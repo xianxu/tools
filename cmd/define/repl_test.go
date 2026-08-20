@@ -32,12 +32,18 @@ func TestParseREPLLine(t *testing.T) {
 
 // replRig drives the loop from a string with no terminal anywhere.
 func replRig(t *testing.T, word string, audioPresent, interactive bool) (*audioRig, options) {
+	return replRigStreams(t, word, audioPresent, interactive, interactive)
+}
+
+// replRigStreams keeps the two terminal questions INDEPENDENT. An earlier
+// version hard-coupled them, commented as "the real-world pairing" — and that
+// assumption is exactly what hid escape sequences leaking into a redirected
+// stdout while stdin was still a terminal.
+func replRigStreams(t *testing.T, word string, audioPresent, stdinTTY, stdoutTTY bool) (*audioRig, options) {
 	t.Helper()
 	rig := newAudioRig(t, word, audioPresent)
-	rig.deps.stdinIsTerminal = func() bool { return interactive }
-	// tty mirrors interactive here: these tests model a terminal on both streams
-	// or neither, which is the real-world pairing.
-	return rig, options{times: 3, locale: "us", tty: interactive}
+	rig.deps.stdinIsTerminal = func() bool { return stdinTTY }
+	return rig, options{times: 3, locale: "us", tty: stdoutTTY}
 }
 
 // The headline behaviour: a bare return replays, and costs nothing.
@@ -243,15 +249,17 @@ func TestREPLReplayFlashesThenRestoresThePrompt(t *testing.T) {
 	if !strings.Contains(s, eraseLineAndStepBack) {
 		t.Error("the flash was never erased — the screen would scroll on every replay")
 	}
+	// The replay indicator must be drawn AFTER stepping back over the prompt, so
+	// it lands where the prompt was rather than on the line below it.
+	step := strings.LastIndex(s, eraseLineAndStepBack)
+	last := strings.LastIndex(s, "♫")
+	if step < 0 || step > last {
+		t.Error("the indicator was drawn before stepping back — it would appear under the prompt")
+	}
 	// Three WRITES, one visible prompt: one before each of the two reads, plus
-	// the redraw that replaces the second in place after the flash is erased.
-	// A fourth would mean the loop drew its own on top of the redraw.
+	// the redraw that reclaims the line the indicator occupied.
 	if n := strings.Count(s, prompt); n != 3 {
 		t.Errorf("prompt written %d times, want 3 (two reads + one in-place redraw)", n)
-	}
-	// The redraw must come after the erase, or it scrolls instead of replacing.
-	if strings.LastIndex(s, eraseLineAndStepBack) > strings.LastIndex(s, prompt) {
-		t.Error("the prompt was redrawn before the erase")
 	}
 }
 
@@ -281,5 +289,86 @@ func TestREPLDefineIndicatorIsErasedAfterPlayback(t *testing.T) {
 	}
 	if !strings.Contains(s[i:], eraseLine) {
 		t.Error("the define-path indicator was never erased")
+	}
+}
+
+// I-1: cursor control goes to STDOUT, so a terminal stdin with a redirected
+// stdout must emit no escapes. `define > out.txt` is ordinary usage.
+func TestREPLMismatchedStreamsEmitNoEscapes(t *testing.T) {
+	rig, opt := replRigStreams(t, "sycophantic", true, true /*stdin tty*/, false /*stdout redirected*/)
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	if strings.Contains(out.String(), "\x1b[") {
+		t.Errorf("ANSI escapes leaked into a redirected stdout: %q", out.String())
+	}
+}
+
+// I-2: a failed replay must not write its diagnostic onto a redrawn prompt, and
+// must not consume the next prompt.
+func TestREPLFailedReplayDoesNotEatThePrompt(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, true)
+	opt.noAudio = true
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	if !strings.Contains(errb.String(), "audio is off") {
+		t.Errorf("want the hint on stderr, got %q", errb.String())
+	}
+	// Three prompts for two reads plus the iteration that discovers EOF: the
+	// failure path claims no line, so the loop draws every one of them.
+	if n := strings.Count(out.String(), prompt); n != 3 {
+		t.Errorf("prompt written %d times, want 3", n)
+	}
+	// With audio off there is nothing to announce and no cursor to move.
+	if strings.Contains(out.String(), "♫") {
+		t.Error("announced playback with -no-audio")
+	}
+	if strings.Contains(out.String(), "\x1b[") {
+		t.Error("moved the cursor for a replay that never played")
+	}
+}
+
+// The likelier I-2 trigger in real use: the replay plays nothing because the CDN
+// has no recording.
+//
+// stdout and stderr are teed into ONE buffer here, because that is what a
+// terminal is — and the defect is only visible in the interleaving. With the
+// streams captured separately both the fixed and the broken version produce
+// identical bytes, which is why the first version of this test could not fail.
+func TestREPLFailedReplayDoesNotWriteOntoThePrompt(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", false /* no recording */, true)
+	var screen bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &screen, &screen)
+
+	s := screen.String()
+	i := strings.Index(s, "define: sycophantic: no recorded pronunciation")
+	if i < 0 {
+		t.Fatalf("failure was not reported: %q", s)
+	}
+	// The diagnostic must not land on a prompt the replay had already redrawn.
+	if strings.HasSuffix(s[:i], prompt) {
+		t.Error("the diagnostic was written onto a redrawn prompt")
+	}
+	// And the loop must still draw a prompt afterwards, so the user is not left
+	// typing onto a bare line.
+	if !strings.Contains(s[i:], prompt) {
+		t.Error("no prompt after the failure — the next read has no prompt")
+	}
+}
+
+// I-4: the Ctrl-C suppression guard was dead to the suite — re-deleting it was
+// green. A pre-cancelled context drives it end to end.
+func TestCancellationPrintsNoDiagnostic(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var out, errb bytes.Buffer
+	if code := defineOnce(ctx, rig.deps, options{times: 3, locale: "us"}, "sycophantic", &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("Ctrl-C printed a diagnostic: %q", errb.String())
 	}
 }

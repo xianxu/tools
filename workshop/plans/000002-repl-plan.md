@@ -196,3 +196,57 @@ echo sycophantic | ./bin/define   # one-shot, unchanged
 - **A blocking read swallows Ctrl-C.** Reading in a goroutine with a `select` on `ctx.Done()` is the mitigation; the cancelled-context test pins it.
 - **Temp files leak on interrupt.** `signal.NotifyContext` returns normally rather than killing the process, so `defer os.RemoveAll` runs. Verified by hand in Task 5 Step 5 — a test cannot observe a real SIGINT cleanly.
 - **The extraction in Task 1 silently changes behaviour.** Mitigated by refusing to touch the existing tests during it; a test that needs editing is the signal.
+
+---
+
+## Revisions
+
+### 2026-08-20 — operator refinements + two close-review rounds
+
+The shipped code has moved twice since Chunk 1 was written. Reconciling here
+rather than leaving the plan describing a design that no longer exists.
+
+**Replay is audio-only, then silent, then transient** (three operator steps).
+`speak` writes nothing at all; `defineOnce` owns the "♫ playing N×" line; and the
+indicator is *ephemeral* — shown while the sound plays, erased when it finishes,
+because it acknowledges a keypress rather than recording anything. On a terminal
+the replay indicator now **replaces the prompt**: the terminal has already echoed
+Enter onto a new line, so the loop steps back over both that echo and the prompt
+before drawing. While the sound plays there is no prompt, which is honest —
+input is not accepted during playback.
+
+**Cursor control is no longer a non-goal.** Chunk 1's Non-goals ruled it out;
+the operator lifted it for exactly this (2026-08-20). `#14` inherits the rest of
+that list (line editing, history, completion) and lifts those too.
+
+**`playAnnounced` is new and unplanned.** The announce → play → erase → report
+sequence existed twice and had diverged three ways: which terminal it gated on,
+whether the audio-off guard applied, and a duplicated literal. One owner now,
+with the erase style as the only intended difference (ARCH-DRY).
+
+**`options.tty` is new.** There are three distinct terminal questions in this
+tool and conflating any two is a bug: `color` (stdout, presentation), `tty`
+(stdout, may I erase), and `stdinIsTerminal` (stdin, is there a human typing).
+Gating cursor control on stdin alone leaked escapes into `define > out.txt`.
+
+**Close review round 1 (4 Important).** Ctrl-C printed `define: afplay: signal:
+killed` — a regression from this issue's own `signal.NotifyContext`, since
+killing `afplay` is *how* cancellation is implemented. The >64 KB guard shipped
+untested. `ErrNoAudio` was retried though it is permanent. `-h` documented only
+the one-shot form.
+
+**Close review round 2 (5 Important).** Escapes leaked into a redirected stdout;
+a failed replay wrote its diagnostic onto the redrawn prompt and then swallowed
+the next one; the duplicated sequence above; the Ctrl-C guard was still dead to
+the suite; and this section did not exist.
+
+**Two testing lessons, both from assertions that could not fail:**
+
+1. `replRig` hard-coupled the stdin and stdout terminal checks, commented as
+   "the real-world pairing." That assumption *was* the blind spot — it made the
+   mismatched-streams bug unreachable from the suite. Test helpers must not
+   couple the conditions whose disagreement is the defect.
+2. The first attempt at the failed-replay test captured stdout and stderr
+   separately, where the fixed and broken versions emit identical bytes. The
+   defect only exists in the *interleaving*, so the test tees both into one
+   buffer — which is what a terminal actually is.

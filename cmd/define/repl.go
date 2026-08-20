@@ -69,6 +69,11 @@ const eraseLineAndStepBack = eraseLine + "\x1b[A" + eraseLine
 // string.
 func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
 	interactive := d.stdinIsTerminal != nil && d.stdinIsTerminal()
+	// Cursor control is written to STDOUT but is only meaningful when the
+	// terminal echoed Enter onto stdout — i.e. when BOTH streams are that
+	// terminal. Gating on stdin alone leaked escape sequences into
+	// `define > out.txt`, which is an ordinary interactive-capture pairing.
+	transient := interactive && opt.tty
 
 	// Cache behind the seam, so the fake CDN's own request recorder proves that a
 	// replay costs no second fetch.
@@ -103,21 +108,24 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 			case cmdNothing:
 				fmt.Fprintln(stderr, "define: type a word, or press return to replay the last one")
 			case cmdReplay:
-				// Pressing return means "say it again": the screen must end up
-				// exactly as it was. Interactively we flash the indicator on the
-				// line Enter's echo just opened, then erase it and step back onto
-				// the prompt — so the word you are hearing stays next to the
-				// definition you are reading, and the view never scrolls.
-				if interactive {
-					fmt.Fprintf(stdout, "  ♫ playing %d×", opt.times)
+				if opt.noAudio || opt.times <= 0 {
+					fmt.Fprintln(stderr, "define: nothing to replay: audio is off")
+					break
 				}
-				err := replay(ctx, d, opt, current)
-				if interactive {
-					fmt.Fprint(stdout, eraseLineAndStepBack+prompt)
-					skipPrompt = true // we just redrew it; do not draw a second
-				}
-				if err != nil && ctx.Err() == nil {
-					fmt.Fprintf(stderr, "define: %s\n", err)
+				// The indicator REPLACES the prompt rather than appearing below
+				// it: the terminal has already echoed Enter onto a new line, so
+				// step back over that echo and over the prompt itself before
+				// drawing. While the sound plays there is no prompt, which is
+				// honest — input is not accepted during playback anyway.
+				ind := indicator{show: transient, before: eraseLineAndStepBack, erase: eraseLine}
+				if playAnnounced(ctx, d, opt, current, ind, stdout, stderr) && transient {
+					// Nothing was reported, so the line we cleared is ours to
+					// reclaim: redraw the prompt in place and let the loop skip
+					// its own. On a failure we deliberately do NOT, so the
+					// diagnostic is not written onto a redrawn prompt and the
+					// loop still draws one afterwards.
+					fmt.Fprint(stdout, prompt)
+					skipPrompt = true
 				}
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo
@@ -128,14 +136,6 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 			}
 		}
 	}
-}
-
-// replay speaks the current word again, writing nothing to stdout.
-func replay(ctx context.Context, d deps, opt options, word string) error {
-	if opt.noAudio || opt.times <= 0 {
-		return fmt.Errorf("nothing to replay: audio is off")
-	}
-	return speak(ctx, d, word, opt.locale, opt.times)
 }
 
 // scanLines reads in a goroutine so a pending read cannot swallow cancellation.

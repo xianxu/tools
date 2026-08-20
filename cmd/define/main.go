@@ -129,26 +129,52 @@ func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, s
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		// The indicator is EPHEMERAL: it exists to show the program responded,
-		// and once the sound has finished it is noise. On a terminal it is erased
-		// afterwards, so the settled screen shows only the definition.
-		fmt.Fprintf(stdout, "\n  ♫ playing %d×", opt.times)
+		ind := indicator{show: true, before: "\n", erase: eraseLine}
 		if !opt.tty {
-			fmt.Fprintln(stdout)
+			// Nothing to erase on a pipe: leave the indicator as a plain line.
+			ind.erase, ind.trail = "", "\n"
 		}
-		err := speak(ctx, d, word, opt.locale, opt.times)
-		if opt.tty {
-			fmt.Fprint(stdout, eraseLine)
-		}
-		// A cancelled context is the user pressing Ctrl-C, not a failure. Without
-		// this guard SIGINT during playback prints "define: afplay: signal:
-		// killed" — killing afplay is how cancellation is *implemented*, so
-		// reporting it as an error tells the user their own keypress went wrong.
-		if err != nil && ctx.Err() == nil {
-			fmt.Fprintf(stderr, "define: %s\n", err)
-		}
+		playAnnounced(ctx, d, opt, word, ind, stdout, stderr)
 	}
 	return 0
+}
+
+// indicator describes the ephemeral "♫ playing N×" line: what to write before it
+// (cursor positioning), and what to write after playback to remove it.
+type indicator struct {
+	show   bool
+	before string
+	erase  string
+	trail  string // written instead of erase when there is nothing to erase
+}
+
+// playAnnounced is the single owner of the announce → play → erase → report
+// sequence. Both entry paths ran their own copy and had diverged three ways —
+// which terminal they gated on, whether the audio-off guard applied, and the
+// duplicated literal — so this exists to make the erase style the only
+// difference between them (ARCH-DRY).
+//
+// Returns true when playback finished with nothing reported, so the caller can
+// decide whether its redrawn UI is still intact.
+func playAnnounced(ctx context.Context, d deps, opt options, word string, ind indicator, stdout, stderr io.Writer) bool {
+	if ind.show {
+		fmt.Fprint(stdout, ind.before)
+		fmt.Fprintf(stdout, "  ♫ playing %d×", opt.times)
+		fmt.Fprint(stdout, ind.trail)
+	}
+	err := speak(ctx, d, word, opt.locale, opt.times)
+	if ind.show {
+		fmt.Fprint(stdout, ind.erase)
+	}
+	// A cancelled context is the user pressing Ctrl-C, not a failure. Without
+	// this guard SIGINT during playback prints "define: afplay: signal: killed" —
+	// killing afplay is how cancellation is *implemented*, so reporting it as an
+	// error tells the user their own keypress went wrong.
+	if err != nil && ctx.Err() == nil {
+		fmt.Fprintf(stderr, "define: %s\n", err)
+		return false
+	}
+	return true
 }
 
 // speak fetches the recording and plays it n times. It prints NOTHING — the
