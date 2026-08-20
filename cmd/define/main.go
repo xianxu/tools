@@ -96,8 +96,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// -no-color means "emit no ANSI", so it disables cursor control too — the
 		// flag exists for terminals that mangle escapes, and splitting its meaning
 		// would leave those users with erase sequences they cannot render.
-		tty:     !*noColor && isTerminal(stdout),
-		noAudio: *noAudio,
+		tty: !*noColor && isTerminal(stdout),
+		// -raw is the scripting form: the unparsed entry and nothing else. The
+		// one-shot path already returned before playing, but the loop's replay
+		// branch never consulted the flag — so a bare return under -raw fetched
+		// and played. Deciding it once here makes the flag mean the same thing on
+		// both paths instead of depending on which line you are on.
+		noAudio: *noAudio || *raw,
 		times:   *times,
 		locale:  *locale,
 	}

@@ -74,6 +74,13 @@ loop steps back over that echo and over the prompt before drawing, then erases
 and redraws. It works and is tested, but it is arithmetic against a terminal that
 has already moved the cursor.
 
+**It is also only correct while the user waits.** `eraseLine` acts on the line the
+cursor is on *now*; the loop blocks inside playback for seconds with ECHO on, so
+a second impatient Return is echoed by the driver, moves the cursor, and the
+post-playback erase clears the wrong line — stranding the indicator. Cooked-mode
+echo is what makes the arithmetic breakable, and no amount of care inside the
+loop fixes it.
+
 In raw mode this disappears: nothing is echoed, so the frame is simply rendered
 with the indicator where the prompt would be. **Expect to delete
 `eraseLineAndStepBack` and the `skipPrompt` bookkeeping here** rather than port

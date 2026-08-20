@@ -183,19 +183,29 @@ indicator on the line Enter's echo just opened, then erases it and steps back
 onto the prompt (`eraseLineAndStepBack`) — the echo is undone rather than
 accepted, so the view never scrolls and the word you are hearing stays beside the
 definition you are reading. Cursor control was a `#2` non-goal, lifted by the
-operator for exactly this. Gated on interactive: piped output contains no escape
-sequence, asserted.
+operator for exactly this. Gated on `interactive && tty` — **both** streams must
+be the terminal, because the escapes go to stdout while the echo being undone
+came from stdin; gating on stdin alone leaked escapes into `define > out.txt`.
 
 **Cancellation prints nothing.** Killing `afplay` is *how* Ctrl-C is implemented,
-so both report sites suppress a diagnostic when `ctx.Err() != nil`; without that
-guard a SIGINT during playback printed `define: afplay: signal: killed` and exited
+so `playAnnounced` — the single report site — suppresses a diagnostic when
+`ctx.Err() != nil`; without that guard a SIGINT during playback printed `define: afplay: signal: killed` and exited
 0, telling the user their own keypress had failed.
 
 **"No recording" is cached; a transport failure is not.** `ErrNoAudio` is
 permanent, so replaying a word without audio must not re-issue all four candidate
 requests each time; `ErrFetchFailed` stays retryable so a transient outage does
 not poison the session. The cache derives that distinction from the error
-taxonomy rather than re-deciding what "failed" means. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
+taxonomy rather than re-deciding what "failed" means.
+
+**The erase arithmetic assumes no input arrives during playback.** `eraseLine`
+acts on whatever line the cursor is on *now*, and the loop is blocked inside
+`speak` for seconds with the tty in cooked mode and ECHO on. A second impatient
+Return during playback is echoed by the driver, moves the cursor down, and the
+post-playback erase then clears the echoed line instead of the indicator —
+stranding `♫ playing N×` on screen. So "the view never scrolls" holds for a user
+who waits, not unconditionally. Raw mode removes the assumption entirely by not
+echoing at all, which is `#14`'s job. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
 *inside* `repl`, so the production and test wiring are the same line and
 `fakeCDN.Requested()` is the assertion. Failed fetches are not cached, so a
 transient outage does not poison a session.

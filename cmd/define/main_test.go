@@ -154,8 +154,32 @@ func TestRunPlaysThreeTimesByDefault(t *testing.T) {
 	if got := rig.player.count(); got != 3 {
 		t.Errorf("played %d times, want 3", got)
 	}
-	if !strings.Contains(out.String(), "playing 3") {
-		t.Error("output should announce playback")
+	// Pin the exact record form, not just its presence. Every other assertion on
+	// this line is a Contains/Count, so dropping the trailing newline was a green
+	// mutation — and `define word | cat` would then glue the record to whatever
+	// followed it.
+	if !strings.HasSuffix(out.String(), "\n  ♫ playing 3×\n") {
+		t.Errorf("record form changed: %q", out.String())
+	}
+}
+
+// -raw is the scripting form and must mean the same thing on both paths. It
+// returned before playing one-shot, while the loop's replay branch ignored it
+// and fetched — so the flag meant two things depending on which line you were on.
+func TestRawNeverPlays(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.stdinIsTerminal = func() bool { return false }
+	var out, errb bytes.Buffer
+
+	// One-shot, then the loop (a word plus a bare return, which is where it played).
+	run(t.Context(), []string{"-raw", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
+	run(t.Context(), []string{"-raw"}, rig.deps, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	if got := rig.player.count(); got != 0 {
+		t.Errorf("-raw played %d times, want 0", got)
+	}
+	if got := rig.cdn.Requested(); len(got) != 0 {
+		t.Errorf("-raw made %d CDN requests, want 0: %v", len(got), got)
 	}
 }
 

@@ -47,3 +47,11 @@ take it back.
 
 Corollary: a flag named for one effect (`-no-color`) must not leave a related
 one on. It suppresses cursor control too, or the name is a lie.
+
+## Reverting a mutation (define #2, close round 4)
+
+`git checkout <file>` to undo a deliberate test-mutation **also discards every
+other uncommitted edit in that file** — it silently reverted a fix made minutes
+earlier, and the follow-up "verification" read as passing because a `|| true`
+masked grep's exit status. Copy the file aside and copy it back. And when a check
+disagrees with a test, the test is the ground truth.
