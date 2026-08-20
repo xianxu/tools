@@ -41,9 +41,19 @@ import (
 // dictionary simply does not have.
 var ErrLookupFailed = errors.New("dictionary lookup failed")
 
-// noadDictionary reads the New Oxford American Dictionary bundled with macOS --
-// the same dictionary Google licenses for its US definition panel, which is why
-// the notation matches character-for-character.
+// noadDictionary reads the host's dictionary set through CoreServices.
+//
+// IMPORTANT: DCSCopyTextDefinition is passed a NULL DCSDictionaryRef, which
+// means "search every ACTIVE dictionary" — not NOAD specifically. The SDK
+// exports no public constructor for a DCSDictionaryRef, so there is no way to
+// select one; the NULL is forced, not a shortcut.
+//
+// In practice NOAD answers for ordinary English words, which is why the notation
+// matches Google's character-for-character (Google licenses the same
+// dictionary). But "iPhone" comes from Apple Dictionary, and if the user has the
+// Chinese dictionaries enabled some words return Han-script entries with an
+// entirely different structure. Results therefore depend on the host's
+// Dictionary.app configuration, and so do the conformance tests.
 type noadDictionary struct{}
 
 func (noadDictionary) Lookup(word string) (string, error) {

@@ -1,0 +1,15 @@
+# Repo-specific Makefile targets.
+# This file is included by Makefile — add your own targets here.
+
+# ~/.local/bin is already on PATH; symlink rather than copy so a rebuild is
+# picked up without reinstalling.
+LOCAL_BIN ?= $(HOME)/.local/bin
+
+.PHONY: install
+install: build  ## Symlink every built binary into $(LOCAL_BIN)
+	@mkdir -p "$(LOCAL_BIN)"
+	@for f in bin/*; do \
+	    [ -x "$$f" ] || continue; \
+	    ln -sf "$(CURDIR)/$$f" "$(LOCAL_BIN)/$$(basename $$f)"; \
+	    echo "  $(LOCAL_BIN)/$$(basename $$f) -> $(CURDIR)/$$f"; \
+	done

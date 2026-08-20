@@ -83,19 +83,33 @@ record rec·ordnoun | ˈrekərd | 1 a thing … : you should keep a written reco
 separate examples. Discriminating on "contains no ASCII letters" does **not**
 work — `ˈrekərd` and `baNGk` are mostly ASCII letters. The rule that does:
 
-> A `|…|` span is a **pronunciation** iff every comma-separated part of its
-> trimmed content is a single token (contains no internal space). Otherwise the
-> pipes are **example separators**.
+> A `|…|` span is a **pronunciation** iff, for every comma-separated part:
+> either the part is a single token, **or** it is a short multi-word run
+> (≤ `maxPronunciationWords`) in which at least one word carries a NOAD stress
+> mark (`ˈ`/`ˌ`). A span containing `[ ] : ; .` is never a pronunciation.
 
-Verified against every pipe span in `sycophantic, record, bank, ephemeral, run, set`:
+Verified against every pipe span in `sycophantic, record, bank, ephemeral, run, set`
+and re-measured over the live dictionary:
 
 | span | verdict |
 |---|---|
-| `ˈrekərd`, `baNGk`, `rən`, `set`, `əˈfem(ə)rəl`, `ˌsikəˈfan(t)ik` | pronunciation |
+| `ˈrekərd`, `baNGk`, `rən`, `set`, `əˈfem(ə)rəl`, `ˌsikəˈfan(t)ik` | pronunciation (single token) |
 | `ˌsikəˈfan(t)ək(ə)lē, -ˈfantik(ə)lē` (comma-separated variants) | pronunciation |
+| `ˈhät ˌdäɡ`, `ˌā prīˈôrī`, `ət ˈprez(ə)nt`, `BrE ˌeɪɡrəˈmatɪk(ə)l` | pronunciation (stress-marked) |
 | `identification was made through dental records` | example |
 | `[as modifier] : record profits` | example |
 | `she ran the last few yards, breathing heavily` | example |
+
+**The single-token-only rule was wrong and shipped a Critical.** It rejected
+every multi-word headword's pronunciation, and because `findPronunciation` then
+walked on to the next candidate span, `define "hot dog"` displayed
+`/ˈhätˌdäɡər/` — *hot dogger* — with the whole entry crushed into the head line.
+At least one stress mark, not one per word: `ət ˈprez(ə)nt` has unstressed
+particles. Prose carries no stress marks at all, which is what makes the rule safe.
+
+The search is also **bounded** by `headLimit` — the first trailing section or
+sentence-ending block opener — so an entry with no pronunciation of its own
+(`concrete`) degrades to a missing IPA instead of adopting a derivative's.
 
 ### Pure entities (the conceptual core)
 
@@ -106,6 +120,7 @@ Verified against every pipe span in `sycophantic, record, bank, ephemeral, run, 
 | `HeadKind` | `cmd/define/parse.go` | new |
 | `Block` | `cmd/define/parse.go` | new |
 | `Sense` | `cmd/define/parse.go` | new |
+| `Example` | `cmd/define/parse.go` | new |
 | `Section` | `cmd/define/parse.go` | new |
 | `ParseEntry` | `cmd/define/parse.go` | new |
 | `opensBlock` | `cmd/define/parse.go` | new |
@@ -127,7 +142,9 @@ Verified against every pipe span in `sycophantic, record, bank, ephemeral, run, 
   - `Block` also carries `FromHead bool` (its POS came from the head, so `Render` must not print it twice) and `Label string` (a grammar label between the POS and its pronunciation, `verb [with object] | rəˈkôrd |`, held separately so it renders in NOAD's order).
   - **Relationships:** N:1 with `Entry`; 1:N with `Sense`.
 
-- **Sense** — a numbered sense or `•` sub-sense: `Number string`, `Sub bool`, `Gloss string`, `Examples []string`.
+- **Sense** — a numbered sense or `•` sub-sense: `Number string`, `Sub bool`, `Gloss string`, `Examples []Example`.
+
+- **Example** — one usage example plus any grammar label introducing it: `Label string`, `Text string`. NOAD writes `4 the cushion of a pool table: [as modifier] : a bank shot`, where `[as modifier]` qualifies the example rather than being part of it; splitting only on the first `:` left the label and a stray colon inside the quotes on 13.8% of entries. Mirrors `Block.Label` one level down.
 
 - **Section** — a trailing all-caps block: `Name` (`DERIVATIVES`, `ORIGIN`, `PHRASES`, `PHRASAL VERBS`, `USAGE`), `Text`.
 
@@ -152,10 +169,10 @@ Verified against every pipe span in `sycophantic, record, bank, ephemeral, run, 
 | `fakeDictionary` | `cmd/define/dict_fake_test.go` | new | fixture corpus in `testdata/entries/` |
 | `AudioSource` | `cmd/define/fetch.go` | new | interface (seam) |
 | `httpAudioSource` | `cmd/define/fetch.go` | new | gstatic CDN over `net/http` |
-| `fakeCDN` | `cmd/define/fetch_fake.go` | new | stateful `httptest` CDN |
+| `fakeCDN` | `cmd/define/fetch_fake_test.go` | new | stateful `httptest` CDN |
 | `Player` | `cmd/define/player.go` | new | interface (seam) |
 | `afplayPlayer` | `cmd/define/player.go` | new | `afplay(1)` |
-| `fakePlayer` | `cmd/define/player_fake.go` | new | stateful play recorder |
+| `fakePlayer` | `cmd/define/player_fake_test.go` | new | stateful play recorder |
 
 - **Dictionary** — `Lookup(word string) (string, error)`, returning raw NOAD text or `ErrNoEntry`.
   - **Injected into:** `run()` (the thin shell), never into `ParseEntry` — which is what keeps the parser's tests IO-free.
@@ -188,33 +205,12 @@ The corpus must include the structurally awkward entries. Fixtures are committed
 - [x] **Step 1: Write `capture.py`** — `ctypes` → `CoreFoundation` + `CoreServices`, calling `DCSCopyTextDefinition(NULL, word, {0, len})`, printing the returned text. (This is the same call the cgo path makes in Task 3; the duplication is deliberate and one-directional — the capture tool must not depend on the artifact it captures for.)
 - [x] **Step 2: Write `capture.sh` so a bad capture fails loudly**
 
-```bash
-#!/usr/bin/env bash
-# Capture real NOAD output for the parser fixture corpus.
-# MUST run OUTSIDE a sandbox — DCSCopyTextDefinition needs real access to
-# /System/Library/AssetsV2 and silently returns nothing without it. That
-# silence is exactly why this script fails hard on a short capture: a
-# directory of zero-byte fixtures makes TestRenderLosesNothing vacuously green.
-set -euo pipefail
-cd "$(dirname "$0")"
-mkdir -p entries
-words=(sycophantic quokka ephemeral defenestrate bank record run gaslighting set)
-MIN_BYTES=40
-for w in "${words[@]}"; do
-    out="entries/$w.txt"
-    if ! python3 capture.py "$w" > "$out.tmp"; then
-        rm -f "$out.tmp"; echo "capture failed: $w" >&2; exit 1
-    fi
-    n=$(wc -c < "$out.tmp" | tr -d ' ')
-    if [ "$n" -lt "$MIN_BYTES" ]; then
-        rm -f "$out.tmp"
-        echo "capture too short for '$w' ($n bytes) — sandboxed, or NOAD is absent." >&2
-        exit 1
-    fi
-    mv "$out.tmp" "$out"
-done
-echo "captured ${#words[@]} entries:"; wc -c entries/*.txt
-```
+The script lives at `cmd/define/testdata/capture.sh` — **read it there**, it is
+not reproduced here (the copy that used to be inline drifted to a stale 9-word
+list). It captures to a `.tmp`, enforces a minimum byte count, and `exit 1`s on a
+short read, because `DCSCopyTextDefinition` returns *silence, not an error*, when
+sandboxed — and a directory of zero-byte fixtures makes the whole invariant suite
+vacuously green.
 
 - [x] **Step 3: Run it outside the sandbox.** Confirm `bank.txt` starts `bank 1 | baNGk |` and `record.txt` contains `rec·ordnoun` — the two cases the parser is designed against. Confirm no file is 0 bytes.
 - [x] **Step 4: Commit** — `#1 M1: capture NOAD fixture corpus`
@@ -359,9 +355,9 @@ Consequence for `Render`: it must not change case, abbreviate, truncate, or reor
 
 Ordering comes from the measured survey (issue `## Log`): the 2022 path first (strictly best coverage), then legacy `sounds/oxford`, `_1` before `_2` at each generation.
 
-- [ ] **Step 1: Write the failing test.** Obligations: exact ordered list for `sycophantic`; input is lower-cased (`Sycophantic` → same list); a one-letter word (`a`) does not panic on the two-letter shard prefix.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement** — lowercase, `url.PathEscape`, shard = first ≤2 letters:
+- [x] **Step 1: Write the failing test.** Obligations: exact ordered list for `sycophantic`; input is lower-cased (`Sycophantic` → same list); a one-letter word (`a`) does not panic on the two-letter shard prefix.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement** — lowercase, `url.PathEscape`, shard = first ≤2 letters:
 
 ```
 https://ssl.gstatic.com/dictionary/static/pronunciation/2022-03-02/audio/sy/sycophantic_en_us_1.mp3
@@ -370,38 +366,38 @@ https://ssl.gstatic.com/dictionary/static/sounds/oxford/sycophantic--_us_1.mp3
 https://ssl.gstatic.com/dictionary/static/sounds/oxford/sycophantic--_us_2.mp3
 ```
 
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#1 M2: derive CDN audio URL candidates`
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#1 M2: derive CDN audio URL candidates`
 
 ### Task 8: `AudioSource` + the stateful fake CDN
 
-**Files:** create `cmd/define/fetch.go`, `cmd/define/fetch_fake.go`; test `cmd/define/fetch_test.go`, `cmd/define/fetch_conformance_test.go`
+**Files:** create `cmd/define/fetch.go`; test `cmd/define/fetch_fake_test.go`, `cmd/define/fetch_test.go`. Fakes live in `_test.go` files so they never link into the shipped binary — the same correction `fakeDictionary` needed.
 
-- [ ] **Step 1: Write the failing tests.** Obligations: with only the third candidate present, `Fetch` returns its bytes **and** `fakeCDN.Requested()` is exactly the first three paths in order (the walk order is the assertion, not just the result); when all 404, `ErrNoAudio` and every candidate attempted.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement** — context-aware, stop at first 200, `ErrNoAudio` when all miss. `fakeCDN` wraps `httptest.NewServer`, records each path under a mutex, exposes `Requested()`.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Write the conformance test** (`//go:build conformance`): the real CDN returns 200 for `sycophantic`, and `gaslighting` is 200 on the 2022 path but 404 on `sounds/oxford` — the two survey facts the ordering rests on.
-- [ ] **Step 6: Commit** — `#1 M2: CDN audio fetch behind a seam + stateful fake`
+- [x] **Step 1: Write the failing tests.** Obligations: with only the third candidate present, `Fetch` returns its bytes **and** `fakeCDN.Requested()` is exactly the first three paths in order (the walk order is the assertion, not just the result); when all 404, `ErrNoAudio` and every candidate attempted.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement** — context-aware, stop at first 200, `ErrNoAudio` when all miss. `fakeCDN` wraps `httptest.NewServer`, records each path under a mutex, exposes `Requested()`.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Write the conformance test** (`//go:build conformance`): the real CDN returns 200 for `sycophantic`, and `gaslighting` is 200 on the 2022 path but 404 on `sounds/oxford` — the two survey facts the ordering rests on.
+- [x] **Step 6: Commit** — `#1 M2: CDN audio fetch behind a seam + stateful fake`
 
 ### Task 9: `Player` and playing three times
 
-**Files:** create `cmd/define/player.go`, `cmd/define/player_fake.go`; test `cmd/define/player_test.go`
+**Files:** create `cmd/define/player.go`; test `cmd/define/player_fake_test.go`, `cmd/define/player_test.go`
 
-- [ ] **Step 1: Write the failing tests** — this is the "3 times" acceptance criterion. Obligations: `playN(ctx, p, path, 3)` records exactly 3 plays; with `fakePlayer{FailOn: 2}` it returns an error and records exactly 2 (stops rather than pressing on).
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `playN` loops `n` times with a 250 ms gap, skipped after the final play, so repeats are distinguishable by ear. `afplayPlayer.Play` runs `exec.CommandContext(ctx, "afplay", path)`; a missing `afplay` returns a typed error the shell downgrades to a warning.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#1 M2: Player seam + playN with count assertion`
+- [x] **Step 1: Write the failing tests** — this is the "3 times" acceptance criterion. Obligations: `playN(ctx, p, path, 3)` records exactly 3 plays; with `fakePlayer{FailOn: 2}` it returns an error and records exactly 2 (stops rather than pressing on).
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `playN` loops `n` times with a 250 ms gap, skipped after the final play, so repeats are distinguishable by ear. `afplayPlayer.Play` runs `exec.CommandContext(ctx, "afplay", path)`; a missing `afplay` returns a typed error the shell downgrades to a warning.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#1 M2: Player seam + playN with count assertion`
 
 ### Task 10: Wire audio into the CLI
 
 **Files:** modify `cmd/define/main.go`; test `cmd/define/main_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations: default run plays 3×; `--no-audio` plays 0× **and makes zero CDN requests** (assert `Requested()` is empty — no wasted fetch); `--times 1` plays once; an audio failure still prints the definition and exits **0** with a stderr warning (the definition is the deliverable; a missing recording is not a failed lookup).
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** Add `--no-audio`, `--times N` (default 3), `--locale us|gb`. Print the definition, then `♫ playing 3×`, then play. Write the MP3 under `os.MkdirTemp`; clean up.
-- [ ] **Step 4: Run tests, then the real end-to-end check**
+- [x] **Step 1: Write the failing tests.** Obligations: default run plays 3×; `--no-audio` plays 0× **and makes zero CDN requests** (assert `Requested()` is empty — no wasted fetch); `--times 1` plays once; an audio failure still prints the definition and exits **0** with a stderr warning (the definition is the deliverable; a missing recording is not a failed lookup).
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** Add `--no-audio`, `--times N` (default 3), `--locale us|gb`. Print the definition, then `♫ playing 3×`, then play. Write the MP3 under `os.MkdirTemp`; clean up.
+- [x] **Step 4: Run tests, then the real end-to-end check**
 
 ```sh
 make build
@@ -411,9 +407,9 @@ make build
 ./bin/define rizz; echo $?    # → clean diagnostic, 1
 ```
 
-- [ ] **Step 5: Add a `make install` target** in `Makefile.local` symlinking `bin/*` into `~/.local/bin` (already on PATH), and correct `README.md`, which currently claims a `make install` that does not exist.
-- [ ] **Step 6: Update `atlas/`** — `atlas/define.md` (the three seams, the two parsing rules, the CDN survey, the conformance trigger, the Non-goals) plus an `atlas/index.md` link.
-- [ ] **Step 7: Commit, then `sdlc close --issue 1 --verified '<evidence>'`**
+- [x] **Step 5: Add a `make install` target** in `Makefile.local` symlinking `bin/*` into `~/.local/bin` (already on PATH), and correct `README.md`, which currently claims a `make install` that does not exist.
+- [x] **Step 6: Update `atlas/`** — `atlas/define.md` (the three seams, the two parsing rules, the CDN survey, the conformance trigger, the Non-goals) plus an `atlas/index.md` link.
+- [x] **Step 7: Commit, then `sdlc close --issue 1 --verified '<evidence>'`**
 
 ---
 

@@ -35,13 +35,24 @@ func TestRenderHeadKeepsSourceOrder(t *testing.T) {
 
 func TestRenderGluedPOSNotPrintedTwice(t *testing.T) {
 	out := Render(ParseEntry(fixture(t, "record")), RenderOpts{Color: false})
-	if n := strings.Count(out, "noun"); n < 1 {
-		t.Fatal("the head part-of-speech vanished")
+	lines := strings.Split(out, "\n")
+
+	// The head line carries the glued POS...
+	if !strings.Contains(lines[0], "noun") {
+		t.Errorf("head line %q lost the glued part-of-speech", lines[0])
 	}
-	// The block whose POS came from the head must not repeat it as a heading.
-	for _, line := range strings.Split(out, "\n") {
-		if strings.TrimSpace(line) == "" && strings.HasPrefix(line, "  ") {
-			t.Error("empty indented block heading — FromHead suppression left a blank line")
+	// ...and no block heading repeats it. A block heading is a line indented by
+	// exactly two spaces; the earlier version of this test looked for an empty
+	// line that also had a "  " prefix, which is unsatisfiable.
+	for _, line := range lines[1:] {
+		if !strings.HasPrefix(line, "  ") || strings.HasPrefix(line, "   ") {
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			t.Error("empty block heading — FromHead suppression left a blank line")
+		}
+		if strings.TrimSpace(line) == "noun" {
+			t.Error("block heading repeated the head's part-of-speech")
 		}
 	}
 }
@@ -173,9 +184,11 @@ func TestCorpusBlockStructure(t *testing.T) {
 		// The phantom-block family: a POS word inside a bracket (man, thing),
 		// in plain prose ("a noun phrase", subject), and a real opener after a
 		// paren ("(subject to) adjective", subject). Each of these shipped a bug.
-		"man":     {"noun", "verb", "exclamation"},
-		"thing":   {"noun"},
-		"subject": {"noun", "adjective", "adverb", "verb"},
+		"man":   {"noun", "verb", "exclamation"},
+		"thing": {"noun"},
+		// A part of speech opening directly after an editorial note's "]".
+		"complete": {"adjective", "verb"},
+		"subject":  {"noun", "adjective", "adverb", "verb"},
 	}
 	d := testDict(t)
 	for word, expect := range want {
@@ -207,6 +220,13 @@ func TestNoRawPronunciationNotationSurvives(t *testing.T) {
 			out := Render(ParseEntry(raw), RenderOpts{Color: false})
 			if near := strayStress(out); near != "" {
 				t.Errorf("unconverted NOAD notation survived rendering, near %q", near)
+			}
+			// Second, blunter oracle: a raw "|" is NOAD's delimiter and has no
+			// place in rendered output. strayStress cannot see example-separator
+			// pipes, because those carry no stress mark.
+			if i := strings.IndexByte(out, '|'); i >= 0 {
+				lo, hi := max(0, i-50), min(len(out), i+50)
+				t.Errorf("raw NOAD delimiter survived rendering, near %q", out[lo:hi])
 			}
 		})
 	}

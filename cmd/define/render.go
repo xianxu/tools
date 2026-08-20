@@ -116,7 +116,20 @@ func Render(e Entry, opt RenderOpts) string {
 	for _, sec := range e.Sections {
 		fmt.Fprintf(&b, "\n  %s%s%s\n", p.sect, sec.Name, p.off)
 		if sec.Text != "" {
-			fmt.Fprintf(&b, "    %s\n", prettyPronunciations(sec.Text, p))
+			// Section text carries the same example separators sense text does
+			// ("…played some great football into the bargain | save yourself
+			// money…"). Rendering it as one paragraph left NOAD's raw "|" on
+			// screen; each segment gets its own line instead.
+			for i, seg := range strings.Split(prettyPronunciations(sec.Text, p), "|") {
+				if seg = strings.TrimSpace(seg); seg == "" {
+					continue
+				}
+				indent := "    "
+				if i > 0 {
+					indent = "      "
+				}
+				fmt.Fprintf(&b, "%s%s\n", indent, seg)
+			}
 		}
 	}
 	return b.String()

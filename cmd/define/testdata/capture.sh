@@ -30,13 +30,21 @@ mkdir -p entries
 #   alewife  "(plural alewives | ˈālˌwīvz |)" -- a pronunciation inside a gloss
 #   parrot   "(parrots, parroting | ˈperədiNG |)" -- pronunciations in an
 #            inflection list, whose pipes collide with example separators
+#   complete "…The Compleat Angler] verb [with object]" -- a part of speech
+#   pulp     opening straight after an editorial note's closing bracket
+#   bargainer PHRASES text carrying example-separator pipes
+#
+# NOTE: DCSCopyTextDefinition searches the host's ACTIVE dictionaries, not NOAD
+# specifically (there is no public API to select one). iPhone, iPad and MacBook
+# below are Apple Dictionary entries, not NOAD -- which is precisely why they
+# have no pronunciation and exercise that branch.
 #
 # The last three, plus content/even/desert/minute/use/subject/iPad/MacBook/Amazon,
 # were all rendering with dropped or reordered content at the M1 boundary review.
 words=(
     sycophantic quokka ephemeral defenestrate bank record run gaslighting set
     present iPhone read content even desert minute use subject iPad MacBook Amazon
-    man thing alewife bases parrot
+    man thing alewife bases parrot complete pulp bargainer
     # Multi-word headwords: their pronunciations have interior spaces
     # ("hot dog | ˈhät ˌdäɡ |"), which the single-token rule rejected outright --
     # and when an entry's OWN pronunciation is rejected the parser used to walk

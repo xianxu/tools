@@ -561,3 +561,187 @@ Add a `## Revisions` entry to `workshop/plans/000001-define-plan.md`:
 For `workshop/issues/000001-define.md`: the estimate-quality INFO carry-forward is resolved — it is recorded in the plan's round-2 Revisions (line 577), so nothing is stranded. The plan-gate ledger's `## Open findings` is empty, so there is nothing deferred from the plan gate for this boundary to pick up.
 
 For `atlas/define.md`: the "0% now" claim under **The invariant** must be re-measured after C1/C2, and the sentence describing what the property is blind to should name the oracle limitation, not just letter-order preservation.
+
+---
+
+## Re-review — 2026-08-20T11:38:28-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 1 — define — NOAD word lookup with Google-style IPA and spoken pronunciation |
+| repo | tools |
+| issue file | workshop/issues/000001-define.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 1e8386b80feb8986ae8a2deb3e85d02012c0ee4a^..HEAD |
+| command | sdlc milestone-close --issue 1 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-20T11:38:28-07:00 |
+| verdict | REWORK |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Round 3's fixes hold, and I confirmed that independently rather than from the commit messages: the live property check reads **0 content loss and 0 stress-marked notation over 2,749 live entries**, `FuzzRenderLosesNothing` survived **30.3M executions** with no crasher, `TestFixturesMatchLiveDictionary` passes against live NOAD, and a phantom-block sweep I wrote from scratch found **0 duplicate-POS blocks and 0 empty blocks** — round 2's `opensBlock` rule is genuinely sound. I also checked the invariant's own one-directional blind spot (it proves nothing is *lost*, not that nothing is *duplicated*) and found zero bloat, so that gap is clean. What blocks the boundary is that `opensBlock` accepts `.`, `)`, `:`, `;` but **not `]`** — so a part-of-speech that follows a bracketed editorial note never opens a block, and the entire block is swallowed into the preceding block's *quoted example*. `define complete` renders one block (`adjective`) and buries the whole verb entry — sense numbering and all — inside a quotation; `pulp`, `blaze`, `beetle` are the same. Full-dictionary sweep: **57 entries hit the rejected-opener shape, 22 of them lose a whole part of speech into an example.** Every existing guard is blind to it by construction — the alnum property (order preserved), `strayStress` (no stress marks involved), the 11-word block golden (no fixture has `] verb`). I applied the one-token fix in a scratch copy and re-verified: all unit tests pass, live property stays 0/0, phantom sweep stays 0/0, and `complete`/`pulp` render both blocks. Second blocker: the plan's Chunk 1 still *specifies* the pronunciation rule round 3 proved false, along with three other code-contradicting entries — all four were round-3 recommendations that did not land, and M2 designs against that chapter.
+
+## 1. Strengths
+
+- **The three-width invariant is real, and it survives adversarial probing.** I re-ran it (2,749 live entries, 0 loss) and then attacked its known blind spot: rendered alnum length never exceeded raw across the whole sample, so nothing is silently duplicated either. `alnum`/`subsequenceGap` shared across fixtures, fuzz, and live (`invariant_test.go:42,55`) is the right ARCH-DRY shape.
+- **Round 2's block-opener rule is confirmed-good ground — don't re-litigate it.** `opensBlock` (`parse.go:733`) retired the phantom-block family: 3,547 blocks across 2,749 entries, zero duplicate-POS, zero senseless blocks. The bug below is a *missing* member of its accept set, not a flaw in the rule.
+- **`strayStress` (`invariant_test.go:40`) is the correct response to round 3's I1** — an oracle resting on a fact about the notation instead of on the parser. It reads a true 0 for what it measures.
+- **ARCH-MOCK closure held up under inspection.** `dict_conformance_test.go:28` reads through `fake.Lookup` rather than around it, and the live fixture-conformance check passes byte-for-byte.
+- **Bookkeeping is clean and I verified each claim:** 30/30 M1 checkboxes ticked, `go mod tidy` a no-op, no build artifacts anywhere in history, 91.2% coverage, `go vet` clean, `GOOS=linux CGO_ENABLED=0` build **and** vet green via the stub, and CLI edge cases (empty arg, unknown flag, 5000-char word, emoji, two args, `-h`) all exit sanely with no panic.
+
+## 2. Critical findings
+
+### C1 — `opensBlock` rejects `]`, so a part-of-speech after a bracketed note never opens a block and the whole block is swallowed into a quoted example
+`cmd/define/parse.go:738`
+
+The accept set is `'.', ')', ':', ';'`. NOAD ends editorial notes with `]` and then opens the next part-of-speech directly:
+
+```
+… his range of skills made him the complete footballer | these articles are for the
+compleat mathematician. [the spelling compleat is a revival of the 17th century use
+as in Walton's The Compleat Angler] verb [with object] 1 finish making or doing: …
+```
+
+`verb` is preceded by `]`, so `opensBlock` returns false, no mark is recorded, and everything after it stays inside the adjective block's sub-sense. Verified live at HEAD — `define complete` renders exactly one block heading (`adjective`), and the verb entry appears *inside quotation marks*:
+
+```
+      • (also compleat) skilled at every aspect of a particular activity; consummate
+        "his range of skills made him the complete footballer"
+        "these articles are for the compleat mathematician. [the spelling compleat …
+         Angler] verb [with object] 1 finish making or doing: he completed his Ph.D. in 1983"
+      …
+        "he completed 12 of 16 passes for 128 yards. 2 make (something) whole or perfect: …"
+```
+
+Verb sense 2 is inside a quoted string. `define pulp` is identical (only `noun` renders).
+
+Prevalence, full sweep over all **71,427** reachable entries: **57** entries contain a strong-shaped POS token at depth 0 that `opensBlock` rejects solely because its predecessor is `]`; **22** of them lose a part of speech into a quoted example (`complete`, `pulp`, `blaze`, …). This is not the ambiguity the atlas accepts under *Limits* — that clause is about NOAD *not writing* punctuation (`parrot`). Here NOAD writes a delimiter and the accept set omits it.
+
+Why nothing caught it: the alnum property preserves order; `strayStress` sees no stress marks; `TestCorpusBlockStructure` (`render_test.go:120`) samples 11 fixtures, none with `] verb`.
+
+Fix — one token:
+
+```go
+case '.', ')', ':', ';', ']':
+```
+
+I applied exactly this in a scratch copy and re-measured: `go test ./...` passes (including the block golden and all 29 fixtures), live property stays **0 loss / 0 stray notation**, the phantom sweep stays **0 dupPOS / 0 empty blocks**, example-swallows drop **54 → 32**, and `complete` and `pulp` both render their verb blocks. Add `complete` to `capture.sh` and a `{"complete": {"adjective","verb"}}` row to `TestCorpusBlockStructure` — this is the fourth boundary at which this family has arrived undetected, and the corpus still has no entry that exercises it.
+
+### C2 — Plan Chunk 1 still specifies the pronunciation rule the code replaced, plus three further code-contradicting entries; all four were round-3 recommendations that did not land
+`workshop/plans/000001-define-plan.md:86`, `:130`, `:155`, `:158`, `:201`
+
+Chunk 1 is specification — it is what M2 will be designed against — and it currently contradicts the code in four places:
+
+| Plan says | Code has |
+|---|---|
+| `:86` "A `\|…\|` span is a **pronunciation** iff every comma-separated part of its trimmed content is a single token" | The stress-mark rule (`parse.go:111-155`): a multi-word span qualifies when a word carries `ˈ`/`ˌ`, capped at `maxPronunciationWords`. The plan's rule **is** the one that shipped round 3's C1 (`define "hot dog"` → `/ˈhätˌdäɡər/`) |
+| `:130` `Sense … Examples []string` | `Examples []Example` (`parse.go:85`), where `Example{Label, Text}` (`parse.go:95`) is a **new pure entity with no row in the Core-concepts table** |
+| `:155`, `:158` `fakeCDN` → `fetch_fake.go`, `fakePlayer` → `player_fake.go` | Non-test files. `fakeDictionary` was moved to `dict_fake_test.go` precisely so fakes don't link into the shipped binary; Tasks 8–9 will re-make the fixed mistake |
+| `:201` Task 1's inline `capture.sh` shows `words=(sycophantic quokka … set)` — 9 words | 29 fixtures on disk |
+
+Round 3's plan-revision recommendations #1, #3 and #4 named the first, fourth and third of these; none was applied, and round 2's C2 was this same defect one level up. Fix Chunk 1 in place (the Rule B block and its verdict table, the `Sense` bullet, an `Example` table row, the two fake paths), and replace Task 1's inline script with a pointer to the file so it cannot drift again.
+
+## 3. Important findings
+
+### I1 — The seam does not read NOAD; it reads whatever dictionaries are active, and every artifact claims otherwise
+`cmd/define/dict_darwin.go:44`, `atlas/define.md:1-8`, `README.md:25`, issue `## Spec`
+
+`DCSCopyTextDefinition(NULL, s, r)` (`dict_darwin.go:31`) passes a NULL `DCSDictionaryRef`, which means *search all active dictionaries*. The code comment says "noadDictionary reads the New Oxford American Dictionary bundled with macOS — the same dictionary Google licenses … which is why the notation matches character-for-character." That guarantee does not hold.
+
+Measured over the full 71,427 reachable entries: **530 contain Han script** — they come from a Chinese dictionary, not NOAD. `define anda` prints `谙达 āndá 动 （对人情世故等）熟悉通达。…`; `define Ao` likewise. The English case is present too: `iPhone`, `iPad` and `MacBook` — three of the 29 committed fixtures — are Apple Dictionary entries ("A line of notebook computers from Apple that was discontinued in 2019"), not NOAD. The `splitHeadByShape` no-pronunciation path (`parse.go:186`) was built for a shape that belongs to a *different dictionary* than the one the design documents.
+
+I checked whether this is fixable in code: the SDK header exports only `DCSGetTermRangeInString` and `DCSCopyTextDefinition`, and `DCSDictionaryRef` has no public constructor — so passing NULL is forced and the behavior is inherent. That is why I rate this Important rather than Critical: the deliverable is a documentation correction, not a code change. State in `atlas/define.md` *Limits*, `README.md`, and the `noadDictionary` doc comment that results come from the host's active dictionary set, NOAD-first in the common case; note that the conformance tests' pass/fail therefore depends on undocumented host dictionary configuration; and mark the three Apple Dictionary fixtures as such in `capture.sh`.
+
+### I2 — 2.0% of entries still render raw NOAD `|` delimiters, and the atlas publishes "0%"
+`atlas/define.md:87`, `cmd/define/render.go:116`
+
+The atlas states: "Independently measured, unconverted notation went 2.2% → **0%** over 2749 live entries." `strayStress` only sees notation carrying a stress mark. Example-separator pipes carry none, so they are invisible to it.
+
+Full-sweep measurement with a one-line oracle that consults nothing (`strings.Contains(out, "|")`): **1,461 of 71,427 entries (2.0%)** render at least one raw `|` — 1,370 in section text, 92 in a sense gloss, 0 in examples. Verified live, `define bargainer`:
+
+```
+  PHRASES
+    drive a hard bargain … into the bargain (North American English in the bargain) in
+    addition to what was expected; moreover: they've exceeded expectations and played some
+    great football into the bargain | save yourself money and keep warm and cozy in the bargain.
+```
+
+Round 3's lesson was that a narrow oracle published a false 0. The oracle is honest now but the *claim* is broader than the measurement. Fix: re-word the atlas to say what was measured ("0% stress-marked notation"), and add the pipe check to `TestNoRawPronunciationNotationSurvives` and the live sweep — it is one line and independent of every function under test. Separately, section text is rendered as one undifferentiated paragraph (`render.go:116-121`); splitting it on the same example-separator rule the sense path already uses would remove the pipes at the source.
+
+### I3 — The register-label opener family is larger than *Limits* implies, and 32 entries still lose a block after C1's fix
+`cmd/define/parse.go:733`, `atlas/define.md` *Limits*
+
+`opensBlock` also rejects an opener preceded by a register or domain label rather than punctuation — `mainly British English verb`, `rare adjective`, `vulgar slang noun`, `see Coleoptera verb`, `chemical formula: CHCl3 verb`. Two distinct severities, both verified live:
+
+- **Block swallowed** (second or later block): after C1's fix, **32 of 71,427** entries still show a POS-plus-grammar-label inside a *quoted example*. Confirmed by hand: `define shuttle` and `define chloroform` each render only `noun`; the verb block is inside a quotation.
+- **First block unlabeled**: `define backheel` and `define Barmecide` render a leading block with no POS heading whose gloss opens "mainly British English verb [with object] kick (something)…". By the same signature this shape reaches ~597 entries; I confirmed two by hand, so treat that number as an upper bound.
+
+The atlas's *Limits* entry covers this in principle ("NOAD does not always write one — `parrot` …"), but "some block boundaries" reads far smaller than 600+, and the swallow-into-example variant is materially worse than `parrot`'s nesting. At minimum, quantify it in the atlas. The register-label sub-case also looks tractable: `isGrammarLabelOnly` (`parse.go:376`) already models "text that may sit between a POS and its pronunciation"; a mirror predicate for a short leading register label would fix `backheel`/`Barmecide` without loosening `opensBlock` generally.
+
+### I4 — `TestRenderGluedPOSNotPrintedTwice` asserts nothing
+`cmd/define/render_test.go:36`
+
+Both checks are dead:
+
+```go
+if n := strings.Count(out, "noun"); n < 1 { t.Fatal(...) }        // "record" always contains "noun"
+for _, line := range strings.Split(out, "\n") {
+    if strings.TrimSpace(line) == "" && strings.HasPrefix(line, "  ") { t.Error(...) }
+}
+```
+
+The second condition requires a line that is entirely whitespace *and* starts with two spaces. `Render` writes blank lines as a bare `"\n"` (`render.go:70`) and never emits an all-space line — every indented write is guarded by a non-empty payload — so the loop body is unreachable. This is the named guard for `FromHead` suppression, which was a Critical in round 1. Replace it with a positive assertion: the head line contains `noun`, and no block heading line equals `noun` for `record`.
+
+## 4. Minor findings
+
+- `parse.go:581` `strings.TrimRight(seg, ".")` strips *all* trailing periods, so an example ending in an abbreviation or ellipsis loses them (`…in Washington, D.C.` → `D.C`). Invisible to the invariant, which excludes punctuation by design.
+- `invariant_test.go:44` `rest[lo:hi]` byte-slices a string that contains multibyte runes; the failure message can carry invalid UTF-8. Test-only.
+- `invariant_test.go:127` `len([]rune(alnum(raw)))` — `alnum` already returns `[]rune`; the conversion is a no-op. Open since round 2.
+- `main.go:49-53` collapses `ErrNoEntry`, `ErrLookupFailed` and the non-darwin stub error to exit 1, while `README.md:31` documents 1 as "no dictionary entry". Open since round 2.
+- `README.md:52` says `go test -tags conformance ./...`; `atlas/define.md:112` says `./cmd/define/`. Open since round 3.
+- `atlas/define.md` heading "## Three parsing rules worth knowing" is followed by "Two shapes are non-obvious" and then three numbered items.
+- `atlas/define.md:56` points at `testdata/fuzz/` for minimized crashers; the directory does not exist. Accurate today (30.3M execs found none) but worth a word.
+- `live_property_test.go:24` `liveSampleSize = 9000` samples 2,749 of 71,427 (3.8%). My full sweeps took ~34 s each; the `checked < 500` guard would still protect it. The stride sample did surface `complete`, so this is not why C1 shipped — but the 26× width is nearly free.
+- `parse.go:214` still cannot segment a multiword glued POS: `define bases` renders the head as `bases ba·sesplural  noun 1`. Open since round 2.
+
+## 5. Test coverage notes
+
+91.2% of statements, `go vet` clean, darwin and `GOOS=linux CGO_ENABLED=0` build **and** vet green, live fixture conformance passing, fuzz clean at 30.3M executions. `TestRenderColorOnlyWhenAsked`'s strip-and-compare (`render_test.go:60`), `TestLoadFakeDictionaryRejectsEmptyCorpus`, and `TestEveryFixtureIsReachableViaLookup` are real assertions on real logic.
+
+Gaps, in payoff order:
+
+1. **No golden exercises a POS opener after `]`** — C1's hiding place. `TestCorpusBlockStructure` covers 11 words; none has the shape.
+2. **The raw-notation checks measure only stress-marked notation** (I2). A `strings.Contains(out, "|")` assertion is one line, needs no knowledge of the parser, and closes the residual.
+3. **`TestRenderGluedPOSNotPrintedTwice` is a no-op** (I4) — the one test named for a round-1 Critical.
+4. **Nothing asserts a block is not swallowed.** The signature I used — a POS word followed by `" ["` or `" ("` inside a `Sense.Gloss` or `Example.Text` — found C1 and I3 in one pass and is cheap enough to run over the fixture corpus as a golden.
+5. **No fixture comes with a documented non-NOAD provenance** (I1), so nothing pins which of the 29 are NOAD and which are Apple Dictionary.
+6. `realDeps` and `main` at 0% — correct, not worth chasing.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one Minor.** Round 3's duplicate raw-pipe oracle is genuinely consolidated: `strayStress` lives once in `invariant_test.go:40` and is called from both `render_test.go:208` and `live_property_test.go:57`. `alnum`/`subsequenceGap` shared across all three widths; `rewritePronunciations` one function with two call sites (`parse.go:174`, `render.go:127`); `splitFirstToken` still the single token-boundary definition; `capture.py`'s duplication of the cgo call remains correct — deliberate, one-directional, documented at `capture.py:4-7`. Residual: `posAt` (`parse.go:734` region) re-inlines the whitespace test two lines below `isBoundary`.
+- **ARCH-PURE — pass.** `ParseEntry`, `Render`, `isPronunciation`, `opensBlock`, `rewritePronunciations`, `alnum`, `subsequenceGap` are pure string→value functions; `TestIsPronunciation` and `TestParseHeader` run on literals with zero IO. `isTerminal` is parked at the boundary (`main.go:62`) and I confirmed zero ANSI escapes on a non-TTY writer. cgo is confined to `dict_darwin.go`. No entity marked PURE needs a mock to run — reading `testdata/` through the fake is idiomatic fixture IO, not mocking.
+- **ARCH-PURPOSE — flag.** Run the shadow-sweep on the issue's stated purpose ("reproduce Google's NOAD panel"). Two consumers do not derive from it: the dictionary seam does not actually select NOAD and no artifact says so (I1), and the pronunciation-notation conversion reaches senses and sections' pronunciations but not their example separators, leaving 2.0% of entries mixing notations while the atlas publishes 0% (I2). Both are the pattern of a claim measured by a check narrower than the claim — the same shape as round 3's finding, one level out.
+- **ARCH-MOCK — pass, with a documentation flag.** Seam, fixture-backed fake from real captures, byte floor, empty-corpus rejection, conformance reading *through* `Lookup`, on-demand cadence with a stated trigger. The flag is I1: the fake is named and documented for NOAD while the real dependency is the host's active dictionary set, so `TestFixturesMatchLiveDictionary` will report "NOAD drifted" on a host whose active dictionaries differ — a false drift signal the test cannot distinguish from a real one.
+- **For M2:** fix C1 before the second `Entry` consumer lands, and correct Chunk 1's Rule B (C2) *first* — `AudioCandidates` derives from the word rather than from `Entry.IPA`, so C1/C2 do not propagate into the audio path, but a user seeing a collapsed entry alongside correct audio will file it as an audio bug. Put `fakeCDN`/`fakePlayer` in `_test.go` files as `fakeDictionary` now is, and give them the reachability assertion `TestEveryFixtureIsReachableViaLookup` provides for the dictionary fake.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` entry to `workshop/plans/000001-define-plan.md`, and this time make the Chunk 1 edits the entry claims:
+
+1. **Rule B is false as written (C2), and it is specification.** Replace the block quote at `:86` with the implemented rule — single-token *or* a multi-word span carrying `ˈ`/`ˌ`, bounded by `maxPronunciationWords` — and extend the verdict table at `:92` with the rows that break the old rule (`ˈhät ˌdäɡ`, `ˌā prīˈôrī`, `ˌän bəˈhaf əv, ˌôn bəˈhaf əv` → pronunciation).
+2. **`Example` is an undocumented entity (C2).** Correct the `Sense` bullet at `:130` to `Examples []Example` and add an `Example` row to the Pure-entities table at `:101`, noting it mirrors `Block.Label` one level down.
+3. **Fake file paths (C2).** `:155` and `:158` must read `cmd/define/fetch_fake_test.go` and `cmd/define/player_fake_test.go`, matching Task 8/Task 9's Files lines at `:378` and `:389`. Round 3 recommended this and it did not land; Tasks 8–9 are next.
+4. **Task 1's inline `capture.sh` (`:201`) is stale** — 9 words versus 29 on disk. Replace the code block with a pointer to the file so it cannot drift a fourth time.
+5. **Record the `]` opener rule (C1)** alongside the `opensBlock` description, so M2 and any future block-boundary work inherit the corrected accept set rather than rediscovering it.
+6. **Amend round 3's closing framing.** The round-3 entry documents `parrot` as the accepted block-boundary ambiguity; C1 is a *punctuated* delimiter that was simply omitted, and I3 shows the accepted class reaches ~600 entries. Distinguish the two so the limitation is not read as covering both.
+
+For `atlas/define.md`: re-word the "0%" claim under **The invariant** to state what `strayStress` measures (I2), quantify the *Limits* block-boundary entry (I3), and add the active-dictionary limitation (I1). For `workshop/issues/000001-define.md`: the `## Spec`'s "NOAD only" should note that the local seam cannot select NOAD specifically. The plan-gate ledger's `## Open findings` is empty, so nothing was deferred from the plan gate for this boundary to pick up.

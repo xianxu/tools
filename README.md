@@ -22,7 +22,7 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 
 | binary | what it does |
 |---|---|
-| `define` | Print a word's NOAD definition with Google-style IPA. Spoken pronunciation lands with M2. |
+| `define` | Print a word's dictionary definition with Google-style IPA, and play its pronunciation. |
 
 ### define
 
@@ -34,8 +34,11 @@ define -no-color bank       # never emit ANSI (also automatic when piped)
 
 Exit codes: `0` success, `1` no dictionary entry, `2` usage error.
 
-Audio playback (`--no-audio`, `--times N`) is **not built yet** — it lands with
-M2. Running the command today prints the definition and plays nothing.
+Lookup goes through macOS's CoreServices, which searches **every active
+dictionary** rather than NOAD specifically — the SDK offers no way to pick one.
+NOAD answers for ordinary English words (hence the Google-matching notation), but
+`iPhone` comes from Apple Dictionary, and enabling the Chinese dictionaries will
+return entries this tool does not format. Adjust the set in Dictionary.app.
 
 ## Build
 

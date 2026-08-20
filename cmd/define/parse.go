@@ -735,7 +735,11 @@ func opensBlock(body string, i int) bool {
 		switch body[j] {
 		case ' ', '\t', '\n':
 			continue
-		case '.', ')', ':', ';':
+		case '.', ')', ':', ';', ']':
+			// "]" belongs here: NOAD closes an editorial note and opens the next
+			// part of speech directly — "…Walton's The Compleat Angler] verb
+			// [with object] 1 finish making…". Omitting it swallowed the verb
+			// block of `complete` and `pulp` into a quoted example.
 			return true
 		default:
 			return false
