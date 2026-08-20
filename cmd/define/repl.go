@@ -87,7 +87,12 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 			case cmdNothing:
 				fmt.Fprintln(stderr, "define: type a word, or press return to replay the last one")
 			case cmdReplay:
-				defineOnce(ctx, d, opt, current, stdout, stderr)
+				// Audio only. The definition is already on screen a few lines up;
+				// reprinting it scrolls it away, which is the opposite of what
+				// pressing return is for.
+				if err := replay(ctx, d, opt, current, stdout); err != nil {
+					fmt.Fprintf(stderr, "define: %s\n", err)
+				}
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo
 				// does not cost you the word you were listening to.
@@ -97,6 +102,14 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 			}
 		}
 	}
+}
+
+// replay speaks the current word again without reprinting its definition.
+func replay(ctx context.Context, d deps, opt options, word string, stdout io.Writer) error {
+	if opt.noAudio || opt.times <= 0 {
+		return fmt.Errorf("nothing to replay: audio is off")
+	}
+	return speak(ctx, d, word, opt.locale, opt.times, stdout)
 }
 
 // scanLines reads in a goroutine so a pending read cannot swallow cancellation.

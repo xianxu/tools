@@ -52,8 +52,29 @@ func TestREPLBareReturnReplaysWithoutRefetching(t *testing.T) {
 	if got := rig.cdn.Requested(); len(got) != 1 {
 		t.Errorf("made %d CDN requests, want exactly 1 — the replay refetched: %v", len(got), got)
 	}
-	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 2 {
-		t.Errorf("printed the definition %d times, want 2", n)
+	// The definition is printed ONCE: a bare return is a request to hear the
+	// word again, not to scroll the definition off the screen.
+	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
+		t.Errorf("printed the definition %d times, want 1 — replay reprinted it", n)
+	}
+	if n := strings.Count(out.String(), "♫"); n != 2 {
+		t.Errorf("announced playback %d times, want 2", n)
+	}
+}
+
+// With audio off there is nothing for a bare return to do; say so rather than
+// silently doing nothing.
+func TestREPLReplayWithAudioOffIsAHint(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	opt.noAudio = true
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	if !strings.Contains(errb.String(), "audio is off") {
+		t.Errorf("want a hint on stderr, got %q", errb.String())
+	}
+	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
+		t.Errorf("definition printed %d times, want 1", n)
 	}
 }
 
@@ -62,10 +83,14 @@ func TestREPLSecondWordBecomesCurrent(t *testing.T) {
 	var out, errb bytes.Buffer
 	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\nephemeral\n\n"), &out, &errb)
 
-	// ephemeral has no fixture-backed audio in this rig, but it must still become
-	// the current word, so the trailing blank line replays IT, not sycophantic.
-	if n := strings.Count(out.String(), "ephemeral"); n < 2 {
-		t.Errorf("expected ephemeral defined twice (once typed, once replayed), got %d mentions", n)
+	// ephemeral must become the current word, so the trailing blank line replays
+	// IT. Replay prints no definition, so the evidence is that sycophantic's
+	// definition appears exactly once and is not reprinted by the blank line.
+	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
+		t.Errorf("sycophantic printed %d times, want 1", n)
+	}
+	if !strings.Contains(out.String(), "ephemeral") {
+		t.Error("ephemeral was never defined")
 	}
 }
 
@@ -78,8 +103,13 @@ func TestREPLUnknownWordLeavesCurrentUnchanged(t *testing.T) {
 	if !strings.Contains(errb.String(), "rizz") {
 		t.Error("the unknown word should be reported on stderr")
 	}
-	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 2 {
-		t.Errorf("sycophantic printed %d times, want 2 — the failed lookup replaced the current word", n)
+	// One definition (the successful lookup); the blank line then replays it as
+	// audio, which is the proof that rizz did not become the current word.
+	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
+		t.Errorf("sycophantic printed %d times, want 1", n)
+	}
+	if got := rig.player.count(); got != 6 {
+		t.Errorf("played %d times, want 6 — the blank line did not replay sycophantic", got)
 	}
 }
 

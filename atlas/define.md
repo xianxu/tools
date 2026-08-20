@@ -169,7 +169,8 @@ testable from a string. `deps.stdinIsTerminal` is injected because a test
 harness's stdin is never a terminal; note it is a different question from the
 stdout probe that drives colour.
 
-Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
+A bare return replays audio only: the definition is already on screen, and
+reprinting it scrolls away the thing you just looked up. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
 *inside* `repl`, so the production and test wiring are the same line and
 `fakeCDN.Requested()` is the assertion. Failed fetches are not cached, so a
 transient outage does not poison a session.
