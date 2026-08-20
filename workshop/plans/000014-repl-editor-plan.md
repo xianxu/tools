@@ -187,61 +187,61 @@ completion of `/`-commands only), and mouse.
 
 **Files:** create `cmd/define/key.go`; test `cmd/define/key_test.go`
 
-- [ ] **Step 1: Write the failing table test.** Obligations: `a` → rune; `\x1b[A/B/C/D` → Up/Down/Right/Left; `\x1b[H`/`\x1b[F` and `\x1bOH`/`\x1bOF` → Home/End; `\x7f` and `\b` → Backspace; `\x1b[3~` → Delete; `\r` and `\n` → Enter; `\x03` → Interrupt; `\x04` → EOF; `\t` → Tab. A **partial** sequence (`\x1b`, `\x1b[`) → `consumed == 0`. An unknown sequence → `KeyUnknown` with its bytes, never a rune. A multi-byte UTF-8 rune (`é`, `♫`) decodes as one rune — the corpus has non-ASCII headwords.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run, expect PASS; add a fuzz target** asserting `decodeKey` never panics and never reports `consumed > len(buf)` — it is the one function fed arbitrary bytes from outside.
-- [ ] **Step 5: Commit** — `#14: decode terminal key sequences`
+- [x] **Step 1: Write the failing table test.** Obligations: `a` → rune; `\x1b[A/B/C/D` → Up/Down/Right/Left; `\x1b[H`/`\x1b[F` and `\x1bOH`/`\x1bOF` → Home/End; `\x7f` and `\b` → Backspace; `\x1b[3~` → Delete; `\r` and `\n` → Enter; `\x03` → Interrupt; `\x04` → EOF; `\t` → Tab. A **partial** sequence (`\x1b`, `\x1b[`) → `consumed == 0`. An unknown sequence → `KeyUnknown` with its bytes, never a rune. A multi-byte UTF-8 rune (`é`, `♫`) decodes as one rune — the corpus has non-ASCII headwords.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run, expect PASS; add a fuzz target** asserting `decodeKey` never panics and never reports `consumed > len(buf)` — it is the one function fed arbitrary bytes from outside.
+- [x] **Step 5: Commit** — `#14: decode terminal key sequences`
 
 ### Task 2: `Editor` + `Apply` — editing without history
 
 **Files:** create `cmd/define/editor.go`; test `cmd/define/editor_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations: insert at cursor, not just append; Left/Right clamp at the ends; Home/End; Backspace at position 0 is a no-op (not a panic); Delete at end likewise; Enter yields `ActSubmit` with the line and clears it; Ctrl-C yields `ActInterrupt`; Ctrl-D on an **empty** line yields `ActEOF` but on a non-empty line does nothing (that asymmetry is standard and easy to get wrong); `KeyUnknown` changes nothing.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#14: pure line-editor state machine`
+- [x] **Step 1: Write the failing tests.** Obligations: insert at cursor, not just append; Left/Right clamp at the ends; Home/End; Backspace at position 0 is a no-op (not a panic); Delete at end likewise; Enter yields `ActSubmit` with the line and clears it; Ctrl-C yields `ActInterrupt`; Ctrl-D on an **empty** line yields `ActEOF` but on a non-empty line does nothing (that asymmetry is standard and easy to get wrong); `KeyUnknown` changes nothing.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#14: pure line-editor state machine`
 
 ### Task 3: History walk + prefix search
 
 **Files:** create `cmd/define/history.go`; modify `editor.go`; test `history_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations: Up from an empty line walks all entries newest-first; Down walks back and past the newest restores **what was typed before walking started** (losing it is the classic bug); with `sy` typed, Up visits only entries starting `sy`, newest first, and leaves the typed prefix in place; exhausting matches is a no-op, not a wrap; duplicates appear once.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `histCursor` holds the saved draft and the walk index.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#14: history walk and prefix search`
+- [x] **Step 1: Write the failing tests.** Obligations: Up from an empty line walks all entries newest-first; Down walks back and past the newest restores **what was typed before walking started** (losing it is the classic bug); with `sy` typed, Up visits only entries starting `sy`, newest first, and leaves the typed prefix in place; exhausting matches is a no-op, not a wrap; duplicates appear once.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `histCursor` holds the saved draft and the walk index.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#14: history walk and prefix search`
 
 ### Task 4: Inline autosuggestion
 
 **Files:** modify `editor.go`; test `editor_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations: typing `sy` with `sycophantic` in history suggests `cophantic`; Right/End at end of line accepts it; Left, Backspace and any other key leave it unaccepted; **Enter submits only what was typed, never the suggestion** (the single most damaging possible bug here — you would look up a word you did not ask for); no suggestion when the cursor is mid-line; no suggestion when nothing matches.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#14: inline autosuggestion`
+- [x] **Step 1: Write the failing tests.** Obligations: typing `sy` with `sycophantic` in history suggests `cophantic`; Right/End at end of line accepts it; Left, Backspace and any other key leave it unaccepted; **Enter submits only what was typed, never the suggestion** (the single most damaging possible bug here — you would look up a word you did not ask for); no suggestion when the cursor is mid-line; no suggestion when nothing matches.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#14: inline autosuggestion`
 
 ### Task 5: `RenderLine`
 
 **Files:** modify `editor.go`; test `render_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations: the suggestion is emitted in grey and the plain-text form contains it exactly once; with `Color:false` **no ANSI at all** (`#2`'s `-no-color` contract, which this must not regress); the cursor is positioned after the typed text, not after the suggestion; a frame ends by clearing to end-of-line so a shortened line leaves no residue.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#14: render the editor line`
+- [x] **Step 1: Write the failing tests.** Obligations: the suggestion is emitted in grey and the plain-text form contains it exactly once; with `Color:false` **no ANSI at all** (`#2`'s `-no-color` contract, which this must not regress); the cursor is positioned after the typed text, not after the suggestion; a frame ends by clearing to end-of-line so a shortened line leaves no residue.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#14: render the editor line`
 
 ### Task 6: Raw mode, and deleting the workaround
 
 **Files:** create `cmd/define/rawterm.go`; modify `repl.go`, `main.go`; test `repl_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations: the loop drives `Apply` from a scripted key channel and produces the same lookups `#2`'s line loop did; a bare Enter still replays; `terminalUI` still governs every byte of UI; piped stdin still uses the **line** path unchanged — `echo word | define` must not enter raw mode.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `MakeRaw` on entry, `Restore` deferred **and** on the interrupt path. Delete `eraseLineAndStepBack` and `skipPrompt`; the indicator becomes a rendered frame.
-- [ ] **Step 4: Run, expect PASS.** `go test -race` too — there is a reader goroutine.
-- [ ] **Step 5: Automated pty test** (`//go:build darwin && conformance`), because
+- [x] **Step 1: Write the failing tests.** Obligations: the loop drives `Apply` from a scripted key channel and produces the same lookups `#2`'s line loop did; a bare Enter still replays; `terminalUI` still governs every byte of UI; piped stdin still uses the **line** path unchanged — `echo word | define` must not enter raw mode.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `MakeRaw` on entry, `Restore` deferred **and** on the interrupt path. Delete `eraseLineAndStepBack` and `skipPrompt`; the indicator becomes a rendered frame.
+- [x] **Step 4: Run, expect PASS.** `go test -race` too — there is a reader goroutine.
+- [x] **Step 5: Automated pty test** (`//go:build darwin && conformance`), because
       the Done-when asks for one and a manual check does not satisfy it. Needs
       `github.com/creack/pty` as a **test-only** dependency — it lands in the
       `require` block but never in the binary, so the "no new *runtime*
@@ -251,7 +251,7 @@ completion of `/`-commands only), and mouse.
       silently; and `term.IsTerminal` plus a fresh `MakeRaw`/`Restore` round-trip
       confirm the terminal was left cooked.
 
-- [ ] **Step 5b: Manual check — what even a pty test cannot judge**
+- [x] **Step 5b: Manual check — what even a pty test cannot judge**
 
 ```sh
 make build && ./bin/define
@@ -260,8 +260,8 @@ make build && ./bin/define
 # is covered by Step 5.
 ```
 
-- [ ] **Step 6: Update `README.md`, `atlas/define.md`; revise `#2`'s Limits entry**, which documents a cooked-mode limitation that no longer exists.
-- [ ] **Step 7: Commit, then `sdlc close --issue 14 --verified '<evidence>'`**
+- [x] **Step 6: Update `README.md`, `atlas/define.md`; revise `#2`'s Limits entry**, which documents a cooked-mode limitation that no longer exists.
+- [x] **Step 7: Commit, then `sdlc close --issue 14 --verified '<evidence>'`**
 
 ---
 

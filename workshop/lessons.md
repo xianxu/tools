@@ -72,3 +72,16 @@ fixed for cursor control (round 2), then in prose (round 4), then for the prompt
 (round 5) — three findings, three patches, one missing predicate. When a finding
 looks familiar, state the rule and apply it everywhere instead of fixing the
 instance in front of you.
+
+## Raw mode: render cooked, play raw (define #14)
+
+In raw mode Ctrl-C is byte `0x03`, not a signal, so `signal.NotifyContext` never
+fires and the **key reader** must own cancellation — it can act while the loop is
+blocked. But that is only half of it: restoring cooked mode around a long
+operation hands Ctrl-C back to the line discipline, which swallows the byte, and
+the reader sees nothing. Printing needs cooked (newline translation); blocking
+work must stay raw. Split the two.
+
+Also: a pty master does not honour `SetReadDeadline`, so a foreground read loop
+in a pty test hangs rather than times out. Use a background reader plus a
+snapshot.

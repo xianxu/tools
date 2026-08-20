@@ -81,6 +81,44 @@ rounds:
             cited in the estimate, so it is cheapest to settle now.
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-20T16:32:12-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: 'New "Cancellation" section: reader goroutine cancels on KeyInterrupt, fires while the loop blocks in playback; signal.NotifyContext explicitly retained for the non-raw paths.'
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: Task 6 Step 5 is now an automated pty test under darwin && conformance, with creack/pty declared test-only in the plan and in Done-when.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: '"Which streams turn raw mode on" picks terminalUI = stdinIsTerminal() && opt.tty explicitly, with the three prior regressions cited.'
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: Add(word string, found bool) plus the "What history records" bullet settles issue 15's deferred question; a Done-when row now pins it.
+          round: 2
+        - id: PQ-5
+          disposition: not-addressed
+          note: Tasks 1-6 Step 1 still enumerate test cases in prose; Minor, carried to close review.
+          round: 2
+        - id: PQ-6
+          disposition: not-addressed
+          note: RenderLine still in editor.go but tested in render_test.go, and RenderOpts reuse vs redefinition still unstated.
+          round: 2
+        - id: PQ-7
+          disposition: not-addressed
+          note: The three repl_test.go tests retired by deleting eraseLineAndStepBack/skipPrompt are still unnamed, as is their replacement coverage.
+          round: 2
+        - id: PQ-8
+          disposition: addressed
+          note: Apply and Suggestion now take a plain newest-first snapshot slice; ARCH-PURE cited and the loop owns candidate resolution.
+          round: 2
+      blocked: false
+content_hash: 3986bf5e157a0781fcbf4c98950843b9d7f9d2d28b15d0b8bca28edf621bc6a0
 ---
 
 # Gate ledger — tools#14 (plan-quality)
@@ -134,13 +172,21 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   candidates and hand Editor a plain snapshot slice; the Apply signature is fixed by this plan and
   cited in the estimate, so it is cheapest to settle now.
 
+## Round 2 — 2026-08-20T16:32:12-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — New "Cancellation" section: reader goroutine cancels on KeyInterrupt, fires while the loop blocks in playback; signal.NotifyContext explicitly retained for the non-raw paths.
+- PQ-2 — addressed — Task 6 Step 5 is now an automated pty test under darwin && conformance, with creack/pty declared test-only in the plan and in Done-when.
+- PQ-3 — addressed — "Which streams turn raw mode on" picks terminalUI = stdinIsTerminal() && opt.tty explicitly, with the three prior regressions cited.
+- PQ-4 — addressed — Add(word string, found bool) plus the "What history records" bullet settles issue 15's deferred question; a Done-when row now pins it.
+- PQ-5 — not-addressed — Tasks 1-6 Step 1 still enumerate test cases in prose; Minor, carried to close review.
+- PQ-6 — not-addressed — RenderLine still in editor.go but tested in render_test.go, and RenderOpts reuse vs redefinition still unstated.
+- PQ-7 — not-addressed — The three repl_test.go tests retired by deleting eraseLineAndStepBack/skipPrompt are still unnamed, as is their replacement coverage.
+- PQ-8 — addressed — Apply and Suggestion now take a plain newest-first snapshot slice; ARCH-PURE cited and the loop owns candidate resolution.
+
 ## Open findings
 
-- **PQ-1** [Critical] Raw mode kills the Ctrl-C-during-playback cancellation path; plan handles only Ctrl-C at the prompt
-- **PQ-2** [Important] Done-when requires a real-pty test; plan delivers only a manual check and names no pty dependency
-- **PQ-3** [Important] The predicate that gates raw mode is never stated, in the exact place this repo has regressed 3x
-- **PQ-4** [Important] History seam leaves open the successful-vs-typed question that issue 15 deferred to this issue
 - **PQ-5** [Minor] Per-task Obligations lists are enumerated prose test cases; compress to one strategy line each
 - **PQ-6** [Minor] RenderLine placement collides with the existing Entry renderer and its RenderOpts
 - **PQ-7** [Minor] Plan does not name the existing tests that necessarily die with the cooked-mode workaround
-- **PQ-8** [Minor] Apply and Suggestion take the History interface, putting IO inside the declared pure core

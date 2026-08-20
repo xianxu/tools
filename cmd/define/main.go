@@ -109,7 +109,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 
 	switch fs.NArg() {
 	case 0:
-		return repl(ctx, d, opt, stdin, stdout, stderr)
+		// The loop needs a cancel it can call itself: in raw mode Ctrl-C arrives
+		// as a byte, so signal.NotifyContext cannot deliver it and the key reader
+		// must cancel instead. NotifyContext stays for the one-shot and piped
+		// paths, which still receive it as a signal.
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
 	case 1:
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
 	default:
@@ -122,29 +128,41 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 // speak. Extracted so the loop calls exactly this rather than growing a parallel
 // copy (ARCH-DRY).
 func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, stderr io.Writer) int {
-	text, err := d.dict.Lookup(word)
-	if err != nil {
-		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
-		return 1
-	}
-	if opt.raw {
-		fmt.Fprintln(stdout, text)
-		return 0
-	}
-	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color}))
-
-	if !opt.noAudio && opt.times > 0 {
+	code, play := lookupAndRender(d, opt, word, stdout, stderr)
+	if play {
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		ind := indicator{show: true, before: "\n", erase: eraseLine}
-		if !opt.tty {
-			// Nothing to erase on a pipe: leave the indicator as a plain line.
-			ind.erase, ind.trail = "", "\n"
-		}
-		playAnnounced(ctx, d, opt, word, ind, stdout, stderr)
+		playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
 	}
-	return 0
+	return code
+}
+
+// lookupAndRender is the part of the define path that only WRITES — look up,
+// render, print. Split out because the raw-mode loop must run it in cooked mode
+// (so newlines translate) while playing in RAW mode (so Ctrl-C arrives as a byte
+// the key reader can see). Returns whether audio should follow.
+func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer) (code int, play bool) {
+	text, err := d.dict.Lookup(word)
+	if err != nil {
+		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
+		return 1, false
+	}
+	if opt.raw {
+		fmt.Fprintln(stdout, text)
+		return 0, false
+	}
+	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color}))
+	return 0, !opt.noAudio && opt.times > 0
+}
+
+// defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.
+func defaultIndicator(opt options) indicator {
+	ind := indicator{show: true, before: "\n", erase: eraseLine}
+	if !opt.tty {
+		ind.erase, ind.trail = "", "\n"
+	}
+	return ind
 }
 
 // indicator describes the ephemeral "♫ playing N×" line: what to write before it

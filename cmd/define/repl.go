@@ -52,22 +52,19 @@ const prompt = "› "
 // transient indicator can be removed once it has served its purpose.
 const eraseLine = "\r\x1b[K"
 
-// eraseLineAndStepBack additionally moves up onto the prompt line and clears it,
-// so the prompt can be redrawn in place. A replay therefore leaves the screen
-// exactly as it was — the terminal's echo of Enter is undone rather than
-// accepted, and the view never scrolls.
-//
-// This is the only cursor control in the tool; #2 listed it as a non-goal and the
-// operator lifted it for exactly this (2026-08-20). Gated on a terminal, so piped
-// output never sees an escape sequence.
-const eraseLineAndStepBack = eraseLine + "\x1b[A" + eraseLine
+// NOTE: #2's eraseLineAndStepBack is DELETED, not ported. It stepped back over
+// the terminal's echo of Enter to place the indicator on the prompt line, and
+// broke whenever the user typed during playback because cooked-mode echo moves
+// the cursor asynchronously. Raw mode does not echo, so the frame is simply
+// rendered with the indicator where the prompt would be — the arithmetic has
+// nothing left to correct for.
 
 // repl reads words until the input ends or the context is cancelled.
 //
 // It reads stdin unconditionally and prompts only when interactive, so there is
 // no separate batch path to keep in sync and the whole loop is testable from a
 // string.
-func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
+func repl(ctx context.Context, cancel context.CancelFunc, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
 	interactive := d.stdinIsTerminal != nil && d.stdinIsTerminal()
 	// ONE predicate for "there is a human looking at a terminal", used for every
 	// byte of interactive UI: the prompt, the indicator, and the cursor control.
@@ -82,39 +79,50 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 	// whether a failed lookup should set the exit code.
 	terminalUI := interactive && opt.tty
 
-	// Cache behind the seam, so the fake CDN's own request recorder proves that a
-	// replay costs no second fetch.
-	d.audio = newCachingAudioSource(d.audio)
+	if terminalUI {
+		// Raw mode: keystrokes, a rendered frame, no terminal echo. Everything
+		// #2 did with cursor arithmetic against an echoed Enter is gone.
+		return replRaw(ctx, cancel, d, opt, stdin, stdout, stderr)
+	}
+	return replLines(ctx, d, opt, stdin, stdout, stderr, !interactive, terminalUI)
+}
 
+// replLines is the line-oriented loop: piped input, a redirected stdout, or a
+// terminal we could not put into raw mode. Reads whole lines, draws no UI.
+// pipedInput and showPrompt are SEPARATE parameters on purpose. They answer
+// different questions and this repo has now conflated them four times:
+//
+//	pipedInput — is stdin a pipe?  → does a failed lookup set the exit code
+//	showPrompt — do we own the terminal (stdin AND stdout)? → may we draw UI
+//
+// Collapsing them writes a prompt to stdout whenever stdin is a tty, which
+// pollutes `define > out.txt`. That is the same bug as #2 close rounds 2, 4 and
+// 5, and it recurred here the moment the two were passed as one flag.
+func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer, pipedInput, showPrompt bool) int {
+	// Wrapped HERE rather than in the caller, so the line the tests exercise is
+	// the line production runs — #2's I-1 lesson, applied to both loops.
+	d.audio = newCachingAudioSource(d.audio)
 	lines, errc := scanLines(stdin)
-	var current string
-	var skipPrompt bool
 	// Exiting 0 at EOF is right for a human at a prompt — a typo is not a failed
 	// session. It is wrong for `echo word | define`, which README presents as
 	// interchangeable with `define word` and documents as exiting 1 on an unknown
 	// word. Track failures and report them only on the non-interactive path.
 	var anyFailed bool
+	var current string
 
 	for {
-		if terminalUI && !skipPrompt {
+		if showPrompt {
 			fmt.Fprint(stdout, prompt)
 		}
-		skipPrompt = false
 		select {
 		case <-ctx.Done():
-			if terminalUI {
-				fmt.Fprintln(stdout)
-			}
 			return 0
 		case err := <-errc:
 			if err != nil {
 				fmt.Fprintf(stderr, "define: reading input: %v\n", err)
 				return 1
 			}
-			if terminalUI {
-				fmt.Fprintln(stdout)
-			}
-			if !interactive && anyFailed {
+			if pipedInput && anyFailed {
 				return 1
 			}
 			return 0
@@ -127,21 +135,9 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 					fmt.Fprintln(stderr, "define: nothing to replay: audio is off")
 					break
 				}
-				// The indicator REPLACES the prompt rather than appearing below
-				// it: the terminal has already echoed Enter onto a new line, so
-				// step back over that echo and over the prompt itself before
-				// drawing. While the sound plays there is no prompt, which is
-				// honest — input is not accepted during playback anyway.
-				ind := indicator{show: terminalUI, before: eraseLineAndStepBack, erase: eraseLine}
-				if playAnnounced(ctx, d, opt, current, ind, stdout, stderr) && terminalUI {
-					// Nothing was reported, so the line we cleared is ours to
-					// reclaim: redraw the prompt in place and let the loop skip
-					// its own. On a failure we deliberately do NOT, so the
-					// diagnostic is not written onto a redrawn prompt and the
-					// loop still draws one afterwards.
-					fmt.Fprint(stdout, prompt)
-					skipPrompt = true
-				}
+				// This path is only reached when we do NOT own the terminal, so
+				// there is no transient UI to place: play and report.
+				playAnnounced(ctx, d, opt, current, indicator{}, stdout, stderr)
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo
 				// does not cost you the word you were listening to.
