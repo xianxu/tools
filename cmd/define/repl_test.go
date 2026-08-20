@@ -411,3 +411,20 @@ func TestNoColorSuppressesAllANSI(t *testing.T) {
 		t.Errorf("-no-color emitted ANSI: %q", out.String())
 	}
 }
+
+// The third instance of one family: UI written to stdout but gated on stdin.
+// `define > out.txt` from a terminal must leave the file clean AND is why the
+// human sees nothing — so the prompt is gated on the same predicate as the
+// indicator and the cursor control.
+func TestREPLPromptRequiresBothStreams(t *testing.T) {
+	rig, opt := replRigStreams(t, "sycophantic", true, true /*stdin tty*/, false /*stdout redirected*/)
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
+
+	if strings.Contains(out.String(), prompt) {
+		t.Errorf("prompt polluted a redirected stdout: %q", out.String())
+	}
+	if strings.Contains(out.String(), "\x1b") {
+		t.Errorf("ANSI leaked into a redirected stdout: %q", out.String())
+	}
+}

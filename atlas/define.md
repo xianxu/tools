@@ -207,8 +207,7 @@ stranding `♫ playing N×` on screen. So "the view never scrolls" holds for a u
 who waits, not unconditionally. Raw mode removes the assumption entirely by not
 echoing at all, which is `#14`'s job. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
 *inside* `repl`, so the production and test wiring are the same line and
-`fakeCDN.Requested()` is the assertion. Failed fetches are not cached, so a
-transient outage does not poison a session.
+`fakeCDN.Requested()` is the assertion.
 
 `main` wraps the context in `signal.NotifyContext`, which changed the one-shot
 path too: Ctrl-C during playback now cancels `afplay` through

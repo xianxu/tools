@@ -55,3 +55,20 @@ other uncommitted edit in that file** — it silently reverted a fix made minute
 earlier, and the follow-up "verification" read as passing because a `|| true`
 masked grep's exit status. Copy the file aside and copy it back. And when a check
 disagrees with a test, the test is the ground truth.
+
+## Verify the deletion, don't assert it (define #2, close round 5)
+
+A commit message claimed a false sentence had been removed from the atlas. The
+string replacement never matched, nothing checked, and the sentence survived two
+more review rounds. **After a scripted edit, grep for the thing you removed** —
+`replace()` on text that has since been reflowed is a silent no-op, and a commit
+message is not evidence.
+
+## One predicate, not three fixes (define #2, rounds 2/4/5)
+
+The same rule went missing three times: *interactive UI is written to stdout, so
+stdout must be a terminal; it answers a human, so stdin must be one too.* It was
+fixed for cursor control (round 2), then in prose (round 4), then for the prompt
+(round 5) — three findings, three patches, one missing predicate. When a finding
+looks familiar, state the rule and apply it everywhere instead of fixing the
+instance in front of you.

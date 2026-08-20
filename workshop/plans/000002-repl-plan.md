@@ -39,7 +39,9 @@ with single playback — `NArg() == 0` is the trigger, independent of flags.
 changes the **shipped one-shot path** too, and that is intended: today Ctrl-C
 during playback kills the process outright; afterwards it cancels the context,
 `exec.CommandContext` stops `afplay`, deferred cleanup runs, and the process
-exits 0. Stating it because it is a behaviour change to code that already
+exits 0 **printing nothing**. That last part is not incidental: killing `afplay`
+is *how* cancellation is implemented, so the naive version reported
+`define: afplay: signal: killed` and told the user their own keypress had failed. Stating it because it is a behaviour change to code that already
 shipped, not a new-feature detail.
 
 ---
@@ -71,7 +73,6 @@ shipped, not a new-feature detail.
 - **cachingAudioSource** — decorates any `AudioSource`, memoising by candidate-list key.
   - **Injected into:** applied by `repl` itself to whatever `AudioSource` it is handed. Not in `realDeps()`: wiring it there would leave the production composition untested, since every test builds its own deps. Wrapping inside `repl` means the test path and the production path are the same line of code.
   - **Why a decorator and not a map in the loop:** the cache sits *behind the seam*, so `fakeCDN.Requested()` — which already records every request in order — is the assertion. A map inside the loop would need a bespoke test.
-  - **Failed fetches are not cached**, so a transient outage does not poison the rest of the session.
 
 - **defineOnce** — the existing body of `run()` after flag parsing, extracted verbatim: look up, render, print, speak.
   - **Injected into:** both `run()` (one-shot) and `repl`. This is the ARCH-DRY core of the issue — the REPL must not grow a parallel copy of the define path.
@@ -271,3 +272,31 @@ undisposed plan-gate carry-forward (PQ-10).
    separately, where the fixed and broken versions emit identical bytes. The
    defect only exists in the *interleaving*, so the test tees both into one
    buffer — which is what a terminal actually is.
+
+### 2026-08-20 — close rounds 4 and 5
+
+**Round 4 (4 Important).** `-raw` meant two things — it returned before playing
+one-shot while the loop's replay branch ignored it and fetched; decided once at
+flag parse now. The record form had no shape assertion: mutating its trailing
+newline away left the suite green, which would glue `define word | cat` output to
+whatever followed. Three atlas sentences were false, one contradicting its own
+heading. And the erase arithmetic was documented as unconditional when it assumes
+no input arrives during playback — cooked-mode echo moves the cursor and the
+erase then clears the wrong line.
+
+**Round 5 (3 Important).** Two are the same story told twice more:
+
+- **One family, third instance.** UI is written to STDOUT but was gated on
+  STDIN. Round 2 caught it for cursor control, round 4 caught the atlas
+  describing the weaker gate, round 5 caught the *prompt* — so
+  `define > out.txt` from a terminal polluted the file and showed the human
+  nothing. Fixed once now: a single `terminalUI := interactive && opt.tty`
+  governs every byte of interactive UI. `interactive` alone survives only where
+  the question genuinely is about stdin (whether a failed lookup sets the exit
+  code). **Three rounds to state a one-line rule** is the cost `ariadne#195`
+  exists to remove.
+- **A recorded fix that never landed.** Round 4's commit message says a false
+  atlas sentence was deleted; it was not — the replacement text did not match and
+  nothing checked. It survived at `atlas:210` and `plan:74` into round 5. This is
+  the same defect class as the plan-gate carry-forward in round 3, and the same
+  one `ariadne#195` describes: a disposition asserted rather than verified.

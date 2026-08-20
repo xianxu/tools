@@ -69,11 +69,18 @@ const eraseLineAndStepBack = eraseLine + "\x1b[A" + eraseLine
 // string.
 func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
 	interactive := d.stdinIsTerminal != nil && d.stdinIsTerminal()
-	// Cursor control is written to STDOUT but is only meaningful when the
-	// terminal echoed Enter onto stdout — i.e. when BOTH streams are that
-	// terminal. Gating on stdin alone leaked escape sequences into
-	// `define > out.txt`, which is an ordinary interactive-capture pairing.
-	transient := interactive && opt.tty
+	// ONE predicate for "there is a human looking at a terminal", used for every
+	// byte of interactive UI: the prompt, the indicator, and the cursor control.
+	//
+	// This family of bug has now appeared three times — cursor control gated on
+	// stdin, then the atlas describing that weaker gate, then the prompt itself.
+	// Each was a separate fix. The rule underneath all three: UI goes to STDOUT,
+	// so stdout must be a terminal; it responds to a human, so stdin must be one
+	// too. `define > out.txt` satisfies neither and must stay clean.
+	//
+	// `interactive` alone survives only where the question really is about stdin:
+	// whether a failed lookup should set the exit code.
+	terminalUI := interactive && opt.tty
 
 	// Cache behind the seam, so the fake CDN's own request recorder proves that a
 	// replay costs no second fetch.
@@ -89,13 +96,13 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 	var anyFailed bool
 
 	for {
-		if interactive && !skipPrompt {
+		if terminalUI && !skipPrompt {
 			fmt.Fprint(stdout, prompt)
 		}
 		skipPrompt = false
 		select {
 		case <-ctx.Done():
-			if interactive {
+			if terminalUI {
 				fmt.Fprintln(stdout)
 			}
 			return 0
@@ -104,7 +111,7 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 				fmt.Fprintf(stderr, "define: reading input: %v\n", err)
 				return 1
 			}
-			if interactive {
+			if terminalUI {
 				fmt.Fprintln(stdout)
 			}
 			if !interactive && anyFailed {
@@ -125,8 +132,8 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 				// step back over that echo and over the prompt itself before
 				// drawing. While the sound plays there is no prompt, which is
 				// honest — input is not accepted during playback anyway.
-				ind := indicator{show: transient, before: eraseLineAndStepBack, erase: eraseLine}
-				if playAnnounced(ctx, d, opt, current, ind, stdout, stderr) && transient {
+				ind := indicator{show: terminalUI, before: eraseLineAndStepBack, erase: eraseLine}
+				if playAnnounced(ctx, d, opt, current, ind, stdout, stderr) && terminalUI {
 					// Nothing was reported, so the line we cleared is ours to
 					// reclaim: redraw the prompt in place and let the loop skip
 					// its own. On a failure we deliberately do NOT, so the
