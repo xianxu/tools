@@ -27,13 +27,16 @@ delivers daily value alone and de-risks everything after it.
 
 | phase | issues | delivers |
 |---|---|---|
-| **M0 — standalone** | `#2` REPL | independently shippable; useful before any deck exists |
+| **M0 — standalone** | `#2` REPL, `#14` editor | independently shippable; useful before any deck exists |
 | **M1 — offline trainer** | `#3` store → `#4` capture, `#5` schedule → `#6` play → `#7` meaning form, `#8` stats | a working daily review loop |
+| **M1.5 — command surface** | `#15` `/history` | needs the store; first `/`-command |
 | **M2 — grounded questions** | `#9` news → `#10` harvest, `#11` LLM → `#12` cloze, `#13` sentence | cloze from current news + AI grading |
 
 ## Tasks
 
 - [ ] `#2` define REPL — bare invocation reads, defines, speaks; bare return replays
+- [ ] `#14` REPL line editor — history, prefix search, inline autosuggestion
+- [ ] `#15` REPL command mode — `/`-commands with type-ahead, starting `/history`
 - [ ] `#3` vocabulary store — Store seam, YAML in a brain, clock injected
 - [ ] `#4` capture on lookup — successful lookups build the deck
 - [ ] `#5` scheduling engine — Leitner, pure
