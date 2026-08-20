@@ -46,6 +46,50 @@ and `skipPrompt` are deleted in this issue, not ported** — `#14`'s own file
 commits to this. Keystrokes arriving during playback are read as keys, not echoed
 as bytes, which removes the limitation rather than documenting it.
 
+## Cancellation: the thing raw mode breaks
+
+**In raw mode Ctrl-C is byte `0x03`, not a signal.** `signal.NotifyContext` — which
+`#2` installed and which makes Ctrl-C stop `afplay`, run deferred cleanup and exit
+0 silently — **never fires**. Every guard `#2` built on it is dead the moment
+`MakeRaw` succeeds, and the failure is not at the prompt (where `Apply` returns
+`ActInterrupt`) but **during playback**, where the loop is blocked inside `speak`
+for seconds and cannot act on anything.
+
+So the reader goroutine owns cancellation, not the loop:
+
+```go
+ctx, cancel := context.WithCancel(parent)
+go func() {
+    for k := range keys {
+        if k.Kind == KeyInterrupt { cancel() }   // fires even while the loop is blocked
+        out <- k
+    }
+}()
+```
+
+Requirements this creates, each with its own test:
+
+- Ctrl-C **during playback** cancels the context, `exec.CommandContext` stops
+  `afplay`, and nothing is printed — `#2`'s contract, re-established by a
+  different mechanism.
+- Ctrl-C **at the prompt** exits 0 with the terminal restored.
+- `signal.NotifyContext` **stays** for the non-raw paths (one-shot, piped), which
+  still get Ctrl-C as a signal. Two mechanisms, one contract; the plan for
+  deleting the cooked-mode workaround must not delete this.
+- Raw mode must be **restored before** the process exits on that path, or the
+  user's shell is left unusable.
+
+## Which streams turn raw mode on
+
+Raw mode is entered **iff `terminalUI` — `stdinIsTerminal() && opt.tty`** — the
+same predicate that gates the prompt, the indicator and the cursor control.
+
+Stating it because this repo has now regressed on exactly this three times
+(`#2` close rounds 2, 4 and 5: cursor control, then the prose, then the prompt).
+The rule: UI is written to stdout so stdout must be a terminal; raw mode changes
+how stdin is read so stdin must be one. `define > out.txt` and
+`echo w | define` satisfy neither and keep the **line** path unchanged.
+
 ## Non-goals
 
 Carried from `#2` and still out of scope: multi-line editing, kill-ring,
@@ -85,14 +129,18 @@ completion of `/`-commands only), and mouse.
 - **Editor** — `Line []rune`, `Cursor int`, `Hist *histCursor`. The whole
   editing state, no IO.
 
-- **Apply(e Editor, k Key, h History) (Editor, Action)** — the state machine.
+- **Apply(e Editor, k Key, matches []string) (Editor, Action)** — the state machine.
+  Takes a **plain snapshot slice**, newest-first and deduped, not the `History`
+  interface. The loop resolves candidates and hands them in, so `Apply` stays pure
+  over plain data and needs no double — and once `#3`'s store fills the seam there
+  is no store query per keystroke inside the state machine (ARCH-PURE).
   `Action` is what the *loop* must do: `ActNone`, `ActSubmit{line}`,
   `ActInterrupt`, `ActEOF`. The editor never performs an action itself.
   - **DRY rationale:** every behaviour the issue asks for — history walk, prefix
     search, suggestion accept — is a case here, so all of them are table tests
     over key sequences with no terminal.
 
-- **Suggestion(e Editor, h History) string** — the grey tail: the most recent
+- **Suggestion(e Editor, matches []string) string** — the grey tail: the most recent
   history entry with `Line` as a prefix, minus the typed part. Pure; `""` when
   nothing matches or the cursor is not at end.
 
@@ -103,10 +151,15 @@ completion of `/`-commands only), and mouse.
     deleting. Rendering the line and letting the terminal redraw it is what makes
     "indicator in place of the prompt" fall out for free.
 
-- **History** — `Prefix(p string) []string` (newest first, deduped) and
-  `Add(word string)`. An interface, because the persistent implementation is
+- **History** — `Prefix(p string) []string` (newest first, deduped, all
+  submissions) and `Add(word string, found bool)`. An interface, because the persistent implementation is
   `#3`'s store and must not be re-invented here (`#15` says `/history` reads the
   store, not a private file).
+  - **What history records:** every line the user *submitted*, with a
+    `Found bool`. `#15` deferred this question here, so it is settled here:
+    Up-arrow recall must include a word you typed and got wrong — that is when
+    you most want to edit and retry — while `/history` is about *words queried*
+    and filters to `Found`. One record, two readers; a second store would drift.
   - **`memHistory` ships now**, seeded per session. **Cross-session persistence
     is `#3`'s to satisfy through this seam** — see Revisions for the Done-when
     change that follows.
@@ -188,14 +241,23 @@ completion of `/`-commands only), and mouse.
 - [ ] **Step 2: Run, expect FAIL**
 - [ ] **Step 3: Implement.** `MakeRaw` on entry, `Restore` deferred **and** on the interrupt path. Delete `eraseLineAndStepBack` and `skipPrompt`; the indicator becomes a rendered frame.
 - [ ] **Step 4: Run, expect PASS.** `go test -race` too — there is a reader goroutine.
-- [ ] **Step 5: Manual pty check — the things no test reaches**
+- [ ] **Step 5: Automated pty test** (`//go:build darwin && conformance`), because
+      the Done-when asks for one and a manual check does not satisfy it. Needs
+      `github.com/creack/pty` as a **test-only** dependency — it lands in the
+      `require` block but never in the binary, so the "no new *runtime*
+      dependency" decision above still holds. Assert, against a real pty:
+      raw mode is entered; typing `syc` renders a grey `ophantic`; Right accepts
+      it; Enter defines only what was typed; **Ctrl-C during playback** exits 0
+      silently; and `term.IsTerminal` plus a fresh `MakeRaw`/`Restore` round-trip
+      confirm the terminal was left cooked.
+
+- [ ] **Step 5b: Manual check — what even a pty test cannot judge**
 
 ```sh
 make build && ./bin/define
-# type "syc" → grey "ophantic" appears; Right accepts; Enter defines
-# Up/Down walk; type "sy" then Up → only sy* entries
-# press Enter twice DURING playback → no stranded indicator (#2's documented limit, gone)
-# ^C → exits, and the terminal is not left raw:  stty -a | grep -q icanon && echo OK
+# does the grey read as a suggestion or as damage? is the walk order what a
+# hand expects? these are judgements, not assertions — everything mechanical
+# is covered by Step 5.
 ```
 
 - [ ] **Step 6: Update `README.md`, `atlas/define.md`; revise `#2`'s Limits entry**, which documents a cooked-mode limitation that no longer exists.

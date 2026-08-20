@@ -97,11 +97,17 @@ Multi-line editing, kill-ring, incremental reverse search (Ctrl-R), vi mode.
 - [ ] The grey suggestion is never submitted unless explicitly accepted.
 - [ ] History is consumed through a `History` seam, so `#3`'s store satisfies
       persistence without this issue inventing a private history file.
-- [ ] Ctrl-C exits 0 leaving no temp files, verified through a real pty — the
-      raw-mode regression risk.
+- [ ] Ctrl-C at the prompt exits 0 with the terminal restored to cooked mode.
+- [ ] Ctrl-C **during playback** cancels and prints nothing — `#2`'s contract,
+      which `signal.NotifyContext` can no longer deliver because raw mode makes
+      Ctrl-C a byte rather than a signal.
 - [ ] `echo word | define` behaves exactly as it does today.
 - [ ] The editor's behaviour is unit-tested over key sequences, not only via pty.
-- [ ] Any new third-party dependency is named and justified in the plan.
+- [ ] No new **runtime** dependency; `github.com/creack/pty` is test-only and
+      named as such.
+- [ ] History records every submitted line with a found flag — Up-arrow recalls
+      typos (that is when you want to edit and retry), while `#15`'s `/history`
+      filters to found.
 
 ## Estimate
 
