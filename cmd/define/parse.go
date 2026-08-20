@@ -1,43 +1,78 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strings"
+	"unicode"
 )
+
+// HeadKind classifies a token in an entry's head.
+type HeadKind int
+
+const (
+	HeadWord HeadKind = iota
+	HeadHomograph
+	HeadSyllables
+	HeadPOS
+	HeadOther
+)
+
+// HeadTok is one head token, kept in SOURCE ORDER.
+//
+// The order is carried by the data rather than re-derived by the renderer,
+// because NOAD does not use a fixed field order: "present 1 pres·ent" puts the
+// homograph before the syllabification, "record rec·ordnoun" welds a
+// part-of-speech onto it, and "read verb (past and past participle read | red |)"
+// puts a whole parenthetical in the head. A renderer that emits fields in a
+// fixed order reorders every entry that disagrees with its guess.
+type HeadTok struct {
+	Kind HeadKind
+	Text string
+}
 
 // Entry is one parsed NOAD headword.
 //
 // NOAD returns flat text with no schema, so parsing is best-effort by nature.
-// Raw is retained verbatim so the no-data-loss invariant (invariant_test.go) can
+// Raw is retained verbatim so the no-data-loss property (invariant_test.go) can
 // hold the rendered output against the source, and so --raw can print it.
 type Entry struct {
-	Headword  string
-	Syllables string
-	Homograph string // "1" in "bank 1"; see the Non-goals in the plan
-	IPA       string // the entry-level pronunciation
-	// HeadPOS is a part-of-speech welded onto the syllabification in the head
-	// ("rec·ordnoun"). It opens the first Block, but NOAD prints it in the head,
-	// so Render must too — moving it below the IPA would reorder the entry.
-	HeadPOS   string
-	HeadExtra []string // head tokens we did not classify — kept, never dropped
-	Blocks    []Block
-	Sections  []Section
-	Raw       string
+	Head     []HeadTok
+	IPA      string // the entry-level pronunciation
+	Blocks   []Block
+	Sections []Section
+	Raw      string
 }
+
+// Accessors derive from Head, so there is exactly one representation of the
+// head and no way for the fields and the render order to drift apart.
+func (e Entry) headOf(k HeadKind) string {
+	for _, t := range e.Head {
+		if t.Kind == k {
+			return t.Text
+		}
+	}
+	return ""
+}
+
+func (e Entry) Headword() string  { return e.headOf(HeadWord) }
+func (e Entry) Homograph() string { return e.headOf(HeadHomograph) }
+func (e Entry) Syllables() string { return e.headOf(HeadSyllables) }
+func (e Entry) HeadPOS() string   { return e.headOf(HeadPOS) }
 
 // Block is one part-of-speech run within an entry.
 type Block struct {
 	POS string
-	// FromHead marks the block whose POS came from Entry.HeadPOS, so Render can
-	// avoid printing it twice.
+	// FromHead marks the block whose POS came from the entry head, so Render
+	// does not print it twice.
 	FromHead bool
 	// Label is a grammar label sitting between the POS and its pronunciation
 	// ("verb [with object] | rəˈkôrd |"). Held separately so Render can emit it
 	// in NOAD's order; folding it into the sense text would reorder the entry.
 	Label string
-	// IPA is the block's own pronunciation when it differs from the entry's.
-	// This is not speculative: record's verb block carries |rəˈkôrd| against the
-	// head's |ˈrekərd|. Empty means "same as Entry.IPA".
+	// IPA is the block's own pronunciation, e.g. record's verb block carries
+	// |rəˈkôrd| against the head's |ˈrekərd|. Always stored when present, even
+	// when it equals the entry's: suppressing it would silently drop input.
 	IPA    string
 	Senses []Sense
 }
@@ -66,8 +101,8 @@ var sectionWords = []string{
 	"PHRASAL VERBS", "DERIVATIVES", "PHRASES", "ORIGIN", "USAGE",
 }
 
-// isPronunciation implements Rule B: a |…| span delimits a pronunciation iff
-// every comma-separated part of it is a single token.
+// isPronunciation implements the pipe-disambiguation rule: a |…| span delimits a
+// pronunciation iff every comma-separated part of it is a single token.
 //
 // The tempting rule — "contains no ASCII letters" — is wrong: ˈrekərd and baNGk
 // are mostly ASCII letters. What actually separates the two uses of | is word
@@ -80,81 +115,115 @@ func isPronunciation(inner string) bool {
 	}
 	for _, part := range strings.Split(inner, ",") {
 		part = strings.TrimSpace(part)
-		if part == "" || strings.ContainsAny(part, " \t") {
+		if part == "" || strings.ContainsAny(part, " \t\n") {
 			return false
 		}
 	}
 	return true
 }
 
-var pipeSpan = regexp.MustCompile(`\|([^|]*)\|`)
-
-// splitLeadingPronunciation returns the text before the first pronunciation
-// span, that span's content, and the text after it. ok is false when the text
-// holds no pronunciation span (pipes present but prose-shaped do not count).
-func splitLeadingPronunciation(s string) (before, ipa, after string, ok bool) {
-	for _, m := range pipeSpan.FindAllStringSubmatchIndex(s, -1) {
-		inner := s[m[2]:m[3]]
-		if isPronunciation(inner) {
-			return s[:m[0]], strings.TrimSpace(inner), s[m[1]:], true
+// findPronunciation returns the text before the first pronunciation span at
+// paren depth zero, that span's content, and the text after it.
+//
+// Depth matters: `read` returns "read verb (past and past participle read
+// | red |) [with object] | rēd | …", where the first pronunciation-shaped span
+// belongs to a parenthesised inflected form, not to the entry.
+func findPronunciation(s string) (before, ipa, after string, ok bool) {
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case '|':
+			if depth != 0 {
+				continue
+			}
+			j := strings.IndexByte(s[i+1:], '|')
+			if j < 0 {
+				continue
+			}
+			if inner := s[i+1 : i+1+j]; isPronunciation(inner) {
+				return s[:i], strings.TrimSpace(inner), s[i+1+j+1:], true
+			}
 		}
 	}
 	return s, "", "", false
 }
 
 // ParseEntry converts raw NOAD text into an Entry. It never discards input: any
-// token it cannot classify is preserved (HeadExtra, or an unnumbered sense), so
-// the no-data-loss invariant holds even for shapes nobody sampled.
+// token it cannot classify becomes a HeadOther token or an unnumbered sense, so
+// the no-data-loss property holds even for shapes nobody sampled.
 func ParseEntry(raw string) Entry {
 	e := Entry{Raw: raw}
 
-	head, ipa, rest, ok := splitLeadingPronunciation(raw)
+	head, ipa, rest, ok := findPronunciation(raw)
 	if !ok {
-		// No pronunciation at all — keep everything as one unstructured block.
-		e.Headword = firstToken(raw)
-		e.Blocks = []Block{{Senses: parseSenses(strings.TrimSpace(trimFirstToken(raw)))}}
+		// No pronunciation anywhere — e.g. "iPhone\nA combination mobile phone…".
+		word, body := splitFirstToken(raw)
+		if word != "" {
+			e.Head = []HeadTok{{HeadWord, word}}
+		}
+		if s := strings.TrimSpace(body); s != "" {
+			e.Blocks = []Block{{Senses: parseSenses(s)}}
+		}
 		return e
 	}
 	e.IPA = ipa
-
-	gluedPOS := parseHead(&e, head)
-	e.HeadPOS = gluedPOS
-
+	e.Head = parseHead(head)
 	body, sections := splitSections(rest)
 	e.Sections = sections
-	e.Blocks = parseBlocks(body, gluedPOS, ipa)
+	e.Blocks = parseBlocks(body, e.HeadPOS(), ipa)
 	return e
 }
 
-// parseHead applies Rule A and returns a part-of-speech glued to the
-// syllabification, if any ("rec·ordnoun" → "noun").
-func parseHead(e *Entry, head string) string {
+// parseHead classifies the head tokens, preserving source order. Every token
+// lands somewhere; HeadOther is the "kept, never dropped" bucket.
+func parseHead(head string) []HeadTok {
 	fields := strings.Fields(head)
 	if len(fields) == 0 {
-		return ""
+		return nil
 	}
-	e.Headword = fields[0]
-	bare := strings.ReplaceAll(e.Headword, "·", "")
-	var glued string
+	toks := []HeadTok{{HeadWord, fields[0]}}
+	bare := strings.ReplaceAll(fields[0], "·", "")
+	seen := map[HeadKind]bool{}
+
+	// add records a single-valued kind once; a second occurrence is preserved as
+	// HeadOther rather than overwriting the first.
+	add := func(k HeadKind, text string) {
+		if seen[k] {
+			k = HeadOther
+		}
+		seen[k] = true
+		toks = append(toks, HeadTok{k, text})
+	}
+
 	for _, tok := range fields[1:] {
+		stripped := strings.ReplaceAll(tok, "·", "")
 		switch {
 		case isDigits(tok):
-			e.Homograph = tok
-		case strings.ReplaceAll(tok, "·", "") == bare:
-			e.Syllables = tok
-		default:
+			add(HeadHomograph, tok)
+		// A syllabification always carries interpunct dots. Without that
+		// requirement a token merely equal to the headword ("read verb (past and
+		// past participle read …") would be classified as one and then hidden.
+		case strings.Contains(tok, "·") && stripped == bare:
+			add(HeadSyllables, tok)
+		case strings.Contains(tok, "·") && strings.HasPrefix(stripped, bare) &&
+			matchPOS(stripped[len(bare):]) != "":
 			// "rec·ordnoun" — syllabification with a POS welded onto the end.
-			if stripped := strings.ReplaceAll(tok, "·", ""); strings.HasPrefix(stripped, bare) {
-				if suffix := stripped[len(bare):]; matchPOS(suffix) == suffix && suffix != "" {
-					e.Syllables = tok[:len(tok)-len(suffix)]
-					glued = suffix
-					continue
-				}
-			}
-			e.HeadExtra = append(e.HeadExtra, tok)
+			suffix := stripped[len(bare):]
+			add(HeadSyllables, tok[:len(tok)-len(suffix)])
+			add(HeadPOS, suffix)
+		case matchPOS(tok) != "":
+			add(HeadPOS, tok)
+		default:
+			toks = append(toks, HeadTok{HeadOther, tok})
 		}
 	}
-	return glued
+	return toks
 }
 
 // splitSections peels the trailing all-caps sections off the body.
@@ -183,15 +252,13 @@ func splitSections(body string) (string, []Section) {
 		if i+1 < len(hits) {
 			end = hits[i+1].idx
 		}
-		text := strings.TrimSpace(body[h.idx+len(h.name) : end])
-		sections = append(sections, Section{Name: h.name, Text: text})
+		sections = append(sections, Section{h.name, strings.TrimSpace(body[h.idx+len(h.name) : end])})
 	}
 	return body[:hits[0].idx], sections
 }
 
 // parseBlocks splits the body on part-of-speech tokens. gluedPOS opens block 0
-// when the head consumed the first POS (record), and entryIPA lets a block
-// report only a pronunciation that actually differs.
+// when the head already carried a part-of-speech.
 func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 	type mark struct {
 		idx int
@@ -212,11 +279,9 @@ func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 		b := Block{POS: pos}
 		// A block's pronunciation follows its POS, but a grammar label may sit
 		// between them: "verb [with object] | rəˈkôrd | 1 set down …". The label
-		// is folded back into the sense text so nothing is dropped.
-		if before, ipa, after, ok := splitLeadingPronunciation(text); ok && isGrammarLabelOnly(before) {
-			if ipa != entryIPA {
-				b.IPA = ipa
-			}
+		// is held separately so it still renders in NOAD's order.
+		if before, ipa, after, ok := findPronunciation(text); ok && isGrammarLabelOnly(before) {
+			b.IPA = ipa
 			b.Label = strings.TrimSpace(before)
 			text = after
 		}
@@ -246,24 +311,40 @@ func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 
 var senseSplit = regexp.MustCompile(`(?:^|\s)(\d+)\s|•`)
 
-// parseSenses splits a block into numbered senses and • sub-senses. Text before
-// the first marker becomes an unnumbered sense rather than being dropped.
+// parseSenses splits a block into numbered senses and • sub-senses.
+//
+// A bare numeral in prose ("she ran in the 200 meters", "Dave has run 42
+// marathons") looks exactly like a sense number, so a numbered split is accepted
+// only when it opens the block or continues the sequence. Rejected numerals stay
+// in the surrounding sense text — they are never dropped.
 func parseSenses(text string) []Sense {
 	if text == "" {
 		return nil
 	}
 	locs := senseSplit.FindAllStringSubmatchIndex(text, -1)
-	if len(locs) == 0 {
+	var accepted [][]int
+	want := 1
+	for _, loc := range locs {
+		if loc[2] < 0 { // a • sub-sense always splits
+			accepted = append(accepted, loc)
+			continue
+		}
+		if n, err := atoi(text[loc[2]:loc[3]]); err == nil && n == want {
+			accepted = append(accepted, loc)
+			want++
+		}
+	}
+	if len(accepted) == 0 {
 		return []Sense{newSense("", false, text)}
 	}
 	var senses []Sense
-	if lead := strings.TrimSpace(text[:locs[0][0]]); lead != "" {
+	if lead := strings.TrimSpace(text[:accepted[0][0]]); lead != "" {
 		senses = append(senses, newSense("", false, lead))
 	}
-	for i, loc := range locs {
+	for i, loc := range accepted {
 		end := len(text)
-		if i+1 < len(locs) {
-			end = locs[i+1][0]
+		if i+1 < len(accepted) {
+			end = accepted[i+1][0]
 		}
 		number := ""
 		if loc[2] >= 0 {
@@ -275,14 +356,14 @@ func parseSenses(text string) []Sense {
 }
 
 // newSense splits a sense into its gloss and examples. Examples follow the first
-// ":" and are separated by interior pipes (Rule B guarantees those pipes are not
-// pronunciations, since parseBlocks already peeled any leading one off).
+// ":" and are separated by interior pipes (any leading pronunciation span was
+// already peeled off by parseBlocks).
 func newSense(number string, sub bool, text string) Sense {
 	s := Sense{Number: number, Sub: sub}
 	if i := strings.Index(text, ":"); i >= 0 {
 		s.Gloss = strings.TrimSpace(text[:i])
 		for _, ex := range strings.Split(text[i+1:], "|") {
-			if ex = strings.TrimSpace(strings.TrimRight(strings.TrimSpace(ex), ".")); ex != "" {
+			if ex = strings.TrimRight(strings.TrimSpace(ex), "."); ex != "" {
 				s.Examples = append(s.Examples, ex)
 			}
 		}
@@ -293,6 +374,27 @@ func newSense(number string, sub bool, text string) Sense {
 }
 
 // --- small helpers ---------------------------------------------------------
+
+var bracketed = regexp.MustCompile(`\[[^\]]*\]`)
+
+// isGrammarLabelOnly reports whether s holds nothing but bracketed grammar
+// labels ("[with object]") and whitespace — i.e. whether a pronunciation right
+// after it still belongs to the block that just opened.
+func isGrammarLabelOnly(s string) bool {
+	return strings.TrimSpace(bracketed.ReplaceAllString(s, "")) == ""
+}
+
+// splitFirstToken is the single definition of "the first token and the rest".
+// Two helpers previously re-derived this boundary and disagreed on whether a
+// newline counts, which silently dropped a word from every entry that had no
+// pronunciation (iPhone, iPad, MacBook).
+func splitFirstToken(s string) (head, rest string) {
+	s = strings.TrimLeftFunc(s, unicode.IsSpace)
+	if i := strings.IndexFunc(s, unicode.IsSpace); i >= 0 {
+		return s[:i], s[i:]
+	}
+	return s, ""
+}
 
 func isDigits(s string) bool {
 	if s == "" {
@@ -306,13 +408,25 @@ func isDigits(s string) bool {
 	return true
 }
 
-var bracketed = regexp.MustCompile(`\[[^\]]*\]`)
+var errNotNumber = errors.New("not a number")
 
-// isGrammarLabelOnly reports whether s holds nothing but bracketed grammar
-// labels ("[with object]", "[as modifier]") and whitespace — i.e. whether a
-// pronunciation right after it still belongs to the block that just opened.
-func isGrammarLabelOnly(s string) bool {
-	return strings.TrimSpace(bracketed.ReplaceAllString(s, "")) == ""
+// atoi parses a small non-negative integer. It exists rather than strconv.Atoi
+// so an absurdly long digit run cannot be mistaken for a sense number.
+func atoi(s string) (int, error) {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0, errNotNumber
+		}
+		n = n*10 + int(r-'0')
+		if n > 1<<20 {
+			return 0, errNotNumber
+		}
+	}
+	if s == "" {
+		return 0, errNotNumber
+	}
+	return n, nil
 }
 
 func matchPOS(s string) string {
@@ -324,22 +438,30 @@ func matchPOS(s string) string {
 	return ""
 }
 
+// isBoundary is the LEADING boundary test for a part-of-speech token: a POS may
+// follow a bracket or paren.
 func isBoundary(b byte) bool {
 	return b == ' ' || b == '\t' || b == '\n' || b == ']' || b == ')'
 }
 
-// posAt reports the part-of-speech token starting at i, if any, plus how far to
-// advance. Matching is on whole tokens so "verbatim" never reads as "verb".
+// posAt reports the part-of-speech token starting at i, plus how far to advance.
+//
+// The TRAILING boundary is whitespace-or-end only. Allowing ']' and ')' made
+// "adjective)" inside "(banked as adjective)" open a whole new top-level block,
+// orphaning the verb senses after it under a phantom heading whose body was a
+// lone ")". Real POS tokens followed by a bracket only occur inside ORIGIN /
+// PHRASAL VERBS, which splitSections has already peeled off.
 func posAt(body string, i int) (string, int) {
 	if i > 0 && !isBoundary(body[i-1]) {
 		return "", 0
 	}
 	for _, p := range posWords {
-		if strings.HasPrefix(body[i:], p) {
-			end := i + len(p)
-			if end == len(body) || isBoundary(body[end]) {
-				return p, len(p)
-			}
+		if !strings.HasPrefix(body[i:], p) {
+			continue
+		}
+		end := i + len(p)
+		if end == len(body) || body[end] == ' ' || body[end] == '\t' || body[end] == '\n' {
+			return p, len(p)
 		}
 	}
 	return "", 0
@@ -358,18 +480,4 @@ func indexToken(s, token string) int {
 		}
 	}
 	return -1
-}
-
-func firstToken(s string) string {
-	if f := strings.Fields(s); len(f) > 0 {
-		return f[0]
-	}
-	return ""
-}
-
-func trimFirstToken(s string) string {
-	if i := strings.IndexByte(strings.TrimLeft(s, " "), ' '); i >= 0 {
-		return strings.TrimLeft(s, " ")[i:]
-	}
-	return ""
 }

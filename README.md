@@ -24,12 +24,29 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 |---|---|
 | `define` | Print a word's NOAD definition with Google-style IPA, and play its pronunciation. |
 
+### define
+
+```sh
+define sycophantic          # definition + /ˌsikəˈfan(t)ik/, pronunciation played 3x
+define -raw record          # the unparsed dictionary entry
+define -no-color bank       # never emit ANSI (also automatic when piped)
+```
+
+Exit codes: `0` success, `1` no dictionary entry, `2` usage error.
+
 ## Build
 
 ```sh
-make build        # compile every cmd/ into bin/
-make install      # build + link into $PATH
-go test ./...     # unit tests
+make build     # compile every cmd/ into bin/ (target inherited from ariadne)
+go test ./...  # unit tests, including the fuzz corpus
+```
+
+`bin/` is not on `$PATH` by default; a `make install` target lands with M2.
+
+Live conformance checks sit behind a build tag and must run unsandboxed:
+
+```sh
+go test -tags conformance ./...
 ```
 
 ## Platform

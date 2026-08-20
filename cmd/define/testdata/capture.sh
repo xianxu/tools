@@ -12,11 +12,22 @@ cd "$(dirname "$0")"
 mkdir -p entries
 
 # The corpus is chosen for structural variety, not vocabulary:
-#   bank    homograph number, no syllabification, only sense 1 reachable
-#   record  part-of-speech glued to syllabification; per-block IPA; pipe overload
-#   run/set huge multi-block entries
-#   quokka  minimal entry, no numbered senses
-words=(sycophantic quokka ephemeral defenestrate bank record run gaslighting set)
+#   bank     homograph number, no syllabification, only sense 1 reachable;
+#            "(banked as adjective)" -- a POS inside a paren
+#   record   part-of-speech glued to syllabification; per-block IPA; pipe overload
+#   run/set  huge multi-block entries; bare numerals in examples ("the 200 meters")
+#   quokka   minimal entry, no numbered senses
+#   present  homograph AND syllabification together, in that order
+#   iPhone   no pronunciation span at all, newline-separated
+#   read     a parenthesised inflected-form pronunciation before the entry's own,
+#            plus a head token equal to the headword
+#
+# The last three, plus content/even/desert/minute/use/subject/iPad/MacBook/Amazon,
+# were all rendering with dropped or reordered content at the M1 boundary review.
+words=(
+    sycophantic quokka ephemeral defenestrate bank record run gaslighting set
+    present iPhone read content even desert minute use subject iPad MacBook Amazon
+)
 MIN_BYTES=40
 
 for w in "${words[@]}"; do

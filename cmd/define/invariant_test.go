@@ -74,3 +74,30 @@ func TestSubsequenceGapDetectsALoss(t *testing.T) {
 		t.Error("want the gap reported at the dropped rune")
 	}
 }
+
+// FuzzRenderLosesNothing is the property form of the invariant.
+//
+// TestRenderLosesNothing above only proves the property for the shapes someone
+// already sampled, which is the opposite of what the invariant is for. This
+// target explores the open input space, seeded from the corpus. It is how the
+// M1 boundary review found the head-reordering, first-token, and head-overwrite
+// bugs; minimized crashers land in testdata/fuzz/ as permanent regressions.
+func FuzzRenderLosesNothing(f *testing.F) {
+	d, err := loadFakeDictionary("testdata/entries")
+	if err != nil {
+		f.Fatal(err)
+	}
+	for _, raw := range d.entries {
+		f.Add(raw)
+	}
+	f.Add("in in | ˈin | noun a thing.")
+	f.Add("wug | wʌg | noun a thing. verb | wʌg | 1 to wug.")
+	f.Add("iPhone\nA combination mobile phone and media player.")
+
+	f.Fuzz(func(t *testing.T, raw string) {
+		out := Render(ParseEntry(raw), RenderOpts{Color: false})
+		if i := subsequenceGap(alnum(raw), alnum(out)); i >= 0 {
+			t.Fatalf("alnum loss at rune %d of %d for %q", i, len([]rune(alnum(raw))), raw)
+		}
+	})
+}

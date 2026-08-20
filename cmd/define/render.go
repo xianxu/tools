@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -35,21 +36,34 @@ func Render(e Entry, opt RenderOpts) string {
 	p := newPalette(opt.Color)
 	var b strings.Builder
 
-	// Header: headword, syllabification, and the homograph number — the last of
-	// these matters because only one homograph is reachable at all, so showing
-	// "bank 1" makes the truncation visible instead of silent.
-	fmt.Fprintf(&b, "%s%s%s", p.head, e.Headword, p.off)
-	if e.Syllables != "" && e.Syllables != e.Headword {
-		fmt.Fprintf(&b, "  %s%s%s", p.dim, e.Syllables, p.off)
-	}
-	if e.Homograph != "" {
-		fmt.Fprintf(&b, " %s%s%s", p.dim, e.Homograph, p.off)
-	}
-	if e.HeadPOS != "" {
-		fmt.Fprintf(&b, "  %s%s%s", p.pos, e.HeadPOS, p.off)
-	}
-	for _, x := range e.HeadExtra {
-		fmt.Fprintf(&b, " %s", x)
+	// Header: walk the head tokens in SOURCE order. NOAD has no fixed field
+	// order — "present 1 pres·ent" puts the homograph first, "record rec·ordnoun"
+	// welds a POS on, "read verb (past and past participle read | red |)" carries
+	// a whole parenthetical — so emitting fields in a guessed order reorders the
+	// entry. Nothing is hidden here, including a syllabification equal to the
+	// headword: suppression is how content goes missing.
+	for i, t := range e.Head {
+		sep := " "
+		switch {
+		case i == 0:
+			sep = ""
+		case t.Kind == HeadSyllables || t.Kind == HeadPOS:
+			sep = "  "
+		}
+		var color string
+		switch t.Kind {
+		case HeadWord:
+			color = p.head
+		case HeadSyllables, HeadHomograph:
+			color = p.dim
+		case HeadPOS:
+			color = p.pos
+		}
+		if color != "" {
+			fmt.Fprintf(&b, "%s%s%s%s", sep, color, t.Text, p.off)
+		} else {
+			fmt.Fprintf(&b, "%s%s", sep, t.Text)
+		}
 	}
 	b.WriteString("\n")
 	if e.IPA != "" {
@@ -105,12 +119,14 @@ func Render(e Entry, opt RenderOpts) string {
 	return b.String()
 }
 
+var pipeSpanRe = regexp.MustCompile(`\|([^|]*)\|`)
+
 // prettyPronunciations rewrites NOAD's |ˌsikəˈfan(t)ək(ə)lē| spans as /…/ so
 // section text matches the header's notation. Only punctuation changes, so the
 // no-data-loss invariant is unaffected. Spans that are prose (example
 // separators) are left alone — that is exactly what isPronunciation decides.
 func prettyPronunciations(s string, p palette) string {
-	return pipeSpan.ReplaceAllStringFunc(s, func(m string) string {
+	return pipeSpanRe.ReplaceAllStringFunc(s, func(m string) string {
 		inner := strings.TrimSpace(strings.Trim(m, "|"))
 		if !isPronunciation(inner) {
 			return m

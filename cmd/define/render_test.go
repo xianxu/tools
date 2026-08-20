@@ -1,0 +1,149 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
+
+// Render had no direct test at the M1 boundary review: the colour path,
+// prettyPronunciations, homograph rendering, and the FromHead header
+// suppression were all covered only indirectly by the invariant, which is blind
+// to anything that preserves letter order.
+
+func TestRenderHomographIsVisible(t *testing.T) {
+	// Only one homograph is reachable through this API (see Non-goals), so the
+	// number must be shown — it is the user's only signal that "bank" here means
+	// the riverbank and the financial sense was never returned.
+	out := Render(ParseEntry(fixture(t, "bank")), RenderOpts{Color: false})
+	first := strings.SplitN(out, "\n", 2)[0]
+	if !strings.Contains(first, "bank") || !strings.Contains(first, "1") {
+		t.Errorf("header %q should show the homograph number", first)
+	}
+}
+
+func TestRenderHeadKeepsSourceOrder(t *testing.T) {
+	// present is "present 1 pres·ent" — homograph BEFORE syllabification, the
+	// opposite of record. A renderer with a fixed field order reorders one of them.
+	out := Render(ParseEntry(fixture(t, "present")), RenderOpts{Color: false})
+	first := strings.SplitN(out, "\n", 2)[0]
+	iHomo, iSyl := strings.Index(first, "1"), strings.Index(first, "pres·ent")
+	if iHomo < 0 || iSyl < 0 || iHomo > iSyl {
+		t.Errorf("header %q must keep NOAD's order: headword, homograph, syllabification", first)
+	}
+}
+
+func TestRenderGluedPOSNotPrintedTwice(t *testing.T) {
+	out := Render(ParseEntry(fixture(t, "record")), RenderOpts{Color: false})
+	if n := strings.Count(out, "noun"); n < 1 {
+		t.Fatal("the head part-of-speech vanished")
+	}
+	// The block whose POS came from the head must not repeat it as a heading.
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == "" && strings.HasPrefix(line, "  ") {
+			t.Error("empty indented block heading — FromHead suppression left a blank line")
+		}
+	}
+}
+
+func TestRenderColorOnlyWhenAsked(t *testing.T) {
+	e := ParseEntry(fixture(t, "sycophantic"))
+	if plain := Render(e, RenderOpts{Color: false}); strings.Contains(plain, "\x1b[") {
+		t.Error("ANSI escapes present with Color:false")
+	}
+	colored := Render(e, RenderOpts{Color: true})
+	if !strings.Contains(colored, "\x1b[") {
+		t.Error("no ANSI escapes with Color:true")
+	}
+	// Colour must be presentation-only: stripping the escapes reproduces the
+	// plain rendering exactly.
+	if stripANSI(colored) != Render(e, RenderOpts{Color: false}) {
+		t.Error("colour changed more than presentation")
+	}
+}
+
+func TestPrettyPronunciations(t *testing.T) {
+	p := newPalette(false)
+	got := prettyPronunciations("sycophantically | ˌsikəˈfan(t)ək(ə)lē | adverb", p)
+	if want := "sycophantically /ˌsikəˈfan(t)ək(ə)lē/ adverb"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// Prose between pipes is an example separator, not a pronunciation.
+	prose := "a | b c | d"
+	if got := prettyPronunciations(prose, p); got != prose {
+		t.Errorf("prose span rewritten: %q", got)
+	}
+}
+
+func stripANSI(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if s[i] == '\x1b' {
+			for i < len(s) && s[i] != 'm' {
+				i++
+			}
+			i++
+			continue
+		}
+		b.WriteByte(s[i])
+		i++
+	}
+	return b.String()
+}
+
+// --- structural goldens over the corpus ------------------------------------
+
+// Sense numbering is the one structure the alnum invariant is blind to: a bare
+// numeral in an example ("she ran in the 200 meters") preserves letter order
+// while producing sense "200". Requiring a 1..n sequence per block catches it.
+func TestCorpusSenseNumbersAreSequential(t *testing.T) {
+	d := testDict(t)
+	for word, raw := range d.entries {
+		t.Run(word, func(t *testing.T) {
+			for bi, blk := range ParseEntry(raw).Blocks {
+				want := 1
+				for _, s := range blk.Senses {
+					if s.Number == "" {
+						continue
+					}
+					if s.Number != fmt.Sprint(want) {
+						t.Errorf("block %d (%s): sense number %q, want %d", bi, blk.POS, s.Number, want)
+					}
+					want++
+				}
+			}
+		})
+	}
+}
+
+// Block structure golden. bank and run previously grew a phantom "adjective"
+// block from "(banked as adjective)" — order-preserving, so invisible to the
+// invariant.
+func TestCorpusBlockStructure(t *testing.T) {
+	want := map[string][]string{
+		"sycophantic":  {"adjective"},
+		"quokka":       {"noun"},
+		"ephemeral":    {"adjective", "noun"},
+		"defenestrate": {"verb"},
+		"bank":         {"noun", "verb"},
+		"record":       {"noun", "verb"},
+		"run":          {"verb", "noun"},
+		"gaslighting":  {"noun"},
+	}
+	d := testDict(t)
+	for word, expect := range want {
+		t.Run(word, func(t *testing.T) {
+			raw, err := d.Lookup(word)
+			if err != nil {
+				t.Skipf("fixture absent: %v", err)
+			}
+			var got []string
+			for _, b := range ParseEntry(raw).Blocks {
+				got = append(got, b.POS)
+			}
+			if strings.Join(got, ",") != strings.Join(expect, ",") {
+				t.Errorf("blocks = %v, want %v", got, expect)
+			}
+		})
+	}
+}

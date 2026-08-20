@@ -455,3 +455,56 @@ independently re-verified before acting.
 - **PQ-6 (conformance cadence).** Accepted. Stated on-demand as a deliberate
   choice, with the reason (host NOAD + live network do not belong in
   `merge-check.yml`) and the trigger recorded in `atlas/define.md`.
+
+### 2026-08-20 — M1 boundary review (4 Critical, 8 Important, 7 Minor) → REWORK
+
+The review captured 170 live NOAD entries and ran M1's own invariant predicate
+over them: **12 failed (7%)**. All four Criticals were reproduced locally before
+fixing. The verdict was correct and the diff was reworked rather than argued.
+
+**Core concepts drift, now reconciled (Chunk 1 above is updated in place):**
+
+- `Entry` no longer carries `Headword` / `Syllables` / `Homograph` / `HeadPOS` /
+  `HeadExtra` as parallel fields. It carries **`Head []HeadTok`** in source
+  order, with those four as *accessors* derived from it. This is the root-cause
+  fix for C1 and C3: NOAD has no fixed head field order (`present 1 pres·ent`
+  vs `record rec·ordnoun` vs `read verb (past … read | red |)`), so a renderer
+  emitting fields in a guessed order reorders every entry that disagrees. One
+  representation, walked by `Render`, cannot drift (ARCH-DRY).
+- `Block` gained `FromHead bool`, `Label string`, and `IPA` is now stored
+  **unconditionally** (I4 — suppressing a block pronunciation equal to the
+  entry's silently dropped it).
+- New pure function `splitFirstToken` replaces `firstToken`/`trimFirstToken`,
+  which re-derived the same boundary and **disagreed on whether a newline
+  counts** — that disagreement *was* C2, dropping the leading "A" from every
+  entry with no pronunciation span (`iPhone`, `iPad`, `MacBook`). Two helpers
+  independently deriving one rule is the ARCH-DRY failure mode, not a style nit.
+- `findPronunciation` (was `splitLeadingPronunciation`) now tracks **paren
+  depth**, so `read`'s parenthesised inflected-form pronunciation is not
+  mistaken for the entry's.
+- `posAt`'s trailing boundary is whitespace-or-EOS; allowing `]`/`)` made
+  `(banked as adjective)` open a phantom top-level block (C4).
+- `parseSenses` accepts a numbered split only when it opens the block or
+  continues the sequence — bare numerals in prose ("the 200 meters") were
+  becoming sense numbers (I5).
+
+**Test surface, widened.** The invariant was *corpus-scoped* while its own
+documentation claimed it made the parser "safe against entries nobody sampled"
+(I1 — the ARCH-PURPOSE finding, and the fair one). It is now checked at three
+widths: the 21-fixture corpus, a corpus-seeded `FuzzRenderLosesNothing`, and
+`TestRenderLosesNothingOverLiveEntries`, which walks a stride sample of
+`/usr/share/dict/words` through the real dictionary. Plus `render_test.go`
+(never created in M1, I6) with structural goldens for block shape and sense
+numbering — the classes the alnum property is *blind* to, because they preserve
+letter order.
+
+**Corpus (I2)** grew from 9 to 21 entries, adding every shape that shipped a bug.
+
+**Also noted by the review and applied:** `go mod tidy`; the cgo bridge now
+distinguishes "no entry" from a CoreFoundation failure; the fake moved into a
+`_test.go` file so it no longer links into the shipped binary; `-h` exits 0;
+README documents the flags and no longer claims a `make install` that does not
+exist; committed build-artifact blobs dropped from the branch history.
+
+**Deferred to M2 with reason:** nothing. All Critical and Important findings are
+addressed in this milestone.

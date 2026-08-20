@@ -27,7 +27,7 @@ need no mocks.
 `dict_darwin.go` holds the only cgo. `dict_stub.go` (`//go:build !darwin`) keeps
 `go build ./...` and `go vet ./...` green off macOS.
 
-## Two parsing rules worth knowing
+## Three parsing rules worth knowing
 
 NOAD returns flat text with no schema. Two shapes are non-obvious and both came
 out of reading real output:
@@ -37,7 +37,13 @@ out of reading real output:
    syllabification, ahead of the pronunciation. It opens the first block
    (`Entry.HeadPOS` / `Block.FromHead`) but renders in the head, because that is
    where NOAD puts it.
-2. **`|` is overloaded.** It delimits pronunciations *and* separates examples.
+2. **The head has no fixed field order.** `present 1 pres·ent` puts the
+   homograph first; `record rec·ordnoun` welds the POS on; `read verb (past and
+   past participle read | red |)` carries a whole parenthetical, including a
+   pronunciation that is *not* the entry's. So the head is kept as an ordered
+   `[]HeadTok` and `Render` walks it — order is carried by the data, never
+   re-guessed by the renderer.
+3. **`|` is overloaded.** It delimits pronunciations *and* separates examples.
    The discriminator is word shape, not character class — `ˈrekərd` and `baNGk`
    are mostly ASCII letters, so "contains no ASCII letters" fails. A span is a
    pronunciation iff every comma-separated part is a single space-free token
@@ -45,13 +51,26 @@ out of reading real output:
 
 ## The invariant
 
-`TestRenderLosesNothing` asserts that every letter and digit of the raw entry
-appears **in order** in the rendered output. Punctuation may be restructured;
-words may not vanish or move.
+Every letter and digit of the raw entry must appear **in order** in the rendered
+output. Punctuation may be restructured; words may not vanish or move.
 
-This is what makes a best-effort parser safe against entries nobody sampled: an
-unrecognized construct degrades to a paragraph instead of disappearing. It caught
-two reorderings on `record` during M1 that no content-presence test would have.
+The property is checked at three widths, and it needs all three — the M1 boundary
+review found four rendering bugs that the first alone had shipped green:
+
+| check | scope | catches |
+|---|---|---|
+| `TestRenderLosesNothing` | the 21 captured fixtures | regressions on known shapes |
+| `FuzzRenderLosesNothing` | arbitrary strings, corpus-seeded | parser crashes, boundary bugs |
+| `TestRenderLosesNothingOverLiveEntries` (conformance) | ~2400 real NOAD entries | shapes nobody thought to sample |
+
+The third is the one that earns the claim "safe against entries nobody sampled";
+a corpus test alone only covers what someone already sampled. Before the review,
+7% of live entries lost content (`define iPhone` silently dropped the leading
+"A"); it is 0% now.
+
+The property is **blind to anything that preserves letter order** — a phantom
+`adjective` block on `bank`, or sense numbers taken from "the 200 meters". Those
+need the structural goldens in `render_test.go` instead.
 
 It guarantees **fidelity, not completeness** — see Limits.
 

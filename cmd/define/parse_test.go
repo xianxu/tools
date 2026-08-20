@@ -66,14 +66,14 @@ func TestParseHeader(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			e := ParseEntry(tc.raw)
-			if e.Headword != tc.word {
-				t.Errorf("Headword = %q, want %q", e.Headword, tc.word)
+			if e.Headword() != tc.word {
+				t.Errorf("Headword = %q, want %q", e.Headword(), tc.word)
 			}
-			if e.Syllables != tc.syl {
-				t.Errorf("Syllables = %q, want %q", e.Syllables, tc.syl)
+			if e.Syllables() != tc.syl {
+				t.Errorf("Syllables = %q, want %q", e.Syllables(), tc.syl)
 			}
-			if e.Homograph != tc.homo {
-				t.Errorf("Homograph = %q, want %q", e.Homograph, tc.homo)
+			if e.Homograph() != tc.homo {
+				t.Errorf("Homograph = %q, want %q", e.Homograph(), tc.homo)
 			}
 			if e.IPA != tc.ipa {
 				t.Errorf("IPA = %q, want %q", e.IPA, tc.ipa)
