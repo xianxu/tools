@@ -13,8 +13,12 @@ import (
 type Entry struct {
 	Headword  string
 	Syllables string
-	Homograph string   // "1" in "bank 1"; see the Non-goals in the plan
-	IPA       string   // the entry-level pronunciation
+	Homograph string // "1" in "bank 1"; see the Non-goals in the plan
+	IPA       string // the entry-level pronunciation
+	// HeadPOS is a part-of-speech welded onto the syllabification in the head
+	// ("rec·ordnoun"). It opens the first Block, but NOAD prints it in the head,
+	// so Render must too — moving it below the IPA would reorder the entry.
+	HeadPOS   string
 	HeadExtra []string // head tokens we did not classify — kept, never dropped
 	Blocks    []Block
 	Sections  []Section
@@ -24,6 +28,13 @@ type Entry struct {
 // Block is one part-of-speech run within an entry.
 type Block struct {
 	POS string
+	// FromHead marks the block whose POS came from Entry.HeadPOS, so Render can
+	// avoid printing it twice.
+	FromHead bool
+	// Label is a grammar label sitting between the POS and its pronunciation
+	// ("verb [with object] | rəˈkôrd |"). Held separately so Render can emit it
+	// in NOAD's order; folding it into the sense text would reorder the entry.
+	Label string
 	// IPA is the block's own pronunciation when it differs from the entry's.
 	// This is not speculative: record's verb block carries |rəˈkôrd| against the
 	// head's |ˈrekərd|. Empty means "same as Entry.IPA".
@@ -107,6 +118,7 @@ func ParseEntry(raw string) Entry {
 	e.IPA = ipa
 
 	gluedPOS := parseHead(&e, head)
+	e.HeadPOS = gluedPOS
 
 	body, sections := splitSections(rest)
 	e.Sections = sections
@@ -205,7 +217,8 @@ func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 			if ipa != entryIPA {
 				b.IPA = ipa
 			}
-			text = strings.TrimSpace(before) + " " + after
+			b.Label = strings.TrimSpace(before)
+			text = after
 		}
 		b.Senses = parseSenses(strings.TrimSpace(text))
 		return b
@@ -217,7 +230,9 @@ func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 		lead = body[:marks[0].idx]
 	}
 	if strings.TrimSpace(lead) != "" || gluedPOS != "" {
-		blocks = append(blocks, newBlock(gluedPOS, lead))
+		lb := newBlock(gluedPOS, lead)
+		lb.FromHead = gluedPOS != ""
+		blocks = append(blocks, lb)
 	}
 	for i, m := range marks {
 		end := len(body)
