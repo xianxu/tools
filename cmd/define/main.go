@@ -122,15 +122,18 @@ func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, s
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		if err := speak(ctx, d, word, opt.locale, opt.times, stdout); err != nil {
+		fmt.Fprintf(stdout, "\n  ♫ playing %d×\n", opt.times)
+		if err := speak(ctx, d, word, opt.locale, opt.times); err != nil {
 			fmt.Fprintf(stderr, "define: %s\n", err)
 		}
 	}
 	return 0
 }
 
-// speak fetches the recording and plays it n times.
-func speak(ctx context.Context, d deps, word, locale string, n int, stdout io.Writer) error {
+// speak fetches the recording and plays it n times. It prints NOTHING — the
+// announcement belongs to the caller, because a replay in the loop must leave
+// the screen exactly as it was.
+func speak(ctx context.Context, d deps, word, locale string, n int) error {
 	data, _, err := d.audio.Fetch(ctx, AudioCandidates(word, locale))
 	if err != nil {
 		return fmt.Errorf("%s: %w", word, err)
@@ -145,7 +148,6 @@ func speak(ctx context.Context, d deps, word, locale string, n int, stdout io.Wr
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "\n  ♫ playing %d×\n", n)
 	return playN(ctx, d.player, path, n)
 }
 

@@ -169,8 +169,11 @@ testable from a string. `deps.stdinIsTerminal` is injected because a test
 harness's stdin is never a terminal; note it is a different question from the
 stdout probe that drives colour.
 
-A bare return replays audio only: the definition is already on screen, and
-reprinting it scrolls away the thing you just looked up. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
+A bare return replays audio and writes nothing to stdout — no definition, no
+announcement. `speak` is silent by construction and `defineOnce` owns the "♫
+playing N×" line, so the loop cannot accidentally reprint. The only screen change
+on a replay is the terminal's own echo of the Enter key and the next prompt;
+suppressing those would need cursor control, which is a stated non-goal. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
 *inside* `repl`, so the production and test wiring are the same line and
 `fakeCDN.Requested()` is the assertion. Failed fetches are not cached, so a
 transient outage does not poison a session.

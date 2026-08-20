@@ -57,8 +57,10 @@ func TestREPLBareReturnReplaysWithoutRefetching(t *testing.T) {
 	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
 		t.Errorf("printed the definition %d times, want 1 — replay reprinted it", n)
 	}
-	if n := strings.Count(out.String(), "♫"); n != 2 {
-		t.Errorf("announced playback %d times, want 2", n)
+	// A replay writes NOTHING to stdout: same definition, one announcement, and
+	// the second playback leaves the screen untouched.
+	if n := strings.Count(out.String(), "♫"); n != 1 {
+		t.Errorf("announced playback %d times, want 1 — the replay wrote to stdout", n)
 	}
 }
 
@@ -171,5 +173,25 @@ func TestREPLPromptOnlyWhenInteractive(t *testing.T) {
 		if got := strings.Contains(out.String(), prompt); got != interactive {
 			t.Errorf("interactive=%v: prompt present=%v", interactive, got)
 		}
+	}
+}
+
+// The strongest statement of the replay contract: stdout is byte-identical
+// before and after a bare return.
+func TestREPLReplayWritesNothingToStdout(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+
+	var once bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n"), &once, &bytes.Buffer{})
+
+	rig2, opt2 := replRig(t, "sycophantic", true, false)
+	var twice bytes.Buffer
+	repl(t.Context(), rig2.deps, opt2, strings.NewReader("sycophantic\n\n\n"), &twice, &bytes.Buffer{})
+
+	if once.String() != twice.String() {
+		t.Errorf("two replays changed stdout:\n one: %q\n two: %q", once.String(), twice.String())
+	}
+	if got := rig2.player.count(); got != 9 {
+		t.Errorf("played %d times, want 9 (3 definitions worth: 1 typed + 2 replays)", got)
 	}
 }
