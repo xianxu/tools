@@ -1,11 +1,12 @@
 ---
 id: 000014
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-08-20
 updated: 2026-08-20
 estimate_hours:
+started: 2026-08-20T16:25:33-07:00
 ---
 
 # REPL line editor: history, prefix search, inline autosuggestion
