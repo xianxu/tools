@@ -27,6 +27,8 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 ### define
 
 ```sh
+define                      # interactive: type a word, press return to replay, ^C to quit
+echo sycophantic | define   # or feed it words on stdin
 define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
 define -times 1 record      # play once instead of three times
 define -no-audio bank       # no fetch, no sound
@@ -34,6 +36,13 @@ define -locale gb colour    # British pronunciation
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
+
+With no word, `define` reads stdin: a word defines and speaks it, a bare return
+replays the *pronunciation* of the current one — nothing is re-fetched, and the
+screen is left as it was provided you let the sound finish — and Ctrl-C quits
+silently. `-raw` prints the unparsed entry and never plays. The prompt appears
+only on a terminal, so piping stays clean. Flags are session settings — `define
+-times 1` opens the loop with single playback.
 
 Exit codes: `0` success, `1` no dictionary entry, `2` usage error.
 

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -75,4 +77,61 @@ func (s *httpAudioSource) Fetch(ctx context.Context, urls []string) ([]byte, str
 		return nil, "", fmt.Errorf("%w: %w", ErrFetchFailed, firstErr)
 	}
 	return nil, "", ErrNoAudio
+}
+
+// cachingAudioSource memoises fetches by candidate list.
+//
+// It is a decorator on the seam rather than a map inside the REPL loop, so the
+// existing fakeCDN request recorder is the assertion that a replay costs no
+// second request — no bespoke test scaffolding.
+type cachingAudioSource struct {
+	inner AudioSource
+	mu    sync.Mutex
+	hits  map[string]cachedAudio
+	// misses records words the CDN has no recording for. That is PERMANENT —
+	// unlike a transport failure — so replaying such a word must not re-issue
+	// all four candidate requests every time. The error taxonomy above is the
+	// single source of that distinction; this derives from it rather than
+	// re-deciding what "failed" means.
+	misses map[string]struct{}
+}
+
+type cachedAudio struct {
+	data []byte
+	from string
+}
+
+func newCachingAudioSource(inner AudioSource) *cachingAudioSource {
+	return &cachingAudioSource{inner: inner, hits: map[string]cachedAudio{}, misses: map[string]struct{}{}}
+}
+
+func (c *cachingAudioSource) Fetch(ctx context.Context, urls []string) ([]byte, string, error) {
+	key := strings.Join(urls, "\n")
+
+	c.mu.Lock()
+	hit, ok := c.hits[key]
+	_, missed := c.misses[key]
+	c.mu.Unlock()
+	if ok {
+		return hit.data, hit.from, nil
+	}
+	if missed {
+		return nil, "", ErrNoAudio
+	}
+
+	data, from, err := c.inner.Fetch(ctx, urls)
+	if err != nil {
+		if errors.Is(err, ErrNoAudio) {
+			c.mu.Lock()
+			c.misses[key] = struct{}{}
+			c.mu.Unlock()
+		}
+		// ErrFetchFailed stays retryable: a transient outage must not poison the
+		// rest of the session.
+		return nil, "", err
+	}
+	c.mu.Lock()
+	c.hits[key] = cachedAudio{data, from}
+	c.mu.Unlock()
+	return data, from, nil
 }

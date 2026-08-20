@@ -151,6 +151,69 @@ It guarantees **fidelity, not completeness** — see Limits.
   `isGrammarLabelOnly` for short leading register labels is the tractable fix if
   it becomes worth doing.
 
+## Entry modes
+
+One word per invocation was the original shape; `run` now dispatches on argument
+count into a single shared `defineOnce`, so neither mode owns a copy of the
+define path.
+
+| invocation | behaviour |
+|---|---|
+| `define <word>` | one-shot |
+| `define` | reads stdin until EOF or Ctrl-C |
+| `echo w \| define` | same loop, no prompt |
+
+The loop reads stdin **unconditionally** and only the prompt is TTY-conditional —
+there is no interactive/batch branch to keep in sync, and the whole loop is
+testable from a string. `deps.stdinIsTerminal` is injected because a test
+harness's stdin is never a terminal; note it is a different question from the
+stdout probe that drives colour.
+
+**The "♫ playing N×" indicator is ephemeral.** It exists to show the program
+responded to a keypress; once the sound has finished it is noise, so on a
+terminal it is erased and the settled screen shows only the definition. This
+holds on both paths — the define path erases in place, the replay path
+additionally steps back onto the prompt. Piped output keeps the indicator as a
+plain line and emits no escape sequence, asserted.
+
+A bare return replays audio and leaves the screen **unchanged**. `speak` is
+silent by construction and `defineOnce` owns the "♫ playing N×" line, so the loop
+cannot accidentally reprint a definition. Interactively the loop flashes the
+indicator on the line Enter's echo just opened, then erases it and steps back
+onto the prompt (`eraseLineAndStepBack`) — the echo is undone rather than
+accepted, so the view never scrolls and the word you are hearing stays beside the
+definition you are reading. Cursor control was a `#2` non-goal, lifted by the
+operator for exactly this. Gated on `interactive && tty` — **both** streams must
+be the terminal, because the escapes go to stdout while the echo being undone
+came from stdin; gating on stdin alone leaked escapes into `define > out.txt`.
+
+**Cancellation prints nothing.** Killing `afplay` is *how* Ctrl-C is implemented,
+so `playAnnounced` — the single report site — suppresses a diagnostic when
+`ctx.Err() != nil`; without that guard a SIGINT during playback printed `define: afplay: signal: killed` and exited
+0, telling the user their own keypress had failed.
+
+**"No recording" is cached; a transport failure is not.** `ErrNoAudio` is
+permanent, so replaying a word without audio must not re-issue all four candidate
+requests each time; `ErrFetchFailed` stays retryable so a transient outage does
+not poison the session. The cache derives that distinction from the error
+taxonomy rather than re-deciding what "failed" means.
+
+**The erase arithmetic assumes no input arrives during playback.** `eraseLine`
+acts on whatever line the cursor is on *now*, and the loop is blocked inside
+`speak` for seconds with the tty in cooked mode and ECHO on. A second impatient
+Return during playback is echoed by the driver, moves the cursor down, and the
+post-playback erase then clears the echoed line instead of the indicator —
+stranding `♫ playing N×` on screen. So "the view never scrolls" holds for a user
+who waits, not unconditionally. Raw mode removes the assumption entirely by not
+echoing at all, which is `#14`'s job. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
+*inside* `repl`, so the production and test wiring are the same line and
+`fakeCDN.Requested()` is the assertion.
+
+`main` wraps the context in `signal.NotifyContext`, which changed the one-shot
+path too: Ctrl-C during playback now cancels `afplay` through
+`exec.CommandContext` and lets deferred cleanup run, rather than killing the
+process and stranding a temp file.
+
 ## Pronunciation
 
 The speaker button on Google's dictionary panel is a plain static MP3, and the

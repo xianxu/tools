@@ -76,3 +76,78 @@ func TestFetchContextCancellationReachesTheCaller(t *testing.T) {
 		t.Errorf("errors.Is(err, context.Canceled) = false for %v — the cause was flattened out of the chain", err)
 	}
 }
+
+// --- cachingAudioSource ------------------------------------------------------
+
+func TestCachingAudioSourceServesRepeatsFromMemory(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("ID3audio")})
+	src := newCachingAudioSource(cdn.source())
+	urls := cdn.urls("/a.mp3")
+
+	first, _, err := src.Fetch(t.Context(), urls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _, err := src.Fetch(t.Context(), urls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Errorf("cached bytes differ: %q vs %q", first, second)
+	}
+	if got := cdn.Requested(); len(got) != 1 {
+		t.Errorf("made %d requests, want 1: %v", len(got), got)
+	}
+}
+
+func TestCachingAudioSourceDistinguishesWords(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("A"), "/b.mp3": []byte("B")})
+	src := newCachingAudioSource(cdn.source())
+
+	src.Fetch(t.Context(), cdn.urls("/a.mp3"))
+	src.Fetch(t.Context(), cdn.urls("/b.mp3"))
+	if got := cdn.Requested(); len(got) != 2 {
+		t.Errorf("made %d requests, want 2 — different words shared a cache entry: %v", len(got), got)
+	}
+}
+
+// A TRANSPORT failure is transient and must stay retryable — unlike ErrNoAudio,
+// which is permanent and is cached (see the test below). A 404 is not a
+// transport failure, so this closes the server to produce a real one.
+func TestCachingAudioSourceDoesNotCacheTransportFailures(t *testing.T) {
+	cdn := newFakeCDN(t, nil)
+	urls := cdn.urls("/a.mp3")
+	src := newCachingAudioSource(cdn.source())
+	cdn.Close()
+
+	for i := 0; i < 2; i++ {
+		if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrFetchFailed) {
+			t.Fatalf("fetch %d: %v, want ErrFetchFailed", i, err)
+		}
+	}
+	// The server is closed, so nothing is recorded server-side; what matters is
+	// that the second call still ATTEMPTED rather than being served a cached
+	// error — a closed cache would return instantly with no attempt.
+	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrFetchFailed) {
+		t.Errorf("third fetch: %v — a transient failure was cached", err)
+	}
+}
+
+// "No recording exists" is permanent, unlike a transport failure. Replaying a
+// word with no audio must not re-issue all four candidate requests every time.
+func TestCachingAudioSourceCachesErrNoAudio(t *testing.T) {
+	cdn := newFakeCDN(t, nil) // every candidate 404s → ErrNoAudio
+	src := newCachingAudioSource(cdn.source())
+	urls := cdn.urls("/a.mp3", "/b.mp3")
+
+	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrNoAudio) {
+		t.Fatalf("first fetch: %v", err)
+	}
+	before := len(cdn.Requested())
+	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrNoAudio) {
+		t.Fatalf("second fetch: %v", err)
+	}
+	if got := len(cdn.Requested()); got != before {
+		t.Errorf("made %d more requests for a word with no recording, want 0", got-before)
+	}
+}
