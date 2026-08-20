@@ -75,6 +75,19 @@ shipped, not a new-feature detail.
 
 - **defineOnce** — the existing body of `run()` after flag parsing, extracted verbatim: look up, render, print, speak.
   - **Injected into:** both `run()` (one-shot) and `repl`. This is the ARCH-DRY core of the issue — the REPL must not grow a parallel copy of the define path.
+  - **`run` changes signature**, and this is the only signature change in the issue:
+
+    ```go
+    func run(args []string, d deps, stdout, stderr io.Writer) int                    // before
+    func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, stderr io.Writer) int  // after
+    ```
+
+    Both additions are forced. `ctx` because `run` currently manufactures
+    `context.Background()` inline (`main.go:87`), which no test can cancel — the
+    cancellation contract above is untestable until the caller owns it. `stdin`
+    because the loop must read from somewhere a test can supply. Every existing
+    call site in `main_test.go` updates mechanically; that churn is expected and
+    is not the signal Task 1 Step 3 describes.
 
 - **repl** — reads lines and dispatches commands.
   - **Owns no temp dir.** `speak` already creates and removes one per call, and an
@@ -100,6 +113,13 @@ shipped, not a new-feature detail.
 - [ ] **Step 1: Run the existing suite** — `go test ./cmd/define/`, all green. This is a pure refactor; the existing CLI tests are the regression net.
 - [ ] **Step 2: Extract** the post-flag body of `run()` into `defineOnce(ctx, d, opt, word, stdout, stderr) int`, where `opt` carries `raw`, `color`, `noAudio`, `times`, `locale`.
 - [ ] **Step 3: Re-run the suite** — still green, no test changes. If a test needed changing, the extraction was not behaviour-preserving.
+
+  This norm applies to **Task 1 only**. Task 5 deliberately changes behaviour and
+  must therefore change a test: `TestRunNoArgsIsUsageError` (`main_test.go:87`)
+  asserts that no-args exits 2, which is exactly what this issue removes. It gets
+  **rewritten, not deleted** — into `TestRunNoArgsEntersTheLoop` — so the no-args
+  branch keeps a test at all times and the diff shows the contract moving rather
+  than a test quietly disappearing.
 - [ ] **Step 4: Commit** — `#2: extract defineOnce from run`
 
 ### Task 2: `parseREPLLine`
@@ -136,7 +156,14 @@ shipped, not a new-feature detail.
     loop returns on cancellation). It must share nothing mutable with the loop —
     the current word lives in the loop only. Run the package under `-race`.
 - [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `bufio.Scanner` in a goroutine feeding a channel; `select` on that channel and `ctx.Done()` so Ctrl-C is not blocked behind a pending read. One `os.MkdirTemp` for the session, removed by `defer`.
+- [ ] **Step 3: Implement.** `bufio.Scanner` in a goroutine feeding a channel; `select` on that channel and `ctx.Done()` so Ctrl-C is not blocked behind a pending read.
+
+  **No session temp dir** — `speak` keeps creating and removing its own per call
+  (Chunk 1). Raise the scanner's limit with `scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)`
+  rather than trying to recover from `ErrTooLong`: once the scanner returns that
+  error every later `Scan()` returns false, so "report it and continue" would
+  either spin or quit anyway. A line past 1 MB ends the loop with a diagnostic —
+  the honest outcome, since the reader cannot be resumed.
 - [ ] **Step 4: Run, expect PASS**
 - [ ] **Step 5: Commit** — `#2: REPL loop`
 

@@ -86,6 +86,57 @@ rounds:
             `define -times 1` with no word also has NArg() == 0.
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-20T12:50:56-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: not-addressed
+          note: Spec contradiction fully fixed; the demanded decision on TestRunNoArgsIsUsageError (main_test.go:87) is still absent, and Task 1 Step 3's "a test that needs editing is the signal" norm now points the wrong way for Task 5.
+          round: 2
+        - id: PQ-2
+          disposition: not-addressed
+          note: TTY seam named well (stdinIsTerminal on deps); run()'s signature change is still unstated — it needs both a stdin io.Reader and a ctx, since run manufactures context.Background() at main.go:87.
+          round: 2
+        - id: PQ-3
+          disposition: not-addressed
+          note: Chunk 1 line 80 now says repl owns no temp dir, but Task 4 Step 3 (line 139) still instructs "One os.MkdirTemp for the session" — the plan contradicts itself.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: Dedicated Cancellation contract section; states exit 0 and that the shipped one-shot path changes intentionally. The stderr line Ctrl-C now emits is left to the manual check.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: Decorator applied inside repl, not realDeps, so test and production wiring are the same line.
+          round: 2
+        - id: PQ-6
+          disposition: addressed
+          note: Non-goals section rules out readline/history/completion/multi-line/pager; x/term is now justified as the stdin TTY probe.
+          round: 2
+        - id: PQ-7
+          disposition: addressed
+          note: ErrTooLong and the outliving goroutine named as adversarial classes; -race promoted into Done-when and Risks.
+          round: 2
+        - id: PQ-8
+          disposition: not-addressed
+          note: Task 4's list was compressed to design decisions, but Task 2 (five cases) and Task 3 (three cases) still enumerate in prose. Minor — does not block.
+          round: 2
+        - id: PQ-9
+          disposition: addressed
+          note: Flags-inside-the-loop section plus the prompt glyph routed to stdout only when interactive.
+          round: 2
+      findings:
+        - id: PQ-10
+          severity: Minor
+          title: The ErrTooLong guard as written cannot "report it and continue"
+          detail: |-
+            Once bufio.Scanner returns ErrTooLong, every subsequent Scan() returns false, so
+            Task 4 Step 1's "check scanner.Err() separately, report it, and continue" either
+            spins or exits the loop anyway. The mechanical guard is scanner.Buffer(buf, max)
+            to raise the cap, or recreating the reader after the error.
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#2 (plan-quality)
@@ -140,14 +191,32 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   nothing says whether -times, -locale, -no-audio and -raw apply inside the loop -
   `define -times 1` with no word also has NArg() == 0.
 
+## Round 2 — 2026-08-20T12:50:56-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — not-addressed — Spec contradiction fully fixed; the demanded decision on TestRunNoArgsIsUsageError (main_test.go:87) is still absent, and Task 1 Step 3's "a test that needs editing is the signal" norm now points the wrong way for Task 5.
+- PQ-2 — not-addressed — TTY seam named well (stdinIsTerminal on deps); run()'s signature change is still unstated — it needs both a stdin io.Reader and a ctx, since run manufactures context.Background() at main.go:87.
+- PQ-3 — not-addressed — Chunk 1 line 80 now says repl owns no temp dir, but Task 4 Step 3 (line 139) still instructs "One os.MkdirTemp for the session" — the plan contradicts itself.
+- PQ-4 — addressed — Dedicated Cancellation contract section; states exit 0 and that the shipped one-shot path changes intentionally. The stderr line Ctrl-C now emits is left to the manual check.
+- PQ-5 — addressed — Decorator applied inside repl, not realDeps, so test and production wiring are the same line.
+- PQ-6 — addressed — Non-goals section rules out readline/history/completion/multi-line/pager; x/term is now justified as the stdin TTY probe.
+- PQ-7 — addressed — ErrTooLong and the outliving goroutine named as adversarial classes; -race promoted into Done-when and Risks.
+- PQ-8 — not-addressed — Task 4's list was compressed to design decisions, but Task 2 (five cases) and Task 3 (three cases) still enumerate in prose. Minor — does not block.
+- PQ-9 — addressed — Flags-inside-the-loop section plus the prompt glyph routed to stdout only when interactive.
+
+### Raised
+
+- **PQ-10** [Minor] The ErrTooLong guard as written cannot "report it and continue"
+  Once bufio.Scanner returns ErrTooLong, every subsequent Scan() returns false, so
+  Task 4 Step 1's "check scanner.Err() separately, report it, and continue" either
+  spins or exits the loop anyway. The mechanical guard is scanner.Buffer(buf, max)
+  to raise the cap, or recreating the reader after the error.
+
 ## Open findings
 
 - **PQ-1** [Critical] Plan and Done-when claim `echo word | define` works today; it exits 2 with usage
 - **PQ-2** [Important] No injectable TTY seam, so Task 5's "TTY-ish stdin" test is unwritable
 - **PQ-3** [Important] Session temp dir contradicts the verbatim extraction of speak
-- **PQ-4** [Important] Cancellation contract unstated, and NotifyContext changes the shipped one-shot path
-- **PQ-5** [Important] cachingAudioSource wired only in realDeps, so no test covers the production wiring
-- **PQ-6** [Important] No stated non-goals for a REPL, where scope creep is line editing
-- **PQ-7** [Important] Reader-goroutine strategy names no adversarial input class or mechanical guard
 - **PQ-8** [Minor] Task 2, 3 and 4 Step 1 enumerate test cases in prose
-- **PQ-9** [Minor] Prompt rendering and flag behaviour inside the loop are unspecified
+- **PQ-10** [Minor] The ErrTooLong guard as written cannot "report it and continue"
