@@ -66,6 +66,19 @@ testable only through a pty should be rejected at plan review.
 - Grey suggestion text degrades on terminals without colour, and must never be
   submitted when the user presses return without accepting it.
 
+### Inherits a cooked-mode workaround
+
+`#2` ended up doing cursor arithmetic in **cooked mode** to place the "♫ playing
+N×" indicator over the prompt: the terminal echoes Enter onto a new line, so the
+loop steps back over that echo and over the prompt before drawing, then erases
+and redraws. It works and is tested, but it is arithmetic against a terminal that
+has already moved the cursor.
+
+In raw mode this disappears: nothing is echoed, so the frame is simply rendered
+with the indicator where the prompt would be. **Expect to delete
+`eraseLineAndStepBack` and the `skipPrompt` bookkeeping here** rather than port
+them — if this issue keeps them, the render model is wrong.
+
 ### Still out of scope
 
 Multi-line editing, kill-ring, incremental reverse search (Ctrl-R), vi mode.
