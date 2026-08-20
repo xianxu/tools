@@ -22,14 +22,42 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 
 | binary | what it does |
 |---|---|
-| `define` | Print a word's NOAD definition with Google-style IPA, and play its pronunciation. |
+| `define` | Print a word's dictionary definition with Google-style IPA, and play its pronunciation. |
+
+### define
+
+```sh
+define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
+define -times 1 record      # play once instead of three times
+define -no-audio bank       # no fetch, no sound
+define -locale gb colour    # British pronunciation
+define -raw record          # the unparsed dictionary entry
+define -no-color bank       # never emit ANSI (also automatic when piped)
+```
+
+Exit codes: `0` success, `1` no dictionary entry, `2` usage error.
+
+Lookup goes through macOS's CoreServices, which searches **every active
+dictionary** rather than NOAD specifically — the SDK offers no way to pick one.
+NOAD answers for ordinary English words (hence the Google-matching notation), but
+`iPhone` comes from Apple Dictionary, and enabling the Chinese dictionaries will
+return entries this tool does not format. Adjust the set in Dictionary.app.
 
 ## Build
 
 ```sh
-make build        # compile every cmd/ into bin/
-make install      # build + link into $PATH
-go test ./...     # unit tests
+make build     # compile every cmd/ into bin/ (target inherited from ariadne)
+go test ./...  # unit tests, including the fuzz corpus
+```
+
+```sh
+make install   # symlink bin/* into ~/.local/bin (already on PATH)
+```
+
+Live conformance checks sit behind a build tag and must run unsandboxed:
+
+```sh
+go test -tags conformance ./...
 ```
 
 ## Platform

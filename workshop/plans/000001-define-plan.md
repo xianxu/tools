@@ -10,6 +10,31 @@
 
 **Milestones:** M1 (definition pipeline) and M2 (pronunciation) are separate review boundaries — M1 delivers a useful `define` on its own, and the parser deserves fresh eyes before audio work lands on top of it.
 
+**Testing note:** tests state a *strategy*, not a transcript. Each risky function gets one obligation line; the test body is written at the keyboard. The two things reproduced verbatim below are the ones that were expensive to learn: the cgo body (with its do-not-redeclare trap) and the header/pipe tables, which are specification rather than test data.
+
+---
+
+## Non-goals
+
+These are limitations of the source, not deferred work. They are stated because
+the issue's goal is "reproduce Google's dictionary panel," and NOAD-via-CoreServices
+does not reach all of it:
+
+- **Only one homograph is reachable.** `DCSCopyTextDefinition("bank")` returns
+  `bank 1 | baNGk | noun 1 the land alongside…` and ends at `ORIGIN`. The
+  financial-institution sense (`bank 2`) is simply not in the response —
+  verified, zero occurrences. `define bank` will therefore show the riverbank
+  and nothing else, where Google's panel shows both. **Mitigation:** render the
+  homograph number, so the output says `bank 1` and the truncation is visible
+  rather than silent.
+- **The no-data-loss invariant guarantees fidelity, not completeness.** It
+  asserts that nothing NOAD returned is dropped on the way to the screen. It
+  says nothing about what NOAD declined to return. These are different claims
+  and the tests must not be read as making the stronger one.
+- **No second dictionary source.** NOAD-only was decided with the operator.
+  Words absent from NOAD (`rizz`, `unalive`) exit non-zero. Their audio is
+  missing too — the gaps correlate, since both trace back to Oxford.
+
 ---
 
 ## Chunk 1: Core concepts
@@ -20,44 +45,119 @@ Everything lives in `cmd/define/` as `package main`. Per `AGENTS.local.md`, `int
 
 > When a second tool needs NOAD, promote `dict_darwin.go` + `dict_stub.go` to `internal/noad/` — that is the natural extraction point, and the `Dictionary` interface is already the seam.
 
-`make build` is inherited from ariadne's `Makefile.workflow`: it walks `cmd/*/`, builds each `main.go` into `bin/<name>`, and needs no new target (ARCH-DRY — do not write a build rule).
+`make build` is inherited from ariadne's `Makefile.workflow:735-757`: it walks `cmd/*/`, builds each `main.go` into `bin/<name>`, and needs no new target (ARCH-DRY — do not write a build rule).
+
+### The two parsing rules that are actually hard
+
+Both were derived by calling the real API, and both are the specification the
+parser is written against.
+
+**Rule A — the header.** Tokens before the first IPA span, after `Headword`:
+
+| Case | Raw head | `Headword` | `Syllables` | `Homograph` | Glued POS |
+|---|---|---|---|---|---|
+| simple | `sycophantic syc·o·phan·tic` | `sycophantic` | `syc·o·phan·tic` | — | — |
+| homograph, monosyllable | `bank 1` | `bank` | — | `1` | — |
+| POS glued to syllabification | `record rec·ordnoun` | `record` | `rec·ord` | — | `noun` |
+
+Token rules, applied in order: digits-only → `Homograph`; equal to `Headword`
+after stripping `·` → `Syllables`; *starts with* `Headword` after stripping `·`
+→ `Syllables` plus a glued POS suffix; anything else → `HeadOther` (kept, never
+dropped). A digit only counts as a homograph **immediately after the headword** —
+in `use verb 1 [with object]` the `1` is sense 1's number, not a homograph.
+
+**The glued POS is not decoration — it is the first block's POS.** `record`'s
+body begins `1 a thing constituting…` with no POS token of its own, because the
+head consumed it. A parser that drops it yields a first `Block` with an empty
+`POS`. So: glued POS + head IPA together open block 0.
+
+**Rule B — `|` is overloaded.** In `record` the same delimiter does two jobs:
+
+```
+record rec·ordnoun | ˈrekərd | 1 a thing … : you should keep a written record
+  | identification was made through dental records | a record of meter readings.
+  … verb [with object] | rəˈkôrd | 1 set down …
+```
+
+`| ˈrekərd |` and `| rəˈkôrd |` delimit pronunciations; the middle pipes
+separate examples. Discriminating on "contains no ASCII letters" does **not**
+work — `ˈrekərd` and `baNGk` are mostly ASCII letters. The rule that does:
+
+> A `|…|` span is a **pronunciation** iff, for every comma-separated part:
+> either the part is a single token, **or** it is a short multi-word run
+> (≤ `maxPronunciationWords`) in which at least one word carries a NOAD stress
+> mark (`ˈ`/`ˌ`). A span containing `[ ] : ; .` is never a pronunciation.
+
+Verified against every pipe span in `sycophantic, record, bank, ephemeral, run, set`
+and re-measured over the live dictionary:
+
+| span | verdict |
+|---|---|
+| `ˈrekərd`, `baNGk`, `rən`, `set`, `əˈfem(ə)rəl`, `ˌsikəˈfan(t)ik` | pronunciation (single token) |
+| `ˌsikəˈfan(t)ək(ə)lē, -ˈfantik(ə)lē` (comma-separated variants) | pronunciation |
+| `ˈhät ˌdäɡ`, `ˌā prīˈôrī`, `ət ˈprez(ə)nt`, `BrE ˌeɪɡrəˈmatɪk(ə)l` | pronunciation (stress-marked) |
+| `identification was made through dental records` | example |
+| `[as modifier] : record profits` | example |
+| `she ran the last few yards, breathing heavily` | example |
+
+**The single-token-only rule was wrong and shipped a Critical.** It rejected
+every multi-word headword's pronunciation, and because `findPronunciation` then
+walked on to the next candidate span, `define "hot dog"` displayed
+`/ˈhätˌdäɡər/` — *hot dogger* — with the whole entry crushed into the head line.
+At least one stress mark, not one per word: `ət ˈprez(ə)nt` has unstressed
+particles. Prose carries no stress marks at all, which is what makes the rule safe.
+
+The search is also **bounded** by `headLimit` — the first trailing section or
+sentence-ending block opener — so an entry with no pronunciation of its own
+(`concrete`) degrades to a missing IPA instead of adopting a derivative's.
 
 ### Pure entities (the conceptual core)
 
 | Name | Lives in | Status |
 |------|----------|--------|
 | `Entry` | `cmd/define/parse.go` | new |
+| `HeadTok` | `cmd/define/parse.go` | new |
+| `HeadKind` | `cmd/define/parse.go` | new |
 | `Block` | `cmd/define/parse.go` | new |
 | `Sense` | `cmd/define/parse.go` | new |
+| `Example` | `cmd/define/parse.go` | new |
 | `Section` | `cmd/define/parse.go` | new |
 | `ParseEntry` | `cmd/define/parse.go` | new |
+| `opensBlock` | `cmd/define/parse.go` | new |
+| `rewritePronunciations` | `cmd/define/parse.go` | new |
+| `isPronunciation` | `cmd/define/parse.go` | new |
 | `Render` | `cmd/define/render.go` | new |
 | `AudioCandidates` | `cmd/define/audiourl.go` | new |
 
-- **Entry** — one parsed NOAD headword: `Headword`, `Syllables`, `Homograph`, `IPA`, `HeadExtra []string`, `Blocks []Block`, `Sections []Section`, and `Raw string` (the untouched input, retained so the invariant test and `--raw` can both reach it).
-  - **Relationships:** 1:N with `Block`; 1:N with `Section`. `Entry` owns both.
-  - **DRY rationale:** First occurrence of a pattern likely to recur — a second dictionary source would produce the same shape, so `Render` never learns where an entry came from.
-  - **Future extensions:** A `Source` field when a non-NOAD provider is added (explicitly out of scope, see issue).
+- **Entry** — one parsed NOAD headword: **`Head []HeadTok`** (source-ordered), `IPA`, `Blocks []Block`, `Sections []Section`, `Raw string` (untouched input, retained so the invariant test and `--raw` both reach it). `Headword()`, `Syllables()`, `Homograph()` and `HeadPOS()` are **accessors derived from `Head`**, not stored fields.
+  - **Why ordered tokens, not named fields:** NOAD has no fixed head field order — `present 1 pres·ent` (homograph first), `record rec·ordnoun` (POS welded on), `read verb (past and past participle read | red |)` (a whole parenthetical, carrying a pronunciation that is *not* the entry's). A renderer emitting named fields in a guessed order reorders every entry that disagrees with the guess. One ordered representation cannot drift from its own render order (ARCH-DRY).
 
-- **Block** — one part-of-speech run: `POS string`, `Senses []Sense`.
+- **HeadTok / HeadKind** — one head token plus its classification (`HeadWord`, `HeadHomograph`, `HeadSyllables`, `HeadPOS`, `HeadOther`). `HeadOther` is the "kept, never dropped" bucket.
+  - **Relationships:** 1:N with `Block`; 1:N with `Section`. `Entry` owns both.
+  - **DRY rationale:** First occurrence of a pattern likely to recur — a second source would produce the same shape, so `Render` never learns where an entry came from.
+
+- **Block** — one part-of-speech run: `POS string`, **`IPA string`**, `Senses []Sense`.
+  - **The per-block `IPA` is required, not speculative.** `record`'s verb block carries `| rəˈkôrd |`, distinct from the head's `| ˈrekərd |`.
+  - **Contract (revised after M1 review finding I4):** a block pronunciation is stored **unconditionally** when present and rendered whenever non-empty — including when it equals `Entry.IPA`. The original plan said the opposite ("empty means same as `Entry.IPA`, printed only when it differs"); that made `Render` suppress a span the parser had already consumed, which silently dropped input. **M2 must not expect fallback semantics** — there is no fallback.
+  - `Block` also carries `FromHead bool` (its POS came from the head, so `Render` must not print it twice) and `Label string` (a grammar label between the POS and its pronunciation, `verb [with object] | rəˈkôrd |`, held separately so it renders in NOAD's order).
   - **Relationships:** N:1 with `Entry`; 1:N with `Sense`.
 
-- **Sense** — one numbered sense or `•` sub-sense: `Number string`, `Sub bool`, `Gloss string`, `Examples []string`.
-  - **Relationships:** N:1 with `Block`.
+- **Sense** — a numbered sense or `•` sub-sense: `Number string`, `Sub bool`, `Gloss string`, `Examples []Example`.
+
+- **Example** — one usage example plus any grammar label introducing it: `Label string`, `Text string`. NOAD writes `4 the cushion of a pool table: [as modifier] : a bank shot`, where `[as modifier]` qualifies the example rather than being part of it; splitting only on the first `:` left the label and a stray colon inside the quotes on 13.8% of entries. Mirrors `Block.Label` one level down.
 
 - **Section** — a trailing all-caps block: `Name` (`DERIVATIVES`, `ORIGIN`, `PHRASES`, `PHRASAL VERBS`, `USAGE`), `Text`.
 
-- **ParseEntry(raw string) Entry** — the whole parser. Pure: string in, struct out, no IO.
-  - **DRY rationale:** The single place that knows NOAD's flat-text conventions. Nothing else in the tool may inspect `Raw`.
-  - **Future extensions:** Splitting a multi-headword response (`DCSCopyTextDefinition` returns one entry today; verified across the fixture corpus).
+- **ParseEntry(raw string) Entry** — the whole parser: Rule A, then split trailing sections, then split blocks on POS tokens, then senses. Pure: string in, struct out.
+  - **DRY rationale:** The single place that knows NOAD's conventions. Nothing else may inspect `Raw`.
 
-- **Render(e Entry, opt RenderOpts) string** — `Entry` + `RenderOpts{Color bool, Indent int}` → the printed block. Pure; no `os.Stdout`, no TTY probing (the caller decides `Color`).
-  - **Relationships:** consumes `Entry`; produces a string the thin shell prints.
+- **isPronunciation(inner string) bool** — Rule B, factored out because both the header split and the body scan need it. Its table above *is* its test corpus.
+
+- **Render(e Entry, opt RenderOpts) string** — `Entry` + `RenderOpts{Color bool}` → printed block. Pure; no `os.Stdout`, no TTY probing (caller decides `Color`). Renders `Homograph` (see Non-goals).
   - **Future extensions:** `RenderOpts.Width` for wrapping; a JSON renderer for `--json`.
 
-- **AudioCandidates(word, locale string) []string** — ordered CDN URL candidates. Pure and offline: no request is made here.
-  - **DRY rationale:** The path survey (see issue `## Log`) proved one URL is not enough — `defenestrate` 404s on the legacy `_1` path, `gaslighting` exists only on the 2022 path. Encoding that order once keeps the fallback policy out of the fetch loop.
-  - **Future extensions:** More locales; a newer CDN generation prepends to the list.
+- **AudioCandidates(word, locale string) []string** — ordered CDN URL candidates. Pure and offline.
+  - **DRY rationale:** The survey (issue `## Log`) proved one URL is not enough — `defenestrate` 404s on the legacy `_1` path, `gaslighting` exists only on the 2022 path. Encoding that order once keeps fallback policy out of the fetch loop.
 
 ### Integration points (where pure meets the world)
 
@@ -66,28 +166,27 @@ Everything lives in `cmd/define/` as `package main`. Per `AGENTS.local.md`, `int
 | `Dictionary` | `cmd/define/dict.go` | new | interface (seam) |
 | `noadDictionary` | `cmd/define/dict_darwin.go` | new | CoreServices `DCSCopyTextDefinition` |
 | `unsupportedDictionary` | `cmd/define/dict_stub.go` | new | non-darwin stub |
-| `fakeDictionary` | `cmd/define/dict_fake.go` | new | fixture corpus in `testdata/entries/` |
+| `fakeDictionary` | `cmd/define/dict_fake_test.go` | new | fixture corpus in `testdata/entries/` |
 | `AudioSource` | `cmd/define/fetch.go` | new | interface (seam) |
 | `httpAudioSource` | `cmd/define/fetch.go` | new | gstatic CDN over `net/http` |
-| `fakeCDN` | `cmd/define/fetch_fake.go` | new | stateful `httptest` CDN |
+| `fakeCDN` | `cmd/define/fetch_fake_test.go` | new | stateful `httptest` CDN |
 | `Player` | `cmd/define/player.go` | new | interface (seam) |
 | `afplayPlayer` | `cmd/define/player.go` | new | `afplay(1)` |
-| `fakePlayer` | `cmd/define/player_fake.go` | new | stateful play recorder |
+| `fakePlayer` | `cmd/define/player_fake_test.go` | new | stateful play recorder |
 
 - **Dictionary** — `Lookup(word string) (string, error)`, returning raw NOAD text or `ErrNoEntry`.
-  - **Injected into:** `run()` (the thin shell), never into `ParseEntry`. The parser only ever sees a string, which is what keeps its tests IO-free.
-  - **Fake state model:** `fakeDictionary` is a `map[string]string` loaded from `testdata/entries/*.txt` — real captured output, not hand-written approximations. Unknown word → `ErrNoEntry`, exactly as the real one behaves for `rizz`.
-  - **Live conformance:** `dict_conformance_test.go`, `//go:build darwin && conformance`, asserts the real `DCSCopyTextDefinition` still returns byte-identical text for every fixture. Run on demand (`go test -tags conformance ./...`); it is the drift detector for a macOS upgrade shipping a new NOAD.
+  - **Injected into:** `run()` (the thin shell), never into `ParseEntry` — which is what keeps the parser's tests IO-free.
+  - **Fake state model:** `map[string]string` loaded from `testdata/entries/*.txt` — real captured output, not hand-written approximations. Unknown word → `ErrNoEntry`, exactly as the real one behaves for `rizz`. **Keys are lower-cased at load**, matching the real dependency's case-insensitivity; keying by the raw filename stem made `iPhone`/`iPad`/`MacBook`/`Amazon` unreachable through `Lookup` while present on disk. Every fixture must be reachable *through the seam* — asserted, because a conformance check that reads `entries` directly cannot see the fake diverging at the boundary it exists to validate.
 
 - **AudioSource** — `Fetch(ctx, urls []string) (data []byte, from string, err error)`; walks candidates in order, returns the first 200.
   - **Injected into:** `run()`. `AudioCandidates` stays pure and offline so its ordering is unit-tested without a server.
-  - **Fake state model:** `fakeCDN` is an `httptest.Server` plus a `map[string]bool` of which paths exist and a `[]string` recording **every path requested, in order**. That ordering record is the point: it proves the fallback walks candidates in the surveyed order and stops at the first hit, which a function-call mock would not catch.
-  - **Live conformance:** `fetch_conformance_test.go`, `//go:build conformance`, asserts the real CDN still returns 200 for `sycophantic` and that `gaslighting` is still 2022-path-only — the two facts the candidate ordering rests on.
+  - **Fake state model:** `httptest.Server` + a `map[string]bool` of existing paths + a mutex-guarded `[]string` recording **every path requested, in order**. That ordering record is the point — it proves the walk stops at the first hit, which a function-call mock cannot show.
 
-- **Player** — `Play(ctx context.Context, path string) error`.
-  - **Injected into:** `run()`. The repeat loop lives in the shell, so `fakePlayer` can assert the count.
-  - **Fake state model:** `fakePlayer` records `[]string` of played paths (stateful across calls) and can be armed to fail on the Nth call, so partial-playback handling is testable.
-  - **Live conformance:** covered by the `afplay` presence check in `Play`; a missing `afplay` is a warning, not a crash.
+- **Player** — `Play(ctx, path string) error`.
+  - **Injected into:** `run()`. The repeat loop lives in the shell so the fake can count.
+  - **Fake state model:** records played paths across calls, and can be armed with `FailOn: N` so partial-playback handling is testable.
+
+**Conformance cadence.** Both conformance checks (`//go:build conformance`) are deliberately **on-demand, not CI-scheduled** — they depend on the host's macOS dictionary assets and on reaching Google's CDN, neither of which belongs in `merge-check.yml` (it would make a green build depend on network weather and on a runner that has NOAD installed). The cadence is: run after a macOS upgrade, and whenever an audio or parse bug is reported. `testdata/capture.sh` re-captures the corpus in the same breath. Documented in `atlas/define.md` so the trigger is discoverable rather than folklore.
 
 ---
 
@@ -96,59 +195,29 @@ Everything lives in `cmd/define/` as `package main`. Per `AGENTS.local.md`, `int
 ### Task 1: Capture the fixture corpus
 
 **Files:**
-- Create: `cmd/define/testdata/capture.sh`
+- Create: `cmd/define/testdata/capture.py`, `cmd/define/testdata/capture.sh`
 - Create: `cmd/define/testdata/entries/*.txt`
 
-The corpus must include the structurally awkward entries, not just easy ones. Fixtures are committed (a captured trace is worthless if it cannot be reproduced or re-read).
+The corpus must include the structurally awkward entries. Fixtures are committed — a captured trace nobody can reproduce or re-read is worthless.
 
-- [ ] **Step 1: Write the capture script**
+**The capture must not depend on the binary.** `capture.py` calls CoreServices directly through `ctypes`, so there is no Task 1 ⇄ Task 6 ordering knot: the corpus exists before any Go code does, which is what lets Task 2 onward be TDD at all.
 
-```bash
-#!/usr/bin/env bash
-# Capture real NOAD output for the parser fixture corpus.
-# Re-run after a macOS upgrade; dict_conformance_test.go detects the drift.
-# NOTE: must run OUTSIDE a sandbox — DCSCopyTextDefinition needs real access
-# to /System/Library/AssetsV2 and silently returns nothing without it.
-set -euo pipefail
-cd "$(dirname "$0")"
-mkdir -p entries
-words=(sycophantic quokka ephemeral defenestrate bank record run gaslighting set)
-for w in "${words[@]}"; do
-    go run ../ --raw "$w" > "entries/$w.txt" || echo "no entry: $w" >&2
-done
-wc -c entries/*.txt
-```
+- [x] **Step 1: Write `capture.py`** — `ctypes` → `CoreFoundation` + `CoreServices`, calling `DCSCopyTextDefinition(NULL, word, {0, len})`, printing the returned text. (This is the same call the cgo path makes in Task 3; the duplication is deliberate and one-directional — the capture tool must not depend on the artifact it captures for.)
+- [x] **Step 2: Write `capture.sh` so a bad capture fails loudly**
 
-- [ ] **Step 2: Ship `--raw` first (it is what the script needs)** — implement in Task 5; until then capture with the verified spike, whose exact cgo body is reproduced in Task 3.
-- [ ] **Step 3: Run it, confirm `bank.txt` starts `bank 1 | baNGk |` and `record.txt` contains `rec·ordnoun`** — these are the two cases the parser is designed against.
-- [ ] **Step 4: Commit** — `git add cmd/define/testdata && git commit -m "#1 M1: capture NOAD fixture corpus"`
+The script lives at `cmd/define/testdata/capture.sh` — **read it there**, it is
+not reproduced here (the copy that used to be inline drifted to a stale 9-word
+list). It captures to a `.tmp`, enforces a minimum byte count, and `exit 1`s on a
+short read, because `DCSCopyTextDefinition` returns *silence, not an error*, when
+sandboxed — and a directory of zero-byte fixtures makes the whole invariant suite
+vacuously green.
+
+- [x] **Step 3: Run it outside the sandbox.** Confirm `bank.txt` starts `bank 1 | baNGk |` and `record.txt` contains `rec·ordnoun` — the two cases the parser is designed against. Confirm no file is 0 bytes.
+- [x] **Step 4: Commit** — `#1 M1: capture NOAD fixture corpus`
 
 ### Task 2: The `Dictionary` seam and its fake
 
-**Files:**
-- Create: `cmd/define/dict.go`, `cmd/define/dict_fake.go`
-- Test: `cmd/define/dict_fake_test.go`
-
-- [ ] **Step 1: Write the failing test**
-
-```go
-func TestFakeDictionaryLoadsFixtures(t *testing.T) {
-	d := newFakeDictionary(t)
-	got, err := d.Lookup("sycophantic")
-	if err != nil {
-		t.Fatalf("Lookup: %v", err)
-	}
-	if !strings.Contains(got, "ˌsikəˈfan(t)ik") {
-		t.Errorf("fixture missing IPA, got %q", got)
-	}
-	if _, err := d.Lookup("rizz"); !errors.Is(err, ErrNoEntry) {
-		t.Errorf("want ErrNoEntry for rizz, got %v", err)
-	}
-}
-```
-
-- [ ] **Step 2: Run it, expect a compile failure** — `go test ./cmd/define/ -run FakeDictionary`
-- [ ] **Step 3: Implement**
+**Files:** create `cmd/define/dict.go`; test `cmd/define/dict_fake_test.go` (the fake lives in a `_test.go` file so it never links into the shipped binary)
 
 ```go
 // dict.go
@@ -162,20 +231,19 @@ type Dictionary interface {
 }
 ```
 
-`dict_fake.go` reads `testdata/entries/*.txt` into a map, keyed by filename stem.
-
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#1 M1: Dictionary seam + fixture-backed fake`
+- [x] **Step 1: Write the failing test.** Obligation: `fakeDictionary` loads every `testdata/entries/*.txt` keyed by filename stem, returns the real IPA for a known word, and returns `ErrNoEntry` for an absent one. **Assert the corpus is non-empty** — a fake that silently loads zero fixtures would make every later test vacuous.
+- [x] **Step 2: Run, expect a compile failure**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#1 M1: Dictionary seam + fixture-backed fake`
 
 ### Task 3: The darwin implementation and the non-darwin stub
 
-**Files:**
-- Create: `cmd/define/dict_darwin.go`, `cmd/define/dict_stub.go`
-- Test: `cmd/define/dict_conformance_test.go`
+**Files:** create `cmd/define/dict_darwin.go`, `cmd/define/dict_stub.go`; test `cmd/define/dict_conformance_test.go`
 
-The cgo body below is **verified working** — do not redeclare `DCSCopyTextDefinition`; the SDK header already declares it and a duplicate `extern` is a compile error.
+The cgo body below is **verified working**. Do not redeclare `DCSCopyTextDefinition` — the SDK header already declares it and a duplicate `extern` is a compile error (that failure is how the header was confirmed public).
 
-- [ ] **Step 1: Write `dict_darwin.go`**
+- [x] **Step 1: Write `dict_darwin.go`**
 
 ```go
 //go:build darwin
@@ -224,138 +292,58 @@ func (noadDictionary) Lookup(word string) (string, error) {
 func systemDictionary() Dictionary { return noadDictionary{} }
 ```
 
-- [ ] **Step 2: Write `dict_stub.go`** — `//go:build !darwin`, a `systemDictionary()` returning a `Dictionary` whose `Lookup` reports `"the system dictionary is only available on macOS (GOOS=%s)"`.
-- [ ] **Step 3: Verify both build paths**
+- [x] **Step 2: Write `dict_stub.go`** — `//go:build !darwin`; `systemDictionary()` returns a `Dictionary` whose `Lookup` reports `"the system dictionary is only available on macOS (GOOS=%s)"`.
+- [x] **Step 3: Verify both build paths**
 
 ```sh
 go build ./... && go vet ./...
 GOOS=linux CGO_ENABLED=0 go build ./...   # must stay green — the stub carries it
 ```
 
-- [ ] **Step 4: Write the conformance test** (`//go:build darwin && conformance`) asserting live output is byte-identical to every fixture.
-- [ ] **Step 5: Run `go test -tags conformance ./cmd/define/` outside the sandbox, expect PASS**
-- [ ] **Step 6: Commit** — `#1 M1: NOAD lookup via CoreServices + non-darwin stub`
+- [x] **Step 4: Write the conformance test** (`//go:build darwin && conformance`): live output is byte-identical to every fixture.
+- [x] **Step 5: Run `go test -tags conformance ./cmd/define/` outside the sandbox, expect PASS**
+- [x] **Step 6: Commit** — `#1 M1: NOAD lookup via CoreServices + non-darwin stub`
 
-### Task 4: `ParseEntry` — TDD, hardest cases first
+### Task 4: `ParseEntry`
 
-**Files:**
-- Create: `cmd/define/parse.go`
-- Test: `cmd/define/parse_test.go`
+**Files:** create `cmd/define/parse.go`; test `cmd/define/parse_test.go`
 
-Parsing order: (1) split the header on the first `|…|` pair; (2) tokenize the head; (3) split trailing all-caps sections off the body; (4) split the remaining body into POS blocks; (5) split each block into senses.
-
-Head tokenizing rules, derived from the corpus:
-- token 0 → `Headword`
-- a token of only digits → `Homograph` (`bank 1`)
-- a token equal to `Headword` after removing `·` → `Syllables`
-- a token that *starts with* `Headword` after removing `·` → `Syllables` + a glued leading POS (`rec·ordnoun` → `rec·ord` + `noun`)
-- anything else → appended to `HeadExtra`, never dropped
-
-- [ ] **Step 1: Write the failing tests — the awkward cases are the spec**
-
-```go
-func TestParseHeader(t *testing.T) {
-	tests := []struct{ name, raw, word, syl, homo, ipa, leadPOS string }{
-		{"simple", "sycophantic syc·o·phan·tic | ˌsikəˈfan(t)ik | adjective x",
-			"sycophantic", "syc·o·phan·tic", "", "ˌsikəˈfan(t)ik", ""},
-		{"homograph, no syllabification", "bank 1 | baNGk | noun 1 the land x",
-			"bank", "", "1", "baNGk", ""},
-		{"POS glued to syllabification", "record rec·ordnoun | ˈrekərd | 1 a thing x",
-			"record", "rec·ord", "", "ˈrekərd", "noun"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			e := ParseEntry(tc.raw)
-			if e.Headword != tc.word || e.Syllables != tc.syl ||
-				e.Homograph != tc.homo || e.IPA != tc.ipa {
-				t.Errorf("got %+v", e)
-			}
-		})
-	}
-}
-
-func TestParseSensesAndSections(t *testing.T) {
-	e := ParseEntry(mustFixture(t, "ephemeral"))
-	if len(e.Blocks) != 2 { // adjective, noun
-		t.Fatalf("want 2 blocks, got %d", len(e.Blocks))
-	}
-	if e.Blocks[0].POS != "adjective" {
-		t.Errorf("POS = %q", e.Blocks[0].POS)
-	}
-	if got := e.Blocks[0].Senses[0].Examples; len(got) != 1 || got[0] != "fashions are ephemeral" {
-		t.Errorf("examples = %q", got)
-	}
-	if names := sectionNames(e); !slices.Equal(names, []string{"DERIVATIVES", "ORIGIN"}) {
-		t.Errorf("sections = %v", names)
-	}
-}
-```
-
-- [ ] **Step 2: Run, expect FAIL (undefined: ParseEntry)**
-- [ ] **Step 3: Implement `ParseEntry` per the rules above.** Constants: `posWords` (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, exclamation, determiner, abbreviation, prefix, suffix, symbol, contraction, plural noun) and `sectionWords` (DERIVATIVES, ORIGIN, PHRASES, PHRASAL VERBS, USAGE). Match on whole tokens only. Always set `Raw`.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#1 M1: parse NOAD flat text into Entry`
+- [x] **Step 1: Write the failing tests.** Obligations, hardest first:
+  - `isPronunciation` reproduces the Rule B verdict table exactly — that table is the test corpus, table-driven.
+  - Rule A's three header cases produce the fields in the Rule A table.
+  - `record` parses to **two blocks**, and `Blocks[0].POS == "noun"` (from the glued suffix) while `Blocks[1].IPA == "rəˈkôrd"` — the finding that reshaped `Block`.
+  - `record`'s sense 1 examples split into three on the interior pipes, and none of them is `[as modifier] : record profits` mis-read as a pronunciation.
+  - `ephemeral` yields blocks `[adjective, noun]` and sections `[DERIVATIVES, ORIGIN]`.
+- [x] **Step 2: Run, expect FAIL (undefined: ParseEntry)**
+- [x] **Step 3: Implement.** Constants: `posWords` (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection, exclamation, determiner, abbreviation, prefix, suffix, symbol, contraction, plural noun) and `sectionWords` (DERIVATIVES, ORIGIN, PHRASES, PHRASAL VERBS, USAGE), matched on whole tokens only. Always set `Raw`.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#1 M1: parse NOAD flat text into Entry`
 
 ### Task 5: `Render` and the no-data-loss invariant
 
-**Files:**
-- Create: `cmd/define/render.go`
-- Test: `cmd/define/render_test.go`, `cmd/define/invariant_test.go`
+**Files:** create `cmd/define/render.go`; test `cmd/define/render_test.go`, `cmd/define/invariant_test.go`
 
-The invariant is the load-bearing test: **every letter and digit of the raw entry appears, in order, in the rendered output.** Punctuation may be restructured (`:` becomes a line break, examples gain quotes); words may never vanish and may never be reordered. This is what makes a best-effort parser safe against entries nobody sampled — an unrecognized construct degrades to a paragraph instead of disappearing.
+The invariant is the load-bearing test: **every letter and digit of the raw entry appears, in order, in the rendered output.** Punctuation may be restructured (`:` becomes a line break, examples gain quotes); words may never vanish and never reorder. It is what makes a best-effort parser safe against entries nobody sampled — an unrecognized construct degrades to a paragraph instead of disappearing.
 
-Consequence for `Render`: it must not change case, abbreviate, truncate, or reorder. Note that in a comment; it is a real constraint, not a style preference.
+It guarantees **fidelity, not completeness** (see Non-goals). Say so in the test file, so a future reader does not over-read it.
 
-- [ ] **Step 1: Write the invariant test over the whole corpus**
+Consequence for `Render`: it must not change case, abbreviate, truncate, or reorder. That is a correctness constraint, not a style preference — note it in a comment.
 
-```go
-// alnum reduces a string to its letters and digits, so the comparison ignores
-// punctuation the renderer is allowed to restructure.
-func alnum(s string) []rune {
-	var out []rune
-	for _, r := range s {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
-func TestRenderLosesNothing(t *testing.T) {
-	for _, name := range fixtureNames(t) {
-		t.Run(name, func(t *testing.T) {
-			raw := mustFixture(t, name)
-			out := Render(ParseEntry(raw), RenderOpts{Color: false})
-			if missing, ok := isSubsequence(alnum(raw), alnum(out)); !ok {
-				t.Errorf("renderer dropped content near %q", missing)
-			}
-		})
-	}
-}
-```
-
-`isSubsequence` returns the first raw rune that could not be matched, plus context — a bare `false` would make failures unreadable.
-
-- [ ] **Step 2: Run, expect FAIL (undefined: Render)**
-- [ ] **Step 3: Implement `Render`** — header line (`headword  syllables` + homograph), `/IPA/` on its own line, then per block: POS, senses indented by number, `•` sub-senses one level deeper, examples quoted one level deeper again; then sections. Colour via ANSI only when `opt.Color`.
-- [ ] **Step 4: Run both render tests, expect PASS.** If the invariant fails, fix the *parser* to keep the unmatched text (as `HeadExtra` or a trailing paragraph) — never weaken the test.
-- [ ] **Step 5: Commit** — `#1 M1: render Entry with no-data-loss invariant`
+- [x] **Step 1: Write the invariant test** over the whole corpus: reduce raw and rendered to letters+digits, assert raw is a subsequence of rendered. On failure report the first unmatched rune **with surrounding context** — a bare `false` is unreadable. Guard that the corpus is non-empty.
+- [x] **Step 2: Run, expect FAIL (undefined: Render)**
+- [x] **Step 3: Implement `Render`** — header line (`headword  syllables`, plus homograph), `/IPA/` on its own line, then per block: POS, its own `/IPA/` when it differs from the entry's, senses indented by number, `•` sub-senses one level deeper, examples quoted one level deeper again; then sections. ANSI colour only when `opt.Color`.
+- [x] **Step 4: Run both, expect PASS.** If the invariant fails, fix the **parser** to retain the unmatched text (as `HeadOther` or a trailing paragraph) — never weaken the test.
+- [x] **Step 5: Commit** — `#1 M1: render Entry with no-data-loss invariant`
 
 ### Task 6: CLI wiring — M1 exit
 
-**Files:**
-- Create: `cmd/define/main.go`
-- Test: `cmd/define/main_test.go`
+**Files:** create `cmd/define/main.go`; test `cmd/define/main_test.go`
 
-- [ ] **Step 1: Write the failing test** — a `run(args, deps, stdout, stderr) int` returning `0` for `sycophantic`, and `1` with a stderr diagnostic for `rizz`, driven by `fakeDictionary`. `run` is the seam that makes `main()` a two-liner.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** Flags: `--raw` (print the unparsed entry — Task 1 depends on it), `--no-color`. Colour defaults on only when stdout is a TTY. `main()` = `os.Exit(run(os.Args[1:], realDeps(), os.Stdout, os.Stderr))`.
-- [ ] **Step 4: Run tests; then `make build && ./bin/define sycophantic` and eyeball it**
-- [ ] **Step 5: Commit, then close the milestone**
-
-```sh
-sdlc milestone-close --issue 1 --milestone M1
-```
+- [x] **Step 1: Write the failing test.** Obligation: `run(args, deps, stdout, stderr) int` returns `0` for a known word and `1` with a stderr diagnostic for an unknown one, driven by `fakeDictionary`. `run` is the seam that makes `main()` a two-liner.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** Flags: `--raw`, `--no-color`. Colour defaults on only when stdout is a TTY. `main()` = `os.Exit(run(os.Args[1:], realDeps(), os.Stdout, os.Stderr))`.
+- [x] **Step 4: Run tests; then `make build && ./bin/define sycophantic` and eyeball it**
+- [x] **Step 5: Commit, then `sdlc milestone-close --issue 1 --milestone M1`**
 
 ---
 
@@ -363,137 +351,347 @@ sdlc milestone-close --issue 1 --milestone M1
 
 ### Task 7: `AudioCandidates`
 
-**Files:**
-- Create: `cmd/define/audiourl.go`
-- Test: `cmd/define/audiourl_test.go`
+**Files:** create `cmd/define/audiourl.go`; test `cmd/define/audiourl_test.go`
 
-Ordering comes from the measured survey in the issue `## Log`: the 2022 path first (strictly best coverage), then the legacy `oxford` path, with `_1` before `_2` at each generation.
+Ordering comes from the measured survey (issue `## Log`): the 2022 path first (strictly best coverage), then legacy `sounds/oxford`, `_1` before `_2` at each generation.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test.** Obligations: exact ordered list for `sycophantic`; input is lower-cased (`Sycophantic` → same list); a one-letter word (`a`) does not panic on the two-letter shard prefix.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement** — lowercase, `url.PathEscape`, shard = first ≤2 letters:
 
-```go
-func TestAudioCandidates(t *testing.T) {
-	got := AudioCandidates("Sycophantic", "us") // case-insensitive
-	want := []string{
-		"https://ssl.gstatic.com/dictionary/static/pronunciation/2022-03-02/audio/sy/sycophantic_en_us_1.mp3",
-		"https://ssl.gstatic.com/dictionary/static/pronunciation/2022-03-02/audio/sy/sycophantic_en_us_2.mp3",
-		"https://ssl.gstatic.com/dictionary/static/sounds/oxford/sycophantic--_us_1.mp3",
-		"https://ssl.gstatic.com/dictionary/static/sounds/oxford/sycophantic--_us_2.mp3",
-	}
-	if !slices.Equal(got, want) {
-		t.Errorf("got %#v", got)
-	}
-}
+```
+https://ssl.gstatic.com/dictionary/static/pronunciation/2022-03-02/audio/sy/sycophantic_en_us_1.mp3
+https://ssl.gstatic.com/dictionary/static/pronunciation/2022-03-02/audio/sy/sycophantic_en_us_2.mp3
+https://ssl.gstatic.com/dictionary/static/sounds/oxford/sycophantic--_us_1.mp3
+https://ssl.gstatic.com/dictionary/static/sounds/oxford/sycophantic--_us_2.mp3
 ```
 
-Add a one-letter word case (`a`) — the two-letter shard prefix must not panic on a short word.
-
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement** — lowercase, `url.PathEscape` the word, shard = first ≤2 letters.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#1 M2: derive CDN audio URL candidates`
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#1 M2: derive CDN audio URL candidates`
 
 ### Task 8: `AudioSource` + the stateful fake CDN
 
-**Files:**
-- Create: `cmd/define/fetch.go`, `cmd/define/fetch_fake.go`
-- Test: `cmd/define/fetch_test.go`, `cmd/define/fetch_conformance_test.go`
+**Files:** create `cmd/define/fetch.go`; test `cmd/define/fetch_fake_test.go`, `cmd/define/fetch_test.go`. Fakes live in `_test.go` files so they never link into the shipped binary — the same correction `fakeDictionary` needed.
 
-- [ ] **Step 1: Write the failing test — assert the walk order, not just the result**
-
-```go
-func TestFetchWalksCandidatesInOrder(t *testing.T) {
-	cdn := newFakeCDN(t, map[string][]byte{"/c.mp3": []byte("ID3audio")})
-	src := &httpAudioSource{client: cdn.Client()}
-	data, from, err := src.Fetch(t.Context(), []string{cdn.URL+"/a.mp3", cdn.URL+"/b.mp3", cdn.URL+"/c.mp3"})
-	if err != nil || string(data) != "ID3audio" || from != cdn.URL+"/c.mp3" {
-		t.Fatalf("data=%q from=%q err=%v", data, from, err)
-	}
-	if want := []string{"/a.mp3", "/b.mp3", "/c.mp3"}; !slices.Equal(cdn.Requested(), want) {
-		t.Errorf("walk order = %v, want %v", cdn.Requested(), want)
-	}
-}
-
-func TestFetchAllMissing(t *testing.T) { /* → ErrNoAudio, all candidates attempted */ }
-```
-
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement `httpAudioSource.Fetch`** — context-aware, stops at the first 200, returns `ErrNoAudio` when every candidate 404s. `fakeCDN` wraps `httptest.NewServer`, records each requested path under a mutex, and exposes `Requested()`.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Write the conformance test** (`//go:build conformance`): real CDN returns 200 for `sycophantic`, and `gaslighting` is 200 on the 2022 path but 404 on `sounds/oxford` — the survey facts the ordering depends on.
-- [ ] **Step 6: Commit** — `#1 M2: CDN audio fetch behind a seam + stateful fake`
+- [x] **Step 1: Write the failing tests.** Obligations: with only the third candidate present, `Fetch` returns its bytes **and** `fakeCDN.Requested()` is exactly the first three paths in order (the walk order is the assertion, not just the result); when all 404, `ErrNoAudio` and every candidate attempted.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement** — context-aware, stop at first 200, `ErrNoAudio` when all miss. `fakeCDN` wraps `httptest.NewServer`, records each path under a mutex, exposes `Requested()`.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Write the conformance test** (`//go:build conformance`): the real CDN returns 200 for `sycophantic`, and `gaslighting` is 200 on the 2022 path but 404 on `sounds/oxford` — the two survey facts the ordering rests on.
+- [x] **Step 6: Commit** — `#1 M2: CDN audio fetch behind a seam + stateful fake`
 
 ### Task 9: `Player` and playing three times
 
-**Files:**
-- Create: `cmd/define/player.go`, `cmd/define/player_fake.go`
-- Test: `cmd/define/player_test.go`
+**Files:** create `cmd/define/player.go`; test `cmd/define/player_fake_test.go`, `cmd/define/player_test.go`
 
-- [ ] **Step 1: Write the failing test — this is the "3 times" acceptance criterion**
-
-```go
-func TestPlaysRequestedNumberOfTimes(t *testing.T) {
-	p := &fakePlayer{}
-	if err := playN(t.Context(), p, "/tmp/x.mp3", 3); err != nil {
-		t.Fatal(err)
-	}
-	if len(p.Played) != 3 {
-		t.Errorf("played %d times, want 3", len(p.Played))
-	}
-}
-
-func TestPlayNStopsOnError(t *testing.T) {
-	p := &fakePlayer{FailOn: 2}
-	err := playN(t.Context(), p, "/tmp/x.mp3", 3)
-	if err == nil {
-		t.Fatal("want error")
-	}
-	if len(p.Played) != 2 { // attempted 1 and 2, stopped before 3
-		t.Errorf("played %d times, want 2", len(p.Played))
-	}
-}
-```
-
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `playN` loops `n` times with a short gap (`gap = 250ms`, skipped after the final play) so the repeats are distinguishable by ear. `afplayPlayer.Play` writes the bytes to a temp file once (caller's job) and runs `exec.CommandContext(ctx, "afplay", path)`; a missing `afplay` returns a typed error the shell downgrades to a warning.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#1 M2: Player seam + playN with count assertion`
+- [x] **Step 1: Write the failing tests** — this is the "3 times" acceptance criterion. Obligations: `playN(ctx, p, path, 3)` records exactly 3 plays; with `fakePlayer{FailOn: 2}` it returns an error and records exactly 2 (stops rather than pressing on).
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `playN` loops `n` times with a 250 ms gap, skipped after the final play, so repeats are distinguishable by ear. `afplayPlayer.Play` runs `exec.CommandContext(ctx, "afplay", path)`; a missing `afplay` returns a typed error the shell downgrades to a warning.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#1 M2: Player seam + playN with count assertion`
 
 ### Task 10: Wire audio into the CLI
 
-**Files:**
-- Modify: `cmd/define/main.go`
-- Test: `cmd/define/main_test.go`
+**Files:** modify `cmd/define/main.go`; test `cmd/define/main_test.go`
 
-- [ ] **Step 1: Write the failing tests**
-  - default run plays 3× via `fakePlayer`
-  - `--no-audio` plays 0× and makes **zero** CDN requests (assert `fakeCDN.Requested()` is empty — no wasted fetch)
-  - `--times 1` plays once
-  - audio failure still prints the definition and exits **0**, with a warning on stderr (the definition is the primary deliverable; a missing recording is not a failed lookup)
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** Add `--no-audio`, `--times N` (default 3), `--locale us|gb`. Print the definition first, then `♫ playing 3×`, then play. Write the MP3 to `os.MkdirTemp` and clean up.
-- [ ] **Step 4: Run tests; then the real end-to-end check**
+- [x] **Step 1: Write the failing tests.** Obligations: default run plays 3×; `--no-audio` plays 0× **and makes zero CDN requests** (assert `Requested()` is empty — no wasted fetch); `--times 1` plays once; an audio failure still prints the definition and exits **0** with a stderr warning (the definition is the deliverable; a missing recording is not a failed lookup).
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** Add `--no-audio`, `--times N` (default 3), `--locale us|gb`. Print the definition, then `♫ playing 3×`, then play. Write the MP3 under `os.MkdirTemp`; clean up.
+- [x] **Step 4: Run tests, then the real end-to-end check**
 
 ```sh
 make build
 ./bin/define sycophantic      # hear it 3×, see /ˌsikəˈfan(t)ik/
-./bin/define --no-audio bank  # homograph renders sanely
+./bin/define --no-audio bank  # renders "bank 1" — homograph visible
+./bin/define --no-audio record # two blocks, verb shows its own /rəˈkôrd/
 ./bin/define rizz; echo $?    # → clean diagnostic, 1
 ```
 
-- [ ] **Step 5: Add a `make install` target** in `Makefile.local` symlinking `bin/*` into `~/.local/bin` (already on PATH), and correct `README.md`, which currently claims a `make install` that does not exist.
-- [ ] **Step 6: Update `atlas/`** — a `atlas/define.md` sketch (the three seams, the parser's invariant, the CDN path survey) plus an `atlas/index.md` link.
-- [ ] **Step 7: Commit and close**
-
-```sh
-sdlc close --issue 1 --verified '<evidence>'
-```
+- [x] **Step 5: Add a `make install` target** in `Makefile.local` symlinking `bin/*` into `~/.local/bin` (already on PATH), and correct `README.md`, which currently claims a `make install` that does not exist.
+- [x] **Step 6: Update `atlas/`** — `atlas/define.md` (the three seams, the two parsing rules, the CDN survey, the conformance trigger, the Non-goals) plus an `atlas/index.md` link.
+- [x] **Step 7: Commit, then `sdlc close --issue 1 --verified '<evidence>'`**
 
 ---
 
 ## Risks
 
-- **NOAD text has no schema.** Mitigated by the invariant test, not by claiming the grammar is complete. An unparsed construct degrades to a paragraph; it never disappears.
-- **A macOS upgrade may reship NOAD.** The conformance test detects it; `testdata/capture.sh` re-captures.
-- **The gstatic paths are undocumented.** Stable for a decade and through two path migrations, but unowned. The candidate list absorbs a third migration; the conformance test detects one.
-- **`DCSCopyTextDefinition` returns nothing under a sandbox.** Not a code bug. Fixture-backed tests are unaffected; conformance tests must run unsandboxed.
+- **NOAD text has no schema.** Mitigated by the invariant test, not by claiming the grammar is complete. Unparsed constructs degrade to paragraphs.
+- **A macOS upgrade may reship NOAD.** The conformance test detects it; `capture.sh` re-captures.
+- **The gstatic paths are undocumented.** Stable for a decade and through two migrations, but unowned. The candidate list absorbs a third; conformance detects one.
+- **`DCSCopyTextDefinition` returns nothing under a sandbox.** Not a code bug, and the reason `capture.sh` fails hard on short output. Fixture-backed tests are unaffected; conformance and capture must run unsandboxed.
+
+---
+
+## Revisions
+
+### 2026-08-20 — plan-quality gate round 1 (4 Important, 2 Minor)
+
+Findings PQ-1..PQ-4 were raised by the `sdlc change-code` judge, which called
+the live API rather than trusting the plan. All four factual claims were
+independently re-verified before acting.
+
+- **PQ-1 (`Block` had nowhere to put a per-block pronunciation).** Confirmed:
+  `record`'s verb block carries `| rəˈkôrd |` against the head's `| ˈrekərd |`.
+  Added `Block.IPA`, and made the head's glued POS explicitly open block 0 —
+  previously it was extracted and then dropped, which would have yielded an
+  empty first `POS`.
+- **PQ-2 (`|` overloaded, no disambiguation rule).** Confirmed. Added Rule B as
+  a named pure function `isPronunciation` with a verified verdict table.
+  **The judge's suggested rule was wrong** — it proposed "IPA iff no ASCII
+  letters", but `ˈrekərd` and `baNGk` are mostly ASCII letters. Re-measured
+  across six entries and adopted a word-shape rule instead: a span is a
+  pronunciation iff every comma-separated part is a single space-free token.
+- **PQ-3 (`bank` returns homograph 1 only).** Confirmed — zero occurrences of
+  the financial sense. Added a `## Non-goals` section stating the limitation,
+  and made `Render` print the homograph number so the truncation is visible.
+  Also distinguished fidelity from completeness where the invariant is defined.
+- **PQ-4 (`capture.sh` could emit zero-byte fixtures).** Confirmed by
+  inspection: `>` creates the file before the command runs and `||` swallowed
+  the failure, so a sandboxed run would have left an empty corpus and a
+  vacuously-green invariant test. Rewritten to capture to `.tmp`, enforce a
+  minimum byte count, and `exit 1`. Added a non-empty-corpus assertion in the
+  fake as a second line of defence.
+- **PQ-4b (Task 1 ⇄ Task 6 circularity, raised inside PQ-4).** Confirmed — Step 2 misreferenced
+  Task 5, and the "verified spike" lived only in a scratchpad, not the repo.
+  Capture is now a self-contained `capture.py` (`ctypes` → CoreServices),
+  depending on no Go code at all.
+- **PQ-5 (inline test transcripts).** Accepted. Test bodies collapsed to
+  obligation lines; kept the cgo body and the Rule A/Rule B tables, which are
+  specification rather than test data.
+- **PQ-6 (conformance cadence).** Accepted. Stated on-demand as a deliberate
+  choice, with the reason (host NOAD + live network do not belong in
+  `merge-check.yml`) and the trigger recorded in `atlas/define.md`.
+
+### 2026-08-20 — M1 boundary review (4 Critical, 8 Important, 7 Minor) → REWORK
+
+The review captured 170 live NOAD entries and ran M1's own invariant predicate
+over them: **12 failed (7%)**. All four Criticals were reproduced locally before
+fixing. The verdict was correct and the diff was reworked rather than argued.
+
+**Core concepts drift, now reconciled (Chunk 1 above is updated in place):**
+
+- `Entry` no longer carries `Headword` / `Syllables` / `Homograph` / `HeadPOS` /
+  `HeadExtra` as parallel fields. It carries **`Head []HeadTok`** in source
+  order, with those four as *accessors* derived from it. This is the root-cause
+  fix for C1 and C3: NOAD has no fixed head field order (`present 1 pres·ent`
+  vs `record rec·ordnoun` vs `read verb (past … read | red |)`), so a renderer
+  emitting fields in a guessed order reorders every entry that disagrees. One
+  representation, walked by `Render`, cannot drift (ARCH-DRY).
+- `Block` gained `FromHead bool`, `Label string`, and `IPA` is now stored
+  **unconditionally** (I4 — suppressing a block pronunciation equal to the
+  entry's silently dropped it).
+- New pure function `splitFirstToken` replaces `firstToken`/`trimFirstToken`,
+  which re-derived the same boundary and **disagreed on whether a newline
+  counts** — that disagreement *was* C2, dropping the leading "A" from every
+  entry with no pronunciation span (`iPhone`, `iPad`, `MacBook`). Two helpers
+  independently deriving one rule is the ARCH-DRY failure mode, not a style nit.
+- `findPronunciation` (was `splitLeadingPronunciation`) now tracks **paren
+  depth**, so `read`'s parenthesised inflected-form pronunciation is not
+  mistaken for the entry's.
+- `posAt`'s trailing boundary is whitespace-or-EOS; allowing `]`/`)` made
+  `(banked as adjective)` open a phantom top-level block (C4).
+- `parseSenses` accepts a numbered split only when it opens the block or
+  continues the sequence — bare numerals in prose ("the 200 meters") were
+  becoming sense numbers (I5).
+
+**Test surface, widened.** The invariant was *corpus-scoped* while its own
+documentation claimed it made the parser "safe against entries nobody sampled"
+(I1 — the ARCH-PURPOSE finding, and the fair one). It is now checked at three
+widths: the 21-fixture corpus, a corpus-seeded `FuzzRenderLosesNothing`, and
+`TestRenderLosesNothingOverLiveEntries`, which walks a stride sample of
+`/usr/share/dict/words` through the real dictionary. Plus `render_test.go`
+(never created in M1, I6) with structural goldens for block shape and sense
+numbering — the classes the alnum property is *blind* to, because they preserve
+letter order.
+
+**Corpus (I2)** grew from 9 to 21 entries, adding every shape that shipped a bug.
+
+**Also noted by the review and applied:** `go mod tidy`; the cgo bridge now
+distinguishes "no entry" from a CoreFoundation failure; the fake moved into a
+`_test.go` file so it no longer links into the shipped binary; `-h` exits 0;
+README documents the flags and no longer claims a `make install` that does not
+exist; committed build-artifact blobs dropped from the branch history.
+
+**Deferred to M2 with reason:** nothing from round 1. (Amended after round 2:
+the `posAt` fix above closed only *one* edge of the phantom-block family — a POS
+word inside a bracket or in plain prose still opened blocks. See the round-2
+entry below; the claim "all addressed" was true of the findings as written and
+false of the underlying rule.)
+
+### 2026-08-20 — M1 boundary review round 2 (2 Critical, 4 Important) → REWORK
+
+Round 1's fixes were correct but two were **too narrow**, and one new class of
+bug was found. Chunk 1 above is now genuinely reconciled in place (that was C2 —
+round 1's Revisions entry claimed a reconciliation it had not performed).
+
+**C1 — the phantom-block family had a rule underneath it, not three shapes.**
+Round 1 removed `]`/`)` as *trailing* boundaries, fixing `(banked as adjective)`.
+Round 2 found `[with adjective or noun modifier]` (man, thing) still opened
+blocks, and while fixing that I found a third: `a noun phrase functioning as`
+(subject) — plain prose, no brackets at all. Rather than add a third guard, the
+rule is now expressed once:
+
+> A part-of-speech word opens a block only when it is **structurally** placed —
+> at the start of the body, or immediately after a sentence end (`.`, `)`, `:`,
+> `;`, `]`) — and never inside a bracket or paren.
+
+Measured over the corpus, every real opener is preceded by the body start, `. `,
+or `) `; every false positive sits mid-prose or inside a delimiter. `opensBlock`
+is the new pure function. Live block lists: `man` `[noun verb exclamation]`,
+`thing` `[noun]`, `bank` `[noun verb]`, `run` `[verb noun]` — all correct.
+
+**I1 — four fixtures were inert, which is the vacuous-green failure again.**
+`loadFakeDictionary` keyed by the raw filename stem while `Lookup` lower-cased
+the query, so `iPhone`, `iPad`, `MacBook` and `Amazon` were on disk and
+unreachable through the seam. They had been added in round 1 *specifically* to
+cover the no-pronunciation path — so that path still had no end-to-end coverage.
+Keys are lower-cased at load, and `TestEveryFixtureIsReachableViaLookup` asserts
+reachability. The conformance test now reads through `Lookup` rather than around
+it: a check that bypasses the seam cannot detect divergence *at* the seam.
+
+**I2 — the pronunciation rewrite was wired to one of the four places it was
+needed.** 9.9% of live entries rendered raw `| … |` in the body
+(`(plural alewives | ˈālˌwīvz |)`). Now applied to block labels, glosses,
+examples, sections, and — via `rewritePronunciations` at parse time — the head,
+which is where `read` carries one. One function, two call sites, no drift.
+
+**I3 — sense numbering assumed the sequence starts at 1.** When the head
+swallows sense 1's number (`use verb 1 [with object]`), the body opens at 2 and
+every numbered sense in the block was rejected and merged into prose. Two fixes:
+a digit is a homograph only immediately after the headword, and the sequence is
+seeded from the first candidate when that is 1 or 2. `TestCorpusNumberedSensesAreNotSwallowed`
+is the complement test — the existing one validated numbers that *were* assigned
+and was blind to numbering never assigned at all. It immediately found `subject`.
+
+**I4 — all 30 M1 checkboxes were unticked at close.** Ticked.
+
+**Live measurements after round 2** (`TestRenderLosesNothingOverLiveEntries`,
+2749 real NOAD entries): **0 lost content** (was 7% before round 1) and **0 raw
+pipes** (was 9.9%). Corpus grew 9 → 25 entries, each addition pinning a shape
+that shipped a bug.
+
+**Carried to M2** (from the estimate-quality INFO, which the gate ledger does not
+hold): the estimate has no line item for the dictionary seam, and
+`smaller-go-module`'s note says "low end" while its number is the scaled top.
+Neither was folded in, because the same judge measured `issue-spec design=1.0` as
+~3× high — see the issue `## Log`. Both are recorded here so the close review
+sees them.
+
+### 2026-08-20 — M1 boundary review round 3 (2 Critical, 5 Important) → REWORK
+
+The finding that matters most here is I1, because it invalidates a measurement
+this plan and the atlas had both published.
+
+**I1 — the raw-notation check used `isPronunciation` as its own oracle.** Both
+copies were "scan the rendered output for `|…|` spans, ask `isPronunciation`
+whether each is a pronunciation, fail if so." That asks the function under test
+to grade its own output, so it detects false *positives* only: every span
+`isPronunciation` wrongly **rejected** was, by construction, reported as "not a
+pronunciation" and passed. The check read **0%** while 2.2% of live entries were
+displaying raw pipes — and round 2's Revisions entry above, and `atlas/define.md`,
+both published that false 0%.
+
+The replacement, `strayStress`, rests on a property of the notation instead of on
+the parser: a NOAD stress mark (`ˈ`/`ˌ`) may appear only inside a `/…/` span in
+rendered output. **Rule for this codebase: a check must not consult the function
+it is checking.** The no-data-loss property was always safe here — its oracle is
+the raw string, external to the parser — which is exactly why it kept finding
+real bugs while the notation check found none.
+
+**C1 — `isPronunciation` rejected every multi-word pronunciation.** NOAD writes
+`hot dog | ˈhät ˌdäɡ |`, `a priori | ˌā prīˈôrī |`. The single-token rule rejected
+all of them, and when an entry's *own* pronunciation was the rejected one,
+`findPronunciation` walked on and adopted a derivative's — `define "hot dog"`
+displayed `/ˈhätˌdäɡər/` (*hot dogger*) with the entire entry crushed into the
+head line. The rule now admits a multi-word span when it carries a stress mark
+(prose never does). Note this needs *at least one* mark, not one per word:
+`ət ˈprez(ə)nt` and `BrE ˌeɪɡrəˈmatɪk(ə)l` carry unstressed particles.
+
+**C2 — the head search was unbounded.** An entry with no pronunciation of its own
+reached past every block and section boundary into `DERIVATIVES` and took that
+one (`concrete` → `/känˈkrētnəs/`). Bounded by `headLimit` to the first section
+or sentence-ending block opener, so this class degrades to a missing IPA rather
+than a collapse. The no-pronunciation branch also gained a **shape-based head
+split** (`splitHeadByShape`) and — a bug found while fixing it — section peeling,
+whose absence had left `DERIVATIVES` pronunciations rendering as quoted examples.
+
+Two further pipe-handling bugs surfaced only once the honest oracle existed:
+left-to-right pair consumption **misaligned** the spans in multi-phrase `PHRASES`
+text, and inflection lists (`parrot`, `separate`) had their pronunciation pipes
+eaten as example separators before rendering ever saw them.
+
+**I3 — grammar labels were being quoted as part of the example** on 13.8% of
+entries (`"[as modifier] : a bank shot"`, visible on `bank`). `Example{Label, Text}`
+now mirrors `Block.Label` one level down.
+
+**I4 / I5 — documentation claimed things that do not exist.** The README
+advertised playback M1 does not ship; `atlas/define.md` described three IO seams
+when one is built. Both corrected — the atlas is the *current-state* map, so
+unbuilt seams are marked M2 rather than described as present.
+
+**Live measurements after round 3** (2749 real NOAD entries, independent oracle):
+**0 lost content**, **0 unconverted notation** (was 2.2% under the honest oracle,
+falsely 0% under the circular one). Corpus 25 → 29 fixtures. Fuzz: 5.7M execs, no
+crashers.
+
+**One accepted limitation, newly documented:** some block boundaries are
+genuinely ambiguous in NOAD's flat text — `parrot` writes "…and budgerigars verb
+(parrots)…" with no sentence end, so that block stays nested. Loosening
+`opensBlock` reintroduces the phantom blocks it exists to prevent.
+
+### 2026-08-20 — M1 review round 4 → REWORK, then M2
+
+Round 4's headline was not a code bug but a **false claim in every artifact**:
+`DCSCopyTextDefinition` is passed a NULL `DCSDictionaryRef`, which means *search
+every active dictionary*, not NOAD. The SDK exports no constructor for a
+`DCSDictionaryRef`, so the NULL is forced — inherent, not fixable. `iPhone` /
+`iPad` / `MacBook` are Apple Dictionary entries (hence no pronunciation, hence
+the branch they exercise), and 530 of 71,427 reachable entries return Han script.
+Corrected in the code comment, atlas, README, issue Spec, and `-h` text.
+
+**Correcting the round-3 entry above:** it closes with "0 unconverted notation".
+That was measured with `strayStress`, which only sees notation carrying a stress
+mark — example-separator pipes carry none. 2.0% of entries were still rendering
+raw `|`. There is now a second oracle that consults nothing at all
+(`IndexByte(out, '|')`), and section text splits on the separator rather than
+rendering as one paragraph. Both read 0. *An honest oracle can still be a narrow
+one; a claim must not outrun the measurement.*
+
+`opensBlock` also gained `]`: NOAD closes an editorial note and opens the next
+part of speech directly ("…The Compleat Angler] verb"), which was swallowing
+`complete` and `pulp`'s verb blocks into a quoted example (22 entries). The rule
+block-quote in Chunk 1 now lists `]`.
+
+**M2 shipped** exactly as specified: `AudioCandidates` (pure, ordered by the
+measured survey), `httpAudioSource` behind the seam with a `fakeCDN` that records
+request order, `Player`/`playN` with the repeat loop in the shell so the count is
+assertable. Flags `--no-audio` (zero CDN requests, asserted), `--times N`,
+`--locale`. `make install` symlinks into `~/.local/bin`.
+
+### 2026-08-20 — issue close review (2 Critical, 6 Important) → REWORK
+
+**C1 — the invariant was one-directional.** `Render` printed examples with `%q`,
+i.e. `strconv.Quote`, which escapes `"` and every non-printing rune. NOAD's
+quoted speech arrived as literal backslashes, and a soft hyphen (U+00AD) became
+five alphanumeric runes the dictionary never returned. The subsequence oracle
+detects *loss* only, so five review rounds passed it. The invariant now asserts
+**equality** of alphanumeric counts, not just subsequence — Render draws every
+letter from the raw entry, so insertion is as much a defect as loss.
+
+**C2 — `parseSenses` had no delimiter-depth rule**, though `parseBlocks` one
+level up already did (ARCH-DRY). NOAD's cross-references — "another term for
+pasha (sense 1 of the noun)" — manufactured a sense from a numeral inside a
+paren, cutting the gloss mid-parenthetical (43/43 sampled cases confirmed
+manufactured). A sequence-*opening* `1` must now also be structurally placed,
+which rejects "on January 1 1992" while leaving a continuing `2` alone — NOAD
+does not always write punctuation before one ("plural form of base1 2 …" in
+`bases`).
+
+Importants: the atlas still published the superseded single-token pronunciation
+rule (the one that shipped round 3's Critical); `-h` was a fifth surface carrying
+the retracted NOAD-only claim; the README lacked M2's three flags and the
+`make install` this window shipped; the `Player` seam had a fake but **no live
+conformance check** — now `player_conformance_test.go` asserts `afplay` blocks,
+without which three overlapping sounds would pass every test in the repo; and
+`fetch.go` flattened transport failures into `ErrNoAudio` with `%v`, so
+`errors.Is` could not reach the cause — now `ErrFetchFailed` with `%w`.
