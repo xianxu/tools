@@ -1,0 +1,13 @@
+# tools base.manifest — tools's module declaration for the weave layer compiler.
+#
+# Seeded by `weave link ../ariadne` (ariadne#155). tools consumes ../ariadne
+# as its substrate (construct/deps `substrate ../ariadne`) and inherits that layer's
+# EXPORTED base layer through the edge. This manifest declares tools's OWN internal artifacts.
+#
+# Format and verbs: see ariadne's construct/base.manifest. The leading `internal` token
+# (ariadne#99) keeps an artifact with this repo (selected only on its own self-walk), never
+# leaked into a consumer. NOTE: shipping a base.manifest is ALSO what marks this repo a
+# TRAVERSABLE layer — without it a downstream consumer's weave walk stops here.
+
+# ── Constitution ──────────────────────────────────────────────────────────────
+internal  prose AGENTS.local.md
