@@ -38,6 +38,36 @@ rounds:
           detail: ARCH-MOCK at-plan asks for a live conformance cadence; both checks are "run on demand" behind a build tag. The repo already ships .github/workflows/merge-check.yml — name where these run, or state that on-demand after a macOS upgrade is the deliberate cadence and why.
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-20T10:09:37-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: Block.IPA added with an "empty means inherit Entry.IPA" contract; glued POS explicitly opens block 0.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: Rule B is now the pure isPronunciation with a verified table; my no-ASCII-letters rule was wrong and was correctly replaced.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: Non-goals states the single-homograph limit; Render prints the homograph number; fidelity vs completeness distinguished.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: capture.sh writes to .tmp, enforces MIN_BYTES, unlinks and exits 1; capture.py via ctypes removes the Task 1/Task 6 knot.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: Inline test bodies collapsed to obligation lines; cgo body and the Rule A/B tables correctly kept as specification.
+          round: 2
+        - id: PQ-6
+          disposition: addressed
+          note: On-demand cadence stated as deliberate with rationale and trigger, recorded in atlas/define.md.
+          round: 2
+      blocked: false
+content_hash: 453c4bbed1ef8028ced56b52408150947143aa08be8f4f8e4cfbf91a859f380b
 ---
 
 # Gate ledger — tools#1 (plan-quality)
@@ -62,11 +92,17 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **PQ-6** [Minor] Conformance checks have no scheduled cadence
   ARCH-MOCK at-plan asks for a live conformance cadence; both checks are "run on demand" behind a build tag. The repo already ships .github/workflows/merge-check.yml — name where these run, or state that on-demand after a macOS upgrade is the deliberate cadence and why.
 
+## Round 2 — 2026-08-20T10:09:37-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — Block.IPA added with an "empty means inherit Entry.IPA" contract; glued POS explicitly opens block 0.
+- PQ-2 — addressed — Rule B is now the pure isPronunciation with a verified table; my no-ASCII-letters rule was wrong and was correctly replaced.
+- PQ-3 — addressed — Non-goals states the single-homograph limit; Render prints the homograph number; fidelity vs completeness distinguished.
+- PQ-4 — addressed — capture.sh writes to .tmp, enforces MIN_BYTES, unlinks and exits 1; capture.py via ctypes removes the Task 1/Task 6 knot.
+- PQ-5 — addressed — Inline test bodies collapsed to obligation lines; cgo body and the Rule A/B tables correctly kept as specification.
+- PQ-6 — addressed — On-demand cadence stated as deliberate with rationale and trigger, recorded in atlas/define.md.
+
 ## Open findings
 
-- **PQ-1** [Important] Block has no IPA field, but record's verb block carries its own pronunciation
-- **PQ-2** [Important] Parse rules do not disambiguate IPA pipes from example-separator pipes
-- **PQ-3** [Important] bank returns homograph 1 only; the limitation is unstated and the invariant masks it
-- **PQ-4** [Important] capture.sh can emit zero-byte fixtures, making the invariant test vacuously green
-- **PQ-5** [Minor] Compress the enumerated test cases and inline test bodies to strategy lines
-- **PQ-6** [Minor] Conformance checks have no scheduled cadence
+(none — every finding has been disposed)
