@@ -1,3 +1,10 @@
+# Build artifacts. `make build` writes bin/<name>; `go build ./...` drops the
+# binary at the repo root, which is how bin/define and ./define first got
+# committed. Both paths are ignored so neither recurs.
+bin/
+/define
+.DS_Store
+
 /AGENTS.md
 /CLAUDE.md
 /GEMINI.md
