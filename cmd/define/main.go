@@ -46,9 +46,9 @@ func run(args []string, d deps, stdout, stderr io.Writer) int {
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] <word>\n\n"+
-			"Looks the word up in the New Oxford American Dictionary bundled with\n"+
-			"macOS — the same dictionary Google licenses — and plays its recorded\n"+
-			"pronunciation.\n\nFlags:\n")
+			"Looks the word up in macOS's active dictionaries — normally the New\n"+
+			"Oxford American Dictionary, the one Google licenses, hence the matching\n"+
+			"notation — and plays its recorded pronunciation.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {

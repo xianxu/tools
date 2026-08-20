@@ -57,8 +57,13 @@ out of reading real output:
 3. **`|` is overloaded.** It delimits pronunciations *and* separates examples.
    The discriminator is word shape, not character class — `ˈrekərd` and `baNGk`
    are mostly ASCII letters, so "contains no ASCII letters" fails. A span is a
-   pronunciation iff every comma-separated part is a single space-free token
-   (`isPronunciation`).
+   pronunciation iff every comma-separated part is **either** a single space-free
+   token **or** a short multi-word run carrying a NOAD stress mark
+   (`isPronunciation`). The single-token-only rule was tried and was wrong:
+   multi-word headwords have spaces in their pronunciations (`hot dog | ˈhät ˌdäɡ |`),
+   and rejecting them made the parser walk on and adopt a derivative's —
+   `define "hot dog"` showed `/ˈhätˌdäɡər/`. Prose carries no stress marks, which
+   is what keeps the second clause safe.
 
 ## The invariant
 
@@ -163,6 +168,19 @@ printed, so audio failures warn on stderr and leave the exit code at 0.
 Live checks sit behind `//go:build conformance` and run **on demand, not in CI** —
 they need a host with NOAD installed and reachable network, neither of which
 belongs in `merge-check.yml`.
+
+All three seams have one, and each pins the assumption that seam rests on:
+
+| check | asserts |
+|---|---|
+| `dict_conformance_test.go` | live lookups still byte-match every fixture |
+| `fetch_conformance_test.go` | the CDN path survey still holds (2022 generation dominates) |
+| `player_conformance_test.go` | `afplay` **blocks** until playback finishes |
+
+The third is the least obvious and the most load-bearing: if `afplay` ever
+returned immediately, three *overlapping* sounds would satisfy `fakePlayer`'s
+count and every other test here — "plays three times" would be true on paper and
+wrong in the room.
 
 ```sh
 go test -tags conformance ./cmd/define/   # must run UNSANDBOXED

@@ -638,3 +638,60 @@ crashers.
 genuinely ambiguous in NOAD's flat text — `parrot` writes "…and budgerigars verb
 (parrots)…" with no sentence end, so that block stays nested. Loosening
 `opensBlock` reintroduces the phantom blocks it exists to prevent.
+
+### 2026-08-20 — M1 review round 4 → REWORK, then M2
+
+Round 4's headline was not a code bug but a **false claim in every artifact**:
+`DCSCopyTextDefinition` is passed a NULL `DCSDictionaryRef`, which means *search
+every active dictionary*, not NOAD. The SDK exports no constructor for a
+`DCSDictionaryRef`, so the NULL is forced — inherent, not fixable. `iPhone` /
+`iPad` / `MacBook` are Apple Dictionary entries (hence no pronunciation, hence
+the branch they exercise), and 530 of 71,427 reachable entries return Han script.
+Corrected in the code comment, atlas, README, issue Spec, and `-h` text.
+
+**Correcting the round-3 entry above:** it closes with "0 unconverted notation".
+That was measured with `strayStress`, which only sees notation carrying a stress
+mark — example-separator pipes carry none. 2.0% of entries were still rendering
+raw `|`. There is now a second oracle that consults nothing at all
+(`IndexByte(out, '|')`), and section text splits on the separator rather than
+rendering as one paragraph. Both read 0. *An honest oracle can still be a narrow
+one; a claim must not outrun the measurement.*
+
+`opensBlock` also gained `]`: NOAD closes an editorial note and opens the next
+part of speech directly ("…The Compleat Angler] verb"), which was swallowing
+`complete` and `pulp`'s verb blocks into a quoted example (22 entries). The rule
+block-quote in Chunk 1 now lists `]`.
+
+**M2 shipped** exactly as specified: `AudioCandidates` (pure, ordered by the
+measured survey), `httpAudioSource` behind the seam with a `fakeCDN` that records
+request order, `Player`/`playN` with the repeat loop in the shell so the count is
+assertable. Flags `--no-audio` (zero CDN requests, asserted), `--times N`,
+`--locale`. `make install` symlinks into `~/.local/bin`.
+
+### 2026-08-20 — issue close review (2 Critical, 6 Important) → REWORK
+
+**C1 — the invariant was one-directional.** `Render` printed examples with `%q`,
+i.e. `strconv.Quote`, which escapes `"` and every non-printing rune. NOAD's
+quoted speech arrived as literal backslashes, and a soft hyphen (U+00AD) became
+five alphanumeric runes the dictionary never returned. The subsequence oracle
+detects *loss* only, so five review rounds passed it. The invariant now asserts
+**equality** of alphanumeric counts, not just subsequence — Render draws every
+letter from the raw entry, so insertion is as much a defect as loss.
+
+**C2 — `parseSenses` had no delimiter-depth rule**, though `parseBlocks` one
+level up already did (ARCH-DRY). NOAD's cross-references — "another term for
+pasha (sense 1 of the noun)" — manufactured a sense from a numeral inside a
+paren, cutting the gloss mid-parenthetical (43/43 sampled cases confirmed
+manufactured). A sequence-*opening* `1` must now also be structurally placed,
+which rejects "on January 1 1992" while leaving a continuing `2` alone — NOAD
+does not always write punctuation before one ("plural form of base1 2 …" in
+`bases`).
+
+Importants: the atlas still published the superseded single-token pronunciation
+rule (the one that shipped round 3's Critical); `-h` was a fifth surface carrying
+the retracted NOAD-only claim; the README lacked M2's three flags and the
+`make install` this window shipped; the `Player` seam had a fake but **no live
+conformance check** — now `player_conformance_test.go` asserts `afplay` blocks,
+without which three overlapping sounds would pass every test in the repo; and
+`fetch.go` flattened transport failures into `ErrNoAudio` with `%v`, so
+`errors.Is` could not reach the cause — now `ErrFetchFailed` with `%w`.

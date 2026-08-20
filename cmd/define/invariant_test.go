@@ -83,6 +83,14 @@ func TestRenderLosesNothing(t *testing.T) {
 		t.Run(word, func(t *testing.T) {
 			out := Render(ParseEntry(raw), RenderOpts{Color: false})
 			want, got := alnum(raw), alnum(out)
+			// The subsequence check is one-directional: it detects LOSS only.
+			// Render inserting content passes it silently — which is how %q's
+			// escape sequences ("\u00ad" → five alphanumeric runes) survived five
+			// review rounds. Render draws every letter from the raw entry, so the
+			// counts must match exactly.
+			if len(want) != len(got) {
+				t.Errorf("alnum count %d rendered vs %d raw — Render inserted or dropped content", len(got), len(want))
+			}
 			if i := subsequenceGap(want, got); i >= 0 {
 				lo := max(0, i-40)
 				hi := min(len(want), i+40)

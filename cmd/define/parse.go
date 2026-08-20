@@ -490,6 +490,7 @@ func parseSenses(text string) []Sense {
 	}
 	locs := senseSplit.FindAllStringSubmatchIndex(text, -1)
 	var accepted [][]int
+	depths := delimiterDepths(text)
 	// The sequence does not always start at 1: when the head swallowed sense 1's
 	// number ("use verb 1 [with object] | yo͞oz |"), the body opens at 2. Anchoring
 	// at 1 unconditionally rejected every sense in such a block and merged them
@@ -500,10 +501,28 @@ func parseSenses(text string) []Sense {
 			accepted = append(accepted, loc)
 			continue
 		}
-		if n, err := atoi(text[loc[2]:loc[3]]); err == nil && n == want {
-			accepted = append(accepted, loc)
-			want++
+		// A numeral inside a delimiter is never a sense number: NOAD writes
+		// cross-references like "another term for pasha (sense 1 of the noun)".
+		// parseBlocks already refuses to open a block inside a delimiter; this is
+		// the same rule one level down (ARCH-DRY).
+		if depths[loc[2]] > 0 {
+			continue
 		}
+		n, err := atoi(text[loc[2]:loc[3]])
+		if err != nil || n != want {
+			continue
+		}
+		// A sequence-OPENING "1" must also be structurally placed, because a lone
+		// prose "1" always satisfies the sequence guard on its own: "on January 1
+		// 1992", "present to about 1 part in 6,000", "affects 1 in 3,600".
+		// A continuing number (2, 3, …) needs no such proof — the sequence it
+		// continues is the evidence, and NOAD does not always write punctuation
+		// before it ("plural form of base1 2 …" in `bases`).
+		if n == 1 && !opensBlock(text, loc[2]) {
+			continue
+		}
+		accepted = append(accepted, loc)
+		want++
 	}
 	if len(accepted) == 0 {
 		return []Sense{newSense("", false, text)}
@@ -526,12 +545,39 @@ func parseSenses(text string) []Sense {
 	return senses
 }
 
+// delimiterDepths returns the paren+bracket nesting depth at each byte offset.
+func delimiterDepths(s string) []int {
+	out := make([]int, len(s)+1)
+	d := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[':
+			d++
+		case ')', ']':
+			if d > 0 {
+				d--
+			}
+		}
+		out[i+1] = d
+		if s[i] == '(' || s[i] == '[' {
+			out[i] = d - 1
+		} else {
+			out[i] = out[i+1]
+		}
+	}
+	return out
+}
+
 // firstSenseNumber picks the value the numbered sequence starts at: the first
 // numbered candidate when that is 1 or 2, else 1. A larger leading numeral is a
 // prose number ("she ran in the 200 meters"), not a sense.
 func firstSenseNumber(locs [][]int, text string) int {
+	depths := delimiterDepths(text)
 	for _, loc := range locs {
-		if loc[2] < 0 {
+		// Depth only: the anchor may legitimately sit where NOAD wrote no
+		// punctuation ("plural form of base1 2 …"). Whether a sequence-opening
+		// "1" is real is decided in parseSenses, not here.
+		if loc[2] < 0 || depths[loc[2]] > 0 {
 			continue
 		}
 		if n, err := atoi(text[loc[2]:loc[3]]); err == nil && (n == 1 || n == 2) {

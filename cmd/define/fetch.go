@@ -14,6 +14,12 @@ import (
 // back to Oxford.
 var ErrNoAudio = errors.New("no recorded pronunciation")
 
+// ErrFetchFailed means the CDN could not be reached or read. Distinguishing it
+// from ErrNoAudio matters: "this word has no recording" is a normal outcome,
+// "the network is down" is not. dict_darwin.go draws the same line between "no
+// entry" and a CoreFoundation failure.
+var ErrFetchFailed = errors.New("audio fetch failed")
+
 // AudioSource fetches a recording, given candidate URLs in preference order.
 //
 // The seam exists so AudioCandidates can stay pure and offline, and so the walk
@@ -64,7 +70,9 @@ func (s *httpAudioSource) Fetch(ctx context.Context, urls []string) ([]byte, str
 		return data, u, nil
 	}
 	if firstErr != nil {
-		return nil, "", fmt.Errorf("%w: %v", ErrNoAudio, firstErr)
+		// %w on both, so errors.Is reaches the transport cause (context.Canceled,
+		// a DNS failure) rather than flattening it into the text.
+		return nil, "", fmt.Errorf("%w: %w", ErrFetchFailed, firstErr)
 	}
 	return nil, "", ErrNoAudio
 }

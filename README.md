@@ -27,7 +27,10 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 ### define
 
 ```sh
-define sycophantic          # definition + /ˌsikəˈfan(t)ik/
+define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
+define -times 1 record      # play once instead of three times
+define -no-audio bank       # no fetch, no sound
+define -locale gb colour    # British pronunciation
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
@@ -47,7 +50,9 @@ make build     # compile every cmd/ into bin/ (target inherited from ariadne)
 go test ./...  # unit tests, including the fuzz corpus
 ```
 
-`bin/` is not on `$PATH` by default; a `make install` target lands with M2.
+```sh
+make install   # symlink bin/* into ~/.local/bin (already on PATH)
+```
 
 Live conformance checks sit behind a build tag and must run unsandboxed:
 

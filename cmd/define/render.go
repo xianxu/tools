@@ -108,7 +108,12 @@ func Render(e Entry, opt RenderOpts) string {
 				if ex.Label != "" {
 					fmt.Fprintf(&b, "%s%s%s ", p.dim, ex.Label, p.off)
 				}
-				fmt.Fprintf(&b, "%s%q%s\n", p.ex, prettyPronunciations(ex.Text, p), p.off)
+				// Quote explicitly, never with %q: strconv.Quote escapes '"' and
+				// every rune failing unicode.IsPrint, so NOAD's quoted speech
+				// arrived as literal backslashes and a soft hyphen (U+00AD)
+				// became five alphanumeric runes the dictionary never returned.
+				// Render must not insert content any more than it may drop it.
+				fmt.Fprintf(&b, "%s\"%s\"%s\n", p.ex, prettyPronunciations(ex.Text, p), p.off)
 			}
 		}
 	}
