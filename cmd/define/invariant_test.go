@@ -131,8 +131,12 @@ func FuzzRenderLosesNothing(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, raw string) {
 		out := Render(ParseEntry(raw), RenderOpts{Color: false})
-		if i := subsequenceGap(alnum(raw), alnum(out)); i >= 0 {
-			t.Fatalf("alnum loss at rune %d of %d for %q", i, len([]rune(alnum(raw))), raw)
+		want, got := alnum(raw), alnum(out)
+		if len(want) != len(got) {
+			t.Fatalf("alnum count raw=%d rendered=%d for %q -> %q", len(want), len(got), raw, out)
+		}
+		if i := subsequenceGap(want, got); i >= 0 {
+			t.Fatalf("alnum loss at rune %d of %d for %q", i, len(want), raw)
 		}
 	})
 }

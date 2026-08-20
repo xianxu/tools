@@ -533,7 +533,7 @@ rule is now expressed once:
 
 > A part-of-speech word opens a block only when it is **structurally** placed —
 > at the start of the body, or immediately after a sentence end (`.`, `)`, `:`,
-> `;`) — and never inside a bracket or paren.
+> `;`, `]`) — and never inside a bracket or paren.
 
 Measured over the corpus, every real opener is preceded by the body start, `. `,
 or `) `; every false positive sits mid-prose or inside a delimiter. `opensBlock`

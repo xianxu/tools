@@ -113,7 +113,10 @@ func Render(e Entry, opt RenderOpts) string {
 				// arrived as literal backslashes and a soft hyphen (U+00AD)
 				// became five alphanumeric runes the dictionary never returned.
 				// Render must not insert content any more than it may drop it.
-				fmt.Fprintf(&b, "%s\"%s\"%s\n", p.ex, prettyPronunciations(ex.Text, p), p.off)
+				// Typographic outer quotes so an example containing quoted speech
+				// stays readable: “"This blows," she sighs” rather than
+				// ""This blows," she sighs".
+				fmt.Fprintf(&b, "%s\u201c%s\u201d%s\n", p.ex, prettyPronunciations(ex.Text, p), p.off)
 			}
 		}
 	}

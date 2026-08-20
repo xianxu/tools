@@ -77,12 +77,16 @@ reviews found bugs that each narrower check had shipped green:
 |---|---|---|
 | `TestRenderLosesNothing` | the 29 captured fixtures | regressions on known shapes |
 | `FuzzRenderLosesNothing` | arbitrary strings, corpus-seeded | parser crashes, boundary bugs |
-| `TestRenderLosesNothingOverLiveEntries` (conformance) | ~2750 real NOAD entries | shapes nobody thought to sample |
+| `TestRenderLosesNothingOverLiveEntries` (conformance) | **every** reachable entry — 70,897 | shapes nobody thought to sample |
 
 The third is what earns the claim "safe against entries nobody sampled"; a corpus
 test alone covers only what someone already sampled. Content loss over the live
-sample went 7% → **0%** (2728 English entries; 21 non-Latin entries from other
-active dictionaries are counted and excluded, not silently skipped).
+sample went 7% → **0%**, measured over **all 70,897** reachable entries — not a
+sample. The 530 non-Latin entries from other active dictionaries are counted and
+excluded, not silently skipped. The sweep runs in ~38s.
+
+Sampling is why this section had to be rewritten three times: at 2,749 entries
+(3.8%) the raw-notation count read 0, and at full width it was 27.
 
 ### Two things the property cannot see
 
@@ -122,6 +126,15 @@ It guarantees **fidelity, not completeness** — see Limits.
 - **NOAD has gaps.** Recent coinages (`rizz`, `unalive`) are absent; `define`
   exits 1. Their audio is missing too — the gaps correlate, both tracing to Oxford.
 - **No second dictionary source**, by decision.
+- **A prose numeral that continues a sense sequence is taken as a sense number.**
+  27 of 70,897 entries (0.04%). `define charge` buries its real sense 2 inside a
+  quoted example, and two raw `|` reach the screen; `just`, `ratio`, `glop`,
+  `logarithmic`, `depth` and `shortness` are the same shape. A sequence-opening
+  `1` must be structurally placed, but a continuing number is exempt — and that
+  exemption is the defect. It stands because requiring placement for every number
+  regresses senses NOAD genuinely writes unplaced (`bases`: "plural form of
+  base1 2 …", and likewise `absolute`, `ambrosia`, `bind`). Pinned by the live
+  ratchet rather than left to drift.
 - **Some block boundaries are genuinely ambiguous in the source, and this is not
   rare.** A part-of-speech opens a block when it follows a sentence end or a
   closing `. ) : ; ]`, but NOAD does not always write one. Two shapes remain,

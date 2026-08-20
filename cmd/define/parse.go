@@ -151,13 +151,18 @@ func isPronunciation(inner string) bool {
 		case len(fields) > maxPronunciationWords:
 			return false
 		}
-		// Rule 2: at least one word carries a stress mark. Not *every* word —
-		// unstressed particles and dialect labels are normal inside a phrase
-		// pronunciation ("ət ˈprez(ə)nt", "BrE ˌeɪɡrəˈmatɪk(ə)l"). Prose carries
-		// no stress marks at all, so one is enough to separate the two.
+		// Rule 2: at least one word carries a NOAD phonetic marker. Not *every*
+		// word — unstressed particles and dialect labels are normal inside a
+		// phrase pronunciation ("ət ˈprez(ə)nt", "BrE ˌeɪɡrəˈmatɪk(ə)l").
+		//
+		// A stress mark alone is too narrow: NOAD writes plenty of multi-word
+		// pronunciations without one ("ɡrēn ro͞om" for green room, "BrE dʒan" for
+		// Jan), and rejecting those lost the entry's IPA entirely — the same
+		// false-negative direction that made `define "hot dog"` display
+		// /ˈhätˌdäɡər/. English prose contains none of these characters.
 		marked := false
 		for _, f := range fields {
-			if strings.ContainsAny(f, "ˈˌ") {
+			if hasPhoneticMarker(f) {
 				marked = true
 				break
 			}
@@ -167,6 +172,23 @@ func isPronunciation(inner string) bool {
 		}
 	}
 	return true
+}
+
+// phoneticRunes are characters NOAD uses in pronunciations and English prose
+// does not: stress marks, IPA letters, and the vowel letters it overloads with
+// macrons. Combining diacritics (U+0300–U+036F) count too — "ro͞om" carries one.
+const phoneticRunes = "ˈˌəæʒʃɡŋðθāēīōūäôᴏ͞͝"
+
+func hasPhoneticMarker(word string) bool {
+	for _, r := range word {
+		if r >= 0x0300 && r <= 0x036F { // combining diacritical marks
+			return true
+		}
+		if strings.ContainsRune(phoneticRunes, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // maxPronunciationWords bounds rule 2. The longest genuine phrase pronunciations
@@ -227,17 +249,11 @@ func afterSentenceEnd(s string, i int) bool {
 }
 
 func findPronunciationIn(s string, limit int) (before, ipa, after string, ok bool) {
-	depth := 0
+	depths := delimiterDepths(s)
 	for i := 0; i < len(s) && i < limit; i++ {
 		switch s[i] {
-		case '(':
-			depth++
-		case ')':
-			if depth > 0 {
-				depth--
-			}
 		case '|':
-			if depth != 0 {
+			if depths[i] != 0 {
 				continue
 			}
 			j := strings.IndexByte(s[i+1:], '|')
@@ -345,8 +361,19 @@ func parseHead(head string) []HeadTok {
 		case strings.Contains(tok, "·") && strings.HasPrefix(stripped, bare) &&
 			matchPOS(stripped[len(bare):]) != "":
 			// "rec·ordnoun" — syllabification with a POS welded onto the end.
+			// Split only when the part-of-speech is literally at the end of the
+			// token. Measuring the suffix on the ·-stripped token and slicing it
+			// off the un-stripped one makes the two lengths disagree whenever the
+			// suffix region contains an interpunct, and the head then DUPLICATES
+			// text ("rec·ordno·un" → "rec·ordno  noun"). Found by the fuzz target
+			// once it was given the insertion oracle; when the split is not clean,
+			// keep the token whole rather than guess.
 			suffix := stripped[len(bare):]
-			add(HeadSyllables, tok[:len(tok)-len(suffix)])
+			if !strings.HasSuffix(tok, suffix) {
+				toks = append(toks, HeadTok{HeadOther, tok})
+				continue
+			}
+			add(HeadSyllables, strings.TrimSuffix(tok, suffix))
 			add(HeadPOS, suffix)
 		case matchPOS(tok) != "":
 			add(HeadPOS, tok)
@@ -410,24 +437,10 @@ func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 	// Three separate bugs (bank, man/thing, subject) were all this one rule
 	// missing, so it is expressed once here rather than patched per shape.
 	var marks []mark
-	paren, bracket := 0, 0
+	depths := delimiterDepths(body)
 	for i := 0; i < len(body); {
-		switch body[i] {
-		case '(':
-			paren++
-		case ')':
-			if paren > 0 {
-				paren--
-			}
-		case '[':
-			bracket++
-		case ']':
-			if bracket > 0 {
-				bracket--
-			}
-		}
 		pos, width := posAt(body, i)
-		if pos == "" || paren != 0 || bracket != 0 || !opensBlock(body, i) {
+		if pos == "" || depths[i] != 0 || !opensBlock(body, i) {
 			i++
 			continue
 		}
@@ -515,9 +528,17 @@ func parseSenses(text string) []Sense {
 		// A sequence-OPENING "1" must also be structurally placed, because a lone
 		// prose "1" always satisfies the sequence guard on its own: "on January 1
 		// 1992", "present to about 1 part in 6,000", "affects 1 in 3,600".
-		// A continuing number (2, 3, …) needs no such proof — the sequence it
-		// continues is the evidence, and NOAD does not always write punctuation
-		// before it ("plural form of base1 2 …" in `bases`).
+		//
+		// A continuing number is NOT exempt because the sequence proves it — it
+		// does not. Any prose numeral equal to the next expected value is
+		// accepted, which is a real defect: `charge` buries its real sense 2
+		// inside a quoted example. 27 of 70,897 live entries (0.04%) are affected
+		// and the live sweep pins that count.
+		//
+		// The exemption stands because the alternative is worse: requiring
+		// structural placement for every number regresses senses NOAD genuinely
+		// writes unplaced ("plural form of base1 2 …" in `bases`, and the same in
+		// absolute, ambrosia, bind). Documented in atlas/define.md Limits.
 		if n == 1 && !opensBlock(text, loc[2]) {
 			continue
 		}
@@ -546,24 +567,30 @@ func parseSenses(text string) []Sense {
 }
 
 // delimiterDepths returns the paren+bracket nesting depth at each byte offset.
+//
+// This is the single implementation of "am I inside a delimiter?", which three
+// callers need: findPronunciationIn (a pronunciation inside a paren belongs to an
+// inflected form, not the entry), parseBlocks (a part-of-speech inside a bracket
+// does not open a block), and parseSenses (a numeral inside a paren is a
+// cross-reference, not a sense number). Each of those was written separately, and
+// they disagreed on whether parens and brackets share a counter — merged here,
+// so "(]" cannot be read three ways (ARCH-DRY).
 func delimiterDepths(s string) []int {
 	out := make([]int, len(s)+1)
 	d := 0
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
 		case '(', '[':
+			out[i] = d // the opener itself is still outside
 			d++
+			out[i+1] = d
+			continue
 		case ')', ']':
 			if d > 0 {
 				d--
 			}
 		}
-		out[i+1] = d
-		if s[i] == '(' || s[i] == '[' {
-			out[i] = d - 1
-		} else {
-			out[i] = out[i+1]
-		}
+		out[i], out[i+1] = d, d
 	}
 	return out
 }

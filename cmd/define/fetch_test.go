@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"testing"
@@ -41,5 +42,37 @@ func TestFetchNoCandidates(t *testing.T) {
 	cdn := newFakeCDN(t, nil)
 	if _, _, err := cdn.source().Fetch(t.Context(), nil); !errors.Is(err, ErrNoAudio) {
 		t.Errorf("err = %v, want ErrNoAudio", err)
+	}
+}
+
+// A transport failure must NOT be reported as "no recorded pronunciation": one
+// is a normal outcome for a word, the other means the network is down. The
+// %w:%w chain is the whole point of the distinction, so it is pinned here — a
+// regression to %v, or a swap back to ErrNoAudio, passes nothing.
+func TestFetchTransportFailureIsNotErrNoAudio(t *testing.T) {
+	cdn := newFakeCDN(t, nil)
+	urls := cdn.urls("/a.mp3")
+	cdn.Close() // server gone: every request is a transport error
+
+	_, _, err := cdn.source().Fetch(t.Context(), urls)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if !errors.Is(err, ErrFetchFailed) {
+		t.Errorf("err = %v, want ErrFetchFailed", err)
+	}
+	if errors.Is(err, ErrNoAudio) {
+		t.Error("a transport failure must not report as ErrNoAudio")
+	}
+}
+
+func TestFetchContextCancellationReachesTheCaller(t *testing.T) {
+	cdn := newFakeCDN(t, map[string][]byte{"/a.mp3": []byte("ID3")})
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, _, err := cdn.source().Fetch(ctx, cdn.urls("/a.mp3"))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("errors.Is(err, context.Canceled) = false for %v — the cause was flattened out of the chain", err)
 	}
 }
