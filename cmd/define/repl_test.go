@@ -195,3 +195,67 @@ func TestREPLReplayWritesNothingToStdout(t *testing.T) {
 		t.Errorf("played %d times, want 9 (3 definitions worth: 1 typed + 2 replays)", got)
 	}
 }
+
+// The >64 KB guard exists so a large paste cannot look like EOF and silently end
+// the session. It shipped untested; this pins the branch.
+func TestREPLOverlongLineIsReportedNotSilentEOF(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	var out, errb bytes.Buffer
+	huge := strings.Repeat("a", maxLineBytes+1) + "\n"
+
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader(huge), &out, &errb); code != 1 {
+		t.Errorf("exit = %d, want 1 — an unreadable line must not be mistaken for EOF", code)
+	}
+	if !strings.Contains(errb.String(), "reading input") {
+		t.Errorf("want a diagnostic naming the read failure, got %q", errb.String())
+	}
+}
+
+// A line just under the cap is ordinary input, not an error — the guard must not
+// be so eager that it rejects a long paste it can actually handle.
+func TestREPLLongButReadableLineIsJustAWord(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	var out, errb bytes.Buffer
+	long := strings.Repeat("a", 100_000) + "\n"
+
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader(long), &out, &errb); code != 0 {
+		t.Errorf("exit = %d, want 0", code)
+	}
+}
+
+// Interactively, a replay flashes the indicator and then erases it, ending with
+// the cursor back on the prompt — the screen must not scroll.
+func TestREPLReplayFlashesThenRestoresThePrompt(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, true) // interactive
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	s := out.String()
+	if n := strings.Count(s, "♫"); n != 2 {
+		t.Errorf("indicator shown %d times, want 2 (once on define, once flashed on replay)", n)
+	}
+	if !strings.Contains(s, eraseLineAndStepBack) {
+		t.Error("the flash was never erased — the screen would scroll on every replay")
+	}
+	// Three WRITES, one visible prompt: one before each of the two reads, plus
+	// the redraw that replaces the second in place after the flash is erased.
+	// A fourth would mean the loop drew its own on top of the redraw.
+	if n := strings.Count(s, prompt); n != 3 {
+		t.Errorf("prompt written %d times, want 3 (two reads + one in-place redraw)", n)
+	}
+	// The redraw must come after the erase, or it scrolls instead of replacing.
+	if strings.LastIndex(s, eraseLineAndStepBack) > strings.LastIndex(s, prompt) {
+		t.Error("the prompt was redrawn before the erase")
+	}
+}
+
+// Piped output must never contain an escape sequence.
+func TestREPLNonInteractiveReplayEmitsNoEscapes(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	if strings.Contains(out.String(), "\x1b[") {
+		t.Error("ANSI escapes leaked into non-interactive output")
+	}
+}

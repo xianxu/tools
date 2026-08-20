@@ -169,11 +169,26 @@ testable from a string. `deps.stdinIsTerminal` is injected because a test
 harness's stdin is never a terminal; note it is a different question from the
 stdout probe that drives colour.
 
-A bare return replays audio and writes nothing to stdout — no definition, no
-announcement. `speak` is silent by construction and `defineOnce` owns the "♫
-playing N×" line, so the loop cannot accidentally reprint. The only screen change
-on a replay is the terminal's own echo of the Enter key and the next prompt;
-suppressing those would need cursor control, which is a stated non-goal. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
+A bare return replays audio and leaves the screen **unchanged**. `speak` is
+silent by construction and `defineOnce` owns the "♫ playing N×" line, so the loop
+cannot accidentally reprint a definition. Interactively the loop flashes the
+indicator on the line Enter's echo just opened, then erases it and steps back
+onto the prompt (`eraseLineAndStepBack`) — the echo is undone rather than
+accepted, so the view never scrolls and the word you are hearing stays beside the
+definition you are reading. Cursor control was a `#2` non-goal, lifted by the
+operator for exactly this. Gated on interactive: piped output contains no escape
+sequence, asserted.
+
+**Cancellation prints nothing.** Killing `afplay` is *how* Ctrl-C is implemented,
+so both report sites suppress a diagnostic when `ctx.Err() != nil`; without that
+guard a SIGINT during playback printed `define: afplay: signal: killed` and exited
+0, telling the user their own keypress had failed.
+
+**"No recording" is cached; a transport failure is not.** `ErrNoAudio` is
+permanent, so replaying a word without audio must not re-issue all four candidate
+requests each time; `ErrFetchFailed` stays retryable so a transient outage does
+not poison the session. The cache derives that distinction from the error
+taxonomy rather than re-deciding what "failed" means. Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
 *inside* `repl`, so the production and test wiring are the same line and
 `fakeCDN.Requested()` is the assertion. Failed fetches are not cached, so a
 transient outage does not poison a session.

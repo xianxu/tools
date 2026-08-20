@@ -38,8 +38,8 @@ define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
 
 With no word, `define` reads stdin: a word defines and speaks it, a bare return
-replays the *pronunciation* of the current one — no definition reprinted, no
-re-fetch — and Ctrl-C quits. The prompt appears
+replays the *pronunciation* of the current one — the screen does not change and
+nothing is re-fetched — and Ctrl-C quits silently. The prompt appears
 only on a terminal, so piping stays clean. Flags are session settings — `define
 -times 1` opens the loop with single playback.
 

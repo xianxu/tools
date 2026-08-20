@@ -48,6 +48,16 @@ const maxLineBytes = 1 << 20
 
 const prompt = "› "
 
+// eraseLineAndStepBack clears the line the flash was written on, moves the
+// cursor up onto the prompt line, and clears that too so the prompt can be
+// redrawn in place. The net effect is that a replay leaves the screen byte-for-
+// byte as it was — the terminal's echo of Enter is undone rather than accepted.
+//
+// This is the one place the tool moves the cursor; #2 listed cursor control as a
+// non-goal and the operator lifted it for exactly this (2026-08-20). It is gated
+// on interactive, so piped output never sees an escape sequence.
+const eraseLineAndStepBack = "\r\x1b[K\x1b[A\r\x1b[K"
+
 // repl reads words until the input ends or the context is cancelled.
 //
 // It reads stdin unconditionally and prompts only when interactive, so there is
@@ -62,11 +72,13 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 
 	lines, errc := scanLines(stdin)
 	var current string
+	var skipPrompt bool
 
 	for {
-		if interactive {
+		if interactive && !skipPrompt {
 			fmt.Fprint(stdout, prompt)
 		}
+		skipPrompt = false
 		select {
 		case <-ctx.Done():
 			if interactive {
@@ -87,11 +99,20 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 			case cmdNothing:
 				fmt.Fprintln(stderr, "define: type a word, or press return to replay the last one")
 			case cmdReplay:
-				// Silent: no definition, no announcement, nothing written to
-				// stdout at all. Pressing return means "say it again" — the screen
-				// should look exactly as it did, so what you are hearing stays
-				// next to what you are reading.
-				if err := replay(ctx, d, opt, current); err != nil {
+				// Pressing return means "say it again": the screen must end up
+				// exactly as it was. Interactively we flash the indicator on the
+				// line Enter's echo just opened, then erase it and step back onto
+				// the prompt — so the word you are hearing stays next to the
+				// definition you are reading, and the view never scrolls.
+				if interactive {
+					fmt.Fprintf(stdout, "  ♫ playing %d×", opt.times)
+				}
+				err := replay(ctx, d, opt, current)
+				if interactive {
+					fmt.Fprint(stdout, eraseLineAndStepBack+prompt)
+					skipPrompt = true // we just redrew it; do not draw a second
+				}
+				if err != nil && ctx.Err() == nil {
 					fmt.Fprintf(stderr, "define: %s\n", err)
 				}
 			case cmdDefine:

@@ -68,10 +68,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	times := fs.Int("times", 3, "how many times to play the pronunciation")
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
 	fs.Usage = func() {
-		fmt.Fprint(stderr, "usage: define [flags] <word>\n\n"+
+		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
 			"Looks the word up in macOS's active dictionaries — normally the New\n"+
 			"Oxford American Dictionary, the one Google licenses, hence the matching\n"+
-			"notation — and plays its recorded pronunciation.\n\nFlags:\n")
+			"notation — and plays its recorded pronunciation.\n\n"+
+			"With no word, reads words from stdin; on a terminal that is an\n"+
+			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -123,7 +125,11 @@ func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, s
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
 		fmt.Fprintf(stdout, "\n  ♫ playing %d×\n", opt.times)
-		if err := speak(ctx, d, word, opt.locale, opt.times); err != nil {
+		// A cancelled context is the user pressing Ctrl-C, not a failure. Without
+		// this guard SIGINT during playback prints "define: afplay: signal:
+		// killed" — killing afplay is how cancellation is *implemented*, so
+		// reporting it as an error tells the user their own keypress went wrong.
+		if err := speak(ctx, d, word, opt.locale, opt.times); err != nil && ctx.Err() == nil {
 			fmt.Fprintf(stderr, "define: %s\n", err)
 		}
 	}

@@ -111,19 +111,43 @@ func TestCachingAudioSourceDistinguishesWords(t *testing.T) {
 	}
 }
 
-// A transient outage must not poison the rest of the session.
-func TestCachingAudioSourceDoesNotCacheFailures(t *testing.T) {
-	cdn := newFakeCDN(t, nil) // every path 404s
-	src := newCachingAudioSource(cdn.source())
+// A TRANSPORT failure is transient and must stay retryable — unlike ErrNoAudio,
+// which is permanent and is cached (see the test below). A 404 is not a
+// transport failure, so this closes the server to produce a real one.
+func TestCachingAudioSourceDoesNotCacheTransportFailures(t *testing.T) {
+	cdn := newFakeCDN(t, nil)
 	urls := cdn.urls("/a.mp3")
+	src := newCachingAudioSource(cdn.source())
+	cdn.Close()
 
-	if _, _, err := src.Fetch(t.Context(), urls); err == nil {
-		t.Fatal("want an error")
+	for i := 0; i < 2; i++ {
+		if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrFetchFailed) {
+			t.Fatalf("fetch %d: %v, want ErrFetchFailed", i, err)
+		}
 	}
-	if _, _, err := src.Fetch(t.Context(), urls); err == nil {
-		t.Fatal("want an error")
+	// The server is closed, so nothing is recorded server-side; what matters is
+	// that the second call still ATTEMPTED rather than being served a cached
+	// error — a closed cache would return instantly with no attempt.
+	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrFetchFailed) {
+		t.Errorf("third fetch: %v — a transient failure was cached", err)
 	}
-	if got := cdn.Requested(); len(got) != 2 {
-		t.Errorf("made %d requests, want 2 — a failure was cached: %v", len(got), got)
+}
+
+// "No recording exists" is permanent, unlike a transport failure. Replaying a
+// word with no audio must not re-issue all four candidate requests every time.
+func TestCachingAudioSourceCachesErrNoAudio(t *testing.T) {
+	cdn := newFakeCDN(t, nil) // every candidate 404s → ErrNoAudio
+	src := newCachingAudioSource(cdn.source())
+	urls := cdn.urls("/a.mp3", "/b.mp3")
+
+	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrNoAudio) {
+		t.Fatalf("first fetch: %v", err)
+	}
+	before := len(cdn.Requested())
+	if _, _, err := src.Fetch(t.Context(), urls); !errors.Is(err, ErrNoAudio) {
+		t.Fatalf("second fetch: %v", err)
+	}
+	if got := len(cdn.Requested()); got != before {
+		t.Errorf("made %d more requests for a word with no recording, want 0", got-before)
 	}
 }
