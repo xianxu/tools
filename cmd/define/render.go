@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -80,7 +79,7 @@ func Render(e Entry, opt RenderOpts) string {
 			fmt.Fprintf(&hdr, "%s%s%s", p.pos, blk.POS, p.off)
 		}
 		if blk.Label != "" {
-			fmt.Fprintf(&hdr, " %s%s%s", p.dim, blk.Label, p.off)
+			fmt.Fprintf(&hdr, " %s%s%s", p.dim, prettyPronunciations(blk.Label, p), p.off)
 		}
 		if blk.IPA != "" {
 			fmt.Fprintf(&hdr, "  %s/%s/%s", p.ipa, blk.IPA, p.off)
@@ -100,12 +99,12 @@ func Render(e Entry, opt RenderOpts) string {
 				marker = "• "
 			}
 			if s.Gloss != "" {
-				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, s.Gloss)
+				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, prettyPronunciations(s.Gloss, p))
 			} else if marker != "" {
 				fmt.Fprintf(&b, "%s%s\n", indent, strings.TrimSpace(marker))
 			}
 			for _, ex := range s.Examples {
-				fmt.Fprintf(&b, "%s  %s%q%s\n", indent, p.ex, ex, p.off)
+				fmt.Fprintf(&b, "%s  %s%q%s\n", indent, p.ex, prettyPronunciations(ex, p), p.off)
 			}
 		}
 	}
@@ -119,18 +118,7 @@ func Render(e Entry, opt RenderOpts) string {
 	return b.String()
 }
 
-var pipeSpanRe = regexp.MustCompile(`\|([^|]*)\|`)
-
-// prettyPronunciations rewrites NOAD's |ˌsikəˈfan(t)ək(ə)lē| spans as /…/ so
-// section text matches the header's notation. Only punctuation changes, so the
-// no-data-loss invariant is unaffected. Spans that are prose (example
-// separators) are left alone — that is exactly what isPronunciation decides.
+// prettyPronunciations is the coloured face of rewritePronunciations.
 func prettyPronunciations(s string, p palette) string {
-	return pipeSpanRe.ReplaceAllStringFunc(s, func(m string) string {
-		inner := strings.TrimSpace(strings.Trim(m, "|"))
-		if !isPronunciation(inner) {
-			return m
-		}
-		return fmt.Sprintf("%s/%s/%s", p.ipa, inner, p.off)
-	})
+	return rewritePronunciations(s, p.ipa, p.off)
 }

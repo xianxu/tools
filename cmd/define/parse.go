@@ -173,7 +173,7 @@ func ParseEntry(raw string) Entry {
 		return e
 	}
 	e.IPA = ipa
-	e.Head = parseHead(head)
+	e.Head = parseHead(rewritePronunciations(head, "", ""))
 	body, sections := splitSections(rest)
 	e.Sections = sections
 	e.Blocks = parseBlocks(body, e.HeadPOS(), ipa)
@@ -201,10 +201,13 @@ func parseHead(head string) []HeadTok {
 		toks = append(toks, HeadTok{k, text})
 	}
 
-	for _, tok := range fields[1:] {
+	for i, tok := range fields[1:] {
 		stripped := strings.ReplaceAll(tok, "·", "")
 		switch {
-		case isDigits(tok):
+		// A homograph number sits immediately after the headword ("bank 1",
+		// "present 1"). A digit further along is something else — in
+		// "use verb 1 [with object]" it is sense 1's number.
+		case isDigits(tok) && i == 0:
 			add(HeadHomograph, tok)
 		// A syllabification always carries interpunct dots. Without that
 		// requirement a token merely equal to the headword ("read verb (past and
@@ -264,10 +267,39 @@ func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 		idx int
 		pos string
 	}
+	// A part-of-speech WORD is not a part-of-speech BLOCK. NOAD's prose is full
+	// of them — "a noun phrase functioning as", "[with adjective or noun
+	// modifier]", "(banked as adjective)" — and treating any of them as a block
+	// opener orphans the senses that follow under a phantom heading.
+	//
+	// A real opener is structural, not lexical. It sits at the start of the body
+	// or just after a sentence end, and never inside a bracket or paren:
+	//
+	//	sycophantic … | ˌsikəˈfan(t)ik | adjective behaving …   body start
+	//	… in one season. noun an ephemeral plant: …             after "."
+	//	… attributes. (subject to) adjective [predicative] …    after ")"
+	//
+	// Three separate bugs (bank, man/thing, subject) were all this one rule
+	// missing, so it is expressed once here rather than patched per shape.
 	var marks []mark
+	paren, bracket := 0, 0
 	for i := 0; i < len(body); {
+		switch body[i] {
+		case '(':
+			paren++
+		case ')':
+			if paren > 0 {
+				paren--
+			}
+		case '[':
+			bracket++
+		case ']':
+			if bracket > 0 {
+				bracket--
+			}
+		}
 		pos, width := posAt(body, i)
-		if pos == "" {
+		if pos == "" || paren != 0 || bracket != 0 || !opensBlock(body, i) {
 			i++
 			continue
 		}
@@ -323,7 +355,11 @@ func parseSenses(text string) []Sense {
 	}
 	locs := senseSplit.FindAllStringSubmatchIndex(text, -1)
 	var accepted [][]int
-	want := 1
+	// The sequence does not always start at 1: when the head swallowed sense 1's
+	// number ("use verb 1 [with object] | yo͞oz |"), the body opens at 2. Anchoring
+	// at 1 unconditionally rejected every sense in such a block and merged them
+	// into the preceding text.
+	want := firstSenseNumber(locs, text)
 	for _, loc := range locs {
 		if loc[2] < 0 { // a • sub-sense always splits
 			accepted = append(accepted, loc)
@@ -355,6 +391,22 @@ func parseSenses(text string) []Sense {
 	return senses
 }
 
+// firstSenseNumber picks the value the numbered sequence starts at: the first
+// numbered candidate when that is 1 or 2, else 1. A larger leading numeral is a
+// prose number ("she ran in the 200 meters"), not a sense.
+func firstSenseNumber(locs [][]int, text string) int {
+	for _, loc := range locs {
+		if loc[2] < 0 {
+			continue
+		}
+		if n, err := atoi(text[loc[2]:loc[3]]); err == nil && (n == 1 || n == 2) {
+			return n
+		}
+		return 1
+	}
+	return 1
+}
+
 // newSense splits a sense into its gloss and examples. Examples follow the first
 // ":" and are separated by interior pipes (any leading pronunciation span was
 // already peeled off by parseBlocks).
@@ -374,6 +426,26 @@ func newSense(number string, sub bool, text string) Sense {
 }
 
 // --- small helpers ---------------------------------------------------------
+
+var pipeSpanRe = regexp.MustCompile(`\|([^|]*)\|`)
+
+// rewritePronunciations turns NOAD's |ˌsikəˈfan(t)ək(ə)lē| spans into /…/ so the
+// whole entry uses one notation — the Google-style /…/ the tool exists to show.
+// Spans that are prose (example separators) are left alone; isPronunciation is
+// what decides. Only punctuation changes, so this is no-data-loss safe.
+//
+// Applied at BOTH ends: in the head at parse time (read carries "(past and past
+// participle read | red |)") and to labels, glosses, examples and sections at
+// render time. One function, two call sites, so the two cannot drift.
+func rewritePronunciations(s, pre, post string) string {
+	return pipeSpanRe.ReplaceAllStringFunc(s, func(m string) string {
+		inner := strings.TrimSpace(strings.Trim(m, "|"))
+		if !isPronunciation(inner) {
+			return m
+		}
+		return pre + "/" + inner + "/" + post
+	})
+}
 
 var bracketed = regexp.MustCompile(`\[[^\]]*\]`)
 
@@ -451,6 +523,10 @@ func isBoundary(b byte) bool {
 // orphaning the verb senses after it under a phantom heading whose body was a
 // lone ")". Real POS tokens followed by a bracket only occur inside ORIGIN /
 // PHRASAL VERBS, which splitSections has already peeled off.
+//
+// That covers POS-then-bracket only. The mirror case — a POS *inside* a bracket,
+// "[with adjective or noun modifier]" — has whitespace on both sides and is
+// rejected by the bracket-depth guard in parseBlocks, not here.
 func posAt(body string, i int) (string, int) {
 	if i > 0 && !isBoundary(body[i-1]) {
 		return "", 0
@@ -465,6 +541,23 @@ func posAt(body string, i int) (string, int) {
 		}
 	}
 	return "", 0
+}
+
+// opensBlock reports whether position i is a structural block boundary: the
+// start of the body, or immediately after a sentence end. The closing paren of
+// a lead-in group counts — "attributes. (subject to) adjective [predicative]".
+func opensBlock(body string, i int) bool {
+	for j := i - 1; j >= 0; j-- {
+		switch body[j] {
+		case ' ', '\t', '\n':
+			continue
+		case '.', ')', ':', ';':
+			return true
+		default:
+			return false
+		}
+	}
+	return true // only whitespace before it — the body starts here
 }
 
 func indexToken(s, token string) int {

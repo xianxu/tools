@@ -38,7 +38,12 @@ func loadFakeDictionary(dir string) (*fakeDictionary, error) {
 		if len(b) == 0 {
 			return nil, fmt.Errorf("empty fixture %s — re-run testdata/capture.sh", p)
 		}
-		d.entries[strings.TrimSuffix(filepath.Base(p), ".txt")] = string(b)
+		// Lowercase at LOAD, matching what Lookup does to the query. The real
+		// dependency is case-insensitive (verified: capture.py Amazon and
+		// capture.py amazon both return the entry), so a fake keyed by the raw
+		// filename stem diverges from it — iPhone, iPad, MacBook and Amazon were
+		// all present on disk yet unreachable through the seam.
+		d.entries[strings.ToLower(strings.TrimSuffix(filepath.Base(p), ".txt"))] = string(b)
 	}
 	return d, nil
 }
@@ -82,5 +87,23 @@ func TestFakeDictionaryMissIsErrNoEntry(t *testing.T) {
 func TestLoadFakeDictionaryRejectsEmptyCorpus(t *testing.T) {
 	if _, err := loadFakeDictionary(t.TempDir()); err == nil {
 		t.Error("want an error for an empty corpus, got nil")
+	}
+}
+
+// Every fixture on disk must be reachable through the seam, not merely present
+// in the map. Four were not, which silently disabled the end-to-end coverage of
+// the no-pronunciation path they had been added for.
+func TestEveryFixtureIsReachableViaLookup(t *testing.T) {
+	d := testDict(t)
+	for key := range d.entries {
+		if _, err := d.Lookup(key); err != nil {
+			t.Errorf("fixture %q unreachable via Lookup: %v", key, err)
+		}
+	}
+	// And the capitalized spellings a user would actually type.
+	for _, w := range []string{"iPhone", "MacBook", "Amazon", "iPad"} {
+		if _, err := d.Lookup(w); err != nil {
+			t.Errorf("Lookup(%q) failed: %v", w, err)
+		}
 	}
 }

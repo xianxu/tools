@@ -22,7 +22,14 @@ func TestFixturesMatchLiveDictionary(t *testing.T) {
 		t.Fatalf("loadFakeDictionary: %v", err)
 	}
 	live := systemDictionary()
-	for word, want := range fake.entries {
+	// Read through Lookup, not fake.entries: a conformance check that bypasses
+	// the seam cannot see the fake diverging from the dependency at that seam.
+	for word := range fake.entries {
+		want, err := fake.Lookup(word)
+		if err != nil {
+			t.Errorf("%s: unreachable through the fake seam: %v", word, err)
+			continue
+		}
 		got, err := live.Lookup(word)
 		if err != nil {
 			t.Errorf("%s: live lookup failed: %v (sandboxed?)", word, err)

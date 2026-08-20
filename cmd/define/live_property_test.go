@@ -31,7 +31,7 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 	defer f.Close()
 
 	dict := systemDictionary()
-	var checked, missing, failed int
+	var checked, missing, failed, rawPipes int
 	// Deterministic stride sample across the whole list, so the words are spread
 	// over the alphabet rather than clustered in the a's.
 	sc := bufio.NewScanner(f)
@@ -50,6 +50,18 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 		}
 		checked++
 		out := Render(ParseEntry(raw), RenderOpts{Color: false})
+		// The tool's purpose is Google-style /…/; a rendered entry still showing
+		// NOAD's raw |…| pipes has missed it. This was 9.9% of live entries when
+		// the rewrite was wired to sections only.
+		for _, m := range pipeSpanRe.FindAllStringSubmatch(out, -1) {
+			if isPronunciation(m[1]) {
+				rawPipes++
+				if rawPipes <= 3 {
+					t.Errorf("%s: raw pronunciation span %q survived rendering", w, m[0])
+				}
+				break
+			}
+		}
 		if gap := subsequenceGap(alnum(raw), alnum(out)); gap >= 0 {
 			failed++
 			if failed <= 5 { // report a handful, not thousands
@@ -62,7 +74,12 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 	if checked < 500 {
 		t.Fatalf("only %d live entries checked (%d missing) — sandboxed?", checked, missing)
 	}
-	t.Logf("checked %d live entries, %d failed, %d absent from NOAD", checked, failed, missing)
+	t.Logf("checked %d live entries: %d lost content, %d kept raw pipes, %d absent from NOAD",
+		checked, failed, rawPipes, missing)
+	if rawPipes > 0 {
+		t.Errorf("%d/%d live entries rendered raw |…| pronunciations (%.1f%%)",
+			rawPipes, checked, 100*float64(rawPipes)/float64(checked))
+	}
 	if failed > 0 {
 		t.Errorf("%d/%d live entries lost content (%.1f%%)", failed, checked, 100*float64(failed)/float64(checked))
 	}

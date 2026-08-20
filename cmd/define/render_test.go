@@ -95,21 +95,62 @@ func stripANSI(s string) string {
 
 // Sense numbering is the one structure the alnum invariant is blind to: a bare
 // numeral in an example ("she ran in the 200 meters") preserves letter order
-// while producing sense "200". Requiring a 1..n sequence per block catches it.
+// while producing sense "200". Requiring a consecutive run per block catches it.
+//
+// The run does not always start at 1: when the head swallows sense 1's number
+// ("use verb 1 [with object]"), the body opens at 2. So this asserts
+// consecutiveness from whatever the block starts at, and separately bounds the
+// start — which is what distinguishes "opens at 2" from "opens at 200".
 func TestCorpusSenseNumbersAreSequential(t *testing.T) {
 	d := testDict(t)
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			for bi, blk := range ParseEntry(raw).Blocks {
-				want := 1
+				want := -1
 				for _, s := range blk.Senses {
 					if s.Number == "" {
 						continue
+					}
+					if want < 0 {
+						if s.Number != "1" && s.Number != "2" {
+							t.Errorf("block %d (%s): sequence starts at %q — a prose numeral, not a sense",
+								bi, blk.POS, s.Number)
+							break
+						}
+						want, _ = atoi(s.Number)
 					}
 					if s.Number != fmt.Sprint(want) {
 						t.Errorf("block %d (%s): sense number %q, want %d", bi, blk.POS, s.Number, want)
 					}
 					want++
+				}
+			}
+		})
+	}
+}
+
+// The complement of the test above: it validates numbers that WERE assigned,
+// and is blind to numbering that was never assigned at all. When the "want"
+// anchor was wrong, use's verb senses 2-5 silently merged into the preceding
+// sense text and this is the shape that catches it.
+func TestCorpusNumberedSensesAreNotSwallowed(t *testing.T) {
+	d := testDict(t)
+	for word, raw := range d.entries {
+		t.Run(word, func(t *testing.T) {
+			for bi, blk := range ParseEntry(raw).Blocks {
+				var numbered int
+				for _, s := range blk.Senses {
+					if s.Number != "" {
+						numbered++
+					}
+					// A sense whose own text still contains a later split
+					// candidate means the numbering anchor rejected it.
+					for n := 2; n <= 9; n++ {
+						if strings.Contains(s.Gloss, fmt.Sprintf(" %d ", n)) && numbered == 0 {
+							t.Errorf("block %d (%s): gloss carries an unconsumed sense number %d: %.80q",
+								bi, blk.POS, n, s.Gloss)
+						}
+					}
 				}
 			}
 		})
@@ -129,6 +170,12 @@ func TestCorpusBlockStructure(t *testing.T) {
 		"record":       {"noun", "verb"},
 		"run":          {"verb", "noun"},
 		"gaslighting":  {"noun"},
+		// The phantom-block family: a POS word inside a bracket (man, thing),
+		// in plain prose ("a noun phrase", subject), and a real opener after a
+		// paren ("(subject to) adjective", subject). Each of these shipped a bug.
+		"man":     {"noun", "verb", "exclamation"},
+		"thing":   {"noun"},
+		"subject": {"noun", "adjective", "adverb", "verb"},
 	}
 	d := testDict(t)
 	for word, expect := range want {
@@ -143,6 +190,24 @@ func TestCorpusBlockStructure(t *testing.T) {
 			}
 			if strings.Join(got, ",") != strings.Join(expect, ",") {
 				t.Errorf("blocks = %v, want %v", got, expect)
+			}
+		})
+	}
+}
+
+// No raw NOAD pipe notation may survive into rendered output: the tool exists to
+// show Google-style /…/, and a screen mixing both notations misses the point.
+// This covers the head as well as the body — `read` carries "(past and past
+// participle read | red |)" in its head.
+func TestNoRawPronunciationPipesSurvive(t *testing.T) {
+	d := testDict(t)
+	for word, raw := range d.entries {
+		t.Run(word, func(t *testing.T) {
+			out := Render(ParseEntry(raw), RenderOpts{Color: false})
+			for _, m := range pipeSpanRe.FindAllStringSubmatch(out, -1) {
+				if isPronunciation(m[1]) {
+					t.Errorf("raw pronunciation span %q survived rendering", m[0])
+				}
 			}
 		})
 	}
