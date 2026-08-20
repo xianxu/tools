@@ -4,11 +4,43 @@
 
 **Goal:** Bare `define` on a terminal opens a loop: type a word to define and hear it, press return to hear it again, Ctrl-C to quit.
 
-**Architecture:** The one-shot path is factored into `defineOnce`, and the loop calls it — the REPL adds a reader and a session, not a second implementation of `define` (ARCH-DRY). Replay-without-refetch comes from a `cachingAudioSource` **decorator** on the existing `AudioSource` seam, so the fake CDN's request recorder proves the cache works rather than a hand-inspected log.
+**Architecture:** The one-shot path is factored into `defineOnce`, and the loop calls it — the REPL adds a reader, not a second implementation of `define` (ARCH-DRY). The loop reads **stdin unconditionally** and prints a prompt only when stdin is a terminal, so there is no interactive/batch branch to keep in sync and the whole loop is testable from a string. Replay-without-refetch comes from a `cachingAudioSource` **decorator** on the existing `AudioSource` seam, so the fake CDN's own request recorder is the assertion.
+
+**Correction to the issue as filed.** The Spec claimed `echo word | define` "still" works. It does not and never has: `run()` requires `NArg() == 1`, so no-args exits 2 with usage. Reading words from stdin is therefore **new behaviour introduced here**, not behaviour preserved. Verified at `bin/define` before planning.
 
 **Tech Stack:** Go 1.26, `os/signal.NotifyContext`, `golang.org/x/term` (already a dependency).
 
 **Milestone:** single-pass. One boundary, closed with `sdlc close` — no `Mx` tags.
+
+---
+
+## Non-goals
+
+A REPL is where scope creeps, so the boundary is stated before any code:
+
+- **No line editing, history, or completion.** No readline, no arrow keys, no
+  `~/.define_history`. A word is short and retyping it is cheap; the moment this
+  needs a line editor it needs a dependency, and that is a separate decision.
+- **No multi-line input, no `:` commands.** One line is one word. `:forget` and
+  friends arrive with the deck (#4), where there is something to forget.
+- **No session state beyond the current word** — no per-session deck, no counters.
+  The deck is #3/#4's job and must not be pre-empted here.
+- **No pager, no screen clearing, no cursor control.** Output scrolls.
+
+## Flags inside the loop
+
+`-times`, `-locale`, `-no-audio`, `-raw` and `-no-color` are **session settings**:
+parsed once, applied to every word. `define -times 1` with no word opens the loop
+with single playback — `NArg() == 0` is the trigger, independent of flags.
+
+## Cancellation contract
+
+`main()` wraps the context with `signal.NotifyContext(ctx, os.Interrupt)`. This
+changes the **shipped one-shot path** too, and that is intended: today Ctrl-C
+during playback kills the process outright; afterwards it cancels the context,
+`exec.CommandContext` stops `afplay`, deferred cleanup runs, and the process
+exits 0. Stating it because it is a behaviour change to code that already
+shipped, not a new-feature detail.
 
 ---
 
@@ -33,17 +65,25 @@
 |------|----------|--------|-------|
 | `cachingAudioSource` | `cmd/define/fetch.go` | new | an `AudioSource` |
 | `defineOnce` | `cmd/define/main.go` | new (extracted) | the existing lookup→render→speak path |
+| `stdinIsTerminal` | `cmd/define/main.go` | new | `term.IsTerminal` on **stdin** |
 | `repl` | `cmd/define/repl.go` | new | stdin + the session |
 
-- **cachingAudioSource** — decorates any `AudioSource`, memoising by candidate-list key for the process lifetime.
-  - **Injected into:** `realDeps()` for the REPL only; the one-shot path fetches once anyway, so caching there is dead weight.
-  - **Why a decorator and not a map in the loop:** the cache then sits *behind the seam*, so `fakeCDN.Requested()` — which already records every request in order — is the assertion that a replay makes no second request. A map inside the loop would need its own bespoke test.
+- **cachingAudioSource** — decorates any `AudioSource`, memoising by candidate-list key.
+  - **Injected into:** applied by `repl` itself to whatever `AudioSource` it is handed. Not in `realDeps()`: wiring it there would leave the production composition untested, since every test builds its own deps. Wrapping inside `repl` means the test path and the production path are the same line of code.
+  - **Why a decorator and not a map in the loop:** the cache sits *behind the seam*, so `fakeCDN.Requested()` — which already records every request in order — is the assertion. A map inside the loop would need a bespoke test.
+  - **Failed fetches are not cached**, so a transient outage does not poison the rest of the session.
 
 - **defineOnce** — the existing body of `run()` after flag parsing, extracted verbatim: look up, render, print, speak.
   - **Injected into:** both `run()` (one-shot) and `repl`. This is the ARCH-DRY core of the issue — the REPL must not grow a parallel copy of the define path.
 
-- **repl** — reads lines, dispatches commands, owns the session temp dir.
-  - Takes an `io.Reader` and writers, so tests drive it with a scripted script and no terminal.
+- **repl** — reads lines and dispatches commands.
+  - **Owns no temp dir.** `speak` already creates and removes one per call, and an
+    MP3 is a few KB, so re-writing it per replay is cheaper than owning session
+    state. This keeps Task 1's extraction genuinely verbatim.
+  - Takes an `io.Reader`, the writers, and an `interactive bool`, so tests drive it
+    from a string with no terminal anywhere.
+
+- **stdinIsTerminal** — injected as a field on `deps` (not called directly), because otherwise "no args on a terminal" is unwritable as a test: the harness's stdin is never a TTY. Note this is a *different question* from the existing stdout check that drives colour.
 
 ### Test surface
 
@@ -86,13 +126,15 @@
 
 **Files:** create `cmd/define/repl.go`; test `cmd/define/repl_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations, driven through the fakes:
-  - `"sycophantic\n\n"` → 2 plays-sets (6 plays at the default 3×) and **1** CDN request.
-  - `"sycophantic\nephemeral\n"` → 2 CDN requests; the second word becomes current.
-  - a blank first line → a hint on stderr, no lookup, loop continues.
-  - an unknown word → diagnostic on stderr, loop continues, current word unchanged.
-  - EOF (the reader runs out) → returns 0.
-  - a cancelled context → returns promptly without consuming further input.
+- [ ] **Step 1: Write the failing tests**, driven through the existing fakes. The design decisions they pin: an unknown word leaves the *current* word unchanged so a following blank line replays the last good one; a blank line with nothing current is a hint, not an error; a replay costs zero CDN requests.
+
+  Two adversarial classes get named guards rather than good-path coverage:
+  - **A line over 64 KB.** `bufio.Scanner` stops with `ErrTooLong`, which looks
+    exactly like EOF — a large paste would silently quit the loop. Check
+    `scanner.Err()` separately from the loop ending, report it, and continue.
+  - **The reader goroutine outlives `repl`** (it stays blocked on stdin after the
+    loop returns on cancellation). It must share nothing mutable with the loop —
+    the current word lives in the loop only. Run the package under `-race`.
 - [ ] **Step 2: Run, expect FAIL**
 - [ ] **Step 3: Implement.** `bufio.Scanner` in a goroutine feeding a channel; `select` on that channel and `ctx.Done()` so Ctrl-C is not blocked behind a pending read. One `os.MkdirTemp` for the session, removed by `defer`.
 - [ ] **Step 4: Run, expect PASS**
@@ -102,9 +144,9 @@
 
 **Files:** modify `cmd/define/main.go`; test `cmd/define/main_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligations: no args + a TTY-ish stdin → the loop; no args + **piped** stdin → the one-shot path, so `echo sycophantic | define` still works and stays scriptable; args present → one-shot regardless.
+- [ ] **Step 1: Write the failing tests.** `NArg() == 0` → the loop, whether or not stdin is a terminal; `interactive` only controls the prompt. `echo sycophantic | define` now defines the word instead of printing usage — a **new** capability, asserted as such. Args present → one-shot, unchanged.
 - [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `main()` wraps `signal.NotifyContext(ctx, os.Interrupt)`. The TTY test is on **stdin**, not stdout — colour keys off stdout and these are different questions.
+- [ ] **Step 3: Implement.** `main()` wraps `signal.NotifyContext(ctx, os.Interrupt)` and sets `deps.stdinIsTerminal`. The prompt (`› `) goes to **stdout** and only when interactive, so piped output carries none.
 - [ ] **Step 4: Run, expect PASS**
 - [ ] **Step 5: Manual check** — the one thing tests cannot cover:
 
@@ -123,6 +165,7 @@ echo sycophantic | ./bin/define   # one-shot, unchanged
 
 ## Risks
 
+- **`go test -race ./cmd/define/` is part of Task 4's done**, not an afterthought — the reader goroutine is the only concurrency in this repo.
 - **A blocking read swallows Ctrl-C.** Reading in a goroutine with a `select` on `ctx.Done()` is the mitigation; the cancelled-context test pins it.
 - **Temp files leak on interrupt.** `signal.NotifyContext` returns normally rather than killing the process, so `defer os.RemoveAll` runs. Verified by hand in Task 5 Step 5 — a test cannot observe a real SIGINT cleanly.
 - **The extraction in Task 1 silently changes behaviour.** Mitigated by refusing to touch the existing tests during it; a test that needs editing is the signal.
