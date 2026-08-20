@@ -82,6 +82,11 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 	lines, errc := scanLines(stdin)
 	var current string
 	var skipPrompt bool
+	// Exiting 0 at EOF is right for a human at a prompt — a typo is not a failed
+	// session. It is wrong for `echo word | define`, which README presents as
+	// interchangeable with `define word` and documents as exiting 1 on an unknown
+	// word. Track failures and report them only on the non-interactive path.
+	var anyFailed bool
 
 	for {
 		if interactive && !skipPrompt {
@@ -101,6 +106,9 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 			}
 			if interactive {
 				fmt.Fprintln(stdout)
+			}
+			if !interactive && anyFailed {
+				return 1
 			}
 			return 0
 		case line := <-lines:
@@ -132,6 +140,8 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 				// does not cost you the word you were listening to.
 				if defineOnce(ctx, d, opt, cmd.word, stdout, stderr) == 0 {
 					current = cmd.word
+				} else {
+					anyFailed = true
 				}
 			}
 		}

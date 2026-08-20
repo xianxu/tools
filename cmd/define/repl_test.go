@@ -226,8 +226,15 @@ func TestREPLLongButReadableLineIsJustAWord(t *testing.T) {
 	var out, errb bytes.Buffer
 	long := strings.Repeat("a", 100_000) + "\n"
 
-	if code := repl(t.Context(), rig.deps, opt, strings.NewReader(long), &out, &errb); code != 0 {
-		t.Errorf("exit = %d, want 0", code)
+	repl(t.Context(), rig.deps, opt, strings.NewReader(long), &out, &errb)
+
+	// It is looked up (and fails, since it is not a word) rather than being
+	// reported as an unreadable line — that distinction is the point of the test.
+	if strings.Contains(errb.String(), "reading input") {
+		t.Errorf("a readable line was reported as a read failure: %q", errb.String())
+	}
+	if !strings.Contains(errb.String(), "no dictionary entry") {
+		t.Errorf("want an ordinary failed lookup, got %q", errb.String())
 	}
 }
 
@@ -370,5 +377,37 @@ func TestCancellationPrintsNoDiagnostic(t *testing.T) {
 	}
 	if errb.Len() != 0 {
 		t.Errorf("Ctrl-C printed a diagnostic: %q", errb.String())
+	}
+}
+
+// I-2: README presents `echo word | define` as interchangeable with `define
+// word` and documents exit 1 for an unknown word. The loop returned 0 at EOF
+// regardless, so a script doing `echo "$w" | define || …` got no signal.
+func TestREPLPipedFailedLookupExitsNonZero(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false /* piped */)
+	var out, errb bytes.Buffer
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader("rizz\n"), &out, &errb); code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+}
+
+// ...but a typo at an interactive prompt is not a failed session.
+func TestREPLInteractiveFailedLookupExitsZero(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, true)
+	var out, errb bytes.Buffer
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader("rizz\nsycophantic\n"), &out, &errb); code != 0 {
+		t.Errorf("exit = %d, want 0", code)
+	}
+}
+
+// I-3: -no-color must suppress cursor control too, not merely colour.
+func TestNoColorSuppressesAllANSI(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, true)
+	opt.color, opt.tty = false, false // what -no-color produces on a terminal
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	if strings.Contains(out.String(), "\x1b") {
+		t.Errorf("-no-color emitted ANSI: %q", out.String())
 	}
 }

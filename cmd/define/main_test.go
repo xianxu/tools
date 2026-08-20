@@ -203,6 +203,12 @@ func TestRunMissingAudioStillSucceeds(t *testing.T) {
 	if got := rig.player.count(); got != 0 {
 		t.Errorf("played %d times despite no audio", got)
 	}
+	// A non-erasable indicator is a record, and it played zero times. Without
+	// this, `define <word-with-no-recording> > out.txt` files a claim it played
+	// three. TestRunNoAudioMakesNoRequests already used exactly this assertion.
+	if strings.Contains(out.String(), "playing") {
+		t.Errorf("announced playback that never happened: %q", out.String())
+	}
 }
 
 // The URLs that reach the CDN must be the ones AudioCandidates derived, in order.

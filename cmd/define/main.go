@@ -91,9 +91,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		return 2
 	}
 	opt := options{
-		raw:     *raw,
-		color:   !*noColor && isTerminal(stdout),
-		tty:     isTerminal(stdout),
+		raw:   *raw,
+		color: !*noColor && isTerminal(stdout),
+		// -no-color means "emit no ANSI", so it disables cursor control too — the
+		// flag exists for terminals that mangle escapes, and splitting its meaning
+		// would leave those users with erase sequences they cannot render.
+		tty:     !*noColor && isTerminal(stdout),
 		noAudio: *noAudio,
 		times:   *times,
 		locale:  *locale,
@@ -157,22 +160,33 @@ type indicator struct {
 // Returns true when playback finished with nothing reported, so the caller can
 // decide whether its redrawn UI is still intact.
 func playAnnounced(ctx context.Context, d deps, opt options, word string, ind indicator, stdout, stderr io.Writer) bool {
-	if ind.show {
+	// An erasable indicator is ephemeral UI and may be optimistic — if playback
+	// fails it is taken back and never seen. A non-erasable one (a pipe, or
+	// -no-color) is a RECORD, and a record has to be true: announced only after
+	// something actually played. Otherwise `define <word-with-no-recording> >
+	// out.txt` files a claim that it played three times when it played none.
+	erasable := ind.show && ind.erase != ""
+	if erasable {
 		fmt.Fprint(stdout, ind.before)
 		fmt.Fprintf(stdout, "  ♫ playing %d×", opt.times)
-		fmt.Fprint(stdout, ind.trail)
 	}
 	err := speak(ctx, d, word, opt.locale, opt.times)
-	if ind.show {
+	if erasable {
 		fmt.Fprint(stdout, ind.erase)
 	}
 	// A cancelled context is the user pressing Ctrl-C, not a failure. Without
 	// this guard SIGINT during playback prints "define: afplay: signal: killed" —
 	// killing afplay is how cancellation is *implemented*, so reporting it as an
 	// error tells the user their own keypress went wrong.
-	if err != nil && ctx.Err() == nil {
-		fmt.Fprintf(stderr, "define: %s\n", err)
+	if err != nil {
+		if ctx.Err() == nil {
+			fmt.Fprintf(stderr, "define: %s\n", err)
+		}
 		return false
+	}
+	if ind.show && !erasable {
+		fmt.Fprint(stdout, ind.before)
+		fmt.Fprintf(stdout, "  ♫ playing %d×%s", opt.times, ind.trail)
 	}
 	return true
 }

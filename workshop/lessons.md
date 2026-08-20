@@ -35,3 +35,15 @@
 - **A guard with no test is not a guard.** Both `ctx.Err() == nil` suppressions
   and the whole >64 KB branch were dead to the suite — deleting them was green —
   after being added specifically to fix a shipped regression.
+
+## Ephemeral UI vs. a record (define #2, close round 3)
+
+An indicator that can be **erased** is ephemeral UI and may be optimistic — if
+the action fails it is taken back and never seen. One that **cannot** be erased
+(piped output, `-no-color`) is a *record*, and a record has to be true. Moving
+the "♫ playing 3×" line ahead of playback made `define <word> > out.txt` claim
+three plays where there were zero. Announce optimistically only when you can
+take it back.
+
+Corollary: a flag named for one effect (`-no-color`) must not leave a related
+one on. It suppresses cursor control too, or the name is a lie.

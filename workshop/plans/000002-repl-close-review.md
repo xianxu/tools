@@ -312,3 +312,171 @@ Append one `## Revisions` entry to `workshop/plans/000002-repl-plan.md` (timesta
 6. **New: the terminal-question taxonomy** — record that there are three distinct probes (`color`, `options.tty`, `deps.stdinIsTerminal`) and which one gates escape-sequence emission. This is the invariant I-1 violates; writing it down is what keeps #14/#15 from re-breaking it.
 
 Separately, append a `## Revisions` entry to `workshop/issues/000002-repl.md` amending the Spec bullet that says a bare return "writes nothing to stdout at all" — the settled-screen contract is what survived the operator refinements, and the Spec should say that rather than something the code no longer does.
+
+---
+
+## Re-review — 2026-08-20T15:40:33-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 2 — define REPL: bare invocation reads words, defines and speaks them |
+| repo | tools |
+| issue file | workshop/issues/000002-repl.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 65e91604bc62f5017131f80ab17f46302beca82e..HEAD |
+| command | sdlc close --issue 2 |
+| reviewer | claude |
+| timestamp | 2026-08-20T15:40:33-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The issue's purpose is delivered and the architecture is real, not asserted: `defineOnce` is genuinely the single define path, `playAnnounced` collapsed the duplication that round 2 flagged, `parseREPLLine` is pure and table-tested with no IO, and the cache decorator sits *inside* `repl` so `fakeCDN.Requested()` is a production-path assertion. I re-verified the environment rather than trusting the log: `go vet` clean, `go test -race -count=1 ./cmd/define/` passes (14.0s), `GOOS=linux CGO_ENABLED=0 go build ./...` green, and all four round-1 fixes plus round-2's I-4 (the Ctrl-C guard) are now genuinely covered — `TestCancellationPrintsNoDiagnostic` fails if the `ctx.Err() == nil` suppression is removed. What blocks a bare SHIP is that the operator's "announcement moves out of `speak`" refinement changed *when* the indicator is printed relative to the fetch, and nothing tested the consequence: I executed both paths and confirmed a word with no recording now writes a false `♫ playing 3×` to a redirected stdout while playing zero times, and `echo rizz | define` exits 0 where `define rizz` exits 1 — the exit-code contract README documents three lines below the newly-added piped example. Both are on the shipped one-shot/piped surface, both are cheap, neither is a crash. Alongside them, the plan's `## Revisions` section landed but skipped three of the four specific corrections the last two boundaries asked for, and the issue Spec still states something the code no longer does.
+
+## 1. Strengths
+
+- **`cmd/define/main.go:159-178`** — `playAnnounced` is a real consolidation, not a rename. The three-way divergence round 2 found (terminal gate, audio-off guard, duplicated literal) is genuinely gone, and the `indicator` struct makes the erase style the only remaining difference between the two callers. This is the ARCH-DRY win the issue set out to get.
+- **`cmd/define/repl.go:80`** — the cache applied inside `repl` rather than in `realDeps()`. Production and test wiring are the same line, which is what makes `TestREPLBareReturnReplaysWithoutRefetching`'s "exactly 1 request" a real assertion instead of scaffolding.
+- **`cmd/define/fetch.go:124-131`** — the cache derives permanence from the pre-existing `ErrNoAudio`/`ErrFetchFailed` taxonomy instead of re-deciding what "failed" means, and `TestCachingAudioSourceDoesNotCacheTransportFailures` pins the retryable half. Correct resolution of round-1 I-3.
+- **`cmd/define/repl_test.go:207-227`** — the over-cap *and* just-under-cap pair. Pinning that the >64 KB guard is not over-eager, not merely that it fires, is what keeps a future `maxLineBytes` tweak honest.
+- **`cmd/define/repl.go:76`** and **`repl_test.go:34-41`** — `transient := interactive && opt.tty`, with `replRigStreams` deliberately decoupling the two probes and a comment naming the old coupling as the thing that hid the bug. Round 2's I-1 is fixed at the level of the test *helper*, which is the durable fix.
+- **`workshop/lessons.md:21-37`** — four rules, each traceable to a specific defect in this window (AGENTS.md §4 satisfied).
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — A word with no recording now announces playback that never happens; the line persists on a pipe. Behaviour drift on the shipped one-shot path.**
+`cmd/define/main.go:132-137` and `cmd/define/main.go:159-165`
+
+Before this window, `speak` printed `\n  ♫ playing %d×\n` *after* a successful `Fetch` and `os.WriteFile`, immediately before `playN` (base `main.go:110`). `playAnnounced` now prints it *before* calling `speak`, so every pre-playback failure — no recording, transport error, `MkdirTemp`/`WriteFile` failure — emits the announcement first. On a tty it is erased and invisible; on a pipe `ind.erase` is `""`, so the false line is kept.
+
+Confirmed by execution (throwaway probe against `newAudioRig(t, "sycophantic", false)`, since the sandbox has no working CoreServices dictionary):
+
+```
+PLAYED=0  ANNOUNCED=true  stderr="define: sycophantic: no recorded pronunciation\n"
+tail of stdout: "n(t)ək(ə)lē, -ˈfantik(ə)lē/ adverb\n\n  ♫ playing 3×\n"
+```
+
+So `define <word-with-no-recording> > out.txt` now records that the word played three times when it played zero. `TestRunMissingAudioStillSucceeds` (`main_test.go:191-206`) drives exactly this scenario and asserts `player.count() == 0`, but never asserts the absence of `playing` — even though `TestRunNoAudioMakesNoRequests:185` already uses precisely that assertion for the `-no-audio` case. The pattern was available and not applied.
+
+Fix sketch — the indicator is *ephemeral UI* when erasable and a *record* when not, and a record has to be true. Announce optimistically only when it can be taken back:
+
+```go
+// in playAnnounced: cursor positioning stays unconditional (I-2's fix depends
+// on it), but the text waits for something to actually play when it cannot be erased.
+if ind.show { fmt.Fprint(stdout, ind.before) }
+announceNow := ind.show && ind.erase != ""
+if announceNow { fmt.Fprintf(stdout, "  ♫ playing %d×", opt.times) }
+err := speak(...)
+if ind.show && !announceNow && err == nil {
+    fmt.Fprintf(stdout, "\n  ♫ playing %d×%s", opt.times, ind.trail)  // restores base behaviour
+}
+```
+
+Keep `ind.before` unconditional or `TestREPLFailedReplayDoesNotWriteOntoThePrompt` regresses — with no step-back the diagnostic lands directly after the prompt, which is the defect that test exists to catch. Add the missing assertion to `TestRunMissingAudioStillSucceeds`, and state the resulting rule in `atlas/define.md`'s ephemeral-indicator paragraph.
+
+**I-2 — `echo rizz | define` exits 0 where `define rizz` exits 1, contradicting the documented exit-code table for surface this issue introduced.**
+`cmd/define/repl.go:130-135` and `cmd/define/repl.go:97-105`; `README.md:46`
+
+`repl` discards `defineOnce`'s return value except to decide `current`, and returns 0 at EOF unconditionally. Verified against the built binary:
+
+```
+$ define -no-audio rizz      → define: rizz: no dictionary entry   exit=1
+$ echo rizz | define -no-audio → define: rizz: no dictionary entry   exit=0
+```
+
+`README.md:31` now advertises `echo sycophantic | define   # or feed it words on stdin` directly beneath `define sycophantic`, presenting them as interchangeable, and `README.md:46` states `Exit codes: 0 success, 1 no dictionary entry, 2 usage error`. A script doing `echo "$w" | define || …` gets no signal. Exiting 0 at EOF is right for the *interactive* loop; it is wrong for the piped one-shot form the Done-when added.
+
+Fix sketch — one bool, non-interactive only:
+
+```go
+var anyFailed bool
+…
+case cmdDefine:
+    if defineOnce(...) == 0 { current = cmd.word } else { anyFailed = true }
+…
+// on the EOF arm:
+if !interactive && anyFailed { return 1 }
+return 0
+```
+
+Alternatively decide the divergence is intended and say so in README + Spec — but it should be a decision, not an omission. Either way it needs a test; there is none today for the exit code of a piped failed lookup.
+
+**I-3 — `-no-color` still emits ANSI on a terminal, which README says it never does.**
+`cmd/define/main.go:95-96`, `cmd/define/main.go:132-136`; `README.md:37`
+
+`opt.tty` is `isTerminal(stdout)` with no reference to `noColor`, so `defineOnce` sets `ind.erase = eraseLine` (`"\r\x1b[K"`) regardless. `define -no-color <word>` on a tty therefore emits two escape sequences, while `README.md:37` documents the flag as "never emit ANSI (also automatic when piped)". Round 2 recorded this as Minor; I'm raising it because the doc line is unchanged and it was *this diff* that falsified it — that's drift from a stated contract, and `-no-color` exists precisely for terminals that mangle escapes.
+
+Fix: either `tty: !*noColor && isTerminal(stdout)` (one line; the indicator then stays a plain line for those users, which is the correct degradation), or narrow README to "never emit ANSI **colour**". I'd take the former — it keeps the flag meaning one thing.
+
+**I-4 — Plan and Spec still contradict the code in four named places; three were recommended at both prior boundaries and the `## Revisions` entry that landed does not cover them.**
+
+The `## Revisions` section at `workshop/plans/000002-repl-plan.md:202` is well written and correctly handles the cursor-control non-goal, `playAnnounced`, `options.tty`, and both review rounds — that mechanism is now right. But it skipped the specific line-level corrections:
+
+- `plan:56` — `replCommand` is still documented as including **`cmdQuit`**. The shipped type (`repl.go:19-23`) has only `cmdNothing`/`cmdDefine`/`cmdReplay`; quitting is EOF or cancellation, never a parsed line. Recommended at boundary 1 (item 1) and boundary 2 (item 2).
+- `plan:96` — "Takes an `io.Reader`, the writers, and an **`interactive bool`**". The shipped signature is `repl(ctx, d, opt, stdin, stdout, stderr) int`, deriving interactivity from `d.stdinIsTerminal` at `repl.go:71`. The plan elsewhere asserts `run`'s change is "the only signature change in the issue", so this leaves a parameter documented that does not exist. Recommended twice.
+- `plan:154` — still instructs "check `scanner.Err()` separately from the loop ending, **report it, and continue**", which Step 3 and the implementation deliberately contradict. This one is a **plan-gate carry-forward**: PQ-10's round-3 disposition in `000002-repl-plan-gate.md` reads *"drop Step 1's leftover 'report it, and continue' clause when writing the test"*. The test was written; the clause was not dropped. The ledger's `## Open findings` now says "(none — every finding has been disposed)" while recording a disposition action that is not true on disk.
+- `workshop/issues/000002-repl.md:38` — the Spec bullet still says a bare return "writes **nothing to stdout at all** — no definition, no '♫ playing' line". Interactively it now writes `eraseLineAndStepBack`, the flash, `eraseLine`, and a redrawn prompt. The *settled screen* is unchanged, which is the real (and good) contract; the Spec as written is false, and the issue has no `## Revisions` section. Recommended at boundary 2.
+
+Not blocking, but these are the artifacts the next issue (#14) reads to decide what to keep — and #14's own file already commits to deleting `eraseLineAndStepBack`, so a plan that still calls cursor control a non-goal in one place and describes a `cmdQuit` that never existed is the wrong handoff.
+
+## 4. Minor findings
+
+- `atlas/define.md:200` — "Failed fetches are not cached, so a transient outage does not poison a session" directly contradicts the paragraph's own heading four lines above ("**'No recording' is cached; a transport failure is not**") and duplicates the outage clause. Stale leftover from before I-3's fix; flagged at boundary 2 and not removed.
+- `atlas/define.md:190` — "both report sites suppress a diagnostic" — after the `playAnnounced` consolidation there is exactly one.
+- `atlas/define.md:186` — "Gated on interactive" — it is gated on `interactive && opt.tty`, which is the whole point of round 2's I-1. Also `atlas/define.md:198-199` is a run-on/mis-wrapped line ("…re-deciding what \"failed\" means. Replay costs no network: `cachingAudioSource`…").
+- `cmd/define/repl.go:112` — "nothing to replay: audio is off" also fires for `-times 0`, where audio is not off.
+- `-raw` inside the loop: `defineOnce` returns at `main.go:122-125` before the audio block, so typing a word plays nothing — yet a bare return then *does* play it, and pays a fetch the cache never warmed. Undeclared in the Spec's "flags are session settings".
+- `cmd/define/repl_test.go:158` — the timeout arm selects on `t.Context().Done()`, which cannot fire while the test is blocked in that select. A regression hangs to the package timeout rather than failing "promptly"; use `time.After(2*time.Second)`.
+- `cmd/define/main_test.go:12` — "a nil one would make run() panic rather than fail a test" is now false: `repl.go:71` tolerates a nil `stdinIsTerminal` and silently treats it as non-interactive. `testDeps` relies on that.
+- `cmd/define/main.go:203` — `isTerminal(w io.Writer)` is now called on `os.Stdin`; it works, but the parameter name no longer describes the use.
+- `cmd/define/repl.go:93` / `repl.go:102` — duplicated `if interactive { fmt.Fprintln(stdout) }` across the two exit arms.
+- `cmd/define/main.go:144-149` — `indicator.trail` is documented as "written instead of erase when there is nothing to erase", but it is written *before* playback, alongside the text. Rename or reword.
+- `cmd/define/player_fake_test.go:18` — `fakePlayer.Play` discards `ctx`, so cancel-*during-playback* is still unreachable from the suite (the guard is now covered via a failing fetch instead, which is adequate but not the real path).
+- A second Ctrl-C is swallowed: `stop()` is deferred to `main` exit, so `NotifyContext` keeps absorbing SIGINT and there is no force-quit if playback ever hangs.
+- `cachingAudioSource.hits` is unbounded for the session lifetime. Fine at a few KB per word; noting so it isn't rediscovered.
+- `README.md:40-44` wraps mid-sentence at an odd column; reflow.
+- The window bundles unrelated tracker work (commit `cbcd30c`: `#14`/`#15` issue files, project rows) with `#2`'s implementation — harmless, but it widens the reviewed boundary.
+
+## 5. Test coverage notes
+
+The suite asserts through fakes rather than restating the implementation — player counts, `cdn.Requested()` lengths, byte-identical stdout across two whole runs — which is the right posture, and I confirmed the Ctrl-C guard is no longer dead (removing `&& ctx.Err() == nil` breaks `TestCancellationPrintsNoDiagnostic`). Gaps, in priority order:
+
+1. **The announcement's position relative to the fetch** (I-1). `TestRunMissingAudioStillSucceeds` drives the exact scenario and stops one assertion short. Add `if strings.Contains(out.String(), "playing")` there — mirroring `main_test.go:185`.
+2. **Exit code of a failed lookup on the piped path** (I-2). No test asserts `repl`'s return value for anything other than success, EOF, and the over-cap read error.
+3. **The non-tty define path's `trail` newline.** `TestRunPlaysThreeTimesByDefault:157` only does `Contains(out, "playing 3")`, so a regression setting `trail = ""` would glue the indicator to whatever follows and stay green.
+4. `-raw` inside the REPL — untested; the audio asymmetry above went unnoticed.
+5. `opt.times == 0` routed into the replay branch — untested.
+6. `TestREPLReplayFlashesThenRestoresThePrompt:246` asserts `Count(s, eraseLine) >= 2`, but `eraseLineAndStepBack` itself contains `eraseLine` twice, so the threshold is met by the step-back alone. Weak, not wrong.
+
+`-race` is clean and the goroutine sharing model holds on inspection: `d` is a value copy so the `d.audio` rewrite at `repl.go:80` is unshared, and both channels carry values.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `defineOnce` is the single define path and `playAnnounced` is now the single owner of announce → play → erase → report; I checked the two call sites and the only remaining difference is the `indicator` value, which is the intent. `cachingAudioSource` is a decorator on the existing seam and derives its permanence rule from the existing error taxonomy rather than restating it. One trivial duplication remains (`repl.go:93`/`102`).
+- **ARCH-PURE — pass, with a forward note.** `parseREPLLine` is deterministic, memory-free (`hasCurrent` passed in), and its table test touches no IO, exec, or fs — genuinely PURE, matching the plan's table. The note carried forward from boundary 2 and now *sharper*: the terminal state machine — when to flash, which erase, whether to `skipPrompt`, and (after I-1) whether the announcement is a record or ephemeral UI — is non-trivial policy living in the IO loop, assertable only by `strings.Count` over a buffer. Both of this boundary's behaviour findings live there. `#14`'s file already commits to deleting `eraseLineAndStepBack` and the `skipPrompt` bookkeeping under raw mode, which is the right instinct; pair it with a pure `func replFrame(ev event, interactive, tty bool) string` so the screen contract becomes a table test.
+- **ARCH-PURPOSE — pass with a flag.** Every Done-when item is delivered and independently verified. Shadow-sweep over the consumers of "what invocations and behaviours exist": `-h` (`main.go:75-80`) ✓ updated, `README.md` ✓ updated, `atlas/define.md` ✓ updated but carrying three stale sentences, `workshop/plans/…-plan.md` ✗ three stale claims, `workshop/issues/000002-repl.md` Spec ✗ one false claim (I-4). Consumers of the flag set — `run`, `defineOnce`, `repl`, `playAnnounced` — all derive from the single `options` construction at `main.go:93-100`; no hand-maintained restatement survives there. The exit-code contract (I-2) is the one behavioural consumer that did not derive.
+- **ARCH-MOCK — pass with a note.** All new external surface runs behind existing seams: `cachingAudioSource` against the stateful `fakeCDN` with its ordered request recorder, the REPL end-to-end against `fakeDictionary`/`fakeCDN`/`fakePlayer`, and production/test share the same wiring line. The note, repeated from boundary 2 and still open: the Ctrl-C contract now depends on `exec.CommandContext` actually terminating a real `afplay` mid-file, and `player_conformance_test.go` covers only `TestAfplayBlocksUntilPlaybackCompletes`. That is the one real-binary behaviour this issue newly relies on and does not verify against the real binary. A `ctx` cancelled after ~100 ms asserting `Play` returns early is a five-line addition to the existing conformance file. Non-blocking — the operator exercised it on a pty — but it is the drift-detection this principle asks for.
+
+## 7. Plan revision recommendations
+
+Append to the **existing** `## Revisions` section of `workshop/plans/000002-repl-plan.md` (a new dated sub-entry; don't rewrite the one that's there — it's good):
+
+1. **`plan:56`** — drop `cmdQuit` from the `replCommand` enumeration; quitting is EOF or context cancellation, never a parsed line. *Third time recommended.*
+2. **`plan:96`** — correct "Takes an `io.Reader`, the writers, and an `interactive bool`" to the shipped signature, which derives interactivity from `d.stdinIsTerminal` internally. *Third time recommended*; it currently contradicts the plan's own "the only signature change in the issue".
+3. **`plan:154`** — drop the leftover "report it, and continue" clause. This is the plan-gate carry-forward: PQ-10's round-3 disposition committed to exactly this edit, so until it lands the gate ledger records a disposition that is false on disk. Note the obligation is now discharged by `TestREPLOverlongLineIsReportedNotSilentEOF`.
+4. **Cancellation contract section (`plan:36-43`)** — state what Ctrl-C *prints* (nothing, from the single suppression in `playAnnounced`), not only that it exits 0. The Revisions entry records the fix narratively; the contract section still reads as if only the exit code matters. This is PQ-4's round-2 residue.
+5. **New, from I-1** — record when the announcement is written relative to the fetch, and why it differs by erasability. The move out of `speak` is documented as a refinement; its interaction with a failed fetch is not, and that gap is the finding.
+6. **New, from I-2** — state the exit-code contract for the loop explicitly (interactive → always 0; piped → propagate a failed lookup, or deliberately not, with the reason).
+
+Separately, append a `## Revisions` entry to **`workshop/issues/000002-repl.md`** amending the Spec bullet at line 38: the surviving contract is "the *settled screen* is unchanged and no definition is reprinted", not "writes nothing to stdout at all". *Second time recommended.* The issue currently has no `## Revisions` section at all, so AGENTS.md §1's append-don't-overwrite rule has not been applied to it.

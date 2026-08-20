@@ -53,7 +53,7 @@ shipped, not a new-feature detail.
 | `replCommand` | `cmd/define/repl.go` | new |
 | `parseREPLLine` | `cmd/define/repl.go` | new |
 
-- **replCommand** — what one line of input means: `cmdDefine{word}`, `cmdReplay`, `cmdQuit`, `cmdNothing`.
+- **replCommand** — what one line of input means: `cmdDefine{word}`, `cmdReplay`, `cmdNothing`. (No `cmdQuit`: quitting is EOF or context cancellation, never a parsed line — an earlier draft listed one.)
   - **DRY rationale:** the loop's decision table in one testable place. Without it, "blank line means replay" is an `if` buried in an IO loop and only reachable through a fake terminal.
   - **Future extensions:** `:help`, `:forget` when the deck lands (#4) — new cases, same seam.
 
@@ -93,8 +93,9 @@ shipped, not a new-feature detail.
   - **Owns no temp dir.** `speak` already creates and removes one per call, and an
     MP3 is a few KB, so re-writing it per replay is cheaper than owning session
     state. This keeps Task 1's extraction genuinely verbatim.
-  - Takes an `io.Reader`, the writers, and an `interactive bool`, so tests drive it
-    from a string with no terminal anywhere.
+  - Takes an `io.Reader` and the writers — `repl(ctx, d, opt, stdin, stdout, stderr) int`.
+    Interactivity is derived from `d.stdinIsTerminal`, not passed as a parameter, so
+    `run`'s remains the only signature change in the issue.
 
 - **stdinIsTerminal** — injected as a field on `deps` (not called directly), because otherwise "no args on a terminal" is unwritable as a test: the harness's stdin is never a TTY. Note this is a *different question* from the existing stdout check that drives colour.
 
@@ -150,8 +151,12 @@ shipped, not a new-feature detail.
 
   Two adversarial classes get named guards rather than good-path coverage:
   - **A line over 64 KB.** `bufio.Scanner` stops with `ErrTooLong`, which looks
-    exactly like EOF — a large paste would silently quit the loop. Check
-    `scanner.Err()` separately from the loop ending, report it, and continue.
+    exactly like EOF — a large paste would silently quit the loop. Raise the
+    scanner's buffer cap and check `scanner.Err()` separately from the loop
+    ending. It cannot be *recovered* from: once the scanner returns `ErrTooLong`
+    every later `Scan()` returns false, so the loop reports and exits rather than
+    continuing (an earlier draft said "report it, and continue", which is not
+    implementable).
   - **The reader goroutine outlives `repl`** (it stays blocked on stdin after the
     loop returns on cancellation). It must share nothing mutable with the loop —
     the current word lives in the loop only. Run the package under `-race`.
@@ -239,6 +244,22 @@ the one-shot form.
 a failed replay wrote its diagnostic onto the redrawn prompt and then swallowed
 the next one; the duplicated sequence above; the Ctrl-C guard was still dead to
 the suite; and this section did not exist.
+
+**Close review round 3 (4 Important).** A word with no recording announced
+playback that never happened, and on a pipe the false line persisted —
+`playAnnounced` had moved the announcement ahead of `speak`. The rule now: an
+*erasable* indicator is ephemeral UI and may be optimistic, because a failure
+takes it back; a *non-erasable* one is a record, and a record has to be true.
+Also: `echo rizz | define` exited 0 where `define rizz` exits 1, though README
+presents them as interchangeable; and `-no-color` still emitted cursor-control
+escapes, so `options.tty` now derives from `!noColor && isTerminal(stdout)` —
+the flag means "no ANSI", not "no colour".
+
+**Line-level reconciliations (flagged at every prior boundary, landed here):**
+`cmdQuit` removed from the `replCommand` bullet (it never existed); `repl`'s
+signature corrected — interactivity comes from `d.stdinIsTerminal`, not a
+parameter; and Task 4's "report it, and continue" corrected, which was also an
+undisposed plan-gate carry-forward (PQ-10).
 
 **Two testing lessons, both from assertions that could not fail:**
 
