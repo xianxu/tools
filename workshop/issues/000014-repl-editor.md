@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-20
 updated: 2026-08-20
-estimate_hours:
+estimate_hours: 2.57
 started: 2026-08-20T16:25:33-07:00
 ---
 
@@ -95,16 +95,73 @@ Multi-line editing, kill-ring, incremental reverse search (Ctrl-R), vi mode.
 
 - [ ] Up/Down walk history; with a prefix typed, they walk only matching entries.
 - [ ] The grey suggestion is never submitted unless explicitly accepted.
-- [ ] History persists across sessions (see `#15` for the shared source).
+- [ ] History is consumed through a `History` seam, so `#3`'s store satisfies
+      persistence without this issue inventing a private history file.
 - [ ] Ctrl-C exits 0 leaving no temp files, verified through a real pty — the
       raw-mode regression risk.
 - [ ] `echo word | define` behaves exactly as it does today.
 - [ ] The editor's behaviour is unit-tested over key sequences, not only via pty.
 - [ ] Any new third-party dependency is named and justified in the plan.
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec              design=0.3  impl=0.04
+item: greenfield-go-module    design=0.4  impl=0.32
+item: smaller-go-module       design=0.06 impl=0.12
+item: tui-screen              design=0.4  impl=0.4
+item: milestone-review        design=0.0  impl=0.12
+item: milestone-review        design=0.0  impl=0.12
+item: atlas-docs              design=0.05 impl=0.06
+design-buffer: 0.15
+total: 2.57
+```
+
+Derivation notes:
+
+- **greenfield-go-module** is the editor state machine + key decoder: genuinely
+  new, single concern, no prior art in this repo. Design takes the ×0.2
+  spec-quality discount (2.0 → 0.4) — the plan fixes the `Key` vocabulary, the
+  `Apply` signature and the `Action` split.
+- **tui-screen** is the right primitive for the raw-mode half: terminal state,
+  a frame renderer, and a key loop. Design **not** discounted — raw-mode restore
+  on every exit path is the part that bites, and the plan can specify it but not
+  retire it.
+- **smaller-go-module** covers deleting `#2`'s cooked-mode workaround and rewiring
+  the loop: well-specced, mirror-shaped.
+- **Two `milestone-review` items**, not one. `#1` closed at 4.67h against 2.75
+  and `#2` at 2.22 against 0.81, both from review rework that the model prices at
+  one pass. This is the first estimate in this repo to budget a second round
+  explicitly rather than discover it.
+- `familiarity: 1.0` — same package and fakes; raw mode is new but `x/term` is
+  already in use.
+
+Σdesign 1.21 × 1.15 = 1.3915; Σimpl 1.18 × 1.0 = 1.18; total 2.57 ≈ **2.57**.
+
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+See `workshop/plans/000014-repl-editor-plan.md`.
+
+- [ ] `decodeKey` — the escape-sequence vocabulary, pure, fuzzed.
+- [ ] `Editor`/`Apply` — the state machine, no IO.
+- [ ] History walk + prefix search behind a `History` seam.
+- [ ] Inline autosuggestion (Enter must never submit it).
+- [ ] `RenderLine` — a whole frame, so `#2`'s cursor arithmetic can be deleted.
+- [ ] Raw mode + loop rewire; delete `eraseLineAndStepBack` and `skipPrompt`.
+
+## Revisions
+
+### 2026-08-20 — Done-when narrowed before implementation
+
+"History persists across sessions" now reads as "history is consumed through a
+`History` seam". The persistent implementation is `#3`'s store, and `#15` states
+that `/history` must read the store rather than a private history file — so
+satisfying persistence *here* would mean building the thing `#15` forbids. The
+seam is the deliverable; `#3` fills it. Sequencing is therefore **#14 → #3 → #15**.
 
 ## Log
 
