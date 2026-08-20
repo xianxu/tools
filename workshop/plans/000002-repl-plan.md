@@ -110,9 +110,9 @@ shipped, not a new-feature detail.
 
 **Files:** modify `cmd/define/main.go`; test `cmd/define/main_test.go`
 
-- [ ] **Step 1: Run the existing suite** — `go test ./cmd/define/`, all green. This is a pure refactor; the existing CLI tests are the regression net.
-- [ ] **Step 2: Extract** the post-flag body of `run()` into `defineOnce(ctx, d, opt, word, stdout, stderr) int`, where `opt` carries `raw`, `color`, `noAudio`, `times`, `locale`.
-- [ ] **Step 3: Re-run the suite** — still green, no test changes. If a test needed changing, the extraction was not behaviour-preserving.
+- [x] **Step 1: Run the existing suite** — `go test ./cmd/define/`, all green. This is a pure refactor; the existing CLI tests are the regression net.
+- [x] **Step 2: Extract** the post-flag body of `run()` into `defineOnce(ctx, d, opt, word, stdout, stderr) int`, where `opt` carries `raw`, `color`, `noAudio`, `times`, `locale`.
+- [x] **Step 3: Re-run the suite** — still green, no test changes. If a test needed changing, the extraction was not behaviour-preserving.
 
   This norm applies to **Task 1 only**. Task 5 deliberately changes behaviour and
   must therefore change a test: `TestRunNoArgsIsUsageError` (`main_test.go:87`)
@@ -120,33 +120,33 @@ shipped, not a new-feature detail.
   **rewritten, not deleted** — into `TestRunNoArgsEntersTheLoop` — so the no-args
   branch keeps a test at all times and the diff shows the contract moving rather
   than a test quietly disappearing.
-- [ ] **Step 4: Commit** — `#2: extract defineOnce from run`
+- [x] **Step 4: Commit** — `#2: extract defineOnce from run`
 
 ### Task 2: `parseREPLLine`
 
 **Files:** create `cmd/define/repl.go`; test `cmd/define/repl_test.go`
 
-- [ ] **Step 1: Write the failing table test.** Obligations: a word → `cmdDefine`; leading/trailing space trimmed; blank with a current word → `cmdReplay`; blank with none → `cmdNothing`; a multi-word line (`hot dog`) → `cmdDefine` with both words, since multi-word headwords are real (#1 ships `hot dog` as a fixture).
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#2: parse REPL input lines`
+- [x] **Step 1: Write the failing table test.** Obligations: a word → `cmdDefine`; leading/trailing space trimmed; blank with a current word → `cmdReplay`; blank with none → `cmdNothing`; a multi-word line (`hot dog`) → `cmdDefine` with both words, since multi-word headwords are real (#1 ships `hot dog` as a fixture).
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#2: parse REPL input lines`
 
 ### Task 3: `cachingAudioSource`
 
 **Files:** modify `cmd/define/fetch.go`; test `cmd/define/fetch_test.go`
 
-- [ ] **Step 1: Write the failing test.** Obligations: two `Fetch` calls with the same candidate list return identical bytes and produce **exactly one** entry in `fakeCDN.Requested()`; a different word does hit the network; a failed fetch is **not** cached (so a transient outage does not poison the session).
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement** — a mutex-guarded map keyed by the joined candidate list.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#2: cache fetched audio behind the AudioSource seam`
+- [x] **Step 1: Write the failing test.** Obligations: two `Fetch` calls with the same candidate list return identical bytes and produce **exactly one** entry in `fakeCDN.Requested()`; a different word does hit the network; a failed fetch is **not** cached (so a transient outage does not poison the session).
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement** — a mutex-guarded map keyed by the joined candidate list.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#2: cache fetched audio behind the AudioSource seam`
 
 ### Task 4: The loop
 
 **Files:** create `cmd/define/repl.go`; test `cmd/define/repl_test.go`
 
-- [ ] **Step 1: Write the failing tests**, driven through the existing fakes. The design decisions they pin: an unknown word leaves the *current* word unchanged so a following blank line replays the last good one; a blank line with nothing current is a hint, not an error; a replay costs zero CDN requests.
+- [x] **Step 1: Write the failing tests**, driven through the existing fakes. The design decisions they pin: an unknown word leaves the *current* word unchanged so a following blank line replays the last good one; a blank line with nothing current is a hint, not an error; a replay costs zero CDN requests.
 
   Two adversarial classes get named guards rather than good-path coverage:
   - **A line over 64 KB.** `bufio.Scanner` stops with `ErrTooLong`, which looks
@@ -155,8 +155,8 @@ shipped, not a new-feature detail.
   - **The reader goroutine outlives `repl`** (it stays blocked on stdin after the
     loop returns on cancellation). It must share nothing mutable with the loop —
     the current word lives in the loop only. Run the package under `-race`.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `bufio.Scanner` in a goroutine feeding a channel; `select` on that channel and `ctx.Done()` so Ctrl-C is not blocked behind a pending read.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `bufio.Scanner` in a goroutine feeding a channel; `select` on that channel and `ctx.Done()` so Ctrl-C is not blocked behind a pending read.
 
   **No session temp dir** — `speak` keeps creating and removing its own per call
   (Chunk 1). Raise the scanner's limit with `scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)`
@@ -164,18 +164,18 @@ shipped, not a new-feature detail.
   error every later `Scan()` returns false, so "report it and continue" would
   either spin or quit anyway. A line past 1 MB ends the loop with a diagnostic —
   the honest outcome, since the reader cannot be resumed.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#2: REPL loop`
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#2: REPL loop`
 
 ### Task 5: Wire it up
 
 **Files:** modify `cmd/define/main.go`; test `cmd/define/main_test.go`
 
-- [ ] **Step 1: Write the failing tests.** `NArg() == 0` → the loop, whether or not stdin is a terminal; `interactive` only controls the prompt. `echo sycophantic | define` now defines the word instead of printing usage — a **new** capability, asserted as such. Args present → one-shot, unchanged.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `main()` wraps `signal.NotifyContext(ctx, os.Interrupt)` and sets `deps.stdinIsTerminal`. The prompt (`› `) goes to **stdout** and only when interactive, so piped output carries none.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Manual check** — the one thing tests cannot cover:
+- [x] **Step 1: Write the failing tests.** `NArg() == 0` → the loop, whether or not stdin is a terminal; `interactive` only controls the prompt. `echo sycophantic | define` now defines the word instead of printing usage — a **new** capability, asserted as such. Args present → one-shot, unchanged.
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `main()` wraps `signal.NotifyContext(ctx, os.Interrupt)` and sets `deps.stdinIsTerminal`. The prompt (`› `) goes to **stdout** and only when interactive, so piped output carries none.
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Manual check** — the one thing tests cannot cover:
 
 ```sh
 make build
@@ -185,8 +185,8 @@ make build
 echo sycophantic | ./bin/define   # one-shot, unchanged
 ```
 
-- [ ] **Step 6: Update `README.md` + `atlas/define.md`** — the REPL is new user-facing surface and a new entry mode.
-- [ ] **Step 7: Commit, then `sdlc close --issue 2 --verified '<evidence>'`**
+- [x] **Step 6: Update `README.md` + `atlas/define.md`** — the REPL is new user-facing surface and a new entry mode.
+- [x] **Step 7: Commit, then `sdlc close --issue 2 --verified '<evidence>'`**
 
 ---
 

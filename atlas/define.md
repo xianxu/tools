@@ -151,6 +151,34 @@ It guarantees **fidelity, not completeness** — see Limits.
   `isGrammarLabelOnly` for short leading register labels is the tractable fix if
   it becomes worth doing.
 
+## Entry modes
+
+One word per invocation was the original shape; `run` now dispatches on argument
+count into a single shared `defineOnce`, so neither mode owns a copy of the
+define path.
+
+| invocation | behaviour |
+|---|---|
+| `define <word>` | one-shot |
+| `define` | reads stdin until EOF or Ctrl-C |
+| `echo w \| define` | same loop, no prompt |
+
+The loop reads stdin **unconditionally** and only the prompt is TTY-conditional —
+there is no interactive/batch branch to keep in sync, and the whole loop is
+testable from a string. `deps.stdinIsTerminal` is injected because a test
+harness's stdin is never a terminal; note it is a different question from the
+stdout probe that drives colour.
+
+Replay costs no network: `cachingAudioSource` decorates the `AudioSource` seam
+*inside* `repl`, so the production and test wiring are the same line and
+`fakeCDN.Requested()` is the assertion. Failed fetches are not cached, so a
+transient outage does not poison a session.
+
+`main` wraps the context in `signal.NotifyContext`, which changed the one-shot
+path too: Ctrl-C during playback now cancels `afplay` through
+`exec.CommandContext` and lets deferred cleanup run, rather than killing the
+process and stranding a temp file.
+
 ## Pronunciation
 
 The speaker button on Google's dictionary panel is a plain static MP3, and the

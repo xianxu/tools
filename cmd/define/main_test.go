@@ -59,7 +59,7 @@ func (r *rebasedSource) Fetch(ctx context.Context, urls []string) ([]byte, strin
 
 func TestRunPrintsDefinition(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := run([]string{"sycophantic"}, testDeps(t), &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"sycophantic"}, testDeps(t), strings.NewReader(""), &out, &errb); code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
 	}
 	got := out.String()
@@ -72,7 +72,7 @@ func TestRunPrintsDefinition(t *testing.T) {
 
 func TestRunUnknownWordExitsOne(t *testing.T) {
 	var out, errb bytes.Buffer
-	code := run([]string{"rizz"}, testDeps(t), &out, &errb)
+	code := run(t.Context(), []string{"rizz"}, testDeps(t), strings.NewReader(""), &out, &errb)
 	if code != 1 {
 		t.Errorf("exit = %d, want 1", code)
 	}
@@ -84,16 +84,49 @@ func TestRunUnknownWordExitsOne(t *testing.T) {
 	}
 }
 
-func TestRunNoArgsIsUsageError(t *testing.T) {
+// Rewritten, not deleted: no-args used to be a usage error and is now the loop.
+// Keeping a test on this branch at all times is what makes the contract change
+// visible in the diff rather than a test quietly disappearing.
+func TestRunNoArgsEntersTheLoop(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.stdinIsTerminal = func() bool { return false }
 	var out, errb bytes.Buffer
-	if code := run(nil, testDeps(t), &out, &errb); code != 2 {
+
+	code := run(t.Context(), nil, rig.deps, strings.NewReader("sycophantic\n"), &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "/ˌsikəˈfan(t)ik/") {
+		t.Error("no-args should have read the word from stdin and defined it")
+	}
+}
+
+// `echo word | define` is NEW capability: before this issue it exited 2 with
+// usage. Asserted as new, not as preserved.
+func TestRunPipedStdinDefinesTheWord(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.stdinIsTerminal = func() bool { return false }
+	var out, errb bytes.Buffer
+
+	if code := run(t.Context(), nil, rig.deps, strings.NewReader("sycophantic\n"), &out, &errb); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if strings.Contains(out.String(), prompt) {
+		t.Error("piped stdin must not print a prompt")
+	}
+}
+
+// More than one positional argument is still a usage error.
+func TestRunTooManyArgsIsUsageError(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := run(t.Context(), []string{"a", "b"}, testDeps(t), strings.NewReader(""), &out, &errb); code != 2 {
 		t.Errorf("exit = %d, want 2", code)
 	}
 }
 
 func TestRunRawPrintsUnparsed(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := run([]string{"-raw", "quokka"}, testDeps(t), &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"-raw", "quokka"}, testDeps(t), strings.NewReader(""), &out, &errb); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
 	if !strings.Contains(out.String(), "quok·ka | ˈkwäkə |") {
@@ -104,7 +137,7 @@ func TestRunRawPrintsUnparsed(t *testing.T) {
 // Colour must be off for a non-TTY writer so piping yields clean text.
 func TestRunNoColorWhenNotATerminal(t *testing.T) {
 	var out, errb bytes.Buffer
-	run([]string{"quokka"}, testDeps(t), &out, &errb)
+	run(t.Context(), []string{"quokka"}, testDeps(t), strings.NewReader(""), &out, &errb)
 	if strings.Contains(out.String(), "\x1b[") {
 		t.Error("ANSI escapes leaked into non-TTY output")
 	}
@@ -115,7 +148,7 @@ func TestRunNoColorWhenNotATerminal(t *testing.T) {
 func TestRunPlaysThreeTimesByDefault(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	if code := run([]string{"sycophantic"}, rig.deps, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
 	}
 	if got := rig.player.count(); got != 3 {
@@ -129,7 +162,7 @@ func TestRunPlaysThreeTimesByDefault(t *testing.T) {
 func TestRunTimesFlag(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	run([]string{"-times", "1", "sycophantic"}, rig.deps, &out, &errb)
+	run(t.Context(), []string{"-times", "1", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
 	if got := rig.player.count(); got != 1 {
 		t.Errorf("played %d times, want 1", got)
 	}
@@ -140,7 +173,7 @@ func TestRunTimesFlag(t *testing.T) {
 func TestRunNoAudioMakesNoRequests(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	if code := run([]string{"-no-audio", "sycophantic"}, rig.deps, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"-no-audio", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
 	if got := rig.player.count(); got != 0 {
@@ -158,7 +191,7 @@ func TestRunNoAudioMakesNoRequests(t *testing.T) {
 func TestRunMissingAudioStillSucceeds(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", false) // CDN 404s every candidate
 	var out, errb bytes.Buffer
-	if code := run([]string{"sycophantic"}, rig.deps, &out, &errb); code != 0 {
+	if code := run(t.Context(), []string{"sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Errorf("exit = %d, want 0 — the definition printed fine", code)
 	}
 	if !strings.Contains(out.String(), "/ˌsikəˈfan(t)ik/") {
@@ -176,7 +209,7 @@ func TestRunMissingAudioStillSucceeds(t *testing.T) {
 func TestRunUsesDerivedCandidateOrder(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	run([]string{"sycophantic"}, rig.deps, &out, &errb)
+	run(t.Context(), []string{"sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
 	want := stripHost(t, AudioCandidates("sycophantic", "us")[0], audioBase)
 	got := rig.cdn.Requested()
 	if len(got) != 1 || got[0] != want {
@@ -187,7 +220,7 @@ func TestRunUsesDerivedCandidateOrder(t *testing.T) {
 func TestRunNegativeTimesIsUsageError(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	if code := run([]string{"-times", "-1", "sycophantic"}, rig.deps, &out, &errb); code != 2 {
+	if code := run(t.Context(), []string{"-times", "-1", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb); code != 2 {
 		t.Errorf("exit = %d, want 2", code)
 	}
 }

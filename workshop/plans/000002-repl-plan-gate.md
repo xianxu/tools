@@ -137,6 +137,32 @@ rounds:
             to raise the cap, or recreating the reader after the error.
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-20T12:53:17-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: Declared as new scope in Spec, Done-when, and Task 5; TestRunNoArgsIsUsageError rewritten, not deleted.
+          round: 3
+        - id: PQ-2
+          disposition: addressed
+          note: stdinIsTerminal is a deps field and the run() signature change is stated explicitly with both additions justified.
+          round: 3
+        - id: PQ-3
+          disposition: addressed
+          note: Session temp dir dropped; speak keeps its per-call dir, so Task 1 stays verbatim and main.go is correctly absent from Task 4.
+          round: 3
+        - id: PQ-8
+          disposition: addressed
+          note: Task 4 compressed to design decisions plus two named adversarial classes; the Task 2/3 residue is the keep-worthy kind.
+          round: 3
+        - id: PQ-10
+          disposition: addressed
+          note: scanner.Buffer cap landed in Step 3; drop Step 1's leftover "report it, and continue" clause when writing the test.
+          round: 3
+      blocked: false
+content_hash: a8a258f9aec0e2fa0d1af44c7002ffe283933ca44c327467afd9953bbf41c9c6
 ---
 
 # Gate ledger — tools#2 (plan-quality)
@@ -213,10 +239,16 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   spins or exits the loop anyway. The mechanical guard is scanner.Buffer(buf, max)
   to raise the cap, or recreating the reader after the error.
 
+## Round 3 — 2026-08-20T12:53:17-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — Declared as new scope in Spec, Done-when, and Task 5; TestRunNoArgsIsUsageError rewritten, not deleted.
+- PQ-2 — addressed — stdinIsTerminal is a deps field and the run() signature change is stated explicitly with both additions justified.
+- PQ-3 — addressed — Session temp dir dropped; speak keeps its per-call dir, so Task 1 stays verbatim and main.go is correctly absent from Task 4.
+- PQ-8 — addressed — Task 4 compressed to design decisions plus two named adversarial classes; the Task 2/3 residue is the keep-worthy kind.
+- PQ-10 — addressed — scanner.Buffer cap landed in Step 3; drop Step 1's leftover "report it, and continue" clause when writing the test.
+
 ## Open findings
 
-- **PQ-1** [Critical] Plan and Done-when claim `echo word | define` works today; it exits 2 with usage
-- **PQ-2** [Important] No injectable TTY seam, so Task 5's "TTY-ish stdin" test is unwritable
-- **PQ-3** [Important] Session temp dir contradicts the verbatim extraction of speak
-- **PQ-8** [Minor] Task 2, 3 and 4 Step 1 enumerate test cases in prose
-- **PQ-10** [Minor] The ErrTooLong guard as written cannot "report it and continue"
+(none — every finding has been disposed)
