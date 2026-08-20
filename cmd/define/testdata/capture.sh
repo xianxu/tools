@@ -28,13 +28,22 @@ mkdir -p entries
 #            three cases together pin the block-opener rule from both sides
 #   use      the head swallows sense 1's number ("use verb 1 [with object]")
 #   alewife  "(plural alewives | ˈālˌwīvz |)" -- a pronunciation inside a gloss
+#   parrot   "(parrots, parroting | ˈperədiNG |)" -- pronunciations in an
+#            inflection list, whose pipes collide with example separators
 #
 # The last three, plus content/even/desert/minute/use/subject/iPad/MacBook/Amazon,
 # were all rendering with dropped or reordered content at the M1 boundary review.
 words=(
     sycophantic quokka ephemeral defenestrate bank record run gaslighting set
     present iPhone read content even desert minute use subject iPad MacBook Amazon
-    man thing alewife bases
+    man thing alewife bases parrot
+    # Multi-word headwords: their pronunciations have interior spaces
+    # ("hot dog | ˈhät ˌdäɡ |"), which the single-token rule rejected outright --
+    # and when an entry's OWN pronunciation is rejected the parser used to walk
+    # past it and adopt a derivative's, collapsing the whole entry.
+    "hot dog" "a priori"
+    # concrete has NO pronunciation of its own but DERIVATIVES has one.
+    concrete
 )
 MIN_BYTES=40
 

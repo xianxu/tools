@@ -22,17 +22,20 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 
 | binary | what it does |
 |---|---|
-| `define` | Print a word's NOAD definition with Google-style IPA, and play its pronunciation. |
+| `define` | Print a word's NOAD definition with Google-style IPA. Spoken pronunciation lands with M2. |
 
 ### define
 
 ```sh
-define sycophantic          # definition + /ˌsikəˈfan(t)ik/, pronunciation played 3x
+define sycophantic          # definition + /ˌsikəˈfan(t)ik/
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
 
 Exit codes: `0` success, `1` no dictionary entry, `2` usage error.
+
+Audio playback (`--no-audio`, `--times N`) is **not built yet** — it lands with
+M2. Running the command today prints the definition and plays nothing.
 
 ## Build
 

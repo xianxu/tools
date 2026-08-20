@@ -1,6 +1,8 @@
 package main
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 	"unicode"
 )
@@ -18,6 +20,31 @@ import (
 // returned is lost on the way to the screen. It says nothing about what NOAD
 // declined to return — DCSCopyTextDefinition("bank") yields only homograph 1,
 // and no test here would notice. See the Non-goals in the plan.
+
+var slashSpan = regexp.MustCompile(`/[^/\n]*/`)
+
+// strayStress is an INDEPENDENT oracle for "did any raw NOAD notation survive
+// rendering?" — it does not call isPronunciation.
+//
+// The earlier check did: it scanned the output for |…| spans and asked
+// isPronunciation whether each was a pronunciation. A test that asks the
+// function under test to grade its own output can only ever detect false
+// positives. Every span isPronunciation wrongly REJECTED was, by construction,
+// reported as "not a pronunciation" and passed — so the check read 0% while
+// 2.2% of live entries displayed raw pipes, and that false 0% was published in
+// the atlas.
+//
+// This oracle rests on a fact about the notation instead: a NOAD stress mark
+// (ˈ or ˌ) may appear only inside a /…/ span in rendered output. Anything else
+// is unconverted source.
+func strayStress(out string) string {
+	rest := slashSpan.ReplaceAllString(out, "")
+	if i := strings.IndexAny(rest, "ˈˌ"); i >= 0 {
+		lo, hi := max(0, i-50), min(len(rest), i+50)
+		return rest[lo:hi]
+	}
+	return ""
+}
 
 func alnum(s string) []rune {
 	var out []rune

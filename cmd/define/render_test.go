@@ -195,19 +195,18 @@ func TestCorpusBlockStructure(t *testing.T) {
 	}
 }
 
-// No raw NOAD pipe notation may survive into rendered output: the tool exists to
-// show Google-style /…/, and a screen mixing both notations misses the point.
-// This covers the head as well as the body — `read` carries "(past and past
-// participle read | red |)" in its head.
-func TestNoRawPronunciationPipesSurvive(t *testing.T) {
+// No raw NOAD notation may survive into rendered output: the tool exists to show
+// Google-style /…/, and a screen mixing both notations misses the point.
+//
+// Checked with strayStress, which does NOT consult isPronunciation — see the
+// oracle note there for why the obvious formulation of this test is circular.
+func TestNoRawPronunciationNotationSurvives(t *testing.T) {
 	d := testDict(t)
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			out := Render(ParseEntry(raw), RenderOpts{Color: false})
-			for _, m := range pipeSpanRe.FindAllStringSubmatch(out, -1) {
-				if isPronunciation(m[1]) {
-					t.Errorf("raw pronunciation span %q survived rendering", m[0])
-				}
+			if near := strayStress(out); near != "" {
+				t.Errorf("unconverted NOAD notation survived rendering, near %q", near)
 			}
 		})
 	}

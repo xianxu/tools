@@ -580,3 +580,65 @@ hold): the estimate has no line item for the dictionary seam, and
 Neither was folded in, because the same judge measured `issue-spec design=1.0` as
 ~3× high — see the issue `## Log`. Both are recorded here so the close review
 sees them.
+
+### 2026-08-20 — M1 boundary review round 3 (2 Critical, 5 Important) → REWORK
+
+The finding that matters most here is I1, because it invalidates a measurement
+this plan and the atlas had both published.
+
+**I1 — the raw-notation check used `isPronunciation` as its own oracle.** Both
+copies were "scan the rendered output for `|…|` spans, ask `isPronunciation`
+whether each is a pronunciation, fail if so." That asks the function under test
+to grade its own output, so it detects false *positives* only: every span
+`isPronunciation` wrongly **rejected** was, by construction, reported as "not a
+pronunciation" and passed. The check read **0%** while 2.2% of live entries were
+displaying raw pipes — and round 2's Revisions entry above, and `atlas/define.md`,
+both published that false 0%.
+
+The replacement, `strayStress`, rests on a property of the notation instead of on
+the parser: a NOAD stress mark (`ˈ`/`ˌ`) may appear only inside a `/…/` span in
+rendered output. **Rule for this codebase: a check must not consult the function
+it is checking.** The no-data-loss property was always safe here — its oracle is
+the raw string, external to the parser — which is exactly why it kept finding
+real bugs while the notation check found none.
+
+**C1 — `isPronunciation` rejected every multi-word pronunciation.** NOAD writes
+`hot dog | ˈhät ˌdäɡ |`, `a priori | ˌā prīˈôrī |`. The single-token rule rejected
+all of them, and when an entry's *own* pronunciation was the rejected one,
+`findPronunciation` walked on and adopted a derivative's — `define "hot dog"`
+displayed `/ˈhätˌdäɡər/` (*hot dogger*) with the entire entry crushed into the
+head line. The rule now admits a multi-word span when it carries a stress mark
+(prose never does). Note this needs *at least one* mark, not one per word:
+`ət ˈprez(ə)nt` and `BrE ˌeɪɡrəˈmatɪk(ə)l` carry unstressed particles.
+
+**C2 — the head search was unbounded.** An entry with no pronunciation of its own
+reached past every block and section boundary into `DERIVATIVES` and took that
+one (`concrete` → `/känˈkrētnəs/`). Bounded by `headLimit` to the first section
+or sentence-ending block opener, so this class degrades to a missing IPA rather
+than a collapse. The no-pronunciation branch also gained a **shape-based head
+split** (`splitHeadByShape`) and — a bug found while fixing it — section peeling,
+whose absence had left `DERIVATIVES` pronunciations rendering as quoted examples.
+
+Two further pipe-handling bugs surfaced only once the honest oracle existed:
+left-to-right pair consumption **misaligned** the spans in multi-phrase `PHRASES`
+text, and inflection lists (`parrot`, `separate`) had their pronunciation pipes
+eaten as example separators before rendering ever saw them.
+
+**I3 — grammar labels were being quoted as part of the example** on 13.8% of
+entries (`"[as modifier] : a bank shot"`, visible on `bank`). `Example{Label, Text}`
+now mirrors `Block.Label` one level down.
+
+**I4 / I5 — documentation claimed things that do not exist.** The README
+advertised playback M1 does not ship; `atlas/define.md` described three IO seams
+when one is built. Both corrected — the atlas is the *current-state* map, so
+unbuilt seams are marked M2 rather than described as present.
+
+**Live measurements after round 3** (2749 real NOAD entries, independent oracle):
+**0 lost content**, **0 unconverted notation** (was 2.2% under the honest oracle,
+falsely 0% under the circular one). Corpus 25 → 29 fixtures. Fuzz: 5.7M execs, no
+crashers.
+
+**One accepted limitation, newly documented:** some block boundaries are
+genuinely ambiguous in NOAD's flat text — `parrot` writes "…and budgerigars verb
+(parrots)…" with no sentence end, so that block stays nested. Loosening
+`opensBlock` reintroduces the phantom blocks it exists to prevent.

@@ -104,7 +104,11 @@ func Render(e Entry, opt RenderOpts) string {
 				fmt.Fprintf(&b, "%s%s\n", indent, strings.TrimSpace(marker))
 			}
 			for _, ex := range s.Examples {
-				fmt.Fprintf(&b, "%s  %s%q%s\n", indent, p.ex, prettyPronunciations(ex, p), p.off)
+				fmt.Fprintf(&b, "%s  ", indent)
+				if ex.Label != "" {
+					fmt.Fprintf(&b, "%s%s%s ", p.dim, ex.Label, p.off)
+				}
+				fmt.Fprintf(&b, "%s%q%s\n", p.ex, prettyPronunciations(ex.Text, p), p.off)
 			}
 		}
 	}

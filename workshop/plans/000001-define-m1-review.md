@@ -391,3 +391,173 @@ Add a `## Revisions` entry to `workshop/plans/000001-define-plan.md` — and rec
 4. **Amend the existing Revisions entry.** It closes with "Deferred to M2 with reason: nothing. All Critical and Important findings are addressed in this milestone." C1 is a surviving edge of that entry's own `posAt` fix; note it rather than leaving a claim the code contradicts.
 
 Separately for `workshop/issues/000001-define.md`: the `## Log` says the two estimate-quality INFO observations "reach the close review via the gate ledger," but `000001-define-plan-gate.md`'s `## Open findings` is empty, so nothing carries them to the M2 close. The prior review raised this and it is still open — record them in the ledger or in the issue's `## Plan` for M2.
+
+---
+
+## Re-review — 2026-08-20T11:08:24-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 1 — define — NOAD word lookup with Google-style IPA and spoken pronunciation |
+| repo | tools |
+| issue file | workshop/issues/000001-define.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 1e8386b80feb8986ae8a2deb3e85d02012c0ee4a^..HEAD |
+| command | sdlc milestone-close --issue 1 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-20T11:08:24-07:00 |
+| verdict | REWORK |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Round 2's fixes hold: I re-verified every one of them live rather than taking the commit message's word for it — block structure is correct across 2,749 live entries (zero phantom blocks, zero non-consecutive or high-starting sense numbers), `use`'s senses 2–5 are back, the fixture corpus matches live NOAD byte-for-byte, and `FuzzRenderLosesNothing` survived 7.9M executions. What blocks the boundary is that the milestone's headline claim — `atlas/define.md`'s "Before the review, 7% of live entries lost content… it is 0% now" — is measured by an oracle that **is the code under test**. Both raw-pipe checks (`live_property_test.go:57`, `render_test.go:208`) ask `isPronunciation` whether a surviving `|…|` span is a pronunciation, so the rule's own false negatives are invisible to them by construction. Under an independent oracle (a NOAD stress mark appearing outside a `/…/` span), **61 of the same 2,749 entries (2.2%) render raw, unconverted NOAD pronunciation notation** — not 0. Two root causes: `isPronunciation` rejects every multi-word pronunciation (`| ˈhät ˌdäɡ |`), and `findPronunciation` searches the whole entry unbounded, so an entry lacking its own pronunciation silently adopts a *derivative's*. Together they make `define concrete`, `define "hot dog"`, `define methodological`, `define bucktooth`, and `define apriori` collapse the entire definition into one unreadable head line and display **a different word's pronunciation** as the entry's. I reproduced all of it live at HEAD, trialled a fix in a scratch copy, and measured it down to 8/2,749 with every existing test still green. Fix, replace the self-referential oracle, re-run.
+
+## 1. Strengths
+
+- **Round 2's block-opener rule is genuinely right, and I proved it at a width the goldens can't reach.** I swept 2,749 live entries for duplicate-POS blocks, non-consecutive sense numbers, sequences starting above 2, and empty senses: **zero** of each. `opensBlock` (`parse.go:549`) retired that whole bug family, not just its three known shapes. This is confirmed-good ground — don't re-litigate it.
+- **The three-width invariant shares one predicate** (`alnum`/`subsequenceGap`, `invariant_test.go:32,42`) across fixtures, fuzz, and live. Re-measured: 2,749 live entries, 0 content loss. That claim is true and the ARCH-DRY shape is correct.
+- **ARCH-MOCK is properly closed.** `dict_conformance_test.go:28` reads through `fake.Lookup`, not `fake.entries` — the round-2 I1 fix landed as designed. I independently verified the case-insensitivity the fake models: `capture.py Amazon`, `amazon`, and `AMAZON` all return the same entry, so lowercasing at load matches the real dependency.
+- **`parse.go:131` `findPronunciation`'s paren-depth tracking** is the right root-cause fix for `read`, and `parse.go:463` `splitFirstToken`'s comment naming the bug that motivated it is how a DRY fix should read.
+- **Bookkeeping is clean this round.** All 30 Chunk 2 checkboxes ticked, `go mod tidy` a no-op, no build artifacts tracked or in history (`git log --all -- bin define` is empty), coverage 91.0%, `go vet` clean, `GOOS=linux CGO_ENABLED=0 go build && go vet` green.
+
+## 2. Critical findings
+
+### C1 — `isPronunciation` rejects every multi-word pronunciation, so 2.2% of entries render raw NOAD pipes and some collapse entirely
+`cmd/define/parse.go:111`
+
+The rule is "a span is a pronunciation iff every comma-separated part is a single space-free token." NOAD writes multi-word headwords' pronunciations *with interior spaces*: `hot dog | ˈhät ˌdäɡ |`, `a priori | ˌā prīˈôrī |`, `above board | əˈbəv ˌbôrd |`, `on behalf of | ˌän bəˈhaf əv, ˌôn bəˈhaf əv |`. All are rejected.
+
+Two consequences, both verified against live NOAD at HEAD:
+
+1. **Raw notation on screen.** Over all 71,427 reachable entries, 1,062 render a surviving multi-token `|…|` span. Under the independent stress-mark oracle over the standard 2,749-entry sample: **61 entries (2.2%)**. Examples: `define article` → `the genuine article | T͟Hə ˌjenyəwən ˈärdək(ə)l |`; `define block` → `block out | ˌbläk ˈout |`; `define agrammatical` → `| BrE ˌeɪɡrəˈmatɪk(ə)l, AmE ˌeɪɡrəˈmædɪk(ə)l |`.
+2. **Total collapse.** When the entry's *own* pronunciation is the rejected one, `findPronunciation` walks past it and adopts a later one, dumping everything before it into the head. `define "hot dog"` at HEAD:
+```
+hot dog | ˈhät ˌdäɡ |  noun 1 a frankfurter, especially one served hot in a long, soft roll and
+topped with various condiments: he's ordering a hot dog | a package of hot dogs. 2 North American
+English informal a person who shows off … DERIVATIVES hotdogger
+/ˈhätˌdäɡər/
+
+  noun
+```
+`/ˈhätˌdäɡər/` is *hot dogger*. Same for `define bucktooth` → `/ˌbəkˈto͞oTHt/` (buck-toothed) and `define apriori` → `/āˈprīəˌrizəm/` (apriorism).
+
+Fix sketch — keep the single-token rule as sufficient, and admit a multi-token span when it carries NOAD stress marks, which prose never does:
+```go
+if strings.ContainsAny(inner, "[]:;.") { return false }
+for _, part := range strings.Split(inner, ",") {
+	fields := strings.Fields(part)
+	if len(fields) == 0 || len(fields) > 8 { return false }
+	marked := false
+	for _, f := range fields {
+		if strings.ContainsAny(f, "ˈˌ") { marked = true }
+	}
+	if !marked { return false }
+}
+return true
+```
+I measured this against every distinct multi-token span in the live dictionary: **1,025 accepted** (all genuine — `ˌsānt ˈjəstən`, `ˌslīd əv ˈhand`, `BrE ˌʌndɪsˈtʃɑːdʒd, AmE ˌəndɪsˈtʃɑrdʒd`), **9,697 rejected** (all prose — "she ran her fingers through her hair…", "[as modifier] : a pirate ship…"). Applied in a scratch copy: every existing test passes, the live property check stays 0 loss / 2,749, stray stress drops 61 → 8, and `hot dog`, `bucktooth`, and `apriori` render fully structured with the correct `/ˈhät ˌdäɡ/`, `/ˌbək ˈto͞oTH/`, `/ˌā prīˈôrī/`. Raise the token cap past 6 to clear the residual 8 (5–6-token phrase pronunciations).
+
+### C2 — `findPronunciation` is unbounded, so an entry with no pronunciation adopts a derivative's and loses its whole structure
+`cmd/define/parse.go:131`, consumed at `parse.go:174-176`
+
+`findPronunciation` scans the *entire* raw entry for the first pronunciation-shaped span. NOAD run-on entries carry no pronunciation of their own but do carry one under `DERIVATIVES`, so the parser reaches past every block and section boundary and takes it — treating all the intervening text as head tokens.
+
+Failure scenario (verified live, and **not** fixed by C1's patch). `define concrete`:
+```
+concrete  con·crete  adjective existing in a material or physical form; not abstract: concrete
+objects like stones | … noun a heavy, rough building material … verb [with object] 1 cover (an
+area) with concrete … PHRASES be set in concrete … DERIVATIVES concreteness
+/känˈkrētnəs, kənˈkrētnəs, ˈkänˌkrētnəs/
+
+  noun
+
+  ORIGIN
+    late Middle English (in the sense ‘solidified’): …
+```
+The adjective, noun, and verb blocks and PHRASES are all gone into a single head line, and the displayed pronunciation is *concreteness*. Affected, measured over 52,721 distinct live entries: **8** — `concrete`, `maniacal`, `melancholic`, `meteorological`, `methodological`, `smudgily`, `stinging`, `transect`. Small in count, but they are ordinary words and the per-entry output is unusable with no signal to the user that anything went wrong.
+
+Fix sketch: bound the search to the head region — stop at the first structural block opener (`opensBlock` + `posAt`) or the first section word, whichever comes first. If no pronunciation is found there, take the existing `!ok` branch (`parse.go:167-174`) so the body parses normally with an empty `Entry.IPA`. That also converts any future `isPronunciation` false negative from "catastrophic collapse" into "missing IPA," which is the failure mode you want.
+
+## 3. Important findings
+
+### I1 — Both raw-pipe checks use `isPronunciation` as their own oracle, which is why C1 and C2 shipped green through two boundary reviews
+`cmd/define/live_property_test.go:57`, `cmd/define/render_test.go:208`
+
+Both are `for _, m := range pipeSpanRe.FindAllStringSubmatch(out, -1) { if isPronunciation(m[1]) { …fail… } }`. A test that asks the function under test whether its own output was correct can detect false *positives* only. Every span C1 misses is, by definition, a span `isPronunciation` says is not a pronunciation — so both checks report 0 while 61/2,749 entries show raw notation. The atlas's "0%" is this measurement.
+
+Fix: add an oracle that does not call `isPronunciation`. Verified to work — a NOAD stress mark (`ˈ` or `ˌ`) may appear only inside a `/…/` span:
+```go
+var slashSpan = regexp.MustCompile(`/[^/\n]*/`)
+func strayStress(out string) int {
+	return strings.IndexAny(slashSpan.ReplaceAllString(out, ""), "ˈˌ")
+}
+```
+Fires 61 times on HEAD, 8 after C1's fix, 0 once the token cap is raised. Also ARCH-DRY: extract the one check into a shared helper instead of the two copies.
+
+### I2 — No fixture, and no structural golden, is a multi-word headword
+`cmd/define/testdata/capture.sh:34`, `cmd/define/render_test.go:120`
+
+All 25 fixtures are single-word headwords, and `TestCorpusBlockStructure` samples 11 of them. C1's entire class is therefore unreachable from the fixture-backed suite — the fake models the dependency's single-word output only. Add `hot dog` (multi-word pronunciation), `concrete` (no entry pronunciation, derivative has one), and `a priori`, with block-structure golden rows. Note `capture.sh` takes the word as an argv element, so multi-word entries capture fine; the filename will need the space handled.
+
+### I3 — Grammar labels are swallowed into quoted examples on 13.8% of entries
+`cmd/define/parse.go:413` `newSense`
+
+The split is at the *first* `:`, so `4 the cushion of a pool table: [as modifier] : a bank shot.` yields the example `"[as modifier] : a bank shot"` — label and a stray colon inside the quotes. Measured: **378 of 2,749 live entries**, and it is visible on `bank`, a fixture the issue's Done-when names by hand. `Block.Label` already models exactly this concept at block level (`parse.go:70`); `Sense` has no counterpart. Fix: peel a leading bracketed label off each example segment into a `Sense.Label` (or per-example label) and render it outside the quotes, mirroring what `newBlock` does with `isGrammarLabelOnly`.
+
+### I4 — README documents audio playback that M1 does not ship
+`README.md:25,30`
+
+`| define | Print a word's NOAD definition with Google-style IPA, and play its pronunciation. |` and `define sycophantic # definition + /ˌsikəˈfan(t)ik/, pronunciation played 3x`. There is no audio path in the binary at this boundary — `deps` holds only `dict` (`main.go:16`). The README is honest about `make install` landing with M2; it should be equally honest about playback. A reader who runs the documented command at this commit hears nothing and has no way to know that is expected.
+
+### I5 — `atlas/define.md` describes three IO seams when one exists
+`atlas/define.md:13-24`
+
+"A pure core with three thin IO seams," a table listing `AudioSource`/`fakeCDN` and `Player`/`fakePlayer`, and "Pure: `ParseEntry`, `Render`, `AudioCandidates`." `grep` finds no `AudioSource`, `Player`, `fakeCDN`, `fakePlayer`, or `AudioCandidates` in the tree — all are M2. AGENTS.md §8 makes the atlas the current-state map; a reader (or agent) navigating by it will look for `fetch.go` and `player.go` and find nothing. Mark the two unbuilt seams as M2, or drop them until they land.
+
+## 4. Minor findings
+
+- Seven of round 2's Minors are still open with no note recording the decision: exit code collapses `ErrNoEntry`/`ErrLookupFailed` to 1 (`main.go:52`); `bases ba·sesplural` can't segment a multiword glued POS (`parse.go:214`); `posAt` re-inlines the whitespace test beside `isBoundary` (`parse.go:463` region); `invariant_test.go:98` `len([]rune(alnum(raw)))` is a no-op conversion; `testdata/fuzz/` still doesn't exist though the atlas points at it; README says `-tags conformance ./...` while the atlas says `./cmd/define/`. Leaving Minors is fine — leaving them *silently* means round 4 rediscovers them.
+- `live_property_test.go:24` `liveSampleSize = 9000` with stride 26 covers 2,749 of 71,427 reachable entries (3.8%). A full sweep runs in ~35 s; the `checked < 500` guard would still protect it. Cheap width for the one check that earns the "entries nobody sampled" claim.
+- `define parrot` renders `(, parroting "ˈperədiNG")` — an inflection-list pronunciation landing inside a quoted example because the enclosing sense already split on a `:`. Same family as I3.
+- `TestRenderGluedPOSNotPrintedTwice` (`render_test.go:34`) asserts only `strings.Count(out, "noun") >= 1`; it would pass if the head POS vanished and the block heading appeared instead — the exact swap it exists to prevent.
+
+## 5. Test coverage notes
+
+91.0% of statements, vet clean, darwin and `GOOS=linux CGO_ENABLED=0` both green, live fixture conformance passes, fuzz clean at 7.9M executions. The structural goldens added in round 2 are real assertions on real logic and I confirmed at live width that the properties they pin actually hold.
+
+Gaps, in payoff order:
+
+1. **The raw-pipe oracle is the code under test** (I1). This is the single highest-value fix in the review: it is why two prior boundaries reported 0% on a 2.2% defect. Every other gap below is downstream of it.
+2. **No multi-word fixture** (I2), so C1 is unreachable from the fake — the fixture-backed suite cannot model a shape of the dependency's output that it has never seen.
+3. **No test asserts the head stays small.** Both C1 and C2 manifest as "the definition became head tokens." A one-line property — a parsed head over ~8 tokens is a parse failure — fires on 136 live entries at HEAD and would have caught both classes without any pronunciation-specific reasoning.
+4. **No test asserts a block has senses.** 37 live entries have a block with zero senses; 24 of those are faithful (`behalf`, `cahoot`, `inasmuch` genuinely have no gloss outside PHRASES), 13 were bugs. Worth a golden with the known-faithful set allowlisted.
+5. `realDeps` and `main` at 0% — correct, not worth chasing.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** The raw-pipe check is written twice (`render_test.go:208`, `live_property_test.go:57`) and both copies inherit the same blind oracle; extract one helper and give it an independent predicate. Residual: `posAt` re-inlines the whitespace test beside `isBoundary`. Positives confirmed: `alnum`/`subsequenceGap` shared across all three widths, `rewritePronunciations` one function with two call sites (`parse.go:176`, `render.go:123`), `splitFirstToken` consolidated. `capture.py`'s duplication of the cgo call remains correct — deliberate, one-directional, documented.
+- **ARCH-PURE — pass.** `ParseEntry`, `Render`, `isPronunciation`, `alnum`, `subsequenceGap` are pure string→value functions tested on literals with no IO; `isTerminal` is parked at the boundary (`main.go:62`) and I confirmed zero ANSI escapes on a non-TTY writer; cgo is confined to `dict_darwin.go`. No "pure" entity needs a mock to run.
+- **ARCH-PURPOSE — flag.** Run the shadow-sweep on `isPronunciation`, the single source of truth for "what is a pronunciation." It has four consumers: `findPronunciation` (parser), `rewritePronunciations` (renderer), and **both test oracles**. Because the oracles derive from the source rather than from an independent statement of the property, the source cannot be caught being wrong — the guard and the guarded are the same claim. That is the structural reason a 2.2% defect reads as 0%, and it is worth a `workshop/lessons.md` rule of its own: *a property test must not use the function under test as its oracle.*
+- **ARCH-MOCK — pass.** Seam, fixture-backed fake from real captures, byte floor, empty-corpus rejection, conformance reading through `Lookup`, documented on-demand cadence with a trigger. Verified live that the real dependency is case-insensitive and the fake models it. The one note is I2: the fake models only single-word headword output, so a shape of the dependency's real behavior is unmodeled — that is a corpus gap, not a seam defect.
+- **For M2:** the head model is about to get its second consumer. Fix C2's bound *before* that, so `Entry.IPA` is trustworthy when audio code reads it. And note that `AudioCandidates` derives from the *word*, not from `Entry.IPA`, so C1/C2 don't propagate into the CDN path — but a user seeing a collapsed entry plus correct audio will report it as an audio bug.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` entry to `workshop/plans/000001-define-plan.md`:
+
+1. **Rule B is incomplete and is specification, so it must be corrected in Chunk 1** (lines ~103–118). The stated rule — "a `|…|` span is a pronunciation iff every comma-separated part of its trimmed content is a single token" — is false for multi-word headwords. Extend the verdict table with the rows that break it (`ˈhät ˌdäɡ`, `ˌā prīˈôrī`, `ˌän bəˈhaf əv, ˌôn bəˈhaf əv` → pronunciation) and state the stress-mark discriminator, with the measurement that backs it (1,025 accept / 9,697 reject over the live dictionary).
+2. **Record the bound on `findPronunciation`.** Chunk 1 does not say where the entry pronunciation may legally appear; C2 is the cost of that omission. State that it must lie in the head region, before the first block opener or section word.
+3. **Task 1's inline `capture.sh` is stale** (lines ~205–225). It reproduces the original 9-word list (`words=(sycophantic quokka … set)`) while the real script carries 25. Round 2's prose says "corpus grew 9 → 25" but the script block was never updated, so the plan again documents something the code contradicts — the same defect as round 2's C2. Replace the inline block with a pointer to the file, or re-sync it, and add the I2 words.
+4. **The Integration table will repeat a fixed mistake in M2** (lines ~142-143): `fakeCDN` → `cmd/define/fetch_fake.go` and `fakePlayer` → `cmd/define/player_fake.go` are non-test files. `fakeDictionary` was moved to `dict_fake_test.go` precisely so it would not link into the shipped binary; correct these two rows to `_test.go` before Tasks 8 and 9 are executed.
+5. **Amend round 2's closing claim.** It ends "All Critical and Important findings are addressed in this milestone." C1 and C2 here are surviving edges of that entry's own pronunciation-rule work; note them rather than leaving a claim the code contradicts — this is now the second round in which that sentence was written and then falsified.
+
+For `workshop/issues/000001-define.md`: the estimate-quality INFO carry-forward is resolved — it is recorded in the plan's round-2 Revisions (line 577), so nothing is stranded. The plan-gate ledger's `## Open findings` is empty, so there is nothing deferred from the plan gate for this boundary to pick up.
+
+For `atlas/define.md`: the "0% now" claim under **The invariant** must be re-measured after C1/C2, and the sentence describing what the property is blind to should name the oracle limitation, not just letter-order preservation.

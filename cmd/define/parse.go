@@ -82,7 +82,19 @@ type Sense struct {
 	Number   string
 	Sub      bool
 	Gloss    string
-	Examples []string
+	Examples []Example
+}
+
+// Example is one usage example, with any grammar label that introduces it.
+//
+// NOAD writes "4 the cushion of a pool table: [as modifier] : a bank shot",
+// where "[as modifier]" qualifies the example rather than being part of it.
+// Splitting only on the first ":" left the label and a stray colon inside the
+// quotes on 13.8% of entries. Block.Label already models this concept one level
+// up; this is its counterpart.
+type Example struct {
+	Label string
+	Text  string
 }
 
 // Section is a trailing all-caps block such as DERIVATIVES or ORIGIN.
@@ -101,26 +113,65 @@ var sectionWords = []string{
 	"PHRASAL VERBS", "DERIVATIVES", "PHRASES", "ORIGIN", "USAGE",
 }
 
-// isPronunciation implements the pipe-disambiguation rule: a |…| span delimits a
-// pronunciation iff every comma-separated part of it is a single token.
+// isPronunciation implements the pipe-disambiguation rule.
 //
-// The tempting rule — "contains no ASCII letters" — is wrong: ˈrekərd and baNGk
-// are mostly ASCII letters. What actually separates the two uses of | is word
-// shape. Pronunciations are single tokens (or a comma-separated list of them);
-// examples are prose, and prose has interior spaces.
+// Two shapes qualify, and the second one matters more than it looks:
+//
+//  1. every comma-separated part is a single token — ˈrekərd, baNGk;
+//  2. a multi-word span carrying a NOAD stress mark (ˈ or ˌ) —
+//     "ˈhät ˌdäɡ" (hot dog), "ˌā prīˈôrī" (a priori), "ˌän bəˈhaf əv".
+//
+// Requiring single tokens alone rejected every multi-word headword's
+// pronunciation. That was not merely cosmetic: when an entry's OWN pronunciation
+// was the rejected one, findPronunciation walked past it and adopted a
+// derivative's, dumping the whole entry into the head line.
+//
+// The tempting rule — "contains no ASCII letters" — is wrong in the other
+// direction: ˈrekərd and baNGk are mostly ASCII letters.
+//
+// Prose never carries stress marks, which is what makes rule 2 safe: measured
+// over every distinct multi-token span in the live dictionary, it accepts the
+// genuine pronunciations and rejects the example sentences.
 func isPronunciation(inner string) bool {
 	inner = strings.TrimSpace(inner)
 	if inner == "" {
 		return false
 	}
+	// Sentence punctuation never appears inside a pronunciation.
+	if strings.ContainsAny(inner, "[]:;.") {
+		return false
+	}
 	for _, part := range strings.Split(inner, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" || strings.ContainsAny(part, " \t\n") {
+		fields := strings.Fields(part)
+		switch {
+		case len(fields) == 0:
+			return false
+		case len(fields) == 1:
+			continue // rule 1
+		case len(fields) > maxPronunciationWords:
+			return false
+		}
+		// Rule 2: at least one word carries a stress mark. Not *every* word —
+		// unstressed particles and dialect labels are normal inside a phrase
+		// pronunciation ("ət ˈprez(ə)nt", "BrE ˌeɪɡrəˈmatɪk(ə)l"). Prose carries
+		// no stress marks at all, so one is enough to separate the two.
+		marked := false
+		for _, f := range fields {
+			if strings.ContainsAny(f, "ˈˌ") {
+				marked = true
+				break
+			}
+		}
+		if !marked {
 			return false
 		}
 	}
 	return true
 }
+
+// maxPronunciationWords bounds rule 2. The longest genuine phrase pronunciations
+// in NOAD run to six words; beyond that a stress-marked run is not a headword.
+const maxPronunciationWords = 8
 
 // findPronunciation returns the text before the first pronunciation span at
 // paren depth zero, that span's content, and the text after it.
@@ -129,8 +180,55 @@ func isPronunciation(inner string) bool {
 // | red |) [with object] | rēd | …", where the first pronunciation-shaped span
 // belongs to a parenthesised inflected form, not to the entry.
 func findPronunciation(s string) (before, ipa, after string, ok bool) {
+	return findPronunciationIn(s, len(s))
+}
+
+// headLimit is where an entry's head can no longer be: the first trailing
+// section (DERIVATIVES, ORIGIN, …) or the first part-of-speech word that opens a
+// new block after a sentence end.
+//
+// Without this bound, an entry carrying no pronunciation of its own reaches past
+// every block and section boundary and adopts one from DERIVATIVES — "concrete"
+// rendered its adjective, noun and verb blocks as one head line and displayed
+// the pronunciation of *concreteness*. Bounding the search turns that class of
+// failure from a total collapse into a missing IPA, which is the failure mode to
+// prefer.
+func headLimit(s string) int {
+	limit := len(s)
+	for _, name := range sectionWords {
+		if i := indexToken(s, name); i >= 0 && i < limit {
+			limit = i
+		}
+	}
+	for i := 0; i < len(s) && i < limit; i++ {
+		if pos, _ := posAt(s, i); pos != "" && afterSentenceEnd(s, i) {
+			limit = i
+			break
+		}
+	}
+	return limit
+}
+
+// afterSentenceEnd reports whether the previous non-space character ends a
+// sentence. Unlike opensBlock this does NOT accept ")" or ":" — inside the head
+// those still belong to the head ("(subject to) adjective").
+func afterSentenceEnd(s string, i int) bool {
+	for j := i - 1; j >= 0; j-- {
+		switch s[j] {
+		case ' ', '\t', '\n':
+			continue
+		case '.':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+func findPronunciationIn(s string, limit int) (before, ipa, after string, ok bool) {
 	depth := 0
-	for i := 0; i < len(s); i++ {
+	for i := 0; i < len(s) && i < limit; i++ {
 		switch s[i] {
 		case '(':
 			depth++
@@ -160,16 +258,19 @@ func findPronunciation(s string) (before, ipa, after string, ok bool) {
 func ParseEntry(raw string) Entry {
 	e := Entry{Raw: raw}
 
-	head, ipa, rest, ok := findPronunciation(raw)
+	head, ipa, rest, ok := findPronunciationIn(raw, headLimit(raw))
 	if !ok {
-		// No pronunciation anywhere — e.g. "iPhone\nA combination mobile phone…".
-		word, body := splitFirstToken(raw)
-		if word != "" {
-			e.Head = []HeadTok{{HeadWord, word}}
-		}
-		if s := strings.TrimSpace(body); s != "" {
-			e.Blocks = []Block{{Senses: parseSenses(s)}}
-		}
+		// No pronunciation to delimit the head, so the head is the maximal prefix
+		// of head-SHAPED tokens instead. "iPhone\nA combination mobile phone…"
+		// stops at "A"; "concrete con·creteadjective existing…" still splits the
+		// welded part-of-speech off the syllabification.
+		var body string
+		e.Head, body = splitHeadByShape(raw)
+		// Sections must be peeled here too. Skipping it left DERIVATIVES inside a
+		// block, where its pronunciation pipes were consumed as example
+		// separators and surfaced as quoted "-ˈkälik(ə)lē" examples.
+		body, e.Sections = splitSections(body)
+		e.Blocks = parseBlocks(body, e.HeadPOS(), "")
 		return e
 	}
 	e.IPA = ipa
@@ -178,6 +279,33 @@ func ParseEntry(raw string) Entry {
 	e.Sections = sections
 	e.Blocks = parseBlocks(body, e.HeadPOS(), ipa)
 	return e
+}
+
+// splitHeadByShape consumes head-shaped tokens (headword, homograph,
+// syllabification, part-of-speech) from the front of raw and returns them plus
+// the remaining body. Used only when no pronunciation delimits the head.
+func splitHeadByShape(raw string) ([]HeadTok, string) {
+	rest := strings.TrimLeftFunc(raw, unicode.IsSpace)
+	word, after := splitFirstToken(rest)
+	if word == "" {
+		return nil, ""
+	}
+	head := word
+	for {
+		tok, remainder := splitFirstToken(after)
+		if tok == "" {
+			break
+		}
+		// Reuse the one classifier: a token is head-shaped iff parseHead gives it
+		// a kind other than HeadOther.
+		toks := parseHead(word + " " + tok)
+		if len(toks) < 2 || toks[1].Kind == HeadOther {
+			break
+		}
+		head += " " + tok
+		after = remainder
+	}
+	return parseHead(head), after
 }
 
 // parseHead classifies the head tokens, preserving source order. Every token
@@ -317,6 +445,13 @@ func parseBlocks(body, gluedPOS, entryIPA string) []Block {
 			b.Label = strings.TrimSpace(before)
 			text = after
 		}
+		// Convert any remaining pronunciation spans BEFORE splitting senses.
+		// Sense text splits examples on "|", and an inflection list carries
+		// pronunciations inline — "verb (parrots, parroting | ˈperədiNG |,
+		// parroted | ˈperədəd |)" — whose pipes would otherwise be consumed as
+		// example separators, burying the pronunciation inside a quoted example
+		// where nothing downstream can recognise it.
+		text = rewritePronunciations(text, "", "")
 		b.Senses = parseSenses(strings.TrimSpace(text))
 		return b
 	}
@@ -414,8 +549,8 @@ func newSense(number string, sub bool, text string) Sense {
 	s := Sense{Number: number, Sub: sub}
 	if i := strings.Index(text, ":"); i >= 0 {
 		s.Gloss = strings.TrimSpace(text[:i])
-		for _, ex := range strings.Split(text[i+1:], "|") {
-			if ex = strings.TrimRight(strings.TrimSpace(ex), "."); ex != "" {
+		for _, seg := range strings.Split(text[i+1:], "|") {
+			if ex, ok := newExample(seg); ok {
 				s.Examples = append(s.Examples, ex)
 			}
 		}
@@ -423,6 +558,31 @@ func newSense(number string, sub bool, text string) Sense {
 	}
 	s.Gloss = strings.TrimSpace(text)
 	return s
+}
+
+// newExample peels any leading bracketed grammar label (and the colon that
+// follows it) off one example segment.
+func newExample(seg string) (Example, bool) {
+	seg = strings.TrimSpace(seg)
+	var label string
+	for {
+		seg = strings.TrimSpace(seg)
+		if !strings.HasPrefix(seg, "[") {
+			break
+		}
+		end := strings.IndexByte(seg, ']')
+		if end < 0 {
+			break
+		}
+		label = strings.TrimSpace(label + " " + seg[:end+1])
+		seg = strings.TrimSpace(seg[end+1:])
+		seg = strings.TrimSpace(strings.TrimPrefix(seg, ":"))
+	}
+	seg = strings.TrimRight(seg, ".")
+	if seg == "" && label == "" {
+		return Example{}, false
+	}
+	return Example{Label: label, Text: seg}, true
 }
 
 // --- small helpers ---------------------------------------------------------
@@ -438,13 +598,37 @@ var pipeSpanRe = regexp.MustCompile(`\|([^|]*)\|`)
 // participle read | red |)") and to labels, glosses, examples and sections at
 // render time. One function, two call sites, so the two cannot drift.
 func rewritePronunciations(s, pre, post string) string {
-	return pipeSpanRe.ReplaceAllStringFunc(s, func(m string) string {
-		inner := strings.TrimSpace(strings.Trim(m, "|"))
-		if !isPronunciation(inner) {
-			return m
+	var b strings.Builder
+	i := 0
+	for {
+		open := strings.IndexByte(s[i:], '|')
+		if open < 0 {
+			break
 		}
-		return pre + "/" + inner + "/" + post
-	})
+		open += i
+		close := strings.IndexByte(s[open+1:], '|')
+		if close < 0 {
+			break
+		}
+		close += open + 1
+
+		if inner := s[open+1 : close]; isPronunciation(inner) {
+			b.WriteString(s[i:open])
+			b.WriteString(pre + "/" + strings.TrimSpace(inner) + "/" + post)
+			i = close + 1
+			continue
+		}
+		// Not a pronunciation. Consume only the OPENING pipe and retry from the
+		// next one — swallowing both would misalign every later pair. A PHRASES
+		// section interleaves example separators with phrase pronunciations
+		// ("… | example. in business | ˌin ˈbiznəs | operating …"), so a
+		// left-to-right pairing that consumes two pipes at a time straddles the
+		// real spans and leaves them unconverted.
+		b.WriteString(s[i : open+1])
+		i = open + 1
+	}
+	b.WriteString(s[i:])
+	return b.String()
 }
 
 var bracketed = regexp.MustCompile(`\[[^\]]*\]`)

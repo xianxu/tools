@@ -120,22 +120,22 @@ func TestParsePerBlockIPA(t *testing.T) {
 // a pronunciation span.
 func TestParseExamplesSplitOnInteriorPipes(t *testing.T) {
 	e := ParseEntry(fixture(t, "record"))
-	var found []string
+	var found []Example
 	for _, b := range e.Blocks {
 		for _, s := range b.Senses {
 			for _, ex := range s.Examples {
-				if strings.Contains(ex, "dental records") {
+				if strings.Contains(ex.Text, "dental records") {
 					found = s.Examples
 				}
 			}
 		}
 	}
 	if len(found) < 3 {
-		t.Fatalf("want the sense split into >=3 examples, got %d: %q", len(found), found)
+		t.Fatalf("want the sense split into >=3 examples, got %d: %+v", len(found), found)
 	}
 	for _, ex := range found {
-		if isPronunciation(ex) {
-			t.Errorf("example %q was shaped like a pronunciation", ex)
+		if isPronunciation(ex.Text) {
+			t.Errorf("example %q was shaped like a pronunciation", ex.Text)
 		}
 	}
 }
@@ -156,8 +156,8 @@ func TestParseBlocksAndSections(t *testing.T) {
 	if !slices.Equal(names, []string{"DERIVATIVES", "ORIGIN"}) {
 		t.Errorf("sections = %v, want [DERIVATIVES ORIGIN]", names)
 	}
-	if got := e.Blocks[0].Senses[0].Examples; len(got) != 1 || got[0] != "fashions are ephemeral" {
-		t.Errorf("examples = %q", got)
+	if got := e.Blocks[0].Senses[0].Examples; len(got) != 1 || got[0].Text != "fashions are ephemeral" {
+		t.Errorf("examples = %+v", got)
 	}
 }
 
@@ -165,5 +165,23 @@ func TestParseRawIsRetained(t *testing.T) {
 	raw := fixture(t, "quokka")
 	if ParseEntry(raw).Raw != raw {
 		t.Error("Raw must be retained verbatim")
+	}
+}
+
+// A grammar label introducing an example belongs outside the quotes, not inside
+// them with a stray colon. bank is the fixture the issue's Done-when names.
+func TestParseExampleGrammarLabel(t *testing.T) {
+	e := ParseEntry(fixture(t, "bank"))
+	for _, b := range e.Blocks {
+		for _, s := range b.Senses {
+			for _, ex := range s.Examples {
+				if strings.Contains(ex.Text, "[") || strings.HasPrefix(ex.Text, ":") {
+					t.Errorf("example text still carries a label or colon: %q", ex.Text)
+				}
+				if strings.Contains(ex.Text, "bank shot") && ex.Label != "[as modifier]" {
+					t.Errorf("label = %q, want %q", ex.Label, "[as modifier]")
+				}
+			}
+		}
 	}
 }
