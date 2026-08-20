@@ -169,6 +169,13 @@ testable from a string. `deps.stdinIsTerminal` is injected because a test
 harness's stdin is never a terminal; note it is a different question from the
 stdout probe that drives colour.
 
+**The "♫ playing N×" indicator is ephemeral.** It exists to show the program
+responded to a keypress; once the sound has finished it is noise, so on a
+terminal it is erased and the settled screen shows only the definition. This
+holds on both paths — the define path erases in place, the replay path
+additionally steps back onto the prompt. Piped output keeps the indicator as a
+plain line and emits no escape sequence, asserted.
+
 A bare return replays audio and leaves the screen **unchanged**. `speak` is
 silent by construction and `defineOnce` owns the "♫ playing N×" line, so the loop
 cannot accidentally reprint a definition. Interactively the loop flashes the

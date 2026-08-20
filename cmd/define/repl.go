@@ -48,15 +48,19 @@ const maxLineBytes = 1 << 20
 
 const prompt = "› "
 
-// eraseLineAndStepBack clears the line the flash was written on, moves the
-// cursor up onto the prompt line, and clears that too so the prompt can be
-// redrawn in place. The net effect is that a replay leaves the screen byte-for-
-// byte as it was — the terminal's echo of Enter is undone rather than accepted.
+// eraseLine clears the current line and returns the cursor to its start, so a
+// transient indicator can be removed once it has served its purpose.
+const eraseLine = "\r\x1b[K"
+
+// eraseLineAndStepBack additionally moves up onto the prompt line and clears it,
+// so the prompt can be redrawn in place. A replay therefore leaves the screen
+// exactly as it was — the terminal's echo of Enter is undone rather than
+// accepted, and the view never scrolls.
 //
-// This is the one place the tool moves the cursor; #2 listed cursor control as a
-// non-goal and the operator lifted it for exactly this (2026-08-20). It is gated
-// on interactive, so piped output never sees an escape sequence.
-const eraseLineAndStepBack = "\r\x1b[K\x1b[A\r\x1b[K"
+// This is the only cursor control in the tool; #2 listed it as a non-goal and the
+// operator lifted it for exactly this (2026-08-20). Gated on a terminal, so piped
+// output never sees an escape sequence.
+const eraseLineAndStepBack = eraseLine + "\x1b[A" + eraseLine
 
 // repl reads words until the input ends or the context is cancelled.
 //

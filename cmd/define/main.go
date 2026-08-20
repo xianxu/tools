@@ -54,6 +54,10 @@ type options struct {
 	noAudio bool
 	times   int
 	locale  string
+	// tty reports whether stdout is a terminal, which decides whether transient
+	// UI can be erased. Distinct from color (same probe, different question) and
+	// from stdinIsTerminal (different stream entirely).
+	tty bool
 }
 
 // run is the thin IO shell: parse flags, look up, render, print, play. All of
@@ -89,6 +93,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	opt := options{
 		raw:     *raw,
 		color:   !*noColor && isTerminal(stdout),
+		tty:     isTerminal(stdout),
 		noAudio: *noAudio,
 		times:   *times,
 		locale:  *locale,
@@ -124,12 +129,22 @@ func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, s
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		fmt.Fprintf(stdout, "\n  ♫ playing %d×\n", opt.times)
+		// The indicator is EPHEMERAL: it exists to show the program responded,
+		// and once the sound has finished it is noise. On a terminal it is erased
+		// afterwards, so the settled screen shows only the definition.
+		fmt.Fprintf(stdout, "\n  ♫ playing %d×", opt.times)
+		if !opt.tty {
+			fmt.Fprintln(stdout)
+		}
+		err := speak(ctx, d, word, opt.locale, opt.times)
+		if opt.tty {
+			fmt.Fprint(stdout, eraseLine)
+		}
 		// A cancelled context is the user pressing Ctrl-C, not a failure. Without
 		// this guard SIGINT during playback prints "define: afplay: signal:
 		// killed" — killing afplay is how cancellation is *implemented*, so
 		// reporting it as an error tells the user their own keypress went wrong.
-		if err := speak(ctx, d, word, opt.locale, opt.times); err != nil && ctx.Err() == nil {
+		if err != nil && ctx.Err() == nil {
 			fmt.Fprintf(stderr, "define: %s\n", err)
 		}
 	}

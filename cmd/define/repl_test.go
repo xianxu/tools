@@ -35,7 +35,9 @@ func replRig(t *testing.T, word string, audioPresent, interactive bool) (*audioR
 	t.Helper()
 	rig := newAudioRig(t, word, audioPresent)
 	rig.deps.stdinIsTerminal = func() bool { return interactive }
-	return rig, options{times: 3, locale: "us"}
+	// tty mirrors interactive here: these tests model a terminal on both streams
+	// or neither, which is the real-world pairing.
+	return rig, options{times: 3, locale: "us", tty: interactive}
 }
 
 // The headline behaviour: a bare return replays, and costs nothing.
@@ -234,6 +236,10 @@ func TestREPLReplayFlashesThenRestoresThePrompt(t *testing.T) {
 	if n := strings.Count(s, "♫"); n != 2 {
 		t.Errorf("indicator shown %d times, want 2 (once on define, once flashed on replay)", n)
 	}
+	// Both indicators are transient: each is followed by an erase.
+	if n := strings.Count(s, eraseLine); n < 2 {
+		t.Errorf("erase sequences: %d, want at least 2 — an indicator was left on screen", n)
+	}
 	if !strings.Contains(s, eraseLineAndStepBack) {
 		t.Error("the flash was never erased — the screen would scroll on every replay")
 	}
@@ -257,5 +263,23 @@ func TestREPLNonInteractiveReplayEmitsNoEscapes(t *testing.T) {
 
 	if strings.Contains(out.String(), "\x1b[") {
 		t.Error("ANSI escapes leaked into non-interactive output")
+	}
+}
+
+// The indicator is ephemeral on the DEFINE path too, not only on replay: once
+// the sound has finished it is noise, so the settled screen shows the definition
+// and nothing else.
+func TestREPLDefineIndicatorIsErasedAfterPlayback(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, true)
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
+
+	s := out.String()
+	i := strings.Index(s, "♫")
+	if i < 0 {
+		t.Fatal("no indicator shown")
+	}
+	if !strings.Contains(s[i:], eraseLine) {
+		t.Error("the define-path indicator was never erased")
 	}
 }
