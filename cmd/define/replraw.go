@@ -70,7 +70,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	draw := func(matches []string) {
 		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, matches), opt.color))
 	}
-	draw(hist.Prefix(e.WalkBase()))
+	draw(completionsFor(e.WalkBase(), hist, commands))
 
 	for {
 		select {
@@ -84,7 +84,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				fmt.Fprintln(stdout)
 				return 0
 			}
-			matches := hist.Prefix(e.WalkBase())
+			matches := completionsFor(e.WalkBase(), hist, commands)
 			var act Action
 			e, act = Apply(e, k, matches)
 			switch act {
@@ -111,7 +111,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					// cmdReplay and cmdNothing both stay on this line: the
 					// indicator is drawn over the prompt, then the prompt back.
 					replayInPlace(ctx, d, opt, current, stdout, stderr)
-					draw(hist.Prefix(e.WalkBase()))
+					draw(completionsFor(e.WalkBase(), hist, commands))
 					continue
 				}
 				// In RAW mode "\n" is a line feed only — no carriage return — so
@@ -130,7 +130,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// the prompt butts against the last line of the definition and
 				// reads as part of it.
 				fmt.Fprint(stdout, "\r\n")
-				draw(hist.Prefix(e.WalkBase()))
+				draw(completionsFor(e.WalkBase(), hist, commands))
 				continue
 			}
 			draw(matches)

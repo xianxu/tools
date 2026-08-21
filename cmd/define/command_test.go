@@ -88,3 +88,51 @@ func TestNearestCommands(t *testing.T) {
 		})
 	}
 }
+
+// The namespace switch. One decision point for "which set is this line drawing
+// from", so the four call sites in replraw.go cannot drift apart.
+func TestCompletionsFor(t *testing.T) {
+	h := &memHistory{}
+	h.Add("sycophantic")
+	h.Add("sybarite")
+	h.Add("ephemeral")
+
+	for _, tc := range []struct {
+		name string
+		base string
+		want []string
+	}{
+		{"command prefix draws from commands", "/his", []string{"/history"}},
+		{"bare slash offers every command", "/", []string{"/help", "/history", "/stats"}},
+		{"a word draws from history", "syc", []string{"sycophantic"}},
+		{"a shared word prefix draws several", "sy", []string{"sybarite", "sycophantic"}},
+		{"an empty line draws all history", "", []string{"ephemeral", "sybarite", "sycophantic"}},
+		{"a slash mid-word is not a command", "and/or", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := completionsFor(tc.base, h, testCmds)
+			// History order is newest-first; compare as sets so this test is about
+			// WHICH namespace was consulted, not about either one's ordering.
+			if !sameSet(got, tc.want) {
+				t.Errorf("completionsFor(%q) = %v, want %v (as a set)", tc.base, got, tc.want)
+			}
+		})
+	}
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := map[string]int{}
+	for _, s := range a {
+		seen[s]++
+	}
+	for _, s := range b {
+		seen[s]--
+		if seen[s] < 0 {
+			return false
+		}
+	}
+	return true
+}

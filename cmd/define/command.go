@@ -14,6 +14,30 @@ type command struct {
 	summary string
 }
 
+// commands is the registry. Adding a command is a row here plus its run
+// function — the dispatch loop never changes, which is a Done-when.
+var commands = []command{
+	{name: "help", summary: "list the commands"},
+}
+
+// completionsFor is the ONE place that decides which namespace a line is drawing
+// from, and it is why command-mode type-ahead needed no change to the pure
+// editor: Apply already takes its candidate list from the caller, so command
+// mode is a different match SOURCE rather than a different editor.
+//
+// The candidates come back "/"-prefixed because Suggestion matches against the
+// whole typed line — with "/his" typed, "/history" is what completes it.
+//
+// Once an argument has been typed ("/history 7") the command is settled and the
+// completion is shorter than the line, so Suggestion offers nothing. That falls
+// out rather than being special-cased.
+func completionsFor(base string, hist History, cmds []command) []string {
+	if name, _, ok := parseCommandLine(base); ok {
+		return commandCompletions(name, cmds)
+	}
+	return hist.Prefix(base)
+}
+
 // parseCommandLine reports whether a submitted line is a command, and splits it.
 //
 // `/` in the FIRST column is the marker. No English headword starts with one, so
