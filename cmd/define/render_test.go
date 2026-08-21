@@ -231,3 +231,74 @@ func TestNoRawPronunciationNotationSurvives(t *testing.T) {
 		})
 	}
 }
+
+// Wrapping must break at spaces. The terminal will wrap for us otherwise, but it
+// wraps at the column — splitting words mid-syllable ("fing/ers"), which is
+// exactly what a dictionary entry must not do.
+func TestWrapTextBreaksAtSpaces(t *testing.T) {
+	got := wrapText("mid 16th century from French sycophante or via Latin", 24, 4)
+	for _, line := range strings.Split(got, "\n") {
+		if visibleLen(strings.TrimSpace(line)) == 0 {
+			t.Error("blank line produced")
+		}
+	}
+	// No line may exceed the width once its indent is counted.
+	for i, line := range strings.Split(got, "\n") {
+		w := visibleLen(line)
+		if i == 0 {
+			w += 4
+		}
+		if w > 24 && len(strings.Fields(line)) > 1 {
+			t.Errorf("line %d is %d wide, want <= 24: %q", i, w, line)
+		}
+	}
+	// And nothing is lost.
+	if strings.Join(strings.Fields(got), " ") != "mid 16th century from French sycophante or via Latin" {
+		t.Errorf("wrapping changed the words: %q", got)
+	}
+}
+
+// Width is measured in visible columns: wrapping on byte length would break
+// early on every coloured line, and these lines are coloured.
+func TestWrapTextIgnoresANSI(t *testing.T) {
+	plain := wrapText("alpha beta gamma delta", 20, 0)
+	colored := wrapText("alpha \x1b[35mbeta\x1b[0m gamma delta", 20, 0)
+	if strings.Count(plain, "\n") != strings.Count(colored, "\n") {
+		t.Errorf("colour changed the wrap points:\n plain: %q\n color: %q", plain, colored)
+	}
+}
+
+// A word longer than the line goes on its own line rather than being cut.
+func TestWrapTextDoesNotSplitAWord(t *testing.T) {
+	long := "supercalifragilisticexpialidocious"
+	got := wrapText("a "+long+" b", 10, 0)
+	if !strings.Contains(got, long) {
+		t.Errorf("a long word was split: %q", got)
+	}
+}
+
+// Width 0 means a pipe: leave the text alone, since a consumer re-wraps for
+// itself and baked-in breaks cannot be undone.
+func TestWrapTextDisabledAtZeroWidth(t *testing.T) {
+	in := "some text that would otherwise wrap at a narrow width"
+	if got := wrapText(in, 0, 4); got != in {
+		t.Errorf("wrapped at width 0: %q", got)
+	}
+}
+
+// The no-data-loss property must survive wrapping — it only inserts whitespace.
+func TestWrappedRenderStillLosesNothing(t *testing.T) {
+	d := testDict(t)
+	for word, raw := range d.entries {
+		t.Run(word, func(t *testing.T) {
+			out := Render(ParseEntry(raw), RenderOpts{Color: false, Width: 60})
+			want, got := alnum(raw), alnum(out)
+			if len(want) != len(got) {
+				t.Errorf("alnum count raw=%d wrapped=%d", len(want), len(got))
+			}
+			if i := subsequenceGap(want, got); i >= 0 {
+				t.Errorf("wrapping lost content at rune %d", i)
+			}
+		})
+	}
+}

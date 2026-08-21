@@ -54,6 +54,9 @@ type options struct {
 	noAudio bool
 	times   int
 	locale  string
+	// width is the terminal width for wrapping; 0 on a pipe, where a consumer
+	// re-wraps for itself and baked-in breaks cannot be undone.
+	width int
 	// tty reports whether stdout is a terminal, which decides whether transient
 	// UI can be erased. Distinct from color (same probe, different question) and
 	// from stdinIsTerminal (different stream entirely).
@@ -96,7 +99,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// -no-color means "emit no ANSI", so it disables cursor control too — the
 		// flag exists for terminals that mangle escapes, and splitting its meaning
 		// would leave those users with erase sequences they cannot render.
-		tty: !*noColor && isTerminal(stdout),
+		tty:   !*noColor && isTerminal(stdout),
+		width: terminalWidth(stdout),
 		// -raw is the scripting form: the unparsed entry and nothing else. The
 		// one-shot path already returned before playing, but the loop's replay
 		// branch never consulted the flag — so a bare return under -raw fetched
@@ -109,7 +113,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 
 	switch fs.NArg() {
 	case 0:
-		return repl(ctx, d, opt, stdin, stdout, stderr)
+		// The loop needs a cancel it can call itself: in raw mode Ctrl-C arrives
+		// as a byte, so signal.NotifyContext cannot deliver it and the key reader
+		// must cancel instead. NotifyContext stays for the one-shot and piped
+		// paths, which still receive it as a signal.
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
 	case 1:
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
 	default:
@@ -122,29 +132,41 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 // speak. Extracted so the loop calls exactly this rather than growing a parallel
 // copy (ARCH-DRY).
 func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, stderr io.Writer) int {
-	text, err := d.dict.Lookup(word)
-	if err != nil {
-		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
-		return 1
-	}
-	if opt.raw {
-		fmt.Fprintln(stdout, text)
-		return 0
-	}
-	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color}))
-
-	if !opt.noAudio && opt.times > 0 {
+	code, play := lookupAndRender(d, opt, word, stdout, stderr)
+	if play {
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		ind := indicator{show: true, before: "\n", erase: eraseLine}
-		if !opt.tty {
-			// Nothing to erase on a pipe: leave the indicator as a plain line.
-			ind.erase, ind.trail = "", "\n"
-		}
-		playAnnounced(ctx, d, opt, word, ind, stdout, stderr)
+		playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
 	}
-	return 0
+	return code
+}
+
+// lookupAndRender is the part of the define path that only WRITES — look up,
+// render, print. Split out because the raw-mode loop must run it in cooked mode
+// (so newlines translate) while playing in RAW mode (so Ctrl-C arrives as a byte
+// the key reader can see). Returns whether audio should follow.
+func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer) (code int, play bool) {
+	text, err := d.dict.Lookup(word)
+	if err != nil {
+		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
+		return 1, false
+	}
+	if opt.raw {
+		fmt.Fprintln(stdout, text)
+		return 0, false
+	}
+	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
+	return 0, !opt.noAudio && opt.times > 0
+}
+
+// defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.
+func defaultIndicator(opt options) indicator {
+	ind := indicator{show: true, before: "\n", erase: eraseLine}
+	if !opt.tty {
+		ind.erase, ind.trail = "", "\n"
+	}
+	return ind
 }
 
 // indicator describes the ephemeral "♫ playing N×" line: what to write before it
@@ -215,6 +237,21 @@ func speak(ctx context.Context, d deps, word, locale string, n int) error {
 		return err
 	}
 	return playN(ctx, d.player, path, n)
+}
+
+// terminalWidth reports the usable width of stdout, or 0 when it is not a
+// terminal. Wrapping is a presentation decision, so it stays at the boundary and
+// Render receives a number.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	cols, _, err := term.GetSize(int(f.Fd()))
+	if err != nil || cols < 20 { // an implausibly narrow terminal: do not wrap
+		return 0
+	}
+	return cols
 }
 
 // isTerminal keeps the TTY probe out of Render, so rendering stays pure and

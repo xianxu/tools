@@ -151,6 +151,49 @@ It guarantees **fidelity, not completeness** — see Limits.
   `isGrammarLabelOnly` for short leading register labels is the tractable fix if
   it becomes worth doing.
 
+## The line editor (raw mode)
+
+When `define` owns the terminal (**stdin and stdout both a tty, and not
+`-no-color`**) it enters raw mode and runs its own editor:
+
+- Up/Down walk history newest-first; with text typed they walk only entries with
+  that prefix (zsh's `history-beginning-search-backward`).
+- The newest matching entry appears ahead of the cursor in grey; **Right, End or
+  Tab** accepts it. **Enter submits only what was typed** — and redraws the line
+  without the grey tail before advancing, since an unaccepted suggestion in
+  scrollback claims the user typed something they did not.
+- **Cmd+Delete clears the line.** Terminals send it as Ctrl-U (`\x15`) — Ghostty
+  binds `super+backspace` to exactly that — so the byte is handled rather than a
+  key code no terminal actually emits.
+- Both loops route submissions through the same `parseREPLLine`, so the
+  interactive and piped paths cannot disagree about what a line means.
+- Paragraphs wrap at word boundaries to the terminal width, measured in **visible
+  columns** because every line here is coloured. Width 0 (a pipe) disables it:
+  a consumer re-wraps for itself and baked-in breaks cannot be undone.
+
+The editor is a pure state machine — `Apply(Editor, Key, matches) → (Editor,
+Action)` plus `RenderLine` — so every behaviour above is a table test over key
+sequences with no terminal. `Action` is what the *loop* must do; the editor never
+acts. Candidates arrive as a plain slice rather than a `History` handle, so
+**`Apply` never queries**; the loop resolves matches once per keystroke and hands
+the same slice to both the state machine and the suggestion.
+
+**Cancellation changes shape in raw mode, and this is the subtle part.** Ctrl-C
+arrives as byte `0x03`, not a signal, so `signal.NotifyContext` — which the
+one-shot and piped paths still rely on — never fires. The key reader owns
+cancellation instead, calling `cancel()` the moment it decodes an interrupt, which
+works even while the loop is blocked in playback.
+
+That forced a second decision: **render cooked, play raw.** Printing a definition
+needs cooked mode so newlines translate; playback must stay raw so the key reader
+keeps seeing bytes. Doing the whole lookup cooked made Ctrl-C during playback
+hang — verified, then fixed, then pinned by `TestPTYCtrlCDuringPlaybackExitsPromptly`.
+
+`#2`'s `eraseLineAndStepBack` and `skipPrompt` are **deleted, not ported**: they
+existed to step back over the terminal's echo of Enter, and raw mode does not
+echo. That also removes `#2`'s documented limitation that typing during playback
+stranded the indicator — the arithmetic has nothing left to correct for.
+
 ## Entry modes
 
 One word per invocation was the original shape; `run` now dispatches on argument
@@ -198,7 +241,8 @@ requests each time; `ErrFetchFailed` stays retryable so a transient outage does
 not poison the session. The cache derives that distinction from the error
 taxonomy rather than re-deciding what "failed" means.
 
-**The erase arithmetic assumes no input arrives during playback.** `eraseLine`
+**(Cooked path only.) The erase arithmetic assumes no input arrives during
+playback.** This applies to the fallback line loop, not the editor above: `eraseLine`
 acts on whatever line the cursor is on *now*, and the loop is blocked inside
 `speak` for seconds with the tty in cooked mode and ECHO on. A second impatient
 Return during playback is echoed by the driver, moves the cursor down, and the

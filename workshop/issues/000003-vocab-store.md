@@ -25,10 +25,15 @@ A `Store` seam with a YAML-in-a-brain backend.
   is a merge conflict, not corruption: one file per word (`words/<slug>.yaml`)
   plus an append-only event log per day (`events/YYYY-MM-DD.yaml`). Neither
   conflicts. A single mutable `vocab.yaml` would conflict on every second machine.
-- Per-user by construction — a brain is one person's repo. `nous push`
-  ("checkpoint and push the brain containing the current directory") provides
-  sync, so **no sync code is written here**.
-- Location `$BRAIN/data/vocab/`, resolved via nous; `DEFINE_VOCAB_DIR` overrides.
+- **Location is config, defaulting to the working directory** (operator,
+  2026-08-20). `define` does not resolve brains, workspaces or home directories:
+  it writes YAML where it was started, and a config file can override that.
+- **Durable replication is explicitly NOT this issue's concern.** Running
+  `define` inside a directory that happens to be replicated is how state travels
+  between machines; that is the operator's choice of cwd, not a feature here. The
+  earlier draft resolved a brain path and invoked `nous push` — that was me
+  over-reading "use nous to push" as a design requirement when the actual
+  constraint was only **YAML files rather than a database**.
 - **Clock injected from day one.** Spaced repetition is entirely date-driven and
   "due today" is untestable against a wall clock. No component may call
   `time.Now()` directly.

@@ -37,7 +37,20 @@ define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
 
-With no word, `define` reads stdin: a word defines and speaks it, a bare return
+On a terminal, `define` with no word opens a line editor:
+
+| key | does |
+|---|---|
+| Up / Down | walk history — narrowed to what you have typed |
+| Right / End / Tab | accept the grey suggestion |
+| Enter | define what you typed (never the suggestion) |
+| Enter on an empty line | replay the pronunciation, without moving the screen |
+| Cmd+Delete (Ctrl-U) | clear the line |
+| Ctrl-C | quit, including mid-playback |
+
+Definitions wrap to your terminal width at word boundaries.
+
+With no word and no terminal, `define` reads stdin: a word defines and speaks it, a bare return
 replays the *pronunciation* of the current one — nothing is re-fetched, and the
 screen is left as it was provided you let the sound finish — and Ctrl-C quits
 silently. `-raw` prints the unparsed entry and never plays. The prompt appears
