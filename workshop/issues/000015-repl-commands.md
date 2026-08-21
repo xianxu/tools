@@ -61,7 +61,7 @@ one place to revise when the design moves.
 Two boundaries on purpose. `#4` closed as one batch and took ten review rounds;
 six findings fixed in one commit is six chances to create a seventh.
 
-- [ ] M1 — the `/` namespace and dispatch (plan Tasks 1-3). Complete without the
+- [x] M1 — the `/` namespace and dispatch (plan Tasks 1-3). Complete without the
       store: `/` opens command mode, type-ahead narrows, unknown commands
       suggest, `/help` lists the table. Dispatch lands on `parseREPLLine`'s new
       `cmdCommand` kind so BOTH loops get it.
