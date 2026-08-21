@@ -211,3 +211,21 @@ Two operational forms:
 - **When instances live in a plan, the closing move is an AGENTS.md §1
   `## Revisions` entry, not a checkbox tick.** Ticking boxes records that work
   happened; it does not correct what the document claims.
+
+## `go test` runs in the package directory (define #4)
+
+A repo-wide guard test ran `git ls-files` and got paths relative to `cmd/define/`,
+not the repo root — so `cmd/define/define` arrived as `define`, and a "files at
+the repo root are fine" skip swallowed the very artifact the test existed to
+catch. It printed `ok` and I nearly accepted it.
+
+Resolve the root explicitly (`git rev-parse --show-toplevel`, then `git -C`), and
+**verify a guard by planting what it hunts** — clean passes, planted fails,
+removed passes. Two runs, not one.
+
+## Test the property, not a proxy for it (define #4)
+
+The same guard's first working version flagged "extensionless file in a source
+directory" and immediately false-positived on a tracked symlink. The question was
+never about filenames: it is *is this file an executable image*, which the magic
+bytes answer exactly. A proxy that is cheap to write is expensive to keep.
