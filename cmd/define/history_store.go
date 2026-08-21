@@ -44,10 +44,10 @@ func newStoreHistory(st store.Store, warn io.Writer) *storeHistory {
 // Add records the line for RECALL only.
 //
 // It used to write to the store as well. Those writes moved to storeCapturer
-// (#4) so the process has exactly one writer — otherwise the raw path would
+// (#4) so lookups have exactly one recorder — otherwise the raw path would
 // record every lookup twice, once here and once at the capture site, and a deck
 // that counts double is wrong in a way nobody notices until #5 orders by it.
-func (h *storeHistory) Add(line string, _ bool) {
+func (h *storeHistory) Add(line string) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return

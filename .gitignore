@@ -23,6 +23,21 @@ bin/
 
 # `go build ./` inside a cmd/<name>/ directory writes an extensionless binary
 # named after that directory — a 9.6 MB one was committed this way. bin/ is the
-# sanctioned output. The pattern below covers the known tools; the general case
-# is enforced by TestNoCommittedBinaries, which fails for any future cmd/ too.
+# sanctioned output.
+#
+# gitignore cannot express "a file named after its parent directory" (no
+# backreferences), and an un-anchored `define` would ignore the cmd/define/
+# SOURCE directory, so the line below is necessarily per-tool: it only keeps
+# `git status` quiet for the tools that exist. A new cmd/foo's binary will show
+# up as untracked until someone adds a line.
+#
+# What covers the general case is the pair of guards in repo_guard_test.go, and
+# each covers a different place:
+#   TestNoCommittedBinaries  reads the INDEX   (git ls-files)
+#   TestNoBinariesInHistory  reads the HISTORY (git rev-list --objects HEAD)
+# The distinction is not academic. A binary removed in a follow-up commit
+# leaves the index clean and the blob reachable — every clone still fetches it.
+# Both were verified by planting a binary in a new cmd/newtool/: the index guard
+# fails when it is staged, and after a git rm in a later commit the index guard
+# passes while the history guard fails.
 /cmd/*/define

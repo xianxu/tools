@@ -15,9 +15,9 @@ func fixedClock(day int) store.Clock {
 
 func TestStoreHistoryPrefixIsNewestFirstAndDeduped(t *testing.T) {
 	h := newStoreHistory(store.NewMem(), nil)
-	h.Add("sycophantic", true)
-	h.Add("ephemeral", true)
-	h.Add("sycophantic", true) // looked up again
+	h.Add("sycophantic")
+	h.Add("ephemeral")
+	h.Add("sycophantic") // looked up again
 
 	got := h.Prefix("")
 	if len(got) != 2 || got[0] != "sycophantic" {
@@ -30,7 +30,7 @@ func TestStoreHistoryPrefixIsNewestFirstAndDeduped(t *testing.T) {
 func TestStoreHistoryPrefixDoesNotQueryTheStore(t *testing.T) {
 	counting := &countingStore{Store: store.NewMem()}
 	h := newStoreHistory(counting, nil)
-	h.Add("sycophantic", true)
+	h.Add("sycophantic")
 
 	before := counting.reads
 	for i := 0; i < 50; i++ {

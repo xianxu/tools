@@ -59,6 +59,12 @@ because `#14` consumes the seam.
 
 ## Chunk 1: Core concepts
 
+> **Chunk 1 predates the implementation.** Where it and `## Revisions` disagree,
+> Revisions is right — it was written against the shipped code. Known divergences:
+> the capture site is `lookupAndRender` (not `defineOnce`), `storeHistory` does
+> nothing rather than delegating, and `Capturer.Capture` takes `(word, found, opt)`.
+
+
 ### Pure entities
 
 | Name | Lives in | Status |
@@ -119,10 +125,24 @@ because `#14` consumes the seam.
 
 ### Integration points
 
-| Name | Lives in | Status | Wraps |
-|------|----------|--------|-------|
-| `Capturer` | `cmd/define/capture.go` | new | interface (seam) |
-| `storeCapturer` | `cmd/define/capture.go` | new | a `store.Store` |
+Completed after implementation — the table shipped with two rows and the code
+grew ten more. The `kind` column is what the boundary judge cross-checks against
+the diff, so a PURE row with a mock-needing test is a real signal.
+
+| Name | Lives in | Kind | Status | Wraps |
+|------|----------|------|--------|-------|
+| `decideCapture` | `cmd/define/capture.go` | PURE | new | — (policy; table-tested, no IO) |
+| `Capturer` | `cmd/define/capture.go` | INTEGRATION | new | interface (seam) |
+| `storeCapturer` | `cmd/define/capture.go` | INTEGRATION | new | a `store.Store` |
+| `noopCapturer` | `cmd/define/capture.go` | INTEGRATION | new | nothing — null object for the opt-out |
+| `storeDeps` | `cmd/define/main.go` | PURE | new | — (the trio `openStore` returns) |
+| `withStore` | `cmd/define/main.go` | INTEGRATION | new | the nil-merge over `newStore` |
+| `openStore` | `cmd/define/main.go` | INTEGRATION | new (was `openHistory`) | `os.Getwd` + `store.NewYAML` |
+| `forgetWord` | `cmd/define/main.go` | INTEGRATION | new | `deck.Forget` |
+| `isSet` | `cmd/define/main.go` | PURE | new | — (was the flag explicitly given?) |
+| `wordFileName` | `cmd/define/store/yaml.go` | PURE | new | — (slug → filename + traversal guard) |
+| `Store.Forget` | `cmd/define/store/store.go` | INTEGRATION | modified | interface gained `Forget` |
+| `Mem.Forget` / `YAML.Forget` | `store/mem.go`, `store/yaml.go` | INTEGRATION | new | both answer the shared `storetest.Suite` |
 
 
 - **Capturer** — `Capture(word string, found bool, opt options)`. Deliberately returns **no
@@ -279,6 +299,21 @@ and `newStore` — plus a `storeDeps` value and a `withStore` method. `openHisto
 became `openStore`, because the opt-out is a flag-parse-time input and nothing
 store-backed can be built in `realDeps` before flags exist.
 
+*The defaults, asked for at rounds 6, 7 and 8 and not written until now.*
+`withStore` fills only what a caller left nil: `history` falls back to
+`&memHistory{}`, `capture` to `noopCapturer{}`, and `deck` to whatever
+`newStore` returned — nil when a test supplied no `newStore`, which is what
+makes `--forget` report "no deck in this directory" under a test rig rather
+than panicking. `newStore` itself defaults to `openStore` in `realDeps` and to
+nil in tests, so **the real filesystem is opt-in**: a test that wants it sets
+`newStore = openStore` and `t.Chdir`s into a `t.TempDir` first.
+
+`withStore` also used to short-circuit when `history` and `capture` were both
+supplied. That branch was unreachable — a probe panic inside it left the whole
+suite green — and it left `deck` nil even when a `newStore` could have supplied
+one, so it was deleted rather than pinned. The nil-merge reaches the same result
+with one path through the function.
+
 **4. `DEFINE_NO_CAPTURE` means "write nothing here", including events.** Recorded
 in the Spec during round 1 of the gate; the consequence is that history drops to
 session-only, because the event log is what persists it.
@@ -291,3 +326,42 @@ The rule that generalises, now in `lessons.md`: *an escalated family finding is
 closed only when every instance it enumerates is disposed — regardless of which
 artifact the instances live in — and where they live in a plan, the closing move
 is this section, not a checkbox.*
+
+
+### 2026-08-21 — round 8: the blob, and the clause the family rule was missing
+
+**6. The 9.6 MB binary was excised from history, not just from the tree.** Round 7
+removed the file in a *follow-up* commit, which changes what `HEAD` looks like and
+nothing about what a clone fetches: the branch still cloned to 5.9 MB against
+`main`'s 604 KB. `git filter-branch --index-filter` over `main..HEAD` rewrote the
+commit that adds it; re-measured at **712 KB, identical to `main`, blob absent
+from a fresh clone**.
+
+**7. `TestNoBinariesInHistory` joins the index guard.** The `.gitignore` comment
+named `TestNoCommittedBinaries` as enforcing the general case, but that test reads
+`git ls-files` — the index — while this class costs money in *history*. It was
+green on a repo carrying the artifact. The two guards now read the two places, and
+both were verified by planting a binary in a new `cmd/newtool/`: staged → the index
+guard fails; `git rm`'d in a later commit → the index guard passes and the history
+guard fails.
+
+**8. `History.Add` lost its `found` parameter.** Both implementations ignored it
+while the interface doc claimed it was recorded. `#15`'s `/history` filters on the
+**event log**, where `Found` is a real field, so nothing needed it here.
+
+**9. Usage errors are settled before `withStore` runs.** `define -forget=`,
+`-forget` plus a word, and two words now return 2 without opening the store. The
+observable difference is narrow and worth recording because the obvious test for
+it *cannot fail*: `NewYAML` is a pure constructor, so "the directory is still
+empty" holds either way. `newStoreHistory` reads the log at construction, so the
+real symptom is a corrupt log reporting itself in the middle of a usage error —
+which is what `TestUsageErrorsDoNotOpenTheLog` asserts, mutation-verified in both
+directions.
+
+**The clause the family rule was missing.** Rounds 7 and 8 each closed zero of ten
+open findings while feeling productive, because each fixed the *legible* half — the
+tracked file visible in `git status`, the comment whose file the finding's title
+named — and left the half that required re-deriving the finding's own measurement.
+Now in `lessons.md`: *a finding is closed only when you have re-run the measurement
+that produced it.* Both of these findings shipped with a measurement attached, and
+re-running either is one command.

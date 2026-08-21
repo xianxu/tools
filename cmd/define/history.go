@@ -8,12 +8,15 @@ import "strings"
 // /history to read that store rather than a private history file, so building
 // one here would be building the thing #15 forbids.
 //
-// Every SUBMITTED line is recorded, with whether the lookup found anything.
-// Up-arrow recall must include a word you typed and got wrong — that is exactly
-// when you want to edit and retry — while #15's /history is about words
-// *queried* and filters to found. One record, two readers.
+// Every SUBMITTED line is recorded, found or not: up-arrow recall must include
+// a word you typed and got wrong — that is exactly when you want to edit and
+// retry. Recall therefore needs the line and nothing else.
+//
+// Add used to take a `found bool` for #15's benefit. Both implementations
+// ignored it while this comment claimed it was recorded, and #15 does not need
+// it here: /history filters on the EVENT LOG, where Found is a real field.
 type History interface {
-	Add(line string, found bool)
+	Add(line string)
 	// Prefix returns entries beginning with p, newest first, deduped. An empty
 	// p returns everything.
 	Prefix(p string) []string
@@ -25,7 +28,7 @@ type memHistory struct {
 	lines []string // oldest first
 }
 
-func (h *memHistory) Add(line string, _ bool) {
+func (h *memHistory) Add(line string) {
 	if line = strings.TrimSpace(line); line != "" {
 		h.lines = append(h.lines, line)
 	}

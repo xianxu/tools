@@ -25,7 +25,8 @@ type deps struct {
 	// history is the durable word history. Constructed at the boundary so the
 	// loop takes a seam rather than deciding where state lives.
 	history History
-	// capture is the only thing in the process that writes to the store.
+	// capture is the only thing that RECORDS lookups. deck below is the other
+	// way the store is mutated: --forget deletes through it.
 	capture Capturer
 	// deck is the store --forget acts on. Separate from capture because capture
 	// deliberately cannot fail loudly and --forget deliberately must.
@@ -33,7 +34,9 @@ type deps struct {
 	// newStore builds the three store-backed dependencies AFTER flags are parsed —
 	// it cannot happen in realDeps, because DEFINE_NO_CAPTURE is read at flag
 	// parse and decides whether anything is opened at all. Tests leave it nil and
-	// get in-memory defaults, so no test ever touches the real filesystem.
+	// get in-memory defaults. Tests that DO want the real wiring set it to
+	// openStore and t.Chdir into a t.TempDir first — several do, so this seam is
+	// what keeps the real filesystem opt-in, not unreachable.
 	newStore func(options, io.Writer) storeDeps
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
@@ -61,12 +64,14 @@ type storeDeps struct {
 	deck    store.Store
 }
 
-// withStore fills any store-backed dependency a caller did not supply. Tests
-// supply their own and are left alone.
+// withStore fills any store-backed dependency a caller did not supply, leaving
+// whatever a test supplied alone.
+//
+// It used to short-circuit when history and capture were both supplied. No test
+// ever entered that branch (probe-verified: a panic there left the suite green)
+// and it left deck nil, so --forget had nothing to act on. The nil-merge below
+// reaches the same result without a second path through the function.
 func (d deps) withStore(opt options, warn io.Writer) deps {
-	if d.history != nil && d.capture != nil {
-		return d // fully supplied by a test
-	}
 	var sd storeDeps
 	if d.newStore != nil {
 		sd = d.newStore(opt, warn)
@@ -172,8 +177,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"notation — and plays its recorded pronunciation.\n\n"+
 			"With no word, reads words from stdin; on a terminal that is an\n"+
 			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n\n"+
-			"define records every lookup under words/ and events/ in the CURRENT\n"+
-			"DIRECTORY, so your deck follows whichever directory you run it in.\n"+
+			"define records what you look up under words/ and events/ in the\n"+
+			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
+			"it in. A word that was found is added to the deck; a word that was\n"+
+			"not is kept as history only, so typos never become vocabulary. -raw\n"+
+			"records nothing, because it is for scripts.\n"+
 			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
 			"session-only, because the event log is what persists it.\n\nFlags:\n")
 		fs.PrintDefaults()
@@ -207,22 +215,31 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		locale:    *locale,
 	}
 
+	// Usage errors are settled BEFORE a store is opened. A mistyped command must
+	// not be the thing that creates words/ and events/ in the current directory.
+	//
+	// --forget is a mode, not a lookup, so it is validated and dispatched apart
+	// from the argument count. Combining it with a word is two commands on one
+	// line; silently honouring one of them is how -raw came to mean two different
+	// things in #2.
+	forgetting := isSet(fs, "forget")
+	switch {
+	case forgetting && *forget == "":
+		fmt.Fprintln(stderr, "define: -forget needs a word")
+		return 2
+	case forgetting && fs.NArg() != 0:
+		fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
+		return 2
+	case !forgetting && fs.NArg() > 1:
+		fs.Usage()
+		return 2
+	}
+
 	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
 	// flag-parse-time input and decides whether anything is opened at all.
 	d = d.withStore(opt, stderr)
 
-	if isSet(fs, "forget") {
-		if *forget == "" {
-			fmt.Fprintln(stderr, "define: -forget needs a word")
-			return 2
-		}
-		// A mode, not a lookup, so it dispatches before the NArg switch. Combining
-		// it with a word is two commands on one line; silently honouring one of
-		// them is how -raw came to mean two different things in #2.
-		if fs.NArg() != 0 {
-			fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
-			return 2
-		}
+	if forgetting {
 		return forgetWord(d, opt, *forget, stdout, stderr)
 	}
 
@@ -235,11 +252,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
-	case 1:
+	default: // exactly 1; >1 was rejected above
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
-	default:
-		fs.Usage()
-		return 2
 	}
 }
 
@@ -395,7 +409,7 @@ func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int 
 	}
 	removed, err := d.deck.Forget(word)
 	if err != nil {
-		fmt.Fprintf(stderr, "define: %v\n", err)
+		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
 		return 1
 	}
 	if !removed {

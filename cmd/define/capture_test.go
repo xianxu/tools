@@ -406,3 +406,53 @@ func TestFailingStoreStillDefinesAndExitsZero(t *testing.T) {
 		t.Error("the definition was not printed")
 	}
 }
+
+// A mistyped command must not read the event log. Usage validation therefore
+// runs before withStore opens anything.
+//
+// The obvious assertion — "the directory is still empty" — CANNOT FAIL, and I
+// wrote it that way first: NewYAML is a pure constructor, so nothing is created
+// on open either way. What does distinguish the two orderings is that
+// newStoreHistory READS the log at construction, so with the store opened first
+// a corrupt log reports itself in the middle of a usage error. That is the pin.
+//
+// Verified failable: moving `d = d.withStore(...)` back above the usage switch
+// makes every row here fail with
+// "define: 2020-01-01.yaml: recovered 0 event(s), dropped 1 torn record(s)".
+func TestUsageErrorsDoNotOpenTheLog(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"empty -forget", []string{"-no-audio", "-forget="}},
+		{"-forget plus a word", []string{"-no-audio", "-forget=a", "b"}},
+		{"two words", []string{"-no-audio", "a", "b"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rig := newAudioRig(t, "sycophantic", true)
+			rig.deps.stdinIsTerminal = func() bool { return false }
+			rig.deps.history, rig.deps.capture = nil, nil // force the real wiring
+			rig.deps.newStore = openStore
+
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "events"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// A record cut mid-write: reading it warns, which is what makes the
+			// difference between the two orderings observable at all.
+			torn := "word: sycophantic\nkind: looked_up\nat: 2020-01-01T10:00:00-07:00\nfound: true\n---\nword: torn\nkind: looked"
+			if err := os.WriteFile(filepath.Join(dir, "events", "2020-01-01.yaml"), []byte(torn), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(dir)
+
+			var out, errb bytes.Buffer
+			if code := run(t.Context(), tc.args, rig.deps, strings.NewReader(""), &out, &errb); code != 2 {
+				t.Errorf("exit = %d, want 2 (usage error)", code)
+			}
+			if strings.Contains(errb.String(), "torn record") || strings.Contains(errb.String(), "recovered") {
+				t.Errorf("a usage error read the event log: %q", errb.String())
+			}
+		})
+	}
+}

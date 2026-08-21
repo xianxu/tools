@@ -278,7 +278,9 @@ found → event + word; not found → event only; `--raw` or `DEFINE_NO_CAPTURE`
 nothing. The environment is read once at flag parse into `opt.noCapture`, so it
 is an *input* to the policy rather than a second mechanism beside it.
 
-**`storeCapturer` is the only writer in the process.** `storeHistory` used to
+**`storeCapturer` is the only thing that records a lookup.** It is not the only
+writer: `--forget` deletes a word file through `store.Forget`, deliberately and
+loudly, which is why it is a separate seam. `storeHistory` used to
 write too; since `#4` it only reads at construction and recalls from memory.
 Otherwise the raw path would record every lookup twice, and a deck that
 double-counts is wrong in a way nobody notices until `#5` orders by it. Pinned two ways, because
@@ -325,7 +327,7 @@ editor bypasses `defineOnce` entirely, which is why capture lives one level down
 | `define <word>` | one-shot | `defineOnce` → `lookupAndRender` |
 | `define` on a terminal | raw editor | `submitLine` → `lookupAndRender` |
 | `define` piped, or `echo w \| define` | line loop | `defineOnce` → `lookupAndRender` |
-| `define -forget <word>` | mode; no lookup | neither |
+| `define -forget <word>` | mode; no lookup — deletes one deck entry | `forgetWord` → `store.Forget` |
 
 The loop reads stdin **unconditionally** and only the prompt is TTY-conditional —
 there is no interactive/batch branch to keep in sync, and the whole loop is

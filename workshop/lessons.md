@@ -229,3 +229,46 @@ The same guard's first working version flagged "extensionless file in a source
 directory" and immediately false-positived on a tracked symlink. The question was
 never about filenames: it is *is this file an executable image*, which the magic
 bytes answer exactly. A proxy that is cheap to write is expensive to keep.
+
+## Read `git show --stat` before committing (define #4)
+
+`Bin 0 -> 9616546 bytes` is visible at a glance in `git show --stat`, and it was
+in the commit that added a 9.6 MB binary. Nothing read it. This is the cheapest
+possible check for the whole class of "`git add -A` swept in something I did not
+mean to send", and it costs one command before the commit rather than a history
+rewrite after it.
+
+Corollary, learned the expensive way: **removing the file in a follow-up commit
+does not remove the cost.** The blob stays reachable, so every clone still pays
+— measured here at 5.9 MB against main's 604 KB while `git status` was clean and
+`git ls-files` reported the file zero times. The fix is to rewrite the commit
+that *adds* it, while the branch is still unpushed.
+
+## A finding is closed only when you have re-run the measurement that produced it
+
+Across one close, ten open findings entered a round and zero were closed, twice
+in a row — while both rounds *felt* productive, because each fixed the visible
+half. The shape: a finding arrives with a measurement (a clone size, a grep
+list, an enumerated set of sites), and I fixed the part that shows up in
+`git status` or in the title, then wrote a commit message claiming the finding
+was addressed.
+
+Re-running the finding's own measurement takes one command and would have shown
+the claim false *before* the commit asserted it. Do that, and quote the number
+in the commit — "5.9M → 712K, blob absent from a fresh clone", not "removed".
+
+## `-count=1` belongs in the mutation recipe
+
+A mutation test's planted run printed `ok (cached)`, which reads exactly like a
+blind test and is neither. The recipe is now three clauses: confirm the mutation
+**applied**, confirm it **compiled**, and run with **`-count=1`** so the result
+is not Go's cache answering a question about the previous source.
+
+## Say what a test reads before naming it as enforcement
+
+A `.gitignore` comment named `TestNoCommittedBinaries` as enforcing "the general
+case". The test reads `git ls-files` — the index — while the class's cost lives
+in history, so it was green on a repo carrying exactly the artifact it existed
+to prevent. Before citing a test as the guard for a class, state what the test
+reads and check the class lives there. Scope mismatch passes every review that
+only asks "is there a test?"

@@ -21,8 +21,11 @@ A vocabulary deck nobody has to curate is the only one that gets used. Every
 
 `define <word>` records the lookup into the deck.
 
-- **Capture only on a successful lookup.** Typos exit 1 and never enter, so the
-  dictionary is its own spam filter and no validation layer is needed.
+- **Only a successful lookup enters the deck.** A failed one is still recorded
+  as an event, because up-arrow recall must reach a word you typed and got
+  wrong. So the dictionary is the deck's spam filter — typos are history, never
+  vocabulary — and no validation layer is needed. `decideCapture` is the single
+  place that draws this line; see `capture.go`.
 - Record lookup count and timestamps: a word looked up three times is a stronger
   signal than one looked up once, and `--play` can order by that.
 - `define --forget <word>` removes the word from the deck. It does **not** delete
@@ -122,6 +125,14 @@ Created as part of the `define-learn` project.
 ### 2026-08-21 — implementation notes
 - 2026-08-21: closed — The residual was entirely artifact-side and is now closed. Round 5 measured code 10/10 and plan 0/7; all seven plan sites are corrected (one call site not three; storeHistory does nothing rather than delegates; lookupAndRender not defineOnce; openStore not openHistory; the three-argument Capturer; the three deps fields the plan never mentioned) and the plan now carries the AGENTS.md §1 Revisions section that three consecutive boundaries recommended. Also swept the two stale comments this round CREATED in files it touched: Forget doc comment asserted a security property the same commit retracted and named a filepath.Base call deleted in the same hunk, and inserting type storeDeps orphaned openStore doc comment onto the struct -- both verified re-attached to the code they describe. Code side unchanged and re-verified: full suite and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 - 2026-08-21: closed — Round 4 addressed instance-by-instance, which round 3 was not. Of the 10 instances the three families enumerated, 3 were closed in round 3 (all titles) and the remaining 7 are closed now: BR-6 Forget was still on an inline copy while wordFileName had exactly one caller (Upsert) -- my own previous fix introduced the duplication it was meant to remove, and the copy had already drifted by not rejecting a leading dot; the atlas entry-modes table claimed run dispatches into a single shared defineOnce, which the raw editor bypasses; README exit codes omitted that 1 now also means --forget found nothing; deps.forgetter(), the newStore triple with three nil-merges, and newStoreHistorys dead Clock param are deleted. The BR-6 Done-when is now precise and measured rather than claimed: Slug is the effective guarantee (fuzzed), wordFileName is a second net tested directly with hostile names (RED on removal), and both Upsert and Forget derive from it -- verified by grep, because bypassing it on the --forget path leaves the suite GREEN, so the value is ARCH-DRY rather than a behavioural pin. Two false mutation readings were caught and recorded: one that failed to apply printed GREEN, one that failed to compile printed RED. go test and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
+
+**This branch's history was rewritten on 2026-08-21.** A 9.6 MB `cmd/define/define`
+was committed in `42cc96d`; round 7 deleted the file in a *follow-up* commit, which
+left the blob reachable and every clone paying for it — measured at 5.9 MB against
+`main`'s 604 KB. `git filter-branch --index-filter` over `main..HEAD` rewrote the
+adding commit. Re-measured after: **712 KB, identical to `main`**, blob absent from
+a fresh clone. Anyone holding an old copy of this branch must re-fetch rather than
+merge. The trees are byte-identical, so only the object history changed.
 
 Capture landed at `lookupAndRender`, the one function every entry path shares —
 **not** `defineOnce`, which the plan named first and which the raw editor

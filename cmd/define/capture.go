@@ -48,7 +48,10 @@ type Capturer interface {
 	Capture(word string, found bool, opt options)
 }
 
-// storeCapturer is the only thing in the process that writes to the store.
+// storeCapturer is the only thing that RECORDS a lookup. It is not the only
+// thing that writes: --forget deletes a word file through store.Forget. That
+// one is deliberate, user-initiated and loud, where capture is automatic and
+// silent — which is why they are separate seams.
 type storeCapturer struct {
 	mu     sync.Mutex
 	st     store.Store

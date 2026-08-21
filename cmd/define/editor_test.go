@@ -28,7 +28,7 @@ func runes(s string) []Key {
 func hist(words ...string) History {
 	h := &memHistory{}
 	for _, w := range words {
-		h.Add(w, true)
+		h.Add(w)
 	}
 	return h
 }

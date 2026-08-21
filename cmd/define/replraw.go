@@ -168,7 +168,7 @@ func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt opti
 	if play {
 		playAnnounced(ctx, d, opt, line, indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
 	}
-	hist.Add(line, code == 0)
+	hist.Add(line)
 	if code == 0 {
 		*current = line
 	}
