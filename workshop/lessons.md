@@ -293,3 +293,25 @@ Two clauses, both cheap:
 This one is worth internalising because of where it was found: in the fix for the
 *previous* round's version of the same rule. Writing the rule down does not
 execute it.
+
+## Name the suite a swept file actually runs in
+
+A sweep claimed three instances of a class fixed, and reported the suite green in
+the same breath. The third instance lived behind `//go:build darwin && conformance`
+and skipped without a built binary — so it never ran in the suite being reported.
+The fix was correct; the claim about it was not. When a sweep touches a file with
+a build tag, an env guard, or a skip, say which suite it runs in and run that one.
+
+## Mutation-check a claimed behaviour against its OWN code path
+
+A test asserted "the process exited cleanly" and was credited with pinning "Ctrl-C
+arrives as a byte, not a signal". Both paths produce that observable, and so does
+a crash — the assertion separated only the crash. An observable that two code
+paths both produce cannot distinguish between them, however true the assertion is.
+Mutate the specific branch the prose names and watch THAT test redden.
+
+The same episode is a caution in the other direction: a reviewer measured the byte
+path as "asserted by nothing" from a run scoped to one build tag, when the full
+suite reddens on that mutation. Before accepting a negative finding, re-run its
+measurement at full scope — a finding is a measurement, and measurements have
+scopes.

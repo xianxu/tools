@@ -7,7 +7,7 @@ created: 2026-08-20
 updated: 2026-08-21
 estimate_hours: 1.31
 started: 2026-08-21T10:02:22-07:00
-actual_hours: 5.93
+actual_hours: 6.56
 ---
 
 # capture looked-up words into the deck
@@ -123,6 +123,17 @@ See `workshop/plans/000004-vocab-capture-plan.md`.
 Created as part of the `define-learn` project.
 
 ### 2026-08-21 — implementation notes
+- 2026-08-21: closed — Round 9 (FIX-THEN-SHIP) had two Important findings; both are fixed and each was verified by re-running the measurement that produced it.; review verdict: FIX-THEN-SHIP
+
+BR-38 -- the history guard I shipped in round 8 carried the exact defect it was written to catch. It enumerated every object, compared nothing against the request count, and deferred-and-dropped git cat-file exit status; the only vacuity check was blobs==0, which any non-empty partial scan clears. Swept the CLASS, not the site: scanForExecutables is now shared by both guards, asserts seen == len(want), and checks Wait(). Re-ran the reviewer own mutation (feed cat-file the first five shas; applied, BUILD_OK, -count=1): it now fails "scanned 5 of 159 objects" and "scanned 5 of 761 objects" where it previously reported ok with a planted binary reachable from HEAD. Second instance of the class: the index guard was rebuilt on the same helper and reads the index BLOBS rather than opening worktree files, closing a silent skip where a tracked-but-locally-missing file was passed over. Third instance: pty_conformance_test.go _ = cmd.Wait() now checks the status -- a crashed define also leaves the terminal sane, so discarding it let that test pass for the wrong reason. Full plant cycle re-verified after the rewrite in a throwaway clone: clean PASSES; binary staged in a NEW cmd/newtool/ that no ignore pattern matches -> index guard FAILS naming blob and 9616546 bytes; git rm-d in a follow-up commit -> index guard PASSES while history guard FAILS.
+
+BR-39 -- atlas/repo-guards.md added and linked from atlas/index.md. These are repo-wide invariants living in cmd/define only because a test needs a package, which is the surprising file-tree location AGENTS.md section 8 exists for. It names both tests, what each READS (index vs history), why the split matters, why .gitignore cannot carry it alone, and the plant-and-remove cycle for verifying a change to them.
+
+BR-33 (Minor) is accepted with a stated reason rather than silently dropped: making the event-log read lazy collides with the "Prefix runs on every keystroke and must never touch disk" invariant this issue own tests pin, and splitting openStore into a deck-only path adds a seam to a deps struct a boundary review has already called lumpy -- to save one small read on a rare command. Recorded in the plan Revisions and flagged for #15, the first consumer that exercises history hard enough to measure.
+
+Lesson recorded: a guard that builds a work list must assert it reached the end of it, and must check the exit status of every process it depends on. Notable for WHERE it was found -- inside the fix for the previous round version of the same rule; writing a rule down does not execute it.
+
+go vet clean; full suite and -race green across both packages; GOOS=linux CGO_ENABLED=0 green; both guards green when run inside a fresh clone of the branch.
 - 2026-08-21: closed — Round 8 measured 0 of 10 findings closed for the second round running; this round executes the rules rather than the titles, and re-runs each finding's own measurement before claiming it.; review verdict: FIX-THEN-SHIP
 
 BR-30, all three enumerated moves. (1) The blob is excised from HISTORY, not just the tree: b3ec4bd used a follow-up commit where the finding specified --amend, so 42cc96d still added it. git filter-branch --index-filter over main..HEAD rewrote the adding commit. RE-MEASURED the way the finding measured it -- branch clone 5.9M -> 712K, byte-identical trees, blob d12d8e7 absent from a fresh clone, and after the later commits main and branch both clone to 832K. (2) The .gitignore pattern is necessarily per-tool and now says so: gitignore has no backreferences and an un-anchored "define" would swallow the cmd/define SOURCE directory. (3) The git show --stat rule is in lessons.md, where it was missing while two lessons about how the guard was built had been recorded.
@@ -147,6 +158,17 @@ It is a defect in how the review artifact captures the reviewer's stderr, so it
 cannot converge in this repo; the issue also raises whether the protocol should
 let a finding be dispositioned "external, tracked at <ref>" once instead of
 re-costing a slot each boundary.
+
+**Follow-up for `#15`: the PTY conformance suite does not exercise the byte path.**
+Its header claimed to pin "Ctrl-C is a BYTE rather than a signal". It does not:
+mutating `replRaw`'s `case ActInterrupt, ActEOF:` to return 9 leaves all three PTY
+tests green, while mutating `case <-ctx.Done():` to return 7 reddens them — the
+`\x03` written to the master reaches `define` as a SIGINT, so it leaves through
+`NotifyContext` rather than the key reader. The byte path *is* pinned, in-process,
+by `TestEditorLoopCtrlCExitsZero` (same mutation → `exit = 9, want 0`, verified);
+what is missing is the live-terminal half. `#15` builds more on the raw editor and
+is the right place to make the PTY suite actually enter raw mode before writing
+the byte. The header now states what the suite does and does not distinguish.
 
 **This branch's history was rewritten on 2026-08-21.** A 9.6 MB `cmd/define/define`
 was committed in `42cc96d`; round 7 deleted the file in a *follow-up* commit, which

@@ -109,12 +109,24 @@ func scanForExecutables(t *testing.T, dir string, want map[string]string) []stri
 		if err != nil {
 			t.Fatalf("unparsable size in %q", header)
 		}
-		body := make([]byte, size+1)
-		if _, err := io.ReadFull(r, body); err != nil {
+		// The decision needs four bytes; the --batch protocol needs the whole
+		// record consumed. Reading the object in full would make this guard's
+		// memory scale with exactly the input class it exists to catch — a large
+		// enough committed artifact would OOM it rather than be reported — and
+		// the cost would grow with history forever, on every `go test`.
+		n := 4
+		if size < n {
+			n = size
+		}
+		head := make([]byte, n)
+		if _, err := io.ReadFull(r, head); err != nil {
 			t.Fatalf("reading object %s: %v", f[0], err)
 		}
+		if _, err := io.CopyN(io.Discard, r, int64(size-n+1)); err != nil { // +1: record's trailing newline
+			t.Fatalf("skipping object %s: %v", f[0], err)
+		}
 		seen++
-		if f[1] == "blob" && isExecutableImage(body) {
+		if f[1] == "blob" && isExecutableImage(head) {
 			found = append(found, fmt.Sprintf("%s (blob %s, %d bytes)", want[f[0]], f[0][:8], size))
 		}
 	}

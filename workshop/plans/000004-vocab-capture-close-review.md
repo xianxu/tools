@@ -1628,3 +1628,141 @@ findings:
       live in cmd/define. AGENTS.md section 1's workshop/targets/ is the better long-term home, but the atlas
       entry is the gate item.
 ```
+
+---
+
+## Re-review — 2026-08-21T13:08:41-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 4 — capture looked-up words into the deck |
+| repo | tools |
+| issue file | workshop/issues/000004-vocab-capture.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4afa1c537819ad662ad149a14bd757ac149772e5..a65297281391ee8e8030636582853b9911c33cdc |
+| command | sdlc close --issue 4 |
+| reviewer | claude |
+| timestamp | 2026-08-21T13:08:41-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Ten rounds in, the code is right and I verified this round's claims rather than reading them. Both open Important findings are genuinely closed and I re-ran each one's own measurement: feeding `cat-file` the first five shas now reports `scanned 5 of 160 objects` / `scanned 5 of 776 objects` where BR-38 measured GREEN, the `cmd.Wait()` check is reachable (a `--bogus-flag` probe fatals on the exit status), and I re-ran the *whole* plant cycle against the **rewritten** guards — clean clone (1.0 M `.git`) passes, a binary staged in a new `cmd/newtool/` fails the index guard, `git rm`'d in a follow-up commit the index guard passes while the history guard fails naming the blob. `go vet` clean, suite green (24.1 s), and live behaviour matches every documented claim (failed lookup → one event, no `words/`, exit 1; `DEFINE_NO_CAPTURE=1` → empty directory; hostile `-forget` keys remove nothing and create nothing). Done-when #2 is mutation-RED under my own independent mutation. What keeps this off a clean SHIP is the third instance this commit claims for the exit-status sweep: `pty_conformance_test.go`'s newly-checked `cmd.Wait()` is a real assertion (proven — forcing exit 3 reddens it), but it certifies the **signal** path. Mutating the `ActInterrupt`/`ActEOF` byte path to `return 9` leaves all three PTY tests GREEN, while mutating the `ctx.Done()` path to `return 7` reddens the restore test — so the behaviour the file's own header names as a headline reason it exists ("that Ctrl-C is a BYTE rather than a signal") is asserted by nothing. Non-blocking; no production defect.
+
+### 1. Strengths
+
+- **BR-38's fix is the finding's own measurement, re-run and inverted.** `scanForExecutables` (`cmd/define/repo_guard_test.go:68`) now asserts `seen == len(want)` and checks `Wait()`, and both halves are independently reachable — I verified the count assertion by truncating the request list and the exit-status check by handing `cat-file` an invalid flag. Neither existed before.
+- **The rewrite was re-verified by planting, not by argument.** The guards were substantially rebuilt this round (the index guard moved from opening worktree files to reading index blobs), so the round-9 plant evidence did not carry over — and the commit re-ran it. So did I, and all three states behave correctly.
+- **`atlas/repo-guards.md` is the right artifact for BR-39**, not a checkbox. It names what each guard *reads* (`repo-guards.md:22-23`), why the index/history split is load-bearing, why `.gitignore` cannot carry it, and — the part that will actually save the next contributor — the plant-and-remove cycle with `-count=1`. Linked from `atlas/index.md:11` under a new "Repo-wide" heading, which is the correct place for surface that isn't a binary.
+- **Done-when #2 holds up under a mutation I wrote myself.** Making `storeCapturer` skip `Upsert` once anything is in the deck reddens exactly `TestRepeatLookupsIncrementThroughCapture` (`capture_test.go:386`, `Lookups = 1 after three lookups, want 3`) and nothing else. `#5` can order by that number.
+- **The `-forget` delete path is safe by measurement, not by claim.** `..`, `../../etc/passwd`, `.hidden`, whitespace — all exit 1 with "is not in the deck", nothing removed, nothing created. `Slug` (`store/word.go:47`) falls back to the hash form for every unsafe element, which is exactly what the issue's Done-when honestly says.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-1 — `cmd/define/pty_conformance_test.go:150` — the checked exit status pins the signal path; the byte path the file exists to pin is asserted by nothing.**
+
+**This is the 8th finding in family `unpinned-invariant`** (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36, BR-38; prevalence 8). Per the escalation rule I am not asking for this instance to be patched.
+
+The file's header states the four behaviours no in-process fake can model, and lists among them *"that Ctrl-C is a BYTE rather than a signal"* (`pty_conformance_test.go:9-11`). This round replaced `_ = cmd.Wait()` with a checked status, claiming it as the third instance of BR-38's exit-status sweep. Measured, with `bin/define` built and the tests run under `-tags conformance` (they need a pty, which the sandbox forbids — this required one un-sandboxed run):
+
+```
+mutation: replRaw's `case ActInterrupt, ActEOF:` → return 9   (the BYTE path)
+  MUTATION_APPLIED (line 94), BUILD_OK, -count=1
+  → TestPTYSuggestionAndAcceptance        PASS
+  → TestPTYCtrlCDuringPlaybackExitsPromptly PASS
+  → TestPTYTerminalIsRestoredOnExit       PASS      ← all green
+
+mutation: replRaw's `case <-ctx.Done():` → return 7           (the SIGNAL path)
+  → TestPTYTerminalIsRestoredOnExit  FAIL: exit: exit status 7, want 0
+```
+
+So `f.Write([]byte("\x03"))` on the master reaches `define` as a **SIGINT**, `signal.NotifyContext` cancels, and the process leaves through `ctx.Done()`. The new assertion is not vacuous — forcing an unconditional `os.Exit(3)` reddens it with `exit: exit status 3, want 0` — it simply asserts the exit code of a path the file does not claim to be testing. Two Ctrl-C tests, and neither distinguishes the byte path from the signal path.
+
+*The rule, extending BR-38's clause.* BR-38 added "check the test reads **all** of it." The clause still missing is one step further in: **a test that names a behaviour in prose must be mutation-checked against that behaviour's own code path, not against an observable that two code paths both produce.** "The process exited and the terminal is sane" is produced by the byte path, the signal path, and a crash; checking `Wait()` separated the crash from the other two and stopped there. Two files this round demonstrate the correct form (`scanForExecutables`, `TestUsageErrorsDoNotOpenTheLog`, whose comment explicitly records that its first version could not fail); this one demonstrates the gap. Secondary, same rule one layer out: this whole file sits behind `//go:build darwin && conformance` and `t.Skipf`s when `bin/define` is absent, so the sweep's third instance never ran in the default suite the commit reports green — the "a guard that reports nothing when it cannot run certifies nothing" reasoning the same commit applied to `git()` was not carried across the file it was editing.
+
+### 4. Minor findings
+
+- **BR-33 (not-addressed)** — code unchanged (`main.go:238` builds the store, `:242` dispatches the mode); the plan now records a *reasoned* deferral to `#15`, which is a considered decision rather than a miss. Noting only that the rationale's stated cost ("to save one small read on a rare command") omits what the finding actually measured, and what I re-measured verbatim: `define -forget never-seen` in a directory with a torn log prints `define: 2020-01-01.yaml: recovered 0 event(s), dropped 1 torn record(s)` before its own error. The cost is a spurious user-facing warning from a command that never consults the log, not a wasted read.
+- **NEW `reads-more-than-the-decision-needs`** — `repo_guard_test.go:112` allocates `size+1` bytes and `io.ReadFull`s the entire blob to inspect four magic bytes. The `--batch` protocol requires consuming the record, but `io.CopyN(io.Discard, r, size-3)` discards it without materialising it. Two consequences: cost grows with total repo history forever, in a guard that runs on every `go test ./cmd/define/`; and the guard's memory scales with exactly the input class it exists to catch, so a large enough committed artifact makes it OOM rather than report. Round 9 stated this in un-id'd prose, which `BR-28` measured as the 0%-addressed channel — recording it with an id.
+- `repo_guard_test.go:177-180` — the explicit `if _, dup := want[sha]; dup { continue }` is a no-op; map assignment already dedupes. Harmless, but it reads as guarding something.
+- `cmd/define/main.go:36` says "several do" of the tests that set `newStore = openStore`; there are exactly two (`capture_test.go:316`, `:435`). Both `t.Chdir` into a `t.TempDir` first, so the clause BR-28 cared about is true.
+
+### 5. Test coverage notes
+
+The suite is green (`go vet` clean; `go test -count=1 ./cmd/...` 24.1 s) and the load-bearing tests are load-bearing. I mutation-checked four things independently this round, confirming each applied and compiled and running with `-count=1`: the partial-scan assertion (RED, both guards, with the counts named), the `cat-file` exit-status check (RED), Done-when #2's repeat-lookup accumulation (RED, exactly one test), and the PTY exit-status check (RED under a forced non-zero exit — but GREEN under the byte-path mutation, which is I-1). I also re-ran the three-state plant cycle end to end and the live capture/opt-out/forget behaviours against a built binary. The coverage shape is sound and unchanged: `decideCapture` and `wordFileName` table-tested with zero IO; per-path arity at the `Capturer` seam including the `-raw` row; a store-level arity assertion through real wiring that provably sees writers *below* the seam; `openStore` on both branches; a `t.Setenv` end-to-end disk assertion; `Forget` in the shared conformance suite so `Mem` and `YAML` both answer for it. The one hole is I-1, and it is worth naming that it sits in the *only* part of this window's new test code that does not run in the default suite — which is why ten rounds of mutation discipline did not reach it.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** Grep-verified: `decideCapture` has one caller; the only `.Capture(` call sites are the three inside `lookupAndRender` (`main.go:288`, `:296`, `:300`); `c.st.AppendEvent`/`c.st.Upsert` in `capture.go` are the only append/upsert paths outside `store/`; `wordFileName` serves both filename-deriving call sites; `scanForExecutables` is now shared by both guards rather than each carrying its own scan loop — this round's rewrite *removed* a near-duplicate rather than adding one. `History.Add`'s dead `found` parameter is gone from interface, both implementations, the sole caller, and the doc that claimed it.
+- **ARCH-PURE — pass.** `decideCapture` (`capture.go:26`) and `wordFileName` (`yaml.go:180`) are genuine pure functions with IO-free tests, both mutation-proven in earlier rounds and still so. `isExecutableImage` (`repo_guard_test.go:25`) is the same shape inside the guard — pure magic-byte predicate, with the IO (`git`, `cat-file`) kept in `scanForExecutables` around it, which is why the byte-classification decision is readable at all. `openStore` is the boundary and is injectable through `deps.newStore`. Nothing leaked into `store/`.
+- **ARCH-PURPOSE — pass on the issue, flag on the conformance claim (I-1).** Shadow-sweep on `decideCapture`: `storeCapturer` derives ✓, the raw branch derives and is pinned ✓, `openStore`'s `noCapture` read is a labelled second reader of the same *input* ✓. On `wordFileName`: `Upsert` ✓, `Forget` ✓. The issue's purpose — every entry path records, and records once — is delivered on every path and verified live, not the easy subset. BR-39's purpose was "the surface is on the map," and `atlas/repo-guards.md` delivers the map rather than a mention. The flag is I-1, where a fix delivers a strictly narrower guarantee than the prose attached to it.
+- **ARCH-MOCK — pass, with two standing notes.** `store.Mem` ships as production code behind the interface `YAML` implements, `storetest.Suite` runs both, `Forget` joined it in the commit that introduced it, and the owned backend boots from any portable folder (`store.NewYAML(dir, warn)`; tests use `t.TempDir`) with no production configuration — I confirmed the real deck is created under the working directory and nowhere else. `repo_guard_test.go` shells out to real `git` with no seam, which is correct: a faked `git` would defeat a test whose entire subject is the real object database, and the exit-status checks are the fake-less equivalent of modelling its failure modes. Two notes for later: (a) `git()` and `repoRoot()` are deliberately `Fatal`-never-`Skip`, which means this package's tests cannot pass outside a git checkout — a defensible trade, but worth stating in `atlas/repo-guards.md` beside the "fail rather than skip" bullet, since a consumer vendoring this module hits it; (b) pre-existing and outside this issue — the macOS CoreServices dictionary has a fixture-backed fake (`testDict`) but **no live conformance check**, so nothing detects the day its output shape changes. Worth an issue before `#15` builds more on `ParseEntry`.
+- **For `#5` (ordering by `Lookups`):** trustworthy for both properties it needs — arity, pinned through the real wiring on every producible path, and accumulation, which I re-verified by mutation this round.
+
+### 7. Plan revision recommendations
+
+The `## Revisions` section now carries three dated entries, states the seam defaults, and Chunk 1 has its forward pointer — the reconciliation AGENTS.md §1 requires is done, and §10/§11 accurately describe this round. Two clauses to append to the existing round-9 entry rather than a new one:
+
+- **Amend Revisions §10's third instance.** It says `pty_conformance_test.go`'s `_ = cmd.Wait()` "let the test pass for the wrong reason," which is true of a *crash* and which the fix genuinely closes. Record the measured limit alongside it: the checked status pins the `ctx.Done()`/SIGINT exit, and `ActInterrupt` → `return 9` leaves all three PTY tests green — so "Ctrl-C is a byte rather than a signal," which `pty_conformance_test.go:9-11` names as a reason the suite exists, is still unasserted. Recording the negative result is the same honest form the `wordFileName` Done-when already uses.
+- **Amend the BR-33 acceptance paragraph.** The deferral is reasoned and I am not disputing it, but its stated cost — "to save one small read on a rare command" — is not what the finding measured. Record the actual symptom (`-forget` emits the event log's recovery warning for a log it never consults) so `#15` inherits the real reason to revisit, not the cheap one.
+
+```findings
+dispose:
+  - id: BR-38
+    disposition: addressed
+    note: |
+      Re-ran the finding's own mutation - the first-5-shas feed now reports "scanned 5 of 160" / "scanned 5 of 776"; Wait() check independently reachable via a bogus-flag probe; full plant cycle re-verified against the rewritten guards.
+  - id: BR-39
+    disposition: addressed
+    note: |
+      atlas/repo-guards.md exists, is linked from atlas/index.md under a new Repo-wide heading, and names both tests, what each reads, why they live in cmd/define, and how to verify a change to them.
+  - id: BR-33
+    disposition: not-addressed
+    note: |
+      Code unchanged (main.go:238 builds the store, :242 dispatches); the plan records a reasoned deferral to #15, but its stated cost omits the user-visible warning I re-measured verbatim.
+findings:
+  - id: new
+    severity: Important
+    family: unpinned-invariant
+    title: |
+      The PTY exit-status check pins the SIGNAL path; the byte path the file says it exists to pin is asserted by nothing
+    detail: |
+      8th in family (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36, BR-38; prevalence 8). Do NOT patch this instance.
+      pty_conformance_test.go:9-11 names "that Ctrl-C is a BYTE rather than a signal" as one of four behaviours
+      the conformance suite exists to pin, and this round replaced _ = cmd.Wait() at :150 with a checked status,
+      claiming it as BR-38's third instance. Measured with bin/define built and -tags conformance, -count=1:
+      mutating replRaw's "case ActInterrupt, ActEOF:" to return 9 (MUTATION_APPLIED line 94, BUILD_OK) leaves
+      ALL THREE PTY tests GREEN, while mutating "case <-ctx.Done():" to return 7 reddens
+      TestPTYTerminalIsRestoredOnExit with "exit: exit status 7, want 0". So the \x03 write reaches define as a
+      SIGINT and it leaves through NotifyContext, not the key reader. The new assertion is not vacuous - an
+      unconditional os.Exit(3) reddens it - it just certifies a path the file does not claim to test. The clause
+      the rule was missing, beyond BR-38's "check the test reads ALL of it": a test that names a behaviour in
+      prose must be mutation-checked against that behaviour's OWN code path, not against an observable that two
+      code paths both produce - "exited and the terminal is sane" is produced by the byte path, the signal path
+      and a crash, and checking Wait() separated only the crash. Secondary, same rule one layer out: this file
+      is behind //go:build darwin && conformance and t.Skipf's without bin/define, so the sweep's third instance
+      never ran in the suite the commit reports green.
+  - id: new
+    severity: Minor
+    family: reads-more-than-the-decision-needs
+    title: |
+      scanForExecutables materialises every blob in full to inspect four magic bytes
+    detail: |
+      repo_guard_test.go:112 allocates size+1 bytes and io.ReadFull's the whole object, where the decision needs
+      only the first four. The --batch protocol requires consuming the record, but io.CopyN(io.Discard, r, size-3)
+      discards it without materialising it. Two consequences: cost grows with total repo history forever in a
+      guard that runs on every go test ./cmd/define/, and the guard's memory scales with exactly the input class
+      it exists to catch, so a large enough committed artifact makes it OOM rather than report. Round 9 stated
+      this in un-id'd prose, which BR-28 measured as the 0-percent-addressed channel; recording it with an id.
+```

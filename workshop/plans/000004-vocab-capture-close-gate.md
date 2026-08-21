@@ -857,6 +857,57 @@ rounds:
           family: atlas-omits-new-surface
           round: 9
       blocked: false
+    - "n": 10
+      timestamp: "2026-08-21T13:08:41-07:00"
+      agent: claude
+      dispose:
+        - id: BR-38
+          disposition: addressed
+          note: Re-ran the finding's own mutation - the first-5-shas feed now reports "scanned 5 of 160" / "scanned 5 of 776"; Wait() check independently reachable via a bogus-flag probe; full plant cycle re-verified against the rewritten guards.
+          round: 10
+        - id: BR-39
+          disposition: addressed
+          note: atlas/repo-guards.md exists, is linked from atlas/index.md under a new Repo-wide heading, and names both tests, what each reads, why they live in cmd/define, and how to verify a change to them.
+          round: 10
+        - id: BR-33
+          disposition: not-addressed
+          note: 'Code unchanged (main.go:238 builds the store, :242 dispatches); the plan records a reasoned deferral to #15, but its stated cost omits the user-visible warning I re-measured verbatim.'
+          round: 10
+      findings:
+        - id: BR-40
+          severity: Important
+          title: The PTY exit-status check pins the SIGNAL path; the byte path the file says it exists to pin is asserted by nothing
+          detail: |-
+            8th in family (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36, BR-38; prevalence 8). Do NOT patch this instance.
+            pty_conformance_test.go:9-11 names "that Ctrl-C is a BYTE rather than a signal" as one of four behaviours
+            the conformance suite exists to pin, and this round replaced _ = cmd.Wait() at :150 with a checked status,
+            claiming it as BR-38's third instance. Measured with bin/define built and -tags conformance, -count=1:
+            mutating replRaw's "case ActInterrupt, ActEOF:" to return 9 (MUTATION_APPLIED line 94, BUILD_OK) leaves
+            ALL THREE PTY tests GREEN, while mutating "case <-ctx.Done():" to return 7 reddens
+            TestPTYTerminalIsRestoredOnExit with "exit: exit status 7, want 0". So the \x03 write reaches define as a
+            SIGINT and it leaves through NotifyContext, not the key reader. The new assertion is not vacuous - an
+            unconditional os.Exit(3) reddens it - it just certifies a path the file does not claim to test. The clause
+            the rule was missing, beyond BR-38's "check the test reads ALL of it": a test that names a behaviour in
+            prose must be mutation-checked against that behaviour's OWN code path, not against an observable that two
+            code paths both produce - "exited and the terminal is sane" is produced by the byte path, the signal path
+            and a crash, and checking Wait() separated only the crash. Secondary, same rule one layer out: this file
+            is behind //go:build darwin && conformance and t.Skipf's without bin/define, so the sweep's third instance
+            never ran in the suite the commit reports green.
+          family: unpinned-invariant
+          round: 10
+        - id: BR-41
+          severity: Minor
+          title: scanForExecutables materialises every blob in full to inspect four magic bytes
+          detail: |-
+            repo_guard_test.go:112 allocates size+1 bytes and io.ReadFull's the whole object, where the decision needs
+            only the first four. The --batch protocol requires consuming the record, but io.CopyN(io.Discard, r, size-3)
+            discards it without materialising it. Two consequences: cost grows with total repo history forever in a
+            guard that runs on every go test ./cmd/define/, and the guard's memory scales with exactly the input class
+            it exists to catch, so a large enough committed artifact makes it OOM rather than report. Round 9 stated
+            this in un-id'd prose, which BR-28 measured as the 0-percent-addressed channel; recording it with an id.
+          family: reads-more-than-the-decision-needs
+          round: 10
+      blocked: false
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -1301,8 +1352,42 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   live in cmd/define. AGENTS.md section 1's workshop/targets/ is the better long-term home, but the atlas
   entry is the gate item.
 
+## Round 10 — 2026-08-21T13:08:41-07:00 (claude) — passed
+
+### Disposed
+
+- BR-38 — addressed — Re-ran the finding's own mutation - the first-5-shas feed now reports "scanned 5 of 160" / "scanned 5 of 776"; Wait() check independently reachable via a bogus-flag probe; full plant cycle re-verified against the rewritten guards.
+- BR-39 — addressed — atlas/repo-guards.md exists, is linked from atlas/index.md under a new Repo-wide heading, and names both tests, what each reads, why they live in cmd/define, and how to verify a change to them.
+- BR-33 — not-addressed — Code unchanged (main.go:238 builds the store, :242 dispatches); the plan records a reasoned deferral to #15, but its stated cost omits the user-visible warning I re-measured verbatim.
+
+### Raised
+
+- **BR-40** [Important] `unpinned-invariant` The PTY exit-status check pins the SIGNAL path; the byte path the file says it exists to pin is asserted by nothing
+  8th in family (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36, BR-38; prevalence 8). Do NOT patch this instance.
+  pty_conformance_test.go:9-11 names "that Ctrl-C is a BYTE rather than a signal" as one of four behaviours
+  the conformance suite exists to pin, and this round replaced _ = cmd.Wait() at :150 with a checked status,
+  claiming it as BR-38's third instance. Measured with bin/define built and -tags conformance, -count=1:
+  mutating replRaw's "case ActInterrupt, ActEOF:" to return 9 (MUTATION_APPLIED line 94, BUILD_OK) leaves
+  ALL THREE PTY tests GREEN, while mutating "case <-ctx.Done():" to return 7 reddens
+  TestPTYTerminalIsRestoredOnExit with "exit: exit status 7, want 0". So the \x03 write reaches define as a
+  SIGINT and it leaves through NotifyContext, not the key reader. The new assertion is not vacuous - an
+  unconditional os.Exit(3) reddens it - it just certifies a path the file does not claim to test. The clause
+  the rule was missing, beyond BR-38's "check the test reads ALL of it": a test that names a behaviour in
+  prose must be mutation-checked against that behaviour's OWN code path, not against an observable that two
+  code paths both produce - "exited and the terminal is sane" is produced by the byte path, the signal path
+  and a crash, and checking Wait() separated only the crash. Secondary, same rule one layer out: this file
+  is behind //go:build darwin && conformance and t.Skipf's without bin/define, so the sweep's third instance
+  never ran in the suite the commit reports green.
+- **BR-41** [Minor] `reads-more-than-the-decision-needs` scanForExecutables materialises every blob in full to inspect four magic bytes
+  repo_guard_test.go:112 allocates size+1 bytes and io.ReadFull's the whole object, where the decision needs
+  only the first four. The --batch protocol requires consuming the record, but io.CopyN(io.Discard, r, size-3)
+  discards it without materialising it. Two consequences: cost grows with total repo history forever in a
+  guard that runs on every go test ./cmd/define/, and the guard's memory scales with exactly the input class
+  it exists to catch, so a large enough committed artifact makes it OOM rather than report. Round 9 stated
+  this in un-id'd prose, which BR-28 measured as the 0-percent-addressed channel; recording it with an id.
+
 ## Open findings
 
 - **BR-33** [Minor] `eager-dependency-construction` run builds the store-backed deps before the -forget dispatch, so --forget reads an event log it never uses
-- **BR-38** [Important] `unpinned-invariant` The new history guard reports GREEN on a partial scan, measured with a planted binary present in history
-- **BR-39** [Important] `atlas-omits-new-surface` atlas has no entry for the repo-wide binary guards, new cross-cutting surface living inside cmd/define
+- **BR-40** [Important] `unpinned-invariant` The PTY exit-status check pins the SIGNAL path; the byte path the file says it exists to pin is asserted by nothing
+- **BR-41** [Minor] `reads-more-than-the-decision-needs` scanForExecutables materialises every blob in full to inspect four magic bytes

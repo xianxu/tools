@@ -395,3 +395,29 @@ construction. The other fix, splitting `openStore` into a deck-only path, adds a
 seam to `deps` that a boundary review has already called lumpy, to save one small
 read on a rare command. Revisit in `#15`, which is the first consumer that
 actually exercises history hard enough for the cost to be worth measuring.
+
+
+### 2026-08-21 — round 10, and a correction to round 9
+
+**12. `scanForExecutables` reads four bytes, not four megabytes.** It materialised
+each blob in full to inspect a magic number, so the guard's memory scaled with
+exactly the input class it exists to catch — a large enough committed artifact
+would OOM it rather than be reported — and the cost grew with history on every
+`go test`. It now `io.CopyN`s the remainder to `io.Discard`. Plant cycle and the
+partial-scan mutation both re-verified after the change.
+
+**Correction to entry 10.** Round 9 claimed `pty_conformance_test.go`'s
+`_ = cmd.Wait()` as the third instance of the dropped-exit-status class. Checking
+the status there is right, but the claim was wrong twice over: "exited and the
+terminal is sane" is produced by the byte path, the signal path *and* a crash, so
+the assertion separates only the crash; and that file is behind
+`//go:build darwin && conformance` and `t.Skipf`s without `bin/define`, so it never
+ran in the suite that commit reported green. A claim about a sweep has to name the
+suite the swept file actually runs in.
+
+The reviewer's stronger form of this — that the byte path "is asserted by nothing"
+— does not hold, and the difference is scope. That measurement ran `-run TestPTY`
+under `-tags conformance`. Against the **full** suite the same mutation reddens
+`TestEditorLoopCtrlCExitsZero` with `exit = 9, want 0` (verified here). The byte
+path is pinned in-process; what is genuinely missing is a live-terminal assertion
+of it, which is now recorded in the issue Log as a `#15` follow-up.
