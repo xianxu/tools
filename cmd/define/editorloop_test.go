@@ -185,3 +185,27 @@ func TestRenderLineMakesTheInputLineDistinct(t *testing.T) {
 		t.Errorf("plain render lost content: %q", plain)
 	}
 }
+
+// The grey tail was never accepted, so committing it to scrollback would claim
+// the user typed something they did not. Operator-reported.
+func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	// Define the long word, then type a prefix of it and submit.
+	runEditor(t.Context(), scriptKeys("sycophantic\rsyc\r"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	s := out.String()
+	// The last frame written before the second submit must carry no grey.
+	idx := strings.LastIndex(s, "\r\n")
+	if idx < 0 {
+		t.Fatal("no committed line")
+	}
+	head := s[:idx]
+	lastFrame := head[strings.LastIndex(head, eraseLine):]
+	if strings.Contains(lastFrame, greyOn) {
+		t.Errorf("the committed line still showed the suggestion: %q", lastFrame)
+	}
+	if !strings.Contains(lastFrame, "syc") {
+		t.Errorf("committed frame lost the typed text: %q", lastFrame)
+	}
+}

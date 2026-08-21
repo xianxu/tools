@@ -9,6 +9,10 @@ import (
 // terminal — the caller decides Color.
 type RenderOpts struct {
 	Color bool
+	// Width is the terminal width used for word wrapping. 0 disables wrapping,
+	// which is what a pipe wants — a consumer re-wraps for itself, and hard
+	// breaks baked into piped output cannot be undone.
+	Width int
 }
 
 // ANSI codes, empty when colour is off so the same format strings serve both.
@@ -99,7 +103,9 @@ func Render(e Entry, opt RenderOpts) string {
 				marker = "• "
 			}
 			if s.Gloss != "" {
-				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, prettyPronunciations(s.Gloss, p))
+				body := prettyPronunciations(s.Gloss, p)
+				lead := len(indent) + visibleLen(marker)
+				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, wrapText(body, opt.Width, lead))
 			} else if marker != "" {
 				fmt.Fprintf(&b, "%s%s\n", indent, strings.TrimSpace(marker))
 			}
@@ -116,7 +122,8 @@ func Render(e Entry, opt RenderOpts) string {
 				// Typographic outer quotes so an example containing quoted speech
 				// stays readable: “"This blows," she sighs” rather than
 				// ""This blows," she sighs".
-				fmt.Fprintf(&b, "%s\u201c%s\u201d%s\n", p.ex, prettyPronunciations(ex.Text, p), p.off)
+				fmt.Fprintf(&b, "%s\u201c%s\u201d%s\n", p.ex,
+					wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.off)
 			}
 		}
 	}
@@ -136,7 +143,7 @@ func Render(e Entry, opt RenderOpts) string {
 				if i > 0 {
 					indent = "      "
 				}
-				fmt.Fprintf(&b, "%s%s\n", indent, seg)
+				fmt.Fprintf(&b, "%s%s\n", indent, wrapText(seg, opt.Width, len(indent)))
 			}
 		}
 	}
@@ -146,4 +153,56 @@ func Render(e Entry, opt RenderOpts) string {
 // prettyPronunciations is the coloured face of rewritePronunciations.
 func prettyPronunciations(s string, p palette) string {
 	return rewritePronunciations(s, p.ipa, p.off)
+}
+
+// visibleLen is the display width of s, ignoring ANSI escape sequences. Wrapping
+// on raw byte length would break early on any coloured line, and these lines are
+// coloured.
+func visibleLen(s string) int {
+	n, inEsc := 0, false
+	for _, r := range s {
+		switch {
+		case inEsc:
+			if r == 'm' {
+				inEsc = false
+			}
+		case r == '\x1b':
+			inEsc = true
+		default:
+			n++
+		}
+	}
+	return n
+}
+
+// wrapText breaks s at spaces to fit width, continuing on subsequent lines with
+// `indent` spaces. Returns s unchanged when width is 0.
+//
+// The terminal will wrap for us if we do not, but it wraps at the column —
+// splitting words mid-syllable ("fing/ers"), which is exactly what a dictionary
+// entry must not do.
+func wrapText(s string, width, indent int) string {
+	if width <= 0 || visibleLen(s)+indent <= width {
+		return s
+	}
+	pad := strings.Repeat(" ", indent)
+	var b strings.Builder
+	col := indent
+	for i, word := range strings.Fields(s) {
+		w := visibleLen(word)
+		switch {
+		case i == 0:
+			b.WriteString(word)
+			col += w
+		case col+1+w <= width:
+			b.WriteString(" " + word)
+			col += 1 + w
+		default:
+			// A single word longer than the line still goes on its own line
+			// rather than being cut: better to overflow than to split it.
+			b.WriteString("\n" + pad + word)
+			col = indent + w
+		}
+	}
+	return b.String()
 }

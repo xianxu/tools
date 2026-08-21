@@ -78,7 +78,14 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				return 0
 			case ActSubmit:
 				line := e.String()
+				// Redraw the committed line with NO suggestion before advancing:
+				// the grey tail was never accepted, so leaving it in scrollback
+				// claims the user typed something they did not.
+				submitted := e
 				e = NewEditor()
+				if line != "" {
+					fmt.Fprint(stdout, RenderLine(submitted, "", opt.color))
+				}
 				if line == "" {
 					// A bare Enter replays and must NOT advance: the indicator is
 					// drawn over the prompt, then the prompt is drawn back. The

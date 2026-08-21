@@ -54,6 +54,9 @@ type options struct {
 	noAudio bool
 	times   int
 	locale  string
+	// width is the terminal width for wrapping; 0 on a pipe, where a consumer
+	// re-wraps for itself and baked-in breaks cannot be undone.
+	width int
 	// tty reports whether stdout is a terminal, which decides whether transient
 	// UI can be erased. Distinct from color (same probe, different question) and
 	// from stdinIsTerminal (different stream entirely).
@@ -96,7 +99,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// -no-color means "emit no ANSI", so it disables cursor control too — the
 		// flag exists for terminals that mangle escapes, and splitting its meaning
 		// would leave those users with erase sequences they cannot render.
-		tty: !*noColor && isTerminal(stdout),
+		tty:   !*noColor && isTerminal(stdout),
+		width: terminalWidth(stdout),
 		// -raw is the scripting form: the unparsed entry and nothing else. The
 		// one-shot path already returned before playing, but the loop's replay
 		// branch never consulted the flag — so a bare return under -raw fetched
@@ -152,7 +156,7 @@ func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer)
 		fmt.Fprintln(stdout, text)
 		return 0, false
 	}
-	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color}))
+	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
 	return 0, !opt.noAudio && opt.times > 0
 }
 
@@ -233,6 +237,21 @@ func speak(ctx context.Context, d deps, word, locale string, n int) error {
 		return err
 	}
 	return playN(ctx, d.player, path, n)
+}
+
+// terminalWidth reports the usable width of stdout, or 0 when it is not a
+// terminal. Wrapping is a presentation decision, so it stays at the boundary and
+// Render receives a number.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	cols, _, err := term.GetSize(int(f.Fd()))
+	if err != nil || cols < 20 { // an implausibly narrow terminal: do not wrap
+		return 0
+	}
+	return cols
 }
 
 // isTerminal keeps the TTY probe out of Render, so rendering stays pure and
