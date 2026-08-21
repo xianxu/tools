@@ -96,6 +96,20 @@ Tab to complete, `/help` to list them. It works the same from every entry mode:
 `define /help`, `echo /help | define`, and `/help` typed at the prompt are one
 thing.
 
+`/history [N]` lists what you looked up in the last N days — two by default,
+counted as local calendar days rather than N×24 hours:
+
+```
+  defenestrate  today
+  sycophantic   yesterday   2×
+  perennial     Aug 1       2×
+```
+
+Deduped, and ordered by when each word was **first** seen, so one you keep
+returning to holds its place instead of jumping to the top; the count is how
+often you have looked it up. Words the dictionary could not find are kept for
+up-arrow recall but never listed here — a typo is not vocabulary.
+
 Lookup goes through macOS's CoreServices, which searches **every active
 dictionary** rather than NOAD specifically — the SDK offers no way to pick one.
 NOAD answers for ordinary English words (hence the Google-matching notation), but

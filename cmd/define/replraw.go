@@ -150,7 +150,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					fmt.Fprint(stdout, "\r\n")
 					hist.Add(submitted.String()) // up-arrow recalls "/history" too
 					if err := cooked(func() {
-						dispatchCommand(cmd, commands, newCommandCtx(stdout, stderr))
+						dispatchCommand(cmd, commands, newCommandCtx(d, opt, stdout, stderr))
 					}); err != nil {
 						finish()
 						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)

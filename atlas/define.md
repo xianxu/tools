@@ -387,6 +387,39 @@ dictionary or the player.
 | command | does |
 |---|---|
 | `/help` | lists the commands |
+| `/history [N]` | words looked up in the last N local days (default 2) |
+
+### `/history` and the local-day question
+
+Two facts collide here, and every rule below comes from one of them: **the
+question is a local-calendar one**, and **the event log is a set of UTC-named
+files whose records carry their own offsets**.
+
+- **The window is local midnights**, `AddDate(0,0,-(days-1))` from today's, never
+  `now - N×24h`. A window starting at 00:30 drops everything before half past
+  midnight on the first day, and a DST day is 23 or 25 hours, so a Duration lands
+  an hour off.
+- **Never filter by filename.** A lookup at 19:50 local *today* is written to
+  *tomorrow's* UTC-named file. A filter over local day names never opens it, so a
+  lookup from ten minutes ago vanishes and `/history` reads "nothing today".
+  `store.Events` compares timestamps for exactly this reason.
+- **Membership and ordering are different time facts.** A word is in the list
+  because it was queried inside the window; it sits where it does because of when
+  it was **first ever** seen — so a word you keep returning to holds the position
+  its first sighting earned instead of churning to the top. `summariseLookups`
+  therefore takes the whole log, which costs nothing because `Events` reads every
+  day file whatever `since` says, and answers both facts from one source.
+- **Found lookups only.** A typo stays in `#14`'s up-arrow recall and out of the
+  words-queried view. One log, two readers.
+- The row shows the **key**, not whichever spelling arrived first — the row *is*
+  the key, so showing a spelling would make the dedupe rule invisible.
+- The date shown is `FirstAt`, the field the list is **sorted** on. Showing any
+  other date makes the ordering look arbitrary.
+
+Known cost: `Events` is O(all history) per call. One read per `/history` on a
+personal word list is the right trade today; when it stops being, the fix belongs
+in the store — an index, or a filename pre-filter that still *decides* on
+timestamps — not in this command.
 
 ## Entry modes
 

@@ -101,11 +101,10 @@ func TestUnknownCommandSuggestsWithoutDefining(t *testing.T) {
 	if !strings.Contains(errb.String(), "/histry") {
 		t.Errorf("the unknown command was not named: %q", errb.String())
 	}
-	// Against the LIVE registry, which at M1 holds only /help — so the menu is
-	// what a near-miss can offer. TestDispatchCommand covers the "did you mean"
-	// path against a fixture set with more rows; this test's job is that the
-	// unknown command reached dispatch at all instead of the dictionary.
-	if !strings.Contains(errb.String(), "/help") {
+	// Against the LIVE registry. At M1 this asserted /help, because one command
+	// was registered and every near-miss got the whole menu; with /history
+	// registered it can assert the suggestion it was always meant to.
+	if !strings.Contains(errb.String(), "did you mean /history") {
 		t.Errorf("no suggestion offered: %q", errb.String())
 	}
 }

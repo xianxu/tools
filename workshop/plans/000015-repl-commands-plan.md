@@ -303,37 +303,37 @@ erased on redraw.
 
 **Files:** Modify `cmd/define/history_cmd.go`, `cmd/define/history_cmd_test.go`
 
-- [ ] **Step 1: Write the failing tests** — dedupe by key (`"Sycophantic"` and
+- [x] **Step 1: Write the failing tests** — dedupe by key (`"Sycophantic"` and
       `"sycophantic"` are one row); a word first seen BEFORE the window but
       re-queried inside it appears, ordered by its **first-ever** time; a word
       only seen before the window does not appear; `Found:false` never appears;
       ordering is `firstAt` desc with a total tiebreak.
-- [ ] **Step 2: Run; expect FAIL.** — [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
+- [x] **Step 2: Run; expect FAIL.** — [ ] **Step 3: Implement.**
+- [x] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
 
 #### Task 7: `runHistory`, end to end
 
 **Files:** Modify `cmd/define/history_cmd.go`, `cmd/define/main.go`, `cmd/define/command.go`
 
-- [ ] **Step 1: Write the failing tests** — against `store.Mem` with a fixed
+- [x] **Step 1: Write the failing tests** — against `store.Mem` with a fixed
       clock: `/history` prints the expected rows; `/history 7` widens the window;
       `/history zzz` names the bad operand and exits non-zero; a nil deck prints
       the `DEFINE_NO_CAPTURE` message **through the shared helper**, asserted by
       `forgetWord` and `runHistory` producing the identical string.
-- [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3: Implement** `runHistory`, extract `noDeckMessage(opt)` from
+- [x] **Step 2: Run; expect FAIL.**
+- [x] **Step 3: Implement** `runHistory`, extract `noDeckMessage(opt)` from
       `forgetWord` (`main.go:400-406`), and register the row.
-- [ ] **Step 4: Run the full suite + `-race`.** — [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the full suite + `-race`.** — [ ] **Step 5: Commit.**
 
 #### Task 8: Docs and the atlas
 
-- [ ] **Step 1:** `atlas/define.md` gains `## Command mode`: the `/` namespace,
+- [x] **Step 1:** `atlas/define.md` gains `## Command mode`: the `/` namespace,
       the match-source switch, `cmdCommand` as the shared dispatch point, the
       command table, and — **stated once** — the local-time rule with its reason.
       Add `/history` to the entry-modes table.
-- [ ] **Step 2:** README: what `/history` shows, what it omits and why, `--days`.
-- [ ] **Step 3:** `--help`: one line that `/` opens command mode.
-- [ ] **Step 4:** `sdlc milestone-close --issue 15 --milestone M2`, then `sdlc close`.
+- [x] **Step 2:** README: what `/history` shows, what it omits and why, `--days`.
+- [x] **Step 3:** `--help`: one line that `/` opens command mode.
+- [x] **Step 4:** `sdlc milestone-close --issue 15 --milestone M2`, then `sdlc close`.
 
 ---
 

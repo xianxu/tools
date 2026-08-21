@@ -5,6 +5,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // command is one thing the REPL can do that is not a lookup.
@@ -21,6 +23,7 @@ type command struct {
 // function — the dispatch loop never changes, which is a Done-when.
 var commands = []command{
 	{name: "help", summary: "list the commands", run: runHelp},
+	{name: "history", summary: "words looked up recently", run: runHistory},
 }
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
@@ -146,19 +149,28 @@ func editDistance(a, b string) int {
 // the fixture set in tests honest — help lists what dispatch would actually run.
 type commandCtx struct {
 	cmds   []command
+	deck   store.Store // nil when there is nowhere to read
+	clock  store.Clock
 	stdout io.Writer
 	stderr io.Writer
+	width  int
+	// noCapture only so a nil deck can say WHY. DEFINE_NO_CAPTURE means the
+	// deck was never opened; without it, nil means this directory has none.
+	noCapture bool
 }
 
 // newCommandCtx is the single construction point. Built at two call sites (both
 // loops) and M2 adds a deck and a clock, so a literal in each loop is two places
 // to forget a field (ARCH-DRY).
-// It carried a width field that nothing read, re-derived per dispatch via
-// terminalWidth(stdout) — a second source beside opt.width, which run() computes
-// once and which can disagree with it across a resize. M2's renderHistory is the
-// first consumer that needs a width; it takes opt.width, from the one source.
-func newCommandCtx(stdout, stderr io.Writer) commandCtx {
-	return commandCtx{stdout: stdout, stderr: stderr}
+// width comes from opt, which run() computes ONCE. An earlier version re-derived
+// it per dispatch via terminalWidth(stdout) — a second source that can disagree
+// with opt.width across a resize.
+func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
+	return commandCtx{
+		deck: d.deck, clock: d.clock,
+		stdout: stdout, stderr: stderr,
+		width: opt.width, noCapture: opt.noCapture,
+	}
 }
 
 // dispatchCommand runs a parsed command, or explains why it cannot.

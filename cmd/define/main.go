@@ -196,7 +196,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"With no word, reads words from stdin; on a terminal that is an\n"+
 			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n"+
 			"A line starting with / is a command rather than a word. Type / to\n"+
-			"see the list, keep typing to narrow it, Tab to complete.\n\n"+
+			"see the list, keep typing to narrow it, Tab to complete. /history\n"+
+			"shows what you looked up in the last two days.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
 			"it in. A word that was found is added to the deck; a word that was\n"+
@@ -277,7 +278,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// classifier the two loops use, so `define /help` cannot mean something
 		// different from `/help` typed at the prompt.
 		if cmd := parseREPLLine(fs.Arg(0), false); cmd.kind == cmdCommand {
-			return dispatchCommand(cmd, commands, newCommandCtx(stdout, stderr))
+			return dispatchCommand(cmd, commands, newCommandCtx(d, opt, stdout, stderr))
 		}
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
 	}
@@ -426,11 +427,7 @@ func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int 
 	if d.deck == nil {
 		// Under DEFINE_NO_CAPTURE there may well BE a deck on disk — we simply
 		// did not open one. Saying "no deck" would be a lie about their data.
-		if opt.noCapture {
-			fmt.Fprintln(stderr, "define: DEFINE_NO_CAPTURE is set, so no deck was opened")
-		} else {
-			fmt.Fprintln(stderr, "define: no deck in this directory")
-		}
+		fmt.Fprintln(stderr, noDeckMessage(opt.noCapture))
 		return 1
 	}
 	removed, err := d.deck.Forget(word)
@@ -444,6 +441,15 @@ func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int 
 	}
 	fmt.Fprintf(stdout, "removed %s\n", word)
 	return 0
+}
+
+// noDeckMessage explains a nil deck. Shared by --forget and /history: the same
+// fact stated in two places is how the atlas contradictions in #4 started.
+func noDeckMessage(noCapture bool) string {
+	if noCapture {
+		return "define: DEFINE_NO_CAPTURE is set, so no deck was opened"
+	}
+	return "define: no deck in this directory"
 }
 
 // terminalWidth reports the usable width of stdout, or 0 when it is not a

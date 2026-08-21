@@ -48,10 +48,10 @@ keep returning to holds its original position rather than churning to the top).
 
 - [x] `/` opens command mode; type-ahead narrows; an unknown command suggests.
 - [x] Typing `/` DISPLAYS the matching commands, narrowing as you type.
-- [ ] `/history` lists the last two days, deduped, reverse-sorted by first lookup.
-- [ ] It reads the store, with no second history mechanism anywhere.
-- [ ] A word starting with `/` is impossible to look up — confirmed as acceptable.
-- [ ] Adding a second command needs no change to the dispatch loop.
+- [x] `/history` lists the last two days, deduped, reverse-sorted by first lookup.
+- [x] It reads the store, with no second history mechanism anywhere.
+- [x] A word starting with `/` is impossible to look up — confirmed as acceptable.
+- [x] Adding a second command needs no change to the dispatch loop.
 
 ## Plan
 
@@ -72,7 +72,7 @@ six findings fixed in one commit is six chances to create a seventh.
       hard to use."* M1 shipped inline grey type-ahead, which completes a
       command you already know the name of and reveals nothing to someone who
       does not. Typing `/` now draws the list; typing narrows it.
-- [ ] M2 — `/history` (plan Tasks 4-8). One clock on `storeDeps`, the local-time
+- [x] M2 — `/history` (plan Tasks 4-8). One clock on `storeDeps`, the local-time
       window, the summary, `runHistory`, docs.
 
 ## Estimate
