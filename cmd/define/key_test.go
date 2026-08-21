@@ -29,6 +29,7 @@ func TestDecodeKey(t *testing.T) {
 		{"tab", "\t", KeyTab, 0, 1},
 		{"ctrl-c", "\x03", KeyInterrupt, 0, 1},
 		{"ctrl-d", "\x04", KeyEOF, 0, 1},
+		{"ctrl-u / cmd+delete", "\x15", KeyKillLine, 0, 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

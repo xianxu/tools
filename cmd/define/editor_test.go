@@ -159,9 +159,9 @@ func TestSuggestionOffersNewestMatch(t *testing.T) {
 	}
 }
 
-func TestSuggestionAcceptedByRightAndEnd(t *testing.T) {
+func TestSuggestionAcceptedByRightEndAndTab(t *testing.T) {
 	h := hist("sycophantic")
-	for _, k := range []Key{{Kind: KeyRight}, {Kind: KeyEnd}} {
+	for _, k := range []Key{{Kind: KeyRight}, {Kind: KeyEnd}, {Kind: KeyTab}} {
 		e, _ := typeKeys(h, append(runes("syc"), k)...)
 		if e.String() != "sycophantic" {
 			t.Errorf("key %v: got %q, want the suggestion accepted", k.Kind, e.String())
@@ -176,6 +176,47 @@ func TestSuggestionNotAcceptedByOtherKeys(t *testing.T) {
 		if strings.HasPrefix(e.String(), "sycophantic") {
 			t.Errorf("key %v accepted the suggestion: %q", k.Kind, e.String())
 		}
+	}
+}
+
+// Cmd+Delete (which terminals send as Ctrl-U) clears everything typed.
+func TestKillLineClearsTheWholeLine(t *testing.T) {
+	h := hist("sycophantic")
+	e, _ := typeKeys(h, append(runes("some typing"), Key{Kind: KeyKillLine})...)
+	if e.String() != "" || e.Cursor != 0 {
+		t.Errorf("got %q cursor %d, want an empty line", e.String(), e.Cursor)
+	}
+	// From mid-line too: the gesture is "start over", not "kill backwards".
+	e, _ = typeKeys(h, append(runes("abcdef"), Key{Kind: KeyLeft}, Key{Kind: KeyLeft}, Key{Kind: KeyKillLine})...)
+	if e.String() != "" {
+		t.Errorf("mid-line kill left %q", e.String())
+	}
+	// On an empty line it is inert, not an error.
+	if e, _ := typeKeys(h, Key{Kind: KeyKillLine}); e.String() != "" {
+		t.Errorf("kill on an empty line produced %q", e.String())
+	}
+}
+
+// Killing the line must also end a history walk, so the next Up starts from the
+// top rather than resuming mid-traversal.
+func TestKillLineEndsTheHistoryWalk(t *testing.T) {
+	h := hist("alpha", "beta", "gamma")
+	e, _ := typeKeys(h, Key{Kind: KeyUp}, Key{Kind: KeyUp}, Key{Kind: KeyKillLine}, Key{Kind: KeyUp})
+	if e.String() != "gamma" {
+		t.Errorf("after kill, Up gave %q, want the newest entry gamma", e.String())
+	}
+}
+
+// Tab with nothing to suggest must not insert a tab character into the word.
+func TestTabWithNoSuggestionIsInert(t *testing.T) {
+	h := hist("sycophantic")
+	e, _ := typeKeys(h, append(runes("zzz"), Key{Kind: KeyTab})...)
+	if e.String() != "zzz" {
+		t.Errorf("Tab altered the line with no suggestion: %q", e.String())
+	}
+	e, _ = typeKeys(h, Key{Kind: KeyTab})
+	if e.String() != "" {
+		t.Errorf("Tab on an empty line produced %q", e.String())
 	}
 }
 

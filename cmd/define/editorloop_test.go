@@ -115,3 +115,73 @@ func tailOf(s string) string {
 	}
 	return s
 }
+
+// A bare Enter must not advance the prompt: it replays, and the screen ends
+// where it started. Operator-reported — each empty return was adding a line.
+func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	baseline := strings.Count(out.String(), "\n")
+
+	rig2, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
+	var out2 bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic\r\r\r\r"), rig2.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
+
+	// Three extra replays, zero extra lines.
+	if got := strings.Count(out2.String(), "\n"); got != baseline {
+		t.Errorf("three replays added %d newlines, want 0", got-baseline)
+	}
+	if rig2.player.count() != 12 {
+		t.Errorf("played %d times, want 12 (4 × 3)", rig2.player.count())
+	}
+}
+
+// In RAW mode "\n" is a line feed with no carriage return, so anything written
+// before dropping back to cooked mode must use "\r\n" — otherwise the next line
+// starts at the current column and the definition renders indented.
+func TestEditorLoopUsesCarriageReturnsInRawMode(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	s := out.String()
+	// Find the newline the loop writes to commit the input line.
+	i := strings.Index(s, "\n")
+	if i < 1 {
+		t.Fatalf("no newline written: %q", s)
+	}
+	if s[i-1] != '\r' {
+		t.Errorf("bare \\n written in raw mode at %d — the next line would start at the current column: %q", i, s[max(0, i-20):i+1])
+	}
+}
+
+// The input line must be findable in a screenful of definition text: the prompt
+// carries an accent colour and the typed word is bold, so the one line you can
+// act on reads differently from everything you cannot.
+func TestRenderLineMakesTheInputLineDistinct(t *testing.T) {
+	e := NewEditor()
+	e.Line = []rune("fold")
+	e.Cursor = 4
+
+	got := RenderLine(e, "able", true)
+	if !strings.Contains(got, promptOn+prompt) {
+		t.Error("the prompt is not accented")
+	}
+	if !strings.Contains(got, inputOn+"fold") {
+		t.Error("typed text is not emphasised")
+	}
+	if !strings.Contains(got, greyOn+"able") {
+		t.Error("the suggestion lost its grey")
+	}
+	// -no-color must still produce no ANSI beyond the frame control.
+	plain := RenderLine(e, "able", false)
+	for _, sgr := range []string{promptOn, inputOn, greyOn} {
+		if strings.Contains(plain, sgr) {
+			t.Errorf("colour leaked into a no-colour render: %q", plain)
+		}
+	}
+	if !strings.Contains(plain, "fold"+"able") {
+		t.Errorf("plain render lost content: %q", plain)
+	}
+}

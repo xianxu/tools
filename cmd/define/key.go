@@ -20,6 +20,7 @@ const (
 	KeyTab
 	KeyInterrupt // Ctrl-C: a BYTE in raw mode, not a signal
 	KeyEOF       // Ctrl-D
+	KeyKillLine  // Ctrl-U — and Cmd+Delete, which terminals send as \x15
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
@@ -46,6 +47,12 @@ func decodeKey(buf []byte) (Key, int) {
 		return Key{Kind: KeyInterrupt}, 1
 	case 0x04:
 		return Key{Kind: KeyEOF}, 1
+	case 0x15:
+		// Ctrl-U. Ghostty binds super+backspace to this by default
+		// (`keybind = super+backspace=text:\x15`), and Terminal.app and iTerm2
+		// map Cmd+Delete the same way — so handling the byte covers the gesture
+		// without guessing at a key code no terminal actually sends.
+		return Key{Kind: KeyKillLine}, 1
 	case '\r', '\n':
 		return Key{Kind: KeyEnter}, 1
 	case '\t':

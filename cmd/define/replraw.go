@@ -79,8 +79,24 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 			case ActSubmit:
 				line := e.String()
 				e = NewEditor()
-				fmt.Fprintln(stdout) // commit the input line to scrollback
+				if line == "" {
+					// A bare Enter replays and must NOT advance: the indicator is
+					// drawn over the prompt, then the prompt is drawn back. The
+					// screen is where it was, which is the whole point of the
+					// gesture.
+					replayInPlace(ctx, d, opt, current, stdout, stderr)
+					draw()
+					continue
+				}
+				// In RAW mode "\n" is a line feed only — no carriage return — so
+				// the next line would start at the current column. Everything
+				// written before we drop back to cooked mode needs "\r\n".
+				fmt.Fprint(stdout, "\r\n")
 				submitLine(ctx, cooked, d, opt, line, hist, &current, stdout, stderr)
+				// A blank line between the entry and the next prompt: without it
+				// the prompt butts against the last line of the definition and
+				// reads as part of it.
+				fmt.Fprint(stdout, "\r\n")
 				draw()
 				continue
 			}
@@ -89,23 +105,23 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	}
 }
 
-// submitLine handles one submitted line: a word is defined, a bare Enter replays.
+// replayInPlace speaks the current word again without moving the cursor off the
+// prompt line. Stays in RAW mode throughout: Ctrl-C must reach the key reader as
+// a byte while playback blocks.
+func replayInPlace(ctx context.Context, d deps, opt options, current string, stdout, stderr io.Writer) {
+	switch {
+	case current == "":
+		fmt.Fprint(stderr, eraseLine+"define: type a word, or press return to replay the last one\r\n")
+	case opt.noAudio || opt.times <= 0:
+		fmt.Fprint(stderr, eraseLine+"define: nothing to replay: audio is off\r\n")
+	default:
+		playAnnounced(ctx, d, opt, current, indicator{show: true, erase: eraseLine}, stdout, stderr)
+	}
+}
+
+// submitLine handles one submitted word.
 func submitLine(ctx context.Context, cooked func(func()), d deps, opt options, line string,
 	hist *memHistory, current *string, stdout, stderr io.Writer) {
-
-	if line == "" { // bare Enter: replay, screen untouched
-		if *current == "" {
-			fmt.Fprintln(stderr, "define: type a word, or press return to replay the last one")
-			return
-		}
-		if opt.noAudio || opt.times <= 0 {
-			fmt.Fprintln(stderr, "define: nothing to replay: audio is off")
-			return
-		}
-		// Replay also stays raw: same reason.
-		playAnnounced(ctx, d, opt, *current, indicator{show: true, erase: eraseLine}, stdout, stderr)
-		return
-	}
 
 	// Render in COOKED mode so newlines translate, but play in RAW mode so
 	// Ctrl-C arrives as a byte the key reader can act on. Playback is the part

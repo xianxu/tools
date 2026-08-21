@@ -70,6 +70,12 @@ func Apply(e Editor, k Key, matches []string) (Editor, Action) {
 			return acceptSuggestion(e, matches)
 		}
 		e.Cursor = len(e.Line)
+	case KeyTab:
+		// Tab accepts the suggestion too. Right/End are the zsh-autosuggestions
+		// bindings, but Tab is what a hand reaches for after typing a prefix —
+		// and #15's command mode gives Tab a complementary job (completing a
+		// /command), not a conflicting one.
+		return acceptSuggestion(e, matches)
 	case KeyUp:
 		return walk(e, matches, +1), ActNone
 	case KeyDown:
@@ -78,6 +84,13 @@ func Apply(e Editor, k Key, matches []string) (Editor, Action) {
 		return e, ActSubmit
 	case KeyInterrupt:
 		return e, ActInterrupt
+	case KeyKillLine:
+		// Clears the whole line, not just back to the cursor: the gesture people
+		// reach for is "start over", and a partial kill from mid-word would leave
+		// a tail they did not ask to keep. Also ends any history walk, so the
+		// next Up starts from the full list rather than mid-traversal.
+		e = e.stopWalk()
+		e.Line, e.Cursor = nil, 0
 	case KeyEOF:
 		if len(e.Line) == 0 { // Ctrl-D ends the session only on an empty line
 			return e, ActEOF
@@ -162,8 +175,16 @@ func acceptSuggestion(e Editor, matches []string) (Editor, Action) {
 func RenderLine(e Editor, sug string, color bool) string {
 	var b strings.Builder
 	b.WriteString(eraseLine)
-	b.WriteString(prompt)
-	b.WriteString(string(e.Line))
+	if color {
+		// The input line has to be findable in a screen full of definition text.
+		// The prompt gets an accent colour and the typed word is bold, so the one
+		// line you can act on reads differently from everything you cannot.
+		b.WriteString(promptOn + prompt + sgrOff)
+		b.WriteString(inputOn + string(e.Line) + sgrOff)
+	} else {
+		b.WriteString(prompt)
+		b.WriteString(string(e.Line))
+	}
 	if sug != "" {
 		if color {
 			b.WriteString(greyOn + sug + greyOff)
@@ -184,4 +205,8 @@ func RenderLine(e Editor, sug string, color bool) string {
 const (
 	greyOn  = "\x1b[90m"
 	greyOff = "\x1b[0m"
+
+	promptOn = "\x1b[1;36m" // bold cyan — the marker for "this line is yours"
+	inputOn  = "\x1b[1m"    // bold — what you have typed, against dim suggestion
+	sgrOff   = "\x1b[0m"
 )
