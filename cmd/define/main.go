@@ -71,6 +71,9 @@ func realDeps() deps {
 // exactly as a missing recording degrades rather than fails. Someone in a
 // read-only directory still gets a dictionary.
 func openStore(opt options, warn io.Writer) (History, Capturer, store.Store) {
+	// NOT a second copy of the capture policy: this decides whether there is
+	// anywhere to write at all. decideCapture stays the only thing that decides
+	// whether a given lookup counts.
 	if opt.noCapture {
 		return &memHistory{}, noopCapturer{}, nil
 	}
@@ -135,7 +138,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"Oxford American Dictionary, the one Google licenses, hence the matching\n"+
 			"notation — and plays its recorded pronunciation.\n\n"+
 			"With no word, reads words from stdin; on a terminal that is an\n"+
-			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n\nFlags:\n")
+			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n\n"+
+			"define records every lookup under words/ and events/ in the CURRENT\n"+
+			"DIRECTORY, so your deck follows whichever directory you run it in.\n"+
+			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
+			"session-only, because the event log is what persists it.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -185,7 +192,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		d.capture = noopCapturer{}
 	}
 
-	if *forget != "" {
+	if isSet(fs, "forget") {
+		if *forget == "" {
+			fmt.Fprintln(stderr, "define: -forget needs a word")
+			return 2
+		}
 		// A mode, not a lookup, so it dispatches before the NArg switch. Combining
 		// it with a word is two commands on one line; silently honouring one of
 		// them is how -raw came to mean two different things in #2.
@@ -193,7 +204,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
 			return 2
 		}
-		return forgetWord(d, *forget, stdout, stderr)
+		return forgetWord(d, opt, *forget, stdout, stderr)
 	}
 
 	switch fs.NArg() {
@@ -246,6 +257,10 @@ func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer)
 	}
 	if opt.raw {
 		fmt.Fprintln(stdout, text)
+		// Ask the policy even here. decideCapture answers "nothing" for -raw, and
+		// it must be the thing that says so — returning early made that branch
+		// unreachable and gave "capture is off" a second home.
+		d.capture.Capture(word, true, opt)
 		return 0, false
 	}
 	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
@@ -332,14 +347,32 @@ func speak(ctx context.Context, d deps, word, locale string, n int) error {
 	return playN(ctx, d.player, path, n)
 }
 
+// isSet reports whether a flag was given at all, which is different from being
+// given an empty value: `-forget=""` is a mistake, not a request to start a REPL.
+func isSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
 // forgetWord removes a word from the deck.
 //
 // An absent word exits NON-ZERO: succeeding silently would hide a typo in the
 // very command meant to correct one.
-func forgetWord(d deps, word string, stdout, stderr io.Writer) int {
+func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int {
 	f, ok := d.forgetter()
 	if !ok {
-		fmt.Fprintln(stderr, "define: no deck in this directory")
+		// Under DEFINE_NO_CAPTURE there may well BE a deck on disk — we simply
+		// did not open one. Saying "no deck" would be a lie about their data.
+		if opt.noCapture {
+			fmt.Fprintln(stderr, "define: DEFINE_NO_CAPTURE is set, so no deck was opened")
+		} else {
+			fmt.Fprintln(stderr, "define: no deck in this directory")
+		}
 		return 1
 	}
 	removed, err := f.Forget(word)

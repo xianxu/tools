@@ -14,3 +14,9 @@ bin/
 /.colima/
 /construct/scripts/vm-log.sh
 /construct/generated/
+
+# define writes its deck to the CURRENT directory, and this repo's developers run
+# it from the checkout — a failed lookup in the repo root created an untracked
+# events/ during review.
+/words/
+/events/

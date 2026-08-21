@@ -140,3 +140,16 @@ fragment and erases the signal.
 Prefer one parsing path to a fast-path-plus-fallback: the two-path version
 double-counted whatever the failed parse had collected, and left the fallback
 unreachable for any input that stayed syntactically valid.
+
+## A fake at the seam cannot see bugs below it (define #4)
+
+The plan said "driven through a counting **store**"; the implementation used a
+counting **capturer**, injected at the seam. It counted `Capture` calls, so it
+could not see the failure it existed for — two writers *below* the seam, each
+called once. Restoring the double write left it green while the deck
+double-counted.
+
+Where you inject the double decides what the test can see. To catch "the wrong
+component wrote", the fake has to sit **beneath** every component involved. And
+when a plan names a specific seam for a test, substituting a different one is a
+design change, not an implementation detail.

@@ -281,8 +281,12 @@ is an *input* to the policy rather than a second mechanism beside it.
 **`storeCapturer` is the only writer in the process.** `storeHistory` used to
 write too; since `#4` it only reads at construction and recalls from memory.
 Otherwise the raw path would record every lookup twice, and a deck that
-double-counts is wrong in a way nobody notices until `#5` orders by it. Pinned by
-a capture-arity test across all three paths.
+double-counts is wrong in a way nobody notices until `#5` orders by it. Pinned two ways, because
+one of them is blind on its own: per-path subtests count `Capture` calls with a
+fake **at** the seam, and a separate test asserts `Lookups == 1` and one event
+against the **real** wiring. The first cannot see a double write, since both
+writers live *below* the seam it replaces — verified by restoring the old
+behaviour: the per-path tests stayed green while the deck double-counted.
 
 **Two warnings, two homes**, because conflating them stranded the warn-once rule
 when the writes moved: a failed write is `storeCapturer`'s (once per process); a
@@ -297,15 +301,15 @@ honoured half.
 
 ### History is events, the deck is successes
 
-`storeHistory.Add` always appends an **event**, and upserts a **word** only when
-the lookup found something. `Prefix` therefore reads the event log, not the deck:
-Up-arrow must recall the typo you just made — that is when you want to edit and
-retry — while the deck must not fill with misspellings.
+**`storeCapturer` appends the event and upserts the word** — see Capture above.
+`storeHistory` only *reads*: it loads the log once at construction and recalls
+from memory. An earlier version had it writing too, which is why the raw path
+would have recorded every lookup twice.
 
-`Prefix` runs on **every keystroke** and returns no error, so the log is loaded
-once at construction and held in memory. The store is the durable copy; a write
-failure warns **once** and the session continues, because losing durability is
-not a reason to break the editor mid-word.
+`Prefix` therefore reads the **event log**, not the deck: Up-arrow must recall
+the typo you just made — that is when you want to edit and retry — while the deck
+must not fill with misspellings. It runs on every keystroke and returns no error,
+so it never touches disk.
 
 **Timestamps keep their offset**, so a local-day view is recoverable even though
 day files are named in UTC. `#8` must group by timestamp, never by filename.

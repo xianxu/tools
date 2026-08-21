@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -218,5 +219,86 @@ func TestNoCaptureSuppressesEverything(t *testing.T) {
 	// history to session-only. That cost is documented beside the flag.
 	if ev, _ := st.Events(time.Time{}); len(ev) != 0 {
 		t.Errorf("got %d events, want 0", len(ev))
+	}
+}
+
+// The arity test that can actually SEE a double write.
+//
+// The per-path subtests above inject a countingCapturer AT the seam, so they
+// count Capture calls — which is a different question, and one they answer well.
+// They cannot see the bug this issue's refactor risks: writes happening BELOW
+// the seam, once via storeHistory and once via the capturer. Verified by
+// restoring the old storeHistory.Add writes: this goes red, those stay green.
+func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
+	dir := t.TempDir()
+	st := store.NewYAML(dir, nil)
+
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig.deps.history = newStoreHistory(st, fixedClock(1), nil)
+	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil)
+
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck) != 1 {
+		t.Fatalf("deck has %d entries, want 1: %+v", len(deck), deck)
+	}
+	if deck[0].Lookups != 1 {
+		t.Errorf("Lookups = %d after ONE lookup, want 1 — the word was recorded twice", deck[0].Lookups)
+	}
+	ev, _ := st.Events(time.Time{})
+	if len(ev) != 1 {
+		t.Errorf("got %d events for one lookup, want 1", len(ev))
+	}
+}
+
+// --- openStore -------------------------------------------------------------
+
+// Half of a Done-when lived here untested: DEFINE_NO_CAPTURE must not merely
+// suppress writes, it must leave history session-only rather than half-persisting.
+func TestOpenStoreUnderOptOut(t *testing.T) {
+	h, c, deck := openStore(options{noCapture: true}, nil)
+	if _, ok := h.(*memHistory); !ok {
+		t.Errorf("history = %T, want *memHistory — session-only", h)
+	}
+	if _, ok := c.(noopCapturer); !ok {
+		t.Errorf("capturer = %T, want noopCapturer", c)
+	}
+	if deck != nil {
+		t.Errorf("deck = %v, want nil — nothing was opened", deck)
+	}
+}
+
+// The env → option wiring, end to end: nothing may reach the disk.
+func TestNoCaptureWritesNothingToDisk(t *testing.T) {
+	// Build the rig BEFORE chdir: the fixture corpus is loaded from a relative
+	// testdata path.
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.stdinIsTerminal = func() bool { return false }
+	rig.deps.capture = nil // force the real wiring
+	rig.deps.newStore = openStore
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("DEFINE_NO_CAPTURE", "1")
+
+	var out, errb bytes.Buffer
+	if code := run(t.Context(), []string{"-no-audio", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("DEFINE_NO_CAPTURE=1 still wrote %v", names)
 	}
 }

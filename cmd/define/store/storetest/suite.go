@@ -135,6 +135,26 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("forget cannot escape the words directory", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.Upsert(store.Word{Text: "sycophantic", LastSeen: day(1)})
+		// Forget is the only operation that DELETES a path derived from user
+		// input, so the guarantee is asserted here rather than inherited from
+		// Slug — a regression in Slug must fail HERE, loudly.
+		for _, key := range []string{
+			"../../../etc/passwd", "/etc/passwd", "..", ".", "../sycophantic",
+		} {
+			removed, err := s.Forget(key)
+			if removed {
+				t.Errorf("Forget(%q) reported a removal", key)
+			}
+			_ = err // an error is fine; a deletion is not
+		}
+		if deck, _ := s.Deck(); len(deck) != 1 {
+			t.Errorf("a traversal key removed a real word: deck = %+v", deck)
+		}
+	})
+
 	t.Run("event fields survive the round trip", func(t *testing.T) {
 		s := newStore(t)
 		want := store.ReviewEvent{Word: "hot dog", Kind: store.EventReviewed, Found: true, Correct: true, At: day(2)}
