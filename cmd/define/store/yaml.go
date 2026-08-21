@@ -43,8 +43,12 @@ func (y *YAML) Upsert(w Word) error {
 
 	old, err := readWord(path)
 	if err != nil && !os.IsNotExist(err) {
-		// A corrupt existing entry must not block recording a new sighting: treat
-		// it as absent and overwrite. Losing one stale entry beats refusing to work.
+		// A corrupt or unreadable entry must not block recording a new sighting —
+		// but overwriting it destroys that word's FirstSeen and Lookups, so say
+		// so. Deck warns on exactly this condition, and inside a synced directory
+		// a transiently-unreadable file is a realistic input, not just a corrupt
+		// one.
+		y.warnf("overwriting unreadable %s: %v", filepath.Base(path), err)
 		old = Word{}
 	}
 	return writeAtomic(path, merge(old, w))

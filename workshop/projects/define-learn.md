@@ -34,10 +34,10 @@ delivers daily value alone and de-risks everything after it.
 
 ## Tasks
 
-- [ ] `#2` define REPL — bare invocation reads, defines, speaks; bare return replays
-- [ ] `#14` REPL line editor — history, prefix search, inline autosuggestion
+- [x] `#2` define REPL — bare invocation reads, defines, speaks; bare return replays
+- [x] `#14` REPL line editor — history, prefix search, inline autosuggestion
 - [ ] `#15` REPL command mode — `/`-commands with type-ahead, starting `/history`
-- [ ] `#3` vocabulary store — Store seam, YAML in a brain, clock injected
+- [x] `#3` vocabulary store — Store seam, YAML in the working directory, clock injected
 - [ ] `#4` capture on lookup — successful lookups build the deck
 - [ ] `#5` scheduling engine — Leitner, pure
 - [ ] `#6` `--play` loop + form 2.1
@@ -51,9 +51,15 @@ delivers daily value alone and de-risks everything after it.
 
 ## Design decisions taken up front
 
-- **Storage shape is chosen for git.** One file per word + an append-only event
-  log per day; a brain syncs across machines, so merge conflicts are the failure
-  mode. `nous push` supplies sync, so no sync code is written.
+- **Storage is YAML files in the working directory** (operator, 2026-08-20).
+  `define` resolves no brains, workspaces or home directories, and invokes no
+  git of any kind. The original "git repo / nous push" framing meant only *YAML
+  rather than a database*; replication is whichever directory you run it in.
+- **The layout is one file per word plus an append-only day log.** That does not
+  make sync conflicts impossible — the same word, or the same day, on two
+  machines still conflicts. It changes the *rate*: with a single `vocab.yaml`
+  every write on a second machine conflicts, because every write touches the one
+  file.
 - **Distractors are selected, never invented** (operator, 2026-08-20). The pool is
   news-harvested words at the learner's level plus the learner's own deck,
   filtered for substantial semantic difference. The model only *vetoes* a

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -125,3 +126,41 @@ var errFail = &failErr{}
 type failErr struct{}
 
 func (*failErr) Error() string { return "store unavailable" }
+
+// I-4: the wiring IS the issue. Nothing set deps.history, so runEditor's
+// `hist := d.history` was only ever reached through the nil fallback — deleting
+// the field left the whole suite green while persistence silently stopped.
+func TestEditorPersistsThroughDeps(t *testing.T) {
+	dir := t.TempDir()
+
+	first, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	first.deps.history = newStoreHistory(store.NewYAML(dir, nil), fixedClock(1), nil)
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), first.deps, opt, cooked, finish, &out, &errb)
+
+	// A second editor over the same directory: the restart case.
+	second, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
+	second.deps.history = newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil)
+	var out2 bytes.Buffer
+	runEditor(t.Context(), scriptKeys("syc"), second.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
+
+	if !strings.Contains(out2.String(), greyOn+"ophantic") {
+		t.Errorf("the previous session's word was not suggested: %q", tailOf(out2.String()))
+	}
+}
+
+// Restoring history must include NOT-FOUND lines. Adding `&& e.Found` to the
+// restore loop breaks Up-arrow recall of typos after a restart, and every other
+// test still passes — so this pins it directly.
+func TestStoreHistoryRestoresTyposAcrossSessions(t *testing.T) {
+	dir := t.TempDir()
+
+	first := newStoreHistory(store.NewYAML(dir, nil), fixedClock(1), nil)
+	first.Add("sykophantic", false) // a typo, never in the deck
+	first.Add("ephemeral", true)
+
+	restored := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil).Prefix("sy")
+	if len(restored) != 1 || restored[0] != "sykophantic" {
+		t.Errorf("Prefix(sy) after restart = %v — the typo was dropped from recall", restored)
+	}
+}

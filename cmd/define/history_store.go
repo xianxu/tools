@@ -76,17 +76,7 @@ func (h *storeHistory) Add(line string, found bool) {
 func (h *storeHistory) Prefix(p string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	var out []string
-	seen := map[string]bool{}
-	for i := len(h.lines) - 1; i >= 0; i-- { // newest first
-		l := h.lines[i]
-		if seen[l] || !strings.HasPrefix(l, p) {
-			continue
-		}
-		seen[l] = true
-		out = append(out, l)
-	}
-	return out
+	return prefixMatch(h.lines, p)
 }
 
 // warnf reports at most once. Losing durability is not a reason to interrupt
