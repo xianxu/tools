@@ -342,6 +342,25 @@ whole typed line: with `/his` typed, `/history` is what completes it. Once an
 argument is typed (`/history 7`) the completion is shorter than the line, so no
 suggestion is offered — that falls out rather than being special-cased.
 
+**Typing `/` shows the menu.** The inline grey suggestion and the dropdown
+answer different questions, which is why both exist: completion answers "what
+single string extends this line" and only helps someone who already knows the
+command's name; the menu answers "what are my choices". `menuLines` is pure and
+filtered by the same prefix, so the list narrows as you type and vanishes when
+nothing matches — a stale set left on screen would be worse than none. The name
+column is measured against ALL commands so the summaries do not shuffle sideways
+while the list shrinks.
+
+The terminal half is a dropdown, not scrollback: `paintMenu` writes the rows
+below the prompt and walks the cursor back up by the same count, erasing
+`max(previous, new)` rows so a shrinking list leaves nothing behind. It is
+cleared before a submit and before exit. **Known limit**, shared with the erase
+arithmetic elsewhere in the raw path: if the menu does not fit below the cursor
+the terminal scrolls and the cursor-up count lands a row off; it self-corrects on
+the next keystroke, because the prompt line is fully rewritten each time. A pty
+conformance test covers the placement, because an in-process test can only prove
+the bytes were emitted, not that the cursor came back.
+
 **Tab accepts, Return submits what was typed.** `/his` + Return dispatches `his`
 and gets a suggestion, it does not run the unique match. That is `#14`'s contract
 for words, and command mode diverging from it would make Return mean two things

@@ -195,8 +195,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"notation — and plays its recorded pronunciation.\n\n"+
 			"With no word, reads words from stdin; on a terminal that is an\n"+
 			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n"+
-			"A line starting with / is a command rather than a word: type / to\n"+
-			"see them, Tab to complete, /help to list them.\n\n"+
+			"A line starting with / is a command rather than a word. Type / to\n"+
+			"see the list, keep typing to narrow it, Tab to complete.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
 			"it in. A word that was found is added to the deck; a word that was\n"+

@@ -192,3 +192,47 @@ func runHelp(c commandCtx, _ []string) int {
 	}
 	return 0
 }
+
+// menuLines is the list shown UNDER the prompt in command mode: every command
+// matching what has been typed so far, narrowing as you type.
+//
+// Separate from commandCompletions because they answer different questions.
+// Completion answers "what single string extends this line" and feeds the grey
+// inline suggestion; the menu answers "what are my choices", which is the one
+// the user actually needs first — the inline suggestion completes a command you
+// already know the name of, and reveals nothing to someone who does not.
+//
+// Returns nil outside command mode, and nil when nothing matches: the menu
+// vanishing is the right answer to "/zzz", not a stale set left on screen.
+func menuLines(base string, cmds []command, width int) []string {
+	name, args, ok := parseCommandLine(base)
+	if !ok || len(args) > 0 { // an argument means the command is settled
+		return nil
+	}
+	var out []string
+	for _, c := range cmds {
+		if !strings.HasPrefix(c.name, name) {
+			continue
+		}
+		line := fmt.Sprintf("  /%-*s%s", menuNameWidth(cmds), c.name, c.summary)
+		if width > 0 && len(line) > width {
+			line = line[:width]
+		}
+		out = append(out, line)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// menuNameWidth is the name field's width: the longest name plus a two-space
+// gutter. Computed from ALL commands, not the filtered set, so the summary
+// column does not shuffle sideways as the list narrows under your typing.
+func menuNameWidth(cmds []command) int {
+	w := 0
+	for _, c := range cmds {
+		if len(c.name) > w {
+			w = len(c.name)
+		}
+	}
+	return w + 2
+}

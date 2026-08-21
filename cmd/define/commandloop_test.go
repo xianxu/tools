@@ -166,3 +166,38 @@ func TestEditorSuggestsFromCommands(t *testing.T) {
 		t.Errorf("the line starts with / but history was consulted: %q", out.String())
 	}
 }
+
+// The menu has to actually reach the screen, not merely be computable.
+// menuLines being right is a different claim from the editor painting it.
+func TestEditorShowsTheCommandMenu(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("/\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	if !strings.Contains(out.String(), "list the commands") {
+		t.Errorf("typing / did not show the menu: %q", out.String())
+	}
+}
+
+func TestTypingNarrowsTheMenuAndAWordHidesIt(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+
+	var out, errb bytes.Buffer
+	// A word, not a command: the screen must not sprout a menu under it.
+	runEditor(t.Context(), scriptKeys("syc\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	if strings.Contains(out.String(), "list the commands") {
+		t.Errorf("a word drew the command menu: %q", out.String())
+	}
+
+	// A prefix that matches nothing: the menu must disappear rather than
+	// leaving a stale set on screen.
+	out.Reset()
+	runEditor(t.Context(), scriptKeys("/zzz\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	last := out.String()[strings.LastIndex(out.String(), "/zzz"):]
+	if strings.Contains(last, "list the commands") {
+		t.Errorf("a non-matching prefix left the menu on screen: %q", last)
+	}
+}

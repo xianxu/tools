@@ -173,3 +173,43 @@ func sameSet(a, b []string) bool {
 	}
 	return true
 }
+
+// Typing "/" must SHOW what there is. The inline grey suggestion completes one
+// candidate but never reveals the set, so command mode was undiscoverable
+// (operator, 2026-08-21: "hard to use").
+func TestMenuLines(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		base  string
+		width int
+		want  []string
+	}{
+		{"a bare slash shows everything", "/", 0, []string{
+			"  /help     list the commands",
+			"  /history  words looked up recently",
+			"  /stats    deck statistics",
+		}},
+		{"a prefix filters", "/h", 0, []string{
+			"  /help     list the commands",
+			"  /history  words looked up recently",
+		}},
+		{"a longer prefix narrows further", "/his", 0, []string{
+			"  /history  words looked up recently",
+		}},
+		// No menu at all outside command mode: a word being typed must not have
+		// the screen jump under it.
+		{"a word shows nothing", "syc", 0, nil},
+		{"an empty line shows nothing", "", 0, nil},
+		// Nothing matches: the menu disappears rather than showing a stale set.
+		{"no match shows nothing", "/zzz", 0, nil},
+		// Once an argument is typed the command is settled.
+		{"an argument settles it", "/history 7", 0, nil},
+		{"narrow terminals truncate", "/his", 14, []string{"  /history  wo"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := menuLines(tc.base, testCmds, tc.width); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("menuLines(%q, w=%d) =\n  %q\nwant\n  %q", tc.base, tc.width, got, tc.want)
+			}
+		})
+	}
+}

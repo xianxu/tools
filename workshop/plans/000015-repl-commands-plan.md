@@ -161,6 +161,7 @@ The enumerations inside the tasks are the input corpus; these are the reasons
 | `parseHistoryArgs` | a `--days` value that `AddDate` normalises into a garbage instant instead of being refused |
 | `summariseLookups` | membership and ordering coming from the same timestamp, when they are deliberately different facts |
 | `renderHistory` | width and relative-date formatting regressions, held away from IO |
+| `menuLines` | the menu showing outside command mode, not narrowing, or leaving a stale set when nothing matches |
 | dispatch in each loop | one entry mode disagreeing with another about what a line means (the PQ-2 class) |
 
 ---
@@ -235,6 +236,30 @@ events, no IO beyond stdout.
       and clock nil at this milestone), and `/help`.
 - [x] **Step 4: Run the full suite + `-race`.**
 - [x] **Step 5: `sdlc milestone-close --issue 15 --milestone M1`.**
+
+### M1b — the command menu (scope event)
+
+Added after the operator tried M1: inline type-ahead completes a command you
+already know, and reveals nothing to someone who does not. `menuLines` is pure
+and table-tested; the terminal half is a dropdown drawn below the prompt and
+erased on redraw.
+
+- [x] **Step 1: Write the failing tests** — a bare `/` lists everything, a
+      prefix filters, a word or an empty line shows nothing, a non-matching
+      prefix shows nothing, an argument settles it, and narrow terminals
+      truncate.
+- [x] **Step 2: Run; expect FAIL.**
+- [x] **Step 3: Implement** `menuLines` + `menuNameWidth` (the name column is
+      computed from ALL commands, so the summaries do not shuffle sideways as
+      the list narrows under typing).
+- [x] **Step 4: Wire it** into `runEditor`'s draw: `paintMenu` writes the rows
+      below and returns the cursor, erasing `max(previous, new)` rows so a
+      shrinking list leaves nothing behind. `clearMenu` runs before submit and
+      before exit.
+- [x] **Step 5: Verify.** Mutation: removing the `paintMenu` call from `draw`
+      reddens `TestEditorShowsTheCommandMenu`. Plus a **pty conformance test** —
+      in-process tests prove the bytes are emitted, only a real terminal proves
+      the cursor walks down and back by the same count.
 
 ### M2 — `/history`
 

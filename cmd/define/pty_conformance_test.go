@@ -177,3 +177,33 @@ func TestPTYTerminalIsRestoredOnExit(t *testing.T) {
 		t.Fatalf("restore failed: %v", err)
 	}
 }
+
+// The command menu against a real terminal. In-process tests prove the BYTES
+// are emitted; only a pty proves the cursor arithmetic around them — the menu
+// is drawn below the prompt and then the cursor is walked back up, and a
+// miscount there leaves the user typing on top of the menu.
+func TestPTYCommandMenuAppearsAndClears(t *testing.T) {
+	_, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	out.take(time.Second)
+
+	f.Write([]byte("/"))
+	frame := out.take(1500 * time.Millisecond)
+	if !strings.Contains(frame, "list the commands") {
+		t.Errorf("typing / did not draw the menu: %q", frame)
+	}
+	// Drawn BELOW: the frame must move the cursor down and then back up by the
+	// same number of rows, or the prompt lands in the middle of the menu.
+	if !strings.Contains(frame, "\x1b[1A") {
+		t.Errorf("the menu did not return the cursor to the prompt line: %q", frame)
+	}
+
+	// A prefix that matches nothing must clear it.
+	f.Write([]byte("zzz"))
+	frame = out.take(1500 * time.Millisecond)
+	if strings.Contains(frame, "list the commands") {
+		t.Errorf("a non-matching prefix redrew the menu: %q", frame)
+	}
+
+	f.Write([]byte("\x03"))
+}

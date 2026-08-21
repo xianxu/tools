@@ -67,7 +67,39 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	// Resolve candidates ONCE per keystroke and use the same slice for both the
 	// state machine and the suggestion. Querying twice doubled the work the
 	// History seam will do once #3 backs it with a store.
+	// The command menu is a dropdown, not scrollback: drawn BELOW the prompt
+	// line and erased on every redraw. menuDrawn is how many rows are currently
+	// on screen under the cursor.
+	//
+	// Known limit, shared with the erase arithmetic elsewhere in this file: if
+	// the menu does not fit below the cursor the terminal scrolls, and the
+	// cursor-up count then lands a row off. It self-corrects on the next
+	// keystroke, because the prompt line is fully rewritten each time.
+	menuDrawn := 0
+	paintMenu := func(lines []string) {
+		// Erase max(previous, new) rows, so a list that SHRINKS as you type
+		// leaves nothing of the longer one behind.
+		n := menuDrawn
+		if len(lines) > n {
+			n = len(lines)
+		}
+		if n == 0 {
+			return
+		}
+		for i := 0; i < n; i++ {
+			fmt.Fprint(stdout, "\r\n"+eraseLine)
+			if i < len(lines) {
+				fmt.Fprint(stdout, lines[i])
+			}
+		}
+		fmt.Fprintf(stdout, "\x1b[%dA\r", n) // back up to the prompt line
+		menuDrawn = len(lines)
+	}
+	clearMenu := func() { paintMenu(nil) }
 	draw := func(matches []string) {
+		// The menu is painted FIRST and the prompt line last, so RenderLine
+		// leaves the cursor where the user is typing.
+		paintMenu(menuLines(e.String(), commands, opt.width))
 		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, matches), opt.color))
 	}
 	draw(completionsFor(e.WalkBase(), hist, commands))
@@ -89,6 +121,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 			e, act = Apply(e, k, matches)
 			switch act {
 			case ActInterrupt, ActEOF:
+				clearMenu()
 				finish()
 				fmt.Fprintln(stdout)
 				return 0
@@ -99,6 +132,9 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
 				cmd := parseREPLLine(e.String(), current != "")
 				line := cmd.word
+				// Whatever happens next writes below this line, so the dropdown
+				// has to go before any of it.
+				clearMenu()
 				// Redraw the committed line with NO suggestion before advancing:
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.

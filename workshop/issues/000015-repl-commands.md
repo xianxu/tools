@@ -46,7 +46,8 @@ keep returning to holds its original position rather than churning to the top).
 
 ## Done when
 
-- [ ] `/` opens command mode; type-ahead narrows; an unknown command suggests.
+- [x] `/` opens command mode; type-ahead narrows; an unknown command suggests.
+- [x] Typing `/` DISPLAYS the matching commands, narrowing as you type.
 - [ ] `/history` lists the last two days, deduped, reverse-sorted by first lookup.
 - [ ] It reads the store, with no second history mechanism anywhere.
 - [ ] A word starting with `/` is impossible to look up — confirmed as acceptable.
@@ -65,6 +66,12 @@ six findings fixed in one commit is six chances to create a seventh.
       store: `/` opens command mode, type-ahead narrows, unknown commands
       suggest, `/help` lists the table. Dispatch lands on `parseREPLLine`'s new
       `cmdCommand` kind so BOTH loops get it.
+- [x] M1b — the command menu. **Scope event, operator 2026-08-21**, after
+      trying M1: *"the typeahead is there for /command, which is good. but we
+      need a filtered menu of available command matching the prefix. otherwise
+      hard to use."* M1 shipped inline grey type-ahead, which completes a
+      command you already know the name of and reveals nothing to someone who
+      does not. Typing `/` now draws the list; typing narrows it.
 - [ ] M2 — `/history` (plan Tasks 4-8). One clock on `storeDeps`, the local-time
       window, the summary, `runHistory`, docs.
 
