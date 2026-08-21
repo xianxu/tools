@@ -83,3 +83,14 @@ func (m *Mem) Events(since time.Time) ([]ReviewEvent, error) {
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out, nil
 }
+
+func (m *Mem) Forget(key string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := Key(key)
+	if _, ok := m.words[k]; !ok {
+		return false, nil
+	}
+	delete(m.words, k)
+	return true, nil
+}

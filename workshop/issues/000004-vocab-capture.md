@@ -5,7 +5,7 @@ deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-21
-estimate_hours: 1.22
+estimate_hours: 1.31
 started: 2026-08-21T10:02:22-07:00
 ---
 
@@ -37,15 +37,15 @@ A vocabulary deck nobody has to curate is the only one that gets used. Every
 
 ## Done when
 
-- [ ] A successful lookup appears in the deck; a failed one does not.
-- [ ] Repeat lookups increment the count rather than duplicating the word.
-- [ ] `--forget` removes the word and leaves `events/` untouched, asserted by
+- [x] A successful lookup appears in the deck; a failed one does not.
+- [x] Repeat lookups increment the count rather than duplicating the word.
+- [x] `--forget` removes the word and leaves `events/` untouched, asserted by
       comparing the directory before and after.
-- [ ] `--forget` cannot delete outside `words/` — asserted, not inherited from
+- [x] `--forget` cannot delete outside `words/` — asserted, not inherited from
       `Slug`.
-- [ ] `DEFINE_NO_CAPTURE=1` writes nothing at all, and history falls back to
+- [x] `DEFINE_NO_CAPTURE=1` writes nothing at all, and history falls back to
       session-only rather than half-persisting.
-- [ ] A failing store degrades to a warning, never a failed lookup.
+- [x] A failing store degrades to a warning, never a failed lookup.
 
 ## Estimate
 
@@ -61,7 +61,7 @@ item: milestone-review         design=0.0  impl=0.12
 item: milestone-review         design=0.0  impl=0.12
 item: atlas-docs               design=0.05 impl=0.06
 design-buffer: 0.15
-total: 1.22
+total: 1.31
 ```
 
 Derivation notes:
@@ -70,23 +70,26 @@ Derivation notes:
   writes on the interactive path, so this extracts that decision behind a seam
   and widens it to two more call sites. The first covers the extraction plus
   widening, the second `--forget` and the opt-out.
-- Design discounted ×0.2 on both — the plan fixes the seam, the policy inputs and
-  the three call sites; what is left is typing.
+- Design discounted **×0.5, not ×0.2** — correcting the first draft's note, which
+  claimed a figure it had not applied. Half rather than a fifth because the plan
+  needed four gate rounds to settle: the capture site was named wrongly at first
+  (`defineOnce` is not on the raw path), and the opt-out's collision with `#3`'s
+  event-backed history was found at the gate, not in the draft.
 - **Two `milestone-review`s.** `#3` needed four rounds on one function, and this
   diff touches the same store. Budgeting one would repeat the mistake the ledger
   has now recorded three times.
 - `familiarity: 1.0` — same package, same store, same test posture.
 - Library-availability check: nothing external is involved; no halving applies.
 
-Σdesign 0.45 × 1.15 = 0.5175; Σimpl 0.70; total **1.22**.
+Σdesign 0.50 × 1.15 = 0.5750; Σimpl 0.74; total **1.31**.
 
 ## Plan
 
 See `workshop/plans/000004-vocab-capture-plan.md`.
 
-- [ ] Extract the capture policy behind a `Capturer` seam; `storeHistory` uses it.
-- [ ] Widen to the one-shot and line paths.
-- [ ] `--forget` (word only, never events) and `DEFINE_NO_CAPTURE=1`.
+- [x] Extract the capture policy behind a `Capturer` seam; `storeHistory` uses it.
+- [x] Widen to the one-shot and line paths.
+- [x] `--forget` (word only, never events) and `DEFINE_NO_CAPTURE=1`.
 
 ## Log
 

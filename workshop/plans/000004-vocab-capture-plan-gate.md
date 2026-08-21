@@ -193,6 +193,51 @@ rounds:
           family: extraction-strands-behavior
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-21T10:22:09-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-6
+          disposition: not-addressed
+          note: Line 116 still reads "consulted from three call sites"; the chosen design has exactly one.
+          round: 4
+        - id: PQ-9
+          disposition: addressed
+          note: Call graph at lines 76-80 verified correct against main.go:144/155, repl.go:144, replraw.go:156/165; arity now asserted per path at line 178.
+          round: 4
+        - id: PQ-10
+          disposition: not-addressed
+          note: Line 132-133 "storeHistory delegates" still contradicts line 86-89 "stops writing"; history_store_test.go:133 and :155 remain unaccounted for while line 168 mis-signals their failure as a bug.
+          round: 4
+      findings:
+        - id: PQ-11
+          severity: Important
+          title: Task 2 Step 3 still names defineOnce as the capture site, contradicting Chunk 1's lookupAndRender
+          detail: |-
+            This is the 3rd finding in family capture-arity-invariant (prevalence 3: PQ-7 double-capture,
+            PQ-9 zero-capture-on-raw, now the executable step disagreeing with the prose). Do not patch
+            line 181. The rule, which also covers PQ-6 and PQ-10: each design fact gets exactly ONE
+            normative statement in the plan and every other mention references it rather than restating
+            it (ARCH-DRY applied to the artifact). "Where capture happens" is currently stated at lines
+            7, 24, 72, 116 and 181; three rounds have each fixed one copy and left the rest, which is
+            why the family keeps recurring. Rewrite 7, 24, 116, 181 to point at the Chunk 1 statement,
+            and give storeHistory's fate the same single-home treatment across lines 7, 24, 133 and the
+            issue checkbox.
+          family: capture-arity-invariant
+          round: 4
+        - id: PQ-12
+          severity: Minor
+          title: The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
+          detail: |-
+            deps is the injected IO seam (main.go:20) and both test rigs build it as a literal
+            (main_test.go:14, main_test.go:41), so an unguarded d.capture.Capture panics the suite.
+            The codebase already has the idiom for this at replraw.go:63, where a nil history seam
+            falls back to memHistory. State whether capture takes a nil-fallback null object or every
+            rig must supply one.
+          family: unstated-seam-default
+          round: 4
+      blocked: false
+content_hash: 58285148a85008d527f05c3367b4e41e54bbdffaaa92666d6f7bbb182b714167
 ---
 
 # Gate ledger — tools#4 (plan-quality)
@@ -305,8 +350,36 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   :86-99, :155-166 and :133-150 all fail, contradicting "green without edits … do not
   edit them to fit".
 
+## Round 4 — 2026-08-21T10:22:09-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-6 — not-addressed — Line 116 still reads "consulted from three call sites"; the chosen design has exactly one.
+- PQ-9 — addressed — Call graph at lines 76-80 verified correct against main.go:144/155, repl.go:144, replraw.go:156/165; arity now asserted per path at line 178.
+- PQ-10 — not-addressed — Line 132-133 "storeHistory delegates" still contradicts line 86-89 "stops writing"; history_store_test.go:133 and :155 remain unaccounted for while line 168 mis-signals their failure as a bug.
+
+### Raised
+
+- **PQ-11** [Important] `capture-arity-invariant` Task 2 Step 3 still names defineOnce as the capture site, contradicting Chunk 1's lookupAndRender
+  This is the 3rd finding in family capture-arity-invariant (prevalence 3: PQ-7 double-capture,
+  PQ-9 zero-capture-on-raw, now the executable step disagreeing with the prose). Do not patch
+  line 181. The rule, which also covers PQ-6 and PQ-10: each design fact gets exactly ONE
+  normative statement in the plan and every other mention references it rather than restating
+  it (ARCH-DRY applied to the artifact). "Where capture happens" is currently stated at lines
+  7, 24, 72, 116 and 181; three rounds have each fixed one copy and left the rest, which is
+  why the family keeps recurring. Rewrite 7, 24, 116, 181 to point at the Chunk 1 statement,
+  and give storeHistory's fate the same single-home treatment across lines 7, 24, 133 and the
+  issue checkbox.
+- **PQ-12** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
+  deps is the injected IO seam (main.go:20) and both test rigs build it as a literal
+  (main_test.go:14, main_test.go:41), so an unguarded d.capture.Capture panics the suite.
+  The codebase already has the idiom for this at replraw.go:63, where a nil history seam
+  falls back to memHistory. State whether capture takes a nil-fallback null object or every
+  rig must supply one.
+
 ## Open findings
 
 - **PQ-6** [Minor] `unbacked-existing-behavior-claim` "three call sites" is two - defineOnce serves both the one-shot and line paths
-- **PQ-9** [Critical] `capture-arity-invariant` The chosen capture site misses the raw interactive path, which is where #3's capture lives today
 - **PQ-10** [Important] `extraction-strands-behavior` storeHistory is given two incompatible fates, and Task 1 Step 3's "tests unchanged" is unsatisfiable
+- **PQ-11** [Important] `capture-arity-invariant` Task 2 Step 3 still names defineOnce as the capture site, contradicting Chunk 1's lookupAndRender
+- **PQ-12** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does

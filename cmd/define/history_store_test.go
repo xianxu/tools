@@ -13,47 +13,6 @@ func fixedClock(day int) store.Clock {
 	return store.FixedClock(time.Date(2026, 8, day, 12, 0, 0, 0, time.UTC))
 }
 
-// The whole point of this issue: history outlives the process.
-func TestStoreHistoryPersistsAcrossSessions(t *testing.T) {
-	dir := t.TempDir()
-
-	first := newStoreHistory(store.NewYAML(dir, nil), fixedClock(1), nil)
-	first.Add("sycophantic", true)
-	first.Add("ephemeral", true)
-
-	// A second storeHistory over the same directory is what a restart looks like.
-	second := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil)
-	got := second.Prefix("")
-	if len(got) != 2 {
-		t.Fatalf("restored %d entries, want 2: %v", len(got), got)
-	}
-	if got[0] != "ephemeral" {
-		t.Errorf("newest-first ordering lost across the restart: %v", got)
-	}
-}
-
-// Add and Prefix answer DIFFERENT questions. A typo must be recallable — that is
-// when you most want to edit and retry — but must not become a deck entry.
-func TestStoreHistoryRecallsTyposButDoesNotDeckThem(t *testing.T) {
-	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
-	h := newStoreHistory(st, fixedClock(1), nil)
-
-	h.Add("sycophantic", true)
-	h.Add("sykophantic", false) // a typo
-
-	if got := h.Prefix("sy"); len(got) != 2 {
-		t.Errorf("Prefix returned %v — a failed lookup must still be recallable", got)
-	}
-	deck, err := st.Deck()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(deck) != 1 || deck[0].Text != "sycophantic" {
-		t.Errorf("deck = %+v, want only the word that exists", deck)
-	}
-}
-
 func TestStoreHistoryPrefixIsNewestFirstAndDeduped(t *testing.T) {
 	h := newStoreHistory(store.NewMem(), fixedClock(1), nil)
 	h.Add("sycophantic", true)
@@ -82,22 +41,6 @@ func TestStoreHistoryPrefixDoesNotQueryTheStore(t *testing.T) {
 	}
 }
 
-// A store that cannot be written must not break the editor: warn once, keep going.
-func TestStoreHistoryDegradesOnWriteFailure(t *testing.T) {
-	var warn strings.Builder
-	h := newStoreHistory(failingStore{}, fixedClock(1), &warn)
-
-	h.Add("sycophantic", false)
-	h.Add("ephemeral", false)
-
-	if got := h.Prefix(""); len(got) != 2 {
-		t.Errorf("session history broke when the store failed: %v", got)
-	}
-	if n := strings.Count(warn.String(), "define:"); n != 1 {
-		t.Errorf("warned %d times, want exactly 1 — not once per keystroke", n)
-	}
-}
-
 type countingStore struct {
 	store.Store
 	reads int
@@ -120,6 +63,7 @@ func (failingStore) AppendEvent(store.ReviewEvent) error { return errFail }
 func (failingStore) Events(time.Time) ([]store.ReviewEvent, error) {
 	return nil, errFail
 }
+func (failingStore) Forget(string) (bool, error) { return false, errFail }
 
 var errFail = &failErr{}
 
@@ -133,14 +77,21 @@ func (*failErr) Error() string { return "store unavailable" }
 func TestEditorPersistsThroughDeps(t *testing.T) {
 	dir := t.TempDir()
 
+	// Both halves are wired, because they are now different objects: the capturer
+	// writes, storeHistory reads. Setting only history would persist nothing —
+	// which is exactly the behaviour #4 moved.
 	first, opt, cooked, finish := editorRig(t, "sycophantic", true)
-	first.deps.history = newStoreHistory(store.NewYAML(dir, nil), fixedClock(1), nil)
+	st1 := store.NewYAML(dir, nil)
+	first.deps.history = newStoreHistory(st1, fixedClock(1), nil)
+	first.deps.capture = newStoreCapturer(st1, fixedClock(1), nil)
 	var out, errb bytes.Buffer
 	runEditor(t.Context(), scriptKeys("sycophantic\r"), first.deps, opt, cooked, finish, &out, &errb)
 
 	// A second editor over the same directory: the restart case.
 	second, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
-	second.deps.history = newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil)
+	st2 := store.NewYAML(dir, nil)
+	second.deps.history = newStoreHistory(st2, fixedClock(2), nil)
+	second.deps.capture = newStoreCapturer(st2, fixedClock(2), nil)
 	var out2 bytes.Buffer
 	runEditor(t.Context(), scriptKeys("syc"), second.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
 
@@ -154,13 +105,55 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 // test still passes — so this pins it directly.
 func TestStoreHistoryRestoresTyposAcrossSessions(t *testing.T) {
 	dir := t.TempDir()
+	st := store.NewYAML(dir, nil)
 
-	first := newStoreHistory(store.NewYAML(dir, nil), fixedClock(1), nil)
-	first.Add("sykophantic", false) // a typo, never in the deck
-	first.Add("ephemeral", true)
+	// Writes go through the CAPTURER now (#4); storeHistory only recalls.
+	c := newStoreCapturer(st, fixedClock(1), nil)
+	c.Capture("sykophantic", false, options{}) // a typo, never in the deck
+	c.Capture("ephemeral", true, options{})
 
 	restored := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil).Prefix("sy")
 	if len(restored) != 1 || restored[0] != "sykophantic" {
 		t.Errorf("Prefix(sy) after restart = %v — the typo was dropped from recall", restored)
+	}
+}
+
+// Moved from #3 with the writes it asserts: persistence is now the capturer's
+// job, and storeHistory's job is to read it back.
+func TestCapturedWordsPersistAcrossSessions(t *testing.T) {
+	dir := t.TempDir()
+	st := store.NewYAML(dir, nil)
+
+	c := newStoreCapturer(st, fixedClock(1), nil)
+	c.Capture("sycophantic", true, options{})
+	c.Capture("ephemeral", true, options{})
+
+	got := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil).Prefix("")
+	if len(got) != 2 {
+		t.Fatalf("restored %d entries, want 2: %v", len(got), got)
+	}
+	if got[0] != "ephemeral" {
+		t.Errorf("newest-first ordering lost across the restart: %v", got)
+	}
+}
+
+// Moved from #3: the deck/recall split is the capturer's decision now.
+func TestCapturerRecallsTyposButDoesNotDeckThem(t *testing.T) {
+	dir := t.TempDir()
+	st := store.NewYAML(dir, nil)
+	c := newStoreCapturer(st, fixedClock(1), nil)
+
+	c.Capture("sycophantic", true, options{})
+	c.Capture("sykophantic", false, options{})
+
+	if got := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil).Prefix("sy"); len(got) != 2 {
+		t.Errorf("Prefix returned %v — a failed lookup must still be recallable", got)
+	}
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck) != 1 || deck[0].Text != "sycophantic" {
+		t.Errorf("deck = %+v, want only the word that exists", deck)
 	}
 }

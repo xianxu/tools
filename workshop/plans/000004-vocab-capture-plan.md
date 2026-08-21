@@ -156,39 +156,39 @@ answers it; the environment reaches it as an input, not as a second mechanism.
 
 **Files:** create `cmd/define/capture.go`; modify `history_store.go`; test `capture_test.go`
 
-- [ ] **Step 1: Write the failing test.** `decideCapture` is a four-case truth
+- [x] **Step 1: Write the failing test.** `decideCapture` is a four-case truth
       table over (found, noCapture, raw) — table test, no IO. The two cases that
       are decisions rather than mechanics: a *failed* lookup still records an
       event, so `#14` recalls typos and `#15` can filter them out; and `--raw`
       records nothing, because scripting a dictionary must not mutate a deck.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** Move the store writes out of `storeHistory` into
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** Move the store writes out of `storeHistory` into
       `storeCapturer`, and **move the three named tests with them** rather than
       editing them in place. The recall tests must stay green untouched — those
       *are* behaviour-preserving, and a change needed there is the real signal.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#4: extract the capture policy behind a seam`
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#4: extract the capture policy behind a seam`
 
 ### Task 2: Widen to the one-shot and line paths
 
 **Files:** modify `main.go`, `repl.go`; test `main_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Obligation: every entry path records,
+- [x] **Step 1: Write the failing tests.** Obligation: every entry path records,
       and records **once** — driven through a counting store across one-shot,
       piped and raw. Plus the degradation rule this repo has applied since `#1`:
       a store failure still prints the definition and exits 0.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `defineOnce` calls `d.capture.Capture(word, found)`
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `defineOnce` calls `d.capture.Capture(word, found)`
       after rendering, never before — a lookup that fails to render should not be
       claimed as studied.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Commit** — `#4: capture on every entry path`
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Commit** — `#4: capture on every entry path`
 
 ### Task 3: `--forget` and the opt-out
 
 **Files:** modify `main.go`, `store/`; test `main_test.go`, `store/`
 
-- [ ] **Step 0: Name the adversarial classes for `Forget`**, since it is the
+- [x] **Step 0: Name the adversarial classes for `Forget`**, since it is the
       first operation that *deletes* a file from a path derived from user input:
       - **traversal** — `--forget ../../../etc/passwd`. `Slug` already guarantees
         one safe path element and is fuzzed, but `Forget` must assert it rather
@@ -198,14 +198,14 @@ answers it; the environment reaches it as an input, not as a second mechanism.
         to delete a corrupt entry is the opposite of useful.
       - **`Forget` must not touch `events/`**, mechanically asserted by comparing
         the directory before and after.
-- [ ] **Step 1: Write the failing tests.** `Forget` joins the conformance suite,
+- [x] **Step 1: Write the failing tests.** `Forget` joins the conformance suite,
       so both implementations answer for it. The decisions, as opposed to the
       mechanics: **events are never deleted** (the deck is a working set, the log
       is history, and rewriting the past corrupts every statistic `#8` derives),
       and `--forget` on an absent word exits **non-zero** — succeeding silently
       would hide a typo in the command meant to correct one.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `Forget` joins the `Store` interface, so it lands in
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `Forget` joins the `Store` interface, so it lands in
       the shared conformance suite and both implementations must satisfy it.
 
       **Dispatch:** `-forget <word>` is a string flag checked in `run` *before*
@@ -221,8 +221,8 @@ answers it; the environment reaches it as an input, not as a second mechanism.
       `define -forget x y` is a usage error — `NArg() > 0` alongside `-forget` is
       two commands in one line, and silently ignoring one of them is how `-raw`
       came to mean two things in `#2`.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Manual check**
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Manual check**
 
 ```sh
 cd $(mktemp -d)
@@ -232,10 +232,10 @@ DEFINE_NO_CAPTURE=1 define ephemeral && ls words/   # unchanged
 define --forget sycophantic && ls words/ events/    # word gone, log intact
 ```
 
-- [ ] **Step 6: Update `README.md`, `atlas/define.md`** — capture is now the
+- [x] **Step 6: Update `README.md`, `atlas/define.md`** — capture is now the
       tool's default behaviour on every path, which is a bigger user-facing claim
       than `#3` made.
-- [ ] **Step 7: Commit, then `sdlc close --issue 4 --verified '<evidence>'`**
+- [x] **Step 7: Commit, then `sdlc close --issue 4 --verified '<evidence>'`**
 
 ---
 

@@ -257,6 +257,44 @@ a truncation produces.
 ships as production code; `storetest.Suite` runs against both, so "the fake
 behaves like the real thing" is a test rather than an assumption.
 
+### Capture: one site, one policy
+
+Every entry path records, and records **once**. The single site is
+`lookupAndRender` — verified against the call graph, not assumed:
+
+```
+defineOnce   ← one-shot, line loop
+  └─ lookupAndRender
+submitLine   ← raw editor → lookupAndRender      [skips defineOnce]
+```
+
+An earlier design captured in `defineOnce`, which would have left the interactive
+path — the only one that captured at all before `#4` — silent. `#14` extracted
+`lookupAndRender` so the raw path could render cooked and play raw, and that is
+what makes it the one function every path shares.
+
+`decideCapture(found, opt)` is the only answer to "does this lookup count":
+found → event + word; not found → event only; `--raw` or `DEFINE_NO_CAPTURE` →
+nothing. The environment is read once at flag parse into `opt.noCapture`, so it
+is an *input* to the policy rather than a second mechanism beside it.
+
+**`storeCapturer` is the only writer in the process.** `storeHistory` used to
+write too; since `#4` it only reads at construction and recalls from memory.
+Otherwise the raw path would record every lookup twice, and a deck that
+double-counts is wrong in a way nobody notices until `#5` orders by it. Pinned by
+a capture-arity test across all three paths.
+
+**Two warnings, two homes**, because conflating them stranded the warn-once rule
+when the writes moved: a failed write is `storeCapturer`'s (once per process); a
+store that cannot be opened at all is `openStore`'s (once at startup, and it says
+history is session-only).
+
+**`--forget` removes the word, never the events.** The deck is a working set; the
+log is history, and `#8`'s statistics are a fold over it. An absent word exits
+non-zero — succeeding silently would hide a typo in the command meant to correct
+one — and `-forget` combined with a word is a usage error rather than a silently
+honoured half.
+
 ### History is events, the deck is successes
 
 `storeHistory.Add` always appends an **event**, and upserts a **word** only when

@@ -17,4 +17,9 @@ type Store interface {
 	AppendEvent(e ReviewEvent) error
 	// Events returns events at or after since, in chronological order.
 	Events(since time.Time) ([]ReviewEvent, error)
+	// Forget removes a word from the deck. It does NOT remove events: the deck is
+	// a working set, the log is history, and rewriting the past would corrupt
+	// every statistic derived from it. Reports whether anything was removed;
+	// absence is not an error.
+	Forget(key string) (removed bool, err error)
 }

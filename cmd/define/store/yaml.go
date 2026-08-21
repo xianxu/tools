@@ -291,3 +291,29 @@ func endsWithNewline(path string) bool {
 	}
 	return b[0] == '\n'
 }
+
+// Forget removes one word file. Events are untouched.
+//
+// This is the first operation that DELETES a path derived from user input, so
+// the slug's single-safe-path-element guarantee is asserted here rather than
+// inherited: filepath.Base is applied to the slug before joining, so no key can
+// reach outside words/ even if Slug ever regressed.
+func (y *YAML) Forget(key string) (bool, error) {
+	k := Key(key)
+	if k == "" {
+		return false, nil
+	}
+	name := filepath.Base(Slug(k)) + ".yaml"
+	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return false, fmt.Errorf("refusing unsafe name %q", name)
+	}
+	err := os.Remove(filepath.Join(y.wordsDir(), name))
+	switch {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, err
+	}
+}
