@@ -102,3 +102,29 @@ func FuzzSlugIsSafe(f *testing.F) {
 		}
 	})
 }
+
+// The traversal guard, exercised at its own level.
+//
+// Inlined behind Slug it was unreachable in principle: Slug sanitises first, so
+// no test could tell the guard from Slug and deleting it left every test green.
+// Taking a slug rather than a key makes it a real net under a future Slug
+// regression — these are names Slug does not currently produce, and that is the
+// point.
+func TestWordFileNameRefusesUnsafeNames(t *testing.T) {
+	for _, bad := range []string{
+		"", ".", "..", "../etc/passwd", "/absolute", `back\slash`, ".hidden", "a/b",
+	} {
+		if got, err := wordFileName(bad); err == nil {
+			t.Errorf("wordFileName(%q) = %q, want an error", bad, got)
+		}
+	}
+	for _, ok := range []string{"sycophantic", "hot-dog", "café", "hot-dog-3f9a1c"} {
+		got, err := wordFileName(ok)
+		if err != nil {
+			t.Errorf("wordFileName(%q) failed: %v", ok, err)
+		}
+		if got != ok+".yaml" {
+			t.Errorf("wordFileName(%q) = %q", ok, got)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -122,6 +123,37 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 		var out, errb bytes.Buffer
 		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), rig.deps, opt, cooked, finish, &out, &errb)
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
+	})
+
+	// -raw: the policy is consulted and says "nothing". This is the row the truth
+	// table asserts and production can actually produce — the previous round's
+	// fix (calling Capture inside the raw branch) could be deleted with the whole
+	// suite staying green.
+	t.Run("raw captures nothing but still asks", func(t *testing.T) {
+		rig := newAudioRig(t, "sycophantic", true)
+		c := &countingCapturer{}
+		rig.deps.capture = c
+		rig.deps.stdinIsTerminal = func() bool { return false }
+		var out, errb bytes.Buffer
+		run(t.Context(), []string{"-raw", "-no-audio", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
+		// Asked exactly once — the policy, not an early return, decides.
+		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
+	})
+
+	// ...and nothing reaches the store under -raw, through the real capturer.
+	t.Run("raw writes nothing", func(t *testing.T) {
+		st := store.NewMem()
+		rig := newAudioRig(t, "sycophantic", true)
+		rig.deps.capture = newStoreCapturer(st, store.FixedClock(time.Now()), nil)
+		rig.deps.stdinIsTerminal = func() bool { return false }
+		var out, errb bytes.Buffer
+		run(t.Context(), []string{"-raw", "-no-audio", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
+		if deck, _ := st.Deck(); len(deck) != 0 {
+			t.Errorf("-raw wrote to the deck: %+v", deck)
+		}
+		if ev, _ := st.Events(time.Time{}); len(ev) != 0 {
+			t.Errorf("-raw wrote %d events", len(ev))
+		}
 	})
 
 	// A failed lookup captures exactly once, as not-found.
@@ -300,5 +332,30 @@ func TestNoCaptureWritesNothingToDisk(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Errorf("DEFINE_NO_CAPTURE=1 still wrote %v", names)
+	}
+}
+
+// openStore's live path: without the opt-out it must hand back a real deck, or
+// --forget has nothing to act on. Previously verified only by running the binary.
+func TestOpenStoreWithoutOptOut(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	h, c, deck := openStore(options{}, nil)
+	if _, ok := h.(*storeHistory); !ok {
+		t.Errorf("history = %T, want *storeHistory", h)
+	}
+	if _, ok := c.(*storeCapturer); !ok {
+		t.Errorf("capturer = %T, want *storeCapturer", c)
+	}
+	if deck == nil {
+		t.Fatal("deck is nil — --forget would report no deck in this directory")
+	}
+	// And it is rooted at the working directory, not somewhere else.
+	if err := deck.Upsert(store.Word{Text: "sycophantic", LastSeen: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "words", "sycophantic.yaml")); err != nil {
+		t.Errorf("deck did not write to the working directory: %v", err)
 	}
 }

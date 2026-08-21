@@ -173,6 +173,139 @@ rounds:
           family: prose-contradicts-code
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-21T11:22:26-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: Plan line 116 unchanged and now wrong twice over - decideCapture has exactly one caller.
+          round: 3
+        - id: BR-2
+          disposition: not-addressed
+          note: Plan line 133 "storeHistory delegates" unchanged; it neither delegates nor writes.
+          round: 3
+        - id: BR-3
+          disposition: not-addressed
+          note: Plan line 181 unchanged; signature also drifted to Capture(word, found, opt).
+          round: 3
+        - id: BR-4
+          disposition: not-addressed
+          note: Code resolved it (run installs noopCapturer, rigs supply one); the plan still never says so.
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: Verified by revert - restoring the double write reddens only TestNoDoubleWriteThroughTheRealWiring.
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: yaml.go untouched by 6eb36f8 despite the commit message; guard removal still leaves the store suite green.
+          round: 3
+        - id: BR-7
+          disposition: addressed
+          note: Verified both directions - severing the env wiring and gutting openStore each redden a distinct test.
+          round: 3
+        - id: BR-8
+          disposition: addressed
+          note: Raw branch now calls Capture; behaviour-identical so no test sees it - carried into the N-2 rule finding.
+          round: 3
+        - id: BR-9
+          disposition: addressed
+          note: Atlas rewritten correctly; the same sentence survives in history_store.go - raised as N-1.
+          round: 3
+        - id: BR-10
+          disposition: addressed
+          note: Confirmed against go run ./cmd/define -h; usage now states cwd writes and DEFINE_NO_CAPTURE.
+          round: 3
+        - id: BR-11
+          disposition: addressed
+          note: /words/ and /events/ added with the reason recorded.
+          round: 3
+        - id: BR-12
+          disposition: addressed
+          note: Verified with the built binary - define -forget="" exits 2 with "-forget needs a word".
+          round: 3
+        - id: BR-13
+          disposition: addressed
+          note: Verified - now reports "DEFINE_NO_CAPTURE is set, so no deck was opened".
+          round: 3
+        - id: BR-14
+          disposition: not-addressed
+          note: deps.forgetter() unchanged at main.go:46.
+          round: 3
+        - id: BR-15
+          disposition: not-addressed
+          note: newStore still returns a triple with three nil-merges in run.
+          round: 3
+        - id: BR-16
+          disposition: not-addressed
+          note: Issue Log still ends at the 2026-08-20 creation line; no implementation entry, no manual-check evidence.
+          round: 3
+        - id: BR-17
+          disposition: not-addressed
+          note: Entry-modes table still lists three invocations; the prose above it is now wrong too.
+          round: 3
+      findings:
+        - id: BR-18
+          severity: Important
+          title: history_store.go:17 still says Add appends events and upserts words, contradicting line 25 of the same comment
+          detail: |-
+            4th in family (BR-9 atlas, BR-10 --help, BR-17 entry-modes; prevalence 4). Do NOT patch this
+            instance. Round 2's I-4 fixed this exact sentence in the atlas and left the code copy eight lines
+            above the sentence that refutes it. The rule: a behavioural fact gets exactly one normative home
+            and every other mention points at it. Applied here that means DELETING the "Two things are
+            deliberately NOT the same here" bullets at history_store.go:15-22 - the atlas owns the split and
+            the surviving prose already says everything true - not rewording them into a fifth copy.
+          family: prose-contradicts-code
+          round: 3
+        - id: BR-19
+          severity: Important
+          title: Two fixes landed this round are revert-green, and BR-6's is unpinnable at the current API
+          detail: |-
+            4th in family (BR-5, BR-6, BR-7; prevalence 4). Do NOT patch these instances. Removing the entire
+            BR-8 fix - d.capture.Capture at main.go:257 - leaves go test ./cmd/define/... green, because the
+            arity test has subtests for one-shot, piped, raw editor, replay and failure but none for -raw, the
+            one truth-table row production can now produce. openStore's non-noCapture deck return is likewise
+            untested; I verified it only by running the binary. The rule: a fix ships with a test whose failure
+            you have OBSERVED by deleting the fix - delete the line, run the suite, and if it stays green you
+            wrote documentation. BR-5 and BR-7 show the practice works; these show it was applied selectively.
+            For BR-6 the rule forces an honest choice: extract the name computation so the guard is exercisable
+            at its own level, or drop "asserted, not inherited from Slug" from the Done-when.
+          family: unpinned-invariant
+          round: 3
+        - id: BR-20
+          severity: Important
+          title: A Done-when box is ticked for a clause that revert-verification shows is not delivered
+          detail: |-
+            2nd in family (BR-16; prevalence 2). Do NOT just untick this box. Issue line 44 ticks "--forget
+            cannot delete outside words/ - asserted, not inherited from Slug"; the assertion does not exist.
+            Line 41 ticks "asserted by comparing the directory before and after" against a test that counts
+            events instead. Log still ends at the creation line. The rule: a tick claims evidence exists, so
+            record the evidence in "## Log" at the moment of ticking, naming the test or pasting the command
+            output. Same rule one layer out covers commit 6eb36f8, which describes a yaml.go change the commit
+            does not contain.
+          family: undocumented-work-log
+          round: 3
+        - id: BR-21
+          severity: Minor
+          title: newStoreHistory keeps a dead store.Clock parameter that four call sites construct and pass
+          detail: |-
+            3rd in family (BR-14, BR-15; prevalence 3). Do NOT patch this instance alone. The rule: when a
+            refactor strips a component's responsibilities, strip the surface that served them in the same
+            commit - a retained parameter, wrapper or return slot outlives its reason and reads as intentional.
+            One pass over deps.forgetter(), the newStore triple and this parameter closes the family.
+          family: needless-indirection
+          round: 3
+        - id: BR-22
+          severity: Minor
+          title: The committed close-review artifact opens with a harness stderr preamble
+          detail: |-
+            workshop/plans/000004-vocab-capture-close-review.md:18 carries "Ignoring 6 permissions.allow
+            entries from .claude/settings.json..." inside the "## Review" section. Artifact capture should
+            take the agent's stdout only, or this recurs on every review run in an untrusted workspace.
+          family: generated-artifact-noise
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -269,22 +402,78 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-16** [Minor] `undocumented-work-log` The issue's Log has no implementation entry and the ticked "Manual check" step records no evidence
 - **BR-17** [Minor] `prose-contradicts-code` atlas "Entry modes" table omits define -forget, the fourth invocation this diff adds
 
+## Round 3 — 2026-08-21T11:22:26-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — Plan line 116 unchanged and now wrong twice over - decideCapture has exactly one caller.
+- BR-2 — not-addressed — Plan line 133 "storeHistory delegates" unchanged; it neither delegates nor writes.
+- BR-3 — not-addressed — Plan line 181 unchanged; signature also drifted to Capture(word, found, opt).
+- BR-4 — not-addressed — Code resolved it (run installs noopCapturer, rigs supply one); the plan still never says so.
+- BR-5 — addressed — Verified by revert - restoring the double write reddens only TestNoDoubleWriteThroughTheRealWiring.
+- BR-6 — not-addressed — yaml.go untouched by 6eb36f8 despite the commit message; guard removal still leaves the store suite green.
+- BR-7 — addressed — Verified both directions - severing the env wiring and gutting openStore each redden a distinct test.
+- BR-8 — addressed — Raw branch now calls Capture; behaviour-identical so no test sees it - carried into the N-2 rule finding.
+- BR-9 — addressed — Atlas rewritten correctly; the same sentence survives in history_store.go - raised as N-1.
+- BR-10 — addressed — Confirmed against go run ./cmd/define -h; usage now states cwd writes and DEFINE_NO_CAPTURE.
+- BR-11 — addressed — /words/ and /events/ added with the reason recorded.
+- BR-12 — addressed — Verified with the built binary - define -forget="" exits 2 with "-forget needs a word".
+- BR-13 — addressed — Verified - now reports "DEFINE_NO_CAPTURE is set, so no deck was opened".
+- BR-14 — not-addressed — deps.forgetter() unchanged at main.go:46.
+- BR-15 — not-addressed — newStore still returns a triple with three nil-merges in run.
+- BR-16 — not-addressed — Issue Log still ends at the 2026-08-20 creation line; no implementation entry, no manual-check evidence.
+- BR-17 — not-addressed — Entry-modes table still lists three invocations; the prose above it is now wrong too.
+
+### Raised
+
+- **BR-18** [Important] `prose-contradicts-code` history_store.go:17 still says Add appends events and upserts words, contradicting line 25 of the same comment
+  4th in family (BR-9 atlas, BR-10 --help, BR-17 entry-modes; prevalence 4). Do NOT patch this
+  instance. Round 2's I-4 fixed this exact sentence in the atlas and left the code copy eight lines
+  above the sentence that refutes it. The rule: a behavioural fact gets exactly one normative home
+  and every other mention points at it. Applied here that means DELETING the "Two things are
+  deliberately NOT the same here" bullets at history_store.go:15-22 - the atlas owns the split and
+  the surviving prose already says everything true - not rewording them into a fifth copy.
+- **BR-19** [Important] `unpinned-invariant` Two fixes landed this round are revert-green, and BR-6's is unpinnable at the current API
+  4th in family (BR-5, BR-6, BR-7; prevalence 4). Do NOT patch these instances. Removing the entire
+  BR-8 fix - d.capture.Capture at main.go:257 - leaves go test ./cmd/define/... green, because the
+  arity test has subtests for one-shot, piped, raw editor, replay and failure but none for -raw, the
+  one truth-table row production can now produce. openStore's non-noCapture deck return is likewise
+  untested; I verified it only by running the binary. The rule: a fix ships with a test whose failure
+  you have OBSERVED by deleting the fix - delete the line, run the suite, and if it stays green you
+  wrote documentation. BR-5 and BR-7 show the practice works; these show it was applied selectively.
+  For BR-6 the rule forces an honest choice: extract the name computation so the guard is exercisable
+  at its own level, or drop "asserted, not inherited from Slug" from the Done-when.
+- **BR-20** [Important] `undocumented-work-log` A Done-when box is ticked for a clause that revert-verification shows is not delivered
+  2nd in family (BR-16; prevalence 2). Do NOT just untick this box. Issue line 44 ticks "--forget
+  cannot delete outside words/ - asserted, not inherited from Slug"; the assertion does not exist.
+  Line 41 ticks "asserted by comparing the directory before and after" against a test that counts
+  events instead. Log still ends at the creation line. The rule: a tick claims evidence exists, so
+  record the evidence in "## Log" at the moment of ticking, naming the test or pasting the command
+  output. Same rule one layer out covers commit 6eb36f8, which describes a yaml.go change the commit
+  does not contain.
+- **BR-21** [Minor] `needless-indirection` newStoreHistory keeps a dead store.Clock parameter that four call sites construct and pass
+  3rd in family (BR-14, BR-15; prevalence 3). Do NOT patch this instance alone. The rule: when a
+  refactor strips a component's responsibilities, strip the surface that served them in the same
+  commit - a retained parameter, wrapper or return slot outlives its reason and reads as intentional.
+  One pass over deps.forgetter(), the newStore triple and this parameter closes the family.
+- **BR-22** [Minor] `generated-artifact-noise` The committed close-review artifact opens with a harness stderr preamble
+  workshop/plans/000004-vocab-capture-close-review.md:18 carries "Ignoring 6 permissions.allow
+  entries from .claude/settings.json..." inside the "## Review" section. Artifact capture should
+  take the agent's stdout only, or this recurs on every review run in an untrusted workspace.
+
 ## Open findings
 
 - **BR-1** [Minor] `unbacked-existing-behavior-claim` "three call sites" is two - defineOnce serves both the one-shot and line paths
 - **BR-2** [Important] `extraction-strands-behavior` storeHistory is given two incompatible fates, and Task 1 Step 3's "tests unchanged" is unsatisfiable
 - **BR-3** [Important] `capture-arity-invariant` Task 2 Step 3 still names defineOnce as the capture site, contradicting Chunk 1's lookupAndRender
 - **BR-4** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
-- **BR-5** [Important] `unpinned-invariant` The capture-arity test counts Capturer calls, not store writes, so the double-count it names passes
 - **BR-6** [Important] `unpinned-invariant` The Forget traversal guard is asserted by no test, and half of it is unreachable
-- **BR-7** [Important] `unpinned-invariant` openStore and the DEFINE_NO_CAPTURE env wiring have zero coverage, leaving half a Done-when unverified
-- **BR-8** [Important] `single-source-restated-by-hand` The raw success path bypasses decideCapture, giving "capture is off" three homes
-- **BR-9** [Important] `prose-contradicts-code` atlas/define.md:300 still describes storeHistory.Add as the writer, contradicting :282 fifteen lines above
-- **BR-10** [Important] `prose-contradicts-code` main.go:67 claims DEFINE_NO_CAPTURE is documented in --help; fs.Usage never mentions it
-- **BR-11** [Important] `writes-to-cwd-unignored` .gitignore does not ignore words/ or events/, which define now creates in the repo on every lookup
-- **BR-12** [Minor] `flag-mode-dispatch` define -forget="" falls through to the REPL instead of erroring
-- **BR-13** [Minor] `misleading-error-text` -forget under DEFINE_NO_CAPTURE reports "no deck in this directory"
 - **BR-14** [Minor] `needless-indirection` deps.forgetter() is a four-line nil-check wrapper around one field with one caller
 - **BR-15** [Minor] `needless-indirection` newStore's three-return seam plus three nil-merges in run is lumpy; a small struct would collapse it
 - **BR-16** [Minor] `undocumented-work-log` The issue's Log has no implementation entry and the ticked "Manual check" step records no evidence
 - **BR-17** [Minor] `prose-contradicts-code` atlas "Entry modes" table omits define -forget, the fourth invocation this diff adds
+- **BR-18** [Important] `prose-contradicts-code` history_store.go:17 still says Add appends events and upserts words, contradicting line 25 of the same comment
+- **BR-19** [Important] `unpinned-invariant` Two fixes landed this round are revert-green, and BR-6's is unpinnable at the current API
+- **BR-20** [Important] `undocumented-work-log` A Done-when box is ticked for a clause that revert-verification shows is not delivered
+- **BR-21** [Minor] `needless-indirection` newStoreHistory keeps a dead store.Clock parameter that four call sites construct and pass
+- **BR-22** [Minor] `generated-artifact-noise` The committed close-review artifact opens with a harness stderr preamble

@@ -10,20 +10,16 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-// storeHistory makes a store.Store satisfy the editor's History.
+// storeHistory is the editor's History: it RECALLS, and never writes.
 //
-// Two things are deliberately NOT the same here:
+// Deliberately not restating the capture rules here. Every design fact in this
+// package gets one normative home, because the same sentence in two places is
+// the drift this file has already caused twice — it described itself as the
+// writer for two review rounds after storeCapturer took that over. What writes,
+// and when, is decided in capture.go and described in atlas/define.md.
 //
-//   - Add always appends an EVENT, but upserts a Word only when the lookup
-//     found something. Recall must include the typo you just made — that is when
-//     you most want to edit and retry — while the deck must not fill with
-//     misspellings.
-//   - Prefix therefore reads the EVENT log, not the deck. Reading the deck would
-//     silently drop every failed lookup from Up-arrow recall.
-//
-// History.Prefix runs on every keystroke and cannot return an error, so the log
-// is loaded once at construction and held in memory. Since #4 this type only
-// READS the store — at construction — and storeCapturer owns every write.
+// The one fact that IS local: Prefix runs on every keystroke and returns no
+// error, so the log is read once at construction and everything after is memory.
 type storeHistory struct {
 	mu    sync.Mutex
 	lines []string // oldest first, every submitted line

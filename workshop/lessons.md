@@ -153,3 +153,20 @@ Where you inject the double decides what the test can see. To catch "the wrong
 component wrote", the fake has to sit **beneath** every component involved. And
 when a plan names a specific seam for a test, substituting a different one is a
 design change, not an implementation detail.
+
+## Before ticking a box, delete the line and run the suite (define #4)
+
+*A fix ships with a test whose failure you have observed by removing the fix.*
+Applied selectively, three fixes shipped as documentation: the `-raw` capture
+call, `openStore`'s opt-out branch, and a traversal guard that was **unreachable
+in principle** — sitting behind a sanitiser, no test at that API could tell the
+guard from the sanitiser, and deleting it left everything green.
+
+That last one forces an honest choice rather than a patch: either restructure so
+the guard is exercisable at its own level (extract a pure function taking the
+already-sanitised value, and feed it hostile input), or drop the claim that it is
+asserted. Defence in depth that cannot be tested is decoration.
+
+**And verify the mutation applied.** One check here printed GREEN because the
+text substitution silently missed, not because the test was blind. A mutation
+that did not land is not a result.
