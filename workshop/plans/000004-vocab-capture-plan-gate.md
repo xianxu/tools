@@ -88,6 +88,52 @@ rounds:
           family: capture-arity-invariant
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-21T10:12:23-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: not-addressed
+          note: 'DEFINE_NO_CAPTURE half fully addressed; --raw still suppresses the event log on the live replRaw path with no stated cost, and forces edits to #3''s pinned 3-arg newStoreHistory tests.'
+          round: 2
+        - id: PQ-2
+          disposition: not-addressed
+          note: Null object removed, but openHistory needs noCapture before run() parses flags, so the env is still read in two places and neither is named.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: Dispatch pinned with code and a usage error; the failingStore compile break is mechanical and left as an implementation detail.
+          round: 2
+        - id: PQ-4
+          disposition: not-addressed
+          note: Ownership named (storeCapturer), but the warn writer's source is still unstated and the "(history is session-only)" suffix has no decided home.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: Task 3 Step 0 now names traversal, empty key, unreadable file, and the events-untouched directory-diff guard.
+          round: 2
+        - id: PQ-6
+          disposition: not-addressed
+          note: Plan still says decideCapture is consulted from three call sites; there are two.
+          round: 2
+        - id: PQ-7
+          disposition: not-addressed
+          note: No capture-arity invariant stated or tested.
+          round: 2
+      findings:
+        - id: PQ-8
+          severity: Minor
+          title: Per-case prose survived in all three tasks; state one strategy line per risky function instead
+          detail: |-
+            This is the 2nd finding in family test-strategy-not-enumeration; PQ-5 fixed the Forget
+            instance without applying the rule. Prevalence 3 (Task 1 Step 1, Task 2 Step 1, Task 3
+            Step 1). The rule: each risky function gets one line naming its adversarial input class
+            and mechanical guard, and the case lists are deleted. decideCapture takes an exhaustive
+            table over its three inputs rather than four hand-picked rows; Forget's events-untouched
+            obligation is a storetest.Suite property; storeCapturer currently has no strategy line.
+          family: test-strategy-not-enumeration
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#4 (plan-quality)
@@ -145,12 +191,33 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   invariant is unstated and untested, so routing submitLine through
   defineOnce later would silently double-record.
 
+## Round 2 — 2026-08-21T10:12:23-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — not-addressed — DEFINE_NO_CAPTURE half fully addressed; --raw still suppresses the event log on the live replRaw path with no stated cost, and forces edits to #3's pinned 3-arg newStoreHistory tests.
+- PQ-2 — not-addressed — Null object removed, but openHistory needs noCapture before run() parses flags, so the env is still read in two places and neither is named.
+- PQ-3 — addressed — Dispatch pinned with code and a usage error; the failingStore compile break is mechanical and left as an implementation detail.
+- PQ-4 — not-addressed — Ownership named (storeCapturer), but the warn writer's source is still unstated and the "(history is session-only)" suffix has no decided home.
+- PQ-5 — addressed — Task 3 Step 0 now names traversal, empty key, unreadable file, and the events-untouched directory-diff guard.
+- PQ-6 — not-addressed — Plan still says decideCapture is consulted from three call sites; there are two.
+- PQ-7 — not-addressed — No capture-arity invariant stated or tested.
+
+### Raised
+
+- **PQ-8** [Minor] `test-strategy-not-enumeration` Per-case prose survived in all three tasks; state one strategy line per risky function instead
+  This is the 2nd finding in family test-strategy-not-enumeration; PQ-5 fixed the Forget
+  instance without applying the rule. Prevalence 3 (Task 1 Step 1, Task 2 Step 1, Task 3
+  Step 1). The rule: each risky function gets one line naming its adversarial input class
+  and mechanical guard, and the case lists are deleted. decideCapture takes an exhaustive
+  table over its three inputs rather than four hand-picked rows; Forget's events-untouched
+  obligation is a storetest.Suite property; storeCapturer currently has no strategy line.
+
 ## Open findings
 
 - **PQ-1** [Critical] `event-log-vs-deck-policy` The opt-out suppresses the event log, which backs persisted history, not just the deck
 - **PQ-2** [Important] `single-policy-home` Two homes decide the same opt-out - decideCapture and the noCapture null object
-- **PQ-3** [Important] `unspecified-command-dispatch` Task 3 never says how --forget reaches the dispatch in run
 - **PQ-4** [Important] `extraction-strands-behavior` Moving the store writes out of storeHistory strands its warn-once rule
-- **PQ-5** [Important] `test-strategy-not-enumeration` No adversarial input class or mechanical guard named for Forget
 - **PQ-6** [Minor] `unbacked-existing-behavior-claim` "three call sites" is two - defineOnce serves both the one-shot and line paths
 - **PQ-7** [Minor] `capture-arity-invariant` Nothing pins that exactly one Capture fires per lookup
+- **PQ-8** [Minor] `test-strategy-not-enumeration` Per-case prose survived in all three tasks; state one strategy line per risky function instead

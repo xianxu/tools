@@ -68,9 +68,25 @@ because `#14` consumes the seam.
 
 - **decideCapture(found bool, opt options) captureDecision** — the ONE place that
   answers "does this lookup get recorded, and how far": event only, event plus
-  word, or nothing. The opt-out arrives as `opt.noCapture`, set once at flag/env
-  parse, so the environment is an input to the policy rather than a second
-  mechanism beside it.
+  word, or nothing.
+  - **One call site, not three.** `defineOnce` is already reached by every entry
+    path — one-shot, line loop, and the raw editor's `submitLine` all go through
+    it — so capture goes there and nowhere else. An earlier draft counted three
+    sites and would have had the raw path capture twice, once via `defineOnce`
+    and once via `storeHistory.Add`.
+  - **`storeHistory` therefore stops writing.** It becomes a reader: load the
+    event log once at construction, keep the in-memory recall list, and append to
+    that list on `Add`. Every store write in the process now happens in exactly
+    one place.
+  - **The environment is read exactly once**, at flag parse, into
+    `opt.noCapture`. `realDeps` no longer opens history — it cannot, because the
+    flag is not parsed yet — so `run` constructs it after `opt` is known, and a
+    test that supplies `d.history` is respected unchanged.
+
+- **Capture arity — one lookup, one event.** Stated as an invariant because the
+  refactor's failure mode is silent double-counting, and a deck that counts every
+  lookup twice is wrong in a way nobody notices until `#5` orders by it. Asserted
+  with a counting store across all three entry paths.
   - **Why pure and separate:** the policy has three inputs (did the lookup
     succeed, is capture disabled, is this `--raw`) and is consulted from three
     call sites. Left inline it would be re-derived at each, and they would drift —
@@ -91,12 +107,18 @@ because `#14` consumes the seam.
 - **storeCapturer** — `AppendEvent` always, `Upsert` when the lookup found
   something. This is the code `storeHistory` currently inlines; it moves here and
   `storeHistory` delegates.
-  - **The warn-once rule moves with the writes.** `#3` put `warned bool` on
-    `storeHistory` because that was where writes happened. Once they move, a
-    warn-once left behind would either fire per keystroke from the new site or be
-    duplicated in both — so the flag lives on `storeCapturer`, and
-    `storeHistory` keeps none of its own. Asserted: N failing captures produce
-    exactly one line on stderr.
+  - **The warn-once rule moves with the writes**, and there are now two distinct
+    messages with two distinct homes — conflating them is what left the rule
+    stranded:
+
+    | message | who owns it | when |
+    |---|---|---|
+    | `could not record <word>` | `storeCapturer`, once per process | a write fails |
+    | `… history is session-only` | `openHistory`, once at startup | the store cannot be opened at all |
+
+    Both take their writer from `run`'s `stderr`, passed in at construction —
+    neither reaches for `os.Stderr`, so tests capture them. Asserted: N failing
+    captures produce exactly one line.
 There is deliberately **no null-object `noCapture`**. An earlier draft had both a
 `decideCapture` policy *and* a null object, so "is capture off?" had two homes and
 would drift the moment one grew a case. `decideCapture` is the only place that
@@ -110,11 +132,11 @@ answers it; the environment reaches it as an input, not as a second mechanism.
 
 **Files:** create `cmd/define/capture.go`; modify `history_store.go`; test `capture_test.go`
 
-- [ ] **Step 1: Write the failing tests.** `decideCapture` obligations: found →
-      event + word; not found → event only (so `#14`'s recall keeps typos and
-      `#15`'s `/history` can filter); `DEFINE_NO_CAPTURE=1` → nothing at all, not
-      even an event; `--raw` → nothing, because it is the scripting form and
-      scripting a dictionary should not mutate a deck.
+- [ ] **Step 1: Write the failing test.** `decideCapture` is a four-case truth
+      table over (found, noCapture, raw) — table test, no IO. The two cases that
+      are decisions rather than mechanics: a *failed* lookup still records an
+      event, so `#14` recalls typos and `#15` can filter them out; and `--raw`
+      records nothing, because scripting a dictionary must not mutate a deck.
 - [ ] **Step 2: Run, expect FAIL**
 - [ ] **Step 3: Implement, and rewrite `storeHistory.Add` to call it** — the
       existing behaviour must come out unchanged, proven by `#3`'s tests staying
@@ -127,9 +149,10 @@ answers it; the environment reaches it as an input, not as a second mechanism.
 
 **Files:** modify `main.go`, `repl.go`; test `main_test.go`
 
-- [ ] **Step 1: Write the failing tests.** `define <word>` records a found word;
-      an unknown word records the event but no deck entry; `echo w | define`
-      records; a **store failure still prints the definition and exits 0**.
+- [ ] **Step 1: Write the failing tests.** Obligation: every entry path records,
+      and records **once** — driven through a counting store across one-shot,
+      piped and raw. Plus the degradation rule this repo has applied since `#1`:
+      a store failure still prints the definition and exits 0.
 - [ ] **Step 2: Run, expect FAIL**
 - [ ] **Step 3: Implement.** `defineOnce` calls `d.capture.Capture(word, found)`
       after rendering, never before — a lookup that fails to render should not be
@@ -151,12 +174,12 @@ answers it; the environment reaches it as an input, not as a second mechanism.
         to delete a corrupt entry is the opposite of useful.
       - **`Forget` must not touch `events/`**, mechanically asserted by comparing
         the directory before and after.
-- [ ] **Step 1: Write the failing tests.** `Store.Forget(key)` removes the word
-      and is a no-op on a word that is absent (not an error); `--forget <word>`
-      exits 0 and prints what it removed; `--forget` on an unknown word says so
-      and exits non-zero, since silently succeeding hides a typo; **events are
-      NOT deleted** — the deck is a working set, the log is history, and rewriting
-      the past to remove a word would corrupt every statistic `#8` derives.
+- [ ] **Step 1: Write the failing tests.** `Forget` joins the conformance suite,
+      so both implementations answer for it. The decisions, as opposed to the
+      mechanics: **events are never deleted** (the deck is a working set, the log
+      is history, and rewriting the past corrupts every statistic `#8` derives),
+      and `--forget` on an absent word exits **non-zero** — succeeding silently
+      would hide a typo in the command meant to correct one.
 - [ ] **Step 2: Run, expect FAIL**
 - [ ] **Step 3: Implement.** `Forget` joins the `Store` interface, so it lands in
       the shared conformance suite and both implementations must satisfy it.
