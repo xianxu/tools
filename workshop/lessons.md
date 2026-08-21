@@ -107,3 +107,36 @@ Six tests were removed with a note saying a design change had superseded them.
 Five still passed verbatim: they exercised a path the change left intact. Before
 deleting, **run them against the new code** — "this test is obsolete" is a claim,
 and it is checkable in seconds.
+
+## Say what a design buys, not what it feels like it buys (define #3)
+
+"One file per word so a synced directory never conflicts" was false: the same
+word, or the same day, on two machines still conflicts. What the layout actually
+changes is the *rate* — with one big file, every write on the second machine
+conflicts. The precise claim is still a good reason for the design; the loose one
+would have been quoted back later as a guarantee the code never made.
+
+## Detecting a truncated record needs a round trip (define #3)
+
+Two plausible tests both fail, and each took a review round to disprove:
+
+1. **"it parsed"** — a cut leaves valid YAML. `- word: thi` unmarshals into an
+   event with no timestamp.
+2. **"the fields are present"** — a cut *inside a timestamp* can leave a shorter
+   date that parses fine, so every field is populated and a fabricated event is
+   admitted.
+
+3. **byte-identical round trip** — catches both, and destroys the history it
+   protects: every record in a log a person or a sync tool ever reformatted is
+   discarded. The strictest rule was the most dangerous one.
+
+What works is termination plus completeness: a whole record ends with its
+terminator and carries every field. Two corollaries learned the hard way — the
+writer must REPAIR a missing terminator before appending, or one interrupted
+write costs two events; and a splitter must preserve line endings
+(`SplitAfter`, not `Split` plus re-adding `\n`) or it hands a terminator to the
+fragment and erases the signal.
+
+Prefer one parsing path to a fast-path-plus-fallback: the two-path version
+double-counted whatever the failed parse had collected, and left the fallback
+unreachable for any input that stayed syntactically valid.

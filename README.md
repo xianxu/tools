@@ -50,6 +50,21 @@ On a terminal, `define` with no word opens a line editor:
 
 Definitions wrap to your terminal width at word boundaries.
 
+**`define` writes to the current directory.** Looking a word up in the editor
+records it under `words/` and `events/` where you started `define`, so history
+survives restarts:
+
+```
+words/sycophantic.yaml     one file per word
+events/2026-08-21.yaml     append-only, one file per day (named in UTC)
+```
+
+Nothing is written until you actually look something up, and nothing is written
+by `define <word>` — only the interactive editor records. The directory *is* the
+deck: run `define` somewhere else and you get a different history. If that
+directory happens to be synced, so is your vocabulary; `define` neither knows nor
+cares.
+
 With no word and no terminal, `define` reads stdin: a word defines and speaks it, a bare return
 replays the *pronunciation* of the current one — nothing is re-fetched, and the
 screen is left as it was provided you let the sound finish — and Ctrl-C quits

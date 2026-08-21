@@ -194,6 +194,84 @@ existed to step back over the terminal's echo of Enter, and raw mode does not
 echo. That also removes `#2`'s documented limitation that typing during playback
 stranded the indicator — the arithmetic has nothing left to correct for.
 
+## The store
+
+Persistence is YAML files under the **working directory** — no config, no brain
+resolution, no home-directory search. `NewYAML(dir, warn)` takes the directory as
+a parameter, so *who chooses it* stays one line at the boundary if a config
+arrives later.
+
+```
+words/<slug>.yaml        one file per word
+events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
+```
+
+**What that layout buys, stated precisely:** it does *not* make sync conflicts
+impossible — the same word, or the same day, touched on two machines still
+conflicts. It changes the *rate*. With a single `vocab.yaml` every write on the
+second machine conflicts, because every write touches the one file.
+
+**Slug rule.** The key is lower-cased, space-collapsed text; the filename is that
+with spaces as `-`; and if replacing `-` with ` ` does not return the key, a
+6-hex-digit hash is appended. So `hot dog` → `hot-dog.yaml` stays readable while
+the hyphenated `hot-dog` cannot share its file. Every file stores `text:`, so the
+key lives in the content and the filename is only an index — which makes a future
+naming change a rename rather than a migration.
+
+**Interruption is routine here** — this process is quit with Ctrl-C by design —
+and the two file kinds defend against it differently:
+
+- **Word files are written atomically**: temp file in the same directory, then
+  rename. A leftover temp file is never read as a word, and one corrupt file is
+  skipped with a warning rather than making the deck unopenable.
+- **Event files are appended, deliberately not rewritten.** Two machines
+  appending to the same day merge cleanly; a whole-file rewrite would not. The
+  cost is a possible torn final record, so a day log is parsed record-by-record
+  and incomplete ones are dropped with a warning. An interrupted write costs the
+  event in flight and nothing else.
+
+**A torn record is detected by TERMINATION plus COMPLETENESS**, and three
+weaker rules were tried first — each looks sufficient and none is:
+
+| rule | why it fails |
+|---|---|
+| "it parsed" | a cut leaves valid YAML — `- word: thi` becomes an event with no timestamp |
+| "the fields are present" | a cut **inside the timestamp** leaves a shorter date that parses, fabricating an event |
+| byte-identical round trip | catches both, but discards **every** record in a log that was ever reformatted |
+
+That last one is the trap worth remembering: it is the strictest rule and it
+destroys the history it exists to protect the moment a person, an editor, or a
+sync tool rewrites the file's quoting.
+
+A whole record therefore **ends with a newline** and **carries every field**. The
+writer always terminates a record, and `AppendEvent` repairs a missing terminator
+before writing — without which one interrupted write costs *two* events, because
+the next append lands on the fragment's line and is parsed as part of it.
+
+Parsing is one path, always record-by-record. A fast-path-plus-fallback version
+double-counted whatever the failed whole-file parse had already collected, and
+left the fallback unreachable for input that stayed valid — which is exactly what
+a truncation produces.
+
+**Two Store implementations, one conformance suite.** `Mem` is the reference and
+ships as production code; `storetest.Suite` runs against both, so "the fake
+behaves like the real thing" is a test rather than an assumption.
+
+### History is events, the deck is successes
+
+`storeHistory.Add` always appends an **event**, and upserts a **word** only when
+the lookup found something. `Prefix` therefore reads the event log, not the deck:
+Up-arrow must recall the typo you just made — that is when you want to edit and
+retry — while the deck must not fill with misspellings.
+
+`Prefix` runs on **every keystroke** and returns no error, so the log is loaded
+once at construction and held in memory. The store is the durable copy; a write
+failure warns **once** and the session continues, because losing durability is
+not a reason to break the editor mid-word.
+
+**Timestamps keep their offset**, so a local-day view is recoverable even though
+day files are named in UTC. `#8` must group by timestamp, never by filename.
+
 ## Entry modes
 
 One word per invocation was the original shape; `run` now dispatches on argument

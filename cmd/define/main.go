@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/xianxu/tools/cmd/define/store"
 	"io"
 	"os"
 	"os/signal"
@@ -20,6 +22,9 @@ type deps struct {
 	dict   Dictionary
 	audio  AudioSource
 	player Player
+	// history is the durable word history. Constructed at the boundary so the
+	// loop takes a seam rather than deciding where state lives.
+	history History
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
 	// which would make the interactive path unwritable. Note this is a different
@@ -32,8 +37,23 @@ func realDeps() deps {
 		dict:            systemDictionary(),
 		audio:           newHTTPAudioSource(),
 		player:          afplayPlayer{},
+		history:         openHistory(os.Stderr),
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
 	}
+}
+
+// openHistory builds the durable history over the WORKING DIRECTORY.
+//
+// A store that cannot be opened must not break define: warn and fall back to
+// session-only history, exactly as a missing recording degrades rather than
+// fails. Someone in a read-only directory still gets a dictionary.
+func openHistory(warn io.Writer) History {
+	dir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
+		return &memHistory{}
+	}
+	return newStoreHistory(store.NewYAML(dir, warn), store.SystemClock(), warn)
 }
 
 func main() {

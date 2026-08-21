@@ -31,11 +31,21 @@ func (h *memHistory) Add(line string, _ bool) {
 	}
 }
 
-func (h *memHistory) Prefix(p string) []string {
+func (h *memHistory) Prefix(p string) []string { return prefixMatch(h.lines, p) }
+
+// prefixMatch is the ONE definition of History.Prefix's contract: newest first,
+// deduped, prefix-filtered.
+//
+// Both implementations call it. They previously carried byte-identical copies,
+// and the coverage was lopsided — the editor's tests all built memHistory, so
+// fifteen recall and dedup assertions exercised the fallback while the durable
+// one had a single test. A refinement to either would silently not apply to the
+// other.
+func prefixMatch(lines []string, p string) []string {
 	var out []string
 	seen := map[string]bool{}
-	for i := len(h.lines) - 1; i >= 0; i-- { // newest first
-		l := h.lines[i]
+	for i := len(lines) - 1; i >= 0; i-- { // newest first
+		l := lines[i]
 		if seen[l] || !strings.HasPrefix(l, p) {
 			continue
 		}
