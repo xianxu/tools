@@ -14,16 +14,20 @@ func TestParseREPLLine(t *testing.T) {
 		hasCurrent bool
 		want       replCommand
 	}{
-		{"a word", "sycophantic", false, replCommand{cmdDefine, "sycophantic"}},
-		{"surrounding space trimmed", "  ephemeral  ", false, replCommand{cmdDefine, "ephemeral"}},
-		{"multi-word headword", "hot  dog", false, replCommand{cmdDefine, "hot dog"}},
+		{"a word", "sycophantic", false, replCommand{kind: cmdDefine, word: "sycophantic"}},
+		{"surrounding space trimmed", "  ephemeral  ", false, replCommand{kind: cmdDefine, word: "ephemeral"}},
+		{"multi-word headword", "hot  dog", false, replCommand{kind: cmdDefine, word: "hot dog"}},
 		{"blank replays when there is a current word", "", true, replCommand{kind: cmdReplay}},
 		{"blank with nothing current", "", false, replCommand{kind: cmdNothing}},
 		{"whitespace only is blank", "   \t ", true, replCommand{kind: cmdReplay}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := parseREPLLine(tc.line, tc.hasCurrent); got != tc.want {
+			// Compared field-wise rather than with ==: replCommand gained an
+			// args slice in #15, which makes the struct incomparable.
+			got := parseREPLLine(tc.line, tc.hasCurrent)
+			if got.kind != tc.want.kind || got.word != tc.want.word ||
+				got.name != tc.want.name || !sameSet(got.args, tc.want.args) {
 				t.Errorf("parseREPLLine(%q, %v) = %+v, want %+v", tc.line, tc.hasCurrent, got, tc.want)
 			}
 		})

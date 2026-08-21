@@ -104,8 +104,27 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// claims the user typed something they did not.
 				submitted := e
 				e = NewEditor()
-				if cmd.kind == cmdDefine {
+				if cmd.kind == cmdDefine || cmd.kind == cmdCommand {
 					fmt.Fprint(stdout, RenderLine(submitted, "", opt.color))
+				}
+				if cmd.kind == cmdCommand {
+					// Commands print multiple lines, so they run COOKED for the
+					// same reason a definition does — in raw mode "\n" is a line
+					// feed with no carriage return.
+					fmt.Fprint(stdout, "\r\n")
+					hist.Add(submitted.String()) // up-arrow recalls "/history" too
+					if err := cooked(func() {
+						dispatchCommand(cmd, commands, commandCtx{
+							stdout: stdout, stderr: stderr, width: terminalWidth(stdout),
+						})
+					}); err != nil {
+						finish()
+						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
+						return 1
+					}
+					fmt.Fprint(stdout, "\r\n")
+					draw(completionsFor(e.WalkBase(), hist, commands))
+					continue
 				}
 				if cmd.kind != cmdDefine {
 					// cmdReplay and cmdNothing both stay on this line: the

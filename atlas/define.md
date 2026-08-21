@@ -316,6 +316,46 @@ so it never touches disk.
 **Timestamps keep their offset**, so a local-day view is recoverable even though
 day files are named in UTC. `#8` must group by timestamp, never by filename.
 
+## Command mode
+
+A `/` in the **first column** switches the line from "define this word" to a
+command. The character was forced by the data: `define` takes multi-word
+headwords (`hot dog`), so the namespace could not be a reserved word, and no
+English headword begins with a slash. A slash anywhere else is part of the
+word — `and/or` is a lookup.
+
+**Dispatch lives on `parseREPLLine`**, the classifier both loops already route
+through — `replLines` for the piped path, `runEditor`'s `ActSubmit` for the raw
+editor, which carries a comment explaining why it must not bypass it. A `/` test
+placed in either loop alone would make them disagree about what a line means:
+`echo /history | define` would go to the dictionary while the terminal ran the
+command. The plan gate caught exactly that draft (PQ-2), and
+`TestLineLoopDispatchesCommands` is the pin — deleting the `cmdCommand` case from
+`replLines` reddens it.
+
+**Type-ahead needed no change to the pure editor.** `Apply(e, k, matches)` always
+took its candidate list from the caller, so command mode is a different match
+*source*, not a different editor. `completionsFor` is the one place that decides
+which namespace a line draws from, and it replaced four `hist.Prefix(...)` call
+sites. Candidates come back `/`-prefixed because `Suggestion` matches against the
+whole typed line: with `/his` typed, `/history` is what completes it. Once an
+argument is typed (`/history 7`) the completion is shorter than the line, so no
+suggestion is offered — that falls out rather than being special-cased.
+
+**Tab accepts, Return submits what was typed.** `/his` + Return dispatches `his`
+and gets a suggestion, it does not run the unique match. That is `#14`'s contract
+for words, and command mode diverging from it would make Return mean two things
+on one line.
+
+Adding a command is a row in `commands` plus its `run`; `dispatchCommand`
+switches on outcome (found / not found), never on which command it is.
+`commandCtx` is deliberately narrower than `deps` — a command cannot reach the
+dictionary or the player.
+
+| command | does |
+|---|---|
+| `/help` | lists the commands |
+
 ## Entry modes
 
 `run` dispatches modes first (`-forget`), then on argument count. The function

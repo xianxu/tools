@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
@@ -12,12 +14,13 @@ import (
 type command struct {
 	name    string
 	summary string
+	run     func(commandCtx, []string) int
 }
 
 // commands is the registry. Adding a command is a row here plus its run
 // function — the dispatch loop never changes, which is a Done-when.
 var commands = []command{
-	{name: "help", summary: "list the commands"},
+	{name: "help", summary: "list the commands", run: runHelp},
 }
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
@@ -124,4 +127,49 @@ func editDistance(a, b string) int {
 		prev, curr = curr, prev
 	}
 	return prev[len(br)]
+}
+
+// commandCtx is what a command may touch. Deliberately NOT the whole deps: a
+// command has no business reaching the dictionary or the player, and a narrow
+// struct makes that structural rather than a convention.
+//
+// cmds is here so /help can list the table it was dispatched from, which keeps
+// the fixture set in tests honest — help lists what dispatch would actually run.
+type commandCtx struct {
+	cmds   []command
+	stdout io.Writer
+	stderr io.Writer
+	width  int
+}
+
+// dispatchCommand runs a parsed command, or explains why it cannot.
+//
+// The loop never grows a case: adding a command is a row in `commands`. That is
+// a Done-when, so it is worth stating that the switch below is on OUTCOME
+// (found / not found), never on which command it is.
+func dispatchCommand(c replCommand, cmds []command, cc commandCtx) int {
+	cc.cmds = cmds
+	if c.name == "" { // a bare "/" was submitted: show what there is
+		return runHelp(cc, nil)
+	}
+	for _, cmd := range cmds {
+		if strings.EqualFold(cmd.name, c.name) {
+			return cmd.run(cc, c.args)
+		}
+	}
+	near := nearestCommands(c.name, cmds)
+	if len(near) == len(cmds) {
+		// Nothing was close, so "did you mean" would be a lie about all of them.
+		fmt.Fprintf(cc.stderr, "define: unknown command /%s. Commands: %s\n", c.name, strings.Join(near, " "))
+	} else {
+		fmt.Fprintf(cc.stderr, "define: unknown command /%s; did you mean %s?\n", c.name, strings.Join(near, " or "))
+	}
+	return 2
+}
+
+func runHelp(c commandCtx, _ []string) int {
+	for _, cmd := range c.cmds {
+		fmt.Fprintf(c.stdout, "  /%-10s %s\n", cmd.name, cmd.summary)
+	}
+	return 0
 }
