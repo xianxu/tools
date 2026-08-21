@@ -11,7 +11,7 @@ import (
 // and an audio source that reports no recording. Every dependency is injected —
 // a nil one would make run() panic rather than fail a test.
 func testDeps(t *testing.T) deps {
-	return deps{dict: testDict(t), audio: noAudioSource{}, player: &fakePlayer{}}
+	return deps{dict: testDict(t), audio: noAudioSource{}, player: &fakePlayer{}, capture: noopCapturer{}}
 }
 
 type noAudioSource struct{}
@@ -38,7 +38,7 @@ func newAudioRig(t *testing.T, word string, present bool) *audioRig {
 	cdn := newFakeCDN(t, files)
 	p := &fakePlayer{}
 	return &audioRig{
-		deps:   deps{dict: testDict(t), audio: &rebasedSource{cdn: cdn}, player: p},
+		deps:   deps{dict: testDict(t), audio: &rebasedSource{cdn: cdn}, player: p, capture: noopCapturer{}},
 		cdn:    cdn,
 		player: p,
 	}

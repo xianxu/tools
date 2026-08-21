@@ -25,6 +25,19 @@ type deps struct {
 	// history is the durable word history. Constructed at the boundary so the
 	// loop takes a seam rather than deciding where state lives.
 	history History
+	// capture is the only thing that RECORDS lookups. deck below is the other
+	// way the store is mutated: --forget deletes through it.
+	capture Capturer
+	// deck is the store --forget acts on. Separate from capture because capture
+	// deliberately cannot fail loudly and --forget deliberately must.
+	deck store.Store
+	// newStore builds the three store-backed dependencies AFTER flags are parsed —
+	// it cannot happen in realDeps, because DEFINE_NO_CAPTURE is read at flag
+	// parse and decides whether anything is opened at all. Tests leave it nil and
+	// get in-memory defaults. Tests that DO want the real wiring set it to
+	// openStore and t.Chdir into a t.TempDir first — several do, so this seam is
+	// what keeps the real filesystem opt-in, not unreachable.
+	newStore func(options, io.Writer) storeDeps
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
 	// which would make the interactive path unwritable. Note this is a different
@@ -37,23 +50,80 @@ func realDeps() deps {
 		dict:            systemDictionary(),
 		audio:           newHTTPAudioSource(),
 		player:          afplayPlayer{},
-		history:         openHistory(os.Stderr),
+		newStore:        openStore,
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
 	}
 }
 
-// openHistory builds the durable history over the WORKING DIRECTORY.
+// storeDeps is the trio openStore produces. One value rather than three returns
+// and three nil-merges at the call site: they are always built together, always
+// consumed together, and the merge was three chances to forget one.
+type storeDeps struct {
+	history History
+	capture Capturer
+	deck    store.Store
+}
+
+// withStore fills any store-backed dependency a caller did not supply, leaving
+// whatever a test supplied alone.
 //
-// A store that cannot be opened must not break define: warn and fall back to
-// session-only history, exactly as a missing recording degrades rather than
-// fails. Someone in a read-only directory still gets a dictionary.
-func openHistory(warn io.Writer) History {
+// It used to short-circuit when history and capture were both supplied. No test
+// ever entered that branch (probe-verified: a panic there left the suite green)
+// and it left deck nil, so --forget had nothing to act on. The nil-merge below
+// reaches the same result without a second path through the function.
+func (d deps) withStore(opt options, warn io.Writer) deps {
+	var sd storeDeps
+	if d.newStore != nil {
+		sd = d.newStore(opt, warn)
+	}
+	if d.history == nil {
+		d.history = orElse[History](sd.history, &memHistory{})
+	}
+	if d.capture == nil {
+		d.capture = orElse[Capturer](sd.capture, noopCapturer{})
+	}
+	if d.deck == nil {
+		d.deck = sd.deck
+	}
+	return d
+}
+
+func orElse[T comparable](v, fallback T) T {
+	var zero T
+	if v == zero {
+		return fallback
+	}
+	return v
+}
+
+// openStore builds the store-backed dependencies over the WORKING DIRECTORY.
+//
+// DEFINE_NO_CAPTURE means "write nothing in this directory", and that has a real
+// cost: persisted history IS the event log (#3), so opting out also drops
+// history to session-only. Stated here, in --help, and in the README, rather
+// than discovered.
+//
+// A store that cannot be opened must not break define: warn and fall back,
+// exactly as a missing recording degrades rather than fails. Someone in a
+// read-only directory still gets a dictionary.
+func openStore(opt options, warn io.Writer) storeDeps {
+	// NOT a second copy of the capture policy: this decides whether there is
+	// anywhere to write at all. decideCapture stays the only thing that decides
+	// whether a given lookup counts.
+	if opt.noCapture {
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
+	}
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
-		return &memHistory{}
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
 	}
-	return newStoreHistory(store.NewYAML(dir, warn), store.SystemClock(), warn)
+	st := store.NewYAML(dir, warn)
+	return storeDeps{
+		history: newStoreHistory(st, warn),
+		capture: newStoreCapturer(st, store.SystemClock(), warn),
+		deck:    st,
+	}
 }
 
 func main() {
@@ -74,6 +144,11 @@ type options struct {
 	noAudio bool
 	times   int
 	locale  string
+	// noCapture means "write nothing in this directory". Read ONCE here, at flag
+	// parse, so the environment is an input to decideCapture rather than a second
+	// mechanism beside it. Note it also drops history to session-only, because
+	// persisted history IS the event log (#3) — documented beside the flag.
+	noCapture bool
 	// width is the terminal width for wrapping; 0 on a pipe, where a consumer
 	// re-wraps for itself and baked-in breaks cannot be undone.
 	width int
@@ -94,13 +169,21 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	noAudio := fs.Bool("no-audio", false, "do not fetch or play the pronunciation")
 	times := fs.Int("times", 3, "how many times to play the pronunciation")
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
+	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
 			"Looks the word up in macOS's active dictionaries — normally the New\n"+
 			"Oxford American Dictionary, the one Google licenses, hence the matching\n"+
 			"notation — and plays its recorded pronunciation.\n\n"+
 			"With no word, reads words from stdin; on a terminal that is an\n"+
-			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n\nFlags:\n")
+			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n\n"+
+			"define records what you look up under words/ and events/ in the\n"+
+			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
+			"it in. A word that was found is added to the deck; a word that was\n"+
+			"not is kept as history only, so typos never become vocabulary. -raw\n"+
+			"records nothing, because it is for scripts.\n"+
+			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
+			"session-only, because the event log is what persists it.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -126,9 +209,38 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// branch never consulted the flag — so a bare return under -raw fetched
 		// and played. Deciding it once here makes the flag mean the same thing on
 		// both paths instead of depending on which line you are on.
-		noAudio: *noAudio || *raw,
-		times:   *times,
-		locale:  *locale,
+		noAudio:   *noAudio || *raw,
+		noCapture: os.Getenv("DEFINE_NO_CAPTURE") != "",
+		times:     *times,
+		locale:    *locale,
+	}
+
+	// Usage errors are settled BEFORE a store is opened. A mistyped command must
+	// not be the thing that creates words/ and events/ in the current directory.
+	//
+	// --forget is a mode, not a lookup, so it is validated and dispatched apart
+	// from the argument count. Combining it with a word is two commands on one
+	// line; silently honouring one of them is how -raw came to mean two different
+	// things in #2.
+	forgetting := isSet(fs, "forget")
+	switch {
+	case forgetting && *forget == "":
+		fmt.Fprintln(stderr, "define: -forget needs a word")
+		return 2
+	case forgetting && fs.NArg() != 0:
+		fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
+		return 2
+	case !forgetting && fs.NArg() > 1:
+		fs.Usage()
+		return 2
+	}
+
+	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
+	// flag-parse-time input and decides whether anything is opened at all.
+	d = d.withStore(opt, stderr)
+
+	if forgetting {
+		return forgetWord(d, opt, *forget, stdout, stderr)
 	}
 
 	switch fs.NArg() {
@@ -140,11 +252,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
-	case 1:
+	default: // exactly 1; >1 was rejected above
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
-	default:
-		fs.Usage()
-		return 2
 	}
 }
 
@@ -162,6 +271,12 @@ func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, s
 	return code
 }
 
+// lookupAndRender is also the ONE capture site. Verified against the call graph
+// rather than assumed: one-shot and the line loop reach it through defineOnce,
+// while the raw editor's submitLine calls it directly — #14 extracted it exactly
+// so the raw path could render cooked and play raw. Capturing in defineOnce
+// would leave the interactive path, the only one capturing today, silent.
+//
 // lookupAndRender is the part of the define path that only WRITES — look up,
 // render, print. Split out because the raw-mode loop must run it in cooked mode
 // (so newlines translate) while playing in RAW mode (so Ctrl-C arrives as a byte
@@ -170,13 +285,19 @@ func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer)
 	text, err := d.dict.Lookup(word)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
+		d.capture.Capture(word, false, opt)
 		return 1, false
 	}
 	if opt.raw {
 		fmt.Fprintln(stdout, text)
+		// Ask the policy even here. decideCapture answers "nothing" for -raw, and
+		// it must be the thing that says so — returning early made that branch
+		// unreachable and gave "capture is off" a second home.
+		d.capture.Capture(word, true, opt)
 		return 0, false
 	}
 	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
+	d.capture.Capture(word, true, opt)
 	return 0, !opt.noAudio && opt.times > 0
 }
 
@@ -257,6 +378,46 @@ func speak(ctx context.Context, d deps, word, locale string, n int) error {
 		return err
 	}
 	return playN(ctx, d.player, path, n)
+}
+
+// isSet reports whether a flag was given at all, which is different from being
+// given an empty value: `-forget=""` is a mistake, not a request to start a REPL.
+func isSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
+// forgetWord removes a word from the deck.
+//
+// An absent word exits NON-ZERO: succeeding silently would hide a typo in the
+// very command meant to correct one.
+func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int {
+	if d.deck == nil {
+		// Under DEFINE_NO_CAPTURE there may well BE a deck on disk — we simply
+		// did not open one. Saying "no deck" would be a lie about their data.
+		if opt.noCapture {
+			fmt.Fprintln(stderr, "define: DEFINE_NO_CAPTURE is set, so no deck was opened")
+		} else {
+			fmt.Fprintln(stderr, "define: no deck in this directory")
+		}
+		return 1
+	}
+	removed, err := d.deck.Forget(word)
+	if err != nil {
+		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
+		return 1
+	}
+	if !removed {
+		fmt.Fprintf(stderr, "define: %s is not in the deck\n", word)
+		return 1
+	}
+	fmt.Fprintf(stdout, "removed %s\n", word)
+	return 0
 }
 
 // terminalWidth reports the usable width of stdout, or 0 when it is not a

@@ -257,32 +257,77 @@ a truncation produces.
 ships as production code; `storetest.Suite` runs against both, so "the fake
 behaves like the real thing" is a test rather than an assumption.
 
+### Capture: one site, one policy
+
+Every entry path records, and records **once**. The single site is
+`lookupAndRender` — verified against the call graph, not assumed:
+
+```
+defineOnce   ← one-shot, line loop
+  └─ lookupAndRender
+submitLine   ← raw editor → lookupAndRender      [skips defineOnce]
+```
+
+An earlier design captured in `defineOnce`, which would have left the interactive
+path — the only one that captured at all before `#4` — silent. `#14` extracted
+`lookupAndRender` so the raw path could render cooked and play raw, and that is
+what makes it the one function every path shares.
+
+`decideCapture(found, opt)` is the only answer to "does this lookup count":
+found → event + word; not found → event only; `--raw` or `DEFINE_NO_CAPTURE` →
+nothing. The environment is read once at flag parse into `opt.noCapture`, so it
+is an *input* to the policy rather than a second mechanism beside it.
+
+**`storeCapturer` is the only thing that records a lookup.** It is not the only
+writer: `--forget` deletes a word file through `store.Forget`, deliberately and
+loudly, which is why it is a separate seam. `storeHistory` used to
+write too; since `#4` it only reads at construction and recalls from memory.
+Otherwise the raw path would record every lookup twice, and a deck that
+double-counts is wrong in a way nobody notices until `#5` orders by it. Pinned two ways, because
+one of them is blind on its own: per-path subtests count `Capture` calls with a
+fake **at** the seam, and a separate test asserts `Lookups == 1` and one event
+against the **real** wiring. The first cannot see a double write, since both
+writers live *below* the seam it replaces — verified by restoring the old
+behaviour: the per-path tests stayed green while the deck double-counted.
+
+**Two warnings, two homes**, because conflating them stranded the warn-once rule
+when the writes moved: a failed write is `storeCapturer`'s (once per process); a
+store that cannot be opened at all is `openStore`'s (once at startup, and it says
+history is session-only).
+
+**`--forget` removes the word, never the events.** The deck is a working set; the
+log is history, and `#8`'s statistics are a fold over it. An absent word exits
+non-zero — succeeding silently would hide a typo in the command meant to correct
+one — and `-forget` combined with a word is a usage error rather than a silently
+honoured half.
+
 ### History is events, the deck is successes
 
-`storeHistory.Add` always appends an **event**, and upserts a **word** only when
-the lookup found something. `Prefix` therefore reads the event log, not the deck:
-Up-arrow must recall the typo you just made — that is when you want to edit and
-retry — while the deck must not fill with misspellings.
+**`storeCapturer` appends the event and upserts the word** — see Capture above.
+`storeHistory` only *reads*: it loads the log once at construction and recalls
+from memory. An earlier version had it writing too, which is why the raw path
+would have recorded every lookup twice.
 
-`Prefix` runs on **every keystroke** and returns no error, so the log is loaded
-once at construction and held in memory. The store is the durable copy; a write
-failure warns **once** and the session continues, because losing durability is
-not a reason to break the editor mid-word.
+`Prefix` therefore reads the **event log**, not the deck: Up-arrow must recall
+the typo you just made — that is when you want to edit and retry — while the deck
+must not fill with misspellings. It runs on every keystroke and returns no error,
+so it never touches disk.
 
 **Timestamps keep their offset**, so a local-day view is recoverable even though
 day files are named in UTC. `#8` must group by timestamp, never by filename.
 
 ## Entry modes
 
-One word per invocation was the original shape; `run` now dispatches on argument
-count into a single shared `defineOnce`, so neither mode owns a copy of the
-define path.
+`run` dispatches modes first (`-forget`), then on argument count. The function
+every path converges on is **`lookupAndRender`**, not `defineOnce` — the raw
+editor bypasses `defineOnce` entirely, which is why capture lives one level down.
 
-| invocation | behaviour |
-|---|---|
-| `define <word>` | one-shot |
-| `define` | reads stdin until EOF or Ctrl-C |
-| `echo w \| define` | same loop, no prompt |
+| invocation | behaviour | reaches |
+|---|---|---|
+| `define <word>` | one-shot | `defineOnce` → `lookupAndRender` |
+| `define` on a terminal | raw editor | `submitLine` → `lookupAndRender` |
+| `define` piped, or `echo w \| define` | line loop | `defineOnce` → `lookupAndRender` |
+| `define -forget <word>` | mode; no lookup — deletes one deck entry | `forgetWord` → `store.Forget` |
 
 The loop reads stdin **unconditionally** and only the prompt is TTY-conditional —
 there is no interactive/batch branch to keep in sync, and the whole loop is

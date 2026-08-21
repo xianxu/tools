@@ -140,3 +140,178 @@ fragment and erases the signal.
 Prefer one parsing path to a fast-path-plus-fallback: the two-path version
 double-counted whatever the failed parse had collected, and left the fallback
 unreachable for any input that stayed syntactically valid.
+
+## A fake at the seam cannot see bugs below it (define #4)
+
+The plan said "driven through a counting **store**"; the implementation used a
+counting **capturer**, injected at the seam. It counted `Capture` calls, so it
+could not see the failure it existed for — two writers *below* the seam, each
+called once. Restoring the double write left it green while the deck
+double-counted.
+
+Where you inject the double decides what the test can see. To catch "the wrong
+component wrote", the fake has to sit **beneath** every component involved. And
+when a plan names a specific seam for a test, substituting a different one is a
+design change, not an implementation detail.
+
+## Before ticking a box, delete the line and run the suite (define #4)
+
+*A fix ships with a test whose failure you have observed by removing the fix.*
+Applied selectively, three fixes shipped as documentation: the `-raw` capture
+call, `openStore`'s opt-out branch, and a traversal guard that was **unreachable
+in principle** — sitting behind a sanitiser, no test at that API could tell the
+guard from the sanitiser, and deleting it left everything green.
+
+That last one forces an honest choice rather than a patch: either restructure so
+the guard is exercisable at its own level (extract a pure function taking the
+already-sanitised value, and feed it hostile input), or drop the claim that it is
+asserted. Defence in depth that cannot be tested is decoration.
+
+**And verify the mutation applied.** One check here printed GREEN because the
+text substitution silently missed, not because the test was blind. A mutation
+that did not land is not a result.
+
+## A family finding is closed when every instance it lists is closed (define #4)
+
+Told "this is the 4th finding in family X; fix the rule, not the instance", I
+fixed **3 of the 10 instances the findings enumerated — and all three were the
+ones in the titles.** That is the same substitution the escalation exists to
+prevent: patch the named thing, leave the class.
+
+Two operational forms:
+
+- **Reply instance-by-instance, not finding-by-finding.** Marking a family
+  finding addressed asserts the *family* is closed.
+- **Before ticking a Done-when, name the symbol your evidence exercises and grep
+  that the production path reaches it.** One fix here added a guard and wired
+  only *one* of its two call sites — the one that was not the subject of the
+  finding — while the record claimed both.
+
+## A mutation is a result only if it applied AND compiled (define #4)
+
+Two false readings in one session: a substitution that silently missed printed
+GREEN ("test is blind"), and one that broke the build printed RED ("test caught
+it"). Neither was true. Confirm the mutation landed and the package still
+compiles, *then* read the suite.
+
+## The family rule applies to artifacts, not just code (define #4)
+
+Told to close a family instance-by-instance, I closed **10 of 10 code instances
+and 0 of 7 plan instances** — the same fix-what-the-diff-touches substitution,
+one layer out. A finding whose instances live in a markdown file is not a lesser
+finding; it is the one that misleads the *next* issue, because that is what the
+next issue reads.
+
+Two operational forms:
+
+- **Sweep the file the fix touched, not the line the finding named.** Two stale
+  comments were *created* by a round whose whole subject was stale prose — one
+  asserted a security property the same commit retracted, and one was orphaned
+  onto a struct by an insertion above it. `git diff --stat`, then read each file.
+- **When instances live in a plan, the closing move is an AGENTS.md §1
+  `## Revisions` entry, not a checkbox tick.** Ticking boxes records that work
+  happened; it does not correct what the document claims.
+
+## `go test` runs in the package directory (define #4)
+
+A repo-wide guard test ran `git ls-files` and got paths relative to `cmd/define/`,
+not the repo root — so `cmd/define/define` arrived as `define`, and a "files at
+the repo root are fine" skip swallowed the very artifact the test existed to
+catch. It printed `ok` and I nearly accepted it.
+
+Resolve the root explicitly (`git rev-parse --show-toplevel`, then `git -C`), and
+**verify a guard by planting what it hunts** — clean passes, planted fails,
+removed passes. Two runs, not one.
+
+## Test the property, not a proxy for it (define #4)
+
+The same guard's first working version flagged "extensionless file in a source
+directory" and immediately false-positived on a tracked symlink. The question was
+never about filenames: it is *is this file an executable image*, which the magic
+bytes answer exactly. A proxy that is cheap to write is expensive to keep.
+
+## Read `git show --stat` before committing (define #4)
+
+`Bin 0 -> 9616546 bytes` is visible at a glance in `git show --stat`, and it was
+in the commit that added a 9.6 MB binary. Nothing read it. This is the cheapest
+possible check for the whole class of "`git add -A` swept in something I did not
+mean to send", and it costs one command before the commit rather than a history
+rewrite after it.
+
+Corollary, learned the expensive way: **removing the file in a follow-up commit
+does not remove the cost.** The blob stays reachable, so every clone still pays
+— measured here at 5.9 MB against main's 604 KB while `git status` was clean and
+`git ls-files` reported the file zero times. The fix is to rewrite the commit
+that *adds* it, while the branch is still unpushed.
+
+## A finding is closed only when you have re-run the measurement that produced it
+
+Across one close, ten open findings entered a round and zero were closed, twice
+in a row — while both rounds *felt* productive, because each fixed the visible
+half. The shape: a finding arrives with a measurement (a clone size, a grep
+list, an enumerated set of sites), and I fixed the part that shows up in
+`git status` or in the title, then wrote a commit message claiming the finding
+was addressed.
+
+Re-running the finding's own measurement takes one command and would have shown
+the claim false *before* the commit asserted it. Do that, and quote the number
+in the commit — "5.9M → 712K, blob absent from a fresh clone", not "removed".
+
+## `-count=1` belongs in the mutation recipe
+
+A mutation test's planted run printed `ok (cached)`, which reads exactly like a
+blind test and is neither. The recipe is now three clauses: confirm the mutation
+**applied**, confirm it **compiled**, and run with **`-count=1`** so the result
+is not Go's cache answering a question about the previous source.
+
+## Say what a test reads before naming it as enforcement
+
+A `.gitignore` comment named `TestNoCommittedBinaries` as enforcing "the general
+case". The test reads `git ls-files` — the index — while the class's cost lives
+in history, so it was green on a repo carrying exactly the artifact it existed
+to prevent. Before citing a test as the guard for a class, state what the test
+reads and check the class lives there. Scope mismatch passes every review that
+only asks "is there a test?"
+
+## A guard must assert it consumed the whole work list
+
+A history-scanning guard enumerated every object in the repo, checked each one,
+and reported a clean result — from a partial scan. Nothing compared records read
+against records requested, and the subprocess's exit status was `defer`red and
+dropped. Feeding it the first five objects left it green with a planted binary
+sitting in history.
+
+Two clauses, both cheap:
+
+- If a test builds a work list, assert it reached the end of it. `seen ==
+  len(want)`, and fail with the counts — `scanned 5 of 761 objects` names the
+  problem instantly.
+- Check the exit status of every process the test depends on. `defer cmd.Wait()`
+  discards it; so does `_ = cmd.Wait()`. A crashed child and a clean one are
+  otherwise indistinguishable, and the crash is the interesting case.
+
+This one is worth internalising because of where it was found: in the fix for the
+*previous* round's version of the same rule. Writing the rule down does not
+execute it.
+
+## Name the suite a swept file actually runs in
+
+A sweep claimed three instances of a class fixed, and reported the suite green in
+the same breath. The third instance lived behind `//go:build darwin && conformance`
+and skipped without a built binary — so it never ran in the suite being reported.
+The fix was correct; the claim about it was not. When a sweep touches a file with
+a build tag, an env guard, or a skip, say which suite it runs in and run that one.
+
+## Mutation-check a claimed behaviour against its OWN code path
+
+A test asserted "the process exited cleanly" and was credited with pinning "Ctrl-C
+arrives as a byte, not a signal". Both paths produce that observable, and so does
+a crash — the assertion separated only the crash. An observable that two code
+paths both produce cannot distinguish between them, however true the assertion is.
+Mutate the specific branch the prose names and watch THAT test redden.
+
+The same episode is a caution in the other direction: a reviewer measured the byte
+path as "asserted by nothing" from a run scoped to one build tag, when the full
+suite reddens on that mutation. Before accepting a negative finding, re-run its
+measurement at full scope — a finding is a measurement, and measurements have
+scopes.

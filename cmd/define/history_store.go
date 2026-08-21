@@ -10,31 +10,24 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-// storeHistory makes a store.Store satisfy the editor's History.
+// storeHistory is the editor's History: it RECALLS, and never writes.
 //
-// Two things are deliberately NOT the same here:
+// Deliberately not restating the capture rules here. Every design fact in this
+// package gets one normative home, because the same sentence in two places is
+// the drift this file has already caused twice — it described itself as the
+// writer for two review rounds after storeCapturer took that over. What writes,
+// and when, is decided in capture.go and described in atlas/define.md.
 //
-//   - Add always appends an EVENT, but upserts a Word only when the lookup
-//     found something. Recall must include the typo you just made — that is when
-//     you most want to edit and retry — while the deck must not fill with
-//     misspellings.
-//   - Prefix therefore reads the EVENT log, not the deck. Reading the deck would
-//     silently drop every failed lookup from Up-arrow recall.
-//
-// History.Prefix runs on every keystroke and cannot return an error, so the log
-// is loaded once at construction and held in memory. The store is the durable
-// copy; the slice is what the editor talks to.
+// The one fact that IS local: Prefix runs on every keystroke and returns no
+// error, so the log is read once at construction and everything after is memory.
 type storeHistory struct {
-	mu     sync.Mutex
-	lines  []string // oldest first, every submitted line
-	st     store.Store
-	clock  store.Clock
-	warn   io.Writer
-	warned bool // a write failure is reported once, not once per keystroke
+	mu    sync.Mutex
+	lines []string // oldest first, every submitted line
+	warn  io.Writer
 }
 
-func newStoreHistory(st store.Store, clock store.Clock, warn io.Writer) *storeHistory {
-	h := &storeHistory{st: st, clock: clock, warn: warn}
+func newStoreHistory(st store.Store, warn io.Writer) *storeHistory {
+	h := &storeHistory{warn: warn}
 	events, err := st.Events(time.Time{})
 	if err != nil {
 		h.warnf("could not read history: %v", err)
@@ -48,29 +41,20 @@ func newStoreHistory(st store.Store, clock store.Clock, warn io.Writer) *storeHi
 	return h
 }
 
-func (h *storeHistory) Add(line string, found bool) {
+// Add records the line for RECALL only.
+//
+// It used to write to the store as well. Those writes moved to storeCapturer
+// (#4) so lookups have exactly one recorder — otherwise the raw path would
+// record every lookup twice, once here and once at the capture site, and a deck
+// that counts double is wrong in a way nobody notices until #5 orders by it.
+func (h *storeHistory) Add(line string) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return
 	}
-	now := h.clock.Now()
-
 	h.mu.Lock()
 	h.lines = append(h.lines, line)
 	h.mu.Unlock()
-
-	// The event records what happened, whether or not the word exists.
-	if err := h.st.AppendEvent(store.ReviewEvent{
-		Word: line, Kind: store.EventLookedUp, Found: found, At: now,
-	}); err != nil {
-		h.warnf("could not save history: %v", err)
-	}
-	if !found {
-		return // a typo is history, not vocabulary
-	}
-	if err := h.st.Upsert(store.Word{Text: line, FirstSeen: now, LastSeen: now, Lookups: 1}); err != nil {
-		h.warnf("could not save word: %v", err)
-	}
 }
 
 func (h *storeHistory) Prefix(p string) []string {
@@ -79,12 +63,12 @@ func (h *storeHistory) Prefix(p string) []string {
 	return prefixMatch(h.lines, p)
 }
 
-// warnf reports at most once. Losing durability is not a reason to interrupt
-// someone mid-word on every keystroke.
+// warnf reports a store that could not be READ at startup — a different message,
+// with a different home, from storeCapturer's failed-write warning. Conflating
+// the two is what stranded the warn-once rule when the writes moved.
 func (h *storeHistory) warnf(format string, args ...any) {
-	if h.warn == nil || h.warned {
+	if h.warn == nil {
 		return
 	}
-	h.warned = true
 	fmt.Fprintf(h.warn, "define: "+format+" (history is session-only)\n", args...)
 }

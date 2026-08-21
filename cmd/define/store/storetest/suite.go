@@ -110,6 +110,53 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("forget removes a word and is a no-op when absent", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.Upsert(store.Word{Text: "sycophantic", LastSeen: day(1)})
+		_ = s.AppendEvent(store.ReviewEvent{Word: "sycophantic", Kind: store.EventLookedUp, Found: true, At: day(1)})
+
+		removed, err := s.Forget("Sycophantic") // case-insensitive, like every other key
+		if err != nil || !removed {
+			t.Fatalf("Forget = %v, %v; want true, nil", removed, err)
+		}
+		if deck, _ := s.Deck(); len(deck) != 0 {
+			t.Errorf("deck = %+v, want empty", deck)
+		}
+		// The log is history and must survive: #8's statistics are a fold over it.
+		if ev, _ := s.Events(time.Time{}); len(ev) != 1 {
+			t.Errorf("Forget deleted %d event(s); the log must be untouched", 1-len(ev))
+		}
+		// Absence is not an error.
+		if removed, err := s.Forget("never-seen"); err != nil || removed {
+			t.Errorf("Forget(absent) = %v, %v; want false, nil", removed, err)
+		}
+		if removed, err := s.Forget(""); err != nil || removed {
+			t.Errorf("Forget(empty) = %v, %v; want false, nil — never a wildcard", removed, err)
+		}
+	})
+
+	t.Run("forget cannot escape the words directory", func(t *testing.T) {
+		s := newStore(t)
+		_ = s.Upsert(store.Word{Text: "sycophantic", LastSeen: day(1)})
+		// An end-to-end net, NOT the assertion of the traversal guard: Slug
+		// sanitises first, so this passes whether or not wordFileName's guard
+		// exists (measured). The guard is pinned by its own unit test; this is
+		// here so a Store implementation that derived filenames some other way
+		// would be caught.
+		for _, key := range []string{
+			"../../../etc/passwd", "/etc/passwd", "..", ".", "../sycophantic",
+		} {
+			removed, err := s.Forget(key)
+			if removed {
+				t.Errorf("Forget(%q) reported a removal", key)
+			}
+			_ = err // an error is fine; a deletion is not
+		}
+		if deck, _ := s.Deck(); len(deck) != 1 {
+			t.Errorf("a traversal key removed a real word: deck = %+v", deck)
+		}
+	})
+
 	t.Run("event fields survive the round trip", func(t *testing.T) {
 		s := newStore(t)
 		want := store.ReviewEvent{Word: "hot dog", Kind: store.EventReviewed, Found: true, Correct: true, At: day(2)}

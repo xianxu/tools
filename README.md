@@ -50,20 +50,30 @@ On a terminal, `define` with no word opens a line editor:
 
 Definitions wrap to your terminal width at word boundaries.
 
-**`define` writes to the current directory.** Looking a word up in the editor
-records it under `words/` and `events/` where you started `define`, so history
-survives restarts:
+**`define` writes to the current directory.** *Every* successful lookup — one-shot,
+piped, or in the editor — records the word under `words/` and `events/` where you
+started `define`, so your deck and history build themselves:
 
 ```
 words/sycophantic.yaml     one file per word
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
 ```
 
-Nothing is written until you actually look something up, and nothing is written
-by `define <word>` — only the interactive editor records. The directory *is* the
-deck: run `define` somewhere else and you get a different history. If that
-directory happens to be synced, so is your vocabulary; `define` neither knows nor
-cares.
+A failed lookup is recorded as history but never enters the deck, so typos are
+recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
+scripting a dictionary should not mutate a deck.
+
+```sh
+define --forget sycophantic   # drop a word from the deck (history is kept)
+DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
+```
+
+`DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
+which is what persists your history, so with it set, history is session-only.
+
+The directory *is* the deck: run `define` somewhere else and you get a different
+one. If that directory happens to be synced, so is your vocabulary; `define`
+neither knows nor cares.
 
 With no word and no terminal, `define` reads stdin: a word defines and speaks it, a bare return
 replays the *pronunciation* of the current one — nothing is re-fetched, and the
@@ -72,7 +82,10 @@ silently. `-raw` prints the unparsed entry and never plays. The prompt appears
 only on a terminal, so piping stays clean. Flags are session settings — `define
 -times 1` opens the loop with single playback.
 
-Exit codes: `0` success, `1` no dictionary entry, `2` usage error.
+Exit codes: `0` success; `1` the request failed (no dictionary entry, or
+`--forget` found nothing to remove); `2` usage error. A piped run exits `1` if any
+word failed, so `echo "$w" | define || …` works in a script; an interactive typo
+does not fail the session.
 
 Lookup goes through macOS's CoreServices, which searches **every active
 dictionary** rather than NOAD specifically — the SDK offers no way to pick one.

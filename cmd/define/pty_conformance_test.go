@@ -7,8 +7,22 @@ package main
 // The terminal is an external dependency like the dictionary and the CDN, and
 // these are the behaviours no in-process fake can model: that raw mode is
 // actually entered, that escape sequences arrive as this program's key decoder
-// expects, that Ctrl-C is a BYTE rather than a signal, and — the one that
-// matters most — that the terminal is left cooked when we exit.
+// expects, and — the one that matters most — that the terminal is left cooked
+// when we exit.
+//
+// **This suite does NOT pin "Ctrl-C is a byte rather than a signal", though it
+// used to claim it did.** Measured: mutating replRaw's `case ActInterrupt,
+// ActEOF:` to return 9 leaves all three tests here GREEN, while mutating
+// `case <-ctx.Done():` to return 7 reddens them — so the \x03 written to the
+// master reaches define as a SIGINT and it leaves through NotifyContext, not
+// through the key reader. "Exited, and the terminal is sane" is an observable
+// that the byte path, the signal path and a crash all produce, so asserting it
+// separates only the crash.
+//
+// The byte path is pinned in-process by TestEditorLoopCtrlCExitsZero, which
+// scripts "syc\x03" through runEditor: the same mutation reddens it with
+// "exit = 9, want 0" (verified). That this suite cannot reach that path is a
+// real gap in it — see the issue Log — not a reason to restate the claim here.
 //
 // Cadence is on-demand with the rest of the conformance suite; it needs a real
 // pty and a built binary.
@@ -144,7 +158,12 @@ func TestPTYTerminalIsRestoredOnExit(t *testing.T) {
 	// While the editor runs the SLAVE is raw; assert the master side round-trips
 	// after exit, which is only possible from a sane terminal state.
 	f.Write([]byte("\x03"))
-	_ = cmd.Wait()
+	// Checked, not discarded. A crashed define also leaves the terminal sane —
+	// the kernel restores it when the process dies — so dropping this status
+	// would let this test pass for entirely the wrong reason.
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
 
 	fd := int(f.Fd())
 	if !term.IsTerminal(fd) {

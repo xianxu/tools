@@ -39,7 +39,11 @@ func (y *YAML) Upsert(w Word) error {
 	if k == "" {
 		return nil
 	}
-	path := filepath.Join(y.wordsDir(), Slug(k)+".yaml")
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(y.wordsDir(), name)
 
 	old, err := readWord(path)
 	if err != nil && !os.IsNotExist(err) {
@@ -162,6 +166,22 @@ func (y *YAML) warnf(format string, args ...any) {
 	if y.warn != nil {
 		fmt.Fprintf(y.warn, "define: "+format+"\n", args...)
 	}
+}
+
+// wordFileName turns a slug into a filename, refusing anything that is not a
+// single safe path element.
+//
+// Split out as a PURE function taking a slug rather than a key, so the guard is
+// exercisable at its own level with hostile input. Inlined behind Slug it was
+// unreachable in principle — Slug sanitises first, so no test could distinguish
+// the guard from Slug, and removing it left every test green. Defence in depth
+// that cannot be tested is decoration; this version is a real net under a future
+// Slug regression.
+func wordFileName(slug string) (string, error) {
+	if slug == "" || slug == "." || slug == ".." || strings.ContainsAny(slug, `/\`) || strings.HasPrefix(slug, ".") {
+		return "", fmt.Errorf("refusing unsafe word file name %q", slug)
+	}
+	return slug + ".yaml", nil
 }
 
 func readWord(path string) (Word, error) {
@@ -290,4 +310,29 @@ func endsWithNewline(path string) bool {
 		return true
 	}
 	return b[0] == '\n'
+}
+
+// Forget removes one word file. Events are untouched: the deck is a working set,
+// the log is history.
+//
+// Filename derivation goes through wordFileName, the same function Upsert uses —
+// see its doc comment for what that guard is and is not worth.
+func (y *YAML) Forget(key string) (bool, error) {
+	k := Key(key)
+	if k == "" {
+		return false, nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return false, err
+	}
+	err = os.Remove(filepath.Join(y.wordsDir(), name))
+	switch {
+	case err == nil:
+		return true, nil
+	case os.IsNotExist(err):
+		return false, nil
+	default:
+		return false, err
+	}
 }
