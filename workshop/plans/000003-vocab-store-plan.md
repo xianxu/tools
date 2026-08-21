@@ -162,39 +162,39 @@ filename, so it is the one function here that can produce an unsafe path).
 
 **Files:** create `cmd/define/store/{word,event,clock}.go`; test `word_test.go`
 
-- [ ] **Step 1: Write the failing tests.** `Slug` obligations: lowercases so
+- [x] **Step 1: Write the failing tests.** `Slug` obligations: lowercases so
       `Define` and `define` are one word; `hot dog` → `hot-dog`; keeps non-ASCII
       readable rather than mangling it; **never** produces `.`, `..`, an absolute
       path, or anything containing a path separator; distinct inputs do not
       collide after normalisation (`hot dog` vs `hot-dog` must not silently merge —
       pick one rule and assert it).
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement**
-- [ ] **Step 4: Run, expect PASS. Add `FuzzSlug`** asserting the result is always
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement**
+- [x] **Step 4: Run, expect PASS. Add `FuzzSlug`** asserting the result is always
       a single safe path element — this function turns user input into a filename.
-- [ ] **Step 5: Commit** — `#3: word, event and slug types`
+- [x] **Step 5: Commit** — `#3: word, event and slug types`
 
 ### Task 2: `Store` + `memStore` + the shared conformance suite
 
 **Files:** create `store/{store,mem}.go`, `store/storetest/suite.go`; test `mem_test.go`
 
-- [ ] **Step 1: Write the suite first**, as an exported function taking a
+- [x] **Step 1: Write the suite first**, as an exported function taking a
       `func() Store`. Obligations: `Upsert` then `Deck` round-trips; a second
       `Upsert` of the same word updates rather than duplicating; `Events(since)`
       filters by time and returns chronological order; an empty store returns
       empty, not nil-with-error; times survive the round trip **to the second**.
-- [ ] **Step 2: Run against `memStore`, expect FAIL, then implement**
-- [ ] **Step 3: Run, expect PASS**
-- [ ] **Step 4: Commit** — `#3: Store seam, in-memory implementation, conformance suite`
+- [x] **Step 2: Run against `memStore`, expect FAIL, then implement**
+- [x] **Step 3: Run, expect PASS**
+- [x] **Step 4: Commit** — `#3: Store seam, in-memory implementation, conformance suite`
 
 ### Task 3: `yamlStore`
 
 **Files:** create `store/yaml.go`; test `store/yaml_test.go`
 
-- [ ] **Step 1: Run the SAME suite against `yamlStore`** on a temp dir. Expect
+- [x] **Step 1: Run the SAME suite against `yamlStore`** on a temp dir. Expect
       FAIL, then implement. The suite passing for both is the deliverable — it is
       what makes `memStore` a reference rather than an alibi.
-- [ ] **Step 2: Add the tests only the disk implementation can fail:**
+- [x] **Step 2: Add the tests only the disk implementation can fail:**
   - a store re-opened on the same directory sees what the first wrote;
   - **atomicity** — a temp file left behind by a killed write is not read as a
     word, and no partially-written file ever becomes a deck entry;
@@ -206,23 +206,23 @@ filename, so it is the one function here that can produce an unsafe path).
     files** — the conflict-rate property, asserted rather than asserted-about;
   - **an interrupted write leaves nothing readable**: drop a `*.tmp` into
     `words/` and confirm `Deck()` ignores it.
-- [ ] **Step 3: Run, expect PASS**
-- [ ] **Step 4: Commit** — `#3: YAML store`
+- [x] **Step 3: Run, expect PASS**
+- [x] **Step 4: Commit** — `#3: YAML store`
 
 ### Task 4: Wire persistence into the editor
 
 **Files:** create `cmd/define/history_store.go`; modify `main.go`, `replraw.go`
 
-- [ ] **Step 1: Write the failing test.** `storeHistory` satisfies `History`;
+- [x] **Step 1: Write the failing test.** `storeHistory` satisfies `History`;
       `Add` then `Prefix` returns the word; a second process (a second `Store` on
       the same dir) sees the first's history — that is the whole point.
-- [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement.** `realDeps()` constructs the store on the working
+- [x] **Step 2: Run, expect FAIL**
+- [x] **Step 3: Implement.** `realDeps()` constructs the store on the working
       directory; the loop takes `History` and no longer constructs `memHistory`.
       **A store that fails to open must not break `define`** — warn on stderr and
       fall back to session history, exactly as audio failure degrades today.
-- [ ] **Step 4: Run, expect PASS**
-- [ ] **Step 5: Manual check — the thing that makes this issue worth doing**
+- [x] **Step 4: Run, expect PASS**
+- [x] **Step 5: Manual check — the thing that makes this issue worth doing**
 
 ```sh
 cd $(mktemp -d) && define        # look up two words, ^C
@@ -230,10 +230,10 @@ ls words/ events/                # they are on disk
 define                           # Up recalls them across the restart
 ```
 
-- [ ] **Step 6: Update `README.md` and `atlas/define.md`** — a tool that writes
+- [x] **Step 6: Update `README.md` and `atlas/define.md`** — a tool that writes
       files in your working directory is user-facing behaviour and must be
       documented as such.
-- [ ] **Step 7: Commit, then `sdlc close --issue 3 --verified '<evidence>'`**
+- [x] **Step 7: Commit, then `sdlc close --issue 3 --verified '<evidence>'`**
 
 ---
 

@@ -50,14 +50,14 @@ A `Store` seam with a YAML-files-on-disk backend.
 
 ## Done when
 
-- [ ] Both backends satisfy the same seam and pass one shared conformance suite.
-- [ ] Two stores writing **different** words to one directory produce disjoint
+- [x] Both backends satisfy the same seam and pass one shared conformance suite.
+- [x] Two stores writing **different** words to one directory produce disjoint
       file sets — the property that makes conflicts rare. Same-word-two-machines
       is a genuine conflict and is documented as such, not claimed away.
-- [ ] No production code calls `time.Now()`; the clock is injected everywhere.
-- [ ] A write interrupted mid-flight leaves no partial file readable as a deck
+- [x] No production code calls `time.Now()`; the clock is injected everywhere.
+- [x] A write interrupted mid-flight leaves no partial file readable as a deck
       entry: writes go to a temp file in the same directory and are renamed.
-- [ ] One corrupt or unreadable word file is skipped with a warning; the rest of
+- [x] One corrupt or unreadable word file is skipped with a warning; the rest of
       the deck still opens.
 
 ## Estimate
@@ -86,8 +86,11 @@ Derivation notes:
   corrupt file are the parts with real failure modes.
 - **smaller-go-module** is `storeHistory` plus the wiring: mirror-shaped, since
   `#14` already consumes the `History` interface and nothing in the editor moves.
-- **Two `milestone-review`s.** `#14` budgeted three and used two; `#1` and `#2`
-  each needed more than one. This is smaller than `#14`, so two.
+- **Two `milestone-review`s.** Corrected basis (the first draft cited #14 as
+  "budgeted three, used two", which the artifacts do not show — #14 logged one
+  close verdict plus three *operator feedback* rounds, which are not reviews).
+  The real evidence: #2 budgeted one round and overran 2.74x, and #14 close
+  review returned 2 Critical + 8 Important. Both support two.
 - Library-availability check ran: `go.yaml.in/yaml/v3` is already an ariadne
   dependency and is used rather than hand-rolling YAML; no from-scratch halving.
 - `familiarity: 1.0` — same package family, same fakes, same test posture.
@@ -98,13 +101,34 @@ Derivation notes:
 
 See `workshop/plans/000003-vocab-store-plan.md`.
 
-- [ ] `Word`, `ReviewEvent`, `Slug` (fuzzed — it turns text into a filename).
-- [ ] `Store` seam + `memStore` + one shared conformance suite.
-- [ ] `yamlStore`: one file per word, append-only day logs, atomic writes.
-- [ ] `storeHistory` — makes `#14`'s history persistent with no editor change.
+- [x] `Word`, `ReviewEvent`, `Slug` (fuzzed — it turns text into a filename).
+- [x] `Store` seam + `memStore` + one shared conformance suite.
+- [x] `yamlStore`: one file per word, append-only day logs, atomic writes.
+- [x] `storeHistory` — makes `#14`'s history persistent with no editor change.
 
 ## Log
 
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+### 2026-08-20 — implementation notes
+
+**The persistence deliverable touched the editor not at all.** `#14` already
+consumed a `History` seam, so this issue filled it: `deps.history` is built at
+the boundary and the loop takes what it is given. That was the whole argument for
+declaring the seam a milestone early, and it held.
+
+**Verified end to end in a scratch directory**: two lookups wrote
+`words/ephemeral.yaml`, `words/sycophantic.yaml` and `events/2026-08-21.yaml`,
+and a second session recalled them with Up.
+
+**One trap recorded for `#8`:** day files are named in UTC for stability, but the
+stored timestamps keep their offset. Statistics must group by timestamp, never by
+filename, or an evening lookup west of UTC lands in "tomorrow". The comment sits
+at the line that does the naming.
+
+**The plan gate was right that my conflict rationale was overstated.** One file
+per word does not prevent conflicts — same word or same day on two machines still
+collides. It changes the rate, and only that claim is now made, in the code and
+the atlas.

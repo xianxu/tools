@@ -55,10 +55,13 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	// Same wiring as replLines: cached behind the seam, in the function that uses
 	// it, so a test driving runEditor gets exactly what production gets.
 	d.audio = newCachingAudioSource(d.audio)
-	// Through the SEAM, not the concrete type: #3's store must be able to replace
-	// this without touching the loop, which was the entire justification for
-	// declaring History in the first place.
-	var hist History = &memHistory{}
+	// The seam is filled at the boundary (#3). The loop never decides where
+	// history lives — which is what let persistence land without the editor
+	// changing at all.
+	hist := d.history
+	if hist == nil {
+		hist = &memHistory{}
+	}
 	e := NewEditor()
 	var current string
 	// Resolve candidates ONCE per keystroke and use the same slice for both the

@@ -107,3 +107,11 @@ Six tests were removed with a note saying a design change had superseded them.
 Five still passed verbatim: they exercised a path the change left intact. Before
 deleting, **run them against the new code** — "this test is obsolete" is a claim,
 and it is checkable in seconds.
+
+## Say what a design buys, not what it feels like it buys (define #3)
+
+"One file per word so a synced directory never conflicts" was false: the same
+word, or the same day, on two machines still conflicts. What the layout actually
+changes is the *rate* — with one big file, every write on the second machine
+conflicts. The precise claim is still a good reason for the design; the loose one
+would have been quoted back later as a guarantee the code never made.
