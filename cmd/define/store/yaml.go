@@ -104,6 +104,18 @@ func (y *YAML) AppendEvent(e ReviewEvent) error {
 		return err
 	}
 	defer f.Close()
+
+	// If the last append was cut mid-record the file does not end in a newline,
+	// and this write would land ON that fragment's line — so the parser would see
+	// one malformed record and swallow THIS event along with the broken one. One
+	// interrupted write must cost one event, not two.
+	if st, err := f.Stat(); err == nil && st.Size() > 0 {
+		if !endsWithNewline(path) {
+			if _, err := f.WriteString("\n"); err != nil {
+				return err
+			}
+		}
+	}
 	b, err := yaml.Marshal([]ReviewEvent{e})
 	if err != nil {
 		return err
@@ -206,12 +218,19 @@ func writeAtomic(path string, w Word) error {
 // parse had already collected, and left the fallback unreachable for any input
 // that happened to remain valid YAML.
 //
-// Validity is decided by ROUND TRIP, not by parseability and not by field
-// presence. A truncation leaves valid YAML — "- word: thi" unmarshals into an
-// event with no timestamp, and a cut inside the timestamp can leave a shorter
-// date that parses as a real one, fabricating an event. Re-marshalling what was
-// parsed and comparing it to the bytes on disk catches truncation anywhere in
-// the record, because a fragment cannot reproduce itself.
+// Validity is TERMINATION plus COMPLETENESS, and neither alone is enough:
+//
+//   - "it parsed" is not enough — a cut leaves valid YAML ("- word: thi").
+//   - "the fields are present" is not enough on its own — a cut inside the
+//     timestamp can leave a shorter date that parses as a real one.
+//   - byte-identical round-tripping WOULD catch both, but it also discards every
+//     record in a log that was ever reformatted — a cosmetic edit or a sync tool
+//     rewriting quotes would destroy the history it was meant to protect.
+//
+// So: a whole record ends with a newline (the writer always terminates one, and
+// AppendEvent repairs a missing terminator before writing), and carries every
+// field an event has. A truncation fails one or both, and reformatting fails
+// neither.
 func parseDay(b []byte) (events []ReviewEvent, torn int) {
 	for _, rec := range splitRecords(string(b)) {
 		if strings.TrimSpace(rec) == "" {
@@ -222,8 +241,7 @@ func parseDay(b []byte) (events []ReviewEvent, torn int) {
 			torn++
 			continue
 		}
-		round, err := yaml.Marshal(one)
-		if err != nil || strings.TrimSpace(string(round)) != strings.TrimSpace(rec) {
+		if !strings.HasSuffix(rec, "\n") || !one[0].complete() {
 			torn++
 			continue
 		}
@@ -233,19 +251,43 @@ func parseDay(b []byte) (events []ReviewEvent, torn int) {
 }
 
 // splitRecords cuts a day log at the top-level "- " that begins each event.
+//
+// SplitAfter, not Split: the newline must stay ON the line it terminated. An
+// earlier version split on "\n" and re-appended one to every line, which handed
+// a terminator to the final fragment — destroying the exact signal parseDay uses
+// to tell a whole record from a truncated one.
 func splitRecords(s string) []string {
 	var out []string
 	var cur strings.Builder
-	for _, line := range strings.Split(s, "\n") {
+	for _, line := range strings.SplitAfter(s, "\n") {
+		if line == "" {
+			continue
+		}
 		if strings.HasPrefix(line, "- ") && cur.Len() > 0 {
 			out = append(out, cur.String())
 			cur.Reset()
 		}
 		cur.WriteString(line)
-		cur.WriteString("\n")
 	}
 	if strings.TrimSpace(cur.String()) != "" {
 		out = append(out, cur.String())
 	}
 	return out
+}
+
+func endsWithNewline(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return true // unknown: do not inject a spurious newline
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || st.Size() == 0 {
+		return true
+	}
+	var b [1]byte
+	if _, err := f.ReadAt(b[:], st.Size()-1); err != nil {
+		return true
+	}
+	return b[0] == '\n'
 }

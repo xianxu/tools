@@ -1,12 +1,13 @@
 ---
 id: 000003
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-20
 updated: 2026-08-20
 estimate_hours: 1.61
 started: 2026-08-20T17:51:17-07:00
+actual_hours: 1.67
 ---
 
 # vocabulary store: per-user YAML deck in a brain, behind a Store seam
@@ -109,6 +110,7 @@ See `workshop/plans/000003-vocab-store-plan.md`.
 ## Log
 
 ### 2026-08-20
+- 2026-08-20: closed — Round-3 findings fixed, all three on my own previous fix. parseDay is now ONE path, always record-by-record: the two-path version double-counted (a failed whole-file parse had already populated the slice, and the per-record loop appended to it) and left the recovery path unreachable for input that stayed valid YAML — which is exactly what a truncation produces, so the test I had added never reached the code it was written for. Validity is decided by ROUND TRIP rather than parseability or field-presence: a cut inside the timestamp leaves a shorter date that parses, so every field is populated and a fabricated event was being admitted. Re-marshalling and comparing to the bytes on disk catches truncation anywhere, since a fragment cannot reproduce itself. Verified against six truncation shapes (mid-key, mid-value, after a field, inside the timestamp, unterminated quote, mid-key of the last field), plus a no-duplication test; the round-trip check is mutation-checked and fails RED when removed. Store conformance suite passes for both implementations; go test and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 
 Created as part of the `define-learn` project.
 

@@ -126,7 +126,17 @@ Two plausible tests both fail, and each took a review round to disprove:
    date that parses fine, so every field is populated and a fabricated event is
    admitted.
 
-Re-marshal what was parsed and compare it to the bytes on disk: a fragment cannot
-reproduce itself. And prefer one parsing path to a fast-path-plus-fallback — the
-two-path version double-counted whatever the failed parse had collected, and left
-the fallback unreachable for any input that stayed syntactically valid.
+3. **byte-identical round trip** — catches both, and destroys the history it
+   protects: every record in a log a person or a sync tool ever reformatted is
+   discarded. The strictest rule was the most dangerous one.
+
+What works is termination plus completeness: a whole record ends with its
+terminator and carries every field. Two corollaries learned the hard way — the
+writer must REPAIR a missing terminator before appending, or one interrupted
+write costs two events; and a splitter must preserve line endings
+(`SplitAfter`, not `Split` plus re-adding `\n`) or it hands a terminator to the
+fragment and erases the signal.
+
+Prefer one parsing path to a fast-path-plus-fallback: the two-path version
+double-counted whatever the failed parse had collected, and left the fallback
+unreachable for any input that stayed syntactically valid.

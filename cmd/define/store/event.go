@@ -22,3 +22,12 @@ type ReviewEvent struct {
 	Correct bool      `yaml:"correct,omitempty"`
 	At      time.Time `yaml:"at"`
 }
+
+// complete reports whether an event carries every field a real one does.
+//
+// Half of the torn-record test: a fragment that happens to parse is missing
+// something. The other half is termination — see parseDay, which needs both,
+// because a cut inside the timestamp leaves a shorter date that IS a valid time.
+func (e ReviewEvent) complete() bool {
+	return e.Word != "" && e.Kind != "" && !e.At.IsZero()
+}

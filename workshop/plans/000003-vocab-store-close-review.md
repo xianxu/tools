@@ -759,3 +759,254 @@ findings:
       test in package store driving parseDay over each interesting truncation, asserting both the
       events and the torn count, is about ten lines and catches both.
 ```
+
+---
+
+## Re-review — 2026-08-20T21:58:57-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 3 — vocabulary store: per-user YAML deck in a brain, behind a Store seam |
+| repo | tools |
+| issue file | workshop/issues/000003-vocab-store.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | e44ac7885e15a22ce5a23bc05d404c812688296f..af70ea73d387a6dae49200138859c233fb0aa591 |
+| command | sdlc close --issue 3 |
+| reviewer | claude |
+| timestamp | 2026-08-20T21:58:57-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 4's Critical is genuinely gone and I verified it rather than reading the commit message: `parseDay` now has one path, `TestYAMLRecoveryDoesNotDuplicate` pins it, and removing the round-trip check fails three tests — so BR-28, BR-29 and BR-30 are all closed by real coverage. An exhaustive sweep of all 72 truncation offsets of a final record returns exactly the whole records plus `torn=1` in 70 of them; the two deviations are one benign (a record complete but for its trailing newline is admitted, correctly) and one real. Everything else is clean: `go build`, `go vet`, `gofmt -l`, `go test ./...`, `go test -race ./cmd/define/store/...`, `FuzzSlugIsSafe` to 6.2M execs, and the only `time.Now()` in production is inside `systemClock`. What blocks SHIP is two defects in the recovery code this window added, both verified end to end through the real store and both cheap. First, a torn fragment is not line-isolated: after a killed mid-append the *next session's ordinary lookup* is glued onto the fragment and permanently lost — I recorded `sycophantic`, tore an append, then recorded `quotidian`, and `Events` returns only `sycophantic` while warning "dropped 1 torn record(s)". That directly falsifies `atlas/define.md:231`. Second, validity is byte-equality with this yaml version's emitter applied to *every* record, not just the one an append can tear — so a CRLF-normalised day file drops all 3 of 3 records, and one requoted field drops that record.
+
+### 1. Strengths
+
+- **The round-trip rule is the right insight and it is load-bearing.** I deleted the check at `yaml.go:225-229` and three tests failed with exactly the fabricated records the comment predicts — `{Word:third … At:2026-08-20 00:00:00}` from a mid-timestamp cut. The tests are mutation-proof, not decorative.
+- **One parse path, and the comment explains the corpse.** `yaml.go:204-207` records *why* the two-path version was wrong (double-counting, unreachable fallback) rather than just deleting it. Same for `workshop/lessons.md:118-131`, which generalises both failed heuristics rather than the one instance.
+- **The atlas rewrite is honest engineering prose** (`atlas/define.md:220-244`): it contrasts what the two file kinds each defend against instead of asserting a blanket property, and it names the two weaker tests that looked sufficient. Apart from the one sentence at :231 this is a model entry.
+- **`storetest.Suite` still carries the diff** — run against `Mem` (`mem_test.go:11`) and `YAML` (`yaml_test.go:15`), with `merge` and `sortDeck` shared so the two cannot disagree. ARCH-MOCK pass: the fake is package code, not a `_test.go` alibi.
+- **Timestamps really do survive.** Probed rather than assumed: a `FixedZone(-07:00)` event round-trips through marshal/unmarshal with `off=-25200` intact, and every emitter-stressing headword I tried (`yes`, `null`, `123`, `a: b`, `#hash`, `café`, `-dash`) round-trips clean.
+
+### 2. Critical findings
+
+None. BR-28 is fixed.
+
+### 3. Important findings
+
+**A torn fragment is not line-isolated, so the next session's append is swallowed with it** — `cmd/define/store/yaml.go:236-251` (`splitRecords`), with `AppendEvent` at `:102-112`.
+
+`splitRecords` starts a new record only at a line beginning `- ` at column 0. A fragment left by a killed append has **no trailing newline**, so the next `AppendEvent` writes its record onto the same line. Verified end to end:
+
+```
+file  = "- word: sycophantic\n  kind: …\n- word: ephe- word: quotidian\n  kind: …\n"
+Events() = [sycophantic]
+warn     = "define: 2026-08-20.yaml: recovered 1 event(s), dropped 1 torn record(s)"
+```
+
+`quotidian` was a complete, successfully-written record from a healthy session and it is unrecoverable — permanently, since day files are never rewritten. Across all fragment lengths the following record is lost in **69 of 72** cases. The mirror case: a fragment that does not start with `- ` (a 1-byte `-`) glues onto the record *before* it and destroys that one instead. Either way `atlas/define.md:231` — "An interrupted write costs the event in flight and nothing else" — is false, and the warning under-reports (1 torn, 2 events gone).
+
+*Fix sketch* — make the fragment self-delimiting at write time, in `AppendEvent`, ~4 lines:
+```go
+if st, err := f.Stat(); err == nil && st.Size() > 0 {
+    var last [1]byte
+    if _, err := f.ReadAt(last[:], st.Size()-1); err == nil && last[0] != '\n' {
+        f.Write([]byte("\n")) // a torn fragment must not swallow the next record
+    }
+}
+```
+(needs `O_RDWR|O_APPEND`). That also buys the invariant the next finding wants: **only the final record of a file can ever be torn.**
+
+**Byte-identical round-trip is applied to every record, so a reformatted log is silently discarded** — `cmd/define/store/yaml.go:225-229`.
+
+The rule as implemented is not "this is a whole record", it is "these bytes are exactly what *this build's* `yaml.Marshal` emits". Every record in the file is held to it, though an interrupted append can only ever tear the last one. Verified through the real store — each of these is semantically intact and every record is dropped:
+
+| input | result |
+|---|---|
+| CRLF line endings (3 whole records) | `events=0`, "dropped 3 torn record(s)" |
+| one field requoted by hand (`word: "sycophantic"`) | `events=0`, "dropped 1 torn record(s)" |
+| reordered keys / a trailing comment / 4-space indent / explicit `correct: false` | dropped |
+
+The sharpest trigger is a routine `go get -u`: any change to the yaml emitter's quoting or indentation reclassifies **the entire accumulated history** as torn, and `event.go:15-17` declares that log the only source every `#8` statistic folds over. It degrades with a warning rather than crashing, but it is total loss of the thing the log exists for.
+
+*Fix sketch:* once the fix above guarantees torn ⇒ last record, apply the strict round-trip only to the final record and accept earlier ones on unmarshal success. Blast radius drops from "the whole file" to "one record", truncation detection is unchanged, and the `parseDay` doc comment gets to state the invariant it now relies on.
+
+### 4. Minor findings
+
+- `cmd/define/store/yaml_test.go:121` — `TestYAMLRecoversFromATornEventRecord` is now a strict subset of `TestYAMLDropsEveryShapeOfTornRecord`'s `cut mid-value` case (`:161`); same setup, same tail, weaker assertions. One of them is redundant (ARCH-DRY, tests).
+- `cmd/define/store/yaml.go:137` — the warning counts *records* dropped, not *events* lost; under the glue case above those differ, and the number a user sees is the smaller one.
+
+### 5. Test coverage notes
+
+The two gaps that made round 4 REWORK are closed, and I confirmed by mutation rather than by reading: deleting the round-trip check fails `TestYAMLRecoversFromATornEventRecord` plus two `TestYAMLDropsEveryShapeOfTornRecord` subtests. Because `parseDay` is now the only path, every existing event test exercises `splitRecords` — the unreachable-branch problem is structurally gone, which is a better fix than adding a test to reach it.
+
+Gaps, in priority order:
+
+1. **Nothing writes a fragment and then appends again** — the sequence a real Ctrl-C-then-rerun produces, and the one that loses a valid record. The six-case table at `yaml_test.go:154` always tears *last*.
+2. **Nothing feeds `parseDay` a well-formed record it did not itself emit.** Every event test writes through `AppendEvent`, so the suite can never observe that the validity rule is emitter-specific. One case with a hand-written-but-valid record would pin the intended contract either way.
+3. **`parseDay`/`splitRecords` still have no direct unit test** — they are pure and in-package, but the only tests live in `package store_test` and reach them through the filesystem. The exhaustive-truncation sweep that found the glue case is ~8 lines in `package store` and needs no temp dir.
+4. `YAML.Upsert`'s warning branch still has no test (BR-18); timestamp-offset preservation is still unasserted (BR-9) despite being load-bearing for `#8` — I verified it holds today by probe, but nothing in the suite would notice it breaking.
+
+### 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag (residue only).** `prefixMatch` held. Still open from round 2: the byte-identical event sort at `mem.go:83` / `yaml.go:145` (BR-11) and two `warnf` helpers each hard-coding `"define: "`. New this window, minor: the two overlapping torn-record tests.
+- **ARCH-PURE — pass, with the same caveat as last round.** `Word`, `ReviewEvent`, `Key`, `Slug`, `merge`, `sortDeck`, `Clock`, `parseDay`, `splitRecords` are genuinely pure; `YAML` is the thin shell and `openHistory` (`main.go:45-56`) is the entire IO seam. The caveat is that the pure recovery core is only exercised through the disk, so its purity is buying no test leverage — which is why an off-by-one in string splitting reached a boundary review twice.
+- **ARCH-PURPOSE — pass on code, two artifacts open.** Shadow-sweep over consumers of the storage model: README ✓, atlas ✓ (except the one falsified sentence at :231), project file ✓, code ✓. The **plan** is still a hand-maintained restatement the code does not derive from — BR-22, now five deltas, still no `## Revisions` section. And the issue `## Log` still records no boundary-review outcome for rounds 2–4 (BR-27), which AGENTS.md §3 makes part of crossing the boundary.
+- **ARCH-MOCK — pass, still the strongest part of the diff.** Stateful fake behind the same seam, one suite over both, portable non-production storage by construction (`NewYAML(t.TempDir(), nil)`). Standing caveat BR-25: properties where `Mem` is *stronger* than `YAML` (mutex guarding, non-nil vs nil empty `Deck`) are invisible to a conformance suite by construction and have to be stated on the interface instead. Worth settling before `#4`/`#5` consume it. Note the same blind spot covers the event-log parse: `Mem` has no serialisation, so no conformance obligation constrains what `YAML` considers a valid stored record — that contract lives only in `yaml_test.go`.
+- **For `#5`/`#8`:** `Word` deliberately carries no box/interval — keep the schedule out of `store/word.go` or `#5` inherits a migration. `Events(time.Time{})` still parses every day file on every `define` invocation (BR-21), and this window roughly doubles that cost by re-marshalling every record to validate it; the `since` parameter is already the fix. And because nothing ever repairs a day file, one torn record means `define` prints its warning on **every** future invocation forever, including the one-shot `define <word>` path that never touches history.
+
+### 7. Plan revision recommendations
+
+`workshop/plans/000003-vocab-store-plan.md` still has **no `## Revisions` section** (grep confirms). All five deltas are live and re-verified against the tree:
+
+1. **Type names** — the Integration-points table names `yamlStore`/`memStore`; the shipped exported types are `YAML` (`store/yaml.go:25`) and `Mem` (`store/mem.go:13`).
+2. **`Word` has no `Found` field** — the Pure-entities prose lists `Found bool`; `store/word.go:20-25` has none, and correspondingly the plan's `ReviewEvent` bullet omits the `Found` field the shipped struct does carry (`event.go:21`). Both halves of that swap need recording; the code is right.
+3. **`Key` collapses interior whitespace** — slug rule 1 says `strings.TrimSpace`; `word.go:30` is `strings.Join(strings.Fields(text), " ")`. The implementation is the better rule; record the change.
+4. **Constructor signature** — plan and Spec say `NewStore(dir)`; the shipped constructor is `NewYAML(dir string, warn io.Writer)` (`store/yaml.go:32`).
+5. **Atomicity is not a blanket rule** — the plan states "**Writes must be atomic** — write to a temp file … then rename" for `yamlStore` as a whole. The shipped design deliberately splits it: atomic for words, append-plus-record-level-recovery for events. The atlas now documents the split; the plan does not.
+
+Also worth adding to the plan's Core concepts: `parseDay`/`splitRecords` are now pure entities in `store/yaml.go` with real invariants, and the table that governs the review has no row for them.
+
+```findings
+dispose:
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      No FixedZone anywhere in the tree; every storetest.Suite timestamp is still time.UTC. Verified by probe that the offset does survive today, so this remains an untested contract rather than a bug.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      main.go:3-16 still has the stray blank line after "context" and the store import inside the stdlib group.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      mem.go:83 and yaml.go:145 still carry the byte-identical event sort; history_store.go:89 and yaml.go:151 still repeat the prefix literal.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      history_store.go:85-91 still reads and writes h.warned outside h.mu.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      One warned flag still covers both the construction-time read failure and every later write failure; the session-only suffix is still appended to "could not save word".
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      No length bound in Slug; word.go has no truncate-plus-hash path.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      Key at word.go:29-31 still does no Unicode normalisation.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      store.go:11-12 documents "Lookups accumulates" but not that Upsert can never set an exact count.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      TestYAMLDifferentWordsTouchDisjointFiles still asserts only the file count, not that alpha.yaml was untouched.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      Still no test for Upsert's "overwriting unreadable" branch at yaml.go:44-53.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      history_store_test.go:124-128 still hand-rolls failErr instead of errors.New.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      event.go:21 Found still lacks omitempty while Correct at :22 has it.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      Still eager, and this window amplifies it — parseDay re-marshals every record to validate it, so startup now costs two yaml operations per stored event, and a torn record makes the warning print on every future invocation forever.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      No "## Revisions" section exists (grep confirms); all five deltas re-verified live, and the Core concepts table now also lacks rows for parseDay/splitRecords.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      writeAtomic still inherits 0600 from os.CreateTemp while AppendEvent at yaml.go:102 opens 0644.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      store.go:5-20 still states no thread-safety contract. Note the same blind spot now also covers what counts as a valid stored record — Mem has no serialisation, so no conformance obligation constrains it.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      replraw.go:68-69 still reads "the History seam will do once #3 backs it with a store".
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      The issue Log still ends at the implementation notes; no entry records the round-2, round-3 or round-4 close-review outcomes.
+  - id: BR-28
+    disposition: addressed
+    note: |
+      The whole-file parse path is gone; parseDay is record-by-record only. TestYAMLRecoveryDoesNotDuplicate pins it, and an exhaustive sweep of all 72 truncation offsets produces no duplicate.
+  - id: BR-29
+    disposition: addressed
+    note: |
+      Verified by probe — "at: 2026-08-2", "at: 2026-08-20" and a cut inside the time all now return torn=1 and admit no fabricated event. The round-trip check subsumes complete(), which is gone.
+  - id: BR-30
+    disposition: addressed
+    note: |
+      One parse path means every event test now reaches splitRecords; deleting the round-trip check fails three tests. The suggested pure in-package test was not added, which is re-raised as a coverage note rather than as this finding.
+findings:
+  - id: new
+    severity: Important
+    title: |
+      A torn fragment is not line-isolated, so the next session's append is glued to it and permanently lost
+    detail: |
+      splitRecords (yaml.go:236-251) starts a record only at a line beginning "- " at column 0, but a
+      fragment left by a killed append has no trailing newline, so the next AppendEvent writes onto the
+      same line. Verified end to end through the real store: record "sycophantic", tear an append, then
+      record "quotidian" from a healthy session, and Events returns only [sycophantic] while warning
+      "dropped 1 torn record(s)" — quotidian is unrecoverable, permanently, since day files are never
+      rewritten. The following record is lost in 69 of 72 fragment lengths. The mirror case, a fragment
+      not starting with "- " such as a 1-byte "-", destroys the PRECEDING record instead. Either way
+      atlas/define.md:231 ("an interrupted write costs the event in flight and nothing else") is false,
+      and the warning under-reports — 1 torn record, 2 events gone. Fix at write time in AppendEvent,
+      about four lines: open O_RDWR|O_APPEND, and if the file is non-empty and its last byte is not a
+      newline, write one first. That also establishes the invariant the next finding needs — only the
+      final record of a file can ever be torn.
+  - id: new
+    severity: Important
+    title: |
+      Byte-identical round-trip is applied to every record, so any reformatted log is silently discarded
+    detail: |
+      yaml.go:225-229 decides validity by exact string equality with what THIS build's yaml.Marshal
+      emits, and applies it to every record even though an interrupted append can only tear the last
+      one. Verified through the real store, each input semantically intact: CRLF line endings drop all
+      3 of 3 records ("recovered 0 event(s), dropped 3 torn record(s)"); one hand-requoted field drops
+      that record; reordered keys, a trailing comment, 4-space indent and an explicit "correct: false"
+      each drop too. The sharpest trigger is a routine dependency bump — any change to the emitter's
+      quoting or indentation reclassifies the entire accumulated history as torn, and event.go:15-17
+      declares that log the only source every issue-8 statistic folds over. It warns rather than
+      crashing, but it is total loss of the thing the log exists for. Once the fix above guarantees
+      torn implies last-record, apply the strict round-trip only to the final record and accept earlier
+      ones on unmarshal success — truncation detection is unchanged and the blast radius drops from the
+      whole file to one record.
+  - id: new
+    severity: Minor
+    title: |
+      Two torn-record tests overlap; one is a strict subset of the other
+    detail: |
+      yaml_test.go:121 TestYAMLRecoversFromATornEventRecord uses the same setup and the same tail as
+      TestYAMLDropsEveryShapeOfTornRecord's "cut mid-value" case at :161, with weaker assertions.
+  - id: new
+    severity: Minor
+    title: |
+      The torn warning counts dropped records, not lost events, and the two differ
+    detail: |
+      yaml.go:137 reports the number of unparseable chunks. Under the glue case above one chunk holds
+      both the fragment and a whole record, so the user is told "dropped 1" when two events are gone.
+```

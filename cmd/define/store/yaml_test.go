@@ -156,8 +156,14 @@ func TestYAMLDropsEveryShapeOfTornRecord(t *testing.T) {
 	for _, tc := range []struct{ name, tail string }{
 		{"cut mid-key", "- wor"},
 		{"cut mid-value", "- word: thi"},
-		{"cut after word", "- word: third\n"},
-		{"cut inside the timestamp", "- word: third\n  kind: looked-up\n  found: true\n  at: 2026-08-20\n"},
+		{"cut after word", "- word: third\n"}, // terminated but incomplete
+		// A truncation never ADDS a terminator, so these carry no trailing newline.
+		// An earlier version of this case appended one, which produced an input the
+		// writer cannot emit — it always writes a full RFC3339 timestamp, so a
+		// short date followed by a newline can only come from a human editing the
+		// log, and that is an edit rather than corruption.
+		{"cut inside the timestamp", "- word: third\n  kind: looked-up\n  found: true\n  at: 2026-08-20"},
+		{"cut just before the terminator", "- word: third\n  kind: looked-up\n  found: true\n  at: 2026-08-20T09:00:00Z"},
 		{"unterminated quote", `- word: "third`},
 		{"cut mid-key of last field", "- word: third\n  kind: looked-up\n  found: true\n  a"},
 	} {
@@ -221,5 +227,62 @@ func TestYAMLRecoveryDoesNotDuplicate(t *testing.T) {
 		if n != 1 {
 			t.Errorf("%q appears %d times", w, n)
 		}
+	}
+}
+
+// A log that has been reformatted — by a person, an editor, or a sync tool
+// rewriting quotes — must survive. Byte-identical round-tripping would discard
+// every record in it, destroying the history it exists to protect.
+func TestYAMLAcceptsAReformattedLog(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewYAML(dir, nil)
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
+
+	// Rewrite it the way a formatter might: quoted scalars, different spacing.
+	path := filepath.Join(dir, "events", "2026-08-20.yaml")
+	reformatted := "- word:   \"first\"\n  kind:   \"looked-up\"\n  found:  yes\n  at:     2026-08-20T09:00:00Z\n"
+	if err := os.WriteFile(path, []byte(reformatted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ev, err := s.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ev) != 1 || ev[0].Word != "first" || !ev[0].Found {
+		t.Errorf("a reformatted log was discarded: %+v", ev)
+	}
+}
+
+// One interrupted write must cost ONE event. If the fragment is not isolated on
+// its own line, the next session's append lands on it and both are lost.
+func TestYAMLTornFragmentDoesNotSwallowTheNextAppend(t *testing.T) {
+	dir := t.TempDir()
+	var warn bytesBuffer
+	s := store.NewYAML(dir, &warn)
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
+
+	// A kill mid-append: no terminator.
+	path := filepath.Join(dir, "events", "2026-08-20.yaml")
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	f.WriteString("- word: torn")
+	f.Close()
+
+	// The NEXT session appends normally.
+	_ = store.NewYAML(dir, nil).AppendEvent(store.ReviewEvent{
+		Word: "afterwards", Kind: store.EventLookedUp, Found: true, At: day.Add(time.Hour),
+	})
+
+	ev, err := s.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ev) != 2 {
+		t.Fatalf("got %d events, want 2 — the fragment swallowed the next append: %+v", len(ev), ev)
+	}
+	if ev[1].Word != "afterwards" {
+		t.Errorf("events = %+v, want the later append preserved", ev)
 	}
 }
