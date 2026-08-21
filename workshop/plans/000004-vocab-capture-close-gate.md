@@ -565,6 +565,113 @@ rounds:
           family: generated-artifact-noise
           round: 6
       blocked: false
+    - "n": 7
+      timestamp: "2026-08-21T12:15:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-27
+          disposition: addressed
+          note: Both mutations re-run independently - skipping Upsert on a repeat and propagating a capture error each redden exactly one test; applied and compiled verified.
+          round: 7
+        - id: BR-4
+          disposition: not-addressed
+          note: Revisions section 3 still names the three deps fields with no default stated for any of them.
+          round: 7
+        - id: BR-26
+          disposition: not-addressed
+          note: Probe re-verified - a panic in withStore's early return leaves the entire suite green, so no test enters the branch; no comment states deck's default.
+          round: 7
+        - id: BR-28
+          disposition: not-addressed
+          note: main.go:36 comment verbatim; capture_test.go:316 still sets newStore = openStore and five test files use t.TempDir().
+          round: 7
+        - id: BR-22
+          disposition: not-addressed
+          note: Fifth occurrence (lines 18, 251, 485, 674, 878). Unfixable from tools - see BR-29.
+          round: 7
+        - id: BR-29
+          disposition: not-addressed
+          note: No ariadne issue exists (checked ariadne/workshop/issues) and this issue's Log references only ariadne#195, a different mechanism.
+          round: 7
+      findings:
+        - id: BR-30
+          severity: Critical
+          title: A 9.6MB Mach-O arm64 binary is committed at cmd/define/define in the HEAD commit under review
+          detail: |-
+            2nd in family (BR-11; prevalence 2). Do NOT just add a fourth anchored .gitignore line - but DO excise the
+            blob before merge, because it is the one open item that becomes irreversible. Measured: git ls-files shows
+            it tracked, git log --diff-filter=A dates it to 42cc96d, it is 9616546 bytes against a 99336-byte
+            next-largest blob, and .git is currently 9.3M so it roughly doubles the repo for every clone forever. It
+            is arm64-only, so a Linux or amd64 checkout gets an unrunnable file; and because it is tracked, cd
+            cmd/define && go build now dirties git status on every developer build. The rule covering this and BR-11:
+            an artifact the developer workflow drops into the working tree gets an ignore pattern covering EVERY
+            directory it can be produced in, added when the tool learns to produce it. .gitignore has been patched
+            three times by this rule's absence and each patch was anchored to the one place it had already happened
+            (bin/, then /define root-only, then /words/ and /events/); go build in a main package writes the binary
+            into that package's directory, which none of them match. Second half, since no ignore would have caught
+            this one - it was git add-ed before any ignore existed: read git show --stat before committing, where
+            "Bin 0 -> 9616546 bytes" is visible at a glance and does appear in this commit's own stat. Fix while the
+            branch is unmerged: git rm --cached cmd/define/define, add an un-anchored pattern, git commit --amend.
+          family: writes-to-cwd-unignored
+          round: 7
+        - id: BR-31
+          severity: Important
+          title: The retracted "a regression in Slug must fail HERE" claim survives in storetest/suite.go and is false by measurement
+          detail: |-
+            8th in family (BR-9, BR-10, BR-17, BR-18, README exit codes, BR-25, BR-28; prevalence 8). Do NOT patch this
+            site. storetest/suite.go:140-142 says the traversal guarantee is "asserted here rather than inherited from
+            Slug - a regression in Slug must fail HERE, loudly". That is the exact sentence 96adc20 deleted from
+            YAML.Forget's doc for BR-25 and the exact claim the same commit rewrote the Done-when to RETRACT; wordFileName's
+            own doc now says the opposite. Verified by mutation: regressing Slug entirely (no sanitising) reddens
+            TestSlugDoesNotMergeHyphenAndSpace, TestSlugIsAlwaysOneSafePathElement and FuzzSlugIsSafe, and leaves
+            Suite/forget cannot escape the words directory GREEN - it discards err, so its assertions pass whether the
+            guard is present, absent or bypassed. Second site the same sweep finds: main.go:27, capture.go:50 and
+            atlas/define.md:283 each state absolutely that storeCapturer is the only thing that writes to the store,
+            while forgetWord's d.deck.Forget at main.go:396 deletes a word file - deps.deck's own comment three lines
+            below main.go:27 acknowledges the second mutator. The rule is BR-28's, which is correct and was never
+            executed as written: run the mechanical sweep over ALL 14 changed .go/.md files, not the files a finding
+            named - storetest/suite.go is in git diff --stat and grepping Slug from that comment lands on the
+            contradiction directly.
+          family: prose-contradicts-code
+          round: 7
+        - id: BR-32
+          severity: Minor
+          title: History.Add's found parameter is now dead in both implementations, and orElse is a generic for two nil checks
+          detail: |-
+            4th in family (BR-14, BR-15, BR-21; prevalence 4). Do NOT patch these instances. History.Add(line string,
+            found bool) at history.go:16 is ignored by BOTH implementations - history.go:28 and history_store.go:50 both
+            take _ bool - while the sole caller computes code == 0 to supply it (replraw.go:171). It existed only
+            because storeHistory.Add decided event-vs-deck; #4 moved that decision and left the parameter, which is
+            BR-21's rule verbatim. It was missed because it lives in history.go, a file the diff never touched, so
+            BR-28's file-based sweep cannot reach it - the extension the rule needs is: sweep the changed files AND the
+            interface plus callers of every symbol whose responsibilities the diff moved. Weaker second instance,
+            reasonably withdrawn: orElse[T comparable] at main.go:83 is a generic helper introduced by the very commit
+            that closed this family, replacing two nil checks with six lines.
+          family: needless-indirection
+          round: 7
+        - id: BR-33
+          severity: Minor
+          title: run builds the store-backed deps before the -forget dispatch, so --forget reads an event log it never uses
+          detail: |-
+            main.go:212 calls d.withStore before the -forget dispatch at :214, so --forget constructs storeHistory and
+            loads the whole event log for a result it never consults. Reproduced against a seeded directory: a -forget
+            run printed "define: 2026-08-21.yaml: recovered 0 event(s), dropped 1 torn record(s)" for a log it does not
+            touch. Stated in round 6's prose and never given an id, which is the mechanism BR-28 named; recording it so
+            it can be disposed rather than restated. The rule: a mode dispatch decides which dependencies are needed,
+            so it runs before they are constructed.
+          family: eager-dependency-construction
+          round: 7
+        - id: BR-34
+          severity: Minor
+          title: 'forgetWord prints a bare "define: %v" where every neighbouring message names the operand'
+          detail: |-
+            2nd in family (BR-13; prevalence 2). Do NOT patch this instance alone. main.go:398 formats a store error as
+            "define: %v" while its neighbours use "define: %s: %v" with the word. The rule covering this and BR-13: a
+            user-facing error names both the condition and the operand it failed on - BR-13's message named the wrong
+            condition, this one names no operand.
+          family: misleading-error-text
+          round: 7
+      blocked: true
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -848,11 +955,81 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   at rounds 3 and 4. The actionable move is an ariadne issue for "artifact capture takes agent stdout only",
   referenced from this issue's Log, rather than a fifth not-addressed disposition here.
 
+## Round 7 — 2026-08-21T12:15:28-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-27 — addressed — Both mutations re-run independently - skipping Upsert on a repeat and propagating a capture error each redden exactly one test; applied and compiled verified.
+- BR-4 — not-addressed — Revisions section 3 still names the three deps fields with no default stated for any of them.
+- BR-26 — not-addressed — Probe re-verified - a panic in withStore's early return leaves the entire suite green, so no test enters the branch; no comment states deck's default.
+- BR-28 — not-addressed — main.go:36 comment verbatim; capture_test.go:316 still sets newStore = openStore and five test files use t.TempDir().
+- BR-22 — not-addressed — Fifth occurrence (lines 18, 251, 485, 674, 878). Unfixable from tools - see BR-29.
+- BR-29 — not-addressed — No ariadne issue exists (checked ariadne/workshop/issues) and this issue's Log references only ariadne#195, a different mechanism.
+
+### Raised
+
+- **BR-30** [Critical] `writes-to-cwd-unignored` A 9.6MB Mach-O arm64 binary is committed at cmd/define/define in the HEAD commit under review
+  2nd in family (BR-11; prevalence 2). Do NOT just add a fourth anchored .gitignore line - but DO excise the
+  blob before merge, because it is the one open item that becomes irreversible. Measured: git ls-files shows
+  it tracked, git log --diff-filter=A dates it to 42cc96d, it is 9616546 bytes against a 99336-byte
+  next-largest blob, and .git is currently 9.3M so it roughly doubles the repo for every clone forever. It
+  is arm64-only, so a Linux or amd64 checkout gets an unrunnable file; and because it is tracked, cd
+  cmd/define && go build now dirties git status on every developer build. The rule covering this and BR-11:
+  an artifact the developer workflow drops into the working tree gets an ignore pattern covering EVERY
+  directory it can be produced in, added when the tool learns to produce it. .gitignore has been patched
+  three times by this rule's absence and each patch was anchored to the one place it had already happened
+  (bin/, then /define root-only, then /words/ and /events/); go build in a main package writes the binary
+  into that package's directory, which none of them match. Second half, since no ignore would have caught
+  this one - it was git add-ed before any ignore existed: read git show --stat before committing, where
+  "Bin 0 -> 9616546 bytes" is visible at a glance and does appear in this commit's own stat. Fix while the
+  branch is unmerged: git rm --cached cmd/define/define, add an un-anchored pattern, git commit --amend.
+- **BR-31** [Important] `prose-contradicts-code` The retracted "a regression in Slug must fail HERE" claim survives in storetest/suite.go and is false by measurement
+  8th in family (BR-9, BR-10, BR-17, BR-18, README exit codes, BR-25, BR-28; prevalence 8). Do NOT patch this
+  site. storetest/suite.go:140-142 says the traversal guarantee is "asserted here rather than inherited from
+  Slug - a regression in Slug must fail HERE, loudly". That is the exact sentence 96adc20 deleted from
+  YAML.Forget's doc for BR-25 and the exact claim the same commit rewrote the Done-when to RETRACT; wordFileName's
+  own doc now says the opposite. Verified by mutation: regressing Slug entirely (no sanitising) reddens
+  TestSlugDoesNotMergeHyphenAndSpace, TestSlugIsAlwaysOneSafePathElement and FuzzSlugIsSafe, and leaves
+  Suite/forget cannot escape the words directory GREEN - it discards err, so its assertions pass whether the
+  guard is present, absent or bypassed. Second site the same sweep finds: main.go:27, capture.go:50 and
+  atlas/define.md:283 each state absolutely that storeCapturer is the only thing that writes to the store,
+  while forgetWord's d.deck.Forget at main.go:396 deletes a word file - deps.deck's own comment three lines
+  below main.go:27 acknowledges the second mutator. The rule is BR-28's, which is correct and was never
+  executed as written: run the mechanical sweep over ALL 14 changed .go/.md files, not the files a finding
+  named - storetest/suite.go is in git diff --stat and grepping Slug from that comment lands on the
+  contradiction directly.
+- **BR-32** [Minor] `needless-indirection` History.Add's found parameter is now dead in both implementations, and orElse is a generic for two nil checks
+  4th in family (BR-14, BR-15, BR-21; prevalence 4). Do NOT patch these instances. History.Add(line string,
+  found bool) at history.go:16 is ignored by BOTH implementations - history.go:28 and history_store.go:50 both
+  take _ bool - while the sole caller computes code == 0 to supply it (replraw.go:171). It existed only
+  because storeHistory.Add decided event-vs-deck; #4 moved that decision and left the parameter, which is
+  BR-21's rule verbatim. It was missed because it lives in history.go, a file the diff never touched, so
+  BR-28's file-based sweep cannot reach it - the extension the rule needs is: sweep the changed files AND the
+  interface plus callers of every symbol whose responsibilities the diff moved. Weaker second instance,
+  reasonably withdrawn: orElse[T comparable] at main.go:83 is a generic helper introduced by the very commit
+  that closed this family, replacing two nil checks with six lines.
+- **BR-33** [Minor] `eager-dependency-construction` run builds the store-backed deps before the -forget dispatch, so --forget reads an event log it never uses
+  main.go:212 calls d.withStore before the -forget dispatch at :214, so --forget constructs storeHistory and
+  loads the whole event log for a result it never consults. Reproduced against a seeded directory: a -forget
+  run printed "define: 2026-08-21.yaml: recovered 0 event(s), dropped 1 torn record(s)" for a log it does not
+  touch. Stated in round 6's prose and never given an id, which is the mechanism BR-28 named; recording it so
+  it can be disposed rather than restated. The rule: a mode dispatch decides which dependencies are needed,
+  so it runs before they are constructed.
+- **BR-34** [Minor] `misleading-error-text` forgetWord prints a bare "define: %v" where every neighbouring message names the operand
+  2nd in family (BR-13; prevalence 2). Do NOT patch this instance alone. main.go:398 formats a store error as
+  "define: %v" while its neighbours use "define: %s: %v" with the word. The rule covering this and BR-13: a
+  user-facing error names both the condition and the operand it failed on - BR-13's message named the wrong
+  condition, this one names no operand.
+
 ## Open findings
 
 - **BR-4** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
 - **BR-22** [Minor] `generated-artifact-noise` The committed close-review artifact opens with a harness stderr preamble
 - **BR-26** [Minor] `unstated-seam-default` withStore's early return silently strands deck when history and capture are both supplied
-- **BR-27** [Important] `unpinned-invariant` Done-when 2 "repeat lookups increment the count" is ticked and no test pins it through the capture path
 - **BR-28** [Minor] `prose-contradicts-code` main.go:35 claims no test touches the real filesystem, in the file this commit says it swept
 - **BR-29** [Minor] `generated-artifact-noise` BR-22 cannot be closed from this repo - the generator lives in the ariadne peer
+- **BR-30** [Critical] `writes-to-cwd-unignored` A 9.6MB Mach-O arm64 binary is committed at cmd/define/define in the HEAD commit under review
+- **BR-31** [Important] `prose-contradicts-code` The retracted "a regression in Slug must fail HERE" claim survives in storetest/suite.go and is false by measurement
+- **BR-32** [Minor] `needless-indirection` History.Add's found parameter is now dead in both implementations, and orElse is a generic for two nil checks
+- **BR-33** [Minor] `eager-dependency-construction` run builds the store-backed deps before the -forget dispatch, so --forget reads an event log it never uses
+- **BR-34** [Minor] `misleading-error-text` forgetWord prints a bare "define: %v" where every neighbouring message names the operand

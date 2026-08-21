@@ -20,3 +20,9 @@ bin/
 # events/ during review.
 /words/
 /events/
+
+# `go build ./` inside a cmd/<name>/ directory writes an extensionless binary
+# named after that directory — a 9.6 MB one was committed this way. bin/ is the
+# sanctioned output. The pattern below covers the known tools; the general case
+# is enforced by TestNoCommittedBinaries, which fails for any future cmd/ too.
+/cmd/*/define

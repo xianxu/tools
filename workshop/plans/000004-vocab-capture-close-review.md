@@ -1020,3 +1020,209 @@ findings:
       at rounds 3 and 4. The actionable move is an ariadne issue for "artifact capture takes agent stdout only",
       referenced from this issue's Log, rather than a fifth not-addressed disposition here.
 ```
+
+---
+
+## Re-review — 2026-08-21T12:15:28-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 4 — capture looked-up words into the deck |
+| repo | tools |
+| issue file | workshop/issues/000004-vocab-capture.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4afa1c537819ad662ad149a14bd757ac149772e5..42cc96d1f93e0521220a1b8fcc6cf161ff11241b |
+| command | sdlc close --issue 4 |
+| reviewer | claude |
+| timestamp | 2026-08-21T12:15:28-07:00 |
+| verdict | REWORK |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Seven rounds in, the code is right and this round I could verify the two claims the commit makes rather than trust them: both new pins go RED under mutations I confirmed applied *and* compiled, each reddening exactly one test — skipping `Upsert` on a repeat sighting reddens only `TestRepeatLookupsIncrementThroughCapture` (`Lookups = 1 after three lookups, want 3`), and giving `Capturer.Capture` an error return that `lookupAndRender` propagates reddens only `TestFailingStoreStillDefinesAndExitsZero` (`exit = 1, want 0`). `go test`, `-race`, `go vet` and a `GOOS=linux CGO_ENABLED=0` build are all green, and I drove capture end-to-end against a real directory: a failed lookup writes one `found: false` event and no `words/`, `DEFINE_NO_CAPTURE=1` writes nothing at all, `--forget` removes the word and leaves the log. BR-27 is genuinely closed. **What blocks the boundary is one thing, and it is in the HEAD commit itself: `42cc96d` committed a 9,616,546-byte Mach-O arm64 executable at `cmd/define/define`.** It is the largest object in the repo by ~97× (next largest blob: 99 KB), it roughly doubles `.git` (currently 9.3 M), and `.gitignore`'s own opening comment says this exact class already happened twice and that "Both paths are ignored so neither recurs" — a claim this commit falsifies at a third path. Unlike every other open item, it is cheap now (`git rm --cached cmd/define/define` + amend, the branch is unmerged) and permanent after merge. Everything else below is non-blocking.
+
+### 1. Strengths
+
+- **Both new pins survive mutation, and the mutations were verified to land.** `capture_test.go:370` and `:394`. Round 6's own lesson — "a mutation is a result only if it applied AND compiled" — applied to its own work, and it holds up under independent re-execution.
+- **The Done-when audit was real, not a response to the named box.** BR-27 named #2; the commit found #6 unpinned as well, by audit. That is the family rule working the way six rounds of findings asked for, and the Log says which instance was found by audit rather than by being named.
+- **Live behaviour matches every user-facing claim I checked.** Failed lookup → event only, exit 1; opt-out → empty directory; `--forget` → word gone, `events/` intact, exit 0; event timestamps keep their `-07:00` offset while the day file is named in UTC, exactly as `atlas/define.md` says `#8` will depend on.
+- **`ARCH-PURE` is genuinely earned.** `decideCapture` (`capture.go:26`) and `wordFileName` (`yaml.go:180`) are pure, table-tested with zero IO, and both mutation-proven; `openStore` is the boundary and is injectable through `deps.newStore`, which is what makes the env-wiring test possible without touching the developer's filesystem.
+- **`Forget` joined `storetest.Suite`** rather than getting per-implementation tests, so `Mem` and `YAML` both answer for case-insensitivity, absence-is-not-an-error and events-survive — ARCH-MOCK done properly.
+
+### 2. Critical findings
+
+**C-1 — `cmd/define/define` — a 9.6 MB build artifact is committed in the commit under review.**
+
+**This is the 2nd finding in family `writes-to-cwd-unignored`** (BR-11; prevalence 2). Per the escalation rule I am not asking for this instance to be patched — but the instance is also irreversible after merge, so it needs both halves.
+
+Measured:
+
+```
+git ls-files cmd/define/define        → tracked
+git log --diff-filter=A -- …/define   → 42cc96d  (HEAD, this commit)
+file …                                → Mach-O 64-bit executable arm64
+largest blobs                         → 9616546  cmd/define/define
+                                        99336    (next largest, a markdown file)
+```
+
+Three consequences: every clone pays for it forever; a Linux or amd64 checkout gets a 9.6 MB file that cannot run; and because it is *tracked*, `cd cmd/define && go build` now dirties `git status` on every developer build — the working-tree hazard `.gitignore` was extended twice to prevent.
+
+*The rule, which covers BR-11 and this:* **an artifact the developer workflow drops into the working tree gets ignored by a pattern that covers every directory it can be produced in, and the ignore is added when the tool learns to produce it — not after the first one is committed.** `.gitignore` has been patched three times by this rule's absence and each patch was path-anchored to the one place it had already happened: `bin/`, then `/define` (root only), then `/words/` and `/events/`. `cmd/define/define` is not matched by any of them, because `go build` in a `main` package directory writes the binary *there*. The pattern that closes the class is un-anchored (`define` and/or `cmd/*/define`), not a fourth anchored line. The second half, since the ignore alone would not have caught this one — it was `git add`-ed before any ignore existed: **read `git show --stat` before committing**; a `Bin 0 -> 9616546 bytes` line is visible at a glance and appears in this commit's own stat output.
+
+*Fix, before this branch merges:* `git rm --cached cmd/define/define`, add the un-anchored ignore, `git commit --amend`. The blob then never enters shared history.
+
+### 3. Important findings
+
+**I-1 — `cmd/define/store/storetest/suite.go:140-142` — the retracted safety claim survives in a third file, and it is false by measurement.**
+
+**This is the 8th finding in family `prose-contradicts-code`** (BR-9, BR-10, BR-17, BR-18, README exit codes, BR-25, BR-28; prevalence 8). Do NOT patch this site.
+
+The subtest comment reads: *"the guarantee is asserted here rather than inherited from `Slug` — a regression in `Slug` must fail HERE, loudly."* That is the exact sentence `96adc20` deleted from `YAML.Forget`'s doc (BR-25) and the exact claim the same commit rewrote the issue's Done-when to **retract**. `wordFileName`'s own doc (`yaml.go:174-179`) now says the opposite in plain words — "no test could distinguish the guard from `Slug`, and removing it left every test green."
+
+Verified by mutation rather than argued: I regressed `Slug` completely (`return strings.ReplaceAll(key, " ", "-")`, no sanitising at all), confirmed it applied and compiled, and ran the store package. Red: `TestSlugDoesNotMergeHyphenAndSpace`, `TestSlugIsAlwaysOneSafePathElement`, `FuzzSlugIsSafe` (5 seeds). **Green: `Suite/forget cannot escape the words directory`** — the subtest whose comment claims it must fail loudly. It cannot: `_ = err` discards the only signal that would differ, so the assertions pass whether the guard is present, absent, or bypassed.
+
+A second site the same sweep turns up: `main.go:27`, `capture.go:50` and `atlas/define.md:283` each state absolutely that `storeCapturer` is *"the only thing in the process that writes to the store"* — while `forgetWord` → `d.deck.Forget(word)` (`main.go:396`) deletes a word file, which is a store mutation performed outside the capturer. `deps.deck`'s own comment three lines below `main.go:27` acknowledges the second mutator exists. A reader of `#5` or `#8` auditing "what can change this deck?" is told three times that the answer is one thing.
+
+*The rule, which is BR-28's with the scope clause that would have caught this one:* BR-28 made the sweep mechanical — "for each file in `git diff --stat`, read every comment making a claim about another symbol and grep that symbol." `storetest/suite.go` **is** in `git diff --stat` for this window, and grepping `Slug` from that comment lands directly on `wordFileName`'s contradicting doc. So the rule is right and was not run; the gap is that it has never been executed as written on the *full* changed-file list, only on the files a finding named. Run it once over all 14 changed `.go`/`.md` files and this family closes.
+
+### 4. Minor findings
+
+- **BR-28 (not-addressed)** — `main.go:36` still reads "Tests leave it nil and get in-memory defaults, so no test ever touches the real filesystem." `capture_test.go:316` sets `rig.deps.newStore = openStore`; five test files use `t.TempDir()`. Both clauses false, unchanged. Covered by I-1's rule; do not patch this site alone.
+- **BR-4 / BR-26 (both not-addressed)** — `withStore`'s early return (`main.go:65-67`) still strands `deck`, and Revisions §3 still names the three new `deps` fields without stating any of their defaults. Re-verified this round with a probe: replacing the early return with `panic(...)` leaves the **entire suite green**, so no test enters the branch. Unchanged from round 6's disposition.
+- **NEW `needless-indirection` (4th in family; prevalence 4)** — `History.Add(line string, found bool)` (`history.go:16`): the `found` parameter is now ignored by **both** implementations (`history.go:28` and `history_store.go:50` both take `_ bool`) while the sole caller computes `code == 0` to supply it (`replraw.go:171`). It existed only because `storeHistory.Add` decided event-vs-deck; `#4` moved that decision and left the parameter. Same rule as BR-21 verbatim — *strip the surface a refactor's removed responsibility served, in the same commit* — and it was missed because it lives in `history.go`, which the diff never touched, so BR-28's file-based sweep could not reach it. That is the extension the rule needs: sweep the changed files **and the interface + callers of every symbol whose responsibilities the diff moved.** Second instance of the same family this round, weaker and reasonably `withdrawn`: `orElse[T comparable]` (`main.go:83`) is a generic helper introduced by the commit that closed `needless-indirection`, replacing two nil checks with six lines.
+- **NEW `eager-dependency-construction`** — `run` calls `d.withStore(opt, stderr)` at `main.go:212`, *before* the `-forget` dispatch at `:214`, so `--forget` constructs `storeHistory` and reads the whole event log for a result it never uses. Visible symptom, reproduced with a seeded directory: `define: 2026-08-21.yaml: recovered 0 event(s), dropped 1 torn record(s)` printed by a `-forget` run that never touches the log. Stated in round 6's prose and never given an id; recording it so it can be disposed.
+- **NEW `misleading-error-text` (2nd in family; prevalence 2)** — `forgetWord` prints a bare `define: %v` on a store error (`main.go:398`) where every neighbouring message carries the operand (`define: %s: %v`). *The rule covering this and BR-13:* a user-facing error names both the condition and the operand it failed on; BR-13's message named the wrong condition, this one names no operand.
+- **BR-22 (not-addressed) / BR-29 (not-addressed)** — the harness preamble is now at `close-review.md:18, 251, 485, 674, 878` — a fifth occurrence, one per round, exactly as predicted at rounds 3, 4 and 6. BR-29 asked for an ariadne issue referenced from this issue's Log; I checked `/Users/xianxu/workspace/ariadne/workshop/issues/` (no artifact-capture issue) and this issue's Log (only `ariadne#195`, a different mechanism). Neither exists yet. This cannot converge here — the generator is `ariadne/cmd/sdlc`.
+
+### 5. Test coverage notes
+
+The suite is green with `-race` (24.0 s / 25.5 s) and I mutation-checked four things independently this round, confirming each applied and compiled before reading the result: both new pins (RED, one test each), the `Slug`-regression claim in I-1 (GREEN where the comment says it must be RED), and the `withStore` branch probe (GREEN, i.e. unreachable). All six Done-when boxes now name a symbol, and every one I traced has an assertion behind it — that is a real change from rounds 2–5, where three did not. The shape is sound: `decideCapture` and `wordFileName` table-tested with zero IO; per-path arity at the `Capturer` seam including the `-raw` row; one store-level arity assertion through the real wiring that provably sees writers *below* the seam; `openStore` on both branches; one `t.Setenv` end-to-end disk assertion; `Forget` in the shared conformance suite. The one structural gap left is not a missing test but a mislabelled one — `Suite/forget cannot escape the words directory` (I-1) discards the error it would need to distinguish anything, so it asserts less than its name and comment claim. Making it assert the error, or renaming it to what it actually covers, is the honest close.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass on code, flag on prose (I-1).** Grep-verified: `decideCapture` has one caller; `c.st.AppendEvent`/`c.st.Upsert` in `capture.go` are the only store writes outside `store/`; all three `.Capture(` calls are inside `lookupAndRender`; `wordFileName` has both filename-deriving call sites. The duplication that remains is entirely in comments — "why the delete path is safe" has three homes and one still asserts a retracted claim, and "who mutates the store" has three absolute statements that omit `Forget`.
+- **ARCH-PURE — pass.** Two real pure functions with IO-free, mutation-proven tests; a thin injected shell (`storeCapturer`); the boundary (`openStore`) behind a seam. No business logic leaked into `store/`.
+- **ARCH-PURPOSE — pass.** Shadow-sweep on `decideCapture`: `storeCapturer` derives ✓, the raw branch derives and is pinned ✓, `openStore`'s `noCapture` read is a labelled second reader of the same *input* rather than a restatement of the *policy* ✓. On `wordFileName`: `Upsert` ✓, `Forget` ✓. The issue's stated purpose — every entry path records, and records once — is delivered on every path, not the easy subset, and the "asserted, not inherited" obligation was discharged by measured retraction rather than left as documentation.
+- **ARCH-MOCK — pass, with one note for downstream.** `store.Mem` ships as production code behind the interface `YAML` implements, `storetest.Suite` runs both, the owned backend boots from any portable folder (`store.NewYAML(dir, warn)`, tests use `t.TempDir`) with no production configuration, and the audio CDN and player each have a fake at the same seam production uses. The note, pre-existing and outside this issue's scope: the macOS CoreServices dictionary has a fixture-backed fake (`testDict`) but **no live conformance check** — nothing detects the day CoreServices changes its output shape. Worth an issue before `#15` builds more on top of `ParseEntry`.
+- **For `#5` (ordering by `Lookups`):** the number is now trustworthy for both properties it needs — arity (one lookup, one write, pinned through the real wiring on every producible path) and accumulation (pinned through the capture path as of this commit, verified RED). `#5` can order by it.
+
+### 7. Plan revision recommendations
+
+The `## Revisions` section exists and is substantive; four of its five deltas are accurate. Two residuals, appended to the same entry rather than a new one:
+
+- **Append to Revisions §3 — the seam defaults.** §3 names `capture`, `deck` and `newStore` but states no default for any of them. Record: `withStore` installs `&memHistory{}` and `noopCapturer{}` when a caller supplies neither, and **returns early when `history` and `capture` are both non-nil, leaving `deck` nil** — a branch no test reaches (probe-verified). That is the half BR-4 asked for and BR-26 escalated, still open after two rounds.
+- **Add a forward pointer at the top of Chunk 1.** Round 6 raised this in prose and declined to file it, and I am keeping it here rather than as a finding since BR-1/BR-2/BR-3 are disposed: line 115-116 still reads "consulted from **three call sites**" and line 24 still describes "a `Capturer` that `storeHistory` also uses", while Revisions §1/§2 correct both. Under AGENTS.md §1 leaving them is defensible, but a reader hits the superseded text ~130 lines before the correction. One line — "Chunk 1 predates implementation; `## Revisions` supersedes it where they disagree" — closes it.
+- **The `### Integration points` table is accurate but incomplete.** Both rows verify against the code (`Capturer` and `storeCapturer`, both new, both at `cmd/define/capture.go`), and the `Capture(word, found, opt)` signature bullet now matches. It omits `noopCapturer`, `storeDeps`, `withStore`, `openStore`, `wordFileName`, `forgetWord`, `isSet`, and `Store.Forget`/`Mem.Forget`/`YAML.Forget` — recommended at rounds 4 and 5 and not done. It also carries no PURE/INTEGRATION column, which is what the boundary-review protocol cross-checks; adding one would make the next issue's table checkable rather than descriptive.
+
+```findings
+dispose:
+  - id: BR-27
+    disposition: addressed
+    note: |
+      Both mutations re-run independently - skipping Upsert on a repeat and propagating a capture error each redden exactly one test; applied and compiled verified.
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      Revisions section 3 still names the three deps fields with no default stated for any of them.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      Probe re-verified - a panic in withStore's early return leaves the entire suite green, so no test enters the branch; no comment states deck's default.
+  - id: BR-28
+    disposition: not-addressed
+    note: |
+      main.go:36 comment verbatim; capture_test.go:316 still sets newStore = openStore and five test files use t.TempDir().
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      Fifth occurrence (lines 18, 251, 485, 674, 878). Unfixable from tools - see BR-29.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      No ariadne issue exists (checked ariadne/workshop/issues) and this issue's Log references only ariadne#195, a different mechanism.
+findings:
+  - id: new
+    severity: Critical
+    family: writes-to-cwd-unignored
+    title: |
+      A 9.6MB Mach-O arm64 binary is committed at cmd/define/define in the HEAD commit under review
+    detail: |
+      2nd in family (BR-11; prevalence 2). Do NOT just add a fourth anchored .gitignore line - but DO excise the
+      blob before merge, because it is the one open item that becomes irreversible. Measured: git ls-files shows
+      it tracked, git log --diff-filter=A dates it to 42cc96d, it is 9616546 bytes against a 99336-byte
+      next-largest blob, and .git is currently 9.3M so it roughly doubles the repo for every clone forever. It
+      is arm64-only, so a Linux or amd64 checkout gets an unrunnable file; and because it is tracked, cd
+      cmd/define && go build now dirties git status on every developer build. The rule covering this and BR-11:
+      an artifact the developer workflow drops into the working tree gets an ignore pattern covering EVERY
+      directory it can be produced in, added when the tool learns to produce it. .gitignore has been patched
+      three times by this rule's absence and each patch was anchored to the one place it had already happened
+      (bin/, then /define root-only, then /words/ and /events/); go build in a main package writes the binary
+      into that package's directory, which none of them match. Second half, since no ignore would have caught
+      this one - it was git add-ed before any ignore existed: read git show --stat before committing, where
+      "Bin 0 -> 9616546 bytes" is visible at a glance and does appear in this commit's own stat. Fix while the
+      branch is unmerged: git rm --cached cmd/define/define, add an un-anchored pattern, git commit --amend.
+  - id: new
+    severity: Important
+    family: prose-contradicts-code
+    title: |
+      The retracted "a regression in Slug must fail HERE" claim survives in storetest/suite.go and is false by measurement
+    detail: |
+      8th in family (BR-9, BR-10, BR-17, BR-18, README exit codes, BR-25, BR-28; prevalence 8). Do NOT patch this
+      site. storetest/suite.go:140-142 says the traversal guarantee is "asserted here rather than inherited from
+      Slug - a regression in Slug must fail HERE, loudly". That is the exact sentence 96adc20 deleted from
+      YAML.Forget's doc for BR-25 and the exact claim the same commit rewrote the Done-when to RETRACT; wordFileName's
+      own doc now says the opposite. Verified by mutation: regressing Slug entirely (no sanitising) reddens
+      TestSlugDoesNotMergeHyphenAndSpace, TestSlugIsAlwaysOneSafePathElement and FuzzSlugIsSafe, and leaves
+      Suite/forget cannot escape the words directory GREEN - it discards err, so its assertions pass whether the
+      guard is present, absent or bypassed. Second site the same sweep finds: main.go:27, capture.go:50 and
+      atlas/define.md:283 each state absolutely that storeCapturer is the only thing that writes to the store,
+      while forgetWord's d.deck.Forget at main.go:396 deletes a word file - deps.deck's own comment three lines
+      below main.go:27 acknowledges the second mutator. The rule is BR-28's, which is correct and was never
+      executed as written: run the mechanical sweep over ALL 14 changed .go/.md files, not the files a finding
+      named - storetest/suite.go is in git diff --stat and grepping Slug from that comment lands on the
+      contradiction directly.
+  - id: new
+    severity: Minor
+    family: needless-indirection
+    title: |
+      History.Add's found parameter is now dead in both implementations, and orElse is a generic for two nil checks
+    detail: |
+      4th in family (BR-14, BR-15, BR-21; prevalence 4). Do NOT patch these instances. History.Add(line string,
+      found bool) at history.go:16 is ignored by BOTH implementations - history.go:28 and history_store.go:50 both
+      take _ bool - while the sole caller computes code == 0 to supply it (replraw.go:171). It existed only
+      because storeHistory.Add decided event-vs-deck; #4 moved that decision and left the parameter, which is
+      BR-21's rule verbatim. It was missed because it lives in history.go, a file the diff never touched, so
+      BR-28's file-based sweep cannot reach it - the extension the rule needs is: sweep the changed files AND the
+      interface plus callers of every symbol whose responsibilities the diff moved. Weaker second instance,
+      reasonably withdrawn: orElse[T comparable] at main.go:83 is a generic helper introduced by the very commit
+      that closed this family, replacing two nil checks with six lines.
+  - id: new
+    severity: Minor
+    family: eager-dependency-construction
+    title: |
+      run builds the store-backed deps before the -forget dispatch, so --forget reads an event log it never uses
+    detail: |
+      main.go:212 calls d.withStore before the -forget dispatch at :214, so --forget constructs storeHistory and
+      loads the whole event log for a result it never consults. Reproduced against a seeded directory: a -forget
+      run printed "define: 2026-08-21.yaml: recovered 0 event(s), dropped 1 torn record(s)" for a log it does not
+      touch. Stated in round 6's prose and never given an id, which is the mechanism BR-28 named; recording it so
+      it can be disposed rather than restated. The rule: a mode dispatch decides which dependencies are needed,
+      so it runs before they are constructed.
+  - id: new
+    severity: Minor
+    family: misleading-error-text
+    title: |
+      forgetWord prints a bare "define: %v" where every neighbouring message names the operand
+    detail: |
+      2nd in family (BR-13; prevalence 2). Do NOT patch this instance alone. main.go:398 formats a store error as
+      "define: %v" while its neighbours use "define: %s: %v" with the word. The rule covering this and BR-13: a
+      user-facing error names both the condition and the operand it failed on - BR-13's message named the wrong
+      condition, this one names no operand.
+```

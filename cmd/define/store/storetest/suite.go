@@ -138,9 +138,11 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 	t.Run("forget cannot escape the words directory", func(t *testing.T) {
 		s := newStore(t)
 		_ = s.Upsert(store.Word{Text: "sycophantic", LastSeen: day(1)})
-		// Forget is the only operation that DELETES a path derived from user
-		// input, so the guarantee is asserted here rather than inherited from
-		// Slug — a regression in Slug must fail HERE, loudly.
+		// An end-to-end net, NOT the assertion of the traversal guard: Slug
+		// sanitises first, so this passes whether or not wordFileName's guard
+		// exists (measured). The guard is pinned by its own unit test; this is
+		// here so a Store implementation that derived filenames some other way
+		// would be caught.
 		for _, key := range []string{
 			"../../../etc/passwd", "/etc/passwd", "..", ".", "../sycophantic",
 		} {
