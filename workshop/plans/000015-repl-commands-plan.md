@@ -181,44 +181,44 @@ events, no IO beyond stdout.
 
 **Files:** Create `cmd/define/command.go`, `cmd/define/command_test.go`
 
-- [ ] **Step 1: Write the failing tests** — `parseCommandLine` (`"/history"`,
+- [x] **Step 1: Write the failing tests** — `parseCommandLine` (`"/history"`,
       `"/history 7"`, `"/"`, `"  /history  "`, `"hot dog"`, `""`),
       `commandCompletions` (`""` → all, `"his"` → `["/history"]`, `"zzz"` → none),
       `nearestCommands` (`"histry"` → `["/history"]`, `"zzzz"` → all).
-- [ ] **Step 2: Run; expect FAIL** (undefined symbols).
-- [ ] **Step 3: Implement** `command`, the `commands` table, and the three pure
+- [x] **Step 2: Run; expect FAIL** (undefined symbols).
+- [x] **Step 3: Implement** `command`, the `commands` table, and the three pure
       functions.
-- [ ] **Step 4: Run; expect PASS.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run; expect PASS.**
+- [x] **Step 5: Commit.**
 
 #### Task 2: `completionsFor` — the namespace switch
 
 **Files:** Modify `cmd/define/command.go`, `cmd/define/replraw.go:73,87,114,133`
 
-- [ ] **Step 1: Write the failing test** — `"/his"` completes from commands,
+- [x] **Step 1: Write the failing test** — `"/his"` completes from commands,
       `"syc"` from history, `"/"` lists every command.
-- [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3: Implement** `completionsFor(line string, hist History) []string`
+- [x] **Step 2: Run; expect FAIL.**
+- [x] **Step 3: Implement** `completionsFor(line string, hist History) []string`
       and replace all four `hist.Prefix(e.WalkBase())` sites with it.
-- [ ] **Step 4: Run the full suite.** **Stop condition:** if any `#14` editor test
+- [x] **Step 4: Run the full suite.** **Stop condition:** if any `#14` editor test
       needs editing, the design is wrong — `Apply` must not have to change.
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 #### Task 3: `cmdCommand` and dispatch in BOTH loops
 
 **Files:** Modify `cmd/define/repl.go`, `cmd/define/replraw.go`, `cmd/define/command.go`
 
-- [ ] **Step 1: Write the failing tests** — `parseREPLLine("/history", …)` yields
+- [x] **Step 1: Write the failing tests** — `parseREPLLine("/history", …)` yields
       `cmdCommand` with the line intact; **`replLines` dispatches it** (the piped
       loop, via `echo /help | define`); **`runEditor` dispatches it** (via
       `scriptKeys("/help\r")`); an unknown `/histry` suggests and does NOT reach
       the dictionary — asserted by a rig whose dictionary fails the test if
       called.
-- [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3: Implement** `cmdCommand`, `dispatchCommand`, `commandCtx` (deck
+- [x] **Step 2: Run; expect FAIL.**
+- [x] **Step 3: Implement** `cmdCommand`, `dispatchCommand`, `commandCtx` (deck
       and clock nil at this milestone), and `/help`.
-- [ ] **Step 4: Run the full suite + `-race`.**
-- [ ] **Step 5: `sdlc milestone-close --issue 15 --milestone M1`.**
+- [x] **Step 4: Run the full suite + `-race`.**
+- [x] **Step 5: `sdlc milestone-close --issue 15 --milestone M1`.**
 
 ### M2 — `/history`
 
@@ -243,9 +243,15 @@ events, no IO beyond stdout.
       so the tests ARE the specification:
       - `now = 2026-08-21T00:30:00-07:00`, `days=2` → `2026-08-20T00:00:00-07:00`
         — **not** `2026-08-19T00:30:00Z`;
-      - a lookup at `2026-08-20T19:00:00-07:00`, which lives in the **UTC-named
-        file `2026-08-21.yaml`**, is inside a `days=1` window;
-      - across the US DST boundary the window spans 23/25 local hours, not 24;
+      - **the evening case**: `now = 2026-08-21T20:00-07:00`, a lookup ten
+        minutes earlier at `2026-08-21T19:50-07:00`, which is stored in
+        `events/`**`2026-08-22`**`.yaml`, is inside the window. A filter over the
+        local days `[08-20, 08-21]` never opens that file, so a lookup from ten
+        minutes ago vanishes and `/history` reads "nothing today";
+      - across the US DST boundary the window spans 23/25 local hours, not 24 —
+        `2026-03-08` is 23 h and `2026-11-01` is 25 h, and `AddDate(0,0,-1)` from
+        `2026-03-09` midnight lands on `2026-03-08T00:00-08:00`, changing offset
+        (all three measured in this toolchain, not assumed);
       - `days=0`, `days=-3` clamp to 1; `days=999999999` is REFUSED naming the
         3650 limit, not silently normalised by `AddDate`.
 - [ ] **Step 2: Run; expect FAIL.**
@@ -329,3 +335,31 @@ events, no IO beyond stdout.
 - **Minors:** the Return-on-unique-prefix ambiguity is now an explicit non-goal
   (Tab accepts, Return submits what was typed — `#14`'s contract); the nil-deck
   message is extracted rather than copied; a Non-goals section exists.
+
+
+### 2026-08-21 — M1 boundary review, and a corrected test spec
+
+**The M1 review found five Important, and BR-3 was mine.**
+`TestRawEditorDispatchesCommands` asserted that stdout contained `"/help"` — but
+the raw editor ECHOES the submitted line, so the assertion matched the echo and
+passed with dispatch deleted from `runEditor` (reproduced: mutation applied,
+`BUILD_OK`, `ok`). Same shape as `#1`'s circular oracle: an observable that two
+paths both produce. Both loop tests now assert on `"list the commands"`, which
+only `runHelp` can emit, and the mutation reddens them.
+
+BR-2 was the matching gap one level out: `completionsFor` returning the right
+answer is not evidence the editor ASKS it. `TestEditorSuggestsFromCommands` types
+`/hel` against a history stocked with `hibernate` and requires the grey tail to
+come from the command set — mutation-verified by making `completionsFor` ignore
+commands. BR-6 (`commandCtx` built at two call sites, with M2 about to add two
+fields) became `newCommandCtx`. BR-4 put the `/` surface into `--help` and the
+README, which M1 shipped without. BR-5 was fifteen unticked step boxes.
+
+**Separately, Task 5's central test case was wrong and is corrected above.** It
+claimed a `2026-08-20T19:00-07:00` lookup sits inside a `days=1` window; it does
+not — that is yesterday in local terms. Worse, the case did not demonstrate the
+bug it was written for: a filename filter over local days `[08-20, 08-21]` reads
+`2026-08-21.yaml` anyway. The case that does break is TODAY's evening: a lookup
+at `19:50` local is written to TOMORROW's UTC-named file, so a filename filter
+drops a lookup from ten minutes ago. Measured before writing the test rather than
+after it failed.

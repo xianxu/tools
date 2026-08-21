@@ -66,7 +66,11 @@ func TestLineLoopDispatchesCommands(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit = %d, stderr = %s", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "/help") {
+	// Asserted on the command's OUTPUT, never on "/help": the raw editor echoes
+	// the submitted line, so matching the name matches the echo and passes with
+	// dispatch deleted (BR-3, measured). "list the commands" is a summary only
+	// runHelp can emit.
+	if !strings.Contains(out.String(), "list the commands") {
 		t.Errorf("the piped loop did not run the command: %q", out.String())
 	}
 }
@@ -81,7 +85,7 @@ func TestRawEditorDispatchesCommands(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit = %d, stderr = %s", code, errb.String())
 	}
-	if !strings.Contains(out.String(), "/help") {
+	if !strings.Contains(out.String(), "list the commands") {
 		t.Errorf("the raw editor did not run the command: %q", out.String())
 	}
 }
@@ -134,5 +138,27 @@ func TestDispatchCommand(t *testing.T) {
 				t.Errorf("stderr = %q, want it to contain %q", errb.String(), tc.wantErr)
 			}
 		})
+	}
+}
+
+// BR-2: completionsFor having the right answer is not the same as the editor
+// asking it. This pins the wiring — type "/his" and the grey tail must be
+// offered from the COMMAND set, which history could never produce.
+func TestEditorSuggestsFromCommands(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+	// History that would suggest something else entirely if it were consulted.
+	h := &memHistory{}
+	h.Add("hibernate")
+	rig.deps.history = h
+
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("/hel\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	if !strings.Contains(out.String(), greyOn+"p") {
+		t.Errorf("no grey completion from the command set: %q", out.String())
+	}
+	if strings.Contains(out.String(), "ibernate") {
+		t.Errorf("the line starts with / but history was consulted: %q", out.String())
 	}
 }

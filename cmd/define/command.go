@@ -142,6 +142,13 @@ type commandCtx struct {
 	width  int
 }
 
+// newCommandCtx is the single construction point. Built at two call sites (both
+// loops) and M2 adds a deck and a clock, so a literal in each loop is two places
+// to forget a field (ARCH-DRY).
+func newCommandCtx(stdout, stderr io.Writer) commandCtx {
+	return commandCtx{stdout: stdout, stderr: stderr, width: terminalWidth(stdout)}
+}
+
 // dispatchCommand runs a parsed command, or explains why it cannot.
 //
 // The loop never grows a case: adding a command is a row in `commands`. That is

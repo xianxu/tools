@@ -28,6 +28,7 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 
 ```sh
 define                      # interactive: type a word, press return to replay, ^C to quit
+define                      # …and / starts a command: /help lists them, Tab completes
 echo sycophantic | define   # or feed it words on stdin
 define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
 define -times 1 record      # play once instead of three times

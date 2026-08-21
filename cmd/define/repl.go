@@ -152,9 +152,7 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				// The piped loop dispatches too. `echo /history | define` must
 				// not reach the dictionary, and a first draft of #15 put this
 				// only in the raw editor's submit path (PQ-2).
-				if dispatchCommand(cmd, commands, commandCtx{
-					stdout: stdout, stderr: stderr, width: terminalWidth(stdout),
-				}) != 0 {
+				if dispatchCommand(cmd, commands, newCommandCtx(stdout, stderr)) != 0 {
 					anyFailed = true
 				}
 			case cmdDefine:
