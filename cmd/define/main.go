@@ -2,16 +2,15 @@ package main
 
 import (
 	"context"
-
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/xianxu/tools/cmd/define/store"
 	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"golang.org/x/term"
 )
 
@@ -255,6 +254,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		defer cancel()
 		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
 	default: // exactly 1; >1 was rejected above
+		// A command is a command from every entry mode. Routed through the same
+		// classifier the two loops use, so `define /help` cannot mean something
+		// different from `/help` typed at the prompt.
+		if cmd := parseREPLLine(fs.Arg(0), false); cmd.kind == cmdCommand {
+			return dispatchCommand(cmd, commands, newCommandCtx(stdout, stderr))
+		}
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
 	}
 }

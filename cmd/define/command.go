@@ -70,9 +70,13 @@ func parseCommandLine(line string) (name string, args []string, ok bool) {
 // user would type them. Sorted, so the suggestion a keystroke produces does not
 // depend on registry order.
 //
-// Case-insensitive: typing a command is not a spelling test.
+// Case-SENSITIVE, deliberately, and the asymmetry with dispatch is the point:
+// Suggestion does a byte-prefix match against the typed line, so a completion
+// must literally extend what was typed — "/HIS" cannot be completed by
+// "/history" without rewriting the user's keystrokes. Dispatch stays forgiving
+// (EqualFold), so a submitted "/HELP" still runs. Complete exactly, accept
+// loosely.
 func commandCompletions(prefix string, cmds []command) []string {
-	prefix = strings.ToLower(prefix)
 	var out []string
 	for _, c := range cmds {
 		if strings.HasPrefix(c.name, prefix) {
@@ -88,22 +92,27 @@ func commandCompletions(prefix string, cmds []command) []string {
 // the whole menu. Offering everything is deliberately better than a confident
 // wrong guess: the Done-when asks for an unknown command to SUGGEST rather than
 // silently define something.
-func nearestCommands(name string, cmds []command) []string {
+// The second return says whether anything was actually CLOSE, rather than
+// leaving the caller to infer it. Inferring it from len(near) == len(cmds) is
+// true for every near-miss while only one command is registered, so the
+// "did you mean" branch had zero production reachability (BR-9, measured:
+// `/hel` printed the whole menu, not a suggestion).
+func nearestCommands(name string, cmds []command) (matches []string, close bool) {
 	if hits := commandCompletions(name, cmds); len(hits) > 0 {
-		return hits
+		return hits, true
 	}
-	name = strings.ToLower(name)
+	lower := strings.ToLower(name)
 	var out []string
 	for _, c := range cmds {
-		if editDistance(name, c.name) <= 2 {
+		if editDistance(lower, c.name) <= 2 {
 			out = append(out, "/"+c.name)
 		}
 	}
 	if len(out) == 0 {
-		return commandCompletions("", cmds)
+		return commandCompletions("", cmds), false
 	}
 	sort.Strings(out)
-	return out
+	return out, true
 }
 
 // editDistance is Levenshtein, two rows rather than a full matrix — the inputs
@@ -139,14 +148,17 @@ type commandCtx struct {
 	cmds   []command
 	stdout io.Writer
 	stderr io.Writer
-	width  int
 }
 
 // newCommandCtx is the single construction point. Built at two call sites (both
 // loops) and M2 adds a deck and a clock, so a literal in each loop is two places
 // to forget a field (ARCH-DRY).
+// It carried a width field that nothing read, re-derived per dispatch via
+// terminalWidth(stdout) — a second source beside opt.width, which run() computes
+// once and which can disagree with it across a resize. M2's renderHistory is the
+// first consumer that needs a width; it takes opt.width, from the one source.
 func newCommandCtx(stdout, stderr io.Writer) commandCtx {
-	return commandCtx{stdout: stdout, stderr: stderr, width: terminalWidth(stdout)}
+	return commandCtx{stdout: stdout, stderr: stderr}
 }
 
 // dispatchCommand runs a parsed command, or explains why it cannot.
@@ -164,12 +176,12 @@ func dispatchCommand(c replCommand, cmds []command, cc commandCtx) int {
 			return cmd.run(cc, c.args)
 		}
 	}
-	near := nearestCommands(c.name, cmds)
-	if len(near) == len(cmds) {
+	near, close := nearestCommands(c.name, cmds)
+	if close {
+		fmt.Fprintf(cc.stderr, "define: unknown command /%s; did you mean %s?\n", c.name, strings.Join(near, " or "))
+	} else {
 		// Nothing was close, so "did you mean" would be a lie about all of them.
 		fmt.Fprintf(cc.stderr, "define: unknown command /%s. Commands: %s\n", c.name, strings.Join(near, " "))
-	} else {
-		fmt.Fprintf(cc.stderr, "define: unknown command /%s; did you mean %s?\n", c.name, strings.Join(near, " or "))
 	}
 	return 2
 }

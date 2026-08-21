@@ -115,6 +115,17 @@ reports the doc as stale), not to inflate this number until it looks right.
 ## Log
 
 ### 2026-08-21 — gates
+- 2026-08-21: closed M1 — M1 delivers the / namespace end to end — command mode, type-ahead, dispatch in BOTH loops, unknown-command suggestion — and this round fixes all five findings from the first boundary review.; review verdict: FIX-THEN-SHIP
+
+BR-3 was mine and is the one worth recording: TestRawEditorDispatchesCommands asserted stdout contained "/help", but the raw editor ECHOES the submitted line, so the assertion matched the echo rather than the command and passed with dispatch deleted. I reproduced it before fixing (mutation applied, BUILD_OK, ok) and the mutated output shows the cause literally — captured stdout contains the echoed "/help". Both loop tests now assert "list the commands", text only runHelp can emit, and the same mutation now reddens them. BR-2 was the same gap one level out: TestEditorSuggestsFromCommands types /hel against a history stocked with "hibernate" and requires the grey completion to come from the command set — mutation-verified by making completionsFor ignore commands. BR-6: commandCtx was built at both loops with M2 about to add two fields, so construction is now newCommandCtx. BR-4: --help and README now document the / surface M1 ships. BR-5: fifteen M1 step boxes ticked.
+
+Still holding from the first round: the plan stop condition (no #14 editor test needed editing — completionsFor replaced all four hist.Prefix call sites with the #14 suite untouched, which is the evidence Apply never needed to change) and the PQ-2 pin (deleting the cmdCommand case from replLines reddens TestLineLoopDispatchesCommands). Both loop tests inject a refusingDict that FAILS the test if consulted.
+
+Manually confirmed against a built binary: "echo /help | define" lists the table and exits 0; "/histry" reports unknown-command with the menu and exits 1; a bare "/" lists the menu; a plain word still routes to the dictionary.
+
+Atlas carries ## Command mode at this boundary rather than deferred (AGENTS.md section 8).
+
+go vet clean; full suite and -race green across both packages; GOOS=linux CGO_ENABLED=0 green.
 
 Plan-quality cleared in 2 rounds. Round 1 raised 3 Important; **PQ-2 was `#4`'s
 defect in design form** — dispatch placed in `submitLine`, which only the raw

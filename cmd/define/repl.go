@@ -118,6 +118,10 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 	// interchangeable with `define word` and documents as exiting 1 on an unknown
 	// word. Track failures and report them only on the non-interactive path.
 	var anyFailed bool
+	// A command's exit code survives the loop. Collapsing it into anyFailed made
+	// `echo /histry | define` exit 1 where dispatchCommand computes 2 and the
+	// README documents 2 for a usage error (BR-16).
+	var cmdCode int
 	var current string
 
 	for {
@@ -133,6 +137,9 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				return 1
 			}
 			if pipedInput && anyFailed {
+				if cmdCode != 0 {
+					return cmdCode
+				}
 				return 1
 			}
 			return 0
@@ -152,8 +159,11 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				// The piped loop dispatches too. `echo /history | define` must
 				// not reach the dictionary, and a first draft of #15 put this
 				// only in the raw editor's submit path (PQ-2).
-				if dispatchCommand(cmd, commands, newCommandCtx(stdout, stderr)) != 0 {
+				if code := dispatchCommand(cmd, commands, newCommandCtx(stdout, stderr)); code != 0 {
 					anyFailed = true
+					if code > cmdCode {
+						cmdCode = code
+					}
 				}
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo

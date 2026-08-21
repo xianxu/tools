@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -27,7 +28,7 @@ func TestParseREPLLine(t *testing.T) {
 			// args slice in #15, which makes the struct incomparable.
 			got := parseREPLLine(tc.line, tc.hasCurrent)
 			if got.kind != tc.want.kind || got.word != tc.want.word ||
-				got.name != tc.want.name || !sameSet(got.args, tc.want.args) {
+				got.name != tc.want.name || !reflect.DeepEqual(got.args, tc.want.args) {
 				t.Errorf("parseREPLLine(%q, %v) = %+v, want %+v", tc.line, tc.hasCurrent, got, tc.want)
 			}
 		})

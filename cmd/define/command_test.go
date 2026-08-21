@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -58,9 +60,10 @@ func TestCommandCompletions(t *testing.T) {
 		{"his", []string{"/history"}},
 		{"history", []string{"/history"}},
 		{"zzz", nil},
-		// Completion is over the name only; an argument already typed means the
-		// command is settled and there is nothing left to narrow.
-		{"HIS", []string{"/history"}}, // case-insensitive: typing is not a spelling test
+		// Case-SENSITIVE by policy: Suggestion byte-prefix-matches the typed
+		// line, so a completion has to literally extend it. Dispatch is the
+		// forgiving half — see TestDispatchCommand's mixed-case row.
+		{"HIS", nil},
 	} {
 		t.Run(tc.prefix, func(t *testing.T) {
 			if got := commandCompletions(tc.prefix, testCmds); !reflect.DeepEqual(got, tc.want) {
@@ -72,25 +75,59 @@ func TestCommandCompletions(t *testing.T) {
 
 func TestNearestCommands(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		want []string
+		name      string
+		want      []string
+		wantClose bool
 	}{
-		{"histry", []string{"/history"}},  // one deletion
-		{"hisotry", []string{"/history"}}, // one transposition
-		{"h", []string{"/help", "/history"}},
-		// Nothing close: offer the whole menu rather than a confident wrong guess.
-		{"qqqqqq", []string{"/help", "/history", "/stats"}},
+		{"histry", []string{"/history"}, true},  // one deletion
+		{"hisotry", []string{"/history"}, true}, // one transposition
+		{"h", []string{"/help", "/history"}, true},
+		// Nothing close: offer the whole menu rather than a confident wrong
+		// guess, and SAY it is not close so the caller need not infer it.
+		{"qqqqqq", []string{"/help", "/history", "/stats"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := nearestCommands(tc.name, testCmds); !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("nearestCommands(%q) = %v, want %v", tc.name, got, tc.want)
+			got, close := nearestCommands(tc.name, testCmds)
+			if !reflect.DeepEqual(got, tc.want) || close != tc.wantClose {
+				t.Errorf("nearestCommands(%q) = %v, %v; want %v, %v", tc.name, got, close, tc.want, tc.wantClose)
 			}
 		})
 	}
 }
 
+// BR-9 measured that with ONE command registered, len(near) == len(cmds) is true
+// for every near-miss — so a caller inferring "nothing was close" from that got
+// the wrong answer on a genuine near-miss. This is the regression pin.
+func TestNearMissWithOneRegisteredCommand(t *testing.T) {
+	one := []command{{name: "help", summary: "list the commands", run: runHelp}}
+	if got, close := nearestCommands("hel", one); !close || !reflect.DeepEqual(got, []string{"/help"}) {
+		t.Errorf("nearestCommands(\"hel\", one) = %v, %v; want [/help], true", got, close)
+	}
+	var out, errb bytes.Buffer
+	dispatchCommand(parseREPLLine("/hel", false), one, commandCtx{stdout: &out, stderr: &errb})
+	if !strings.Contains(errb.String(), "did you mean /help") {
+		t.Errorf("a near miss against a one-command registry did not suggest: %q", errb.String())
+	}
+}
+
+// BR-10: a row with a nil run panics on dispatch. The registry is data, so the
+// check is a test rather than a runtime branch.
+func TestEveryRegisteredCommandIsRunnable(t *testing.T) {
+	if len(commands) == 0 {
+		t.Fatal("the registry is empty; this test would pass vacuously")
+	}
+	for _, c := range commands {
+		if c.run == nil {
+			t.Errorf("command /%s has a nil run", c.name)
+		}
+		if c.summary == "" {
+			t.Errorf("command /%s has no summary; /help would print a blank line", c.name)
+		}
+	}
+}
+
 // The namespace switch. One decision point for "which set is this line drawing
-// from", so the four call sites in replraw.go cannot drift apart.
+// from", so the call sites in replraw.go cannot drift apart.
 func TestCompletionsFor(t *testing.T) {
 	h := &memHistory{}
 	h.Add("sycophantic")

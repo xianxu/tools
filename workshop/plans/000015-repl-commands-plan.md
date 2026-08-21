@@ -147,6 +147,22 @@ read of `Deck()` for `FirstSeen`.
 no store and no IO. `runHistory` is tested against `store.Mem` (production code,
 per ARCH-MOCK) with a fixed clock. No new external dependency, so no new fake.
 
+**Test strategy — one line per risky function**, stating what each test is FOR.
+The enumerations inside the tasks are the input corpus; these are the reasons
+(PQ-4/BR-1).
+
+| function | what its test exists to catch |
+|---|---|
+| `parseCommandLine` | a `/` that is not in column one being treated as a command, and the reverse |
+| `commandCompletions` | completing from the wrong namespace, and case policy drifting from `Suggestion`'s byte-prefix match |
+| `nearestCommands` | a near-miss reported as "nothing close" — which is what a count-based inference gets wrong once the registry has one row |
+| `completionsFor` | the editor asking the wrong namespace; the fixture history is stocked so a wrong answer is visibly wrong |
+| `historyWindow` | a window computed in UTC or as `now-48h`, which drops today's evening lookups and mis-sizes a DST day |
+| `parseHistoryArgs` | a `--days` value that `AddDate` normalises into a garbage instant instead of being refused |
+| `summariseLookups` | membership and ordering coming from the same timestamp, when they are deliberately different facts |
+| `renderHistory` | width and relative-date formatting regressions, held away from IO |
+| dispatch in each loop | one entry mode disagreeing with another about what a line means (the PQ-2 class) |
+
 ---
 
 ## Non-goals

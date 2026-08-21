@@ -28,7 +28,7 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 
 ```sh
 define                      # interactive: type a word, press return to replay, ^C to quit
-define                      # …and / starts a command: /help lists them, Tab completes
+define /help                # / starts a command instead of a word; /help lists them
 echo sycophantic | define   # or feed it words on stdin
 define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
 define -times 1 record      # play once instead of three times
@@ -84,9 +84,17 @@ only on a terminal, so piping stays clean. Flags are session settings — `defin
 -times 1` opens the loop with single playback.
 
 Exit codes: `0` success; `1` the request failed (no dictionary entry, or
-`--forget` found nothing to remove); `2` usage error. A piped run exits `1` if any
-word failed, so `echo "$w" | define || …` works in a script; an interactive typo
+`--forget` found nothing to remove); `2` usage error, which includes an unknown
+`/command`. A piped run exits `1` if any word failed and `2` if a command was
+malformed, so `echo "$w" | define || …` works in a script; an interactive typo
 does not fail the session.
+
+A line beginning with `/` is a command rather than a word — `/` is safe as a
+marker because no English headword starts with one, and `define` needs whole
+lines for multi-word headwords like `hot dog`. Type `/` to see what there is,
+Tab to complete, `/help` to list them. It works the same from every entry mode:
+`define /help`, `echo /help | define`, and `/help` typed at the prompt are one
+thing.
 
 Lookup goes through macOS's CoreServices, which searches **every active
 dictionary** rather than NOAD specifically — the SDK offers no way to pick one.

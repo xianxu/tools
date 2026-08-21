@@ -347,8 +347,21 @@ and gets a suggestion, it does not run the unique match. That is `#14`'s contrac
 for words, and command mode diverging from it would make Return mean two things
 on one line.
 
+**Every entry mode reaches it.** `define /help` as a one-shot argument, `echo
+/help | define`, and `/help` typed at the prompt all go through `parseREPLLine`;
+a one-shot that skipped it would have sent `/help` to the dictionary (BR-13).
+
+**Complete exactly, accept loosely.** `commandCompletions` is case-sensitive
+because `Suggestion` byte-prefix-matches the typed line — a completion has to
+literally extend what was typed, so `/HIS` cannot be completed by `/history`
+without rewriting keystrokes. `dispatchCommand` uses `EqualFold`, so a submitted
+`/HELP` still runs.
+
 Adding a command is a row in `commands` plus its `run`; `dispatchCommand`
-switches on outcome (found / not found), never on which command it is.
+switches on outcome (found / not found), never on which command it is, and
+`nearestCommands` REPORTS whether anything was close rather than leaving the
+caller to infer it from a count — inferring it was wrong for every near-miss
+while one command was registered (BR-9).
 `commandCtx` is deliberately narrower than `deps` — a command cannot reach the
 dictionary or the player.
 
@@ -368,6 +381,7 @@ editor bypasses `defineOnce` entirely, which is why capture lives one level down
 | `define` on a terminal | raw editor | `submitLine` → `lookupAndRender` |
 | `define` piped, or `echo w \| define` | line loop | `defineOnce` → `lookupAndRender` |
 | `define -forget <word>` | mode; no lookup — deletes one deck entry | `forgetWord` → `store.Forget` |
+| `define /help` | one-shot command | `parseREPLLine` → `dispatchCommand` |
 
 The loop reads stdin **unconditionally** and only the prompt is TTY-conditional —
 there is no interactive/batch branch to keep in sync, and the whole loop is

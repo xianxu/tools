@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -44,7 +45,7 @@ func TestParseREPLLineClassifiesCommands(t *testing.T) {
 				t.Errorf("parseREPLLine(%q) = kind %v name %q, want kind %v name %q",
 					tc.in, got.kind, got.name, tc.kind, tc.name)
 			}
-			if !sameSet(got.args, tc.args) {
+			if !reflect.DeepEqual(got.args, tc.args) {
 				t.Errorf("args = %v, want %v", got.args, tc.args)
 			}
 		})
@@ -122,6 +123,9 @@ func TestDispatchCommand(t *testing.T) {
 		{"a bare slash lists the menu", "/", 0, "/history", ""},
 		{"unknown suggests the near match", "/histry", 2, "", "did you mean /history"},
 		{"nothing close lists everything", "/qqqqqq", 2, "", "/help"},
+		// The forgiving half of the case policy: completion is exact, dispatch
+		// accepts what was submitted.
+		{"dispatch accepts mixed case", "/HISTORY", 0, "HISTORY RAN", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var out, errb bytes.Buffer

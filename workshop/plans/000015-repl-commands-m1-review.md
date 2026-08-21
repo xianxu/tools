@@ -202,3 +202,158 @@ findings:
     title: |
       main.go:4-12 has a stray blank line and the store import inside the stdlib group
 ```
+
+---
+
+## Re-review — 2026-08-21T16:22:33-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 15 — REPL command mode: /-prefixed commands with type-ahead, starting with /history |
+| repo | tools |
+| issue file | workshop/issues/000015-repl-commands.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | cbcd30c4ffaa849717d85a2924021b116e57f4d8^..d9d26cec1fe320d67fd3b852147cb98508798ef8 |
+| command | sdlc milestone-close --issue 15 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-21T16:22:33-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All five Important findings from round 2 are genuinely closed, and the two that mattered — BR-2 and BR-3 — I closed by re-running the measurement that produced them rather than by reading the commit message. Reverting the fix for BR-2 (all five `completionsFor(e.WalkBase(), hist, commands)` sites in `runEditor` → `hist.Prefix(e.WalkBase())`; mutation applied, `BUILD_OK`, `-count=1`) reddens `TestEditorSuggestsFromCommands`; neutering `dispatchCommand` inside the raw editor's `cooked` closure reddens `TestRawEditorDispatchesCommands`, and its failure output literally shows the echoed `/help` that made the old assertion pass — the fix and the diagnosis are both correct. I also independently verified the atlas's own claim (deleting the `cmdCommand` case from `replLines` reddens `TestLineLoopDispatchesCommands` — it does), so both loops are pinned, not just described. `go vet`, `gofmt -l`, `go test -count=1`, `go test -race`, and `go vet -tags conformance` are all clean. Nothing here is Critical and no Important remains open, so this does not block. What keeps it off SHIP is that nine Minors have now ridden through two rounds untouched, and probing production behaviour showed one of them (BR-9) is materially worse than its original description: with M1's single-command registry, `len(near) == len(cmds)` holds for *every* near-miss, so the "did you mean" branch is unreachable in production and `/hel` prints the menu form. Three of these Minors get harder in M2, not easier.
+
+## 1. Strengths
+
+- **The classifier really is single-source, and it is pinned.** `parseREPLLine` (`cmd/define/repl.go:33`) decides `/` first, and both `replLines` (`repl.go:140`) and `runEditor` (`replraw.go:100`) route through it. Mutation-verified in both directions. The PQ-2 defect — dispatch in `submitLine`, which only the raw editor reaches — is structurally impossible now, not merely avoided.
+- **The BR-3 fix is the right fix, for the right stated reason.** Both loop tests now assert `"list the commands"`, a string only `runHelp` emits, instead of `"/help"`, which the editor's own echo produces. That is the correct repair for a circular oracle: change the observable so the two paths stop sharing it.
+- **`TestEditorSuggestsFromCommands` (`commandloop_test.go:144`) is well-constructed** — it stocks history with `hibernate` so a regression that consulted history would produce a *visibly wrong* tail, and asserts both the positive (`greyOn+"p"`) and the negative (`"ibernate"` absent). Two-sided assertions like this are what made the mutation check unambiguous.
+- **`refusingDict` (`commandloop_test.go:12`) asserts a negative interaction** — "the dictionary was never reached" — which is strictly stronger than "the output looks right", and it is why `TestUnknownCommandSuggestsWithoutDefining` also reddens under the dispatch mutation.
+- **`newCommandCtx` (`command.go:148`) closes BR-6 in a compiler-enforced way.** M2 adding `deck`/`clock` will force a signature change that breaks both call sites at compile time — so the "wire one loop, forget the other" failure cannot recur silently.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None open. BR-2, BR-3, BR-4, BR-5, BR-6 verified closed (BR-2/BR-3 by reverting the fix; BR-4 by reading `README.md:31` and `main.go` usage text; BR-5 by counting fifteen `- [x]` boxes at `000015-repl-commands-plan.md:184-221`; BR-6 by grepping both call sites).
+
+## 4. Minor findings
+
+- **BR-9 is worse than its original measurement.** Probed against the live registry: `/hel` + Enter prints `define: unknown command /hel. Commands: /help`, not "did you mean". With one command, `len(near) == len(cmds)` is true for every near-miss, so the "did you mean" branch has **zero production reachability at M1** — it is exercised only by `dispatchCmds`, the fixture set. The atlas's own sentence ("`/his` + Return dispatches `his` and gets a suggestion") describes the branch that never runs.
+- **BR-7 now has a second edge**: `commandCtx.width` is still read by nothing, and `newCommandCtx` re-derives it via `terminalWidth(stdout)` on every dispatch — a second source of truth for terminal width alongside `opt.width`, computed once in `run()`. They can disagree across a resize, and M2's `renderHistory` is the first consumer that will care which one it got.
+- **BR-12 has a second instance**, created by this round: `command_test.go:93` still says "the four call sites in replraw.go" — the `cmdCommand` branch made it five. (The *atlas* claim "replaced four `hist.Prefix(...)` call sites" is accurate; there were exactly four before `8688137`.)
+- BR-8, BR-10, BR-11, BR-13, BR-14, BR-1 — unchanged from round 2; re-verified present.
+- **New:** the BR-4 fix was appended rather than integrated — `README.md:31` adds a second `define` row to a shell block whose every other line is a distinct invocation, and the editor key table (`README.md:44-51`), which is where a reader looks for "what can I type", gained no `/` row while its `Enter | define what you typed` row is now incomplete.
+- **New:** `echo /histry | define` exits **1**, though `dispatchCommand` computes **2** and README documents 2 as the usage-error code. `replLines` collapses any non-zero to `anyFailed`. Defensible for a multi-line loop, but it is script-visible and asserted nowhere.
+
+## 5. Test coverage notes
+
+- Verified green: full suite, `-race`, `go vet`, `go vet -tags conformance`, `gofmt -l` (empty).
+- Verified pins by mutation (applied + compiled + `-count=1` each time): `completionsFor` wiring in `runEditor` → `TestEditorSuggestsFromCommands` reddens ✓; dispatch removed from `runEditor` → `TestRawEditorDispatchesCommands` **and** `TestUnknownCommandSuggestsWithoutDefining` redden ✓; `cmdCommand` case removed from `replLines` → `TestLineLoopDispatchesCommands` reddens ✓.
+- Probed correct but unasserted: Tab accepts a command completion (`/hel`+Tab+Enter runs help); `/`+Tab and `/`+Up both reach `/help`; `define /help` as a one-shot argument exits 1 with "no dictionary entry" (BR-13); piped unknown-command exit code (above).
+- `TestDispatchCommand` correctly uses a fixture registry rather than the live one, so M2 adding `/history` will not break unrelated tests.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `parseREPLLine` as the one classifier and `completionsFor` as the one namespace switch are both mutation-verified live. BR-6 closed the duplicated `commandCtx` literal. The one residue is the second terminal-width derivation noted above.
+- **ARCH-PURE — pass.** `parseCommandLine`, `commandCompletions`, `nearestCommands`, `editDistance`, `completionsFor` are pure and table-tested with `memHistory` (production code, not a mock); no store, clock, or IO is needed to run any of them. `dispatchCommand`/`runHelp` take writers and are the thin shell.
+- **ARCH-PURPOSE — pass.** Shadow-sweep of every consumer of "what does a line mean": `replLines` derives ✓, `runEditor` derives ✓, `--help` and README now describe the surface ✓, `atlas/define.md` ✓. The one non-deriving consumer is the one-shot argument path (BR-13), which the Spec's "line" framing places out of scope. No hand-maintained restatement of the command table survives — `/help` lists `c.cmds`, the table it was dispatched from.
+- **ARCH-MOCK — pass.** No new external dependency at M1. The terminal stays doubled at one seam (scripted `<-chan Key` in-process, live pty behind `//go:build darwin && conformance`), and `pty_conformance_test.go:12-25` states plainly what that suite does *not* pin.
+- **For M2:** settle BR-7/BR-9 before `/history` lands. `renderHistory` is `width`'s first real consumer, and a second registry row is what makes BR-9's branch reachable — fixing both after the fact means changing behaviour a test has by then frozen.
+
+## 7. Plan revision recommendations
+
+- **Task 2 Step 3's signature is stale.** The plan specifies `completionsFor(line string, hist History) []string`; the shipped function is `completionsFor(base string, hist History, cmds []command) []string`. The extra parameter is what lets the tests use a fixture registry — record it rather than leaving the plan naming a function that does not exist.
+- **Record that `atlas/define.md` landed at M1, not M2.** Task 8 Step 1 was delivered in `ee605ee`, and Steps 2–3 (README, `--help`) in `d9d26ce` — so Task 8 is three-quarters done while sitting entirely unticked under M2. Either tick those steps or move them into M1's scope retroactively; as written, M2 will re-derive documentation that exists.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      Plan Tasks 1/3/5/6/7 still enumerate cases in prose; no fuzz target named for either parser.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Mutation-verified: all five completionsFor sites reverted to hist.Prefix, BUILD_OK, TestEditorSuggestsFromCommands FAILS.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Mutation-verified: dispatch neutered in runEditor, BUILD_OK, TestRawEditorDispatchesCommands FAILS on "list the commands".
+  - id: BR-4
+    disposition: addressed
+    note: |
+      README.md:31 and main.go usage both name the / surface; see the new fix-appended-not-integrated finding for the residue.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      All fifteen M1 step boxes ticked at plan lines 184-221.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      newCommandCtx at command.go:148, used at repl.go:155 and replraw.go:117; M2 field additions are now compiler-enforced.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Still unread, and newCommandCtx now re-derives width per dispatch — a second source beside opt.width.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      Probed live: /HEL + Tab does not accept, then dispatches and fails; /HELP + Enter works. Unchanged.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Worse than measured: with one command, len(near)==len(cmds) always, so "did you mean" is unreachable in production at M1.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      No nil-run check anywhere; a row without run panics at dispatch.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      sameSet still compares ordered args at repl_test.go:30 and commandloop_test.go:47.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Prevalence now 2 — command_test.go:93 "the four call sites in replraw.go" was made wrong by the cmdCommand branch's fifth.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Probed: `define /help` exits 1 with "define: /help: no dictionary entry".
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      main.go:3-16 unchanged — blank line after "context", store import inside the stdlib group.
+findings:
+  - id: new
+    severity: Minor
+    family: fix-appended-not-integrated
+    title: |
+      The BR-4 README fix was appended to the sh block instead of integrated into the key table
+    detail: |
+      README.md:31 adds a second "define" row to a shell block whose every other line is a
+      distinct invocation, so the block now lists the same command twice with a continuation
+      comment. The editor key table at README.md:44-51 — the doc's actual structure for "what
+      can I type" — gained no row for /, and its "Enter | define what you typed" row is now
+      incomplete, since Enter also dispatches a command. The finding asked for two lines in
+      the key table; the fix landed elsewhere.
+  - id: new
+    severity: Minor
+    family: loop-collapses-callee-exit-code
+    title: |
+      A piped unknown command exits 1 where dispatchCommand computes 2 and README documents 2
+    detail: |
+      Probed: `echo /qqqqqq | define` exits 1. dispatchCommand returns 2 (repl.go:155 discards
+      it into anyFailed), and README documents 2 as the usage-error code, so a script cannot
+      tell "no such command" from "no dictionary entry". Defensible for a multi-line loop, but
+      it is script-visible behaviour and no test asserts it in either direction.
+```
