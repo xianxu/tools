@@ -1226,3 +1226,216 @@ findings:
       user-facing error names both the condition and the operand it failed on - BR-13's message named the wrong
       condition, this one names no operand.
 ```
+
+---
+
+## Re-review — 2026-08-21T12:27:06-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 4 — capture looked-up words into the deck |
+| repo | tools |
+| issue file | workshop/issues/000004-vocab-capture.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4afa1c537819ad662ad149a14bd757ac149772e5..82e3684c8a3c0185c866ea1d8949a6b8bf9a454a |
+| command | sdlc close --issue 4 |
+| reviewer | claude |
+| timestamp | 2026-08-21T12:27:06-07:00 |
+| verdict | REWORK |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+I have everything I need. Here is the review.
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Eight rounds in, the shipped code is correct and I verified it rather than trusted it: `go vet`, the full suite, and a live end-to-end run all agree with the documented contracts (failed lookup → one `found: false` event, no `words/`, exit 1; `DEFINE_NO_CAPTURE=1` → nothing written; `--forget` absent → 1; `--forget a b` → 2). This round's headline claim also holds up under the discipline its own lesson demands — I verified `TestNoCommittedBinaries` by planting what it hunts in a **new** `cmd/` directory: clean PASS, planted FAIL (`compiled binary is tracked: cmd/newtool/newtool`), removed PASS, with `-count=1` so the result was not the cached one my first attempt read. What blocks the boundary is that BR-30's fix removed the file and not the cost. `b3ec4bd` ran `git rm` in a **follow-up commit** where the finding specified `git commit --amend`; `42cc96d` still adds the blob, so it remains reachable from HEAD. Measured by actually cloning: **`main` clones to 604 K of `.git`; this branch clones to 5.9 M, and blob `d12d8e7` (9,616,546 bytes) is present in the clone.** The repo merges with merge commits (all four of `main`'s merges are `Merge pull request`), so merging carries `42cc96d` into `main` permanently. The branch is 8 commits ahead and unpushed — this is the last cheap moment. Everything else below is non-blocking.
+
+### 1. Strengths
+
+- **The guard test is real, and it covers the class rather than the path.** I planted a binary at `cmd/newtool/newtool` — a directory that does not exist and that no `.gitignore` line matches — and `repo_guard_test.go:59` caught it. The magic-byte approach (`repo_guard_test.go:38-43`) is the right property; I confirmed the false-positive narrative too, since the repo really does track 28 symlinks.
+- **`git rev-parse --show-toplevel` + `git -C`** (`repo_guard_test.go:27-32`) genuinely fixes the package-directory problem, and `.gitignore:28` demonstrably works — a fresh `go build` inside `cmd/define` leaves `git status` clean (`git check-ignore -v` confirms the rule that matched).
+- **BR-31's titled site was swept, not patched.** `storetest/suite.go:140-145` now says what the test actually is — "an end-to-end net, NOT the assertion of the traversal guard… (measured)" — which is the honest form, consistent with `wordFileName`'s own doc and with the retracted Done-when.
+- **The two new lessons are correctly drawn and transferable.** "`go test` runs in the package directory" and "test the property, not a proxy for it" are both earned here and both stated as rules rather than patch notes.
+- **Every Done-when box now names a symbol**, and the ones I traced have assertions behind them. `issue:38-73` reads as an audit rather than a set of ticks — including a box that records its own negative result.
+
+### 2. Critical findings
+
+**BR-30 (not-addressed) — the artifact was removed from the working tree; the 9.2 MB blob is still in the branch's history.**
+
+The commit message says "the artifact is removed and `.gitignore` covers the path" — both true of `HEAD`'s tree, neither true of the repo. Measured:
+
+```
+git rev-list --objects HEAD | grep cmd/define/define
+  → d12d8e7fb992e427e87cf1651496291afc3d4b98 cmd/define/define
+git log --oneline --all -- cmd/define/define
+  → b3ec4bd (Bin 9616546 -> 0)      # deletion, a NEW commit
+  → 42cc96d (Bin 0 -> 9616546)      # still adds it
+
+clone --single-branch main                   → 604K  .git
+clone --single-branch 000004-vocab-capture   → 5.9M  .git   ← blob present in the clone
+```
+
+BR-30 named the mechanism precisely — "git rm --cached …, add an un-anchored pattern, **git commit --amend**". The amend is the load-bearing verb; a `git rm` in a later commit changes what `HEAD` looks like and nothing about what is fetched. The finding's stated harm ("roughly doubles the repo for every clone forever") is unchanged, and this repo's merge convention preserves the branch's commits, so it becomes `main`'s cost on merge.
+
+Two further residuals from the same finding's body, recorded so they can be disposed rather than restated:
+
+- The pattern shipped as `/cmd/*/define` — **anchored and name-specific**, where the finding asked for un-anchored. `go build` in a future `cmd/words` writes `cmd/words/words`, which no line matches. That is defensible *given* the guard test (which I proved catches it), but only once the file is staged — the ignore is what keeps `git status` clean before that.
+- BR-30's second half — "read `git show --stat` before committing, where `Bin 0 -> 9616546 bytes` is visible at a glance" — was **not recorded**. `grep` over `workshop/lessons.md` returns nothing for it, while the same commit recorded two lessons about how the guard was *built*. The lesson that would have prevented the artifact is the one missing.
+
+*Fix, while the branch is unmerged:* rebase `42cc96d` to drop the blob (`git rebase -i` is unavailable here, but `git filter-branch`/`git-filter-repo` over `main..HEAD`, or reordering so the add never lands, all work), then `git gc --prune=now` and re-clone to confirm `.git` returns to the ~700 K range. Verify the same way I did — clone the branch and grep `git rev-list --objects HEAD`; do not read `git status`, which is green today and tells you nothing about this.
+
+### 3. Important findings
+
+**BR-31 (not-addressed) — the titled site was swept; the site enumerated in the body was not.**
+
+BR-31's body named two sites. Site 1 (`storetest/suite.go`) is genuinely fixed. Site 2 is verbatim:
+
+```
+cmd/define/capture.go:51   // storeCapturer is the only thing in the process that writes to the store.
+cmd/define/main.go:28      // capture is the only thing in the process that writes to the store.
+atlas/define.md:281        **`storeCapturer` is the only writer in the process.**
+cmd/define/main.go:396         removed, err := d.deck.Forget(word)
+```
+
+`Forget` deletes a word file — a store mutation performed outside the capturer. The contradiction is **two lines apart** in `main.go`: line 28 says "the only thing… that writes," and line 30 introduces `deck` as "the store `--forget` acts on." A reader of `#5` or `#8` auditing "what can change this deck?" is told three times the answer is one thing.
+
+BR-31 also stated the rule and why it had never been run: *"run the mechanical sweep over ALL 14 changed `.go`/`.md` files, not the files a finding named."* The sweep was run on the file BR-31's title named and not on the list. I ran it, and it turns up two further instances beyond site 2, which I am recording under one id below rather than leaving as prose — because BR-28 measured that un-id'd prose items get 0 % addressed while id'd findings get 100 %.
+
+**NEW [Important] `family-rule-applied-selectively` — this is the 3rd finding in this family (BR-23, BR-24; prevalence 3).** Per the escalation rule I am not asking for these instances to be patched.
+
+Measured across this round, 10 open findings entering it:
+
+| finding | body enumerated | closed |
+|---|---|---|
+| BR-30 | excise the blob (amend), un-anchored pattern, record the `--stat` rule | 0 of 3 — the *file* was untracked, which is none of the three |
+| BR-31 | `storetest/suite.go`; the three "only writer" absolutes | 1 of 2 — the one in the title |
+| BR-4, BR-22, BR-26, BR-28, BR-29, BR-32, BR-33, BR-34 | — | 0 of 8, untouched |
+
+**Zero of ten closed.** BR-23 measured 3 of 10 and named the substitution; BR-24 added the scope clause for artifacts; both were disposed `addressed`. The rule they state is right and this round did not execute it — and the shape is now sharper than "fix the title": both partial fixes stopped at the *most legible* half of the finding (the tracked file you can see in `git status`; the comment whose file the title named), leaving the half that requires re-deriving the finding's measurement (clone size, the enumerated grep list). *The clause the rule was missing:* **a finding is closed only when you have re-run the measurement that produced it.** BR-30 came with a clone-size number and BR-31 with a grep list; re-running either takes one command and would have shown the work incomplete before the commit claimed it done.
+
+### 4. Minor findings
+
+- **BR-4 / BR-26 (both not-addressed)** — unchanged, and I re-verified BR-26 by probe: replacing `withStore`'s early return (`main.go:68`) with `panic("BR26_BRANCH_ENTERED")` — mutation confirmed applied, `BUILD_OK` — leaves the **entire suite green**, so no test enters the branch. Revisions §3 still names `capture`, `deck` and `newStore` with no default stated for any of them.
+- **BR-28 (not-addressed)** — `main.go:36` verbatim: "Tests leave it nil and get in-memory defaults, so no test ever touches the real filesystem." `capture_test.go:316` sets `rig.deps.newStore = openStore`; **five** test files use `t.TempDir()`.
+- **NEW `unpinned-invariant` — this is the 6th finding in this family (BR-5, BR-6, BR-7, BR-19, BR-27; prevalence 6).** Do NOT patch this instance. `.gitignore:25-28` claims "the general case is enforced by `TestNoCommittedBinaries`". It is not: the test reads `git ls-files` (`repo_guard_test.go:32`), which is the **index**, while the cost of this class lives in **history**. Verified on the clone above — the 9.6 MB blob is present and `git ls-files | grep -c cmd/define/define` returns 0, so the guard is green on a repo carrying exactly the artifact it exists to prevent. Secondary: both `git` calls fall back to `t.Skipf` (`:29`, `:34`), so the guard is a silent no-op wherever `git` is absent or the tree is exported. *The rule this family needs, and the clause it was missing:* the family's five prior instances were all "a claim is ticked and the named test does not redden"; this one is "a claim is enforced by a test whose **scope** is narrower than the claim." Before naming a test as the enforcement for a class, state what the test reads and check the class lives there.
+- **NEW `prose-contradicts-code` — this is the 9th finding in this family (prevalence 9).** Do NOT patch these; BR-31's rule covers them and was not executed. Two instances the mechanical sweep over the changed-file list turns up, beyond BR-31's site 2: `workshop/issues/000004-vocab-capture.md:24` — the Spec's normative bullet "**Capture only on a successful lookup**" is contradicted by `decideCapture`'s `captureEventOnly` branch, by `capture_test.go:24`'s truth table, and by the README and atlas, all of which say a failed lookup *is* captured as history. And `main.go:173-176` — the `--help` text this window added says "define records **every** lookup under `words/` and `events/`", which is false for `-raw` (records nothing) and half-false for a failed lookup (event only, never `words/`); the README two files over states both exceptions correctly.
+- **BR-32 (not-addressed)** — `History.Add(line string, found bool)` (`history.go:16`) is still ignored by both implementations (`history.go:28`, `history_store.go:50`), while `replraw.go:171` computes `code == 0` to supply it. The interface's own doc at `history.go:11` still says "Every SUBMITTED line is recorded, **with whether the lookup found anything**", which is now false in both implementations — the same finding from the prose side.
+- **BR-33 (not-addressed)** — `main.go:212` still calls `d.withStore` before the `-forget` dispatch at `:214`.
+- **BR-34 (not-addressed)** — `main.go:398` still formats a store error as `define: %v` where `:402` and `:405` name the word.
+- **BR-22 / BR-29 (both not-addressed)** — the preamble is now at `close-review.md:18, 251, 485, 674, 878, 1043` — a sixth occurrence, one per round, exactly as predicted at rounds 3, 4, 6 and 7. I re-checked `/Users/xianxu/workspace/ariadne/workshop/issues/` (26 issues, none about artifact capture) and this issue's Log (`ariadne#195` only, a different mechanism). Neither exists yet; this cannot converge here.
+
+### 5. Test coverage notes
+
+The suite is green (`go vet` clean; `go test ./cmd/...` 24.3 s) and the new guard is the strongest-verified thing in this round — I ran the plant-and-remove cycle the lesson prescribes, and it behaved correctly in all three states once I re-ran with `-count=1`. Worth flagging as a caution for the next round: my first attempt at that verification printed `ok (cached)` for the planted run, which reads exactly like a blind test and is neither — the same class of false reading the round-4 Log records for `sed`-based mutations, arriving through Go's test cache instead. **`-count=1` belongs in the mutation recipe alongside "confirm it applied and compiled."** The rest of the coverage shape is unchanged and sound: `decideCapture` and `wordFileName` table-tested with zero IO; per-path arity at the `Capturer` seam including the `-raw` row; one store-level arity assertion through real wiring that provably sees writers below the seam; `openStore` on both branches; a `t.Setenv` end-to-end disk assertion; `Forget` in the shared conformance suite. The one gap that is a *scope* problem rather than a missing test is the guard's index-vs-history blindness, in the Minor above.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass on code, flag on prose (BR-31, and the 9th prose instance).** Grep-verified: `decideCapture` has one caller; `c.st.AppendEvent`/`c.st.Upsert` in `capture.go` are the only append/upsert paths outside `store/`; all three `.Capture(` calls are inside `lookupAndRender`; `wordFileName` serves both filename-deriving call sites. The duplication that remains is entirely comments — "who mutates the store" has three absolute statements that omit `Forget`, and "what capture means" has a Spec bullet and a `--help` sentence that contradict `decideCapture`.
+- **ARCH-PURE — pass.** `decideCapture` (`capture.go:26`) and `wordFileName` (`yaml.go:180`) are genuine pure functions with IO-free tests; `storeCapturer` is a thin shell over the policy; `openStore` is the boundary and is injectable through `deps.newStore`, which is what makes the env-wiring test possible without touching the developer's filesystem. Nothing leaked into `store/`.
+- **ARCH-PURPOSE — pass on the issue, flag on this round's fix.** Shadow-sweep on `decideCapture`: `storeCapturer` derives ✓, the raw branch derives and is pinned ✓, `openStore`'s `noCapture` read is a labelled second reader of the same *input* ✓. On `wordFileName`: `Upsert` ✓, `Forget` ✓. The issue's stated purpose — every entry path records, and records once — is delivered on every path, not the easy subset. The flag is BR-30: the purpose of that finding was "the repo must not carry a 9.6 MB blob," and what shipped is the cheap, visible subset of it ("`git status` is clean"). Removing the file is not the point; removing the cost is.
+- **ARCH-MOCK — pass, with one note.** `store.Mem` ships as production code behind the interface `YAML` implements, `storetest.Suite` runs both, `Forget` joined the suite in the commit that introduced it, and the owned backend boots from any portable folder (`store.NewYAML(dir, warn)`; tests use `t.TempDir`) with no production configuration. `repo_guard_test.go` shells out to `git` with no seam and no fake — correct here, since a faked `git` would defeat a test whose whole subject is the real index; the cost is the silent-skip failure mode noted above. The pre-existing gap, still outside this issue's scope: the macOS CoreServices dictionary has a fixture-backed fake (`testDict`) but **no live conformance check**, so nothing detects the day its output shape changes. Worth an issue before `#15` builds more on `ParseEntry`.
+- **For `#5` (ordering by `Lookups`):** the number is trustworthy for both properties it needs — arity, pinned through the real wiring on every producible path, and accumulation, pinned through the capture path. `#5` can order by it.
+
+### 7. Plan revision recommendations
+
+The `## Revisions` section is substantive and four of its five deltas are accurate. Two residuals, appended to the same entry rather than a new one — both unchanged from round 7:
+
+- **Append to Revisions §3 — the seam defaults.** §3 names `capture`, `deck` and `newStore` and states no default for any. Record: `withStore` installs `&memHistory{}` and `noopCapturer{}` when a caller supplies neither, and **returns early when `history` and `capture` are both non-nil, leaving `deck` nil** — a branch no test reaches (probe-verified green under `panic`). That is the half BR-4 asked for and BR-26 escalated, open three rounds.
+- **A forward pointer at the top of Chunk 1.** Line 115-116 still reads "consulted from **three call sites**" and line 24 still describes "a `Capturer` that `storeHistory` also uses", while Revisions §1/§2 correct both ~130 lines later. One line — "Chunk 1 predates implementation; `## Revisions` supersedes it where they disagree" — closes it.
+- **The `### Integration points` table** still omits `noopCapturer`, `storeDeps`, `withStore`, `openStore`, `wordFileName`, `forgetWord`, `isSet`, and `Store.Forget`/`Mem.Forget`/`YAML.Forget`, and carries no PURE/INTEGRATION column — which is what this protocol cross-checks. Recommended at rounds 4, 5 and 7.
+
+```findings
+dispose:
+  - id: BR-30
+    disposition: not-addressed
+    note: |
+      File untracked at HEAD, but b3ec4bd used a follow-up commit where the finding specified --amend; 42cc96d still adds the blob. Clone measured: main 604K, this branch 5.9M, blob d12d8e7 present.
+  - id: BR-31
+    disposition: not-addressed
+    note: |
+      Site 1 (storetest/suite.go) swept correctly; site 2 (capture.go:51, main.go:28, atlas/define.md:281 vs d.deck.Forget at main.go:396) untouched.
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      Revisions section 3 still names the three deps fields with no default stated for any of them.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      Probe re-verified - panic in withStore's early return, mutation applied and BUILD_OK, entire suite still green.
+  - id: BR-28
+    disposition: not-addressed
+    note: |
+      main.go:36 verbatim; capture_test.go:316 still sets newStore = openStore and five test files use t.TempDir().
+  - id: BR-32
+    disposition: not-addressed
+    note: |
+      History.Add's found still ignored by both implementations; history.go:11 doc still claims it is recorded.
+  - id: BR-33
+    disposition: not-addressed
+    note: |
+      main.go:212 still calls withStore before the -forget dispatch at :214.
+  - id: BR-34
+    disposition: not-addressed
+    note: |
+      main.go:398 still prints a bare "define: %v" while :402 and :405 name the word.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      Sixth occurrence (lines 18, 251, 485, 674, 878, 1043). Unfixable from tools - see BR-29.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      Re-checked ariadne/workshop/issues (26 issues, none on artifact capture); this issue's Log still references only ariadne#195.
+findings:
+  - id: new
+    severity: Important
+    family: family-rule-applied-selectively
+    title: |
+      Both partial fixes closed the legible half of the finding and left the half that required re-running its measurement
+    detail: |
+      3rd in family (BR-23, BR-24; prevalence 3). Do NOT patch these instances. Measured: 10 open findings
+      entered this round, 0 closed. BR-30 enumerated three moves (excise the blob via amend, an un-anchored
+      pattern, record the git show --stat rule) and closed none of them - the file was untracked, which is
+      none of the three. BR-31 enumerated two sites and closed the one in its title. The other eight were
+      untouched. BR-23 measured 3 of 10 and BR-24 added the artifact-scope clause; both were disposed
+      addressed, so the rule is written and was not executed. The clause it is still missing: a finding is
+      closed only when you have RE-RUN the measurement that produced it. BR-30 shipped with a clone-size
+      number and BR-31 with a grep list; re-running either is one command and would have shown the work
+      incomplete before the commit claimed it done.
+  - id: new
+    severity: Minor
+    family: unpinned-invariant
+    title: |
+      .gitignore names TestNoCommittedBinaries as enforcing the general case, but the test reads the index and the cost lives in history
+    detail: |
+      6th in family (BR-5, BR-6, BR-7, BR-19, BR-27; prevalence 6). Do NOT patch this instance. .gitignore:25-28
+      claims "the general case is enforced by TestNoCommittedBinaries"; the test reads git ls-files
+      (repo_guard_test.go:32), which is the index. Verified on a real clone of this branch: blob d12d8e7
+      (9616546 bytes) is present, git ls-files reports it 0 times, and the guard is GREEN - certifying "no
+      committed binaries" on a repo that carries one. Secondary: both git calls fall back to t.Skipf (:29, :34),
+      so the guard is a silent no-op wherever git is absent or the tree is exported. The family's five prior
+      instances were all "a claim is ticked and the named test does not redden"; this one is "a claim is
+      enforced by a test whose SCOPE is narrower than the claim". The clause the rule needs: before naming a
+      test as the enforcement for a class, state what the test reads and check the class lives there.
+  - id: new
+    severity: Minor
+    family: prose-contradicts-code
+    title: |
+      The Spec's "capture only on a successful lookup" and --help's "records every lookup" both contradict decideCapture
+    detail: |
+      9th in family (prevalence 9). Do NOT patch these sites - BR-31's rule covers them and was not executed
+      as written. Two instances the mechanical sweep over the full changed-file list turns up, beyond BR-31's
+      own site 2. workshop/issues/000004-vocab-capture.md:24 - the Spec's normative bullet "Capture only on a
+      successful lookup" is contradicted by decideCapture's captureEventOnly branch, by capture_test.go:24's
+      truth table, and by the README and atlas, both of which state that a failed lookup IS captured as
+      history. cmd/define/main.go:173-176 - the --help text this window added says define "records every
+      lookup under words/ and events/", false for -raw (records nothing) and half-false for a failed lookup
+      (event only, never words/); the README states both exceptions correctly two files over. Recording these
+      with ids rather than as prose, because BR-28 measured that un-id'd prose items get 0 percent addressed.
+```

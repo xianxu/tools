@@ -672,6 +672,97 @@ rounds:
           family: misleading-error-text
           round: 7
       blocked: true
+    - "n": 8
+      timestamp: "2026-08-21T12:27:06-07:00"
+      agent: claude
+      dispose:
+        - id: BR-30
+          disposition: not-addressed
+          note: 'File untracked at HEAD, but b3ec4bd used a follow-up commit where the finding specified --amend; 42cc96d still adds the blob. Clone measured: main 604K, this branch 5.9M, blob d12d8e7 present.'
+          round: 8
+        - id: BR-31
+          disposition: not-addressed
+          note: Site 1 (storetest/suite.go) swept correctly; site 2 (capture.go:51, main.go:28, atlas/define.md:281 vs d.deck.Forget at main.go:396) untouched.
+          round: 8
+        - id: BR-4
+          disposition: not-addressed
+          note: Revisions section 3 still names the three deps fields with no default stated for any of them.
+          round: 8
+        - id: BR-26
+          disposition: not-addressed
+          note: Probe re-verified - panic in withStore's early return, mutation applied and BUILD_OK, entire suite still green.
+          round: 8
+        - id: BR-28
+          disposition: not-addressed
+          note: main.go:36 verbatim; capture_test.go:316 still sets newStore = openStore and five test files use t.TempDir().
+          round: 8
+        - id: BR-32
+          disposition: not-addressed
+          note: History.Add's found still ignored by both implementations; history.go:11 doc still claims it is recorded.
+          round: 8
+        - id: BR-33
+          disposition: not-addressed
+          note: main.go:212 still calls withStore before the -forget dispatch at :214.
+          round: 8
+        - id: BR-34
+          disposition: not-addressed
+          note: 'main.go:398 still prints a bare "define: %v" while :402 and :405 name the word.'
+          round: 8
+        - id: BR-22
+          disposition: not-addressed
+          note: Sixth occurrence (lines 18, 251, 485, 674, 878, 1043). Unfixable from tools - see BR-29.
+          round: 8
+        - id: BR-29
+          disposition: not-addressed
+          note: Re-checked ariadne/workshop/issues (26 issues, none on artifact capture); this issue's Log still references only ariadne#195.
+          round: 8
+      findings:
+        - id: BR-35
+          severity: Important
+          title: Both partial fixes closed the legible half of the finding and left the half that required re-running its measurement
+          detail: |-
+            3rd in family (BR-23, BR-24; prevalence 3). Do NOT patch these instances. Measured: 10 open findings
+            entered this round, 0 closed. BR-30 enumerated three moves (excise the blob via amend, an un-anchored
+            pattern, record the git show --stat rule) and closed none of them - the file was untracked, which is
+            none of the three. BR-31 enumerated two sites and closed the one in its title. The other eight were
+            untouched. BR-23 measured 3 of 10 and BR-24 added the artifact-scope clause; both were disposed
+            addressed, so the rule is written and was not executed. The clause it is still missing: a finding is
+            closed only when you have RE-RUN the measurement that produced it. BR-30 shipped with a clone-size
+            number and BR-31 with a grep list; re-running either is one command and would have shown the work
+            incomplete before the commit claimed it done.
+          family: family-rule-applied-selectively
+          round: 8
+        - id: BR-36
+          severity: Minor
+          title: .gitignore names TestNoCommittedBinaries as enforcing the general case, but the test reads the index and the cost lives in history
+          detail: |-
+            6th in family (BR-5, BR-6, BR-7, BR-19, BR-27; prevalence 6). Do NOT patch this instance. .gitignore:25-28
+            claims "the general case is enforced by TestNoCommittedBinaries"; the test reads git ls-files
+            (repo_guard_test.go:32), which is the index. Verified on a real clone of this branch: blob d12d8e7
+            (9616546 bytes) is present, git ls-files reports it 0 times, and the guard is GREEN - certifying "no
+            committed binaries" on a repo that carries one. Secondary: both git calls fall back to t.Skipf (:29, :34),
+            so the guard is a silent no-op wherever git is absent or the tree is exported. The family's five prior
+            instances were all "a claim is ticked and the named test does not redden"; this one is "a claim is
+            enforced by a test whose SCOPE is narrower than the claim". The clause the rule needs: before naming a
+            test as the enforcement for a class, state what the test reads and check the class lives there.
+          family: unpinned-invariant
+          round: 8
+        - id: BR-37
+          severity: Minor
+          title: The Spec's "capture only on a successful lookup" and --help's "records every lookup" both contradict decideCapture
+          detail: |-
+            9th in family (prevalence 9). Do NOT patch these sites - BR-31's rule covers them and was not executed
+            as written. Two instances the mechanical sweep over the full changed-file list turns up, beyond BR-31's
+            own site 2. workshop/issues/000004-vocab-capture.md:24 - the Spec's normative bullet "Capture only on a
+            successful lookup" is contradicted by decideCapture's captureEventOnly branch, by capture_test.go:24's
+            truth table, and by the README and atlas, both of which state that a failed lookup IS captured as
+            history. cmd/define/main.go:173-176 - the --help text this window added says define "records every
+            lookup under words/ and events/", false for -raw (records nothing) and half-false for a failed lookup
+            (event only, never words/); the README states both exceptions correctly two files over. Recording these
+            with ids rather than as prose, because BR-28 measured that un-id'd prose items get 0 percent addressed.
+          family: prose-contradicts-code
+          round: 8
+      blocked: true
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -1021,6 +1112,54 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   user-facing error names both the condition and the operand it failed on - BR-13's message named the wrong
   condition, this one names no operand.
 
+## Round 8 — 2026-08-21T12:27:06-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-30 — not-addressed — File untracked at HEAD, but b3ec4bd used a follow-up commit where the finding specified --amend; 42cc96d still adds the blob. Clone measured: main 604K, this branch 5.9M, blob d12d8e7 present.
+- BR-31 — not-addressed — Site 1 (storetest/suite.go) swept correctly; site 2 (capture.go:51, main.go:28, atlas/define.md:281 vs d.deck.Forget at main.go:396) untouched.
+- BR-4 — not-addressed — Revisions section 3 still names the three deps fields with no default stated for any of them.
+- BR-26 — not-addressed — Probe re-verified - panic in withStore's early return, mutation applied and BUILD_OK, entire suite still green.
+- BR-28 — not-addressed — main.go:36 verbatim; capture_test.go:316 still sets newStore = openStore and five test files use t.TempDir().
+- BR-32 — not-addressed — History.Add's found still ignored by both implementations; history.go:11 doc still claims it is recorded.
+- BR-33 — not-addressed — main.go:212 still calls withStore before the -forget dispatch at :214.
+- BR-34 — not-addressed — main.go:398 still prints a bare "define: %v" while :402 and :405 name the word.
+- BR-22 — not-addressed — Sixth occurrence (lines 18, 251, 485, 674, 878, 1043). Unfixable from tools - see BR-29.
+- BR-29 — not-addressed — Re-checked ariadne/workshop/issues (26 issues, none on artifact capture); this issue's Log still references only ariadne#195.
+
+### Raised
+
+- **BR-35** [Important] `family-rule-applied-selectively` Both partial fixes closed the legible half of the finding and left the half that required re-running its measurement
+  3rd in family (BR-23, BR-24; prevalence 3). Do NOT patch these instances. Measured: 10 open findings
+  entered this round, 0 closed. BR-30 enumerated three moves (excise the blob via amend, an un-anchored
+  pattern, record the git show --stat rule) and closed none of them - the file was untracked, which is
+  none of the three. BR-31 enumerated two sites and closed the one in its title. The other eight were
+  untouched. BR-23 measured 3 of 10 and BR-24 added the artifact-scope clause; both were disposed
+  addressed, so the rule is written and was not executed. The clause it is still missing: a finding is
+  closed only when you have RE-RUN the measurement that produced it. BR-30 shipped with a clone-size
+  number and BR-31 with a grep list; re-running either is one command and would have shown the work
+  incomplete before the commit claimed it done.
+- **BR-36** [Minor] `unpinned-invariant` .gitignore names TestNoCommittedBinaries as enforcing the general case, but the test reads the index and the cost lives in history
+  6th in family (BR-5, BR-6, BR-7, BR-19, BR-27; prevalence 6). Do NOT patch this instance. .gitignore:25-28
+  claims "the general case is enforced by TestNoCommittedBinaries"; the test reads git ls-files
+  (repo_guard_test.go:32), which is the index. Verified on a real clone of this branch: blob d12d8e7
+  (9616546 bytes) is present, git ls-files reports it 0 times, and the guard is GREEN - certifying "no
+  committed binaries" on a repo that carries one. Secondary: both git calls fall back to t.Skipf (:29, :34),
+  so the guard is a silent no-op wherever git is absent or the tree is exported. The family's five prior
+  instances were all "a claim is ticked and the named test does not redden"; this one is "a claim is
+  enforced by a test whose SCOPE is narrower than the claim". The clause the rule needs: before naming a
+  test as the enforcement for a class, state what the test reads and check the class lives there.
+- **BR-37** [Minor] `prose-contradicts-code` The Spec's "capture only on a successful lookup" and --help's "records every lookup" both contradict decideCapture
+  9th in family (prevalence 9). Do NOT patch these sites - BR-31's rule covers them and was not executed
+  as written. Two instances the mechanical sweep over the full changed-file list turns up, beyond BR-31's
+  own site 2. workshop/issues/000004-vocab-capture.md:24 - the Spec's normative bullet "Capture only on a
+  successful lookup" is contradicted by decideCapture's captureEventOnly branch, by capture_test.go:24's
+  truth table, and by the README and atlas, both of which state that a failed lookup IS captured as
+  history. cmd/define/main.go:173-176 - the --help text this window added says define "records every
+  lookup under words/ and events/", false for -raw (records nothing) and half-false for a failed lookup
+  (event only, never words/); the README states both exceptions correctly two files over. Recording these
+  with ids rather than as prose, because BR-28 measured that un-id'd prose items get 0 percent addressed.
+
 ## Open findings
 
 - **BR-4** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
@@ -1033,3 +1172,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-32** [Minor] `needless-indirection` History.Add's found parameter is now dead in both implementations, and orElse is a generic for two nil checks
 - **BR-33** [Minor] `eager-dependency-construction` run builds the store-backed deps before the -forget dispatch, so --forget reads an event log it never uses
 - **BR-34** [Minor] `misleading-error-text` forgetWord prints a bare "define: %v" where every neighbouring message names the operand
+- **BR-35** [Important] `family-rule-applied-selectively` Both partial fixes closed the legible half of the finding and left the half that required re-running its measurement
+- **BR-36** [Minor] `unpinned-invariant` .gitignore names TestNoCommittedBinaries as enforcing the general case, but the test reads the index and the cost lives in history
+- **BR-37** [Minor] `prose-contradicts-code` The Spec's "capture only on a successful lookup" and --help's "records every lookup" both contradict decideCapture
