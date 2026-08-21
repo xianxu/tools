@@ -34,20 +34,12 @@ type deps struct {
 	// it cannot happen in realDeps, because DEFINE_NO_CAPTURE is read at flag
 	// parse and decides whether anything is opened at all. Tests leave it nil and
 	// get in-memory defaults, so no test ever touches the real filesystem.
-	newStore func(options, io.Writer) (History, Capturer, store.Store)
+	newStore func(options, io.Writer) storeDeps
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
 	// which would make the interactive path unwritable. Note this is a different
 	// question from the stdout check that drives colour.
 	stdinIsTerminal func() bool
-}
-
-// forgetter returns the deck store, if there is one.
-func (d deps) forgetter() (store.Store, bool) {
-	if d.deck == nil {
-		return nil, false
-	}
-	return d.deck, true
 }
 
 func realDeps() deps {
@@ -70,22 +62,63 @@ func realDeps() deps {
 // A store that cannot be opened must not break define: warn and fall back,
 // exactly as a missing recording degrades rather than fails. Someone in a
 // read-only directory still gets a dictionary.
-func openStore(opt options, warn io.Writer) (History, Capturer, store.Store) {
+// storeDeps is the trio openStore produces. One value rather than three returns
+// and three nil-merges at the call site: they are always built together, always
+// consumed together, and the merge was three chances to forget one.
+type storeDeps struct {
+	history History
+	capture Capturer
+	deck    store.Store
+}
+
+// withStore fills any store-backed dependency a caller did not supply. Tests
+// supply their own and are left alone.
+func (d deps) withStore(opt options, warn io.Writer) deps {
+	if d.history != nil && d.capture != nil {
+		return d // fully supplied by a test
+	}
+	var sd storeDeps
+	if d.newStore != nil {
+		sd = d.newStore(opt, warn)
+	}
+	if d.history == nil {
+		d.history = orElse[History](sd.history, &memHistory{})
+	}
+	if d.capture == nil {
+		d.capture = orElse[Capturer](sd.capture, noopCapturer{})
+	}
+	if d.deck == nil {
+		d.deck = sd.deck
+	}
+	return d
+}
+
+func orElse[T comparable](v, fallback T) T {
+	var zero T
+	if v == zero {
+		return fallback
+	}
+	return v
+}
+
+func openStore(opt options, warn io.Writer) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides
 	// whether a given lookup counts.
 	if opt.noCapture {
-		return &memHistory{}, noopCapturer{}, nil
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
 	}
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
-		return &memHistory{}, noopCapturer{}, nil
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
 	}
 	st := store.NewYAML(dir, warn)
-	return newStoreHistory(st, store.SystemClock(), warn),
-		newStoreCapturer(st, store.SystemClock(), warn),
-		st
+	return storeDeps{
+		history: newStoreHistory(st, warn),
+		capture: newStoreCapturer(st, store.SystemClock(), warn),
+		deck:    st,
+	}
 }
 
 func main() {
@@ -176,21 +209,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 
 	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
 	// flag-parse-time input and decides whether anything is opened at all.
-	if d.newStore != nil {
-		h, c, dk := d.newStore(opt, stderr)
-		if d.history == nil {
-			d.history = h
-		}
-		if d.capture == nil {
-			d.capture = c
-		}
-		if d.deck == nil {
-			d.deck = dk
-		}
-	}
-	if d.capture == nil {
-		d.capture = noopCapturer{}
-	}
+	d = d.withStore(opt, stderr)
 
 	if isSet(fs, "forget") {
 		if *forget == "" {
@@ -364,8 +383,7 @@ func isSet(fs *flag.FlagSet, name string) bool {
 // An absent word exits NON-ZERO: succeeding silently would hide a typo in the
 // very command meant to correct one.
 func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int {
-	f, ok := d.forgetter()
-	if !ok {
+	if d.deck == nil {
 		// Under DEFINE_NO_CAPTURE there may well BE a deck on disk — we simply
 		// did not open one. Saying "no deck" would be a lie about their data.
 		if opt.noCapture {
@@ -375,7 +393,7 @@ func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int 
 		}
 		return 1
 	}
-	removed, err := f.Forget(word)
+	removed, err := d.deck.Forget(word)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: %v\n", err)
 		return 1

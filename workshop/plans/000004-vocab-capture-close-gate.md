@@ -306,6 +306,83 @@ rounds:
           family: generated-artifact-noise
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-21T11:34:57-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: Plan line 116 unchanged; decideCapture still has exactly one caller.
+          round: 4
+        - id: BR-2
+          disposition: not-addressed
+          note: Plan line 133 "storeHistory delegates" unchanged; it neither delegates nor writes.
+          round: 4
+        - id: BR-3
+          disposition: not-addressed
+          note: Plan line 181 unchanged; the plan file's only edit this window is checkbox ticks.
+          round: 4
+        - id: BR-4
+          disposition: not-addressed
+          note: Plan still never states that deps gains capture, deck or newStore, nor the noopCapturer fallback.
+          round: 4
+        - id: BR-6
+          disposition: not-addressed
+          note: wordFileName was wired into Upsert, not Forget; Forget's guard is unchanged and still revert-green.
+          round: 4
+        - id: BR-14
+          disposition: not-addressed
+          note: deps.forgetter() unchanged at main.go:46.
+          round: 4
+        - id: BR-15
+          disposition: not-addressed
+          note: newStore still returns a triple with three nil-merges at main.go:179-193.
+          round: 4
+        - id: BR-16
+          disposition: addressed
+          note: Implementation Log entry landed and is substantive; the manual-check evidence residual carries under BR-20.
+          round: 4
+        - id: BR-17
+          disposition: not-addressed
+          note: atlas/define.md:317-327 unchanged - table still lists three invocations, prose still names defineOnce as the dispatch target.
+          round: 4
+        - id: BR-18
+          disposition: addressed
+          note: The restatement was deleted rather than reworded; history_store.go:13-22 now keeps only the locally-owned fact.
+          round: 4
+        - id: BR-19
+          disposition: addressed
+          note: Verified by mutation - deleting the raw Capture call and nilling openStore's deck each redden a distinct test.
+          round: 4
+        - id: BR-20
+          disposition: not-addressed
+          note: Issue line 45-49, the Log and commit 00f9b94 all state the --forget guard is wordFileName; it is not.
+          round: 4
+        - id: BR-21
+          disposition: not-addressed
+          note: newStoreHistory's dead store.Clock parameter unchanged; the one-pass fix the finding specified did not happen.
+          round: 4
+        - id: BR-22
+          disposition: not-addressed
+          note: Preamble still at close-review.md:18 and recurred at :251 on the round-3 run, exactly as predicted.
+          round: 4
+      findings:
+        - id: BR-23
+          severity: Important
+          title: The family fixes closed each finding's titled instance and left the instances enumerated in its body
+          detail: |-
+            Measured across round 3: BR-18 named 4 instances and 1 closed; BR-19 named 3 and 2 closed;
+            BR-21 named 3, said "one pass over all three closes the family", and 0 closed. That is 3 of 10,
+            and the three closed are the ones in the titles. A fifth prose-contradicts-code instance also
+            arrived unremarked - README.md:85 still says exit 1 means "no dictionary entry", which now also
+            means "not in the deck" and "no deck was opened". The rule: an escalated family finding is closed
+            only when every instance it enumerates is disposed, and the response states which were fixed and
+            which were not. Marking a family finding addressed asserts the family is closed, not that the
+            headline site was patched - which is the same fix-the-named-thing substitution the escalation
+            mechanism exists to stop. Next round: reply to BR-18, BR-19 and BR-21 instance-by-instance.
+          family: family-rule-applied-selectively
+          round: 4
+      blocked: true
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -461,6 +538,38 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   entries from .claude/settings.json..." inside the "## Review" section. Artifact capture should
   take the agent's stdout only, or this recurs on every review run in an untrusted workspace.
 
+## Round 4 — 2026-08-21T11:34:57-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — Plan line 116 unchanged; decideCapture still has exactly one caller.
+- BR-2 — not-addressed — Plan line 133 "storeHistory delegates" unchanged; it neither delegates nor writes.
+- BR-3 — not-addressed — Plan line 181 unchanged; the plan file's only edit this window is checkbox ticks.
+- BR-4 — not-addressed — Plan still never states that deps gains capture, deck or newStore, nor the noopCapturer fallback.
+- BR-6 — not-addressed — wordFileName was wired into Upsert, not Forget; Forget's guard is unchanged and still revert-green.
+- BR-14 — not-addressed — deps.forgetter() unchanged at main.go:46.
+- BR-15 — not-addressed — newStore still returns a triple with three nil-merges at main.go:179-193.
+- BR-16 — addressed — Implementation Log entry landed and is substantive; the manual-check evidence residual carries under BR-20.
+- BR-17 — not-addressed — atlas/define.md:317-327 unchanged - table still lists three invocations, prose still names defineOnce as the dispatch target.
+- BR-18 — addressed — The restatement was deleted rather than reworded; history_store.go:13-22 now keeps only the locally-owned fact.
+- BR-19 — addressed — Verified by mutation - deleting the raw Capture call and nilling openStore's deck each redden a distinct test.
+- BR-20 — not-addressed — Issue line 45-49, the Log and commit 00f9b94 all state the --forget guard is wordFileName; it is not.
+- BR-21 — not-addressed — newStoreHistory's dead store.Clock parameter unchanged; the one-pass fix the finding specified did not happen.
+- BR-22 — not-addressed — Preamble still at close-review.md:18 and recurred at :251 on the round-3 run, exactly as predicted.
+
+### Raised
+
+- **BR-23** [Important] `family-rule-applied-selectively` The family fixes closed each finding's titled instance and left the instances enumerated in its body
+  Measured across round 3: BR-18 named 4 instances and 1 closed; BR-19 named 3 and 2 closed;
+  BR-21 named 3, said "one pass over all three closes the family", and 0 closed. That is 3 of 10,
+  and the three closed are the ones in the titles. A fifth prose-contradicts-code instance also
+  arrived unremarked - README.md:85 still says exit 1 means "no dictionary entry", which now also
+  means "not in the deck" and "no deck was opened". The rule: an escalated family finding is closed
+  only when every instance it enumerates is disposed, and the response states which were fixed and
+  which were not. Marking a family finding addressed asserts the family is closed, not that the
+  headline site was patched - which is the same fix-the-named-thing substitution the escalation
+  mechanism exists to stop. Next round: reply to BR-18, BR-19 and BR-21 instance-by-instance.
+
 ## Open findings
 
 - **BR-1** [Minor] `unbacked-existing-behavior-claim` "three call sites" is two - defineOnce serves both the one-shot and line paths
@@ -470,10 +579,8 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-6** [Important] `unpinned-invariant` The Forget traversal guard is asserted by no test, and half of it is unreachable
 - **BR-14** [Minor] `needless-indirection` deps.forgetter() is a four-line nil-check wrapper around one field with one caller
 - **BR-15** [Minor] `needless-indirection` newStore's three-return seam plus three nil-merges in run is lumpy; a small struct would collapse it
-- **BR-16** [Minor] `undocumented-work-log` The issue's Log has no implementation entry and the ticked "Manual check" step records no evidence
 - **BR-17** [Minor] `prose-contradicts-code` atlas "Entry modes" table omits define -forget, the fourth invocation this diff adds
-- **BR-18** [Important] `prose-contradicts-code` history_store.go:17 still says Add appends events and upserts words, contradicting line 25 of the same comment
-- **BR-19** [Important] `unpinned-invariant` Two fixes landed this round are revert-green, and BR-6's is unpinnable at the current API
 - **BR-20** [Important] `undocumented-work-log` A Done-when box is ticked for a clause that revert-verification shows is not delivered
 - **BR-21** [Minor] `needless-indirection` newStoreHistory keeps a dead store.Clock parameter that four call sites construct and pass
 - **BR-22** [Minor] `generated-artifact-noise` The committed close-review artifact opens with a harness stderr preamble
+- **BR-23** [Important] `family-rule-applied-selectively` The family fixes closed each finding's titled instance and left the instances enumerated in its body

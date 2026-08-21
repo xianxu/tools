@@ -26,7 +26,7 @@ type storeHistory struct {
 	warn  io.Writer
 }
 
-func newStoreHistory(st store.Store, _ store.Clock, warn io.Writer) *storeHistory {
+func newStoreHistory(st store.Store, warn io.Writer) *storeHistory {
 	h := &storeHistory{warn: warn}
 	events, err := st.Events(time.Time{})
 	if err != nil {

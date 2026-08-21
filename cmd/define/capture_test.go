@@ -266,7 +266,7 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 	st := store.NewYAML(dir, nil)
 
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
-	rig.deps.history = newStoreHistory(st, fixedClock(1), nil)
+	rig.deps.history = newStoreHistory(st, nil)
 	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil)
 
 	var out, errb bytes.Buffer
@@ -293,7 +293,8 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 // Half of a Done-when lived here untested: DEFINE_NO_CAPTURE must not merely
 // suppress writes, it must leave history session-only rather than half-persisting.
 func TestOpenStoreUnderOptOut(t *testing.T) {
-	h, c, deck := openStore(options{noCapture: true}, nil)
+	sd := openStore(options{noCapture: true}, nil)
+	h, c, deck := sd.history, sd.capture, sd.deck
 	if _, ok := h.(*memHistory); !ok {
 		t.Errorf("history = %T, want *memHistory — session-only", h)
 	}
@@ -341,7 +342,8 @@ func TestOpenStoreWithoutOptOut(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 
-	h, c, deck := openStore(options{}, nil)
+	sd := openStore(options{}, nil)
+	h, c, deck := sd.history, sd.capture, sd.deck
 	if _, ok := h.(*storeHistory); !ok {
 		t.Errorf("history = %T, want *storeHistory", h)
 	}

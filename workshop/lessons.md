@@ -170,3 +170,26 @@ asserted. Defence in depth that cannot be tested is decoration.
 **And verify the mutation applied.** One check here printed GREEN because the
 text substitution silently missed, not because the test was blind. A mutation
 that did not land is not a result.
+
+## A family finding is closed when every instance it lists is closed (define #4)
+
+Told "this is the 4th finding in family X; fix the rule, not the instance", I
+fixed **3 of the 10 instances the findings enumerated — and all three were the
+ones in the titles.** That is the same substitution the escalation exists to
+prevent: patch the named thing, leave the class.
+
+Two operational forms:
+
+- **Reply instance-by-instance, not finding-by-finding.** Marking a family
+  finding addressed asserts the *family* is closed.
+- **Before ticking a Done-when, name the symbol your evidence exercises and grep
+  that the production path reaches it.** One fix here added a guard and wired
+  only *one* of its two call sites — the one that was not the subject of the
+  finding — while the record claimed both.
+
+## A mutation is a result only if it applied AND compiled (define #4)
+
+Two false readings in one session: a substitution that silently missed printed
+GREEN ("test is blind"), and one that broke the build printed RED ("test caught
+it"). Neither was true. Confirm the mutation landed and the package still
+compiles, *then* read the suite.

@@ -316,15 +316,16 @@ day files are named in UTC. `#8` must group by timestamp, never by filename.
 
 ## Entry modes
 
-One word per invocation was the original shape; `run` now dispatches on argument
-count into a single shared `defineOnce`, so neither mode owns a copy of the
-define path.
+`run` dispatches modes first (`-forget`), then on argument count. The function
+every path converges on is **`lookupAndRender`**, not `defineOnce` — the raw
+editor bypasses `defineOnce` entirely, which is why capture lives one level down.
 
-| invocation | behaviour |
-|---|---|
-| `define <word>` | one-shot |
-| `define` | reads stdin until EOF or Ctrl-C |
-| `echo w \| define` | same loop, no prompt |
+| invocation | behaviour | reaches |
+|---|---|---|
+| `define <word>` | one-shot | `defineOnce` → `lookupAndRender` |
+| `define` on a terminal | raw editor | `submitLine` → `lookupAndRender` |
+| `define` piped, or `echo w \| define` | line loop | `defineOnce` → `lookupAndRender` |
+| `define -forget <word>` | mode; no lookup | neither |
 
 The loop reads stdin **unconditionally** and only the prompt is TTY-conditional —
 there is no interactive/batch branch to keep in sync, and the whole loop is

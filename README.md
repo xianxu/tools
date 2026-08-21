@@ -82,7 +82,10 @@ silently. `-raw` prints the unparsed entry and never plays. The prompt appears
 only on a terminal, so piping stays clean. Flags are session settings — `define
 -times 1` opens the loop with single playback.
 
-Exit codes: `0` success, `1` no dictionary entry, `2` usage error.
+Exit codes: `0` success; `1` the request failed (no dictionary entry, or
+`--forget` found nothing to remove); `2` usage error. A piped run exits `1` if any
+word failed, so `echo "$w" | define || …` works in a script; an interactive typo
+does not fail the session.
 
 Lookup goes through macOS's CoreServices, which searches **every active
 dictionary** rather than NOAD specifically — the SDK offers no way to pick one.

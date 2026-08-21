@@ -44,11 +44,19 @@ A vocabulary deck nobody has to curate is the only one that gets used. Every
       original wording said "comparing the directory"; the assertion counts
       events, which covers the same risk — corrected rather than left claiming
       something else.)
-- [x] `--forget` cannot delete outside `words/`. The guard is now a pure
-      `wordFileName(slug)` tested directly with hostile names — behind `Slug` it
-      was unreachable in principle, so the earlier tick claimed an assertion that
-      did not exist. `Slug` remains the first line (fuzzed); this is the net
-      under a future regression in it.
+- [x] `--forget` cannot delete outside `words/` — stated precisely, because two
+      earlier versions of this box were false:
+      - **`Slug` is the effective guarantee**, and it is fuzzed (6.9M execs) for
+        "always exactly one safe path element".
+      - **`wordFileName(slug)` is a second net** under a future `Slug`
+        regression. It is a pure function tested directly with hostile names, and
+        removing it turns that test RED.
+      - **`Upsert` and `Forget` both derive their filename from it** — verified by
+        grep, not by test, and honestly so: because `Slug` sanitises first, no
+        test at the `Store` API can distinguish routing through the guard from
+        bypassing it. Measured, not assumed: bypassing it on the `--forget` path
+        leaves the suite GREEN. The value is ARCH-DRY (one definition of a safe
+        word filename), not a behavioural pin.
 - [x] `DEFINE_NO_CAPTURE=1` writes nothing at all, and history falls back to
       session-only rather than half-persisting.
 - [x] A failing store degrades to a warning, never a failed lookup.
@@ -129,3 +137,36 @@ instance** — the mechanism filed as `ariadne#195`, met in the wild:
 the substitution silently failed to apply, not because the test was blind. The
 tell was an assertion error in the same output. A mutation that does not apply is
 not a passing result — verify the mutation landed before believing what it says.
+
+### 2026-08-21 — round 4: the family rule, applied properly
+
+Round 3 escalated three families; I closed **3 of the 10 instances they
+enumerated, and all three were the ones in the titles** — the exact substitution
+(fix the named thing, leave the class) the escalation exists to prevent. Round 4
+caught that as its own finding, which is the mechanism working.
+
+Instance by instance this round:
+
+| family | instance | disposition |
+|---|---|---|
+| `unpinned-invariant` | raw capture row | fixed round 3 |
+| | `openStore` deck path | fixed round 3 |
+| | BR-6 `Forget` guard | **fixed now** — `Forget` was still using an inline copy; `wordFileName` had one caller and it was `Upsert` |
+| `prose-contradicts-code` | `history_store.go` comment | fixed round 3 |
+| | atlas entry-modes table | **fixed now** — it claimed `run` dispatches into "a single shared `defineOnce`", which the raw path bypasses |
+| | `--help` | fixed round 3 |
+| | README exit codes | **fixed now** — `1` now also means `--forget` found nothing; this issue invalidated the list and did not update it |
+| `needless-indirection` | `deps.forgetter()` | **fixed now** — deleted; `d.deck == nil` says it directly |
+| | the `newStore` triple | **fixed now** — one `storeDeps` value and one `withStore`, replacing three returns and three nil-merges |
+| | dead `Clock` param | **fixed now** — `newStoreHistory` stopped needing it when it stopped writing |
+
+**My BR-6 fix had introduced the duplication it was meant to remove.** I added
+`wordFileName` and wired only `Upsert` to it, leaving `Forget` — the entire
+subject of the finding — on an inline copy that had already drifted (it did not
+reject a leading dot). One line of wiring closed the duplication, the dead
+branches and the false Done-when together.
+
+**Two false readings caught while verifying**, both worth recording: a mutation
+that failed to compile reported RED (a build break is not a test failure), and
+before that one that failed to apply reported GREEN. Neither is a result. The
+working form: confirm the mutation compiled *and* landed, then read the suite.

@@ -14,7 +14,7 @@ func fixedClock(day int) store.Clock {
 }
 
 func TestStoreHistoryPrefixIsNewestFirstAndDeduped(t *testing.T) {
-	h := newStoreHistory(store.NewMem(), fixedClock(1), nil)
+	h := newStoreHistory(store.NewMem(), nil)
 	h.Add("sycophantic", true)
 	h.Add("ephemeral", true)
 	h.Add("sycophantic", true) // looked up again
@@ -29,7 +29,7 @@ func TestStoreHistoryPrefixIsNewestFirstAndDeduped(t *testing.T) {
 // the disk. Asserted by removing the store's ability to answer.
 func TestStoreHistoryPrefixDoesNotQueryTheStore(t *testing.T) {
 	counting := &countingStore{Store: store.NewMem()}
-	h := newStoreHistory(counting, fixedClock(1), nil)
+	h := newStoreHistory(counting, nil)
 	h.Add("sycophantic", true)
 
 	before := counting.reads
@@ -82,7 +82,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	// which is exactly the behaviour #4 moved.
 	first, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	st1 := store.NewYAML(dir, nil)
-	first.deps.history = newStoreHistory(st1, fixedClock(1), nil)
+	first.deps.history = newStoreHistory(st1, nil)
 	first.deps.capture = newStoreCapturer(st1, fixedClock(1), nil)
 	var out, errb bytes.Buffer
 	runEditor(t.Context(), scriptKeys("sycophantic\r"), first.deps, opt, cooked, finish, &out, &errb)
@@ -90,7 +90,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	// A second editor over the same directory: the restart case.
 	second, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
 	st2 := store.NewYAML(dir, nil)
-	second.deps.history = newStoreHistory(st2, fixedClock(2), nil)
+	second.deps.history = newStoreHistory(st2, nil)
 	second.deps.capture = newStoreCapturer(st2, fixedClock(2), nil)
 	var out2 bytes.Buffer
 	runEditor(t.Context(), scriptKeys("syc"), second.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
@@ -112,7 +112,7 @@ func TestStoreHistoryRestoresTyposAcrossSessions(t *testing.T) {
 	c.Capture("sykophantic", false, options{}) // a typo, never in the deck
 	c.Capture("ephemeral", true, options{})
 
-	restored := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil).Prefix("sy")
+	restored := newStoreHistory(store.NewYAML(dir, nil), nil).Prefix("sy")
 	if len(restored) != 1 || restored[0] != "sykophantic" {
 		t.Errorf("Prefix(sy) after restart = %v — the typo was dropped from recall", restored)
 	}
@@ -128,7 +128,7 @@ func TestCapturedWordsPersistAcrossSessions(t *testing.T) {
 	c.Capture("sycophantic", true, options{})
 	c.Capture("ephemeral", true, options{})
 
-	got := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil).Prefix("")
+	got := newStoreHistory(store.NewYAML(dir, nil), nil).Prefix("")
 	if len(got) != 2 {
 		t.Fatalf("restored %d entries, want 2: %v", len(got), got)
 	}
@@ -146,7 +146,7 @@ func TestCapturerRecallsTyposButDoesNotDeckThem(t *testing.T) {
 	c.Capture("sycophantic", true, options{})
 	c.Capture("sykophantic", false, options{})
 
-	if got := newStoreHistory(store.NewYAML(dir, nil), fixedClock(2), nil).Prefix("sy"); len(got) != 2 {
+	if got := newStoreHistory(store.NewYAML(dir, nil), nil).Prefix("sy"); len(got) != 2 {
 		t.Errorf("Prefix returned %v — a failed lookup must still be recallable", got)
 	}
 	deck, err := st.Deck()

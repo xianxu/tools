@@ -323,11 +323,11 @@ func (y *YAML) Forget(key string) (bool, error) {
 	if k == "" {
 		return false, nil
 	}
-	name := filepath.Base(Slug(k)) + ".yaml"
-	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
-		return false, fmt.Errorf("refusing unsafe name %q", name)
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return false, err
 	}
-	err := os.Remove(filepath.Join(y.wordsDir(), name))
+	err = os.Remove(filepath.Join(y.wordsDir(), name))
 	switch {
 	case err == nil:
 		return true, nil
