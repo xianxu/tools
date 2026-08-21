@@ -255,7 +255,7 @@ events, no IO beyond stdout.
 
 **Files:** Create `cmd/define/history_cmd.go`, `cmd/define/history_cmd_test.go`
 
-- [ ] **Step 1: Write the failing tests.** This is the task the operator flagged,
+- [x] **Step 1: Write the failing tests.** This is the task the operator flagged,
       so the tests ARE the specification:
       - `now = 2026-08-21T00:30:00-07:00`, `days=2` → `2026-08-20T00:00:00-07:00`
         — **not** `2026-08-19T00:30:00Z`;
@@ -270,9 +270,9 @@ events, no IO beyond stdout.
         (all three measured in this toolchain, not assumed);
       - `days=0`, `days=-3` clamp to 1; `days=999999999` is REFUSED naming the
         3650 limit, not silently normalised by `AddDate`.
-- [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3: Implement** `historyWindow`, `parseHistoryArgs`, `maxHistoryDays`.
-- [ ] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
+- [x] **Step 2: Run; expect FAIL.**
+- [x] **Step 3: Implement** `historyWindow`, `parseHistoryArgs`, `maxHistoryDays`.
+- [x] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
 
 #### Task 6: `summariseLookups`
 
