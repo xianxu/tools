@@ -72,7 +72,12 @@ six findings fixed in one commit is six chances to create a seventh.
       hard to use."* M1 shipped inline grey type-ahead, which completes a
       command you already know the name of and reveals nothing to someone who
       does not. Typing `/` now draws the list; typing narrows it.
-- [x] M2 — `/history` (plan Tasks 4-8). One clock on `storeDeps`, the local-time
+- [x] M2 — `/history` (plan Tasks 4-8).
+- [x] M3 — playback count. **Scope event, operator 2026-08-21**: *"add a flag so
+      `define word --sound 1` to play sound once. also /sound 1 should be
+      supported in TUI."* `--sound` names the setting `-times` already had; the
+      old flag keeps working. `/sound` is the first command that CHANGES the
+      session, so it introduced the `setTimes` seam. One clock on `storeDeps`, the local-time
       window, the summary, `runHistory`, docs.
 
 ## Estimate

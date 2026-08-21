@@ -185,7 +185,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	raw := fs.Bool("raw", false, "print the unparsed dictionary entry")
 	noColor := fs.Bool("no-color", false, "disable ANSI colour")
 	noAudio := fs.Bool("no-audio", false, "do not fetch or play the pronunciation")
-	times := fs.Int("times", 3, "how many times to play the pronunciation")
+	sound := fs.Int("sound", 3, "how many times to play the pronunciation")
+	// The older name for -sound. Kept working rather than removed: it is
+	// documented and in people's shell history. One of them wins, and asking for
+	// both is a mistyped command, not a preference to guess at.
+	times := fs.Int("times", 3, "how many times to play the pronunciation (older name for -sound)")
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	fs.Usage = func() {
@@ -197,7 +201,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n"+
 			"A line starting with / is a command rather than a word. Type / to\n"+
 			"see the list, keep typing to narrow it, Tab to complete. /history\n"+
-			"shows what you looked up in the last two days.\n\n"+
+			"shows what you looked up in the last two days; /sound sets how many\n"+
+			"times a pronunciation plays for the rest of the session.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
 			"it in. A word that was found is added to the deck; a word that was\n"+
@@ -213,8 +218,15 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		}
 		return 2
 	}
+	if isSet(fs, "sound") && isSet(fs, "times") {
+		fmt.Fprintln(stderr, "define: -sound and -times are the same setting; pass one")
+		return 2
+	}
+	if isSet(fs, "sound") {
+		*times = *sound
+	}
 	if *times < 0 {
-		fmt.Fprintf(stderr, "define: -times must not be negative\n")
+		fmt.Fprintf(stderr, "define: -sound must not be negative\n")
 		return 2
 	}
 	opt := options{

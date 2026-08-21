@@ -150,7 +150,11 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					fmt.Fprint(stdout, "\r\n")
 					hist.Add(submitted.String()) // up-arrow recalls "/history" too
 					if err := cooked(func() {
-						dispatchCommand(cmd, commands, newCommandCtx(d, opt, stdout, stderr))
+						cc := newCommandCtx(d, opt, stdout, stderr)
+						// opt is this loop's own copy, so a command can change
+						// the session by writing through here.
+						cc.setTimes = func(n int) { opt.times = n }
+						dispatchCommand(cmd, commands, cc)
 					}); err != nil {
 						finish()
 						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)

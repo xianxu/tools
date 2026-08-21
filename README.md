@@ -31,7 +31,7 @@ define                      # interactive: type a word, press return to replay, 
 define /help                # / starts a command instead of a word; /help lists them
 echo sycophantic | define   # or feed it words on stdin
 define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
-define -times 1 record      # play once instead of three times
+define --sound 1 record     # play once instead of three times
 define -no-audio bank       # no fetch, no sound
 define -locale gb colour    # British pronunciation
 define -raw record          # the unparsed dictionary entry
@@ -109,6 +109,12 @@ Deduped, and ordered by when each word was **first** seen, so one you keep
 returning to holds its place instead of jumping to the top; the count is how
 often you have looked it up. Words the dictionary could not find are kept for
 up-arrow recall but never listed here — a typo is not vocabulary.
+
+`/sound N` changes how many times a pronunciation plays for the rest of the
+session; `/sound` on its own reports it, and `0` turns playback off. It is the
+in-session form of `--sound`, which sets it for one run. (`-times` is the older
+name for `--sound` and still works; passing both is a usage error rather than a
+guess at which you meant.)
 
 Lookup goes through macOS's CoreServices, which searches **every active
 dictionary** rather than NOAD specifically — the SDK offers no way to pick one.

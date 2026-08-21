@@ -388,6 +388,16 @@ dictionary or the player.
 |---|---|
 | `/help` | lists the commands |
 | `/history [N]` | words looked up in the last N local days (default 2) |
+| `/sound [N]` | how many times a pronunciation plays, for the rest of the session |
+
+`/sound` is the first command that CHANGES the session rather than reporting on
+it, and the seam is deliberately narrow: `commandCtx.setTimes func(int)` writing
+through to the loop's own copy of `opt`, not a `*options` a command could use to
+reach anything else. `nil` is the honest representation of "there is no session
+here" — the one-shot path refuses rather than silently accepting a command that
+could not do anything. `--sound` is the same setting for one run; `-times` is its
+older name and still works, and passing both is a usage error rather than a guess
+at which was meant.
 
 ### `/history` and the local-day question
 

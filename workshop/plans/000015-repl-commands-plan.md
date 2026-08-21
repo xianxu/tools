@@ -404,3 +404,27 @@ bug it was written for: a filename filter over local days `[08-20, 08-21]` reads
 at `19:50` local is written to TOMORROW's UTC-named file, so a filename filter
 drops a lookup from ten minutes ago. Measured before writing the test rather than
 after it failed.
+
+
+### 2026-08-21 — M3: `--sound` / `/sound` (scope event)
+
+Operator, after M2: *"add a flag so `define word --sound 1` to play sound once.
+also /sound 1 should be supported in TUI."*
+
+`-times` already was this setting under a worse name. `--sound` becomes the name;
+`-times` keeps working because it is documented and in shell history, and passing
+both is a usage error rather than a guess at which was meant.
+
+`/sound` is the first command that MUTATES the session, which is a new shape. The
+seam is `commandCtx.setTimes func(int)` writing through to the loop's own copy of
+`opt` — a func rather than a `*options`, so a command still cannot reach the rest
+of the options, and `nil` honestly means "there is no session here" so the
+one-shot path refuses instead of accepting a command that could do nothing.
+Bounded at 20 for the same reason `--days` is bounded at 3650: a fat-fingered
+`/sound 1000` wedges the session behind twenty minutes of playback.
+
+| function | what its test exists to catch |
+|---|---|
+| `parseSoundArgs` | 0 (playback off) being confused with "no argument given", and an unbounded count |
+| `runSound` | accepting a change it cannot make, when there is no session |
+| the seam | a closure that is called but changes nothing — the test drives the real loop and counts player calls |

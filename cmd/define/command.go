@@ -24,6 +24,7 @@ type command struct {
 var commands = []command{
 	{name: "help", summary: "list the commands", run: runHelp},
 	{name: "history", summary: "words looked up recently", run: runHistory},
+	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
 }
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
@@ -154,6 +155,12 @@ type commandCtx struct {
 	stdout io.Writer
 	stderr io.Writer
 	width  int
+	// times is the current playback count, and setTimes changes it for the rest
+	// of the session. A func rather than a *options: a command has no business
+	// reaching the rest of the options, and nil is the honest representation of
+	// "there is no session here" for the one-shot and piped paths.
+	times    int
+	setTimes func(int)
 	// noCapture only so a nil deck can say WHY. DEFINE_NO_CAPTURE means the
 	// deck was never opened; without it, nil means this directory has none.
 	noCapture bool
@@ -170,6 +177,7 @@ func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 		deck: d.deck, clock: d.clock,
 		stdout: stdout, stderr: stderr,
 		width: opt.width, noCapture: opt.noCapture,
+		times: opt.times,
 	}
 }
 
