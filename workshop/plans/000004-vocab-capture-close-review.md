@@ -855,3 +855,168 @@ findings:
       covering this and BR-4: every field of an injected seam states its own default and how it is
       filled, and a fill-in helper must not make one field's default depend on another field's presence.
 ```
+
+---
+
+## Re-review — 2026-08-21T12:01:34-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 4 — capture looked-up words into the deck |
+| repo | tools |
+| issue file | workshop/issues/000004-vocab-capture.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4afa1c537819ad662ad149a14bd757ac149772e5..e940f987cc8d6e0c93fd1c44eae3184b81a791eb |
+| command | sdlc close --issue 4 |
+| reviewer | claude |
+| timestamp | 2026-08-21T12:01:34-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+I've completed the review. Cleanup verified: scratch worktree removed, tree clean.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Six rounds in, the code is right and I proved it rather than trusted it. Four independent mutations all landed, compiled, and reddened exactly one test each: gutting `wordFileName`'s guard (8 assertions), deleting the `-raw` `Capture` call, nilling `openStore`'s live deck, and adding a second writer *below* the `Capturer` seam (which reddens `TestNoDoubleWriteThroughTheRealWiring` while the per-path arity subtests stay green — exactly as the atlas documents). `go test -race` and `go vet` are green across both packages. I drove every `-forget` surface against a real deck with a sentinel one level up: traversal keys remove nothing, sentinel and event log survive, exit codes 0/1/2 as the README now documents. Both BR-25 sites are genuinely fixed — `Forget`'s doc no longer claims a `filepath.Base` that does not exist and does derive from `wordFileName` (grep-verified), and `openStore`'s doc is re-attached to `openStore` (AST-verified, `storeDeps` carries its own). The plan finally got its `## Revisions` section, closing the artifact side that went 0-for-4 last round. What keeps this off a clean SHIP is one ticked Done-when that nothing pins: **"Repeat lookups increment the count rather than duplicating the word"** — I made `storeCapturer` silently skip `Upsert` on a repeat sighting and the *entire* suite stayed green (`ok github.com/xianxu/tools/cmd/define 24.084s`). `#5` orders by that number. It is a one-line fix inside a test that already exists.
+
+### 1. Strengths
+
+- **The pins survived the refactor that came after them.** `storeDeps`/`withStore` reshaped `openStore` in the previous round, and all three capture-side pins still go RED. A fix that outlives the next refactor is the strongest form of this evidence.
+- **`TestNoDoubleWriteThroughTheRealWiring` (`capture_test.go:283`) does the job its predecessor could not.** My below-the-seam mutation reddened it with `Lookups = 2` and `got 2 events` while `TestCaptureArityIsOnePerLookup` stayed green — the exact asymmetry `atlas/define.md:283-289` claims, verified rather than asserted.
+- **`wordFileName` now has both filename-deriving call sites** (`yaml.go:42`, `yaml.go:325`) and one honest doc comment; the Done-when's retraction (`issue:48-60`) separates "Slug is the effective guarantee, fuzzed" from "wordFileName is a second net, RED on removal" from "both derive, grep-verified, and bypassing it leaves the suite GREEN." A Done-when that records its own negative result is worth more than one that claims a pin.
+- **The `## Revisions` section is substantive, not ceremonial.** It names the four design deltas *and* the process failure that produced five rounds, and `workshop/lessons.md:186-195` carries the transferable form. The artifact side went from 0/4 to substantially closed in one commit.
+- **`--help`, README and atlas all now carry the cwd-writes claim and `DEFINE_NO_CAPTURE`'s real cost.** I read all three; they agree with each other and with the code. Docs gate: pass.
+
+### 2. Critical findings
+
+None. No correctness bug, no crash path, no silent error swallowing. Traversal is not exploitable — `Slug` sanitises first, confirmed against the running binary.
+
+### 3. Important findings
+
+**NEW — `unpinned-invariant` (5th in family; prevalence 5) — Done-when #2 is ticked and nothing pins it through the capture path.**
+
+Per the escalation rule I am not asking for this instance to be patched in isolation. Measured, this round:
+
+```
+mutation: storeCapturer.Capture skips Upsert on a repeat sighting of the same word
+result:   MUTATION_APPLIED, BUILD_OK
+          ok github.com/xianxu/tools/cmd/define        24.084s
+          ok github.com/xianxu/tools/cmd/define/store  (cached)
+```
+
+`issue:42` ticks "Repeat lookups increment the count rather than duplicating the word." The only `Lookups` assertions in the tree are `storetest/suite.go:71` (`Upsert` merge semantics — a different question) and `capture_test.go:282` (`== 1`). Nothing drives two captures of one word and asserts the count moved. Round 5 noted this in prose for the third round running and declined to raise it as "robust in practice"; the mutation shows the practice is unpinned, and `#5` is the consumer.
+
+*The rule, which is BR-19's with the clause it was missing:* **the delete-the-line discipline was applied to fixes and never to Done-when ticks.** A tick is a behavioural claim exactly as a fix is; both deserve a mutation whose failure you have observed. That single clause also unifies this family with `undocumented-work-log` (BR-20), whose rule was "a tick claims evidence exists" — the two findings have been chasing the same rule from opposite ends for four rounds. Applied to the remaining ticks: #1 and #3-#6 are each mutation-backed (I verified #4's and #6's); #2 is the one that is not.
+
+*Cheap close:* two lines inside `TestNoDoubleWriteThroughTheRealWiring`, which already has the real wiring over a real store — a second `runEditor`/`Capture` of the same word and `Lookups == 2`.
+
+### 4. Minor findings
+
+- **BR-4 / BR-26 (both not-addressed)** — `main.go:67`'s `if d.history != nil && d.capture != nil { return d }` still strands `deck`, no comment states the rule, no test enters the branch (I traced every `deps` literal: the rigs that set both call `runEditor` directly and never reach `withStore`). Revisions §3 names the three new fields but not their defaults, which was the second half of BR-4's ask and is BR-26's whole rule. Covered by the existing family; do not patch one site.
+- **NEW `prose-contradicts-code` (7th in family; prevalence 7)** — `main.go:35-36`: *"Tests leave it nil and get in-memory defaults, so no test ever touches the real filesystem."* `capture_test.go:316` sets `rig.deps.newStore = openStore`, and four test files use `t.TempDir()`. Both clauses false. It sits ~30 lines above the comment this very commit moved, in the file the commit's own message says it swept. *The rule, and the mechanism that defeated it:* round 5 named this defect in its **Minor prose list and never gave it a `BR-` id** — and 0 of that list's 5 items were addressed, while 100% of the id'd findings were. The sweep is not failing on attention, it is failing because the response works the machine-read `findings:` block. So the corrective is on both sides: the reviewer puts every stated defect in the block (I am doing that now), and the sweep becomes mechanical — for each file in `git diff --stat`, read every comment that makes a claim about *another* symbol and grep that symbol.
+- **BR-22 (not-addressed, and not fixable here)** — the harness preamble is now at `close-review.md:18`, `:251`, `:485` **and `:674`**: a fourth occurrence, exactly as predicted twice. The generator is `sdlc`, whose source is `/Users/xianxu/workspace/ariadne/cmd/sdlc` — a peer repo. No commit in `tools` can close this. The actionable move is `sdlc issue new` in **ariadne** for "artifact capture takes agent stdout only"; re-raising it here every round cannot converge.
+- Still open from round 5's un-id'd list, now recorded so they can be disposed: `run` builds store deps at `main.go:212` before the `-forget` dispatch at `:214`, so `--forget` loads the whole event log for a result it never uses; `forgetWord` prints a bare `define: %v` at `:398` where neighbours carry context; `orElse[T comparable]` is a generic helper introduced by the commit that closed `needless-indirection`.
+
+### 5. Test coverage notes
+
+The suite is green with `-race` (24.4s / 25.7s) and the load-bearing tests are load-bearing — four mutations, each confirmed to have applied *and* compiled before I read the result, each reddening exactly the assertion it should. Shape: `decideCapture` and `wordFileName` table-tested with zero IO; per-path arity at the `Capturer` seam including the `-raw` row; one store-level arity assertion through the real wiring that provably sees writers below the seam; `openStore` on both branches; one `t.Setenv` end-to-end disk assertion; `Forget` in the shared conformance suite so `Mem` and `YAML` both answer. The single hole is Done-when #2 above, and it is the last one — I mutated for it specifically because it is the only ticked box I could not find an assertion for. Note the conformance suite's "forget cannot escape the words directory" subtest is still not a pin for the guard (it passes with `wordFileName` bypassed, because `Slug` does the work at that API) — the issue now says so in writing, which is the honest resolution.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** One policy (`decideCapture`, one caller), one writer (grep-verified: `c.st.AppendEvent` and `c.st.Upsert` in `capture.go` are the only store writes outside `store/`), one capture site (all three `.Capture(` calls are inside `lookupAndRender`), one filename rule with both consumers deriving. The prose duplication that drove six rounds of this family is down to one stale clause (Minor above).
+- **ARCH-PURE — pass.** `decideCapture` and `wordFileName` are genuine pure functions with IO-free tests, both mutation-proven. `openStore` is the boundary and is injectable through `deps.newStore`, which is what makes the env-wiring test possible. Nothing leaked into `store/`.
+- **ARCH-PURPOSE — pass.** Shadow-sweep on `decideCapture`: `storeCapturer` derives ✓, the raw branch derives and is pinned ✓, `openStore`'s `noCapture` read is a labelled second reader of the same *input*, not a restatement of the *policy* ✓. On `wordFileName`: `Upsert` ✓, `Forget` ✓. The last non-deriving consumer was the plan, and the `## Revisions` entry closes it. The "asserted, not inherited" obligation was discharged by measured retraction — the branch BR-19 explicitly offered.
+- **ARCH-MOCK — pass.** `store.Mem` ships as production code behind the interface `YAML` implements, `storetest.Suite` runs both, `Forget` joined it in the commit that introduced it, and the owned backend boots from any portable folder (`store.NewYAML(dir, warn)`, tests use `t.TempDir`) — no production configuration required. `countingCapturer` is kept for the per-path question it answers well, with the store-level test covering what it structurally cannot see. Production and test flows share the boundary.
+- **For `#5`:** `Lookups` is trustworthy for *arity* (one lookup, one write — pinned through the real wiring on every producible path). It is **not yet** pinned for *accumulation*. Close the finding above before ordering by it.
+
+### 7. Plan revision recommendations
+
+The `## Revisions` section three rounds asked for now exists and covers BR-1, BR-2, BR-3 and the field half of BR-4. Two residuals for the same entry, not a new one:
+
+- **Append to Revisions §3** — the seam defaults: `withStore` installs `&memHistory{}` and `noopCapturer{}` when a caller supplies neither, and **returns early when `history` and `capture` are both non-nil, leaving `deck` nil.** That is the unstated rule BR-4 asked for and BR-26 escalated.
+- **One consistency note.** AGENTS.md §1 says append, don't overwrite; this commit did both — five in-place corrections (lines 47, 128, 133, 141, 181) *plus* the Revisions section. The result is more accurate for a future reader, so I am not raising it, but the mixed convention means `Chunk 1`'s line 115-116 ("consulted from three call sites") and line 24 ("a `Capturer` that `storeHistory` also uses") still read wrong in place while Revisions §1/§2 correct them. Either finish the in-place pass or state at the top of Chunk 1 that Revisions supersedes it.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Revisions section 1 states "There is one call site" explicitly; the AGENTS.md section 1 append-not-overwrite move BR-24 specified.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Line 133 now reads "stops writing entirely - it does not delegate, it does nothing", plus Revisions section 2.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Line 181 rewritten to lookupAndRender with the three-arg signature; lines 7/24/116 covered by Revisions rather than in place.
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      Revisions section 3 names the three new deps fields but never states their defaults - the exact half BR-4 asked for and BR-26 escalated.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      Fourth occurrence (lines 18, 251, 485, 674). Generator is ariadne/cmd/sdlc, a peer repo - unfixable from tools; needs an ariadne issue.
+  - id: BR-24
+    disposition: addressed
+    note: |
+      Plan substantively edited with a Revisions section; 6 of 7 enumerated artifact instances closed, the 7th carried under BR-4/BR-26.
+  - id: BR-25
+    disposition: addressed
+    note: |
+      Both sites verified - Forget's doc derives from wordFileName (grep), openStore's doc re-attached to openStore (AST).
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      main.go:67 early return unchanged; no comment states deck's default, no test enters the branch.
+findings:
+  - id: new
+    severity: Important
+    family: unpinned-invariant
+    title: |
+      Done-when 2 "repeat lookups increment the count" is ticked and no test pins it through the capture path
+    detail: |
+      5th in family (BR-5, BR-6, BR-7, BR-19; prevalence 5). Do NOT patch this instance alone. Verified by
+      mutation: making storeCapturer skip Upsert on a repeat sighting of the same word leaves the ENTIRE suite
+      green (MUTATION_APPLIED, BUILD_OK, ok cmd/define 24.084s). The only Lookups assertions are
+      storetest/suite.go:71 (Upsert merge semantics, a different question) and capture_test.go:282 (== 1);
+      nothing drives two captures of one word and asserts the count moved. Issue 5 orders by this number.
+      The rule is BR-19's with the clause it was missing - the delete-the-line discipline was applied to FIXES
+      and never to Done-when TICKS, though a tick is the same kind of behavioural claim. That clause also
+      unifies this family with undocumented-work-log, whose rule (BR-20, "a tick claims evidence exists") has
+      been chasing the same thing from the other end for four rounds. Cheap close: two lines inside
+      TestNoDoubleWriteThroughTheRealWiring, which already has real wiring over a real store.
+  - id: new
+    severity: Minor
+    family: prose-contradicts-code
+    title: |
+      main.go:35 claims no test touches the real filesystem, in the file this commit says it swept
+    detail: |
+      7th in family (BR-9, BR-10, BR-17, BR-18, README exit codes, BR-25; prevalence 7). Do NOT patch this
+      site. deps.newStore's comment says "Tests leave it nil and get in-memory defaults, so no test ever
+      touches the real filesystem"; capture_test.go:316 sets rig.deps.newStore = openStore, and four test
+      files use t.TempDir(). Both clauses false, ~30 lines above the comment this commit moved. The mechanism
+      that defeated BR-25's sweep rule, measured: round 5 stated this defect in its Minor PROSE list and never
+      gave it a BR id - 0 of that list's 5 items were addressed while 100 percent of the id'd findings were.
+      So the rule needs both halves: the reviewer puts every stated defect in the machine-read findings block
+      (done this round for all five), and the sweep becomes mechanical rather than attentional - for each file
+      in git diff --stat, read every comment making a claim about another symbol and grep that symbol.
+  - id: new
+    severity: Minor
+    family: generated-artifact-noise
+    title: |
+      BR-22 cannot be closed from this repo - the generator lives in the ariadne peer
+    detail: |
+      Recording this so BR-22 stops recurring undisposed. The close-review artifact is written by sdlc, whose
+      source is /Users/xianxu/workspace/ariadne/cmd/sdlc; no commit in tools can change what it captures. The
+      preamble is now at lines 18, 251, 485 and 674 - one new occurrence per review round, exactly as predicted
+      at rounds 3 and 4. The actionable move is an ariadne issue for "artifact capture takes agent stdout only",
+      referenced from this issue's Log, rather than a fifth not-addressed disposition here.
+```

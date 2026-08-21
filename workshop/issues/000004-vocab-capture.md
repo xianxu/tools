@@ -7,7 +7,7 @@ created: 2026-08-20
 updated: 2026-08-21
 estimate_hours: 1.31
 started: 2026-08-21T10:02:22-07:00
-actual_hours: 3.25
+actual_hours: 3.85
 ---
 
 # capture looked-up words into the deck
@@ -39,7 +39,11 @@ A vocabulary deck nobody has to curate is the only one that gets used. Every
 ## Done when
 
 - [x] A successful lookup appears in the deck; a failed one does not.
-- [x] Repeat lookups increment the count rather than duplicating the word.
+- [x] Repeat lookups increment the count rather than duplicating the word —
+      pinned **through the capture path** (`TestRepeatLookupsIncrementThroughCapture`),
+      not only at the `Store` level. Capture supplies `Lookups: 1` on every call,
+      so accumulation depends on both halves agreeing; breaking the merge
+      reddens it.
 - [x] `--forget` removes the word and leaves `events/` untouched, asserted by
       counting events before and after in the shared conformance suite. (The
       original wording said "comparing the directory"; the assertion counts
@@ -60,7 +64,10 @@ A vocabulary deck nobody has to curate is the only one that gets used. Every
         word filename), not a behavioural pin.
 - [x] `DEFINE_NO_CAPTURE=1` writes nothing at all, and history falls back to
       session-only rather than half-persisting.
-- [x] A failing store degrades to a warning, never a failed lookup.
+- [x] A failing store degrades to a warning, never a failed lookup. Both halves
+      pinned: warn-once at the capturer, and the half a user actually feels —
+      the definition still prints and the exit code stays 0
+      (`TestFailingStoreStillDefinesAndExitsZero`).
 
 ## Estimate
 
@@ -113,6 +120,7 @@ See `workshop/plans/000004-vocab-capture-plan.md`.
 Created as part of the `define-learn` project.
 
 ### 2026-08-21 — implementation notes
+- 2026-08-21: closed — The residual was entirely artifact-side and is now closed. Round 5 measured code 10/10 and plan 0/7; all seven plan sites are corrected (one call site not three; storeHistory does nothing rather than delegates; lookupAndRender not defineOnce; openStore not openHistory; the three-argument Capturer; the three deps fields the plan never mentioned) and the plan now carries the AGENTS.md §1 Revisions section that three consecutive boundaries recommended. Also swept the two stale comments this round CREATED in files it touched: Forget doc comment asserted a security property the same commit retracted and named a filepath.Base call deleted in the same hunk, and inserting type storeDeps orphaned openStore doc comment onto the struct -- both verified re-attached to the code they describe. Code side unchanged and re-verified: full suite and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 - 2026-08-21: closed — Round 4 addressed instance-by-instance, which round 3 was not. Of the 10 instances the three families enumerated, 3 were closed in round 3 (all titles) and the remaining 7 are closed now: BR-6 Forget was still on an inline copy while wordFileName had exactly one caller (Upsert) -- my own previous fix introduced the duplication it was meant to remove, and the copy had already drifted by not rejecting a leading dot; the atlas entry-modes table claimed run dispatches into a single shared defineOnce, which the raw editor bypasses; README exit codes omitted that 1 now also means --forget found nothing; deps.forgetter(), the newStore triple with three nil-merges, and newStoreHistorys dead Clock param are deleted. The BR-6 Done-when is now precise and measured rather than claimed: Slug is the effective guarantee (fuzzed), wordFileName is a second net tested directly with hostile names (RED on removal), and both Upsert and Forget derive from it -- verified by grep, because bypassing it on the --forget path leaves the suite GREEN, so the value is ARCH-DRY rather than a behavioural pin. Two false mutation readings were caught and recorded: one that failed to apply printed GREEN, one that failed to compile printed RED. go test and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 
 Capture landed at `lookupAndRender`, the one function every entry path shares —
@@ -172,3 +180,16 @@ branches and the false Done-when together.
 that failed to compile reported RED (a build break is not a test failure), and
 before that one that failed to apply reported GREEN. Neither is a result. The
 working form: confirm the mutation compiled *and* landed, then read the suite.
+
+### 2026-08-21 — round 6: audited every box rather than the named one
+
+The 5th `unpinned-invariant` named Done-when #2. Rather than pin that one, I
+audited all six boxes for the symbol each claims and found **two** unpinned: the
+named repeat-lookup claim, and "never a failed lookup", whose warn-once half was
+pinned at the capturer while the half a user feels — the lookup still succeeding
+— was pinned nowhere. Both now redden under mutations verified to have applied
+*and* compiled.
+
+That is the family rule finally applied the way five rounds of findings asked
+for: enumerate the class, close the class, and say which instances were found by
+audit rather than by being named.

@@ -485,6 +485,86 @@ rounds:
           family: unstated-seam-default
           round: 5
       blocked: false
+    - "n": 6
+      timestamp: "2026-08-21T12:01:34-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: Revisions section 1 states "There is one call site" explicitly; the AGENTS.md section 1 append-not-overwrite move BR-24 specified.
+          round: 6
+        - id: BR-2
+          disposition: addressed
+          note: Line 133 now reads "stops writing entirely - it does not delegate, it does nothing", plus Revisions section 2.
+          round: 6
+        - id: BR-3
+          disposition: addressed
+          note: Line 181 rewritten to lookupAndRender with the three-arg signature; lines 7/24/116 covered by Revisions rather than in place.
+          round: 6
+        - id: BR-4
+          disposition: not-addressed
+          note: Revisions section 3 names the three new deps fields but never states their defaults - the exact half BR-4 asked for and BR-26 escalated.
+          round: 6
+        - id: BR-22
+          disposition: not-addressed
+          note: Fourth occurrence (lines 18, 251, 485, 674). Generator is ariadne/cmd/sdlc, a peer repo - unfixable from tools; needs an ariadne issue.
+          round: 6
+        - id: BR-24
+          disposition: addressed
+          note: Plan substantively edited with a Revisions section; 6 of 7 enumerated artifact instances closed, the 7th carried under BR-4/BR-26.
+          round: 6
+        - id: BR-25
+          disposition: addressed
+          note: Both sites verified - Forget's doc derives from wordFileName (grep), openStore's doc re-attached to openStore (AST).
+          round: 6
+        - id: BR-26
+          disposition: not-addressed
+          note: main.go:67 early return unchanged; no comment states deck's default, no test enters the branch.
+          round: 6
+      findings:
+        - id: BR-27
+          severity: Important
+          title: Done-when 2 "repeat lookups increment the count" is ticked and no test pins it through the capture path
+          detail: |-
+            5th in family (BR-5, BR-6, BR-7, BR-19; prevalence 5). Do NOT patch this instance alone. Verified by
+            mutation: making storeCapturer skip Upsert on a repeat sighting of the same word leaves the ENTIRE suite
+            green (MUTATION_APPLIED, BUILD_OK, ok cmd/define 24.084s). The only Lookups assertions are
+            storetest/suite.go:71 (Upsert merge semantics, a different question) and capture_test.go:282 (== 1);
+            nothing drives two captures of one word and asserts the count moved. Issue 5 orders by this number.
+            The rule is BR-19's with the clause it was missing - the delete-the-line discipline was applied to FIXES
+            and never to Done-when TICKS, though a tick is the same kind of behavioural claim. That clause also
+            unifies this family with undocumented-work-log, whose rule (BR-20, "a tick claims evidence exists") has
+            been chasing the same thing from the other end for four rounds. Cheap close: two lines inside
+            TestNoDoubleWriteThroughTheRealWiring, which already has real wiring over a real store.
+          family: unpinned-invariant
+          round: 6
+        - id: BR-28
+          severity: Minor
+          title: main.go:35 claims no test touches the real filesystem, in the file this commit says it swept
+          detail: |-
+            7th in family (BR-9, BR-10, BR-17, BR-18, README exit codes, BR-25; prevalence 7). Do NOT patch this
+            site. deps.newStore's comment says "Tests leave it nil and get in-memory defaults, so no test ever
+            touches the real filesystem"; capture_test.go:316 sets rig.deps.newStore = openStore, and four test
+            files use t.TempDir(). Both clauses false, ~30 lines above the comment this commit moved. The mechanism
+            that defeated BR-25's sweep rule, measured: round 5 stated this defect in its Minor PROSE list and never
+            gave it a BR id - 0 of that list's 5 items were addressed while 100 percent of the id'd findings were.
+            So the rule needs both halves: the reviewer puts every stated defect in the machine-read findings block
+            (done this round for all five), and the sweep becomes mechanical rather than attentional - for each file
+            in git diff --stat, read every comment making a claim about another symbol and grep that symbol.
+          family: prose-contradicts-code
+          round: 6
+        - id: BR-29
+          severity: Minor
+          title: BR-22 cannot be closed from this repo - the generator lives in the ariadne peer
+          detail: |-
+            Recording this so BR-22 stops recurring undisposed. The close-review artifact is written by sdlc, whose
+            source is /Users/xianxu/workspace/ariadne/cmd/sdlc; no commit in tools can change what it captures. The
+            preamble is now at lines 18, 251, 485 and 674 - one new occurrence per review round, exactly as predicted
+            at rounds 3 and 4. The actionable move is an ariadne issue for "artifact capture takes agent stdout only",
+            referenced from this issue's Log, rather than a fifth not-addressed disposition here.
+          family: generated-artifact-noise
+          round: 6
+      blocked: false
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -725,13 +805,54 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   covering this and BR-4: every field of an injected seam states its own default and how it is
   filled, and a fill-in helper must not make one field's default depend on another field's presence.
 
+## Round 6 — 2026-08-21T12:01:34-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — addressed — Revisions section 1 states "There is one call site" explicitly; the AGENTS.md section 1 append-not-overwrite move BR-24 specified.
+- BR-2 — addressed — Line 133 now reads "stops writing entirely - it does not delegate, it does nothing", plus Revisions section 2.
+- BR-3 — addressed — Line 181 rewritten to lookupAndRender with the three-arg signature; lines 7/24/116 covered by Revisions rather than in place.
+- BR-4 — not-addressed — Revisions section 3 names the three new deps fields but never states their defaults - the exact half BR-4 asked for and BR-26 escalated.
+- BR-22 — not-addressed — Fourth occurrence (lines 18, 251, 485, 674). Generator is ariadne/cmd/sdlc, a peer repo - unfixable from tools; needs an ariadne issue.
+- BR-24 — addressed — Plan substantively edited with a Revisions section; 6 of 7 enumerated artifact instances closed, the 7th carried under BR-4/BR-26.
+- BR-25 — addressed — Both sites verified - Forget's doc derives from wordFileName (grep), openStore's doc re-attached to openStore (AST).
+- BR-26 — not-addressed — main.go:67 early return unchanged; no comment states deck's default, no test enters the branch.
+
+### Raised
+
+- **BR-27** [Important] `unpinned-invariant` Done-when 2 "repeat lookups increment the count" is ticked and no test pins it through the capture path
+  5th in family (BR-5, BR-6, BR-7, BR-19; prevalence 5). Do NOT patch this instance alone. Verified by
+  mutation: making storeCapturer skip Upsert on a repeat sighting of the same word leaves the ENTIRE suite
+  green (MUTATION_APPLIED, BUILD_OK, ok cmd/define 24.084s). The only Lookups assertions are
+  storetest/suite.go:71 (Upsert merge semantics, a different question) and capture_test.go:282 (== 1);
+  nothing drives two captures of one word and asserts the count moved. Issue 5 orders by this number.
+  The rule is BR-19's with the clause it was missing - the delete-the-line discipline was applied to FIXES
+  and never to Done-when TICKS, though a tick is the same kind of behavioural claim. That clause also
+  unifies this family with undocumented-work-log, whose rule (BR-20, "a tick claims evidence exists") has
+  been chasing the same thing from the other end for four rounds. Cheap close: two lines inside
+  TestNoDoubleWriteThroughTheRealWiring, which already has real wiring over a real store.
+- **BR-28** [Minor] `prose-contradicts-code` main.go:35 claims no test touches the real filesystem, in the file this commit says it swept
+  7th in family (BR-9, BR-10, BR-17, BR-18, README exit codes, BR-25; prevalence 7). Do NOT patch this
+  site. deps.newStore's comment says "Tests leave it nil and get in-memory defaults, so no test ever
+  touches the real filesystem"; capture_test.go:316 sets rig.deps.newStore = openStore, and four test
+  files use t.TempDir(). Both clauses false, ~30 lines above the comment this commit moved. The mechanism
+  that defeated BR-25's sweep rule, measured: round 5 stated this defect in its Minor PROSE list and never
+  gave it a BR id - 0 of that list's 5 items were addressed while 100 percent of the id'd findings were.
+  So the rule needs both halves: the reviewer puts every stated defect in the machine-read findings block
+  (done this round for all five), and the sweep becomes mechanical rather than attentional - for each file
+  in git diff --stat, read every comment making a claim about another symbol and grep that symbol.
+- **BR-29** [Minor] `generated-artifact-noise` BR-22 cannot be closed from this repo - the generator lives in the ariadne peer
+  Recording this so BR-22 stops recurring undisposed. The close-review artifact is written by sdlc, whose
+  source is /Users/xianxu/workspace/ariadne/cmd/sdlc; no commit in tools can change what it captures. The
+  preamble is now at lines 18, 251, 485 and 674 - one new occurrence per review round, exactly as predicted
+  at rounds 3 and 4. The actionable move is an ariadne issue for "artifact capture takes agent stdout only",
+  referenced from this issue's Log, rather than a fifth not-addressed disposition here.
+
 ## Open findings
 
-- **BR-1** [Minor] `unbacked-existing-behavior-claim` "three call sites" is two - defineOnce serves both the one-shot and line paths
-- **BR-2** [Important] `extraction-strands-behavior` storeHistory is given two incompatible fates, and Task 1 Step 3's "tests unchanged" is unsatisfiable
-- **BR-3** [Important] `capture-arity-invariant` Task 2 Step 3 still names defineOnce as the capture site, contradicting Chunk 1's lookupAndRender
 - **BR-4** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
 - **BR-22** [Minor] `generated-artifact-noise` The committed close-review artifact opens with a harness stderr preamble
-- **BR-24** [Important] `family-rule-applied-selectively` The family rule was applied to every code instance and to no artifact instance
-- **BR-25** [Important] `prose-contradicts-code` This round's own edits left two comments describing code they no longer describe
 - **BR-26** [Minor] `unstated-seam-default` withStore's early return silently strands deck when history and capture are both supplied
+- **BR-27** [Important] `unpinned-invariant` Done-when 2 "repeat lookups increment the count" is ticked and no test pins it through the capture path
+- **BR-28** [Minor] `prose-contradicts-code` main.go:35 claims no test touches the real filesystem, in the file this commit says it swept
+- **BR-29** [Minor] `generated-artifact-noise` BR-22 cannot be closed from this repo - the generator lives in the ariadne peer

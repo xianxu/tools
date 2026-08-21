@@ -361,3 +361,48 @@ func TestOpenStoreWithoutOptOut(t *testing.T) {
 		t.Errorf("deck did not write to the working directory: %v", err)
 	}
 }
+
+// Done-when: "Repeat lookups increment the count rather than duplicating."
+//
+// The conformance suite pins the merge at the Store level, but nothing pinned it
+// THROUGH capture — and capture is what supplies Lookups:1 on every call, so the
+// accumulation depends on both halves agreeing.
+func TestRepeatLookupsIncrementThroughCapture(t *testing.T) {
+	st := store.NewMem()
+	c := newStoreCapturer(st, store.FixedClock(time.Now()), nil)
+
+	c.Capture("sycophantic", true, options{})
+	c.Capture("Sycophantic", true, options{}) // same word, different case
+	c.Capture("sycophantic", true, options{})
+
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck) != 1 {
+		t.Fatalf("three lookups produced %d entries, want 1: %+v", len(deck), deck)
+	}
+	if deck[0].Lookups != 3 {
+		t.Errorf("Lookups = %d after three lookups, want 3", deck[0].Lookups)
+	}
+}
+
+// Done-when: "A failing store degrades to a warning, never a failed lookup."
+//
+// The warn-once half was pinned at the capturer; the "never a failed lookup"
+// half — the part a user actually feels — was not pinned anywhere.
+func TestFailingStoreStillDefinesAndExitsZero(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.capture = newStoreCapturer(failingStore{}, store.FixedClock(time.Now()), nil)
+	rig.deps.stdinIsTerminal = func() bool { return false }
+
+	var out, errb bytes.Buffer
+	code := run(t.Context(), []string{"-no-audio", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
+
+	if code != 0 {
+		t.Errorf("exit = %d, want 0 — a store that cannot be written is not a failed lookup", code)
+	}
+	if !strings.Contains(out.String(), "/ˌsikəˈfan(t)ik/") {
+		t.Error("the definition was not printed")
+	}
+}
