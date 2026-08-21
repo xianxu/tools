@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-20
 updated: 2026-08-20
-estimate_hours:
+estimate_hours: 1.61
 started: 2026-08-20T17:51:17-07:00
 ---
 
@@ -55,9 +55,48 @@ A `Store` seam with a YAML-files-on-disk backend.
 - [ ] No production code calls `time.Now()`; the clock is injected everywhere.
 - [ ] Store survives an interrupted write (append-only log is never truncated).
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.2  impl=0.04
+item: greenfield-go-module     design=0.3  impl=0.32
+item: smaller-go-module        design=0.1  impl=0.2
+item: milestone-review         design=0.0  impl=0.12
+item: milestone-review         design=0.0  impl=0.12
+item: atlas-docs               design=0.05 impl=0.06
+design-buffer: 0.15
+total: 1.61
+```
+
+Derivation notes:
+
+- **greenfield-go-module** is the store package: types, two implementations, one
+  shared conformance suite. Design takes the ×0.2 spec-quality discount
+  (1.5 → 0.3) — the plan fixes the interface, the file layout and the atomicity
+  rule. Impl at the top of its band, because atomic writes and skip-and-warn on a
+  corrupt file are the parts with real failure modes.
+- **smaller-go-module** is `storeHistory` plus the wiring: mirror-shaped, since
+  `#14` already consumes the `History` interface and nothing in the editor moves.
+- **Two `milestone-review`s.** `#14` budgeted three and used two; `#1` and `#2`
+  each needed more than one. This is smaller than `#14`, so two.
+- Library-availability check ran: `go.yaml.in/yaml/v3` is already an ariadne
+  dependency and is used rather than hand-rolling YAML; no from-scratch halving.
+- `familiarity: 1.0` — same package family, same fakes, same test posture.
+
+Σdesign 0.65 × 1.15 = 0.7475; Σimpl 0.86; total **1.61**.
+
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+See `workshop/plans/000003-vocab-store-plan.md`.
+
+- [ ] `Word`, `ReviewEvent`, `Slug` (fuzzed — it turns text into a filename).
+- [ ] `Store` seam + `memStore` + one shared conformance suite.
+- [ ] `yamlStore`: one file per word, append-only day logs, atomic writes.
+- [ ] `storeHistory` — makes `#14`'s history persistent with no editor change.
 
 ## Log
 
