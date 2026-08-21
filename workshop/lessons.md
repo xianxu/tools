@@ -272,3 +272,24 @@ in history, so it was green on a repo carrying exactly the artifact it existed
 to prevent. Before citing a test as the guard for a class, state what the test
 reads and check the class lives there. Scope mismatch passes every review that
 only asks "is there a test?"
+
+## A guard must assert it consumed the whole work list
+
+A history-scanning guard enumerated every object in the repo, checked each one,
+and reported a clean result — from a partial scan. Nothing compared records read
+against records requested, and the subprocess's exit status was `defer`red and
+dropped. Feeding it the first five objects left it green with a planted binary
+sitting in history.
+
+Two clauses, both cheap:
+
+- If a test builds a work list, assert it reached the end of it. `seen ==
+  len(want)`, and fail with the counts — `scanned 5 of 761 objects` names the
+  problem instantly.
+- Check the exit status of every process the test depends on. `defer cmd.Wait()`
+  discards it; so does `_ = cmd.Wait()`. A crashed child and a clean one are
+  otherwise indistinguishable, and the crash is the interesting case.
+
+This one is worth internalising because of where it was found: in the fix for the
+*previous* round's version of the same rule. Writing the rule down does not
+execute it.

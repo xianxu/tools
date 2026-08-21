@@ -1439,3 +1439,192 @@ findings:
       (event only, never words/); the README states both exceptions correctly two files over. Recording these
       with ids rather than as prose, because BR-28 measured that un-id'd prose items get 0 percent addressed.
 ```
+
+---
+
+## Re-review — 2026-08-21T12:51:45-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 4 — capture looked-up words into the deck |
+| repo | tools |
+| issue file | workshop/issues/000004-vocab-capture.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4afa1c537819ad662ad149a14bd757ac149772e5..3c0c1028169010c69882261c9e9c83c49684b2a4 |
+| command | sdlc close --issue 4 |
+| reviewer | claude |
+| timestamp | 2026-08-21T12:51:45-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Nine rounds in, this is the first round where the response executed the family rules rather than their titles, and I could measure that rather than take it on trust: **11 of the 13 open findings are genuinely closed, against 0 of 10 in each of the two prior rounds.** The Critical is gone and I re-ran its own measurement rather than reading the commit message — a fresh clone of this branch is 856 K of `.git`, byte-identical to a fresh clone of `main`, and blob `d12d8e7` is absent (`git cat-file: could not get object info`). I verified the new history guard the way its own lesson prescribes, by planting what it hunts in a **new** `cmd/newtool/` that no ignore pattern matches: clean → PASS, staged → index guard FAILS, `git rm`'d in a follow-up commit → index guard passes and **history guard FAILS**, exactly as `.gitignore:34-42` claims. `TestUsageErrorsDoNotOpenTheLog` is mutation-red on all three rows. `go vet`, `go test` and `go test -race` are green across both packages, the tree stays clean after a full run, and every documented exit code checks out against the built binary. What keeps this off a clean SHIP is that `TestNoBinariesInHistory` — the brand-new guard this round added to close BR-36 — reports GREEN on a repo carrying a planted 1.7 MB binary when its `cat-file` stream is short: it enumerates N blob shas and never asserts N came back. That is the same *scope-narrower-than-the-claim* defect BR-36 named, reappearing in BR-36's own fix. Both findings below are cheap.
+
+### 1. Strengths
+
+- **BR-30 was closed the way the finding measured it, and the commit quotes the number.** `git filter-branch` over `main..HEAD` rewrote the *adding* commit rather than deleting the file in a follow-up. Re-measured independently: branch clone `.git` = 856 K, main clone `.git` = 856 K, blob absent. The issue Log (`workshop/issues/000004-vocab-capture.md:133-140`) also warns that anyone holding an old copy must re-fetch — the operational consequence, stated rather than left to be discovered.
+- **The guard pair is verified by planting, not by argument.** `repo_guard_test.go:65` reads the index, `:100` reads history, and both `t.Fatal` rather than `t.Skip` (`:41-48`) — "a guard that reports nothing when it cannot run certifies nothing." Both vacuity guards (`:89`, `:166`) are real. I reproduced the full three-state cycle.
+- **BR-31's rule was finally run over the whole changed-file list rather than the file its title named**, and it turned up a fourth site the finding never enumerated. All four now read "records a lookup" and name `--forget` as the second mutator: `capture.go:51`, `main.go:28`, `history_store.go:47`, `atlas/define.md:281`. My own independent grep for `only writer|only thing.*writes` finds no survivor.
+- **`TestUsageErrorsDoNotOpenTheLog` (`capture_test.go:422`) is a test whose first version could not fail, and the comment says so.** The obvious assertion ("the directory is still empty") holds either way because `NewYAML` is a pure constructor; the real observable is `newStoreHistory` reading at construction. I moved `d = d.withStore(...)` back above the usage switch and all three rows go red with the exact torn-record warning. That is the delete-the-line discipline applied to a case where the honest answer was "my first test was blind."
+- **BR-29's resolution is the right shape for an unfixable finding.** `ariadne#201` exists, states both defects (stderr in the artifact, and a recurring finding with no home costing a slot per round), and is referenced from this issue's Log at line 130. Six rounds of undisposable re-raising now has an owner.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-1 — `cmd/define/repo_guard_test.go:122-131` — the new history guard passes on a partial scan, verified GREEN with a planted binary in history.**
+
+**This is the 7th finding in family `unpinned-invariant`** (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36; prevalence 7). Per the escalation rule I am not asking for this instance to be patched.
+
+`TestNoBinariesInHistory` enumerates every path-bearing sha into `req` (`:107-117`), pipes them to `git cat-file --batch`, and reads records until EOF. Two things are missing: the record count is never compared against the request count, and `defer cmd.Wait()` (`:131`) discards `cat-file`'s exit status. Its only vacuity guard is `blobs == 0` (`:166`), which any non-empty partial scan clears.
+
+Measured, in the same planted clone where the guard correctly failed a moment earlier:
+
+```
+MUTATION_APPLIED   (cat-file receives only the first 5 shas, as if the stream were cut short)
+BUILD_OK
+git rev-list --objects HEAD | grep -c cmd/newtool/newtool   → 1     ← the binary IS in history
+go test -count=1 -run TestNoBinariesInHistory ./cmd/define/ → ok    ← the guard is GREEN
+```
+
+The file states the correct rule for itself at `:38-40` — *"Deliberately Fatal, never Skip… a guard that reports nothing when it cannot run certifies nothing"* — and applies it to the `git()` helper, which is two of the three git invocations. The third (`:122`) bypasses `git()` entirely and is the one whose failure is silent. ARCH-PURPOSE, at-review: the guard's stated purpose is "no executable image is reachable from HEAD," and what it delivers is "no executable image among however many records happened to arrive."
+
+*The rule the family needs, extending BR-36's clause.* BR-36's clause was **state what the test reads, and check the class lives there** — correct, executed, and it produced this test. The half it was missing: **check the test reads *all* of it.** Operationally, a guard that enumerates a work list asserts it consumed the whole list (`if blobs+skipped != len(paths)`), and every subprocess it depends on has its exit status checked, not deferred and dropped. Both halves are one line each here; the general form is what stops the next guard shipping with the same shape.
+
+**I-2 — `atlas/` has no entry for the repo-wide binary guards, which are new cross-cutting surface in a surprising location.**
+
+Docs update gate (AGENTS.md §8). This window introduces a repo-wide invariant — no executable image in the index or in history — enforced by two tests that live in `cmd/define/` and a `.gitignore` policy explaining why the pattern is necessarily per-tool. `atlas/define.md` was updated thoroughly for capture and says nothing about any of it; `grep -rn "repo_guard\|NoCommittedBinaries\|NoBinariesInHistory" atlas/ README.md` returns zero hits, and the only prose home is `.gitignore:24-42` plus `workshop/plans/…-plan.md:340`, an archived plan.
+
+The concrete cost: a contributor who adds `cmd/foo` and leaves a build artifact there gets a failure from **`cmd/define`'s** test suite, with the explanation living in a gitignore comment they have no reason to read. That the guard's location is surprising is exactly why it belongs on the map. `atlas/` is also where AGENTS.md §8 says new *conventions* and *file-tree locations* go, and both are new here.
+
+*Fix:* a short section in `atlas/define.md` (or a new `atlas/repo-guards.md` linked from `atlas/index.md`) naming both tests, what each reads, and why they live in `cmd/define/`. AGENTS.md §1 also offers a better long-term home — this is precisely a `workshop/targets/` invariant — but the atlas entry is the gate item.
+
+### 4. Minor findings
+
+- **BR-33 (not-addressed)** — `--forget` still reads an event log it never consults. `main.go:240` builds the store, `main.go:242` dispatches the mode. I re-ran the finding's own reproduction against a seeded directory: `define -forget never-seen` → `define: 2026-08-21.yaml: recovered 1 event(s), dropped 1 torn record(s)` / `never-seen is not in the deck` / exit 1. The commit moved *usage validation* above `withStore` (a real, well-pinned improvement) but not the `-forget` dispatch, which is what the finding's title names. Covered by BR-35's own clause — re-run the measurement — so I am recording it as a residual disposition, not patching advice.
+- `repo_guard_test.go:152` reads each blob's **entire** body to inspect 4 magic bytes, so the guard's memory and time grow with total history forever. `io.ReadFull` into a 4-byte head plus `io.CopyN(io.Discard, r, size-3)` gets the same answer. Currently 0.36 s; noting it because it is a guard that runs on every `go test ./cmd/define/`.
+- `isSet` is listed PURE in the plan's Integration-points table and is genuinely pure, but has no direct test — it is exercised only through `run`, which needs the full dict/audio rig. Not a purity violation; a coverage shape worth a two-line table test.
+- `.gitignore:1-3`'s original claim *"Both paths are ignored so neither recurs"* survives above the block that documents the third path it did not cover. Narrowly true of the two paths it names, so not a contradiction — but the sentence reads as a completeness claim.
+
+### 5. Test coverage notes
+
+The suite is green with `-race` (25.6 s / 1.6 s), `go vet` is clean, and the tree stays clean after a full run — only two tests set `newStore`, both `t.Chdir` into a `t.TempDir` first, so the `main.go:34-40` seam comment is now accurate as well as honest. I mutation-checked one thing independently this round and it behaved correctly (`TestUsageErrorsDoNotOpenTheLog`, applied + compiled + `-count=1`, red on all three rows with the exact expected warning), and I plant-verified the guard pair through all three states. The coverage shape is otherwise unchanged and sound: `decideCapture` and `wordFileName` table-tested with zero IO; per-path arity at the `Capturer` seam including the `-raw` row; a store-level arity assertion through real wiring that provably sees writers *below* the seam; `openStore` on both branches; a `t.Setenv` end-to-end disk assertion; `Forget` in the shared conformance suite so `Mem` and `YAML` both answer.
+
+The one hole is I-1, and it is worth naming precisely because of where it sits: this round's *only* substantially new production-adjacent code is the guard pair, and the guard pair is where the round's own escalated family recurs. Everything else in the window has been through eight rounds of mutation checking. Note also the shape difference — every prior instance of `unpinned-invariant` was "the fix has no failing test"; this one has a failing test I reproduced, and still under-delivers, because the test's *coverage of its own input* is unasserted. That is the variant a delete-the-line check cannot catch.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** Grep-verified: `decideCapture` has one caller; `c.st.AppendEvent`/`c.st.Upsert` in `capture.go` are the only append/upsert paths outside `store/`; all three `.Capture(` calls are inside `lookupAndRender`; `wordFileName` serves both filename-deriving call sites; `History.Add`'s dead `found` parameter is gone from the interface, both implementations and the sole caller. A full sweep of the changed files for prose restating a fact owned elsewhere turned up no survivor — the first round in nine where that is true.
+- **ARCH-PURE — pass.** `decideCapture` (`capture.go:26`) and `wordFileName` (`yaml.go:180`) are genuine pure functions with IO-free tests. `storeCapturer` is a thin shell over the policy; `openStore` is the boundary and is injectable through `deps.newStore`. Deleting `withStore`'s unreachable early return leaves one path through the function, so the seam's fill-in rule is now stateable in one sentence — and the plan states it (`plan.md:274`ff). Nothing leaked into `store/`.
+- **ARCH-PURPOSE — pass on the issue, flag on the guard (I-1).** Shadow-sweep on `decideCapture`: `storeCapturer` derives ✓, the raw branch derives and is pinned ✓, `openStore`'s `noCapture` read is a labelled second reader of the same *input* ✓. On `wordFileName`: `Upsert` ✓, `Forget` ✓. BR-30's purpose — remove the *cost*, not the file — is now genuinely delivered and re-measured, which is the axis round 8 settled for the cheap subset of. The flag is I-1, where a guard's implementation delivers a subset of the claim it makes.
+- **ARCH-MOCK — pass, with two notes.** `store.Mem` ships as production code behind the interface `YAML` implements, `storetest.Suite` runs both, `Forget` joined it in the commit that introduced it, and the owned backend boots from any portable folder (`NewYAML(dir, warn)`; tests use `t.TempDir`) with no production configuration. `repo_guard_test.go` shells out to real `git` with **no** seam and no fake, which is correct — a faked `git` would defeat a test whose entire subject is the real object database — but the fake-less equivalent of a stateless double is exactly I-1: one of the three invocations has its outcome unchecked. The standing gap, pre-existing and outside this issue: macOS CoreServices has a fixture-backed fake (`testDict`) but **no live conformance check**, so nothing detects the day its output shape changes. Worth an issue before `#15` builds more on `ParseEntry`.
+- **For `#5` (ordering by `Lookups`):** the number is trustworthy for both properties it needs — arity, pinned through the real wiring on every producible path, and accumulation, pinned through the capture path and mutation-verified at round 7. `#5` can order by it.
+
+### 7. Plan revision recommendations
+
+The `## Revisions` section (`plan.md:274`) now carries two dated entries, states the seam defaults BR-4 asked for across three rounds, and the forward pointer at `plan.md:62-65` establishes that Revisions supersedes Chunk 1. That is the reconciliation AGENTS.md §1 requires, and it is done. Two residuals, appended to the existing entry rather than a new one:
+
+- **Extend the Chunk 1 forward pointer's "Known divergences" list.** It names three divergences; a fourth survives in place at `plan.md:121` — *"is consulted from three call sites"*, contradicted by `plan.md:78` (*"One call site: `lookupAndRender`"*) 43 lines above it and by Revisions §1. The precedence rule makes this defensible rather than wrong, which is why I am recommending it here rather than raising it, but a reader hits the false count before the correction. One clause in the pointer closes it.
+- **Add the guard pair to the Integration-points table.** Every one of its twelve rows verifies against the filesystem at the stated path (I checked each, and `openHistory` is gone as the table says) — but `TestNoCommittedBinaries` / `TestNoBinariesInHistory` and the `.gitignore` policy are the window's newest surface and appear nowhere in it. They are INTEGRATION by the table's own `kind` column (they exec `git`), which is worth recording, since it is the fact I-1 turns on.
+
+```findings
+dispose:
+  - id: BR-30
+    disposition: addressed
+    note: |
+      Re-measured, not read: fresh clone of this branch is 856K .git, identical to a fresh main clone, and blob d12d8e7 is absent. All three enumerated moves closed.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      Sweep run over the full changed-file list, not the title's file - it found a fourth site (history_store.go:47); my independent grep finds no surviving "only writer" absolute.
+  - id: BR-35
+    disposition: addressed
+    note: |
+      All five enumerated instances closed. Measured this round - 11 of 13 open findings closed, against 0 of 10 in each of the two prior rounds; the re-run-the-measurement clause is in lessons.md and was executed.
+  - id: BR-36
+    disposition: addressed
+    note: |
+      Verified by planting a binary in a new cmd/newtool - staged reddens the index guard, git rm in a follow-up commit leaves the index guard green and reddens the new history guard. The gitignore comment now states what each test READS.
+  - id: BR-37
+    disposition: addressed
+    note: |
+      Spec bullet rewritten to "Only a successful lookup enters the deck", and --help now states the -raw and failed-lookup exceptions; both re-read against decideCapture.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Revisions section 3 now states all three defaults explicitly - memHistory, noopCapturer, and deck from newStore or nil - plus why the real filesystem is opt-in.
+  - id: BR-26
+    disposition: addressed
+    note: |
+      The unreachable early return is deleted rather than pinned, leaving one path through withStore; probe re-verified there is no second path to enter.
+  - id: BR-28
+    disposition: addressed
+    note: |
+      main.go:36 now says tests get in-memory defaults and that several DO set newStore = openStore after t.Chdir; verified both clauses true, and the tree stays clean after a full suite run.
+  - id: BR-29
+    disposition: addressed
+    note: |
+      ariadne#201 exists, states both defects, and is referenced from this issue's Log at line 130 - exactly the move the finding specified.
+  - id: BR-32
+    disposition: addressed
+    note: |
+      History.Add's found parameter removed from the interface, both implementations, the sole caller and the doc that claimed it was recorded; orElse was withdrawn in the finding itself.
+  - id: BR-34
+    disposition: addressed
+    note: |
+      main.go:411 now formats the store error as "define: %s: %v" with the word, matching its neighbours.
+  - id: BR-22
+    disposition: withdrawn
+    note: |
+      Real but unfixable here and now owned externally at ariadne#201 (BR-29's specified resolution); re-raising it costs a slot per round with no possible convergence. Seventh occurrence, at close-review.md:1249.
+  - id: BR-33
+    disposition: not-addressed
+    note: |
+      Usage errors now settle before withStore, but the -forget dispatch still does not - main.go:240 builds the store, :242 dispatches. Reproduction re-run: -forget never-seen still prints "recovered 1 event(s), dropped 1 torn record(s)" for a log it never consults.
+findings:
+  - id: new
+    severity: Important
+    family: unpinned-invariant
+    title: |
+      The new history guard reports GREEN on a partial scan, measured with a planted binary present in history
+    detail: |
+      7th in family (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36; prevalence 7). Do NOT patch this instance.
+      repo_guard_test.go:107-117 enumerates every path-bearing sha into req, but nothing compares the
+      record count against the request count, and defer cmd.Wait() at :131 discards git cat-file's exit
+      status; the only vacuity guard is blobs == 0 at :166, which any non-empty partial scan clears.
+      Measured in the same planted clone where the guard had just correctly failed - feeding cat-file only
+      the first 5 shas (MUTATION_APPLIED, BUILD_OK, -count=1) leaves the guard GREEN while
+      git rev-list --objects HEAD still reports cmd/newtool/newtool present. The file states the right rule
+      for itself at :38-40 ("a guard that reports nothing when it cannot run certifies nothing") and applies
+      it to the git() helper, which covers two of three git invocations; the third, at :122, bypasses git()
+      and is the one whose failure is silent. This is BR-36's own fix carrying BR-36's own defect, so the
+      clause the rule was missing is: state what the test reads, check the class lives there, AND check the
+      test reads ALL of it - a guard that enumerates a work list asserts it consumed the whole list, and
+      every subprocess it depends on has its exit status checked rather than deferred and dropped.
+  - id: new
+    severity: Important
+    family: atlas-omits-new-surface
+    title: |
+      atlas has no entry for the repo-wide binary guards, new cross-cutting surface living inside cmd/define
+    detail: |
+      Docs update gate, AGENTS.md section 8. This window introduces a repo-wide invariant - no executable
+      image in the index or in history - enforced by two tests in cmd/define/repo_guard_test.go plus a
+      .gitignore policy explaining why the pattern is necessarily per-tool. atlas/define.md was updated
+      thoroughly for capture and mentions none of it; grep -rn "repo_guard|NoCommittedBinaries|NoBinariesInHistory"
+      over atlas/ and README.md returns zero hits, leaving the only prose home in a .gitignore comment and an
+      archived plan. The concrete cost: a contributor who adds cmd/foo and leaves a build artifact there gets
+      a failure from cmd/define's suite with no mapped explanation. Both a new convention and a surprising
+      file-tree location, which is what section 8 says belongs on the map. Fix: a short atlas/define.md section
+      or an atlas/repo-guards.md linked from atlas/index.md, naming both tests, what each reads, and why they
+      live in cmd/define. AGENTS.md section 1's workshop/targets/ is the better long-term home, but the atlas
+      entry is the gate item.
+```

@@ -7,7 +7,7 @@ created: 2026-08-20
 updated: 2026-08-21
 estimate_hours: 1.31
 started: 2026-08-21T10:02:22-07:00
-actual_hours: 3.85
+actual_hours: 5.93
 ---
 
 # capture looked-up words into the deck
@@ -123,6 +123,21 @@ See `workshop/plans/000004-vocab-capture-plan.md`.
 Created as part of the `define-learn` project.
 
 ### 2026-08-21 — implementation notes
+- 2026-08-21: closed — Round 8 measured 0 of 10 findings closed for the second round running; this round executes the rules rather than the titles, and re-runs each finding's own measurement before claiming it.; review verdict: FIX-THEN-SHIP
+
+BR-30, all three enumerated moves. (1) The blob is excised from HISTORY, not just the tree: b3ec4bd used a follow-up commit where the finding specified --amend, so 42cc96d still added it. git filter-branch --index-filter over main..HEAD rewrote the adding commit. RE-MEASURED the way the finding measured it -- branch clone 5.9M -> 712K, byte-identical trees, blob d12d8e7 absent from a fresh clone, and after the later commits main and branch both clone to 832K. (2) The .gitignore pattern is necessarily per-tool and now says so: gitignore has no backreferences and an un-anchored "define" would swallow the cmd/define SOURCE directory. (3) The git show --stat rule is in lessons.md, where it was missing while two lessons about how the guard was built had been recorded.
+
+The unpinned-invariant escalation was correct: the guard read git ls-files (the INDEX) while this class costs money in HISTORY, so it certified a repo that carried the artifact. TestNoBinariesInHistory now reads git rev-list --objects HEAD and checks magic bytes per blob; both guards Fatal rather than Skip, since a guard that reports nothing when it cannot run certifies nothing; both assert non-vacuity. Verified by planting a binary in a NEW cmd/newtool/ that no ignore pattern matches: clean PASS, staged -> index guard FAILS, git rm-d in a later commit -> index guard PASSES while history guard FAILS naming the blob and its 9616546 bytes.
+
+BR-31: ran the mechanical sweep over all 20 changed files instead of the file its title named, which turned up a FOURTH "only writer" absolute no finding enumerated (history_store.go:47). All four corrected -- --forget mutates the store too.
+
+Eight previously-untouched findings closed: History.Add drops "found" (ignored by both implementations while the doc claimed it recorded; #15 filters on the event log where Found is real), main.go:36 no longer claims no test touches the filesystem, usage errors settle before withStore opens anything, Forget errors name the word, withStore-s unreachable early return deleted rather than pinned, plan Revisions now states the seam defaults (open since round 6), Chunk 1 carries a forward pointer, and the Integration table lists all 12 entities with a PURE/INTEGRATION column.
+
+The usage-order fix ships with a test whose failure I OBSERVED -- and whose first version could NOT fail: "the directory is still empty" holds either way because NewYAML is a pure constructor. The real observable is that newStoreHistory reads at construction, so a corrupt log reports itself mid-usage-error. Mutation-verified: applied, compiled, -count=1, RED with the exact warning, GREEN on restore.
+
+Two round-8 minors were stale and are NOT claimed fixed: the atlas entry-modes table already had a -forget row, and the issue Log already had implementation notes. BR-22/BR-29 is filed as ariadne#201 -- it is a defect in the reviewer artifact-s stderr capture and cannot converge here.
+
+go vet clean; full suite and -race green across both packages; GOOS=linux CGO_ENABLED=0 green; history guard green when run inside a fresh clone of the branch.
 - 2026-08-21: closed — The residual was entirely artifact-side and is now closed. Round 5 measured code 10/10 and plan 0/7; all seven plan sites are corrected (one call site not three; storeHistory does nothing rather than delegates; lookupAndRender not defineOnce; openStore not openHistory; the three-argument Capturer; the three deps fields the plan never mentioned) and the plan now carries the AGENTS.md §1 Revisions section that three consecutive boundaries recommended. Also swept the two stale comments this round CREATED in files it touched: Forget doc comment asserted a security property the same commit retracted and named a filepath.Base call deleted in the same hunk, and inserting type storeDeps orphaned openStore doc comment onto the struct -- both verified re-attached to the code they describe. Code side unchanged and re-verified: full suite and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 - 2026-08-21: closed — Round 4 addressed instance-by-instance, which round 3 was not. Of the 10 instances the three families enumerated, 3 were closed in round 3 (all titles) and the remaining 7 are closed now: BR-6 Forget was still on an inline copy while wordFileName had exactly one caller (Upsert) -- my own previous fix introduced the duplication it was meant to remove, and the copy had already drifted by not rejecting a leading dot; the atlas entry-modes table claimed run dispatches into a single shared defineOnce, which the raw editor bypasses; README exit codes omitted that 1 now also means --forget found nothing; deps.forgetter(), the newStore triple with three nil-merges, and newStoreHistorys dead Clock param are deleted. The BR-6 Done-when is now precise and measured rather than claimed: Slug is the effective guarantee (fuzzed), wordFileName is a second net tested directly with hostile names (RED on removal), and both Upsert and Forget derive from it -- verified by grep, because bypassing it on the --forget path leaves the suite GREEN, so the value is ARCH-DRY rather than a behavioural pin. Two false mutation readings were caught and recorded: one that failed to apply printed GREEN, one that failed to compile printed RED. go test and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 

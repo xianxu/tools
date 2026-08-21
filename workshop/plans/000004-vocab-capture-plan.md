@@ -365,3 +365,33 @@ named — and left the half that required re-deriving the finding's own measurem
 Now in `lessons.md`: *a finding is closed only when you have re-run the measurement
 that produced it.* Both of these findings shipped with a measurement attached, and
 re-running either is one command.
+
+
+### 2026-08-21 — round 9
+
+**10. The guards assert they consumed the whole work list.** `TestNoBinariesInHistory`
+shipped in round 8 with the defect it was written to catch: it enumerated every
+object, compared nothing against the request count, and deferred-and-dropped
+`git cat-file`'s exit status. Feeding it the first five shas left it GREEN with a
+planted binary reachable from `HEAD`. `scanForExecutables` now asserts
+`seen == len(want)` and checks `Wait()`; the same mutation reports
+`scanned 5 of 761 objects`. The index guard was rebuilt on the same helper and
+now reads the index's **blobs** rather than opening worktree files, closing a
+second silent skip — a tracked file missing locally used to be passed over.
+`pty_conformance_test.go`'s `_ = cmd.Wait()` was the other instance of the class:
+a crashed `define` also leaves the terminal sane, so dropping that status let the
+test pass for the wrong reason.
+
+**11. `atlas/repo-guards.md`** — the guards are repo-wide surface that happens to
+live in `cmd/define` for want of a package, which is exactly the surprising
+file-tree location AGENTS.md §8 says belongs on the map.
+
+**BR-33 is accepted, not fixed, and here is the reason.** `--forget` goes through
+`withStore`, which constructs `storeHistory`, which reads the whole event log for
+a command that never recalls anything. The obvious fix — make that read lazy —
+collides with a deliberate invariant this issue's own tests pin: `Prefix` runs on
+every keystroke and must never touch disk, which is *why* the read happens once at
+construction. The other fix, splitting `openStore` into a deck-only path, adds a
+seam to `deps` that a boundary review has already called lumpy, to save one small
+read on a rare command. Revisit in `#15`, which is the first consumer that
+actually exercises history hard enough for the cost to be worth measuring.

@@ -763,6 +763,100 @@ rounds:
           family: prose-contradicts-code
           round: 8
       blocked: true
+    - "n": 9
+      timestamp: "2026-08-21T12:51:45-07:00"
+      agent: claude
+      dispose:
+        - id: BR-30
+          disposition: addressed
+          note: 'Re-measured, not read: fresh clone of this branch is 856K .git, identical to a fresh main clone, and blob d12d8e7 is absent. All three enumerated moves closed.'
+          round: 9
+        - id: BR-31
+          disposition: addressed
+          note: Sweep run over the full changed-file list, not the title's file - it found a fourth site (history_store.go:47); my independent grep finds no surviving "only writer" absolute.
+          round: 9
+        - id: BR-35
+          disposition: addressed
+          note: All five enumerated instances closed. Measured this round - 11 of 13 open findings closed, against 0 of 10 in each of the two prior rounds; the re-run-the-measurement clause is in lessons.md and was executed.
+          round: 9
+        - id: BR-36
+          disposition: addressed
+          note: Verified by planting a binary in a new cmd/newtool - staged reddens the index guard, git rm in a follow-up commit leaves the index guard green and reddens the new history guard. The gitignore comment now states what each test READS.
+          round: 9
+        - id: BR-37
+          disposition: addressed
+          note: Spec bullet rewritten to "Only a successful lookup enters the deck", and --help now states the -raw and failed-lookup exceptions; both re-read against decideCapture.
+          round: 9
+        - id: BR-4
+          disposition: addressed
+          note: Revisions section 3 now states all three defaults explicitly - memHistory, noopCapturer, and deck from newStore or nil - plus why the real filesystem is opt-in.
+          round: 9
+        - id: BR-26
+          disposition: addressed
+          note: The unreachable early return is deleted rather than pinned, leaving one path through withStore; probe re-verified there is no second path to enter.
+          round: 9
+        - id: BR-28
+          disposition: addressed
+          note: main.go:36 now says tests get in-memory defaults and that several DO set newStore = openStore after t.Chdir; verified both clauses true, and the tree stays clean after a full suite run.
+          round: 9
+        - id: BR-29
+          disposition: addressed
+          note: ariadne#201 exists, states both defects, and is referenced from this issue's Log at line 130 - exactly the move the finding specified.
+          round: 9
+        - id: BR-32
+          disposition: addressed
+          note: History.Add's found parameter removed from the interface, both implementations, the sole caller and the doc that claimed it was recorded; orElse was withdrawn in the finding itself.
+          round: 9
+        - id: BR-34
+          disposition: addressed
+          note: 'main.go:411 now formats the store error as "define: %s: %v" with the word, matching its neighbours.'
+          round: 9
+        - id: BR-22
+          disposition: withdrawn
+          note: Real but unfixable here and now owned externally at ariadne#201 (BR-29's specified resolution); re-raising it costs a slot per round with no possible convergence. Seventh occurrence, at close-review.md:1249.
+          round: 9
+        - id: BR-33
+          disposition: not-addressed
+          note: 'Usage errors now settle before withStore, but the -forget dispatch still does not - main.go:240 builds the store, :242 dispatches. Reproduction re-run: -forget never-seen still prints "recovered 1 event(s), dropped 1 torn record(s)" for a log it never consults.'
+          round: 9
+      findings:
+        - id: BR-38
+          severity: Important
+          title: The new history guard reports GREEN on a partial scan, measured with a planted binary present in history
+          detail: |-
+            7th in family (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36; prevalence 7). Do NOT patch this instance.
+            repo_guard_test.go:107-117 enumerates every path-bearing sha into req, but nothing compares the
+            record count against the request count, and defer cmd.Wait() at :131 discards git cat-file's exit
+            status; the only vacuity guard is blobs == 0 at :166, which any non-empty partial scan clears.
+            Measured in the same planted clone where the guard had just correctly failed - feeding cat-file only
+            the first 5 shas (MUTATION_APPLIED, BUILD_OK, -count=1) leaves the guard GREEN while
+            git rev-list --objects HEAD still reports cmd/newtool/newtool present. The file states the right rule
+            for itself at :38-40 ("a guard that reports nothing when it cannot run certifies nothing") and applies
+            it to the git() helper, which covers two of three git invocations; the third, at :122, bypasses git()
+            and is the one whose failure is silent. This is BR-36's own fix carrying BR-36's own defect, so the
+            clause the rule was missing is: state what the test reads, check the class lives there, AND check the
+            test reads ALL of it - a guard that enumerates a work list asserts it consumed the whole list, and
+            every subprocess it depends on has its exit status checked rather than deferred and dropped.
+          family: unpinned-invariant
+          round: 9
+        - id: BR-39
+          severity: Important
+          title: atlas has no entry for the repo-wide binary guards, new cross-cutting surface living inside cmd/define
+          detail: |-
+            Docs update gate, AGENTS.md section 8. This window introduces a repo-wide invariant - no executable
+            image in the index or in history - enforced by two tests in cmd/define/repo_guard_test.go plus a
+            .gitignore policy explaining why the pattern is necessarily per-tool. atlas/define.md was updated
+            thoroughly for capture and mentions none of it; grep -rn "repo_guard|NoCommittedBinaries|NoBinariesInHistory"
+            over atlas/ and README.md returns zero hits, leaving the only prose home in a .gitignore comment and an
+            archived plan. The concrete cost: a contributor who adds cmd/foo and leaves a build artifact there gets
+            a failure from cmd/define's suite with no mapped explanation. Both a new convention and a surprising
+            file-tree location, which is what section 8 says belongs on the map. Fix: a short atlas/define.md section
+            or an atlas/repo-guards.md linked from atlas/index.md, naming both tests, what each reads, and why they
+            live in cmd/define. AGENTS.md section 1's workshop/targets/ is the better long-term home, but the atlas
+            entry is the gate item.
+          family: atlas-omits-new-surface
+          round: 9
+      blocked: false
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -1160,18 +1254,55 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   (event only, never words/); the README states both exceptions correctly two files over. Recording these
   with ids rather than as prose, because BR-28 measured that un-id'd prose items get 0 percent addressed.
 
+## Round 9 — 2026-08-21T12:51:45-07:00 (claude) — passed
+
+### Disposed
+
+- BR-30 — addressed — Re-measured, not read: fresh clone of this branch is 856K .git, identical to a fresh main clone, and blob d12d8e7 is absent. All three enumerated moves closed.
+- BR-31 — addressed — Sweep run over the full changed-file list, not the title's file - it found a fourth site (history_store.go:47); my independent grep finds no surviving "only writer" absolute.
+- BR-35 — addressed — All five enumerated instances closed. Measured this round - 11 of 13 open findings closed, against 0 of 10 in each of the two prior rounds; the re-run-the-measurement clause is in lessons.md and was executed.
+- BR-36 — addressed — Verified by planting a binary in a new cmd/newtool - staged reddens the index guard, git rm in a follow-up commit leaves the index guard green and reddens the new history guard. The gitignore comment now states what each test READS.
+- BR-37 — addressed — Spec bullet rewritten to "Only a successful lookup enters the deck", and --help now states the -raw and failed-lookup exceptions; both re-read against decideCapture.
+- BR-4 — addressed — Revisions section 3 now states all three defaults explicitly - memHistory, noopCapturer, and deck from newStore or nil - plus why the real filesystem is opt-in.
+- BR-26 — addressed — The unreachable early return is deleted rather than pinned, leaving one path through withStore; probe re-verified there is no second path to enter.
+- BR-28 — addressed — main.go:36 now says tests get in-memory defaults and that several DO set newStore = openStore after t.Chdir; verified both clauses true, and the tree stays clean after a full suite run.
+- BR-29 — addressed — ariadne#201 exists, states both defects, and is referenced from this issue's Log at line 130 - exactly the move the finding specified.
+- BR-32 — addressed — History.Add's found parameter removed from the interface, both implementations, the sole caller and the doc that claimed it was recorded; orElse was withdrawn in the finding itself.
+- BR-34 — addressed — main.go:411 now formats the store error as "define: %s: %v" with the word, matching its neighbours.
+- BR-22 — withdrawn — Real but unfixable here and now owned externally at ariadne#201 (BR-29's specified resolution); re-raising it costs a slot per round with no possible convergence. Seventh occurrence, at close-review.md:1249.
+- BR-33 — not-addressed — Usage errors now settle before withStore, but the -forget dispatch still does not - main.go:240 builds the store, :242 dispatches. Reproduction re-run: -forget never-seen still prints "recovered 1 event(s), dropped 1 torn record(s)" for a log it never consults.
+
+### Raised
+
+- **BR-38** [Important] `unpinned-invariant` The new history guard reports GREEN on a partial scan, measured with a planted binary present in history
+  7th in family (BR-5, BR-6, BR-7, BR-19, BR-27, BR-36; prevalence 7). Do NOT patch this instance.
+  repo_guard_test.go:107-117 enumerates every path-bearing sha into req, but nothing compares the
+  record count against the request count, and defer cmd.Wait() at :131 discards git cat-file's exit
+  status; the only vacuity guard is blobs == 0 at :166, which any non-empty partial scan clears.
+  Measured in the same planted clone where the guard had just correctly failed - feeding cat-file only
+  the first 5 shas (MUTATION_APPLIED, BUILD_OK, -count=1) leaves the guard GREEN while
+  git rev-list --objects HEAD still reports cmd/newtool/newtool present. The file states the right rule
+  for itself at :38-40 ("a guard that reports nothing when it cannot run certifies nothing") and applies
+  it to the git() helper, which covers two of three git invocations; the third, at :122, bypasses git()
+  and is the one whose failure is silent. This is BR-36's own fix carrying BR-36's own defect, so the
+  clause the rule was missing is: state what the test reads, check the class lives there, AND check the
+  test reads ALL of it - a guard that enumerates a work list asserts it consumed the whole list, and
+  every subprocess it depends on has its exit status checked rather than deferred and dropped.
+- **BR-39** [Important] `atlas-omits-new-surface` atlas has no entry for the repo-wide binary guards, new cross-cutting surface living inside cmd/define
+  Docs update gate, AGENTS.md section 8. This window introduces a repo-wide invariant - no executable
+  image in the index or in history - enforced by two tests in cmd/define/repo_guard_test.go plus a
+  .gitignore policy explaining why the pattern is necessarily per-tool. atlas/define.md was updated
+  thoroughly for capture and mentions none of it; grep -rn "repo_guard|NoCommittedBinaries|NoBinariesInHistory"
+  over atlas/ and README.md returns zero hits, leaving the only prose home in a .gitignore comment and an
+  archived plan. The concrete cost: a contributor who adds cmd/foo and leaves a build artifact there gets
+  a failure from cmd/define's suite with no mapped explanation. Both a new convention and a surprising
+  file-tree location, which is what section 8 says belongs on the map. Fix: a short atlas/define.md section
+  or an atlas/repo-guards.md linked from atlas/index.md, naming both tests, what each reads, and why they
+  live in cmd/define. AGENTS.md section 1's workshop/targets/ is the better long-term home, but the atlas
+  entry is the gate item.
+
 ## Open findings
 
-- **BR-4** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
-- **BR-22** [Minor] `generated-artifact-noise` The committed close-review artifact opens with a harness stderr preamble
-- **BR-26** [Minor] `unstated-seam-default` withStore's early return silently strands deck when history and capture are both supplied
-- **BR-28** [Minor] `prose-contradicts-code` main.go:35 claims no test touches the real filesystem, in the file this commit says it swept
-- **BR-29** [Minor] `generated-artifact-noise` BR-22 cannot be closed from this repo - the generator lives in the ariadne peer
-- **BR-30** [Critical] `writes-to-cwd-unignored` A 9.6MB Mach-O arm64 binary is committed at cmd/define/define in the HEAD commit under review
-- **BR-31** [Important] `prose-contradicts-code` The retracted "a regression in Slug must fail HERE" claim survives in storetest/suite.go and is false by measurement
-- **BR-32** [Minor] `needless-indirection` History.Add's found parameter is now dead in both implementations, and orElse is a generic for two nil checks
 - **BR-33** [Minor] `eager-dependency-construction` run builds the store-backed deps before the -forget dispatch, so --forget reads an event log it never uses
-- **BR-34** [Minor] `misleading-error-text` forgetWord prints a bare "define: %v" where every neighbouring message names the operand
-- **BR-35** [Important] `family-rule-applied-selectively` Both partial fixes closed the legible half of the finding and left the half that required re-running its measurement
-- **BR-36** [Minor] `unpinned-invariant` .gitignore names TestNoCommittedBinaries as enforcing the general case, but the test reads the index and the cost lives in history
-- **BR-37** [Minor] `prose-contradicts-code` The Spec's "capture only on a successful lookup" and --help's "records every lookup" both contradict decideCapture
+- **BR-38** [Important] `unpinned-invariant` The new history guard reports GREEN on a partial scan, measured with a planted binary present in history
+- **BR-39** [Important] `atlas-omits-new-surface` atlas has no entry for the repo-wide binary guards, new cross-cutting surface living inside cmd/define

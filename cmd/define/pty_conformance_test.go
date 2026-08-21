@@ -144,7 +144,12 @@ func TestPTYTerminalIsRestoredOnExit(t *testing.T) {
 	// While the editor runs the SLAVE is raw; assert the master side round-trips
 	// after exit, which is only possible from a sane terminal state.
 	f.Write([]byte("\x03"))
-	_ = cmd.Wait()
+	// Checked, not discarded. A crashed define also leaves the terminal sane —
+	// the kernel restores it when the process dies — so dropping this status
+	// would let this test pass for entirely the wrong reason.
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
 
 	fd := int(f.Fd())
 	if !term.IsTerminal(fd) {

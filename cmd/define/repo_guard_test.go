@@ -3,10 +3,9 @@ package main_test
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -55,72 +54,31 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(git(t, "rev-parse", "--show-toplevel")))
 }
 
-// A compiled binary must never be tracked. `go build ./` inside cmd/define
-// writes an extensionless binary named after the directory, and `git add -A`
-// swept a 9.6 MB one in.
+// scanForExecutables reads every blob named by want (sha -> path) out of git and
+// returns the ones that are executable images.
 //
-// This covers the INDEX — the state a .gitignore line keeps clean, and the last
-// moment the mistake is free. TestNoBinariesInHistory covers where the cost
-// actually lives.
-func TestNoCommittedBinaries(t *testing.T) {
-	dir := repoRoot(t)
-	files := strings.Split(string(git(t, "-C", dir, "ls-files", "-z")), "\x00")
-
-	scanned := 0
-	for _, f := range files {
-		if f == "" {
-			continue
-		}
-		fh, err := os.Open(filepath.Join(dir, f))
-		if err != nil {
-			continue // deleted or a dangling symlink; not this test's business
-		}
-		var head [4]byte
-		n, _ := fh.Read(head[:])
-		fh.Close()
-		if n < 4 {
-			continue
-		}
-		scanned++
-		if isExecutableImage(head[:]) {
-			t.Errorf("compiled binary is tracked: %s", f)
-		}
+// It asserts that it CONSUMED THE WHOLE LIST. That assertion is the point: the
+// first version of this helper enumerated every object and then reported a clean
+// result from a partial scan, because nothing compared the records read against
+// the records requested and cat-file's exit status was deferred and dropped.
+// Feeding it only the first five shas left the guard GREEN with a planted binary
+// still reachable from HEAD — a guard carrying the exact defect it exists to
+// catch. A guard that enumerates a work list must assert it reached the end of
+// it, and must check the exit status of every process it depends on.
+func scanForExecutables(t *testing.T, dir string, want map[string]string) []string {
+	t.Helper()
+	if len(want) == 0 {
+		t.Fatal("nothing to scan; this test would pass vacuously")
 	}
-	if scanned == 0 {
-		t.Fatal("no files were read; this test would pass vacuously")
-	}
-}
 
-// The index is not where this class costs anything. Removing a binary in a
-// FOLLOW-UP commit leaves the blob reachable, so every clone still pays: the
-// 9.6 MB artifact took this branch's clone to 5.9 MB against main's 604 KB
-// while `git ls-files` reported it zero times and the index guard above was
-// green. The fix is to rewrite the commit that adds it, and this is the test
-// that says whether that worked.
-func TestNoBinariesInHistory(t *testing.T) {
-	dir := repoRoot(t)
-
-	// rev-list --objects prints "<sha> <path>" for blobs and trees, bare shas
-	// for commits.
-	paths := map[string]string{}
 	var req strings.Builder
-	for _, line := range strings.Split(string(git(t, "-C", dir, "rev-list", "--objects", "HEAD")), "\n") {
-		sha, path, ok := strings.Cut(line, " ")
-		if !ok || path == "" {
-			continue
-		}
-		if _, seen := paths[sha]; seen {
-			continue
-		}
-		paths[sha] = path
+	for sha := range want {
 		req.WriteString(sha + "\n")
 	}
-	if len(paths) == 0 {
-		t.Fatal("rev-list returned no path-bearing objects; this test would pass vacuously")
-	}
-
 	cmd := exec.Command("git", "-C", dir, "cat-file", "--batch")
 	cmd.Stdin = strings.NewReader(req.String())
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		t.Fatalf("stdout pipe: %v", err)
@@ -128,11 +86,11 @@ func TestNoBinariesInHistory(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("git cat-file: %v", err)
 	}
-	defer cmd.Wait()
 
-	// Each record is "<sha> <type> <size>\n" followed by <size> bytes and a \n.
+	// Each record is "<sha> <type> <size>\n" then <size> bytes then a newline.
+	var found []string
+	seen := 0
 	r := bufio.NewReader(pipe)
-	blobs := 0
 	for {
 		header, err := r.ReadString('\n')
 		if err == io.EOF {
@@ -143,27 +101,87 @@ func TestNoBinariesInHistory(t *testing.T) {
 		}
 		f := strings.Fields(header)
 		if len(f) < 3 {
-			continue // "<sha> missing"
+			// "<sha> missing": an object git was asked for and could not
+			// produce. Never a reason to keep going quietly.
+			t.Fatalf("git cat-file could not read %q", strings.TrimSpace(header))
 		}
 		size, err := strconv.Atoi(f[2])
 		if err != nil {
 			t.Fatalf("unparsable size in %q", header)
 		}
-		body := make([]byte, size+1) // +1 for the record's trailing newline
+		body := make([]byte, size+1)
 		if _, err := io.ReadFull(r, body); err != nil {
 			t.Fatalf("reading object %s: %v", f[0], err)
 		}
-		if f[1] != "blob" {
-			continue
-		}
-		blobs++
-		if isExecutableImage(body) {
-			t.Errorf("compiled binary in history: %s (blob %s, %d bytes) — reachable from HEAD, "+
-				"so it is fetched by every clone. Rewrite the commit that adds it; deleting it "+
-				"in a later commit does not remove the cost.", paths[f[0]], f[0][:8], size)
+		seen++
+		if f[1] == "blob" && isExecutableImage(body) {
+			found = append(found, fmt.Sprintf("%s (blob %s, %d bytes)", want[f[0]], f[0][:8], size))
 		}
 	}
-	if blobs == 0 {
-		t.Fatal("no blobs were read; this test would pass vacuously")
+
+	// Both of these are load-bearing, and neither existed in the first version.
+	if err := cmd.Wait(); err != nil {
+		t.Fatalf("git cat-file exited %v (%s)", err, strings.TrimSpace(errb.String()))
+	}
+	if seen != len(want) {
+		t.Fatalf("scanned %d of %d objects — a partial scan must not report a clean result", seen, len(want))
+	}
+	return found
+}
+
+// A compiled binary must never be tracked. `go build ./` inside cmd/define
+// writes an extensionless binary named after the directory, and `git add -A`
+// swept a 9.6 MB one in.
+//
+// This reads the INDEX — the state a .gitignore line keeps clean, and the last
+// moment the mistake is free. It reads the index's BLOBS rather than the files
+// on disk: the previous version opened each path and skipped anything it could
+// not open, so a tracked file missing from the worktree was silently unexamined.
+func TestNoCommittedBinaries(t *testing.T) {
+	dir := repoRoot(t)
+
+	want := map[string]string{}
+	for _, line := range strings.Split(string(git(t, "-C", dir, "ls-files", "-s")), "\n") {
+		meta, path, ok := strings.Cut(line, "\t") // "<mode> <sha> <stage>\t<path>"
+		if !ok {
+			continue
+		}
+		f := strings.Fields(meta)
+		if len(f) < 2 {
+			continue
+		}
+		want[f[1]] = path // identical content at two paths collapses; either name locates it
+	}
+	for _, hit := range scanForExecutables(t, dir, want) {
+		t.Errorf("compiled binary is tracked: %s", hit)
+	}
+}
+
+// The index is not where this class costs anything. Removing a binary in a
+// FOLLOW-UP commit leaves the blob reachable, so every clone still pays: the
+// 9.6 MB artifact took this branch's clone to 5.9 MB against main's 604 KB
+// while `git ls-files` reported it zero times and the index guard was green.
+// The fix is to rewrite the commit that adds it, and this is the test that says
+// whether that worked.
+func TestNoBinariesInHistory(t *testing.T) {
+	dir := repoRoot(t)
+
+	// rev-list --objects prints "<sha> <path>" for blobs and trees, bare shas
+	// for commits.
+	want := map[string]string{}
+	for _, line := range strings.Split(string(git(t, "-C", dir, "rev-list", "--objects", "HEAD")), "\n") {
+		sha, path, ok := strings.Cut(line, " ")
+		if !ok || path == "" {
+			continue
+		}
+		if _, dup := want[sha]; dup {
+			continue
+		}
+		want[sha] = path
+	}
+	for _, hit := range scanForExecutables(t, dir, want) {
+		t.Errorf("compiled binary in history: %s — reachable from HEAD, so it is fetched by "+
+			"every clone. Rewrite the commit that adds it; deleting it in a later commit does not "+
+			"remove the cost.", hit)
 	}
 }
