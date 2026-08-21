@@ -44,7 +44,7 @@ disabled it is the more surprising of the two failures. The cost — history sto
 persisting — is real, so it is stated in `--help`, the README and the atlas
 beside the flag, not in a footnote.
 
-**Consequence for the wiring:** with the flag set, `openHistory` installs the
+**Consequence for the wiring:** with the flag set, `openStore` installs the
 session-only `memHistory` rather than `storeHistory`. Nothing downstream changes,
 because `#14` consumes the seam.
 
@@ -125,12 +125,12 @@ because `#14` consumes the seam.
 | `storeCapturer` | `cmd/define/capture.go` | new | a `store.Store` |
 
 
-- **Capturer** — `Capture(word string, found bool)`. Deliberately returns **no
+- **Capturer** — `Capture(word string, found bool, opt options)`. Deliberately returns **no
   error**: capture must never change the outcome of a lookup. A store failure
   warns and the definition still prints, exactly as a missing recording does.
 - **storeCapturer** — `AppendEvent` always, `Upsert` when the lookup found
   something. This is the code `storeHistory` currently inlines; it moves here and
-  `storeHistory` delegates.
+  `storeHistory` stops writing entirely — it does not delegate, it does nothing.
   - **The warn-once rule moves with the writes**, and there are now two distinct
     messages with two distinct homes — conflating them is what left the rule
     stranded:
@@ -138,7 +138,7 @@ because `#14` consumes the seam.
     | message | who owns it | when |
     |---|---|---|
     | `could not record <word>` | `storeCapturer`, once per process | a write fails |
-    | `… history is session-only` | `openHistory`, once at startup | the store cannot be opened at all |
+    | `… history is session-only` | `openStore`, once at startup | the store cannot be opened at all |
 
     Both take their writer from `run`'s `stderr`, passed in at construction —
     neither reaches for `os.Stderr`, so tests capture them. Asserted: N failing
@@ -178,8 +178,8 @@ answers it; the environment reaches it as an input, not as a second mechanism.
       piped and raw. Plus the degradation rule this repo has applied since `#1`:
       a store failure still prints the definition and exits 0.
 - [x] **Step 2: Run, expect FAIL**
-- [x] **Step 3: Implement.** `defineOnce` calls `d.capture.Capture(word, found)`
-      after rendering, never before — a lookup that fails to render should not be
+- [x] **Step 3: Implement.** `lookupAndRender` calls
+      `d.capture.Capture(word, found, opt)` after rendering, never before — a lookup that fails to render should not be
       claimed as studied.
 - [x] **Step 4: Run, expect PASS**
 - [x] **Step 5: Commit** — `#4: capture on every entry path`
@@ -248,3 +248,46 @@ define --forget sycophantic && ls words/ events/    # word gone, log intact
   needing edits. That is the signal; do not edit them to fit.
 - **`--forget` deleting events** would silently corrupt `#8`'s statistics. The
   deck is a working set; the log is history. Tested explicitly.
+
+---
+
+## Revisions
+
+### 2026-08-21 — the design moved twice during implementation; five review rounds
+
+AGENTS.md §1 requires this section when a plan is revised mid-stream. It was
+recommended at three consecutive boundaries and not written; the plan was edited
+only to tick checkboxes for the entire window. Recording the deltas now, because
+`#15` and `#5` will read this file to learn what capture does.
+
+**1. The capture site is `lookupAndRender`, not `defineOnce`.** Chunk 1 originally
+counted three call sites and named `defineOnce`. Both were wrong, and the second
+was load-bearing: `defineOnce` is reached by the one-shot and line paths only —
+the raw editor's `submitLine` calls `lookupAndRender` directly, which is exactly
+what `#14` extracted it for. Capturing in `defineOnce` would have left the
+interactive path, *the only one capturing before this issue*, silent. There is
+**one** call site.
+
+**2. `storeHistory` stops writing entirely.** The draft had it delegating to the
+capturer. It does not delegate — it does nothing, and reads only at construction.
+Anything else double-writes on the raw path, and `Capturer.Capture` takes
+`(word, found, opt)`, not `(word, found)`: the policy needs the options to see
+`-raw` and the opt-out.
+
+**3. `deps` gained three fields the plan never mentioned** — `capture`, `deck`,
+and `newStore` — plus a `storeDeps` value and a `withStore` method. `openHistory`
+became `openStore`, because the opt-out is a flag-parse-time input and nothing
+store-backed can be built in `realDeps` before flags exist.
+
+**4. `DEFINE_NO_CAPTURE` means "write nothing here", including events.** Recorded
+in the Spec during round 1 of the gate; the consequence is that history drops to
+session-only, because the event log is what persists it.
+
+**What five rounds actually cost, and why:** every round I fixed the instance
+named in a finding's title and left the instances enumerated in its body. Round 4
+measured 3 of 10; round 5 measured code 10/10 and artifacts 0/7 — the same
+substitution one layer out, applied to a markdown file instead of a function.
+The rule that generalises, now in `lessons.md`: *an escalated family finding is
+closed only when every instance it enumerates is disposed — regardless of which
+artifact the instances live in — and where they live in a plan, the closing move
+is this section, not a checkbox.*

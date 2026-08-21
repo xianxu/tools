@@ -651,3 +651,207 @@ findings:
       headline site was patched - which is the same fix-the-named-thing substitution the escalation
       mechanism exists to stop. Next round: reply to BR-18, BR-19 and BR-21 instance-by-instance.
 ```
+
+---
+
+## Re-review — 2026-08-21T11:49:52-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 4 — capture looked-up words into the deck |
+| repo | tools |
+| issue file | workshop/issues/000004-vocab-capture.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4afa1c537819ad662ad149a14bd757ac149772e5..96adc2007554a9530f29ece0dbf38e06c01f4e0d |
+| command | sdlc close --issue 4 |
+| reviewer | claude |
+| timestamp | 2026-08-21T11:49:52-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+I have everything I need. Here is the review.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The code is right, and this round I could prove it rather than take it on trust. All three pins BR-19 disputed survive this round's `storeDeps` refactor and go RED under mutation (deleting the `-raw` `Capture` call, nilling `openStore`'s deck, restoring the double write each redden exactly one distinct test, each verified to have applied *and* compiled). `wordFileName` is genuinely pinned — gutting its guard reddens `TestWordFileNameRefusesUnsafeNames` with 8 assertions — and it now has both filename-deriving call sites, `Upsert` (`yaml.go:42`) and `Forget` (`yaml.go:326`), closing BR-6's ARCH-DRY regression. I drove `-forget` end-to-end against a real deck with a sentinel one level up: traversal keys remove nothing, the sentinel and the event log survive, exit codes are 0/1/2 as documented. BR-23's family sweep was done properly — I checked all ten enumerated instances and all ten are closed. What keeps this from a clean SHIP is the artifact side, which is now the whole residual: **the plan file has not been edited in this entire window except to tick checkboxes** (`git log 4afa1c5..96adc20 -- ...plan.md` returns only `3ca9ab4`), so BR-1/BR-2/BR-3/BR-4 stand exactly as raised in round 1 — and BR-3 is itself an escalated family finding that enumerated four plan lines and instructed a rewrite of each; zero were touched. The same commit that corrected the issue's Done-when about `Forget`'s safety left `Forget`'s own doc comment asserting the retracted claim and naming a `filepath.Base` call it deleted in the same hunk.
+
+### 1. Strengths
+
+- **The honest retraction on BR-6 is the right call, and it is measured, not asserted.** The Done-when now separates three things — `Slug` is the effective guarantee (fuzzed), `wordFileName` is a tested second net, both call sites derive from it by grep — and states outright that bypassing it on the `--forget` path leaves the suite GREEN, so the value is ARCH-DRY not a behavioural pin. I reproduced that exact measurement: mutation applied, `BUILD_OK`, suite green. A Done-when that records its own negative result is stronger than one that claims a pin.
+- **The dead sub-conditions are actually gone.** BR-6 noted `name == "."` / `".."` could never fire because `name` already carried `.yaml`. Moving the check onto the slug *before* the suffix makes both reachable, and the test feeds them (`word_test.go:113`).
+- **Three mutation-verified pins, re-verified after a refactor that reshaped `openStore`.** `capture_test.go:140`, `:354`, `:283`. A fix that survives the refactor that came after it is the strongest version of this evidence.
+- **`needless-indirection` closed 3-for-3.** `deps.forgetter()` deleted, the triple collapsed into `storeDeps`, `newStoreHistory`'s dead `Clock` gone from four call sites — the one-pass fix BR-21 specified, done as specified.
+- **`workshop/lessons.md:144-195` are real rules, not patch notes.** "Where you inject the double decides what the test can see"; "a mutation is a result only if it applied AND compiled". Both are transferable and both were earned here.
+- **BR-11's fix works in practice.** My own stray run created `words/` and `events/` in the repo root and `git status` stayed clean.
+
+### 2. Critical findings
+
+None. No correctness bug, no crash path, no silent error swallowing. The traversal guard's non-pin is not exploitable: `Slug` sanitises first (`../../../etc/passwd` → `etc-passwd-<hash>`), confirmed against the running binary.
+
+### 3. Important findings
+
+**BR-1/BR-2/BR-3/BR-4 (not-addressed) + NEW `family-rule-applied-selectively` — the family rule was applied to code and not to artifacts.**
+
+**This is the 2nd finding in family `family-rule-applied-selectively`** (BR-23; prevalence 2). Per the escalation rule I am not asking for these four plan lines to be patched in isolation — BR-3 already asked for exactly that and got nothing.
+
+Measured, code side vs artifact side, this round:
+
+| side | enumerated instances | closed |
+|---|---|---|
+| code (BR-18, BR-19, BR-21) | 10 | **10** |
+| plan artifact (BR-1, BR-2, BR-3, BR-4) | 4 findings, ≥7 sites | **0** |
+
+BR-3 is not an ordinary Minor — it is an escalated family finding (`capture-arity-invariant`, 3rd) whose body enumerates plan lines 7, 24, 116, 181 and says "Rewrite 7, 24, 116, 181 to point at the Chunk 1 statement". Line 115-116 still reads "consulted from three call sites" (there is one). Line 133 still reads "`storeHistory` delegates" (it does not delegate; it does nothing). Line 181 still reads "`defineOnce` calls `d.capture.Capture(word, found)`" — the single claim this entire issue exists to disprove, with a signature that also drifted. Lines 47 and 141 still name `openHistory`. Line 128 still declares the two-argument `Capturer`. The plan never states that `deps` gains `capture`, `deck` or `newStore` (BR-4). There is no `## Revisions` section, which AGENTS.md §1 requires for mid-stream plan revision and which three consecutive rounds have recommended.
+
+*The rule, which is BR-23's with the scope clause it was missing:* **every open finding gets an instance-by-instance disposition regardless of which artifact its instances live in — and where the instances live in the plan, the closing move is an AGENTS.md §1 `## Revisions` entry, not a checkbox tick.** BR-23's rule as written ("reply instance-by-instance") was applied faithfully to the three families whose instances a code commit could close, and not at all to the one whose instances live in a markdown file. That is the same fix-what-the-diff-touches substitution one layer out.
+
+**NEW [Important] `prose-contradicts-code` — this round's own edits left two comments describing code they no longer describe, both in files the commit touched.**
+
+**This is the 6th finding in family `prose-contradicts-code`** (BR-9 atlas, BR-10 `--help`, BR-17 entry-modes, BR-18 `history_store.go`, README exit codes; prevalence now 6). Do not patch these two sites.
+
+- `cmd/define/store/yaml.go:317-320` — `Forget`'s doc comment: *"the slug's single-safe-path-element guarantee is **asserted here rather than inherited**: **`filepath.Base` is applied to the slug** before joining, so no key can reach outside `words/` even if `Slug` ever regressed."* Commit `96adc20` deleted the `filepath.Base` call from `Forget` in the same hunk (`grep -rn filepath.Base cmd/define/store/` returns zero hits inside `Forget`), and "asserted rather than inherited" is precisely the claim the same commit rewrote the issue's Done-when to **retract**. A future reader auditing "is the delete path safe?" reads a false security claim on the delete path — the exact harm the whole BR-6/BR-20 arc was about.
+- `cmd/define/main.go:55-64` — inserting `type storeDeps` between `openStore`'s doc comment and `openStore` orphaned it. AST-verified: `type storeDeps` now carries *"openStore builds the store-backed dependencies over the WORKING DIRECTORY… DEFINE_NO_CAPTURE means…"*, and `openStore` has an empty doc. The issue's Spec names this comment as one of three homes for the opt-out's cost ("Stated here, in `--help`, and in the README"); it now documents a struct that never reads the environment.
+
+*The rule, which is round 3's with the clause that would have caught both:* **closing a `prose-contradicts-code` instance means sweeping the file the fix touched, not the line the finding named.** Round 3 stated "one normative home per behavioural fact" and applied it to `history_store.go`; both new sites are in files this round edited, and the first is a third restatement of a story `wordFileName`'s own doc comment (`yaml.go:171-179`) and the issue Done-when already tell. The sweep is `git diff --stat` on the commit, file by file.
+
+### 4. Minor findings
+
+- **BR-22 (not-addressed)** — the harness preamble is now at `close-review.md:18`, `:251` **and `:485`**. It recurred a third time on the round-4 run, exactly as the finding predicted twice.
+- **NEW `unstated-seam-default` (2nd in family, BR-4; prevalence 2)** — `main.go:77`: `withStore`'s early return `if d.history != nil && d.capture != nil { return d }` silently strands `deck`. The pre-refactor block filled `deck` from `newStore` independently; now supplying history+capture also suppresses the deck. Verified with a probe: `newStore called = false, deck = <nil>`. Not reachable from production (`realDeps` supplies neither) and no test hits it, so not a live bug — but it is a new seam whose rule no comment states and no test pins, introduced by a cleanup whose stated purpose was "the merge was three chances to forget one". *The rule covering this and BR-4:* every field of an injected seam states its own default and how it is filled; a fill-in helper must not make one field's default depend on another field's presence.
+- `run` builds store deps before the `-forget` dispatch, so `--forget` loads the entire event log through `newStoreHistory` for a result it never uses — now with a visible symptom: I saw `define: 2026-08-21.yaml: recovered 0 event(s), dropped 1 torn record(s)` printed by a `-forget` invocation that never touches the log.
+- `deps.newStore`'s comment claims "no test ever touches the real filesystem"; `TestNoCaptureWritesNothingToDisk` and `TestOpenStoreWithoutOptOut` set it and do (safely, inside `t.TempDir` + `t.Chdir`).
+- `forgetWord` prints a bare `define: %v` on a store error (`main.go:398`) where neighbours carry context (`define: %s: %v`).
+- `orElse[T comparable]` is a generic helper introduced to replace two nil checks in a commit closing `needless-indirection`.
+
+### 5. Test coverage notes
+
+The suite is green (`go test ./cmd/define/...`, 24.2s) and — unlike round 2 — the tests that matter are load-bearing. I mutation-checked four independently, confirming each applied and compiled before reading the result, and all four reddened on exactly the assertion they should: `TestWordFileNameRefusesUnsafeNames`, `.../raw_captures_nothing_but_still_asks`, `TestOpenStoreWithoutOptOut`, `TestNoDoubleWriteThroughTheRealWiring`. The shape is now sound: `decideCapture` and `wordFileName` table-tested with zero IO; per-path arity at the `Capturer` seam; one store-level arity assertion through the real wiring; `openStore` on both branches; one `t.Setenv` end-to-end disk assertion; `Forget` in the shared conformance suite so `Mem` and `YAML` both answer for it. One gap I am noting rather than raising, for the third round running because `#5` is what makes it matter: **nothing drives two `Capture` calls of the same word and asserts `Lookups == 2`.** `storetest/suite.go:71` asserts that at the `Upsert` level, and `merge`'s `old.Lookups + max(1, w.Lookups)` (`mem.go:43`) makes it correct in practice — but a capturer that stopped calling `Upsert` on the second sighting would pass everything, and `#5` orders by that number. One line inside `TestNoDoubleWriteThroughTheRealWiring` covers it.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass on code, flag on artifacts.** Code is clean: one policy (`decideCapture`, one caller), one writer (`storeCapturer`), one capture site (all three `.Capture(` call sites are inside `lookupAndRender` — grep-verified), one filename rule (`wordFileName`, both call sites grep-verified, the drifted inline copy deleted). The duplication that remains is entirely in prose — "why the filename guard is safe" has three homes and two are now false — which is where ARCH-DRY-applied-to-artifacts has failed on this issue for six gate rounds.
+- **ARCH-PURE — pass.** `decideCapture` and `wordFileName` are real pure functions with real IO-free tests, both mutation-proven. `openStore` is the boundary and is injectable through `deps.newStore`, which is what makes the env-wiring test possible without touching the developer's filesystem. `storeCapturer` is a thin shell over the policy. Nothing leaked into `store/`.
+- **ARCH-PURPOSE — pass on code.** Shadow-sweep on `decideCapture`: `storeCapturer` derives ✓, the raw branch derives ✓ and is pinned ✓, `openStore`'s `noCapture` read is a labelled second reader of the same *input* rather than a restatement of the *policy* ✓. Shadow-sweep on `wordFileName`: `Upsert` ✓, `Forget` ✓ — this is the consumer that was hand-maintained last round and now derives. The "asserted, not inherited" obligation was discharged by honest retraction with a measured result, which is the branch BR-19 explicitly offered as acceptable. The remaining non-deriving consumer is the plan, which still describes a different design (finding above).
+- **ARCH-MOCK — pass.** `store.Mem` ships as production code behind the same interface the YAML store implements, `storetest.Suite` runs both, `Forget` joined the suite in the commit that introduced it, and the audio CDN has a fixture-backed fake at the same seam. Production flow and test flow share the boundary. `countingCapturer` is retained for the per-path question it answers well, with the store-level test covering what it structurally cannot see — the round-2 flag is properly resolved rather than papered over.
+- **For `#5`:** the arity invariant it depends on is pinned through the real wiring on every path production can produce, and the pin survived a refactor. `#5` can trust `Lookups`. Add the two-lookup assertion before ordering by it.
+
+### 7. Plan revision recommendations
+
+`workshop/plans/000004-vocab-capture-plan.md` needs its first `## Revisions` entry — the finding above is about the *pattern*, but the concrete delta is unchanged from what rounds 2, 3 and 4 each specified, so here it is once more, consolidated. One dated entry covering:
+
+- **Line 115-116** — "consulted from three call sites": `decideCapture` has exactly one caller, `storeCapturer.Capture`. (BR-1)
+- **Line 132-133** — "it moves here and `storeHistory` delegates" contradicts line 86's "`storeHistory` therefore stops writing". It does not delegate; it does nothing. (BR-2)
+- **Line 181** — "`defineOnce` calls `d.capture.Capture(word, found)`" contradicts Chunk 1's `lookupAndRender`. **Rewrite it to point at the Chunk 1 statement rather than restating it** — restating is what has produced this finding five rounds running. (BR-3)
+- **Line 128** — `Capturer` declared `Capture(word string, found bool)`; shipped with a third `opt options`.
+- **Lines 47, 141** — `openHistory` is now `openStore` and returns a `storeDeps` value.
+- **`deps` gains `capture`, `deck`, `newStore`** — never stated; record the `noopCapturer` fallback, and (new this round) that `withStore` returns early when history and capture are both supplied. (BR-4)
+- **Task 2 Step 1** — "driven through a counting store" shipped as a counting *capturer*; record the substitution, that it was wrong, and that a store-level test was added alongside. `lessons.md:144` has the lesson; the plan should carry the fact.
+- **Task 3 Step 0** — the before/after directory comparison shipped as an event count, and the traversal assertion was resolved by *retracting* the claim rather than delivering it. Record both, and that the residual guarantee is `Slug`'s.
+- **Chunk 1 core-concepts tables** — omit `noopCapturer`, `wordFileName`, `openStore`, `storeDeps`, `withStore`, `orElse`, `forgetWord`, `isSet`, and `Store.Forget`/`Mem.Forget`/`YAML.Forget`, all new in this diff.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      Plan line 115-116 unchanged; the plan file's only edit in the whole window is 3ca9ab4's checkbox ticks.
+  - id: BR-2
+    disposition: not-addressed
+    note: |
+      Plan line 133 "storeHistory delegates" unchanged; it neither delegates nor writes.
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      Lines 7, 24, 116, 181 all unchanged - an escalated family finding that enumerated four sites and closed none.
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      Plan still never states deps gains capture, deck or newStore, nor the noopCapturer fallback.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      wordFileName now serves Upsert AND Forget (grep-verified); guard is mutation-RED; Done-when honestly retracts the "asserted" claim with a measured GREEN I reproduced.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      deps.forgetter() deleted; forgetWord tests d.deck == nil directly.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Collapsed into a storeDeps value and one withStore call, as the finding specified.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      Entry-modes table now has four rows including define -forget, and the prose above it names lookupAndRender.
+  - id: BR-20
+    disposition: addressed
+    note: |
+      Both false ticks rewritten to state what is actually asserted; Log carries two substantive entries with a per-instance table.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      newStoreHistory's Clock parameter removed along with all four call sites' constructions.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      Preamble now at close-review.md:18, :251 AND :485 - a third occurrence added by the round-4 run.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      Verified all ten enumerated instances across BR-18/BR-19/BR-21 are closed, and the response replies instance-by-instance.
+findings:
+  - id: new
+    severity: Important
+    family: family-rule-applied-selectively
+    title: |
+      The family rule was applied to every code instance and to no artifact instance
+    detail: |
+      2nd in family (BR-23; prevalence 2). Do NOT patch the four plan lines in isolation - BR-3 already
+      asked for exactly that and got nothing. Measured this round: code-side families closed 10 of 10
+      enumerated instances; artifact-side closed 0 of 4 findings covering at least 7 sites. BR-3 is
+      itself an escalated family finding whose body enumerates plan lines 7, 24, 116 and 181 and says
+      "rewrite [them] to point at the Chunk 1 statement"; none were touched, and the plan file's only
+      edit in the entire window is 3ca9ab4's checkbox ticks. There is still no "## Revisions" section,
+      which AGENTS.md section 1 requires and three rounds have recommended. The rule is BR-23's with
+      the scope clause it was missing: every open finding gets an instance-by-instance disposition
+      regardless of which artifact its instances live in, and where they live in the plan the closing
+      move is a "## Revisions" entry, not a checkbox tick.
+  - id: new
+    severity: Important
+    family: prose-contradicts-code
+    title: |
+      This round's own edits left two comments describing code they no longer describe
+    detail: |
+      6th in family (BR-9, BR-10, BR-17, BR-18, README exit codes; prevalence 6). Do NOT patch these
+      two sites. cmd/define/store/yaml.go:317-320 - Forget's doc still says the guarantee is "asserted
+      here rather than inherited: filepath.Base is applied to the slug", but 96adc20 deleted that
+      filepath.Base call in the same hunk, and the same commit rewrote the issue Done-when to RETRACT
+      "asserted rather than inherited". A false safety claim on the delete path is the exact harm the
+      BR-6/BR-20 arc was about. cmd/define/main.go:55-64 - inserting type storeDeps between openStore's
+      doc comment and openStore orphaned it; AST-verified, type storeDeps now carries "openStore builds
+      the store-backed dependencies..." and openStore has no doc, while the Spec names that comment as
+      one of three homes for the opt-out's cost. The rule is round 3's with the missing clause: closing
+      a prose-contradicts-code instance means sweeping the file the fix touched, not the line the
+      finding named. Both sites are in files this commit edited, and the first is a third restatement of
+      a story wordFileName's own doc comment and the Done-when already tell.
+  - id: new
+    severity: Minor
+    family: unstated-seam-default
+    title: |
+      withStore's early return silently strands deck when history and capture are both supplied
+    detail: |
+      2nd in family (BR-4; prevalence 2). Do NOT patch this instance alone. main.go:77 returns early
+      when history and capture are non-nil, so newStore is never consulted and deck stays nil - the
+      pre-refactor block filled deck independently. Verified with a probe: "newStore called = false,
+      deck = <nil>". Not reachable from production (realDeps supplies neither) and no test hits it, so
+      not a live bug, but it is a new seam whose rule no comment states and no test pins, introduced by
+      a cleanup whose stated purpose was that "the merge was three chances to forget one". The rule
+      covering this and BR-4: every field of an injected seam states its own default and how it is
+      filled, and a fill-in helper must not make one field's default depend on another field's presence.
+```

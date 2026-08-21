@@ -1,12 +1,13 @@
 ---
 id: 000004
-status: working
+status: codecomplete
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-21
 estimate_hours: 1.31
 started: 2026-08-21T10:02:22-07:00
+actual_hours: 3.25
 ---
 
 # capture looked-up words into the deck
@@ -112,6 +113,7 @@ See `workshop/plans/000004-vocab-capture-plan.md`.
 Created as part of the `define-learn` project.
 
 ### 2026-08-21 — implementation notes
+- 2026-08-21: closed — Round 4 addressed instance-by-instance, which round 3 was not. Of the 10 instances the three families enumerated, 3 were closed in round 3 (all titles) and the remaining 7 are closed now: BR-6 Forget was still on an inline copy while wordFileName had exactly one caller (Upsert) -- my own previous fix introduced the duplication it was meant to remove, and the copy had already drifted by not rejecting a leading dot; the atlas entry-modes table claimed run dispatches into a single shared defineOnce, which the raw editor bypasses; README exit codes omitted that 1 now also means --forget found nothing; deps.forgetter(), the newStore triple with three nil-merges, and newStoreHistorys dead Clock param are deleted. The BR-6 Done-when is now precise and measured rather than claimed: Slug is the effective guarantee (fuzzed), wordFileName is a second net tested directly with hostile names (RED on removal), and both Upsert and Forget derive from it -- verified by grep, because bypassing it on the --forget path leaves the suite GREEN, so the value is ARCH-DRY rather than a behavioural pin. Two false mutation readings were caught and recorded: one that failed to apply printed GREEN, one that failed to compile printed RED. go test and -race green across both packages, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 
 Capture landed at `lookupAndRender`, the one function every entry path shares —
 **not** `defineOnce`, which the plan named first and which the raw editor

@@ -52,16 +52,6 @@ func realDeps() deps {
 	}
 }
 
-// openStore builds the store-backed dependencies over the WORKING DIRECTORY.
-//
-// DEFINE_NO_CAPTURE means "write nothing in this directory", and that has a real
-// cost: persisted history IS the event log (#3), so opting out also drops
-// history to session-only. Stated here, in --help, and in the README, rather
-// than discovered.
-//
-// A store that cannot be opened must not break define: warn and fall back,
-// exactly as a missing recording degrades rather than fails. Someone in a
-// read-only directory still gets a dictionary.
 // storeDeps is the trio openStore produces. One value rather than three returns
 // and three nil-merges at the call site: they are always built together, always
 // consumed together, and the merge was three chances to forget one.
@@ -101,6 +91,16 @@ func orElse[T comparable](v, fallback T) T {
 	return v
 }
 
+// openStore builds the store-backed dependencies over the WORKING DIRECTORY.
+//
+// DEFINE_NO_CAPTURE means "write nothing in this directory", and that has a real
+// cost: persisted history IS the event log (#3), so opting out also drops
+// history to session-only. Stated here, in --help, and in the README, rather
+// than discovered.
+//
+// A store that cannot be opened must not break define: warn and fall back,
+// exactly as a missing recording degrades rather than fails. Someone in a
+// read-only directory still gets a dictionary.
 func openStore(opt options, warn io.Writer) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides

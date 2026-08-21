@@ -193,3 +193,21 @@ Two false readings in one session: a substitution that silently missed printed
 GREEN ("test is blind"), and one that broke the build printed RED ("test caught
 it"). Neither was true. Confirm the mutation landed and the package still
 compiles, *then* read the suite.
+
+## The family rule applies to artifacts, not just code (define #4)
+
+Told to close a family instance-by-instance, I closed **10 of 10 code instances
+and 0 of 7 plan instances** — the same fix-what-the-diff-touches substitution,
+one layer out. A finding whose instances live in a markdown file is not a lesser
+finding; it is the one that misleads the *next* issue, because that is what the
+next issue reads.
+
+Two operational forms:
+
+- **Sweep the file the fix touched, not the line the finding named.** Two stale
+  comments were *created* by a round whose whole subject was stale prose — one
+  asserted a security property the same commit retracted, and one was orphaned
+  onto a struct by an insertion above it. `git diff --stat`, then read each file.
+- **When instances live in a plan, the closing move is an AGENTS.md §1
+  `## Revisions` entry, not a checkbox tick.** Ticking boxes records that work
+  happened; it does not correct what the document claims.

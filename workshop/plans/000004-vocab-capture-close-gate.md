@@ -383,6 +383,108 @@ rounds:
           family: family-rule-applied-selectively
           round: 4
       blocked: true
+    - "n": 5
+      timestamp: "2026-08-21T11:49:52-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: Plan line 115-116 unchanged; the plan file's only edit in the whole window is 3ca9ab4's checkbox ticks.
+          round: 5
+        - id: BR-2
+          disposition: not-addressed
+          note: Plan line 133 "storeHistory delegates" unchanged; it neither delegates nor writes.
+          round: 5
+        - id: BR-3
+          disposition: not-addressed
+          note: Lines 7, 24, 116, 181 all unchanged - an escalated family finding that enumerated four sites and closed none.
+          round: 5
+        - id: BR-4
+          disposition: not-addressed
+          note: Plan still never states deps gains capture, deck or newStore, nor the noopCapturer fallback.
+          round: 5
+        - id: BR-6
+          disposition: addressed
+          note: wordFileName now serves Upsert AND Forget (grep-verified); guard is mutation-RED; Done-when honestly retracts the "asserted" claim with a measured GREEN I reproduced.
+          round: 5
+        - id: BR-14
+          disposition: addressed
+          note: deps.forgetter() deleted; forgetWord tests d.deck == nil directly.
+          round: 5
+        - id: BR-15
+          disposition: addressed
+          note: Collapsed into a storeDeps value and one withStore call, as the finding specified.
+          round: 5
+        - id: BR-17
+          disposition: addressed
+          note: Entry-modes table now has four rows including define -forget, and the prose above it names lookupAndRender.
+          round: 5
+        - id: BR-20
+          disposition: addressed
+          note: Both false ticks rewritten to state what is actually asserted; Log carries two substantive entries with a per-instance table.
+          round: 5
+        - id: BR-21
+          disposition: addressed
+          note: newStoreHistory's Clock parameter removed along with all four call sites' constructions.
+          round: 5
+        - id: BR-22
+          disposition: not-addressed
+          note: Preamble now at close-review.md:18, :251 AND :485 - a third occurrence added by the round-4 run.
+          round: 5
+        - id: BR-23
+          disposition: addressed
+          note: Verified all ten enumerated instances across BR-18/BR-19/BR-21 are closed, and the response replies instance-by-instance.
+          round: 5
+      findings:
+        - id: BR-24
+          severity: Important
+          title: The family rule was applied to every code instance and to no artifact instance
+          detail: |-
+            2nd in family (BR-23; prevalence 2). Do NOT patch the four plan lines in isolation - BR-3 already
+            asked for exactly that and got nothing. Measured this round: code-side families closed 10 of 10
+            enumerated instances; artifact-side closed 0 of 4 findings covering at least 7 sites. BR-3 is
+            itself an escalated family finding whose body enumerates plan lines 7, 24, 116 and 181 and says
+            "rewrite [them] to point at the Chunk 1 statement"; none were touched, and the plan file's only
+            edit in the entire window is 3ca9ab4's checkbox ticks. There is still no "## Revisions" section,
+            which AGENTS.md section 1 requires and three rounds have recommended. The rule is BR-23's with
+            the scope clause it was missing: every open finding gets an instance-by-instance disposition
+            regardless of which artifact its instances live in, and where they live in the plan the closing
+            move is a "## Revisions" entry, not a checkbox tick.
+          family: family-rule-applied-selectively
+          round: 5
+        - id: BR-25
+          severity: Important
+          title: This round's own edits left two comments describing code they no longer describe
+          detail: |-
+            6th in family (BR-9, BR-10, BR-17, BR-18, README exit codes; prevalence 6). Do NOT patch these
+            two sites. cmd/define/store/yaml.go:317-320 - Forget's doc still says the guarantee is "asserted
+            here rather than inherited: filepath.Base is applied to the slug", but 96adc20 deleted that
+            filepath.Base call in the same hunk, and the same commit rewrote the issue Done-when to RETRACT
+            "asserted rather than inherited". A false safety claim on the delete path is the exact harm the
+            BR-6/BR-20 arc was about. cmd/define/main.go:55-64 - inserting type storeDeps between openStore's
+            doc comment and openStore orphaned it; AST-verified, type storeDeps now carries "openStore builds
+            the store-backed dependencies..." and openStore has no doc, while the Spec names that comment as
+            one of three homes for the opt-out's cost. The rule is round 3's with the missing clause: closing
+            a prose-contradicts-code instance means sweeping the file the fix touched, not the line the
+            finding named. Both sites are in files this commit edited, and the first is a third restatement of
+            a story wordFileName's own doc comment and the Done-when already tell.
+          family: prose-contradicts-code
+          round: 5
+        - id: BR-26
+          severity: Minor
+          title: withStore's early return silently strands deck when history and capture are both supplied
+          detail: |-
+            2nd in family (BR-4; prevalence 2). Do NOT patch this instance alone. main.go:77 returns early
+            when history and capture are non-nil, so newStore is never consulted and deck stays nil - the
+            pre-refactor block filled deck independently. Verified with a probe: "newStore called = false,
+            deck = <nil>". Not reachable from production (realDeps supplies neither) and no test hits it, so
+            not a live bug, but it is a new seam whose rule no comment states and no test pins, introduced by
+            a cleanup whose stated purpose was that "the merge was three chances to forget one". The rule
+            covering this and BR-4: every field of an injected seam states its own default and how it is
+            filled, and a fill-in helper must not make one field's default depend on another field's presence.
+          family: unstated-seam-default
+          round: 5
+      blocked: false
 ---
 
 # Gate ledger — tools#4 (boundary-review)
@@ -570,17 +672,66 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   headline site was patched - which is the same fix-the-named-thing substitution the escalation
   mechanism exists to stop. Next round: reply to BR-18, BR-19 and BR-21 instance-by-instance.
 
+## Round 5 — 2026-08-21T11:49:52-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — not-addressed — Plan line 115-116 unchanged; the plan file's only edit in the whole window is 3ca9ab4's checkbox ticks.
+- BR-2 — not-addressed — Plan line 133 "storeHistory delegates" unchanged; it neither delegates nor writes.
+- BR-3 — not-addressed — Lines 7, 24, 116, 181 all unchanged - an escalated family finding that enumerated four sites and closed none.
+- BR-4 — not-addressed — Plan still never states deps gains capture, deck or newStore, nor the noopCapturer fallback.
+- BR-6 — addressed — wordFileName now serves Upsert AND Forget (grep-verified); guard is mutation-RED; Done-when honestly retracts the "asserted" claim with a measured GREEN I reproduced.
+- BR-14 — addressed — deps.forgetter() deleted; forgetWord tests d.deck == nil directly.
+- BR-15 — addressed — Collapsed into a storeDeps value and one withStore call, as the finding specified.
+- BR-17 — addressed — Entry-modes table now has four rows including define -forget, and the prose above it names lookupAndRender.
+- BR-20 — addressed — Both false ticks rewritten to state what is actually asserted; Log carries two substantive entries with a per-instance table.
+- BR-21 — addressed — newStoreHistory's Clock parameter removed along with all four call sites' constructions.
+- BR-22 — not-addressed — Preamble now at close-review.md:18, :251 AND :485 - a third occurrence added by the round-4 run.
+- BR-23 — addressed — Verified all ten enumerated instances across BR-18/BR-19/BR-21 are closed, and the response replies instance-by-instance.
+
+### Raised
+
+- **BR-24** [Important] `family-rule-applied-selectively` The family rule was applied to every code instance and to no artifact instance
+  2nd in family (BR-23; prevalence 2). Do NOT patch the four plan lines in isolation - BR-3 already
+  asked for exactly that and got nothing. Measured this round: code-side families closed 10 of 10
+  enumerated instances; artifact-side closed 0 of 4 findings covering at least 7 sites. BR-3 is
+  itself an escalated family finding whose body enumerates plan lines 7, 24, 116 and 181 and says
+  "rewrite [them] to point at the Chunk 1 statement"; none were touched, and the plan file's only
+  edit in the entire window is 3ca9ab4's checkbox ticks. There is still no "## Revisions" section,
+  which AGENTS.md section 1 requires and three rounds have recommended. The rule is BR-23's with
+  the scope clause it was missing: every open finding gets an instance-by-instance disposition
+  regardless of which artifact its instances live in, and where they live in the plan the closing
+  move is a "## Revisions" entry, not a checkbox tick.
+- **BR-25** [Important] `prose-contradicts-code` This round's own edits left two comments describing code they no longer describe
+  6th in family (BR-9, BR-10, BR-17, BR-18, README exit codes; prevalence 6). Do NOT patch these
+  two sites. cmd/define/store/yaml.go:317-320 - Forget's doc still says the guarantee is "asserted
+  here rather than inherited: filepath.Base is applied to the slug", but 96adc20 deleted that
+  filepath.Base call in the same hunk, and the same commit rewrote the issue Done-when to RETRACT
+  "asserted rather than inherited". A false safety claim on the delete path is the exact harm the
+  BR-6/BR-20 arc was about. cmd/define/main.go:55-64 - inserting type storeDeps between openStore's
+  doc comment and openStore orphaned it; AST-verified, type storeDeps now carries "openStore builds
+  the store-backed dependencies..." and openStore has no doc, while the Spec names that comment as
+  one of three homes for the opt-out's cost. The rule is round 3's with the missing clause: closing
+  a prose-contradicts-code instance means sweeping the file the fix touched, not the line the
+  finding named. Both sites are in files this commit edited, and the first is a third restatement of
+  a story wordFileName's own doc comment and the Done-when already tell.
+- **BR-26** [Minor] `unstated-seam-default` withStore's early return silently strands deck when history and capture are both supplied
+  2nd in family (BR-4; prevalence 2). Do NOT patch this instance alone. main.go:77 returns early
+  when history and capture are non-nil, so newStore is never consulted and deck stays nil - the
+  pre-refactor block filled deck independently. Verified with a probe: "newStore called = false,
+  deck = <nil>". Not reachable from production (realDeps supplies neither) and no test hits it, so
+  not a live bug, but it is a new seam whose rule no comment states and no test pins, introduced by
+  a cleanup whose stated purpose was that "the merge was three chances to forget one". The rule
+  covering this and BR-4: every field of an injected seam states its own default and how it is
+  filled, and a fill-in helper must not make one field's default depend on another field's presence.
+
 ## Open findings
 
 - **BR-1** [Minor] `unbacked-existing-behavior-claim` "three call sites" is two - defineOnce serves both the one-shot and line paths
 - **BR-2** [Important] `extraction-strands-behavior` storeHistory is given two incompatible fates, and Task 1 Step 3's "tests unchanged" is unsatisfiable
 - **BR-3** [Important] `capture-arity-invariant` Task 2 Step 3 still names defineOnce as the capture site, contradicting Chunk 1's lookupAndRender
 - **BR-4** [Minor] `unstated-seam-default` The plan calls d.capture but never says deps gains the field, nor what a deps literal without it does
-- **BR-6** [Important] `unpinned-invariant` The Forget traversal guard is asserted by no test, and half of it is unreachable
-- **BR-14** [Minor] `needless-indirection` deps.forgetter() is a four-line nil-check wrapper around one field with one caller
-- **BR-15** [Minor] `needless-indirection` newStore's three-return seam plus three nil-merges in run is lumpy; a small struct would collapse it
-- **BR-17** [Minor] `prose-contradicts-code` atlas "Entry modes" table omits define -forget, the fourth invocation this diff adds
-- **BR-20** [Important] `undocumented-work-log` A Done-when box is ticked for a clause that revert-verification shows is not delivered
-- **BR-21** [Minor] `needless-indirection` newStoreHistory keeps a dead store.Clock parameter that four call sites construct and pass
 - **BR-22** [Minor] `generated-artifact-noise` The committed close-review artifact opens with a harness stderr preamble
-- **BR-23** [Important] `family-rule-applied-selectively` The family fixes closed each finding's titled instance and left the instances enumerated in its body
+- **BR-24** [Important] `family-rule-applied-selectively` The family rule was applied to every code instance and to no artifact instance
+- **BR-25** [Important] `prose-contradicts-code` This round's own edits left two comments describing code they no longer describe
+- **BR-26** [Minor] `unstated-seam-default` withStore's early return silently strands deck when history and capture are both supplied

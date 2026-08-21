@@ -312,12 +312,11 @@ func endsWithNewline(path string) bool {
 	return b[0] == '\n'
 }
 
-// Forget removes one word file. Events are untouched.
+// Forget removes one word file. Events are untouched: the deck is a working set,
+// the log is history.
 //
-// This is the first operation that DELETES a path derived from user input, so
-// the slug's single-safe-path-element guarantee is asserted here rather than
-// inherited: filepath.Base is applied to the slug before joining, so no key can
-// reach outside words/ even if Slug ever regressed.
+// Filename derivation goes through wordFileName, the same function Upsert uses —
+// see its doc comment for what that guard is and is not worth.
 func (y *YAML) Forget(key string) (bool, error) {
 	k := Key(key)
 	if k == "" {
