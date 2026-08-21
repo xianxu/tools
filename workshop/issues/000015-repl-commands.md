@@ -1,11 +1,12 @@
 ---
 id: 000015
-status: open
+status: working
 deps: [tools#14, tools#3]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-08-21
 estimate_hours:
+started: 2026-08-21T13:55:32-07:00
 ---
 
 # REPL command mode: /-prefixed commands with type-ahead, starting with /history
