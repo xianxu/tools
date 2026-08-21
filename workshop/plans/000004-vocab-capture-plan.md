@@ -25,6 +25,29 @@ So the move is **extract, then widen**: the recording decision becomes a
 beside it (ARCH-DRY). If this issue ends with two places that decide what a
 lookup means, it has failed.
 
+## What `DEFINE_NO_CAPTURE=1` suppresses — and what that costs
+
+The draft said "nothing at all, not even an event". That collides with `#3`:
+**persisted history is the event log**. Suppressing events would silently turn
+off cross-session history, which the user never asked to lose.
+
+Both readings of the flag are defensible, so the choice is made explicitly:
+
+| reading | effect |
+|---|---|
+| "don't build a deck from my lookups" | suppress `Upsert` only; events keep flowing, history persists |
+| **"don't write in this directory"** ← chosen | suppress **everything**; history falls back to session-only |
+
+Chosen because that is the intent someone has when they opt a tool out of
+touching their filesystem, and because a flag that still writes files after you
+disabled it is the more surprising of the two failures. The cost — history stops
+persisting — is real, so it is stated in `--help`, the README and the atlas
+beside the flag, not in a footnote.
+
+**Consequence for the wiring:** with the flag set, `openHistory` installs the
+session-only `memHistory` rather than `storeHistory`. Nothing downstream changes,
+because `#14` consumes the seam.
+
 ## Non-goals
 
 - No ordering, scoring or scheduling. `#5` owns "which word next"; `Lookups` is
@@ -43,9 +66,11 @@ lookup means, it has failed.
 | `captureDecision` | `cmd/define/capture.go` | new |
 | `decideCapture` | `cmd/define/capture.go` | new |
 
-- **decideCapture(found bool, opt options, env lookupEnv) captureDecision** — the
-  whole policy in one pure function: record the event, record the word, or do
-  nothing.
+- **decideCapture(found bool, opt options) captureDecision** — the ONE place that
+  answers "does this lookup get recorded, and how far": event only, event plus
+  word, or nothing. The opt-out arrives as `opt.noCapture`, set once at flag/env
+  parse, so the environment is an input to the policy rather than a second
+  mechanism beside it.
   - **Why pure and separate:** the policy has three inputs (did the lookup
     succeed, is capture disabled, is this `--raw`) and is consulted from three
     call sites. Left inline it would be re-derived at each, and they would drift —
@@ -58,15 +83,24 @@ lookup means, it has failed.
 |------|----------|--------|-------|
 | `Capturer` | `cmd/define/capture.go` | new | interface (seam) |
 | `storeCapturer` | `cmd/define/capture.go` | new | a `store.Store` |
-| `noCapture` | `cmd/define/capture.go` | new | nothing — the opt-out |
+
 
 - **Capturer** — `Capture(word string, found bool)`. Deliberately returns **no
   error**: capture must never change the outcome of a lookup. A store failure
   warns and the definition still prints, exactly as a missing recording does.
-- **storeCapturer** — `AppendEvent` always, `Upsert` when found. This is the code
-  `storeHistory` currently inlines; it moves here and `storeHistory` calls it.
-- **noCapture** — what `DEFINE_NO_CAPTURE=1` and `--raw` install. A null object
-  rather than a nil check at three call sites.
+- **storeCapturer** — `AppendEvent` always, `Upsert` when the lookup found
+  something. This is the code `storeHistory` currently inlines; it moves here and
+  `storeHistory` delegates.
+  - **The warn-once rule moves with the writes.** `#3` put `warned bool` on
+    `storeHistory` because that was where writes happened. Once they move, a
+    warn-once left behind would either fire per keystroke from the new site or be
+    duplicated in both — so the flag lives on `storeCapturer`, and
+    `storeHistory` keeps none of its own. Asserted: N failing captures produce
+    exactly one line on stderr.
+There is deliberately **no null-object `noCapture`**. An earlier draft had both a
+`decideCapture` policy *and* a null object, so "is capture off?" had two homes and
+would drift the moment one grew a case. `decideCapture` is the only place that
+answers it; the environment reaches it as an input, not as a second mechanism.
 
 ---
 
@@ -107,6 +141,16 @@ lookup means, it has failed.
 
 **Files:** modify `main.go`, `store/`; test `main_test.go`, `store/`
 
+- [ ] **Step 0: Name the adversarial classes for `Forget`**, since it is the
+      first operation that *deletes* a file from a path derived from user input:
+      - **traversal** — `--forget ../../../etc/passwd`. `Slug` already guarantees
+        one safe path element and is fuzzed, but `Forget` must assert it rather
+        than inherit it: the test removes nothing outside `words/`.
+      - **empty or whitespace key** — a no-op, never a wildcard.
+      - **a key whose file is unreadable** — removal must still succeed; refusing
+        to delete a corrupt entry is the opposite of useful.
+      - **`Forget` must not touch `events/`**, mechanically asserted by comparing
+        the directory before and after.
 - [ ] **Step 1: Write the failing tests.** `Store.Forget(key)` removes the word
       and is a no-op on a word that is absent (not an error); `--forget <word>`
       exits 0 and prints what it removed; `--forget` on an unknown word says so
@@ -116,6 +160,20 @@ lookup means, it has failed.
 - [ ] **Step 2: Run, expect FAIL**
 - [ ] **Step 3: Implement.** `Forget` joins the `Store` interface, so it lands in
       the shared conformance suite and both implementations must satisfy it.
+
+      **Dispatch:** `-forget <word>` is a string flag checked in `run` *before*
+      the `NArg` switch, since it is a mode rather than a lookup:
+
+      ```go
+      if *forget != "" {
+          return forgetWord(d, *forget, stdout, stderr)   // 0 removed, 1 absent
+      }
+      switch fs.NArg() { … }
+      ```
+
+      `define -forget x y` is a usage error — `NArg() > 0` alongside `-forget` is
+      two commands in one line, and silently ignoring one of them is how `-raw`
+      came to mean two things in `#2`.
 - [ ] **Step 4: Run, expect PASS**
 - [ ] **Step 5: Manual check**
 

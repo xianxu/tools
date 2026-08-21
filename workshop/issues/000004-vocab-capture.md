@@ -24,7 +24,13 @@ A vocabulary deck nobody has to curate is the only one that gets used. Every
   dictionary is its own spam filter and no validation layer is needed.
 - Record lookup count and timestamps: a word looked up three times is a stronger
   signal than one looked up once, and `--play` can order by that.
-- `define --forget <word>` removes it; `DEFINE_NO_CAPTURE=1` disables capture.
+- `define --forget <word>` removes the word from the deck. It does **not** delete
+  events: the deck is a working set, the log is history, and rewriting the past
+  would corrupt every statistic `#8` derives.
+- `DEFINE_NO_CAPTURE=1` means **write nothing in this directory** — not "deck
+  only". Persisted history is the event log (`#3`), so the flag also drops
+  history to session-only. That cost is documented beside the flag rather than
+  discovered.
 - Capture must never break a lookup: a store failure warns on stderr and leaves
   the exit code alone, exactly as audio failure does today.
 - Applies to REPL lookups (#2) too.
@@ -33,7 +39,12 @@ A vocabulary deck nobody has to curate is the only one that gets used. Every
 
 - [ ] A successful lookup appears in the deck; a failed one does not.
 - [ ] Repeat lookups increment the count rather than duplicating the word.
-- [ ] `--forget` removes; `DEFINE_NO_CAPTURE=1` suppresses.
+- [ ] `--forget` removes the word and leaves `events/` untouched, asserted by
+      comparing the directory before and after.
+- [ ] `--forget` cannot delete outside `words/` — asserted, not inherited from
+      `Slug`.
+- [ ] `DEFINE_NO_CAPTURE=1` writes nothing at all, and history falls back to
+      session-only rather than half-persisting.
 - [ ] A failing store degrades to a warning, never a failed lookup.
 
 ## Estimate
