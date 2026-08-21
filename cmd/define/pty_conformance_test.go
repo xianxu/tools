@@ -32,6 +32,8 @@ package main
 import (
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -192,10 +194,19 @@ func TestPTYCommandMenuAppearsAndClears(t *testing.T) {
 	if !strings.Contains(frame, "list the commands") {
 		t.Errorf("typing / did not draw the menu: %q", frame)
 	}
-	// Drawn BELOW: the frame must move the cursor down and then back up by the
-	// same number of rows, or the prompt lands in the middle of the menu.
-	if !strings.Contains(frame, "\x1b[1A") {
-		t.Errorf("the menu did not return the cursor to the prompt line: %q", frame)
+	// Drawn BELOW: the cursor must come back up by exactly as many rows as were
+	// drawn, or the prompt lands in the middle of the menu.
+	//
+	// Derived from the frame, never hardcoded. The first version asserted
+	// "\x1b[1A" and broke the moment a second command was registered — the row
+	// count is incidental, the EQUALITY is the invariant.
+	rows := strings.Count(frame, "\r\n")
+	m := regexp.MustCompile(`\x1b\[(\d+)A`).FindStringSubmatch(frame)
+	if m == nil {
+		t.Fatalf("the menu never moved the cursor back up: %q", frame)
+	}
+	if up, _ := strconv.Atoi(m[1]); up != rows {
+		t.Errorf("drew %d rows but came back up %d: %q", rows, up, frame)
 	}
 
 	// A prefix that matches nothing must clear it.
