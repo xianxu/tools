@@ -1,12 +1,13 @@
 ---
 id: 000014
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-20
 updated: 2026-08-20
 estimate_hours: 3.59
 started: 2026-08-20T16:25:33-07:00
+actual_hours: 1.27
 ---
 
 # REPL line editor: history, prefix search, inline autosuggestion
@@ -190,6 +191,7 @@ seam is the deliverable; `#3` fills it. Sequencing is therefore **#14 → #3 →
 ## Log
 
 ### 2026-08-20
+- 2026-08-20: closed — Operator-verified across three feedback rounds on a real terminal, plus an automated pty conformance suite (creack/pty is TEST-ONLY; runtime deps unchanged at x/term). Editor: Up/Down walk history and narrow to the typed prefix; the newest match renders in grey ahead of the cursor; Right, End and Tab accept it; Enter submits only what was typed and now redraws the line WITHOUT the grey tail before advancing. Cmd+Delete clears the line (Ghostty binds super+backspace to \x15, verified via +list-keybinds; Terminal.app and iTerm2 map it the same). A bare Enter replays without advancing the prompt — three consecutive replays add zero lines. Raw-mode newlines use \r\n so definitions start at column 0. Paragraphs wrap at word boundaries measured in VISIBLE columns, with width 0 on a pipe. Ctrl-C during playback exits 0 in 0.61s — it hung until I split lookupAndRender out of defineOnce to render cooked and play raw. Terminal restoration asserted by a MakeRaw/Restore round-trip after exit. The editor is a pure state machine covered by table tests over key sequences with no terminal; decodeKey fuzzed 5.1M execs clean; the no-data-loss property re-asserted under wrapping. #2 eraseLineAndStepBack and skipPrompt deleted, not ported. go test -race clean, go vet green, GOOS=linux CGO_ENABLED=0 green.; review verdict: FIX-THEN-SHIP
 
 Created as part of the `define-learn` project.
 

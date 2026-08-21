@@ -29,14 +29,18 @@ func replRaw(ctx context.Context, cancel context.CancelFunc, d deps, opt options
 	keys := readKeys(ctx, f, cancel)
 	// cooked drops raw mode around a lookup so the definition scrolls normally,
 	// then re-enters for the next frame.
-	cooked := func(run func()) {
+	// Dropping and re-entering raw mode around a lookup. If re-entry fails the
+	// editor would keep drawing frames a cooked terminal echoes over — silently
+	// unusable — so say so and stop rather than swallow it.
+	cooked := func(run func()) error {
 		sess.restore()
-		defer func() {
-			if s, err := enterRaw(f); err == nil {
-				*sess = *s
-			}
-		}()
 		run()
+		s, err := enterRaw(f)
+		if err != nil {
+			return err
+		}
+		*sess = *s
+		return nil
 	}
 	return runEditor(ctx, keys, d, opt, cooked, sess.restore, stdout, stderr)
 }
@@ -46,16 +50,24 @@ func replRaw(ctx context.Context, cancel context.CancelFunc, d deps, opt options
 // terminal. Tests drive it with a scripted channel and no terminal at all —
 // which is the whole point of keeping Apply and RenderLine pure.
 func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
-	cooked func(func()), finish func(), stdout, stderr io.Writer) int {
+	cooked func(func()) error, finish func(), stdout, stderr io.Writer) int {
 
 	// Same wiring as replLines: cached behind the seam, in the function that uses
 	// it, so a test driving runEditor gets exactly what production gets.
 	d.audio = newCachingAudioSource(d.audio)
-	hist := &memHistory{}
+	// Through the SEAM, not the concrete type: #3's store must be able to replace
+	// this without touching the loop, which was the entire justification for
+	// declaring History in the first place.
+	var hist History = &memHistory{}
 	e := NewEditor()
 	var current string
-	draw := func() { fmt.Fprint(stdout, RenderLine(e, Suggestion(e, hist.Prefix(e.WalkBase())), opt.color)) }
-	draw()
+	// Resolve candidates ONCE per keystroke and use the same slice for both the
+	// state machine and the suggestion. Querying twice doubled the work the
+	// History seam will do once #3 backs it with a store.
+	draw := func(matches []string) {
+		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, matches), opt.color))
+	}
+	draw(hist.Prefix(e.WalkBase()))
 
 	for {
 		select {
@@ -69,45 +81,56 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				fmt.Fprintln(stdout)
 				return 0
 			}
+			matches := hist.Prefix(e.WalkBase())
 			var act Action
-			e, act = Apply(e, k, hist.Prefix(e.WalkBase()))
+			e, act = Apply(e, k, matches)
 			switch act {
 			case ActInterrupt, ActEOF:
 				finish()
 				fmt.Fprintln(stdout)
 				return 0
 			case ActSubmit:
-				line := e.String()
+				// Route through the SAME decision table the line loop uses.
+				// Bypassing it meant the interactive path quietly disagreed about
+				// what a line means — no trimming, and "hot  dog" not collapsed to
+				// the multi-word headword the dictionary actually has (ARCH-DRY).
+				cmd := parseREPLLine(e.String(), current != "")
+				line := cmd.word
 				// Redraw the committed line with NO suggestion before advancing:
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.
 				submitted := e
 				e = NewEditor()
-				if line != "" {
+				if cmd.kind == cmdDefine {
 					fmt.Fprint(stdout, RenderLine(submitted, "", opt.color))
 				}
-				if line == "" {
-					// A bare Enter replays and must NOT advance: the indicator is
-					// drawn over the prompt, then the prompt is drawn back. The
-					// screen is where it was, which is the whole point of the
-					// gesture.
+				if cmd.kind != cmdDefine {
+					// cmdReplay and cmdNothing both stay on this line: the
+					// indicator is drawn over the prompt, then the prompt back.
 					replayInPlace(ctx, d, opt, current, stdout, stderr)
-					draw()
+					draw(hist.Prefix(e.WalkBase()))
 					continue
 				}
 				// In RAW mode "\n" is a line feed only — no carriage return — so
 				// the next line would start at the current column. Everything
 				// written before we drop back to cooked mode needs "\r\n".
 				fmt.Fprint(stdout, "\r\n")
-				submitLine(ctx, cooked, d, opt, line, hist, &current, stdout, stderr)
+				if err := submitLine(ctx, cooked, d, opt, line, hist, &current, stdout, stderr); err != nil {
+					// Raw mode could not be re-entered. The editor would keep
+					// drawing frames a cooked terminal echoes over — silently
+					// unusable — so stop and say why rather than swallow it.
+					finish()
+					fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
+					return 1
+				}
 				// A blank line between the entry and the next prompt: without it
 				// the prompt butts against the last line of the definition and
 				// reads as part of it.
 				fmt.Fprint(stdout, "\r\n")
-				draw()
+				draw(hist.Prefix(e.WalkBase()))
 				continue
 			}
-			draw()
+			draw(matches)
 		}
 	}
 }
@@ -127,8 +150,8 @@ func replayInPlace(ctx context.Context, d deps, opt options, current string, std
 }
 
 // submitLine handles one submitted word.
-func submitLine(ctx context.Context, cooked func(func()), d deps, opt options, line string,
-	hist *memHistory, current *string, stdout, stderr io.Writer) {
+func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt options, line string,
+	hist History, current *string, stdout, stderr io.Writer) error {
 
 	// Render in COOKED mode so newlines translate, but play in RAW mode so
 	// Ctrl-C arrives as a byte the key reader can act on. Playback is the part
@@ -136,7 +159,9 @@ func submitLine(ctx context.Context, cooked func(func()), d deps, opt options, l
 	// signal that raw mode exists to replace.
 	var code int
 	var play bool
-	cooked(func() { code, play = lookupAndRender(d, opt, line, stdout, stderr) })
+	if err := cooked(func() { code, play = lookupAndRender(d, opt, line, stdout, stderr) }); err != nil {
+		return err
+	}
 	if play {
 		playAnnounced(ctx, d, opt, line, indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
 	}
@@ -144,4 +169,5 @@ func submitLine(ctx context.Context, cooked func(func()), d deps, opt options, l
 	if code == 0 {
 		*current = line
 	}
+	return nil
 }

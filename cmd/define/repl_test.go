@@ -46,11 +46,84 @@ func replRigStreams(t *testing.T, word string, audioPresent, stdinTTY, stdoutTTY
 	return rig, options{times: 3, locale: "us", tty: stdoutTTY}
 }
 
-// NOTE: #2's interactive tests drove repl() with a strings.Reader. That path is
-// now the LINE loop — raw mode needs a real terminal handle — so the editor's
-// behaviour is exercised through runEditor with a scripted key channel instead,
-// in editorloop_test.go. What remains here covers the line loop, which is still
-// what piped input and a redirected stdout use.
+// NOTE (corrected): exactly ONE of #2's tests died with this change —
+// TestREPLReplayFlashesThenRestoresThePrompt, which asserted the
+// eraseLineAndStepBack arithmetic that raw mode deletes. The rest were built
+// with interactive=false, so they always exercised the LINE loop, which this
+// diff leaves intact; an earlier note here claimed all of them had been
+// superseded, and that was wrong. The raw loop is covered separately in
+// editorloop_test.go.
+
+// The headline line-loop behaviour: a bare return replays, and costs nothing.
+func TestREPLBareReturnReplaysWithoutRefetching(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	var out, errb bytes.Buffer
+
+	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if got := rig.player.count(); got != 6 {
+		t.Errorf("played %d times, want 6 (3 per definition, twice)", got)
+	}
+	if got := rig.cdn.Requested(); len(got) != 1 {
+		t.Errorf("made %d CDN requests, want exactly 1 — the replay refetched: %v", len(got), got)
+	}
+	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
+		t.Errorf("printed the definition %d times, want 1 — replay reprinted it", n)
+	}
+}
+
+func TestREPLSecondWordBecomesCurrent(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	var out, errb bytes.Buffer
+	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\nephemeral\n\n"), &out, &errb)
+
+	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
+		t.Errorf("sycophantic printed %d times, want 1", n)
+	}
+	if !strings.Contains(out.String(), "ephemeral") {
+		t.Error("ephemeral was never defined")
+	}
+}
+
+// A failed lookup must not cost you the word you were listening to.
+func TestREPLUnknownWordLeavesCurrentUnchanged(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	var out, errb bytes.Buffer
+	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\nrizz\n\n"), &out, &errb)
+
+	if !strings.Contains(errb.String(), "rizz") {
+		t.Error("the unknown word should be reported on stderr")
+	}
+	if got := rig.player.count(); got != 6 {
+		t.Errorf("played %d times, want 6 — the blank line did not replay sycophantic", got)
+	}
+}
+
+func TestREPLBlankWithNothingCurrentIsAHint(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	var out, errb bytes.Buffer
+	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("\nsycophantic\n"), &out, &errb); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(errb.String(), "press return to replay") {
+		t.Errorf("want a hint on stderr, got %q", errb.String())
+	}
+	if rig.player.count() != 3 {
+		t.Errorf("played %d times, want 3 — the blank line triggered a lookup", rig.player.count())
+	}
+}
+
+func TestREPLReplayWithAudioOffIsAHint(t *testing.T) {
+	rig, opt := replRig(t, "sycophantic", true, false)
+	opt.noAudio = true
+	var out, errb bytes.Buffer
+	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+
+	if !strings.Contains(errb.String(), "audio is off") {
+		t.Errorf("want a hint on stderr, got %q", errb.String())
+	}
+}
 
 func TestREPLEndOfInputExitsZero(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)

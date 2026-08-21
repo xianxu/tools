@@ -85,3 +85,25 @@ work must stay raw. Split the two.
 Also: a pty master does not honour `SetReadDeadline`, so a foreground read loop
 in a pty test hangs rather than times out. Use a background reader plus a
 snapshot.
+
+## Don't assume an escape sequence's length (define #14)
+
+`ESC[3~` is Delete; `ESC[3;5~` is Ctrl-Delete. Special-casing the four-byte form
+consumed four bytes of a six-byte sequence and inserted `5~` into the word being
+typed. Scan to the CSI final byte (0x40–0x7E after parameter/intermediate bytes)
+instead of matching a prefix and assuming a length.
+
+## Two loops, one decision table (define #14)
+
+A second input path was added and re-implemented "what does this line mean"
+inline, so the interactive path stopped trimming and stopped collapsing
+`hot  dog` into the multi-word headword. If two paths take user input, they route
+through one parser or they will drift — the divergence is silent because each
+path is individually tested.
+
+## Deleting a test needs the same evidence as writing one
+
+Six tests were removed with a note saying a design change had superseded them.
+Five still passed verbatim: they exercised a path the change left intact. Before
+deleting, **run them against the new code** — "this test is obsolete" is a claim,
+and it is checkable in seconds.

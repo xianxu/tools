@@ -97,21 +97,25 @@ func decodeEscape(buf []byte) (Key, int) {
 			return Key{Kind: KeyHome}, 3
 		case 'F':
 			return Key{Kind: KeyEnd}, 3
-		case '3':
-			if len(buf) < 4 {
-				return Key{}, 0
-			}
-			if buf[3] == '~' {
-				return Key{Kind: KeyDelete}, 4
-			}
-			return Key{Kind: KeyUnknown, Raw: buf[:4]}, 4
 		}
-		// A CSI sequence we do not model: swallow through its final byte so the
-		// tail never reaches the line as text.
+		// Every other CSI sequence: find its REAL final byte rather than assuming
+		// a length. ESC[3~ is Delete, but ESC[3;5~ is Ctrl-Delete — assuming four
+		// bytes consumed "ESC[3;" and left "5~" to be inserted into the word as
+		// text. Parameter bytes are 0x30-0x3F, intermediates 0x20-0x2F, and the
+		// final byte is 0x40-0x7E.
 		for i := 2; i < len(buf); i++ {
-			if c := buf[i]; (c >= '@' && c <= '~') && c != '[' {
-				return Key{Kind: KeyUnknown, Raw: buf[:i+1]}, i + 1
+			c := buf[i]
+			if c >= 0x30 && c <= 0x3F || c >= 0x20 && c <= 0x2F {
+				continue // parameter or intermediate byte
 			}
+			if c >= 0x40 && c <= 0x7E {
+				seq := buf[:i+1]
+				if string(seq) == "\x1b[3~" {
+					return Key{Kind: KeyDelete}, i + 1
+				}
+				return Key{Kind: KeyUnknown, Raw: seq}, i + 1
+			}
+			return Key{Kind: KeyUnknown, Raw: buf[:i+1]}, i + 1 // malformed
 		}
 		return Key{}, 0 // still incomplete
 	}

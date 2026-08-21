@@ -279,3 +279,49 @@ make build && ./bin/define
 - **`#2`'s regressions returning:** `-no-color` emitting ANSI, UI gated on stdin
   alone, piped input entering raw mode. All three have existing tests; they must
   stay green rather than be rewritten.
+
+---
+
+## Revisions
+
+### 2026-08-20 — operator feedback (3 rounds) + close review
+
+**Scope added during implementation, none of it planned:**
+
+- **Tab accepts the suggestion** alongside Right/End — what a hand reaches for.
+  `#15`'s command mode gives Tab a complementary job, not a conflicting one.
+- **Cmd+Delete clears the line.** Terminals send it as Ctrl-U (`\x15`); verified
+  against Ghostty's `+list-keybinds` rather than guessed.
+- **Word wrapping** — `Render` never wrapped, so the terminal did, at the column,
+  splitting words mid-syllable. Width is measured in *visible* columns; width 0
+  on a pipe disables it.
+- **The input line is accented** (bold cyan prompt, bold input) with a blank line
+  above it, so it is findable in a screenful of definition text.
+
+**Two rendering bugs the operator caught that no test covered:**
+
+- A bare Enter wrote a newline *before* replaying, so every replay advanced the
+  prompt. It now draws the indicator over the prompt and the prompt back.
+- Raw mode makes `\n` a line feed with **no carriage return**, so definitions
+  began at the column where typing ended. Everything written before dropping to
+  cooked mode uses `\r\n`.
+
+**Close review — 2 Critical, 8 Important:**
+
+- **C-1:** `decodeKey` assumed `ESC[3` was four bytes, so `ESC[3;5~` (Ctrl-Delete)
+  consumed four and leaked `5~` into the word. It now scans to the sequence's real
+  final byte per the CSI grammar.
+- **C-2:** the raw loop bypassed `parseREPLLine`, so the interactive path silently
+  disagreed with the piped one about what a line means — no trimming, and
+  `hot  dog` never matched the multi-word headword (ARCH-DRY).
+- **I-1 was a correction to me.** I deleted six tests claiming raw mode had
+  superseded them. Only **one** had — the rest were built with
+  `interactive=false` and always exercised the line loop, which this change
+  leaves intact. Restored, and the note corrected.
+- **I-7:** the atlas claimed "no store query runs per keystroke" while the loop
+  queried `hist.Prefix` twice per key. Now resolved once and shared.
+- **I-8:** a failed re-entry into raw mode was swallowed, leaving the editor
+  drawing frames a cooked terminal echoes over. `cooked` returns an error and the
+  loop exits saying so.
+- **I-4:** `History` was declared as a seam and then used as a concrete type.
+  Now used through the interface, which was the entire point of declaring it.

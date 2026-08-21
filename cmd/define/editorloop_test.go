@@ -26,12 +26,12 @@ func scriptKeys(s string) <-chan Key {
 	return ch
 }
 
-func editorRig(t *testing.T, word string, audioPresent bool) (*audioRig, options, func(func()), func()) {
+func editorRig(t *testing.T, word string, audioPresent bool) (*audioRig, options, func(func()) error, func()) {
 	t.Helper()
 	rig := newAudioRig(t, word, audioPresent)
 	rig.deps.stdinIsTerminal = func() bool { return true }
 	// cooked and finish are no-ops: there is no real terminal in a test.
-	return rig, options{times: 3, locale: "us", tty: true, color: true}, func(run func()) { run() }, func() {}
+	return rig, options{times: 3, locale: "us", tty: true, color: true}, func(run func()) error { run(); return nil }, func() {}
 }
 
 func TestEditorLoopDefinesTypedWord(t *testing.T) {
@@ -207,5 +207,50 @@ func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
 	}
 	if !strings.Contains(lastFrame, "syc") {
 		t.Errorf("committed frame lost the typed text: %q", lastFrame)
+	}
+}
+
+// C-2: the interactive path must mean the same thing as the line path. It
+// bypassed parseREPLLine, so it trimmed nothing and did not collapse interior
+// whitespace — "hot  dog" never matched the multi-word headword.
+func TestEditorLoopNormalisesTheSubmittedLine(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "hot dog", true)
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("  hot   dog  \r"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	if strings.Contains(errb.String(), "no dictionary entry") {
+		t.Errorf("the line was not normalised before lookup: %q", errb.String())
+	}
+	if !strings.Contains(out.String(), "hot dog") {
+		t.Errorf("the multi-word headword was not defined: %q", tailOf(out.String()))
+	}
+}
+
+// I-2: a bare Enter with nothing defined yet is a hint, not a crash or a lookup.
+func TestEditorLoopBareEnterWithNoCurrentWord(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("\r"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	if !strings.Contains(errb.String(), "press return to replay") {
+		t.Errorf("want the hint, got %q", errb.String())
+	}
+	if rig.player.count() != 0 {
+		t.Errorf("played %d times with nothing defined", rig.player.count())
+	}
+}
+
+// I-2: a failed lookup must not become the current word, so a following bare
+// Enter replays the last GOOD word rather than retrying the typo.
+func TestEditorLoopFailedLookupKeepsPreviousWord(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic\rrizz\r\r"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	if !strings.Contains(errb.String(), "rizz") {
+		t.Error("the failed lookup was not reported")
+	}
+	if got := rig.player.count(); got != 6 {
+		t.Errorf("played %d times, want 6 — the replay did not use the last good word", got)
 	}
 }

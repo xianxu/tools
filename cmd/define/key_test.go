@@ -76,6 +76,43 @@ func TestDecodeKeyUnknownSequencesAreInert(t *testing.T) {
 	}
 }
 
+// A modified Delete must not be mistaken for plain Delete, and must consume its
+// whole sequence. This was a Critical: ESC[3;5~ consumed four bytes and inserted
+// "5~" into the word being typed.
+func TestDecodeKeyModifiedDeleteIsNotDelete(t *testing.T) {
+	k, n := decodeKey([]byte("\x1b[3;5~"))
+	if k.Kind == KeyDelete {
+		t.Error("Ctrl-Delete decoded as plain Delete")
+	}
+	if n != 6 {
+		t.Errorf("consumed %d of a 6-byte sequence — the tail would reach the line as text", n)
+	}
+	// Plain Delete still works.
+	if k, n := decodeKey([]byte("\x1b[3~")); k.Kind != KeyDelete || n != 4 {
+		t.Errorf("plain Delete broke: kind %v consumed %d", k.Kind, n)
+	}
+}
+
+// The fuzz target's real obligation: no byte of an escape sequence may ever
+// surface as a rune, or it lands in the word the user is typing.
+func FuzzDecodeKeyNeverLeaksEscapeTails(f *testing.F) {
+	for _, s := range []string{"\x1b[3;5~", "\x1b[1;3D", "\x1b[200~", "\x1bO", "\x1b["} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, buf []byte) {
+		if len(buf) == 0 || buf[0] != 0x1b {
+			return
+		}
+		k, n := decodeKey(buf)
+		if k.Kind == KeyRune {
+			t.Fatalf("an escape sequence decoded as the rune %q", k.Rune)
+		}
+		if n > 0 && n < len(buf) && buf[n] == 0x1b {
+			return // next sequence starts cleanly
+		}
+	})
+}
+
 // decodeKey is the one function fed arbitrary bytes from outside the program.
 func FuzzDecodeKey(f *testing.F) {
 	for _, s := range []string{"a", "\x1b[A", "\x1b[3~", "\x1bO", "é", "\x1b[1;5C", "\x00"} {
