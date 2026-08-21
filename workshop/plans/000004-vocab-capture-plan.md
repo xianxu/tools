@@ -69,15 +69,39 @@ because `#14` consumes the seam.
 - **decideCapture(found bool, opt options) captureDecision** — the ONE place that
   answers "does this lookup get recorded, and how far": event only, event plus
   word, or nothing.
-  - **One call site, not three.** `defineOnce` is already reached by every entry
-    path — one-shot, line loop, and the raw editor's `submitLine` all go through
-    it — so capture goes there and nowhere else. An earlier draft counted three
-    sites and would have had the raw path capture twice, once via `defineOnce`
-    and once via `storeHistory.Add`.
-  - **`storeHistory` therefore stops writing.** It becomes a reader: load the
-    event log once at construction, keep the in-memory recall list, and append to
-    that list on `Add`. Every store write in the process now happens in exactly
-    one place.
+  - **One call site: `lookupAndRender`.** Verified against the call graph rather
+    than assumed — an earlier draft named `defineOnce`, which is **not** on the
+    raw path:
+
+    ```
+    defineOnce        ← main.go:144 (one-shot), repl.go:144 (line loop)
+      └─ lookupAndRender
+    submitLine        ← replraw.go:165 (raw editor) → lookupAndRender  [skips defineOnce]
+    ```
+
+    `#14` extracted `lookupAndRender` precisely so the raw path could render in
+    cooked mode and play in raw mode, and that extraction is what makes it the
+    one function every path shares. Capturing in `defineOnce` would have left the
+    interactive path — the only one that captures *today* — recording nothing.
+  - **`storeHistory` therefore stops writing, and this is a behaviour move, not a
+    refactor.** It becomes recall only: load the event log once at construction,
+    keep the in-memory list, append to it on `Add`. Every store write in the
+    process then happens in exactly one place.
+
+    **`#3`'s tests must change, and Task 1 Step 3's "tests unchanged" does not
+    apply to them.** Naming them, because "a test needing a change is the signal"
+    is only true of a behaviour-*preserving* extraction, and these three assert
+    the writes that are moving:
+
+    | test | fate |
+    |---|---|
+    | `TestStoreHistoryRecallsTyposButDoesNotDeckThem` | **moves** to the capturer — the assertion is about what reaches the deck |
+    | `TestStoreHistoryPersistsAcrossSessions` | **moves**: it writes via `Add` today; it must write via capture |
+    | `TestStoreHistoryDegradesOnWriteFailure` | **moves** with the warn-once rule |
+
+    They are re-targeted, never deleted — `#14`'s close review caught me deleting
+    five tests on the claim that a design change had superseded them, and five of
+    them still passed. The recall tests stay where they are.
   - **The environment is read exactly once**, at flag parse, into
     `opt.noCapture`. `realDeps` no longer opens history — it cannot, because the
     flag is not parsed yet — so `run` constructs it after `opt` is known, and a
@@ -138,10 +162,10 @@ answers it; the environment reaches it as an input, not as a second mechanism.
       event, so `#14` recalls typos and `#15` can filter them out; and `--raw`
       records nothing, because scripting a dictionary must not mutate a deck.
 - [ ] **Step 2: Run, expect FAIL**
-- [ ] **Step 3: Implement, and rewrite `storeHistory.Add` to call it** — the
-      existing behaviour must come out unchanged, proven by `#3`'s tests staying
-      green **without edits**. A test needing a change here means the extraction
-      was not behaviour-preserving.
+- [ ] **Step 3: Implement.** Move the store writes out of `storeHistory` into
+      `storeCapturer`, and **move the three named tests with them** rather than
+      editing them in place. The recall tests must stay green untouched — those
+      *are* behaviour-preserving, and a change needed there is the real signal.
 - [ ] **Step 4: Run, expect PASS**
 - [ ] **Step 5: Commit** — `#4: extract the capture policy behind a seam`
 

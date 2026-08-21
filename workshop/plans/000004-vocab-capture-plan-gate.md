@@ -134,6 +134,65 @@ rounds:
           family: test-strategy-not-enumeration
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-21T10:17:59-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: The flag's meaning is now chosen explicitly, its cost stated, and openHistory installs memHistory under it.
+          round: 3
+        - id: PQ-2
+          disposition: addressed
+          note: Null object deleted; decideCapture is the only home and the env is read once at flag parse into opt.noCapture.
+          round: 3
+        - id: PQ-4
+          disposition: addressed
+          note: Two messages, two owners, both writers injected from run's stderr, warn-once asserted.
+          round: 3
+        - id: PQ-6
+          disposition: not-addressed
+          note: '"three call sites" became "every entry path goes through defineOnce" — still wrong; only main.go:144 and repl.go:144 call it.'
+          round: 3
+        - id: PQ-7
+          disposition: addressed
+          note: Arity is now an explicit invariant with a counting store; the per-path refinement is raised below.
+          round: 3
+        - id: PQ-8
+          disposition: addressed
+          note: 'Residual for the close review: decideCapture''s table should be exhaustive over its three inputs, not four rows.'
+          round: 3
+      findings:
+        - id: PQ-9
+          severity: Critical
+          title: 'The chosen capture site misses the raw interactive path, which is where #3''s capture lives today'
+          detail: |-
+            This is the 2nd finding in family capture-arity-invariant (prevalence 2: PQ-7's
+            double-capture risk, now zero-capture on raw). Do not patch line 72 — state the rule:
+            the plan must name, per entry path, the single function where capture happens, and
+            assert arity per path rather than in aggregate. Plan line 72 claims submitLine goes
+            through defineOnce; it calls lookupAndRender at replraw.go:165 and hist.Add at
+            replraw.go:171, and defineOnce has only two callers (main.go:144, repl.go:144). With
+            line 77's "storeHistory stops writing", the interactive path records nothing and #3's
+            persistence regresses. An aggregate counting store cannot tell zero-on-raw from
+            twice-on-piped.
+          family: capture-arity-invariant
+          round: 3
+        - id: PQ-10
+          severity: Important
+          title: storeHistory is given two incompatible fates, and Task 1 Step 3's "tests unchanged" is unsatisfiable
+          detail: |-
+            This is the 2nd finding in family extraction-strands-behavior (prevalence 2: PQ-4's
+            warn-once, now the durability contract itself). The rule: an extraction must enumerate
+            every obligation the source component is contracted for — the tests that pin it, the
+            warn-once, the durability guarantee — and say where each lands. Plan line 77 says
+            storeHistory becomes a pure reader; line 109 says it delegates; the issue checkbox
+            agrees with line 109. Under the reader reading, history_store_test.go:17-33, :37-55,
+            :86-99, :155-166 and :133-150 all fail, contradicting "green without edits … do not
+            edit them to fit".
+          family: extraction-strands-behavior
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#4 (plan-quality)
@@ -213,11 +272,41 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   table over its three inputs rather than four hand-picked rows; Forget's events-untouched
   obligation is a storetest.Suite property; storeCapturer currently has no strategy line.
 
+## Round 3 — 2026-08-21T10:17:59-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — The flag's meaning is now chosen explicitly, its cost stated, and openHistory installs memHistory under it.
+- PQ-2 — addressed — Null object deleted; decideCapture is the only home and the env is read once at flag parse into opt.noCapture.
+- PQ-4 — addressed — Two messages, two owners, both writers injected from run's stderr, warn-once asserted.
+- PQ-6 — not-addressed — "three call sites" became "every entry path goes through defineOnce" — still wrong; only main.go:144 and repl.go:144 call it.
+- PQ-7 — addressed — Arity is now an explicit invariant with a counting store; the per-path refinement is raised below.
+- PQ-8 — addressed — Residual for the close review: decideCapture's table should be exhaustive over its three inputs, not four rows.
+
+### Raised
+
+- **PQ-9** [Critical] `capture-arity-invariant` The chosen capture site misses the raw interactive path, which is where #3's capture lives today
+  This is the 2nd finding in family capture-arity-invariant (prevalence 2: PQ-7's
+  double-capture risk, now zero-capture on raw). Do not patch line 72 — state the rule:
+  the plan must name, per entry path, the single function where capture happens, and
+  assert arity per path rather than in aggregate. Plan line 72 claims submitLine goes
+  through defineOnce; it calls lookupAndRender at replraw.go:165 and hist.Add at
+  replraw.go:171, and defineOnce has only two callers (main.go:144, repl.go:144). With
+  line 77's "storeHistory stops writing", the interactive path records nothing and #3's
+  persistence regresses. An aggregate counting store cannot tell zero-on-raw from
+  twice-on-piped.
+- **PQ-10** [Important] `extraction-strands-behavior` storeHistory is given two incompatible fates, and Task 1 Step 3's "tests unchanged" is unsatisfiable
+  This is the 2nd finding in family extraction-strands-behavior (prevalence 2: PQ-4's
+  warn-once, now the durability contract itself). The rule: an extraction must enumerate
+  every obligation the source component is contracted for — the tests that pin it, the
+  warn-once, the durability guarantee — and say where each lands. Plan line 77 says
+  storeHistory becomes a pure reader; line 109 says it delegates; the issue checkbox
+  agrees with line 109. Under the reader reading, history_store_test.go:17-33, :37-55,
+  :86-99, :155-166 and :133-150 all fail, contradicting "green without edits … do not
+  edit them to fit".
+
 ## Open findings
 
-- **PQ-1** [Critical] `event-log-vs-deck-policy` The opt-out suppresses the event log, which backs persisted history, not just the deck
-- **PQ-2** [Important] `single-policy-home` Two homes decide the same opt-out - decideCapture and the noCapture null object
-- **PQ-4** [Important] `extraction-strands-behavior` Moving the store writes out of storeHistory strands its warn-once rule
 - **PQ-6** [Minor] `unbacked-existing-behavior-claim` "three call sites" is two - defineOnce serves both the one-shot and line paths
-- **PQ-7** [Minor] `capture-arity-invariant` Nothing pins that exactly one Capture fires per lookup
-- **PQ-8** [Minor] `test-strategy-not-enumeration` Per-case prose survived in all three tasks; state one strategy line per risky function instead
+- **PQ-9** [Critical] `capture-arity-invariant` The chosen capture site misses the raw interactive path, which is where #3's capture lives today
+- **PQ-10** [Important] `extraction-strands-behavior` storeHistory is given two incompatible fates, and Task 1 Step 3's "tests unchanged" is unsatisfiable
