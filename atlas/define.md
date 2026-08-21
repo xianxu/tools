@@ -230,10 +230,20 @@ and the two file kinds defend against it differently:
   and incomplete ones are dropped with a warning. An interrupted write costs the
   event in flight and nothing else.
 
-Note that **parsing successfully is not the test for a torn record**: an append
-cut mid-write leaves valid YAML (`- word: thi`) that unmarshals into an event
-with no timestamp. Completeness — word, kind and time all present — is what
-distinguishes a whole record from a fragment.
+**A torn record is detected by ROUND TRIP**, and the two weaker tests that were
+tried first are worth knowing, because each looks sufficient:
+
+- *"it parsed"* — a cut leaves valid YAML. `- word: thi` unmarshals into an event
+  with no timestamp.
+- *"the fields are present"* — a cut **inside the timestamp** can leave a shorter
+  date that still parses, so every field is populated and the event is admitted
+  with a fabricated time.
+
+Re-marshalling the parsed record and comparing it to the bytes on disk catches a
+truncation anywhere, because a fragment cannot reproduce itself. Parsing is one
+path, always record-by-record: a two-path version double-counted whatever the
+failed whole-file parse had already collected, and left the fallback unreachable
+for input that happened to stay valid.
 
 **Two Store implementations, one conformance suite.** `Mem` is the reference and
 ships as production code; `storetest.Suite` runs against both, so "the fake

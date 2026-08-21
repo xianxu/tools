@@ -201,30 +201,33 @@ func writeAtomic(path string, w Word) error {
 // that an interrupted append can leave a partial record — and this process is
 // quit with Ctrl-C by design, so that is routine rather than exceptional.
 //
-// Whole-file parsing would then discard the entire day for one truncated tail.
-// Instead each record is parsed on its own and the fragment is dropped, so an
-// interrupted write costs the event in flight and nothing else.
+// ONE path, always record-by-record. An earlier version tried whole-file parsing
+// first and fell back on error, which double-counted every record the failed
+// parse had already collected, and left the fallback unreachable for any input
+// that happened to remain valid YAML.
+//
+// Validity is decided by ROUND TRIP, not by parseability and not by field
+// presence. A truncation leaves valid YAML — "- word: thi" unmarshals into an
+// event with no timestamp, and a cut inside the timestamp can leave a shorter
+// date that parses as a real one, fabricating an event. Re-marshalling what was
+// parsed and comparing it to the bytes on disk catches truncation anywhere in
+// the record, because a fragment cannot reproduce itself.
 func parseDay(b []byte) (events []ReviewEvent, torn int) {
-	// Parsing successfully is NOT the test. A record cut mid-write — "- word: thi"
-	// — is perfectly valid YAML and unmarshals into an event with no timestamp and
-	// no kind. Completeness is the test.
-	var all []ReviewEvent
-	if err := yaml.Unmarshal(b, &all); err != nil {
-		for _, rec := range splitRecords(string(b)) {
-			var one []ReviewEvent
-			if err := yaml.Unmarshal([]byte(rec), &one); err != nil {
-				torn++
-				continue
-			}
-			all = append(all, one...)
-		}
-	}
-	for _, e := range all {
-		if e.complete() {
-			events = append(events, e)
+	for _, rec := range splitRecords(string(b)) {
+		if strings.TrimSpace(rec) == "" {
 			continue
 		}
-		torn++
+		var one []ReviewEvent
+		if err := yaml.Unmarshal([]byte(rec), &one); err != nil || len(one) != 1 {
+			torn++
+			continue
+		}
+		round, err := yaml.Marshal(one)
+		if err != nil || strings.TrimSpace(string(round)) != strings.TrimSpace(rec) {
+			torn++
+			continue
+		}
+		events = append(events, one[0])
 	}
 	return events, torn
 }

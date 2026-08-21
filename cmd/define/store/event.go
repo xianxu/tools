@@ -22,12 +22,3 @@ type ReviewEvent struct {
 	Correct bool      `yaml:"correct,omitempty"`
 	At      time.Time `yaml:"at"`
 }
-
-// complete reports whether an event carries everything a real one does.
-//
-// An append cut mid-write leaves a fragment that is still valid YAML, so
-// "it parsed" cannot distinguish a whole record from a torn one — only the
-// presence of the fields every event sets can.
-func (e ReviewEvent) complete() bool {
-	return e.Word != "" && e.Kind != "" && !e.At.IsZero()
-}

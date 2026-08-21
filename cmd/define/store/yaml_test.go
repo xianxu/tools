@@ -146,3 +146,80 @@ func TestYAMLRecoversFromATornEventRecord(t *testing.T) {
 		t.Error("a dropped record must be reported")
 	}
 }
+
+// Truncation cases, each cut at a different point in the record. The earlier
+// completeness check admitted two of these: "- word: thi" parses into an event
+// with no timestamp, and a cut inside the timestamp leaves a SHORTER DATE THAT
+// STILL PARSES, fabricating an event that never happened.
+func TestYAMLDropsEveryShapeOfTornRecord(t *testing.T) {
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct{ name, tail string }{
+		{"cut mid-key", "- wor"},
+		{"cut mid-value", "- word: thi"},
+		{"cut after word", "- word: third\n"},
+		{"cut inside the timestamp", "- word: third\n  kind: looked-up\n  found: true\n  at: 2026-08-20\n"},
+		{"unterminated quote", `- word: "third`},
+		{"cut mid-key of last field", "- word: third\n  kind: looked-up\n  found: true\n  a"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var warn bytesBuffer
+			s := store.NewYAML(dir, &warn)
+			_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
+			_ = s.AppendEvent(store.ReviewEvent{Word: "second", Kind: store.EventLookedUp, Found: true, At: day.Add(time.Hour)})
+
+			f, err := os.OpenFile(filepath.Join(dir, "events", "2026-08-20.yaml"), os.O_APPEND|os.O_WRONLY, 0o644)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.WriteString(tc.tail)
+			f.Close()
+
+			ev, err := s.Events(time.Time{})
+			if err != nil {
+				t.Fatalf("a torn record broke the day: %v", err)
+			}
+			if len(ev) != 2 {
+				t.Fatalf("got %d events, want exactly the 2 whole ones: %+v", len(ev), ev)
+			}
+			if ev[0].Word != "first" || ev[1].Word != "second" {
+				t.Errorf("events = %+v", ev)
+			}
+			if warn.String() == "" {
+				t.Error("a dropped record must be reported")
+			}
+		})
+	}
+}
+
+// Whole records must survive the recovery path unduplicated. An earlier version
+// parsed the whole file first and appended the per-record results to whatever
+// the failed parse had already collected, doubling every good record.
+func TestYAMLRecoveryDoesNotDuplicate(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewYAML(dir, nil)
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	for i, w := range []string{"one", "two", "three"} {
+		_ = s.AppendEvent(store.ReviewEvent{Word: w, Kind: store.EventLookedUp, Found: true, At: day.Add(time.Duration(i) * time.Hour)})
+	}
+	f, _ := os.OpenFile(filepath.Join(dir, "events", "2026-08-20.yaml"), os.O_APPEND|os.O_WRONLY, 0o644)
+	f.WriteString(`- word: "torn`)
+	f.Close()
+
+	ev, err := s.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ev) != 3 {
+		t.Errorf("got %d events, want 3 — the recovery path duplicated: %+v", len(ev), ev)
+	}
+	seen := map[string]int{}
+	for _, e := range ev {
+		seen[e.Word]++
+	}
+	for w, n := range seen {
+		if n != 1 {
+			t.Errorf("%q appears %d times", w, n)
+		}
+	}
+}

@@ -365,6 +365,130 @@ rounds:
             AGENTS.md section 3 makes logging the review outcome part of crossing the boundary.
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-20T21:48:20-07:00"
+      agent: claude
+      dispose:
+        - id: BR-9
+          disposition: not-addressed
+          note: No FixedZone anywhere in the tree; every storetest.Suite timestamp is still time.UTC.
+          round: 4
+        - id: BR-10
+          disposition: not-addressed
+          note: main.go:3-16 still has the stray blank line after "context" and the store import inside the stdlib group.
+          round: 4
+        - id: BR-11
+          disposition: not-addressed
+          note: 'mem.go:83 and yaml.go:145 still carry the byte-identical event sort; history_store.go:84 and yaml.go:149 still repeat the "define: " prefix literal.'
+          round: 4
+        - id: BR-12
+          disposition: not-addressed
+          note: history_store.go:84-90 still reads and writes h.warned outside h.mu.
+          round: 4
+        - id: BR-13
+          disposition: not-addressed
+          note: One warned flag still covers both the construction-time read failure and every later write failure; the "(history is session-only)" suffix is still appended to "could not save word".
+          round: 4
+        - id: BR-14
+          disposition: not-addressed
+          note: No length bound in Slug; word.go has no truncate-plus-hash path.
+          round: 4
+        - id: BR-15
+          disposition: not-addressed
+          note: Key at word.go:29-31 still does no Unicode normalisation.
+          round: 4
+        - id: BR-16
+          disposition: not-addressed
+          note: store.go:11-12 documents "Lookups accumulates" but not that Upsert can never set an exact count.
+          round: 4
+        - id: BR-17
+          disposition: not-addressed
+          note: TestYAMLDifferentWordsTouchDisjointFiles still asserts only the file count, not that alpha.yaml was untouched.
+          round: 4
+        - id: BR-18
+          disposition: not-addressed
+          note: Still no test for Upsert's "overwriting unreadable" branch (yaml.go:44-53) — the branch round 2 changed remains invisible to the suite.
+          round: 4
+        - id: BR-19
+          disposition: not-addressed
+          note: history_store_test.go:124-128 still hand-rolls failErr instead of errors.New.
+          round: 4
+        - id: BR-20
+          disposition: not-addressed
+          note: event.go:20 Found still lacks omitempty while Correct at :21 has it.
+          round: 4
+        - id: BR-21
+          disposition: not-addressed
+          note: realDeps still builds openHistory eagerly and newStoreHistory still calls Events(time.Time{}), parsing every day file on every invocation.
+          round: 4
+        - id: BR-22
+          disposition: not-addressed
+          note: No "## Revisions" section exists in the plan (grep confirms); all four deltas re-verified live, plus a fifth — the plan states atomic writes as a blanket rule the shipped design deliberately splits.
+          round: 4
+        - id: BR-23
+          disposition: addressed
+          note: Atlas is now scoped to word writes and the record-level recovery landed (parseDay/splitRecords/complete). The fix itself ships a duplication defect and an untested branch, raised separately below rather than re-raised here.
+          round: 4
+        - id: BR-24
+          disposition: not-addressed
+          note: writeAtomic still inherits 0600 from os.CreateTemp while AppendEvent at yaml.go:102 opens 0644.
+          round: 4
+        - id: BR-25
+          disposition: not-addressed
+          note: store.go:5-20 still states no thread-safety contract; Mem is mutex-guarded and YAML is not.
+          round: 4
+        - id: BR-26
+          disposition: not-addressed
+          note: 'replraw.go:70-71 still reads "the History seam will do once #3 backs it with a store".'
+          round: 4
+        - id: BR-27
+          disposition: not-addressed
+          note: The issue Log still ends at the implementation notes; no entry records the round-2 or round-3 close-review outcomes.
+          round: 4
+      findings:
+        - id: BR-28
+          severity: Critical
+          title: parseDay double-counts every whole record whenever the torn-record recovery path runs
+          detail: |-
+            yaml.go:211-221 — yaml.Unmarshal populates `all` with everything it could decode BEFORE
+            returning its error, and the fallback loop appends the individually-parsed records to that
+            same slice instead of replacing them. Verified end to end through the real store: two real
+            events plus a 3-byte torn append makes Events return 4 (sycophantic, sycophantic, ephemeral,
+            ephemeral) and warn "recovered 4 event(s), dropped 1 torn record(s)". 27 of 78 single-record
+            truncation offsets reproduce it. Recall survives only because prefixMatch dedupes, but the
+            Store contract is violated and event.go:15-17 declares the log the ONLY source every #8
+            statistic folds over, so a duplicated day inflates words/day, streaks, active days and
+            accuracy. It also falsifies atlas/define.md:235 ("an interrupted write costs the event in
+            flight and nothing else"). One-line fix: set `all = nil` immediately inside the `err != nil`
+            branch, before the splitRecords loop.
+          round: 4
+        - id: BR-29
+          severity: Important
+          title: A truncation inside the timestamp passes complete() and is admitted as a real event with a fabricated date
+          detail: |-
+            event.go:31-33 tests for field presence, not integrity. A record cut at "at: 2026-08-2"
+            parses as 2026-08-02 and is returned as a whole event — an 18-day-displaced record invented
+            from a fragment; "at: 2026-08-20" likewise becomes midnight. This is the exact failure mode
+            workshop/lessons.md:120 was written about, one truncation point over, and atlas/define.md:233
+            states completeness IS what distinguishes a whole record from a fragment. Cheap fix: the
+            reliable torn-tail signal is the one AppendEvent already guarantees — every complete record
+            ends with a newline. In parseDay, if the file does not end in "\n", the final record is torn
+            by construction: drop and count it, then apply the existing checks to the rest.
+          round: 4
+        - id: BR-30
+          severity: Important
+          title: The torn-record recovery branch added this window has no test that reaches it (ARCH-PURE)
+          detail: |-
+            yaml_test.go:121-148 appends "- word: thi", which leaves the day file VALID YAML — confirmed
+            yaml.Unmarshal returns nil on that exact input — so the test never enters the err != nil
+            branch and splitRecords is dead code as far as the suite is concerned. Both defects above
+            live in that unreached branch. Compounding it, parseDay/splitRecords/complete are pure and
+            in-package but yaml_test.go is package store_test and cannot see them, while word_test.go
+            (package store) tests only Key and Slug — so the pure core buys no test leverage. A table
+            test in package store driving parseDay over each interesting truncation, asserting both the
+            events and the torn count, is about ten lines and catches both.
+          round: 4
+      blocked: true
 ---
 
 # Gate ledger — tools#3 (boundary-review)
@@ -561,6 +685,63 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   is no entry for the round-2 close review or the four Important fixes it produced.
   AGENTS.md section 3 makes logging the review outcome part of crossing the boundary.
 
+## Round 4 — 2026-08-20T21:48:20-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-9 — not-addressed — No FixedZone anywhere in the tree; every storetest.Suite timestamp is still time.UTC.
+- BR-10 — not-addressed — main.go:3-16 still has the stray blank line after "context" and the store import inside the stdlib group.
+- BR-11 — not-addressed — mem.go:83 and yaml.go:145 still carry the byte-identical event sort; history_store.go:84 and yaml.go:149 still repeat the "define: " prefix literal.
+- BR-12 — not-addressed — history_store.go:84-90 still reads and writes h.warned outside h.mu.
+- BR-13 — not-addressed — One warned flag still covers both the construction-time read failure and every later write failure; the "(history is session-only)" suffix is still appended to "could not save word".
+- BR-14 — not-addressed — No length bound in Slug; word.go has no truncate-plus-hash path.
+- BR-15 — not-addressed — Key at word.go:29-31 still does no Unicode normalisation.
+- BR-16 — not-addressed — store.go:11-12 documents "Lookups accumulates" but not that Upsert can never set an exact count.
+- BR-17 — not-addressed — TestYAMLDifferentWordsTouchDisjointFiles still asserts only the file count, not that alpha.yaml was untouched.
+- BR-18 — not-addressed — Still no test for Upsert's "overwriting unreadable" branch (yaml.go:44-53) — the branch round 2 changed remains invisible to the suite.
+- BR-19 — not-addressed — history_store_test.go:124-128 still hand-rolls failErr instead of errors.New.
+- BR-20 — not-addressed — event.go:20 Found still lacks omitempty while Correct at :21 has it.
+- BR-21 — not-addressed — realDeps still builds openHistory eagerly and newStoreHistory still calls Events(time.Time{}), parsing every day file on every invocation.
+- BR-22 — not-addressed — No "## Revisions" section exists in the plan (grep confirms); all four deltas re-verified live, plus a fifth — the plan states atomic writes as a blanket rule the shipped design deliberately splits.
+- BR-23 — addressed — Atlas is now scoped to word writes and the record-level recovery landed (parseDay/splitRecords/complete). The fix itself ships a duplication defect and an untested branch, raised separately below rather than re-raised here.
+- BR-24 — not-addressed — writeAtomic still inherits 0600 from os.CreateTemp while AppendEvent at yaml.go:102 opens 0644.
+- BR-25 — not-addressed — store.go:5-20 still states no thread-safety contract; Mem is mutex-guarded and YAML is not.
+- BR-26 — not-addressed — replraw.go:70-71 still reads "the History seam will do once #3 backs it with a store".
+- BR-27 — not-addressed — The issue Log still ends at the implementation notes; no entry records the round-2 or round-3 close-review outcomes.
+
+### Raised
+
+- **BR-28** [Critical] parseDay double-counts every whole record whenever the torn-record recovery path runs
+  yaml.go:211-221 — yaml.Unmarshal populates `all` with everything it could decode BEFORE
+  returning its error, and the fallback loop appends the individually-parsed records to that
+  same slice instead of replacing them. Verified end to end through the real store: two real
+  events plus a 3-byte torn append makes Events return 4 (sycophantic, sycophantic, ephemeral,
+  ephemeral) and warn "recovered 4 event(s), dropped 1 torn record(s)". 27 of 78 single-record
+  truncation offsets reproduce it. Recall survives only because prefixMatch dedupes, but the
+  Store contract is violated and event.go:15-17 declares the log the ONLY source every #8
+  statistic folds over, so a duplicated day inflates words/day, streaks, active days and
+  accuracy. It also falsifies atlas/define.md:235 ("an interrupted write costs the event in
+  flight and nothing else"). One-line fix: set `all = nil` immediately inside the `err != nil`
+  branch, before the splitRecords loop.
+- **BR-29** [Important] A truncation inside the timestamp passes complete() and is admitted as a real event with a fabricated date
+  event.go:31-33 tests for field presence, not integrity. A record cut at "at: 2026-08-2"
+  parses as 2026-08-02 and is returned as a whole event — an 18-day-displaced record invented
+  from a fragment; "at: 2026-08-20" likewise becomes midnight. This is the exact failure mode
+  workshop/lessons.md:120 was written about, one truncation point over, and atlas/define.md:233
+  states completeness IS what distinguishes a whole record from a fragment. Cheap fix: the
+  reliable torn-tail signal is the one AppendEvent already guarantees — every complete record
+  ends with a newline. In parseDay, if the file does not end in "\n", the final record is torn
+  by construction: drop and count it, then apply the existing checks to the rest.
+- **BR-30** [Important] The torn-record recovery branch added this window has no test that reaches it (ARCH-PURE)
+  yaml_test.go:121-148 appends "- word: thi", which leaves the day file VALID YAML — confirmed
+  yaml.Unmarshal returns nil on that exact input — so the test never enters the err != nil
+  branch and splitRecords is dead code as far as the suite is concerned. Both defects above
+  live in that unreached branch. Compounding it, parseDay/splitRecords/complete are pure and
+  in-package but yaml_test.go is package store_test and cannot see them, while word_test.go
+  (package store) tests only Key and Slug — so the pure core buys no test leverage. A table
+  test in package store driving parseDay over each interesting truncation, asserting both the
+  events and the torn count, is about ten lines and catches both.
+
 ## Open findings
 
 - **BR-9** [Minor] Timestamp offset preservation is a load-bearing contract with no test
@@ -577,8 +758,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-20** [Minor] Found lacks omitempty while Correct has it, within one struct
 - **BR-21** [Minor] History is constructed eagerly and loads every day file on every invocation
 - **BR-22** [Minor] Plan needs a Revisions entry — four documented deltas the code does not match
-- **BR-23** [Important] The event log has no torn-record recovery, and the atlas claims atomic writes without scoping it to words
 - **BR-24** [Minor] words/*.yaml is written 0600 while events/*.yaml is 0644
 - **BR-25** [Minor] Store states no thread-safety contract and the two implementations differ (ARCH-MOCK)
 - **BR-26** [Minor] Stale comment at replraw.go:69 still says the store is future work
 - **BR-27** [Minor] The issue Log records no boundary-review outcome for round 2
+- **BR-28** [Critical] parseDay double-counts every whole record whenever the torn-record recovery path runs
+- **BR-29** [Important] A truncation inside the timestamp passes complete() and is admitted as a real event with a fabricated date
+- **BR-30** [Important] The torn-record recovery branch added this window has no test that reaches it (ARCH-PURE)

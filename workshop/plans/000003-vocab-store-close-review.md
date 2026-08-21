@@ -521,3 +521,241 @@ findings:
       is no entry for the round-2 close review or the four Important fixes it produced.
       AGENTS.md section 3 makes logging the review outcome part of crossing the boundary.
 ```
+
+---
+
+## Re-review — 2026-08-20T21:48:20-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 3 — vocabulary store: per-user YAML deck in a brain, behind a Store seam |
+| repo | tools |
+| issue file | workshop/issues/000003-vocab-store.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | e44ac7885e15a22ce5a23bc05d404c812688296f..e54313f2fdb6fb4795050ba39d8ec4ebd58a6a4d |
+| command | sdlc close --issue 3 |
+| reviewer | claude |
+| timestamp | 2026-08-20T21:48:20-07:00 |
+| verdict | REWORK |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The window's first two commits are solid and I re-verified them independently (`go build`, `go vet`, `gofmt -l`, `go test ./...`, `go test -race ./cmd/define/store/...` all clean; `FuzzSlugIsSafe` 6.5M execs clean; the only `time.Now()` in production code is inside `systemClock`, satisfying Done-when 3). The third commit — `e54313f`, the BR-23 torn-record fix — is what blocks. Its atlas half is correct (the blanket atomicity claim is now scoped to word writes, and the event-log paragraph is honest), but its code half ships a data-corruption bug: when the whole-file unmarshal fails, `parseDay` does **not** reset the partially-decoded slice before running the per-record recovery loop, so every whole record in that day file is returned **twice**. I reproduced it end to end through the real store: two real events plus a 3-byte torn append (`- w`) makes `Events` return 4 events — `sycophantic, sycophantic, ephemeral, ephemeral` — while warning "recovered 4 event(s), dropped 1 torn record(s)". 27 of the 78 possible truncation offsets of a single record reproduce it. Two aggravating facts: the shipped test `TestYAMLRecoversFromATornEventRecord` never reaches `splitRecords` at all (its input, `good + "- word: thi"`, is valid YAML, so it exercises only the `complete()` filter), and `event.go` declares the event log "deliberately the ONLY record of activity: every statistic #8 lists … is a fold over these" — so silent duplicates land straight in `#8`'s arithmetic. One line fixes it; the gate should re-run after.
+
+### 1. Strengths
+
+- **`storetest.Suite` is the deliverable and it holds** (`cmd/define/store/storetest/suite.go`), run against `Mem` (`mem_test.go:11`) and `YAML` (`yaml_test.go:15`), with `merge` (`mem.go:34`) and `sortDeck` (`mem.go:58`) shared so the two cannot disagree about upsert semantics or ordering. ARCH-MOCK pass: production flow and test flow share the `Store` boundary, and the fake is package code rather than a `_test.go` alibi.
+- **The atlas half of BR-23 was done exactly right** (`atlas/define.md:220-236`). Rather than deleting the awkward sentence, it now contrasts the two file kinds and states what each defends against — "word files are written atomically… event files are appended, deliberately not rewritten." That is the honest-claim discipline `workshop/lessons.md:111` was written to enforce.
+- **`complete()` is the right *idea*, documented at the right altitude** (`event.go:26-34`, and the note at `atlas/define.md:233`). "Parsing successfully is not the test" is a genuine insight about append-torn YAML, and putting it in `workshop/lessons.md` rather than only in a comment is the durable move.
+- **`Slug` is total and safe under real fuzzing** (`word.go:48`); branch-A output is provably injective because reversibility forces the key to contain no `-`.
+- **Round 2's four Important fixes stayed fixed** — `prefixMatch` (`history.go:44`) is still the single definition called by both `History` implementations, `Upsert`'s reset branch still warns (`yaml.go:51`), and `TestEditorPersistsThroughDeps` still pins the wiring that is the issue's purpose.
+
+### 2. Critical findings
+
+**`parseDay` double-counts every whole record when the recovery path runs** — `cmd/define/store/yaml.go:211-221`.
+
+`yaml.Unmarshal(b, &all)` populates `all` with everything it could decode *before* returning its error, and the fallback loop then **appends** the individually-parsed records to that same slice instead of replacing them. Verified by probe against the real store:
+
+```
+2 real events + a 3-byte torn append ("- w")
+→ Events() = 4:  sycophantic, sycophantic, ephemeral, ephemeral
+→ warn:  define: 2026-08-20.yaml: recovered 4 event(s), dropped 1 torn record(s)
+```
+
+27 of 78 single-record truncation offsets reproduce this. Recall happens to survive because `prefixMatch` dedupes, but the `Store` contract is violated and `#8`'s folds (words/day, streaks, active days, accuracy) would all be inflated by a duplicated day. It also falsifies `atlas/define.md:235` — "an interrupted write costs the event in flight and nothing else."
+
+*Fix sketch* — one line, at `yaml.go:212`:
+```go
+if err := yaml.Unmarshal(b, &all); err != nil {
+    all = nil // a failed decode leaves PARTIAL results; the split rebuilds from scratch
+    for _, rec := range splitRecords(string(b)) {
+```
+
+### 3. Important findings
+
+**A truncation inside the timestamp passes `complete()` and is admitted as a real event with a fabricated date** — `cmd/define/store/event.go:31-33`, consumed at `yaml.go:222-228`.
+
+`complete()` tests for presence, not integrity, so a record cut at `at: 2026-08-2` parses as **2026-08-02** and is returned as a whole event — an 18-day-displaced record silently invented from a fragment. `at: 2026-08-20` likewise becomes midnight. This is the exact failure mode `workshop/lessons.md:120` was written about ("a recovery path that tests for a parse error therefore accepts the fragment and silently invents a record"), reappearing one truncation point over, and `atlas/define.md:233-236` states completeness *is* what distinguishes a whole record from a fragment.
+
+*Fix sketch:* the reliable torn-tail signal is the one `AppendEvent` already guarantees — every complete record ends with `\n`. In `parseDay`, if `len(b) > 0 && b[len(b)-1] != '\n'`, the final record is torn by construction: drop it and count it, then apply the existing checks to the rest. That subsumes both this case and the ones `complete()` already catches.
+
+**The recovery path added by this commit has no test that reaches it** — `cmd/define/store/yaml_test.go:121-148`.
+
+`TestYAMLRecoversFromATornEventRecord` appends `- word: thi`, which makes the day file *valid* YAML — I confirmed `yaml.Unmarshal` returns `nil` on that exact input, so the test never enters the `err != nil` branch and `splitRecords` is dead code as far as the suite is concerned. Both defects above live in that unreached branch. Compounding it: `parseDay`, `splitRecords` and `complete()` are pure, in-package, and trivially unit-testable, but `word_test.go` (`package store`) tests only `Key`/`Slug`, and `yaml_test.go` is `package store_test` and cannot see them (ARCH-PURE — the pure core is there, it just isn't being tested as pure).
+
+*Fix sketch:* add a table test in `package store` driving `parseDay` directly over a good record plus each interesting truncation (`- w`, `  kin`, `at: 2026-08-2`, `at: 2026-08-20T10`), asserting both the returned events **and** `torn`. The all-prefixes sweep is ~10 lines and would have caught both findings above:
+```go
+for i := 1; i < len(rec); i++ {
+    ev, torn := parseDay([]byte(good + rec[:i]))
+    if len(ev) != 1 || ev[0].Word != "first" || torn != 1 { t.Errorf(...) }
+}
+```
+
+### 4. Minor findings
+
+- `cmd/define/store/yaml.go:137` — the warning reports `len(day)` as "recovered", which is the post-duplication count; it will read correctly once the Critical is fixed, but the message is currently user-facing and wrong.
+- `cmd/define/store/yaml.go:233` — `splitRecords` assumes every record begins at column 0 with `- `. Unreachable today (editor lines carry no newlines, and yaml indents block scalars), but it is an undocumented assumption in a function whose whole job is parsing damaged input.
+
+### 5. Test coverage notes
+
+The suite is strong where the risk was named in the plan and blind exactly where this window's new code lives.
+
+Well covered: the conformance suite runs both implementations against one contract; the disk-only hazards each have a test (reopen, leftover temp file, corrupt word file + warning, day grouping); `Slug` has a table test plus a fuzz target I ran clean to 6.5M execs; `storeHistory`'s three behavioural commitments are each mutation-proof, and `TestStoreHistoryPrefixDoesNotQueryTheStore` (`history_store_test.go:82`) tests a real invariant rather than restating the implementation.
+
+Gaps, in priority order:
+
+1. **The `splitRecords` recovery branch is unreached** by every test in the tree (Important above). This is how both new defects shipped.
+2. **`parseDay`/`complete()` have no direct unit test** despite being pure and in-package.
+3. **`YAML.Upsert`'s warning branch still has no test** (BR-18) — round 2 changed that branch and it remains invisible to the suite.
+4. **Timestamp offset preservation is still unasserted** (BR-9) despite being load-bearing for `#8`; every suite timestamp is `time.UTC`.
+5. `yaml_test.go` uses wall-clock `time.Now()` in four tests while the package ships `FixedClock` for exactly this. Harmless — nothing asserts on the value — but it is the one place the diff does not take its own clock-injection medicine.
+
+### 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag (residue only).** The substantive round-2 fix (`prefixMatch`) held. What remains is BR-11: the event sort is still byte-identical at `mem.go:83` and `yaml.go:145`, and two `warnf` helpers each hard-code the `"define: "` prefix. `sortDeck` was extracted for precisely this reason; `sortEvents` finishes the thought.
+- **ARCH-PURE — flag, narrow.** The shape is right: `Word`, `ReviewEvent`, `Key`, `Slug`, `merge`, `sortDeck`, `Clock`, and now `parseDay`/`splitRecords`/`complete()` are pure, with `YAML` as the thin shell and `openHistory` (`main.go:47-54`) as the entire IO seam. The flag is that the newest pure logic is only reachable from a `package store_test` end-to-end test, so its purity buys no test leverage. Pure recovery logic deserves a pure test.
+- **ARCH-PURPOSE — pass on code, one artifact open.** Shadow sweep over the consumers of the storage model: README ✓, atlas ✓ (rewritten this window), project file ✓ (round 2). The **plan** is still a hand-maintained restatement that the code does not derive from — BR-22, four live deltas, no `## Revisions` section.
+- **ARCH-MOCK — pass, still the strongest part of the diff.** Stateful fake behind the same seam, both sides run one suite under ordinary `go test`, and the owned component boots from portable non-production storage by construction (`NewYAML(t.TempDir(), nil)`). The standing caveat is BR-25: properties where `Mem` is *stronger* than `YAML` (mutex guarding; non-nil-vs-nil empty `Deck`) are invisible to a conformance suite by construction, so they have to be stated on the interface instead. Worth settling before `#4`/`#5` consume it.
+- **For `#5`/`#8`:** three constraints this window creates. `Word` deliberately carries no box/interval — keep the schedule out of `store/word.go` or `#5` inherits a migration. `Events(time.Time{})` still parses every day file ever written on every `define` invocation, including one-shot lookups that never touch history (BR-21); the `since` parameter is already the fix. And `#8` must group by timestamp, never by filename — still guaranteed only by a comment (BR-9).
+
+### 7. Plan revision recommendations
+
+`workshop/plans/000003-vocab-store-plan.md` still has **no `## Revisions` section** (BR-22, re-confirmed by grep). All four deltas are live, and a fifth is now needed:
+
+1. **Type names** — the Integration-points table names `yamlStore`/`memStore`; the shipped exported types are `YAML` (`store/yaml.go:25`) and `Mem` (`store/mem.go:13`), because they are consumed from outside the package as `store.NewYAML`/`store.NewMem`.
+2. **`Word` has no `Found` field** — the Pure-entities prose lists `Found bool`; `store/word.go:20-25` has none. The code is right (`found` is a property of a lookup event), and correspondingly the plan's `ReviewEvent` bullet *omits* the `Found` field the shipped struct does carry (`event.go:20`). Both halves of that swap need recording.
+3. **`Key` collapses interior whitespace** — slug rule 1 specifies `strings.ToLower(strings.TrimSpace(text))`; `store/word.go:30` is `strings.ToLower(strings.Join(strings.Fields(text), " "))`. The implementation is the better rule and matches `parseREPLLine`; record the change, keep the code.
+4. **Constructor signature** — plan and Spec both say `NewStore(dir)`; the shipped constructor is `NewYAML(dir string, warn io.Writer)` (`store/yaml.go:32`).
+5. **New:** the plan's Task 3 lists atomicity as a blanket write rule ("**Writes must be atomic** — write to a temp file in the same directory, then rename"). The shipped design deliberately splits this — atomic for words, append-plus-record-level-recovery for events — which the atlas now documents but the plan does not.
+
+Separately, `workshop/plans/000003-vocab-store-plan-gate.md` still lists **PQ-9** under "Open findings"; it was fixed in `8bd988a` and should be disposed `addressed`.
+
+```findings
+dispose:
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      No FixedZone anywhere in the tree; every storetest.Suite timestamp is still time.UTC.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      main.go:3-16 still has the stray blank line after "context" and the store import inside the stdlib group.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      mem.go:83 and yaml.go:145 still carry the byte-identical event sort; history_store.go:84 and yaml.go:149 still repeat the "define: " prefix literal.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      history_store.go:84-90 still reads and writes h.warned outside h.mu.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      One warned flag still covers both the construction-time read failure and every later write failure; the "(history is session-only)" suffix is still appended to "could not save word".
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      No length bound in Slug; word.go has no truncate-plus-hash path.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      Key at word.go:29-31 still does no Unicode normalisation.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      store.go:11-12 documents "Lookups accumulates" but not that Upsert can never set an exact count.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      TestYAMLDifferentWordsTouchDisjointFiles still asserts only the file count, not that alpha.yaml was untouched.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      Still no test for Upsert's "overwriting unreadable" branch (yaml.go:44-53) — the branch round 2 changed remains invisible to the suite.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      history_store_test.go:124-128 still hand-rolls failErr instead of errors.New.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      event.go:20 Found still lacks omitempty while Correct at :21 has it.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      realDeps still builds openHistory eagerly and newStoreHistory still calls Events(time.Time{}), parsing every day file on every invocation.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      No "## Revisions" section exists in the plan (grep confirms); all four deltas re-verified live, plus a fifth — the plan states atomic writes as a blanket rule the shipped design deliberately splits.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      Atlas is now scoped to word writes and the record-level recovery landed (parseDay/splitRecords/complete). The fix itself ships a duplication defect and an untested branch, raised separately below rather than re-raised here.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      writeAtomic still inherits 0600 from os.CreateTemp while AppendEvent at yaml.go:102 opens 0644.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      store.go:5-20 still states no thread-safety contract; Mem is mutex-guarded and YAML is not.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      replraw.go:70-71 still reads "the History seam will do once #3 backs it with a store".
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      The issue Log still ends at the implementation notes; no entry records the round-2 or round-3 close-review outcomes.
+findings:
+  - id: new
+    severity: Critical
+    title: |
+      parseDay double-counts every whole record whenever the torn-record recovery path runs
+    detail: |
+      yaml.go:211-221 — yaml.Unmarshal populates `all` with everything it could decode BEFORE
+      returning its error, and the fallback loop appends the individually-parsed records to that
+      same slice instead of replacing them. Verified end to end through the real store: two real
+      events plus a 3-byte torn append makes Events return 4 (sycophantic, sycophantic, ephemeral,
+      ephemeral) and warn "recovered 4 event(s), dropped 1 torn record(s)". 27 of 78 single-record
+      truncation offsets reproduce it. Recall survives only because prefixMatch dedupes, but the
+      Store contract is violated and event.go:15-17 declares the log the ONLY source every #8
+      statistic folds over, so a duplicated day inflates words/day, streaks, active days and
+      accuracy. It also falsifies atlas/define.md:235 ("an interrupted write costs the event in
+      flight and nothing else"). One-line fix: set `all = nil` immediately inside the `err != nil`
+      branch, before the splitRecords loop.
+  - id: new
+    severity: Important
+    title: |
+      A truncation inside the timestamp passes complete() and is admitted as a real event with a fabricated date
+    detail: |
+      event.go:31-33 tests for field presence, not integrity. A record cut at "at: 2026-08-2"
+      parses as 2026-08-02 and is returned as a whole event — an 18-day-displaced record invented
+      from a fragment; "at: 2026-08-20" likewise becomes midnight. This is the exact failure mode
+      workshop/lessons.md:120 was written about, one truncation point over, and atlas/define.md:233
+      states completeness IS what distinguishes a whole record from a fragment. Cheap fix: the
+      reliable torn-tail signal is the one AppendEvent already guarantees — every complete record
+      ends with a newline. In parseDay, if the file does not end in "\n", the final record is torn
+      by construction: drop and count it, then apply the existing checks to the rest.
+  - id: new
+    severity: Important
+    title: |
+      The torn-record recovery branch added this window has no test that reaches it (ARCH-PURE)
+    detail: |
+      yaml_test.go:121-148 appends "- word: thi", which leaves the day file VALID YAML — confirmed
+      yaml.Unmarshal returns nil on that exact input — so the test never enters the err != nil
+      branch and splitRecords is dead code as far as the suite is concerned. Both defects above
+      live in that unreached branch. Compounding it, parseDay/splitRecords/complete are pure and
+      in-package but yaml_test.go is package store_test and cannot see them, while word_test.go
+      (package store) tests only Key and Slug — so the pure core buys no test leverage. A table
+      test in package store driving parseDay over each interesting truncation, asserting both the
+      events and the torn count, is about ten lines and catches both.
+```
