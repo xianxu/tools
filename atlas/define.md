@@ -218,10 +218,22 @@ the hyphenated `hot-dog` cannot share its file. Every file stores `text:`, so th
 key lives in the content and the filename is only an index — which makes a future
 naming change a rename rather than a migration.
 
-**Writes are atomic** (temp file in the same directory, then rename) because this
-process is quit with Ctrl-C by design, so an interrupted write is routine. A
-leftover temp file is never read as a word, and one corrupt file is skipped with
-a warning rather than making the whole deck unopenable.
+**Interruption is routine here** — this process is quit with Ctrl-C by design —
+and the two file kinds defend against it differently:
+
+- **Word files are written atomically**: temp file in the same directory, then
+  rename. A leftover temp file is never read as a word, and one corrupt file is
+  skipped with a warning rather than making the deck unopenable.
+- **Event files are appended, deliberately not rewritten.** Two machines
+  appending to the same day merge cleanly; a whole-file rewrite would not. The
+  cost is a possible torn final record, so a day log is parsed record-by-record
+  and incomplete ones are dropped with a warning. An interrupted write costs the
+  event in flight and nothing else.
+
+Note that **parsing successfully is not the test for a torn record**: an append
+cut mid-write leaves valid YAML (`- word: thi`) that unmarshals into an event
+with no timestamp. Completeness — word, kind and time all present — is what
+distinguishes a whole record from a fragment.
 
 **Two Store implementations, one conformance suite.** `Mem` is the reference and
 ships as production code; `storetest.Suite` runs against both, so "the fake

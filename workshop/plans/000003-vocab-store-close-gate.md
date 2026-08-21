@@ -222,6 +222,149 @@ rounds:
             genuinely still open in the tree.
           round: 2
       blocked: false
+    - "n": 3
+      timestamp: "2026-08-20T21:40:22-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: withdrawn
+          note: Overtaken by the shipped code — deps.history plus a nil default at replraw.go:62-64; no rig panics and the full suite is green.
+          round: 3
+        - id: BR-2
+          disposition: withdrawn
+          note: A plan-authoring style nit about pre-images of code that now exists; no value left at a code boundary.
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: go.mod and go.sum pin go.yaml.in/yaml/v3 v3.0.5; go build and go test run offline.
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: Same fix as BR-7 — define-learn.md now records the cwd-only model.
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: prefixMatch at history.go:44 is now the single definition, called by memHistory.Prefix and storeHistory.Prefix.
+          round: 3
+        - id: BR-6
+          disposition: addressed
+          note: 'Verified by probe — the branch now emits "define: overwriting unreadable alpha.yaml: ..." before the reset.'
+          round: 3
+        - id: BR-7
+          disposition: addressed
+          note: define-learn.md:37 and :54-60 rewritten to the cwd-only model plus the rate-not-impossibility claim.
+          round: 3
+        - id: BR-8
+          disposition: addressed
+          note: Both mutations re-verified independently — reverting replraw.go:61-64 and adding "&& e.Found" each fail exactly one new test.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: No FixedZone case anywhere in the tree; every suite timestamp is still time.UTC.
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: main.go:3-16 still has the stray blank line after "context" and the store import inside the stdlib group.
+          round: 3
+        - id: BR-11
+          disposition: not-addressed
+          note: mem.go:83 and yaml.go:144 still carry the identical event sort; two warnf helpers still repeat the prefix literal.
+          round: 3
+        - id: BR-12
+          disposition: not-addressed
+          note: history_store.go:84-90 still reads and writes h.warned outside h.mu.
+          round: 3
+        - id: BR-13
+          disposition: not-addressed
+          note: One warned flag still covers both the construction-time read failure and every later write failure.
+          round: 3
+        - id: BR-14
+          disposition: not-addressed
+          note: No length bound in Slug; word.go still has no truncate-plus-hash path.
+          round: 3
+        - id: BR-15
+          disposition: not-addressed
+          note: Key still does no Unicode normalisation.
+          round: 3
+        - id: BR-16
+          disposition: not-addressed
+          note: store.go:11-12 documents "Lookups accumulates" but not that Upsert can never set an exact count.
+          round: 3
+        - id: BR-17
+          disposition: not-addressed
+          note: yaml_test.go:99-112 still asserts only the file count, not that alpha.yaml was untouched.
+          round: 3
+        - id: BR-18
+          disposition: not-addressed
+          note: Still no test for the Upsert corrupt-file branch — the very branch round 2 changed remains invisible to the suite.
+          round: 3
+        - id: BR-19
+          disposition: not-addressed
+          note: history_store_test.go:124-128 still hand-rolls failErr instead of errors.New.
+          round: 3
+        - id: BR-20
+          disposition: not-addressed
+          note: event.go:20 Found still lacks omitempty while Correct at :21 has it.
+          round: 3
+        - id: BR-21
+          disposition: not-addressed
+          note: openHistory is still eager and Events(time.Time{}) still parses every day file on every invocation.
+          round: 3
+        - id: BR-22
+          disposition: not-addressed
+          note: No "## Revisions" section exists in the plan (grep confirms); all four deltas re-verified live. The PQ-9 note in this finding is now stale in the other direction — the plan-gate ledger should dispose PQ-9 as addressed.
+          round: 3
+      findings:
+        - id: BR-23
+          severity: Important
+          title: The event log has no torn-record recovery, and the atlas claims atomic writes without scoping it to words
+          detail: |-
+            AppendEvent (yaml.go:96-110) is a raw O_APPEND write with no temp-file-then-rename,
+            and Events (yaml.go:126-131) unmarshals the whole day file and skips it entirely on
+            any parse error. Verified by probe: appending 35 bytes of a truncated record to a day
+            file holding one good event makes Events return 0 events with a "skipping" warning, so
+            that day vanishes from Up-arrow recall permanently — a larger blast radius than the
+            word path, where one bad file costs one word. Meanwhile atlas/define.md states
+            "Writes are atomic (temp file in the same directory, then rename)" as a blanket
+            property. Cheap fix: scope the atlas sentence to word writes. Durable fix, about ten
+            lines: on unmarshal failure, split the file on lines starting with "- " and unmarshal
+            each record independently, applying the skip-one-not-all rule Deck already follows.
+          round: 3
+        - id: BR-24
+          severity: Minor
+          title: words/*.yaml is written 0600 while events/*.yaml is 0644
+          detail: |-
+            yaml.go:161-193 inherits 0600 from os.CreateTemp and the rename preserves it, while
+            AppendEvent at yaml.go:106 opens with 0644. Verified by probe. Two files written by
+            one store with two permission stories.
+          round: 3
+        - id: BR-25
+          severity: Minor
+          title: Store states no thread-safety contract and the two implementations differ (ARCH-MOCK)
+          detail: |-
+            store.go:10 — Mem guards every method with a mutex; YAML has none and Upsert is a
+            non-atomic read-modify-write. The conformance suite cannot catch this because the
+            fake is stronger than the real one, which is the fake-diverges-from-real gap the
+            suite exists to close. Same shape, lower stakes: Mem.Deck returns a non-nil empty
+            slice where YAML.Deck returns nil. Harmless today since the CLI is single-goroutine;
+            a one-line interface doc comment settles the intent before issues 4 and 5 consume it.
+          round: 3
+        - id: BR-26
+          severity: Minor
+          title: Stale comment at replraw.go:69 still says the store is future work
+          detail: |-
+            "Querying twice doubled the work the History seam will do once #3 backs it with a
+            store" — issue 3 now does, three lines above at replraw.go:61.
+          round: 3
+        - id: BR-27
+          severity: Minor
+          title: The issue Log records no boundary-review outcome for round 2
+          detail: |-
+            workshop/issues/000003-vocab-store.md:115-134 ends at the implementation notes; there
+            is no entry for the round-2 close review or the four Important fixes it produced.
+            AGENTS.md section 3 makes logging the review outcome part of crossing the boundary.
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#3 (boundary-review)
@@ -359,16 +502,67 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   gate ledger still carries PQ-9 as open, which finding I-3 confirms is
   genuinely still open in the tree.
 
+## Round 3 — 2026-08-20T21:40:22-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — withdrawn — Overtaken by the shipped code — deps.history plus a nil default at replraw.go:62-64; no rig panics and the full suite is green.
+- BR-2 — withdrawn — A plan-authoring style nit about pre-images of code that now exists; no value left at a code boundary.
+- BR-3 — addressed — go.mod and go.sum pin go.yaml.in/yaml/v3 v3.0.5; go build and go test run offline.
+- BR-4 — addressed — Same fix as BR-7 — define-learn.md now records the cwd-only model.
+- BR-5 — addressed — prefixMatch at history.go:44 is now the single definition, called by memHistory.Prefix and storeHistory.Prefix.
+- BR-6 — addressed — Verified by probe — the branch now emits "define: overwriting unreadable alpha.yaml: ..." before the reset.
+- BR-7 — addressed — define-learn.md:37 and :54-60 rewritten to the cwd-only model plus the rate-not-impossibility claim.
+- BR-8 — addressed — Both mutations re-verified independently — reverting replraw.go:61-64 and adding "&& e.Found" each fail exactly one new test.
+- BR-9 — not-addressed — No FixedZone case anywhere in the tree; every suite timestamp is still time.UTC.
+- BR-10 — not-addressed — main.go:3-16 still has the stray blank line after "context" and the store import inside the stdlib group.
+- BR-11 — not-addressed — mem.go:83 and yaml.go:144 still carry the identical event sort; two warnf helpers still repeat the prefix literal.
+- BR-12 — not-addressed — history_store.go:84-90 still reads and writes h.warned outside h.mu.
+- BR-13 — not-addressed — One warned flag still covers both the construction-time read failure and every later write failure.
+- BR-14 — not-addressed — No length bound in Slug; word.go still has no truncate-plus-hash path.
+- BR-15 — not-addressed — Key still does no Unicode normalisation.
+- BR-16 — not-addressed — store.go:11-12 documents "Lookups accumulates" but not that Upsert can never set an exact count.
+- BR-17 — not-addressed — yaml_test.go:99-112 still asserts only the file count, not that alpha.yaml was untouched.
+- BR-18 — not-addressed — Still no test for the Upsert corrupt-file branch — the very branch round 2 changed remains invisible to the suite.
+- BR-19 — not-addressed — history_store_test.go:124-128 still hand-rolls failErr instead of errors.New.
+- BR-20 — not-addressed — event.go:20 Found still lacks omitempty while Correct at :21 has it.
+- BR-21 — not-addressed — openHistory is still eager and Events(time.Time{}) still parses every day file on every invocation.
+- BR-22 — not-addressed — No "## Revisions" section exists in the plan (grep confirms); all four deltas re-verified live. The PQ-9 note in this finding is now stale in the other direction — the plan-gate ledger should dispose PQ-9 as addressed.
+
+### Raised
+
+- **BR-23** [Important] The event log has no torn-record recovery, and the atlas claims atomic writes without scoping it to words
+  AppendEvent (yaml.go:96-110) is a raw O_APPEND write with no temp-file-then-rename,
+  and Events (yaml.go:126-131) unmarshals the whole day file and skips it entirely on
+  any parse error. Verified by probe: appending 35 bytes of a truncated record to a day
+  file holding one good event makes Events return 0 events with a "skipping" warning, so
+  that day vanishes from Up-arrow recall permanently — a larger blast radius than the
+  word path, where one bad file costs one word. Meanwhile atlas/define.md states
+  "Writes are atomic (temp file in the same directory, then rename)" as a blanket
+  property. Cheap fix: scope the atlas sentence to word writes. Durable fix, about ten
+  lines: on unmarshal failure, split the file on lines starting with "- " and unmarshal
+  each record independently, applying the skip-one-not-all rule Deck already follows.
+- **BR-24** [Minor] words/*.yaml is written 0600 while events/*.yaml is 0644
+  yaml.go:161-193 inherits 0600 from os.CreateTemp and the rename preserves it, while
+  AppendEvent at yaml.go:106 opens with 0644. Verified by probe. Two files written by
+  one store with two permission stories.
+- **BR-25** [Minor] Store states no thread-safety contract and the two implementations differ (ARCH-MOCK)
+  store.go:10 — Mem guards every method with a mutex; YAML has none and Upsert is a
+  non-atomic read-modify-write. The conformance suite cannot catch this because the
+  fake is stronger than the real one, which is the fake-diverges-from-real gap the
+  suite exists to close. Same shape, lower stakes: Mem.Deck returns a non-nil empty
+  slice where YAML.Deck returns nil. Harmless today since the CLI is single-goroutine;
+  a one-line interface doc comment settles the intent before issues 4 and 5 consume it.
+- **BR-26** [Minor] Stale comment at replraw.go:69 still says the store is future work
+  "Querying twice doubled the work the History seam will do once #3 backs it with a
+  store" — issue 3 now does, three lines above at replraw.go:61.
+- **BR-27** [Minor] The issue Log records no boundary-review outcome for round 2
+  workshop/issues/000003-vocab-store.md:115-134 ends at the implementation notes; there
+  is no entry for the round-2 close review or the four Important fixes it produced.
+  AGENTS.md section 3 makes logging the review outcome part of crossing the boundary.
+
 ## Open findings
 
-- **BR-1** [Minor] Task 4 does not say where History is injected or what the nil default is
-- **BR-2** [Minor] Task 1 Step 1 and Task 3 Step 2 enumerate test cases in prose; compress to one strategy line per risky function
-- **BR-3** [Minor] go.yaml.in/yaml/v3 is not a dependency of this module and no step adds it
-- **BR-4** [Minor] The define-learn project file still records the retired brain/nous-push storage decision
-- **BR-5** [Important] storeHistory.Prefix duplicates memHistory.Prefix verbatim (ARCH-DRY)
-- **BR-6** [Important] YAML.Upsert silently resets a word's history when the existing file is unreadable
-- **BR-7** [Important] Project file still documents the git/brain/nous-push storage model (PQ-9)
-- **BR-8** [Important] No test covers the deps.history to runEditor wiring — the issue's purpose
 - **BR-9** [Minor] Timestamp offset preservation is a load-bearing contract with no test
 - **BR-10** [Minor] main.go import block has a stray blank line and a third-party import in the stdlib group
 - **BR-11** [Minor] Event sort and warnf helper are each duplicated across the two stores
@@ -383,3 +577,8 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-20** [Minor] Found lacks omitempty while Correct has it, within one struct
 - **BR-21** [Minor] History is constructed eagerly and loads every day file on every invocation
 - **BR-22** [Minor] Plan needs a Revisions entry — four documented deltas the code does not match
+- **BR-23** [Important] The event log has no torn-record recovery, and the atlas claims atomic writes without scoping it to words
+- **BR-24** [Minor] words/*.yaml is written 0600 while events/*.yaml is 0644
+- **BR-25** [Minor] Store states no thread-safety contract and the two implementations differ (ARCH-MOCK)
+- **BR-26** [Minor] Stale comment at replraw.go:69 still says the store is future work
+- **BR-27** [Minor] The issue Log records no boundary-review outcome for round 2

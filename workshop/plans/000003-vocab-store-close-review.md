@@ -299,3 +299,225 @@ findings:
       gate ledger still carries PQ-9 as open, which finding I-3 confirms is
       genuinely still open in the tree.
 ```
+
+---
+
+## Re-review — 2026-08-20T21:40:22-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 3 — vocabulary store: per-user YAML deck in a brain, behind a Store seam |
+| repo | tools |
+| issue file | workshop/issues/000003-vocab-store.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | e44ac7885e15a22ce5a23bc05d404c812688296f..8bd988a03bfd696cce4a034210307070ca17be55 |
+| command | sdlc close --issue 3 |
+| reviewer | claude |
+| timestamp | 2026-08-20T21:40:22-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 2's four Important findings are genuinely fixed, and I verified each rather than trusting the commit message: `prefixMatch` is now the single definition called by both `History` implementations; `YAML.Upsert`'s reset branch now warns (probe output: `define: overwriting unreadable alpha.yaml: yaml: found character that cannot start any token`); the project file no longer restates the git/brain/`nous push` model; and both new tests are real — reverting `replraw.go:61-64` to `var hist History = &memHistory{}` fails `TestEditorPersistsThroughDeps`, and adding `&& e.Found` to the restore loop fails `TestStoreHistoryRestoresTyposAcrossSessions`. Independent verification is clean throughout: `go build`, `go vet`, `gofmt -l`, `go test ./...`, `go test -race ./cmd/define/store/...`, and `FuzzSlugIsSafe` to 8.2M execs. Done-when 3 checks out by grep — the only `time.Now()` in production code is inside `systemClock`. Nothing here is Critical. One new Important holds it back from SHIP: the atlas claims "**Writes are atomic** (temp file in the same directory, then rename)" as a blanket property, but only *word* writes are atomic — the event log is a raw `O_APPEND` write, and I confirmed by probe that one truncated record makes `Events` skip the entire day file, silently erasing that day from Up-arrow recall. That's the exact class of overstated claim this issue's own `workshop/lessons.md` entry was written about. The rest is a Minor tail, most of it carried unfixed from round 2 by design.
+
+### 1. Strengths
+
+- **`storetest.Suite` is the deliverable and it holds up** (`cmd/define/store/storetest/suite.go`), run against `Mem` (`mem_test.go:11`) and `YAML` (`yaml_test.go:15`), with `merge` (`mem.go:34`) and `sortDeck` (`mem.go:58`) shared so the two cannot disagree about upsert semantics or ordering. Textbook ARCH-MOCK: production and test flow share the `Store` boundary and the fake is package code, not a `_test.go` alibi.
+- **The round-2 fixes were done at the right altitude.** `prefixMatch` (`history.go:44`) isn't just a de-dup — the comment records *why* the duplication was dangerous (lopsided coverage), which is the thing that would otherwise be re-learned. Same for the `Upsert` warning comment at `yaml.go:44-49`.
+- **The two new tests are mutation-proof, and the commit says so honestly** ("I verified each FAILS on the mutation it exists to catch"). I re-ran both mutations independently; the claim is accurate. `TestStoreHistoryPrefixDoesNotQueryTheStore` (`history_store_test.go:82`) is likewise testing an invariant rather than restating the implementation.
+- **`Slug` is total and safe under real fuzzing** (`word.go:48`). Branch-A output is provably injective — reversibility forces the key to contain no `-` — and 8.2M execs found nothing.
+- **Degradation is real, not asserted.** A read-only directory returns `mkdir …: permission denied` from both `Upsert` and `AppendEvent` and the session continues; a 300-char headword, a corrupt word file and a leftover temp file all skip or error rather than panic.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**The event log has no torn-record recovery, and the atlas's atomicity claim doesn't scope itself to words.**
+`cmd/define/store/yaml.go:96-110` (`AppendEvent`) writes with `os.OpenFile(…O_APPEND…)` + `f.Write(b)` — no temp-file-then-rename, no per-record recovery on read. `Events` (`yaml.go:126-131`) unmarshals the *whole* day file and skips it entirely on any parse error. Probe: after appending 35 bytes of a truncated record to a day file holding one good event, `s.Events(time.Time{})` returns **0 events** with `define: skipping 2026-08-21.yaml: yaml: line 7: could not find expected ':'`. Because `storeHistory` restores recall from events and nothing else, one partial record permanently erases that day's Up-arrow history — a strictly larger blast radius than the word path, where one bad file costs one word. Meanwhile `atlas/define.md` states "**Writes are atomic** (temp file in the same directory, then rename) because this process is quit with Ctrl-C by design" without saying that half the writes aren't. Ctrl-C genuinely can't tear a completed `write()`, so this isn't a crash-path panic — but the README actively markets running inside a synced directory, which is the same argument used to justify the round-2 `Upsert` warning, and a partially-materialised day file is exactly that input.
+*Fix sketch, cheap version:* scope the atlas sentence — "word writes are atomic; the day log is append-only, and an interrupted or partially-synced append costs that day's log." *Durable version (~10 lines):* in `Events`, on unmarshal failure, split the file on lines beginning with `- ` and unmarshal each record independently, keeping the parseable ones and warning about the remainder — the same skip-one-not-all principle already applied to `Deck`.
+
+### 4. Minor findings
+
+- `cmd/define/store/yaml.go:161-193` vs `:96-110` — `words/*.yaml` lands at **0600** (inherited from `os.CreateTemp`, preserved by the rename) while `events/*.yaml` is **0644**. Verified by probe. Two files written by one store with two permission stories.
+- `cmd/define/store/store.go:10` — the `Store` interface states no thread-safety contract, and the implementations differ: `Mem` guards every method with a mutex, `YAML` has none (`Upsert` is a non-atomic read-modify-write). The conformance suite cannot catch this because the fake is *stronger* than the real one — the precise fake-diverges-from-real gap the suite exists to close (ARCH-MOCK). Same shape, lower stakes: `Mem.Deck()` returns a non-nil empty slice where `YAML.Deck()` returns `nil`. Both harmless today (single-goroutine CLI); a one-line interface doc comment settles the intent before `#4`/`#5` consume it.
+- `cmd/define/replraw.go:69` — stale comment: "Querying twice doubled the work the History seam will do **once `#3` backs it with a store**." `#3` now does, three lines above.
+- `workshop/issues/000003-vocab-store.md:115-134` — `## Log` has no entry for the round-2 close review or the four Important fixes it produced. AGENTS.md §3 makes logging the boundary-review outcome part of crossing the boundary.
+
+### 5. Test coverage notes
+
+The two gaps that mattered at round 2 are closed and I confirmed both by mutation rather than by reading. Remaining, in priority order:
+
+1. **The event-log torn-record path has no test** — the Important above. `TestYAMLSkipsCorruptFileWithWarning` covers a corrupt *word* file only; nothing writes a partial record into a day file.
+2. **`YAML.Upsert`'s newly-warning branch still has no test** (BR-18). The fix is correct — I verified it by probe — but the branch that just changed is still invisible to the suite, which is how the missing warning survived to round 2 in the first place. This is the cheapest remaining test in the diff: write `\t: [unclosed` to `words/alpha.yaml`, `Upsert`, assert the warn buffer is non-empty.
+3. **Timestamp offset preservation is still unasserted** (BR-9) despite being load-bearing for `#8`.
+4. `cmd/define/store/yaml_test.go` uses wall-clock `time.Now()` in four tests while the package ships a `FixedClock` for exactly this. Harmless — nothing asserts on the value — but it's the one place the diff doesn't take its own clock-injection medicine.
+
+### 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass, with a residue.** The round-2 fix was the substantive one and it landed correctly. What remains is cosmetic and still open: the event sort duplicated verbatim at `mem.go:83` and `yaml.go:144` (BR-11), and two `warnf` helpers each hard-coding the `"define: "` prefix. `sortDeck` was extracted for exactly this reason; `sortEvents` would finish the thought.
+- **ARCH-PURE — pass.** `Word`, `ReviewEvent`, `Key`, `Slug`, `merge`, `sortDeck` and `Clock` are genuinely pure, and `word_test.go` runs with no filesystem, no mocks, no fakes. `YAML` is the thin shell; the one IO decision that could have leaked into logic — *where* the directory is — is a constructor parameter resolved in the 8-line `openHistory` at `main.go:47-54`. That is the whole IO seam for this feature.
+- **ARCH-PURPOSE — pass on code, one artifact still open.** Shadow-sweep: `storeHistory` derives from `Store`; `runEditor` takes the seam and was mutation-proven to depend on it; the deferred consumers (one-shot, piped) are a genuinely separable extension with an explicit `#3`/`#4` split table. Hand-maintained restatements: README ✓, atlas ✓, project file ✓ (round-2 fix). Only the **plan** still restates a model the code doesn't derive from — BR-22, below.
+- **ARCH-MOCK — pass, and still the strongest part of the diff.** Stateful fake behind the same seam, both sides run the same suite in ordinary `go test`, and the owned component boots from portable non-production storage by construction (`NewYAML(t.TempDir(), nil)`). No live-conformance check is needed because the "real" side already runs against a real filesystem. The one caveat is the Minor above: properties where `Mem` is *stronger* than `YAML` are invisible to the suite by construction, so they need to be stated on the interface instead.
+- **For `#5`/`#8`:** three constraints this diff creates. `Word` deliberately carries no box/interval — keep the schedule out of `store/word.go` or `#5` inherits a migration. `Events(time.Time{})` parses every day file ever written on *every* `define` invocation including one-shot lookups that never touch history (BR-21); the `since` parameter is already the fix. And `#8` must group by timestamp, never by filename — currently guaranteed only by a comment.
+
+### 7. Plan revision recommendations
+
+`workshop/plans/000003-vocab-store-plan.md` still has **no `## Revisions` section** (BR-22, re-confirmed by grep). All four deltas are still live and I re-verified each against the tree:
+
+1. **Type names** — the Integration-points table names `yamlStore`/`memStore`; the shipped exported types are `YAML` (`store/yaml.go:25`) and `Mem` (`store/mem.go:13`), because they are consumed from outside the package as `store.NewYAML`/`store.NewMem`.
+2. **`Word` has no `Found` field** — the Pure-entities prose lists `Found bool`; `store/word.go:20-25` has none. The code is right (`found` is a property of a lookup event) — and note the plan's `ReviewEvent` bullet correspondingly *omits* the `Found` field the shipped struct does carry (`event.go:20`). Both halves of that swap need recording.
+3. **`Key` collapses interior whitespace** — slug rule 1 specifies `strings.ToLower(strings.TrimSpace(text))`; `store/word.go:30` is `strings.ToLower(strings.Join(strings.Fields(text), " "))`, so `hot   dog` normalises to `hot dog`. The implementation is the better rule and matches `parseREPLLine`; record the change, keep the code.
+4. **Constructor signature** — plan and Spec both say `NewStore(dir)`; the shipped constructor is `NewYAML(dir string, warn io.Writer)` (`store/yaml.go:32`). The `warn` seam earns its place, but it's an undeclared addition that downstream issues will consume.
+
+Separately, `workshop/plans/000003-vocab-store-plan-gate.md` still lists **PQ-9** under "Open findings" — now stale in the *other* direction, since `define-learn.md` was corrected in `8bd988a`. It should be disposed `addressed`.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: withdrawn
+    note: |
+      Overtaken by the shipped code — deps.history plus a nil default at replraw.go:62-64; no rig panics and the full suite is green.
+  - id: BR-2
+    disposition: withdrawn
+    note: |
+      A plan-authoring style nit about pre-images of code that now exists; no value left at a code boundary.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      go.mod and go.sum pin go.yaml.in/yaml/v3 v3.0.5; go build and go test run offline.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Same fix as BR-7 — define-learn.md now records the cwd-only model.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      prefixMatch at history.go:44 is now the single definition, called by memHistory.Prefix and storeHistory.Prefix.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Verified by probe — the branch now emits "define: overwriting unreadable alpha.yaml: ..." before the reset.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      define-learn.md:37 and :54-60 rewritten to the cwd-only model plus the rate-not-impossibility claim.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Both mutations re-verified independently — reverting replraw.go:61-64 and adding "&& e.Found" each fail exactly one new test.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      No FixedZone case anywhere in the tree; every suite timestamp is still time.UTC.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      main.go:3-16 still has the stray blank line after "context" and the store import inside the stdlib group.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      mem.go:83 and yaml.go:144 still carry the identical event sort; two warnf helpers still repeat the prefix literal.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      history_store.go:84-90 still reads and writes h.warned outside h.mu.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      One warned flag still covers both the construction-time read failure and every later write failure.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      No length bound in Slug; word.go still has no truncate-plus-hash path.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      Key still does no Unicode normalisation.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      store.go:11-12 documents "Lookups accumulates" but not that Upsert can never set an exact count.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      yaml_test.go:99-112 still asserts only the file count, not that alpha.yaml was untouched.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      Still no test for the Upsert corrupt-file branch — the very branch round 2 changed remains invisible to the suite.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      history_store_test.go:124-128 still hand-rolls failErr instead of errors.New.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      event.go:20 Found still lacks omitempty while Correct at :21 has it.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      openHistory is still eager and Events(time.Time{}) still parses every day file on every invocation.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      No "## Revisions" section exists in the plan (grep confirms); all four deltas re-verified live. The PQ-9 note in this finding is now stale in the other direction — the plan-gate ledger should dispose PQ-9 as addressed.
+findings:
+  - id: new
+    severity: Important
+    title: |
+      The event log has no torn-record recovery, and the atlas claims atomic writes without scoping it to words
+    detail: |
+      AppendEvent (yaml.go:96-110) is a raw O_APPEND write with no temp-file-then-rename,
+      and Events (yaml.go:126-131) unmarshals the whole day file and skips it entirely on
+      any parse error. Verified by probe: appending 35 bytes of a truncated record to a day
+      file holding one good event makes Events return 0 events with a "skipping" warning, so
+      that day vanishes from Up-arrow recall permanently — a larger blast radius than the
+      word path, where one bad file costs one word. Meanwhile atlas/define.md states
+      "Writes are atomic (temp file in the same directory, then rename)" as a blanket
+      property. Cheap fix: scope the atlas sentence to word writes. Durable fix, about ten
+      lines: on unmarshal failure, split the file on lines starting with "- " and unmarshal
+      each record independently, applying the skip-one-not-all rule Deck already follows.
+  - id: new
+    severity: Minor
+    title: |
+      words/*.yaml is written 0600 while events/*.yaml is 0644
+    detail: |
+      yaml.go:161-193 inherits 0600 from os.CreateTemp and the rename preserves it, while
+      AppendEvent at yaml.go:106 opens with 0644. Verified by probe. Two files written by
+      one store with two permission stories.
+  - id: new
+    severity: Minor
+    title: |
+      Store states no thread-safety contract and the two implementations differ (ARCH-MOCK)
+    detail: |
+      store.go:10 — Mem guards every method with a mutex; YAML has none and Upsert is a
+      non-atomic read-modify-write. The conformance suite cannot catch this because the
+      fake is stronger than the real one, which is the fake-diverges-from-real gap the
+      suite exists to close. Same shape, lower stakes: Mem.Deck returns a non-nil empty
+      slice where YAML.Deck returns nil. Harmless today since the CLI is single-goroutine;
+      a one-line interface doc comment settles the intent before issues 4 and 5 consume it.
+  - id: new
+    severity: Minor
+    title: |
+      Stale comment at replraw.go:69 still says the store is future work
+    detail: |
+      "Querying twice doubled the work the History seam will do once #3 backs it with a
+      store" — issue 3 now does, three lines above at replraw.go:61.
+  - id: new
+    severity: Minor
+    title: |
+      The issue Log records no boundary-review outcome for round 2
+    detail: |
+      workshop/issues/000003-vocab-store.md:115-134 ends at the implementation notes; there
+      is no entry for the round-2 close review or the four Important fixes it produced.
+      AGENTS.md section 3 makes logging the review outcome part of crossing the boundary.
+```

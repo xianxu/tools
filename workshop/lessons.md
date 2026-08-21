@@ -115,3 +115,10 @@ word, or the same day, on two machines still conflicts. What the layout actually
 changes is the *rate* — with one big file, every write on the second machine
 conflicts. The precise claim is still a good reason for the design; the loose one
 would have been quoted back later as a guarantee the code never made.
+
+## "It parsed" is not "it is complete" (define #3)
+
+An append cut mid-write leaves *valid* YAML — `- word: thi` unmarshals happily
+into an event with no timestamp and no kind. A recovery path that tests for a
+parse error therefore accepts the fragment and silently invents a record. Test
+for the fields a real record always carries, not for the absence of an error.

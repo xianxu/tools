@@ -115,3 +115,34 @@ type bytesBuffer struct{ b []byte }
 
 func (w *bytesBuffer) Write(p []byte) (int, error) { w.b = append(w.b, p...); return len(p), nil }
 func (w *bytesBuffer) String() string              { return string(w.b) }
+
+// Events are appended, not renamed, so an interrupted write can leave a torn
+// record. Losing that record is acceptable; losing the whole day is not.
+func TestYAMLRecoversFromATornEventRecord(t *testing.T) {
+	dir := t.TempDir()
+	var warn bytesBuffer
+	s := store.NewYAML(dir, &warn)
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, At: day})
+	_ = s.AppendEvent(store.ReviewEvent{Word: "second", Kind: store.EventLookedUp, At: day.Add(time.Hour)})
+
+	// Simulate a kill mid-append: a partial record on the end.
+	path := filepath.Join(dir, "events", "2026-08-20.yaml")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.WriteString("- word: thi")
+	f.Close()
+
+	ev, err := s.Events(time.Time{})
+	if err != nil {
+		t.Fatalf("a torn record broke the day: %v", err)
+	}
+	if len(ev) != 2 || ev[0].Word != "first" || ev[1].Word != "second" {
+		t.Errorf("events = %+v, want the two whole records preserved", ev)
+	}
+	if warn.String() == "" {
+		t.Error("a dropped record must be reported")
+	}
+}

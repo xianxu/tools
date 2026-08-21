@@ -130,10 +130,11 @@ func (y *YAML) Events(since time.Time) ([]ReviewEvent, error) {
 			y.warnf("skipping %s: %v", e.Name(), err)
 			continue
 		}
-		var day []ReviewEvent
-		if err := yaml.Unmarshal(b, &day); err != nil {
-			y.warnf("skipping %s: %v", e.Name(), err)
-			continue
+		day, torn := parseDay(b)
+		if torn > 0 {
+			// A torn record, not a corrupt file: keep every whole record and drop
+			// only the fragment.
+			y.warnf("%s: recovered %d event(s), dropped %d torn record(s)", e.Name(), len(day), torn)
 		}
 		for _, ev := range day {
 			if !ev.At.Before(since) {
@@ -191,4 +192,57 @@ func writeAtomic(path string, w Word) error {
 		return err
 	}
 	return os.Rename(name, path)
+}
+
+// parseDay reads a day log, tolerating a torn final record.
+//
+// Events are APPENDED rather than written-and-renamed: two machines appending to
+// the same day merge cleanly, which a whole-file rewrite would not. The cost is
+// that an interrupted append can leave a partial record — and this process is
+// quit with Ctrl-C by design, so that is routine rather than exceptional.
+//
+// Whole-file parsing would then discard the entire day for one truncated tail.
+// Instead each record is parsed on its own and the fragment is dropped, so an
+// interrupted write costs the event in flight and nothing else.
+func parseDay(b []byte) (events []ReviewEvent, torn int) {
+	// Parsing successfully is NOT the test. A record cut mid-write — "- word: thi"
+	// — is perfectly valid YAML and unmarshals into an event with no timestamp and
+	// no kind. Completeness is the test.
+	var all []ReviewEvent
+	if err := yaml.Unmarshal(b, &all); err != nil {
+		for _, rec := range splitRecords(string(b)) {
+			var one []ReviewEvent
+			if err := yaml.Unmarshal([]byte(rec), &one); err != nil {
+				torn++
+				continue
+			}
+			all = append(all, one...)
+		}
+	}
+	for _, e := range all {
+		if e.complete() {
+			events = append(events, e)
+			continue
+		}
+		torn++
+	}
+	return events, torn
+}
+
+// splitRecords cuts a day log at the top-level "- " that begins each event.
+func splitRecords(s string) []string {
+	var out []string
+	var cur strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(line, "- ") && cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+		cur.WriteString(line)
+		cur.WriteString("\n")
+	}
+	if strings.TrimSpace(cur.String()) != "" {
+		out = append(out, cur.String())
+	}
+	return out
 }
