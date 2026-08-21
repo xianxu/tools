@@ -242,14 +242,14 @@ events, no IO beyond stdout.
 
 **Files:** Modify `cmd/define/main.go`, `cmd/define/capture_test.go`
 
-- [ ] **Step 1: Write the failing test** — `openStore` returns a `storeDeps`
+- [x] **Step 1: Write the failing test** — `openStore` returns a `storeDeps`
       whose `clock` is non-nil, and a test-supplied clock reaches both the
       capturer and `commandCtx`.
-- [ ] **Step 2: Run; expect FAIL.**
-- [ ] **Step 3: Implement** — add `clock store.Clock` to `storeDeps`, build it
+- [x] **Step 2: Run; expect FAIL.**
+- [x] **Step 3: Implement** — add `clock store.Clock` to `storeDeps`, build it
       once in `openStore`, and delete the inline `store.SystemClock()` at
       `main.go:124` so there is one source.
-- [ ] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
+- [x] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
 
 #### Task 5: The local-time window
 

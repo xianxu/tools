@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -455,4 +456,53 @@ func TestUsageErrorsDoNotOpenTheLog(t *testing.T) {
 			}
 		})
 	}
+}
+
+// One source for "what time is it". The clock was constructed inline where the
+// capturer was built, so nothing else could reach it; #15's /history needs the
+// same clock to compute a local-day window, and two clocks would be two answers.
+//
+// The noCapture row is the one worth having: that path writes nothing, but
+// /history still READS, so a nil clock there is a panic waiting for the first
+// opt-out user to run a command.
+func TestOpenStoreSuppliesOneClock(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		opt      options
+		wantDeck bool
+	}{
+		{"normal", options{}, true},
+		{"DEFINE_NO_CAPTURE", options{noCapture: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			sd := openStore(tc.opt, io.Discard)
+			if sd.clock == nil {
+				t.Error("clock is nil; a command that reads the log would panic")
+			}
+			if got := sd.deck != nil; got != tc.wantDeck {
+				t.Errorf("deck non-nil = %v, want %v", got, tc.wantDeck)
+			}
+			if sd.clock != nil && sd.clock.Now().IsZero() {
+				t.Error("the clock reports the zero time")
+			}
+		})
+	}
+}
+
+// The clock has to REACH a command, not merely exist on storeDeps.
+func TestWithStoreCarriesTheClock(t *testing.T) {
+	t.Run("a test-supplied clock wins", func(t *testing.T) {
+		want := fixedClock(1)
+		d := deps{clock: want, history: &memHistory{}, capture: noopCapturer{}}
+		if got := d.withStore(options{}, io.Discard).clock; got.Now() != want.Now() {
+			t.Errorf("clock = %v, want the supplied one (%v)", got.Now(), want.Now())
+		}
+	})
+	t.Run("nothing supplied still yields a usable clock", func(t *testing.T) {
+		d := deps{history: &memHistory{}, capture: noopCapturer{}}
+		if got := d.withStore(options{}, io.Discard).clock; got == nil || got.Now().IsZero() {
+			t.Error("withStore left a nil or zero clock; a command would panic")
+		}
+	})
 }

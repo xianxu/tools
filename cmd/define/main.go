@@ -37,6 +37,10 @@ type deps struct {
 	// openStore and t.Chdir into a t.TempDir first — several do, so this seam is
 	// what keeps the real filesystem opt-in, not unreachable.
 	newStore func(options, io.Writer) storeDeps
+	// clock is what a command reads to answer "now". Injected for the same
+	// reason storeCapturer's is: /history's window is a local-DAY computation,
+	// so a test has to be able to stand at a chosen instant in a chosen zone.
+	clock store.Clock
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
 	// which would make the interactive path unwritable. Note this is a different
@@ -61,6 +65,15 @@ type storeDeps struct {
 	history History
 	capture Capturer
 	deck    store.Store
+	// clock is the process's ONE answer to "what time is it". It used to be
+	// constructed inline where the capturer was built, so nothing else could
+	// reach it — and #15's /history needs the same clock to compute a local-day
+	// window. Two clocks would be two answers, and a test could only move one.
+	//
+	// Supplied on every path, including the opt-out: DEFINE_NO_CAPTURE means
+	// "write nothing here", not "time does not exist", and a command that reads
+	// the log still needs one.
+	clock store.Clock
 }
 
 // withStore fills any store-backed dependency a caller did not supply, leaving
@@ -84,6 +97,10 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	if d.deck == nil {
 		d.deck = sd.deck
 	}
+	// Same shape as the memHistory/noopCapturer fallbacks above: a test that
+	// supplies no newStore still gets a usable process. A test that wants to
+	// control time sets d.clock and it survives.
+	d.clock = orElse[store.Clock](d.clock, orElse[store.Clock](sd.clock, store.SystemClock()))
 	return d
 }
 
@@ -109,19 +126,21 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides
 	// whether a given lookup counts.
+	clk := store.SystemClock()
 	if opt.noCapture {
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
 	}
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
 	}
 	st := store.NewYAML(dir, warn)
 	return storeDeps{
 		history: newStoreHistory(st, warn),
-		capture: newStoreCapturer(st, store.SystemClock(), warn),
+		capture: newStoreCapturer(st, clk, warn),
 		deck:    st,
+		clock:   clk,
 	}
 }
 
