@@ -24,6 +24,24 @@ Both cut real work, so they are recorded before the design rather than inside it
 What survives from the original framing is the **file shape**, and only because
 the operator plans to run this inside a replicated directory (below).
 
+## Where this issue stops and `#4` begins
+
+`#4` is "capture looked-up words into the deck", and this issue necessarily
+captures *something* — otherwise history cannot persist. The split, stated so
+neither issue silently absorbs the other:
+
+| | `#3` (here) | `#4` |
+|---|---|---|
+| interactive REPL | records events + successful words | — |
+| one-shot `define word` | **not captured** | captures |
+| piped / line loop | **not captured** | captures |
+| `--forget`, `DEFINE_NO_CAPTURE` | — | owns both |
+| ordering the deck by lookup count | — | owns |
+
+So after this issue, `define sycophantic` still records nothing; only the editor
+does. That is deliberate — the persistence the editor needs is this issue's
+purpose, and widening capture to every entry point is `#4`'s.
+
 ## Non-goals
 
 - No config file, no `--dir` flag, no environment variable. `define` runs where
@@ -61,10 +79,23 @@ the operator plans to run this inside a replicated directory (below).
     days, accuracy — is a fold over these. Storing counters instead would create a
     second source of truth that drifts (ARCH-DRY).
 
-- **Slug(text) string** — the on-disk name for a word. Pure and **total**: it must
-  produce a safe filename for any input the dictionary accepts, including
-  multi-word headwords (`hot dog`), non-ASCII (`café`), and case variants that
-  must not collide-by-accident yet must not become two decks either.
+- **Slug(key) string** — the on-disk name for a word. Pure and **total**. The rule
+  is decided here rather than left to the implementer, because it fixes filenames
+  and the plan itself calls those expensive to change:
+
+  1. The **key** is `strings.ToLower(strings.TrimSpace(text))`. `Define` and
+     `define` are one word.
+  2. The **filename** is the key with spaces replaced by `-`.
+  3. **If that is not reversible, append a hash.** If replacing `-` with ` ` does
+     not return the key, the name becomes `<slug>-<first 6 hex of sha256(key)>`.
+     So `hot dog` → `hot-dog.yaml` (reversible, readable) while the hyphenated
+     word `hot-dog` → `hot-dog-3f9a1c.yaml` — the two never share a file.
+  4. Any rune that is a path separator, or a name that is `.`/`..`/empty, forces
+     the hash form. **A slug is always exactly one safe path element.**
+
+  Every file also stores `text:`, so the key is recoverable from content and the
+  filename is only an index. That is what keeps rule 3 cheap: a future change to
+  the naming scheme is a rename, never a data migration.
 
 - **Clock** — `Now() time.Time`. Injected, never called globally.
   - **Injected into:** every `Store` method that stamps a time. `#5`'s entire
@@ -87,21 +118,33 @@ the operator plans to run this inside a replicated directory (below).
 
 - **yamlStore** — `words/<slug>.yaml`, one file per word; `events/YYYY-MM-DD.yaml`,
   append-only per day.
-  - **Why this shape:** the operator intends to run `define` inside a replicated
-    directory. The failure mode there is a **merge conflict**, not corruption. One
-    file per word and an append-only day log never conflict; a single mutable
-    `vocab.yaml` conflicts on the second machine. The cost is zero now and high
-    after files exist.
+  - **Why this shape — stated precisely, because the loose version is false.**
+    One file per word does **not** make conflicts impossible: the same word looked
+    up on two machines conflicts, and two machines appending to the same day's log
+    conflict. What it changes is the *rate*. With a single `vocab.yaml`, **every**
+    write on the second machine conflicts, because every write touches the one
+    file. With this layout a conflict needs the same word, or the same day, on two
+    machines before a sync — rare, and localised to one small file a human can
+    read. That is the honest claim, and it is still worth the zero cost now.
   - **Writes must be atomic** — write to a temp file in the same directory, then
     rename. A half-written YAML file is a corrupted deck entry, and this process
     is killed with Ctrl-C by design.
   - **Injected into:** `run()`, constructed once with the working directory.
 
 - **storeHistory** — makes a `Store` satisfy `#14`'s `History`.
-  - `Add(line, found)` → `Upsert` + `AppendEvent`. `Prefix(p)` → deck entries with
-    that prefix, newest-first, deduped.
-  - **This is the whole persistence deliverable for the editor.** `#14` already
-    talks to `History`; nothing in the editor changes.
+  - **`Add(line, found)` always appends an EVENT; it upserts a `Word` only when
+    `found`.** These are different questions and conflating them was the plan's
+    error: recall must include the typo you just made (that is when you want to
+    edit and retry), while the deck must not fill with misspellings. `#14` settled
+    this — "one record, two readers" — and this is where it becomes code.
+  - **`Prefix` therefore reads EVENTS, not the deck.** Reading the deck would
+    silently drop every failed lookup from Up-arrow recall.
+  - **Loaded once at construction, appended in memory, written through.**
+    `History.Prefix` runs on **every keystroke** and returns no error, so it must
+    never touch the disk and must have nowhere to report a failure from. The
+    in-memory slice is authoritative for the session; the store is the durable
+    copy. A write failure warns **once** on stderr and the session continues —
+    losing durability is not a reason to break the editor mid-word.
 
 ### Test surface
 
@@ -158,7 +201,11 @@ filename, so it is the one function here that can produce an unsafe path).
   - a `words/` file that is corrupt or unreadable is **skipped with a warning**,
     not fatal: one bad file must not make the deck unopenable;
   - two events on the same day land in one file, in order;
-  - a directory that does not exist yet is created on first write.
+  - a directory that does not exist yet is created on first write;
+  - **two stores over one directory writing different words produce disjoint
+    files** — the conflict-rate property, asserted rather than asserted-about;
+  - **an interrupted write leaves nothing readable**: drop a `*.tmp` into
+    `words/` and confirm `Deck()` ignores it.
 - [ ] **Step 3: Run, expect PASS**
 - [ ] **Step 4: Commit** — `#3: YAML store`
 

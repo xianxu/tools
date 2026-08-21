@@ -51,9 +51,14 @@ A `Store` seam with a YAML-files-on-disk backend.
 ## Done when
 
 - [ ] Both backends satisfy the same seam and pass one shared conformance suite.
-- [ ] A word written on two "machines" (two checkouts) merges without conflict.
+- [ ] Two stores writing **different** words to one directory produce disjoint
+      file sets — the property that makes conflicts rare. Same-word-two-machines
+      is a genuine conflict and is documented as such, not claimed away.
 - [ ] No production code calls `time.Now()`; the clock is injected everywhere.
-- [ ] Store survives an interrupted write (append-only log is never truncated).
+- [ ] A write interrupted mid-flight leaves no partial file readable as a deck
+      entry: writes go to a temp file in the same directory and are renamed.
+- [ ] One corrupt or unreadable word file is skipped with a warning; the rest of
+      the deck still opens.
 
 ## Estimate
 
