@@ -396,3 +396,32 @@ passed with the production wiring deleted.
 Before using a string to locate "where the output starts", check it does not also
 appear in what comes before. Prefer a marker only the code under test can emit —
 or drive a case whose output shares no text with its surroundings.
+
+## An exemption drops invariants you weren't thinking about
+
+To stop a command paying for a log it never read, I exempted it from the shared
+setup call. That call also supplied the process clock — so the exemption left it
+nil, and any future command that read the clock would have panicked. It also
+failed at its own job: the thing being avoided (an eager log read) still happened
+for the commands that *weren't* exempted, so `/history` read the log twice.
+
+**The rule:** when a new kind is exempted from a shared setup path, enumerate
+everything that path guaranteed and re-supply it. An exemption removes more than
+the cost you were trying to avoid.
+
+**The better move, when it is available:** remove the cost at its source instead
+of routing around it. Making the log read lazy meant nothing needed exempting,
+which fixed three findings at once and deleted the branch that caused the
+strand.
+
+## Removing a cost can make an old test vacuous
+
+Reading the log moved out of a constructor, and a test from a previous issue —
+one that asserted usage errors do not read the log — silently stopped being able
+to fail: the ordering it pinned no longer decided the outcome. It still passed,
+and it still looked like a guard.
+
+When you change *when* something happens, re-run the mutations of every test that
+existed to pin *that timing*. And where a test asserts an absence ("this did not
+happen"), pair it with a control that makes the same thing happen — otherwise a
+dead fixture and a working guard are indistinguishable.

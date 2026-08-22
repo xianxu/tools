@@ -9,6 +9,15 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
+// loaded restores a storeHistory's recall state. Reading the log moved out of
+// the constructor: opening a store and READING it are different costs, and only
+// the raw editor recalls — a one-shot lookup or a command was paying for a log
+// it never consulted, twice in /history's case.
+func loaded(h *storeHistory) *storeHistory {
+	h.Load()
+	return h
+}
+
 func fixedClock(day int) store.Clock {
 	return store.FixedClock(time.Date(2026, 8, day, 12, 0, 0, 0, time.UTC))
 }
@@ -112,7 +121,7 @@ func TestStoreHistoryRestoresTyposAcrossSessions(t *testing.T) {
 	c.Capture("sykophantic", false, options{}) // a typo, never in the deck
 	c.Capture("ephemeral", true, options{})
 
-	restored := newStoreHistory(store.NewYAML(dir, nil), nil).Prefix("sy")
+	restored := loaded(newStoreHistory(store.NewYAML(dir, nil), nil)).Prefix("sy")
 	if len(restored) != 1 || restored[0] != "sykophantic" {
 		t.Errorf("Prefix(sy) after restart = %v — the typo was dropped from recall", restored)
 	}
@@ -128,7 +137,7 @@ func TestCapturedWordsPersistAcrossSessions(t *testing.T) {
 	c.Capture("sycophantic", true, options{})
 	c.Capture("ephemeral", true, options{})
 
-	got := newStoreHistory(store.NewYAML(dir, nil), nil).Prefix("")
+	got := loaded(newStoreHistory(store.NewYAML(dir, nil), nil)).Prefix("")
 	if len(got) != 2 {
 		t.Fatalf("restored %d entries, want 2: %v", len(got), got)
 	}
@@ -146,7 +155,7 @@ func TestCapturerRecallsTyposButDoesNotDeckThem(t *testing.T) {
 	c.Capture("sycophantic", true, options{})
 	c.Capture("sykophantic", false, options{})
 
-	if got := newStoreHistory(store.NewYAML(dir, nil), nil).Prefix("sy"); len(got) != 2 {
+	if got := loaded(newStoreHistory(store.NewYAML(dir, nil), nil)).Prefix("sy"); len(got) != 2 {
 		t.Errorf("Prefix returned %v — a failed lookup must still be recallable", got)
 	}
 	deck, err := st.Deck()

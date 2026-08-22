@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -123,6 +124,30 @@ func TestEveryRegisteredCommandIsRunnable(t *testing.T) {
 		if c.summary == "" {
 			t.Errorf("command /%s has no summary; /help would print a blank line", c.name)
 		}
+	}
+}
+
+// BR-31: a fix that exempted commands from withStore dropped an invariant it was
+// not thinking about — deps.clock is supplied there, so the exemption stranded
+// it as nil and any row that read the clock would have panicked. The exemption
+// is gone, but the guard is the durable part: assert the ctx a one-shot ACTUALLY
+// builds carries every field a row may read.
+func TestOneShotCommandCtxIsFullyPopulated(t *testing.T) {
+	t.Chdir(t.TempDir())
+	d := deps{newStore: openStore}.withStore(options{}, io.Discard)
+	cc := newCommandCtx(d, options{times: 3, width: 80}, io.Discard, io.Discard)
+
+	if cc.clock == nil {
+		t.Error("clock is nil; a command that reads it would panic")
+	}
+	if cc.stdout == nil || cc.stderr == nil {
+		t.Error("a command has nowhere to write")
+	}
+	if cc.deck == nil {
+		t.Error("deck is nil in a writable directory")
+	}
+	if cc.times == 0 {
+		t.Error("times did not reach the ctx")
 	}
 }
 

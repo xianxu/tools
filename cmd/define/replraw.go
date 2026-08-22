@@ -62,6 +62,9 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	if hist == nil {
 		hist = &memHistory{}
 	}
+	// The RAW editor is the only thing that recalls, so it is the only thing
+	// that pays for reading the log. replLines never touches history at all.
+	hist.Load()
 	e := NewEditor()
 	var current string
 	// Resolve candidates ONCE per keystroke and use the same slice for both the

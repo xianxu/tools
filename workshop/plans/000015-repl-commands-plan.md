@@ -75,6 +75,7 @@ read of `Deck()` for `FirstSeen`.
 | `parseSoundArgs` | `cmd/define/sound_cmd.go` | PURE | new (M3) |
 | `soundTimes` | `cmd/define/sound_cmd.go` | PURE | new (M3) |
 | `noDeckMessage` | `cmd/define/main.go` | PURE | new (extracted from `forgetWord`) |
+| `historyPaths` | `cmd/define/repo_guard_test.go` | PURE | new (shared by both history guards) |
 | `summariseLookups` | `cmd/define/history_cmd.go` | PURE | new |
 | `renderHistory` | `cmd/define/history_cmd.go` | PURE | new |
 
@@ -135,7 +136,10 @@ read of `Deck()` for `FirstSeen`.
 | `commandCtx.setTimes` | `cmd/define/command.go` | INTEGRATION | new (M3) | the loop's own `opt`, narrowly |
 | `runSound` | `cmd/define/sound_cmd.go` | INTEGRATION | new (M3) | `setTimes` + stdout |
 | `storeDeps.clock` | `cmd/define/main.go` | INTEGRATION | new | the process's one `store.Clock` |
-| `TestNoTrackedRuntimeState` | `cmd/define/repo_guard_test.go` | INTEGRATION | new | `git ls-files` (a repo-wide guard) |
+| `TestNoTrackedRuntimeState` | `cmd/define/repo_guard_test.go` | INTEGRATION | new | `git ls-files` — the INDEX |
+| `TestNoRuntimeStateInHistory` | `cmd/define/repo_guard_test.go` | INTEGRATION | new | `git rev-list` — HISTORY |
+| `History.Load` | `cmd/define/history.go` | INTEGRATION | new | the event log, read once when a loop recalls |
+| `storeHistory.Load` | `cmd/define/history_store.go` | INTEGRATION | new (moved out of the constructor) | `store.Events` |
 
 Completed after the two scope events, which is the point BR-21 makes: the table
 is what the boundary judge grep-checks against the diff, so entities added by a
@@ -484,3 +488,44 @@ is ECHOED with the same sequence — so it passed with `hist.Add` deleted. It no
 asserts only on output after the command has run. **An observable that two paths
 produce cannot distinguish them**, and knowing the rule is not the same as
 applying it.
+
+
+### 2026-08-21 — close rounds 5 and 6
+
+**Round 5** left five findings open under a FIX-THEN-SHIP verdict, and the two
+dispositions worth recording are the ones that say *fixed is not closed*:
+
+- **BR-19 was disposed not-addressed even though all four instances were
+  mutation-pinned**, because the RULE was still absent from `lessons.md` and the
+  same commit created two more instances of it (an unpinned arity exemption and
+  an unpinned `clearMenu`). Fixing a list is not adopting a rule.
+- **BR-20 was disposed not-addressed because the behaviour was right and
+  unpinned.** Reverting the exemption restored the reported bug with the suite
+  green.
+
+**Round 6, BR-28 — the deck blobs were still reachable from HEAD**, and the guard
+written for BR-18 checked only the index. That is `#4`'s BR-30 repeated exactly.
+Excised with `filter-branch`; **the first attempt silently failed** ("Cannot
+rewrite branches: You have unstaged changes") and the clone SIZE would have read
+as success at 876K against main's 872K — the object grep is what caught it.
+
+**BR-26 / BR-31 / BR-32 collapsed into one design change, and the finding's own
+rule is why.** *When a new kind is exempted from a shared setup path, enumerate
+everything that path guaranteed and re-supply it.* The `needsDeck` exemption I
+added for BR-26 skipped `withStore`, which is also where `deps.clock` is supplied
+— so a future row with `needsDeck: false` that read the clock would panic
+(BR-31), and `/history` still read the log twice because `withStore` built
+`storeHistory` eagerly (BR-32, measured: every torn-record warning printed
+twice).
+
+The fix removes the cost at its source instead of routing around it: **reading
+the log moved out of `storeHistory`'s constructor into `History.Load`**, called
+by the raw editor — the only thing that recalls. `replLines` never touched
+history at all, so it no longer pays either. Nothing is exempted from `withStore`
+any more, so nothing can strand what `withStore` supplies. Measured after:
+`/history` warns once, `define /help` zero times.
+
+That change made `#4`'s `TestUsageErrorsDoNotOpenTheLog` **vacuous** — the
+ordering it pinned no longer decides the outcome, and its mutation left it green.
+Each row now carries a control that runs `/history` against the same fixture, so
+a dead fixture fails loudly instead of passing silently.

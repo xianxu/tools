@@ -278,13 +278,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
 	// flag-parse-time input and decides whether anything is opened at all.
 	//
-	// A one-shot command that reads nothing is left out of it, for the same
-	// reason a usage error is: opening the store constructs storeHistory, which
-	// reads the whole event log. `define /help` should not pay for that, and an
-	// unknown command should not pay for it before being refused.
-	if oneShot.kind != cmdCommand || commandNeedsDeck(oneShot, commands) {
-		d = d.withStore(opt, stderr)
-	}
+	// Nothing is exempted from this. An earlier fix skipped it for commands that
+	// read nothing, which dropped an invariant it was not thinking about —
+	// deps.clock is supplied here, so the exemption stranded it as nil. The cost
+	// it was avoiding is gone at the source instead: opening a store no longer
+	// reads the log (History.Load does, when a loop is about to recall).
+	d = d.withStore(opt, stderr)
 
 	if forgetting {
 		return forgetWord(d, opt, *forget, stdout, stderr)

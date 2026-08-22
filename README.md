@@ -81,7 +81,7 @@ replays the *pronunciation* of the current one — nothing is re-fetched, and th
 screen is left as it was provided you let the sound finish — and Ctrl-C quits
 silently. `-raw` prints the unparsed entry and never plays. The prompt appears
 only on a terminal, so piping stays clean. Flags are session settings — `define
--times 1` opens the loop with single playback.
+--sound 1` opens the loop with single playback.
 
 Exit codes: `0` success; `1` the request failed (no dictionary entry, or
 `--forget` found nothing to remove); `2` usage error, which includes an unknown

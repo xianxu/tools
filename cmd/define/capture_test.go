@@ -417,9 +417,12 @@ func TestFailingStoreStillDefinesAndExitsZero(t *testing.T) {
 // newStoreHistory READS the log at construction, so with the store opened first
 // a corrupt log reports itself in the middle of a usage error. That is the pin.
 //
-// Verified failable: moving `d = d.withStore(...)` back above the usage switch
-// makes every row here fail with
-// "define: 2020-01-01.yaml: recovered 0 event(s), dropped 1 torn record(s)".
+// UPDATED in #15, and the update is the point. Reading the log moved out of
+// store construction into History.Load, so the withStore ordering no longer
+// decides this — laziness does, and the mutation that used to redden these rows
+// now leaves them green. Rather than keep a test that cannot fail, each row is
+// paired with a control: /history DOES read the log, so if the control is silent
+// the fixture is dead and the row proves nothing.
 func TestUsageErrorsDoNotOpenTheLog(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -453,6 +456,13 @@ func TestUsageErrorsDoNotOpenTheLog(t *testing.T) {
 			}
 			if strings.Contains(errb.String(), "torn record") || strings.Contains(errb.String(), "recovered") {
 				t.Errorf("a usage error read the event log: %q", errb.String())
+			}
+
+			// The control. Without it this row would pass against an empty
+			// directory, a misnamed fixture, or a parser that stopped warning.
+			var cout, cerr bytes.Buffer
+			if run(t.Context(), []string{"-no-audio", "/history"}, rig.deps, strings.NewReader(""), &cout, &cerr); !strings.Contains(cerr.String(), "torn record") {
+				t.Fatalf("the fixture is not live — /history did not warn either, so this row proves nothing: %q", cerr.String())
 			}
 		})
 	}

@@ -519,6 +519,156 @@ rounds:
           family: comment-orphaned-by-insertion
           round: 5
       blocked: true
+    - "n": 6
+      timestamp: "2026-08-21T18:00:13-07:00"
+      agent: claude
+      dispose:
+        - id: BR-15
+          disposition: not-addressed
+          note: README.md:43-50 still has no / row and "Enter | define what you typed (never the suggestion)" still omits command dispatch.
+          round: 6
+        - id: BR-19
+          disposition: addressed
+          note: Rule recorded at lessons.md:367; both new instances mutation-verified (arity exemption and clearMenu each redden a loop-driving test).
+          round: 6
+        - id: BR-20
+          disposition: addressed
+          note: Both halves mutation-verified — reverting the arity exemption and classifying fs.Arg(0) each redden TestOneShotCommandTakesArguments.
+          round: 6
+        - id: BR-22
+          disposition: not-addressed
+          note: Re-probed against the built binary — "define --sound 1000 /sound" prints "playing 1000x" and exits 0.
+          round: 6
+        - id: BR-23
+          disposition: not-addressed
+          note: 'Re-probed — "define -times -1 x" still reports "define: -sound must not be negative".'
+          round: 6
+        - id: BR-24
+          disposition: not-addressed
+          note: command.go:255 still slices bytes, history_cmd.go:177 still slices runes.
+          round: 6
+        - id: BR-25
+          disposition: not-addressed
+          note: Both renderHistory call sites still pass width 0, and nothing asserts runHistory forwards c.width.
+          round: 6
+        - id: BR-26
+          disposition: not-addressed
+          note: Two of the three measured cases are fixed and mutation-pinned, but "define /history zzz" still reads the whole log before its usage error, and that is the one row the finding asked for that was not added.
+          round: 6
+        - id: BR-27
+          disposition: addressed
+          note: --days now derives in three reachable consumers — README.md:102, atlas/define.md:401, and the --help text at main.go:206.
+          round: 6
+        - id: BR-28
+          disposition: addressed
+          note: git rev-list --objects HEAD returns zero deck objects, the three named commits no longer exist, and TestNoRuntimeStateInHistory covers the history scope.
+          round: 6
+        - id: BR-29
+          disposition: not-addressed
+          note: history_cmd.go:199 still uses math.Round on elapsed hours, and the exactness comment is unchanged.
+          round: 6
+        - id: BR-30
+          disposition: not-addressed
+          note: replraw.go:67-69 unchanged; completionsFor still runs twice per keystroke, at :113 and :129.
+          round: 6
+      findings:
+        - id: BR-31
+          severity: Important
+          title: The needsDeck exemption strands deps.clock, so a registry row with needsDeck false gets a nil clock and panics
+          detail: |-
+            This is the 2nd finding in family guard-bypassed-by-new-kind (BR-26 first). Do NOT patch
+            this instance. main.go:285 skips withStore for a command that does not need the deck, and
+            withStore (main.go:99) is the ONLY thing that ever sets deps.clock - realDeps at main.go:50
+            does not. Measured: adding a registry row with needsDeck false whose run calls c.clock.Now()
+            makes "define -no-audio /probe" panic with a nil pointer dereference, while the full suite
+            stays green. capture_test.go:468 and :494 exist to prevent exactly this and both pass,
+            because they exercise openStore and withStore, the path the exemption routes around. The
+            issue's Done-when "adding a second command needs no change to the dispatch loop" now carries
+            an undocumented precondition that neither the commandCtx doc comment nor atlas/define.md's
+            needsDeck paragraph states.
+            THE RULE - when a new kind is exempted from a shared setup path, enumerate everything that
+            path guaranteed and re-supply it; the exemption drops invariants you were not thinking about,
+            not just the cost you were avoiding. Rule-level fix - the clock has no store dependency, so
+            supply it outside withStore (in run before the branch, or as a fallback in newCommandCtx) so
+            no exemption can strand it, and extend TestEveryRegisteredCommandIsRunnable to assert the ctx
+            a one-shot actually builds carries every field a row may read.
+          family: guard-bypassed-by-new-kind
+          round: 6
+        - id: BR-32
+          severity: Important
+          title: /history reads the whole event log twice and prints every store warning twice
+          detail: |-
+            Measured against a torn-log fixture - "define -no-audio /history" and "echo /history |
+            define" each emit "recovered 1 event(s), dropped 1 torn record(s)" TWICE before the
+            output, while a plain word lookup emits it once and "define /help" not at all. Read 1 is
+            newStoreHistory calling st.Events(time.Time{}) at history_store.go:31, built by withStore
+            because commandNeedsDeck said yes; read 2 is runHistory calling c.deck.Events(time.Time{})
+            at history_cmd.go:228. In the one-shot path the first read is pure waste, and replLines
+            never touches d.history at all so it is waste in the piped path too. atlas/define.md:446
+            and plan line 374 both record "One read per /history on a personal word list is the right
+            trade today" as the accepted cost, so the recorded trade is not the one the code makes.
+            Fix by gating on the specific dependency rather than the whole store bundle, or by handing
+            runHistory the events storeHistory already read, and assert the warning COUNT in
+            TestCommandThatReadsNothingDoesNotOpenTheLog, which today only checks presence.
+          family: same-source-read-twice
+          round: 6
+        - id: BR-33
+          severity: Important
+          title: The atlas never learned about the runtime-state guards, and the README still teaches the deprecated flag name
+          detail: |-
+            This is the 3rd finding in family docs-consumer-not-updated (BR-4, BR-27). Do NOT patch
+            these instances. Measured prevalence, both from this window - (1) atlas/repo-guards.md
+            documents one guard class with an index/history table naming TestNoCommittedBinaries and
+            TestNoBinariesInHistory; this window added a second class with the identical split
+            (TestNoTrackedRuntimeState / TestNoRuntimeStateInHistory) and neither that page nor
+            atlas/index.md:13-14 ("no executable image in the index or reachable from HEAD") mentions
+            it, so the index understates what the file it points at enforces. (2) README.md:84 still
+            reads "Flags are session settings - define -times 1 opens the loop with single playback",
+            teaching the name README.md:118 calls "the older name for --sound".
+            THE RULE - a surface is not shipped until every doc that already describes its class is
+            updated in the same commit, where "its class" means the page that is wrong by omission,
+            not only the page that names the new thing. BR-4 updated the README because the finding
+            named the README and BR-27 updated three places because the finding listed three; neither
+            adopted the sweep. Enforcement worth having (ARCH-PURPOSE) - atlas/repo-guards.md's table
+            is a hand-maintained restatement of the Test functions in repo_guard_test.go, so a test
+            that greps the table for every "func TestNo..." in that file makes the page derive.
+          family: docs-consumer-not-updated
+          round: 6
+        - id: BR-34
+          severity: Important
+          title: The Core-concepts table lost five entities again, and the plan has no Revisions entry for rounds 5 or 6
+          detail: |-
+            This is the 3rd finding in family plan-artifact-lags-code (BR-5, BR-21). Do NOT just add
+            the rows. commandNeedsDeck, command.needsDeck, editDistance, historyPaths and
+            TestNoRuntimeStateInHistory appear in no row (grep-verified, zero occurrences of each name
+            in the plan); four of the five were added by e5719f9, the commit that closed BR-21's own
+            family. The plan's last Revisions heading is "close round 4", so rounds 5 and 6 - which
+            produced the needsDeck design, the history rewrite and the --days docs - are unrecorded.
+            Box-ticking is clean and every entity the table DOES name exists at its stated path.
+            THE RULE - the Core-concepts table is a hand-maintained restatement of what the package
+            declares, so it drifts by default; the fix is to make it derive, not to remember harder.
+            BR-21 was disposed addressed and the very next commit re-broke it, which is the measurement
+            that a habit-level fix does not hold. A guard comparing the table's Name-and-path pairs
+            against top-level declarations in the named files would fail the same commit that adds an
+            unnamed entity - the same shape as TestNoTrackedRuntimeState.
+          family: plan-artifact-lags-code
+          round: 6
+        - id: BR-35
+          severity: Minor
+          title: Two registry lookups carry independently-written matching rules and nothing pins that they agree
+          detail: |-
+            This is the 2nd finding in family parallel-construction-drift (BR-6 first). Do NOT patch
+            this instance. commandNeedsDeck (command.go:192-199) and dispatchCommand (command.go:211-215)
+            each walk cmds with strings.EqualFold. Mutating commandNeedsDeck to an exact comparison
+            leaves the ENTIRE suite green while "define /HISTORY" reports "define: no deck in this
+            directory" and exits 1 - a lie about the user's data - because dispatch still accepts
+            loosely and the deck gate no longer does. atlas/define.md states the loose-accept policy as
+            a design decision, so the two lookups implementing it must agree by construction.
+            THE RULE - two sites that must agree about one fact should be one site: a single
+            findCommand(name, cmds) (command, bool) that both call, so the matching rule cannot drift.
+          family: parallel-construction-drift
+          round: 6
+      blocked: true
 ---
 
 # Gate ledger — tools#15 (boundary-review)
@@ -788,17 +938,109 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   A comment that survives a behaviour change is a false claim about the code beneath it,
   which is exactly what let BR-17's DST bug read as correct for four rounds.
 
+## Round 6 — 2026-08-21T18:00:13-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-15 — not-addressed — README.md:43-50 still has no / row and "Enter | define what you typed (never the suggestion)" still omits command dispatch.
+- BR-19 — addressed — Rule recorded at lessons.md:367; both new instances mutation-verified (arity exemption and clearMenu each redden a loop-driving test).
+- BR-20 — addressed — Both halves mutation-verified — reverting the arity exemption and classifying fs.Arg(0) each redden TestOneShotCommandTakesArguments.
+- BR-22 — not-addressed — Re-probed against the built binary — "define --sound 1000 /sound" prints "playing 1000x" and exits 0.
+- BR-23 — not-addressed — Re-probed — "define -times -1 x" still reports "define: -sound must not be negative".
+- BR-24 — not-addressed — command.go:255 still slices bytes, history_cmd.go:177 still slices runes.
+- BR-25 — not-addressed — Both renderHistory call sites still pass width 0, and nothing asserts runHistory forwards c.width.
+- BR-26 — not-addressed — Two of the three measured cases are fixed and mutation-pinned, but "define /history zzz" still reads the whole log before its usage error, and that is the one row the finding asked for that was not added.
+- BR-27 — addressed — --days now derives in three reachable consumers — README.md:102, atlas/define.md:401, and the --help text at main.go:206.
+- BR-28 — addressed — git rev-list --objects HEAD returns zero deck objects, the three named commits no longer exist, and TestNoRuntimeStateInHistory covers the history scope.
+- BR-29 — not-addressed — history_cmd.go:199 still uses math.Round on elapsed hours, and the exactness comment is unchanged.
+- BR-30 — not-addressed — replraw.go:67-69 unchanged; completionsFor still runs twice per keystroke, at :113 and :129.
+
+### Raised
+
+- **BR-31** [Important] `guard-bypassed-by-new-kind` The needsDeck exemption strands deps.clock, so a registry row with needsDeck false gets a nil clock and panics
+  This is the 2nd finding in family guard-bypassed-by-new-kind (BR-26 first). Do NOT patch
+  this instance. main.go:285 skips withStore for a command that does not need the deck, and
+  withStore (main.go:99) is the ONLY thing that ever sets deps.clock - realDeps at main.go:50
+  does not. Measured: adding a registry row with needsDeck false whose run calls c.clock.Now()
+  makes "define -no-audio /probe" panic with a nil pointer dereference, while the full suite
+  stays green. capture_test.go:468 and :494 exist to prevent exactly this and both pass,
+  because they exercise openStore and withStore, the path the exemption routes around. The
+  issue's Done-when "adding a second command needs no change to the dispatch loop" now carries
+  an undocumented precondition that neither the commandCtx doc comment nor atlas/define.md's
+  needsDeck paragraph states.
+  THE RULE - when a new kind is exempted from a shared setup path, enumerate everything that
+  path guaranteed and re-supply it; the exemption drops invariants you were not thinking about,
+  not just the cost you were avoiding. Rule-level fix - the clock has no store dependency, so
+  supply it outside withStore (in run before the branch, or as a fallback in newCommandCtx) so
+  no exemption can strand it, and extend TestEveryRegisteredCommandIsRunnable to assert the ctx
+  a one-shot actually builds carries every field a row may read.
+- **BR-32** [Important] `same-source-read-twice` /history reads the whole event log twice and prints every store warning twice
+  Measured against a torn-log fixture - "define -no-audio /history" and "echo /history |
+  define" each emit "recovered 1 event(s), dropped 1 torn record(s)" TWICE before the
+  output, while a plain word lookup emits it once and "define /help" not at all. Read 1 is
+  newStoreHistory calling st.Events(time.Time{}) at history_store.go:31, built by withStore
+  because commandNeedsDeck said yes; read 2 is runHistory calling c.deck.Events(time.Time{})
+  at history_cmd.go:228. In the one-shot path the first read is pure waste, and replLines
+  never touches d.history at all so it is waste in the piped path too. atlas/define.md:446
+  and plan line 374 both record "One read per /history on a personal word list is the right
+  trade today" as the accepted cost, so the recorded trade is not the one the code makes.
+  Fix by gating on the specific dependency rather than the whole store bundle, or by handing
+  runHistory the events storeHistory already read, and assert the warning COUNT in
+  TestCommandThatReadsNothingDoesNotOpenTheLog, which today only checks presence.
+- **BR-33** [Important] `docs-consumer-not-updated` The atlas never learned about the runtime-state guards, and the README still teaches the deprecated flag name
+  This is the 3rd finding in family docs-consumer-not-updated (BR-4, BR-27). Do NOT patch
+  these instances. Measured prevalence, both from this window - (1) atlas/repo-guards.md
+  documents one guard class with an index/history table naming TestNoCommittedBinaries and
+  TestNoBinariesInHistory; this window added a second class with the identical split
+  (TestNoTrackedRuntimeState / TestNoRuntimeStateInHistory) and neither that page nor
+  atlas/index.md:13-14 ("no executable image in the index or reachable from HEAD") mentions
+  it, so the index understates what the file it points at enforces. (2) README.md:84 still
+  reads "Flags are session settings - define -times 1 opens the loop with single playback",
+  teaching the name README.md:118 calls "the older name for --sound".
+  THE RULE - a surface is not shipped until every doc that already describes its class is
+  updated in the same commit, where "its class" means the page that is wrong by omission,
+  not only the page that names the new thing. BR-4 updated the README because the finding
+  named the README and BR-27 updated three places because the finding listed three; neither
+  adopted the sweep. Enforcement worth having (ARCH-PURPOSE) - atlas/repo-guards.md's table
+  is a hand-maintained restatement of the Test functions in repo_guard_test.go, so a test
+  that greps the table for every "func TestNo..." in that file makes the page derive.
+- **BR-34** [Important] `plan-artifact-lags-code` The Core-concepts table lost five entities again, and the plan has no Revisions entry for rounds 5 or 6
+  This is the 3rd finding in family plan-artifact-lags-code (BR-5, BR-21). Do NOT just add
+  the rows. commandNeedsDeck, command.needsDeck, editDistance, historyPaths and
+  TestNoRuntimeStateInHistory appear in no row (grep-verified, zero occurrences of each name
+  in the plan); four of the five were added by e5719f9, the commit that closed BR-21's own
+  family. The plan's last Revisions heading is "close round 4", so rounds 5 and 6 - which
+  produced the needsDeck design, the history rewrite and the --days docs - are unrecorded.
+  Box-ticking is clean and every entity the table DOES name exists at its stated path.
+  THE RULE - the Core-concepts table is a hand-maintained restatement of what the package
+  declares, so it drifts by default; the fix is to make it derive, not to remember harder.
+  BR-21 was disposed addressed and the very next commit re-broke it, which is the measurement
+  that a habit-level fix does not hold. A guard comparing the table's Name-and-path pairs
+  against top-level declarations in the named files would fail the same commit that adds an
+  unnamed entity - the same shape as TestNoTrackedRuntimeState.
+- **BR-35** [Minor] `parallel-construction-drift` Two registry lookups carry independently-written matching rules and nothing pins that they agree
+  This is the 2nd finding in family parallel-construction-drift (BR-6 first). Do NOT patch
+  this instance. commandNeedsDeck (command.go:192-199) and dispatchCommand (command.go:211-215)
+  each walk cmds with strings.EqualFold. Mutating commandNeedsDeck to an exact comparison
+  leaves the ENTIRE suite green while "define /HISTORY" reports "define: no deck in this
+  directory" and exits 1 - a lie about the user's data - because dispatch still accepts
+  loosely and the deck gate no longer does. atlas/define.md states the loose-accept policy as
+  a design decision, so the two lookups implementing it must agree by construction.
+  THE RULE - two sites that must agree about one fact should be one site: a single
+  findCommand(name, cmds) (command, bool) that both call, so the matching rule cannot drift.
+
 ## Open findings
 
 - **BR-15** [Minor] `fix-appended-not-integrated` The BR-4 README fix was appended to the sh block instead of integrated into the key table
-- **BR-19** [Important] `unpinned-production-wiring` Four loop-shell wirings shipped this round with no test that fails without them
-- **BR-20** [Important] `entry-mode-inconsistency` define /history 7 prints a usage dump while echo '/history 7' | define runs it
 - **BR-22** [Minor] `same-setting-two-validation-policies` --sound 1000 is accepted while /sound 1000 is refused at the 20 cap
 - **BR-23** [Minor] `error-names-a-flag-the-user-did-not-type` define -times -1 reports "define: -sound must not be negative"
 - **BR-24** [Minor] `duplicated-width-arithmetic` menuLines truncates in bytes while renderHistory truncates in runes, and renderHistory measures columns in bytes but pads in runes
 - **BR-25** [Minor] `uncovered-branch-at-boundary` renderHistory's truncation branch is never exercised — both test call sites pass width 0
 - **BR-26** [Important] `guard-bypassed-by-new-kind` A command line skips the "usage errors are settled before a store is opened" invariant and reads the whole event log
-- **BR-27** [Important] `docs-consumer-not-updated` --days and --days=N ship and are tested but appear in no user-facing doc, while the plan box promising them is ticked
-- **BR-28** [Important] `runtime-output-tracked-in-source-tree` The deck blobs are still reachable from HEAD, and the guard written for BR-18 checks only the index
 - **BR-29** [Minor] `elapsed-hours-for-calendar-days` relativeDay's rounding is a heuristic where an exact computation is one line away, and the comment asserts an exactness the code lacks
 - **BR-30** [Minor] `comment-orphaned-by-insertion` replraw.go:67 still claims candidates are resolved once per keystroke, but draw() now computes its own list
+- **BR-31** [Important] `guard-bypassed-by-new-kind` The needsDeck exemption strands deps.clock, so a registry row with needsDeck false gets a nil clock and panics
+- **BR-32** [Important] `same-source-read-twice` /history reads the whole event log twice and prints every store warning twice
+- **BR-33** [Important] `docs-consumer-not-updated` The atlas never learned about the runtime-state guards, and the README still teaches the deprecated flag name
+- **BR-34** [Important] `plan-artifact-lags-code` The Core-concepts table lost five entities again, and the plan has no Revisions entry for rounds 5 or 6
+- **BR-35** [Minor] `parallel-construction-drift` Two registry lookups carry independently-written matching rules and nothing pins that they agree
