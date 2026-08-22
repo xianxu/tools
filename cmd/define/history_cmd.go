@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -151,10 +151,13 @@ func summariseLookups(evs []store.ReviewEvent, since time.Time) []historyRow {
 // "yesterday" once it is past midnight, and saying "0 days ago" would be true
 // and useless.
 func renderHistory(rows []historyRow, now time.Time, width int) []string {
+	// Measured in RUNES, because fmt pads in runes. Measuring in bytes lined the
+	// columns up for ASCII and nothing else — and a deck is a vocabulary, which
+	// is exactly where accented and non-Latin headwords turn up.
 	nameW := 0
 	for _, r := range rows {
-		if len(r.Word) > nameW {
-			nameW = len(r.Word)
+		if n := utf8.RuneCountInString(r.Word); n > nameW {
+			nameW = n
 		}
 	}
 	dateW := 0
@@ -163,8 +166,8 @@ func renderHistory(rows []historyRow, now time.Time, width int) []string {
 		// FirstAt, not LastAt: the list is ORDERED by first sighting, so showing
 		// any other date makes the ordering look arbitrary.
 		dates[i] = relativeDay(r.FirstAt, now)
-		if len(dates[i]) > dateW {
-			dateW = len(dates[i])
+		if n := utf8.RuneCountInString(dates[i]); n > dateW {
+			dateW = n
 		}
 	}
 
@@ -174,9 +177,7 @@ func renderHistory(rows []historyRow, now time.Time, width int) []string {
 		if r.Lookups > 1 {
 			line = fmt.Sprintf("  %-*s  %-*s   %d×", nameW, r.Word, dateW, dates[i], r.Lookups)
 		}
-		if width > 0 && len([]rune(line)) > width {
-			line = string([]rune(line)[:width])
-		}
+		line = truncate(line, width)
 		out = append(out, line)
 	}
 	return out
@@ -185,18 +186,17 @@ func renderHistory(rows []historyRow, now time.Time, width int) []string {
 // relativeDay names a day the way a person would.
 func relativeDay(at, now time.Time) string {
 	at = at.In(now.Location())
-	dayOf := func(t time.Time) time.Time {
+	// EXACT, not a Duration at all. Two local midnights one calendar day apart
+	// are 23 hours across a spring-forward and 25 across a fall-back, so elapsed
+	// hours cannot answer a calendar question — truncating reads a day too
+	// recent for the week after the change, and rounding merely hides that with
+	// a heuristic. Projecting the LOCAL date onto a UTC day index takes DST out
+	// of the arithmetic instead of compensating for it.
+	dayIndex := func(t time.Time) int64 {
 		y, m, d := t.Date()
-		return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+		return time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Unix() / 86400
 	}
-	// ROUNDED, not truncated. Two local midnights one calendar day apart are 23
-	// hours across a spring-forward and 25 across a fall-back, so int(23.0/24)
-	// is 0 and every date reads a day too recent for the week after the change.
-	// The true gap is always N days ± 1 hour, which makes rounding exact — and
-	// it is the same DST fact historyWindow avoids by using AddDate rather than
-	// a Duration, twenty lines above. Getting it right there and wrong here is
-	// what a second implementation of one idea costs.
-	switch days := int(math.Round(dayOf(now).Sub(dayOf(at)).Hours() / 24)); {
+	switch days := int(dayIndex(now) - dayIndex(at)); {
 	case days == 0:
 		return "today"
 	case days == 1:

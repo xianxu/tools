@@ -224,11 +224,22 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		fmt.Fprintln(stderr, "define: -sound and -times are the same setting; pass one")
 		return 2
 	}
+	// The flag and /sound are the same setting, so they get the SAME limits —
+	// -sound 1000 used to be accepted while /sound 1000 was refused at 20. And
+	// the message names the flag the user actually typed, rather than the one
+	// the code happens to read.
+	flagName := "-times"
 	if isSet(fs, "sound") {
 		*times = *sound
+		flagName = "-sound"
 	}
 	if *times < 0 {
-		fmt.Fprintf(stderr, "define: -sound must not be negative\n")
+		fmt.Fprintf(stderr, "define: %s must not be negative\n", flagName)
+		return 2
+	}
+	if *times > maxSoundTimes {
+		fmt.Fprintf(stderr, "define: %s %d would take a while to sit through; the limit is %d\n",
+			flagName, *times, maxSoundTimes)
 		return 2
 	}
 	opt := options{

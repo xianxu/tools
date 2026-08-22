@@ -27,10 +27,10 @@ smaller stays a shell function in `construct/dev-aliases.sh`.
 ### define
 
 ```sh
-define                      # interactive: type a word, press return to replay, ^C to quit
-define /help                # / starts a command instead of a word; /help lists them
+define                      # interactive: type a word, / for commands, ^C to quit
 echo sycophantic | define   # or feed it words on stdin
 define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
+define /history             # a command works as an argument too
 define --sound 1 record     # play once instead of three times
 define -no-audio bank       # no fetch, no sound
 define -locale gb colour    # British pronunciation

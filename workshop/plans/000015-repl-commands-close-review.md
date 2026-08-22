@@ -789,3 +789,273 @@ findings:
       THE RULE - two sites that must agree about one fact should be one site: a single
       findCommand(name, cmds) (command, bool) that both call, so the matching rule cannot drift.
 ```
+
+---
+
+## Re-review — 2026-08-21T18:10:14-07:00 (unknown)
+
+| field | value |
+|-------|-------|
+| issue | 15 — REPL command mode: /-prefixed commands with type-ahead, starting with /history |
+| repo | tools |
+| issue file | workshop/issues/000015-repl-commands.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | c7d07575cb125fcb438bcb3fe45ff3763282690b..8f04434783a169d762fb781618c390f47fcf0a90 |
+| command | sdlc close --issue 15 |
+| reviewer | claude |
+| timestamp | 2026-08-21T18:10:14-07:00 |
+| verdict | unknown |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+I'll start by getting oriented in the repo and reading the issue, plan, and current code state.
+API Error: Connection lost mid-response. The response above may be incomplete.
+
+---
+
+## Re-review — 2026-08-21T18:24:16-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 15 — REPL command mode: /-prefixed commands with type-ahead, starting with /history |
+| repo | tools |
+| issue file | workshop/issues/000015-repl-commands.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | c7d07575cb125fcb438bcb3fe45ff3763282690b..8f04434783a169d762fb781618c390f47fcf0a90 |
+| command | sdlc close --issue 15 |
+| reviewer | claude |
+| timestamp | 2026-08-21T18:24:16-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 7 closes the three findings that carried real behaviour, and it closes them by deleting the design that caused them rather than patching around it — `needsDeck` is gone, `withStore` is unconditional again, and reading the log moved out of `storeHistory`'s constructor into `History.Load`, called only by the loop that recalls. I verified every claim by reverting it rather than reading the commit message: reverting `Load` to eager reddens `TestCommandThatReadsNothingDoesNotOpenTheLog`; removing `withStore`'s clock fallback reddens `TestWithStoreCarriesTheClock`; nil-ing the clock in `newCommandCtx` panics the suite; deleting `hist.Load()` from `runEditor` reddens `TestEditorPersistsThroughDeps`; and killing the torn-log fixture path makes every row of `TestUsageErrorsDoNotOpenTheLog` fail loudly instead of passing on nothing. Probed against the built binary with a torn log: `/qqqqqq`, `/qqqqqq zzz` and `/history zzz` now read nothing, and `/history` warns **once** where it warned twice. `go build`, `go vet` (both tag sets), `gofmt -l`, `go test -count=1`, `-race`, and all four pty conformance tests on a real terminal are green, with `git status` clean and zero deck objects in the index or reachable from `HEAD`. Nothing is Critical, so this does not block. What keeps it off SHIP is that the same commit which fixed `BR-33`'s documentation left `atlas/define.md` describing `needsDeck` — a field it deleted — plus two more paragraphs claiming the log is read "at construction", and `history_store.go`'s own type comment contradicts its `Load` doc fifteen lines below. The atlas is this repo's designated always-current map; it now documents a design that does not exist.
+
+## 1. Strengths
+
+- **Removing the cost beat routing around it, and the commit says so.** `History.Load` (`history_store.go:40`) made three findings one change: nothing needs exempting from `withStore`, so nothing can strand what `withStore` supplies. Measured downstream benefit beyond the findings — a plain one-shot word lookup no longer reads the event log either.
+- **The vacuity repair is the best thing in this window.** `capture_test.go:461-465` pairs every absence assertion with a control that makes the same thing happen. I broke the fixture path and all three rows failed with *"the fixture is not live — /history did not warn either, so this row proves nothing"*. That is the correct shape for "this did not happen" tests and it is worth copying repo-wide.
+- **`hist.Load()`'s production wiring is pinned by a loop-driving test**, not a hand-built context: deleting `replraw.go:67` reddens `TestEditorPersistsThroughDeps`. BR-19's rule held on the very next wiring the issue introduced, which is the evidence that a rule in `lessons.md` is doing work.
+- **BR-35 is closed by construction, not by discipline.** Deleting `commandNeedsDeck` leaves exactly one `strings.EqualFold` walk over the registry (`command.go:195`), so the two matching rules can no longer disagree — the "two sites that must agree should be one site" fix, taken rather than deferred.
+- **ARCH-MOCK is genuinely satisfied**: `store.Mem` and `store.FixedClock` are production files (`store/mem.go`, `store/clock.go`), five live conformance suites sit behind a build tag, and `cmd.Dir = t.TempDir()` means the pty flow and the in-process fake now share the storage boundary — re-confirmed by a clean tree after a real-pty run.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — `atlas/define.md` documents `needsDeck`, a field this window's last commit deleted, and two more paragraphs describe a load that no longer happens at construction.**
+
+> **This is the 4th finding in family `docs-consumer-not-updated`** (BR-4, BR-27, BR-33). Earlier rounds fixed named instances. Do NOT patch these instances — state the rule and fix that.
+
+Measured prevalence, all four from commit `8f04434` — the commit whose message closes BR-33 with *"atlas/repo-guards.md now documents both runtime-state guards"*:
+
+| location | claim | actual |
+|---|---|---|
+| `atlas/define.md:404-405` | "A command declares `needsDeck` when it reads the store. Opening the store constructs `storeHistory`, which READS the whole event log" | `grep needsDeck cmd/` → zero hits; opening the store reads nothing |
+| `atlas/define.md:307` | "`storeHistory` … loads the log once at construction" | loads in `Load()`, `history_store.go:40` |
+| `atlas/define.md:284` | "since `#4` it only reads at construction" | same |
+| `atlas/index.md:13-14` | "no executable image in the index or reachable from `HEAD`" | `repo-guards.md` now enforces a second class (`TestNoTrackedRuntimeState` / `TestNoRuntimeStateInHistory`) the index does not mention — the exact instance BR-33 named |
+
+**The rule** BR-33 stated and this round did not adopt: *a surface is not shipped until every doc that already describes its class is updated in the same commit, where "its class" is the page that is wrong by omission or contradiction, not only the page that names the new thing.* The measurement that a habit-level fix does not hold is now three rounds deep: BR-4 fixed the README because the finding named the README, BR-27 fixed three places because the finding listed three, BR-33 fixed `repo-guards.md` and the README flag name and left `index.md`, and the same commit created three fresh contradictions in a file it did not think to re-read. **The enforcement worth having** (ARCH-PURPOSE): `atlas/repo-guards.md`'s table is a hand-maintained restatement of the `func TestNo…` declarations in `repo_guard_test.go`; a test that greps the table for each one makes that page derive. There is no equivalent for `atlas/define.md`, so the cheap durable half is a rule the diff can be checked against: *when a commit deletes an identifier, grep `atlas/` and `README.md` for it before committing.*
+
+**I-2 — `editDistance` is still absent from the Core-concepts table, and so is `runHelp`.**
+
+> **This is the 4th finding in family `plan-artifact-lags-code`** (BR-5, BR-21, BR-34). Do NOT just add the rows.
+
+BR-34 named five missing entities. Two (`commandNeedsDeck`, `command.needsDeck`) became correct by being *deleted*, not by being maintained. Two (`historyPaths`, `TestNoRuntimeStateInHistory`) were added. **`editDistance` (`command.go:124`) is still absent** — grep-verified, zero occurrences in the plan — and cross-checking every top-level declaration in the three new files against the tables surfaces a sixth the finding never named: **`runHelp` (`command.go:211`)**, the `/help` command itself, has no row and never has. Box-ticking is clean (zero `- [ ]` in plan and issue), the round-5/6 Revisions entry landed, and every entity the tables *do* name exists at its stated path.
+
+**The rule**, restated because round 6's prediction came true: *the Core-concepts table is a hand-maintained restatement of what the package declares, so it drifts by default; the fix is to make it derive, not to remember harder.* A guard comparing the table's `Name | path` pairs against top-level declarations in the named files would have failed the commit that added `editDistance` and the commit that added `runHelp` — the same shape as `TestNoTrackedRuntimeState`, which this repo has already shown itself willing to write. Four rounds of remembering harder is the measurement that remembering does not work here.
+
+## 4. Minor findings
+
+- **`history_store.go:21-22` contradicts `history_store.go:35-38` inside one file.** *3rd in family `comment-orphaned-by-insertion`* (BR-12, BR-30) — do not patch the instance. The type doc says "the log is read once **at construction** and everything after is memory"; `Load`'s doc fifteen lines below says "It used to happen in the constructor". Same commit wrote the second and left the first. **The rule** (already stated for BR-30, now measurably unadopted at prevalence 3): *when a fix changes what a block does, every comment describing that block is part of the diff — including the type's own doc comment, which is the one nobody re-reads.*
+- BR-15's key table is untouched for the fourth round: `README.md:42-49` has no `/` row and `Enter | define what you typed (never the suggestion)` still omits command dispatch.
+- `define --sound 1000 /sound` prints `playing 1000×` and exits 0 while `/sound 1000` is refused at the cap (BR-22, re-probed).
+- `define -times -1 x` still reports `define: -sound must not be negative` (BR-23, re-probed).
+- Truncation is still bytes in `command.go:238-239` and runes in `history_cmd.go:177-178`; a third name-column width now exists in `runHelp`'s hardcoded `%-10s` (`command.go:211`) beside `menuNameWidth`'s computed 9 (BR-24, prevalence now 3).
+- `renderHistory`'s truncation branch is still entered by no test — `history_cmd_test.go:225` and `:268` both pass width 0 (BR-25).
+- `relativeDay` still rounds elapsed hours (`history_cmd.go:199`); re-reproduced in `Pacific/Apia`, `at=2011-12-29`, `now=2011-12-31` → `"yesterday"` for a two-calendar-day gap, exactly 24 elapsed hours (BR-29).
+- `replraw.go:70` still claims candidates are resolved once per keystroke; `completionsFor` runs at `:113` and `:129` (BR-30).
+- **`storeHistory.Load` (`history_store.go:40`) mutates `h.loaded` and `h.lines` without taking `h.mu`**, while `Add` and `Prefix` both take it. Unreachable concurrently today — the only caller is `runEditor` before the key loop, and `-race` is green — but it is a mutating method on a mutex-guarded struct that skips the mutex, added this round.
+- `define /history zzz` reading the whole log before its usage error is untested — see test coverage below.
+
+## 5. Test coverage notes
+
+- Verified green: `go build ./...`, `go vet ./cmd/...`, `go vet -tags conformance ./cmd/define/`, `gofmt -l cmd/` (empty), `go test ./cmd/define/... -count=1`, `-race`, and `go test -tags conformance -run PTY -v` — **all four pty tests PASS on a real terminal**, run unsandboxed, with `git status` clean afterwards and no deck under `cmd/define/`.
+- Verified pinned by reverting the fix (each mutation compiled, full suite `-count=1`): `History.Load` laziness → `TestCommandThatReadsNothingDoesNotOpenTheLog` fails naming both commands; `withStore`'s clock fallback → `TestWithStoreCarriesTheClock` fails; `newCommandCtx` clock → nil-pointer panic through `run()`; `hist.Load()` in `runEditor` → `TestEditorPersistsThroughDeps` fails; the torn-log fixture path → all three `TestUsageErrorsDoNotOpenTheLog` rows fail on the control.
+- Verified **unpinned**, two mutations, full suite green each time: (1) inserting a second `c.deck.Events(time.Time{})` into `runHistory` — the exact BR-32 symptom, and the count assertion that finding asked for was not added; (2) moving the `Events` read *above* `parseHistoryArgs` in `runHistory` — the exact BR-26 symptom for `/history zzz`, and the three rows that finding asked for were not added. **This is the 2nd finding in family `uncovered-branch-at-boundary`** (BR-25 first). Do not add these two rows and stop. **The rule:** *when a finding states the inputs it measured, those inputs are the regression fixture — the fix is closed by a test that runs them, not by a fix that happens to make them pass.* BR-25 is the same shape: `renderHistory`'s width branch is prose-correct and fixture-free.
+- `TestNoTrackedRuntimeState` and `TestNoRuntimeStateInHistory` both `t.Fatal` on an empty scan, so neither can pass vacuously; `historyPaths` is genuinely shared by both history guards.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass with flags.** Real consolidations this round: `commandNeedsDeck` deleted so one `EqualFold` walk remains; `historyPaths` shared by both history guards; `noDeckMessage` shared by `--forget` and `/history`; the event log now has exactly one reader per invocation. Flagged: three independent name-column width computations (`runHelp`'s `%-10s`, `menuNameWidth`, `renderHistory`'s `nameW`) and two truncation implementations (BR-24, prevalence 3); `relativeDay` vs `historyWindow` still two techniques for one calendar-day concept (BR-29).
+- **ARCH-PURE — pass.** Every PURE row in the Core-concepts table runs its tests with no store, clock, terminal or network; I confirmed none needs a mock, and the doubles that appear (`memHistory`, `store.Mem`, `store.FixedClock`) are production code behind the same interfaces the YAML store implements. `runHistory`/`runSound`/`dispatchCommand` take writers and are the thin shell, and `commandCtx` narrower than `deps` keeps "a command cannot reach the dictionary or the player" structural rather than conventional.
+- **ARCH-PURPOSE — flag.** Entry-mode sweep passes: `define /history 7`, `echo '/history 7' | define` and the raw prompt all hand `parseREPLLine` a whole line. Registry sweep passes: `commands` is the source and `/help`, `menuLines`, `completionsFor`, `nearestCommands` all derive from it. The failing sweep is the reverse direction — `atlas/define.md` and `atlas/index.md` are hand-maintained restatements that now *contradict* the source rather than merely lag it (I-1), and the plan's Core-concepts table is a restatement that has drifted after repair three times (I-2). Both are the ARCH-PURPOSE point precisely: a restatement that does not derive is a deferred consumer.
+- **ARCH-MOCK — pass.** No new external dependency. Production flow and conformance flow share the storage boundary (`cmd.Dir` to a temp dir, re-verified by a clean tree after a real-pty run), five live conformance suites exist behind `//go:build conformance`, and `refusingDict` asserts a negative interaction rather than an output shape.
+
+## 7. Plan revision recommendations
+
+The plan needs one more `## Revisions` entry (the last is "close rounds 5 and 6"), covering:
+
+- **Record that `needsDeck` was designed, shipped, and deleted within one issue**, and why: the exemption it created dropped `deps.clock` and did not even achieve its own goal. That is the load-bearing design history for anyone who later wonders why commands do not declare their dependencies — and it is what makes `atlas/define.md:404`'s survival legible as an omission rather than a disagreement.
+- **Add the two missing Core-concepts rows** — `editDistance` (PURE, `cmd/define/command.go`) and `runHelp` (INTEGRATION, `cmd/define/command.go`) — *and* record that the table has now been repaired and re-broken across four rounds, which is the argument for the derive-guard over another repair (I-2).
+- **Correct the Task 2 Step 3 signature**, open since the M1 review: the plan specifies `completionsFor(line string, hist History) []string`; the shipped function is `completionsFor(base string, hist History, cmds []command) []string`.
+- **Restate the `Events` cost note.** Chunk 1's "Known cost: `Events` is O(all history) per call. It is one read per `/history` invocation" is now true — it was not when written — but the *mechanism* changed underneath it (laziness in `History.Load`, not eager construction), and the paragraph still reads as if the store were opened-and-read. One sentence naming `Load` keeps the plan's account matching the code's.
+
+```findings
+dispose:
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      README.md:42-49 still has no / row and "Enter | define what you typed (never the suggestion)" still omits command dispatch.
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      Re-probed against the built binary — "define --sound 1000 /sound" prints "playing 1000x" and exits 0, while "/sound 1000" is refused at 20.
+  - id: BR-23
+    disposition: not-addressed
+    note: |
+      Re-probed — "define -times -1 x" still reports "define: -sound must not be negative".
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      command.go:238-239 still slices bytes, history_cmd.go:177-178 still slices runes, and runHelp's hardcoded %-10s at command.go:211 is now a third name-column width beside menuNameWidth.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      history_cmd_test.go:225 and :268 still pass width 0, and nothing asserts runHistory forwards c.width.
+  - id: BR-26
+    disposition: addressed
+    note: |
+      Probed with the torn-log fixture — /qqqqqq, /qqqqqq zzz and /history zzz all read nothing now; mutation-verified (reverting Load to eager reddens TestCommandThatReadsNothingDoesNotOpenTheLog). The three rows were still not added; raised separately.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      Reproduced in Pacific/Apia — at=2011-12-29, now=2011-12-31 prints "yesterday" for a two-calendar-day gap. history_cmd.go:199 unchanged, exactness comment unchanged.
+  - id: BR-30
+    disposition: not-addressed
+    note: |
+      replraw.go:70 unchanged; completionsFor still runs twice per keystroke, at :113 and :129.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      needsDeck deleted and withStore is unconditional; mutation-verified two ways — removing withStore's clock fallback reddens TestWithStoreCarriesTheClock, and nil-ing clock in newCommandCtx panics the suite through run().
+  - id: BR-32
+    disposition: addressed
+    note: |
+      Probed — /history warns ONCE now, one-shot and piped; pinned by the Load-laziness mutation. The warning-COUNT assertion the finding asked for is still absent; raised separately.
+  - id: BR-33
+    disposition: not-addressed
+    note: |
+      repo-guards.md gained the section and README.md:84 now teaches --sound, but atlas/index.md:13-14 — named explicitly in the finding — still mentions only the executable-image class, and the same commit created three fresh stale claims in atlas/define.md.
+  - id: BR-34
+    disposition: not-addressed
+    note: |
+      commandNeedsDeck and needsDeck became correct by deletion rather than maintenance; historyPaths and TestNoRuntimeStateInHistory landed; editDistance is still absent (grep-verified), and the derive-guard the rule called for was not written.
+  - id: BR-35
+    disposition: addressed
+    note: |
+      commandNeedsDeck is deleted, so exactly one strings.EqualFold walk over cmds remains (command.go:195) — the two rules cannot drift by construction.
+findings:
+  - id: new
+    severity: Important
+    family: docs-consumer-not-updated
+    title: |
+      atlas/define.md documents needsDeck, a field the same commit deleted, and two more paragraphs describe a load that no longer happens at construction
+    detail: |
+      This is the 4th finding in family docs-consumer-not-updated (BR-4, BR-27, BR-33). Do NOT
+      patch these instances. Measured prevalence, all four from 8f04434 - the commit whose
+      message closes BR-33: (1) atlas/define.md:404-405 "A command declares needsDeck when it
+      reads the store. Opening the store constructs storeHistory, which READS the whole event
+      log" - grep needsDeck over cmd/ returns zero hits and opening the store reads nothing;
+      (2) atlas/define.md:307 "loads the log once at construction"; (3) atlas/define.md:284
+      "since #4 it only reads at construction" - both falsified by History.Load; (4)
+      atlas/index.md:13-14 still names only the executable-image class, the exact instance
+      BR-33 listed and the one half of it that was not fixed.
+      THE RULE, stated by BR-33 and still unadopted - a surface is not shipped until every doc
+      that already describes its class is updated in the same commit, where "its class" means
+      the page that is wrong by omission or contradiction, not only the page that names the new
+      thing. Three rounds of fixing exactly the pages a finding lists is the measurement that
+      the sweep is not happening. Cheap durable half - when a commit DELETES an identifier,
+      grep atlas/ and README.md for it before committing; enforcement worth having
+      (ARCH-PURPOSE) is the repo-guards table guard BR-33 already described.
+  - id: new
+    severity: Important
+    family: plan-artifact-lags-code
+    title: |
+      editDistance is still missing from the Core-concepts table, and runHelp was never in it
+    detail: |
+      This is the 4th finding in family plan-artifact-lags-code (BR-5, BR-21, BR-34). Do NOT
+      just add the rows. Of BR-34's five named entities, two (commandNeedsDeck,
+      command.needsDeck) became correct by DELETION rather than maintenance, two (historyPaths,
+      TestNoRuntimeStateInHistory) were added, and editDistance at command.go:124 is still
+      absent - grep-verified, zero occurrences in the plan. Cross-checking every top-level
+      declaration in command.go, history_cmd.go and sound_cmd.go against both tables surfaces
+      a sixth the finding never named - runHelp at command.go:211, the /help command itself,
+      which has no row and never had one. Box-ticking is clean, the round-5/6 Revisions entry
+      landed, and every entity the tables DO name exists at its stated path.
+      THE RULE, unchanged from BR-34 and now four rounds deep - the table is a hand-maintained
+      restatement of what the package declares, so it drifts by default; the fix is to make it
+      derive, not to remember harder. A guard comparing the table's Name-and-path pairs against
+      top-level declarations in the named files would have failed the commit that added
+      editDistance and the commit that added runHelp - the same shape as TestNoTrackedRuntimeState.
+  - id: new
+    severity: Minor
+    family: comment-orphaned-by-insertion
+    title: |
+      history_store.go's type comment says the log is read at construction; its own Load doc fifteen lines below says it moved out of the constructor
+    detail: |
+      This is the 3rd finding in family comment-orphaned-by-insertion (BR-12, BR-30). Do NOT
+      patch this instance. history_store.go:21-22 reads "the log is read once at construction
+      and everything after is memory", while history_store.go:35-38 - written by the same
+      commit - reads "It used to happen in the constructor". A direct contradiction inside one
+      file, in the doc comment of the type the change is about.
+      THE RULE, already stated for BR-30 and measurably unadopted at prevalence 3 - when a fix
+      changes what a block does, every comment describing that block is part of the diff,
+      including the TYPE's own doc comment, which is the one nobody re-reads because it sits
+      above the declaration rather than above the changed lines. The same two sentences are
+      restated at atlas/define.md:284 and :307, which is why this and the docs finding are one
+      change to make.
+  - id: new
+    severity: Minor
+    family: uncovered-branch-at-boundary
+    title: |
+      The specific inputs BR-26 and BR-32 measured are still entered by no fixture; both regressions restore silently
+    detail: |
+      This is the 2nd finding in family uncovered-branch-at-boundary (BR-25 first). Do NOT just
+      add these rows. Two mutations, each compiled with the full suite green at -count=1:
+      (1) inserting a second c.deck.Events(time.Time{}) into runHistory restores BR-32's exact
+      doubled-warning symptom - the count assertion that finding asked for was never added;
+      (2) moving the Events read above parseHistoryArgs in runHistory restores BR-26's exact
+      "define /history zzz reads the whole log before its usage error" symptom - the three rows
+      that finding asked for were never added. The behaviour is correct in both cases and the
+      shared mechanism (History.Load laziness) IS pinned, so this is about the specific cases,
+      not the fix.
+      THE RULE - when a finding states the inputs it measured, those inputs ARE the regression
+      fixture; a fix is closed by a test that runs them, not by a change that happens to make
+      them pass. BR-25 is the same shape at a different site - renderHistory's width branch is
+      prose-correct and fixture-free because both call sites pass 0.
+  - id: new
+    severity: Minor
+    family: partial-lock-discipline
+    title: |
+      storeHistory.Load mutates lines and loaded without taking the mutex that Add and Prefix both take
+    detail: |
+      history_store.go:40. Load appends to h.lines and sets h.loaded outside h.mu, while
+      Add (:62) and Prefix (:73) both lock. Unreachable concurrently today - the only production
+      caller is runEditor at replraw.go:67, before the key loop starts, and go test -race is
+      green - so this is latent, not live. But a struct that locks for some mutations and not
+      others invites the next caller to assume the wrong thing, and Load is the newest method
+      on it.
+```

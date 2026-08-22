@@ -401,11 +401,17 @@ dictionary or the player.
 | `/history [N]` | words looked up in the last N local days (default 2); `N`, `--days N` and `--days=N` are all accepted |
 | `/sound [N]` | how many times a pronunciation plays, for the rest of the session |
 
-A command declares `needsDeck` when it reads the store. Opening the store
-constructs `storeHistory`, which READS the whole event log — so `define /help`
-used to pay for a log it never looked at, and an unknown command paid for one
-before being told it does not exist. That is the same invariant `#4` established
-for usage errors, which the command path was skipping.
+**Opening a store does not read it.** `storeHistory` used to read the whole event
+log in its constructor, so `define /help` paid for a log it never consulted and
+`/history` read it *twice*. The read is now `History.Load`, called by the raw
+editor — the only thing that recalls. `replLines` never touched history at all,
+so it does not pay either, and `Prefix` stays IO-free because it runs on every
+keystroke.
+
+A first attempt at this exempted commands from `withStore` instead. That is worth
+recording as the wrong shape: the exemption also skipped where `deps.clock` is
+supplied, so it stranded an invariant it was not thinking about. Removing the
+cost at its source meant nothing needed exempting.
 
 `/sound` is the first command that CHANGES the session rather than reporting on
 it, and the seam is deliberately narrow: `commandCtx.setTimes func(int)` writing

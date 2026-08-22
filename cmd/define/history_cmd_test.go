@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/xianxu/tools/cmd/define/store"
 
@@ -371,4 +372,38 @@ func TestRunHistoryWindowAndErrors(t *testing.T) {
 			}
 		}
 	})
+}
+
+// BR-25: the truncation branch was never exercised — both call sites passed
+// width 0. BR-24: the two renderers disagreed about what a width means, so a
+// narrow terminal would have split a multi-byte character in half.
+func TestRenderHistoryWidthIsCountedInRunes(t *testing.T) {
+	loc := la(t)
+	now := time.Date(2026, 8, 21, 20, 0, 0, 0, loc)
+	at := time.Date(2026, 8, 21, 12, 0, 0, 0, loc)
+
+	// "naïve" is 6 bytes and 5 runes; the count column is a multi-byte "×".
+	rows := []historyRow{{Word: "naïve", FirstAt: at, LastAt: at, Lookups: 2}}
+	full := renderHistory(rows, now, 0)[0]
+
+	for _, w := range []int{1, 5, 9, 14, len([]rune(full))} {
+		got := renderHistory(rows, now, w)[0]
+		if n := len([]rune(got)); n > w {
+			t.Errorf("width %d produced %d runes: %q", w, n, got)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("width %d split a character: %q", w, got)
+		}
+	}
+	// Alignment is measured in runes too: the date must start at the same column
+	// whether or not the word carries multi-byte characters.
+	two := renderHistory([]historyRow{
+		{Word: "naïve", FirstAt: at, LastAt: at, Lookups: 1},
+		{Word: "naive", FirstAt: at, LastAt: at, Lookups: 1},
+	}, now, 0)
+	a := strings.Index(string([]rune(two[0])), "today")
+	b := strings.Index(string([]rune(two[1])), "today")
+	if len([]rune(two[0][:strings.Index(two[0], "today")])) != len([]rune(two[1][:strings.Index(two[1], "today")])) {
+		t.Errorf("columns misaligned across a multi-byte word:\n  %q\n  %q (%d vs %d)", two[0], two[1], a, b)
+	}
 }

@@ -669,6 +669,159 @@ rounds:
           family: parallel-construction-drift
           round: 6
       blocked: true
+    - "n": 7
+      timestamp: "2026-08-21T18:10:14-07:00"
+      agent: claude
+      blocked: false
+      protocol_error: no valid findings block
+    - "n": 8
+      timestamp: "2026-08-21T18:24:16-07:00"
+      agent: claude
+      dispose:
+        - id: BR-15
+          disposition: not-addressed
+          note: README.md:42-49 still has no / row and "Enter | define what you typed (never the suggestion)" still omits command dispatch.
+          round: 8
+        - id: BR-22
+          disposition: not-addressed
+          note: Re-probed against the built binary — "define --sound 1000 /sound" prints "playing 1000x" and exits 0, while "/sound 1000" is refused at 20.
+          round: 8
+        - id: BR-23
+          disposition: not-addressed
+          note: 'Re-probed — "define -times -1 x" still reports "define: -sound must not be negative".'
+          round: 8
+        - id: BR-24
+          disposition: not-addressed
+          note: command.go:238-239 still slices bytes, history_cmd.go:177-178 still slices runes, and runHelp's hardcoded %-10s at command.go:211 is now a third name-column width beside menuNameWidth.
+          round: 8
+        - id: BR-25
+          disposition: not-addressed
+          note: history_cmd_test.go:225 and :268 still pass width 0, and nothing asserts runHistory forwards c.width.
+          round: 8
+        - id: BR-26
+          disposition: addressed
+          note: Probed with the torn-log fixture — /qqqqqq, /qqqqqq zzz and /history zzz all read nothing now; mutation-verified (reverting Load to eager reddens TestCommandThatReadsNothingDoesNotOpenTheLog). The three rows were still not added; raised separately.
+          round: 8
+        - id: BR-29
+          disposition: not-addressed
+          note: Reproduced in Pacific/Apia — at=2011-12-29, now=2011-12-31 prints "yesterday" for a two-calendar-day gap. history_cmd.go:199 unchanged, exactness comment unchanged.
+          round: 8
+        - id: BR-30
+          disposition: not-addressed
+          note: replraw.go:70 unchanged; completionsFor still runs twice per keystroke, at :113 and :129.
+          round: 8
+        - id: BR-31
+          disposition: addressed
+          note: needsDeck deleted and withStore is unconditional; mutation-verified two ways — removing withStore's clock fallback reddens TestWithStoreCarriesTheClock, and nil-ing clock in newCommandCtx panics the suite through run().
+          round: 8
+        - id: BR-32
+          disposition: addressed
+          note: Probed — /history warns ONCE now, one-shot and piped; pinned by the Load-laziness mutation. The warning-COUNT assertion the finding asked for is still absent; raised separately.
+          round: 8
+        - id: BR-33
+          disposition: not-addressed
+          note: repo-guards.md gained the section and README.md:84 now teaches --sound, but atlas/index.md:13-14 — named explicitly in the finding — still mentions only the executable-image class, and the same commit created three fresh stale claims in atlas/define.md.
+          round: 8
+        - id: BR-34
+          disposition: not-addressed
+          note: commandNeedsDeck and needsDeck became correct by deletion rather than maintenance; historyPaths and TestNoRuntimeStateInHistory landed; editDistance is still absent (grep-verified), and the derive-guard the rule called for was not written.
+          round: 8
+        - id: BR-35
+          disposition: addressed
+          note: commandNeedsDeck is deleted, so exactly one strings.EqualFold walk over cmds remains (command.go:195) — the two rules cannot drift by construction.
+          round: 8
+      findings:
+        - id: BR-36
+          severity: Important
+          title: atlas/define.md documents needsDeck, a field the same commit deleted, and two more paragraphs describe a load that no longer happens at construction
+          detail: |-
+            This is the 4th finding in family docs-consumer-not-updated (BR-4, BR-27, BR-33). Do NOT
+            patch these instances. Measured prevalence, all four from 8f04434 - the commit whose
+            message closes BR-33: (1) atlas/define.md:404-405 "A command declares needsDeck when it
+            reads the store. Opening the store constructs storeHistory, which READS the whole event
+            log" - grep needsDeck over cmd/ returns zero hits and opening the store reads nothing;
+            (2) atlas/define.md:307 "loads the log once at construction"; (3) atlas/define.md:284
+            "since #4 it only reads at construction" - both falsified by History.Load; (4)
+            atlas/index.md:13-14 still names only the executable-image class, the exact instance
+            BR-33 listed and the one half of it that was not fixed.
+            THE RULE, stated by BR-33 and still unadopted - a surface is not shipped until every doc
+            that already describes its class is updated in the same commit, where "its class" means
+            the page that is wrong by omission or contradiction, not only the page that names the new
+            thing. Three rounds of fixing exactly the pages a finding lists is the measurement that
+            the sweep is not happening. Cheap durable half - when a commit DELETES an identifier,
+            grep atlas/ and README.md for it before committing; enforcement worth having
+            (ARCH-PURPOSE) is the repo-guards table guard BR-33 already described.
+          family: docs-consumer-not-updated
+          round: 8
+        - id: BR-37
+          severity: Important
+          title: editDistance is still missing from the Core-concepts table, and runHelp was never in it
+          detail: |-
+            This is the 4th finding in family plan-artifact-lags-code (BR-5, BR-21, BR-34). Do NOT
+            just add the rows. Of BR-34's five named entities, two (commandNeedsDeck,
+            command.needsDeck) became correct by DELETION rather than maintenance, two (historyPaths,
+            TestNoRuntimeStateInHistory) were added, and editDistance at command.go:124 is still
+            absent - grep-verified, zero occurrences in the plan. Cross-checking every top-level
+            declaration in command.go, history_cmd.go and sound_cmd.go against both tables surfaces
+            a sixth the finding never named - runHelp at command.go:211, the /help command itself,
+            which has no row and never had one. Box-ticking is clean, the round-5/6 Revisions entry
+            landed, and every entity the tables DO name exists at its stated path.
+            THE RULE, unchanged from BR-34 and now four rounds deep - the table is a hand-maintained
+            restatement of what the package declares, so it drifts by default; the fix is to make it
+            derive, not to remember harder. A guard comparing the table's Name-and-path pairs against
+            top-level declarations in the named files would have failed the commit that added
+            editDistance and the commit that added runHelp - the same shape as TestNoTrackedRuntimeState.
+          family: plan-artifact-lags-code
+          round: 8
+        - id: BR-38
+          severity: Minor
+          title: history_store.go's type comment says the log is read at construction; its own Load doc fifteen lines below says it moved out of the constructor
+          detail: |-
+            This is the 3rd finding in family comment-orphaned-by-insertion (BR-12, BR-30). Do NOT
+            patch this instance. history_store.go:21-22 reads "the log is read once at construction
+            and everything after is memory", while history_store.go:35-38 - written by the same
+            commit - reads "It used to happen in the constructor". A direct contradiction inside one
+            file, in the doc comment of the type the change is about.
+            THE RULE, already stated for BR-30 and measurably unadopted at prevalence 3 - when a fix
+            changes what a block does, every comment describing that block is part of the diff,
+            including the TYPE's own doc comment, which is the one nobody re-reads because it sits
+            above the declaration rather than above the changed lines. The same two sentences are
+            restated at atlas/define.md:284 and :307, which is why this and the docs finding are one
+            change to make.
+          family: comment-orphaned-by-insertion
+          round: 8
+        - id: BR-39
+          severity: Minor
+          title: The specific inputs BR-26 and BR-32 measured are still entered by no fixture; both regressions restore silently
+          detail: |-
+            This is the 2nd finding in family uncovered-branch-at-boundary (BR-25 first). Do NOT just
+            add these rows. Two mutations, each compiled with the full suite green at -count=1:
+            (1) inserting a second c.deck.Events(time.Time{}) into runHistory restores BR-32's exact
+            doubled-warning symptom - the count assertion that finding asked for was never added;
+            (2) moving the Events read above parseHistoryArgs in runHistory restores BR-26's exact
+            "define /history zzz reads the whole log before its usage error" symptom - the three rows
+            that finding asked for were never added. The behaviour is correct in both cases and the
+            shared mechanism (History.Load laziness) IS pinned, so this is about the specific cases,
+            not the fix.
+            THE RULE - when a finding states the inputs it measured, those inputs ARE the regression
+            fixture; a fix is closed by a test that runs them, not by a change that happens to make
+            them pass. BR-25 is the same shape at a different site - renderHistory's width branch is
+            prose-correct and fixture-free because both call sites pass 0.
+          family: uncovered-branch-at-boundary
+          round: 8
+        - id: BR-40
+          severity: Minor
+          title: storeHistory.Load mutates lines and loaded without taking the mutex that Add and Prefix both take
+          detail: |-
+            history_store.go:40. Load appends to h.lines and sets h.loaded outside h.mu, while
+            Add (:62) and Prefix (:73) both lock. Unreachable concurrently today - the only production
+            caller is runEditor at replraw.go:67, before the key loop starts, and go test -race is
+            green - so this is latent, not live. But a struct that locks for some mutations and not
+            others invites the next caller to assume the wrong thing, and Load is the newest method
+            on it.
+          family: partial-lock-discipline
+          round: 8
+      blocked: false
 ---
 
 # Gate ledger — tools#15 (boundary-review)
@@ -1029,6 +1182,96 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   THE RULE - two sites that must agree about one fact should be one site: a single
   findCommand(name, cmds) (command, bool) that both call, so the matching rule cannot drift.
 
+## Round 7 — 2026-08-21T18:10:14-07:00 (claude) — passed
+
+**Protocol error:** no valid findings block — this round contributed no findings.
+
+## Round 8 — 2026-08-21T18:24:16-07:00 (claude) — passed
+
+### Disposed
+
+- BR-15 — not-addressed — README.md:42-49 still has no / row and "Enter | define what you typed (never the suggestion)" still omits command dispatch.
+- BR-22 — not-addressed — Re-probed against the built binary — "define --sound 1000 /sound" prints "playing 1000x" and exits 0, while "/sound 1000" is refused at 20.
+- BR-23 — not-addressed — Re-probed — "define -times -1 x" still reports "define: -sound must not be negative".
+- BR-24 — not-addressed — command.go:238-239 still slices bytes, history_cmd.go:177-178 still slices runes, and runHelp's hardcoded %-10s at command.go:211 is now a third name-column width beside menuNameWidth.
+- BR-25 — not-addressed — history_cmd_test.go:225 and :268 still pass width 0, and nothing asserts runHistory forwards c.width.
+- BR-26 — addressed — Probed with the torn-log fixture — /qqqqqq, /qqqqqq zzz and /history zzz all read nothing now; mutation-verified (reverting Load to eager reddens TestCommandThatReadsNothingDoesNotOpenTheLog). The three rows were still not added; raised separately.
+- BR-29 — not-addressed — Reproduced in Pacific/Apia — at=2011-12-29, now=2011-12-31 prints "yesterday" for a two-calendar-day gap. history_cmd.go:199 unchanged, exactness comment unchanged.
+- BR-30 — not-addressed — replraw.go:70 unchanged; completionsFor still runs twice per keystroke, at :113 and :129.
+- BR-31 — addressed — needsDeck deleted and withStore is unconditional; mutation-verified two ways — removing withStore's clock fallback reddens TestWithStoreCarriesTheClock, and nil-ing clock in newCommandCtx panics the suite through run().
+- BR-32 — addressed — Probed — /history warns ONCE now, one-shot and piped; pinned by the Load-laziness mutation. The warning-COUNT assertion the finding asked for is still absent; raised separately.
+- BR-33 — not-addressed — repo-guards.md gained the section and README.md:84 now teaches --sound, but atlas/index.md:13-14 — named explicitly in the finding — still mentions only the executable-image class, and the same commit created three fresh stale claims in atlas/define.md.
+- BR-34 — not-addressed — commandNeedsDeck and needsDeck became correct by deletion rather than maintenance; historyPaths and TestNoRuntimeStateInHistory landed; editDistance is still absent (grep-verified), and the derive-guard the rule called for was not written.
+- BR-35 — addressed — commandNeedsDeck is deleted, so exactly one strings.EqualFold walk over cmds remains (command.go:195) — the two rules cannot drift by construction.
+
+### Raised
+
+- **BR-36** [Important] `docs-consumer-not-updated` atlas/define.md documents needsDeck, a field the same commit deleted, and two more paragraphs describe a load that no longer happens at construction
+  This is the 4th finding in family docs-consumer-not-updated (BR-4, BR-27, BR-33). Do NOT
+  patch these instances. Measured prevalence, all four from 8f04434 - the commit whose
+  message closes BR-33: (1) atlas/define.md:404-405 "A command declares needsDeck when it
+  reads the store. Opening the store constructs storeHistory, which READS the whole event
+  log" - grep needsDeck over cmd/ returns zero hits and opening the store reads nothing;
+  (2) atlas/define.md:307 "loads the log once at construction"; (3) atlas/define.md:284
+  "since #4 it only reads at construction" - both falsified by History.Load; (4)
+  atlas/index.md:13-14 still names only the executable-image class, the exact instance
+  BR-33 listed and the one half of it that was not fixed.
+  THE RULE, stated by BR-33 and still unadopted - a surface is not shipped until every doc
+  that already describes its class is updated in the same commit, where "its class" means
+  the page that is wrong by omission or contradiction, not only the page that names the new
+  thing. Three rounds of fixing exactly the pages a finding lists is the measurement that
+  the sweep is not happening. Cheap durable half - when a commit DELETES an identifier,
+  grep atlas/ and README.md for it before committing; enforcement worth having
+  (ARCH-PURPOSE) is the repo-guards table guard BR-33 already described.
+- **BR-37** [Important] `plan-artifact-lags-code` editDistance is still missing from the Core-concepts table, and runHelp was never in it
+  This is the 4th finding in family plan-artifact-lags-code (BR-5, BR-21, BR-34). Do NOT
+  just add the rows. Of BR-34's five named entities, two (commandNeedsDeck,
+  command.needsDeck) became correct by DELETION rather than maintenance, two (historyPaths,
+  TestNoRuntimeStateInHistory) were added, and editDistance at command.go:124 is still
+  absent - grep-verified, zero occurrences in the plan. Cross-checking every top-level
+  declaration in command.go, history_cmd.go and sound_cmd.go against both tables surfaces
+  a sixth the finding never named - runHelp at command.go:211, the /help command itself,
+  which has no row and never had one. Box-ticking is clean, the round-5/6 Revisions entry
+  landed, and every entity the tables DO name exists at its stated path.
+  THE RULE, unchanged from BR-34 and now four rounds deep - the table is a hand-maintained
+  restatement of what the package declares, so it drifts by default; the fix is to make it
+  derive, not to remember harder. A guard comparing the table's Name-and-path pairs against
+  top-level declarations in the named files would have failed the commit that added
+  editDistance and the commit that added runHelp - the same shape as TestNoTrackedRuntimeState.
+- **BR-38** [Minor] `comment-orphaned-by-insertion` history_store.go's type comment says the log is read at construction; its own Load doc fifteen lines below says it moved out of the constructor
+  This is the 3rd finding in family comment-orphaned-by-insertion (BR-12, BR-30). Do NOT
+  patch this instance. history_store.go:21-22 reads "the log is read once at construction
+  and everything after is memory", while history_store.go:35-38 - written by the same
+  commit - reads "It used to happen in the constructor". A direct contradiction inside one
+  file, in the doc comment of the type the change is about.
+  THE RULE, already stated for BR-30 and measurably unadopted at prevalence 3 - when a fix
+  changes what a block does, every comment describing that block is part of the diff,
+  including the TYPE's own doc comment, which is the one nobody re-reads because it sits
+  above the declaration rather than above the changed lines. The same two sentences are
+  restated at atlas/define.md:284 and :307, which is why this and the docs finding are one
+  change to make.
+- **BR-39** [Minor] `uncovered-branch-at-boundary` The specific inputs BR-26 and BR-32 measured are still entered by no fixture; both regressions restore silently
+  This is the 2nd finding in family uncovered-branch-at-boundary (BR-25 first). Do NOT just
+  add these rows. Two mutations, each compiled with the full suite green at -count=1:
+  (1) inserting a second c.deck.Events(time.Time{}) into runHistory restores BR-32's exact
+  doubled-warning symptom - the count assertion that finding asked for was never added;
+  (2) moving the Events read above parseHistoryArgs in runHistory restores BR-26's exact
+  "define /history zzz reads the whole log before its usage error" symptom - the three rows
+  that finding asked for were never added. The behaviour is correct in both cases and the
+  shared mechanism (History.Load laziness) IS pinned, so this is about the specific cases,
+  not the fix.
+  THE RULE - when a finding states the inputs it measured, those inputs ARE the regression
+  fixture; a fix is closed by a test that runs them, not by a change that happens to make
+  them pass. BR-25 is the same shape at a different site - renderHistory's width branch is
+  prose-correct and fixture-free because both call sites pass 0.
+- **BR-40** [Minor] `partial-lock-discipline` storeHistory.Load mutates lines and loaded without taking the mutex that Add and Prefix both take
+  history_store.go:40. Load appends to h.lines and sets h.loaded outside h.mu, while
+  Add (:62) and Prefix (:73) both lock. Unreachable concurrently today - the only production
+  caller is runEditor at replraw.go:67, before the key loop starts, and go test -race is
+  green - so this is latent, not live. But a struct that locks for some mutations and not
+  others invites the next caller to assume the wrong thing, and Load is the newest method
+  on it.
+
 ## Open findings
 
 - **BR-15** [Minor] `fix-appended-not-integrated` The BR-4 README fix was appended to the sh block instead of integrated into the key table
@@ -1036,11 +1279,12 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-23** [Minor] `error-names-a-flag-the-user-did-not-type` define -times -1 reports "define: -sound must not be negative"
 - **BR-24** [Minor] `duplicated-width-arithmetic` menuLines truncates in bytes while renderHistory truncates in runes, and renderHistory measures columns in bytes but pads in runes
 - **BR-25** [Minor] `uncovered-branch-at-boundary` renderHistory's truncation branch is never exercised — both test call sites pass width 0
-- **BR-26** [Important] `guard-bypassed-by-new-kind` A command line skips the "usage errors are settled before a store is opened" invariant and reads the whole event log
 - **BR-29** [Minor] `elapsed-hours-for-calendar-days` relativeDay's rounding is a heuristic where an exact computation is one line away, and the comment asserts an exactness the code lacks
 - **BR-30** [Minor] `comment-orphaned-by-insertion` replraw.go:67 still claims candidates are resolved once per keystroke, but draw() now computes its own list
-- **BR-31** [Important] `guard-bypassed-by-new-kind` The needsDeck exemption strands deps.clock, so a registry row with needsDeck false gets a nil clock and panics
-- **BR-32** [Important] `same-source-read-twice` /history reads the whole event log twice and prints every store warning twice
 - **BR-33** [Important] `docs-consumer-not-updated` The atlas never learned about the runtime-state guards, and the README still teaches the deprecated flag name
 - **BR-34** [Important] `plan-artifact-lags-code` The Core-concepts table lost five entities again, and the plan has no Revisions entry for rounds 5 or 6
-- **BR-35** [Minor] `parallel-construction-drift` Two registry lookups carry independently-written matching rules and nothing pins that they agree
+- **BR-36** [Important] `docs-consumer-not-updated` atlas/define.md documents needsDeck, a field the same commit deleted, and two more paragraphs describe a load that no longer happens at construction
+- **BR-37** [Important] `plan-artifact-lags-code` editDistance is still missing from the Core-concepts table, and runHelp was never in it
+- **BR-38** [Minor] `comment-orphaned-by-insertion` history_store.go's type comment says the log is read at construction; its own Load doc fifteen lines below says it moved out of the constructor
+- **BR-39** [Minor] `uncovered-branch-at-boundary` The specific inputs BR-26 and BR-32 measured are still entered by no fixture; both regressions restore silently
+- **BR-40** [Minor] `partial-lock-discipline` storeHistory.Load mutates lines and loaded without taking the mutex that Add and Prefix both take

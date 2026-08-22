@@ -425,3 +425,17 @@ When you change *when* something happens, re-run the mutations of every test tha
 existed to pin *that timing*. And where a test asserts an absence ("this did not
 happen"), pair it with a control that makes the same thing happen — otherwise a
 dead fixture and a working guard are indistinguishable.
+
+## A width is a rune count, and two renderers must agree what it means
+
+One renderer truncated in bytes, the other in runes, and a third place measured
+column widths in bytes while `fmt` padded in runes. All of it was invisible
+because every test passed width 0 — the truncation branch had never executed.
+Mutation-checked afterwards, the byte version produced `"  na\xc3"`: half a
+character.
+
+Two rules fell out. **Share the width helper** rather than writing the check at
+each call site, because two implementations of "cut this to N" will disagree
+about what N counts. And **a branch no test exercises is not covered by the tests
+that call the function** — if every call site passes the value that skips it, it
+has never run.

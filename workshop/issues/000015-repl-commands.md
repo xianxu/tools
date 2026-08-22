@@ -1,12 +1,13 @@
 ---
 id: 000015
-status: working
+status: codecomplete
 deps: [tools#14, tools#3]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-21
 estimate_hours: 1.82
 started: 2026-08-21T13:55:32-07:00
+actual_hours: 6.77
 ---
 
 # REPL command mode: /-prefixed commands with type-ahead, starting with /history
@@ -127,6 +128,21 @@ reports the doc as stale), not to inflate this number until it looks right.
 ## Log
 
 ### 2026-08-21 — gates
+- 2026-08-21: closed — Re-run after the previous round return verdict "unknown": the reviewer agent died mid-response ("API Error: Connection lost mid-response") before it reviewed anything, so no verdict was emitted. Investigated the sidecar as the gate instructed -- it is a dropped connection, not a gate or prompt fault, and implies nothing about the code. The same run reported "no open blocking findings after 4 rounds".; review verdict: FIX-THEN-SHIP
+
+Round 6 five findings, three of which were one problem:
+
+BR-26 / BR-31 / BR-32 -- the finding own rule exposed it: when a new kind is exempted from a shared setup path, enumerate everything that path guaranteed and re-supply it. My needsDeck exemption skipped withStore, which is ALSO where deps.clock is supplied, so a row with needsDeck false that read the clock would panic (BR-31); and it did not achieve its goal either, because withStore still built storeHistory eagerly for the commands that were not exempted, so /history read the log twice and printed every torn-record warning twice (BR-32 -- which I had SEEN in a manual run and moved past). Fixed at the source rather than routed around: the log read moved out of storeHistory constructor into History.Load, called by the raw editor, the only thing that recalls; replLines never touched history at all so it stops paying too. Nothing is exempted from withStore now, so nothing can strand what it supplies, and needsDeck is deleted. Measured against a torn-log fixture: /history warns ONCE (was twice), define /help zero times, piped /history once.
+
+That change made #4 TestUsageErrorsDoNotOpenTheLog VACUOUS -- the ordering it pinned no longer decides the outcome and its mutation now leaves it green. Not left as a passing test that cannot fail: every row carries a control that runs /history against the same fixture, and breaking the fixture path makes it fail loudly ("the fixture is not live"). Verified in both directions. BR-31 also gets the durable half -- a test asserting the ctx a one-shot ACTUALLY builds carries every field a row may read.
+
+BR-33 -- atlas/repo-guards.md documents both runtime-state guards, what each READS (index vs history), and that the root cause is fixed as well as guarded: the pty suite gives its child an explicit cmd.Dir so the conformance flow no longer writes into the source tree. README no longer teaches -times.
+
+BR-34 -- the Core-concepts tables regained the entities this round added (historyPaths, both history guards, History.Load, storeHistory.Load), and the plan has a Revisions entry for rounds 5 and 6, including why BR-19 and BR-20 were disposed not-addressed: fixing a list is not adopting a rule, and correct-but-unpinned is not closed.
+
+Deck blobs remain zero-reachable from HEAD (re-checked this round).
+
+go vet clean; full suite and -race green across both packages; GOOS=linux CGO_ENABLED=0 green; all four pty conformance tests green against a real terminal and leaving the tree clean.
 - 2026-08-21: closed M1 — M1 delivers the / namespace end to end — command mode, type-ahead, dispatch in BOTH loops, unknown-command suggestion — and this round fixes all five findings from the first boundary review.; review verdict: FIX-THEN-SHIP
 
 BR-3 was mine and is the one worth recording: TestRawEditorDispatchesCommands asserted stdout contained "/help", but the raw editor ECHOES the submitted line, so the assertion matched the echo rather than the command and passed with dispatch deleted. I reproduced it before fixing (mutation applied, BUILD_OK, ok) and the mutated output shows the cause literally — captured stdout contains the echoed "/help". Both loop tests now assert "list the commands", text only runHelp can emit, and the same mutation now reddens them. BR-2 was the same gap one level out: TestEditorSuggestsFromCommands types /hel against a history stocked with "hibernate" and requires the grey completion to come from the command set — mutation-verified by making completionsFor ignore commands. BR-6: commandCtx was built at both loops with M2 about to add two fields, so construction is now newCommandCtx. BR-4: --help and README now document the / surface M1 ships. BR-5: fifteen M1 step boxes ticked.

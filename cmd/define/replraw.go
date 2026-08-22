@@ -67,9 +67,11 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	hist.Load()
 	e := NewEditor()
 	var current string
-	// Resolve candidates ONCE per keystroke and use the same slice for both the
-	// state machine and the suggestion. Querying twice doubled the work the
-	// History seam will do once #3 backs it with a store.
+	// Apply gets the candidate list computed BEFORE the keystroke, which is
+	// correct: it is deciding what to do with that keystroke given the line as
+	// it stands, and a history walk anchors on it. draw() computes its own from
+	// the line AFTER — passing it this one is what made the grey tail disagree
+	// with what Tab accepted.
 	// The command menu is a dropdown, not scrollback: drawn BELOW the prompt
 	// line and erased on every redraw. menuDrawn is how many rows are currently
 	// on screen under the cursor.
