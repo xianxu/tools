@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -416,9 +417,12 @@ func TestFailingStoreStillDefinesAndExitsZero(t *testing.T) {
 // newStoreHistory READS the log at construction, so with the store opened first
 // a corrupt log reports itself in the middle of a usage error. That is the pin.
 //
-// Verified failable: moving `d = d.withStore(...)` back above the usage switch
-// makes every row here fail with
-// "define: 2020-01-01.yaml: recovered 0 event(s), dropped 1 torn record(s)".
+// UPDATED in #15, and the update is the point. Reading the log moved out of
+// store construction into History.Load, so the withStore ordering no longer
+// decides this — laziness does, and the mutation that used to redden these rows
+// now leaves them green. Rather than keep a test that cannot fail, each row is
+// paired with a control: /history DOES read the log, so if the control is silent
+// the fixture is dead and the row proves nothing.
 func TestUsageErrorsDoNotOpenTheLog(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -453,6 +457,62 @@ func TestUsageErrorsDoNotOpenTheLog(t *testing.T) {
 			if strings.Contains(errb.String(), "torn record") || strings.Contains(errb.String(), "recovered") {
 				t.Errorf("a usage error read the event log: %q", errb.String())
 			}
+
+			// The control. Without it this row would pass against an empty
+			// directory, a misnamed fixture, or a parser that stopped warning.
+			var cout, cerr bytes.Buffer
+			if run(t.Context(), []string{"-no-audio", "/history"}, rig.deps, strings.NewReader(""), &cout, &cerr); !strings.Contains(cerr.String(), "torn record") {
+				t.Fatalf("the fixture is not live — /history did not warn either, so this row proves nothing: %q", cerr.String())
+			}
 		})
 	}
+}
+
+// One source for "what time is it". The clock was constructed inline where the
+// capturer was built, so nothing else could reach it; #15's /history needs the
+// same clock to compute a local-day window, and two clocks would be two answers.
+//
+// The noCapture row is the one worth having: that path writes nothing, but
+// /history still READS, so a nil clock there is a panic waiting for the first
+// opt-out user to run a command.
+func TestOpenStoreSuppliesOneClock(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		opt      options
+		wantDeck bool
+	}{
+		{"normal", options{}, true},
+		{"DEFINE_NO_CAPTURE", options{noCapture: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			sd := openStore(tc.opt, io.Discard)
+			if sd.clock == nil {
+				t.Error("clock is nil; a command that reads the log would panic")
+			}
+			if got := sd.deck != nil; got != tc.wantDeck {
+				t.Errorf("deck non-nil = %v, want %v", got, tc.wantDeck)
+			}
+			if sd.clock != nil && sd.clock.Now().IsZero() {
+				t.Error("the clock reports the zero time")
+			}
+		})
+	}
+}
+
+// The clock has to REACH a command, not merely exist on storeDeps.
+func TestWithStoreCarriesTheClock(t *testing.T) {
+	t.Run("a test-supplied clock wins", func(t *testing.T) {
+		want := fixedClock(1)
+		d := deps{clock: want, history: &memHistory{}, capture: noopCapturer{}}
+		if got := d.withStore(options{}, io.Discard).clock; got.Now() != want.Now() {
+			t.Errorf("clock = %v, want the supplied one (%v)", got.Now(), want.Now())
+		}
+	})
+	t.Run("nothing supplied still yields a usable clock", func(t *testing.T) {
+		d := deps{history: &memHistory{}, capture: noopCapturer{}}
+		if got := d.withStore(options{}, io.Discard).clock; got == nil || got.Now().IsZero() {
+			t.Error("withStore left a nil or zero clock; a command would panic")
+		}
+	})
 }

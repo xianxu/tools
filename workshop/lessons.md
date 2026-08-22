@@ -315,3 +315,127 @@ path as "asserted by nothing" from a run scoped to one build tag, when the full
 suite reddens on that mutation. Before accepting a negative finding, re-run its
 measurement at full scope — a finding is a measurement, and measurements have
 scopes.
+
+
+## Render from the state you just changed, not the state you read
+
+A key loop computed its candidate list, applied the keystroke, then drew the
+suggestion using the list from *before* the keystroke. It was invisible for as
+long as both the old and new lists came from the same source — a stale superset
+usually shares its first element. It became a reported bug the moment the two
+lists came from different **namespaces**: the grey tail offered one completion
+and Tab accepted another.
+
+The fix that removes the class rather than the instance: the drawing function
+computes what it needs instead of accepting it. A parameter is a place a stale
+value can enter; if a function can derive its input from current state, let it.
+
+Corollary worth keeping: "it was already like that and nothing broke" is not
+evidence of correctness. It is evidence that nothing has yet varied the thing the
+latent bug depends on.
+
+## `go test` runs in the package directory — third time
+
+This one fact has now cost three review rounds in three disguises:
+
+1. A repo guard resolved `git ls-files` relative to `cmd/define/`, so the artifact
+   it hunted arrived as `define` and a "repo root" skip swallowed it. It could
+   not fail.
+2. `.gitignore` anchored `/words/` and `/events/` at the repo root, so a deck
+   written by tests at `cmd/define/words/` matched nothing and was committed.
+3. The pty conformance suite launched the binary with the test's cwd, so it wrote
+   a deck into the source tree and rewrote it on every run.
+
+Whenever a test touches the filesystem or the repo, state which directory it is
+standing in. Resolve repo paths from `git rev-parse --show-toplevel`, give any
+child process an explicit `cmd.Dir`, and prefer un-anchored ignore patterns for
+runtime output — anchoring only covers the root, and tests do not run there.
+
+## Two implementations of one idea diverge, and the wrong one carries the comment
+
+`historyWindow` used `AddDate` and documented exactly why a Duration is wrong
+across DST. `relativeDay`, twenty lines below, divided a Duration by 24h — and
+carried a comment claiming it worked on calendar days. Every `/history` date was
+off by one for the week after each spring-forward.
+
+Having got a subtlety right once is not protection; it is the thing that makes
+the second copy feel safe to write. When a second site needs the same idea, reach
+for the same primitive, and give the second site the harder test — the first one
+already has it.
+
+
+## Pin a loop shell's wiring with a test that drives that loop shell
+
+Four separate wirings shipped green with the wiring deleted — a `setTimes`
+closure, a one-shot dispatch, an exit-code propagation, a history append. Every
+one had tests. The tests built the callee's context by hand, or drove the *other*
+loop.
+
+The sharpest was `/sound`: its test drove the piped loop while the requirement
+was the raw TUI prompt, so deleting the raw loop's wiring left the feature
+silently broken exactly where it had been asked for.
+
+**The rule:** a value or effect that only a loop shell supplies (`runEditor`,
+`replLines`, `run`) must be pinned by a test that drives that loop shell. Every
+hand-built context literal in a test is a place this breaks invisibly — the test
+passes because it supplied the thing the production path forgot to.
+
+And the part that cost an extra round: *fixing the four instances is not closing
+the finding.* The same commit that fixed them introduced two more — an unpinned
+arity exemption and an unpinned `clearMenu` — because the rule had been applied
+to a list rather than adopted. Write the rule down where it will be read again,
+then check the diff you are about to commit against it.
+
+## A marker must not match the thing it is meant to distinguish from
+
+Twice in one issue, a test found its marker in the wrong place: `inputOn+"/sound"`
+matched the ECHO of the submitted line rather than the recall, and
+`"list the commands"` matched the MENU row rather than `/help`'s output. Both
+passed with the production wiring deleted.
+
+Before using a string to locate "where the output starts", check it does not also
+appear in what comes before. Prefer a marker only the code under test can emit —
+or drive a case whose output shares no text with its surroundings.
+
+## An exemption drops invariants you weren't thinking about
+
+To stop a command paying for a log it never read, I exempted it from the shared
+setup call. That call also supplied the process clock — so the exemption left it
+nil, and any future command that read the clock would have panicked. It also
+failed at its own job: the thing being avoided (an eager log read) still happened
+for the commands that *weren't* exempted, so `/history` read the log twice.
+
+**The rule:** when a new kind is exempted from a shared setup path, enumerate
+everything that path guaranteed and re-supply it. An exemption removes more than
+the cost you were trying to avoid.
+
+**The better move, when it is available:** remove the cost at its source instead
+of routing around it. Making the log read lazy meant nothing needed exempting,
+which fixed three findings at once and deleted the branch that caused the
+strand.
+
+## Removing a cost can make an old test vacuous
+
+Reading the log moved out of a constructor, and a test from a previous issue —
+one that asserted usage errors do not read the log — silently stopped being able
+to fail: the ordering it pinned no longer decided the outcome. It still passed,
+and it still looked like a guard.
+
+When you change *when* something happens, re-run the mutations of every test that
+existed to pin *that timing*. And where a test asserts an absence ("this did not
+happen"), pair it with a control that makes the same thing happen — otherwise a
+dead fixture and a working guard are indistinguishable.
+
+## A width is a rune count, and two renderers must agree what it means
+
+One renderer truncated in bytes, the other in runes, and a third place measured
+column widths in bytes while `fmt` padded in runes. All of it was invisible
+because every test passed width 0 — the truncation branch had never executed.
+Mutation-checked afterwards, the byte version produced `"  na\xc3"`: half a
+character.
+
+Two rules fell out. **Share the width helper** rather than writing the check at
+each call site, because two implementations of "cut this to N" will disagree
+about what N counts. And **a branch no test exercises is not covered by the tests
+that call the function** — if every call site passes the value that skips it, it
+has never run.

@@ -2,16 +2,16 @@ package main
 
 import (
 	"context"
-
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/xianxu/tools/cmd/define/store"
 	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"golang.org/x/term"
 )
 
@@ -38,6 +38,10 @@ type deps struct {
 	// openStore and t.Chdir into a t.TempDir first — several do, so this seam is
 	// what keeps the real filesystem opt-in, not unreachable.
 	newStore func(options, io.Writer) storeDeps
+	// clock is what a command reads to answer "now". Injected for the same
+	// reason storeCapturer's is: /history's window is a local-DAY computation,
+	// so a test has to be able to stand at a chosen instant in a chosen zone.
+	clock store.Clock
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
 	// which would make the interactive path unwritable. Note this is a different
@@ -62,6 +66,15 @@ type storeDeps struct {
 	history History
 	capture Capturer
 	deck    store.Store
+	// clock is the process's ONE answer to "what time is it". It used to be
+	// constructed inline where the capturer was built, so nothing else could
+	// reach it — and #15's /history needs the same clock to compute a local-day
+	// window. Two clocks would be two answers, and a test could only move one.
+	//
+	// Supplied on every path, including the opt-out: DEFINE_NO_CAPTURE means
+	// "write nothing here", not "time does not exist", and a command that reads
+	// the log still needs one.
+	clock store.Clock
 }
 
 // withStore fills any store-backed dependency a caller did not supply, leaving
@@ -85,6 +98,10 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	if d.deck == nil {
 		d.deck = sd.deck
 	}
+	// Same shape as the memHistory/noopCapturer fallbacks above: a test that
+	// supplies no newStore still gets a usable process. A test that wants to
+	// control time sets d.clock and it survives.
+	d.clock = orElse[store.Clock](d.clock, orElse[store.Clock](sd.clock, store.SystemClock()))
 	return d
 }
 
@@ -110,19 +127,21 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides
 	// whether a given lookup counts.
+	clk := store.SystemClock()
 	if opt.noCapture {
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
 	}
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}}
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
 	}
 	st := store.NewYAML(dir, warn)
 	return storeDeps{
 		history: newStoreHistory(st, warn),
-		capture: newStoreCapturer(st, store.SystemClock(), warn),
+		capture: newStoreCapturer(st, clk, warn),
 		deck:    st,
+		clock:   clk,
 	}
 }
 
@@ -167,7 +186,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	raw := fs.Bool("raw", false, "print the unparsed dictionary entry")
 	noColor := fs.Bool("no-color", false, "disable ANSI colour")
 	noAudio := fs.Bool("no-audio", false, "do not fetch or play the pronunciation")
-	times := fs.Int("times", 3, "how many times to play the pronunciation")
+	sound := fs.Int("sound", 3, "how many times to play the pronunciation")
+	// The older name for -sound. Kept working rather than removed: it is
+	// documented and in people's shell history. One of them wins, and asking for
+	// both is a mistyped command, not a preference to guess at.
+	times := fs.Int("times", 3, "how many times to play the pronunciation (older name for -sound)")
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	fs.Usage = func() {
@@ -176,7 +199,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"Oxford American Dictionary, the one Google licenses, hence the matching\n"+
 			"notation — and plays its recorded pronunciation.\n\n"+
 			"With no word, reads words from stdin; on a terminal that is an\n"+
-			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n\n"+
+			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n"+
+			"A line starting with / is a command rather than a word. Type / to\n"+
+			"see the list, keep typing to narrow it, Tab to complete. /history\n"+
+			"shows what you looked up in the last two days (/history 7, or\n"+
+			"--days 7, for a wider window); /sound sets how many times a\n"+
+			"pronunciation plays for the rest of the session.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
 			"it in. A word that was found is added to the deck; a word that was\n"+
@@ -192,8 +220,26 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		}
 		return 2
 	}
+	if isSet(fs, "sound") && isSet(fs, "times") {
+		fmt.Fprintln(stderr, "define: -sound and -times are the same setting; pass one")
+		return 2
+	}
+	// The flag and /sound are the same setting, so they get the SAME limits —
+	// -sound 1000 used to be accepted while /sound 1000 was refused at 20. And
+	// the message names the flag the user actually typed, rather than the one
+	// the code happens to read.
+	flagName := "-times"
+	if isSet(fs, "sound") {
+		*times = *sound
+		flagName = "-sound"
+	}
 	if *times < 0 {
-		fmt.Fprintf(stderr, "define: -times must not be negative\n")
+		fmt.Fprintf(stderr, "define: %s must not be negative\n", flagName)
+		return 2
+	}
+	if *times > maxSoundTimes {
+		fmt.Fprintf(stderr, "define: %s %d would take a while to sit through; the limit is %d\n",
+			flagName, *times, maxSoundTimes)
 		return 2
 	}
 	opt := options{
@@ -223,6 +269,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// line; silently honouring one of them is how -raw came to mean two different
 	// things in #2.
 	forgetting := isSet(fs, "forget")
+	// A command may take arguments, so the WHOLE argument list is one line:
+	// `define /history 7` has to mean what `/history 7` means at the prompt.
+	// Classifying only fs.Arg(0) made the argument count reject it as "too many
+	// words" while the piped loop ran it happily (BR-20).
+	oneShot := parseREPLLine(strings.Join(fs.Args(), " "), false)
 	switch {
 	case forgetting && *forget == "":
 		fmt.Fprintln(stderr, "define: -forget needs a word")
@@ -230,13 +281,19 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case forgetting && fs.NArg() != 0:
 		fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
 		return 2
-	case !forgetting && fs.NArg() > 1:
+	case !forgetting && oneShot.kind != cmdCommand && fs.NArg() > 1:
 		fs.Usage()
 		return 2
 	}
 
 	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
 	// flag-parse-time input and decides whether anything is opened at all.
+	//
+	// Nothing is exempted from this. An earlier fix skipped it for commands that
+	// read nothing, which dropped an invariant it was not thinking about —
+	// deps.clock is supplied here, so the exemption stranded it as nil. The cost
+	// it was avoiding is gone at the source instead: opening a store no longer
+	// reads the log (History.Load does, when a loop is about to recall).
 	d = d.withStore(opt, stderr)
 
 	if forgetting {
@@ -252,7 +309,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
-	default: // exactly 1; >1 was rejected above
+	default:
+		// A command is a command from every entry mode, arguments and all.
+		if oneShot.kind == cmdCommand {
+			return dispatchCommand(oneShot, commands, newCommandCtx(d, opt, stdout, stderr))
+		}
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
 	}
 }
@@ -400,11 +461,7 @@ func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int 
 	if d.deck == nil {
 		// Under DEFINE_NO_CAPTURE there may well BE a deck on disk — we simply
 		// did not open one. Saying "no deck" would be a lie about their data.
-		if opt.noCapture {
-			fmt.Fprintln(stderr, "define: DEFINE_NO_CAPTURE is set, so no deck was opened")
-		} else {
-			fmt.Fprintln(stderr, "define: no deck in this directory")
-		}
+		fmt.Fprintln(stderr, noDeckMessage(opt.noCapture))
 		return 1
 	}
 	removed, err := d.deck.Forget(word)
@@ -418,6 +475,15 @@ func forgetWord(d deps, opt options, word string, stdout, stderr io.Writer) int 
 	}
 	fmt.Fprintf(stdout, "removed %s\n", word)
 	return 0
+}
+
+// noDeckMessage explains a nil deck. Shared by --forget and /history: the same
+// fact stated in two places is how the atlas contradictions in #4 started.
+func noDeckMessage(noCapture bool) string {
+	if noCapture {
+		return "define: DEFINE_NO_CAPTURE is set, so no deck was opened"
+	}
+	return "define: no deck in this directory"
 }
 
 // terminalWidth reports the usable width of stdout, or 0 when it is not a

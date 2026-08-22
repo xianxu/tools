@@ -21,24 +21,37 @@ import (
 // The one fact that IS local: Prefix runs on every keystroke and returns no
 // error, so the log is read once at construction and everything after is memory.
 type storeHistory struct {
-	mu    sync.Mutex
-	lines []string // oldest first, every submitted line
-	warn  io.Writer
+	mu     sync.Mutex
+	st     store.Store
+	loaded bool
+	lines  []string // oldest first, every submitted line
+	warn   io.Writer
 }
 
 func newStoreHistory(st store.Store, warn io.Writer) *storeHistory {
-	h := &storeHistory{warn: warn}
-	events, err := st.Events(time.Time{})
+	return &storeHistory{st: st, warn: warn}
+}
+
+// Load reads the event log once, when a loop is about to recall from it.
+//
+// It used to happen in the constructor, which meant opening the store read the
+// whole log — so `define /help` paid for a log it never looked at and /history
+// read it TWICE, printing every torn-record warning twice.
+func (h *storeHistory) Load() {
+	if h.loaded || h.st == nil {
+		return
+	}
+	h.loaded = true
+	events, err := h.st.Events(time.Time{})
 	if err != nil {
 		h.warnf("could not read history: %v", err)
-		return h
+		return
 	}
 	for _, e := range events {
 		if e.Kind == store.EventLookedUp {
 			h.lines = append(h.lines, e.Word)
 		}
 	}
-	return h
 }
 
 // Add records the line for RECALL only.

@@ -11,7 +11,9 @@ import (
 // replCommand is what one line of input means.
 type replCommand struct {
 	kind replKind
-	word string
+	word string   // cmdDefine: the headword
+	name string   // cmdCommand: the command name, "" for a bare "/"
+	args []string // cmdCommand: everything after the name
 }
 
 type replKind int
@@ -20,6 +22,7 @@ const (
 	cmdNothing replKind = iota // blank line, nothing to replay
 	cmdDefine                  // define this word
 	cmdReplay                  // replay the current word
+	cmdCommand                 // a /-prefixed command
 )
 
 // parseREPLLine is the loop's decision table, kept pure so it is a unit test
@@ -28,6 +31,13 @@ const (
 // hasCurrent is passed in rather than read from session state, so the function
 // has no memory and "blank line with nothing to replay" is an ordinary case.
 func parseREPLLine(line string, hasCurrent bool) replCommand {
+	// Commands are decided FIRST and HERE. This function is the one place both
+	// loops route a submitted line through, so putting the "/" test anywhere
+	// else means the raw editor and the line loop disagree about what a line
+	// means — the defect #4 spent ten rounds paying for, in a different shape.
+	if name, args, ok := parseCommandLine(line); ok {
+		return replCommand{kind: cmdCommand, name: name, args: args}
+	}
 	word := strings.TrimSpace(line)
 	if word == "" {
 		if hasCurrent {
@@ -108,6 +118,10 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 	// interchangeable with `define word` and documents as exiting 1 on an unknown
 	// word. Track failures and report them only on the non-interactive path.
 	var anyFailed bool
+	// A command's exit code survives the loop. Collapsing it into anyFailed made
+	// `echo /histry | define` exit 1 where dispatchCommand computes 2 and the
+	// README documents 2 for a usage error (BR-16).
+	var cmdCode int
 	var current string
 
 	for {
@@ -123,6 +137,9 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				return 1
 			}
 			if pipedInput && anyFailed {
+				if cmdCode != 0 {
+					return cmdCode
+				}
 				return 1
 			}
 			return 0
@@ -138,6 +155,18 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				// This path is only reached when we do NOT own the terminal, so
 				// there is no transient UI to place: play and report.
 				playAnnounced(ctx, d, opt, current, indicator{}, stdout, stderr)
+			case cmdCommand:
+				// The piped loop dispatches too. `echo /history | define` must
+				// not reach the dictionary, and a first draft of #15 put this
+				// only in the raw editor's submit path (PQ-2).
+				cc := newCommandCtx(d, opt, stdout, stderr)
+				cc.setTimes = func(n int) { opt.times = n }
+				if code := dispatchCommand(cmd, commands, cc); code != 0 {
+					anyFailed = true
+					if code > cmdCode {
+						cmdCode = code
+					}
+				}
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo
 				// does not cost you the word you were listening to.

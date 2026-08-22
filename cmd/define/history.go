@@ -16,6 +16,14 @@ import "strings"
 // ignored it while this comment claimed it was recorded, and #15 does not need
 // it here: /history filters on the EVENT LOG, where Found is a real field.
 type History interface {
+	// Load reads whatever durable state recall needs, once. Separate from
+	// construction because opening a store and READING a log are different
+	// costs, and only the two loops recall anything — a one-shot lookup or a
+	// command was paying for a log it never consulted, twice in /history's case.
+	//
+	// Prefix stays IO-free: it runs on every keystroke, and that is the reason
+	// this is a distinct call rather than a lazy read inside it.
+	Load()
 	Add(line string)
 	// Prefix returns entries beginning with p, newest first, deduped. An empty
 	// p returns everything.
@@ -27,6 +35,9 @@ type History interface {
 type memHistory struct {
 	lines []string // oldest first
 }
+
+// Nothing durable to load.
+func (h *memHistory) Load() {}
 
 func (h *memHistory) Add(line string) {
 	if line = strings.TrimSpace(line); line != "" {

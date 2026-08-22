@@ -45,6 +45,29 @@ it:
   the first five objects once left the history guard green with a planted binary
   present; it now fails with `scanned 5 of 761 objects`.
 
+## No runtime state is ever tracked, or ever reachable
+
+`define` writes its deck to the CURRENT directory, and a test's cwd is the
+PACKAGE directory — so `go test` and the pty suite created a deck at
+`cmd/define/words/` and `cmd/define/events/`, which the root-anchored ignore
+patterns did not match, and `git add -A` committed somebody's vocabulary across
+five commits.
+
+| test | reads | catches |
+|---|---|---|
+| `TestNoTrackedRuntimeState` | the **index** | a deck file staged or committed |
+| `TestNoRuntimeStateInHistory` | **history** | deck blobs still reachable from `HEAD` |
+
+Same two-place split as the binary guards, and for the same reason — the first
+version of the runtime-state guard checked only the index, which is precisely the
+half-fix that left a 9.6 MB binary reachable in `#4` after its file was removed.
+The patterns in `.gitignore` are **un-anchored** for this class (`words/`,
+`events/`), because anchoring only covers the root and tests do not run there.
+
+The root cause is fixed too, not only guarded: `pty_conformance_test.go` gives
+the child an explicit `cmd.Dir` of a `t.TempDir`, so the conformance flow no
+longer writes into the source tree at all.
+
 ### Why `.gitignore` cannot carry this alone
 
 `.gitignore` has no backreferences, so "a file named after its parent directory"

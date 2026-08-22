@@ -32,6 +32,9 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -44,11 +47,19 @@ import (
 // startDefine launches the built binary on a pty and returns it plus the master.
 func startDefine(t *testing.T, args ...string) (*exec.Cmd, *os.File) {
 	t.Helper()
-	bin := "../../bin/define"
+	bin, err := filepath.Abs("../../bin/define")
+	if err != nil {
+		t.Fatalf("resolving the binary: %v", err)
+	}
 	if _, err := os.Stat(bin); err != nil {
 		t.Skipf("run `make build` first: %v", err)
 	}
 	cmd := exec.Command(bin, args...)
+	// define writes its deck to the CURRENT directory, and a test's cwd is the
+	// PACKAGE directory — so this suite used to write a deck into the source
+	// tree and then rewrite it on every run, which is how three deck files
+	// reached commits. The binary path is absolute for exactly this reason.
+	cmd.Dir = t.TempDir()
 	f, err := pty.Start(cmd)
 	if err != nil {
 		t.Skipf("no pty available: %v", err)
@@ -176,4 +187,43 @@ func TestPTYTerminalIsRestoredOnExit(t *testing.T) {
 	if err := term.Restore(fd, st); err != nil {
 		t.Fatalf("restore failed: %v", err)
 	}
+}
+
+// The command menu against a real terminal. In-process tests prove the BYTES
+// are emitted; only a pty proves the cursor arithmetic around them — the menu
+// is drawn below the prompt and then the cursor is walked back up, and a
+// miscount there leaves the user typing on top of the menu.
+func TestPTYCommandMenuAppearsAndClears(t *testing.T) {
+	_, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	out.take(time.Second)
+
+	f.Write([]byte("/"))
+	frame := out.take(1500 * time.Millisecond)
+	if !strings.Contains(frame, "list the commands") {
+		t.Errorf("typing / did not draw the menu: %q", frame)
+	}
+	// Drawn BELOW: the cursor must come back up by exactly as many rows as were
+	// drawn, or the prompt lands in the middle of the menu.
+	//
+	// Derived from the frame, never hardcoded. The first version asserted
+	// "\x1b[1A" and broke the moment a second command was registered — the row
+	// count is incidental, the EQUALITY is the invariant.
+	rows := strings.Count(frame, "\r\n")
+	m := regexp.MustCompile(`\x1b\[(\d+)A`).FindStringSubmatch(frame)
+	if m == nil {
+		t.Fatalf("the menu never moved the cursor back up: %q", frame)
+	}
+	if up, _ := strconv.Atoi(m[1]); up != rows {
+		t.Errorf("drew %d rows but came back up %d: %q", rows, up, frame)
+	}
+
+	// A prefix that matches nothing must clear it.
+	f.Write([]byte("zzz"))
+	frame = out.take(1500 * time.Millisecond)
+	if strings.Contains(frame, "list the commands") {
+		t.Errorf("a non-matching prefix redrew the menu: %q", frame)
+	}
+
+	f.Write([]byte("\x03"))
 }

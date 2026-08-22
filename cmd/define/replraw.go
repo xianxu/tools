@@ -62,15 +62,62 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	if hist == nil {
 		hist = &memHistory{}
 	}
+	// The RAW editor is the only thing that recalls, so it is the only thing
+	// that pays for reading the log. replLines never touches history at all.
+	hist.Load()
 	e := NewEditor()
 	var current string
-	// Resolve candidates ONCE per keystroke and use the same slice for both the
-	// state machine and the suggestion. Querying twice doubled the work the
-	// History seam will do once #3 backs it with a store.
-	draw := func(matches []string) {
-		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, matches), opt.color))
+	// Apply gets the candidate list computed BEFORE the keystroke, which is
+	// correct: it is deciding what to do with that keystroke given the line as
+	// it stands, and a history walk anchors on it. draw() computes its own from
+	// the line AFTER — passing it this one is what made the grey tail disagree
+	// with what Tab accepted.
+	// The command menu is a dropdown, not scrollback: drawn BELOW the prompt
+	// line and erased on every redraw. menuDrawn is how many rows are currently
+	// on screen under the cursor.
+	//
+	// Known limit, shared with the erase arithmetic elsewhere in this file: if
+	// the menu does not fit below the cursor the terminal scrolls, and the
+	// cursor-up count then lands a row off. It self-corrects on the next
+	// keystroke, because the prompt line is fully rewritten each time.
+	menuDrawn := 0
+	paintMenu := func(lines []string) {
+		// Erase max(previous, new) rows, so a list that SHRINKS as you type
+		// leaves nothing of the longer one behind.
+		n := menuDrawn
+		if len(lines) > n {
+			n = len(lines)
+		}
+		if n == 0 {
+			return
+		}
+		for i := 0; i < n; i++ {
+			fmt.Fprint(stdout, "\r\n"+eraseLine)
+			if i < len(lines) {
+				fmt.Fprint(stdout, lines[i])
+			}
+		}
+		fmt.Fprintf(stdout, "\x1b[%dA\r", n) // back up to the prompt line
+		menuDrawn = len(lines)
 	}
-	draw(hist.Prefix(e.WalkBase()))
+	clearMenu := func() { paintMenu(nil) }
+	// draw takes NO match list on purpose. It used to accept one, and one caller
+	// passed the list computed BEFORE the keystroke was applied — so the grey
+	// tail was rendered against the previous line. Both lists were history until
+	// #15 and a stale superset usually had the same first match, so nothing
+	// showed; command mode made the stale list come from a different NAMESPACE
+	// and typing "/" suggested "/history" out of recall while the menu under it
+	// listed commands and Tab accepted "/help".
+	//
+	// Computing here means there is one answer to "what does the current line
+	// match", and no way to hand this function a stale one.
+	draw := func() {
+		// The menu is painted FIRST and the prompt line last, so RenderLine
+		// leaves the cursor where the user is typing.
+		paintMenu(menuLines(e.String(), commands, opt.width))
+		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), opt.color))
+	}
+	draw()
 
 	for {
 		select {
@@ -84,11 +131,12 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				fmt.Fprintln(stdout)
 				return 0
 			}
-			matches := hist.Prefix(e.WalkBase())
+			matches := completionsFor(e.WalkBase(), hist, commands)
 			var act Action
 			e, act = Apply(e, k, matches)
 			switch act {
 			case ActInterrupt, ActEOF:
+				clearMenu()
 				finish()
 				fmt.Fprintln(stdout)
 				return 0
@@ -99,19 +147,43 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
 				cmd := parseREPLLine(e.String(), current != "")
 				line := cmd.word
+				// Whatever happens next writes below this line, so the dropdown
+				// has to go before any of it.
+				clearMenu()
 				// Redraw the committed line with NO suggestion before advancing:
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.
 				submitted := e
 				e = NewEditor()
-				if cmd.kind == cmdDefine {
+				if cmd.kind == cmdDefine || cmd.kind == cmdCommand {
 					fmt.Fprint(stdout, RenderLine(submitted, "", opt.color))
+				}
+				if cmd.kind == cmdCommand {
+					// Commands print multiple lines, so they run COOKED for the
+					// same reason a definition does — in raw mode "\n" is a line
+					// feed with no carriage return.
+					fmt.Fprint(stdout, "\r\n")
+					hist.Add(submitted.String()) // up-arrow recalls "/history" too
+					if err := cooked(func() {
+						cc := newCommandCtx(d, opt, stdout, stderr)
+						// opt is this loop's own copy, so a command can change
+						// the session by writing through here.
+						cc.setTimes = func(n int) { opt.times = n }
+						dispatchCommand(cmd, commands, cc)
+					}); err != nil {
+						finish()
+						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
+						return 1
+					}
+					fmt.Fprint(stdout, "\r\n")
+					draw()
+					continue
 				}
 				if cmd.kind != cmdDefine {
 					// cmdReplay and cmdNothing both stay on this line: the
 					// indicator is drawn over the prompt, then the prompt back.
 					replayInPlace(ctx, d, opt, current, stdout, stderr)
-					draw(hist.Prefix(e.WalkBase()))
+					draw()
 					continue
 				}
 				// In RAW mode "\n" is a line feed only — no carriage return — so
@@ -130,10 +202,10 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// the prompt butts against the last line of the definition and
 				// reads as part of it.
 				fmt.Fprint(stdout, "\r\n")
-				draw(hist.Prefix(e.WalkBase()))
+				draw()
 				continue
 			}
-			draw(matches)
+			draw()
 		}
 	}
 }

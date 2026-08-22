@@ -316,6 +316,144 @@ so it never touches disk.
 **Timestamps keep their offset**, so a local-day view is recoverable even though
 day files are named in UTC. `#8` must group by timestamp, never by filename.
 
+## Command mode
+
+A `/` in the **first column** switches the line from "define this word" to a
+command. The character was forced by the data: `define` takes multi-word
+headwords (`hot dog`), so the namespace could not be a reserved word, and no
+English headword begins with a slash. A slash anywhere else is part of the
+word — `and/or` is a lookup.
+
+**Dispatch lives on `parseREPLLine`**, the classifier both loops already route
+through — `replLines` for the piped path, `runEditor`'s `ActSubmit` for the raw
+editor, which carries a comment explaining why it must not bypass it. A `/` test
+placed in either loop alone would make them disagree about what a line means:
+`echo /history | define` would go to the dictionary while the terminal ran the
+command. The plan gate caught exactly that draft (PQ-2), and
+`TestLineLoopDispatchesCommands` is the pin — deleting the `cmdCommand` case from
+`replLines` reddens it.
+
+**Type-ahead needed no change to the pure editor.** `Apply(e, k, matches)` always
+took its candidate list from the caller, so command mode is a different match
+*source*, not a different editor. `completionsFor` is the one place that decides
+which namespace a line draws from, and it replaced four `hist.Prefix(...)` call
+sites. Candidates come back `/`-prefixed because `Suggestion` matches against the
+whole typed line: with `/his` typed, `/history` is what completes it. Once an
+argument is typed (`/history 7`) the completion is shorter than the line, so no
+suggestion is offered — that falls out rather than being special-cased.
+
+**Typing `/` shows the menu.** The inline grey suggestion and the dropdown
+answer different questions, which is why both exist: completion answers "what
+single string extends this line" and only helps someone who already knows the
+command's name; the menu answers "what are my choices". `menuLines` is pure and
+filtered by the same prefix, so the list narrows as you type and vanishes when
+nothing matches — a stale set left on screen would be worse than none. The name
+column is measured against ALL commands so the summaries do not shuffle sideways
+while the list shrinks.
+
+The terminal half is a dropdown, not scrollback: `paintMenu` writes the rows
+below the prompt and walks the cursor back up by the same count, erasing
+`max(previous, new)` rows so a shrinking list leaves nothing behind. It is
+cleared before a submit and before exit. **Known limit**, shared with the erase
+arithmetic elsewhere in the raw path: if the menu does not fit below the cursor
+the terminal scrolls and the cursor-up count lands a row off; it self-corrects on
+the next keystroke, because the prompt line is fully rewritten each time. A pty
+conformance test covers the placement, because an in-process test can only prove
+the bytes were emitted, not that the cursor came back.
+
+**One source for "what does this line match".** `draw` computes the candidate
+list itself rather than accepting one. It used to take a parameter, and one
+caller passed the list computed BEFORE the keystroke was applied — so the grey
+tail was rendered against the previous line. Both lists were history before
+command mode and a stale superset usually shared its first match, so nothing
+showed; the namespace switch made the stale list come from a *different set*, and
+typing `/` suggested `/history` out of recall while the menu under it listed
+commands and Tab accepted `/help`. `Apply` still receives the pre-keystroke list,
+which is correct — it is deciding what to do with that keystroke given the line
+as it stands — but nothing can hand `draw` a stale one.
+
+**Tab accepts, Return submits what was typed.** `/his` + Return dispatches `his`
+and gets a suggestion, it does not run the unique match. That is `#14`'s contract
+for words, and command mode diverging from it would make Return mean two things
+on one line.
+
+**Every entry mode reaches it.** `define /help` as a one-shot argument, `echo
+/help | define`, and `/help` typed at the prompt all go through `parseREPLLine`;
+a one-shot that skipped it would have sent `/help` to the dictionary (BR-13).
+
+**Complete exactly, accept loosely.** `commandCompletions` is case-sensitive
+because `Suggestion` byte-prefix-matches the typed line — a completion has to
+literally extend what was typed, so `/HIS` cannot be completed by `/history`
+without rewriting keystrokes. `dispatchCommand` uses `EqualFold`, so a submitted
+`/HELP` still runs.
+
+Adding a command is a row in `commands` plus its `run`; `dispatchCommand`
+switches on outcome (found / not found), never on which command it is, and
+`nearestCommands` REPORTS whether anything was close rather than leaving the
+caller to infer it from a count — inferring it was wrong for every near-miss
+while one command was registered (BR-9).
+`commandCtx` is deliberately narrower than `deps` — a command cannot reach the
+dictionary or the player.
+
+| command | does |
+|---|---|
+| `/help` | lists the commands |
+| `/history [N]` | words looked up in the last N local days (default 2); `N`, `--days N` and `--days=N` are all accepted |
+| `/sound [N]` | how many times a pronunciation plays, for the rest of the session |
+
+**Opening a store does not read it.** `storeHistory` used to read the whole event
+log in its constructor, so `define /help` paid for a log it never consulted and
+`/history` read it *twice*. The read is now `History.Load`, called by the raw
+editor — the only thing that recalls. `replLines` never touched history at all,
+so it does not pay either, and `Prefix` stays IO-free because it runs on every
+keystroke.
+
+A first attempt at this exempted commands from `withStore` instead. That is worth
+recording as the wrong shape: the exemption also skipped where `deps.clock` is
+supplied, so it stranded an invariant it was not thinking about. Removing the
+cost at its source meant nothing needed exempting.
+
+`/sound` is the first command that CHANGES the session rather than reporting on
+it, and the seam is deliberately narrow: `commandCtx.setTimes func(int)` writing
+through to the loop's own copy of `opt`, not a `*options` a command could use to
+reach anything else. `nil` is the honest representation of "there is no session
+here" — the one-shot path refuses rather than silently accepting a command that
+could not do anything. `--sound` is the same setting for one run; `-times` is its
+older name and still works, and passing both is a usage error rather than a guess
+at which was meant.
+
+### `/history` and the local-day question
+
+Two facts collide here, and every rule below comes from one of them: **the
+question is a local-calendar one**, and **the event log is a set of UTC-named
+files whose records carry their own offsets**.
+
+- **The window is local midnights**, `AddDate(0,0,-(days-1))` from today's, never
+  `now - N×24h`. A window starting at 00:30 drops everything before half past
+  midnight on the first day, and a DST day is 23 or 25 hours, so a Duration lands
+  an hour off.
+- **Never filter by filename.** A lookup at 19:50 local *today* is written to
+  *tomorrow's* UTC-named file. A filter over local day names never opens it, so a
+  lookup from ten minutes ago vanishes and `/history` reads "nothing today".
+  `store.Events` compares timestamps for exactly this reason.
+- **Membership and ordering are different time facts.** A word is in the list
+  because it was queried inside the window; it sits where it does because of when
+  it was **first ever** seen — so a word you keep returning to holds the position
+  its first sighting earned instead of churning to the top. `summariseLookups`
+  therefore takes the whole log, which costs nothing because `Events` reads every
+  day file whatever `since` says, and answers both facts from one source.
+- **Found lookups only.** A typo stays in `#14`'s up-arrow recall and out of the
+  words-queried view. One log, two readers.
+- The row shows the **key**, not whichever spelling arrived first — the row *is*
+  the key, so showing a spelling would make the dedupe rule invisible.
+- The date shown is `FirstAt`, the field the list is **sorted** on. Showing any
+  other date makes the ordering look arbitrary.
+
+Known cost: `Events` is O(all history) per call. One read per `/history` on a
+personal word list is the right trade today; when it stops being, the fix belongs
+in the store — an index, or a filename pre-filter that still *decides* on
+timestamps — not in this command.
+
 ## Entry modes
 
 `run` dispatches modes first (`-forget`), then on argument count. The function
@@ -328,6 +466,7 @@ editor bypasses `defineOnce` entirely, which is why capture lives one level down
 | `define` on a terminal | raw editor | `submitLine` → `lookupAndRender` |
 | `define` piped, or `echo w \| define` | line loop | `defineOnce` → `lookupAndRender` |
 | `define -forget <word>` | mode; no lookup — deletes one deck entry | `forgetWord` → `store.Forget` |
+| `define /help` | one-shot command | `parseREPLLine` → `dispatchCommand` |
 
 The loop reads stdin **unconditionally** and only the prompt is TTY-conditional —
 there is no interactive/batch branch to keep in sync, and the whole loop is
