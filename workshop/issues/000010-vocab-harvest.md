@@ -56,3 +56,42 @@ An asynchronous harvester that maintains a pool of candidate words.
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+## Revisions
+
+### 2026-08-22 — the harvester authors finished items, and reads the learner
+
+**Reason.** Measured against the live feed for `sycophantic` the same day (100
+items, 14+ containing the word): the feed **collapses thematically** — 10 of the
+first 14 matching headlines were about AI chatbots — and headlines do not work as
+stems. Blanking *"Sycophantic AI decreases prosocial intentions"* produces a
+question its own sentence does not entail. A pool of words plus a raw sentence is
+not enough raw material to make a question worth answering.
+
+**Delta.**
+
+- **Output is finished, verified practice items**, not a word pool: authored stem,
+  selected options, provenance (source URL, date, the usages it was written from),
+  and the verdicts of whatever filters ran. Prunable and inspectable, as the pool
+  was.
+- **The model authors the stem** by reading *across* usages and writing one that
+  entails its answer — which is the job the measurement above says is real.
+  Distractor sourcing is unchanged (see #12's revision).
+- **Authoring happens here, offline and ahead of time**, never at question time.
+  This is what keeps a review session instant, free and network-independent, and it
+  is why the whole pipeline sits behind `--harvest`.
+- **Learner-aware.** Reads `user-model.md` (#17) so items are pitched at the right
+  level and drawn from the domains the learner actually reads in. Absent file →
+  generic authoring, not an error.
+- **Level classification gains a model step.** Frequency (a static list) as the
+  coarse prefilter; the model labels register and domain, cached per word
+  indefinitely; the learner's own deck anchors the band. The Done-when below
+  already demands the bucketing be checked against a held-out sample rather than
+  asserted — that stands, and now covers the model's labels too.
+
+**Unchanged.** Asynchronous and independent of any review session; provenance
+required; a network outage leaves the existing store usable and untouched; growth
+bounded and pruning deterministic.
+
+**This is the project's material-quality checkpoint.** Stop here and read generated
+items before building the forms that consume them.

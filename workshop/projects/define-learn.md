@@ -1,73 +1,293 @@
 ---
 type: project
 name: "define-learn"
-goal: "Turn define from a lookup tool into a retention tool: words looked up enter a per-user deck, define --play reviews what is due with several question forms, define --stats shows whether it is working."
-done_when: "A real day of review runs end to end: words captured by ordinary define use, scheduled by spaced repetition, reviewed in at least two forms, persisted to the brain, and visible in --stats."
-status: ideation
+goal: "Make define an adaptive vocabulary trainer on three verbs — definition, pronunciation, free-form learning — where a frontier model authors practice material from current usage and adapts it to a durable model of this learner."
+done_when: "A real day of use runs end to end on generated material: words captured by ordinary lookup; practice items authored from current usage and stored offline; a review session played and scored; a free-form question answered in the console with the session's own words as context; and user-model.md regenerated from the resulting events, visibly steering the next batch of items."
+status: defined
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-08-22
+mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#13", "tools#16", "tools#17"]
+explicitly_out: ["multi-learner accounts", "sync/replication beyond whichever directory you run it in", "languages other than English", "generated (TTS) pronunciation — recorded audio only", "a GUI or mobile client"]
+sources: ["workshop/parley/ — define-learn ideation", "operator conversation 2026-08-22 (adaptive scope)"]
 ---
 
 # define-learn
 
+`define` becomes a trainer that meets the learner where they are: type a word and
+get a definition, type a question and get an answer, sit down with `--play` and
+review material a frontier model authored from how those words are actually being
+used this week. **Not in MVP: any of it working for a second person.** The learner
+model, the deck, the authored items and the corrections are one person's, in one
+directory, and the design leans on that — the words you look up are the level
+signal a generic vocabulary app does not have.
+
 ## PRD
+
+### Three verbs on one noun
+
+The whole product is three things you can do with a word, and the boundary between
+them is invisible to the user — input is free-form and `define` classifies it,
+rather than the learner selecting a mode.
+
+| verb | how | availability |
+|---|---|---|
+| **definition** | NOAD via macOS `DCSCopyTextDefinition` | offline, instant, no key |
+| **pronunciation** | recorded Oxford audio via the CDN | offline after first fetch |
+| **free-form learning** | frontier model: ask anything, get authored practice, be modelled as a learner | needs the seam; degrades to the first two |
+
+The first two already ship. This project is the third, plus the retention loop
+(deck, schedule, review, stats) that gives the third something to adapt to.
+
+### The adaptive loop
+
+This is the thesis. Each arrow is a real artifact on disk, not an abstraction:
+
+```
+ordinary lookups ─┐
+                  ├─→ user-model.md ─→ authored items ─→ review session ─→ events ─┐
+review events ────┘        ▲                                                       │
+                           └───────────────────────────────────────────────────────┘
+```
+
+- **Lookups reveal the domain.** A learner who looks up `certiorari`, `dicta` and
+  `arguendo` reads judicial opinions. Nobody asked them; the deck says so. Their
+  distractors and comparables should come from that register, not from a generic
+  frequency band.
+- **Misses reveal the weakness.** Batch-analysed, not diagnosed per-answer: the
+  question is *what kind of thing does this learner get wrong* (near-synonym
+  collapse, connotation, register, domain), and that is a pattern across many
+  events, not a property of one.
+- **The model steers authoring.** `user-model.md` is an input to every authoring
+  prompt, which is what makes the next item adapted rather than merely generated.
+
+### How the model is leveraged — and where it is not
+
+Deliberately generous with the model where judgment is needed; deliberately
+absent where a deterministic answer exists. Cost is not a constraint (operator,
+2026-08-22): access is through the local `cli-proxy-api` on a subscription plan,
+and the goal is the best material achievable, not the cheapest.
+
+| task | where | why a model |
+|---|---|---|
+| author a practice item | `#10`, offline batch | raw headlines are not questions — see below |
+| classify a word's level, register, domain | `#10`/`#17`, cached per word forever | frequency lists cannot see register |
+| veto a distractor | `#12` | a yes/no on a concrete pair is checkable; open generation is not |
+| grade a written sentence | `#13` | the only judgment a local rule genuinely cannot make |
+| batch-analyse errors into a learner model | `#17` | pattern-finding across many events |
+| answer a free-form question | `#16` | this is the verb |
+
+**Not the model's job:** the definition (NOAD is better and offline), the
+pronunciation (a recording is ground truth), the schedule (Leitner is explainable
+in one sentence; an ease factor is not), and *which real words the distractors are
+drawn from* (see the decision below).
+
+### Why authoring is a real job, and measured
+
+Measured 2026-08-22 against the live feed for `sycophantic` (100 items):
+
+- **The feed collapses thematically.** 10 of the first 14 matching headlines were
+  about AI chatbots. Drill on that and the learner acquires the collocation
+  *"sycophantic AI"*, not the word.
+- **Headlines are not stems.** Blanking *"Sycophantic AI decreases prosocial
+  intentions"* yields a question the sentence does not entail — unanswerable from
+  its own context, so it teaches nothing.
+
+So the model must read *across* usages and write a stem that entails its answer:
+
+> The board meeting produced nothing but ______ agreement — every executive
+> praised a plan they had privately called unworkable.
+
+That is authoring. It is also why authoring belongs in the **async harvest step**
+rather than at question time: a session then costs nothing, waits on nothing, and
+works with the network off.
+
+### Decisions
+
+Appended, never overwritten — original intent stays visible.
+
+**2026-08-20**
+
+- **Storage is YAML files in the working directory.** `define` resolves no brains,
+  workspaces or home directories, and invokes no git of any kind. The original
+  "git repo / nous push" framing meant only *YAML rather than a database*;
+  replication is whichever directory you run it in.
+- **One file per word plus an append-only day log.** That does not make sync
+  conflicts impossible — the same word, or the same day, on two machines still
+  conflicts. It changes the *rate*: with a single `vocab.yaml` every write on a
+  second machine conflicts, because every write touches the one file.
+- **Distractors are selected, never invented.** The pool is news-harvested words at
+  the learner's level plus the learner's own deck, filtered for substantial
+  semantic difference. The model only *vetoes* a candidate that would also fit.
+  This removes the "the LLM's wrong answer is also right" failure mode.
+- **Google News RSS, not the SERP.** Measured: 41–100 items per word. The SERP was
+  measured too — a 91 KB JS shell with zero usable content.
+- **Clock injected everywhere.** Spaced repetition is date-driven; "due today" is
+  untestable against a wall clock.
+- **Every LLM/network feature degrades.** No key, no network → `--play` falls back
+  to the local forms rather than failing.
+
+**2026-08-22 — the adaptive scope**
+
+- **The model authors the stem; the options are still selected.** Broadens the
+  2026-08-20 rule rather than reversing it: the model reads many real usages and
+  writes a clean, self-entailing stem, but the four options still come from the
+  level-matched pool and the learner's deck, and the model still only vetoes.
+  Two-right-answers stays impossible by construction rather than by a check.
+- **Cost is not a constraint; quality is the goal.** Access via the local
+  `cli-proxy-api` (running on `127.0.0.1:8317`) against a subscription plan, with a
+  direct API key as fallback. Use frontier models generously.
+- **A single `user-model.md`, batch-generated, human-correctable.** One durable
+  markdown artifact holding level, domains read, and weaknesses. Regenerated by
+  batch analysis; a `## Corrections` section is human-owned, never rewritten, and
+  authoritative over anything inferred.
+- **Free-form input is a first-class verb.** A question typed at the prompt routes
+  to the model with the session's recent words as context; the classifier asks NOAD
+  first, so "is this a headword" is a free, offline, deterministic signal. One
+  decision table, not a second parser.
+- **The LLM harness is repo infrastructure (`internal/llm`).** Operator override,
+  2026-08-22: `AGENTS.local.md` says `internal/` is earned on the *second*
+  consumer, and this creates it for the first. Recorded rather than done quietly —
+  a transport with auth, retries, a stateful fake and a live conformance check is
+  the kind of thing the next tool would otherwise copy.
 
 ## Estimate
 
+Not yet costed. Per ariadne #113/#187 the estimate is derived at `sdlc change-code`
+per issue — after the plan clears the plan-quality gate, when scope is knowable —
+not guessed at project definition.
+
 ## Breakdown
 
-- [ ]
+The ordered list is execution order. It **departs from the 2026-08-20 sequencing**,
+which put the offline trainer first: the goal then was "a working trainer", and the
+goal now is "how good can the material get". So the harness and the authoring
+pipeline come first, and there is a deliberate stop at `#10` to read generated
+items before building the forms that consume them.
+
+`#16` sits early because it is the cheapest thing that makes the tool better daily,
+and it exercises the harness end to end on a real task before anything depends on it.
+
+`#17` also lands early in a reduced form: **domain and level fall out of lookups
+alone**, which already exist — only the weakness taxonomy needs review events. So
+authoring is learner-aware from the first generated item, and `#17 M2` deepens it
+once `#6` is producing misses.
+
+- [x] define REPL — bare invocation reads, defines, speaks; bare return replays [tools#2]
+- [x] REPL line editor — history, prefix search, inline autosuggestion [tools#14]
+- [x] vocabulary store — Store seam, YAML in the working directory, clock injected [tools#3]
+- [x] capture on lookup — successful lookups build the deck [tools#4]
+- [x] REPL command mode — `/`-commands with type-ahead, starting `/history` [tools#15]
+- [ ] LLM harness — `internal/llm`, transport + fake + prompt goldens + conformance [tools#11]
+- [ ] free-form Q&A in the console — three-way input classification, directory as context [tools#16]
+- [ ] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
+- [ ] news seam — Google News RSS (not the SERP) [tools#9]
+- [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
+- [ ] scheduling engine — Leitner, pure [tools#5]
+- [ ] `--play` loop + form 2.1 [tools#6]
+- [ ] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
+- [ ] `--stats` — all derived from the event log [tools#8]
+- [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
+- [ ] form 2.4 — free sentence, graded [tools#13]
+- [ ] learner model — weakness taxonomy from review events, steers authoring [tools#17 M2]
+
+<a id="tools-11"></a>
+### tools#11 — LLM harness
+
+**status:** open — first in execution order; everything model-shaped depends on it
+
+Revised 2026-08-22 from "Anthropic client behind a narrow interface" to the base of
+a harness: one transport (`internal/llm`), configurable base URL defaulting to the
+local `cli-proxy-api`, a stateful fake that records prompts so prompt regressions
+show up in a diff, prompts as versioned artifacts with goldens, structured-response
+parsing that degrades rather than crashes, and a live conformance check behind the
+build tag. The per-task prompts do **not** live here — they live with their
+consumers; this issue owns the transport and the contract.
+
+<a id="tools-16"></a>
+### tools#16 — free-form Q&A in the console
+
+**status:** open — new, 2026-08-22
+
+The third verb. Free-form input at the prompt routes to the model with the recent
+session's words as context; the context is the directory `define` was started in
+(`words/`, `events/`, `user-model.md`), so it survives a fresh process and is
+inspectable as files. The classifier is the hard part and gets one decision table:
+NOAD answers "is this a headword" offline and for free, and what is left splits into
+interrogative → Q&A and everything else → the existing not-found path.
+
+<a id="tools-10"></a>
+### tools#10 — item authoring + harvest
+
+**status:** open — the material-quality checkpoint
+
+Broadened 2026-08-22: the harvester no longer maintains a *word pool*, it produces
+**finished, verified practice items** with provenance, ahead of time and offline.
+Consumes `user-model.md` so items are learner-aware from the start. This is where
+the project's central question gets answered — stop here and read the output before
+building the forms that consume it.
+
+<a id="tools-17-m1"></a>
+### tools#17 M1 — learner model from lookups
+
+**status:** open — new, 2026-08-22
+
+Level and domain fall out of the deck that already exists, so this lands before any
+review events do. Batch analysis writes `user-model.md`; the `## Corrections`
+section is human-owned and never rewritten.
+
+<a id="tools-17-m2"></a>
+### tools#17 M2 — weakness taxonomy
+
+**status:** blocked — needs review events from [tools#6]
 
 ## Log
 
-## Sequencing
+### 2026-08-22 — scope event: the project became adaptive
 
-**M1 is a complete trainer with no network and no API key** — deliberate: it
-delivers daily value alone and de-risks everything after it.
+Original goal (2026-08-20): *"turn `define` from a lookup tool into a retention
+tool"* — deck, schedule, forms, stats. Model use was scoped narrowly and
+defensively: veto a distractor, grade a sentence, nothing else.
 
-| phase | issues | delivers |
-|---|---|---|
-| **M0 — standalone** | `#2` REPL, `#14` editor | independently shippable; useful before any deck exists |
-| **M1 — offline trainer** | `#3` store → `#4` capture, `#5` schedule → `#6` play → `#7` meaning form, `#8` stats | a working daily review loop |
-| **M1.5 — command surface** | `#15` `/history` | needs the store; first `/`-command |
-| **M2 — grounded questions** | `#9` news → `#10` harvest, `#11` LLM → `#12` cloze, `#13` sentence | cloze from current news + AI grading |
+Operator broadened it in conversation on 2026-08-22. Three additions, none of which
+the original nine issues covered:
 
-## Tasks
+1. **The model authors the material.** Real usage is raw input, not the question;
+   producing something worth answering is a real authoring job. Measured against the
+   live feed the same day — see PRD.
+2. **A durable learner model steers it.** One `user-model.md`, batch-generated from
+   lookups and misses, holding level, domains read and weaknesses — and used as an
+   input to authoring, so distractors for a reader of Supreme Court opinions come
+   from that register.
+3. **Free-form input is a first-class verb.** Typing a question at the prompt is as
+   ordinary as typing a word. "Meet the user where they are, rather than the user
+   conforming to a certain way to use it."
 
-- [x] `#2` define REPL — bare invocation reads, defines, speaks; bare return replays
-- [x] `#14` REPL line editor — history, prefix search, inline autosuggestion
-- [ ] `#15` REPL command mode — `/`-commands with type-ahead, starting `/history`
-- [x] `#3` vocabulary store — Store seam, YAML in the working directory, clock injected
-- [ ] `#4` capture on lookup — successful lookups build the deck
-- [ ] `#5` scheduling engine — Leitner, pure
-- [ ] `#6` `--play` loop + form 2.1
-- [ ] `#7` form 2.3 — meaning multiple choice, deck distractors, no LLM
-- [ ] `#8` `--stats` — all derived from the event log
-- [ ] `#9` news seam — Google News RSS (not the SERP)
-- [ ] `#10` news harvester — async, level-aware candidate pool
-- [ ] `#11` LLM seam — narrow tasks, stateful fake, offline degradation
-- [ ] `#12` form 2.2 — cloze from news, distractors **selected not invented**
-- [ ] `#13` form 2.4 — free sentence, graded
+Also settled: cost is not a constraint (subscription via local `cli-proxy-api`), and
+the `internal/` first-consumer rule is explicitly overridden for the harness.
 
-## Design decisions taken up front
+Consequences recorded elsewhere: `## Revisions` on [tools#10], [tools#11] and
+[tools#12]; new issues [tools#16] and [tools#17]; `done_when` above rewritten (the
+old one said results are *"persisted to the brain"*, contradicting this file's own
+2026-08-20 decision that `define` resolves no brains — stale phrasing from the
+original framing, now removed).
 
-- **Storage is YAML files in the working directory** (operator, 2026-08-20).
-  `define` resolves no brains, workspaces or home directories, and invokes no
-  git of any kind. The original "git repo / nous push" framing meant only *YAML
-  rather than a database*; replication is whichever directory you run it in.
-- **The layout is one file per word plus an append-only day log.** That does not
-  make sync conflicts impossible — the same word, or the same day, on two
-  machines still conflicts. It changes the *rate*: with a single `vocab.yaml`
-  every write on a second machine conflicts, because every write touches the one
-  file.
-- **Distractors are selected, never invented** (operator, 2026-08-20). The pool is
-  news-harvested words at the learner's level plus the learner's own deck,
-  filtered for substantial semantic difference. The model only *vetoes* a
-  candidate that would also fit — a yes/no check on a concrete pair, not open
-  generation. This removes the "the LLM's wrong answer is also right" failure mode.
-- **Google News RSS, not the SERP.** Measured: 41–100 items per word. The SERP
-  was measured too — a 91 KB JS shell with zero usable content.
-- **Clock injected everywhere.** Spaced repetition is date-driven; "due today" is
-  untestable against a wall clock.
-- **Every LLM/network feature degrades.** No key, no network → `--play` falls
-  back to the local forms rather than failing.
+Task list also brought current: [tools#4] and [tools#15] were `done` and archived but
+still showed open here.
+
+[tools#2]: #tools-2
+[tools#3]: #tools-3
+[tools#4]: #tools-4
+[tools#5]: #tools-5
+[tools#6]: #tools-6
+[tools#7]: #tools-7
+[tools#8]: #tools-8
+[tools#9]: #tools-9
+[tools#10]: #tools-10
+[tools#11]: #tools-11
+[tools#12]: #tools-12
+[tools#13]: #tools-13
+[tools#14]: #tools-14
+[tools#15]: #tools-15
+[tools#16]: #tools-16
+[tools#17 M1]: #tools-17-m1
+[tools#17 M2]: #tools-17-m2

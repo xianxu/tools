@@ -48,3 +48,27 @@ Google News **RSS**, behind a seam.
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+## Revisions
+
+### 2026-08-22 — the consumer changed; NOAD's own examples join the feed
+
+**Reason.** #10 now authors finished items rather than harvesting a word pool, and
+the operator raised general web search as an alternative usage source.
+
+**Delta.**
+
+- **General Google search stays out, on the measurement already recorded above** —
+  the SERP is a 91 KB JS shell needing a headless browser. That finding is why this
+  issue is RSS-shaped, and it has not changed.
+- **NOAD's own example sentences are a second usage source, and a free one.** The
+  entry is already fetched, already parsed, offline, editorially curated, and
+  register-correct. It complements the feed exactly where the feed is weakest: the
+  measured thematic collapse (10 of 14 `sycophantic` headlines were about AI
+  chatbots) is a *current-events* artifact, and the dictionary's examples are not
+  current, which is the point. Authoring gets both.
+- **What is cached is unchanged** (raw feed items), but the downstream consumer is
+  now the authoring step, not a question at review time.
+
+**Unchanged.** Feed shape, the personal-use terms note, the stateful fake, the
+malformed-feed requirement, and live conformance on shape and coverage.

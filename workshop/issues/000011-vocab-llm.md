@@ -46,3 +46,43 @@ An LLM seam with a stateful fake.
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+## Revisions
+
+### 2026-08-22 — from a narrow seam to the base of a harness
+
+**Reason.** The operator broadened `define-learn` to an adaptive program in which
+the model authors material, classifies level, models the learner and answers
+free-form questions — six tasks rather than the two this issue was scoped for. And
+this is the first thing in `tools/` that talks to a model at all, so what gets built
+here is what every later tool inherits.
+
+**Delta.**
+
+- **Scope: `internal/llm`, the transport and the contract.** Per-task prompts do NOT
+  live here — they live with their consumers (#10 authoring, #12 veto, #13 grading,
+  #16 Q&A, #17 reflection). This issue owns one transport, the fake, the response
+  contract and the conformance check.
+- **Operator override on `AGENTS.local.md`.** That file says `internal/` is earned
+  on the *second* consumer, never the first. This creates it for the first,
+  deliberately: a transport carrying auth, retries, a stateful fake and a live
+  conformance check is exactly what the next tool would otherwise copy. Recorded
+  loudly rather than done quietly; `AGENTS.local.md` gets the carve-out in the same
+  change.
+- **Access path.** Official `anthropic-sdk-go` speaking the Messages API, base URL
+  and auth from config, defaulting to the local `cli-proxy-api` (measured running on
+  `127.0.0.1:8317`) against a subscription plan, with a direct API key as fallback.
+  One seam, so the fake and the conformance check do not fork.
+- **Streaming is required, not optional.** #16 answers a question at a prompt; a
+  paragraph that arrives all at once after four seconds reads as a hang.
+- **Cost stops being a design constraint** (operator, 2026-08-22) — the goal is the
+  best material achievable. "Cost and latency are per-question and user-visible;
+  budget them explicitly" in the Spec above is superseded: still *report* them, no
+  longer *budget* against them. Frontier models by default.
+- **Degradation survives unchanged, and matters more.** With the seam unavailable
+  the definition and the pronunciation still work, `--play` falls back to the local
+  forms, and #16 says so plainly instead of guessing.
+
+**Unchanged.** One method per task rather than a general chat call; the fake records
+prompts so prompt regressions show up in a diff; structured responses parsed
+defensively; live conformance behind the build tag.

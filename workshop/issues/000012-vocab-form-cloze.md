@@ -66,3 +66,33 @@ must be rejected by the distance filter. That case belongs in the tests.
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+## Revisions
+
+### 2026-08-22 — the stem is authored; the options are still selected
+
+**Reason.** Operator, 2026-08-22: real usage is raw material, not a question — the
+model has to process and rephrase before it is usable. Measured support in #10's
+revision.
+
+**Delta.**
+
+- **The stem is authored by the model** (#10, offline, ahead of time) rather than
+  being a real sentence with a word blanked. The example in the Spec above is now
+  what the *output* looks like, not what the input looks like.
+- **The form reads a finished item** from the store instead of assembling one at
+  question time.
+
+**Explicitly unchanged — the load-bearing rule.** *Distractors are selected, never
+invented.* The options still come from the level-matched pool and the learner's own
+deck, and the model's only role in the option set is to **veto** a candidate that
+would also fit the blank. The 2026-08-20 decision stands: selecting from real words
+with known definitions makes "the generated wrong answer is also right" impossible
+by construction rather than by a check that has to hold.
+
+`obsequious` must still be rejected as a distractor for `sycophantic`. That test
+does not move.
+
+**Added.** Distractor *domain* now follows the learner (#17): for someone whose
+lookups are 34% judicial, the interesting confusion is `dicta` against `holding`,
+not `dicta` against `ephemeral`.
