@@ -97,7 +97,10 @@ Tab to complete, `/help` to list them. It works the same from every entry mode:
 thing.
 
 `/history [N]` lists what you looked up in the last N days — two by default,
-counted as local calendar days rather than N×24 hours:
+counted as local calendar days rather than N×24 hours. `N` can be written three
+ways, so it reads the same whichever you reach for: `/history 7`,
+`/history --days 7`, `/history --days=7`. It works from every entry mode, so
+`define /history 7` and `echo '/history 7' | define` mean the same thing.
 
 ```
   defenestrate  today

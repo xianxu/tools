@@ -202,8 +202,9 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"interactive loop — return replays the pronunciation, Ctrl-C quits.\n"+
 			"A line starting with / is a command rather than a word. Type / to\n"+
 			"see the list, keep typing to narrow it, Tab to complete. /history\n"+
-			"shows what you looked up in the last two days; /sound sets how many\n"+
-			"times a pronunciation plays for the rest of the session.\n\n"+
+			"shows what you looked up in the last two days (/history 7, or\n"+
+			"--days 7, for a wider window); /sound sets how many times a\n"+
+			"pronunciation plays for the rest of the session.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
 			"it in. A word that was found is added to the deck; a word that was\n"+
@@ -276,7 +277,14 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 
 	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
 	// flag-parse-time input and decides whether anything is opened at all.
-	d = d.withStore(opt, stderr)
+	//
+	// A one-shot command that reads nothing is left out of it, for the same
+	// reason a usage error is: opening the store constructs storeHistory, which
+	// reads the whole event log. `define /help` should not pay for that, and an
+	// unknown command should not pay for it before being refused.
+	if oneShot.kind != cmdCommand || commandNeedsDeck(oneShot, commands) {
+		d = d.withStore(opt, stderr)
+	}
 
 	if forgetting {
 		return forgetWord(d, opt, *forget, stdout, stderr)

@@ -17,13 +17,19 @@ type command struct {
 	name    string
 	summary string
 	run     func(commandCtx, []string) int
+	// needsDeck declares that this command reads the store. Opening the store
+	// constructs storeHistory, which READS the whole event log — so `define
+	// /help` used to pay for a log it never looked at, and an unknown command
+	// paid for one before being told it does not exist. Same invariant #4
+	// established for usage errors, which the command path was skipping.
+	needsDeck bool
 }
 
 // commands is the registry. Adding a command is a row here plus its run
 // function — the dispatch loop never changes, which is a Done-when.
 var commands = []command{
 	{name: "help", summary: "list the commands", run: runHelp},
-	{name: "history", summary: "words looked up recently", run: runHistory},
+	{name: "history", summary: "words looked up recently", run: runHistory, needsDeck: true},
 	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
 }
 
@@ -179,6 +185,17 @@ func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 		width: opt.width, noCapture: opt.noCapture,
 		times: opt.times,
 	}
+}
+
+// commandNeedsDeck reports whether a parsed command reads the store. An unknown
+// name needs nothing: it is about to be refused.
+func commandNeedsDeck(c replCommand, cmds []command) bool {
+	for _, cmd := range cmds {
+		if strings.EqualFold(cmd.name, c.name) {
+			return cmd.needsDeck
+		}
+	}
+	return false
 }
 
 // dispatchCommand runs a parsed command, or explains why it cannot.

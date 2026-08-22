@@ -398,8 +398,14 @@ dictionary or the player.
 | command | does |
 |---|---|
 | `/help` | lists the commands |
-| `/history [N]` | words looked up in the last N local days (default 2) |
+| `/history [N]` | words looked up in the last N local days (default 2); `N`, `--days N` and `--days=N` are all accepted |
 | `/sound [N]` | how many times a pronunciation plays, for the rest of the session |
+
+A command declares `needsDeck` when it reads the store. Opening the store
+constructs `storeHistory`, which READS the whole event log — so `define /help`
+used to pay for a log it never looked at, and an unknown command paid for one
+before being told it does not exist. That is the same invariant `#4` established
+for usage errors, which the command path was skipping.
 
 `/sound` is the first command that CHANGES the session rather than reporting on
 it, and the seam is deliberately narrow: `commandCtx.setTimes func(int)` writing

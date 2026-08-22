@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -320,5 +323,106 @@ func TestPipedLoopReturnsTheCommandsExitCode(t *testing.T) {
 		strings.NewReader("/histry\n"), &out, &errb, true, false)
 	if code != 2 {
 		t.Errorf("exit = %d, want 2 — a usage error, not the generic failure 1", code)
+	}
+}
+
+// BR-20: `define /history 7` printed a usage dump while `echo '/history 7' |
+// define` ran it. The behaviour was fixed without a pin, which is the same
+// omission BR-19 names — so it gets one that drives run().
+func TestOneShotCommandTakesArguments(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+	rig.deps.stdinIsTerminal = func() bool { return false }
+	rig.deps.history, rig.deps.capture, rig.deps.deck = nil, nil, nil
+	rig.deps.newStore = openStore // /history needs a deck to report an empty one
+	t.Chdir(t.TempDir())
+
+	var out, errb bytes.Buffer
+	code := run(t.Context(), []string{"-no-audio", "/history", "7"}, rig.deps, strings.NewReader(""), &out, &errb)
+
+	if code != 0 {
+		t.Errorf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if strings.Contains(errb.String(), "usage:") {
+		t.Errorf("a command with an argument was rejected by the word count: %q", errb.String())
+	}
+	// The window has to REACH the command, not just get past the arity guard.
+	if !strings.Contains(out.String(), "7 days") {
+		t.Errorf("the argument did not reach the command: %q", out.String())
+	}
+	// Two plain words are still a usage error: the exemption is for commands.
+	errb.Reset()
+	if code := run(t.Context(), []string{"-no-audio", "hot", "dog"}, rig.deps, strings.NewReader(""), &out, &errb); code != 2 {
+		t.Errorf("two words exit = %d, want 2", code)
+	}
+}
+
+// BR-26: opening the store constructs storeHistory, which READS the whole event
+// log. A command that reads nothing must not pay for it — the same invariant #4
+// established for usage errors, which the command path was skipping.
+func TestCommandThatReadsNothingDoesNotOpenTheLog(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+	rig.deps.stdinIsTerminal = func() bool { return false }
+	rig.deps.history, rig.deps.capture, rig.deps.deck = nil, nil, nil
+	rig.deps.newStore = openStore
+
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "events"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	torn := "- word: sycophantic\n  kind: looked-up\n  found: true\n  at: 2020-01-01T10:00:00-07:00\n- word: torn\n  kind: looked"
+	if err := os.WriteFile(filepath.Join(dir, "events", "2020-01-01.yaml"), []byte(torn), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	for _, args := range [][]string{{"-no-audio", "/help"}, {"-no-audio", "/histry"}} {
+		var out, errb bytes.Buffer
+		run(t.Context(), args, rig.deps, strings.NewReader(""), &out, &errb)
+		if strings.Contains(errb.String(), "torn record") {
+			t.Errorf("%v read the event log: %q", args, errb.String())
+		}
+	}
+
+	// …and /history, which does read it, still does.
+	var out, errb bytes.Buffer
+	run(t.Context(), []string{"-no-audio", "/history"}, rig.deps, strings.NewReader(""), &out, &errb)
+	if !strings.Contains(errb.String(), "torn record") {
+		t.Errorf("/history did NOT read the log, so this test cannot tell the two apart: %q", errb.String())
+	}
+}
+
+// BR-19 again: clearMenu was shipped in the same commit as the rule and is
+// itself unpinned. The dropdown must be erased before a command's output is
+// written under it.
+func TestSubmitClearsTheMenuBeforeOutput(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+
+	var out, errb bytes.Buffer
+	// /sound, deliberately: its OUTPUT ("playing 3×") shares no text with its
+	// menu row, so the marker below cannot match the menu instead of the output.
+	// /help's output is nearly identical to its own menu row, which is exactly
+	// the kind of coincidence that makes a marker match the wrong thing.
+	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
+	runEditor(t.Context(), keySeq(ks...), rig.deps, opt, cooked, finish, &out, &errb)
+
+	s := out.String()
+	i := strings.Index(s, "playing")
+	if i < 0 {
+		t.Fatalf("the command never ran: %q", s)
+	}
+	// clearMenu has an exact signature: one EMPTY erased row per drawn row —
+	// "\r\n" + eraseLine with no text between — then the cursor walked back up
+	// by that count. A menu PAINT writes text after each erase, so the empty run
+	// belongs to the clear and nothing else.
+	//
+	// Counting erases would not work: RenderLine emits one on every redraw, so
+	// the count says nothing about who wrote them.
+	rows := len(menuLines("/sound", commands, 0))
+	want := strings.Repeat("\r\n"+eraseLine, rows) + fmt.Sprintf("\x1b[%dA\r", rows)
+	if !strings.Contains(s[:i], want) {
+		t.Errorf("the menu was not cleared before the output was written under it: %q", s[:i])
 	}
 }

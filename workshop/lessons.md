@@ -362,3 +362,37 @@ Having got a subtlety right once is not protection; it is the thing that makes
 the second copy feel safe to write. When a second site needs the same idea, reach
 for the same primitive, and give the second site the harder test — the first one
 already has it.
+
+
+## Pin a loop shell's wiring with a test that drives that loop shell
+
+Four separate wirings shipped green with the wiring deleted — a `setTimes`
+closure, a one-shot dispatch, an exit-code propagation, a history append. Every
+one had tests. The tests built the callee's context by hand, or drove the *other*
+loop.
+
+The sharpest was `/sound`: its test drove the piped loop while the requirement
+was the raw TUI prompt, so deleting the raw loop's wiring left the feature
+silently broken exactly where it had been asked for.
+
+**The rule:** a value or effect that only a loop shell supplies (`runEditor`,
+`replLines`, `run`) must be pinned by a test that drives that loop shell. Every
+hand-built context literal in a test is a place this breaks invisibly — the test
+passes because it supplied the thing the production path forgot to.
+
+And the part that cost an extra round: *fixing the four instances is not closing
+the finding.* The same commit that fixed them introduced two more — an unpinned
+arity exemption and an unpinned `clearMenu` — because the rule had been applied
+to a list rather than adopted. Write the rule down where it will be read again,
+then check the diff you are about to commit against it.
+
+## A marker must not match the thing it is meant to distinguish from
+
+Twice in one issue, a test found its marker in the wrong place: `inputOn+"/sound"`
+matched the ECHO of the submitted line rather than the recall, and
+`"list the commands"` matched the MENU row rather than `/help`'s output. Both
+passed with the production wiring deleted.
+
+Before using a string to locate "where the output starts", check it does not also
+appear in what comes before. Prefer a marker only the code under test can emit —
+or drive a case whose output shares no text with its surroundings.
