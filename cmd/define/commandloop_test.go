@@ -236,3 +236,89 @@ func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
 		t.Errorf("Tab did not accept the suggestion that was displayed: %q", out.String())
 	}
 }
+
+// keySeq scripts an exact key sequence, for tests that need keys scriptKeys
+// does not spell (arrows, Tab).
+func keySeq(ks ...Key) <-chan Key {
+	ch := make(chan Key, len(ks)+1)
+	for _, k := range ks {
+		ch <- k
+	}
+	close(ch)
+	return ch
+}
+
+// BR-19's rule: a value or effect that only a LOOP SHELL supplies must be
+// pinned by a test that drives that loop shell. Every one of these was green
+// with its wiring deleted, because the existing tests either built the callee's
+// context by hand or drove the OTHER loop.
+
+// runEditor's cc.setTimes. The M3 test drove replLines — the piped loop — so
+// deleting the raw loop's wiring left /sound silently broken at the actual TUI
+// prompt, which is the only place the operator asked for it.
+func TestRawEditorSoundChangesTheSession(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+
+	ks := append(runes("/sound 1"), Key{Kind: KeyEnter})
+	ks = append(ks, runes("sycophantic")...)
+	ks = append(ks, Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
+	runEditor(t.Context(), keySeq(ks...), rig.deps, opt, cooked, finish, &out, &errb)
+
+	if got := rig.player.count(); got != 1 {
+		t.Errorf("played %d times after /sound 1 at the raw prompt, want 1", got)
+	}
+}
+
+// runEditor's hist.Add for commands: a submitted command must be recallable.
+func TestRawEditorRecallsSubmittedCommands(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig.deps.history = &memHistory{}
+	var out, errb bytes.Buffer
+
+	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyUp}, Key{Kind: KeyInterrupt})
+	runEditor(t.Context(), keySeq(ks...), rig.deps, opt, cooked, finish, &out, &errb)
+
+	// Asserted only on what came AFTER the command ran. The submitted line is
+	// ECHOED through RenderLine, which uses the same inputOn sequence, so
+	// searching the whole stream matches the echo and passes with hist.Add
+	// deleted — measured. That is BR-3's mistake, repeated inside the fix for
+	// BR-19; the marker is the one thing only a completed dispatch emits.
+	after := out.String()
+	i := strings.Index(after, "playing")
+	if i < 0 {
+		t.Fatalf("the command never ran, so this test cannot see a recall: %q", after)
+	}
+	if !strings.Contains(after[i:], inputOn+"/sound") {
+		t.Errorf("Up did not recall the submitted command: %q", after[i:])
+	}
+}
+
+// run()'s one-shot dispatch, driven through run rather than dispatchCommand.
+func TestOneShotCommandGoesThroughRun(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+	rig.deps.stdinIsTerminal = func() bool { return false }
+
+	var out, errb bytes.Buffer
+	if code := run(t.Context(), []string{"-no-audio", "/help"}, rig.deps, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Errorf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "list the commands") {
+		t.Errorf("define /help did not run the command: %q", out.String())
+	}
+}
+
+// replLines' command exit code, which used to be collapsed into a generic 1.
+func TestPipedLoopReturnsTheCommandsExitCode(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+	rig.deps.stdinIsTerminal = func() bool { return false }
+
+	var out, errb bytes.Buffer
+	code := replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+		strings.NewReader("/histry\n"), &out, &errb, true, false)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2 — a usage error, not the generic failure 1", code)
+	}
+}

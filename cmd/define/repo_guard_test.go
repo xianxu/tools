@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -195,5 +196,34 @@ func TestNoBinariesInHistory(t *testing.T) {
 		t.Errorf("compiled binary in history: %s — reachable from HEAD, so it is fetched by "+
 			"every clone. Rewrite the commit that adds it; deleting it in a later commit does not "+
 			"remove the cost.", hit)
+	}
+}
+
+// A deck is runtime state, never source. Three of its files reached commits
+// because .gitignore anchored at the repo root while `go test` and the pty
+// suite both run with cwd set to cmd/define/, so the deck they created matched
+// no pattern.
+//
+// Checked against the INDEX by path, not by content: a deck file is perfectly
+// valid YAML, so nothing about the file itself says it does not belong.
+func TestNoTrackedRuntimeState(t *testing.T) {
+	dir := repoRoot(t)
+	files := strings.Split(string(git(t, "-C", dir, "ls-files", "-z")), "\x00")
+
+	seen := 0
+	for _, f := range files {
+		if f == "" {
+			continue
+		}
+		seen++
+		for _, p := range strings.Split(filepath.ToSlash(f), "/") {
+			if p == "words" || p == "events" {
+				t.Errorf("runtime deck state is tracked: %s", f)
+				break
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no tracked files were examined; this test would pass vacuously")
 	}
 }

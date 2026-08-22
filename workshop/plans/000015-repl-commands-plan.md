@@ -67,6 +67,14 @@ read of `Deck()` for `FirstSeen`.
 | `historyWindow` | `cmd/define/history_cmd.go` | PURE | new |
 | `parseHistoryArgs` | `cmd/define/history_cmd.go` | PURE | new |
 | `replKind.cmdCommand` | `cmd/define/repl.go` | PURE | modified |
+| `menuLines` | `cmd/define/command.go` | PURE | new (M1b) |
+| `menuNameWidth` | `cmd/define/command.go` | PURE | new (M1b) |
+| `relativeDay` | `cmd/define/history_cmd.go` | PURE | new |
+| `historyRow` | `cmd/define/history_cmd.go` | PURE | new |
+| `days2str` | `cmd/define/history_cmd.go` | PURE | new |
+| `parseSoundArgs` | `cmd/define/sound_cmd.go` | PURE | new (M3) |
+| `soundTimes` | `cmd/define/sound_cmd.go` | PURE | new (M3) |
+| `noDeckMessage` | `cmd/define/main.go` | PURE | new (extracted from `forgetWord`) |
 | `summariseLookups` | `cmd/define/history_cmd.go` | PURE | new |
 | `renderHistory` | `cmd/define/history_cmd.go` | PURE | new |
 
@@ -122,6 +130,16 @@ read of `Deck()` for `FirstSeen`.
 | `commandCtx` | `cmd/define/command.go` | INTEGRATION | new | the deps a command may touch |
 | `runHistory` | `cmd/define/history_cmd.go` | INTEGRATION | new | `store.Store.Events` + stdout |
 | `dispatchCommand` | `cmd/define/command.go` | INTEGRATION | new | the `commands` table |
+| `newCommandCtx` | `cmd/define/command.go` | INTEGRATION | new | one construction point for the ctx |
+| `paintMenu` / `clearMenu` | `cmd/define/replraw.go` | INTEGRATION | new (M1b) | the terminal below the prompt |
+| `commandCtx.setTimes` | `cmd/define/command.go` | INTEGRATION | new (M3) | the loop's own `opt`, narrowly |
+| `runSound` | `cmd/define/sound_cmd.go` | INTEGRATION | new (M3) | `setTimes` + stdout |
+| `storeDeps.clock` | `cmd/define/main.go` | INTEGRATION | new | the process's one `store.Clock` |
+| `TestNoTrackedRuntimeState` | `cmd/define/repo_guard_test.go` | INTEGRATION | new | `git ls-files` (a repo-wide guard) |
+
+Completed after the two scope events, which is the point BR-21 makes: the table
+is what the boundary judge grep-checks against the diff, so entities added by a
+mid-stream change have to land here or the check runs against a stale model.
 
 - **commandCtx** — `{deck store.Store; clock store.Clock; stdout, stderr io.Writer; width int}`.
   - **`clock` does not exist yet and Task 4 adds it.** `storeDeps` currently
@@ -274,7 +292,7 @@ erased on redraw.
 - [x] **Step 3: Implement** — add `clock store.Clock` to `storeDeps`, build it
       once in `openStore`, and delete the inline `store.SystemClock()` at
       `main.go:124` so there is one source.
-- [x] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
+- [x] **Step 4: Run; expect PASS.** — [x] **Step 5: Commit.**
 
 #### Task 5: The local-time window
 
@@ -297,7 +315,7 @@ erased on redraw.
         3650 limit, not silently normalised by `AddDate`.
 - [x] **Step 2: Run; expect FAIL.**
 - [x] **Step 3: Implement** `historyWindow`, `parseHistoryArgs`, `maxHistoryDays`.
-- [x] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
+- [x] **Step 4: Run; expect PASS.** — [x] **Step 5: Commit.**
 
 #### Task 6: `summariseLookups`
 
@@ -308,8 +326,8 @@ erased on redraw.
       re-queried inside it appears, ordered by its **first-ever** time; a word
       only seen before the window does not appear; `Found:false` never appears;
       ordering is `firstAt` desc with a total tiebreak.
-- [x] **Step 2: Run; expect FAIL.** — [ ] **Step 3: Implement.**
-- [x] **Step 4: Run; expect PASS.** — [ ] **Step 5: Commit.**
+- [x] **Step 2: Run; expect FAIL.** — [x] **Step 3: Implement.**
+- [x] **Step 4: Run; expect PASS.** — [x] **Step 5: Commit.**
 
 #### Task 7: `runHistory`, end to end
 
@@ -323,7 +341,7 @@ erased on redraw.
 - [x] **Step 2: Run; expect FAIL.**
 - [x] **Step 3: Implement** `runHistory`, extract `noDeckMessage(opt)` from
       `forgetWord` (`main.go:400-406`), and register the row.
-- [x] **Step 4: Run the full suite + `-race`.** — [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the full suite + `-race`.** — [x] **Step 5: Commit.**
 
 #### Task 8: Docs and the atlas
 
@@ -428,3 +446,41 @@ Bounded at 20 for the same reason `--days` is bounded at 3650: a fat-fingered
 | `parseSoundArgs` | 0 (playback off) being confused with "no argument given", and an unbounded count |
 | `runSound` | accepting a change it cannot make, when there is no session |
 | the seam | a closure that is called but changes nothing — the test drives the real loop and counts player calls |
+
+
+### 2026-08-21 — close round 4: two Criticals, both mine
+
+**BR-17 — `relativeDay` divided a Duration by 24h.** Two local midnights one
+calendar day apart are 23 hours across a spring-forward, so `int(23.0/24)` is 0
+and every `/history` date read a day too recent for the week after the change.
+This is the *same DST fact* `historyWindow` avoids with `AddDate`, **twenty lines
+above it** — a second implementation of one idea, and the one that got it wrong
+carried a comment claiming it was computed on calendar days. Fixed by rounding
+(the true gap is always N days ± 1 h, so rounding is exact) and pinned with four
+DST rows; the file already embedded `time/tzdata` for the window tests and the
+render tests had none.
+
+**BR-18 — the developer's deck was committed under `cmd/define/`.** `.gitignore`
+anchored `/words/` and `/events/` at the repo root, but `go test` runs with cwd
+set to the PACKAGE directory and the pty suite launched `bin/define` from there,
+so the deck they created matched no pattern and `git add -A` swept it in — twice.
+Third instance of this family, and the *same underlying fact* that made the first
+`TestNoCommittedBinaries` unable to fail: **`go test` runs in the package
+directory.** Fixed at three levels: the patterns are un-anchored, the pty suite
+sets `cmd.Dir` to a `t.TempDir` so the conformance flow stops writing into the
+source tree at all, and `TestNoTrackedRuntimeState` guards the class
+(plant-verified in both directions).
+
+**BR-19 — the rule, not the four instances.** *A value or effect that only a loop
+shell supplies must be pinned by a test that drives that loop shell.* Each of the
+four was green with its wiring deleted because the tests built the callee's
+context by hand or drove the *other* loop — the `/sound` one most sharply, since
+its test drove `replLines` while the operator's requirement was the raw TUI
+prompt. All four now have loop-driving tests, each mutation-verified.
+
+One of those four repeated BR-3's mistake inside the fix for BR-19: the recall
+test asserted `inputOn+"/sound"` across the whole stream, and the submitted line
+is ECHOED with the same sequence — so it passed with `hist.Add` deleted. It now
+asserts only on output after the command has run. **An observable that two paths
+produce cannot distinguish them**, and knowing the rule is not the same as
+applying it.

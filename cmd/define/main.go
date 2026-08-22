@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
 	"golang.org/x/term"
@@ -256,6 +257,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// line; silently honouring one of them is how -raw came to mean two different
 	// things in #2.
 	forgetting := isSet(fs, "forget")
+	// A command may take arguments, so the WHOLE argument list is one line:
+	// `define /history 7` has to mean what `/history 7` means at the prompt.
+	// Classifying only fs.Arg(0) made the argument count reject it as "too many
+	// words" while the piped loop ran it happily (BR-20).
+	oneShot := parseREPLLine(strings.Join(fs.Args(), " "), false)
 	switch {
 	case forgetting && *forget == "":
 		fmt.Fprintln(stderr, "define: -forget needs a word")
@@ -263,7 +269,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case forgetting && fs.NArg() != 0:
 		fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
 		return 2
-	case !forgetting && fs.NArg() > 1:
+	case !forgetting && oneShot.kind != cmdCommand && fs.NArg() > 1:
 		fs.Usage()
 		return 2
 	}
@@ -285,12 +291,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
-	default: // exactly 1; >1 was rejected above
-		// A command is a command from every entry mode. Routed through the same
-		// classifier the two loops use, so `define /help` cannot mean something
-		// different from `/help` typed at the prompt.
-		if cmd := parseREPLLine(fs.Arg(0), false); cmd.kind == cmdCommand {
-			return dispatchCommand(cmd, commands, newCommandCtx(d, opt, stdout, stderr))
+	default:
+		// A command is a command from every entry mode, arguments and all.
+		if oneShot.kind == cmdCommand {
+			return dispatchCommand(oneShot, commands, newCommandCtx(d, opt, stdout, stderr))
 		}
 		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
 	}

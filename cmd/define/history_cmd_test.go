@@ -252,6 +252,17 @@ func TestRenderHistoryRelativeDatesAreCalendarDays(t *testing.T) {
 	}{
 		{"twenty minutes ago but yesterday", time.Date(2026, 8, 21, 0, 10, 0, 0, loc), time.Date(2026, 8, 20, 23, 50, 0, 0, loc), "yesterday"},
 		{"most of a day ago but today", time.Date(2026, 8, 21, 23, 50, 0, 0, loc), time.Date(2026, 8, 21, 0, 10, 0, 0, loc), "today"},
+
+		// Across a spring-forward, two local midnights one calendar day apart
+		// are 23 HOURS, so dividing elapsed hours by 24 truncates to 0 and every
+		// date reads a day too recent for a week afterwards. This is the same
+		// trap historyWindow avoids with AddDate, twenty lines above.
+		{"the day after a spring-forward", time.Date(2026, 3, 9, 12, 0, 0, 0, loc), time.Date(2026, 3, 8, 12, 0, 0, 0, loc), "yesterday"},
+		{"two days across a spring-forward", time.Date(2026, 3, 9, 12, 0, 0, 0, loc), time.Date(2026, 3, 7, 12, 0, 0, 0, loc), "Saturday"},
+		{"a week across a spring-forward is a date", time.Date(2026, 3, 9, 12, 0, 0, 0, loc), time.Date(2026, 3, 2, 12, 0, 0, 0, loc), "Mar 2"},
+		// And a fall-back day is 25 hours, which truncation also gets wrong the
+		// other way for the >7 boundary.
+		{"the day after a fall-back", time.Date(2026, 11, 2, 12, 0, 0, 0, loc), time.Date(2026, 11, 1, 12, 0, 0, 0, loc), "yesterday"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := renderHistory([]historyRow{{Word: "w", FirstAt: tc.at, LastAt: tc.at, Lookups: 1}}, tc.now, 0)

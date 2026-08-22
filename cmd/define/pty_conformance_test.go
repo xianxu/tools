@@ -32,6 +32,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,11 +47,19 @@ import (
 // startDefine launches the built binary on a pty and returns it plus the master.
 func startDefine(t *testing.T, args ...string) (*exec.Cmd, *os.File) {
 	t.Helper()
-	bin := "../../bin/define"
+	bin, err := filepath.Abs("../../bin/define")
+	if err != nil {
+		t.Fatalf("resolving the binary: %v", err)
+	}
 	if _, err := os.Stat(bin); err != nil {
 		t.Skipf("run `make build` first: %v", err)
 	}
 	cmd := exec.Command(bin, args...)
+	// define writes its deck to the CURRENT directory, and a test's cwd is the
+	// PACKAGE directory — so this suite used to write a deck into the source
+	// tree and then rewrite it on every run, which is how three deck files
+	// reached commits. The binary path is absolute for exactly this reason.
+	cmd.Dir = t.TempDir()
 	f, err := pty.Start(cmd)
 	if err != nil {
 		t.Skipf("no pty available: %v", err)

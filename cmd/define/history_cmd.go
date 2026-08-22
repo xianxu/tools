@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -188,7 +189,14 @@ func relativeDay(at, now time.Time) string {
 		y, m, d := t.Date()
 		return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
 	}
-	switch days := int(dayOf(now).Sub(dayOf(at)).Hours() / 24); {
+	// ROUNDED, not truncated. Two local midnights one calendar day apart are 23
+	// hours across a spring-forward and 25 across a fall-back, so int(23.0/24)
+	// is 0 and every date reads a day too recent for the week after the change.
+	// The true gap is always N days ± 1 hour, which makes rounding exact — and
+	// it is the same DST fact historyWindow avoids by using AddDate rather than
+	// a Duration, twenty lines above. Getting it right there and wrong here is
+	// what a second implementation of one idea costs.
+	switch days := int(math.Round(dayOf(now).Sub(dayOf(at)).Hours() / 24)); {
 	case days == 0:
 		return "today"
 	case days == 1:

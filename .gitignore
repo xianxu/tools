@@ -15,11 +15,19 @@ bin/
 /construct/scripts/vm-log.sh
 /construct/generated/
 
-# define writes its deck to the CURRENT directory, and this repo's developers run
-# it from the checkout — a failed lookup in the repo root created an untracked
-# events/ during review.
-/words/
-/events/
+# define writes its deck to the CURRENT directory.
+#
+# UN-ANCHORED, and that is the fix rather than the default. The anchored form
+# only covered the repo root, while `go test` runs with cwd set to the PACKAGE
+# directory and the pty conformance suite launches bin/define from there — so a
+# deck appeared at cmd/define/words/ and cmd/define/events/, which no pattern
+# matched, and `git add -A` committed the developer's own vocabulary.
+#
+# That is the same fact — go test runs in the package directory — that made the
+# first version of TestNoCommittedBinaries unable to fail. Third time this class
+# has cost a review round; TestNoTrackedRuntimeState now covers it.
+words/
+events/
 
 # `go build ./` inside a cmd/<name>/ directory writes an extensionless binary
 # named after that directory — a 9.6 MB one was committed this way. bin/ is the

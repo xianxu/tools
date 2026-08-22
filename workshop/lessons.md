@@ -333,3 +333,32 @@ value can enter; if a function can derive its input from current state, let it.
 Corollary worth keeping: "it was already like that and nothing broke" is not
 evidence of correctness. It is evidence that nothing has yet varied the thing the
 latent bug depends on.
+
+## `go test` runs in the package directory — third time
+
+This one fact has now cost three review rounds in three disguises:
+
+1. A repo guard resolved `git ls-files` relative to `cmd/define/`, so the artifact
+   it hunted arrived as `define` and a "repo root" skip swallowed it. It could
+   not fail.
+2. `.gitignore` anchored `/words/` and `/events/` at the repo root, so a deck
+   written by tests at `cmd/define/words/` matched nothing and was committed.
+3. The pty conformance suite launched the binary with the test's cwd, so it wrote
+   a deck into the source tree and rewrote it on every run.
+
+Whenever a test touches the filesystem or the repo, state which directory it is
+standing in. Resolve repo paths from `git rev-parse --show-toplevel`, give any
+child process an explicit `cmd.Dir`, and prefer un-anchored ignore patterns for
+runtime output — anchoring only covers the root, and tests do not run there.
+
+## Two implementations of one idea diverge, and the wrong one carries the comment
+
+`historyWindow` used `AddDate` and documented exactly why a Duration is wrong
+across DST. `relativeDay`, twenty lines below, divided a Duration by 24h — and
+carried a comment claiming it worked on calendar days. Every `/history` date was
+off by one for the week after each spring-forward.
+
+Having got a subtlety right once is not protection; it is the thing that makes
+the second copy feel safe to write. When a second site needs the same idea, reach
+for the same primitive, and give the second site the harder test — the first one
+already has it.
