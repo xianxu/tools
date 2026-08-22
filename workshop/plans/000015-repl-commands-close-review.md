@@ -292,3 +292,230 @@ findings:
       history_cmd_test.go:227 and :250 pass 0, and nothing asserts runHistory forwards c.width.
       The equivalent branch in menuLines is covered by TestMenuLines' width=14 row.
 ```
+
+---
+
+## Re-review — 2026-08-21T17:39:51-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 15 — REPL command mode: /-prefixed commands with type-ahead, starting with /history |
+| repo | tools |
+| issue file | workshop/issues/000015-repl-commands.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | c7d07575cb125fcb438bcb3fe45ff3763282690b..4b019e080465c7ee3861969354ed2e58571d4007 |
+| command | sdlc close --issue 15 |
+| reviewer | claude |
+| timestamp | 2026-08-21T17:39:51-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Both Criticals from round 4 are genuinely closed, and I closed them by re-running the measurements that produced them rather than reading the commit message. Reverting `math.Round` to truncation reddens three DST rows in `TestRenderHistoryRelativeDatesAreCalendarDays`; planting a tracked deck file reddens `TestNoTrackedRuntimeState`; and running the conformance suite on a real pty (all four PTY tests PASS, unsandboxed) now leaves `git status` clean and creates no deck under `cmd/define/`. `go vet`, `gofmt -l`, and `go test -count=1` are all clean. Nothing new is Critical, so this does not block. What keeps it off SHIP is that the two Important findings the round asked for as *rules* shipped as unpinned code. `define /history 7` works — I probed it — but I applied two separate mutations to its fix (revert the arity-guard exemption; classify `fs.Arg(0)` instead of the joined line) and the **full suite stayed green under both**, with the first restoring BR-20's exact reported symptom and the second silently printing a 2-day window for `/history 7`. That is BR-19's own rule violated by the commit that closed BR-19, and BR-19's rule was never written to `workshop/lessons.md` (three entries landed this round; none of them is it). Separately, the BR-20 fix exempts command lines from the arity guard, which drops them past `d = d.withStore(...)` — so `define /qqqqqq` now reads the whole event log and emits a torn-record recovery warning before reporting the usage error, contradicting the invariant stated four lines above it at `main.go:252`.
+
+## 1. Strengths
+
+- **The BR-17 fix is pinned and the diagnosis was right.** Reverting `history_cmd.go:199` to `int(…Hours()/24)` reddens exactly the three predicted rows ("today" for yesterday, "yesterday" for two days ago, "Monday" where "Mar 2" is due). The four DST rows added to `TestRenderHistoryRelativeDatesAreCalendarDays` are the corpus the sibling window test always had and the render test lacked.
+- **BR-18 is fixed at the level that actually holds.** Un-anchored `words/`/`events/` is the load-bearing change, and `TestNoTrackedRuntimeState` is plant-verified in both directions — I added `cmd/define/words/planted.yaml` to the index and it failed with the file named. `cmd.Dir = t.TempDir()` genuinely closes the ARCH-MOCK half: the live conformance flow and the in-process fake now share a storage boundary, verified by a clean tree after a real-pty run.
+- **The four BR-19 instances are each mutation-verified.** I deleted all four wirings independently: `cc.setTimes` → `TestRawEditorSoundChangesTheSession` fails ("played 3 times … want 1"); `hist.Add` → `TestRawEditorRecallsSubmittedCommands` fails; `cmdCode` return → exit 1 instead of 2; one-shot dispatch → `refusingDict` fires. The recall test's fix (asserting only after `"playing"`) is the right repair for the echo-shares-the-observable trap.
+- **`TestNoTrackedRuntimeState` refuses to pass vacuously** (`t.Fatal` when `seen == 0`), matching the doctrine `scanForExecutables` established. `TestEveryRegisteredCommandIsRunnable` does the same against the live registry.
+- **BR-21 is fully closed** — zero `- [ ]` boxes remain, and every entity in the Core-concepts table (`menuLines`, `menuNameWidth`, `parseSoundArgs`, `soundTimes`, `runSound`, `relativeDay`, `historyRow`, `days2str`, `noDeckMessage`) exists at its stated path.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — a command line skips the "usage errors are settled before a store is opened" invariant, and reads the whole event log.** `cmd/define/main.go:272` exempts `cmdCommand` from the arity guard, so command lines fall through to `main.go:279` `d = d.withStore(opt, stderr)` before anything validates the command. Measured with the same torn-log fixture `TestUsageErrorsDoNotOpenTheLog` uses:
+
+```
+define /qqqqqq        → "define: 2020-01-01.yaml: recovered 0 event(s), dropped 1 torn record(s)"
+                        "define: unknown command /qqqqqq. Commands: /help /history /sound"  (exit 2)
+define /qqqqqq zzz    → same
+define /history zzz   → same warning, then "\"zzz\" is not a number of days"  (exit 2)
+```
+
+`main.go:252` states the contract four lines above the guard that breaks it: *"Usage errors are settled BEFORE a store is opened. A mistyped command must not be the thing that creates words/ and events/."* The directory-creation half still holds (`NewYAML` is lazy — I confirmed no `words/`/`events/` appears), but the read half does not, and `TestUsageErrorsDoNotOpenTheLog` (`capture_test.go:423`) has rows for `-forget` and two words and none for a command. Fix sketch: resolve the command name against `commands` before `withStore` and return the unknown-command error there, or move `withStore` below the dispatch; either way add the three rows above to `TestUsageErrorsDoNotOpenTheLog`.
+
+**I-2 — `--days` / `--days=N` ship, are tested, and are documented nowhere; the plan box promising them is ticked.**
+
+> **This is the 2nd finding in family `docs-consumer-not-updated`** (BR-4 was the first). Do NOT patch this instance — state the rule and fix that.
+
+`parseHistoryArgs` accepts `7`, `--days 7`, and `--days=7`, all pinned by `TestParseHistoryArgs`. `grep -- "--days"` finds zero occurrences in `README.md`, zero in `atlas/define.md`, and zero in the `--help` text; `/help`'s own summary is "words looked up recently". Only the positional `[N]` form is documented. Meanwhile plan line 352 reads `- [x] **Step 2:** README: what /history shows, what it omits and why, --days.` — a ticked box asserting delivery of the one thing that did not land. **The rule:** *a flag or argument form is not shipped until at least one consumer a user can reach derives it — the box is ticked by the commit that updates that consumer, not by the commit that adds the parser.* Shadow-sweep of "what windows can I ask for": parser ✓, tests ✓, README ✗, atlas ✗, `--help` ✗, `/help` summary ✗ (ARCH-PURPOSE).
+
+**I-3 — the deck blobs are still reachable from HEAD, and the guard written for BR-18 cannot see them.**
+
+> **This is the 2nd finding in family `runtime-output-tracked-in-source-tree`** (BR-18 was the first). Do NOT patch this instance — state the rule and fix that.
+
+`git show 1ff0d5e:cmd/define/words/sycophantic.yaml` still returns the developer's word with `first_seen`/`last_seen` timestamps and `lookups: 12`; `cmd/define/events/2026-08-21.yaml` and `2026-08-22.yaml` likewise, added by `fc071af` and `1ff0d5e`. `4b019e0` removed them from the index only. `TestNoTrackedRuntimeState` checks `git ls-files` — the index — while its sibling `TestNoBinariesInHistory` walks *history* precisely because, in that test's own words, *"deleting it in a later commit does not remove the cost."* **The rule:** *a guard for a committed-artifact class must check the scope where that class's cost lives — the index for what is checked out, history for what every clone fetches — and a fix that only untracks is incomplete against a history-scoped guard.* Cheap now (the branch is unmerged); permanent after merge. Either rewrite `fc071af` and `1ff0d5e`, or extend `TestNoTrackedRuntimeState` to the history scope and record explicitly that the deck content is accepted as public.
+
+## 4. Minor findings
+
+- **`relativeDay`'s rounding is a heuristic where an exact computation is one line away, and the comment again asserts a property the code lacks.** *This is the 2nd finding in family `elapsed-hours-for-calendar-days`* — do not patch the instance. `history_cmd.go:199`'s comment says "The true gap is always N days ± 1 hour, which makes rounding exact"; measured in `Pacific/Apia`, `at=2011-12-29`, `now=2011-12-31` prints **"yesterday"** for a two-calendar-day gap, because Samoa's date-line change deleted 2011-12-30 and only 24 hours elapsed. **The rule:** *count calendar days on calendar-day numbers, never on elapsed time — normalise both dates into a fixed-offset zone before differencing, so no offset arithmetic enters the count.* Verified: changing `dayOf` to build in `time.UTC` and dropping `math.Round` makes Apia return "Thursday", keeps the whole suite green including all four DST rows, and removes the `math` import.
+- **`replraw.go:67` is orphaned by `1ff0d5e`.** *2nd in family `comment-orphaned-by-insertion`* — do not patch the instance. It still reads "Resolve candidates ONCE per keystroke and use the same slice for both the state machine and the suggestion. Querying twice doubled the work the History seam will do once #3 backs it with a store." Since `draw()` computes its own list, `completionsFor` now runs twice per keystroke — the exact thing the comment says was avoided, and `#3` has landed. **The rule:** *when a fix changes what a block does, the comment above it is part of the diff; a comment that survives a behaviour change is a false claim, which is how BR-17 stayed invisible.*
+- BR-15's key table (`README.md:43-50`) is still untouched: no `/` row, and `Enter | define what you typed` still omits command dispatch. The `sh` block half of that finding is now fine.
+- `--sound 1000` is still accepted while `/sound 1000` is refused at 20 (BR-22, re-probed).
+- `define -times -1` still reports `define: -sound must not be negative` (BR-23, re-probed).
+- `command.go:239` truncates in bytes, `history_cmd.go:178` in runes (BR-24, unchanged).
+- `renderHistory`'s truncation branch still has no test at non-zero width (BR-25, unchanged).
+- `relativeDay` with a future `at` (clock skew, or a deck synced from a machine ahead) gives negative days, falls into `days < 7`, and prints a weekday name.
+
+## 5. Test coverage notes
+
+- Verified green: `go build ./...`, `go vet ./cmd/...`, `gofmt -l cmd/` (empty), `go test ./cmd/define/... -count=1`, and `go test -tags conformance -run PTY` — all four pty tests PASS on a real terminal, run unsandboxed.
+- Verified pinned by reverting the fix: BR-17 (3 DST rows redden), BR-18 (planted index entry reddens `TestNoTrackedRuntimeState`), and all four BR-19 wirings.
+- Verified **unpinned**: both halves of BR-20's fix (two mutations, full suite green each time, one restoring the reported symptom and one producing a silent wrong window), and `clearMenu()` before submit at `replraw.go:150` — deleting it leaves both the unit suite and the pty suite green. I diffed the real pty frames with and without it: at HEAD the three menu rows are erased before the echoed line; without it they are overwritten only by luck, since `/` draws three rows and `runHelp` prints three. A prefix like `/h` (two menu rows) followed by Enter (one line of stderr) leaves a row behind.
+- Verified **uncovered**: `TestUsageErrorsDoNotOpenTheLog` has no command row (I-1); `renderHistory` at non-zero width (BR-25).
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** `parseREPLLine` as the one classifier and `completionsFor` as the one namespace switch both hold, and `noDeckMessage` is genuinely shared. Flagged: `relativeDay` remains a second, heuristic implementation of the calendar-day concept `historyWindow` owns exactly (Minor above); `menuLines`/`renderHistory` still carry divergent truncate-and-pad logic (BR-24).
+- **ARCH-PURE — pass.** Every PURE row in the Core-concepts table runs its tests with no store, clock, terminal, or network — I confirmed none needs a mock. `runHistory`/`runSound`/`dispatchCommand` take writers and are the thin shell, and `commandCtx` narrower than `deps` keeps "a command cannot reach the dictionary or the player" structural. The caution stands: cheap purity is what makes the wiring gaps easy to miss.
+- **ARCH-PURPOSE — flag.** The entry-mode sweep now passes: `define /history 7`, `echo '/history 7' | define`, and the raw prompt all reach `parseREPLLine` with a whole line, which is what BR-20 asked for behaviourally. The failing sweep is `--days` (I-2): the parser is the only consumer that derives it.
+- **ARCH-MOCK — pass.** `store.Mem` and `store.FixedClock` are production files in `cmd/define/store/`, not test doubles, and `storeHistory.Add` is memory-only, so submitted commands never contaminate the deck (checked — `/sound` lines are recall-only). BR-18's ARCH-MOCK half is closed: production flow and conformance flow now share the storage boundary, verified by a clean tree after a real-pty run.
+
+## 7. Plan revision recommendations
+
+- **Untick Task 8 Step 2, or land the README `--days` text it claims** (plan line 352). It is currently the only ticked box in the plan whose deliverable does not exist, which inverts BR-21's failure mode rather than closing it.
+- **Add a `## Revisions` entry recording that BR-19's rule was not durably captured.** The commit message and this plan's Revisions state it; `workshop/lessons.md` — the artifact AGENTS.md §4 designates for cross-issue rules — gained three entries this round and none of them is it. The rule belongs there, because the family's next instance will be in a different file.
+- **Record `relativeDay`'s exactness caveat where the plan already discusses the local-day question**, or take the one-line UTC-normalised fix. The plan's Chunk 1 makes the case for `AddDate` over Durations for `historyWindow`; `relativeDay` now sits one section away using a different, weaker technique for the same concept.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: addressed
+    note: |
+      Probed: `define /help` runs and exits 0; pinned by TestOneShotCommandGoesThroughRun (deleting the dispatch block reddens it).
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      The sh block is fine now, but README.md:43-50 still has no / row and "Enter | define what you typed" still omits command dispatch — the exact structure the finding named.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      Probed `echo /qqqqqq | define` exits 2; mutation-verified — deleting the cmdCode return reddens TestPipedLoopReturnsTheCommandsExitCode.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      Mutation-verified: reverting math.Round to truncation reddens three DST rows. Residual exactness gap raised separately as a Minor.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      Files untracked, TestNoTrackedRuntimeState plant-verified to fail, and a real-pty conformance run leaves git status clean with no deck under cmd/define/. History residue raised separately.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      All four instances are now mutation-verified pinned, but the RULE the finding demanded is absent from workshop/lessons.md and was violated in the same commit — BR-20's fix and clearMenu are both unpinned (measured).
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      Behaviour correct when probed, but unpinned: reverting the arity-guard exemption restores the reported usage dump, and classifying fs.Arg(0) makes /history 7 print a 2-day window — full suite green under both.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      Zero unticked boxes remain, and every entity named in the Core-concepts table exists at its stated path (grep-verified).
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      Re-probed: --sound 1000 accepted, /sound 1000 refused at the 20 cap.
+  - id: BR-23
+    disposition: not-addressed
+    note: |
+      Re-probed: define -times -1 still reports "define: -sound must not be negative".
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      command.go:239 still slices bytes, history_cmd.go:178 still slices runes.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      Both renderHistory call sites still pass width 0, and nothing asserts runHistory forwards c.width.
+findings:
+  - id: new
+    severity: Important
+    family: guard-bypassed-by-new-kind
+    title: |
+      A command line skips the "usage errors are settled before a store is opened" invariant and reads the whole event log
+    detail: |
+      main.go:272 exempts cmdCommand from the arity guard, so a command line reaches
+      main.go:279 d.withStore before anything validates it. Measured with the same torn-log
+      fixture TestUsageErrorsDoNotOpenTheLog uses - `define /qqqqqq`, `define /qqqqqq zzz`
+      and `define /history zzz` all print "recovered 0 event(s), dropped 1 torn record(s)"
+      before their usage error. main.go:252 states the contract four lines above the guard
+      that breaks it. The directory-creation half still holds (NewYAML is lazy, confirmed),
+      but the read half does not, and capture_test.go:423 has rows for -forget and two words
+      and none for a command, so the drift is untested in either direction. Fix by resolving
+      the command name against `commands` before withStore, and add the three rows.
+  - id: new
+    severity: Important
+    family: docs-consumer-not-updated
+    title: |
+      --days and --days=N ship and are tested but appear in no user-facing doc, while the plan box promising them is ticked
+    detail: |
+      This is the 2nd finding in family docs-consumer-not-updated (BR-4 first). Do NOT patch
+      this instance. parseHistoryArgs accepts 7, --days 7 and --days=7, all pinned by
+      TestParseHistoryArgs; grep finds zero occurrences of --days in README.md, atlas/define.md
+      and the --help text, and /help's summary is "words looked up recently". Only the
+      positional [N] form is documented. Plan line 352 reads "- [x] Step 2: README: what
+      /history shows, what it omits and why, --days" - a ticked box asserting the one
+      deliverable that did not land.
+      THE RULE - a flag or argument form is not shipped until at least one consumer a user can
+      reach derives it, and the plan box is ticked by the commit that updates that consumer,
+      not by the commit that adds the parser (ARCH-PURPOSE shadow-sweep: parser and tests
+      derive, README/atlas/--help//help do not).
+  - id: new
+    severity: Important
+    family: runtime-output-tracked-in-source-tree
+    title: |
+      The deck blobs are still reachable from HEAD, and the guard written for BR-18 checks only the index
+    detail: |
+      This is the 2nd finding in family runtime-output-tracked-in-source-tree (BR-18 first). Do
+      NOT patch this instance. `git show 1ff0d5e:cmd/define/words/sycophantic.yaml` still
+      returns the word with its timestamps and lookups: 12; the two events files likewise, added
+      by fc071af and 1ff0d5e. 4b019e0 removed them from the index only. TestNoTrackedRuntimeState
+      reads `git ls-files` - the index - while its sibling TestNoBinariesInHistory walks history
+      precisely because, in its own words, deleting in a later commit does not remove the cost.
+      THE RULE - a guard for a committed-artifact class must check the scope where that class's
+      cost lives: the index for what is checked out, history for what every clone fetches. A fix
+      that only untracks is incomplete against a history-scoped guard. Cheap now while the branch
+      is unmerged; permanent after.
+  - id: new
+    severity: Minor
+    family: elapsed-hours-for-calendar-days
+    title: |
+      relativeDay's rounding is a heuristic where an exact computation is one line away, and the comment asserts an exactness the code lacks
+    detail: |
+      This is the 2nd finding in family elapsed-hours-for-calendar-days (BR-17 first). Do NOT
+      patch this instance. history_cmd.go:199's comment claims "The true gap is always N days
+      +/- 1 hour, which makes rounding exact"; measured in Pacific/Apia, at=2011-12-29,
+      now=2011-12-31 prints "yesterday" for a two-calendar-day gap, because the 2011 date-line
+      change deleted 2011-12-30 and only 24 hours elapsed.
+      THE RULE - count calendar days on calendar-day numbers, never on elapsed time: normalise
+      both dates into a fixed-offset zone before differencing, so no offset arithmetic enters
+      the count at all. Verified - building dayOf in time.UTC and dropping math.Round returns
+      "Thursday" for Apia, keeps the full suite green including all four DST rows, and removes
+      the math import.
+  - id: new
+    severity: Minor
+    family: comment-orphaned-by-insertion
+    title: |
+      replraw.go:67 still claims candidates are resolved once per keystroke, but draw() now computes its own list
+    detail: |
+      This is the 2nd finding in family comment-orphaned-by-insertion (BR-12 first). Do NOT patch
+      this instance. The comment reads "Resolve candidates ONCE per keystroke and use the same
+      slice for both the state machine and the suggestion. Querying twice doubled the work the
+      History seam will do once #3 backs it with a store." Since 1ff0d5e removed draw's parameter,
+      completionsFor runs twice per keystroke - once for Apply at replraw.go:129 and once inside
+      draw - and #3 has landed.
+      THE RULE - when a fix changes what a block does, the comment above it is part of the diff.
+      A comment that survives a behaviour change is a false claim about the code beneath it,
+      which is exactly what let BR-17's DST bug read as correct for four rounds.
+```
