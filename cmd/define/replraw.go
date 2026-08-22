@@ -96,13 +96,23 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 		menuDrawn = len(lines)
 	}
 	clearMenu := func() { paintMenu(nil) }
-	draw := func(matches []string) {
+	// draw takes NO match list on purpose. It used to accept one, and one caller
+	// passed the list computed BEFORE the keystroke was applied — so the grey
+	// tail was rendered against the previous line. Both lists were history until
+	// #15 and a stale superset usually had the same first match, so nothing
+	// showed; command mode made the stale list come from a different NAMESPACE
+	// and typing "/" suggested "/history" out of recall while the menu under it
+	// listed commands and Tab accepted "/help".
+	//
+	// Computing here means there is one answer to "what does the current line
+	// match", and no way to hand this function a stale one.
+	draw := func() {
 		// The menu is painted FIRST and the prompt line last, so RenderLine
 		// leaves the cursor where the user is typing.
 		paintMenu(menuLines(e.String(), commands, opt.width))
-		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, matches), opt.color))
+		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), opt.color))
 	}
-	draw(completionsFor(e.WalkBase(), hist, commands))
+	draw()
 
 	for {
 		select {
@@ -161,14 +171,14 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 						return 1
 					}
 					fmt.Fprint(stdout, "\r\n")
-					draw(completionsFor(e.WalkBase(), hist, commands))
+					draw()
 					continue
 				}
 				if cmd.kind != cmdDefine {
 					// cmdReplay and cmdNothing both stay on this line: the
 					// indicator is drawn over the prompt, then the prompt back.
 					replayInPlace(ctx, d, opt, current, stdout, stderr)
-					draw(completionsFor(e.WalkBase(), hist, commands))
+					draw()
 					continue
 				}
 				// In RAW mode "\n" is a line feed only — no carriage return — so
@@ -187,10 +197,10 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// the prompt butts against the last line of the definition and
 				// reads as part of it.
 				fmt.Fprint(stdout, "\r\n")
-				draw(completionsFor(e.WalkBase(), hist, commands))
+				draw()
 				continue
 			}
-			draw(matches)
+			draw()
 		}
 	}
 }

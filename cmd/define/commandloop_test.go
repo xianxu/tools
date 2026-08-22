@@ -200,3 +200,39 @@ func TestTypingNarrowsTheMenuAndAWordHidesIt(t *testing.T) {
 		t.Errorf("a non-matching prefix left the menu on screen: %q", last)
 	}
 }
+
+// What the grey tail SHOWS must be what Tab ACCEPTS.
+//
+// The loop computes `matches` from the line BEFORE the keystroke (Apply needs
+// that list to anchor a history walk) and then drew the suggestion against the
+// line AFTER it. Both lists were history until #15, so a stale superset usually
+// had the same first match and nothing showed. Command mode made the stale list
+// come from a DIFFERENT NAMESPACE: typing "/" rendered a suggestion out of
+// history — which contains "/history", because submitted commands are recalled —
+// while the next keystroke resolved Tab against the command set and accepted
+// "/help". Reported from the terminal: grey said history, Tab gave help.
+func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig.deps.dict = refusingDict{t}
+	// A history that has seen commands, which is what any real session has.
+	h := &memHistory{}
+	h.Add("/history")
+	rig.deps.history = h
+
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("/\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	if strings.Contains(out.String(), greyOn+"history") {
+		t.Errorf("typing / suggested from HISTORY; the menu below it lists commands: %q", out.String())
+	}
+	if !strings.Contains(out.String(), greyOn+"help") {
+		t.Errorf("no command suggestion after /: %q", out.String())
+	}
+
+	// And the acceptance agrees: Tab commits the tail that was shown.
+	out.Reset()
+	runEditor(t.Context(), scriptKeys("/\t\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	if !strings.Contains(out.String(), "/help") {
+		t.Errorf("Tab did not accept the suggestion that was displayed: %q", out.String())
+	}
+}

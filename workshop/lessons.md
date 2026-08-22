@@ -315,3 +315,21 @@ path as "asserted by nothing" from a run scoped to one build tag, when the full
 suite reddens on that mutation. Before accepting a negative finding, re-run its
 measurement at full scope — a finding is a measurement, and measurements have
 scopes.
+
+
+## Render from the state you just changed, not the state you read
+
+A key loop computed its candidate list, applied the keystroke, then drew the
+suggestion using the list from *before* the keystroke. It was invisible for as
+long as both the old and new lists came from the same source — a stale superset
+usually shares its first element. It became a reported bug the moment the two
+lists came from different **namespaces**: the grey tail offered one completion
+and Tab accepted another.
+
+The fix that removes the class rather than the instance: the drawing function
+computes what it needs instead of accepting it. A parameter is a place a stale
+value can enter; if a function can derive its input from current state, let it.
+
+Corollary worth keeping: "it was already like that and nothing broke" is not
+evidence of correctness. It is evidence that nothing has yet varied the thing the
+latent bug depends on.

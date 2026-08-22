@@ -361,6 +361,17 @@ the next keystroke, because the prompt line is fully rewritten each time. A pty
 conformance test covers the placement, because an in-process test can only prove
 the bytes were emitted, not that the cursor came back.
 
+**One source for "what does this line match".** `draw` computes the candidate
+list itself rather than accepting one. It used to take a parameter, and one
+caller passed the list computed BEFORE the keystroke was applied — so the grey
+tail was rendered against the previous line. Both lists were history before
+command mode and a stale superset usually shared its first match, so nothing
+showed; the namespace switch made the stale list come from a *different set*, and
+typing `/` suggested `/history` out of recall while the menu under it listed
+commands and Tab accepted `/help`. `Apply` still receives the pre-keystroke list,
+which is correct — it is deciding what to do with that keystroke given the line
+as it stands — but nothing can hand `draw` a stale one.
+
 **Tab accepts, Return submits what was typed.** `/his` + Return dispatches `his`
 and gets a suggestion, it does not run the unique match. That is `#14`'s contract
 for words, and command mode diverging from it would make Return mean two things
