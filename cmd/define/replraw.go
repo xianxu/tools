@@ -146,7 +146,6 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// what a line means — no trimming, and "hot  dog" not collapsed to
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
 				cmd := parseREPLLine(e.String(), current != "")
-				line := cmd.word
 				// Whatever happens next writes below this line, so the dropdown
 				// has to go before any of it.
 				clearMenu()
@@ -190,7 +189,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// the next line would start at the current column. Everything
 				// written before we drop back to cooked mode needs "\r\n".
 				fmt.Fprint(stdout, "\r\n")
-				if err := submitLine(ctx, cooked, d, opt, line, hist, &current, stdout, stderr); err != nil {
+				if err := submitLine(ctx, cooked, d, opt, cmd, hist, &current, stdout, stderr); err != nil {
 					// Raw mode could not be re-entered. The editor would keep
 					// drawing frames a cooked terminal echoes over — silently
 					// unusable — so stop and say why rather than swallow it.
@@ -225,23 +224,23 @@ func replayInPlace(ctx context.Context, d deps, opt options, current string, std
 }
 
 // submitLine handles one submitted word.
-func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt options, line string,
+func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt options, cmd replCommand,
 	hist History, current *string, stdout, stderr io.Writer) error {
+	line := cmd.word
 
 	// Render in COOKED mode so newlines translate, but play in RAW mode so
 	// Ctrl-C arrives as a byte the key reader can act on. Playback is the part
 	// that blocks for seconds; doing it cooked made cancellation depend on a
 	// signal that raw mode exists to replace.
-	var code int
-	var play bool
-	if err := cooked(func() { code, play = lookupAndRender(d, opt, line, stdout, stderr) }); err != nil {
+	var out lookupOutcome
+	if err := cooked(func() { out = lookupAndRender(d, opt, cmd, stdout, stderr) }); err != nil {
 		return err
 	}
-	if play {
+	if out.play {
 		playAnnounced(ctx, d, opt, line, indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
 	}
 	hist.Add(line)
-	if code == 0 {
+	if out.code == 0 {
 		*current = line
 	}
 	return nil

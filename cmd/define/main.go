@@ -324,22 +324,43 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		if oneShot.kind == cmdCommand {
 			return dispatchCommand(oneShot, commands, newCommandCtx(d, opt, stdout, stderr))
 		}
-		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
+		// oneShot, not fs.Arg(0): the parsed line is what carries #16's hatches,
+		// and a one-shot that re-derived the word from argv would send `define
+		// "?what is X"` to the dictionary — BR-13's shape, in a new place.
+		return defineOnce(ctx, d, opt, oneShot, stdout, stderr).code
 	}
 }
 
 // defineOnce is the whole define path for a single word: look up, render, print,
 // speak. Extracted so the loop calls exactly this rather than growing a parallel
 // copy (ARCH-DRY).
-func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, stderr io.Writer) int {
-	code, play := lookupAndRender(d, opt, word, stdout, stderr)
-	if play {
+func defineOnce(ctx context.Context, d deps, opt options, cmd replCommand, stdout, stderr io.Writer) lookupOutcome {
+	out := lookupAndRender(d, opt, cmd, stdout, stderr)
+	if out.ask != "" {
+		// Not this function's to answer: the caller decides where an answer is
+		// rendered, because the raw loop streams it in a terminal mode this path
+		// knows nothing about (#16 D6).
+		return out
+	}
+	if out.play {
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
+		playAnnounced(ctx, d, opt, cmd.word, defaultIndicator(opt), stdout, stderr)
 	}
-	return code
+	return out
+}
+
+// lookupOutcome is what one line turned out to be, once the dictionary has
+// answered. It carries a third possibility the define path did not used to have:
+// the line was a question. That has to travel as DATA rather than be acted on
+// here, because the raw loop renders a definition cooked and streams an answer
+// raw — one function cannot do both (#16 D6).
+type lookupOutcome struct {
+	code  int    // exit semantics, unchanged
+	play  bool   // audio should follow
+	ask   string // non-empty: this line is a question for the model
+	entry string // the raw dictionary text, kept for the ask context
 }
 
 // lookupAndRender is also the ONE capture site. Verified against the call graph
@@ -352,12 +373,21 @@ func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, s
 // render, print. Split out because the raw-mode loop must run it in cooked mode
 // (so newlines translate) while playing in RAW mode (so Ctrl-C arrives as a byte
 // the key reader can see). Returns whether audio should follow.
-func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer) (code int, play bool) {
+func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Writer) lookupOutcome {
+	word := cmd.word
 	text, err := d.dict.Lookup(word)
 	if err != nil {
+		// The route decision comes BEFORE capture, and that order is the point:
+		// a question recorded as a not-found lookup lands in the event log that
+		// #8's statistics and #17's learner model both fold over — data that is
+		// not a lookup at all. The dictionary is asked once and its miss is the
+		// free, offline signal the classifier runs on (#16 D1).
+		if !cmd.literal && readsAsQuestion(word) {
+			return lookupOutcome{ask: word}
+		}
 		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
 		d.capture.Capture(word, false, opt)
-		return 1, false
+		return lookupOutcome{code: 1}
 	}
 	if opt.raw {
 		fmt.Fprintln(stdout, text)
@@ -365,11 +395,11 @@ func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer)
 		// it must be the thing that says so — returning early made that branch
 		// unreachable and gave "capture is off" a second home.
 		d.capture.Capture(word, true, opt)
-		return 0, false
+		return lookupOutcome{entry: text}
 	}
 	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
 	d.capture.Capture(word, true, opt)
-	return 0, !opt.noAudio && opt.times > 0
+	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
 }
 
 // defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.

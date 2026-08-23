@@ -357,8 +357,9 @@ func TestCancellationPrintsNoDiagnostic(t *testing.T) {
 	cancel()
 
 	var out, errb bytes.Buffer
-	if code := defineOnce(ctx, rig.deps, options{times: 3, locale: "us"}, "sycophantic", &out, &errb); code != 0 {
-		t.Fatalf("exit = %d, want 0", code)
+	cmd := replCommand{kind: cmdDefine, word: "sycophantic"}
+	if out := defineOnce(ctx, rig.deps, options{times: 3, locale: "us"}, cmd, &out, &errb); out.code != 0 {
+		t.Fatalf("exit = %d, want 0", out.code)
 	}
 	if errb.Len() != 0 {
 		t.Errorf("Ctrl-C printed a diagnostic: %q", errb.String())

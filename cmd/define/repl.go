@@ -205,7 +205,8 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo
 				// does not cost you the word you were listening to.
-				if defineOnce(ctx, d, opt, cmd.word, stdout, stderr) == 0 {
+				out := defineOnce(ctx, d, opt, cmd, stdout, stderr)
+				if out.code == 0 {
 					current = cmd.word
 				} else {
 					anyFailed = true
