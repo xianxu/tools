@@ -177,7 +177,8 @@ once `#6` is producing misses.
 - [x] vocabulary store — Store seam, YAML in the working directory, clock injected [tools#3]
 - [x] capture on lookup — successful lookups build the deck [tools#4]
 - [x] REPL command mode — `/`-commands with type-ahead, starting `/history` [tools#15]
-- [ ] LLM harness — `internal/llm`, transport + fake + prompt goldens + conformance [tools#11]
+- [x] LLM harness — transport, wire fake, obligation suite [tools#11 M1]
+- [ ] LLM harness — typed tasks, goldens, conformance, `--llm-check` [tools#11 M2]
 - [ ] free-form Q&A in the console — three-way input classification, directory as context [tools#16]
 - [ ] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [ ] news seam — Google News RSS (not the SERP) [tools#9]
@@ -190,18 +191,45 @@ once `#6` is producing misses.
 - [ ] form 2.4 — free sentence, graded [tools#13]
 - [ ] learner model — weakness taxonomy from review events, steers authoring [tools#17 M2]
 
-<a id="tools-11"></a>
-### tools#11 — LLM harness
+<a id="tools-11-m1"></a>
+### tools#11 M1 — transport, wire fake, obligation suite
 
-**status:** open — first in execution order; everything model-shaped depends on it
+**est:** 7.98 (whole issue)
+**actual:** 3.45h
+**closed:** 2026-08-22
 
-Revised 2026-08-22 from "Anthropic client behind a narrow interface" to the base of
-a harness: one transport (`internal/llm`), configurable base URL defaulting to the
-local `cli-proxy-api`, a stateful fake that records prompts so prompt regressions
-show up in a diff, prompts as versioned artifacts with goldens, structured-response
-parsing that degrades rather than crashes, and a live conformance check behind the
-build tag. The per-task prompts do **not** live here — they live with their
-consumers; this issue owns the transport and the contract.
+`internal/llm` exists: a provider-independent `Client` over `anthropic-sdk-go`
+pointed at the parley-managed proxy, a five-member error taxonomy, pure config
+resolution, a wire-level stateful fake, and one obligation suite that runs against
+both the fake and (under `-tags conformance`) the live service. Prompts
+deliberately live with consumers, not here.
+
+The decision worth preserving is where the test double sits: an httptest server
+speaking the Anthropic protocol, **not** a stubbed `Client`. Placement decides
+what a test can see, and a stubbed client sits above every bug this harness can
+actually have. Content in tests comes from committed captures rather than
+literals — you cannot fake judgment, but you can freeze a real answer.
+
+Three surprises, all from measurement rather than reasoning. `claude-opus-5`
+returns a **thinking block first** on any non-trivial prompt, so `content[0]` is
+not the text — and one capture has a thinking block *after* the text, so no
+sequence may be asserted at all. A **truncated structured answer parses**
+(`{"verdict":"yes","reason":": Ā"}`, every required field present), so the stop
+reason must be checked before decoding; that specimen is preserved as a fixture.
+And the **proxy answers 502 for an unknown model** where the direct API answers
+400, so an our-bug-class error is absorbed as `ErrUnavailable` — recorded as a
+known limitation rather than papered over.
+
+Cost note for calibration: `sdlc actual` measured 3.45h against a window whose
+wall clock is 1.83h (`b5d50ea2` 17:20 → `bd94021` 19:10). The measured value was
+recorded rather than a hand-typed one, but it is **1.9× the window it names**, so
+this row should not be treated as clean evidence for the ledger.
+
+<a id="tools-11-m2"></a>
+### tools#11 M2 — typed tasks, goldens, conformance
+
+**status:** open — `Task[T]`/`Run[T]`, `SchemaFor[T]`, `renderRequest` +
+cassettes/goldens, live conformance, `define --llm-check`
 
 <a id="tools-16"></a>
 ### tools#16 — free-form Q&A in the console
@@ -283,7 +311,8 @@ still showed open here.
 [tools#8]: #tools-8
 [tools#9]: #tools-9
 [tools#10]: #tools-10
-[tools#11]: #tools-11
+[tools#11 M1]: #tools-11-m1
+[tools#11 M2]: #tools-11-m2
 [tools#12]: #tools-12
 [tools#13]: #tools-13
 [tools#14]: #tools-14
