@@ -130,8 +130,8 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	// already written one before submitLine — emitting a second here put the two
 	// routes' output at different heights, which is exactly the divergence one
 	// shared closure exists to prevent.
-	askInSession := func(question string) error {
-		err := cooked(func() { askUnavailable(stderr, question) })
+	askInSession := func(q question) error {
+		err := cooked(func() { ask(opt, stderr, q) })
 		if err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					// same reason a definition does — in raw mode "\n" is a line
 					// feed with no carriage return.
 					fmt.Fprint(stdout, "\r\n")
-					hist.Add(submitted.String()) // up-arrow recalls "/history" too
+					hist.Add(cmd.recallLine()) // up-arrow recalls "/history" too
 					if err := cooked(func() {
 						cc := newCommandCtx(d, opt, stdout, stderr)
 						// opt is this loop's own copy, so a command can change
@@ -204,9 +204,9 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					// as it recalls a /command. Added here rather than inside
 					// askInSession, which the unforced route reaches AFTER
 					// submitLine has already recorded the line.
-					hist.Add(submitted.String())
+					hist.Add(cmd.recallLine())
 					fmt.Fprint(stdout, "\r\n")
-					if err := askInSession(cmd.question); err != nil {
+					if err := askInSession(question{text: cmd.question, forced: true}); err != nil {
 						finish()
 						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
 						return 1
@@ -245,7 +245,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					// The unforced route into the SAME closure the forced one
 					// uses. submitLine has already recorded the line for recall
 					// and left the session's current word alone.
-					if err := askInSession(out.ask); err != nil {
+					if err := askInSession(question{text: out.ask}); err != nil {
 						finish()
 						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
 						return 1
@@ -295,8 +295,9 @@ func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt opti
 		playAnnounced(ctx, d, opt, line, indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
 	}
 	// Recorded whatever it turned out to be — a typo you want to edit and retry,
-	// and a question you want to ask again, are both worth an Up-arrow.
-	hist.Add(line)
+	// and a question you want to ask again, are both worth an Up-arrow. Stored
+	// in its re-submittable form, so a forced line comes back still forced.
+	hist.Add(cmd.recallLine())
 	// A QUESTION IS NOT A LOOKUP, and out.code is 0 for both: the ask outcome
 	// carries no failure, so testing the code alone would make the question the
 	// current word and have the next bare Enter "replay" it.

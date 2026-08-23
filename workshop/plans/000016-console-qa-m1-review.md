@@ -191,3 +191,224 @@ findings:
       question.go:83. The module is go 1.26 and the package's tests already
       import slices (ARCH-DRY).
 ```
+
+---
+
+## Re-review — 2026-08-23T16:05:39-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 16 — free-form Q&A in the console: input classification + the directory as context |
+| repo | tools |
+| issue file | workshop/issues/000016-console-qa.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | aab71caeb1303528c1cd8db9641e83402612a4ed^..2378c33746c5df6016002aed11f71620107eb55e |
+| command | sdlc milestone-close --issue 16 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-23T16:05:39-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All eight round-1 findings are genuinely disposed, and I confirmed the two that mattered by mutation rather than by reading the diff: deleting either loop's forced-`?` branch now reddens `TestLineLoopRoutesAForcedQuestion`/`TestEditorLoopRoutesAForcedQuestion` (BR-1), and removing `hist.Add` at either of its two sites reddens the matching subtest of `TestAQuestionIsRecalledByUpArrow` (BR-1/BR-2). BR-4's exhaustive one-shot dispatch is real and pinned; BR-5 and BR-6 I verified against the actual byte stream (the note now carries `eraseLine`; forced and unforced asks both emit exactly `\r\n\r\n` before `draw()`). What keeps this off a clean SHIP is that the round's own new surface repeats two of the families it just closed: the `-raw` rule the round pulled forward from M2 was applied to the unforced route only — `define -raw "?x"`, `echo "?x" | define -raw` and the raw editor under `-raw` all reach the ask path, so README's flat "`-raw` never asks" is false at 3 of the 6 ask entry points; and BR-4's own test injects a `countingCapturer` that is never installed, so the half of BR-4 that was about junk in the append-only log asserts nothing. Both are cheap. `go vet ./...` and `go test ./...` are green.
+
+## 1. Strengths
+
+- **The forced-branch tests do exactly what round 1 asked and nothing more.** `askroute_test.go:38` and `:52` use `?why`, where `why` *is* a headword — so only the hatch can make it a question, which makes them tests of the branch rather than of the classifier. I deleted `case cmdAsk:` from `repl.go:219` and the whole `if cmd.kind == cmdAsk` block from `replraw.go:202-215` and got exactly the two intended failures.
+- **`TestAQuestionIsRecalledByUpArrow` (askroute_test.go:145) now asserts against the injected `History`,** and the forced/unforced split means each of the two `hist.Add` sites has its own red. Reverting `replraw.go:207` reddens `forced`; reverting `replraw.go:299` reddens `unforced`. This is the fix the round-1 note said it was.
+- **BR-4 was fixed exhaustively rather than by special-casing `?`.** `main.go:346`'s `if oneShot.kind != cmdDefine` closes the whole class — `define " "` and any future kind land there too — and removing it reddens `TestOneShotRejectsAHatchWithNothingAfterIt` with both the exit code and the empty-word-to-dictionary assertions.
+- **BR-6's fix is the right shape.** Moving the leading `\r\n` out of `askInSession` and into each caller (`replraw.go:129-132`) is what makes one shared closure actually mean one rendering; I measured both routes producing an identical `…\r\n\r\n` + redraw tail.
+- **`readsAsQuestion` stayed pure and its containment argument survived the round** — `route_test.go` drives the real `parseREPLLine` → `lookupAndRender` path against the committed corpus through `loadFakeDictionary`, so the "PURE" entities are never propped up by a stubbed `Lookup`.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N-1 — `-raw` still asks on the forced route, in all three entry modes (cmd/define/main.go:336, cmd/define/repl.go:219, cmd/define/replraw.go:202).**
+**This is the 2nd finding in family `doc-overstates-code`.** Round 1 fixed the instance (the atlas sentence about single-word lines). Do not fix this instance either — state the rule and sweep it.
+
+The rule: **a claim stated as an absolute in README/atlas or in a test's name must name the enumeration it quantifies over, and every cell of that enumeration must be guarded and asserted.** `-raw never asks` quantifies over `{forced, unforced} × {one-shot, piped loop, raw editor}` — six cells. The `!opt.raw` guard was placed at `main.go:425`, which is on the unforced path only, so the three forced cells are unguarded. Measured with the built binary and with `runEditor`/`replLines` directly:
+
+```
+define -raw "?what is X"          → define: no model configured; `what is X` is not a word   (exit 1)
+echo "?what is X" | define -raw   → define: no model configured; `what is X` is not a word   (exit 1)
+runEditor(opt.raw=true, "?why\r") → define: no model configured; `why` is not a word
+```
+
+`TestRawNeverAsks` (askroute_test.go:202) names the class and pins one cell; it stays green with all three above. README.md:79 states the absolute (`-raw never asks — it is the scripting form, so a miss stays a miss`), and the code comment at main.go:419-424 names the cost this leaves open: in M2 a network call for a line a script piped in. Same family, same round, smaller prevalence: README.md:69 and :76 quote the miss message as `` `not found` `` where the program prints `no dictionary entry`. Fix: decide once whether an explicit `?` overrides `-raw`, put that predicate in one place both the forced and unforced dispatches consult, and add the missing rows.
+
+**N-2 — the `countingCapturer` in `TestOneShotRejectsAHatchWithNothingAfterIt` is never installed, so BR-4's log-junk assertion is dead (cmd/define/askroute_test.go:176-194).**
+**This is the 2nd finding in family `test-asserts-nothing`.** Round 1 fixed the instance (`TestAQuestionIsRecalledByUpArrow` asserting on an echoing stdout). Do not fix this instance — state the rule.
+
+The rule: **a test that injects a double must assert the injection took effect, or inject at the seam production actually reads.** Here the test sets `d.newStore` (askroute_test.go:178) on a `deps` that `testDeps` already gave a non-nil `capture` (main_test.go:14), and `withStore` only fills nils (`main.go:96`: `if d.capture == nil`), so `cap` is discarded and `cap.calls` is always empty — the `for _, w := range cap.calls` loop never iterates. Verified by probe: panicking inside `countingCapturer.Capture` leaves this test green while `TestAQuestionIsNotCaptured` (which sets `rig.deps.capture` directly) panics immediately; and under the BR-4 mutation the exit-code and dictionary assertions fire while the capture one stays silent. Measured prevalence: 1 of 1 `d.newStore` injection in the package's tests is dead. So the specific harm BR-4 named — `ReviewEvent{Word: ""}` that `store/event.go`'s `complete()` discards at read time — has no falsifiable test. Cheapest fix: set `d.capture = cap` directly, as `TestAQuestionIsNotCaptured` does; the durable fix is a guard in the injection helper (or a `withStore` that prefers an explicitly supplied `newStore`) so a discarded double is a failure rather than a silence.
+
+## 4. Minor findings
+
+- **This is the 3rd finding in family `raw-mode-message-placement`.** Neither BR-5's nor BR-6's fix is pinned: with `eraseLine` removed from replraw.go:223 *and* a second `\r\n` re-added to `askInSession`, `go test ./cmd/define/` is fully green. Do not re-fix the sites — state the rule: **every message class the raw loop writes gets an assertion on the emitted byte stream**, the way `TestEditorLoopUsesCarriageReturnsInRawMode` (editorloop_test.go:143) already does for the definition path. Measured prevalence: 3 of 3 raw-mode message placements introduced by #16 (the bare-`?` note, the forced ask, the unforced ask) are unasserted, which is why the family recurs.
+- cmd/define/replraw.go:299 vs :207 — the `\` hatch is dropped from editor recall while `?` is kept. Measured: typing `\how so` records `how so` in `History` (submitLine adds `cmd.word`, post-strip), so Up-arrow + Enter now *asks* the line you had just forced to a lookup; `?why` records `?why` and stays forced. Family `forced-route-enumeration` (new): a behaviour specified for the unforced route is silently inherited by the forced one.
+- cmd/define/ask.go:18 — same family: `askUnavailable` tells a forced question about a real headword that it "is not a word" (`?why` → ``no model configured; `why` is not a word``). The sentence was written for the unforced route, where it is true by construction.
+- workshop/plans/000016-console-qa-plan.md — 0 of 60 step checkboxes ticked while Tasks 1–6 are complete and committed. #14 and #15's archived plans are fully ticked; #11's are not, so the convention is soft, but leaving M1's boxes open makes "where does M2 resume" ambiguous.
+
+## 5. Test coverage notes
+
+Mutation results, all run in a scratch copy of the tree (the working tree was not touched):
+
+| mutation | result |
+|---|---|
+| delete `case cmdAsk:` from `replLines` | RED — `TestLineLoopRoutesAForcedQuestion` |
+| delete the `cmdAsk` block from `runEditor` | RED — `TestEditorLoopRoutesAForcedQuestion`, `…IsRecalledByUpArrow/forced` |
+| `hist.Add(line)` → no-op in `submitLine` | RED — `…IsRecalledByUpArrow/unforced`, `TestEditorLoopFeedsHistory` |
+| delete the `oneShot.kind != cmdDefine` guard | RED — `TestOneShotRejectsAHatchWithNothingAfterIt` (both rows) |
+| delete the `?` arm from `parseREPLLine` | RED — 6 tests / 10 subtests across parser, both loops, one-shot and the decision table |
+| drop `!opt.raw` from `lookupAndRender` | RED — `TestRawNeverAsks` |
+| drop `eraseLine` from the bare-`?` note (BR-5) | **GREEN** |
+| re-add `askInSession`'s own `\r\n` (BR-6) | **GREEN** |
+| panic inside `countingCapturer.Capture` | **GREEN** for `TestOneShotRejectsAHatchWithNothingAfterIt` (N-2) |
+
+Both hatches are now pinned by tests that fail when the hatch is removed, so the issue's second Done-when row is honestly ticked — at the parser *and* at both loop shells, which is what round 1 said it was not. The gap that remains is the one N-1 and the family finding describe: the enumerations `{forced, unforced} × {entry mode}` for `-raw`, and raw-mode message placement, have no rows at all.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass, with one note.** `askUnavailable` is the single degradation message; `parseREPLLine` is the single decision table; `lookupAndRender` is still the single capture site; `session` holds what three variables used to. The note: BR-4's fix gave `cmdNothing` a *third* reporting site (main.go:347, repl.go:194, replraw.go:219), each formatting `define: %s` with its own line ending and default text. Three is where this repo's own history says a rule starts being believed once and written thrice — worth collapsing before M2 adds a fourth caller.
+- **ARCH-PURE — pass.** `readsAsQuestion`, `openerStem`, `truncateQuestion`, `parseREPLLine` and `session` are deterministic, and their tests run with no fake at all. `route_test.go` goes through the real dictionary seam against a committed corpus rather than a stub. Nothing "pure" here needs a mock to run.
+- **ARCH-PURPOSE — flagged (N-1).** M1's purpose — the console knows a question from a word, both hatches, all three entry modes — is delivered and now verified. The flag is on the round's *own* additions: `-raw never asks` was named as a class in the commit that added it and swept at one site. That is the same instance-not-class shape as BR-1, one round later, which is what makes it worth stating as a rule rather than patching.
+- **ARCH-MOCK — pass for M1.** No new external binary or service. The dictionary stays behind `d.dict` with a committed-corpus fake plus `dict_conformance_test.go` for live drift; production and test share the boundary. M2 introduces `llm.Client.Stream`, where the plan already names `llmtest`'s wire-level httptest fake — hold the line that tests hit the server, not a stubbed `Client`.
+- **M2 watch item — the ask entry points are now six, not three.** `askUnavailable` is reached from `run` (main.go:337 and :362), `replLines`' `ask` closure (both arms), and `runEditor`'s `askInSession` (both arms). When `runAsk` replaces it, that enumeration is the thing to wire once — and it is the same enumeration N-1 says is currently half-guarded, so fixing N-1 now buys M2 the table it needs.
+- **M2 watch item — `session.entry` is written and read nowhere.** `sawLookup` sets it (session.go:27) for `askContext.CurrentEntry`; nothing consumes it until Task 9. Fine as declared intent, but it is exactly the "field set, never read" shape that reads as protection — worth a consuming assertion the moment M2 lands rather than after.
+
+## 7. Plan revision recommendations
+
+One `## Revisions` entry in `workshop/plans/000016-console-qa-plan.md`, because the plan no longer describes what the code does:
+
+> ### 2026-08-23 — M1 boundary review round 1: `-raw` never asks, pulled forward from M2
+>
+> **Reason:** M1 boundary review round 1 took the reviewer's M2 watch item and implemented it in M1. D3/D4 and Task 3 describe the miss-branch route condition as `!literal && readsAsQuestion(word)`; the code is `!cmd.literal && !opt.raw && readsAsQuestion(word)` (`main.go:425`).
+>
+> **Delta:** D4 gains a fourth suppression alongside `\`: `-raw` is the scripting form and a miss under it stays a miss. Task 3's snippet is updated to match. The rule the condition implies is written out as an enumeration — `{forced, unforced} × {one-shot, piped loop, raw editor}`, six cells — with the note that as shipped only the three unforced cells are guarded, and that `TestRawNeverAsks` covers one of them (round-1 finding N-1). Task 11's `TestForcedAndUnforcedAsksShareOneWiring` inherits that table.
+
+Also worth a second entry if the `\`-in-recall behaviour is left as-is: Task 4's contract table says "does add the line to editor recall (`hist.Add`)" without saying *what* is added, and the two hatches now differ (`?why` recalls forced, `\how so` recalls unforced). Either state the intended asymmetry in the table or make both record `submitted.String()`.
+
+No contradiction between the plan's Core-concepts table and the tree at this boundary: `readsAsQuestion`, `truncateQuestion`, `parseREPLLine`/`replCommand` and `session` exist at their stated paths with their stated status, and every absent row (`askContext`, `renderAskPrompt`, `recentTurns`, `exchange`, `crlfWriter`, `ReviewEvent`/`complete`, `gatherAskContext`, `runAsk`, `Store.UserModel`, `interrupter`, `deps.notifySignals`) is explicitly M2's.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Mutation-verified: deleting either loop's cmdAsk branch now reddens the matching forced test; hist.Add(submitted) is pinned too.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Asserted against an injected memHistory; reverting hist.Add(line) in submitLine reddens the unforced subtest.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      README documents both hatches, routing, the model requirement and the exit codes; two of its claims are inexact — see the new doc-overstates-code finding.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Exhaustive dispatch at main.go:346; removing it reddens the test. The test's capture half is dead, raised separately under test-asserts-nothing.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      eraseLine present at replraw.go:223 and measured on the byte stream; unpinned by any test, folded into the family finding.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Measured: forced and unforced asks both emit exactly one leading CRLF plus askInSession's, identical tails; unpinned, folded into the family finding.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      atlas/define.md now qualifies the sentence and names "why?" explicitly.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      question.go:62 uses slices.Contains; the hand-rolled contains() is gone.
+findings:
+  - id: new
+    severity: Important
+    family: doc-overstates-code
+    title: |
+      "-raw never asks" is guarded on the unforced route only, so 3 of 6 ask entry points ignore it
+    detail: |
+      This is the 2nd finding in family doc-overstates-code, so the deliverable
+      is the rule, not the site. Rule - an absolute stated in README/atlas or in
+      a test name must name the enumeration it quantifies over, and every cell
+      must be guarded and asserted. Here the enumeration is
+      {forced, unforced} x {one-shot, piped loop, raw editor}; the !opt.raw
+      guard sits at main.go:425 on the unforced path only. Measured -
+      `define -raw "?what is X"` and `echo "?what is X" | define -raw` both
+      print the no-model message and exit 1, and runEditor with opt.raw=true on
+      "?why" does the same, while TestRawNeverAsks (askroute_test.go:202) stays
+      green through all three. README.md:79 states the absolute; main.go:419-424
+      names the M2 cost (a network call for a line a script piped in). Same
+      family, smaller prevalence - README.md:69 and :76 quote the miss message
+      as `not found` where the program prints `no dictionary entry`.
+  - id: new
+    severity: Important
+    family: test-asserts-nothing
+    title: |
+      BR-4's test injects a countingCapturer that withStore discards, so its log-junk assertion is dead
+    detail: |
+      This is the 2nd finding in family test-asserts-nothing, so state the rule -
+      a test that injects a double must assert the injection took effect, or
+      inject at the seam production reads. askroute_test.go:178 sets d.newStore
+      on a deps whose capture testDeps already filled (main_test.go:14), and
+      withStore only fills nils (main.go:96), so cap is discarded and
+      `for _, w := range cap.calls` never iterates. Probe-verified - a panic
+      inside countingCapturer.Capture leaves TestOneShotRejectsAHatchWithNothingAfterIt
+      green while TestAQuestionIsNotCaptured panics at once. So the harm BR-4
+      actually named, a ReviewEvent with an empty Word that complete() discards
+      at read time, has no falsifiable test. Measured prevalence - 1 of 1
+      d.newStore injection in the package is dead.
+  - id: new
+    severity: Minor
+    family: raw-mode-message-placement
+    title: |
+      neither BR-5's nor BR-6's fix is pinned - both can be reverted with the suite green
+    detail: |
+      This is the 3rd finding in family raw-mode-message-placement. Do not
+      re-fix the sites. Rule - every message class the raw loop writes gets an
+      assertion on the emitted byte stream, as TestEditorLoopUsesCarriageReturnsInRawMode
+      (editorloop_test.go:143) already does for the definition path. Verified -
+      removing eraseLine from replraw.go:223 and re-adding askInSession's own
+      "\r\n" together leave go test ./cmd/define/ fully green. Measured
+      prevalence - 3 of 3 raw-mode message placements introduced by this issue
+      (the bare-"?" note, the forced ask, the unforced ask) are unasserted,
+      which is why the family recurs.
+  - id: new
+    severity: Minor
+    family: forced-route-enumeration
+    title: |
+      the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
+    detail: |
+      Two instances of one rule - a behaviour specified for the unforced route
+      is silently inherited by the forced one. (a) submitLine adds cmd.word
+      (replraw.go:299), which is post-strip, so typing `\how so` records
+      "how so"; Up-arrow then Enter asks the line you had just forced to a
+      lookup. The cmdAsk branch records submitted.String() (replraw.go:207), so
+      "?why" stays forced. Measured through runEditor with an injected
+      memHistory. (b) askUnavailable (ask.go:18) tells a forced question about a
+      real headword that it "is not a word" - "?why" prints
+      "no model configured; `why` is not a word". The sentence is true by
+      construction only on the unforced route.
+  - id: new
+    severity: Minor
+    family: plan-bookkeeping
+    title: |
+      the plan's step checkboxes are 0 of 60 ticked while M1's tasks are complete and committed
+    detail: |
+      workshop/plans/000016-console-qa-plan.md - Tasks 1-6 shipped in five
+      commits, but no step box is ticked. The two most recent archived plans set
+      the convention (000015 39/39, 000014 33/33; 000011 did not), so this is
+      soft, but leaving M1's boxes open makes "where does M2 resume" ambiguous
+      when the plan is picked up in a fresh session.
+```

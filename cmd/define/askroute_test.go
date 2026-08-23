@@ -2,11 +2,8 @@ package main
 
 import (
 	"bytes"
-	"io"
 	"strings"
 	"testing"
-
-	"github.com/xianxu/tools/cmd/define/store"
 )
 
 const aQuestion = "what's the difference to obsequious?"
@@ -175,9 +172,15 @@ func TestOneShotRejectsAHatchWithNothingAfterIt(t *testing.T) {
 		t.Run(line, func(t *testing.T) {
 			cap := &countingCapturer{}
 			d := testDeps(t)
-			d.newStore = func(options, io.Writer) storeDeps {
-				return storeDeps{history: &memHistory{}, capture: cap, clock: store.SystemClock()}
-			}
+			// Set at the seam withStore actually reads. Injecting through
+			// d.newStore looked equivalent and was DEAD: withStore only fills
+			// nils (main.go:96), and testDeps has already supplied a capturer,
+			// so the double was discarded and every assertion over cap.calls
+			// ranged over an empty slice (BR-10). The rule: a test that injects
+			// a double must inject where production reads, or assert the
+			// injection took effect. The control subtest below does the second
+			// half, so a future re-break is a failure rather than a silence.
+			d.capture = cap
 			var out, errb bytes.Buffer
 			code := run(t.Context(), []string{line}, d, strings.NewReader(""), &out, &errb)
 
@@ -196,17 +199,164 @@ func TestOneShotRejectsAHatchWithNothingAfterIt(t *testing.T) {
 	}
 }
 
+// The control half of the rule above: the same injection, in a case that MUST
+// capture. If the double is ever discarded again, this goes red immediately
+// instead of leaving the assertions above ranging over an empty slice.
+func TestTheCapturerInjectionIsLive(t *testing.T) {
+	cap := &countingCapturer{}
+	d := testDeps(t)
+	d.capture = cap
+	var out, errb bytes.Buffer
+	run(t.Context(), []string{"-no-audio", "sycophantic"}, d, strings.NewReader(""), &out, &errb)
+
+	if len(cap.calls) == 0 {
+		t.Fatal("the injected capturer saw nothing — every assertion over cap.calls is dead")
+	}
+}
+
 // -raw is the scripting form; README documents it as recording nothing "because
 // it is for scripts". It must not reach the model either — in M1 that costs a
 // different message, in M2 a network call for a line a script piped in.
+//
+// "Never" is an absolute, so it names its enumeration and asserts every cell:
+// {forced, unforced} x {one-shot, piped loop, raw editor}. The first version of
+// this test named the class and pinned ONE cell — the unforced one-shot — while
+// all three forced cells still asked (BR-9). A claim stated as an absolute must
+// name what it quantifies over.
 func TestRawNeverAsks(t *testing.T) {
-	var out, errb bytes.Buffer
-	code := run(t.Context(), []string{"-raw", aQuestion}, testDeps(t), strings.NewReader(""), &out, &errb)
+	rawOpt := options{times: 3, locale: "us", raw: true}
 
-	if code != 1 {
-		t.Errorf("exit = %d, want 1 (a miss stays a miss under -raw)", code)
+	t.Run("one-shot/unforced", func(t *testing.T) {
+		var out, errb bytes.Buffer
+		code := run(t.Context(), []string{"-raw", aQuestion}, testDeps(t), strings.NewReader(""), &out, &errb)
+		assertDidNotAsk(t, code, 1, errb.String())
+	})
+	t.Run("one-shot/forced", func(t *testing.T) {
+		var out, errb bytes.Buffer
+		code := run(t.Context(), []string{"-raw", "?why"}, testDeps(t), strings.NewReader(""), &out, &errb)
+		assertDidNotAsk(t, code, 2, errb.String())
+	})
+	t.Run("piped/unforced", func(t *testing.T) {
+		rig := newAudioRig(t, "sycophantic", true)
+		var out, errb bytes.Buffer
+		replLines(t.Context(), rig.deps, rawOpt, strings.NewReader(aQuestion+"\n"), &out, &errb, true, false)
+		assertDidNotAsk(t, 0, 0, errb.String())
+	})
+	t.Run("piped/forced", func(t *testing.T) {
+		rig := newAudioRig(t, "sycophantic", true)
+		var out, errb bytes.Buffer
+		replLines(t.Context(), rig.deps, rawOpt, strings.NewReader("?why\n"), &out, &errb, true, false)
+		assertDidNotAsk(t, 0, 0, errb.String())
+	})
+	t.Run("editor/unforced", func(t *testing.T) {
+		rig, _, cooked, finish := editorRig(t, "sycophantic", true)
+		opt := rawOpt
+		opt.tty = true
+		var out, errb bytes.Buffer
+		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), rig.deps, opt, cooked, finish, &out, &errb)
+		assertDidNotAsk(t, 0, 0, errb.String())
+	})
+	t.Run("editor/forced", func(t *testing.T) {
+		rig, _, cooked, finish := editorRig(t, "sycophantic", true)
+		opt := rawOpt
+		opt.tty = true
+		var out, errb bytes.Buffer
+		runEditor(t.Context(), scriptKeys("?why\r"), rig.deps, opt, cooked, finish, &out, &errb)
+		assertDidNotAsk(t, 0, 0, errb.String())
+	})
+}
+
+// assertDidNotAsk checks the one thing every -raw cell must have in common.
+// wantCode of 0 means "this route has no exit code of its own" (the loops).
+func assertDidNotAsk(t *testing.T, code, wantCode int, stderr string) {
+	t.Helper()
+	if strings.Contains(stderr, "no model configured") {
+		t.Errorf("-raw routed to the model: %q", stderr)
 	}
-	if strings.Contains(errb.String(), "no model configured") {
-		t.Errorf("-raw routed to the model: %q", errb.String())
+	if wantCode != 0 && code != wantCode {
+		t.Errorf("exit = %d, want %d", code, wantCode)
+	}
+}
+
+// BR-12: what recall stores must RE-SUBMIT TO THE SAME MEANING. A forcing prefix
+// is part of the meaning, so stripping it inverts the line: `\how so` recalled as
+// `how so` re-submits as a question, which is what the hatch was typed to
+// prevent.
+func TestRecallPreservesWhatALineMeant(t *testing.T) {
+	for _, tc := range []struct{ name, typed, want string }{
+		{"a forced lookup keeps its backslash", `\how so`, `\how so`},
+		{"a forced question keeps its mark", "?why", "?why"},
+		{"an ordinary word is stored collapsed", "hot  dog", "hot dog"},
+		{"a command is stored as typed", "/history 7", "/history 7"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := parseREPLLine(tc.typed, false).recallLine(); got != tc.want {
+				t.Errorf("recallLine(%q) = %q, want %q", tc.typed, got, tc.want)
+			}
+			// And the round trip that makes it matter: what comes back must
+			// parse to the same kind it was.
+			first, again := parseREPLLine(tc.typed, false), parseREPLLine(tc.want, false)
+			if first.kind != again.kind || first.literal != again.literal {
+				t.Errorf("re-submitting %q changed the meaning: kind %v/%v literal %v/%v",
+					tc.want, first.kind, again.kind, first.literal, again.literal)
+			}
+		})
+	}
+}
+
+// The raw loop writes three classes of message of its own, and a bare "\n" in
+// raw mode starts the next line at the current column. Every class gets an
+// assertion on the EMITTED BYTES, because two placement fixes shipped unpinned
+// and the family recurred three times.
+func TestRawLoopMessagePlacement(t *testing.T) {
+	for _, tc := range []struct {
+		name, keys string
+		wantErase  bool
+	}{
+		{"the bare-? note", "?\r", true},
+		{"a forced ask", "?why\r", false},
+		{"an unforced ask", aQuestion + "\r", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+			var out, errb bytes.Buffer
+			runEditor(t.Context(), scriptKeys(tc.keys), rig.deps, opt, cooked, finish, &out, &errb)
+
+			assertNoBareNewline(t, out.String(), "stdout")
+			if tc.wantErase && !strings.Contains(errb.String(), eraseLine) {
+				t.Errorf("no eraseLine: the message is appended to the line the user typed: %q", errb.String())
+			}
+		})
+	}
+}
+
+// The two ask routes differ only in whether the dictionary was consulted, so
+// they must land at the same height. They did not: the shared closure emitted a
+// second "\r\n" that only the unforced route had already written.
+func TestForcedAndUnforcedAsksRenderAtTheSameHeight(t *testing.T) {
+	framing := func(keys string) int {
+		rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+		var out, errb bytes.Buffer
+		runEditor(t.Context(), scriptKeys(keys), rig.deps, opt, cooked, finish, &out, &errb)
+		return strings.Count(out.String(), "\r\n")
+	}
+	if forced, unforced := framing("?why\r"), framing(aQuestion+"\r"); forced != unforced {
+		t.Errorf("forced ask wrote %d newlines, unforced wrote %d — the two routes render at different heights",
+			forced, unforced)
+	}
+}
+
+func assertNoBareNewline(t *testing.T, s, where string) {
+	t.Helper()
+	// The loop's LAST newline is written after finish() has restored cooked
+	// mode, so a bare "\n" there is correct — the terminal translates it again.
+	// Everything before it is emitted in raw mode and must carry its own \r.
+	s = strings.TrimSuffix(s, "\n")
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' && (i == 0 || s[i-1] != '\r') {
+			t.Errorf("bare \\n in %s at %d — the next line starts at the current column: %q",
+				where, i, s[max(0, i-24):min(len(s), i+1)])
+			return
+		}
 	}
 }

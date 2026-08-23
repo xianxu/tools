@@ -85,6 +85,29 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	return replCommand{kind: cmdDefine, word: strings.Join(strings.Fields(word), " "), literal: literal}
 }
 
+// recallLine is the canonical, re-submittable form of this line: what Up-arrow
+// must put back so that pressing Enter means what it meant the first time.
+//
+// A forcing prefix is PART OF THE MEANING. Recall used to store the stripped
+// word, so `\how so` came back as `how so` — which re-submits as a QUESTION,
+// the exact opposite of what the hatch was typed to force (BR-12). The rule the
+// three recall sites now share: what recall stores must re-submit to the same
+// meaning. Whitespace is still collapsed, because that changes no meaning.
+func (c replCommand) recallLine() string {
+	switch c.kind {
+	case cmdAsk:
+		return "?" + c.question
+	case cmdCommand:
+		return strings.Join(append([]string{"/" + c.name}, c.args...), " ")
+	case cmdDefine:
+		if c.literal {
+			return `\` + c.word
+		}
+		return c.word
+	}
+	return ""
+}
+
 // maxLineBytes bounds one line of input. bufio.Scanner's default is 64 KB, past
 // which it stops with ErrTooLong — and once that happens every later Scan()
 // returns false, so the error cannot be recovered from, only reported. Raising
@@ -163,8 +186,8 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 	// reads as a question). They differ only in whether the dictionary was
 	// consulted, so wiring them separately would mean maintaining the answer
 	// path twice (ARCH-DRY).
-	ask := func(question string) {
-		if askUnavailable(stderr, question) != 0 {
+	askHere := func(q question) {
+		if ask(opt, stderr, q) != 0 {
 			anyFailed = true
 		}
 	}
@@ -217,7 +240,7 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 					}
 				}
 			case cmdAsk:
-				ask(cmd.question)
+				askHere(question{text: cmd.question, forced: true})
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo
 				// does not cost you the word you were listening to — and neither
@@ -225,7 +248,7 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				out := defineOnce(ctx, d, opt, cmd, stdout, stderr)
 				switch {
 				case out.ask != "":
-					ask(out.ask)
+					askHere(question{text: out.ask})
 				case out.code == 0:
 					sess.sawLookup(cmd.word, out)
 				default:

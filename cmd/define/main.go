@@ -334,7 +334,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// So is a question. The forced route ("?…") skips the dictionary here
 		// exactly as it does at the prompt.
 		if oneShot.kind == cmdAsk {
-			return askUnavailable(stderr, oneShot.question)
+			return ask(opt, stderr, question{text: oneShot.question, forced: true})
 		}
 		// EXHAUSTIVE over what parseREPLLine can return, not "handle the two I
 		// added and let the rest fall through". #16 gave the parser a kind this
@@ -359,7 +359,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			// The unforced route: the dictionary missed and the line reads as a
 			// question. Returning out.code here would exit 0 having printed
 			// nothing, since an ask outcome carries no failure.
-			return askUnavailable(stderr, out.ask)
+			return ask(opt, stderr, question{text: out.ask})
 		}
 		return out.code
 	}
@@ -416,13 +416,12 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		// #8's statistics and #17's learner model both fold over — data that is
 		// not a lookup at all. The dictionary is asked once and its miss is the
 		// free, offline signal the classifier runs on (#16 D1).
-		// -raw is the scripting contract — README calls it the form that "records
-		// nothing, because it is for scripts" — so it must not reach the model
-		// either. Decided HERE, beside the literal flag, because both answer the
-		// same question: may this miss fall back to a question? In M1 the cost of
-		// getting it wrong is a different message; in M2 it is a network call for
-		// a line a script piped in.
-		if !cmd.literal && !opt.raw && readsAsQuestion(word) {
+		// Two conditions, one question: may this miss fall back to a question?
+		// cmd.literal is the user's per-line answer ("\\"), mayAsk is the
+		// session's (-raw, the scripting form). mayAsk lives in ask.go because
+		// the forced route needs the same predicate and guarding only this one
+		// left three of six cells open (BR-9).
+		if !cmd.literal && mayAsk(opt) && readsAsQuestion(word) {
 			return lookupOutcome{ask: word}
 		}
 		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)

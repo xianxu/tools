@@ -280,7 +280,7 @@ Two review boundaries, genuinely separate (AGENTS.md §3):
 - Create: `cmd/define/question.go`
 - Test: `cmd/define/question_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 package main
@@ -337,12 +337,12 @@ func TestTruncateQuestion(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define/ -run 'TestReadsAsQuestion|TestTruncateQuestion' -v`
 Expected: FAIL — `undefined: readsAsQuestion`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```go
 package main
@@ -444,12 +444,12 @@ func truncateQuestion(s string) string {
 }
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `go test ./cmd/define/ -run 'TestReadsAsQuestion|TestTruncateQuestion' -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/question.go cmd/define/question_test.go
@@ -462,7 +462,7 @@ git commit -m "#16 M1: readsAsQuestion — the semantic half of the decision tab
 - Modify: `cmd/define/repl.go:11-50`
 - Test: `cmd/define/repl_test.go`
 
-- [ ] **Step 1: Write the failing test** (add rows to the existing table in `repl_test.go`)
+- [x] **Step 1: Write the failing test** (add rows to the existing table in `repl_test.go`)
 
 ```go
 {"a question mark in column 1 forces a question", "?what is X", false,
@@ -478,12 +478,12 @@ git commit -m "#16 M1: readsAsQuestion — the semantic half of the decision tab
 	replCommand{kind: cmdDefine, word: "what?"}},
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define/ -run TestParseREPLLine -v`
 Expected: FAIL — `undefined: cmdAsk`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `cmd/define/repl.go`, extend the kind set and the struct:
 
@@ -534,12 +534,12 @@ and carry `literal` into the returned `cmdDefine`.
 or press return to replay the last one" — wrong words for this case. Task 5
 adjusts that message; do not special-case it here.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `go test ./cmd/define/ -run TestParseREPLLine -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/repl.go cmd/define/repl_test.go
@@ -566,7 +566,7 @@ type lookupOutcome struct {
 }
 ```
 
-- [ ] **Step 1: Write the failing test** — the ONE decision table, driven
+- [x] **Step 1: Write the failing test** — the ONE decision table, driven
       end-to-end through the real route with the committed NOAD corpus.
 
 ```go
@@ -608,12 +608,12 @@ func TestConsoleDecisionTable(t *testing.T) {
 `cmdDefine` calls `lookupAndRender`, classifying the result from the returned
 `lookupOutcome`. Keep it under 25 lines; it is a harness, not a second router.
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define/ -run TestConsoleDecisionTable -v`
 Expected: FAIL — `lookupAndRender` returns `(int, bool)`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lookupAndRender` returns `lookupOutcome`. Its miss branch becomes:
 
@@ -640,12 +640,12 @@ each caller. Update the three call sites (`defineOnce`, `submitLine`,
 double-lookup this design exists to avoid (D1) and it would break the one-capture-
 site invariant `TestCaptureArityIsOnePerLookup` (`capture_test.go:89`) pins.
 
-- [ ] **Step 4: Run the whole package**
+- [x] **Step 4: Run the whole package**
 
 Run: `go test ./cmd/define/`
 Expected: PASS (expect to fix `capture_test.go` and `main_test.go` call sites).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/main.go cmd/define/route_test.go cmd/define/capture_test.go
@@ -679,7 +679,7 @@ believed once.
 Until M2 the ask path is one function that prints the degradation message —
 `askUnavailable(stderr, question)`. That is what makes M1 a shippable boundary.
 
-- [ ] **Step 1: Write the failing tests** — one per entry mode, because "every
+- [x] **Step 1: Write the failing tests** — one per entry mode, because "every
       entry mode reaches it" is the invariant BR-13 cost us, plus one per
       contract row:
 
@@ -705,12 +705,12 @@ func TestAQuestionIsRecalledByUpArrow(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 Run: `go test ./cmd/define/ -run 'RoutesAQuestion|AQuestion' -v`
 Expected: FAIL — the question is looked up, or the one-shot exits 2.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 1. `cmd/define/session.go`:
 
@@ -760,12 +760,12 @@ error, exactly as `define hot dog` is today. Quoting works
 (`define "what is X?"`), and so does the hatch (`define ?what is X`). Do not
 "fix" the usage guard beyond the `cmdAsk` exemption.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `go test ./cmd/define/`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define
@@ -778,17 +778,17 @@ git commit -m "#16 M1: one session, and an ask that touches none of the lookup s
 - Modify: `cmd/define/command.go` (`runHelp`), `cmd/define/repl.go` (the `cmdNothing` message)
 - Test: `cmd/define/command_test.go`
 
-- [ ] **Step 1: Write the failing test** — `/help` mentions both hatches; the
+- [x] **Step 1: Write the failing test** — `/help` mentions both hatches; the
       bare-`?` message says what to do.
-- [ ] **Step 2: Run and watch it fail.**
-- [ ] **Step 3: Implement.** `/help` gains a trailing line:
+- [x] **Step 2: Run and watch it fail.**
+- [x] **Step 3: Implement.** `/help` gains a trailing line:
       `ask anything — "?" forces a question, "\" forces a word`. The `cmdNothing`
       message stays as-is for a blank line; a bare `?` gets
       `define: type a question after "?"`. That needs `cmdNothing` to carry the
       reason — add a `note string` field rather than a new kind, and have the
       loops print it when set.
-- [ ] **Step 4: Run the tests.** `go test ./cmd/define/`
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the tests.** `go test ./cmd/define/`
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#16 M1: /help names both hatches"
@@ -796,12 +796,12 @@ git commit -am "#16 M1: /help names both hatches"
 
 ### Task 6: close M1
 
-- [ ] Run the full suite: `go test ./... && go vet ./...`
-- [ ] Update `atlas/define.md` — a new "Free-form input" section under "Command
+- [x] Run the full suite: `go test ./... && go vet ./...`
+- [x] Update `atlas/define.md` — a new "Free-form input" section under "Command
       mode" describing the decision table and both hatches (AGENTS.md §8:
       per-milestone, not an end-of-project sweep).
-- [ ] Tick the M1 rows in the issue's `## Plan` and log what was learned.
-- [ ] `sdlc milestone-close --issue 16 --milestone M1` — the binary dispatches
+- [x] Tick the M1 rows in the issue's `## Plan` and log what was learned.
+- [x] `sdlc milestone-close --issue 16 --milestone M1` — the binary dispatches
       the mandatory fresh-eyes review itself (AGENTS.md §3). Fix Critical and
       Important findings before crossing.
 

@@ -328,3 +328,51 @@ note now erases the line like its siblings, the forced and unforced asks render
 at the same height (the shared closure no longer emits a second `\r\n`), the
 atlas sentence that claimed single-word lines are never questions is qualified
 (`why?` is one), and `contains` is `slices.Contains`.
+
+### 2026-08-23 — M1 boundary round 2: two repeat families, fixed as rules
+
+Round 1's eight findings all disposed; round 2 returned two Important, and the
+gate's own verdict on them was the useful part — *3 repeat families, not
+converging: fix rules, not instances.* Both were second occurrences of families I
+had "fixed" the instance of:
+
+- **BR-9, family `doc-overstates-code`.** I put the `-raw` guard on the unforced
+  fallback and wrote "`-raw` never asks" in the README. Measured: three of six
+  cells still asked — `{forced} × {one-shot, piped, editor}` — because the forced
+  route skips `lookupAndRender` entirely. **The rule: a claim stated as an
+  absolute must name the enumeration it quantifies over, and every cell must be
+  guarded and asserted.** `mayAsk` now lives with the ask rather than with either
+  dispatch, and `TestRawNeverAsks` runs all six cells. Decided while fixing it:
+  an explicit `?` under `-raw` is contradictory input, so it is a **usage error**
+  (exit 2), matching this repo's `-forget`-with-a-word and `--sound`-with-`-times`
+  precedents rather than guessing which flag was meant.
+- **BR-10, family `test-asserts-nothing`.** BR-4's test injected a
+  `countingCapturer` through `d.newStore`, but `withStore` only fills nils and
+  `testDeps` had already supplied one — so the double was discarded and every
+  assertion over `cap.calls` ranged over an empty slice. (The pre-existing
+  convention is explicit: `TestNoCaptureWritesNothingToDisk` sets
+  `deps.capture = nil // force the real wiring`.) **The rule: a test that injects
+  a double must inject where production reads, or assert the injection took
+  effect.** Done both — the injection moved to `d.capture`, and
+  `TestTheCapturerInjectionIsLive` is the control that goes red if it is ever
+  discarded again.
+
+Two more families closed the same way rather than at their sites:
+
+- **`raw-mode-message-placement`, 3rd occurrence.** Round 1's two placement fixes
+  were unpinned — both could be reverted with the suite green. The rule: every
+  message class the raw loop writes gets an assertion on the emitted byte stream.
+  Three classes, three cells, all asserted. Getting this right needed one
+  correction of my own assertion: the loop's final newline is written *after*
+  `finish()` restores cooked mode, so a bare `\n` there is correct.
+- **`forced-route-enumeration`, new.** `\how so` was recorded in history as
+  `how so`, so Up-arrow + Enter re-submitted it as a **question** — the opposite
+  of what the hatch forced. The rule: what recall stores must re-submit to the
+  same meaning. `recallLine` is now the one canonical form and all three recall
+  sites use it. Same family: `askUnavailable` told `?why` that "`why` is not a
+  word", a claim nothing had checked, since the forced route never consults the
+  dictionary. `question` now carries its route, and the sentence is only used
+  where it is true by construction.
+
+Every fix mutation-verified: reverting each of the four rules reddens its test,
+and the `-raw` revert reddens exactly the three forced cells.

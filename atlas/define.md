@@ -516,10 +516,32 @@ next one is about. `session` exists for this: it replaced three separate
 declarations of "what is this session holding" (`replLines`, `runEditor`,
 `submitLine`), because the rule would otherwise have been written three times.
 
-**One ask entry per loop.** The forced route (`?…`, decided by the parser) and
-the unforced one (a dictionary miss that reads as a question) differ only in
-whether the dictionary was consulted, so each loop funnels both into a single
-closure — the place the streaming writer and the scoped interrupt will hang.
+**One ask entry, six cells.** A question arrives by two routes — forced (`?…`,
+decided by the parser without a dictionary call) and unforced (a miss that reads
+as one) — across three entry modes. That is the enumeration every claim about
+asking quantifies over, and all six go through one `ask(opt, w, question)`.
+
+`question` carries **how** it arrived, because the route changes what can
+honestly be said: an unforced question is one the dictionary missed, so "is not a
+word" is true by construction; a forced one skipped the dictionary, and `?why`
+*is* a headword. Each loop wraps that one call in its own closure — the raw
+loop's is where M2's streaming writer and scoped interrupt hang — but the
+decision itself does not fork.
+
+**`-raw` never asks, and "never" names its cells.** It is the scripting form, so
+an unforced miss simply does not fall back, and an explicit `?` alongside it is a
+usage error rather than a guess between contradicting flags. The predicate
+(`mayAsk`) lives with the ask rather than with either dispatch: guarding only the
+fallback left three of the six cells asking anyway while the README stated the
+absolute. **A rule stated as an absolute has to be enforced where the thing
+happens, not on one route to it** — and the test that asserts it names the
+enumeration and covers every cell.
+
+**Recall stores what a line MEANT.** A forcing prefix is part of that: `\how so`
+recorded as `how so` comes back from Up-arrow and re-submits as a *question* —
+the opposite of what the hatch was typed to force. So `recallLine` is the one
+canonical, re-submittable form, and all three recall sites use it. Whitespace is
+still collapsed, because that changes no meaning.
 
 ## Entry modes
 

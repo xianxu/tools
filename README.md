@@ -65,7 +65,7 @@ working: `define` asks it first, and only classifies what it does not have. So
 `hot dog` and `a priori` are definitions, while a line it has no entry for that
 reads as a question — a wh-word, a question mark, or a request like `use it in a
 sentence` — goes to the model. Anything else is still a miss, so a typo says
-`not found` rather than starting a conversation.
+`no dictionary entry` rather than starting a conversation.
 
 Both directions have a one-key escape, and neither is the only way to reach its
 outcome:
@@ -73,11 +73,14 @@ outcome:
 | prefix | means |
 |---|---|
 | `?` | ask, even if it is a word — `?why` asks about *why* instead of defining it |
-| `\` | define, even if it reads as a question — `\how so` answers `not found` |
+| `\` | define, even if it reads as a question — `\how so` answers `no dictionary entry` |
 
 Questions need a model configured (see `--llm-check` below); without one, `define`
-says so and exits `1` rather than looking up a sentence. `-raw` never asks — it is
-the scripting form, so a miss stays a miss.
+says so and exits `1` rather than looking up a sentence.
+
+**`-raw` never asks**, on either route: it is the scripting form, so an unforced
+miss stays a miss, and an explicit `?` alongside it is a usage error (exit `2`)
+rather than a guess at which of the two contradicting flags you meant.
 
 **`define` writes to the current directory.** *Every* successful lookup — one-shot,
 piped, or in the editor — records the word under `words/` and `events/` where you
