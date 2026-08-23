@@ -5,7 +5,7 @@ deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
 updated: 2026-08-23
-estimate_hours:
+estimate_hours: 3.72
 started: 2026-08-23T13:35:58-07:00
 ---
 
@@ -90,6 +90,65 @@ the generated items are.
 - [ ] Driven through the raw TUI loop, not only the piped loop — a wiring only a
       loop shell supplies must be pinned by a test that drives that loop shell
       (`lessons.md`, define #15).
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187), against
+`workshop/plans/000016-console-qa-plan.md`'s task decomposition — one item per
+task, plus the two review boundaries and the two atlas updates the milestones
+commit to.
+
+Design hours carry v2's ×0.2 spec-quality discount: the plan pre-resolves the
+decision table, both hatches, the outcome contract, the interrupt enumeration and
+the prompt's shape, so what is left at design time is reading rather than
+deciding. Implementation hours are written at v3.1's 40% of the v2 primitive
+table. Familiarity is 1.0 — same repo, same files, `internal/llm` and both REPL
+loops shipped in the last two issues. Step 2.5 finds nothing to short-circuit: the
+transport, the wire fake, the store and the editor all already exist here, which
+is why this is roughly half of #11 rather than comparable to it.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: milestone-review       design=0.02 impl=0.14
+item: atlas-docs             design=0.03 impl=0.05
+item: greenfield-go-module   design=0.25 impl=0.22
+item: smaller-go-module      design=0.03 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: milestone-review       design=0.02 impl=0.14
+item: atlas-docs             design=0.03 impl=0.05
+design-buffer: 0.15
+total: 3.72
+```
+
+| item | plan task |
+|---|---|
+| smaller-go-module | T1 `question.go` — `readsAsQuestion`, `truncateQuestion` |
+| smaller-go-module | T2 `parseREPLLine` — `cmdAsk`, the `?` and `\` hatches |
+| cross-cutting-refactor | T3 `lookupOutcome` through three call sites + the decision table |
+| cross-cutting-refactor | T4a `session` replaces three `current` declarations |
+| smaller-go-module | T4b ask routing in both loops and the one-shot |
+| smaller-go-module | T5 `/help` and the messages |
+| milestone-review | M1 boundary review |
+| atlas-docs | M1 atlas update |
+| greenfield-go-module | T7 `crlfWriter`, `interrupter`, the signal seam, the detach |
+| smaller-go-module | T8 store — `UserModel`, the `asked` event, suite rows |
+| greenfield-go-module | T9 `askContext` + the pure prompt + golden |
+| greenfield-go-module | T10 `runAsk` — seams, streaming, taxonomy, wire-fake tests |
+| cross-cutting-refactor | T11 Ctrl-C through `readKeys`/`repl`/`replRaw` + pty row |
+| milestone-review | close review |
+| atlas-docs | close — atlas + the project row |
 
 ## Plan
 

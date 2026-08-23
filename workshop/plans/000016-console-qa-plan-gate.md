@@ -113,6 +113,20 @@ rounds:
           family: interrupt-delivery-path
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-23T15:04:28-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-6
+          disposition: addressed
+          note: D5 states the rule (detach + sink install together where the loop is chosen) and enumerates every loop x transport; Task 7 moves both into repl above the replRaw/replLines choice and pins the piped path with TestThePipedLoopStillExitsOnASignal.
+          round: 3
+        - id: PQ-5
+          disposition: addressed
+          note: 'Spot-checked the class sweep: llmtest API (fake.URL field, Script, Requests/Prompt/System), capture_test.go:89, pty_conformance_test.go:13-25, llmcheck.go:62, anthropic.go:282-290, replraw.go:69,228-229 all resolve correctly.'
+          round: 3
+      blocked: false
+content_hash: 9ea5bfe30ce34f0067ec115f239a8e0d38985c6326de9791a02fa3094b5ec7d5
 ---
 
 # Gate ledger — tools#16 (plan-quality)
@@ -187,7 +201,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   prevalence: 2 of 2 interrupt-path statements in this plan were wrong about
   which transport serves which loop.
 
+## Round 3 — 2026-08-23T15:04:28-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-6 — addressed — D5 states the rule (detach + sink install together where the loop is chosen) and enumerates every loop x transport; Task 7 moves both into repl above the replRaw/replLines choice and pins the piped path with TestThePipedLoopStillExitsOnASignal.
+- PQ-5 — addressed — Spot-checked the class sweep: llmtest API (fake.URL field, Script, Requests/Prompt/System), capture_test.go:89, pty_conformance_test.go:13-25, llmcheck.go:62, anthropic.go:282-290, replraw.go:69,228-229 all resolve correctly.
+
 ## Open findings
 
-- **PQ-5** [Minor] `stale-api-reference` the plan names test-infra symbols that do not exist
-- **PQ-6** [Important] `interrupt-delivery-path` D5 detaches the signal context on a branch that serves the piped loop too, leaving replLines with no interrupt transport
+(none — every finding has been disposed)
