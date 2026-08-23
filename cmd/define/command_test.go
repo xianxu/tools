@@ -238,3 +238,17 @@ func TestMenuLines(t *testing.T) {
 		})
 	}
 }
+
+// The hatches are one keystroke each and invisible until something says so.
+// /help is the one place that lists what the console understands, so it is where
+// they belong — a feature nobody can find is a feature nobody has.
+func TestHelpNamesBothHatches(t *testing.T) {
+	var out, errb bytes.Buffer
+	runHelp(commandCtx{cmds: commands, stdout: &out, stderr: &errb}, nil)
+
+	for _, want := range []string{"?", `\`, "ask"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("/help does not mention %q:\n%s", want, out.String())
+		}
+	}
+}

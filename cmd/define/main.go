@@ -207,6 +207,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"shows what you looked up in the last two days (/history 7, or\n"+
 			"--days 7, for a wider window); /sound sets how many times a\n"+
 			"pronunciation plays for the rest of the session.\n\n"+
+			"A line that is not a word and reads as a question is answered by\n"+
+			"the model rather than looked up — there is no mode to switch. The\n"+
+			"dictionary is asked first, so multi-word headwords (hot dog) are\n"+
+			"still definitions. Force either way: ? asks, \\ defines.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
 			"it in. A word that was found is added to the deck; a word that was\n"+
