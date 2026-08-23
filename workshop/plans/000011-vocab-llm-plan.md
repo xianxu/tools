@@ -76,6 +76,8 @@ should be able to re-run the measurement rather than trust the prose.
 | `Task[T]` + `Run[T]` | `internal/llm/task.go` | new |
 | `SchemaFor[T]` | `internal/llm/schema.go` | new |
 | `decode` | `internal/llm/task.go` | new |
+| `requireSchemaFields` | `internal/llm/task.go` | new |
+| `renderRequest` / `RequestHash` | `internal/llm/render.go` | new |
 | `Redact` | `internal/llm/config.go` | new |
 
 - **`Request` / `Response` / `Usage`** — the wire-independent contract. `Request`
@@ -155,7 +157,9 @@ should be able to re-run the measurement rather than trust the prose.
 | `anthropicClient` | `internal/llm/anthropic.go` | new | Anthropic Messages API / `cli-proxy-api` |
 | `llmtest.Fake` | `internal/llm/llmtest/fake.go` | new | the Anthropic wire protocol |
 | `llmtest.Suite` | `internal/llm/llmtest/suite.go` | new | — (obligations both backends satisfy) |
-| `llmtest.Golden` | `internal/llm/llmtest/golden.go` | new | `testdata/` files |
+| `llmtest.AssertGolden` | `internal/llm/llmtest/golden.go` | new | `testdata/golden/` files |
+| `llmtest.Cassette` | `internal/llm/llmtest/cassette.go` | new | recorded wire exchanges |
+| `Config.Transport` | `internal/llm/config.go` | new | `http.RoundTripper` — the seam a cassette sits beneath |
 | `--llm-check` | `cmd/define/llmcheck.go` | new | the harness, from the binary |
 
 - **`Client`** — two methods, deliberately:
@@ -2037,3 +2041,65 @@ reversion: text joining, system-prompt plumbing, `OnSlow`/`Progress`, and
 seconds); negative `StallAfter` disables the bound, zero takes the default;
 `transient()` derives the retryable set from the SDK's own policy rather than
 restating it; `Progress` lists the two phases the tree emits, and `Bytes` is gone.
+
+### 2026-08-23 — M2 boundary review (REWORK): what M2 actually built
+
+**Reason.** The M2 boundary review returned REWORK with 17 findings, one Critical.
+Two of them are about this document: an M2 design was described that was not
+built, and the divergence was never appended. AGENTS.md §1 asks for the delta in
+the same commit that diverges; the rule the review states is stronger and better —
+**diff the plan's Core concepts and Task lists against the tree at each boundary
+and append what moved.** That diff follows.
+
+**The Critical, and it is the one that mattered.** `decode` returned a
+half-populated `T` with a **nil error** when a required field was missing —
+`{"fits":true}` yielded `{Fits:true Reason:""}`, and `{}` yielded a zero value
+that #12's veto could not distinguish from a genuine "no". It would have dropped
+a distractor rather than skipped a question.
+
+Three artifacts asserted the opposite: this plan's Task 10 (*"require every
+schema-required field present"*), `task.go`'s own invariant comment, and
+`atlas/llm.md`. `SchemaFor[T]` already emitted `"required":["fits","reason"]` —
+the single source declared it and the decoder ignored it. Fixed by deriving the
+check from that source (`requireSchemaFields`), and the reason it survived is
+worth more than the fix: **`FuzzDecode` asserted only the error branch and
+returned early on success**, so half the invariant was unfuzzed. It now asserts
+both, and 535K executions hold.
+
+**The design that changed, and why.** Task 4 Step 3 specified
+`func Cassette(t, r llm.Request) Reply` — a body served *through* the wire `Fake`.
+What M2 first built was `func (c *Cassette) Client(live llm.Client) llm.Client`,
+which **replaces `llm.Client` outright** — reversing M1's central decision in the
+same package whose doc argues at length that a stubbed `Client` cannot see a
+mis-serialized `output_config` or a dropped header.
+
+Rebuilt beneath the seam as an `http.RoundTripper` behind a new
+`Config.Transport`. Three things fell out that the Client-level version could not
+have had:
+
+- replay runs the SDK's serialisation, retries and SSE parsing, so a consumer test
+  can still catch the bugs the fake exists to catch;
+- the **taxonomy survives replay structurally** — a recorded 400 is replayed as a
+  400 and reaches `classifyStatus` as `ErrRequest`. The Client-level version
+  re-derived the error from a stored string and collapsed every recorded
+  `ErrRequest` into `ErrUnavailable`: the one collapse the taxonomy exists to
+  prevent;
+- the artifact records the **question as well as the answer**, so a reviewer
+  reading a diff sees what was asked without recomputing a hash.
+
+**Other deltas from the plan as written.** The refresh flag is `-update`, not
+`-record`, and it drives goldens and cassettes together because they are two views
+of one request. Task 9's schema golden was missing entirely — `AssertGolden`
+shipped with **zero committed artifacts anywhere in the tree**, which made
+`schema.go`'s justification for reflecting the schema aspirational; there is now a
+committed snapshot, and adding a struct field reddens it. The Core concepts tables
+above are corrected in place to name what exists (`AssertGolden`, not
+`llmtest.Golden`) and to add the rows for `renderRequest`/`RequestHash`,
+`requireSchemaFields`, `Cassette` and `Config.Transport`.
+
+**And a rule about claims, now on its fourth finding.** A doc claim of universal
+form — "every", "always", "never", "is held by" — is a claim about an
+*enumeration*, so it may only be written after enumerating the sites and checking
+each. Four such claims in this milestone were false when written, including one
+that said every drift failure names the fix when 2 of 7 did (now 7 of 7), and one
+that cited a golden file that did not exist.

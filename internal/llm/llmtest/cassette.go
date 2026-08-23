@@ -1,131 +1,163 @@
 package llmtest
 
 import (
-	"context"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/xianxu/tools/internal/llm"
 )
 
-// Cassette is a real response, frozen.
+// Cassette is a real exchange, frozen at the WIRE.
 //
-// You cannot fake judgment. You can freeze a real answer and pin OUR HANDLING of
-// it — which is what a consumer's tests actually need: that a well-formed veto
-// verdict decodes, that a refusal is skipped, that a truncation is caught. What a
-// cassette does NOT establish is that the model reliably produces that answer. It
-// is one sample of a stochastic process, and the live conformance run is what
-// detects drift.
+// You cannot fake judgment. You can freeze a real answer and pin our handling of
+// it — which is what a consumer's tests need: that a well-formed veto verdict
+// decodes, that a refusal is skipped, that a truncation is caught. What a
+// cassette does NOT establish is that the model reliably produces that answer; it
+// is one sample of a stochastic process, which is what the conformance run is for.
 //
-// Keyed by llm.RequestHash over the SAME canonical form llmtest.Golden prints, so
-// a prompt edit misses loudly rather than passing against a stale recording.
+// It sits BENEATH the seam, as an http.RoundTripper, for the same reason the Fake
+// does: replacing llm.Client would mean a replayed test never serialises a
+// request, never runs a retry and never parses an SSE frame — so it could not see
+// a dropped header or a mis-serialized output_config, which are exactly the bugs
+// this harness can have. Below the transport, all of that still runs.
 type Cassette struct {
 	dir string
 	t   *testing.T
 }
 
 // Cassettes opens the store under a consumer's testdata directory. Recordings
-// live with the consumer that owns the prompt, exactly as goldens do.
+// live with the consumer that owns the prompt, as goldens do.
 func Cassettes(t *testing.T, dir string) *Cassette {
 	t.Helper()
 	return &Cassette{dir: filepath.Join(dir, "cassettes"), t: t}
 }
 
-// Path is where a request's recording lives. Exposed so a failure message can
-// name the file rather than describe it.
-func (c *Cassette) Path(r llm.Request) string {
-	return filepath.Join(c.dir, r.Task+"-"+llm.RequestHash(r)+".json")
-}
-
-// Client returns a Client that replays recordings, or — with -update — calls
-// through to live and records what comes back.
+// exchange is what lands on disk: the question AND the answer, both as sent.
 //
-// A MISS without -update is a loud failure naming the task and the path. Never a
-// fallback: falling back is how a prompt edit comes to pass against a recording
-// of the question it no longer asks.
-func (c *Cassette) Client(live llm.Client) llm.Client {
-	return &cassetteClient{store: c, live: live}
+// The request is stored, not just hashed, so the artifact is self-describing: a
+// reviewer reading a diff can see what was asked without recomputing a hash.
+type exchange struct {
+	Request  json.RawMessage `json:"request"`
+	Status   int             `json:"status"`
+	Response json.RawMessage `json:"response"`
 }
 
-type cassetteClient struct {
+// key hashes the request body with volatile fields removed.
+//
+// max_tokens is dropped deliberately, matching llm.RequestHash: it changes how
+// much room the answer had, not what was asked, so a default moving must not
+// invalidate every recording.
+func key(body []byte) string {
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err == nil {
+		delete(m, "max_tokens")
+		if norm, err := json.Marshal(m); err == nil {
+			body = norm
+		}
+	}
+	sum := sha256.Sum256(body)
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+// Transport returns a RoundTripper that replays recordings — or, with -update,
+// calls through to next and records what comes back.
+//
+// A MISS without -update is a loud failure naming the path and quoting the
+// request. Never a fallback: falling back is how an edited prompt comes to pass
+// against a recording of the question it no longer asks.
+func (c *Cassette) Transport(next http.RoundTripper) http.RoundTripper {
+	return &cassetteTransport{store: c, next: next}
+}
+
+type cassetteTransport struct {
 	store *Cassette
-	live  llm.Client
+	next  http.RoundTripper
 }
 
-func (c *cassetteClient) Complete(ctx context.Context, r llm.Request) (llm.Response, error) {
-	path := c.store.Path(r)
+func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, err := readBody(req)
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(c.store.dir, key(body)+".json")
+
 	if !Updating() {
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			c.store.t.Fatalf("cassette: no recording for task %q at %s\n\n"+
-				"the request renders as:\n%s\n"+
-				"re-run with -update to record it against the live service",
-				r.Task, path, llm.RenderRequest(r))
-			return llm.Response{}, err
+			// A miss is a test-authoring problem, so it is reported as a 400 the
+			// caller surfaces as ErrRequest — loud, and not retried. t.Fatalf is
+			// wrong here: RoundTrip runs on whatever goroutine the SDK is using.
+			return jsonResponse(http.StatusBadRequest, []byte(fmt.Sprintf(
+				`{"type":"error","error":{"type":"invalid_request_error","message":`+
+					`"llmtest: no cassette at %s — re-run with -update to record it. request was: %s"}}`,
+				path, jsonEscape(body)))), nil
 		}
-		var rec recorded
-		if err := json.Unmarshal(raw, &rec); err != nil {
-			c.store.t.Fatalf("cassette: %s is unreadable: %v", path, err)
-			return llm.Response{}, err
+		var ex exchange
+		if err := json.Unmarshal(raw, &ex); err != nil {
+			return nil, fmt.Errorf("llmtest: cassette %s is unreadable: %w", path, err)
 		}
-		return rec.Response, rec.err()
+		return jsonResponse(ex.Status, ex.Response), nil
 	}
 
-	if c.live == nil {
-		c.store.t.Fatalf("cassette: -update needs a live client; none was supplied")
-		return llm.Response{}, nil
+	resp, err := c.next.RoundTrip(req)
+	if err != nil {
+		return nil, err
 	}
-	resp, callErr := c.live.Complete(ctx, r)
-	rec := recorded{Response: resp}
-	if callErr != nil {
-		rec.Err = callErr.Error()
+	respBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
 	}
 	if err := os.MkdirAll(c.store.dir, 0o755); err != nil {
-		c.store.t.Fatalf("cassette: %v", err)
+		return nil, err
 	}
-	out, err := json.MarshalIndent(rec, "", "  ")
+	out, err := json.MarshalIndent(exchange{
+		Request: json.RawMessage(body), Status: resp.StatusCode, Response: json.RawMessage(respBody),
+	}, "", "  ")
 	if err != nil {
-		c.store.t.Fatalf("cassette: %v", err)
+		return nil, err
 	}
 	if err := os.WriteFile(path, out, 0o644); err != nil {
-		c.store.t.Fatalf("cassette: %v", err)
+		return nil, err
 	}
 	c.store.t.Logf("cassette: recorded %s", path)
-	return resp, callErr
+	resp.Body = io.NopCloser(bytes.NewReader(respBody))
+	return resp, nil
 }
 
-// Stream is not recorded. A cassette exists so a consumer can assert on a real
-// ANSWER; the streaming path's obligation is that deltas concatenate to that
-// answer, which llmtest.Suite already holds against both backends. Recording SSE
-// frame timing would model something no consumer asserts.
-func (c *cassetteClient) Stream(ctx context.Context, r llm.Request, onDelta func(string)) (llm.Response, error) {
-	resp, err := c.Complete(ctx, r)
-	if err == nil && onDelta != nil {
-		onDelta(resp.Text)
+// readBody consumes the request body and restores it, so the SDK's retry — which
+// re-sends the same request — still has one to send.
+func readBody(req *http.Request) ([]byte, error) {
+	if req.Body == nil {
+		return nil, nil
 	}
-	return resp, err
+	body, err := io.ReadAll(req.Body)
+	req.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
 }
 
-// recorded is what lands on disk: the response, plus the error text when the
-// recorded call failed. Errors are recorded too — "this prompt gets refused" is
-// exactly the kind of thing a consumer needs to handle and would otherwise have
-// to invent.
-type recorded struct {
-	Response llm.Response `json:"response"`
-	Err      string       `json:"error,omitempty"`
+func jsonResponse(status int, body []byte) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewReader(body)),
+	}
 }
 
-func (r recorded) err() error {
-	if r.Err == "" {
-		return nil
+func jsonEscape(b []byte) string {
+	q, err := json.Marshal(string(b))
+	if err != nil {
+		return `"<unquotable>"`
 	}
-	// The taxonomy is reconstructed from the stop reason rather than the text, so
-	// a replayed refusal is still errors.Is(err, ErrRefused).
-	if e := llm.ErrorForStop(r.Response.Stop); e != nil {
-		return e
-	}
-	return fmt.Errorf("%w: %s", llm.ErrUnavailable, r.Err)
+	return string(q[1 : len(q)-1])
 }

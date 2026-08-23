@@ -1,151 +1,180 @@
 package llmtest
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xianxu/tools/internal/llm"
 )
 
-// stubLive stands in for the live service during a -update recording. It is NOT
-// a general test double — nothing replays through it — it exists so the record
-// path can be exercised without a key.
-type stubLive struct {
-	resp  llm.Response
-	err   error
-	calls int
+// recordingClient drives a cassette in -update mode against the wire Fake, so
+// "the live service" in these tests is itself a real HTTP exchange. Nothing here
+// replaces llm.Client.
+func recordingClient(t *testing.T, dir, base string) llm.Client {
+	t.Helper()
+	return llm.New(llm.Config{
+		BaseURL: base, APIKey: "sk-test-1234567890", Model: "claude-opus-5",
+		Effort: "high", MaxTokens: 8192, Timeout: 30 * time.Second,
+		Transport: Cassettes(t, dir).Transport(http.DefaultTransport),
+	})
 }
 
-func (s *stubLive) Complete(context.Context, llm.Request) (llm.Response, error) {
-	s.calls++
-	return s.resp, s.err
-}
-func (s *stubLive) Stream(_ context.Context, _ llm.Request, onDelta func(string)) (llm.Response, error) {
-	s.calls++
-	if onDelta != nil {
-		onDelta(s.resp.Text)
-	}
-	return s.resp, s.err
-}
-
-func recordThenReplay(t *testing.T, dir string, r llm.Request, live *stubLive) llm.Response {
+func withUpdate(t *testing.T, fn func()) {
 	t.Helper()
 	*update = true
-	defer func() { *update = false }()
-	c := Cassettes(t, dir).Client(live)
-	got, err := c.Complete(t.Context(), r)
-	if err != nil {
-		t.Fatalf("record: %v", err)
-	}
-	return got
+	defer func() { *update = false }() // defer, so a Fatal cannot leak -update
+	fn()
 }
 
-func TestCassetteRecordsThenReplaysWithoutCallingLive(t *testing.T) {
+func TestCassetteRecordsThenReplaysWithoutTheService(t *testing.T) {
 	dir := t.TempDir()
-	r := llm.Request{Task: "veto", Model: "claude-opus-5", Prompt: "Is obsequious a near-synonym?"}
-	live := &stubLive{resp: llm.Response{
-		Text: `{"fits":true,"reason":"both describe servile flattery"}`, Stop: "end_turn",
-	}}
+	f := NewFake(t)
+	f.Script("near-synonym", Reply{Text: `{"fits":true,"reason":"both describe servile flattery"}`})
+	r := llm.Request{Task: "veto", Prompt: "Is obsequious a near-synonym?"}
 
-	recordThenReplay(t, dir, r, live)
-	if live.calls != 1 {
-		t.Fatalf("recording made %d live calls, want 1", live.calls)
+	withUpdate(t, func() {
+		if _, err := recordingClient(t, dir, f.URL).Complete(t.Context(), r); err != nil {
+			t.Fatalf("record: %v", err)
+		}
+	})
+	if len(f.Requests()) != 1 {
+		t.Fatalf("recording made %d service calls, want 1", len(f.Requests()))
 	}
 
-	// Replay: the live client is nil, so any call through would panic — which is
-	// the assertion. A replay that reaches the service is not a replay.
-	got, err := Cassettes(t, dir).Client(nil).Complete(t.Context(), r)
+	// Replay points at an address nothing listens on: if the replay reached the
+	// network at all, this fails. That is the assertion.
+	got, err := llm.New(llm.Config{
+		BaseURL: "http://127.0.0.1:1", APIKey: "sk-test-1234567890", Model: "claude-opus-5",
+		Timeout: 10 * time.Second, Transport: Cassettes(t, dir).Transport(nil),
+	}).Complete(t.Context(), r)
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
 	if !strings.Contains(got.Text, "servile flattery") {
 		t.Errorf("replayed text = %q", got.Text)
 	}
-	if live.calls != 1 {
-		t.Errorf("replay made a live call; calls = %d", live.calls)
+	if len(f.Requests()) != 1 {
+		t.Errorf("replay reached the service; calls = %d", len(f.Requests()))
 	}
 }
 
-// THE property. A prompt edit moves the hash, so the recording for the old
-// question no longer answers the new one — loudly, naming the file.
+// A prompt edit moves the key, so the recording for the old question no longer
+// answers the new one — loudly, and as ErrRequest, which a consumer must not
+// absorb the way it absorbs an outage.
 func TestAPromptEditMissesItsCassetteLoudly(t *testing.T) {
 	dir := t.TempDir()
-	original := llm.Request{Task: "veto", Model: "claude-opus-5", Prompt: "Is obsequious a near-synonym?"}
-	recordThenReplay(t, dir, original, &stubLive{resp: llm.Response{Text: `{"fits":true}`, Stop: "end_turn"}})
+	f := NewFake(t)
+	f.Script("obsequious", Reply{Text: `{"fits":true,"reason":"x"}`})
 
-	edited := original
-	edited.Prompt = "Is obsequious a near-synonym of sycophantic, precisely?"
+	withUpdate(t, func() {
+		_, _ = recordingClient(t, dir, f.URL).Complete(t.Context(),
+			llm.Request{Task: "veto", Prompt: "Is obsequious a near-synonym?"})
+	})
 
-	fake := &testing.T{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		// Fatalf on a miss, so this runs on its own goroutine.
-		_, _ = Cassettes(fake, dir).Client(nil).Complete(context.Background(), edited)
-	}()
-	<-done
-	if !fake.Failed() {
-		t.Error("an edited prompt silently replayed the recording of a different question")
+	_, err := llm.New(llm.Config{
+		BaseURL: "http://127.0.0.1:1", APIKey: "sk-test-1234567890", Model: "claude-opus-5",
+		Timeout: 10 * time.Second, Transport: Cassettes(t, dir).Transport(nil),
+	}).Complete(t.Context(), llm.Request{Task: "veto", Prompt: "Is obsequious a near-synonym, precisely?"})
+
+	if err == nil {
+		t.Fatal("an edited prompt silently replayed a recording of a different question")
+	}
+	if !errors.Is(err, llm.ErrRequest) {
+		t.Errorf("err = %v, want ErrRequest — a missing recording is a test-authoring bug, not an outage", err)
+	}
+	if !strings.Contains(err.Error(), "-update") {
+		t.Errorf("the miss does not say how to fix it: %v", err)
 	}
 }
 
-// A recorded refusal must replay as ErrRefused, not as a generic failure —
-// otherwise a consumer's degradation path is never exercised by the recording
-// that exists precisely to exercise it.
-func TestCassetteReplaysTheTaxonomy(t *testing.T) {
-	dir := t.TempDir()
-	r := llm.Request{Task: "grade", Model: "claude-opus-5", Prompt: "grade this"}
-	live := &stubLive{
-		resp: llm.Response{Stop: "refusal", StopDetails: &llm.StopDetails{Type: "refusal", Category: "cyber"}},
-		err:  llm.ErrRefused,
-	}
-	*update = true
-	c := Cassettes(t, dir).Client(live)
-	_, _ = c.Complete(t.Context(), r)
-	*update = false
+// The taxonomy survives replay BECAUSE the status is replayed. A 400 recorded is
+// a 400 replayed, so it reaches classifyStatus as ErrRequest — the one collapse
+// the taxonomy exists to prevent, now structurally impossible rather than
+// re-derived from a stored string.
+func TestCassetteReplaysTheTaxonomyFromTheStatus(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		status int
+		want   error
+	}{
+		{"a bad request stays loud", 400, llm.ErrRequest},
+		{"an outage stays absorbable", 503, llm.ErrUnavailable},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			f := NewFake(t)
+			f.Script("x", Reply{Status: c.status})
+			r := llm.Request{Task: "t", Prompt: "x"}
 
-	_, err := Cassettes(t, dir).Client(nil).Complete(t.Context(), r)
-	if !errors.Is(err, llm.ErrRefused) {
-		t.Errorf("replayed err = %v, want ErrRefused", err)
+			withUpdate(t, func() {
+				_, _ = recordingClient(t, dir, f.URL).Complete(t.Context(), r)
+			})
+			_, err := llm.New(llm.Config{
+				BaseURL: "http://127.0.0.1:1", APIKey: "sk-test-1234567890", Model: "claude-opus-5",
+				Timeout: 10 * time.Second, Transport: Cassettes(t, dir).Transport(nil),
+			}).Complete(t.Context(), r)
+			if !errors.Is(err, c.want) {
+				t.Errorf("replayed err = %v, want %v", err, c.want)
+			}
+		})
 	}
 }
 
-// The recording is a readable artifact, not an opaque blob: a human reviewing a
-// diff must be able to see what the model said.
-func TestCassetteOnDiskIsReadable(t *testing.T) {
+// The artifact records the QUESTION as well as the answer, so a reviewer reading
+// a diff can see what was asked without recomputing a hash.
+func TestCassetteOnDiskIsSelfDescribing(t *testing.T) {
 	dir := t.TempDir()
-	r := llm.Request{Task: "veto", Model: "claude-opus-5", Prompt: "p"}
-	recordThenReplay(t, dir, r, &stubLive{resp: llm.Response{Text: `{"fits":true}`, Stop: "end_turn"}})
+	f := NewFake(t)
+	f.Script("sycophantic", Reply{Text: `{"fits":true,"reason":"x"}`})
+	withUpdate(t, func() {
+		_, _ = recordingClient(t, dir, f.URL).Complete(t.Context(),
+			llm.Request{Task: "veto", Prompt: "Is obsequious close to sycophantic?"})
+	})
 
-	raw, err := os.ReadFile(Cassettes(t, dir).Path(r))
+	files, _ := filepath.Glob(filepath.Join(dir, "cassettes", "*.json"))
+	if len(files) != 1 {
+		t.Fatalf("%d cassettes written, want 1", len(files))
+	}
+	raw, err := os.ReadFile(files[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The answer is a JSON string INSIDE the recording, so it appears escaped —
-	// `"text": "{\"fits\":true}"`. Still legible in a diff, which is the point,
-	// but it means the property to assert is the round trip rather than a literal
-	// substring: what the model said survives the artifact unchanged.
-	var back struct {
-		Response struct {
-			Text string `json:"Text"`
-			Stop string `json:"Stop"`
-		} `json:"response"`
+	var ex struct {
+		Request  json.RawMessage `json:"request"`
+		Status   int             `json:"status"`
+		Response json.RawMessage `json:"response"`
 	}
-	if err := json.Unmarshal(raw, &back); err != nil {
-		t.Fatalf("recording is not valid JSON: %v\n%s", err, raw)
+	if err := json.Unmarshal(raw, &ex); err != nil {
+		t.Fatalf("not valid JSON: %v\n%s", err, raw)
 	}
-	if back.Response.Text != `{"fits":true}` {
-		t.Errorf("recorded text = %q, want the model's answer verbatim", back.Response.Text)
+	if !strings.Contains(string(ex.Request), "sycophantic") {
+		t.Errorf("the recording does not show the question:\n%s", ex.Request)
 	}
-	if back.Response.Stop != "end_turn" {
-		t.Errorf("recorded stop = %q", back.Response.Stop)
+	if !strings.Contains(string(ex.Response), "fits") {
+		t.Errorf("the recording does not show the answer:\n%s", ex.Response)
 	}
-	// And a human reading the diff must be able to see the answer at all.
-	if !strings.Contains(string(raw), "fits") {
-		t.Errorf("the answer is not visible in the artifact:\n%s", raw)
+	if ex.Status != 200 {
+		t.Errorf("status = %d", ex.Status)
+	}
+}
+
+// max_tokens is excluded from the key, matching llm.RequestHash: it changes how
+// much room the answer had, not what was asked, so a default moving must not
+// invalidate every recording in the repo.
+func TestMaxTokensDoesNotMoveTheKey(t *testing.T) {
+	a := []byte(`{"model":"m","max_tokens":1024,"messages":[{"role":"user","content":"x"}]}`)
+	b := []byte(`{"model":"m","max_tokens":8192,"messages":[{"role":"user","content":"x"}]}`)
+	if key(a) != key(b) {
+		t.Error("max_tokens moves the cassette key")
+	}
+	c := []byte(`{"model":"m","max_tokens":1024,"messages":[{"role":"user","content":"y"}]}`)
+	if key(a) == key(c) {
+		t.Error("the prompt does NOT move the cassette key")
 	}
 }

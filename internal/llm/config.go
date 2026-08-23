@@ -3,6 +3,7 @@ package llm
 import (
 	"cmp"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -52,6 +53,11 @@ type Config struct {
 	// moment New started defaulting it, leaving the documented way to turn stall
 	// detection off unreachable.
 	StallAfter time.Duration
+	// Transport, when set, replaces the HTTP transport. The seam a cassette sits
+	// BENEATH: below it the SDK still serialises the request, applies retries and
+	// parses SSE, so a test driven through it exercises the same code production
+	// does. Above it — replacing Client — none of that runs.
+	Transport http.RoundTripper
 	// OnSlow, when set, is called on a ticker while a call is still running, with
 	// the phase it is in. Optional, off by default, never called on a fast path —
 	// this is for answering "slow where", not for logging.

@@ -556,6 +556,126 @@ rounds:
           round: 4
       boundary: M1
       blocked: false
+    - "n": 5
+      timestamp: "2026-08-23T00:06:09-07:00"
+      agent: claude
+      findings:
+        - id: BR-33
+          severity: Critical
+          title: decode returns a partially populated T with a nil error when a required field is missing
+          detail: |-
+            Measured against the shipped code: decode[answer](`{"fits":true}`) returns {Fits:true Reason:""} with err=nil; `{}` and `null` return the zero value with err=nil. task.go:59 states "it never returns a partially populated value with a nil error", atlas/llm.md:112 states "reject missing ones", and plan Task 10 states "require every schema-required field present". SchemaFor already emits "required":["fits","reason"] — the single source declares it and decode ignores it. #12's veto would read Fits:false from `{}` and silently drop a distractor rather than skip the question.
+            THIS IS THE 4TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. Do not fix only this site. The RULE: an invariant stated in a doc comment must be asserted by a test that goes red when it is violated — including the SUCCESS branch of a property/fuzz target, which is where FuzzDecode returns early (`if err == nil { return }`) and where its own seed `"{}"` is a violating input the target waves through. THE ENUMERATION to sweep in this round: grep every "never", "always", "must", "either ... or" claim in the doc comments added by this window (task.go decode, task.go Run, render.go renderRequest/renderSchema, schema.go SchemaFor, cassette.go Cassette/Stream, golden.go AssertGolden, fake.go next) and for each confirm a test that fails when the claim is broken; where none exists, either write it or delete the claim.
+          family: enforcement-not-pinned-by-a-test
+          round: 5
+        - id: BR-34
+          severity: Important
+          title: Four doc claims in this window assert properties the code does not hold
+          detail: |-
+            Measured prevalence, 4 instances in one milestone. (1) atlas/llm.md:112 "allow unknown fields, reject missing ones" — decode does not reject missing (see the Critical). (2) atlas/llm.md:114 "Its invariant ... is held by a fuzz target" — FuzzDecode asserts only the error half. (3) atlas/llm.md:171 "Every failure names scripts/llm-probe.sh record" and capture_conformance_test.go:22 "On drift the failure names the fix" — 2 of 7 failure messages in that file name it; the unknown-block-type, no-text-block, output_config-decode, no-deltas and preamble messages do not. (4) internal/llm/schema.go:15 "llmtest.Golden snapshots it, so a struct field added without thought shows up in a diff" — no golden file exists anywhere in the tree, and `llmtest.Golden` is not an identifier (it is `AssertGolden`).
+            THIS IS THE 4TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not patch the four sentences. The RULE: a doc claim of UNIVERSAL form ("every", "always", "never", "is held by") is a claim about an enumeration, so it may only be written after enumerating the sites and checking each — and a doc claim naming a code identifier or an on-disk artifact must be grep-verified against the tree in the same edit. Sweep: for each universal claim in atlas/llm.md and in the doc comments of render.go, schema.go, task.go, cassette.go and golden.go, run the enumeration it implies and either make it true or weaken it to what is true.
+          family: docs-claim-absent-surface
+          round: 5
+        - id: BR-35
+          severity: Important
+          title: Plan Task 9's schema golden was never written, so AssertGolden ships with zero committed artifacts
+          detail: 'internal/llm/testdata/ does not exist; `find` returns no golden/ or cassettes/ directory in the repo; the only callers of AssertGolden and Cassettes are their own self-tests against t.TempDir(). Task 9 required a snapshot AND a byte-identical assertion, and schema.go:15 cites that snapshot as the property that justifies reflecting the schema instead of hand-writing it. ARCH-PURPOSE shadow-sweep on the SchemaFor[T] single source: 4 consumers, 2 derive (Request.Schema on the wire, RequestHash), 2 do not (no golden; decode ignores the required list).'
+          family: single-source-consumer-not-derived
+          round: 5
+        - id: BR-36
+          severity: Important
+          title: README.md is not updated for the new --llm-check flag or its exit code
+          detail: '`grep -n "llm" README.md` returns nothing. README documents --sound/-times, -locale, -raw, --forget and DEFINE_NO_CAPTURE, and its exit-code paragraph enumerates what `1` means ("no dictionary entry, or --forget found nothing to remove") — --llm-check now also exits 1, for a third reason. main.go''s usage text was updated; README was not.'
+          family: user-surface-undocumented
+          round: 5
+        - id: BR-37
+          severity: Important
+          title: The cassette double replaces llm.Client, bypassing the SDK path the plan places it beneath
+          detail: 'Plan Task 4 Step 3 specifies `func Cassette(t *testing.T, r llm.Request) Reply` — a body served through the wire Fake. Shipped is `func (c *Cassette) Client(live llm.Client) llm.Client` (cassette.go:47): replay reads the file and returns rec.Response without serialising a Request, without the SDK, without SSE. llmtest''s own package doc (fake.go:5) argues that a stubbed Client cannot see a mis-serialized output_config, a dropped anthropic-version header, or a retry that re-sends a consumed body — a consumer test written against a cassette now cannot see any of them. cassetteClient.Stream (cassette.go:101) does not stream: it calls Complete and fires a single delta. ARCH-MOCK: production flow and test flow no longer share the same boundary on this path.'
+          family: double-above-the-seam
+          round: 5
+        - id: BR-38
+          severity: Important
+          title: Cassette replay collapses a recorded ErrRequest into ErrUnavailable
+          detail: 'recorded.err() (cassette.go:122) stores the error as a string and re-derives the taxonomy from Stop. A recorded 400 — bad schema or unknown model, the class errors.go:20 says must stay LOUD — carries Stop:"" , so ErrorForStop returns nil and the replay falls through to `fmt.Errorf("%w: %s", llm.ErrUnavailable, r.Err)`, the quiet class every consumer degrades on. Recording the taxonomy member itself (or the HTTP status) instead of re-deriving it removes the second classification path.'
+          family: double-rederives-error-taxonomy
+          round: 5
+        - id: BR-39
+          severity: Important
+          title: The capture-drift conformance suite reports drift when the proxy is merely unreachable
+          detail: 'capture_conformance_test.go:31 skips only when llm.Resolve fails (no key). With a key set and the proxy stopped, Complete returns ErrUnavailable and every subtest t.Fatalf''s — telling the operator "the model may no longer think by default ... Re-record: scripts/llm-probe.sh record" when nothing drifted. Plan Task 8 Step 2 asked for skip-not-fail explicitly. THIS IS THE 2ND FINDING IN FAMILY `unclassified-failure-mode`: the rule is that a check must distinguish "dependency unreachable" from "dependency changed" before reporting either, and internal/llm/conformance_test.go:30 has the same gap, so fix both.'
+          family: unclassified-failure-mode
+          round: 5
+        - id: BR-40
+          severity: Important
+          title: Both test doubles added this window discard the llm.Request entirely
+          detail: |-
+            checkClient (cmd/define/llmcheck_test.go:14) and stubLive (internal/llm/llmtest/cassette_test.go:17) both take `context.Context, llm.Request` and name neither parameter. Consequence: nothing asserts that --llm-check's request is well-formed — MaxTokens:2048, Task:"llm-check" and the PONG prompt could all be dropped and the four llmcheck tests stay green, while the real flag 400s. The repo already has a wire fake (llmtest.NewFake + llm.New) that would catch it and is importable from cmd/define.
+            THIS IS THE 4TH FINDING IN FAMILY `fake-silently-ignores-inputs`. The RULE: a double must either record its input for assertion or be replaced by the wire-level fake that already exists for that dependency; a double whose method signature discards its request parameter cannot fail for any reason related to what was asked. Sweep every type in the tree implementing llm.Client, cmd/define's fetch seam, and the store seams, and confirm each records or asserts its input.
+          family: fake-silently-ignores-inputs
+          round: 5
+        - id: BR-41
+          severity: Important
+          title: The plan still describes an M2 design that was not built, with no Revisions entry
+          detail: |-
+            Undeclared deltas: Cassette's seam, API and storage path all changed (see the double-above-the-seam finding); the flag is -update, not -record; Task 9's golden snapshot was dropped; the Integration points table names `llmtest.Golden` where the identifier is `AssertGolden` and has no row for llmtest.Cassette or for renderRequest/RequestHash (internal/llm/render.go), both delivered.
+            THIS IS THE 2ND FINDING IN FAMILY `plan-revision-not-appended`. The rule per AGENTS.md section 1: any divergence from a plan artifact discovered during implementation is appended as a timestamped `## Revisions` delta in the SAME commit that diverges — so the sweep is not "add one entry now" but "diff the plan's Core concepts and Task lists against the tree at each milestone close and append what moved".
+          family: plan-revision-not-appended
+          round: 5
+        - id: BR-42
+          severity: Minor
+          title: '`_ = llmtest.Capture` exists only to keep an import alive'
+          detail: |-
+            capture_conformance_test.go:132. The comment calls it "the committed artifacts this run is checking", but the statement checks nothing — llmtest is otherwise unused in the file.
+            THIS IS THE 4TH FINDING IN FAMILY `dead-code`. The RULE: a statement whose only effect is to satisfy the compiler is not documentation — drop the import and put the sentence in the doc comment, or make the reference load-bearing (here: read the capture and compare a field against the live response, which is what the file claims to do).
+          family: dead-code
+          round: 5
+        - id: BR-43
+          severity: Minor
+          title: TestAQueueStillAdvancesWhileItHasEntries duplicates TestQueueServesInOrder
+          detail: 'fake_test.go:163 vs fake_test.go:80 — same script shape (429 then a text reply), same two assertions, different string literals. Verified: with the sticky change reverted, the new test still passes, so it pins nothing the older one does not. ARCH-DRY.'
+          family: redundant-test-duplicates-existing
+          round: 5
+        - id: BR-44
+          severity: Minor
+          title: '`define -llm-check <word>` silently ignores the word'
+          detail: 'main.go:279 returns before the arity switch. The comment immediately above calls --llm-check "a mode, like --forget", but --forget has an explicit guard (main.go:288: "-forget takes the word to remove; do not also pass one") added because "silently honouring one of them is how -raw came to mean two different things in #2". Same guard, same reason.'
+          family: mode-flag-arity-guard
+          round: 5
+        - id: BR-45
+          severity: Minor
+          title: --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
+          detail: llmcheck.go:44. config.go:23 records that an under-budgeted max_tokens let adaptive thinking consume the whole allowance and returned an answer cut mid-rune — the committed message-truncated.json. A truncated PONG surfaces as ErrTruncated and exits 1, so the diagnostic would report a healthy configuration as broken.
+          family: diagnostic-ignores-config
+          round: 5
+        - id: BR-46
+          severity: Minor
+          title: additionalProperties:false is set unconditionally, including on non-object schemas
+          detail: 'schema.go:66. Measured: SchemaFor[string]() -> {"type":"string","additionalProperties":false}; SchemaFor[map[string]string]() -> {"type":"object","additionalProperties":false}, an object that permits no keys at all. The adjacent comment justifies stripping $schema/$id because "the provider rejects a schema carrying JSON Schema metadata it does not use" — the same argument applies to additionalProperties on a string or array.'
+          family: schema-metadata-applied-blindly
+          round: 5
+        - id: BR-47
+          severity: Minor
+          title: Cassette.Client's t.Fatalf fires from whatever goroutine a consumer calls Complete on
+          detail: |-
+            cassette.go:60/66/74/80/84 call c.store.t.Fatalf from inside an llm.Client, a value designed to be handed to arbitrary consumer code including concurrent authoring loops. fake.go:326 states the opposing rule for the same package ("NOT t.Fatalf: this runs on the server's goroutine, where Fatalf becomes a hang or a 'log after test completed' panic").
+            THIS IS THE 3RD FINDING IN FAMILY `test-helper-fatal-off-goroutine`. The RULE: a helper may call t.Fatalf only if it is structurally guaranteed to run on the test goroutine; anything returned to a caller as a value (a Client, a handler, a callback) must return an error instead. Enumerate every exported llmtest constructor that captures *testing.T and classify each by that criterion.
+          family: test-helper-fatal-off-goroutine
+          round: 5
+        - id: BR-48
+          severity: Minor
+          title: TestCassetteReplaysTheTaxonomy sets *update without a defer
+          detail: cassette_test.go:107-112 does `*update = true` ... `*update = false` inline; a Fatal in the Complete call between them leaks -update into every subsequent test in the package, turning AssertGolden from a comparator into a writer. recordThenReplay (cassette_test.go:34) uses defer correctly; this site does not.
+          family: test-flag-mutation-leaks
+          round: 5
+        - id: BR-49
+          severity: Minor
+          title: A cassette records the answer but not the question
+          detail: recorded (cassette.go:117) stores only Response and an error string; the filename carries task plus a 12-hex hash. TestCassetteOnDiskIsReadable asserts the ANSWER is legible in a diff, but a reviewer cannot tell what was asked without recomputing the hash. Storing llm.RenderRequest(r) alongside would make the artifact self-describing, and is free — the miss message already renders it.
+          family: artifact-omits-the-question
+          round: 5
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (boundary-review)
@@ -878,6 +998,51 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   identified both in its prose section 5 and never raised them, so they were
   never tracked or disposed.
 
+## Round 5 — 2026-08-23T00:06:09-07:00 (claude) — BLOCKED
+
+### Raised
+
+- **BR-33** [Critical] `enforcement-not-pinned-by-a-test` decode returns a partially populated T with a nil error when a required field is missing
+  Measured against the shipped code: decode[answer](`{"fits":true}`) returns {Fits:true Reason:""} with err=nil; `{}` and `null` return the zero value with err=nil. task.go:59 states "it never returns a partially populated value with a nil error", atlas/llm.md:112 states "reject missing ones", and plan Task 10 states "require every schema-required field present". SchemaFor already emits "required":["fits","reason"] — the single source declares it and decode ignores it. #12's veto would read Fits:false from `{}` and silently drop a distractor rather than skip the question.
+  THIS IS THE 4TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. Do not fix only this site. The RULE: an invariant stated in a doc comment must be asserted by a test that goes red when it is violated — including the SUCCESS branch of a property/fuzz target, which is where FuzzDecode returns early (`if err == nil { return }`) and where its own seed `"{}"` is a violating input the target waves through. THE ENUMERATION to sweep in this round: grep every "never", "always", "must", "either ... or" claim in the doc comments added by this window (task.go decode, task.go Run, render.go renderRequest/renderSchema, schema.go SchemaFor, cassette.go Cassette/Stream, golden.go AssertGolden, fake.go next) and for each confirm a test that fails when the claim is broken; where none exists, either write it or delete the claim.
+- **BR-34** [Important] `docs-claim-absent-surface` Four doc claims in this window assert properties the code does not hold
+  Measured prevalence, 4 instances in one milestone. (1) atlas/llm.md:112 "allow unknown fields, reject missing ones" — decode does not reject missing (see the Critical). (2) atlas/llm.md:114 "Its invariant ... is held by a fuzz target" — FuzzDecode asserts only the error half. (3) atlas/llm.md:171 "Every failure names scripts/llm-probe.sh record" and capture_conformance_test.go:22 "On drift the failure names the fix" — 2 of 7 failure messages in that file name it; the unknown-block-type, no-text-block, output_config-decode, no-deltas and preamble messages do not. (4) internal/llm/schema.go:15 "llmtest.Golden snapshots it, so a struct field added without thought shows up in a diff" — no golden file exists anywhere in the tree, and `llmtest.Golden` is not an identifier (it is `AssertGolden`).
+  THIS IS THE 4TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not patch the four sentences. The RULE: a doc claim of UNIVERSAL form ("every", "always", "never", "is held by") is a claim about an enumeration, so it may only be written after enumerating the sites and checking each — and a doc claim naming a code identifier or an on-disk artifact must be grep-verified against the tree in the same edit. Sweep: for each universal claim in atlas/llm.md and in the doc comments of render.go, schema.go, task.go, cassette.go and golden.go, run the enumeration it implies and either make it true or weaken it to what is true.
+- **BR-35** [Important] `single-source-consumer-not-derived` Plan Task 9's schema golden was never written, so AssertGolden ships with zero committed artifacts
+  internal/llm/testdata/ does not exist; `find` returns no golden/ or cassettes/ directory in the repo; the only callers of AssertGolden and Cassettes are their own self-tests against t.TempDir(). Task 9 required a snapshot AND a byte-identical assertion, and schema.go:15 cites that snapshot as the property that justifies reflecting the schema instead of hand-writing it. ARCH-PURPOSE shadow-sweep on the SchemaFor[T] single source: 4 consumers, 2 derive (Request.Schema on the wire, RequestHash), 2 do not (no golden; decode ignores the required list).
+- **BR-36** [Important] `user-surface-undocumented` README.md is not updated for the new --llm-check flag or its exit code
+  `grep -n "llm" README.md` returns nothing. README documents --sound/-times, -locale, -raw, --forget and DEFINE_NO_CAPTURE, and its exit-code paragraph enumerates what `1` means ("no dictionary entry, or --forget found nothing to remove") — --llm-check now also exits 1, for a third reason. main.go's usage text was updated; README was not.
+- **BR-37** [Important] `double-above-the-seam` The cassette double replaces llm.Client, bypassing the SDK path the plan places it beneath
+  Plan Task 4 Step 3 specifies `func Cassette(t *testing.T, r llm.Request) Reply` — a body served through the wire Fake. Shipped is `func (c *Cassette) Client(live llm.Client) llm.Client` (cassette.go:47): replay reads the file and returns rec.Response without serialising a Request, without the SDK, without SSE. llmtest's own package doc (fake.go:5) argues that a stubbed Client cannot see a mis-serialized output_config, a dropped anthropic-version header, or a retry that re-sends a consumed body — a consumer test written against a cassette now cannot see any of them. cassetteClient.Stream (cassette.go:101) does not stream: it calls Complete and fires a single delta. ARCH-MOCK: production flow and test flow no longer share the same boundary on this path.
+- **BR-38** [Important] `double-rederives-error-taxonomy` Cassette replay collapses a recorded ErrRequest into ErrUnavailable
+  recorded.err() (cassette.go:122) stores the error as a string and re-derives the taxonomy from Stop. A recorded 400 — bad schema or unknown model, the class errors.go:20 says must stay LOUD — carries Stop:"" , so ErrorForStop returns nil and the replay falls through to `fmt.Errorf("%w: %s", llm.ErrUnavailable, r.Err)`, the quiet class every consumer degrades on. Recording the taxonomy member itself (or the HTTP status) instead of re-deriving it removes the second classification path.
+- **BR-39** [Important] `unclassified-failure-mode` The capture-drift conformance suite reports drift when the proxy is merely unreachable
+  capture_conformance_test.go:31 skips only when llm.Resolve fails (no key). With a key set and the proxy stopped, Complete returns ErrUnavailable and every subtest t.Fatalf's — telling the operator "the model may no longer think by default ... Re-record: scripts/llm-probe.sh record" when nothing drifted. Plan Task 8 Step 2 asked for skip-not-fail explicitly. THIS IS THE 2ND FINDING IN FAMILY `unclassified-failure-mode`: the rule is that a check must distinguish "dependency unreachable" from "dependency changed" before reporting either, and internal/llm/conformance_test.go:30 has the same gap, so fix both.
+- **BR-40** [Important] `fake-silently-ignores-inputs` Both test doubles added this window discard the llm.Request entirely
+  checkClient (cmd/define/llmcheck_test.go:14) and stubLive (internal/llm/llmtest/cassette_test.go:17) both take `context.Context, llm.Request` and name neither parameter. Consequence: nothing asserts that --llm-check's request is well-formed — MaxTokens:2048, Task:"llm-check" and the PONG prompt could all be dropped and the four llmcheck tests stay green, while the real flag 400s. The repo already has a wire fake (llmtest.NewFake + llm.New) that would catch it and is importable from cmd/define.
+  THIS IS THE 4TH FINDING IN FAMILY `fake-silently-ignores-inputs`. The RULE: a double must either record its input for assertion or be replaced by the wire-level fake that already exists for that dependency; a double whose method signature discards its request parameter cannot fail for any reason related to what was asked. Sweep every type in the tree implementing llm.Client, cmd/define's fetch seam, and the store seams, and confirm each records or asserts its input.
+- **BR-41** [Important] `plan-revision-not-appended` The plan still describes an M2 design that was not built, with no Revisions entry
+  Undeclared deltas: Cassette's seam, API and storage path all changed (see the double-above-the-seam finding); the flag is -update, not -record; Task 9's golden snapshot was dropped; the Integration points table names `llmtest.Golden` where the identifier is `AssertGolden` and has no row for llmtest.Cassette or for renderRequest/RequestHash (internal/llm/render.go), both delivered.
+  THIS IS THE 2ND FINDING IN FAMILY `plan-revision-not-appended`. The rule per AGENTS.md section 1: any divergence from a plan artifact discovered during implementation is appended as a timestamped `## Revisions` delta in the SAME commit that diverges — so the sweep is not "add one entry now" but "diff the plan's Core concepts and Task lists against the tree at each milestone close and append what moved".
+- **BR-42** [Minor] `dead-code` `_ = llmtest.Capture` exists only to keep an import alive
+  capture_conformance_test.go:132. The comment calls it "the committed artifacts this run is checking", but the statement checks nothing — llmtest is otherwise unused in the file.
+  THIS IS THE 4TH FINDING IN FAMILY `dead-code`. The RULE: a statement whose only effect is to satisfy the compiler is not documentation — drop the import and put the sentence in the doc comment, or make the reference load-bearing (here: read the capture and compare a field against the live response, which is what the file claims to do).
+- **BR-43** [Minor] `redundant-test-duplicates-existing` TestAQueueStillAdvancesWhileItHasEntries duplicates TestQueueServesInOrder
+  fake_test.go:163 vs fake_test.go:80 — same script shape (429 then a text reply), same two assertions, different string literals. Verified: with the sticky change reverted, the new test still passes, so it pins nothing the older one does not. ARCH-DRY.
+- **BR-44** [Minor] `mode-flag-arity-guard` `define -llm-check <word>` silently ignores the word
+  main.go:279 returns before the arity switch. The comment immediately above calls --llm-check "a mode, like --forget", but --forget has an explicit guard (main.go:288: "-forget takes the word to remove; do not also pass one") added because "silently honouring one of them is how -raw came to mean two different things in #2". Same guard, same reason.
+- **BR-45** [Minor] `diagnostic-ignores-config` --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
+  llmcheck.go:44. config.go:23 records that an under-budgeted max_tokens let adaptive thinking consume the whole allowance and returned an answer cut mid-rune — the committed message-truncated.json. A truncated PONG surfaces as ErrTruncated and exits 1, so the diagnostic would report a healthy configuration as broken.
+- **BR-46** [Minor] `schema-metadata-applied-blindly` additionalProperties:false is set unconditionally, including on non-object schemas
+  schema.go:66. Measured: SchemaFor[string]() -> {"type":"string","additionalProperties":false}; SchemaFor[map[string]string]() -> {"type":"object","additionalProperties":false}, an object that permits no keys at all. The adjacent comment justifies stripping $schema/$id because "the provider rejects a schema carrying JSON Schema metadata it does not use" — the same argument applies to additionalProperties on a string or array.
+- **BR-47** [Minor] `test-helper-fatal-off-goroutine` Cassette.Client's t.Fatalf fires from whatever goroutine a consumer calls Complete on
+  cassette.go:60/66/74/80/84 call c.store.t.Fatalf from inside an llm.Client, a value designed to be handed to arbitrary consumer code including concurrent authoring loops. fake.go:326 states the opposing rule for the same package ("NOT t.Fatalf: this runs on the server's goroutine, where Fatalf becomes a hang or a 'log after test completed' panic").
+  THIS IS THE 3RD FINDING IN FAMILY `test-helper-fatal-off-goroutine`. The RULE: a helper may call t.Fatalf only if it is structurally guaranteed to run on the test goroutine; anything returned to a caller as a value (a Client, a handler, a callback) must return an error instead. Enumerate every exported llmtest constructor that captures *testing.T and classify each by that criterion.
+- **BR-48** [Minor] `test-flag-mutation-leaks` TestCassetteReplaysTheTaxonomy sets *update without a defer
+  cassette_test.go:107-112 does `*update = true` ... `*update = false` inline; a Fatal in the Complete call between them leaks -update into every subsequent test in the package, turning AssertGolden from a comparator into a writer. recordThenReplay (cassette_test.go:34) uses defer correctly; this site does not.
+- **BR-49** [Minor] `artifact-omits-the-question` A cassette records the answer but not the question
+  recorded (cassette.go:117) stores only Response and an error string; the filename carries task plus a 12-hex hash. TestCassetteOnDiskIsReadable asserts the ANSWER is legible in a diff, but a reviewer cannot tell what was asked without recomputing the hash. Storing llm.RenderRequest(r) alongside would make the artifact self-describing, and is free — the miss message already renders it.
+
 ## Open findings
 
 - **BR-27** [Important] `partial-constructor-defaults` A negative SlowEvery panics on the watcher goroutine, where no caller can recover
@@ -886,3 +1051,20 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-30** [Minor] `fake-tuned-to-its-fixture` splitInto chops on byte offsets, so any multibyte scripted text round-trips corrupted
 - **BR-31** [Minor] `docs-claim-absent-surface` The plan's Task 1 contract block still declares four Progress phases and a Bytes field
 - **BR-32** [Minor] `dead-code` Reply.Body and Reply.NoThinking are documented knobs that no fixture in the tree turns
+- **BR-33** [Critical] `enforcement-not-pinned-by-a-test` decode returns a partially populated T with a nil error when a required field is missing
+- **BR-34** [Important] `docs-claim-absent-surface` Four doc claims in this window assert properties the code does not hold
+- **BR-35** [Important] `single-source-consumer-not-derived` Plan Task 9's schema golden was never written, so AssertGolden ships with zero committed artifacts
+- **BR-36** [Important] `user-surface-undocumented` README.md is not updated for the new --llm-check flag or its exit code
+- **BR-37** [Important] `double-above-the-seam` The cassette double replaces llm.Client, bypassing the SDK path the plan places it beneath
+- **BR-38** [Important] `double-rederives-error-taxonomy` Cassette replay collapses a recorded ErrRequest into ErrUnavailable
+- **BR-39** [Important] `unclassified-failure-mode` The capture-drift conformance suite reports drift when the proxy is merely unreachable
+- **BR-40** [Important] `fake-silently-ignores-inputs` Both test doubles added this window discard the llm.Request entirely
+- **BR-41** [Important] `plan-revision-not-appended` The plan still describes an M2 design that was not built, with no Revisions entry
+- **BR-42** [Minor] `dead-code` `_ = llmtest.Capture` exists only to keep an import alive
+- **BR-43** [Minor] `redundant-test-duplicates-existing` TestAQueueStillAdvancesWhileItHasEntries duplicates TestQueueServesInOrder
+- **BR-44** [Minor] `mode-flag-arity-guard` `define -llm-check <word>` silently ignores the word
+- **BR-45** [Minor] `diagnostic-ignores-config` --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
+- **BR-46** [Minor] `schema-metadata-applied-blindly` additionalProperties:false is set unconditionally, including on non-object schemas
+- **BR-47** [Minor] `test-helper-fatal-off-goroutine` Cassette.Client's t.Fatalf fires from whatever goroutine a consumer calls Complete on
+- **BR-48** [Minor] `test-flag-mutation-leaks` TestCassetteReplaysTheTaxonomy sets *update without a defer
+- **BR-49** [Minor] `artifact-omits-the-question` A cassette records the answer but not the question

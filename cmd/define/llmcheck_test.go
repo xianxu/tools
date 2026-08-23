@@ -3,23 +3,24 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
-type checkClient struct {
-	resp llm.Response
-	err  error
-}
-
-func (c checkClient) Complete(context.Context, llm.Request) (llm.Response, error) {
-	return c.resp, c.err
-}
-func (c checkClient) Stream(context.Context, llm.Request, func(string)) (llm.Response, error) {
-	return c.resp, c.err
+// The wire fake, not a stubbed Client. A double that discards its llm.Request
+// cannot fail for any reason related to what was asked — MaxTokens, the task name
+// and the PONG prompt could all be dropped and every test here would stay green
+// while the real flag 400s. llmtest.NewFake records the request, so they cannot.
+func fakeClient(t *testing.T, f *llmtest.Fake) func(llm.Config) llm.Client {
+	return func(cfg llm.Config) llm.Client {
+		cfg.BaseURL = f.URL
+		cfg.Timeout = 30 * time.Second
+		return llm.New(cfg)
+	}
 }
 
 func envOf(m map[string]string) func(string) string {
@@ -29,26 +30,32 @@ func envOf(m map[string]string) func(string) string {
 const testKey = "sk-ant-api03-SUPERSECRETVALUE"
 
 func TestLLMCheckReportsAHealthyConfiguration(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("PONG", llmtest.Reply{Text: "PONG"})
+
 	var out, errOut bytes.Buffer
 	code := runLLMCheck(
 		envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}),
-		func(llm.Config) llm.Client {
-			return checkClient{resp: llm.Response{
-				Text: "PONG",
-				Usage: llm.Usage{
-					InputTokens: 22, OutputTokens: 5, ThinkingTokens: 0,
-					CacheReadTokens: 1902,
-				},
-			}}
-		}, &out, &errOut)
+		fakeClient(t, f), &out, &errOut)
 
 	if code != 0 {
 		t.Fatalf("exit %d, stderr: %s", code, errOut.String())
 	}
-	for _, want := range []string{"127.0.0.1:8317", "claude-opus-5", "1902", "PONG", "ok"} {
+	for _, want := range []string{"claude-opus-5", "PONG", "ok"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output is missing %q:\n%s", want, out.String())
 		}
+	}
+	// What was ASKED is now assertable, which is the point of using the wire fake.
+	reqs := f.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("%d requests, want 1", len(reqs))
+	}
+	if !strings.Contains(reqs[0].Prompt(), "PONG") {
+		t.Errorf("prompt = %q, want the PONG probe", reqs[0].Prompt())
+	}
+	if mt, _ := reqs[0].Body["max_tokens"].(float64); mt < 1024 {
+		t.Errorf("max_tokens = %v — too small for a model that thinks before answering", mt)
 	}
 }
 
@@ -57,10 +64,9 @@ func TestLLMCheckReportsAHealthyConfiguration(t *testing.T) {
 // about bytes.
 func TestLLMCheckNeverPrintsTheKey(t *testing.T) {
 	var out, errOut bytes.Buffer
-	runLLMCheck(
-		envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}),
-		func(llm.Config) llm.Client { return checkClient{resp: llm.Response{Text: "PONG"}} },
-		&out, &errOut)
+	f := llmtest.NewFake(t)
+	f.Script("PONG", llmtest.Reply{Text: "PONG"})
+	runLLMCheck(envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}), fakeClient(t, f), &out, &errOut)
 
 	both := out.String() + errOut.String()
 	if strings.Contains(both, testKey) || strings.Contains(both, "SUPERSECRET") {
@@ -74,26 +80,33 @@ func TestLLMCheckIsNonZeroAndSpecificWhenUnavailable(t *testing.T) {
 	cases := []struct {
 		name   string
 		env    map[string]string
-		client llm.Client
+		base   string
 		wantIn string
 	}{
 		{
 			name:   "no key names both variables and where to find one",
 			env:    nil,
-			client: checkClient{resp: llm.Response{Text: "PONG"}},
 			wantIn: "DEFINE_LLM_API_KEY",
 		},
 		{
+			// A real closed port, not a fabricated error: the message a user sees
+			// comes from the transport, so inventing one proves nothing about it.
 			name:   "unreachable names the failure",
 			env:    map[string]string{"DEFINE_LLM_API_KEY": testKey},
-			client: checkClient{err: errors.New("llm: unavailable: connection refused")},
-			wantIn: "connection refused",
+			base:   "http://127.0.0.1:1",
+			wantIn: "unavailable",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			code := runLLMCheck(envOf(c.env), func(llm.Config) llm.Client { return c.client }, &out, &errOut)
+			code := runLLMCheck(envOf(c.env), func(cfg llm.Config) llm.Client {
+				if c.base != "" {
+					cfg.BaseURL = c.base
+				}
+				cfg.Timeout = 5 * time.Second
+				return llm.New(cfg)
+			}, &out, &errOut)
 			if code == 0 {
 				t.Errorf("exit 0 for an unusable configuration; stdout:\n%s", out.String())
 			}

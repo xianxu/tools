@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -46,15 +47,18 @@ func New(c Config) Client {
 	c.Model = cmp.Or(c.Model, defaultModel)
 	c.Effort = cmp.Or(c.Effort, defaultEffort)
 	c.BaseURL = cmp.Or(c.BaseURL, defaultBaseURL)
-	return &anthropicClient{
-		cfg: c,
-		api: anthropic.NewClient(
-			option.WithBaseURL(c.BaseURL),
-			option.WithAPIKey(c.APIKey),
-			option.WithMaxRetries(2),
-			option.WithRequestTimeout(c.Timeout),
-		),
+	opts := []option.RequestOption{
+		option.WithBaseURL(c.BaseURL),
+		option.WithAPIKey(c.APIKey),
+		option.WithMaxRetries(2),
+		option.WithRequestTimeout(c.Timeout),
 	}
+	if c.Transport != nil {
+		opts = append(opts, option.WithHTTPClient(&http.Client{
+			Transport: c.Transport, Timeout: c.Timeout,
+		}))
+	}
+	return &anthropicClient{cfg: c, api: anthropic.NewClient(opts...)}
 }
 
 func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {

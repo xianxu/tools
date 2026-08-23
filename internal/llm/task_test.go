@@ -43,6 +43,12 @@ func TestDecodeRejectsWithoutPartialResults(t *testing.T) {
 		{"two objects", `{"fits":true,"reason":"x"}{"fits":false,"reason":"y"}`},
 		{"truncated object", `{"fits":true,"reason":"x`},
 		{"array where an object was expected", `[{"fits":true,"reason":"x"}]`},
+		// C1: encoding/json zero-fills a missing field, so these decoded to a
+		// half-populated value with a NIL error — #12 could not tell {} from a
+		// genuine "no", and would drop a distractor rather than skip a question.
+		{"missing a required field", `{"fits":true}`},
+		{"empty object", `{}`},
+		{"json null", `null`},
 		{"fence with prose inside", "```json\nSure! {\"fits\":true}\n```"},
 	}
 	for _, c := range cases {
@@ -105,7 +111,13 @@ func FuzzDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, body string) {
 		got, err := decode[answer](body)
 		if err == nil {
-			return // a successful decode is allowed to be anything valid
+			// The success half of the invariant, which this used to skip — and
+			// that omission is why C1 survived: every required field must be
+			// populated, or decode has returned a partial value with a nil error.
+			if got.Reason == "" {
+				t.Fatalf("decode(%q) succeeded with an empty required field: %+v", body, got)
+			}
+			return
 		}
 		if !errors.Is(err, ErrMalformed) {
 			t.Fatalf("error is not ErrMalformed: %v", err)

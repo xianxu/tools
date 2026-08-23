@@ -109,9 +109,15 @@ truncated structured answer commonly parses, so a decode-first implementation
 returns success on garbage and nothing downstream can tell.
 
 `decode`'s strategy, once: strip one optional markdown fence, decode exactly one
-JSON value, require the payload **consumed to EOF**, allow unknown fields, reject
-missing ones. Its invariant — a fully populated `T` and `nil`, or the zero `T` and
-`ErrMalformed`, never a partial value, never a panic — is held by a fuzz target.
+JSON value, require the payload **consumed to EOF**, require every field the
+schema marks required, and allow unknown fields. The required check derives its
+set from `SchemaFor[T]` rather than restating it — without it `encoding/json`
+zero-fills, so `{}` decodes to a veto verdict of `Fits:false` that a consumer
+cannot tell from a real "no".
+
+Its invariant — a fully populated `T` and `nil`, or the zero `T` and
+`ErrMalformed`, never a partial value, never a panic — is asserted on **both**
+branches by `FuzzDecode`.
 
 ## Testing: `llmtest`
 
@@ -130,13 +136,23 @@ and against the live proxy under `-tags conformance`. Assertions are about shape
 never content, so both backends can satisfy them — which is what makes "the fake
 behaves like the real thing" a test rather than a claim.
 
-**Goldens and cassettes are two views of one request**, both deriving from the
-single `renderRequest`: `AssertGolden` prints it, `RequestHash` hashes it. Two
-renderers would drift in the worst direction — a prompt edit visible in the golden
-while a stale cassette kept matching. `MaxTokens` deliberately stays out of the
-hash: it changes how much room the answer had, not what was asked.
+**Goldens** snapshot a request's canonical form via `AssertGolden`, which renders
+through the single `renderRequest` that `RequestHash` also hashes. A committed
+example lives at `internal/llm/testdata/golden/schema-veto-verdict.txt`; it is what
+makes reflecting the schema safe, because a struct field added without thought
+shows up in its diff.
 
-A **cassette** is a real response frozen and keyed by that hash. You cannot fake
+A **cassette** is a real exchange frozen at the WIRE — request body, status and
+response body — keyed by a hash of the request body with `max_tokens` removed
+(the same exclusion `RequestHash` makes: it changes how much room the answer had,
+not what was asked).
+
+It sits **beneath** the seam, as an `http.RoundTripper` (`Config.Transport`), for
+the same reason the fake does: replacing `Client` would mean a replayed test never
+serialises a request, never runs a retry and never parses SSE. A consequence worth
+naming — the taxonomy survives replay *structurally*, because a recorded 400 is
+replayed as a 400 and reaches `classifyStatus` as `ErrRequest`. Re-deriving it
+from a stored string is how a loud error becomes a quiet one. You cannot fake
 judgment; you can freeze a real answer and pin our handling of it. A miss fails
 loudly naming the task and path — never a fallback, because falling back is how an
 edited prompt comes to pass against a recording of the question it no longer asks.
@@ -177,7 +193,8 @@ Two tagged suites, both on-demand (`-tags conformance`), neither in merge-check:
   describe reality: thinking blocks still returned, `output_config` still passing
   the proxy, signature deltas still in the stream, preamble still ~1,900 tokens.
   Every failure names `scripts/llm-probe.sh record`, because a drift test that
-  doesn't say what to do becomes the test everyone skips.
+  doesn't say what to do becomes the test everyone skips — and an **unreachable**
+  service skips rather than reporting drift, since "not running" is not "changed".
 
 ## Known limitations
 

@@ -5,6 +5,7 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -34,14 +35,26 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
+	// skipUnreachable separates "the service changed" from "the service is not
+	// running". Resolving config only proves a key is SET; with the proxy stopped
+	// every check below would fail telling the operator to re-record captures
+	// that are perfectly good.
+	skipUnreachable := func(t *testing.T, err error) {
+		t.Helper()
+		if errors.Is(err, llm.ErrUnavailable) {
+			t.Skipf("service unreachable, not drifted: %v", err)
+		}
+		if err != nil {
+			t.Fatalf("call failed: %v", err)
+		}
+	}
+
 	t.Run("a non-trivial prompt still returns a thinking block", func(t *testing.T) {
 		got, err := c.Complete(ctx, llm.Request{
 			Task:   "drift-blocks",
 			Prompt: "Which of obsequious, ephemeral, meticulous would ALSO fill the blank in: \"The board produced nothing but ______ agreement — every executive praised a plan they had privately called unworkable.\" Think it through, then answer.",
 		})
-		if err != nil {
-			t.Fatalf("Complete: %v", err)
-		}
+		skipUnreachable(t, err)
 		var kinds []string
 		var sawThinking, sawText bool
 		for _, b := range got.Blocks {
@@ -53,11 +66,12 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 				sawText = true
 			default:
 				t.Errorf("unknown block type %q — reconcile it against the response model "+
-					"(llm.Block) before it reaches a learner", b.Type)
+					"(llm.Block) before it reaches a learner, then re-record: "+
+					"scripts/llm-probe.sh record", b.Type)
 			}
 		}
 		if !sawText {
-			t.Error("no text block")
+			t.Error("no text block — re-record: scripts/llm-probe.sh record")
 		}
 		if !sawThinking {
 			t.Errorf("blocks = %v, no thinking block: the model may no longer think by "+
@@ -77,14 +91,13 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 				"additionalProperties": false,
 			},
 		})
-		if err != nil {
-			t.Fatalf("Complete: %v", err)
-		}
+		skipUnreachable(t, err)
 		var out map[string]any
 		if err := json.Unmarshal([]byte(strings.TrimSpace(got.Text)), &out); err != nil {
 			t.Fatalf("schema'd response no longer decodes: %v\nbody: %q\n"+
 				"the proxy may have stopped passing output_config through; every authored "+
-				"item would degrade to free-text parsing", err, got.Text)
+				"item would degrade to free-text parsing. Re-record: scripts/llm-probe.sh record",
+				err, got.Text)
 		}
 	})
 
@@ -94,11 +107,9 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 			Task:   "drift-stream",
 			Prompt: "Name one synonym for sycophantic, then explain the nuance in two sentences.",
 		}, func(string) { deltas++ })
-		if err != nil {
-			t.Fatalf("Stream: %v", err)
-		}
+		skipUnreachable(t, err)
 		if deltas == 0 {
-			t.Error("no text deltas delivered")
+			t.Error("no text deltas delivered — re-record: scripts/llm-probe.sh record")
 		}
 		var signed bool
 		for _, b := range got.Blocks {
@@ -114,16 +125,15 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 
 	t.Run("the injected preamble has not moved materially", func(t *testing.T) {
 		got, err := c.Complete(ctx, llm.Request{Task: "drift-preamble", Prompt: "Reply with exactly: PONG"})
-		if err != nil {
-			t.Fatalf("Complete: %v", err)
-		}
+		skipUnreachable(t, err)
 		p := got.Usage.PreambleTokens()
 		// Measured at ~1,900 on 2026-08-22. A broad band: the point is to notice a
 		// change of kind, not of a few tokens — every prompt in this repo was
 		// tuned against a preamble of roughly this size.
 		if p < 500 || p > 6000 {
 			t.Errorf("proxy preamble = %d tokens, expected ~1,900. The upstream shape may "+
-				"have changed; re-check what the proxy prepends before trusting prompt tuning.", p)
+				"have changed; re-check what the proxy prepends before trusting prompt "+
+				"tuning, then re-record: scripts/llm-probe.sh record", p)
 		}
 		t.Logf("preamble: %d tokens (cache_creation %d + cache_read %d)",
 			p, got.Usage.CacheCreationTokens, got.Usage.CacheReadTokens)

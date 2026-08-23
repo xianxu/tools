@@ -58,19 +58,30 @@ func Run[T any](ctx context.Context, c Client, t Task[T]) (T, error) {
 // decode parses a model's answer into T.
 //
 // The strategy, stated once: strip one optional markdown fence, decode exactly
-// one JSON value, require the whole payload consumed, reject unknown-shaped
-// input, and allow unknown FIELDS. Unknown fields are allowed deliberately — a
-// provider adding one must not break us — while a missing required field is not,
-// because a half-populated result is worse than no result.
+// one JSON value, require the whole payload consumed to EOF, require every field
+// the schema marks REQUIRED to be present, and allow unknown fields. Unknown
+// fields are allowed deliberately — a provider adding one must not break us —
+// while a missing required field is not, because a half-populated result is worse
+// than no result.
 //
-// The invariant, which the fuzz target asserts: decode either returns a fully
-// populated T and nil, or the zero T and an error matching ErrMalformed. It never
-// panics, and it never returns a partially populated value with a nil error.
+// The required check is not decoration. encoding/json silently zero-fills a
+// missing field, so `{}` decoded into a veto verdict yields Fits:false — which
+// #12 cannot distinguish from a real "no", and would drop a distractor rather
+// than skip a question. The schema already declares which fields are required;
+// this derives the check from that single source rather than restating it.
+//
+// The invariant, asserted by the fuzz target on BOTH branches: decode returns
+// either a fully populated T and nil, or the zero T and an error matching
+// ErrMalformed. It never panics, and it never returns a partially populated value
+// with a nil error.
 func decode[T any](raw string) (T, error) {
 	var zero T
 	body := strings.TrimSpace(stripFence(raw))
 	if body == "" {
 		return zero, fmt.Errorf("%w: empty response", ErrMalformed)
+	}
+	if err := requireSchemaFields[T](body); err != nil {
+		return zero, err
 	}
 
 	var out T
@@ -89,6 +100,38 @@ func decode[T any](raw string) (T, error) {
 			ErrMalformed, excerpt(body))
 	}
 	return out, nil
+}
+
+// requireSchemaFields rejects a payload missing any field the schema marks
+// required, deriving the set from SchemaFor[T] rather than restating it.
+//
+// Only object payloads are checked: a T that is not a struct has no required
+// set, and a non-object body is rejected by the decode below anyway.
+func requireSchemaFields[T any](body string) error {
+	var present map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &present); err != nil {
+		return nil // not an object; decode reports the real problem
+	}
+	schema, err := SchemaFor[T]()
+	if err != nil {
+		return nil // a type we cannot reflect declares nothing to require
+	}
+	required, _ := schema["required"].([]any)
+	var missing []string
+	for _, k := range required {
+		name, ok := k.(string)
+		if !ok {
+			continue
+		}
+		if _, found := present[name]; !found {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("%w: missing required field(s) %s (body: %s)",
+			ErrMalformed, strings.Join(missing, ", "), excerpt(body))
+	}
+	return nil
 }
 
 // stripFence removes one ```json … ``` wrapper. Models add them despite a schema,

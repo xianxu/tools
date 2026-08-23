@@ -13,9 +13,14 @@ import (
 //
 // Reflected rather than hand-written beside each result struct, because two
 // sources of truth for one shape drift the first time a field is added
-// (ARCH-DRY). The generated schema is still a visible artifact: llmtest.Golden
-// snapshots it, so a struct field added without thought shows up in a diff —
-// which is the only property the hand-written version actually had.
+// (ARCH-DRY). The generated schema is still a visible artifact:
+// llmtest.AssertGolden snapshots it — see
+// internal/llm/testdata/golden/schema-veto-verdict.txt — so a struct field added
+// without thought shows up in a diff, which is the only property the
+// hand-written version actually had.
+//
+// It is also what decode's required check reads, so the declared shape and the
+// enforced shape cannot disagree.
 //
 // Memoised per type: reflection is not free and a task runs the same type on
 // every call.

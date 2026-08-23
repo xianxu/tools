@@ -83,9 +83,36 @@ silently. `-raw` prints the unparsed entry and never plays. The prompt appears
 only on a terminal, so piping stays clean. Flags are session settings — `define
 --sound 1` opens the loop with single playback.
 
-Exit codes: `0` success; `1` the request failed (no dictionary entry, or
-`--forget` found nothing to remove); `2` usage error, which includes an unknown
-`/command`. A piped run exits `1` if any word failed and `2` if a command was
+## Checking the model connection
+
+`define` can use a language model for the parts a dictionary cannot do. Every one
+of those features **degrades silently by design** — no key or no network means
+they are skipped, not failed, so a review session is never blocked on a third
+party. That makes a misconfiguration invisible, which is what this flag is for:
+
+```sh
+define --llm-check
+```
+
+```
+  base url  http://127.0.0.1:8317
+  model     claude-opus-5 (effort high)
+  key       (set, short)
+  latency   1.379s
+  tokens    22 in, 5 out (0 thinking)
+  preamble  1902 tokens injected upstream (not ours)
+  answer    "PONG"
+  ok
+```
+
+It is the one surface where an unusable configuration is **loud**: it exits
+non-zero and names the reason. Configure it with `DEFINE_LLM_API_KEY` (or
+`ANTHROPIC_API_KEY`), `DEFINE_LLM_BASE_URL` and `DEFINE_LLM_MODEL`; the default
+base URL is a local proxy on `127.0.0.1:8317`.
+
+Exit codes: `0` success; `1` the request failed (no dictionary entry, `--forget`
+found nothing to remove, or `--llm-check` found no usable model configuration);
+`2` usage error, which includes an unknown `/command`. A piped run exits `1` if any word failed and `2` if a command was
 malformed, so `echo "$w" | define || …` works in a script; an interactive typo
 does not fail the session.
 
