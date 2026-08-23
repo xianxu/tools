@@ -50,7 +50,7 @@ Neither is the only way to reach its outcome: a bare question still asks, a bare
 word still looks up. `\` matters for a phrase you believe is a headword and want
 the dictionary's verdict on — `\how so` answers "not found" instead of chatting.
 
-**D4 — `readsAsQuestion` has four arms, and only ever sees NOAD misses.** That
+**D4 — `readsAsQuestion` has three arms, and only ever sees NOAD misses.** That
 containment is what makes it safe: `hot dog`, `use`, `a priori` never reach it.
 
 | arm | example | why |
@@ -58,9 +58,17 @@ containment is what makes it safe: `hot dog`, `use`, `a priori` never reach it.
 | trailing `?` | `is it pejorative?` | the explicit mark |
 | first word is interrogative/auxiliary | `what's the difference to obsequious` | the wh/aux opener |
 | first word is a request verb **and** ≥2 words | `use it in a sentence`, `give me three more examples` | a follow-up is imperative, not interrogative |
-| ≥5 words | `difference between sycophantic and obsequious please` | a five-word line NOAD does not know is not a headword typo |
 
-`sycophanti` fails all four → not-found, unchanged.
+`sycophanti` fails all three → not-found, unchanged.
+
+**Length is deliberately NOT an arm** (operator, 2026-08-23). A draft had "≥5
+words → question" as a backstop for `difference between sycophantic and
+obsequious`, which reads as neither interrogative nor imperative. That is a word
+count wearing a different hat, and the spec rejects word count as the signal. The
+cost is named rather than hidden: a long phrasal request with no wh-word, no `?`
+and no request verb answers `not found`, and `?` is its recovery. If real use
+shows that landing often, the arm is one line — but it is an operator decision,
+not a drift.
 
 **D5 — Ctrl-C mid-stream cancels the question, not the session.** Today
 `readKeys` calls the session `cancel()` the moment it decodes an interrupt, which
@@ -117,7 +125,7 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `ReviewEvent` / `complete` | `cmd/define/store/event.go` | modified |
 
 - **readsAsQuestion** — the semantic half of the decision table: does this line,
-  which NOAD does not know, read as a question. Four arms (D4), no IO, no state.
+  which NOAD does not know, read as a question. Three arms (D4), no IO, no state.
   - **Relationships:** consulted from exactly one call site
     (`lookupAndRender`'s miss branch) plus the one-shot ask route.
   - **DRY rationale:** the alternative is a `strings.HasSuffix(line, "?")` at each
@@ -243,7 +251,7 @@ func TestReadsAsQuestion(t *testing.T) {
 		{"a wh word ending in n is not a negation", "when is it used", true},
 		{"request verb with an object", "use it in a sentence", true},
 		{"follow-up request", "give me three more examples", true},
-		{"five words is not a headword", "difference between sycophantic and obsequious please", true},
+		{"length alone is not a signal", "difference between sycophantic and obsequious please", false},
 		{"a typo is not a question", "sycophanti", false},
 		{"a bare request verb is a word", "give", false},
 		{"a wh word alone is a word", "what", false},
@@ -315,17 +323,15 @@ var requestVerbs = []string{
 	"write", "list", "translate", "rewrite", "define",
 }
 
-// longLineWords is the backstop arm: a line this long that NOAD does not know is
-// not a headword the user expects to exist. NOAD's own long entries — proverbs,
-// "the proof of the pudding is in the eating" — HAVE entries, so they never
-// reach here.
-const longLineWords = 5
-
 // readsAsQuestion is the semantic half of the console's one decision table.
 //
 // It is only ever asked about a line NOAD has already missed. That containment
 // is the safety argument: "hot dog", "a priori" and "use" are lookups because
 // the dictionary said so, not because this function was careful.
+//
+// There is deliberately NO length arm. Word count is the signal the spec
+// rejects, and a line being long is not the same fact as it reading as a
+// question — see the note under D4.
 func readsAsQuestion(line string) bool {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -335,9 +341,6 @@ func readsAsQuestion(line string) bool {
 		return true
 	}
 	fields := strings.Fields(line)
-	if len(fields) >= longLineWords {
-		return true
-	}
 	first := openerStem(fields[0])
 	if contains(questionOpeners, first) && len(fields) > 1 {
 		return true
@@ -538,6 +541,7 @@ func TestConsoleDecisionTable(t *testing.T) {
 		{"the ? hatch skips the dictionary", "?hot dog", "question"},
 		{`the \ hatch suppresses the fallback`, `\how so`, "not-found"},
 		{"a follow-up request", "use it in a sentence", "question"},
+		{"a long phrase with no interrogative reading", "difference between sycophantic and obsequious", "not-found"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := routeFor(t, tc.line); got != tc.want {
@@ -1017,15 +1021,30 @@ git commit -am "#16 M2: Ctrl-C stops the answer, not the session"
 | seam unavailable → explanatory message, lookup still works | 4, 10 |
 | driven through the raw TUI loop, not only the piped loop | 4, 11 |
 
-## Open questions for the operator
+## Operator decisions (2026-08-23)
 
-1. **`\` as the force-literal hatch** (D3). It is one keystroke and shell-native,
-   but it is also the one character a user may have to escape depending on their
-   terminal's paste handling. `=` or `.` are alternatives. Happy to switch.
-2. **The ≥5-word arm** (D4). It makes the classifier generous — a long line NOAD
-   misses becomes a question rather than "not found". That is the right default
-   for a learning tool, but it means a badly mistyped long phrase gets an answer
-   instead of a correction. Keep?
-3. **`Store.UserModel` now** (D7) versus a plain file read deferred to `#17`.
-   Adding the method here means `#17` inherits the seam and the conformance rows;
-   the cost is one method on `Store` that only one caller uses until `#17` lands.
+All three open questions are answered; nothing below is still open.
+
+1. **`\` is the force-literal hatch.** Accepted as proposed (D3).
+2. **Follow the spec: NOAD-first, word count is not a signal.** Multi-word
+   headwords keep working — `hot dog` and `a priori` are lookups because the
+   dictionary has them. The `≥5 words` arm is dropped as a consequence; see the
+   note under D4 for the cost that buys and the one line that would undo it.
+3. **`Store.UserModel()` lands here** (D7). Operator: no preference, so the seam
+   wins over an `os.ReadFile` at the call site — the store already owns which
+   directory this session is, and #17 inherits the seam and its conformance rows
+   rather than adding a second answer beside it (ARCH-DRY).
+
+## Revisions
+
+### 2026-08-23 — the classifier has three arms, not four
+
+**Reason:** operator direction, "let's follow the spec", answering the open
+question about the length backstop.
+
+**Delta:** `readsAsQuestion` loses the `≥5 words` arm and the `longLineWords`
+constant. D4's table drops the row and gains a note naming what that costs. The
+fixture row `difference between sycophantic and obsequious please` flips from
+`true` to `false`, and the end-to-end decision table in Task 3 gains a row
+asserting the same line routes to `not-found` — so the limit is pinned by a test
+rather than remembered.
