@@ -66,7 +66,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	// that pays for reading the log. replLines never touches history at all.
 	hist.Load()
 	e := NewEditor()
-	var current string
+	var sess session
 	// Apply gets the candidate list computed BEFORE the keystroke, which is
 	// correct: it is deciding what to do with that keystroke given the line as
 	// it stands, and a history walk anchors on it. draw() computes its own from
@@ -119,6 +119,24 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	}
 	draw()
 
+	// ONE entry into the ask path for this loop, reached from two places: a
+	// forced question ("?…") and a dictionary miss that reads as one. M2 hangs
+	// the interrupter and the streaming writer here, so a second copy of this
+	// wiring would be a second copy of Ctrl-C's meaning (ARCH-DRY).
+	//
+	// It runs COOKED for the same reason a command does: in raw mode "\n" is a
+	// line feed with no carriage return.
+	askInSession := func(question string) error {
+		fmt.Fprint(stdout, "\r\n")
+		err := cooked(func() { askUnavailable(stderr, question) })
+		if err != nil {
+			return err
+		}
+		fmt.Fprint(stdout, "\r\n")
+		draw()
+		return nil
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -145,7 +163,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// Bypassing it meant the interactive path quietly disagreed about
 				// what a line means — no trimming, and "hot  dog" not collapsed to
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
-				cmd := parseREPLLine(e.String(), current != "")
+				cmd := parseREPLLine(e.String(), sess.hasCurrent())
 				// Whatever happens next writes below this line, so the dropdown
 				// has to go before any of it.
 				clearMenu()
@@ -154,7 +172,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// claims the user typed something they did not.
 				submitted := e
 				e = NewEditor()
-				if cmd.kind == cmdDefine || cmd.kind == cmdCommand {
+				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
 					fmt.Fprint(stdout, RenderLine(submitted, "", opt.color))
 				}
 				if cmd.kind == cmdCommand {
@@ -178,10 +196,28 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					draw()
 					continue
 				}
+				if cmd.kind == cmdAsk {
+					// Up-arrow must recall the question you just asked, exactly
+					// as it recalls a /command. Added here rather than inside
+					// askInSession, which the unforced route reaches AFTER
+					// submitLine has already recorded the line.
+					hist.Add(submitted.String())
+					if err := askInSession(cmd.question); err != nil {
+						finish()
+						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
+						return 1
+					}
+					continue
+				}
 				if cmd.kind != cmdDefine {
 					// cmdReplay and cmdNothing both stay on this line: the
 					// indicator is drawn over the prompt, then the prompt back.
-					replayInPlace(ctx, d, opt, current, stdout, stderr)
+					if cmd.note != "" {
+						fmt.Fprintf(stderr, "define: %s\r\n", cmd.note)
+						draw()
+						continue
+					}
+					replayInPlace(ctx, d, opt, sess.current, stdout, stderr)
 					draw()
 					continue
 				}
@@ -189,13 +225,25 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				// the next line would start at the current column. Everything
 				// written before we drop back to cooked mode needs "\r\n".
 				fmt.Fprint(stdout, "\r\n")
-				if err := submitLine(ctx, cooked, d, opt, cmd, hist, &current, stdout, stderr); err != nil {
+				out, err := submitLine(ctx, cooked, d, opt, cmd, hist, &sess, stdout, stderr)
+				if err != nil {
 					// Raw mode could not be re-entered. The editor would keep
 					// drawing frames a cooked terminal echoes over — silently
 					// unusable — so stop and say why rather than swallow it.
 					finish()
 					fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
 					return 1
+				}
+				if out.ask != "" {
+					// The unforced route into the SAME closure the forced one
+					// uses. submitLine has already recorded the line for recall
+					// and left the session's current word alone.
+					if err := askInSession(out.ask); err != nil {
+						finish()
+						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
+						return 1
+					}
+					continue
 				}
 				// A blank line between the entry and the next prompt: without it
 				// the prompt butts against the last line of the definition and
@@ -225,7 +273,7 @@ func replayInPlace(ctx context.Context, d deps, opt options, current string, std
 
 // submitLine handles one submitted word.
 func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt options, cmd replCommand,
-	hist History, current *string, stdout, stderr io.Writer) error {
+	hist History, sess *session, stdout, stderr io.Writer) (lookupOutcome, error) {
 	line := cmd.word
 
 	// Render in COOKED mode so newlines translate, but play in RAW mode so
@@ -234,14 +282,19 @@ func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt opti
 	// signal that raw mode exists to replace.
 	var out lookupOutcome
 	if err := cooked(func() { out = lookupAndRender(d, opt, cmd, stdout, stderr) }); err != nil {
-		return err
+		return out, err
 	}
 	if out.play {
 		playAnnounced(ctx, d, opt, line, indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
 	}
+	// Recorded whatever it turned out to be — a typo you want to edit and retry,
+	// and a question you want to ask again, are both worth an Up-arrow.
 	hist.Add(line)
-	if out.code == 0 {
-		*current = line
+	// A QUESTION IS NOT A LOOKUP, and out.code is 0 for both: the ask outcome
+	// carries no failure, so testing the code alone would make the question the
+	// current word and have the next bare Enter "replay" it.
+	if out.ask == "" && out.code == 0 {
+		sess.sawLookup(line, out)
 	}
-	return nil
+	return out, nil
 }

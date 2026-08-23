@@ -291,7 +291,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case forgetting && fs.NArg() != 0:
 		fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
 		return 2
-	case !forgetting && oneShot.kind != cmdCommand && fs.NArg() > 1:
+	// cmdAsk is exempted for the same reason cmdCommand is: a question is
+	// multi-word by nature, so counting words would reject the thing the flag
+	// exists to accept (BR-20's shape).
+	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 		fs.Usage()
 		return 2
 	}
@@ -324,10 +327,22 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		if oneShot.kind == cmdCommand {
 			return dispatchCommand(oneShot, commands, newCommandCtx(d, opt, stdout, stderr))
 		}
+		// So is a question. The forced route ("?…") skips the dictionary here
+		// exactly as it does at the prompt.
+		if oneShot.kind == cmdAsk {
+			return askUnavailable(stderr, oneShot.question)
+		}
 		// oneShot, not fs.Arg(0): the parsed line is what carries #16's hatches,
 		// and a one-shot that re-derived the word from argv would send `define
 		// "?what is X"` to the dictionary — BR-13's shape, in a new place.
-		return defineOnce(ctx, d, opt, oneShot, stdout, stderr).code
+		out := defineOnce(ctx, d, opt, oneShot, stdout, stderr)
+		if out.ask != "" {
+			// The unforced route: the dictionary missed and the line reads as a
+			// question. Returning out.code here would exit 0 having printed
+			// nothing, since an ask outcome carries no failure.
+			return askUnavailable(stderr, out.ask)
+		}
+		return out.code
 	}
 }
 

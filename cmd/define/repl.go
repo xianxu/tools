@@ -157,7 +157,17 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 	// `echo /histry | define` exit 1 where dispatchCommand computes 2 and the
 	// README documents 2 for a usage error (BR-16).
 	var cmdCode int
-	var current string
+	var sess session
+	// ONE entry into the ask path, reached from two places: a forced question
+	// ("?…", decided by the parser) and an unforced one (a dictionary miss that
+	// reads as a question). They differ only in whether the dictionary was
+	// consulted, so wiring them separately would mean maintaining the answer
+	// path twice (ARCH-DRY).
+	ask := func(question string) {
+		if askUnavailable(stderr, question) != 0 {
+			anyFailed = true
+		}
+	}
 
 	for {
 		if showPrompt {
@@ -179,8 +189,12 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 			}
 			return 0
 		case line := <-lines:
-			switch cmd := parseREPLLine(line, current != ""); cmd.kind {
+			switch cmd := parseREPLLine(line, sess.hasCurrent()); cmd.kind {
 			case cmdNothing:
+				if cmd.note != "" {
+					fmt.Fprintf(stderr, "define: %s\n", cmd.note)
+					break
+				}
 				fmt.Fprintln(stderr, "define: type a word, or press return to replay the last one")
 			case cmdReplay:
 				if opt.noAudio || opt.times <= 0 {
@@ -189,7 +203,7 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				}
 				// This path is only reached when we do NOT own the terminal, so
 				// there is no transient UI to place: play and report.
-				playAnnounced(ctx, d, opt, current, indicator{}, stdout, stderr)
+				playAnnounced(ctx, d, opt, sess.current, indicator{}, stdout, stderr)
 			case cmdCommand:
 				// The piped loop dispatches too. `echo /history | define` must
 				// not reach the dictionary, and a first draft of #15 put this
@@ -202,13 +216,19 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 						cmdCode = code
 					}
 				}
+			case cmdAsk:
+				ask(cmd.question)
 			case cmdDefine:
 				// Only a successful lookup becomes the current word, so a typo
-				// does not cost you the word you were listening to.
+				// does not cost you the word you were listening to — and neither
+				// does a question, which is why the ask branch returns first.
 				out := defineOnce(ctx, d, opt, cmd, stdout, stderr)
-				if out.code == 0 {
-					current = cmd.word
-				} else {
+				switch {
+				case out.ask != "":
+					ask(out.ask)
+				case out.code == 0:
+					sess.sawLookup(cmd.word, out)
+				default:
 					anyFailed = true
 				}
 			}
