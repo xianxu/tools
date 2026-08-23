@@ -212,7 +212,11 @@ rounds:
           note: 'Both blocks extracted from the plan and built: contract block compiles with encoding/json; fake block compiles and vets with matcher defined and matchers used throughout.'
           round: 4
       blocked: false
-content_hash: 266bfdc03332e27f01991014a98c808ad4cea2fc781087cc8e0e9a12b1536799
+    - "n": 5
+      timestamp: "2026-08-22T18:42:22-07:00"
+      agent: claude
+      blocked: false
+content_hash: c356ecb762568be73e368186284b0f64ff8e41cd47f496352cfd96e84473399c
 ---
 
 # Gate ledger — tools#11 (plan-quality)
@@ -336,6 +340,8 @@ section (plan :1665-1680) still assert the proxy facts Delta 1 retracts.
 - PQ-1 — addressed — All five task-body changes landed; measured fact 2 and the Open question are corrected in place, and Usage now has the preamble/thinking fields Tasks 12/13 read.
 - PQ-10 — addressed — llm-probe.sh verify declares each capture's required shape and record stages-verifies-promotes; stream-sample.sse now carries thinking_delta and signature_delta.
 - PQ-11 — addressed — Both blocks extracted from the plan and built: contract block compiles with encoding/json; fake block compiles and vets with matcher defined and matchers used throughout.
+
+## Round 5 — 2026-08-22T18:42:22-07:00 (claude) — passed
 
 ## Open findings
 

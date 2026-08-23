@@ -5,7 +5,7 @@ deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-22
-estimate_hours: 5.78
+estimate_hours: 7.98
 started: 2026-08-22T17:11:23-07:00
 ---
 
@@ -49,61 +49,86 @@ An LLM seam with a stateful fake.
 
 ```estimate
 model: estimate-logic-v3.1
-familiarity: 1.0
-item: greenfield-go-module   design=1.5  impl=0.24
-item: api-integration        design=1.0  impl=0.48
-item: greenfield-go-module   design=0.75 impl=0.32
+familiarity: 1.5
+item: greenfield-go-module   design=1.5  impl=0.32
+item: api-integration        design=1.0  impl=0.60
+item: greenfield-go-module   design=0.75 impl=0.28
 item: smaller-go-module      design=0.2  impl=0.14
 item: real-api-discovery     design=0.0  impl=0.18
-item: milestone-review       design=0.0  impl=0.14
-item: milestone-review       design=0.0  impl=0.14
-item: atlas-docs             design=0.1  impl=0.06
-design-buffer: 0.15
-total: 5.78
+item: milestone-review       design=0.0  impl=0.20
+item: milestone-review       design=0.0  impl=0.20
+item: milestone-review       design=0.0  impl=0.20
+item: atlas-docs             design=0.15 impl=0.08
+design-buffer: 0.30
+total: 7.98
 ```
 
 *Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
 `baseline-v3.1.md`. Method A only.*
 
-**What each item is.** `greenfield-go-module` ×2 — the `internal/llm` core
-(contract, config, taxonomy, `Task[T]`/`Run[T]`, schema, `renderRequest`) and
-`llmtest` (wire fake, captures, cassettes, obligation suite, golden), which are
-separate concerns with separate test surfaces. `api-integration` — the SDK client
-with retry, streaming, stall detection and the error mapping; the slug's own
-definition is "API integration with batch + retry + tests", which is this exactly.
-`smaller-go-module` — `define --llm-check`, extending an existing command surface.
-`real-api-discovery` — the per-external-API budget: proxy shape, captures,
-conformance. `milestone-review` ×2 — M1 and M2 are two real boundaries, so two.
+**Revised upward from 5.78 after the estimate-quality judge, which raised six
+findings that all pointed the same way.** The first derivation passed the gate;
+that is not a reason to keep a number I now believe is low, because a knowingly-low
+estimate pollutes the calibration ledger exactly as much as a guessed one. What
+changed and why:
+
+- **`familiarity: 1.0 → 1.5`.** The block's own closing paragraph said an
+  unexercised SDK streaming path or `output_config` pass-through through a
+  third-party proxy "could double" the integration impl — which is a verbatim
+  description of v2 Step 5's *novel-but-bounded* case. Naming a risk in prose and
+  then declining to price it with the lever the model provides is having it both
+  ways.
+- **Three review boundaries, not two, at band-max hours.** The plan's own
+  `### Issue close` dispatches a review, so M1 + M2 + close is three. And the
+  primitive covers "one chunk" of review — dispatch and reading, not fixing. Checked
+  against this repo's most recent comparable rather than guessed: #15's boundary
+  remediation was `e37543a` (17:24) → `e5719f9` (17:45) → `8f04434` (18:07), ~43
+  minutes across three commits, plus `d9d26ce` for M1's five findings. 0.20 each
+  (band max) is still probably light for a greenfield transport.
+- **`design-buffer: 0.15 → 0.30`.** v2.1's Step 6 rule of thumb is explicit: the
+  +15% exists to avoid double-counting a ×0.2 spec discount, so *"if Step 3 was
+  ×0.5 or ×1.0, keep the v2 +30%"*. Step 3 ran at ×1.0 here (see below), so taking
+  the discount-adjacent buffer without the discount was reading the model
+  selectively in the direction that lowered the number.
+- **`api-integration` impl to band max (0.60).** The `## Robustness bar` puts work
+  inside this primitive that its definition ("batch + retry + tests") does not
+  cover: an idle-timeout stall detector, `Progress`/`OnSlow` across four phases, a
+  header-dribbling test server, and thinking-block byte-preservation. There is no
+  headroom left inside the band; if it overruns, the honest fix is a Method B
+  sketch rather than a higher pick here.
+- **The two `greenfield-go-module` impl figures were inverted.** The core carries
+  Tasks 1, 2, 3, 9, 10, 11; `llmtest` carries 4, 6 and part of 11. Core 0.24 → 0.32,
+  fake 0.32 → 0.28.
+- **`atlas-docs` absorbs Task 7**, the `AGENTS.local.md` carve-out, which had no
+  line of its own.
 
 **Step 2.5 (library availability) applied, and it moved two numbers.**
 `api-integration` design halved 2.0 → 1.0: the official `anthropic-sdk-go` exists,
-is already fetched and vetted, and collapses the wire-format, retry and SSE-parsing
-design dialogue that the primitive's range assumes. `llmtest` design halved
+is fetched and vetted at v1.66.0, and collapses the wire-format, retry and
+SSE-parsing design dialogue the primitive's range assumes. `llmtest` design halved
 1.5 → 0.75: `net/http/httptest` is stdlib and this repo already carries the pattern
-to mirror (`fakeCDN` in `cmd/define/fetch_fake_test.go`). The `internal/llm` core
+to mirror (`fakeCDN`, `cmd/define/fetch_fake_test.go:18`). The `internal/llm` core
 keeps full design hours — no library supplies a provider-independent contract or
-the degradation taxonomy, which is where the actual decisions were.
+the degradation taxonomy, which is where the decisions actually were.
 
-**Step 3 (spec-quality discount) deliberately NOT applied — the honest call.**
-The ×0.2 discount credits a spec that *pre-existed* the work. Here the plan was
-authored inside the measurement window: `sdlc claim` ran before any design, so
-today's brainstorm, the four plan-quality rounds and the prior-art study are all
-inside what `sdlc actual` will measure. Discounting design to ~0.7h would produce a
-row that reads 4× over for a reason that is an artifact of the method, not of the
-work. The +15% design buffer *is* applied, since a thorough plan doc now exists for
-the implementation half.
+**Step 3 (spec-quality discount) deliberately NOT applied.** The ×0.2 credits a
+spec that *pre-existed* the work; here the plan was authored inside the measurement
+window, because `sdlc claim` ran before any design. So today's brainstorm, four
+plan-quality rounds and the prior-art study are all inside what `sdlc actual`
+measures. `sdlc actual --issue 11` already reads 2.45h with no code committed —
+against a ×0.2 discount that would have budgeted 0.71h for all design, the row
+would be 3× under before a line of implementation exists.
 
-**Reconciliation.** Σdesign 3.55 × 1.15 = 4.0825; Σimpl 1.70 × 1.0 = 1.70;
-total 5.78. Impl values are already written at v3.1's 40% of the v2 table, per the
-model's instruction not to carry a separate scale field.
+**Reconciliation.** Σdesign 3.60 × 1.30 = 4.68; Σimpl 2.20 × 1.5 = 3.30;
+total 7.98. Impl values are written at v3.1's 40% of the v2 table, per the model's
+instruction not to carry a separate scale field.
 
-**Where this is most likely wrong.** The two `greenfield-go-module` design figures
-are the soft numbers — if the wire fake turns out to be mostly mechanical once the
-captures are in hand (they are already recorded and verified), design lands lower
-and the row reads over. Conversely `api-integration` impl assumes the SDK behaves
-as read; a surprise in streaming or `output_config` pass-through through the proxy
-is the one thing that could double it.
-
+**Where this is most likely wrong, now.** The design column: 3.60h before buffer
+assumes in-implementation design dialogue across 14 tasks under a plan that
+pre-resolves most decisions. If the plan holds up, design lands near the 2.45h
+already spent and this row reads over. The judge's own advisory is worth recording
+too — `sdlc actual` sums concurrent subagent spans additively, so the measured
+number can exceed wall clock, and this window already does.
 
 ## Plan
 
