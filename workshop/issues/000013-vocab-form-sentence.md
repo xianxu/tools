@@ -32,6 +32,11 @@ Form 2.4: the learner writes a sentence; the model grades it.
       structurally.
 - [ ] A malformed or refused response skips the question without losing the
       session.
+- [ ] **An unavailable seam skips this form entirely**, and the session continues
+      with the local forms. Distinct from the row above and not covered by it:
+      malformed/refused means the model answered badly, unavailable means it was
+      never reached, and only the second one is the ordinary offline state.
+      Relocated from #11 on 2026-08-22.
 - [ ] Disagreement is recorded with enough context to improve the prompt.
 
 ## Plan

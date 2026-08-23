@@ -33,7 +33,14 @@ An LLM seam with a stateful fake.
 
 ## Done when
 
-- [ ] `--play` runs a full session with the seam unavailable, using local forms.
+- [x] ~~`--play` runs a full session with the seam unavailable, using local
+      forms.~~ **Relocated 2026-08-22** — `--play` does not exist until #6, so
+      this could only ever have been ticked dishonestly here. Now carried by #6
+      (the loop degrades), #12 (veto skipped — it already held this row) and #13
+      (form skipped). What stays here is the property they all rest on, below.
+- [ ] `ErrUnavailable` is returned for no key, no network, 429 and 5xx, and is
+      distinguishable from `ErrRequest`, which stays loud. This is the half of
+      the degradation contract that IS testable in this issue.
 - [ ] Every prompt has a fake-backed test; no test hits the live API by default.
 - [ ] Structured responses are parsed defensively — a malformed reply degrades to
       "skip this question", never a crash.

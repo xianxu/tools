@@ -35,6 +35,12 @@ The deck and the schedule are inert without a way to sit down and review.
       per answer.
 - [ ] Interrupting mid-session preserves already-recorded events.
 - [ ] Adding a second form requires no change to the loop.
+- [ ] **A full session runs with the LLM seam unavailable**, falling back to the
+      forms that need neither key nor network (2.1 here, 2.3 in #7) rather than
+      failing. Relocated from #11 on 2026-08-22: it names `--play`, so it belongs
+      to the issue that owns `--play`. Asserted with a client returning
+      `llm.ErrUnavailable`, not by unsetting an env var — the point is that the
+      loop degrades, not that config resolution does.
 
 ## Plan
 
