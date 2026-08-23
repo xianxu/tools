@@ -93,7 +93,14 @@ the generated items are.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Design: [`workshop/plans/000016-console-qa-plan.md`](../plans/000016-console-qa-plan.md).
+
+- [x] Design via `sdlc start-plan` before implementing.
+- [ ] M1 — the console knows a question from a word: `readsAsQuestion`, the `?`
+      and `\` hatches on `parseREPLLine`, routing from the NOAD miss branch, and
+      the honest "no model configured" message in all three entry modes.
+- [ ] M2 — the answer: `askContext` + pure prompt, `runAsk` streaming through
+      `internal/llm`, `Store.UserModel`, the `asked` event, scoped Ctrl-C.
 
 ## Log
 
@@ -101,3 +108,19 @@ the generated items are.
 
 Created from the operator conversation that broadened `define-learn` to an adaptive
 program. See the project file's `## Log` scope event for the surrounding decisions.
+
+### 2026-08-23
+
+`sdlc start-plan` run; durable plan written to
+`workshop/plans/000016-console-qa-plan.md`. Three decisions worth surfacing
+before code: the NOAD lookup is **not** repeated — routing happens inside
+`lookupAndRender` after its single `dict.Lookup`, which also keeps it the one
+capture site (ARCH-DRY); a question is routed **before** capture, so it never
+lands in the event log as a not-found lookup (#8/#17 fold over that log); and
+Ctrl-C mid-stream has to mean something narrower than everywhere else, so the raw
+key reader's cancel becomes a swappable sink rather than the session cancel
+(ARCH-PURE keeps the swap testable without a terminal).
+
+Three open questions for the operator are listed at the foot of the plan: the
+choice of `\` for the force-literal hatch, whether the ≥5-word arm of the
+classifier is too generous, and whether `Store.UserModel` belongs here or in #17.
