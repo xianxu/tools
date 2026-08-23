@@ -229,3 +229,29 @@ key reader's cancel becomes a swappable sink rather than the session cancel
 Three open questions for the operator are listed at the foot of the plan: the
 choice of `\` for the force-literal hatch, whether the ≥5-word arm of the
 classifier is too generous, and whether `Store.UserModel` belongs here or in #17.
+
+### 2026-08-23 — residual estimate risk, recorded not repriced
+
+`sdlc change-code` cleared plan-quality after three rounds (PQ-1…PQ-6, ledger in
+`workshop/plans/000016-console-qa-plan-gate.md`) and estimate-quality passed the
+revised block as a derivation. Two risk signals it raised were **not** folded into
+the number, deliberately — a second repricing round before any code exists is the
+optimism it was warning about, in a different shape. Recorded here so that when
+`sdlc actual` measures this, the calibration has the hypotheses rather than just
+the miss:
+
+- **T11 is the item to doubt.** `impl=0.14` buys ~8 minutes for three tests, a pty
+  row, and threading `interrupts.Set` through `readKeys`/`repl`/`replRaw` — the
+  wiring the gate caught wrong twice on paper. `scope-pivot` insures T7's design
+  churn; nothing insures T11 executing that contract against a real terminal.
+- **No UX-iteration allowance on a feature that is entirely surface.** The
+  `user-driven UX iteration round` primitive is unused, while everything the
+  operator touches here is wording and rendering — the degradation message, the
+  `\` hatch, how a streamed paragraph lands through `crlfWriter`. v2.1's own
+  Known Limitations names this hole (3–5 rounds typical for TUI features).
+  Design produced three operator questions before any code; budgeting zero
+  rounds after code is the same bet.
+
+Counterweight the judge itself supplied: #14 — the closest analogue, raw-mode
+editor work — came in at **0.35×** its estimate. So the exposure is real but not
+one-directional.
