@@ -179,7 +179,7 @@ once `#6` is producing misses.
 - [x] capture on lookup — successful lookups build the deck [tools#4]
 - [x] REPL command mode — `/`-commands with type-ahead, starting `/history` [tools#15]
 - [x] LLM harness — transport, wire fake, obligation suite [tools#11 M1]
-- [ ] LLM harness — typed tasks, goldens, conformance, `--llm-check` [tools#11 M2]
+- [x] LLM harness — typed tasks, goldens, conformance, `--llm-check` [tools#11 M2]
 - [ ] free-form Q&A in the console — three-way input classification, directory as context [tools#16]
 - [ ] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [ ] news seam — Google News RSS (not the SERP) [tools#9]
@@ -231,8 +231,36 @@ this row should not be treated as clean evidence for the ledger.
 <a id="tools-11-m2"></a>
 ### tools#11 M2 — typed tasks, goldens, conformance
 
-**status:** open — `Task[T]`/`Run[T]`, `SchemaFor[T]`, `renderRequest` +
-cassettes/goldens, live conformance, `define --llm-check`
+**est:** 7.98 (whole issue)
+**actual:** 3.75h (increment: 7.20h measured total − 3.45h recorded at M1)
+**closed:** 2026-08-22
+
+A consumer now writes a prompt and a result type and gets a typed answer:
+`SchemaFor[T]` reflects the schema from the struct, `Run[T]` calls and decodes,
+and the stop reason is checked **before** decoding because a truncated structured
+answer parses cleanly.
+
+The decision worth preserving is that goldens and cassettes are two views of one
+request, both deriving from a single `renderRequest`. Two renderers would have
+drifted in the worst direction — a prompt edit visible in the golden while a stale
+cassette kept matching — so it landed before either consumer.
+
+The cassette is the answer to "how do you mock an LLM": you don't. You freeze a
+real response, key it by the request hash, and a miss fails loudly rather than
+falling back, because falling back is how an edited prompt comes to pass against a
+recording of the question it no longer asks.
+
+`decode` needed one real fix: "another token" is not "consumed cleanly" —
+`dec.Token()` returns an *error* for trailing prose, so `{...} — hope that helps!`
+was accepted with a populated value. 1.2M fuzz executions now hold the invariant.
+
+**Calibration caveat, stronger than M1's.** `sdlc actual` reports 7.20h for the
+issue, but its attribution warnings show it reaching into sessions from 2026-07-27
+and 2026-08-20/21 — days before this issue was claimed — and the window is shared
+with [tools#18]. Two spans are attributed to #11 by *mention fallback* rather than
+by commit boundary. The increment above is derived by subtraction from a
+measurement, not typed, but this row should not be treated as clean ledger
+evidence.
 
 <a id="tools-16"></a>
 ### tools#16 — free-form Q&A in the console
