@@ -336,6 +336,21 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		if oneShot.kind == cmdAsk {
 			return askUnavailable(stderr, oneShot.question)
 		}
+		// EXHAUSTIVE over what parseREPLLine can return, not "handle the two I
+		// added and let the rest fall through". #16 gave the parser a kind this
+		// branch had never seen — cmdNothing, from a bare "?" or "\" — and
+		// falling through handed lookupAndRender an EMPTY word: `define "?"`
+		// printed `define: : no dictionary entry` and appended a ReviewEvent with
+		// no word, which the log then discards at read time as indistinguishable
+		// from a torn record (BR-4).
+		if oneShot.kind != cmdDefine {
+			if oneShot.note != "" {
+				fmt.Fprintf(stderr, "define: %s\n", oneShot.note)
+			} else {
+				fmt.Fprintln(stderr, "define: type a word")
+			}
+			return 2
+		}
 		// oneShot, not fs.Arg(0): the parsed line is what carries #16's hatches,
 		// and a one-shot that re-derived the word from argv would send `define
 		// "?what is X"` to the dictionary — BR-13's shape, in a new place.
@@ -401,7 +416,13 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		// #8's statistics and #17's learner model both fold over — data that is
 		// not a lookup at all. The dictionary is asked once and its miss is the
 		// free, offline signal the classifier runs on (#16 D1).
-		if !cmd.literal && readsAsQuestion(word) {
+		// -raw is the scripting contract — README calls it the form that "records
+		// nothing, because it is for scripts" — so it must not reach the model
+		// either. Decided HERE, beside the literal flag, because both answer the
+		// same question: may this miss fall back to a question? In M1 the cost of
+		// getting it wrong is a different message; in M2 it is a network call for
+		// a line a script piped in.
+		if !cmd.literal && !opt.raw && readsAsQuestion(word) {
 			return lookupOutcome{ask: word}
 		}
 		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)

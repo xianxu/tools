@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -58,7 +59,7 @@ func readsAsQuestion(line string) bool {
 		return false
 	}
 	first := openerStem(fields[0])
-	return contains(questionOpeners, first) || contains(requestVerbs, first)
+	return slices.Contains(questionOpeners, first) || slices.Contains(requestVerbs, first)
 }
 
 // openerStem lowercases and strips the inflection a question opener carries:
@@ -78,15 +79,6 @@ func openerStem(w string) string {
 		return w[:i]
 	}
 	return w
-}
-
-func contains(set []string, s string) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // maxQuestionRunes bounds a question quoted back in a diagnostic.

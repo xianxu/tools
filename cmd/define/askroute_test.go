@@ -2,14 +2,28 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 const aQuestion = "what's the difference to obsequious?"
 
-// "Every entry mode reaches it" is the invariant BR-13 cost us once already,
-// so it gets a test per mode rather than one test and an assumption.
+// "Every entry mode reaches it" is the invariant BR-13 cost us once already, so
+// it gets a test per mode rather than one test and an assumption.
+//
+// And per mode is not enough: a question arrives by TWO routes — forced ("?…",
+// decided by the parser without a dictionary call) and unforced (a miss that
+// reads as one) — so the enumeration this file has to cover is
+// {replLines, runEditor} x {forced, unforced}, four cells. Three were empty on
+// the forced side at the M1 boundary review (I-2): the whole `case cmdAsk:` could
+// be deleted from BOTH loops with the suite green, because every loop-level test
+// took the unforced route and routeFor answers "question" for cmdAsk without
+// entering a loop at all. That is lessons.md define #15 — a wiring only a loop
+// shell supplies must be pinned by a test that drives that loop shell — applied
+// to the branch this milestone is named after.
 func TestLineLoopRoutesAQuestion(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
@@ -25,6 +39,33 @@ func TestEditorLoopRoutesAQuestion(t *testing.T) {
 	runEditor(t.Context(), scriptKeys(aQuestion+"\r"), rig.deps, opt, cooked, finish, &out, &errb)
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
+}
+
+// The forced half of the enumeration. Both pass against today's code — which is
+// the point: they exist to go RED when the branch is touched.
+func TestLineLoopRoutesAForcedQuestion(t *testing.T) {
+	rig := newAudioRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	// "why" IS a headword, so only the hatch can make this a question — which is
+	// what makes it a test of the forced branch rather than of the classifier.
+	replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+		strings.NewReader("?why\n"), &out, &errb, true, false)
+
+	assertAskedAndUnanswered(t, errb.String(), out.String())
+	if strings.Contains(out.String(), "adverb") {
+		t.Error("the forced question was defined instead of asked")
+	}
+}
+
+func TestEditorLoopRoutesAForcedQuestion(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("?why\r"), rig.deps, opt, cooked, finish, &out, &errb)
+
+	assertAskedAndUnanswered(t, errb.String(), out.String())
+	if rig.player.count() != 0 {
+		t.Errorf("played %d times — a forced question fell through to replay", rig.player.count())
+	}
 }
 
 func TestOneShotRoutesAQuestion(t *testing.T) {
@@ -92,31 +133,80 @@ func TestAQuestionIsNotCaptured(t *testing.T) {
 	}
 }
 
+// Asserted against the injected History, NOT against stdout.
+//
+// The first version of this test checked stdout for the question and could not
+// fail: the raw editor re-renders the whole line on every keystroke, so the
+// question is in stdout from typing alone — before Enter, before Up, before
+// history is consulted. Removing hist.Add outright left it green (I-1). The
+// general shape is worth remembering: in a loop that echoes, an assertion on
+// stdout is satisfied by the echo, so it has to be made against the thing the
+// behaviour actually writes to.
 func TestAQuestionIsRecalledByUpArrow(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
-	var out, errb bytes.Buffer
-	keys := make(chan Key, 64)
-	for _, k := range keysFor(aQuestion + "\r") {
-		keys <- k
-	}
-	keys <- Key{Kind: KeyUp}
-	close(keys)
-	runEditor(t.Context(), keys, rig.deps, opt, cooked, finish, &out, &errb)
+	for _, tc := range []struct{ name, keys, want string }{
+		{"forced", "?why\r", "?why"},
+		{"unforced", aQuestion + "\r", aQuestion},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+			hist := &memHistory{}
+			rig.deps.history = hist
+			var out, errb bytes.Buffer
+			runEditor(t.Context(), scriptKeys(tc.keys), rig.deps, opt, cooked, finish, &out, &errb)
 
-	if !strings.Contains(out.String(), aQuestion) {
-		t.Errorf("Up did not recall the question; stdout = %q", out.String())
+			if len(hist.lines) != 1 || hist.lines[0] != tc.want {
+				t.Fatalf("history = %q, want [%q] — the question was not recorded for recall", hist.lines, tc.want)
+			}
+			// And that what was recorded is what Up actually offers back.
+			if got := hist.Prefix(""); len(got) == 0 || got[0] != tc.want {
+				t.Errorf("Prefix(\"\") = %q, want %q first", got, tc.want)
+			}
+		})
 	}
 }
 
-func keysFor(s string) []Key {
-	var ks []Key
-	for _, r := range s {
-		switch r {
-		case '\r', '\n':
-			ks = append(ks, Key{Kind: KeyEnter})
-		default:
-			ks = append(ks, Key{Kind: KeyRune, Rune: r})
-		}
+// BR-4: the one-shot's dispatch must be exhaustive over what parseREPLLine can
+// return, not "handle the kinds I added and fall through". #16 gave the parser a
+// kind that branch had never seen — cmdNothing, from a bare "?" or "\" — and the
+// fall-through handed lookupAndRender an EMPTY word, which then appended an event
+// with no word that the log discards at read time as if it were torn.
+func TestOneShotRejectsAHatchWithNothingAfterIt(t *testing.T) {
+	for _, line := range []string{"?", `\`} {
+		t.Run(line, func(t *testing.T) {
+			cap := &countingCapturer{}
+			d := testDeps(t)
+			d.newStore = func(options, io.Writer) storeDeps {
+				return storeDeps{history: &memHistory{}, capture: cap, clock: store.SystemClock()}
+			}
+			var out, errb bytes.Buffer
+			code := run(t.Context(), []string{line}, d, strings.NewReader(""), &out, &errb)
+
+			if code != 2 {
+				t.Errorf("exit = %d, want 2 (a usage error)", code)
+			}
+			if strings.Contains(errb.String(), "no dictionary entry") {
+				t.Errorf("an empty word reached the dictionary: %q", errb.String())
+			}
+			for _, w := range cap.calls {
+				if w == "" {
+					t.Error("an empty word was captured — the log would hold a record it discards as torn")
+				}
+			}
+		})
 	}
-	return ks
+}
+
+// -raw is the scripting form; README documents it as recording nothing "because
+// it is for scripts". It must not reach the model either — in M1 that costs a
+// different message, in M2 a network call for a line a script piped in.
+func TestRawNeverAsks(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := run(t.Context(), []string{"-raw", aQuestion}, testDeps(t), strings.NewReader(""), &out, &errb)
+
+	if code != 1 {
+		t.Errorf("exit = %d, want 1 (a miss stays a miss under -raw)", code)
+	}
+	if strings.Contains(errb.String(), "no model configured") {
+		t.Errorf("-raw routed to the model: %q", errb.String())
+	}
 }

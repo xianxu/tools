@@ -126,8 +126,11 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	//
 	// It runs COOKED for the same reason a command does: in raw mode "\n" is a
 	// line feed with no carriage return.
+	// The caller supplies the leading "\r\n", because the unforced route has
+	// already written one before submitLine — emitting a second here put the two
+	// routes' output at different heights, which is exactly the divergence one
+	// shared closure exists to prevent.
 	askInSession := func(question string) error {
-		fmt.Fprint(stdout, "\r\n")
 		err := cooked(func() { askUnavailable(stderr, question) })
 		if err != nil {
 			return err
@@ -202,6 +205,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					// askInSession, which the unforced route reaches AFTER
 					// submitLine has already recorded the line.
 					hist.Add(submitted.String())
+					fmt.Fprint(stdout, "\r\n")
 					if err := askInSession(cmd.question); err != nil {
 						finish()
 						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
@@ -213,7 +217,10 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					// cmdReplay and cmdNothing both stay on this line: the
 					// indicator is drawn over the prompt, then the prompt back.
 					if cmd.note != "" {
-						fmt.Fprintf(stderr, "define: %s\r\n", cmd.note)
+						// eraseLine like replayInPlace's siblings: without it the
+						// note is appended to the line the user typed and reads
+						// as `› ?define: type a question after "?"`.
+						fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, cmd.note)
 						draw()
 						continue
 					}

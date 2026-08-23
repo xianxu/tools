@@ -282,3 +282,49 @@ Verified by hand against the real dictionary (not the fake): `sycophantic` and
 `hot dog` define, `sycophanti` misses, `how so` routes to the model, `\how so`
 stays a miss, `?why` asks despite `why` being a headword. Event log after six
 lines: four events, neither question among them.
+
+### 2026-08-23 — M1 boundary review round 1: BR-1…BR-4 + 4 Minor, all fixed
+
+Verdict FIX-THEN-SHIP, 8 findings, and two of them were mutations the reviewer
+ran that I had claimed were covered. Worth recording as a pair, because they are
+the same mistake in two shapes — **a test that cannot fail**:
+
+- **BR-1 / I-2 — the forced `?` branch was deletable from BOTH loops with the
+  suite green.** Every loop-level ask test took the *unforced* route, and
+  `routeFor` answers "question" for `cmdAsk` without entering a loop at all. The
+  class, not the site: any branch reachable only through a loop shell needs a
+  loop-shell test, and the enumeration that implies is
+  `{replLines, runEditor} × {forced, unforced}` — four cells, three empty. Both
+  new tests use `?why`, where `why` **is** a headword, so only the hatch can make
+  it a question.
+- **BR-2 / I-1 — `TestAQuestionIsRecalledByUpArrow` passed with `hist.Add`
+  removed.** It asserted on stdout, and the raw editor re-renders the line on
+  every keystroke, so the question was there from *typing* — before Enter, before
+  Up. In a loop that echoes, an assertion on stdout is satisfied by the echo. Now
+  asserted against the injected `History`, both routes.
+
+All three mutations the reviewer found green now go red; re-verified after the
+fixes.
+
+- **BR-4** — the one-shot fell through to `defineOnce` for kinds it did not
+  handle, and #16 gave the parser a new one: a bare `?` or `\` produced
+  `cmdNothing` with an empty word, printed `define: : no dictionary entry`, and
+  appended an event with no word that the log then discards at read time as
+  indistinguishable from a torn record. Fixed exhaustively — the branch now
+  handles everything that is not `cmdDefine` — rather than by special-casing `?`.
+- **BR-3** — README documents this class (the `/` marker, the key table, the
+  exit-code contract) and had none of it. Added, and the two behavioural claims
+  it now makes are pinned by tests rather than asserted in prose.
+
+Taken from the reviewer's M2 watch list and fixed **now**, since it is one
+condition and shipped behaviour: **`-raw` never asks.** It is the scripting form
+("records nothing, because it is for scripts"); routing a `-raw` miss to the
+model costs a different message today and a network call for a piped line in M2.
+Decided beside the `literal` flag, because both answer the same question — may
+this miss fall back to a question?
+
+Four Minor findings fixed in the same round rather than carried: the bare-`?`
+note now erases the line like its siblings, the forced and unforced asks render
+at the same height (the shared closure no longer emits a second `\r\n`), the
+atlas sentence that claimed single-word lines are never questions is qualified
+(`why?` is one), and `contains` is `slices.Contains`.

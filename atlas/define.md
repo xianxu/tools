@@ -485,8 +485,9 @@ the *table* unasserted.
 
 `readsAsQuestion` has three arms: a trailing `?`, a leading interrogative or
 auxiliary (`what's` → what, `isn't` → is, and `when` is not a negation), or a
-leading request verb with an object (`use it in a sentence`). Single-word lines
-are never questions — that is a headword shape, and a miss is a typo.
+leading request verb with an object (`use it in a sentence`). A single-word line
+with no question mark is never a question — that is a headword shape, and a miss
+is a typo. `why?` is, because the mark is explicit and its arm is tested first.
 
 **There is deliberately no length arm.** A draft had "≥5 words → question" to
 catch `difference between sycophantic and obsequious`, which reads as neither

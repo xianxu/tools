@@ -51,6 +51,34 @@ On a terminal, `define` with no word opens a line editor:
 
 Definitions wrap to your terminal width at word boundaries.
 
+**Type a question and it is answered instead of looked up.** There is no mode and
+no prefix to remember:
+
+```
+› sycophantic                            # a word: the dictionary entry
+› what's the difference to obsequious?   # a question: answered by the model
+› hot dog                                # still a word — two of them
+```
+
+The dictionary decides which is which, and that is why multi-word headwords keep
+working: `define` asks it first, and only classifies what it does not have. So
+`hot dog` and `a priori` are definitions, while a line it has no entry for that
+reads as a question — a wh-word, a question mark, or a request like `use it in a
+sentence` — goes to the model. Anything else is still a miss, so a typo says
+`not found` rather than starting a conversation.
+
+Both directions have a one-key escape, and neither is the only way to reach its
+outcome:
+
+| prefix | means |
+|---|---|
+| `?` | ask, even if it is a word — `?why` asks about *why* instead of defining it |
+| `\` | define, even if it reads as a question — `\how so` answers `not found` |
+
+Questions need a model configured (see `--llm-check` below); without one, `define`
+says so and exits `1` rather than looking up a sentence. `-raw` never asks — it is
+the scripting form, so a miss stays a miss.
+
 **`define` writes to the current directory.** *Every* successful lookup — one-shot,
 piped, or in the editor — records the word under `words/` and `events/` where you
 started `define`, so your deck and history build themselves:
@@ -111,15 +139,17 @@ non-zero and names the reason. Configure it with `DEFINE_LLM_API_KEY` (or `ANTHR
 `DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) — all five the tool reads. The
 default base URL is a local proxy on `127.0.0.1:8317`.
 
-Exit codes: `0` success; `1` the request failed (no dictionary entry, `--forget`
-found nothing to remove, or `--llm-check` found no usable model configuration);
-`2` usage error, which includes an unknown `/command`. A piped run exits `1` if any word failed and `2` if a command was
+Exit codes: `0` success; `1` the request failed (no dictionary entry, a question
+with no model configured, `--forget` found nothing to remove, or `--llm-check`
+found no usable model configuration); `2` usage error, which includes an unknown
+`/command` and a bare `?` or `\` with nothing after it. A piped run exits `1` if any word failed and `2` if a command was
 malformed, so `echo "$w" | define || …` works in a script; an interactive typo
 does not fail the session.
 
 A line beginning with `/` is a command rather than a word — `/` is safe as a
 marker because no English headword starts with one, and `define` needs whole
-lines for multi-word headwords like `hot dog`. Type `/` to see what there is,
+lines for multi-word headwords like `hot dog`. The same reasoning picks `?` and
+`\` for the two question hatches above: no headword begins with either. Type `/` to see what there is,
 Tab to complete, `/help` to list them. It works the same from every entry mode:
 `define /help`, `echo /help | define`, and `/help` typed at the prompt are one
 thing.
