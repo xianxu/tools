@@ -567,3 +567,25 @@ Two failures of the same shape in one review:
 **Enumerate where the class can live before fixing any instance of it**: source,
 tests, embedded code blocks, plan prose, atlas, and the script comments. Then
 re-run the finding's own measurement, not a proxy for it.
+
+## The sandbox reports "absent" where the truth is "unreachable" (define #18)
+
+`define madrugar` returned `no dictionary entry` under the sandbox and a full
+Oxford entry without it — same binary, same word, same machine.
+`DCSCopyTextDefinition` cannot reach the system dictionary assets from inside the
+sandbox, and the API has no way to say so: its status codes distinguish
+*no entry* from *CoreFoundation failure*, and a denied read looks like the former.
+
+I published a conclusion from that probe — "no Spanish dictionary is enabled on
+this Mac" — **after the operator had already said the definition worked.** Their
+observation was direct evidence; mine was a probe through a layer I had not
+accounted for.
+
+Two rules:
+
+- **When a capability looks absent, check whether it is merely unreachable** before
+  concluding it is missing. This is the third instance in this environment (git
+  over SSH, pty allocation, now DictionaryServices), so treat "sandboxed probe says
+  no" as unproven rather than negative.
+- **A user's direct observation outranks your indirect probe.** When they conflict,
+  the probe is what needs explaining.

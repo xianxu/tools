@@ -7,6 +7,7 @@ status: defined
 created: 2026-08-20
 updated: 2026-08-22
 mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#13", "tools#16", "tools#17"]
+explicitly_out_note: "tools#18 (Spanish) is real and filed, but OUT of this project's MVP: define-learn is done when the English loop works end to end. #18 M1 (audio) is independently shippable at any time."
 explicitly_out: ["multi-learner accounts", "sync/replication beyond whichever directory you run it in", "languages other than English", "generated (TTS) pronunciation — recorded audio only", "a GUI or mobile client"]
 sources: ["workshop/parley/ — define-learn ideation", "operator conversation 2026-08-22 (adaptive scope)"]
 ---
@@ -190,6 +191,8 @@ once `#6` is producing misses.
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
 - [ ] learner model — weakness taxonomy from review events, steers authoring [tools#17 M2]
+- [ ] Spanish — pronunciation locale (independently shippable) [tools#18 M1]
+- [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
 <a id="tools-11-m1"></a>
 ### tools#11 M1 — transport, wire fake, obligation suite
@@ -268,6 +271,28 @@ section is human-owned and never rewritten.
 
 **status:** blocked — needs review events from [tools#6]
 
+<a id="tools-18-m1"></a>
+### tools#18 M1 — Spanish pronunciation locale
+
+**status:** open — independently shippable, blocked on nothing
+
+`AudioCandidates` hardcodes `_en_`, so a Spanish word is only ever requested as an
+English one. Measured: `madrugar_en_us_1` 404s while `madrugar_es_es_1` and
+`madrugar_es_us_1` both return 200. The locale is phonemically load-bearing here
+rather than cosmetic — `es_es` is Castilian /θ/, `es_us` is *seseo* — and since
+Spanish orthography is phonemic, dictionary entries carry no phonetic notation at
+all, so the recording is the only place that information exists.
+
+<a id="tools-18-m2"></a>
+### tools#18 M2 — language-aware deck, agreement-safe distractors
+
+**status:** blocked — needs [tools#10] and [tools#12]
+
+The one that would otherwise break #12: Spanish leaks answers grammatically.
+*"La actitud del jefe era claramente ______"* eliminates every masculine option
+without the learner knowing a single word's meaning, so distractor selection needs
+a gender/number agreement filter beside the semantic-distance one.
+
 ## Log
 
 ### 2026-08-22 — scope event: the project became adaptive
@@ -320,3 +345,5 @@ still showed open here.
 [tools#16]: #tools-16
 [tools#17 M1]: #tools-17-m1
 [tools#17 M2]: #tools-17-m2
+[tools#18 M1]: #tools-18-m1
+[tools#18 M2]: #tools-18-m2
