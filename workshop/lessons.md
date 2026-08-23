@@ -589,3 +589,55 @@ Two rules:
   no" as unproven rather than negative.
 - **A user's direct observation outranks your indirect probe.** When they conflict,
   the probe is what needs explaining.
+
+## Fuzz both branches, or half the invariant is unfuzzed (define #11 M2)
+
+`FuzzDecode` asserted the error branch and `return`ed early on success. So the
+half that said *"a fully populated T"* was never checked, and `decode` shipped
+returning `{Fits:true, Reason:""}` with a **nil error** for `{"fits":true}` —
+while three separate artifacts (the function's own invariant comment, the atlas,
+the plan) claimed the opposite, and `SchemaFor[T]` already emitted
+`"required":["fits","reason"]`.
+
+The single source declared the constraint and the consumer ignored it. Two rules:
+
+- **A fuzz target that returns early on the success path is testing one half.**
+  Write the success assertion first — it is the one the happy path exercises
+  constantly, so a bug there is both likelier and quieter.
+- **`encoding/json` zero-fills.** "Decoded without error" never means "the fields
+  are present". Where a schema declares `required`, derive the check from it;
+  restating the list in a second place is the drift you were avoiding.
+
+## A double placed above the seam quietly reverses the design (define #11 M2)
+
+M1's central decision was that the test double is an httptest server speaking the
+wire protocol, **not** a stubbed `Client` — with a package doc arguing that a
+stubbed client cannot see a mis-serialized field or a dropped header. M2 then
+added a cassette that replaced `llm.Client` outright. Same package, opposite
+decision, no revision entry, and every consumer test written against it would have
+lost exactly the coverage the doc promised.
+
+Rebuilt as an `http.RoundTripper` under a `Config.Transport` seam, which cost
+about forty lines and bought a property the higher placement could not have:
+**the error taxonomy survives replay structurally.** A recorded 400 is replayed as
+a 400 and reaches the classifier as "our bug"; the `Client`-level version stored
+the error as a string, re-derived the class from the stop reason, and collapsed
+every recorded `ErrRequest` into `ErrUnavailable` — the one collapse the taxonomy
+exists to prevent.
+
+**The rule:** when adding a second double for a dependency that already has one,
+place it at the same seam. If it cannot go there, that is a design change and it
+needs saying out loud, not a new file.
+
+## A universal claim is a claim about an enumeration (define #11 M2)
+
+Four doc claims in one milestone were false the moment they were written —
+"every failure names the fix" (2 of 7 did), "held by a fuzz target" (one branch),
+"reject missing ones" (it did not), and a citation of a golden file that did not
+exist anywhere in the tree.
+
+Each was written as a description of intent while the edit was fresh. **"Every",
+"always", "never", "is held by" are claims about a set**, so they may only be
+written after enumerating that set and checking each member — and a claim naming
+an identifier or an on-disk artifact must be grep-verified in the same edit that
+writes it. Otherwise the doc records what the author meant to build.

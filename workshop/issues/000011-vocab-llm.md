@@ -243,6 +243,34 @@ Also, twice in this milestone a scripted edit aborted partway and I committed as
 though it had applied (the `Reply.Capture` comment in M1, the atlas sections
 here). Every edit batch now re-greps for what it wrote and reports APPLIED/FAILED.
 
+### 2026-08-23 — M2 boundary review: REWORK, then fixed
+
+17 findings, one Critical, verdict REWORK. The two that mattered:
+
+**`decode` returned a half-populated `T` with a nil error** when a required field
+was missing — `{}` decoded to a veto verdict of `Fits:false` that #12 could not
+distinguish from a real "no", so it would have dropped a distractor rather than
+skipped a question. Three artifacts claimed otherwise while `SchemaFor[T]` already
+emitted the required list. It survived because `FuzzDecode` asserted only the
+error branch and returned early on success — half the invariant was unfuzzed.
+
+**The cassette had been built above the seam**, replacing `llm.Client` outright
+and reversing M1's central decision in the same package whose doc argues against
+exactly that. Rebuilt as an `http.RoundTripper` beneath a new `Config.Transport`;
+the taxonomy now survives replay structurally rather than being re-derived from a
+stored string, which had collapsed every recorded `ErrRequest` into
+`ErrUnavailable`.
+
+Also closed: the schema golden that justified reflecting the schema did not exist;
+`--llm-check`'s doubles discarded the request so nothing asserted what the flag
+asks; the drift suite reported drift when the proxy was merely unreachable; the
+README documented every flag but this one; and four universal doc claims were
+false when written. Three lessons filed.
+
+Verified after rework: `go test ./...` green, `-race` clean, both conformance
+suites pass live (39.9s), `--llm-check` still answers PONG against the real proxy
+with the preamble at 1902 tokens.
+
 ## Revisions
 
 ### 2026-08-22 — from a narrow seam to the base of a harness
