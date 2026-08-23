@@ -20,7 +20,7 @@ func TestServesACaptureVerbatim(t *testing.T) {
 	f := NewFake(t)
 	f.ServeRecorded("message-thinking.json")
 
-	body := post(t, f.URL, `{"model":"m","messages":[{"role":"user","content":"which also fits"}]}`)
+	body := post(t, f.URL, `{"model":"claude-opus-5","messages":[{"role":"user","content":"which also fits"}]}`)
 	want := Capture(t, "message-thinking.json")
 	if !bytes.Equal(bytes.TrimSpace(body), bytes.TrimSpace(want)) {
 		t.Errorf("served body is not the capture\n got %d bytes\nwant %d bytes", len(body), len(want))
@@ -123,4 +123,20 @@ func postStatus(t *testing.T, url, body string) int {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
+}
+
+// The fake rejects an unknown model the way the REAL proxy does — 502 with an
+// api_error body, measured 2026-08-22, NOT the 400 api.anthropic.com returns
+// directly. A fake that answered 400 would make the shared obligation suite pass
+// here and fail against the live service, which is the divergence the suite
+// exists to catch.
+func TestUnknownModelIsRejectedLikeTheProxyDoes(t *testing.T) {
+	f := NewFake(t)
+	code := postStatus(t, f.URL, `{"model":"claude-not-a-real-model","messages":[{"role":"user","content":"hi"}]}`)
+	if code != 502 {
+		t.Errorf("status = %d, want 502 (what cli-proxy-api answers)", code)
+	}
+	if code := postStatus(t, f.URL, `{"model":"claude-opus-5","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
+		t.Errorf("a real model got %d", code)
+	}
 }

@@ -120,6 +120,18 @@ type Reply struct {
 	JunkFrame bool
 }
 
+// knownModel mirrors the model list the proxy actually serves (measured via
+// GET /v1/models). Deliberately a prefix check rather than the full 31-entry
+// list: the point is to reject a typo, not to be a registry that goes stale.
+func knownModel(m string) bool {
+	for _, p := range []string{"claude-", "gpt-", "gemini-", "grok-"} {
+		if strings.HasPrefix(m, p) && !strings.Contains(m, "not-a-real") {
+			return true
+		}
+	}
+	return false
+}
+
 type matcher struct {
 	match string
 	queue []Reply
@@ -207,6 +219,19 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	reply := f.next(rec.Prompt())
 	f.mu.Unlock()
 
+	// An unknown model is rejected the way the REAL proxy rejects one. Measured
+	// 2026-08-22: cli-proxy-api answers 502 with
+	// {"type":"error","error":{"type":"api_error","message":"unknown provider for
+	// model X"}} — NOT the 400 an unknown model gets from api.anthropic.com
+	// directly. Modelled here rather than invented, because the whole value of a
+	// shared obligation suite is that the fake and the live service answer the
+	// same way; a fake that 400s would make the suite pass here and fail there.
+	if m, _ := rec.Body["model"].(string); m != "" && !knownModel(m) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"unknown provider for model %s"}}`, m)
+		return
+	}
 	if reply.Status != 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(reply.Status)
