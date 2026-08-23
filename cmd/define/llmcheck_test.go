@@ -80,13 +80,15 @@ func TestLLMCheckNeverPrintsTheKey(t *testing.T) {
 // A diagnostic must be LOUD. Every model-shaped feature in this tool degrades
 // silently by design; this is the one surface where it must not.
 func TestLLMCheckIsNonZeroAndSpecificWhenUnavailable(t *testing.T) {
+	// Every field here is set by at least one row. `hung` and `timeout` used to
+	// sit in this struct after the row that used them moved to its own test, so
+	// the setup they gated ran for nobody — a knob no fixture turns is dead the
+	// same way an unread field is, and in a test table it reads as coverage.
 	cases := []struct {
-		name    string
-		env     map[string]string
-		base    string
-		hung    bool // point at a listener that accepts and never answers
-		timeout time.Duration
-		wantIn  string
+		name   string
+		env    map[string]string
+		base   string
+		wantIn string
 	}{
 		{
 			name:   "no key names both variables and where to find one",
@@ -105,32 +107,11 @@ func TestLLMCheckIsNonZeroAndSpecificWhenUnavailable(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			base := c.base
-			if c.hung {
-				ln, err := net.Listen("tcp", "127.0.0.1:0")
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer ln.Close()
-				go func() {
-					for {
-						conn, err := ln.Accept()
-						if err != nil {
-							return
-						}
-						_ = conn // hold it open, answer nothing
-					}
-				}()
-				base = "http://" + ln.Addr().String()
-			}
 			code := runLLMCheck(t.Context(), envOf(c.env), func(cfg llm.Config) llm.Client {
-				if base != "" {
-					cfg.BaseURL = base
+				if c.base != "" {
+					cfg.BaseURL = c.base
 				}
 				cfg.Timeout = 5 * time.Second
-				if c.timeout != 0 {
-					cfg.Timeout = c.timeout
-				}
 				return llm.New(cfg)
 			}, &out, &errOut)
 			if code == 0 {
@@ -223,11 +204,12 @@ func TestLLMCheckHonoursCancellation(t *testing.T) {
 
 // A DEADLINE must be reported, not silenced.
 //
-// Its own test rather than a row in the table above, because the table's hung
-// listener races two timers — the context deadline and the SDK's per-request
-// timeout — and whichever wins changes the error. That made the row pass either
-// way, so it could not detect the guard being widened back. Here the transport
-// blocks until the CONTEXT is done, so the deadline is unambiguously the cause.
+// Its own test rather than a row in the table above, because it needs a
+// transport that blocks past the deadline AND a shortened DEFINE_LLM_TIMEOUT —
+// neither of which the table's rows supply. An earlier attempt used a hung
+// listener in the table and could not detect the bug: a listener races two
+// timers, the context deadline and the SDK's per-request timeout, and whichever
+// wins changes the error.
 //
 // The bug this pins: a guard meant to keep an interrupt quiet, written against
 // the DERIVED context, also silences the deadline — and a hung proxy is exactly

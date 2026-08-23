@@ -76,14 +76,22 @@ func New(c Config) Client {
 func (a *anthropicClient) effective(r Request) Request {
 	r.Model = cmp.Or(r.Model, a.cfg.Model)
 	r.Effort = cmp.Or(r.Effort, a.cfg.Effort)
-	r.MaxTokens = cmp.Or(r.MaxTokens, a.cfg.MaxTokens)
+	// <= 0, not cmp.Or. Request.MaxTokens is a SECOND door into the same field,
+	// and normalising only Config left it open: cmp.Or replaces the zero value,
+	// so a negative override reached the wire as -5 with a nil error. Any field
+	// with a per-request override needs the same treatment at both doors.
+	if r.MaxTokens <= 0 {
+		r.MaxTokens = a.cfg.MaxTokens
+	}
 	return r
 }
 
 func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 	p := anthropic.MessageNewParams{
-		Model:     anthropic.Model(cmp.Or(r.Model, a.cfg.Model)),
-		MaxTokens: cmp.Or(r.MaxTokens, a.cfg.MaxTokens),
+		Model: anthropic.Model(cmp.Or(r.Model, a.cfg.Model)),
+		// effective() has already normalised this; the guard stays because params
+		// is reachable from a future caller that has not been through it.
+		MaxTokens: positiveOrInt64(r.MaxTokens, a.cfg.MaxTokens),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(r.Prompt)),
 		},
@@ -312,6 +320,14 @@ func (a *anthropicClient) watch(ctx context.Context, task, phase string) func() 
 	}()
 	var once sync.Once
 	return func() { once.Do(func() { close(stop) }) }
+}
+
+// positiveOrInt64 is positiveOr for a token count.
+func positiveOrInt64(v, fallback int64) int64 {
+	if v <= 0 {
+		return fallback
+	}
+	return v
 }
 
 // positiveOr takes the fallback unless v is meaningfully positive.

@@ -1189,6 +1189,171 @@ rounds:
           family: unclassified-failure-mode
           round: 10
       blocked: true
+    - "n": 11
+      timestamp: "2026-08-23T10:54:24-07:00"
+      agent: claude
+      dispose:
+        - id: BR-27
+          disposition: addressed
+          note: Reversion-verified per field — reverting Timeout and MaxTokens to cmp.Or reddens TestNewNormalisesOutOfRangeConfig naming both. The Request surface of the same rule is raised as a new finding, not this one re-raised.
+          round: 11
+        - id: BR-28
+          disposition: addressed
+          note: Reversion-verified (4 non-stream rows redden), and I swept all 9 Reply field x path combinations — every one is served correctly or answers LOUD-harness; no silent acceptance remains.
+          round: 11
+        - id: BR-43
+          disposition: not-addressed
+          note: Re-verified by reversion — with sticky reverted, TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green while TestTheLastScriptedReplyIsSticky reddens.
+          round: 11
+        - id: BR-44
+          disposition: not-addressed
+          note: Re-measured against the built binary — `define -llm-check hello` runs the check and discards the word; main.go:278 still returns before the arity switch.
+          round: 11
+        - id: BR-45
+          disposition: addressed
+          note: The Request no longer sets MaxTokens, so effective() supplies cfg.MaxTokens. Unpinned though — reinstating 2048 leaves the suite green; raised as a new enforcement finding.
+          round: 11
+        - id: BR-46
+          disposition: not-addressed
+          note: Measured — SchemaFor[string]() = {additionalProperties:false, type:string}; map = an object permitting no keys; a top-level slice gets it on a type:array schema.
+          round: 11
+        - id: BR-53
+          disposition: not-addressed
+          note: Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+          round: 11
+        - id: BR-56
+          disposition: not-addressed
+          note: Ran the enumeration — ErrorForStop (errors.go:92) has 0 references tree-wide including tests; `_ = c` still at cassette_test.go:242.
+          round: 11
+        - id: BR-57
+          disposition: not-addressed
+          note: Plan's last Revisions heading is still M2 rounds 6-7; rounds 8/9/10 and both close rounds undeclared, and task_conformance returns 0 grep hits in the plan.
+          round: 11
+        - id: BR-60
+          disposition: not-addressed
+          note: plan:2138 still claims SkipIfUnreachable was added to the Integration points table; the eight-row table at plan:154 contains neither it nor RequestFromContext.
+          round: 11
+        - id: BR-61
+          disposition: not-addressed
+          note: Cleanest mutation yet — diverging only params()'s Config fallback puts a different model on the wire than effective() hashes, and go test ./... stays fully green.
+          round: 11
+        - id: BR-62
+          disposition: addressed
+          note: Measured 12 pass / 0 fail / 0 skip of 12 verified-running live runs (vs 3/18 and 3/15); zero content assertions remain and both misattributing messages are corrected. The mustCall item of its enumeration is raised separately.
+          round: 11
+        - id: BR-63
+          disposition: addressed
+          note: 'Both members of its two-item enumeration: ctx threaded (SIGINT against a hung endpoint now exits in 0s, measured) and MaxTokens read from the resolved Config.'
+          round: 11
+        - id: BR-64
+          disposition: addressed
+          note: Count corrected to Three, and the quoted claim "Asserts shape, never the model's judgment" is now true at 12/12 live. A different false clause in the same bullet is raised as a new finding.
+          round: 11
+        - id: BR-65
+          disposition: addressed
+          note: Reversion-verified — restoring the derived ctx.Err() reddens TestLLMCheckReportsADeadline with stderr = "" exactly; live against a hung listener the binary now names the timeout and the base URL.
+          round: 11
+      findings:
+        - id: BR-66
+          severity: Important
+          title: A negative Request.MaxTokens still reaches the wire as -5 with a nil error
+          detail: |-
+            Measured on the clean tree at 36f3cfa: Complete(Request{MaxTokens: -5}) returns
+            err=nil with wire max_tokens = -5; MaxTokens: 0 correctly resolves to 8192. New
+            normalises Config.MaxTokens with `if c.MaxTokens <= 0`, but effective()
+            (anthropic.go:73) resolves the REQUEST with cmp.Or(r.MaxTokens, a.cfg.MaxTokens) —
+            and New's own comment forty lines above states why that fails: "cmp.Or only
+            replaces the ZERO value — so every negative slipped straight through... a negative
+            MaxTokens reached the wire as -5 with a nil error." That sentence now describes the
+            code below it. Task[T].MaxTokens feeds this path directly, so it is the surface
+            five downstream issues write against. No test covers it:
+            TestNegativeConfigValuesDoNotPanic passes MaxTokens: -5 in the Config, which IS
+            normalised.
+            THIS IS THE 3RD FINDING IN FAMILY `partial-constructor-defaults`. Do not add a
+            guard in effective() and stop. The RULE, stated so it covers both rounds:
+            normalisation belongs wherever a value ENTERS the package, and cmp.Or is never a
+            range check — it is an unset check. THE ENUMERATION is mechanical: grep cmp.Or in
+            internal/llm and for each call name the field's out-of-range meaning. Today that is
+            effective() and params(), which range-check the same three fields in neither place
+            — so collapsing to positiveOr and one derivation (see BR-61) closes both at once.
+          family: partial-constructor-defaults
+          round: 11
+        - id: BR-67
+          severity: Minor
+          title: The MaxTokens half of BR-63 is real in the code but survives full reversion
+          detail: |-
+            Measured: reinstating `MaxTokens: 2048` in runLLMCheck's Request leaves the entire
+            TestLLMCheck* suite green. The assertion at llmcheck_test.go:59 is
+            `mt < 1024`, which cannot distinguish the hardcoded 2048 from the resolved 8192 —
+            so the property the fix exists for ("the diagnostic reports on the request the
+            operator configured") is asserted by nothing.
+            THIS IS THE 7TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. The RULE is
+            unchanged since BR-15 and needs no restatement: a boundary fix that changes
+            behaviour is not complete until a test fails against the pre-fix code. What is
+            worth adding is the shape the floor-assertion hides: a threshold assertion pins a
+            RANGE, not a DERIVATION, so it cannot detect a value that stopped deriving. Assert
+            against the resolved config (`mt == float64(cfg.MaxTokens)`), not against a floor.
+          family: enforcement-not-pinned-by-a-test
+          round: 11
+        - id: BR-68
+          severity: Minor
+          title: mustCall reports a transient 529 as a capture-drift failure
+          detail: |-
+            Measured against a local server answering 529 overloaded_error: all four subtests
+            of TestCaptureDriftAgainstTheLiveService fail with "call failed: llm: unavailable:
+            ... 529". anthropic.go:19 records 529 as "observed live while recording this
+            issue's captures", so this is an ordinary condition of the dependency, not drift —
+            the third bucket BR-62 named ("the dependency behaved normally but differently").
+            This is the one item of BR-62's own written enumeration that was not swept; the two
+            assertions it named ARE fixed and measured at 12/12 live.
+            THIS IS THE 5TH FINDING IN FAMILY `unclassified-failure-mode`. Do not special-case
+            529 at this site. The RULE, already stated at BR-39/BR-62 and unchanged: a live
+            check must distinguish unreachable, changed, and normally-but-differently before
+            reporting any of them — and the transport ALREADY draws that line, in
+            errors.go:transient(), derived from the SDK's retry policy. The enumeration is one
+            question per call site: is this error in the transient set? If so it is the service
+            being busy, and the suite should retry or skip, not report drift.
+          family: unclassified-failure-mode
+          round: 11
+        - id: BR-69
+          severity: Minor
+          title: Two artifacts still claim the live typed-task suite asserts fields are populated, which this round deliberately removed
+          detail: |-
+            task_conformance_test.go:22 says "It asserts SHAPE ... that the fields are
+            populated, that the schema constrained the answer, that a nested result decodes",
+            and atlas/llm.md:207 says "a Go struct in, a populated struct out". The same file's
+            body, sixty lines below, says "NOTHING about the CONTENT is asserted. Whitespace-only
+            strings, how many options come back ... all of that is the model's choice." Verified:
+            the only assertions in the file are two t.Fatalf on Run's error. The count ("Three
+            tagged suites") and the claim BR-64 quoted are both correct now; these two clauses
+            were left describing the pre-fix behaviour.
+            THIS IS THE 7TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not just edit the
+            two sentences. The RULE, unchanged since BR-34, needs its converse spelled out:
+            REMOVING an assertion is an edit to every sentence that describes what the test
+            asserts, exactly as adding a list member is an edit to every counting sentence. The
+            enumeration is the doc comment of the file you changed plus its atlas bullet — both
+            were open in the same commit.
+          family: docs-claim-absent-surface
+          round: 11
+        - id: BR-70
+          severity: Minor
+          title: The llm-check table carries a hung-listener branch and a timeout field that no case turns on
+          detail: |-
+            cmd/define/llmcheck_test.go:87-88 declare `hung bool` and `timeout time.Duration`;
+            neither of the table's two cases sets either, so the ~20-line listener at :109-127
+            and the override at :131 are unreachable. Verified: deleting the branch and both
+            fields leaves TestLLMCheck* green. The comment at :226 justifies
+            TestLLMCheckReportsADeadline being a separate test "because the table's hung
+            listener races two timers" — describing a listener the table never starts.
+            THIS IS THE 6TH FINDING IN FAMILY `dead-code`. Do not just delete these lines. The
+            RULE was already widened at BR-32 to "a knob no fixture turns is dead the same as
+            an unread field", and this is the first instance of it inside a TEST table. The
+            enumeration that catches the class: for every struct field in a table-driven test
+            fixture, confirm at least one case sets it — a field no row sets is a branch no run
+            enters, and it reads as coverage in exactly the way BR-15 described.
+          family: dead-code
+          round: 11
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (boundary-review)
@@ -1785,20 +1950,115 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   own bound, and add a deadline row to the "non-zero and specific" table so the silent
   branch is covered by something.
 
+## Round 11 — 2026-08-23T10:54:24-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-27 — addressed — Reversion-verified per field — reverting Timeout and MaxTokens to cmp.Or reddens TestNewNormalisesOutOfRangeConfig naming both. The Request surface of the same rule is raised as a new finding, not this one re-raised.
+- BR-28 — addressed — Reversion-verified (4 non-stream rows redden), and I swept all 9 Reply field x path combinations — every one is served correctly or answers LOUD-harness; no silent acceptance remains.
+- BR-43 — not-addressed — Re-verified by reversion — with sticky reverted, TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green while TestTheLastScriptedReplyIsSticky reddens.
+- BR-44 — not-addressed — Re-measured against the built binary — `define -llm-check hello` runs the check and discards the word; main.go:278 still returns before the arity switch.
+- BR-45 — addressed — The Request no longer sets MaxTokens, so effective() supplies cfg.MaxTokens. Unpinned though — reinstating 2048 leaves the suite green; raised as a new enforcement finding.
+- BR-46 — not-addressed — Measured — SchemaFor[string]() = {additionalProperties:false, type:string}; map = an object permitting no keys; a top-level slice gets it on a type:array schema.
+- BR-53 — not-addressed — Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+- BR-56 — not-addressed — Ran the enumeration — ErrorForStop (errors.go:92) has 0 references tree-wide including tests; `_ = c` still at cassette_test.go:242.
+- BR-57 — not-addressed — Plan's last Revisions heading is still M2 rounds 6-7; rounds 8/9/10 and both close rounds undeclared, and task_conformance returns 0 grep hits in the plan.
+- BR-60 — not-addressed — plan:2138 still claims SkipIfUnreachable was added to the Integration points table; the eight-row table at plan:154 contains neither it nor RequestFromContext.
+- BR-61 — not-addressed — Cleanest mutation yet — diverging only params()'s Config fallback puts a different model on the wire than effective() hashes, and go test ./... stays fully green.
+- BR-62 — addressed — Measured 12 pass / 0 fail / 0 skip of 12 verified-running live runs (vs 3/18 and 3/15); zero content assertions remain and both misattributing messages are corrected. The mustCall item of its enumeration is raised separately.
+- BR-63 — addressed — Both members of its two-item enumeration: ctx threaded (SIGINT against a hung endpoint now exits in 0s, measured) and MaxTokens read from the resolved Config.
+- BR-64 — addressed — Count corrected to Three, and the quoted claim "Asserts shape, never the model's judgment" is now true at 12/12 live. A different false clause in the same bullet is raised as a new finding.
+- BR-65 — addressed — Reversion-verified — restoring the derived ctx.Err() reddens TestLLMCheckReportsADeadline with stderr = "" exactly; live against a hung listener the binary now names the timeout and the base URL.
+
+### Raised
+
+- **BR-66** [Important] `partial-constructor-defaults` A negative Request.MaxTokens still reaches the wire as -5 with a nil error
+  Measured on the clean tree at 36f3cfa: Complete(Request{MaxTokens: -5}) returns
+  err=nil with wire max_tokens = -5; MaxTokens: 0 correctly resolves to 8192. New
+  normalises Config.MaxTokens with `if c.MaxTokens <= 0`, but effective()
+  (anthropic.go:73) resolves the REQUEST with cmp.Or(r.MaxTokens, a.cfg.MaxTokens) —
+  and New's own comment forty lines above states why that fails: "cmp.Or only
+  replaces the ZERO value — so every negative slipped straight through... a negative
+  MaxTokens reached the wire as -5 with a nil error." That sentence now describes the
+  code below it. Task[T].MaxTokens feeds this path directly, so it is the surface
+  five downstream issues write against. No test covers it:
+  TestNegativeConfigValuesDoNotPanic passes MaxTokens: -5 in the Config, which IS
+  normalised.
+  THIS IS THE 3RD FINDING IN FAMILY `partial-constructor-defaults`. Do not add a
+  guard in effective() and stop. The RULE, stated so it covers both rounds:
+  normalisation belongs wherever a value ENTERS the package, and cmp.Or is never a
+  range check — it is an unset check. THE ENUMERATION is mechanical: grep cmp.Or in
+  internal/llm and for each call name the field's out-of-range meaning. Today that is
+  effective() and params(), which range-check the same three fields in neither place
+  — so collapsing to positiveOr and one derivation (see BR-61) closes both at once.
+- **BR-67** [Minor] `enforcement-not-pinned-by-a-test` The MaxTokens half of BR-63 is real in the code but survives full reversion
+  Measured: reinstating `MaxTokens: 2048` in runLLMCheck's Request leaves the entire
+  TestLLMCheck* suite green. The assertion at llmcheck_test.go:59 is
+  `mt < 1024`, which cannot distinguish the hardcoded 2048 from the resolved 8192 —
+  so the property the fix exists for ("the diagnostic reports on the request the
+  operator configured") is asserted by nothing.
+  THIS IS THE 7TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. The RULE is
+  unchanged since BR-15 and needs no restatement: a boundary fix that changes
+  behaviour is not complete until a test fails against the pre-fix code. What is
+  worth adding is the shape the floor-assertion hides: a threshold assertion pins a
+  RANGE, not a DERIVATION, so it cannot detect a value that stopped deriving. Assert
+  against the resolved config (`mt == float64(cfg.MaxTokens)`), not against a floor.
+- **BR-68** [Minor] `unclassified-failure-mode` mustCall reports a transient 529 as a capture-drift failure
+  Measured against a local server answering 529 overloaded_error: all four subtests
+  of TestCaptureDriftAgainstTheLiveService fail with "call failed: llm: unavailable:
+  ... 529". anthropic.go:19 records 529 as "observed live while recording this
+  issue's captures", so this is an ordinary condition of the dependency, not drift —
+  the third bucket BR-62 named ("the dependency behaved normally but differently").
+  This is the one item of BR-62's own written enumeration that was not swept; the two
+  assertions it named ARE fixed and measured at 12/12 live.
+  THIS IS THE 5TH FINDING IN FAMILY `unclassified-failure-mode`. Do not special-case
+  529 at this site. The RULE, already stated at BR-39/BR-62 and unchanged: a live
+  check must distinguish unreachable, changed, and normally-but-differently before
+  reporting any of them — and the transport ALREADY draws that line, in
+  errors.go:transient(), derived from the SDK's retry policy. The enumeration is one
+  question per call site: is this error in the transient set? If so it is the service
+  being busy, and the suite should retry or skip, not report drift.
+- **BR-69** [Minor] `docs-claim-absent-surface` Two artifacts still claim the live typed-task suite asserts fields are populated, which this round deliberately removed
+  task_conformance_test.go:22 says "It asserts SHAPE ... that the fields are
+  populated, that the schema constrained the answer, that a nested result decodes",
+  and atlas/llm.md:207 says "a Go struct in, a populated struct out". The same file's
+  body, sixty lines below, says "NOTHING about the CONTENT is asserted. Whitespace-only
+  strings, how many options come back ... all of that is the model's choice." Verified:
+  the only assertions in the file are two t.Fatalf on Run's error. The count ("Three
+  tagged suites") and the claim BR-64 quoted are both correct now; these two clauses
+  were left describing the pre-fix behaviour.
+  THIS IS THE 7TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not just edit the
+  two sentences. The RULE, unchanged since BR-34, needs its converse spelled out:
+  REMOVING an assertion is an edit to every sentence that describes what the test
+  asserts, exactly as adding a list member is an edit to every counting sentence. The
+  enumeration is the doc comment of the file you changed plus its atlas bullet — both
+  were open in the same commit.
+- **BR-70** [Minor] `dead-code` The llm-check table carries a hung-listener branch and a timeout field that no case turns on
+  cmd/define/llmcheck_test.go:87-88 declare `hung bool` and `timeout time.Duration`;
+  neither of the table's two cases sets either, so the ~20-line listener at :109-127
+  and the override at :131 are unreachable. Verified: deleting the branch and both
+  fields leaves TestLLMCheck* green. The comment at :226 justifies
+  TestLLMCheckReportsADeadline being a separate test "because the table's hung
+  listener races two timers" — describing a listener the table never starts.
+  THIS IS THE 6TH FINDING IN FAMILY `dead-code`. Do not just delete these lines. The
+  RULE was already widened at BR-32 to "a knob no fixture turns is dead the same as
+  an unread field", and this is the first instance of it inside a TEST table. The
+  enumeration that catches the class: for every struct field in a table-driven test
+  fixture, confirm at least one case sets it — a field no row sets is a branch no run
+  enters, and it reads as coverage in exactly the way BR-15 described.
+
 ## Open findings
 
-- **BR-27** [Important] `partial-constructor-defaults` A negative SlowEvery panics on the watcher goroutine, where no caller can recover
-- **BR-28** [Important] `fake-silently-ignores-inputs` A .json capture scripted against a streaming request is silently replaced by stream-sample.sse
 - **BR-43** [Minor] `redundant-test-duplicates-existing` TestAQueueStillAdvancesWhileItHasEntries duplicates TestQueueServesInOrder
 - **BR-44** [Minor] `mode-flag-arity-guard` `define -llm-check <word>` silently ignores the word
-- **BR-45** [Minor] `diagnostic-ignores-config` --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
 - **BR-46** [Minor] `schema-metadata-applied-blindly` additionalProperties:false is set unconditionally, including on non-object schemas
 - **BR-53** [Minor] `test-flag-mutation-leaks` withUpdate restores *update to the literal false rather than its prior value, silently cancelling a real -update run
 - **BR-56** [Minor] `dead-code` ErrorForStop is an exported function with zero references whose doc still asserts the role the rework removed
 - **BR-57** [Minor] `plan-revision-not-appended` Round 6 changed the design again with no Revisions entry, and two artifacts still name llmtest.Golden
 - **BR-60** [Minor] `docs-claim-absent-surface` The Revisions entry written to establish grep-verification claims a table row that does not exist
 - **BR-61** [Minor] `single-source-consumer-not-derived` effective() and params() are now two independent defaulting implementations of the same three fields
-- **BR-62** [Important] `unclassified-failure-mode` The live typed-task suite fails on ordinary model variation, asserting judgment its own doc comment disclaims
-- **BR-63** [Important] `diagnostic-ignores-config` define --llm-check discards run's signal context, so Ctrl-C is swallowed for the full five-minute timeout
-- **BR-64** [Minor] `docs-claim-absent-surface` atlas/llm.md says "Two tagged suites" above a list of three, and the third bullet's claim is measurably false
-- **BR-65** [Important] `unclassified-failure-mode` The guard added this round silences --llm-check on the deadline it is most likely to hit
+- **BR-66** [Important] `partial-constructor-defaults` A negative Request.MaxTokens still reaches the wire as -5 with a nil error
+- **BR-67** [Minor] `enforcement-not-pinned-by-a-test` The MaxTokens half of BR-63 is real in the code but survives full reversion
+- **BR-68** [Minor] `unclassified-failure-mode` mustCall reports a transient 529 as a capture-drift failure
+- **BR-69** [Minor] `docs-claim-absent-surface` Two artifacts still claim the live typed-task suite asserts fields are populated, which this round deliberately removed
+- **BR-70** [Minor] `dead-code` The llm-check table carries a hung-listener branch and a timeout field that no case turns on

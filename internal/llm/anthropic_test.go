@@ -810,3 +810,24 @@ func TestMisappliedReplyFieldsFailLoudlyOnBothPaths(t *testing.T) {
 		})
 	}
 }
+
+// A per-request override is a SECOND door into a Config field, and normalising
+// only Config left it open: a negative Request.MaxTokens reached the wire as -5
+// with a nil error.
+func TestNegativeRequestOverridesDoNotReachTheWire(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Text: "ok"})
+	_, err := client(t, f.URL).Complete(t.Context(), llm.Request{
+		Task: "t", Prompt: "x", MaxTokens: -5,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mt, ok := f.Requests()[0].Body["max_tokens"].(float64)
+	if !ok {
+		t.Fatalf("max_tokens absent from the request: %+v", f.Requests()[0].Body)
+	}
+	if mt <= 0 {
+		t.Errorf("max_tokens = %v reached the wire; a negative override must take the default", mt)
+	}
+}

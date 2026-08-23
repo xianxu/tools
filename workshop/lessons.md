@@ -802,3 +802,26 @@ Corollary, learned four times in one sitting: **a mutation that leaves the test
 green is a fact about the test, not a verdict on the fix.** Print what the guard
 actually sees before concluding anything. `ctx.Err() = <nil>` answered in one line
 what three rounds of reasoning had not.
+
+## A per-request override is a second door into the same field (define #11 close)
+
+`Config.MaxTokens` was normalised against negatives; `Request.MaxTokens` — the
+per-request override — was not, so `-5` still reached the wire with a nil error.
+Two doors into one field, and the fix went in one of them.
+
+**When a field has both a default and an override, they are two entry points to
+one invariant.** Normalising the default is half the work. The same applies to any
+`cmp.Or(requestField, configField)` pair: `cmp.Or` replaces only the ZERO value,
+so every negative walks straight through both.
+
+## A table field no row sets is dead code that reads as coverage (define #11 close)
+
+Two fields survived in a test-table struct after the row that used them moved to
+its own test. The setup they gated — starting a hung listener, overriding a
+timeout — then ran for nobody, and a comment still explained a race in a listener
+the table no longer started.
+
+**For every field in a table-driven fixture, confirm at least one row sets it.**
+The check is mechanical and worth running over the whole repo rather than the file
+in front of you; a field nothing sets is a branch nothing enters, and in a test it
+looks exactly like a case that is covered.
