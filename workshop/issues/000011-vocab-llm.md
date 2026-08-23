@@ -1,11 +1,12 @@
 ---
 id: 000011
-status: open
+status: working
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-08-22
 estimate_hours:
+started: 2026-08-22T17:11:23-07:00
 ---
 
 # LLM seam: Anthropic client, stateful fake, offline degradation
