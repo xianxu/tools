@@ -949,6 +949,152 @@ rounds:
           round: 8
       boundary: M2
       blocked: false
+    - "n": 9
+      timestamp: "2026-08-23T10:03:37-07:00"
+      agent: claude
+      dispose:
+        - id: BR-27
+          disposition: not-addressed
+          note: SlowEvery clamped; the class not swept — negative Timeout still returns ErrUnavailable in 1ms, negative MaxTokens still reaches the wire as -5 with err=nil.
+          round: 9
+        - id: BR-28
+          disposition: not-addressed
+          note: Stream path swept field by field; JSON path not swept at all — Stall/StallEarly/JunkFrame silently ignored on Complete, and an .sse capture on Complete surfaces as ErrUnavailable.
+          round: 9
+        - id: BR-29
+          disposition: addressed
+          note: The vacuous test is gone from the tree; only TestNewPreservesADisabledStallBound remains, and it reddens when New stops preserving a negative StallAfter.
+          round: 9
+        - id: BR-30
+          disposition: addressed
+          note: Reversion-verified — reverting splitInto to []byte reddens TestTextJoinsMultibyteBlocksWithoutCorruption while the ASCII test stays green.
+          round: 9
+        - id: BR-31
+          disposition: addressed
+          note: plan:518-520 now declares two phases and no Bytes, matching llm.go.
+          round: 9
+        - id: BR-32
+          disposition: addressed
+          note: Reply.Body and Reply.NoThinking are both gone from the struct and from every branch that read them.
+          round: 9
+        - id: BR-39
+          disposition: addressed
+          note: Measured live — with the proxy up and a renamed model, all four drift subtests now FAIL where round 8 measured them skipping. No ErrUnavailable skip remains in any conformance file.
+          round: 9
+        - id: BR-43
+          disposition: not-addressed
+          note: Re-verified by reversion — with sticky reverted, TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green while TestTheLastScriptedReplyIsSticky reddens.
+          round: 9
+        - id: BR-44
+          disposition: not-addressed
+          note: Re-measured — `define -llm-check hello` runs the check and discards the word, exit 0.
+          round: 9
+        - id: BR-45
+          disposition: not-addressed
+          note: llmcheck.go:41 still hardcodes MaxTokens 2048. Folded into the diagnostic-ignores-config class finding this round.
+          round: 9
+        - id: BR-46
+          disposition: not-addressed
+          note: schema.go:100 still unconditional; SchemaFor[string]() still returns additionalProperties:false on a string schema.
+          round: 9
+        - id: BR-53
+          disposition: not-addressed
+          note: Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+          round: 9
+        - id: BR-56
+          disposition: not-addressed
+          note: Ran the enumeration — ErrorForStop still 0 non-test refs (errors.go:92); `_ = c` still at cassette_test.go:242 guarding an unused llm.New at :231.
+          round: 9
+        - id: BR-57
+          disposition: not-addressed
+          note: Table at plan:152 still lacks SkipIfUnreachable and RequestFromContext, and the new task_conformance_test.go surface is undeclared in the plan too.
+          round: 9
+        - id: BR-59
+          disposition: addressed
+          note: Reversion-verified twice — deleting the additionalProperties arm reddens TestRequiredWalkCoversEveryNestingKeyword AND FuzzDecode/seed#8 via an independent oracle.
+          round: 9
+        - id: BR-60
+          disposition: not-addressed
+          note: plan:2138 still claims SkipIfUnreachable was "added to the Integration points table above"; the eight-row table at plan:152 does not contain it.
+          round: 9
+        - id: BR-61
+          disposition: not-addressed
+          note: Now measured stronger — making params() send a different model than effective() hashes leaves the ENTIRE suite green.
+          round: 9
+      findings:
+        - id: BR-62
+          severity: Important
+          title: The live typed-task suite fails on ordinary model variation, asserting judgment its own doc comment disclaims
+          detail: |-
+            Measured against the live proxy: 3 failures in 18 runs (~17%), two distinct modes.
+            "task_conformance_test.go:97: option[3] = {Word: Why:}: a required field came back
+            empty" (the model returned four options where the prompt asks for three, the fourth
+            with empty strings) and "task_conformance_test.go:88: stem has no blank:
+            \"placeholder\"" with "no options returned" (a degenerate stub). In both, Run[T]
+            returned err=nil correctly — an empty array and an empty string both satisfy JSON
+            Schema required. Three artifacts claim the test asserts shape only: the doc comment
+            at :23, atlas/llm.md:207, and the commit message of e4c0364. Contains(stem,"___")
+            is a formatting convention and non-emptiness is not a shape the layer guarantees.
+            Two messages compound it by misattributing to the walk: :56 says "the required-field
+            check should have rejected this" and :95 says "Every required field at every depth —
+            the property the walk exists for", but missingRequired enforces key PRESENCE, not
+            value non-emptiness, so both send the next reader hunting in a function that behaved
+            correctly.
+            THIS IS THE 3RD FINDING IN FAMILY `unclassified-failure-mode`. Do not fix these two
+            assertions. The RULE, stated at BR-39 as "a check must distinguish dependency
+            unreachable from dependency changed before reporting either", needs its third
+            bucket: a live check must ALSO distinguish "the dependency changed" from "the
+            dependency behaved normally but differently", and may only assert properties the
+            layer under test guarantees. THE ENUMERATION, mechanically available: for each
+            assertion in the three -tags conformance files, name which side guarantees it —
+            the transport/decode layer (assert) or the model (log). Contains(stem,"___"),
+            TrimSpace(o.Word)!="" and TrimSpace(got.Reason)!="" are all model-side and belong
+            beside the verdicts already in t.Logf; the layer-side properties this test should
+            assert and does not are err==nil, that the struct decoded, and that the schema
+            reached the wire. The same sweep covers mustCall at capture_conformance_test.go:52,
+            which Fatalfs a mid-run 429/529 as drift.
+          family: unclassified-failure-mode
+          round: 9
+        - id: BR-63
+          severity: Important
+          title: define --llm-check discards run's signal context, so Ctrl-C is swallowed for the full five-minute timeout
+          detail: |-
+            main.go:154 builds signal.NotifyContext with the comment "Ctrl-C now cancels the
+            context ... This changes the one-shot path too, deliberately", and run() threads
+            that ctx into defineOnce and repl. main.go:278 drops it —
+            runLLMCheck(os.Getenv, llm.New, stdout, stderr) takes no ctx — and llmcheck.go:35
+            starts from context.Background() with cfg.Timeout, five minutes. Measured against a
+            server that accepts and never answers: the process survived three SIGINTs over six
+            seconds. Repeated Ctrl-C does not help, because NotifyContext leaves signal.Notify
+            registered until stop(), so the default terminate behaviour is never restored and
+            the process is uninterruptible until the deadline.
+            THIS IS THE 2ND FINDING IN FAMILY `diagnostic-ignores-config`. Do not just add a ctx
+            parameter. The RULE that covers both: the diagnostic path must use the inputs the
+            caller already resolved, never reconstruct them. Measured prevalence 2 —
+            llmcheck.go:41 hardcodes MaxTokens 2048 instead of cfg.MaxTokens (BR-45, still
+            open), and llmcheck.go:35 reconstructs a context instead of deriving from run's.
+            THE ENUMERATION is runLLMCheck's argument list against what run() already holds:
+            ctx, the resolved cfg, and the writers — two of the three are reconstructed.
+          family: diagnostic-ignores-config
+          round: 9
+        - id: BR-64
+          severity: Minor
+          title: atlas/llm.md says "Two tagged suites" above a list of three, and the third bullet's claim is measurably false
+          detail: |-
+            atlas/llm.md:200 reads "Two tagged suites, both on-demand" and is followed by three
+            bullets; e4c0364 inserted TestTypedTaskAgainstTheLiveService without touching the
+            count. The same inserted bullet asserts "Asserts shape, never the model's judgment",
+            which the ~17% live failure rate falsifies.
+            THIS IS THE 6TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not just change
+            "Two" to "Three". The RULE, unchanged since BR-34: a doc claim of universal or
+            COUNTING form is a claim about an enumeration, so it may only be written after
+            running that enumeration — and inserting a member into a list is an edit to every
+            counting sentence that governs the list. The cheap enforcement is to grep the
+            enclosing section for a cardinal before adding a bullet, and to re-read the sentence
+            you are inserting under, not only the ones you wrote.
+          family: docs-claim-absent-surface
+          round: 9
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (boundary-review)
@@ -1414,15 +1560,92 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   anthropic.go:70 resolves Model/Effort/MaxTokens against a.cfg for the context-carried Request; anthropic.go:77 params() independently re-does cmp.Or on the same three fields for the wire body. They agree today, so nothing is currently broken — but the fix for BR-55 added a third derivation of "what was asked" rather than collapsing to one, so a fourth Config-defaulted field added to params() would silently move the wire body without moving the cassette key, and no test would catch it because the field-coverage table (render_test.go:57) still runs over a hand-populated struct rather than through Run[T].
   THIS IS THE 4TH FINDING IN FAMILY `single-source-consumer-not-derived`. Do not add a fourth field to both functions when that day comes. The RULE, stated at BR-50 and again at BR-55: where two derivations of one fact exist, one must derive from the other. Here that is one line — `r = a.effective(r)` at the top of Complete and Stream, with params() reading the already-resolved values and its cmp.Or calls deleted — after which the wire body and RenderRequest agree by construction rather than by coincidence.
 
+## Round 9 — 2026-08-23T10:03:37-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-27 — not-addressed — SlowEvery clamped; the class not swept — negative Timeout still returns ErrUnavailable in 1ms, negative MaxTokens still reaches the wire as -5 with err=nil.
+- BR-28 — not-addressed — Stream path swept field by field; JSON path not swept at all — Stall/StallEarly/JunkFrame silently ignored on Complete, and an .sse capture on Complete surfaces as ErrUnavailable.
+- BR-29 — addressed — The vacuous test is gone from the tree; only TestNewPreservesADisabledStallBound remains, and it reddens when New stops preserving a negative StallAfter.
+- BR-30 — addressed — Reversion-verified — reverting splitInto to []byte reddens TestTextJoinsMultibyteBlocksWithoutCorruption while the ASCII test stays green.
+- BR-31 — addressed — plan:518-520 now declares two phases and no Bytes, matching llm.go.
+- BR-32 — addressed — Reply.Body and Reply.NoThinking are both gone from the struct and from every branch that read them.
+- BR-39 — addressed — Measured live — with the proxy up and a renamed model, all four drift subtests now FAIL where round 8 measured them skipping. No ErrUnavailable skip remains in any conformance file.
+- BR-43 — not-addressed — Re-verified by reversion — with sticky reverted, TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green while TestTheLastScriptedReplyIsSticky reddens.
+- BR-44 — not-addressed — Re-measured — `define -llm-check hello` runs the check and discards the word, exit 0.
+- BR-45 — not-addressed — llmcheck.go:41 still hardcodes MaxTokens 2048. Folded into the diagnostic-ignores-config class finding this round.
+- BR-46 — not-addressed — schema.go:100 still unconditional; SchemaFor[string]() still returns additionalProperties:false on a string schema.
+- BR-53 — not-addressed — Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+- BR-56 — not-addressed — Ran the enumeration — ErrorForStop still 0 non-test refs (errors.go:92); `_ = c` still at cassette_test.go:242 guarding an unused llm.New at :231.
+- BR-57 — not-addressed — Table at plan:152 still lacks SkipIfUnreachable and RequestFromContext, and the new task_conformance_test.go surface is undeclared in the plan too.
+- BR-59 — addressed — Reversion-verified twice — deleting the additionalProperties arm reddens TestRequiredWalkCoversEveryNestingKeyword AND FuzzDecode/seed#8 via an independent oracle.
+- BR-60 — not-addressed — plan:2138 still claims SkipIfUnreachable was "added to the Integration points table above"; the eight-row table at plan:152 does not contain it.
+- BR-61 — not-addressed — Now measured stronger — making params() send a different model than effective() hashes leaves the ENTIRE suite green.
+
+### Raised
+
+- **BR-62** [Important] `unclassified-failure-mode` The live typed-task suite fails on ordinary model variation, asserting judgment its own doc comment disclaims
+  Measured against the live proxy: 3 failures in 18 runs (~17%), two distinct modes.
+  "task_conformance_test.go:97: option[3] = {Word: Why:}: a required field came back
+  empty" (the model returned four options where the prompt asks for three, the fourth
+  with empty strings) and "task_conformance_test.go:88: stem has no blank:
+  \"placeholder\"" with "no options returned" (a degenerate stub). In both, Run[T]
+  returned err=nil correctly — an empty array and an empty string both satisfy JSON
+  Schema required. Three artifacts claim the test asserts shape only: the doc comment
+  at :23, atlas/llm.md:207, and the commit message of e4c0364. Contains(stem,"___")
+  is a formatting convention and non-emptiness is not a shape the layer guarantees.
+  Two messages compound it by misattributing to the walk: :56 says "the required-field
+  check should have rejected this" and :95 says "Every required field at every depth —
+  the property the walk exists for", but missingRequired enforces key PRESENCE, not
+  value non-emptiness, so both send the next reader hunting in a function that behaved
+  correctly.
+  THIS IS THE 3RD FINDING IN FAMILY `unclassified-failure-mode`. Do not fix these two
+  assertions. The RULE, stated at BR-39 as "a check must distinguish dependency
+  unreachable from dependency changed before reporting either", needs its third
+  bucket: a live check must ALSO distinguish "the dependency changed" from "the
+  dependency behaved normally but differently", and may only assert properties the
+  layer under test guarantees. THE ENUMERATION, mechanically available: for each
+  assertion in the three -tags conformance files, name which side guarantees it —
+  the transport/decode layer (assert) or the model (log). Contains(stem,"___"),
+  TrimSpace(o.Word)!="" and TrimSpace(got.Reason)!="" are all model-side and belong
+  beside the verdicts already in t.Logf; the layer-side properties this test should
+  assert and does not are err==nil, that the struct decoded, and that the schema
+  reached the wire. The same sweep covers mustCall at capture_conformance_test.go:52,
+  which Fatalfs a mid-run 429/529 as drift.
+- **BR-63** [Important] `diagnostic-ignores-config` define --llm-check discards run's signal context, so Ctrl-C is swallowed for the full five-minute timeout
+  main.go:154 builds signal.NotifyContext with the comment "Ctrl-C now cancels the
+  context ... This changes the one-shot path too, deliberately", and run() threads
+  that ctx into defineOnce and repl. main.go:278 drops it —
+  runLLMCheck(os.Getenv, llm.New, stdout, stderr) takes no ctx — and llmcheck.go:35
+  starts from context.Background() with cfg.Timeout, five minutes. Measured against a
+  server that accepts and never answers: the process survived three SIGINTs over six
+  seconds. Repeated Ctrl-C does not help, because NotifyContext leaves signal.Notify
+  registered until stop(), so the default terminate behaviour is never restored and
+  the process is uninterruptible until the deadline.
+  THIS IS THE 2ND FINDING IN FAMILY `diagnostic-ignores-config`. Do not just add a ctx
+  parameter. The RULE that covers both: the diagnostic path must use the inputs the
+  caller already resolved, never reconstruct them. Measured prevalence 2 —
+  llmcheck.go:41 hardcodes MaxTokens 2048 instead of cfg.MaxTokens (BR-45, still
+  open), and llmcheck.go:35 reconstructs a context instead of deriving from run's.
+  THE ENUMERATION is runLLMCheck's argument list against what run() already holds:
+  ctx, the resolved cfg, and the writers — two of the three are reconstructed.
+- **BR-64** [Minor] `docs-claim-absent-surface` atlas/llm.md says "Two tagged suites" above a list of three, and the third bullet's claim is measurably false
+  atlas/llm.md:200 reads "Two tagged suites, both on-demand" and is followed by three
+  bullets; e4c0364 inserted TestTypedTaskAgainstTheLiveService without touching the
+  count. The same inserted bullet asserts "Asserts shape, never the model's judgment",
+  which the ~17% live failure rate falsifies.
+  THIS IS THE 6TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not just change
+  "Two" to "Three". The RULE, unchanged since BR-34: a doc claim of universal or
+  COUNTING form is a claim about an enumeration, so it may only be written after
+  running that enumeration — and inserting a member into a list is an edit to every
+  counting sentence that governs the list. The cheap enforcement is to grep the
+  enclosing section for a cardinal before adding a bullet, and to re-read the sentence
+  you are inserting under, not only the ones you wrote.
+
 ## Open findings
 
 - **BR-27** [Important] `partial-constructor-defaults` A negative SlowEvery panics on the watcher goroutine, where no caller can recover
 - **BR-28** [Important] `fake-silently-ignores-inputs` A .json capture scripted against a streaming request is silently replaced by stream-sample.sse
-- **BR-29** [Minor] `enforcement-not-pinned-by-a-test` TestNegativeStallAfterDisablesTheBound survives full reversion of the behaviour it names
-- **BR-30** [Minor] `fake-tuned-to-its-fixture` splitInto chops on byte offsets, so any multibyte scripted text round-trips corrupted
-- **BR-31** [Minor] `docs-claim-absent-surface` The plan's Task 1 contract block still declares four Progress phases and a Bytes field
-- **BR-32** [Minor] `dead-code` Reply.Body and Reply.NoThinking are documented knobs that no fixture in the tree turns
-- **BR-39** [Important] `unclassified-failure-mode` The capture-drift conformance suite reports drift when the proxy is merely unreachable
 - **BR-43** [Minor] `redundant-test-duplicates-existing` TestAQueueStillAdvancesWhileItHasEntries duplicates TestQueueServesInOrder
 - **BR-44** [Minor] `mode-flag-arity-guard` `define -llm-check <word>` silently ignores the word
 - **BR-45** [Minor] `diagnostic-ignores-config` --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
@@ -1430,6 +1653,8 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-53** [Minor] `test-flag-mutation-leaks` withUpdate restores *update to the literal false rather than its prior value, silently cancelling a real -update run
 - **BR-56** [Minor] `dead-code` ErrorForStop is an exported function with zero references whose doc still asserts the role the rework removed
 - **BR-57** [Minor] `plan-revision-not-appended` Round 6 changed the design again with no Revisions entry, and two artifacts still name llmtest.Golden
-- **BR-59** [Important] `enforcement-not-pinned-by-a-test` The required-field walk skips additionalProperties, so a map-valued object still decodes to a partial value with a nil error
 - **BR-60** [Minor] `docs-claim-absent-surface` The Revisions entry written to establish grep-verification claims a table row that does not exist
 - **BR-61** [Minor] `single-source-consumer-not-derived` effective() and params() are now two independent defaulting implementations of the same three fields
+- **BR-62** [Important] `unclassified-failure-mode` The live typed-task suite fails on ordinary model variation, asserting judgment its own doc comment disclaims
+- **BR-63** [Important] `diagnostic-ignores-config` define --llm-check discards run's signal context, so Ctrl-C is swallowed for the full five-minute timeout
+- **BR-64** [Minor] `docs-claim-absent-surface` atlas/llm.md says "Two tagged suites" above a list of three, and the third bullet's claim is measurably false

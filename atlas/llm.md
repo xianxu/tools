@@ -197,7 +197,7 @@ since every other model-shaped feature degrades silently by design.
 
 ## Conformance
 
-Two tagged suites, both on-demand (`-tags conformance`), neither in merge-check:
+Three tagged suites, all on-demand (`-tags conformance`), none in merge-check:
 
 - `TestConformanceAgainstTheLiveService` — the obligation suite against the real
   service, so "the fake behaves like the real thing" is a test.

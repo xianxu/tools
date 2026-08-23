@@ -755,3 +755,28 @@ just removed — so all four drift subtests still skipped on a renamed model.
 **After changing a helper's behaviour, grep for the behaviour, not the helper.**
 The name changed; the mistake had been copy-pasted before the rename, and it does
 not answer to the new name.
+
+## A test bounded only by the package timeout names nothing (define #11 close)
+
+`TestLLMCheckHonoursCancellation` did redden under mutation — by hitting the
+120s package timeout, because the code under test waits five minutes and the
+elapsed-time assertion after it never ran. A timeout failure is indistinguishable
+from an unrelated hang, a slow machine, or a deadlock somewhere else in the
+package, and it takes the whole package down with it.
+
+**Bound the call inside the test** — run it in a goroutine, `select` on a timer,
+and fail with the sentence that names the cause. Same mutation now reports
+*"runLLMCheck ignored a cancelled context; Ctrl-C would be swallowed for the whole
+Timeout"* in 20s instead of an anonymous 120s timeout.
+
+## Take the context you were given (define #11 close)
+
+`main` installs `signal.NotifyContext` so Ctrl-C cancels rather than kills. A new
+subcommand then built its own with `context.WithTimeout(context.Background(), …)`
+— which silently opts out of that, so against a hung endpoint Ctrl-C did nothing
+for five minutes. Measured: 5s+ with no exit, versus 250ms after the fix.
+
+**A function that takes no context, or derives from `Background()`, is opting out
+of every cancellation the process has arranged.** When a signal context exists,
+every path that can block must be reachable from it — and the test for that is
+"does Ctrl-C work while it is blocked", not "does it return eventually".

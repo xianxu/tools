@@ -17,7 +17,12 @@ import (
 // That is right for a review session and wrong for an operator who has just
 // edited a config and wants to know whether it worked. This is the one surface
 // where an unavailable seam is loud.
-func runLLMCheck(getenv func(string) string, newClient func(llm.Config) llm.Client, stdout, stderr io.Writer) int {
+// ctx is run's signal context, and taking it is the whole point: main installs
+// signal.NotifyContext so Ctrl-C cancels rather than killing. Deriving from
+// context.Background() instead discards that, and a hung endpoint then holds the
+// terminal for the full Timeout with Ctrl-C doing nothing — measured at 5s+
+// against a socket that accepts and never answers.
+func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func(llm.Config) llm.Client, stdout, stderr io.Writer) int {
 	cfg, err := llm.Resolve(getenv)
 	if err != nil {
 		// Non-zero, and the message says what to do. A cheerful empty result is
@@ -31,7 +36,7 @@ func runLLMCheck(getenv func(string) string, newClient func(llm.Config) llm.Clie
 	// cannot paste into an issue.
 	fmt.Fprintf(stdout, "  key       %s\n", llm.Redact(cfg.APIKey))
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.Timeout)
+	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
 	start := time.Now()
@@ -41,6 +46,11 @@ func runLLMCheck(getenv func(string) string, newClient func(llm.Config) llm.Clie
 		MaxTokens: 2048,
 	})
 	if err != nil {
+		// A cancelled context is the user pressing Ctrl-C, not a failure — the
+		// same distinction playAnnounced draws for interrupted playback.
+		if ctx.Err() != nil {
+			return 1
+		}
 		fmt.Fprintf(stderr, "define: llm check failed after %s: %v\n", took(start), err)
 		return 1
 	}

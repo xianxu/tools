@@ -355,6 +355,31 @@ Two lessons filed. Verified: `go test ./...` green, `-race` clean, live
 conformance 39.9s, both demoted findings mutation-checked from the table test AND
 from the fuzz corpus.
 
+### 2026-08-23 — close review (FIX-THEN-SHIP)
+
+`Review-Verdict: FIX-THEN-SHIP` · `Review-Window: 8b60e06b..65fa45f3` · sidecar
+`workshop/plans/000011-vocab-llm-close-review.md`.
+
+Four blocking findings. Two (BR-27, BR-28) were stale ledger entries demoted past
+the M1 round cap and never disposed — verified fixed by reproducing each
+finding's OWN case, not by re-running the suite that missed them the first time.
+Two were real:
+
+- **`define --llm-check` swallowed Ctrl-C.** It derived its context from
+  `context.Background()` rather than taking `run`'s signal context, so against a
+  hung endpoint an interrupt did nothing for the full five-minute timeout.
+  Reproduced against a socket that accepts and never answers: 5s+ with no exit,
+  250ms after the fix. This is the first *confirmed* instance of the operator's
+  Ctrl-C report — a different path from the sound playback they described, which
+  still measures clean.
+- **The live typed-task suite asserted the model's judgment** while its own doc
+  comment disclaimed doing so: it required `___` in the stem, and how a model
+  renders a blank is its choice. Relaxed to what the layer actually guarantees —
+  fields populated at every depth.
+
+Also: the atlas said "Two tagged suites" after a third was added, which is the
+counting-claim half of the doc-claim family.
+
 ## Revisions
 
 ### 2026-08-22 — from a narrow seam to the base of a harness

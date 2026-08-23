@@ -276,7 +276,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// configuration rather than looking a word up, so it is dispatched before the
 	// argument count is judged.
 	if *llmCheck {
-		return runLLMCheck(os.Getenv, llm.New, stdout, stderr)
+		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
 	}
 	forgetting := isSet(fs, "forget")
 	// A command may take arguments, so the WHOLE argument list is one line:

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ func TestLLMCheckReportsAHealthyConfiguration(t *testing.T) {
 	f.Script("PONG", llmtest.Reply{Text: "PONG"})
 
 	var out, errOut bytes.Buffer
-	code := runLLMCheck(
+	code := runLLMCheck(t.Context(),
 		envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}),
 		fakeClient(t, f), &out, &errOut)
 
@@ -66,7 +67,7 @@ func TestLLMCheckNeverPrintsTheKey(t *testing.T) {
 	var out, errOut bytes.Buffer
 	f := llmtest.NewFake(t)
 	f.Script("PONG", llmtest.Reply{Text: "PONG"})
-	runLLMCheck(envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}), fakeClient(t, f), &out, &errOut)
+	runLLMCheck(t.Context(), envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}), fakeClient(t, f), &out, &errOut)
 
 	both := out.String() + errOut.String()
 	if strings.Contains(both, testKey) || strings.Contains(both, "SUPERSECRET") {
@@ -100,7 +101,7 @@ func TestLLMCheckIsNonZeroAndSpecificWhenUnavailable(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
-			code := runLLMCheck(envOf(c.env), func(cfg llm.Config) llm.Client {
+			code := runLLMCheck(t.Context(), envOf(c.env), func(cfg llm.Config) llm.Client {
 				if c.base != "" {
 					cfg.BaseURL = c.base
 				}
@@ -137,5 +138,60 @@ func TestLLMCheckIsReachableFromTheFlag(t *testing.T) {
 	// And it must not have looked a word up or opened a deck on the way.
 	if strings.Contains(out.String(), "no dictionary entry") {
 		t.Error("-llm-check fell through to the lookup path")
+	}
+}
+
+// Ctrl-C must reach the call. main installs signal.NotifyContext so an interrupt
+// cancels rather than kills; deriving the check's context from Background()
+// discarded that, and a hung endpoint then held the terminal for the full
+// five-minute timeout with Ctrl-C doing nothing — measured against a socket that
+// accepts and never answers.
+func TestLLMCheckHonoursCancellation(t *testing.T) {
+	// A listener that accepts and never responds: the shape of a hung upstream.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = c // hold it open, answer nothing
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { time.Sleep(300 * time.Millisecond); cancel() }()
+
+	var out, errOut bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- runLLMCheck(ctx, envOf(map[string]string{"DEFINE_LLM_API_KEY": testKey}),
+			func(cfg llm.Config) llm.Client {
+				cfg.BaseURL = "http://" + ln.Addr().String()
+				cfg.Timeout = 5 * time.Minute // deliberately long: cancellation must win
+				return llm.New(cfg)
+			}, &out, &errOut)
+	}()
+
+	// Bounded HERE rather than by the package timeout. With the fix reverted the
+	// call blocks for the full five minutes, and a package-level timeout failure
+	// is indistinguishable from an unrelated hang — so the test names its own
+	// cause instead.
+	var code int
+	select {
+	case code = <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("runLLMCheck ignored a cancelled context; Ctrl-C would be swallowed for the whole Timeout")
+	}
+	if code == 0 {
+		t.Error("exit 0 after cancellation")
+	}
+	// A cancelled context is the user's own keypress, not a failure to report.
+	if strings.Contains(errOut.String(), "llm check failed") {
+		t.Errorf("reported an interrupt as a failure: %q", errOut.String())
 	}
 }

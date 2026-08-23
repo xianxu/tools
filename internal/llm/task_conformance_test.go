@@ -84,8 +84,17 @@ func TestTypedTaskAgainstTheLiveService(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
-		if !strings.Contains(got.Stem, "___") {
-			t.Errorf("stem has no blank: %q", got.Stem)
+		// Shape only, as the doc comment above promises. An earlier version
+		// asserted the stem contained "___" — but how a model renders a blank is
+		// its own choice (three underscores, five, an ellipsis, "[blank]"), so
+		// that assertion failed on ordinary variation and made the suite a
+		// judgment test the comment disclaimed. What the LAYER guarantees is that
+		// the fields arrive populated.
+		if strings.TrimSpace(got.Stem) == "" {
+			t.Error("stem is empty")
+		}
+		if strings.TrimSpace(got.Answer) == "" {
+			t.Error("answer is empty")
 		}
 		if len(got.Options) == 0 {
 			t.Fatal("no options returned")
