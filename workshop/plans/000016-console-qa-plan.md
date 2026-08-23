@@ -94,11 +94,30 @@ before deriving the loop's own cancellable context. `main` keeps
 `signal.NotifyContext` unchanged for the one-shot and piped paths, whose contract
 really is "SIGINT ends the program".
 
-The default sink is the session cancel, so quitting at the prompt and Ctrl-C
-during playback behave exactly as they do today; the ask path points it at the
-question's own `CancelFunc` for the duration of a stream. The signal source is
-injected as a `<-chan os.Signal` so a test drives it without raising a real
-signal in the test binary.
+**Where this is installed is part of the rule, not an implementation detail.**
+The detach and the sink go together, at the place the loop is actually chosen —
+`repl` (`repl.go:77`, deciding `replRaw` at `:95` vs `replLines` at `:97`) — and
+never in `run`'s `case 0:` (`main.go:314-321`), which serves **both** loops. Put
+the detach there and give the watcher to `replRaw` only, and every non-terminal
+zero-arg run — `echo word | define`, `define < words.txt`, a redirected stdout,
+and `replRaw`'s own two fallbacks at `replraw.go:20,25` — reaches `replLines`,
+whose only interrupt transport is `ctx.Done()` (`repl.go:132`). Detached from
+`NotifyContext` and unwatched, that loop would be **uninterruptible**: SIGINT is
+diverted from default termination by `main.go:154` and then delivered to nothing.
+
+So the enumeration is the deliverable, and every cell is wired:
+
+| loop entry | byte `\x03` | SIGINT | default sink does |
+|---|---|---|---|
+| `replRaw` (terminal, raw mode entered) | `readKeys` → `Fire()` | `repl`'s watcher → `Fire()` | cancels the loop ctx — today's behaviour |
+| `replLines` (piped, redirected, or a raw-mode fallback) | n/a — no key reader | `repl`'s watcher → `Fire()` | cancels the loop ctx → `repl.go:132` returns 0 — today's behaviour |
+| one-shot / `-forget` / `--llm-check` | n/a | `main`'s `NotifyContext`, unchanged | ends the program |
+
+The default sink is the loop's own cancel, so quitting at the prompt, Ctrl-C
+during playback, and Ctrl-C in a piped run behave exactly as they do today; the
+ask path points it at the question's own `CancelFunc` for the duration of a
+stream. The signal source is injected as a `<-chan os.Signal` so a test drives it
+without raising a real signal in the test binary.
 
 
 **D6 — Stream raw, translate newlines.** "Render cooked, play raw" (#14) cannot
@@ -180,9 +199,9 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 - **session** — the per-session state both loops carry: `current` word, `entry`
   text of that word, and `turns` (the Q&A transcript, added in M2).
   - **Relationships:** one per loop invocation. It **replaces** the bare
-    `current string` declared in `replLines` (`repl.go:145`), in `runEditor`
+    `current string` declared in `replLines` (`repl.go:125`), in `runEditor`
     (`replraw.go`), and threaded through `submitLine` as `current *string`
-    (`replraw.go:229`) — all three migrate in Task 4, not later.
+    (`replraw.go:228-229`) — all three migrate in Task 4, not later.
   - **DRY rationale:** three declarations of "what is this session holding" is
     already one too many, and #16 adds two more facts to hold. It is also where
     the ask contract lives: a question must not become the current word, and one
@@ -619,7 +638,7 @@ each caller. Update the three call sites (`defineOnce`, `submitLine`,
 
 ⚠️ **Do not move the `d.dict.Lookup` call up into the loops.** That is the
 double-lookup this design exists to avoid (D1) and it would break the one-capture-
-site invariant `TestCaptureHappensOncePerLookup` pins.
+site invariant `TestCaptureArityIsOnePerLookup` (`capture_test.go:89`) pins.
 
 - [ ] **Step 4: Run the whole package**
 
@@ -637,12 +656,12 @@ git commit -m "#16 M1: a NOAD miss that reads as a question routes to the model"
 
 **Files:**
 - Create: `cmd/define/session.go`
-- Modify: `cmd/define/repl.go:145,147-180` (line loop), `cmd/define/replraw.go:71,140-200,228-246`
+- Modify: `cmd/define/repl.go:125,147-180` (line loop), `cmd/define/replraw.go:69,140-200,228-246`
   (raw loop + `submitLine`), `cmd/define/main.go:286-330` (one-shot)
 - Test: `cmd/define/commandloop_test.go`, `cmd/define/editorloop_test.go`, `cmd/define/main_test.go`
 
 Two things land together because they are one class: the loops have three
-separate declarations of "what is this session holding" (`repl.go:145`,
+separate declarations of "what is this session holding" (`repl.go:125`,
 `runEditor`'s `var current string`, `submitLine`'s `current *string`), and #16
 adds an outcome none of them has a rule for. Wiring the outcome into three
 places without unifying them is how the rule comes to be written twice and
@@ -794,8 +813,9 @@ git commit -am "#16 M1: /help names both hatches"
 
 **Files:**
 - Create: `cmd/define/crlf.go`, `cmd/define/crlf_test.go`
-- Modify: `cmd/define/rawterm.go:37-75`, `cmd/define/replraw.go:15-45`,
-  `cmd/define/main.go:318-324` (the loop's context), `cmd/define/main.go` (`deps.notifySignals`)
+- Modify: `cmd/define/rawterm.go:37-75`, `cmd/define/repl.go:77-97` (the sink and
+  the detach), `cmd/define/main.go:314-321` (hand the loop the signal ctx),
+  `cmd/define/main.go` (`deps.notifySignals`)
 - Test: `cmd/define/rawterm_test.go`, `cmd/define/main_test.go`
 
 - [ ] **Step 1: Write the failing tests**
@@ -820,12 +840,18 @@ func TestInterrupterFiresWhatIsInstalled(t *testing.T) {
 	// default fires the session cancel; Set swaps it; the restore func puts it back.
 }
 
-// The finding this task exists for (PQ-1). Both transports, one observable.
+// The findings this task exists for (PQ-1, PQ-6): every loop, every transport.
 func TestBothInterruptTransportsReachTheSink(t *testing.T) {
 	// (a) a KeyInterrupt decoded by readKeys fires the sink;
 	// (b) a value on the injected signal channel fires the SAME sink;
 	// (c) with the sink pointed at a question cancel, NEITHER cancels the
 	//     loop's context — which is what makes "the session survives" true.
+}
+
+func TestThePipedLoopStillExitsOnASignal(t *testing.T) {
+	// replLines, reached with a non-terminal stdin, must still return 0 when the
+	// injected signal channel fires. Its only transport is the sink's default,
+	// and PQ-6 is exactly the wiring where it has none.
 }
 ```
 
@@ -857,27 +883,42 @@ Three wirings, and the third is the one that makes the other two mean anything:
 1. `readKeys` takes `*interrupter` instead of a `context.CancelFunc`, and calls
    `Fire()` where it called `cancel()`. Update its doc comment — it currently
    asserts Ctrl-C is a byte "not a signal", which the pty suite disproved.
-2. `replRaw` starts a watcher over `d.notifySignals(os.Interrupt)` — a
-   `func(...os.Signal) <-chan os.Signal` seam on `deps`, defaulting to
-   `signal.Notify` — that also calls `Fire()`. Injected rather than called
-   directly so a test drives it without raising a real signal in the test binary.
-3. `run`'s `NArg() == 0` branch detaches from the signal context before deriving
-   the loop's own:
+2. **`repl` owns both** — the detach, the sink, and the watcher, installed
+   before it chooses a loop (`repl.go:77-97`) so `replRaw` and `replLines` are
+   served by the same three lines:
 
 ```go
-		// The loop owns what an interrupt means (#16 D5), so it must not ALSO be
-		// cancelled behind the sink's back by main's NotifyContext — a SIGINT
-		// would end the session while an answer streams no matter what the sink
-		// points at. The one-shot and piped paths keep the signal context, where
-		// "SIGINT ends the program" is the right contract.
-		ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-		defer cancel()
+	// The loop owns what an interrupt means (#16 D5), so it must not ALSO be
+	// cancelled behind the sink's back by main's NotifyContext. This sits HERE,
+	// above the replRaw/replLines choice, because BOTH loops need a transport:
+	// detaching in run() and watching only in replRaw leaves the piped loop with
+	// ctx.Done() that nothing can reach — SIGINT diverted by NotifyContext and
+	// delivered to no one.
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	interrupts := &interrupter{fn: cancel}
+	go func() {
+		for range d.notifySignals(os.Interrupt) {
+			interrupts.Fire()
+		}
+	}()
 ```
 
-⚠️ The default sink is that same `cancel`, so quitting at the prompt and Ctrl-C
-during playback are byte-for-byte what they are today. Verify by running the
-existing `TestEditorLoopCtrlCExitsZero` and the pty suite unchanged — if either
-needs editing, the default sink is wired wrong.
+   `d.notifySignals` is a `func(...os.Signal) <-chan os.Signal` seam on `deps`,
+   defaulting to `signal.Notify`'s channel. Injected rather than called directly
+   so a test drives it without raising a real signal in the test binary.
+3. `run`'s `case 0:` (`main.go:314-321`) hands `repl` the signal context
+   unchanged and stops deriving a cancel of its own — that responsibility moved
+   down to where the loop is chosen. The one-shot, `-forget` and `--llm-check`
+   paths keep `NotifyContext` exactly as they have it, where "SIGINT ends the
+   program" is the right contract.
+
+⚠️ The default sink is the loop's own `cancel`, so quitting at the prompt, Ctrl-C
+during playback, and Ctrl-C in a piped run are byte-for-byte what they are today.
+Verify by running the existing `TestEditorLoopCtrlCExitsZero` and the pty suite
+unchanged — if either needs editing, the default sink is wired wrong. Add one
+test that a piped run still exits on a signal, because that is the path this
+finding showed a plausible wiring silently strands.
 
 - [ ] **Step 4: Run the tests.** `go test ./cmd/define/` and
       `go test -tags conformance -run PTY ./cmd/define/`
@@ -1233,7 +1274,7 @@ Ledger: `workshop/plans/000016-console-qa-plan-gate.md`.
   wires all three pieces and tests both transports against one observable; Task
   11 adds the pty row that only a surviving session can produce.
 - **PQ-2 (Important) — addressed.** `session` is created and wired in **Task 4**
-  (M1), not assumed: it replaces `repl.go:145`'s `current`, `runEditor`'s
+  (M1), not assumed: it replaces `repl.go:125`'s `current`, `runEditor`'s
   `current`, and `submitLine`'s `current *string`. `exchange`/`turns` are
   explicitly M2's, in Task 9.
 - **PQ-3 (Important) — addressed.** Task 4 states the ask outcome's contract as
@@ -1251,3 +1292,34 @@ Ledger: `workshop/plans/000016-console-qa-plan-gate.md`.
   as an embedded field, `Script`, `Requests() []Recorded` with
   `Prompt()`/`System()`), and D1 cites `TestCaptureArityIsOnePerLookup`
   (`capture_test.go:89`).
+
+### 2026-08-23 — plan-quality round 2 (PQ-6, and PQ-5's class)
+
+**Reason:** `sdlc change-code` round 2. PQ-1..PQ-4 accepted as addressed; PQ-5
+came back **not-addressed** (instance fixed, class not swept) and PQ-6 opened as
+the second finding in family `interrupt-delivery-path`.
+
+**Delta:**
+
+- **PQ-6 (Important) — addressed, as a rule rather than a patch.** Round 1 put
+  the `WithoutCancel` detach in `run`'s `case 0:` and the signal watcher in
+  `replRaw`. But `case 0:` calls `repl` (`main.go:314-321`), which chooses
+  between `replRaw` and `replLines` (`repl.go:95,97`) — so every piped,
+  redirected or raw-mode-fallback run would have been detached from
+  `NotifyContext` and given no watcher, leaving `replLines`' `ctx.Done()`
+  (`repl.go:132`) unreachable and the loop **uninterruptible**. The rule now
+  stated in D5: *the detach and the sink are installed together, at the point
+  the loop is chosen*, and D5 carries the full loop × transport enumeration
+  rather than naming transports for one loop. Task 7 moves both into `repl`,
+  and adds `TestThePipedLoopStillExitsOnASignal` — the path the wrong wiring
+  strands silently.
+- **PQ-5 (Minor) — addressed as a class.** Every `file.go:NNN` citation in the
+  plan was extracted and resolved against the tree mechanically, not re-read by
+  eye; `repl.go:145` → `:125`, `replraw.go:71` → `:69`, `main.go:318-324` →
+  `:314-321`, and the second `TestCaptureHappensOncePerLookup` →
+  `TestCaptureArityIsOnePerLookup`. Every named existing symbol
+  (`TestEditorLoopCtrlCExitsZero`, `TestPTYCtrlCDuringPlaybackExitsPromptly`,
+  `storetest.Suite`, `llmtest.NewFake`, `AssertGolden`, `decideCapture`,
+  `completionsFor`, `menuLines`, `newCommandCtx`, `TestParseREPLLine`) was
+  confirmed to exist. The enumeration is what disposes of the family — a line
+  number fixed by eye is the instance again.
