@@ -89,6 +89,30 @@ need opposite responses.
   still gets the stall bound.
 - Retries are the SDK's: 408, 409, 429 and every 5xx, honouring `retry-after`.
 
+## Typed tasks
+
+A consumer writes a prompt and a result type; nothing else.
+
+```go
+type verdict struct {
+    Fits   bool   `json:"fits"`
+    Reason string `json:"reason"`
+}
+v, err := llm.Run(ctx, client, llm.Task[verdict]{Name: "veto-distractor", Prompt: ...})
+```
+
+`SchemaFor[T]` reflects the JSON Schema from the result type (memoised per type,
+`additionalProperties:false`), so the struct is the single source of the shape.
+
+**`Run` checks the stop reason BEFORE decoding.** Not an ordering nicety: a
+truncated structured answer commonly parses, so a decode-first implementation
+returns success on garbage and nothing downstream can tell.
+
+`decode`'s strategy, once: strip one optional markdown fence, decode exactly one
+JSON value, require the payload **consumed to EOF**, allow unknown fields, reject
+missing ones. Its invariant — a fully populated `T` and `nil`, or the zero `T` and
+`ErrMalformed`, never a partial value, never a panic — is held by a fuzz target.
+
 ## Testing: `llmtest`
 
 The fake is an **httptest server speaking the Anthropic wire protocol**, not a
@@ -106,10 +130,54 @@ and against the live proxy under `-tags conformance`. Assertions are about shape
 never content, so both backends can satisfy them — which is what makes "the fake
 behaves like the real thing" a test rather than a claim.
 
+**Goldens and cassettes are two views of one request**, both deriving from the
+single `renderRequest`: `AssertGolden` prints it, `RequestHash` hashes it. Two
+renderers would drift in the worst direction — a prompt edit visible in the golden
+while a stale cassette kept matching. `MaxTokens` deliberately stays out of the
+hash: it changes how much room the answer had, not what was asked.
+
+A **cassette** is a real response frozen and keyed by that hash. You cannot fake
+judgment; you can freeze a real answer and pin our handling of it. A miss fails
+loudly naming the task and path — never a fallback, because falling back is how an
+edited prompt comes to pass against a recording of the question it no longer asks.
+`-update` re-records against the live service. What a cassette does *not*
+establish is that the model reliably produces that answer: it is one sample of a
+stochastic process, which is what the conformance run is for.
+
 `internal/llm/llmtest/testdata/README.md` tabulates the captures and the rule
 they enforce: *a capture is evidence only for the shape its recording conditions
 elicit.* Regenerate with `scripts/llm-probe.sh record`, which stages, verifies,
 and only then promotes.
+
+## Checking a configuration
+
+`define --llm-check` runs one trivial task through the real transport and reports
+base URL, model, latency, tokens, the injected preamble size, and the answer.
+Non-zero and specific when unavailable — the one surface where the seam is LOUD,
+since every other model-shaped feature degrades silently by design.
+
+```
+  base url  http://127.0.0.1:8317
+  model     claude-opus-5 (effort high)
+  key       (set, short)
+  latency   1.379s
+  tokens    22 in, 5 out (0 thinking)
+  preamble  1902 tokens injected upstream (not ours)
+  answer    "PONG"
+  ok
+```
+
+## Conformance
+
+Two tagged suites, both on-demand (`-tags conformance`), neither in merge-check:
+
+- `TestConformanceAgainstTheLiveService` — the obligation suite against the real
+  service, so "the fake behaves like the real thing" is a test.
+- `TestCaptureDriftAgainstTheLiveService` — do the committed captures still
+  describe reality: thinking blocks still returned, `output_config` still passing
+  the proxy, signature deltas still in the stream, preamble still ~1,900 tokens.
+  Every failure names `scripts/llm-probe.sh record`, because a drift test that
+  doesn't say what to do becomes the test everyone skips.
 
 ## Known limitations
 

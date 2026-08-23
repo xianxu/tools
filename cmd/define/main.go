@@ -213,7 +213,9 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"not is kept as history only, so typos never become vocabulary. -raw\n"+
 			"records nothing, because it is for scripts.\n"+
 			"DEFINE_NO_CAPTURE=1 disables that entirely; with it set, history is\n"+
-			"session-only, because the event log is what persists it.\n\nFlags:\n")
+			"session-only, because the event log is what persists it.\n\n"+
+			"--llm-check reports whether the model seam is configured and reachable.\n"+
+			"Model features degrade silently by design, so this is where they are loud.\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
