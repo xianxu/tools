@@ -40,7 +40,19 @@ An LLM seam with a stateful fake.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Design: `workshop/plans/000011-vocab-llm-plan.md` (authored 2026-08-22 via
+`superpowers-writing-plans`, after `sdlc start-plan`).
+
+Two review boundaries — each closes with its own `sdlc milestone-close`.
+
+- [ ] M1 — transport, contract, wire fake. `internal/llm` contract; error
+      taxonomy; config resolution pure over an env lookup; the stateful
+      Anthropic-shaped `httptest` fake; the real client over `anthropic-sdk-go`
+      driven at that fake; the obligation suite; the `AGENTS.local.md` carve-out.
+- [ ] M2 — typed tasks, goldens, conformance. Recorded live SSE sample;
+      `SchemaFor[T]` with a golden snapshot; `Task[T]`/`Run[T]` with defensive
+      decode; `llmtest.Golden`; live conformance behind the build tag;
+      `define --llm-check`; atlas page.
 
 ## Log
 
@@ -87,3 +99,22 @@ here is what every later tool inherits.
 **Unchanged.** One method per task rather than a general chat call; the fake records
 prompts so prompt regressions show up in a diff; structured responses parsed
 defensively; live conformance behind the build tag.
+
+### 2026-08-22 — one Done-when relocated (it cannot be satisfied here)
+
+**Reason.** The Done-when *"`--play` runs a full session with the seam
+unavailable, using local forms"* names a command that does not exist yet: `--play`
+is #6, and forms 2.1/2.3 are #6/#7. Left here it would be either un-ticked
+forever or ticked dishonestly.
+
+**Delta.** That obligation moves to the issues that own the surface — #6 (the loop
+degrades) and #12/#13 (the forms skip). What stays here is the property those
+depend on and that IS testable now: `ErrUnavailable` is returned for no key, no
+network, 429 and 5xx, and is distinguishable from `ErrRequest`, which stays loud.
+Pinned by `errors_test.go` and by the obligation suite.
+
+**Added, to keep the seam from being unexercised in a real binary until #16:**
+`define --llm-check` — a diagnostic that runs one task through the real transport
+and reports base URL, model, latency and usage. It also answers the operator's
+"did my proxy config take" question, which is currently open (see the plan's
+`## Open question`).
