@@ -84,3 +84,9 @@ func classifyStop(stop string) error {
 		return fmt.Errorf("%w: unknown stop_reason %q", ErrMalformed, stop)
 	}
 }
+
+// ErrorForStop exposes the stop-reason mapping to llmtest, so a replayed
+// recording reconstructs the same taxonomy member the live call produced —
+// otherwise a recorded refusal would come back as a generic failure and a
+// consumer's degradation path would go untested.
+func ErrorForStop(stop string) error { return classifyStop(stop) }

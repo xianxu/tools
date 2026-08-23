@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
+	"github.com/xianxu/tools/internal/llm"
 	"golang.org/x/term"
 )
 
@@ -193,6 +194,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	times := fs.Int("times", 3, "how many times to play the pronunciation (older name for -sound)")
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
+	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
 			"Looks the word up in macOS's active dictionaries — normally the New\n"+
@@ -268,6 +270,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// from the argument count. Combining it with a word is two commands on one
 	// line; silently honouring one of them is how -raw came to mean two different
 	// things in #2.
+	// --llm-check is a mode, like --forget: it answers a question about the
+	// configuration rather than looking a word up, so it is dispatched before the
+	// argument count is judged.
+	if *llmCheck {
+		return runLLMCheck(os.Getenv, llm.New, stdout, stderr)
+	}
 	forgetting := isSet(fs, "forget")
 	// A command may take arguments, so the WHOLE argument list is one line:
 	// `define /history 7` has to mean what `/history 7` means at the prompt.
