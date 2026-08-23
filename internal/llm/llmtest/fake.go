@@ -104,7 +104,10 @@ func joinBlocks(v any) string {
 // transport failures. Capture names a committed artifact to serve verbatim —
 // which is how anything resembling real model output enters a test.
 type Reply struct {
-	Capture string // committed capture served verbatim; wins over the rest
+	// Capture is a committed capture served verbatim. Status still WINS over it:
+	// serve() short-circuits on a scripted transport failure before any body is
+	// chosen, which is the right precedence and not what this used to claim.
+	Capture string
 	Text    string // invented text, wrapped in a realistic envelope
 	Stop    string // "" means "end_turn"
 	Status  int    // non-zero: reply with this HTTP status instead
@@ -113,6 +116,14 @@ type Reply struct {
 	// NoThinking omits the leading thinking block. The default INCLUDES one,
 	// because that is what the live service does on any non-trivial prompt.
 	NoThinking bool
+	// SplitText serves the answer as N separate text blocks rather than one.
+	//
+	// Constructed rather than captured, deliberately: no committed capture has
+	// more than one text block, so "Text joins every text block" cannot be told
+	// apart from "Text takes the first" — the property the atlas, the package doc
+	// and Response.Text each single out. Block COUNT is transport shape, not
+	// judgment, so inventing it is legitimate where inventing an answer is not.
+	SplitText int
 	// Stall replays frames up to and including the first TEXT delta, then goes
 	// silent without closing: the shape a hung upstream has, and the case where a
 	// partial answer exists to be salvaged. Gating on text_delta rather than
@@ -146,6 +157,25 @@ var knownModels = map[string]bool{
 
 func knownModel(m string) bool { return knownModels[m] }
 
+// splitInto chops s into n roughly equal pieces, so a multi-text-block response
+// can be served without inventing what the model said — only how it was framed.
+func splitInto(s string, n int) []string {
+	if n < 2 || len(s) < n {
+		return []string{s}
+	}
+	size := len(s) / n
+	var out []string
+	for i := 0; i < n; i++ {
+		start := i * size
+		end := start + size
+		if i == n-1 {
+			end = len(s)
+		}
+		out = append(out, s[start:end])
+	}
+	return out
+}
+
 type matcher struct {
 	match string
 	queue []Reply
@@ -171,7 +201,6 @@ type Fake struct {
 	requests []Recorded
 	matchers []matcher
 	fallback Reply
-	t        *testing.T
 	// closing is closed at test cleanup. A stalled handler waits on it rather
 	// than sleeping: httptest.Server.Close blocks on active connections, so a
 	// sleeping handler turns every stall test into a 30-second cleanup hang.
@@ -181,7 +210,7 @@ type Fake struct {
 // NewFake starts a fake and registers cleanup.
 func NewFake(t *testing.T) *Fake {
 	t.Helper()
-	f := &Fake{t: t, fallback: Reply{Text: "ok"}, closing: make(chan struct{})}
+	f := &Fake{fallback: Reply{Text: "ok"}, closing: make(chan struct{})}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(func() { close(f.closing); f.Close() })
 	return f
@@ -230,7 +259,6 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	rec := Recorded{Path: r.URL.Path, Headers: r.Header.Clone(), Body: body}
 	f.mu.Lock()
 	f.requests = append(f.requests, rec)
-	reply := f.next(rec.Prompt())
 	f.mu.Unlock()
 
 	// An unknown model is rejected the way the REAL proxy rejects one. Measured
@@ -246,6 +274,15 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"unknown provider for model %s"}}`, m)
 		return
 	}
+	// The queue is popped only once a scripted reply will actually be SERVED.
+	// Popping before the unknown-model check consumed an entry on a path that
+	// discards it — harmless while nothing scripts a sequence against a bad
+	// model, and a trap for cassette sequences, where the next call would
+	// silently draw the wrong entry.
+	f.mu.Lock()
+	reply := f.next(rec.Prompt())
+	f.mu.Unlock()
+
 	if reply.Status != 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(reply.Status)
@@ -307,8 +344,14 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 			"type": "thinking", "thinking": "", "signature": "scripted-signature",
 		})
 	}
-	blocks = append(blocks, map[string]any{"type": "text", "text": reply.Text})
-	json.NewEncoder(w).Encode(map[string]any{
+	if reply.SplitText > 1 {
+		for _, part := range splitInto(reply.Text, reply.SplitText) {
+			blocks = append(blocks, map[string]any{"type": "text", "text": part})
+		}
+	} else {
+		blocks = append(blocks, map[string]any{"type": "text", "text": reply.Text})
+	}
+	body := map[string]any{
 		"type": "message", "role": "assistant", "id": "msg_fake", "model": "claude-opus-5",
 		"content": blocks, "stop_reason": stop,
 		"usage": map[string]any{
@@ -317,7 +360,16 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 			"cache_creation_input_tokens": 0,
 			"output_tokens_details":       map[string]any{"thinking_tokens": 5},
 		},
-	})
+	}
+	if stop == "refusal" {
+		// The real service populates stop_details on a refusal, and without it
+		// Response.StopDetails is unreachable from any fixture — so ErrRefused
+		// could say a call was refused but never why, untested.
+		body["stop_details"] = map[string]any{
+			"type": "refusal", "category": "cyber", "explanation": "scripted refusal",
+		}
+	}
+	json.NewEncoder(w).Encode(body)
 }
 
 // serveStream replays the RECORDED frame sequence.

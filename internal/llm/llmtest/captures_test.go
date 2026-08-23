@@ -2,6 +2,7 @@ package llmtest
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -66,7 +67,7 @@ func TestCapturesExhibitTheirShapes(t *testing.T) {
 
 	t.Run("message-thinking has a thinking block and completed", func(t *testing.T) {
 		kinds, m := blocks(t, "message-thinking.json")
-		if !contains(kinds, "thinking") {
+		if !slices.Contains(kinds, "thinking") {
 			t.Errorf("blocks = %v, want a thinking block — the prompt was too easy, and a "+
 				"capture without one cannot show that content[0] is not the text", kinds)
 		}
@@ -125,13 +126,4 @@ func TestCapturesExhibitTheirShapes(t *testing.T) {
 			}
 		}
 	})
-}
-
-func contains(hay []string, needle string) bool {
-	for _, h := range hay {
-		if h == needle {
-			return true
-		}
-	}
-	return false
 }

@@ -36,6 +36,7 @@ func New(c Config) Client {
 	// one protection the SDK does not supply.
 	c.Timeout = cmp.Or(c.Timeout, defaultTimeout)
 	c.StallAfter = cmp.Or(c.StallAfter, defaultStallAfter) // negative = disabled, preserved
+	c.SlowEvery = cmp.Or(c.SlowEvery, defaultSlowEvery)
 	c.MaxTokens = cmp.Or(c.MaxTokens, defaultMaxTokens)
 	c.Model = cmp.Or(c.Model, defaultModel)
 	c.Effort = cmp.Or(c.Effort, defaultEffort)
@@ -266,7 +267,7 @@ func (a *anthropicClient) watch(ctx context.Context, task, phase string) func() 
 	start := time.Now()
 	stop := make(chan struct{})
 	go func() {
-		t := time.NewTicker(10 * time.Second)
+		t := time.NewTicker(a.cfg.SlowEvery)
 		defer t.Stop()
 		for {
 			select {

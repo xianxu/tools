@@ -30,6 +30,8 @@ const (
 	// Silence inside a stream, which defaultTimeout cannot express: a long answer
 	// legitimately takes minutes, a dead connection should fail in seconds.
 	defaultStallAfter = 90 * time.Second
+	// How often OnSlow reports while a call is still in flight.
+	defaultSlowEvery = 10 * time.Second
 )
 
 // Config is where the model lives and who we are.
@@ -54,6 +56,9 @@ type Config struct {
 	// the phase it is in. Optional, off by default, never called on a fast path —
 	// this is for answering "slow where", not for logging.
 	OnSlow func(Progress)
+	// SlowEvery is that ticker's interval. Zero takes the default; it is a field
+	// rather than a constant so the behaviour is testable in under ten seconds.
+	SlowEvery time.Duration
 }
 
 // Resolve reads configuration from an env lookup function.

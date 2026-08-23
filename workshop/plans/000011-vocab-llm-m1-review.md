@@ -519,3 +519,199 @@ findings:
       and it means a behavior change now needs three edits to stay honest. llm.go is 53%
       comment, errors.go 48%. Round 1 flagged density as worth watching; it rose.
 ```
+
+---
+
+## Re-review — 2026-08-22T20:04:10-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 11 — LLM seam: Anthropic client, stateful fake, offline degradation |
+| repo | tools |
+| issue file | workshop/issues/000011-vocab-llm.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | b5d50ea29e4041e5681696fd47bc4e973c8f6c10^..97a9b674e681f1ae22caacde42acfffdb0149389 |
+| command | sdlc milestone-close --issue 11 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-22T20:04:10-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 2's two hardest findings were genuinely closed at the class, and I verified that by reverting rather than by reading: BR-14's fix derives transience from the SDK's own retry policy instead of adding two cases (reverting reddens the 408/409 rows), and BR-15's three unpinned fixes are now each pinned by a test that fails against pre-fix code — I confirmed `TestNewDefaultsEveryConfigField` reddens on *two different* deleted defaults, not just the one the finding named. Full suite green, `-race` clean, `go mod tidy` a no-op, `-tags conformance` vets, `llm-probe.sh verify` runs offline at exit 0. What keeps this from SHIP is two Importants, neither a shipped defect: BR-16's docs sweep is **not-addressed** — three claims it was scoped to fix are still false in the tree, two of them cited by line number *inside the finding itself* — and a measured class of load-bearing behaviour that no fixture distinguishes. `Request.System` can be deleted from the wire and the entire suite stays green; so can the multi-text-block join that `Response.Text`'s own comment calls "the thing most likely to drift."
+
+## 1. Strengths
+
+- **BR-14 was fixed structurally, not additively.** `internal/llm/errors.go:42-51` derives the transient set from the transport's retry policy rather than keeping a second list — which is the actual cause of the contradiction, not the two missing cases. Mutation-verified: reverting reddens `classifyStatus(408)` and `(409)`.
+- **BR-15's rule was applied to the class.** `internal/llm/response_test.go:114` asserts on the *constructed config* in-package, so it fails when **any** default is dropped. I deleted `StallAfter` and then `Effort` — both red, with the field named in the message. That is the class, not the field.
+- **The unknown-model fixtures no longer carry the escape hatch.** `internal/llm/llmtest/fake_test.go:135-139` uses three ordinary typos. Reverting `knownModel` to the prefix rule now reddens both `TestUnknownModelIsRejectedLikeTheProxyDoes` *and* `llmtest.Suite`'s unknown-model obligation — the exact regression BR-15a said was silent.
+- **`buildResponse`'s doc comment finally describes the tree.** `response_test.go` is `package llm`, reads the capture with `os.ReadFile`, and calls `buildResponse` directly — no server. The claim that was false in round 2 is true now, and four tests rest on it.
+- **BR-18 was swept to zero.** `grep -- "--llm-check"` over `internal/ cmd/ atlas/ scripts/` returns nothing. Comment density also genuinely fell (`llm.go` 53%→48%, `errors.go` 48%→39%), and only three archaeology sites survive, all of them rationale for the current shape rather than narration of a prior round.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — BR-16's sweep is incomplete; three claims it covered are still false, two named by line in the finding.** *Re-raised as `not-addressed`, not as a new id.*
+
+1. `internal/llm/llmtest/fake.go:107` — `Capture string // committed capture served verbatim; wins over the rest`. Measured with a scratch test: `Reply{Capture: "message-thinking.json", Status: 429}` serves **429**, because `serve` checks `reply.Status != 0` at fake.go:249 before `serveJSON` ever reads `Capture`. This is verbatim the sub-item BR-16 listed as (4).
+2. `workshop/plans/000011-vocab-llm-plan.md:837` — `// seconds. Zero disables it.` BR-16 said "the plan repeats the sentence at plan:837." `config.go` was corrected; the plan was not.
+3. `workshop/plans/000011-vocab-llm-plan.md:345-346` — `Progress{Phase, Elapsed, Bytes}` … phases `connect|waiting|streaming|done`. `llm.go` was corrected to the two phases the tree emits and `Bytes` was removed; the plan still claims four phases and a field that no longer exists.
+
+The rule BR-16 stated is right and stays the deliverable: a doc claim is a claim about the tree, checked against the tree. What it did not get is the **enumeration** — the sweep ran over `internal/llm/*.go` and stopped there, so the plan (which the finding explicitly reached into) and one struct-field comment survived. ARCH-PURPOSE: the instances that were easy to see, not the class.
+
+**I2 — Four load-bearing behaviours are entered by no fixture; the suite stays green when each is removed.** *This is the 2nd finding in family `fake-cannot-reach-the-branch`.* Earlier rounds fixed instances (BR-2: the fake stalled on a thinking delta, so stall-after-text was unreachable). Do NOT fix these four instances — state the rule and sweep the enumeration it implies. The rule: **a behaviour the code singles out as load-bearing needs a fixture that separates it from the alternative it warns against; where no committed capture exhibits that shape, the fixture is constructed, because block *count* and header *presence* are transport shape rather than judgment.** Measured prevalence 4, three verified by reversion:
+
+- `internal/llm/anthropic.go:218-228` — "Text is every text block JOINED … not `Content[0].Text`". All three captures carry exactly **one** text block, so `if text.Len() == 0 { … }` (first-block-only) leaves `go test ./internal/llm/...` fully green. This is the property the atlas, the package doc, and `Response.Text`'s comment each single out.
+- `internal/llm/anthropic.go:62-64` — deleting the `r.System` → `p.System` plumbing leaves the suite green. `Recorded.System()` exists at fake.go:59 for exactly this assertion and has **zero callers**. M2's `Task[T]` sets `System` on every call; a silently dropped system prompt looks identical to a working one — the same shape as round 1's "the credential never reaches an assertion," which was fixed by asserting `x-api-key` on the wire.
+- `internal/llm/anthropic.go:262-284` — neutering `watch()` so `OnSlow` never fires leaves the suite green. `grep -rn "OnSlow\|Progress" --include='*_test.go'` returns nothing. The plan lists `TestOnSlowNamesThePhase` at plan:1383 and it was not delivered; round 2 asked for it to be retracted or delivered and neither happened. A test here would have caught I1.3 on its own.
+- `Response.StopDetails` — zero test references. The field exists so `ErrRefused` can say *why*, and the fake's scripted refusal (`Reply{Stop: "refusal"}`) emits no `stop_details`, so the populated branch is unreachable from any fixture on either side of the seam.
+
+## 4. Minor findings
+
+- `internal/llm/errors_test.go:91` and `internal/llm/llmtest/captures_test.go:130` — *2nd finding in family `stdlib-reimplemented`.* Two hand-rolled `contains` helpers survived the round that replaced `orDefault`/`orInt64`/`orDuration` with `cmp.Or`: one re-implements `strings.Contains`, the other `slices.Contains`. State the rule (a helper that duplicates a stdlib function is removed, and the sweep covers `_test.go` too) rather than patching these two.
+- `internal/llm/llmtest/fake.go:174` — *2nd finding in family `dead-code`.* `Fake.t` is assigned in `NewFake` and read by nothing; BR-17's fix removed its last consumer. The rule: when a fix removes the last reader of a field, import, or helper, the same edit removes the field.
+- `internal/llm/llmtest/fake.go:233` vs `:243` — *2nd finding in family `fake-silently-ignores-inputs`.* `f.next()` pops the matcher queue **before** the unknown-model check returns 502, so a scripted reply is consumed and discarded on that path. Harmless today (no test scripts a sequence against a bad model); a trap for M2's cassette sequences.
+- The plan was edited in place at the M1 boundary (`*Corrected in place, M1 boundary review (C1)*` in the Robustness bar; measured fact 2 likewise) with no appended `## Revisions` entry for the boundary-review round. AGENTS.md §1: append, don't overwrite. Round 2 recommended this in section 7, where it was advisory and therefore never tracked or disposed.
+
+## 5. Test coverage notes
+
+Verified green under reversion this round: BR-14 (both statuses), BR-15a (`knownModel`, reddens two tests), BR-15b (two independent defaults), BR-15c (the loud unstreamable-`Reply` branch). Full suite 9.5s, `-race` clean, `go vet` clean including `-tags conformance`.
+
+The gap is I2's enumeration, and it is worth stating as one number: **three of the transport's own named invariants can be deleted outright without a single test failing.** Beyond those, `Reply.NoThinking` and `Reply.Body` are fake features with zero callers, and `Usage.InputTokens`/`CacheCreationTokens` are never asserted individually (only via `PreambleTokens()`, which sums them — so a swap of the two fields is invisible). The right shape for the fix is one hand-built multi-block fixture plus a `Recorded.System()` assertion in `TestCompleteRoundTrip`, not four separate tests.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one flag.** `transient()` at errors.go:42 is a genuine win: one answer to "is this worth retrying," derived from the transport rather than restated beside it, and the comment says why. `buildResponse`/`watch` stay shared across both paths. Flagged: the two hand-rolled `contains` helpers (Minor).
+- **ARCH-PURE — pass.** `buildResponse` is package-level, side-effect free, and now genuinely tested with no server; `Resolve` remains pure over the lookup with `TestResolveIsPureOverTheLookup` proving it against a real `t.Setenv`. Nothing in the diff buries logic in IO.
+- **ARCH-PURPOSE — flag.** The round answered BR-14 and BR-15 at the class, which is the right instinct and visibly better than round 1. BR-16 did not: the sweep covered the package's `.go` files and stopped, leaving two sites the finding had cited by line number. Naming a class and then enumerating only the part of it that is convenient to grep is the same failure one level up.
+- **ARCH-MOCK — flag.** Placement stays exemplary — the double is on the wire, the fake models the *measured* 502 rather than the direct API's 400, and the live half exists, vets under the tag, and skips cleanly unconfigured (I could not exercise it: no key on this machine, which is the correct shape). Flagged: the fake's fixture set does not exhibit the multi-text-block shape the transport's own contract is written around, and the one accessor built to assert `System` on the wire has no caller — so two things the seam exists to protect are protected by nothing.
+
+**For M2:** `Run[T]` must call `classifyStop` before `decode`, with `message-truncated.json` as the fixture and a test that fails against a decode-first implementation. `renderRequest` must marshal the schema `map[string]any` with sorted keys or cassettes miss at random. And `--llm-check` is the first production caller of `Resolve`/`Redact` — both are test-only today, so the whole config path lands unexercised by production flow until then.
+
+## 7. Plan revision recommendations
+
+1. **Append a `## Revisions` entry for the M1 boundary-review rounds.** The plan has four dated entries, none for BR-1…BR-21; the C1 correction and measured fact 2 were both rewritten in place. AGENTS.md §1 requires an appended entry (timestamp + reason + delta) so the pre-review claim survives.
+2. **Correct plan:837** (`Zero disables it`) and **plan:345-346** (`Progress{Phase, Elapsed, Bytes}`, `connect|waiting|streaming|done`) to match the tree. Both were named by BR-16 and by round 2's section 7.
+3. **Retract or deliver `TestOnSlowNamesThePhase` (plan:1383).** Asked for last round; still neither.
+
+```findings
+dispose:
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Fixed at the cause — transient() derives from the SDK retry policy; reverting reddens the 408 and 409 rows.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      All three reversions now red; TestNewDefaultsEveryConfigField verified against two different deleted defaults, not just StallAfter.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Three claims still false: fake.go:107 "wins over the rest" (Status wins, measured), plan:837, plan:345-346 — two cited by line in the finding.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      No t.Fatalf remains on any handler goroutine; the rule is stated in serveStream and both capture-miss paths answer with a status.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      Swept to zero — no --llm-check reference anywhere in internal/, cmd/, atlas/ or scripts/.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      captures_test.go checks every assertion and t.Fatalf's; the rule is stated at the top of the helper.
+  - id: BR-20
+    disposition: addressed
+    note: |
+      cmp.Or replaces all three helpers. Two hand-rolled contains helpers survived the sweep — raised as the family repeat.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      Density fell (llm.go 53->48%, errors.go 48->39%); only three archaeology sites remain and all three are rationale.
+findings:
+  - id: new
+    severity: Important
+    family: fake-cannot-reach-the-branch
+    title: |
+      Three of the transport's own named invariants can be deleted outright with the whole suite still green
+    detail: |
+      This is the 2nd finding in family fake-cannot-reach-the-branch. Do NOT fix these
+      four instances — the rule is: a behaviour the code singles out as load-bearing
+      needs a fixture that separates it from the alternative it warns against, and
+      where no committed capture exhibits that shape the fixture is constructed,
+      because block count and header presence are transport shape rather than
+      judgment. Measured prevalence 4, three verified by reversion against
+      go test ./internal/llm/... this round. (1) anthropic.go:218-228 — all three
+      captures carry exactly one text block, so writing only the first leaves the
+      suite green, though "every text block JOINED, not Content[0].Text" is what the
+      atlas, the package doc and Response.Text all single out. (2) anthropic.go:62-64
+      — deleting the r.System to p.System plumbing leaves the suite green;
+      Recorded.System() exists at fake.go:59 for exactly this assertion and has zero
+      callers, and M2's Task[T] sets System on every call. (3) anthropic.go:262-284 —
+      neutering watch() so OnSlow never fires leaves the suite green; grep for
+      OnSlow or Progress across _test.go returns nothing, and plan:1383 lists
+      TestOnSlowNamesThePhase undelivered. (4) Response.StopDetails has zero test
+      references and the fake's refusal reply emits no stop_details, so the populated
+      branch is unreachable from either side of the seam.
+  - id: new
+    severity: Minor
+    family: stdlib-reimplemented
+    title: |
+      Two hand-rolled contains helpers survived the round that replaced the or* helpers with cmp.Or
+    detail: |
+      This is the 2nd finding in family stdlib-reimplemented. Do NOT fix these two
+      instances — state the rule (a helper duplicating a stdlib function is removed,
+      and the sweep covers _test.go as well as production files) and fix that.
+      Measured prevalence 2. errors_test.go:91 re-implements strings.Contains with an
+      index loop; captures_test.go:130 re-implements slices.Contains. Both are in the
+      same two packages as the cmp.Or fix and both were skipped because the sweep
+      scoped itself to production code.
+  - id: new
+    severity: Minor
+    family: dead-code
+    title: |
+      Fake.t is assigned in NewFake and read by nothing after BR-17 removed its last consumer
+    detail: |
+      This is the 2nd finding in family dead-code. Do NOT fix this instance — the rule
+      is: when a fix removes the last reader of a field, import or helper, the same
+      edit removes the field. internal/llm/llmtest/fake.go:174 declares t *testing.T
+      and fake.go:184 assigns it; grep for f.t across the package returns nothing now
+      that serveStream answers with a status instead of calling Fatalf. go vet does
+      not flag unused struct fields, so nothing else will catch this class.
+  - id: new
+    severity: Minor
+    family: fake-silently-ignores-inputs
+    title: |
+      An unknown-model request pops the matcher queue and then discards the reply it drew
+    detail: |
+      This is the 2nd finding in family fake-silently-ignores-inputs. Do NOT fix this
+      instance — the rule is: the fake must not mutate scripted state on a path that
+      does not serve the scripted reply. internal/llm/llmtest/fake.go:233 calls
+      f.next(rec.Prompt()) before the unknown-model check at fake.go:243 returns 502,
+      so a queued Reply is consumed and thrown away. Harmless today because no test
+      scripts a sequence against a bad model; a trap for M2's cassette sequences,
+      where the next call would silently draw the wrong queue entry.
+  - id: new
+    severity: Minor
+    family: plan-revision-not-appended
+    title: |
+      The plan was corrected in place at the M1 boundary with no appended Revisions entry
+    detail: |
+      workshop/plans/000011-vocab-llm-plan.md carries four dated Revisions entries,
+      none for the boundary-review rounds, while the Robustness bar was rewritten
+      in place ("Corrected in place, M1 boundary review (C1)") and measured fact 2
+      likewise. AGENTS.md section 1 requires appending a Revisions entry with
+      timestamp, reason and delta rather than overwriting, so the pre-review claim
+      survives. Round 2 recommended this in its advisory section, where it was never
+      tracked as a finding and therefore never disposed.
+```

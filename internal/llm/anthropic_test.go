@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -473,5 +474,109 @@ func TestScriptedTextOnAStreamingRequestFailsLoudly(t *testing.T) {
 	}
 	if !errors.Is(err, llm.ErrRequest) {
 		t.Errorf("err = %v, want ErrRequest — a caller mistake must not be retried away", err)
+	}
+}
+
+// BR-22's rule, applied: a behaviour the code singles out as load-bearing needs a
+// fixture that separates it from the alternative it warns against. Where no
+// committed capture exhibits that shape, the fixture is CONSTRUCTED — block count
+// and header presence are transport shape, not judgment.
+
+// "Text is every text block JOINED, not Content[0].Text" is asserted by the
+// atlas, the package doc and Response.Text's own comment — and was untestable,
+// because all three captures carry exactly one text block. A first-block-only
+// implementation passed everything.
+func TestTextJoinsEveryTextBlock(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Text: "alpha beta gamma delta", SplitText: 3})
+	got, err := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var texts int
+	for _, b := range got.Blocks {
+		if b.Type == "text" {
+			texts++
+		}
+	}
+	if texts < 3 {
+		t.Fatalf("fixture served %d text blocks, want 3 — this test cannot detect the defect", texts)
+	}
+	if got.Text != "alpha beta gamma delta" {
+		t.Errorf("Text = %q — every text block must be joined, not just the first", got.Text)
+	}
+}
+
+// The system prompt must reach the wire. Recorded.System() existed for exactly
+// this assertion and had zero callers, so deleting the System plumbing left the
+// suite green — and M2's Task[T] sets System on every call, where a silently
+// dropped system prompt looks identical to a working one.
+func TestSystemPromptReachesTheWire(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Text: "ok"})
+	_, err := client(t, f.URL).Complete(t.Context(), llm.Request{
+		Task: "t", System: "You are a lexicographer.", Prompt: "x",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Requests()[0].System(); got != "You are a lexicographer." {
+		t.Errorf("system on the wire = %q, want the configured system prompt", got)
+	}
+}
+
+// OnSlow/Progress existed with no test at all: neutering watch() left the suite
+// green, and the phase vocabulary drifted from what the tree emits as a result.
+func TestOnSlowReportsThePhase(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Stall: true})
+
+	var mu sync.Mutex
+	var seen []llm.Progress
+	c := llm.New(llm.Config{
+		BaseURL: f.URL, APIKey: "sk-test-1234567890",
+		StallAfter: 3 * time.Second, Timeout: 30 * time.Second,
+		SlowEvery: 200 * time.Millisecond,
+		OnSlow: func(p llm.Progress) {
+			mu.Lock()
+			seen = append(seen, p)
+			mu.Unlock()
+		},
+	})
+	_, _ = c.Stream(t.Context(), llm.Request{Task: "author-cloze", Prompt: "x"}, nil)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) == 0 {
+		t.Fatal("OnSlow never fired on a stalled call")
+	}
+	for _, p := range seen {
+		if p.Phase != "streaming" {
+			t.Errorf("phase = %q, want streaming (the tree emits only waiting|streaming)", p.Phase)
+		}
+		if p.Task != "author-cloze" {
+			t.Errorf("task = %q, want the request's task", p.Task)
+		}
+		if p.Elapsed == 0 {
+			t.Error("Elapsed is zero")
+		}
+	}
+}
+
+// StopDetails exists so ErrRefused can say WHY. Nothing referenced it, and the
+// fake's refusal emitted no stop_details, so the populated branch was unreachable
+// from either side of the seam.
+func TestRefusalCarriesItsReason(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Stop: "refusal"})
+	got, err := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	if !errors.Is(err, llm.ErrRefused) {
+		t.Fatalf("err = %v, want ErrRefused", err)
+	}
+	if got.StopDetails == nil {
+		t.Fatal("StopDetails is nil — ErrRefused can say that a call was refused but not why")
+	}
+	if got.StopDetails.Category == "" || got.StopDetails.Explanation == "" {
+		t.Errorf("StopDetails = %+v, want category and explanation", got.StopDetails)
 	}
 }

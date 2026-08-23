@@ -3,6 +3,7 @@ package llm
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -83,16 +84,7 @@ func TestUnknownStopNamesItself(t *testing.T) {
 	if err == nil || !errors.Is(err, ErrMalformed) {
 		t.Fatalf("err = %v, want ErrMalformed", err)
 	}
-	if got := err.Error(); !contains(got, "pause_turn") {
+	if got := err.Error(); !strings.Contains(got, "pause_turn") {
 		t.Errorf("error %q does not name the stop reason it rejected", got)
 	}
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

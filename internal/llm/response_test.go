@@ -126,6 +126,7 @@ func TestNewDefaultsEveryConfigField(t *testing.T) {
 		{"Model", c.cfg.Model == ""},
 		{"Effort", c.cfg.Effort == ""},
 		{"BaseURL", c.cfg.BaseURL == ""},
+		{"SlowEvery", c.cfg.SlowEvery == 0},
 	} {
 		if f.zero {
 			t.Errorf("New left %s unset — a consumer writing the minimal Config silently loses it", f.name)

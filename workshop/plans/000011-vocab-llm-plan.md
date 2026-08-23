@@ -342,8 +342,9 @@ text; nothing arrived → `ErrUnavailable`. One rule, one place. The review foun
 the contradiction by reading the code against `atlas/llm.md`, which had stated the
 correct rule all along.
 
-**Does: say where the time went.** `Progress{Phase, Elapsed, Bytes}` via an
-optional `OnSlow` hook, phases `connect|waiting|streaming|done`, fired on a ticker.
+**Does: say where the time went.** `Progress{Task, Phase, Elapsed}` via an
+optional `OnSlow` hook, phases `waiting|streaming` — the two the transport can
+actually distinguish — fired on a ticker.
 Errors name the phase. Finding 6 cost two days of not being able to ask.
 
 **Does: preserve what it does not understand.** `Response.Blocks` keeps every
@@ -834,7 +835,7 @@ type Config struct {
 	Timeout time.Duration
 	// StallAfter bounds SILENCE inside a stream, which Timeout cannot: a long
 	// answer legitimately takes minutes, while a dead connection should fail in
-	// seconds. Zero disables it.
+	// seconds. Zero means "use the default" (New applies it); NEGATIVE disables.
 	StallAfter time.Duration
 	// OnSlow, when set, is called on a ticker while a call is still running, with
 	// the phase it is in. Optional, off by default, and never called on a fast
@@ -1981,3 +1982,59 @@ rename landed in one block and left three others writing the old field, and
 `Block.Raw` used `json.RawMessage` without the import. Fixed, plus a standing
 instruction in Task 1 Step 3: these blocks get pasted verbatim, so a struct edit
 sweeps its constructor and every method that touches it.
+
+### 2026-08-22 — M1 boundary review, three rounds
+
+**Reason.** `sdlc milestone-close` dispatched the mandatory fresh-context review;
+it ran three rounds (13 findings disposed in round 2, 8 in round 3) and twice
+returned *"not converging: fix rules, not instances"*. AGENTS.md §1 requires this
+as an appended entry rather than an in-place edit; two corrections were made in
+place during the rounds (the Robustness bar's stall sentence, and measured fact 2),
+and this entry is the record that should have accompanied them.
+
+**The one real defect (C1).** `Stream` had two branches doing opposite things for
+the same situation. The stall path returned an empty `Response` with
+`ErrUnavailable` — discarding every byte already accumulated — while the salvage
+path fifteen lines below preserved the partial answer as `ErrTruncated`, and
+`atlas/llm.md` stated the *preserving* behaviour as the contract. The Robustness
+bar above had said a stall "aborts as `ErrUnavailable`", and the implementation
+followed the prose. A stall is no longer special-cased: it routes through the same
+`sawEvent` discriminator as any other mid-stream failure.
+
+**Why it survived (C2), and the rule that generalises it.** No test could reach
+the defect: the fake stalled on the first `content_block_delta`, which in the
+recorded capture is a *thinking* delta, so only stall-before-any-text ever ran —
+and there, discarding the response is coincidentally correct. Round 3 found four
+more of the same shape, and stated the rule the plan should have carried from the
+start:
+
+> **A behaviour the code singles out as load-bearing needs a fixture that
+> separates it from the alternative it warns against. Where no committed capture
+> exhibits that shape, the fixture is CONSTRUCTED — block count and header
+> presence are transport shape, not judgment.**
+
+That resolves a tension this plan left open. "Content comes from captures, never
+literals" is right about *what the model said*; it was wrongly extended to *how a
+response is framed*. All three captures carry exactly one text block, so
+`Text is every text block joined` — asserted by the atlas, the package doc and
+the field's own comment — could not be told apart from `Text takes the first`.
+Four such behaviours are now pinned by constructed fixtures and verified by
+reversion: text joining, system-prompt plumbing, `OnSlow`/`Progress`, and
+`StopDetails`.
+
+**Two rules the rounds added, both about claims rather than code.**
+
+- *A boundary fix is not complete until a test fails against the pre-fix code, and
+  the fixture must not encode the pre-fix escape hatch.* The unknown-model fixture
+  was literally the string the buggy rule special-cased, so reverting the fix
+  stayed green.
+- *A doc claim is a claim about the tree, checked against the tree.* Round 3
+  re-raised this as `not-addressed` rather than new: the round-2 sweep covered
+  `internal/llm/*.go` and stopped there, leaving the same corrected sentences alive
+  in this plan. One of those "fixes" had also never applied at all — the batch
+  aborted mid-way and the result was reported as done without re-grepping.
+
+**Contract changes.** `Config.SlowEvery` (so `OnSlow` is testable in under ten
+seconds); negative `StallAfter` disables the bound, zero takes the default;
+`transient()` derives the retryable set from the SDK's own policy rather than
+restating it; `Progress` lists the two phases the tree emits, and `Bytes` is gone.
