@@ -127,3 +127,46 @@ func FuzzDecode(f *testing.F) {
 		}
 	})
 }
+
+type innerResult struct {
+	Score  int    `json:"score"`
+	Detail string `json:"detail"`
+}
+
+type outerResult struct {
+	Fits  bool        `json:"fits"`
+	Inner innerResult `json:"inner"`
+}
+
+// BR-51: the required check walked only the top level, so the C1 bug survived one
+// level down. #10's authoring result — an item with its distractors — is the
+// first consumer likely to be nested, so this is not a hypothetical depth.
+func TestDecodeRequiresNestedFieldsToo(t *testing.T) {
+	for _, c := range []struct{ name, body string }{
+		{"nested object empty", `{"fits":true,"inner":{}}`},
+		{"nested object partial", `{"fits":true,"inner":{"score":3}}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := decode[outerResult](c.body)
+			if err == nil {
+				t.Fatalf("accepted %q as %+v", c.body, got)
+			}
+			if got != (outerResult{}) {
+				t.Errorf("returned a partial value %+v with an error", got)
+			}
+			// The error must name WHERE, or a nested miss is undiagnosable.
+			if !strings.Contains(err.Error(), "inner.") {
+				t.Errorf("error does not name the nested path: %v", err)
+			}
+		})
+	}
+
+	full := `{"fits":true,"inner":{"score":3,"detail":"x"}}`
+	got, err := decode[outerResult](full)
+	if err != nil {
+		t.Fatalf("rejected a complete nested payload: %v", err)
+	}
+	if got.Inner.Detail != "x" {
+		t.Errorf("got %+v", got)
+	}
+}

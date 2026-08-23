@@ -271,6 +271,34 @@ Verified after rework: `go test ./...` green, `-race` clean, both conformance
 suites pass live (39.9s), `--llm-check` still answers PONG against the real proxy
 with the preamble at 1902 tokens.
 
+### 2026-08-23 — M2 round 6: four more, all real
+
+REWORK cleared (17 disposed), then four blocking findings on the rework itself:
+
+- **The rework severed a coupling it did not mean to touch.** Moving the cassette
+  beneath the transport was right, but a `RoundTripper` cannot see `Task` — it is
+  never sent — so the key fell back to the wire body and two requests differing
+  only in task collided, the second overwriting the first. `RequestHash` was left
+  with zero non-test callers while five artifacts asserted the coupling. Fixed by
+  carrying the `Request` down by context.
+- **The required check walked only the top level**, so the Critical it was written
+  for survived one level down: `{"fits":true,"inner":{}}` still decoded to a
+  partial value with a nil error. Now recursive, and the error names the path.
+- **A stream could not be recorded at all** — an SSE body is not JSON, so
+  `json.RawMessage` failed to marshal, and the harness's own bug arrived as
+  `ErrUnavailable`, the class consumers absorb silently. Body is stored as text
+  with its content type; harness failures now return `ErrRequest`.
+- **The unreachable-vs-drifted fix had been applied to one of the two files the
+  finding named.** Now `llmtest.SkipIfUnreachable`, called by both, with a grep
+  proving the enumeration ran.
+
+Plus a `clone` on the memoised schema, since returning it by reference let one
+caller poison every later `Run[T]` process-wide.
+
+Three lessons filed. Verified: full suite green, `-race` clean, live conformance
+39.4s, and every fix mutation-checked — including two mutations I had to redo
+because the first attempt did not compile or did not reproduce the bug.
+
 ## Revisions
 
 ### 2026-08-22 — from a narrow seam to the base of a harness

@@ -29,11 +29,38 @@ func SchemaFor[T any]() (map[string]any, error) {
 	t := reflect.TypeOf(&zero).Elem()
 	if cached, ok := schemaCache.Load(t); ok {
 		c := cached.(cachedSchema)
-		return c.schema, c.err
+		return clone(c.schema), c.err
 	}
 	s, err := reflectSchema(zero)
 	schemaCache.Store(t, cachedSchema{s, err})
-	return s, err
+	return clone(s), err
+}
+
+// clone deep-copies the memoised schema before handing it out.
+//
+// Returning the cached map itself means one consumer writing s["description"]
+// permanently changes what every later Run[T] sends on the wire and what
+// requireSchemaFields reads. Five issues will consume this package; a
+// process-wide poisoning that only shows up in the second caller is not a bug
+// anyone would find quickly.
+func clone(v map[string]any) map[string]any {
+	if v == nil {
+		return nil
+	}
+	out := make(map[string]any, len(v))
+	for k, val := range v {
+		switch t := val.(type) {
+		case map[string]any:
+			out[k] = clone(t)
+		case []any:
+			cp := make([]any, len(t))
+			copy(cp, t)
+			out[k] = cp
+		default:
+			out[k] = val
+		}
+	}
+	return out
 }
 
 type cachedSchema struct {

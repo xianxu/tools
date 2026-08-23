@@ -85,6 +85,7 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 }
 
 func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, error) {
+	ctx = withRequest(ctx, r)
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
 	defer cancel()
 
@@ -99,6 +100,7 @@ func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, er
 }
 
 func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(string)) (Response, error) {
+	ctx = withRequest(ctx, r)
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
 	defer cancel()
 

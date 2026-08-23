@@ -35,10 +35,10 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// skipUnreachable separates "the service changed" from "the service is not
-	// running". Resolving config only proves a key is SET; with the proxy stopped
-	// every check below would fail telling the operator to re-record captures
-	// that are perfectly good.
+	// One preflight for the whole suite, plus a per-call guard: a service that
+	// goes down mid-run must skip the remaining checks rather than report drift.
+	llmtest.SkipIfUnreachable(t, c)
+
 	skipUnreachable := func(t *testing.T, err error) {
 		t.Helper()
 		if errors.Is(err, llm.ErrUnavailable) {

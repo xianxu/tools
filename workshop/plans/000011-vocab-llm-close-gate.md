@@ -676,6 +676,117 @@ rounds:
           round: 5
       boundary: M2
       blocked: true
+    - "n": 6
+      timestamp: "2026-08-23T00:28:07-07:00"
+      agent: claude
+      dispose:
+        - id: BR-33
+          disposition: addressed
+          note: 'Reversion-verified: removing requireSchemaFields reddens 3 table cases and FuzzDecode seed#1. See new finding for the depth-1 limit.'
+          round: 6
+        - id: BR-34
+          disposition: addressed
+          note: All four claims now hold; 7 of 7 drift failures name the script. render.go's claims are re-raised as a new finding, not this one.
+          round: 6
+        - id: BR-35
+          disposition: addressed
+          note: testdata/golden/schema-veto-verdict.txt committed; adding a struct field to vetoVerdict reddens TestSchemaGoldenIsStable.
+          round: 6
+        - id: BR-36
+          disposition: addressed
+          note: README has a "Checking the model connection" section and the exit-code paragraph names --llm-check.
+          round: 6
+        - id: BR-37
+          disposition: addressed
+          note: Rebuilt as http.RoundTripper under Config.Transport; replay against 127.0.0.1:1 proves the SDK path still runs.
+          round: 6
+        - id: BR-38
+          disposition: addressed
+          note: 'Reversion-verified: hardcoding jsonResponse(200, …) reddens both subtests of TestCassetteReplaysTheTaxonomyFromTheStatus.'
+          round: 6
+        - id: BR-39
+          disposition: not-addressed
+          note: capture_conformance_test.go fixed; internal/llm/conformance_test.go:30, named in the finding, is unchanged.
+          round: 6
+        - id: BR-40
+          disposition: addressed
+          note: 'Reversion-verified: mutating MaxTokens to 512 and the PONG prompt each redden a distinct assertion.'
+          round: 6
+        - id: BR-41
+          disposition: addressed
+          note: Revisions entry appended and both tables corrected; Task 11's prose was missed and is covered by the new coupling finding.
+          round: 6
+        - id: BR-42
+          disposition: not-addressed
+          note: '`_ = llmtest.Capture` still present at capture_conformance_test.go:142.'
+          round: 6
+        - id: BR-43
+          disposition: not-addressed
+          note: TestAQueueStillAdvancesWhileItHasEntries still present and still the same shape as TestQueueServesInOrder (fake_test.go:80).
+          round: 6
+        - id: BR-44
+          disposition: not-addressed
+          note: main.go still returns on *llmCheck before the arity switch; `define -llm-check hello` ignores the word.
+          round: 6
+        - id: BR-45
+          disposition: not-addressed
+          note: 'llmcheck.go:40 still hardcodes MaxTokens: 2048 rather than reading cfg.MaxTokens.'
+          round: 6
+        - id: BR-46
+          disposition: not-addressed
+          note: schema.go:71 still sets additionalProperties:false unconditionally; SchemaFor[string]() still returns it on a string schema.
+          round: 6
+        - id: BR-47
+          disposition: addressed
+          note: No t.Fatalf remains in cassette.go; the enumeration holds — every other Fatalf in llmtest is on the test goroutine.
+          round: 6
+        - id: BR-48
+          disposition: addressed
+          note: Defer added; the restore-to-literal residual is raised as a new finding in the same family rather than re-raised here.
+          round: 6
+        - id: BR-49
+          disposition: addressed
+          note: exchange.Request stores the wire body; TestCassetteOnDiskIsSelfDescribing asserts the question is legible.
+          round: 6
+      findings:
+        - id: BR-50
+          severity: Important
+          title: The cassette no longer derives from renderRequest, leaving RequestHash dead and five artifacts asserting a coupling that is measurably false
+          detail: |-
+            Measured: two Requests differing only in Task recorded to ONE cassette file (f3f94dfd72ba.json) while RequestHash(a)=c94ee5919d42, RequestHash(b)=d1d164764fc2 and RenderRequest differs — the second recording silently overwrote the first. cassette.go:51 keys on sha256(wire body minus max_tokens); renderRequest is no longer its input. RequestHash has zero non-test callers yet render.go:57 says "RequestHash keys a cassette"; render.go:15 says "llmtest.Golden prints it … and llmtest.Cassette hashes it to key a recording" (llmtest.Golden is still not an identifier, in the very file BR-34's rule named for grep-verification); golden.go:28, atlas/llm.md:140 and plan Task 11 repeat the claim; and TestGoldenAndCassetteKeyMoveTogether plus TestEveryMeaningfulFieldReachesTheHash now pin a function nothing uses, so the real cassette key has no field-coverage test.
+            THIS IS THE 2ND FINDING IN FAMILY `single-source-consumer-not-derived`. Do not patch the five sentences. The RULE: when a refactor moves a consumer off a declared single source, the source is either re-wired to that consumer or deleted in the SAME change — an exported function with no caller plus docs asserting its role is a source that has quietly become documentation. THE ENUMERATION to sweep: for every "the same X that Y" / "single source" / "exactly one renderer" claim in internal/llm and internal/llm/llmtest, grep that Y actually calls X, and for every exported identifier in internal/llm confirm a non-test caller exists or the export is justified in its doc.
+          family: single-source-consumer-not-derived
+          round: 6
+        - id: BR-51
+          severity: Important
+          title: requireSchemaFields checks only top-level required fields, so a nested object still decodes to a partial value with a nil error
+          detail: |-
+            Measured against the shipped code with type outer{Fits bool; Inner inner} where inner{Score int; Detail string}: SchemaFor emits "required":["score","detail"] on the nested object, and decode[outer](`{"fits":true,"inner":{}}`) returns {Fits:true Inner:{Score:0 Detail:""}} with err=nil; `{"fits":true,"inner":{"score":3}}` likewise. task.go:61 still claims "require every field the schema marks REQUIRED to be present" and task.go:75 still claims "it never returns a partially populated value with a nil error"; atlas/llm.md repeats both. #10's authoring result is the first consumer likely to be nested. Also unchecked: an object inside an array, and an explicit null for a required object field (present, so it passes, and zero-fills).
+            THIS IS THE 5TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. Do not fix only the nested case. The RULE: a check written to satisfy a finding must be written against the SHAPE the invariant quantifies over, not against the example the finding used — here the invariant quantifies over the whole schema tree, so the check must walk it (or the doc must state the depth limit, and then the limit needs its own test). THE ENUMERATION to sweep in this round: for each universal quantifier in the doc comments of task.go, schema.go, render.go, cassette.go and golden.go, write down the set it ranges over and confirm a test exists at every point of that set — depth for schemas, both branches for the fuzz target, every method for a seam double.
+          family: enforcement-not-pinned-by-a-test
+          round: 6
+        - id: BR-52
+          severity: Important
+          title: A cassette cannot record a streaming exchange, and the failure is delivered as ErrUnavailable
+          detail: 'exchange.Response is json.RawMessage (cassette.go:44), so an SSE body cannot be marshalled. Measured, recording a Stream call through the transport against the wire fake: `llm: unavailable: Post ".../v1/messages": json: error calling MarshalJSON for type json.RawMessage: invalid character ''e'' looking for beginning of value`. Half the Client interface is unrecordable, and a harness marshalling bug arrives wearing the class every consumer is designed to absorb silently — the collapse BR-38 existed to prevent, now on a different path. cassette.go:23 justifies the transport placement on the grounds that replay "parses an SSE frame", describing a path recording cannot produce. Replay itself would work: ssestream.NewDecoder ignores the application/json content-type jsonResponse hardcodes. Fix: store the body as bytes plus the recorded Content-Type, and return a harness error that is not in the dependency''s absorbable class.'
+          family: double-covers-partial-seam
+          round: 6
+        - id: BR-53
+          severity: Minor
+          title: withUpdate restores *update to the literal false rather than its prior value, silently cancelling a real -update run
+          detail: |-
+            cassette_test.go:31. Measured: `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` FAILS ("a changed prompt passed its golden"); the full-package run only passes because the record test runs first and clobbers the flag back to false before the golden tests see it. So the documented refresh mechanism is order-dependent and self-cancelling in the package that defines it.
+            THIS IS THE 2ND FINDING IN FAMILY `test-flag-mutation-leaks`. The RULE: a helper that mutates process-global state must capture the prior value and restore THAT — `defer func(prev bool) { *update = prev }(*update)` — because restoring to a constant is indistinguishable from a leak whenever the constant is not what the operator passed.
+          family: test-flag-mutation-leaks
+          round: 6
+        - id: BR-54
+          severity: Minor
+          title: SchemaFor returns the memoised map by reference, so any consumer mutation poisons the cache process-wide
+          detail: schema.go:27 returns the cached map[string]any itself. A consumer doing `s, _ := llm.SchemaFor[T](); s["description"] = "..."` permanently changes what every later Run[T] sends on the wire and what requireSchemaFields reads. Either clone on read or document the value as read-only and return it through a type that says so; this is a new internal package five downstream issues will consume.
+          family: memoised-value-is-caller-mutable
+          round: 6
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (boundary-review)
@@ -1043,6 +1154,44 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-49** [Minor] `artifact-omits-the-question` A cassette records the answer but not the question
   recorded (cassette.go:117) stores only Response and an error string; the filename carries task plus a 12-hex hash. TestCassetteOnDiskIsReadable asserts the ANSWER is legible in a diff, but a reviewer cannot tell what was asked without recomputing the hash. Storing llm.RenderRequest(r) alongside would make the artifact self-describing, and is free — the miss message already renders it.
 
+## Round 6 — 2026-08-23T00:28:07-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-33 — addressed — Reversion-verified: removing requireSchemaFields reddens 3 table cases and FuzzDecode seed#1. See new finding for the depth-1 limit.
+- BR-34 — addressed — All four claims now hold; 7 of 7 drift failures name the script. render.go's claims are re-raised as a new finding, not this one.
+- BR-35 — addressed — testdata/golden/schema-veto-verdict.txt committed; adding a struct field to vetoVerdict reddens TestSchemaGoldenIsStable.
+- BR-36 — addressed — README has a "Checking the model connection" section and the exit-code paragraph names --llm-check.
+- BR-37 — addressed — Rebuilt as http.RoundTripper under Config.Transport; replay against 127.0.0.1:1 proves the SDK path still runs.
+- BR-38 — addressed — Reversion-verified: hardcoding jsonResponse(200, …) reddens both subtests of TestCassetteReplaysTheTaxonomyFromTheStatus.
+- BR-39 — not-addressed — capture_conformance_test.go fixed; internal/llm/conformance_test.go:30, named in the finding, is unchanged.
+- BR-40 — addressed — Reversion-verified: mutating MaxTokens to 512 and the PONG prompt each redden a distinct assertion.
+- BR-41 — addressed — Revisions entry appended and both tables corrected; Task 11's prose was missed and is covered by the new coupling finding.
+- BR-42 — not-addressed — `_ = llmtest.Capture` still present at capture_conformance_test.go:142.
+- BR-43 — not-addressed — TestAQueueStillAdvancesWhileItHasEntries still present and still the same shape as TestQueueServesInOrder (fake_test.go:80).
+- BR-44 — not-addressed — main.go still returns on *llmCheck before the arity switch; `define -llm-check hello` ignores the word.
+- BR-45 — not-addressed — llmcheck.go:40 still hardcodes MaxTokens: 2048 rather than reading cfg.MaxTokens.
+- BR-46 — not-addressed — schema.go:71 still sets additionalProperties:false unconditionally; SchemaFor[string]() still returns it on a string schema.
+- BR-47 — addressed — No t.Fatalf remains in cassette.go; the enumeration holds — every other Fatalf in llmtest is on the test goroutine.
+- BR-48 — addressed — Defer added; the restore-to-literal residual is raised as a new finding in the same family rather than re-raised here.
+- BR-49 — addressed — exchange.Request stores the wire body; TestCassetteOnDiskIsSelfDescribing asserts the question is legible.
+
+### Raised
+
+- **BR-50** [Important] `single-source-consumer-not-derived` The cassette no longer derives from renderRequest, leaving RequestHash dead and five artifacts asserting a coupling that is measurably false
+  Measured: two Requests differing only in Task recorded to ONE cassette file (f3f94dfd72ba.json) while RequestHash(a)=c94ee5919d42, RequestHash(b)=d1d164764fc2 and RenderRequest differs — the second recording silently overwrote the first. cassette.go:51 keys on sha256(wire body minus max_tokens); renderRequest is no longer its input. RequestHash has zero non-test callers yet render.go:57 says "RequestHash keys a cassette"; render.go:15 says "llmtest.Golden prints it … and llmtest.Cassette hashes it to key a recording" (llmtest.Golden is still not an identifier, in the very file BR-34's rule named for grep-verification); golden.go:28, atlas/llm.md:140 and plan Task 11 repeat the claim; and TestGoldenAndCassetteKeyMoveTogether plus TestEveryMeaningfulFieldReachesTheHash now pin a function nothing uses, so the real cassette key has no field-coverage test.
+  THIS IS THE 2ND FINDING IN FAMILY `single-source-consumer-not-derived`. Do not patch the five sentences. The RULE: when a refactor moves a consumer off a declared single source, the source is either re-wired to that consumer or deleted in the SAME change — an exported function with no caller plus docs asserting its role is a source that has quietly become documentation. THE ENUMERATION to sweep: for every "the same X that Y" / "single source" / "exactly one renderer" claim in internal/llm and internal/llm/llmtest, grep that Y actually calls X, and for every exported identifier in internal/llm confirm a non-test caller exists or the export is justified in its doc.
+- **BR-51** [Important] `enforcement-not-pinned-by-a-test` requireSchemaFields checks only top-level required fields, so a nested object still decodes to a partial value with a nil error
+  Measured against the shipped code with type outer{Fits bool; Inner inner} where inner{Score int; Detail string}: SchemaFor emits "required":["score","detail"] on the nested object, and decode[outer](`{"fits":true,"inner":{}}`) returns {Fits:true Inner:{Score:0 Detail:""}} with err=nil; `{"fits":true,"inner":{"score":3}}` likewise. task.go:61 still claims "require every field the schema marks REQUIRED to be present" and task.go:75 still claims "it never returns a partially populated value with a nil error"; atlas/llm.md repeats both. #10's authoring result is the first consumer likely to be nested. Also unchecked: an object inside an array, and an explicit null for a required object field (present, so it passes, and zero-fills).
+  THIS IS THE 5TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. Do not fix only the nested case. The RULE: a check written to satisfy a finding must be written against the SHAPE the invariant quantifies over, not against the example the finding used — here the invariant quantifies over the whole schema tree, so the check must walk it (or the doc must state the depth limit, and then the limit needs its own test). THE ENUMERATION to sweep in this round: for each universal quantifier in the doc comments of task.go, schema.go, render.go, cassette.go and golden.go, write down the set it ranges over and confirm a test exists at every point of that set — depth for schemas, both branches for the fuzz target, every method for a seam double.
+- **BR-52** [Important] `double-covers-partial-seam` A cassette cannot record a streaming exchange, and the failure is delivered as ErrUnavailable
+  exchange.Response is json.RawMessage (cassette.go:44), so an SSE body cannot be marshalled. Measured, recording a Stream call through the transport against the wire fake: `llm: unavailable: Post ".../v1/messages": json: error calling MarshalJSON for type json.RawMessage: invalid character 'e' looking for beginning of value`. Half the Client interface is unrecordable, and a harness marshalling bug arrives wearing the class every consumer is designed to absorb silently — the collapse BR-38 existed to prevent, now on a different path. cassette.go:23 justifies the transport placement on the grounds that replay "parses an SSE frame", describing a path recording cannot produce. Replay itself would work: ssestream.NewDecoder ignores the application/json content-type jsonResponse hardcodes. Fix: store the body as bytes plus the recorded Content-Type, and return a harness error that is not in the dependency's absorbable class.
+- **BR-53** [Minor] `test-flag-mutation-leaks` withUpdate restores *update to the literal false rather than its prior value, silently cancelling a real -update run
+  cassette_test.go:31. Measured: `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` FAILS ("a changed prompt passed its golden"); the full-package run only passes because the record test runs first and clobbers the flag back to false before the golden tests see it. So the documented refresh mechanism is order-dependent and self-cancelling in the package that defines it.
+  THIS IS THE 2ND FINDING IN FAMILY `test-flag-mutation-leaks`. The RULE: a helper that mutates process-global state must capture the prior value and restore THAT — `defer func(prev bool) { *update = prev }(*update)` — because restoring to a constant is indistinguishable from a leak whenever the constant is not what the operator passed.
+- **BR-54** [Minor] `memoised-value-is-caller-mutable` SchemaFor returns the memoised map by reference, so any consumer mutation poisons the cache process-wide
+  schema.go:27 returns the cached map[string]any itself. A consumer doing `s, _ := llm.SchemaFor[T](); s["description"] = "..."` permanently changes what every later Run[T] sends on the wire and what requireSchemaFields reads. Either clone on read or document the value as read-only and return it through a type that says so; this is a new internal package five downstream issues will consume.
+
 ## Open findings
 
 - **BR-27** [Important] `partial-constructor-defaults` A negative SlowEvery panics on the watcher goroutine, where no caller can recover
@@ -1051,20 +1200,14 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-30** [Minor] `fake-tuned-to-its-fixture` splitInto chops on byte offsets, so any multibyte scripted text round-trips corrupted
 - **BR-31** [Minor] `docs-claim-absent-surface` The plan's Task 1 contract block still declares four Progress phases and a Bytes field
 - **BR-32** [Minor] `dead-code` Reply.Body and Reply.NoThinking are documented knobs that no fixture in the tree turns
-- **BR-33** [Critical] `enforcement-not-pinned-by-a-test` decode returns a partially populated T with a nil error when a required field is missing
-- **BR-34** [Important] `docs-claim-absent-surface` Four doc claims in this window assert properties the code does not hold
-- **BR-35** [Important] `single-source-consumer-not-derived` Plan Task 9's schema golden was never written, so AssertGolden ships with zero committed artifacts
-- **BR-36** [Important] `user-surface-undocumented` README.md is not updated for the new --llm-check flag or its exit code
-- **BR-37** [Important] `double-above-the-seam` The cassette double replaces llm.Client, bypassing the SDK path the plan places it beneath
-- **BR-38** [Important] `double-rederives-error-taxonomy` Cassette replay collapses a recorded ErrRequest into ErrUnavailable
 - **BR-39** [Important] `unclassified-failure-mode` The capture-drift conformance suite reports drift when the proxy is merely unreachable
-- **BR-40** [Important] `fake-silently-ignores-inputs` Both test doubles added this window discard the llm.Request entirely
-- **BR-41** [Important] `plan-revision-not-appended` The plan still describes an M2 design that was not built, with no Revisions entry
 - **BR-42** [Minor] `dead-code` `_ = llmtest.Capture` exists only to keep an import alive
 - **BR-43** [Minor] `redundant-test-duplicates-existing` TestAQueueStillAdvancesWhileItHasEntries duplicates TestQueueServesInOrder
 - **BR-44** [Minor] `mode-flag-arity-guard` `define -llm-check <word>` silently ignores the word
 - **BR-45** [Minor] `diagnostic-ignores-config` --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
 - **BR-46** [Minor] `schema-metadata-applied-blindly` additionalProperties:false is set unconditionally, including on non-object schemas
-- **BR-47** [Minor] `test-helper-fatal-off-goroutine` Cassette.Client's t.Fatalf fires from whatever goroutine a consumer calls Complete on
-- **BR-48** [Minor] `test-flag-mutation-leaks` TestCassetteReplaysTheTaxonomy sets *update without a defer
-- **BR-49** [Minor] `artifact-omits-the-question` A cassette records the answer but not the question
+- **BR-50** [Important] `single-source-consumer-not-derived` The cassette no longer derives from renderRequest, leaving RequestHash dead and five artifacts asserting a coupling that is measurably false
+- **BR-51** [Important] `enforcement-not-pinned-by-a-test` requireSchemaFields checks only top-level required fields, so a nested object still decodes to a partial value with a nil error
+- **BR-52** [Important] `double-covers-partial-seam` A cassette cannot record a streaming exchange, and the failure is delivered as ErrUnavailable
+- **BR-53** [Minor] `test-flag-mutation-leaks` withUpdate restores *update to the literal false rather than its prior value, silently cancelling a real -update run
+- **BR-54** [Minor] `memoised-value-is-caller-mutable` SchemaFor returns the memoised map by reference, so any consumer mutation poisons the cache process-wide

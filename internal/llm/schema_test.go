@@ -83,3 +83,39 @@ func TestSchemaCacheIsPerType(t *testing.T) {
 		t.Error("cached schema differs from the first derivation")
 	}
 }
+
+// The memoised schema is handed out by value, not by reference.
+//
+// Returning the cached map itself means one consumer writing to it permanently
+// changes what every later Run[T] sends on the wire and what requireSchemaFields
+// reads — a process-wide poisoning that only shows up in the SECOND caller, in a
+// package five issues will consume.
+func TestSchemaIsolationAcrossCallers(t *testing.T) {
+	type isolated struct {
+		A string `json:"a"`
+	}
+	first, err := SchemaFor[isolated]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	first["description"] = "poisoned"
+	delete(first, "required")
+	props, _ := first["properties"].(map[string]any)
+	props["injected"] = map[string]any{"type": "string"}
+
+	second, err := SchemaFor[isolated]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, poisoned := second["description"]; poisoned {
+		t.Error("a top-level write by one caller reached the next")
+	}
+	if _, ok := second["required"]; !ok {
+		t.Error("a delete by one caller reached the next")
+	}
+	if p, _ := second["properties"].(map[string]any); p != nil {
+		if _, injected := p["injected"]; injected {
+			t.Error("a NESTED write by one caller reached the next — the clone is shallow")
+		}
+	}
+}

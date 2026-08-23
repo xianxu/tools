@@ -641,3 +641,44 @@ Each was written as a description of intent while the edit was fresh. **"Every",
 written after enumerating that set and checking each member — and a claim naming
 an identifier or an on-disk artifact must be grep-verified in the same edit that
 writes it. Otherwise the doc records what the author meant to build.
+
+## Run the enumeration a finding hands you (define #11 M2)
+
+A finding said the drift suite reports drift when the proxy is merely unreachable,
+and named **two** conformance files. I fixed one. The next round re-raised it as
+`not-addressed`, and the fix that finally worked was not a third patch but
+`llmtest.SkipIfUnreachable` — one helper both suites call, so the third live suite
+cannot forget it.
+
+When a finding writes out an enumeration, the enumeration IS the work item. Run
+it, and then run a grep that proves you ran it — mine surfaced a third candidate,
+which turned out to be fake-backed and correctly unguarded. Dismissing a candidate
+with a reason is part of the sweep; not looking is not.
+
+## Restoring one property can sever another (define #11 M2)
+
+Moving the cassette beneath the transport seam fixed a real architectural problem
+— and silently broke the coupling that goldens and cassettes derive from one
+renderer, because an `http.RoundTripper` cannot see a field (`Task`) that is never
+sent. The key fell back to hashing the wire body, so two requests differing only
+in task collided and the second recording overwrote the first, while five
+artifacts and two tests went on asserting the coupling. `RequestHash` had zero
+non-test callers and a doc comment saying "RequestHash keys a cassette".
+
+The fix was to carry the request down by context so one key definition survives.
+The lesson is the check: **after a structural move, re-verify the invariants the
+old structure was holding** — list what the moved thing used to guarantee, and
+confirm each still holds. A test that pins a now-unused function looks exactly
+like a test that pins a used one.
+
+## A fix without a test is a comment (define #11 M2)
+
+I added a defensive `clone` to a memoised value, explained why in six lines, and
+wrote no test. A mutation that removed it passed. Worse, my first mutation
+attempt removed the clone from only *one* of two return paths and still passed —
+so I nearly recorded "verified" on the strength of a mutation that did not
+reproduce the bug.
+
+Two clauses: **a fix ships with a test whose failure you have observed**, and
+**the mutation must be the honest absence of the fix**, not a partial one. If the
+fix has two sites, remove both.

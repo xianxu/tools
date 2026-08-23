@@ -108,30 +108,81 @@ func decode[T any](raw string) (T, error) {
 // Only object payloads are checked: a T that is not a struct has no required
 // set, and a non-object body is rejected by the decode below anyway.
 func requireSchemaFields[T any](body string) error {
-	var present map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(body), &present); err != nil {
-		return nil // not an object; decode reports the real problem
+	var payload any
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		return nil // decode reports the real problem
 	}
 	schema, err := SchemaFor[T]()
 	if err != nil {
 		return nil // a type we cannot reflect declares nothing to require
 	}
-	required, _ := schema["required"].([]any)
-	var missing []string
-	for _, k := range required {
-		name, ok := k.(string)
-		if !ok {
-			continue
-		}
-		if _, found := present[name]; !found {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
+	if missing := missingRequired(schema, payload, ""); len(missing) > 0 {
 		return fmt.Errorf("%w: missing required field(s) %s (body: %s)",
 			ErrMalformed, strings.Join(missing, ", "), excerpt(body))
 	}
 	return nil
+}
+
+// missingRequired walks the schema and the payload together, at EVERY depth.
+//
+// A top-level-only check leaves the bug it was written for alive one level down:
+// with a nested result type, `{"fits":true,"inner":{}}` passed while inner's own
+// required fields were absent. #10's authoring result — an item with its
+// distractors — is the first consumer likely to be nested, so this is not a
+// hypothetical depth.
+//
+// Paths are dotted so the error names WHERE, not just what.
+func missingRequired(schema map[string]any, payload any, path string) []string {
+	required := asStrings(schema["required"])
+	obj, ok := payload.(map[string]any)
+	if !ok {
+		// A schema that requires fields cannot be satisfied by a non-object —
+		// `null` and `[]` included. Reporting them as missing is what makes
+		// decode("null") fail rather than yield a zero value with a nil error.
+		if len(required) > 0 {
+			out := make([]string, 0, len(required))
+			for _, k := range required {
+				out = append(out, join(path, k))
+			}
+			return out
+		}
+		return nil
+	}
+	var missing []string
+	for _, k := range required {
+		if _, found := obj[k]; !found {
+			missing = append(missing, join(path, k))
+		}
+	}
+	props, _ := schema["properties"].(map[string]any)
+	for name, sub := range props {
+		subSchema, ok := sub.(map[string]any)
+		if !ok {
+			continue
+		}
+		if child, found := obj[name]; found {
+			missing = append(missing, missingRequired(subSchema, child, join(path, name))...)
+		}
+	}
+	return missing
+}
+
+func asStrings(v any) []string {
+	raw, _ := v.([]any)
+	out := make([]string, 0, len(raw))
+	for _, e := range raw {
+		if s, ok := e.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func join(path, name string) string {
+	if path == "" {
+		return name
+	}
+	return path + "." + name
 }
 
 // stripFence removes one ```json … ``` wrapper. Models add them despite a schema,

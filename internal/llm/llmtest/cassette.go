@@ -2,6 +2,7 @@ package llmtest
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +11,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/internal/llm"
 )
 
 // Cassette is a real exchange, frozen at the WIRE.
@@ -42,18 +46,33 @@ func Cassettes(t *testing.T, dir string) *Cassette {
 //
 // The request is stored, not just hashed, so the artifact is self-describing: a
 // reviewer reading a diff can see what was asked without recomputing a hash.
+//
+// Response is a STRING, not json.RawMessage: an SSE body is not JSON, so the
+// RawMessage version could not marshal a streamed exchange at all — half the
+// Client interface was unrecordable, and the marshalling failure surfaced as
+// ErrUnavailable, the class every consumer absorbs silently. ContentType is
+// recorded with it so replay answers as the service did.
 type exchange struct {
-	Request  json.RawMessage `json:"request"`
-	Status   int             `json:"status"`
-	Response json.RawMessage `json:"response"`
+	Request     json.RawMessage `json:"request"`
+	Status      int             `json:"status"`
+	ContentType string          `json:"content_type"`
+	Response    string          `json:"response"`
 }
 
-// key hashes the request body with volatile fields removed.
+// key identifies a recording.
 //
-// max_tokens is dropped deliberately, matching llm.RequestHash: it changes how
-// much room the answer had, not what was asked, so a default moving must not
-// invalidate every recording.
-func key(body []byte) string {
+// Derived from llm.RequestHash over the Request carried in the context — the SAME
+// canonical form AssertGolden prints — so a prompt edit moves the golden and the
+// cassette together. Hashing the wire body instead is what an earlier version did,
+// and it collided: Task is never sent, so two Requests differing only in Task
+// hashed identically and the second recording overwrote the first.
+//
+// The body hash remains as a fallback for a request that reaches the transport
+// without a Request in context, which should not happen through llm.Client.
+func key(ctx context.Context, body []byte) string {
+	if r, ok := llm.RequestFromContext(ctx); ok {
+		return llm.RequestHash(r)
+	}
 	var m map[string]any
 	if err := json.Unmarshal(body, &m); err == nil {
 		delete(m, "max_tokens")
@@ -62,7 +81,7 @@ func key(body []byte) string {
 		}
 	}
 	sum := sha256.Sum256(body)
-	return hex.EncodeToString(sum[:])[:12]
+	return "body-" + hex.EncodeToString(sum[:])[:12]
 }
 
 // Transport returns a RoundTripper that replays recordings — or, with -update,
@@ -85,7 +104,7 @@ func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 	if err != nil {
 		return nil, err
 	}
-	path := filepath.Join(c.store.dir, key(body)+".json")
+	path := filepath.Join(c.store.dir, key(req.Context(), body)+".json")
 
 	if !Updating() {
 		raw, err := os.ReadFile(path)
@@ -93,16 +112,14 @@ func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 			// A miss is a test-authoring problem, so it is reported as a 400 the
 			// caller surfaces as ErrRequest — loud, and not retried. t.Fatalf is
 			// wrong here: RoundTrip runs on whatever goroutine the SDK is using.
-			return jsonResponse(http.StatusBadRequest, []byte(fmt.Sprintf(
-				`{"type":"error","error":{"type":"invalid_request_error","message":`+
-					`"llmtest: no cassette at %s — re-run with -update to record it. request was: %s"}}`,
-				path, jsonEscape(body)))), nil
+			return harnessError(path, fmt.Sprintf(
+				"no cassette — re-run with -update to record it. request was: %s", jsonEscape(body))), nil
 		}
 		var ex exchange
 		if err := json.Unmarshal(raw, &ex); err != nil {
-			return nil, fmt.Errorf("llmtest: cassette %s is unreadable: %w", path, err)
+			return harnessError(path, fmt.Sprintf("cassette is unreadable: %v", err)), nil
 		}
-		return jsonResponse(ex.Status, ex.Response), nil
+		return replay(ex), nil
 	}
 
 	resp, err := c.next.RoundTrip(req)
@@ -118,7 +135,10 @@ func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, err
 	}
 	out, err := json.MarshalIndent(exchange{
-		Request: json.RawMessage(body), Status: resp.StatusCode, Response: json.RawMessage(respBody),
+		Request:     json.RawMessage(body),
+		Status:      resp.StatusCode,
+		ContentType: resp.Header.Get("Content-Type"),
+		Response:    string(respBody),
 	}, "", "  ")
 	if err != nil {
 		return nil, err
@@ -146,9 +166,34 @@ func readBody(req *http.Request) ([]byte, error) {
 	return body, nil
 }
 
-func jsonResponse(status int, body []byte) *http.Response {
+func replay(ex exchange) *http.Response {
+	ct := ex.ContentType
+	if ct == "" {
+		ct = "application/json"
+	}
 	return &http.Response{
-		StatusCode: status,
+		StatusCode: ex.Status,
+		Header:     http.Header{"Content-Type": []string{ct}},
+		Body:       io.NopCloser(strings.NewReader(ex.Response)),
+	}
+}
+
+// harnessError reports a problem with the HARNESS, not the dependency.
+//
+// Deliberately a 400: it reaches the caller as ErrRequest, the class that must
+// stay loud. An earlier version let a marshalling failure escape as a transport
+// error, which classifies as ErrUnavailable — the class every consumer is built
+// to absorb silently, so a broken cassette would have looked like flight mode.
+func harnessError(path, msg string) *http.Response {
+	body, _ := json.Marshal(map[string]any{
+		"type": "error",
+		"error": map[string]any{
+			"type":    "invalid_request_error",
+			"message": "llmtest [" + path + "]: " + msg,
+		},
+	})
+	return &http.Response{
+		StatusCode: http.StatusBadRequest,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(bytes.NewReader(body)),
 	}

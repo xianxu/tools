@@ -142,10 +142,17 @@ example lives at `internal/llm/testdata/golden/schema-veto-verdict.txt`; it is w
 makes reflecting the schema safe, because a struct field added without thought
 shows up in its diff.
 
-A **cassette** is a real exchange frozen at the WIRE — request body, status and
-response body — keyed by a hash of the request body with `max_tokens` removed
-(the same exclusion `RequestHash` makes: it changes how much room the answer had,
-not what was asked).
+A **cassette** is a real exchange frozen at the WIRE — request body, status,
+content type and response body — keyed by `RequestHash`, the same renderer
+`AssertGolden` prints. The in-flight `Request` reaches the transport by context,
+because `Task` is never sent: keying on the wire body alone made two Requests
+differing only in `Task` collide, and the second recording overwrote the first.
+
+Streaming records too — the body is stored as text with its content type, so
+replay runs the SDK's SSE parser and thinking signatures survive. And a problem
+with the *harness* (a missing or corrupt recording) is returned as `ErrRequest`,
+never `ErrUnavailable`: a broken cassette that reads as an outage looks exactly
+like flight mode.
 
 It sits **beneath** the seam, as an `http.RoundTripper` (`Config.Transport`), for
 the same reason the fake does: replacing `Client` would mean a replayed test never
