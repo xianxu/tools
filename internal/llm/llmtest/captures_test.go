@@ -17,6 +17,10 @@ import (
 //
 // These assert SHAPE, never content — the text differs every re-record.
 func TestCapturesExhibitTheirShapes(t *testing.T) {
+	// RULE: a test helper reading a fixture must FAIL, never panic. An unchecked
+	// type assertion on a malformed capture aborts the whole package run and
+	// masks every other result — the same class as indexing Blocks[0] after
+	// discarding an error.
 	blocks := func(t *testing.T, name string) ([]string, map[string]any) {
 		t.Helper()
 		var m map[string]any
@@ -26,18 +30,35 @@ func TestCapturesExhibitTheirShapes(t *testing.T) {
 		if m["type"] == "error" {
 			t.Fatalf("%s is an upstream error envelope, not a capture — re-record it", name)
 		}
+		content, ok := m["content"].([]any)
+		if !ok {
+			t.Fatalf("%s has no content array", name)
+		}
 		var kinds []string
-		for _, c := range m["content"].([]any) {
-			kinds = append(kinds, c.(map[string]any)["type"].(string))
+		for i, c := range content {
+			cm, ok := c.(map[string]any)
+			if !ok {
+				t.Fatalf("%s: content[%d] is not an object", name, i)
+			}
+			kind, ok := cm["type"].(string)
+			if !ok {
+				t.Fatalf("%s: content[%d] has no type", name, i)
+			}
+			kinds = append(kinds, kind)
 		}
 		return kinds, m
 	}
-	textOf := func(m map[string]any) string {
+	textOf := func(t *testing.T, m map[string]any) string {
+		t.Helper()
 		var b strings.Builder
-		for _, c := range m["content"].([]any) {
-			cm := c.(map[string]any)
-			if cm["type"] == "text" {
-				b.WriteString(cm["text"].(string))
+		content, _ := m["content"].([]any)
+		for _, c := range content {
+			cm, ok := c.(map[string]any)
+			if !ok || cm["type"] != "text" {
+				continue
+			}
+			if s, ok := cm["text"].(string); ok {
+				b.WriteString(s)
 			}
 		}
 		return b.String()
@@ -60,7 +81,7 @@ func TestCapturesExhibitTheirShapes(t *testing.T) {
 			t.Errorf("stop_reason = %v — raise max_tokens; thinking shares the budget", m["stop_reason"])
 		}
 		var out map[string]any
-		if err := json.Unmarshal([]byte(strings.TrimSpace(textOf(m))), &out); err != nil {
+		if err := json.Unmarshal([]byte(strings.TrimSpace(textOf(t, m))), &out); err != nil {
 			t.Errorf("payload does not decode: %v — this capture exists to show output_config works", err)
 		}
 	})
@@ -71,7 +92,7 @@ func TestCapturesExhibitTheirShapes(t *testing.T) {
 			t.Fatalf("stop_reason = %v — this preserved specimen must not be re-recorded", m["stop_reason"])
 		}
 		var out map[string]any
-		if err := json.Unmarshal([]byte(strings.TrimSpace(textOf(m))), &out); err != nil {
+		if err := json.Unmarshal([]byte(strings.TrimSpace(textOf(t, m))), &out); err != nil {
 			t.Errorf("payload no longer parses: %v — the whole point is that a truncated "+
 				"answer decodes cleanly, which is why only stop_reason can catch it", err)
 		}

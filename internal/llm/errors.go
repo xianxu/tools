@@ -27,17 +27,28 @@ var (
 	// ErrMalformed means the answer did not decode into the caller's type. The
 	// caller skips this question; it does not crash the session.
 	ErrMalformed = errors.New("llm: malformed response")
-	// ErrTruncated means the answer was CUT OFF — stop_reason "max_tokens".
-	//
-	// Separate from ErrMalformed because a truncated structured answer commonly
-	// PARSES. Measured, and the specimen is committed at
-	// llmtest/testdata/message-truncated.json: a schema'd request hit the cap and
-	// returned {"verdict":"yes", "reason":": Ā"} — valid JSON, both required
-	// fields present, the reason cut mid-rune. A decoder accepts it and every
-	// consumer would have believed it. Nothing downstream can detect this; only
-	// the stop reason can, so the transport is the only place it can be caught.
+	// ErrTruncated means the answer was CUT OFF — "max_tokens", or a stream that
+	// died mid-reply. Separate from ErrMalformed because a truncated structured
+	// answer commonly PARSES: the specimen at llmtest/testdata/message-truncated.json
+	// decodes cleanly with every required field present. Only the stop reason can
+	// catch that, so the transport is the only place it can be caught.
 	ErrTruncated = errors.New("llm: truncated response")
 )
+
+// transient mirrors the set the TRANSPORT itself retries (the SDK's shouldRetry:
+// 408, 409, 429, every 5xx). Derived rather than restated — a second independent
+// list is how 408 came to be retried twice and then reported as our bad request
+// (ARCH-DRY: one answer to "is this worth retrying").
+func transient(status int) bool {
+	switch {
+	case status == http.StatusRequestTimeout, // 408 — retried by the transport
+		status == http.StatusConflict,        // 409 — retried by the transport
+		status == http.StatusTooManyRequests, // 429
+		status >= 500:
+		return true
+	}
+	return false
+}
 
 // classifyStatus maps an HTTP status (0 when the request never got one) onto the
 // taxonomy, preserving the cause so errors.Is reaches it.
@@ -45,26 +56,22 @@ func classifyStatus(status int, cause error) error {
 	switch {
 	case status == 0: // never reached the server: DNS, refused, timeout
 		return fmt.Errorf("%w: %w", ErrUnavailable, cause)
-	case status == http.StatusTooManyRequests, status >= 500:
-		// >= 500 covers 529 "overloaded", which this issue hit live while
-		// recording captures — it is a real code, not a hypothetical.
+	case transient(status):
 		return fmt.Errorf("%w: %w", ErrUnavailable, cause)
 	case status == http.StatusUnauthorized, status == http.StatusForbidden:
 		// A missing or wrong credential is an operator configuration state, not a
-		// crash: `define` still defines words. --llm-check is where it is loud.
+		// crash: `define` still defines words.
 		return fmt.Errorf("%w: %w", ErrUnavailable, cause)
 	default:
 		return fmt.Errorf("%w: %w", ErrRequest, cause)
 	}
 }
 
-// classifyStop maps a stop_reason onto the taxonomy. The two that are not
-// outcomes are the two that matter.
+// classifyStop maps a stop_reason onto the taxonomy.
 //
-// Enumerated rather than defaulted-to-success: an unrecognised stop_reason is a
-// reason to be suspicious, not to proceed. A future stop reason we have never
-// seen returns ErrMalformed naming it, so it surfaces on the first occurrence
-// instead of silently passing garbage to a learner.
+// Enumerated rather than defaulted-to-success: an unrecognised stop reason
+// returns ErrMalformed naming itself, so a new one surfaces on first sight
+// instead of passing garbage to a learner.
 func classifyStop(stop string) error {
 	switch stop {
 	case "end_turn", "stop_sequence", "tool_use", "":

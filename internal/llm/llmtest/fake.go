@@ -36,6 +36,9 @@ var captures embed.FS
 // Capture reads a committed capture by name. Fails the test rather than
 // returning an error: a missing capture is a broken checkout, not a condition to
 // handle.
+//
+// TEST-GOROUTINE ONLY. Handlers must use captures.ReadFile and answer with a 500
+// — see the rule in serveStream.
 func Capture(t *testing.T, name string) []byte {
 	t.Helper()
 	b, err := captures.ReadFile("testdata/" + name)
@@ -111,22 +114,16 @@ type Reply struct {
 	// because that is what the live service does on any non-trivial prompt.
 	NoThinking bool
 	// Stall replays frames up to and including the first TEXT delta, then goes
-	// silent without closing — the shape a hung upstream actually has, and the
-	// case where a partial answer exists to be salvaged.
-	//
-	// It used to gate on content_block_delta, whose first occurrence in the
-	// capture is a THINKING delta — so the only reachable case was
-	// stall-before-any-text, where discarding the response is coincidentally
-	// correct. The defect that hid behind that lived in production code for a
-	// whole milestone.
+	// silent without closing: the shape a hung upstream has, and the case where a
+	// partial answer exists to be salvaged. Gating on text_delta rather than
+	// content_block_delta is deliberate — the capture's first content_block_delta
+	// is a THINKING delta, so that gate can only ever reach stall-before-any-text.
 	Stall bool
 	// StallEarly goes silent before any frame at all: the genuinely-unreachable
 	// case, which must classify as ErrUnavailable rather than a truncation.
 	StallEarly bool
-	// scripted distinguishes an explicitly-scripted reply from the fake's own
-	// default. It decides whether an unstreamable Reply is a caller mistake worth
-	// failing on, or just the default fallback meeting a streaming request — the
-	// loud check fired on its own default without it.
+	// scripted marks a reply that a test asked for, as opposed to the fake's own
+	// default. Only a scripted-but-unstreamable Reply is a caller mistake.
 	scripted bool
 	// JunkFrame inserts an undecodable data line AFTER the first text delta, so
 	// the salvage path is genuinely exercised. Injecting it earlier would only
@@ -136,15 +133,11 @@ type Reply struct {
 }
 
 // knownModels is a subset of what the proxy actually serves, measured via
-// GET /v1/models on 2026-08-22 (31 models; these are the ones anything here is
-// plausibly configured with).
+// GET /v1/models on 2026-08-22.
 //
-// An EXACT set, not a prefix rule. The first version accepted any "claude-"
-// prefix and excluded one magic substring — which meant it rejected exactly one
-// model name, the test's own fixture, and answered 200 for every other typo
-// while the measured proxy answers 502. That is the fake tuned to its test
-// rather than to the dependency, which is the divergence the shared obligation
-// suite exists to catch.
+// An EXACT set, not a prefix rule: a prefix rule accepts every typo that starts
+// with "claude-", so the fake would answer 200 where the measured proxy answers
+// 502 — the fake tuned to its test rather than to the dependency.
 var knownModels = map[string]bool{
 	"claude-opus-5": true, "claude-fable-5": true, "claude-sonnet-5": true,
 	"claude-opus-4-8": true, "claude-opus-4-7": true, "claude-opus-4-6": true,
@@ -335,13 +328,24 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 // service does not have — this capture carries a `ping` event and space-padded
 // payloads that no one would have invented.
 func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
-	// Fail loudly rather than silently ignore. serveStream replays frames, so a
-	// Reply carrying invented Text or Stop cannot be honoured here — and
-	// f.Script("x", Reply{Text: "…"}) followed by a streaming request used to do
-	// nothing at all, which reads exactly like a bug in the code under test.
+	// RULE FOR THIS FILE: never t.Fatalf/FailNow from a handler goroutine. It
+	// runs off the test goroutine, where Fatalf is a hang or a "log after test
+	// completed" panic rather than a clean failure. Answer with a 500 carrying the
+	// reason; the caller then fails at its own call site, with a stack that points
+	// at the test.
+	//
+	// Silently ignoring is not the alternative: f.Script("x", Reply{Text: "…"})
+	// against a streaming request used to do nothing at all, which reads exactly
+	// like a bug in the code under test.
 	if reply.scripted && (reply.Text != "" || reply.Stop != "") {
-		f.t.Fatalf("llmtest: Reply{Text/Stop} cannot be served on a streaming request; "+
-			"script a Capture, or use Complete. got Text=%q Stop=%q", reply.Text, reply.Stop)
+		// 400, not 500: this is a mistake in the TEST, and 5xx is in the SDK's
+		// retry set — a retried 500 draws the next queue entry (or the unscripted
+		// fallback), which streams fine and swallows the complaint entirely.
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":`+
+			`"llmtest: Reply{Text/Stop} cannot be served on a streaming request; script a Capture (Text=%q Stop=%q)"}}`,
+			reply.Text, reply.Stop)
+		return
 	}
 	name := reply.Capture
 	if name == "" || !strings.HasSuffix(name, ".sse") {

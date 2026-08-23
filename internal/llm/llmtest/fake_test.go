@@ -132,9 +132,15 @@ func postStatus(t *testing.T, url, body string) int {
 // exists to catch.
 func TestUnknownModelIsRejectedLikeTheProxyDoes(t *testing.T) {
 	f := NewFake(t)
-	code := postStatus(t, f.URL, `{"model":"claude-not-a-real-model","messages":[{"role":"user","content":"hi"}]}`)
-	if code != 502 {
-		t.Errorf("status = %d, want 502 (what cli-proxy-api answers)", code)
+	// The fixtures are ORDINARY typos, not strings carrying a magic substring.
+	// An earlier fixture was "claude-not-a-real-model", which the pre-fix prefix
+	// rule special-cased by name — so reverting that rule left this test green
+	// while the fake answered 200 for every other typo.
+	for _, bad := range []string{"claude-opus-6", "claude-sonnet-9", "gpt-5.7-imaginary"} {
+		code := postStatus(t, f.URL, `{"model":"`+bad+`","messages":[{"role":"user","content":"hi"}]}`)
+		if code != 502 {
+			t.Errorf("%s: status = %d, want 502 (what cli-proxy-api answers)", bad, code)
+		}
 	}
 	if code := postStatus(t, f.URL, `{"model":"claude-opus-5","messages":[{"role":"user","content":"hi"}]}`); code != 200 {
 		t.Errorf("a real model got %d", code)

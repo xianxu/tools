@@ -14,6 +14,10 @@ func TestClassifyStatus(t *testing.T) {
 		status int
 		want   error
 	}{
+		// 408 and 409 are in the TRANSPORT's retry set, so classifying them as
+		// ErrRequest made a retried-then-failed timeout look like our bad schema.
+		{http.StatusRequestTimeout, ErrUnavailable},
+		{http.StatusConflict, ErrUnavailable},
 		{http.StatusTooManyRequests, ErrUnavailable},
 		{http.StatusInternalServerError, ErrUnavailable},
 		{http.StatusBadGateway, ErrUnavailable},

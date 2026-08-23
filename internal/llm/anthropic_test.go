@@ -436,3 +436,42 @@ func dribblingServer(t *testing.T) string {
 	}()
 	return "http://" + l.Addr().String()
 }
+
+// Negative StallAfter disables the bound, which is what the doc now promises.
+// Without this the documented escape hatch would be unreachable and untested —
+// the exact shape of the claim BR-16 caught.
+func TestNegativeStallAfterDisablesTheBound(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Stall: true})
+	c := llm.New(llm.Config{
+		BaseURL: f.URL, APIKey: "sk-test-1234567890",
+		StallAfter: -1, Timeout: 2 * time.Second,
+	})
+	start := time.Now()
+	_, err := c.Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"}, nil)
+	if err == nil {
+		t.Fatal("expected the total deadline to end it")
+	}
+	// With stall detection off, the TOTAL deadline is what ends the call — so it
+	// must last past the stall default's reaction time, not be cut short by it.
+	if elapsed := time.Since(start); elapsed < time.Second {
+		t.Errorf("returned after %s — stall detection is still active despite StallAfter < 0", elapsed)
+	}
+}
+
+// BR-15c — the loud branch for an unstreamable scripted Reply was entered by
+// nothing in the tree.
+func TestScriptedTextOnAStreamingRequestFailsLoudly(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Text: "invented"})
+	_, err := client(t, f.URL).Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"}, nil)
+	if err == nil {
+		t.Fatal("scripting Reply{Text} against a streaming request silently did nothing")
+	}
+	if !strings.Contains(err.Error(), "cannot be served on a streaming request") {
+		t.Errorf("err = %v, want the fake's explanation", err)
+	}
+	if !errors.Is(err, llm.ErrRequest) {
+		t.Errorf("err = %v, want ErrRequest — a caller mistake must not be retried away", err)
+	}
+}

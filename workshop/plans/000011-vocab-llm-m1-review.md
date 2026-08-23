@@ -263,3 +263,259 @@ findings:
       internal/llm/config.go:99. Also io := []byte(...) shadows the io package at
       internal/llm/anthropic_test.go:349.
 ```
+
+---
+
+## Re-review — 2026-08-22T19:45:37-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 11 — LLM seam: Anthropic client, stateful fake, offline degradation |
+| repo | tools |
+| issue file | workshop/issues/000011-vocab-llm.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | b5d50ea29e4041e5681696fd47bc4e973c8f6c10^..a9fc896c18bc95a1fc6a1107514fac39ae269529 |
+| command | sdlc milestone-close --issue 11 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-22T19:45:37-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+I have everything I need. Verdict and findings:
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Both Criticals from round 1 are genuinely fixed and — unusually — genuinely pinned: I reverted each in the working tree and confirmed the test goes red (BR-1 → `err = llm: unavailable…, want ErrTruncated`; BR-2 → `no deltas were delivered; this test is not exercising the after-text case`), then restored byte-exactly. All four Importants are disposed `addressed` with independent verification: `go mod tidy` now produces no diff, `CLIPROXY_CONFIG=/nonexistent scripts/llm-probe.sh verify` exits 0, `conformance_test.go` exists/vets/skips cleanly, and every plausible typo model (`claude-opus-6`, `claude-opus-5-typo`, `claude-sonnet-9`) now gets 502. Full suite green including `-race`. What keeps this from a clean SHIP is one new correctness gap in the milestone's own deliverable — an exhausted 408 lands in `ErrRequest`, the loud "our bug" arm, despite being in the SDK's retry set — plus two family repeats the escalation protocol says to answer with a rule rather than an instance: three of this round's fixes changed behavior that no test would catch regressing, and four doc claims now outrun the tree.
+
+## 1. Strengths
+
+- **The two Critical fixes are pinned, not asserted.** `internal/llm/anthropic.go:159-177` routes a stall through the same `sawEvent` discriminator as any other mid-stream failure, and `TestStreamStallAfterTextSalvagesAndTruncates` (anthropic_test.go:307) fails without it. The test even guards its own premise (`if seen.Len() == 0 { t.Fatal("this test is not exercising the after-text case") }`), which is what caught the C2 reversion — a rare and correct instinct.
+- **I1 was answered at the class, not the instance.** `knownModels` (fake.go:148) is an exact measured set, not the fixture patch the finding could have been read as asking for. Verified positively: three unrelated typos all get 502.
+- **I4 became a Go test rather than a better script.** `captures_test.go` runs offline on every `go test`, and `llm-probe.sh`'s key read is now lazy (`need_key`, scripts/llm-probe.sh:24) so `verify` runs without the proxy config. That is the durable form of the fix.
+- **The plan's Robustness bar was corrected in place where the code contradicted it** (plan §"Does: detect a stalled stream"), rather than leaving prose that the implementation had already diverged from.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — `internal/llm/errors.go:44-52`: an exhausted 408 is classified as `ErrRequest`, the arm a caller must not absorb.**
+
+`classifyStatus` routes 429 and ≥500 to `ErrUnavailable` and everything else to `ErrRequest`. 408 Request Timeout and 409 Conflict fall to `default`. Measured end-to-end through the real client against the fake:
+
+```
+status 408 -> err=llm: bad request: … 408 Request Timeout | ErrUnavailable=false ErrRequest=true (requests=3)
+status 409 -> err=llm: bad request: … 409 Conflict         | ErrUnavailable=false ErrRequest=true (requests=3)
+```
+
+The `requests=3` is the point: the SDK retried it twice, because 408 is in its retry set — `anthropic.go:18-19` says so in the doc comment. So the transport treats 408 as transient and then the taxonomy calls it our bad schema/model/body. A consumer degrading on `ErrUnavailable` and staying loud on `ErrRequest` will surface "the proxy timed out" as a defect report. `errors_test.go:14-25` covers neither status, so nothing catches it. Fix: add `status == http.StatusRequestTimeout` (and decide 409 deliberately) to the `ErrUnavailable` arm, and add both rows to the table.
+
+**I2 — three of this round's fixes are not pinned by any test.** *This is the 2nd finding in family `enforcement-not-pinned-by-a-test`.* Earlier rounds fixed instances. Do NOT fix these three instances — state the rule that covers all of them and fix that. The rule: **a boundary fix that changes behavior is not complete until a test fails against the pre-fix code, and the fixture must not encode the pre-fix implementation's escape hatch.** Measured prevalence 3, all verified this round:
+
+- BR-3 (`fake.go:148`): reverting `knownModel` to the prefix + `"not-a-real"` substring rule leaves `go test ./internal/llm/...` fully green, because `TestUnknownModelIsRejectedLikeTheProxyDoes` still uses the fixture `claude-not-a-real-model`, which carries the magic substring. The rule can silently regress.
+- BR-4 (`anthropic.go:39`): deleting `c.StallAfter = orDuration(...)` from `New` leaves the suite green. Every stall test sets `StallAfter` explicitly, so no fixture depends on the default.
+- BR-11 (`fake.go:342`): no test in the tree scripts `Reply{Text}` against a streaming request, so the loud branch is entered by nothing. (I confirmed it *works* with a scratch test — it is reachable, just unexercised.)
+
+**I3 — four doc claims now outrun the tree.** *This is the 2nd finding in family `docs-claim-absent-surface`.* Do NOT fix these four sites individually — the rule is: **a claim in a doc comment or atlas page is a claim about the tree, and this round's sweep must check each one against the tree rather than against the intent of the change that wrote it.** Measured prevalence 4:
+
+1. `anthropic.go:203-204` — "It is now unit-tested directly from a committed capture with `json.Unmarshal` and no server at all." `grep -rn buildResponse --include="*.go"` returns only `anthropic.go`; it is unexported and `anthropic_test.go` is `package llm_test`, so no such test exists or can exist there. The receiver removal (BR-10) is real; the test is not.
+2. `config.go:43` — "StallAfter bounds SILENCE inside a stream. **Zero disables it.**" `New` (the only constructor) now overrides zero with 90s, so the documented way to disable stall detection is unreachable. This was introduced *by* the BR-4 fix. The plan carries the same sentence at `workshop/plans/000011-vocab-llm-plan.md:837`.
+3. `llm.go:130-136` — `Progress.Phase` documents `"connect" | "waiting" | "streaming" | "done"`; only `"waiting"` and `"streaming"` are ever emitted (`anthropic.go:82,116`). `Progress.Bytes` is never assigned anywhere in the tree.
+4. `fake.go:104` — `Reply.Capture` "committed capture served verbatim; **wins over the rest**". `serve` checks `reply.Status != 0` at fake.go:256 before reaching `serveJSON`, so `Status` wins over `Capture`.
+
+## 4. Minor findings
+
+- `fake.go:343` — *2nd finding in family `test-helper-fatal-off-goroutine`.* BR-11's fix added `f.t.Fatalf` on the server goroutine, ten lines above the comment "Same reason as serveJSON: no Fatalf off the test goroutine" that BR-12's fix wrote. It happens to record the failure today; a request arriving after cleanup still panics with "log after test completed". State the rule (no `t.Fatalf`/`FailNow` from a handler goroutine — resolve at `Script` time or answer with a 500) rather than patching this site.
+- `llm.go:110`, `errors.go:54` — *2nd finding in family `comment-references-future-surface`.* BR-13 removed the `--llm-check` reference from `config.go:99` and left two siblings in the same package. Instance fixed, class not (ARCH-PURPOSE).
+- `captures_test.go:29-31,36-40` — *2nd finding in family `test-panics-instead-of-failing`.* `m["content"].([]any)`, `c.(map[string]any)["type"].(string)` and `cm["text"].(string)` are unchecked; a capture missing `content` panics and aborts the package run rather than failing. Introduced by the fix round closing BR-8.
+- `anthropic.go:294-306` + `config.go:96` — `orInt64`, `orDuration` and `orDefault` re-implement stdlib `cmp.Or[T comparable](vals ...T) T`, available since Go 1.22 (module targets 1.26). One import replaces three helpers (ARCH-DRY).
+- Comment archaeology is growing in production code. The fix commit added 110 comment lines against 230 code lines, much of it narrating prior review rounds (`anthropic.go:32-37`, `:164-169`; `fake.go:117-121`, `:142-147`) — history that already lives in the gate ledger and the issue Log. `llm.go` is 53% comment, `errors.go` 48%. Round 1 flagged density as "worth watching"; it went up.
+
+## 5. Test coverage notes
+
+- **Verified green under mutation:** BR-1 and BR-2 both confirmed red-on-revert. Full suite `go test ./...` passes in 8.6s; `-race` clean on both llm packages.
+- **`OnSlow` / `Progress` has zero tests.** `grep -rn "OnSlow\|Progress" --include="*_test.go"` returns nothing. The plan's Task 5 explicitly lists `func TestOnSlowNamesThePhase(t *testing.T) { /* waiting vs streaming */ }` (plan:1383) and it was not delivered. A test would have caught the phase-vocabulary and `Bytes` gaps in I3.3.
+- **`Response.StopDetails` is never asserted.** `TestRefusalBecomesErrRefused` checks the error but not the field PQ-9 added specifically so `ErrRefused` could say *why*. The fake's scripted refusal emits no `stop_details`, so the populated case is unexercised on both sides.
+- **The 408/409 rows are absent from the `classifyStatus` table** (I1) — the one gap where missing coverage maps directly to a shipped misclassification.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one flag.** `buildResponse` and `watch` remain shared between `Complete` and `Stream`, so the two paths cannot fork on `Text` assembly or phase vocabulary. Flagged: the three `or*` helpers duplicate `cmp.Or` (Minor above).
+- **ARCH-PURE — pass, one flag.** `buildResponse` is now a package-level pure function with no receiver, which was the substance of BR-10, and `Resolve` remains pure over the lookup with `TestResolveIsPureOverTheLookup` proving it. Flagged: the promotion did not come with the direct capture-driven unit test its own doc comment claims (I3.1) — the logic is *structurally* pure and still only reachable through httptest.
+- **ARCH-PURPOSE — pass, one flag.** The round mostly answered classes rather than instances: I1 became an exact model set rather than a fixture edit, and I4 became a Go test rather than a script tweak. Flagged: BR-13 fixed the one site the finding named and left two enumerable siblings — the instance, not the class.
+- **ARCH-MOCK — pass, two flags.** The fake stays on the wire, models the *measured* 502 rather than the direct API's 400, and the live half of its contract now exists as a file that vets under the tag and skips cleanly unconfigured. Flagged: the fake's exact-model-set invariant regresses silently (I2), and the live conformance run could not be verified here (no key on this machine — it skipped, which is the correct shape).
+
+**For M2:** `Run[T]` must call `classifyStop` before `decode`, and the test for it should feed `message-truncated.json` and fail against a decode-first implementation. Fix I1 before five consumers branch on the taxonomy — a 408 misclassification is much cheaper now than after `#12`/`#13` build degradation logic on it. And `renderRequest` must marshal the schema `map[string]any` with sorted keys or every cassette will miss at random.
+
+## 7. Plan revision recommendations
+
+1. **Append a `## Revisions` entry for the M1 boundary-review round.** The plan has four dated entries, none for the BR round; the C1 correction was made in place with an inline note. AGENTS.md §1 requires an appended entry (timestamp + reason + delta), not an in-place rewrite, so the record of *what the code did before the review* survives.
+2. **Correct `Zero disables it` at plan:837** to match whatever `New` is decided to do (I3.2) — the plan and `config.go` currently agree with each other and disagree with the code.
+3. **Retract or deliver `TestOnSlowNamesThePhase` (plan:1383)**, and reconcile the plan's `phases connect|waiting|streaming|done` claim (plan:346) with the two phases the code emits.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Mutation-verified — reverting the stall branch to Response{}+ErrUnavailable turns TestStreamStallAfterTextSalvagesAndTruncates red.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Mutation-verified — re-gating Stall on content_block_delta turns the same test red at "no deltas were delivered".
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Behavior verified: claude-opus-6 / -typo / -sonnet-9 all get 502. Not pinned by a test — rolled into the enforcement-not-pinned-by-a-test repeat.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      New now defaults all six fields. Side effects (unpinned; "Zero disables it" now unreachable) raised as new findings.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      conformance_test.go exists, vets under -tags conformance, and skips cleanly with no key configured.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      captures_test.go runs offline in go test; CLIPROXY_CONFIG=/nonexistent llm-probe.sh verify exits 0.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      SDK is in the direct require block; go mod tidy produces no diff.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Both tests now check the error and length-check before indexing Blocks.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      var _ = http.StatusOK and the net/http import are gone from anthropic_test.go.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      buildResponse is package-level with no receiver. The doc comment's claim of a direct unit test is false — rolled into the docs-claim repeat.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      serveStream fails loudly; verified reachable with a scratch test. No fixture enters it — rolled into the enforcement repeat.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Both capture-miss paths return 500 instead of Fatalf. A new off-goroutine Fatalf was added by BR-11's fix — raised separately.
+  - id: BR-13
+    disposition: addressed
+    note: |
+      config.go:99 cleared; llm.go:110 and errors.go:54 still carry the reference — raised as the family repeat.
+findings:
+  - id: new
+    severity: Important
+    family: unclassified-failure-mode
+    title: |
+      An exhausted 408 classifies as ErrRequest, the loud "our bug" arm, though the SDK retries it as transient
+    detail: |
+      internal/llm/errors.go:44-52 routes 429 and >=500 to ErrUnavailable and everything
+      else to default/ErrRequest, so 408 Request Timeout and 409 Conflict land loud.
+      Measured end-to-end through the real client against the fake: status 408 ->
+      "llm: bad request", ErrUnavailable=false, after 3 attempts — the SDK retried it,
+      which is the transport itself calling it transient, and then the taxonomy calls it
+      our bad schema/model/body. errors_test.go covers neither status. Add
+      http.StatusRequestTimeout to the ErrUnavailable arm, decide 409 deliberately, and
+      add both rows to the table.
+  - id: new
+    severity: Important
+    family: enforcement-not-pinned-by-a-test
+    title: |
+      Three of this round's fixes survive full reversion with a green suite, or are entered by no fixture
+    detail: |
+      This is the 2nd finding in family enforcement-not-pinned-by-a-test. Do NOT fix these
+      three instances — the rule is: a boundary fix that changes behavior is not complete
+      until a test fails against the pre-fix code, and the fixture must not encode the
+      pre-fix implementation's escape hatch. Measured prevalence 3, all verified this
+      round. BR-3 (fake.go:148): reverting knownModel to the prefix + "not-a-real"
+      substring rule leaves go test ./internal/llm/... green, because the fixture
+      claude-not-a-real-model still carries the magic substring. BR-4 (anthropic.go:39):
+      deleting the StallAfter default from New leaves the suite green — every stall test
+      sets it explicitly. BR-11 (fake.go:342): no test scripts Reply{Text} against a
+      streaming request, so the loud branch is reachable but unexercised.
+  - id: new
+    severity: Important
+    family: docs-claim-absent-surface
+    title: |
+      Four doc claims outrun the tree, two of them written by this round's own fixes
+    detail: |
+      This is the 2nd finding in family docs-claim-absent-surface. Do NOT fix these four
+      sites individually — the rule is: a claim in a doc comment or atlas page is a claim
+      about the tree, and the sweep must check each against the tree rather than against
+      the intent of the change that wrote it. Measured prevalence 4. (1) anthropic.go:203
+      says buildResponse "is now unit-tested directly from a committed capture with
+      json.Unmarshal and no server at all" — grep finds no caller outside anthropic.go,
+      and it is unexported while anthropic_test.go is package llm_test. (2) config.go:43
+      says StallAfter "Zero disables it", but New — the only constructor — overrides zero
+      with 90s; the plan repeats the sentence at plan:837. (3) llm.go:130-136 documents
+      Progress phases connect|waiting|streaming|done, but only waiting and streaming are
+      ever emitted, and Progress.Bytes is assigned nowhere. (4) fake.go:104 says
+      Reply.Capture "wins over the rest", but serve checks reply.Status first at
+      fake.go:256.
+  - id: new
+    severity: Minor
+    family: test-helper-fatal-off-goroutine
+    title: |
+      BR-11's fix added a t.Fatalf on the fake's server goroutine, ten lines above the comment forbidding it
+    detail: |
+      This is the 2nd finding in family test-helper-fatal-off-goroutine. Do NOT fix this
+      instance — state the rule (no t.Fatalf/FailNow from a handler goroutine; resolve at
+      Script time or answer with a 500) and fix that. fake.go:343 calls f.t.Fatalf inside
+      serveStream while fake.go:352 says "Same reason as serveJSON: no Fatalf off the test
+      goroutine". Verified: it does record the failure today, but a request arriving after
+      cleanup still panics with "log after test completed".
+  - id: new
+    severity: Minor
+    family: comment-references-future-surface
+    title: |
+      --llm-check was removed from config.go and left in two sibling files
+    detail: |
+      This is the 2nd finding in family comment-references-future-surface. Do NOT fix this
+      instance — state the rule covering forward references to unbuilt surface and sweep
+      the enumeration. Remaining: llm.go:110 and errors.go:54. Measured prevalence 2 after
+      the round that closed the one site the finding named (ARCH-PURPOSE: instance, not
+      class).
+  - id: new
+    severity: Minor
+    family: test-panics-instead-of-failing
+    title: |
+      captures_test.go indexes into unchecked type assertions, so a malformed capture panics rather than fails
+    detail: |
+      This is the 2nd finding in family test-panics-instead-of-failing. Do NOT fix this
+      instance — state the rule and sweep. internal/llm/llmtest/captures_test.go:29-31 does
+      m["content"].([]any) and c.(map[string]any)["type"].(string), and :40 does
+      cm["text"].(string). A capture missing content aborts the whole package run. This
+      instance was introduced by the fix round that closed BR-8.
+  - id: new
+    severity: Minor
+    family: stdlib-reimplemented
+    title: |
+      orDefault, orInt64 and orDuration re-implement stdlib cmp.Or
+    detail: |
+      anthropic.go:294-306 and config.go:96. cmp.Or[T comparable](vals ...T) T has been in
+      the standard library since Go 1.22 and the module targets 1.26, so one import
+      replaces three near-identical helpers (ARCH-DRY).
+  - id: new
+    severity: Minor
+    family: review-archaeology-in-code
+    title: |
+      Production comments increasingly narrate prior review rounds, duplicating the gate ledger
+    detail: |
+      The fix commit added 110 comment lines against 230 code lines. Examples:
+      anthropic.go:32-37 and :164-169, fake.go:117-121 and :142-147 all recount what "the
+      first version" did. That history already lives in the gate ledger and the issue Log,
+      and it means a behavior change now needs three edits to stay honest. llm.go is 53%
+      comment, errors.go 48%. Round 1 flagged density as worth watching; it rose.
+```

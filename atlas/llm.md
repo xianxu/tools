@@ -54,11 +54,15 @@ The load-bearing distinction is the first two: one is absorbed, one must not be.
 
 | error | means | caller |
 |---|---|---|
-| `ErrUnavailable` | no key, no network, 429, 5xx | degrade quietly |
-| `ErrRequest` | a 4xx — **our** bad schema/model/body | stay loud |
+| `ErrUnavailable` | no key, no network, 401/403, and anything the transport itself retries (408, 409, 429, every 5xx) | degrade quietly |
+| `ErrRequest` | any other 4xx — **our** bad schema/model/body | stay loud |
 | `ErrRefused` | the model declined (`StopDetails` says why) | skip |
 | `ErrTruncated` | cut off: `max_tokens`, or a stream that died mid-reply | skip |
 | `ErrMalformed` | did not decode, or an unknown `stop_reason` | skip |
+
+The transient set is **derived** from the SDK's own retry policy rather than
+restated, which is what keeps 408 from being retried twice by the transport and
+then reported as our bad request.
 
 `ErrTruncated` exists because **a truncated structured answer usually parses** —
 the committed specimen decodes to `{"verdict":"yes","reason":": Ā"}` with every
@@ -79,7 +83,10 @@ need opposite responses.
   headers one byte at a time.
 - `StallAfter` (default 90s) bounds **silence inside a stream**, which a total
   deadline cannot express — minutes of headroom for a long answer, seconds of
-  patience for a dead connection. The one bound the SDK does not provide.
+  patience for a dead connection. The one bound the SDK does not provide. Zero
+  means "use the default" (`New` applies it); a **negative** value disables it.
+  `New` defaults every `Config` field, so a minimal `Config{BaseURL, APIKey}`
+  still gets the stall bound.
 - Retries are the SDK's: 408, 409, 429 and every 5xx, honouring `retry-after`.
 
 ## Testing: `llmtest`

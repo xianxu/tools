@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,18 +30,16 @@ type anthropicClient struct {
 
 // New builds a Client from resolved config.
 func New(c Config) Client {
-	// Default EVERY field, not the two that happened to come up first. Config is
-	// this package's whole public input and five consumers are queued behind it;
-	// a caller writing llm.New(llm.Config{BaseURL: u, APIKey: k}) — the natural
-	// first thing to type — was getting no stall detection at all, so a hung
-	// stream blocked for the full deadline. The stall bound is the one protection
-	// the SDK does not supply, and it was the one the constructor omitted.
-	c.Timeout = orDuration(c.Timeout, defaultTimeout)
-	c.StallAfter = orDuration(c.StallAfter, defaultStallAfter)
-	c.MaxTokens = orInt64(c.MaxTokens, defaultMaxTokens)
-	c.Model = orDefault(c.Model, defaultModel)
-	c.Effort = orDefault(c.Effort, defaultEffort)
-	c.BaseURL = orDefault(c.BaseURL, defaultBaseURL)
+	// Default EVERY field. Config is this package's whole public input, and a
+	// caller writing llm.New(llm.Config{BaseURL: u, APIKey: k}) — the natural
+	// first thing to type — must not silently lose the stall bound, which is the
+	// one protection the SDK does not supply.
+	c.Timeout = cmp.Or(c.Timeout, defaultTimeout)
+	c.StallAfter = cmp.Or(c.StallAfter, defaultStallAfter) // negative = disabled, preserved
+	c.MaxTokens = cmp.Or(c.MaxTokens, defaultMaxTokens)
+	c.Model = cmp.Or(c.Model, defaultModel)
+	c.Effort = cmp.Or(c.Effort, defaultEffort)
+	c.BaseURL = cmp.Or(c.BaseURL, defaultBaseURL)
 	return &anthropicClient{
 		cfg: c,
 		api: anthropic.NewClient(
@@ -54,8 +53,8 @@ func New(c Config) Client {
 
 func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 	p := anthropic.MessageNewParams{
-		Model:     anthropic.Model(orDefault(r.Model, a.cfg.Model)),
-		MaxTokens: orInt64(r.MaxTokens, a.cfg.MaxTokens),
+		Model:     anthropic.Model(cmp.Or(r.Model, a.cfg.Model)),
+		MaxTokens: cmp.Or(r.MaxTokens, a.cfg.MaxTokens),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(r.Prompt)),
 		},
@@ -66,7 +65,7 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 	// Thinking is left UNSET: on claude-opus-5 that runs adaptive by default,
 	// which is what we want, and budget_tokens would be rejected with a 400.
 	oc := anthropic.OutputConfigParam{
-		Effort: anthropic.OutputConfigEffort(orDefault(r.Effort, a.cfg.Effort)),
+		Effort: anthropic.OutputConfigEffort(cmp.Or(r.Effort, a.cfg.Effort)),
 	}
 	if r.Schema != nil {
 		oc.Format = anthropic.JSONOutputFormatParam{Schema: r.Schema}
@@ -102,7 +101,7 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 	var stalled bool
 	var mu sync.Mutex
 	reset := func() {}
-	if a.cfg.StallAfter > 0 {
+	if a.cfg.StallAfter > 0 { // negative disables; zero was defaulted by New
 		timer := time.AfterFunc(a.cfg.StallAfter, func() {
 			mu.Lock()
 			stalled = true
@@ -157,16 +156,9 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 		s := stalled
 		mu.Unlock()
 		if s {
-			// A stall is not special-cased. It goes through the SAME discriminator
-			// as any other mid-stream failure, because the question a caller asks
-			// is identical: did we ever reach the service?
-			//
-			// The first version returned Response{} + ErrUnavailable here, which
-			// threw away every byte already accumulated and told the caller "stop
-			// trying for a while" when the correct instruction was "skip this
-			// question" — while the salvage branch fifteen lines below did the
-			// opposite for the same situation, and atlas/llm.md stated the
-			// salvaging behaviour as the contract. One rule, one place.
+			// A stall is not special-cased: it goes through the SAME discriminator
+			// as any other mid-stream failure, because the caller's question is
+			// identical — did we ever reach the service?
 			partial, _ := buildResponse(&msg, time.Since(start))
 			if sawEvent {
 				return partial, fmt.Errorf("%w: stream went silent for %s after %d bytes of text",
@@ -289,18 +281,4 @@ func (a *anthropicClient) watch(ctx context.Context, task, phase string) func() 
 	}()
 	var once sync.Once
 	return func() { once.Do(func() { close(stop) }) }
-}
-
-func orInt64(v, fallback int64) int64 {
-	if v == 0 {
-		return fallback
-	}
-	return v
-}
-
-func orDuration(v, fallback time.Duration) time.Duration {
-	if v == 0 {
-		return fallback
-	}
-	return v
 }

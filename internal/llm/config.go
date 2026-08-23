@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"cmp"
 	"fmt"
 	"time"
 )
@@ -40,7 +41,14 @@ type Config struct {
 	MaxTokens int64
 	// Timeout is the TOTAL budget for a call: attempts, backoff and body read.
 	Timeout time.Duration
-	// StallAfter bounds SILENCE inside a stream. Zero disables it.
+	// StallAfter bounds SILENCE inside a stream, which Timeout cannot: a long
+	// answer legitimately takes minutes while a dead connection should fail in
+	// seconds.
+	//
+	// Zero means "use the default" — New applies it — so disabling requires a
+	// NEGATIVE value. Zero used to mean disabled, and that stopped being true the
+	// moment New started defaulting it, leaving the documented way to turn stall
+	// detection off unreachable.
 	StallAfter time.Duration
 	// OnSlow, when set, is called on a ticker while a call is still running, with
 	// the phase it is in. Optional, off by default, never called on a fast path —
@@ -70,10 +78,10 @@ func Resolve(getenv func(string) string) (Config, error) {
 		return ""
 	}
 	c := Config{
-		BaseURL:    orDefault(first("DEFINE_LLM_BASE_URL"), defaultBaseURL),
+		BaseURL:    cmp.Or(first("DEFINE_LLM_BASE_URL"), defaultBaseURL),
 		APIKey:     first("DEFINE_LLM_API_KEY", "ANTHROPIC_API_KEY"),
-		Model:      orDefault(first("DEFINE_LLM_MODEL"), defaultModel),
-		Effort:     orDefault(first("DEFINE_LLM_EFFORT"), defaultEffort),
+		Model:      cmp.Or(first("DEFINE_LLM_MODEL"), defaultModel),
+		Effort:     cmp.Or(first("DEFINE_LLM_EFFORT"), defaultEffort),
 		MaxTokens:  defaultMaxTokens,
 		Timeout:    defaultTimeout,
 		StallAfter: defaultStallAfter,
@@ -86,13 +94,6 @@ func Resolve(getenv func(string) string) (Config, error) {
 			ErrUnavailable)
 	}
 	return c, nil
-}
-
-func orDefault(v, fallback string) string {
-	if v == "" {
-		return fallback
-	}
-	return v
 }
 
 // Redact renders a credential safe to print. Every diagnostic path goes through

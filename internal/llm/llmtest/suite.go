@@ -135,7 +135,7 @@ func Suite(t *testing.T, newClient func(t *testing.T) llm.Client) {
 	t.Run("an unknown model errors without panicking", func(t *testing.T) {
 		c := newClient(t)
 		_, err := c.Complete(ctx(t), llm.Request{
-			Task: "suite-badmodel", Model: "claude-not-a-real-model", Prompt: "hello",
+			Task: "suite-badmodel", Model: "claude-opus-6", Prompt: "hello",
 		})
 		if err == nil {
 			t.Fatal("an unknown model succeeded")
