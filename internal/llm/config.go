@@ -88,13 +88,25 @@ func Resolve(getenv func(string) string) (Config, error) {
 		}
 		return ""
 	}
+	// Timeout is configurable because it was otherwise unreachable: nothing could
+	// shorten it, so the outer deadline in a caller like --llm-check could only
+	// fire after five minutes of a hung proxy — untestable, and unadjustable by
+	// an operator whose proxy is simply slow.
+	timeout := defaultTimeout
+	if v := first("DEFINE_LLM_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			timeout = d
+		}
+		// A malformed or non-positive value takes the default rather than
+		// failing: a typo in an optional tuning knob must not stop a lookup.
+	}
 	c := Config{
 		BaseURL:    cmp.Or(first("DEFINE_LLM_BASE_URL"), defaultBaseURL),
 		APIKey:     first("DEFINE_LLM_API_KEY", "ANTHROPIC_API_KEY"),
 		Model:      cmp.Or(first("DEFINE_LLM_MODEL"), defaultModel),
 		Effort:     cmp.Or(first("DEFINE_LLM_EFFORT"), defaultEffort),
 		MaxTokens:  defaultMaxTokens,
-		Timeout:    defaultTimeout,
+		Timeout:    timeout,
 		StallAfter: defaultStallAfter,
 	}
 	if c.APIKey == "" {

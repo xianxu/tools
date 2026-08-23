@@ -4,14 +4,15 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
-func env(m map[string]string) func(string) string {
+func envOf(m map[string]string) func(string) string {
 	return func(k string) string { return m[k] }
 }
 
 func TestResolveDefaultsToTheLocalProxy(t *testing.T) {
-	c, err := Resolve(env(map[string]string{"ANTHROPIC_API_KEY": "sk-test-key-1234"}))
+	c, err := Resolve(envOf(map[string]string{"ANTHROPIC_API_KEY": "sk-test-key-1234"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +31,7 @@ func TestResolveDefaultsToTheLocalProxy(t *testing.T) {
 }
 
 func TestResolvePrecedence(t *testing.T) {
-	c, err := Resolve(env(map[string]string{
+	c, err := Resolve(envOf(map[string]string{
 		"ANTHROPIC_API_KEY":   "sk-generic",
 		"DEFINE_LLM_API_KEY":  "sk-specific",
 		"DEFINE_LLM_BASE_URL": "http://elsewhere:9000",
@@ -51,7 +52,7 @@ func TestResolvePrecedence(t *testing.T) {
 // No key is not an error to shout about — it is the ordinary offline state, and
 // it must be recognisable with errors.Is so callers degrade uniformly.
 func TestResolveWithNoKeyIsUnavailable(t *testing.T) {
-	_, err := Resolve(env(nil))
+	_, err := Resolve(envOf(nil))
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
@@ -90,8 +91,42 @@ func TestRedactShortAndEmpty(t *testing.T) {
 // depend on the developer's shell.
 func TestResolveIsPureOverTheLookup(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "sk-from-the-real-environment")
-	_, err := Resolve(env(nil))
+	_, err := Resolve(envOf(nil))
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("Resolve read the process environment instead of the lookup: %v", err)
+	}
+}
+
+// Timeout is configurable, and it was not before: nothing could shorten it, so a
+// caller's outer deadline could only fire after five minutes of a hung proxy —
+// unreachable from a test AND unadjustable by an operator with a slow proxy.
+func TestResolveTimeout(t *testing.T) {
+	cases := []struct {
+		name string
+		val  string
+		want time.Duration
+	}{
+		{"unset takes the default", "", defaultTimeout},
+		{"a duration is honoured", "250ms", 250 * time.Millisecond},
+		{"minutes too", "2m", 2 * time.Minute},
+		// A typo in an optional tuning knob must not stop a lookup working.
+		{"garbage takes the default", "not-a-duration", defaultTimeout},
+		{"zero takes the default", "0s", defaultTimeout},
+		{"negative takes the default", "-5s", defaultTimeout},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			env := map[string]string{"DEFINE_LLM_API_KEY": "sk-test-key-1234"}
+			if c.val != "" {
+				env["DEFINE_LLM_TIMEOUT"] = c.val
+			}
+			got, err := Resolve(envOf(env))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Timeout != c.want {
+				t.Errorf("Timeout = %v, want %v", got.Timeout, c.want)
+			}
+		})
 	}
 }

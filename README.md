@@ -107,8 +107,9 @@ define --llm-check
 
 It is the one surface where an unusable configuration is **loud**: it exits
 non-zero and names the reason. Configure it with `DEFINE_LLM_API_KEY` (or
-`ANTHROPIC_API_KEY`), `DEFINE_LLM_BASE_URL` and `DEFINE_LLM_MODEL`; the default
-base URL is a local proxy on `127.0.0.1:8317`.
+`ANTHROPIC_API_KEY`), `DEFINE_LLM_BASE_URL`, `DEFINE_LLM_MODEL` and
+`DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`); the default base URL is a local
+proxy on `127.0.0.1:8317`.
 
 Exit codes: `0` success; `1` the request failed (no dictionary entry, `--forget`
 found nothing to remove, or `--llm-check` found no usable model configuration);

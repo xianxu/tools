@@ -259,3 +259,208 @@ findings:
       enclosing section for a cardinal before adding a bullet, and to re-read the sentence
       you are inserting under, not only the ones you wrote.
 ```
+
+---
+
+## Re-review — 2026-08-23T10:24:15-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 11 — LLM seam: Anthropic client, stateful fake, offline degradation |
+| repo | tools |
+| issue file | workshop/issues/000011-vocab-llm.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 8b60e06b1f1aad127d240647140669bcdd317489..e9a36b3673350bd962626514ab125198e51321bf |
+| command | sdlc close --issue 11 |
+| reviewer | claude |
+| timestamp | 2026-08-23T10:24:15-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The Ctrl-C fix is real and I verified it by reversion, not by reading the commit message: restoring `context.Background()` in `llmcheck.go:39` reddens `TestLLMCheckHonoursCancellation` in 20s with the sentence that names the cause, and the test bounds the call itself rather than leaning on the package timeout — the lesson filed alongside it is honoured in the same commit. `go test ./...` green, `go vet -tags conformance` clean, tree clean at `e9a36b3` after every probe. What keeps this off SHIP is that the round's own record contains a claim I could not reproduce, and that its one behavioural fix introduced a new silent-failure path in the surface whose entire purpose is to be loud. The commit message states BR-27 and BR-28 were "verified fixed by reproducing each finding's OWN case" — but round 9 disposed both `not-addressed` on the *residual*, and no code outside `cmd/define` and `task_conformance_test.go` moved this window. I re-measured the residuals on the clean tree: negative `Timeout` still returns `ErrUnavailable` in 940µs, negative `MaxTokens` still reaches the wire as `-5` with `err=nil`, and the fake still ignores `Stall`/`StallEarly`/`JunkFrame` on `Complete` while an `.sse` capture on `Complete` surfaces as `ErrUnavailable`. And BR-62 is not just open but slightly worse: **3 failures in 15 live runs (20%)**, two of them on the `stem is empty` / `answer is empty` assertions this round *added*.
+
+## 1. Strengths
+
+- **`cmd/define/llmcheck.go:39` — the Ctrl-C fix is genuinely pinned, and the test names its own cause.** Reverting to `context.Background()` produces `runLLMCheck ignored a cancelled context; Ctrl-C would be swallowed for the whole Timeout` in 20s. The `select` on a local timer instead of the 120s package timeout is exactly the correction `workshop/lessons.md` files, applied in the commit that filed it.
+- **Core concepts cross-check is clean.** All 14 PURE rows and all 8 INTEGRATION rows exist at their stated paths. `render_test.go`, `schema_test.go`, `task_test.go`, `config_test.go` import nothing IO-shaped; `errors_test.go`'s `net/http` is status constants and `response_test.go`'s `os` reads a committed capture. No table/code contradiction.
+- **`internal/llm/task.go:126` — the required-field walk is driven by the generator's vocabulary and pinned twice**, by `TestSchemaKeywordsAreCovered` and by `FuzzDecode` through an oracle (`keysAbsentFromInput`) written as a deliberately separate traversal so it can disagree with its subject.
+- **The docs gate passes.** `README.md` has a "Checking the model connection" section and names `--llm-check` in the exit-code paragraph; `atlas/llm.md` exists and `atlas/index.md:13` links it. No new surface is undocumented.
+- **The issue's Done-when evidence is reproducible** — I re-ran two rows: `go test ./... -list '.*'` returns only the store's in-memory conformance tests, and every live-client file carries `//go:build conformance`.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — `cmd/define/llmcheck.go:49` the guard added this round silences the diagnostic's most likely failure.** The new `if ctx.Err() != nil { return 1 }` cannot distinguish a user interrupt from the deadline expiring, because `ctx` was shadowed four lines earlier by `context.WithTimeout(ctx, cfg.Timeout)` — both cases give a non-nil `Err()`. Measured, two orderings:
+
+```
+SDK bound fires first  -> stderr = "define: llm check failed after 2.002s: llm: unavailable: context deadline exceeded"
+ctx  bound fires first -> stderr = ""            exit=1
+```
+
+Production has the second ordering by construction: both bounds are `cfg.Timeout`, and the context is created at `:39` while the SDK's `WithRequestTimeout` starts when the request is issued at `:42`, so the context deadline is strictly earlier and always wins. A hung proxy therefore prints three config lines and then nothing. Three artifacts promise otherwise — `README.md:108` ("it exits non-zero and **names the reason**"), `atlas/llm.md:186` ("Non-zero and specific when unavailable — the one surface where the seam is LOUD"), and the function's own doc comment. `TestLLMCheckIsNonZeroAndSpecificWhenUnavailable` covers no-key and a closed port, neither of which reaches this branch, and `TestLLMCheckHonoursCancellation` actively pins the silence via `!strings.Contains(errOut, "llm check failed")`. **This is the 4th finding in family `unclassified-failure-mode`** — do not add a second `errors.Is` check here. The rule, stated at BR-39 and extended at BR-62, needs its narrowest form yet: **a guard that suppresses reporting must be narrower than the set of failures it can fire on, and must be tested on the failure it is *not* meant to suppress.** The enumeration is the two things a non-nil `ctx.Err()` can mean here; capture the parent's `Err()` before deriving the timeout so `context.Canceled` from the signal context is distinguishable from `context.DeadlineExceeded` from your own bound, and add the timeout row to the "non-zero and specific" table.
+
+**BR-27 remains open** — the class was never swept. Measured on the clean tree: `Timeout: -1` → `llm: unavailable: context deadline exceeded` in 940µs, absorbed as an outage rather than reported as misconfiguration; `MaxTokens: -5` → reaches the wire as `max_tokens: -5` with `err=nil`. Only `SlowEvery` is clamped (`anthropic.go:42`); `Timeout` and `MaxTokens` use `cmp.Or`, which replaces zero only. `TestNegativeConfigValuesDoNotPanic` pins the `MaxTokens: -5` pass-through as *correct* by asserting `err == nil`. The finding's own table listed all three rows.
+
+**BR-28 remains open** — the stream path was swept field by field, the JSON path not at all. Measured, all on `Complete`:
+
+| scripted | result |
+|---|---|
+| `Reply{Stall}` / `Reply{StallEarly}` / `Reply{JunkFrame}` | `err=nil`, `stop="end_turn"`, empty text — silently ignored |
+| `Reply{Capture:"stream-sample.sse"}` | SSE served as `application/json` → `llm: unavailable: error parsing response json` |
+| `Reply{SplitText:3}` on `Stream` | silently ignored |
+
+The fourth row is the exact mirror of the case `fake.go:406` closed (`.json` on a streaming request → 400 naming the field), and it is worse: it arrives wearing `ErrUnavailable`, the class every consumer absorbs silently.
+
+**BR-62 remains open, and this round's change made the class larger.** The finding named three model-side assertions and said "Do not fix these two assertions." One (`Contains(stem,"___")`) was removed; two new ones of the same class were added (`TrimSpace(got.Stem)==""` at `:94`, `TrimSpace(got.Answer)==""` at `:97`); `TrimSpace(o.Word)!=""`/`TrimSpace(o.Why)!=""` at `:106` and `TrimSpace(got.Reason)!=""` at `:56` are untouched, as is `mustCall` at `capture_conformance_test.go:49`, which still `Fatalf`s a mid-run 429/529 as drift. Measured live against the proxy, 15 runs:
+
+```
+RUN  3: option[0] = {Word:sycophantic Why:}: a required field came back empty   (stem "placeholder")
+RUN  7: stem is empty / answer is empty / no options returned
+RUN 13: no options returned
+TYPED-TASK LIVE: 12 pass / 3 fail out of 15
+```
+
+20%, against round 9's 17%. Note run 3: the degenerate `"placeholder"` stub the removed assertion used to catch is *still* a failure, now via a different line — and runs 7's two failures are on assertions that did not exist before this commit. The misattributing messages the finding quoted survive verbatim at `:56` ("the required-field check should have rejected this") and `:105` ("Every required field at every depth — the property the walk exists for"), both pointing a reader at `missingRequired`, which enforces key **presence** and behaved correctly.
+
+**BR-63 — the ctx half is fixed and reversion-verified; the enumeration it wrote is 1 of 2.** The finding said "Do not just add a ctx parameter" and named `llmcheck.go:41`'s hardcoded `MaxTokens: 2048` as the second member of the same class. `MaxTokens: 2048` is unchanged at `:46`. Reporting this `addressed` would let the class close while half of its own enumeration is open.
+
+## 4. Minor findings
+
+- **BR-43** — re-verified by reversion: with sticky reverted, `TestTheLastScriptedReplyIsSticky` reddens while `TestAQueueStillAdvancesWhileItHasEntries` (`fake_test.go:166`) stays green beside `TestQueueServesInOrder` (`:82`). Same script shape, same two assertions.
+- **BR-44** — re-measured: `define -llm-check hello` runs the check and discards `hello`, exit 1 (not the usage 2 that `--forget` gives).
+- **BR-45** — `llmcheck.go:46` still `MaxTokens: 2048`. Folded into N1/BR-63's class.
+- **BR-46** — `schema.go:100` still unconditional.
+- **BR-53** — re-measured: `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still FAILS ("a changed prompt passed its golden").
+- **BR-56** — ran the enumeration: `ErrorForStop` (`errors.go:92`) has **0** references tree-wide including tests; `_ = c` still at `cassette_test.go:242` guarding an unused `llm.New` at `:231`.
+- **BR-57 / BR-60** — the plan's last `## Revisions` heading is *M2 rounds 6–7*; rounds 8, 9 and 10 are undeclared, and `task_conformance_test.go` / `TestTypedTaskAgainstTheLiveService` appears nowhere in the plan (`grep` returns zero hits). `plan:2138` still claims `SkipIfUnreachable` was "added to the Integration points table above"; the table at `plan:152` has eight rows and contains neither it nor `llm.RequestFromContext`.
+- **BR-61** — now measured with a cleaner mutation than round 9's: changing only `params()`'s Config fallback to `cmp.Or(r.Model, "claude-sonnet-5")` (so an explicit `Request.Model` still reaches the wire, keeping the unknown-model obligation intact) puts a different model on the wire than `effective()` hashes, and **`go test ./...` stays fully green**.
+- **BR-64** — the count is corrected to "Three", but the same bullet still asserts "Asserts shape, never the model's judgment", which the 3/15 measurement falsifies; the identical claim sits at `task_conformance_test.go:23`.
+- `README.md:115` is 120 characters in a file otherwise wrapped near 80 (base had no line over 102) — an unwrapped edit artifact, flagged in three prior rounds and never raised.
+- `internal/llm/llmtest/cassette.go:128-151` — the *record* path still returns raw IO/marshal errors from `RoundTrip`, which classify as `ErrUnavailable`. BR-52 removed the SSE instance; its clause "return a harness error not in the dependency's absorbable class" was applied to the read path only.
+
+## 5. Test coverage notes
+
+Reversion-verified green→red this round: the `ctx` threading in `runLLMCheck` (20s, named cause). Verified *not* red where it should be: the `params()`/`effective()` divergence (whole suite green), and every BR-27/BR-28 residual (no test touches them). Full suite green; `go vet -tags conformance` clean; tree clean at `e9a36b3` after every probe.
+
+The structural gap is unchanged and is now the one to fix before consumers arrive: the *effective* cassette key has no field-coverage test. `TestEveryMeaningfulFieldReachesTheHash` (`render_test.go:57`) runs over a hand-populated struct, not through `Run[T]`, which is why a deliberate wire-vs-key divergence is invisible to 100% of the suite. Second: the live typed-task suite is the only place `Run[T]` is proven end to end, and at a 20% failure rate it is a check that will be `-run`-excluded rather than trusted — after which it protects nothing. Third: `Cassettes`/`Transport` still has zero committed artifacts, so replay is only ever exercised against files the same test wrote seconds earlier; defensible while no consumer exists, but the first real recording will also be the first real test of that path.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag.** `effective()` (`anthropic.go:70`) and `params()` (`anthropic.go:77`) remain two independent defaulting implementations of `Model`/`Effort`/`MaxTokens`, and I have now measured that a divergence between them is caught by nothing at all. One line — `r = a.effective(r)` at the top of `Complete`/`Stream`, with `params()`'s `cmp.Or` calls deleted — makes the wire body and `RenderRequest` agree by construction (BR-61).
+- **ARCH-PURE — pass.** No business logic sits inside IO in this window. Every PURE row is deterministic and tested with no server, clock or network; `runLLMCheck` is a thin shell over injected `getenv`/`newClient`, and N1 is a defect in how it *reports*, not in where its logic lives.
+- **ARCH-PURPOSE — flag, and this round is the sharpest instance the ledger has recorded.** Two open Importants were closed in the commit message on the strength of "reproducing each finding's OWN case" — but the finding's own case was the original instance, fixed rounds ago; what round 9 measured and disposed was the residual, which I re-measured unchanged. A third (BR-62) was answered by deleting one named assertion and adding two of the same class, both of which I measured failing live. The corrective is mechanical and has been recommended twice: when a finding hands you an enumeration, write it into the issue `## Log` as a checklist with a measurement pasted per row *before* any code moves — and when re-verifying a `not-addressed` disposition, reproduce **the disposition's** measurement, not the original finding's.
+- **ARCH-MOCK — pass on placement, flag on fidelity.** The fake at the wire, the cassette beneath `Config.Transport`, taxonomy surviving replay by status, streaming recordable, and a reachability probe tested in both directions is a genuinely strong seam. Two fidelity gaps: the fake silently ignores five `Reply` fields on the JSON path (one of them surfacing as `ErrUnavailable`), and the live check that proves the layer to its consumers cries wolf once in five runs.
+- **For the consumers next up (`#10`, `#12`, `#13`, `#16`, `#17`):** `Task[T]`/`Run[T]` is stable and I would not change the surface. One contract line belongs in the doc before it has five callers, because each consumer will otherwise answer it privately: **`decode` guarantees presence, not non-emptiness** — `{"word":"","why":""}` and `"options":[]` are valid answers that `Run[T]` returns with a nil error. BR-62 is the first place that ambiguity has already cost something.
+
+## 7. Plan revision recommendations
+
+Append one `## Revisions` entry to `workshop/plans/000011-vocab-llm-plan.md` — the last heading is *2026-08-23 — M2 rounds 6–7*, and three rounds have landed since:
+
+- **Rounds 8–10 are undeclared.** `missingRequired` is now driven by the generator's nesting vocabulary with `TestSchemaKeywordsAreCovered` as its backstop; `FuzzDecode` ranges over four result shapes with an independent oracle; `runLLMCheck` takes `run`'s signal context. None of it appears in any Task or Revisions entry.
+- **`internal/llm/task_conformance_test.go` / `TestTypedTaskAgainstTheLiveService` appears nowhere in the plan** — no Task, no Revisions entry, no Integration points row — although the issue's close leans on it for "the layer consumers write against is proven rather than argued."
+- **Correct `plan:2138`.** Write the `llmtest.SkipIfUnreachable` and `llm.RequestFromContext` rows into the table at `plan:152` *first*, then the sentence that claims they are there (BR-60).
+- **Task 10 / Core concepts wording:** state that the required check enforces **presence**, not non-emptiness — the distinction that turned the live gate flaky.
+
+```findings
+dispose:
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      Re-measured on the clean tree — negative Timeout returns ErrUnavailable in 940us, negative MaxTokens reaches the wire as -5 with err=nil; only SlowEvery is clamped, and no code moved this window.
+  - id: BR-28
+    disposition: not-addressed
+    note: |
+      Re-measured — Stall/StallEarly/JunkFrame silently ignored on Complete, SplitText silently ignored on Stream, and an .sse capture on Complete surfaces as ErrUnavailable; the JSON path is still unswept.
+  - id: BR-43
+    disposition: not-addressed
+    note: |
+      Re-verified by reversion — with sticky reverted, TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green while TestTheLastScriptedReplyIsSticky reddens.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      Re-measured against the built binary — `define -llm-check hello` runs the check and discards the word, exit 1.
+  - id: BR-45
+    disposition: not-addressed
+    note: |
+      llmcheck.go:46 still hardcodes MaxTokens 2048; it is the second member of BR-63's own two-item enumeration.
+  - id: BR-46
+    disposition: not-addressed
+    note: |
+      schema.go:100 still sets additionalProperties:false unconditionally.
+  - id: BR-53
+    disposition: not-addressed
+    note: |
+      Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+  - id: BR-56
+    disposition: not-addressed
+    note: |
+      Ran the enumeration — ErrorForStop (errors.go:92) has 0 references tree-wide including tests; `_ = c` still at cassette_test.go:242.
+  - id: BR-57
+    disposition: not-addressed
+    note: |
+      Plan's last Revisions heading is still M2 rounds 6-7; rounds 8/9/10 undeclared, and task_conformance_test.go returns zero grep hits in the plan.
+  - id: BR-60
+    disposition: not-addressed
+    note: |
+      plan:2138 still claims SkipIfUnreachable was added to the Integration points table; the eight-row table at plan:152 contains neither it nor RequestFromContext.
+  - id: BR-61
+    disposition: not-addressed
+    note: |
+      Cleaner mutation than round 9's — diverging only params()'s Config fallback puts a different model on the wire than effective() hashes, and the whole suite stays green.
+  - id: BR-62
+    disposition: not-addressed
+    note: |
+      Measured live 3 fail / 15 runs (20%, vs round 9's 17%); one named assertion removed, two of the same class added at :94 and :97, and both fired.
+  - id: BR-63
+    disposition: not-addressed
+    note: |
+      The ctx half is fixed and reversion-verified (20s, named cause), but the finding's own two-item enumeration is 1 of 2 — llmcheck.go:46 still hardcodes MaxTokens 2048.
+  - id: BR-64
+    disposition: not-addressed
+    note: |
+      The count is corrected, but the same bullet's "Asserts shape, never the model's judgment" is falsified by the 3/15 live measurement, as is the identical claim at task_conformance_test.go:23.
+findings:
+  - id: new
+    severity: Important
+    family: unclassified-failure-mode
+    title: |
+      The guard added this round silences --llm-check on the deadline it is most likely to hit
+    detail: |
+      cmd/define/llmcheck.go:49 added `if ctx.Err() != nil { return 1 }`, but ctx was
+      shadowed at :39 by context.WithTimeout(ctx, cfg.Timeout), so a non-nil Err() means
+      either the user's Ctrl-C or the diagnostic's own deadline. Measured both orderings
+      against a socket that accepts and never answers: when the SDK's WithRequestTimeout
+      fires first, stderr reads "define: llm check failed after 2.002s: llm: unavailable:
+      context deadline exceeded"; when the outer context deadline fires first, stderr is
+      EMPTY and exit is 1. Production always has the second ordering by construction —
+      both bounds are cfg.Timeout, and the context is created at :39 while the SDK's bound
+      starts when the request is issued at :42, so the context deadline is strictly
+      earlier. A hung proxy therefore prints three config lines and then nothing, from the
+      surface README.md:108 calls "the one surface where an unusable configuration is
+      loud: it exits non-zero and names the reason" and atlas/llm.md:186 calls "Non-zero
+      and specific when unavailable". TestLLMCheckIsNonZeroAndSpecificWhenUnavailable
+      covers no-key and a closed port, neither of which reaches this branch, and
+      TestLLMCheckHonoursCancellation pins the silence via
+      !strings.Contains(errOut, "llm check failed").
+      THIS IS THE 4TH FINDING IN FAMILY `unclassified-failure-mode`. Do not add a second
+      errors.Is check at this site. The RULE, stated at BR-39 as "a skip condition must be
+      narrower than the failure it protects against" and extended at BR-62, needs its
+      narrowest form: a guard that suppresses REPORTING must be narrower than the set of
+      failures it can fire on, and must be tested against the failure it is not meant to
+      suppress. THE ENUMERATION is the two things a non-nil ctx.Err() can mean here —
+      capture the parent context's Err() before deriving the timeout so context.Canceled
+      from the signal context is distinguishable from context.DeadlineExceeded from your
+      own bound, and add a deadline row to the "non-zero and specific" table so the silent
+      branch is covered by something.
+```

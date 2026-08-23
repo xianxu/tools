@@ -142,3 +142,38 @@ func TestNewPreservesADisabledStallBound(t *testing.T) {
 		t.Errorf("StallAfter = %v; a negative value must be preserved as 'disabled'", c.cfg.StallAfter)
 	}
 }
+
+// Out-of-range Config values are as ordinary as unset ones for public input, and
+// fixing only the one that PANICKED left two others live: a negative Timeout
+// produced an instant ErrUnavailable and a negative MaxTokens reached the wire
+// as -5 with a nil error.
+//
+// A table over every field, so the next one added is covered by the shape of the
+// test rather than by someone remembering.
+func TestNewNormalisesOutOfRangeConfig(t *testing.T) {
+	hostile := Config{
+		BaseURL: "http://example", APIKey: "sk-test-1234567890",
+		Timeout: -1, SlowEvery: -1, MaxTokens: -5,
+	}
+	c := New(hostile).(*anthropicClient)
+
+	for _, f := range []struct {
+		name string
+		bad  bool
+	}{
+		{"Timeout", c.cfg.Timeout <= 0},
+		{"SlowEvery", c.cfg.SlowEvery <= 0},
+		{"MaxTokens", c.cfg.MaxTokens <= 0},
+	} {
+		if f.bad {
+			t.Errorf("New left %s out of range; a negative reaches the wire or panics a goroutine", f.name)
+		}
+	}
+
+	// StallAfter is the deliberate exception: negative means DISABLED there, and
+	// that is the documented escape hatch, so it must survive normalisation.
+	d := New(Config{BaseURL: "http://example", APIKey: "sk-test-1234567890", StallAfter: -1}).(*anthropicClient)
+	if d.cfg.StallAfter >= 0 {
+		t.Errorf("StallAfter = %v; a negative must be preserved as 'disabled'", d.cfg.StallAfter)
+	}
+}

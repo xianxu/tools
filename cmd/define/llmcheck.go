@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -36,19 +37,34 @@ func runLLMCheck(ctx context.Context, getenv func(string) string, newClient func
 	// cannot paste into an issue.
 	fmt.Fprintf(stdout, "  key       %s\n", llm.Redact(cfg.APIKey))
 
+	// parent is kept so the two reasons ctx can be done stay distinguishable.
+	// Checking the DERIVED ctx.Err() treats both alike — and the one it silences,
+	// our own deadline, is the failure a hung endpoint actually produces, so the
+	// guard that was meant to keep an interrupt quiet was silencing the loudest
+	// case instead.
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
 	start := time.Now()
+	// MaxTokens comes from the resolved Config. Hardcoding it here meant
+	// --llm-check reported on a request the operator had not configured, which is
+	// the opposite of a diagnostic's job.
 	resp, err := newClient(cfg).Complete(ctx, llm.Request{
-		Task:      "llm-check",
-		Prompt:    "Reply with exactly the word PONG and nothing else.",
-		MaxTokens: 2048,
+		Task:   "llm-check",
+		Prompt: "Reply with exactly the word PONG and nothing else.",
 	})
 	if err != nil {
-		// A cancelled context is the user pressing Ctrl-C, not a failure — the
-		// same distinction playAnnounced draws for interrupted playback.
-		if ctx.Err() != nil {
+		// An interrupt is the user's own keypress, not a failure to report — the
+		// same distinction playAnnounced draws for interrupted playback. A
+		// DEADLINE is a failure, and a loud one: it is what a hung proxy looks
+		// like, and silence there is the worst possible answer from a diagnostic.
+		if parent.Err() != nil {
+			return 1
+		}
+		if errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded {
+			fmt.Fprintf(stderr, "define: llm check timed out after %s (DEFINE_LLM_* points at %s)\n",
+				took(start), cfg.BaseURL)
 			return 1
 		}
 		fmt.Fprintf(stderr, "define: llm check failed after %s: %v\n", took(start), err)

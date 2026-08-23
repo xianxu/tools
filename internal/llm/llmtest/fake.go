@@ -176,6 +176,74 @@ func splitInto(s string, n int) []string {
 	return out
 }
 
+// misapplied reports why a scripted Reply cannot be served on this path, or "".
+//
+// The MATRIX, both directions, because one direction was the instance fix: a
+// stream cannot honour an invented body, and a non-stream cannot honour frame
+// choreography. Either way the field was silently ignored before, which reads
+// exactly like a bug in the code under test rather than in the test.
+//
+// Only SCRIPTED replies are judged — the fake's own default fallback is served
+// on whichever path it meets.
+func misapplied(r Reply, streaming bool) string {
+	if !r.scripted {
+		return ""
+	}
+	type rule struct {
+		set  bool
+		name string
+	}
+	var offending []string
+	if streaming {
+		// A streamed response replays recorded frames; an invented body has
+		// nowhere to go, and a .json capture would be silently swapped for the
+		// SSE sample.
+		for _, x := range []rule{
+			{r.Text != "", "Text"}, {r.Stop != "", "Stop"}, {r.SplitText > 1, "SplitText"},
+		} {
+			if x.set {
+				offending = append(offending, x.name)
+			}
+		}
+		if r.Capture != "" && !strings.HasSuffix(r.Capture, ".sse") {
+			offending = append(offending, "Capture (not a .sse file)")
+		}
+		if len(offending) > 0 {
+			return "Reply{" + strings.Join(offending, ", ") + "} cannot be served on a STREAMING request; " +
+				"script a .sse Capture, or drive Complete instead"
+		}
+		return ""
+	}
+	for _, x := range []rule{
+		{r.Stall, "Stall"}, {r.StallEarly, "StallEarly"}, {r.JunkFrame, "JunkFrame"},
+	} {
+		if x.set {
+			offending = append(offending, x.name)
+		}
+	}
+	if r.Capture != "" && strings.HasSuffix(r.Capture, ".sse") {
+		offending = append(offending, "Capture (.sse on a non-stream)")
+	}
+	if len(offending) > 0 {
+		return "Reply{" + strings.Join(offending, ", ") + "} is frame choreography and only applies to a " +
+			"STREAMING request; drive Stream instead"
+	}
+	return ""
+}
+
+// harnessBody renders a harness complaint as a 400.
+//
+// 400 rather than 5xx deliberately: this is a mistake in the TEST, and 5xx is in
+// the SDK's retry set — a retried 500 draws the next queue entry or the
+// unscripted fallback, which answers fine and swallows the complaint entirely.
+func harnessBody(msg string) string {
+	b, _ := json.Marshal(map[string]any{
+		"type":  "error",
+		"error": map[string]any{"type": "invalid_request_error", "message": "llmtest: " + msg},
+	})
+	return string(b)
+}
+
 type matcher struct {
 	match string
 	queue []Reply
@@ -323,6 +391,11 @@ func (f *Fake) next(prompt string) Reply {
 
 func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 	w.Header().Set("Content-Type", "application/json")
+	if bad := misapplied(reply, false /*not streaming*/); bad != "" {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, harnessBody(bad))
+		return
+	}
 	if reply.Capture != "" {
 		body, err := captures.ReadFile("testdata/" + reply.Capture)
 		if err != nil {
@@ -385,33 +458,12 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 // service does not have — this capture carries a `ping` event and space-padded
 // payloads that no one would have invented.
 func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
-	// RULE FOR THIS FILE: never t.Fatalf/FailNow from a handler goroutine. It
-	// runs off the test goroutine, where Fatalf is a hang or a "log after test
-	// completed" panic rather than a clean failure. Answer with a 500 carrying the
-	// reason; the caller then fails at its own call site, with a stack that points
-	// at the test.
-	//
-	// Silently ignoring is not the alternative: f.Script("x", Reply{Text: "…"})
-	// against a streaming request used to do nothing at all, which reads exactly
-	// like a bug in the code under test.
-	if reply.scripted && (reply.Text != "" || reply.Stop != "") {
-		// 400, not 500: this is a mistake in the TEST, and 5xx is in the SDK's
-		// retry set — a retried 500 draws the next queue entry (or the unscripted
-		// fallback), which streams fine and swallows the complaint entirely.
+	if bad := misapplied(reply, true /*streaming*/); bad != "" {
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":`+
-			`"llmtest: Reply{Text/Stop} cannot be served on a streaming request; script a Capture (Text=%q Stop=%q)"}}`,
-			reply.Text, reply.Stop)
+		fmt.Fprint(w, harnessBody(bad))
 		return
 	}
 	name := reply.Capture
-	if name != "" && !strings.HasSuffix(name, ".sse") {
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":`+
-			`"llmtest: capture %q is not a stream; a .json capture on a streaming request `+
-			`would silently serve stream-sample.sse instead"}}`, name)
-		return
-	}
 	if name == "" {
 		name = "stream-sample.sse"
 	}

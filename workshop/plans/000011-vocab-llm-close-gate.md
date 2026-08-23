@@ -1095,6 +1095,100 @@ rounds:
           family: docs-claim-absent-surface
           round: 9
       blocked: true
+    - "n": 10
+      timestamp: "2026-08-23T10:24:15-07:00"
+      agent: claude
+      dispose:
+        - id: BR-27
+          disposition: not-addressed
+          note: Re-measured on the clean tree — negative Timeout returns ErrUnavailable in 940us, negative MaxTokens reaches the wire as -5 with err=nil; only SlowEvery is clamped, and no code moved this window.
+          round: 10
+        - id: BR-28
+          disposition: not-addressed
+          note: Re-measured — Stall/StallEarly/JunkFrame silently ignored on Complete, SplitText silently ignored on Stream, and an .sse capture on Complete surfaces as ErrUnavailable; the JSON path is still unswept.
+          round: 10
+        - id: BR-43
+          disposition: not-addressed
+          note: Re-verified by reversion — with sticky reverted, TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green while TestTheLastScriptedReplyIsSticky reddens.
+          round: 10
+        - id: BR-44
+          disposition: not-addressed
+          note: Re-measured against the built binary — `define -llm-check hello` runs the check and discards the word, exit 1.
+          round: 10
+        - id: BR-45
+          disposition: not-addressed
+          note: llmcheck.go:46 still hardcodes MaxTokens 2048; it is the second member of BR-63's own two-item enumeration.
+          round: 10
+        - id: BR-46
+          disposition: not-addressed
+          note: schema.go:100 still sets additionalProperties:false unconditionally.
+          round: 10
+        - id: BR-53
+          disposition: not-addressed
+          note: Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+          round: 10
+        - id: BR-56
+          disposition: not-addressed
+          note: Ran the enumeration — ErrorForStop (errors.go:92) has 0 references tree-wide including tests; `_ = c` still at cassette_test.go:242.
+          round: 10
+        - id: BR-57
+          disposition: not-addressed
+          note: Plan's last Revisions heading is still M2 rounds 6-7; rounds 8/9/10 undeclared, and task_conformance_test.go returns zero grep hits in the plan.
+          round: 10
+        - id: BR-60
+          disposition: not-addressed
+          note: plan:2138 still claims SkipIfUnreachable was added to the Integration points table; the eight-row table at plan:152 contains neither it nor RequestFromContext.
+          round: 10
+        - id: BR-61
+          disposition: not-addressed
+          note: Cleaner mutation than round 9's — diverging only params()'s Config fallback puts a different model on the wire than effective() hashes, and the whole suite stays green.
+          round: 10
+        - id: BR-62
+          disposition: not-addressed
+          note: Measured live 3 fail / 15 runs (20%, vs round 9's 17%); one named assertion removed, two of the same class added at :94 and :97, and both fired.
+          round: 10
+        - id: BR-63
+          disposition: not-addressed
+          note: The ctx half is fixed and reversion-verified (20s, named cause), but the finding's own two-item enumeration is 1 of 2 — llmcheck.go:46 still hardcodes MaxTokens 2048.
+          round: 10
+        - id: BR-64
+          disposition: not-addressed
+          note: The count is corrected, but the same bullet's "Asserts shape, never the model's judgment" is falsified by the 3/15 live measurement, as is the identical claim at task_conformance_test.go:23.
+          round: 10
+      findings:
+        - id: BR-65
+          severity: Important
+          title: The guard added this round silences --llm-check on the deadline it is most likely to hit
+          detail: |-
+            cmd/define/llmcheck.go:49 added `if ctx.Err() != nil { return 1 }`, but ctx was
+            shadowed at :39 by context.WithTimeout(ctx, cfg.Timeout), so a non-nil Err() means
+            either the user's Ctrl-C or the diagnostic's own deadline. Measured both orderings
+            against a socket that accepts and never answers: when the SDK's WithRequestTimeout
+            fires first, stderr reads "define: llm check failed after 2.002s: llm: unavailable:
+            context deadline exceeded"; when the outer context deadline fires first, stderr is
+            EMPTY and exit is 1. Production always has the second ordering by construction —
+            both bounds are cfg.Timeout, and the context is created at :39 while the SDK's bound
+            starts when the request is issued at :42, so the context deadline is strictly
+            earlier. A hung proxy therefore prints three config lines and then nothing, from the
+            surface README.md:108 calls "the one surface where an unusable configuration is
+            loud: it exits non-zero and names the reason" and atlas/llm.md:186 calls "Non-zero
+            and specific when unavailable". TestLLMCheckIsNonZeroAndSpecificWhenUnavailable
+            covers no-key and a closed port, neither of which reaches this branch, and
+            TestLLMCheckHonoursCancellation pins the silence via
+            !strings.Contains(errOut, "llm check failed").
+            THIS IS THE 4TH FINDING IN FAMILY `unclassified-failure-mode`. Do not add a second
+            errors.Is check at this site. The RULE, stated at BR-39 as "a skip condition must be
+            narrower than the failure it protects against" and extended at BR-62, needs its
+            narrowest form: a guard that suppresses REPORTING must be narrower than the set of
+            failures it can fire on, and must be tested against the failure it is not meant to
+            suppress. THE ENUMERATION is the two things a non-nil ctx.Err() can mean here —
+            capture the parent context's Err() before deriving the timeout so context.Canceled
+            from the signal context is distinguishable from context.DeadlineExceeded from your
+            own bound, and add a deadline row to the "non-zero and specific" table so the silent
+            branch is covered by something.
+          family: unclassified-failure-mode
+          round: 10
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (boundary-review)
@@ -1642,6 +1736,55 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   enclosing section for a cardinal before adding a bullet, and to re-read the sentence
   you are inserting under, not only the ones you wrote.
 
+## Round 10 — 2026-08-23T10:24:15-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-27 — not-addressed — Re-measured on the clean tree — negative Timeout returns ErrUnavailable in 940us, negative MaxTokens reaches the wire as -5 with err=nil; only SlowEvery is clamped, and no code moved this window.
+- BR-28 — not-addressed — Re-measured — Stall/StallEarly/JunkFrame silently ignored on Complete, SplitText silently ignored on Stream, and an .sse capture on Complete surfaces as ErrUnavailable; the JSON path is still unswept.
+- BR-43 — not-addressed — Re-verified by reversion — with sticky reverted, TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green while TestTheLastScriptedReplyIsSticky reddens.
+- BR-44 — not-addressed — Re-measured against the built binary — `define -llm-check hello` runs the check and discards the word, exit 1.
+- BR-45 — not-addressed — llmcheck.go:46 still hardcodes MaxTokens 2048; it is the second member of BR-63's own two-item enumeration.
+- BR-46 — not-addressed — schema.go:100 still sets additionalProperties:false unconditionally.
+- BR-53 — not-addressed — Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+- BR-56 — not-addressed — Ran the enumeration — ErrorForStop (errors.go:92) has 0 references tree-wide including tests; `_ = c` still at cassette_test.go:242.
+- BR-57 — not-addressed — Plan's last Revisions heading is still M2 rounds 6-7; rounds 8/9/10 undeclared, and task_conformance_test.go returns zero grep hits in the plan.
+- BR-60 — not-addressed — plan:2138 still claims SkipIfUnreachable was added to the Integration points table; the eight-row table at plan:152 contains neither it nor RequestFromContext.
+- BR-61 — not-addressed — Cleaner mutation than round 9's — diverging only params()'s Config fallback puts a different model on the wire than effective() hashes, and the whole suite stays green.
+- BR-62 — not-addressed — Measured live 3 fail / 15 runs (20%, vs round 9's 17%); one named assertion removed, two of the same class added at :94 and :97, and both fired.
+- BR-63 — not-addressed — The ctx half is fixed and reversion-verified (20s, named cause), but the finding's own two-item enumeration is 1 of 2 — llmcheck.go:46 still hardcodes MaxTokens 2048.
+- BR-64 — not-addressed — The count is corrected, but the same bullet's "Asserts shape, never the model's judgment" is falsified by the 3/15 live measurement, as is the identical claim at task_conformance_test.go:23.
+
+### Raised
+
+- **BR-65** [Important] `unclassified-failure-mode` The guard added this round silences --llm-check on the deadline it is most likely to hit
+  cmd/define/llmcheck.go:49 added `if ctx.Err() != nil { return 1 }`, but ctx was
+  shadowed at :39 by context.WithTimeout(ctx, cfg.Timeout), so a non-nil Err() means
+  either the user's Ctrl-C or the diagnostic's own deadline. Measured both orderings
+  against a socket that accepts and never answers: when the SDK's WithRequestTimeout
+  fires first, stderr reads "define: llm check failed after 2.002s: llm: unavailable:
+  context deadline exceeded"; when the outer context deadline fires first, stderr is
+  EMPTY and exit is 1. Production always has the second ordering by construction —
+  both bounds are cfg.Timeout, and the context is created at :39 while the SDK's bound
+  starts when the request is issued at :42, so the context deadline is strictly
+  earlier. A hung proxy therefore prints three config lines and then nothing, from the
+  surface README.md:108 calls "the one surface where an unusable configuration is
+  loud: it exits non-zero and names the reason" and atlas/llm.md:186 calls "Non-zero
+  and specific when unavailable". TestLLMCheckIsNonZeroAndSpecificWhenUnavailable
+  covers no-key and a closed port, neither of which reaches this branch, and
+  TestLLMCheckHonoursCancellation pins the silence via
+  !strings.Contains(errOut, "llm check failed").
+  THIS IS THE 4TH FINDING IN FAMILY `unclassified-failure-mode`. Do not add a second
+  errors.Is check at this site. The RULE, stated at BR-39 as "a skip condition must be
+  narrower than the failure it protects against" and extended at BR-62, needs its
+  narrowest form: a guard that suppresses REPORTING must be narrower than the set of
+  failures it can fire on, and must be tested against the failure it is not meant to
+  suppress. THE ENUMERATION is the two things a non-nil ctx.Err() can mean here —
+  capture the parent context's Err() before deriving the timeout so context.Canceled
+  from the signal context is distinguishable from context.DeadlineExceeded from your
+  own bound, and add a deadline row to the "non-zero and specific" table so the silent
+  branch is covered by something.
+
 ## Open findings
 
 - **BR-27** [Important] `partial-constructor-defaults` A negative SlowEvery panics on the watcher goroutine, where no caller can recover
@@ -1658,3 +1801,4 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-62** [Important] `unclassified-failure-mode` The live typed-task suite fails on ordinary model variation, asserting judgment its own doc comment disclaims
 - **BR-63** [Important] `diagnostic-ignores-config` define --llm-check discards run's signal context, so Ctrl-C is swallowed for the full five-minute timeout
 - **BR-64** [Minor] `docs-claim-absent-surface` atlas/llm.md says "Two tagged suites" above a list of three, and the third bullet's claim is measurably false
+- **BR-65** [Important] `unclassified-failure-mode` The guard added this round silences --llm-check on the deadline it is most likely to hit

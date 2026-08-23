@@ -441,23 +441,6 @@ func dribblingServer(t *testing.T) string {
 	return "http://" + l.Addr().String()
 }
 
-// BR-15c — the loud branch for an unstreamable scripted Reply was entered by
-// nothing in the tree.
-func TestScriptedTextOnAStreamingRequestFailsLoudly(t *testing.T) {
-	f := llmtest.NewFake(t)
-	f.Script("x", llmtest.Reply{Text: "invented"})
-	_, err := client(t, f.URL).Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"}, nil)
-	if err == nil {
-		t.Fatal("scripting Reply{Text} against a streaming request silently did nothing")
-	}
-	if !strings.Contains(err.Error(), "cannot be served on a streaming request") {
-		t.Errorf("err = %v, want the fake's explanation", err)
-	}
-	if !errors.Is(err, llm.ErrRequest) {
-		t.Errorf("err = %v, want ErrRequest — a caller mistake must not be retried away", err)
-	}
-}
-
 // BR-22's rule, applied: a behaviour the code singles out as load-bearing needs a
 // fixture that separates it from the alternative it warns against. Where no
 // committed capture exhibits that shape, the fixture is CONSTRUCTED — block count
@@ -606,7 +589,7 @@ func TestJSONCaptureOnAStreamingRequestFailsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatal("a .json capture was silently served as the SSE sample")
 	}
-	if !strings.Contains(err.Error(), "not a stream") {
+	if !strings.Contains(err.Error(), "STREAMING request") {
 		t.Errorf("err = %v, want the fake's explanation", err)
 	}
 }
@@ -783,3 +766,47 @@ func TestRequestInContextCarriesTheEffectiveModel(t *testing.T) {
 type roundTripStub func(*http.Request) (*http.Response, error)
 
 func (f roundTripStub) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// The matrix, both directions. Fixing one direction was the instance fix: frame
+// choreography scripted against Complete was just as silently ignored as an
+// invented body scripted against Stream.
+func TestMisappliedReplyFieldsFailLoudlyOnBothPaths(t *testing.T) {
+	cases := []struct {
+		name      string
+		reply     llmtest.Reply
+		streaming bool
+		wantIn    string
+	}{
+		{"invented text on a stream", llmtest.Reply{Text: "invented"}, true, "STREAMING"},
+		{"a split body on a stream", llmtest.Reply{Text: "a b c", SplitText: 3}, true, "STREAMING"},
+		{"a .json capture on a stream", llmtest.Reply{Capture: "message-thinking.json"}, true, "STREAMING"},
+		{"a stall on a non-stream", llmtest.Reply{Stall: true}, false, "frame choreography"},
+		{"an early stall on a non-stream", llmtest.Reply{StallEarly: true}, false, "frame choreography"},
+		{"a junk frame on a non-stream", llmtest.Reply{JunkFrame: true}, false, "frame choreography"},
+		{"an .sse capture on a non-stream", llmtest.Reply{Capture: "stream-sample.sse"}, false, "frame choreography"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := llmtest.NewFake(t)
+			f.Script("x", c.reply)
+			cl := client(t, f.URL)
+			var err error
+			if c.streaming {
+				_, err = cl.Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"}, nil)
+			} else {
+				_, err = cl.Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+			}
+			if err == nil {
+				t.Fatal("the field was silently ignored")
+			}
+			if !strings.Contains(err.Error(), c.wantIn) {
+				t.Errorf("err = %v, want it to mention %q", err, c.wantIn)
+			}
+			// A harness mistake must stay loud: absorbable as ErrUnavailable it
+			// would look exactly like flight mode.
+			if !errors.Is(err, llm.ErrRequest) {
+				t.Errorf("err = %v, want ErrRequest", err)
+			}
+		})
+	}
+}

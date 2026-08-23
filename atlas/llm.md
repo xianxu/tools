@@ -39,6 +39,7 @@ Precedence, all resolved by a pure `Resolve(getenv)`:
 | key | `DEFINE_LLM_API_KEY` → `ANTHROPIC_API_KEY` | none → `ErrUnavailable` |
 | model | `DEFINE_LLM_MODEL` | `claude-opus-5` |
 | effort | `DEFINE_LLM_EFFORT` | `high` |
+| timeout | `DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) | 5m |
 
 **No startup probe.** Reachability is never checked when `define` starts — that
 would put a network round trip on the definition path, which must stay instant

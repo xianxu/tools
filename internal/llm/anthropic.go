@@ -31,19 +31,25 @@ type anthropicClient struct {
 
 // New builds a Client from resolved config.
 func New(c Config) Client {
-	// Default EVERY field. Config is this package's whole public input, and a
-	// caller writing llm.New(llm.Config{BaseURL: u, APIKey: k}) — the natural
-	// first thing to type — must not silently lose the stall bound, which is the
-	// one protection the SDK does not supply.
-	c.Timeout = cmp.Or(c.Timeout, defaultTimeout)
-	c.StallAfter = cmp.Or(c.StallAfter, defaultStallAfter) // negative = disabled, preserved
-	// cmp.Or only replaces the ZERO value, so a negative slipped through to
-	// time.NewTicker, which panics — on the watcher goroutine, where no caller
-	// can recover. Config is public input; out-of-range is as ordinary as unset.
-	if c.SlowEvery <= 0 {
-		c.SlowEvery = defaultSlowEvery
+	// NORMALISE, do not merely default. Config is this package's whole public
+	// input, and cmp.Or only replaces the ZERO value — so every negative slipped
+	// straight through: a negative SlowEvery panicked time.NewTicker on the
+	// watcher goroutine where no caller can recover, a negative Timeout produced
+	// an instant ErrUnavailable (940us), and a negative MaxTokens reached the
+	// wire as -5 with a nil error. Fixing only the panic left the other two.
+	//
+	// Out-of-range is as ordinary as unset for public input, so each numeric
+	// field takes the default unless it is meaningfully positive. StallAfter is
+	// the deliberate exception: NEGATIVE means "disabled" there, which is the
+	// documented escape hatch, so only zero defaults.
+	c.Timeout = positiveOr(c.Timeout, defaultTimeout)
+	c.SlowEvery = positiveOr(c.SlowEvery, defaultSlowEvery)
+	if c.StallAfter == 0 {
+		c.StallAfter = defaultStallAfter // negative stays: it means disabled
 	}
-	c.MaxTokens = cmp.Or(c.MaxTokens, defaultMaxTokens)
+	if c.MaxTokens <= 0 {
+		c.MaxTokens = defaultMaxTokens
+	}
 	c.Model = cmp.Or(c.Model, defaultModel)
 	c.Effort = cmp.Or(c.Effort, defaultEffort)
 	c.BaseURL = cmp.Or(c.BaseURL, defaultBaseURL)
@@ -306,4 +312,15 @@ func (a *anthropicClient) watch(ctx context.Context, task, phase string) func() 
 	}()
 	var once sync.Once
 	return func() { once.Do(func() { close(stop) }) }
+}
+
+// positiveOr takes the fallback unless v is meaningfully positive.
+//
+// Distinct from cmp.Or, which only replaces the zero value — that distinction is
+// what let three separate negative-Config bugs through at once.
+func positiveOr(v, fallback time.Duration) time.Duration {
+	if v <= 0 {
+		return fallback
+	}
+	return v
 }

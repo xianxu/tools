@@ -780,3 +780,25 @@ for five minutes. Measured: 5s+ with no exit, versus 250ms after the fix.
 of every cancellation the process has arranged.** When a signal context exists,
 every path that can block must be reachable from it — and the test for that is
 "does Ctrl-C work while it is blocked", not "does it return eventually".
+
+## An untestable branch is an unreachable knob (define #11 close)
+
+A guard was silencing the wrong error, and four attempts to pin it with a test
+all passed under mutation. The reason was not the test: `runLLMCheck` derived its
+deadline from the resolved `Config`, and **nothing could shorten that** — no env
+var, no flag — so the branch could only be reached after five minutes of a hung
+proxy. Every fixture I wrote shortened the SDK's *per-request* timeout instead,
+which is a different clock.
+
+The fix was to add `DEFINE_LLM_TIMEOUT`. Once the deadline was reachable the test
+became one line and the mutation reddened immediately with `stderr = ""` — the
+exact silent exit the finding described.
+
+**When a branch resists testing, ask what makes it unreachable.** Usually it is a
+value nobody can set, and making it settable is a feature an operator wanted
+anyway — here, anyone whose proxy is merely slow.
+
+Corollary, learned four times in one sitting: **a mutation that leaves the test
+green is a fact about the test, not a verdict on the fix.** Print what the guard
+actually sees before concluding anything. `ctx.Err() = <nil>` answered in one line
+what three rounds of reasoning had not.
