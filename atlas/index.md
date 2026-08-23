@@ -8,6 +8,12 @@ workflow layer. This is a map, not a changelog — history lives in
 
 - [define](define.md) — NOAD word lookup with Google-style IPA and spoken pronunciation.
 
+## Libraries
+
+- [internal/llm](llm.md) — the one seam to a language model: transport, error
+  taxonomy, wire-level stateful fake, and the obligation suite the fake and the
+  live service both satisfy. Owns no prompts.
+
 ## Repo-wide
 
 - [repo-guards](repo-guards.md) — invariants owned by the repository, not by a
