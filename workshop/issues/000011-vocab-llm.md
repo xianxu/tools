@@ -141,7 +141,7 @@ Two review boundaries — each closes with its own `sdlc milestone-close`.
       taxonomy; config resolution pure over an env lookup; the stateful
       Anthropic-shaped `httptest` fake; the real client over `anthropic-sdk-go`
       driven at that fake; the obligation suite; the `AGENTS.local.md` carve-out.
-- [ ] M2 — typed tasks, goldens, conformance. Recorded live SSE sample;
+- [x] M2 — typed tasks, goldens, conformance. Recorded live SSE sample;
       `SchemaFor[T]` with a golden snapshot; `Task[T]`/`Run[T]` with defensive
       decode; `llmtest.Golden`; live conformance behind the build tag;
       `define --llm-check`; atlas page.
@@ -219,6 +219,29 @@ delta in the capture.
 **Closed at the boundary:** 10 behaviours mutation-checked by reversion, the
 obligation suite green against the fake **and** the live proxy (6/6, `-tags
 conformance`), capture shapes enforced offline in Go, and `--race` clean.
+
+### 2026-08-22 — M2 built
+
+`renderRequest` + `RequestHash`, `SchemaFor[T]`, `Task[T]`/`Run[T]` with defensive
+decode, `llmtest.Golden`, `llmtest.Cassette`, capture-drift conformance, and
+`define --llm-check`. Full repo suite green; both conformance suites pass live.
+
+Three things worth keeping:
+
+1. **`decode` needed a real fix.** Testing for "another token" is not the same as
+   "consumed cleanly" — `dec.Token()` returns an *error* for trailing prose, so
+   `{"fits":true} — hope that helps!` was accepted with a populated value. Clean
+   EOF is the only acceptable outcome. 1.2M fuzz executions hold the invariant.
+2. **The fake's last scripted reply is now sticky**, which removes a trap that bit
+   twice: the SDK retries 5xx, so scripting one 503 meant the retry drew the
+   fallback's success and the test saw a decode error instead of the outage it
+   scripted.
+3. **Capture drift passes live** — preamble measured at 1902 tokens, the same
+   number the original probe found on 2026-08-22.
+
+Also, twice in this milestone a scripted edit aborted partway and I committed as
+though it had applied (the `Reply.Capture` comment in M1, the atlas sections
+here). Every edit batch now re-greps for what it wrote and reports APPLIED/FAILED.
 
 ## Revisions
 
