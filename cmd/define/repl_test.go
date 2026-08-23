@@ -21,6 +21,25 @@ func TestParseREPLLine(t *testing.T) {
 		{"blank replays when there is a current word", "", true, replCommand{kind: cmdReplay}},
 		{"blank with nothing current", "", false, replCommand{kind: cmdNothing}},
 		{"whitespace only is blank", "   \t ", true, replCommand{kind: cmdReplay}},
+		// #16's two escape hatches. Both are decided HERE for the same reason "/"
+		// is: one decision table, or the loops disagree about what a line means.
+		{"a question mark in column 1 forces a question", "?what is X", false,
+			replCommand{kind: cmdAsk, question: "what is X"}},
+		{"a forced question keeps its own punctuation", "?is it pejorative?", false,
+			replCommand{kind: cmdAsk, question: "is it pejorative?"}},
+		{"a forced question collapses interior whitespace", "?what   is   X", false,
+			replCommand{kind: cmdAsk, question: "what is X"}},
+		{"a bare question mark asks nothing", "?", false,
+			replCommand{kind: cmdNothing, note: noteEmptyQuestion}},
+		{"a backslash forces a literal lookup", `\how so`, false,
+			replCommand{kind: cmdDefine, word: "how so", literal: true}},
+		{"a backslash collapses whitespace like any word", `\hot   dog`, false,
+			replCommand{kind: cmdDefine, word: "hot dog", literal: true}},
+		{"a bare backslash is blank", `\`, false, replCommand{kind: cmdNothing}},
+		{"a question mark inside a word is part of it", "what?", false,
+			replCommand{kind: cmdDefine, word: "what?"}},
+		{"a slash still wins over a question mark", "/help", false,
+			replCommand{kind: cmdCommand, name: "help"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -28,7 +47,9 @@ func TestParseREPLLine(t *testing.T) {
 			// args slice in #15, which makes the struct incomparable.
 			got := parseREPLLine(tc.line, tc.hasCurrent)
 			if got.kind != tc.want.kind || got.word != tc.want.word ||
-				got.name != tc.want.name || !reflect.DeepEqual(got.args, tc.want.args) {
+				got.name != tc.want.name || !reflect.DeepEqual(got.args, tc.want.args) ||
+				got.question != tc.want.question || got.literal != tc.want.literal ||
+				got.note != tc.want.note {
 				t.Errorf("parseREPLLine(%q, %v) = %+v, want %+v", tc.line, tc.hasCurrent, got, tc.want)
 			}
 		})

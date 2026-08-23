@@ -10,10 +10,19 @@ import (
 
 // replCommand is what one line of input means.
 type replCommand struct {
-	kind replKind
-	word string   // cmdDefine: the headword
-	name string   // cmdCommand: the command name, "" for a bare "/"
-	args []string // cmdCommand: everything after the name
+	kind     replKind
+	word     string   // cmdDefine: the headword
+	question string   // cmdAsk: the question, with any forcing prefix stripped
+	name     string   // cmdCommand: the command name, "" for a bare "/"
+	args     []string // cmdCommand: everything after the name
+	// literal suppresses the question fallback: a "\"-prefixed line the
+	// dictionary misses stays a miss. One of #16's two escape hatches — the
+	// other is "?", which reaches cmdAsk without a dictionary call at all.
+	literal bool
+	// note is what to say about a cmdNothing that is not simply a blank line.
+	// A field rather than a fourth kind: the loops already do nothing here, and
+	// only the wording differs.
+	note string
 }
 
 type replKind int
@@ -23,7 +32,13 @@ const (
 	cmdDefine                  // define this word
 	cmdReplay                  // replay the current word
 	cmdCommand                 // a /-prefixed command
+	cmdAsk                     // a question for the model
 )
+
+// noteEmptyQuestion is the hint for a bare "?" — the hatch typed with nothing
+// after it. "type a word, or press return to replay the last one" is the wrong
+// answer to a key the user pressed on purpose.
+const noteEmptyQuestion = `type a question after "?"`
 
 // parseREPLLine is the loop's decision table, kept pure so it is a unit test
 // rather than something only reachable through a fake terminal.
@@ -38,6 +53,26 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	if name, args, ok := parseCommandLine(line); ok {
 		return replCommand{kind: cmdCommand, name: name, args: args}
 	}
+	// The two escape hatches, decided HERE for the same reason "/" is. They sit
+	// AFTER the command test so "/" keeps winning: "/help" is a command, never a
+	// question about help.
+	//
+	// "?" forces a question without consulting the dictionary at all; "\" forces
+	// the dictionary and suppresses the question fallback. Neither is the only
+	// way to reach its outcome — a bare question still asks and a bare word still
+	// looks up — which is what makes them escape hatches rather than syntax.
+	trimmed := strings.TrimSpace(line)
+	if rest, ok := strings.CutPrefix(trimmed, "?"); ok {
+		q := strings.Join(strings.Fields(rest), " ")
+		if q == "" {
+			return replCommand{kind: cmdNothing, note: noteEmptyQuestion}
+		}
+		return replCommand{kind: cmdAsk, question: q}
+	}
+	var literal bool
+	if rest, ok := strings.CutPrefix(trimmed, `\`); ok {
+		literal, line = true, rest
+	}
 	word := strings.TrimSpace(line)
 	if word == "" {
 		if hasCurrent {
@@ -47,7 +82,7 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	}
 	// Multi-word headwords are real — "hot dog", "a priori" — so the whole line
 	// is the word, with interior whitespace collapsed.
-	return replCommand{kind: cmdDefine, word: strings.Join(strings.Fields(word), " ")}
+	return replCommand{kind: cmdDefine, word: strings.Join(strings.Fields(word), " "), literal: literal}
 }
 
 // maxLineBytes bounds one line of input. bufio.Scanner's default is 64 KB, past
