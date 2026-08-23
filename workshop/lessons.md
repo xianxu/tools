@@ -439,3 +439,67 @@ each call site, because two implementations of "cut this to N" will disagree
 about what N counts. And **a branch no test exercises is not covered by the tests
 that call the function** — if every call site passes the value that skips it, it
 has never run.
+
+## An assertion whose subject is empty cannot fail (define #11)
+
+`TestStreamDoesNotForwardThinkingDeltas` compared what `onDelta` emitted against
+the thinking block's text, guarded with `if thinking != ""`. The recorded capture's
+`thinking_delta` carries `""` — the model returns an empty thinking body even under
+`display: summarized`, only the signature is meaningful — so the guard never opened
+and the test could not fail in any universe. Mutation confirmed it: forwarding
+thinking deltas to `onDelta` as well left the suite GREEN.
+
+The fix was to assert on an observable that actually *differs* between the two
+implementations — the **call count** (5 text deltas, not 6) — and to derive the
+expected numbers from the capture rather than a literal, so re-recording cannot
+silently rot them.
+
+The general rule: before asserting `A does not contain B`, check that B is
+non-empty in the fixture. A containment check against an empty needle is
+vacuously true, and it reads exactly like a passing guard.
+
+## A fake grounded in the easy case models the wrong thing (define #11, three rounds)
+
+Three findings in one family, all the same mistake: a probe recorded under
+conditions that do not elicit the shape the fake is supposed to model.
+
+1. A trivial prompt returned one `text` block — so the fake was single-block, and
+   a client reading `content[0].text` would have returned `""` live while passing
+   the whole suite. `claude-opus-5` returns a **thinking block first** on anything
+   non-trivial.
+2. `max_tokens: 512` with adaptive thinking on let thinking eat the budget. The
+   answer came back `stop_reason: max_tokens` carrying `{"verdict":"yes",
+   "reason":": Ā"}` — valid JSON, every required field present, cut mid-rune. It
+   **decodes**, so a decode-first implementation returns success on garbage.
+3. A trivial stream produced no `thinking_delta`/`signature_delta` frames, so a
+   `Stream` that dropped thinking blocks would have passed everything.
+
+Each artifact looked like evidence, was committed, and had something modelled on
+it. The fix is not a better capture — it is making the required shape **checkable
+at record time**: `scripts/llm-probe.sh verify` declares per capture what it must
+exhibit, and `record` refuses to promote one that does not. It caught a real
+failure on its first run (an `overloaded_error` envelope heading for `testdata/`),
+which exposed a second bug in the check itself:
+
+**A verification that runs after the destructive step protects nothing.** The
+first version wrote into `testdata/` then verified, so the bad response had already
+clobbered a good capture before the check failed. Stage, verify, then promote.
+
+Corollary: with adaptive thinking on, `max_tokens` must cover the thinking AND the
+answer. Budget for the answer alone and the answer is what gets cut.
+
+## Two error classes that need opposite responses must not collapse (define #11)
+
+A stream that dies mid-reply and a service that is unreachable are not the same
+event: one means "skip this question", the other means "stop trying for a while".
+Conflating them either parks a healthy run or abandons a recoverable one (the rule
+is kbench's `is_outage`, learned there across four rewrites).
+
+The discriminator that works is cheap: **once a single frame has arrived, the
+service is demonstrably reachable**, so any later failure is a truncation. Return
+the partial text with `ErrTruncated`, not `ErrUnavailable`.
+
+Same shape as this repo's older `ErrNoAudio`/`ErrFetchFailed` split. When adding an
+error, ask what a caller does differently on it — if the answer is "nothing", it
+does not need to be a new class; if two existing classes lead to opposite actions,
+they must not be one.

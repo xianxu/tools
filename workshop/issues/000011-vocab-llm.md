@@ -137,7 +137,7 @@ Design: `workshop/plans/000011-vocab-llm-plan.md` (authored 2026-08-22 via
 
 Two review boundaries — each closes with its own `sdlc milestone-close`.
 
-- [ ] M1 — transport, contract, wire fake. `internal/llm` contract; error
+- [x] M1 — transport, contract, wire fake. `internal/llm` contract; error
       taxonomy; config resolution pure over an env lookup; the stateful
       Anthropic-shaped `httptest` fake; the real client over `anthropic-sdk-go`
       driven at that fake; the obligation suite; the `AGENTS.local.md` carve-out.
@@ -151,6 +151,39 @@ Two review boundaries — each closes with its own `sdlc milestone-close`.
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+### 2026-08-22 — M1 built
+
+Seven tasks: contract, taxonomy, config, wire fake, real client, obligation
+suite, `AGENTS.local.md` carve-out. Full repo suite green (`go test ./...`).
+
+Three things the build discovered that the plan did not predict:
+
+1. **A malformed SSE frame is fatal, and the Lua lesson does not transfer.** The
+   SDK's `ssestream` decoder owns framing, so a frame it refuses ends the stream
+   and there is no skipping it from above. What transfers is the other half: once
+   a frame has arrived the service is demonstrably reachable, so a stream dying
+   mid-reply returns its partial text with `ErrTruncated` rather than
+   `ErrUnavailable` — kbench's `is_outage` line, and the two need opposite
+   responses from a caller.
+2. **The proxy answers 502 for an unknown model**, where `api.anthropic.com`
+   answers 400. So an our-bug-class error arrives as a 5xx and is absorbed as
+   `ErrUnavailable` instead of staying loud as `ErrRequest`. The fake models the
+   502 (a fake that answered 400 would pass here and fail live), and the suite
+   asserts only that a typo errors rather than which member it lands in. Known
+   limitation, not a defect to fix here: `--llm-check` (M2) is where a bad model
+   should be caught loudly.
+3. **One test could not fail, and only mutation found it.** `TestStreamDoes
+   NotForwardThinkingDeltas` compared `onDelta`'s output against the thinking
+   block's text — and the capture's `thinking_delta` carries `""` even under
+   `display:summarized`, so there was nothing to leak and the assertion never
+   ran. Forwarding thinking deltas left it GREEN. Rewritten to count calls
+   against the capture's own frame counts, it now reports `6 want 5`. Filed to
+   `workshop/lessons.md`.
+
+Also: a stalled-stream fake that `time.Sleep`s blocks `httptest.Server.Close`,
+which turned every stall test into a 30-second cleanup hang — the package suite
+ran 65s instead of 6s. It waits on a cleanup channel now.
 
 ## Revisions
 
