@@ -17,9 +17,16 @@ MODEL="${DEFINE_LLM_MODEL:-claude-opus-5}"
 OUT="$(cd "$(dirname "$0")/.." && pwd)/internal/llm/llmtest/testdata"
 
 key() { python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['api-keys'][0])" "$CONFIG"; }
-K="$(key)"
+
+# The key is read LAZILY, by the probes that need it. It used to be read at
+# startup, which meant `verify` — which needs neither key nor network — died on a
+# missing config file. A check that cannot run without the thing it is checking
+# against is a check nobody runs.
+K=""
+need_key() { [ -n "$K" ] || K="$(key)"; }
 
 post() { # post <json-body>
+  need_key
   curl -s --max-time 300 "$BASE/v1/messages" \
     -H 'content-type: application/json' \
     -H "x-api-key: $K" \
@@ -63,6 +70,7 @@ probe_schema() {
 # depends on. A capture is evidence only for the shape its recording conditions
 # elicit, which is the rule the whole verify step below exists to enforce.
 probe_stream() {
+  need_key
   curl -sN --max-time 300 "$BASE/v1/messages" \
     -H 'content-type: application/json' -H "x-api-key: $K" -H 'anthropic-version: 2023-06-01' \
     -d '{"model":"'"$MODEL"'","max_tokens":8192,"stream":true,"thinking":{"type":"adaptive","display":"summarized"},"messages":[{"role":"user","content":"Which of obsequious, ephemeral, meticulous would ALSO correctly fill the blank in: \"The board produced nothing but ______ agreement — every executive praised a plan they had privately called unworkable.\" Think it through, then answer."}]}'

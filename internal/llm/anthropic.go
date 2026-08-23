@@ -29,12 +29,18 @@ type anthropicClient struct {
 
 // New builds a Client from resolved config.
 func New(c Config) Client {
-	if c.Timeout == 0 {
-		c.Timeout = defaultTimeout
-	}
-	if c.MaxTokens == 0 {
-		c.MaxTokens = defaultMaxTokens
-	}
+	// Default EVERY field, not the two that happened to come up first. Config is
+	// this package's whole public input and five consumers are queued behind it;
+	// a caller writing llm.New(llm.Config{BaseURL: u, APIKey: k}) — the natural
+	// first thing to type — was getting no stall detection at all, so a hung
+	// stream blocked for the full deadline. The stall bound is the one protection
+	// the SDK does not supply, and it was the one the constructor omitted.
+	c.Timeout = orDuration(c.Timeout, defaultTimeout)
+	c.StallAfter = orDuration(c.StallAfter, defaultStallAfter)
+	c.MaxTokens = orInt64(c.MaxTokens, defaultMaxTokens)
+	c.Model = orDefault(c.Model, defaultModel)
+	c.Effort = orDefault(c.Effort, defaultEffort)
+	c.BaseURL = orDefault(c.BaseURL, defaultBaseURL)
 	return &anthropicClient{
 		cfg: c,
 		api: anthropic.NewClient(
@@ -80,7 +86,7 @@ func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, er
 	if err != nil {
 		return Response{}, a.mapError(err)
 	}
-	return a.response(msg, time.Since(start))
+	return buildResponse(msg, time.Since(start))
 }
 
 func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(string)) (Response, error) {
@@ -151,7 +157,22 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 		s := stalled
 		mu.Unlock()
 		if s {
-			return Response{}, fmt.Errorf("%w: stream went silent for %s (phase streaming)",
+			// A stall is not special-cased. It goes through the SAME discriminator
+			// as any other mid-stream failure, because the question a caller asks
+			// is identical: did we ever reach the service?
+			//
+			// The first version returned Response{} + ErrUnavailable here, which
+			// threw away every byte already accumulated and told the caller "stop
+			// trying for a while" when the correct instruction was "skip this
+			// question" — while the salvage branch fifteen lines below did the
+			// opposite for the same situation, and atlas/llm.md stated the
+			// salvaging behaviour as the contract. One rule, one place.
+			partial, _ := buildResponse(&msg, time.Since(start))
+			if sawEvent {
+				return partial, fmt.Errorf("%w: stream went silent for %s after %d bytes of text",
+					ErrTruncated, a.cfg.StallAfter, len(partial.Text))
+			}
+			return Response{}, fmt.Errorf("%w: stream went silent for %s before any frame (phase streaming)",
 				ErrUnavailable, a.cfg.StallAfter)
 		}
 		// The SDK's SSE decoder owns framing, so a frame it cannot decode ends the
@@ -166,23 +187,28 @@ func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(st
 		// it; one that treats any error as "skip this question" is correct by
 		// default.
 		if sawEvent {
-			partial, _ := a.response(&msg, time.Since(start))
+			partial, _ := buildResponse(&msg, time.Since(start))
 			return partial, fmt.Errorf("%w: stream ended mid-reply after %d bytes of text: %w",
 				ErrTruncated, len(partial.Text), err)
 		}
 		return Response{}, a.mapError(err)
 	}
-	return a.response(&msg, time.Since(start))
+	return buildResponse(&msg, time.Since(start))
 }
 
-// response converts an SDK message into our provider-independent shape.
+// buildResponse converts an SDK message into our provider-independent shape.
+//
+// A package-level PURE function, not a method: it touches no IO, and as a method
+// the one piece of real transformation logic in this package was reachable only
+// through an httptest server (ARCH-PURE). It is now unit-tested directly from a
+// committed capture with json.Unmarshal and no server at all.
 //
 // Shared by both paths so they cannot disagree about how Text is assembled,
 // which is the thing most likely to drift: Text is every text block JOINED, in
 // arrival order — not Content[0].Text. Measured, the first block is a thinking
 // block on any non-trivial prompt, and the committed captures show a thinking
 // block arriving AFTER the text too.
-func (a *anthropicClient) response(msg *anthropic.Message, took time.Duration) (Response, error) {
+func buildResponse(msg *anthropic.Message, took time.Duration) (Response, error) {
 	out := Response{
 		ID:    msg.ID,
 		Model: string(msg.Model),
@@ -266,6 +292,13 @@ func (a *anthropicClient) watch(ctx context.Context, task, phase string) func() 
 }
 
 func orInt64(v, fallback int64) int64 {
+	if v == 0 {
+		return fallback
+	}
+	return v
+}
+
+func orDuration(v, fallback time.Duration) time.Duration {
 	if v == 0 {
 		return fallback
 	}

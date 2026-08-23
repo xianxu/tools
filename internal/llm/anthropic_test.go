@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +58,13 @@ func TestCompleteRoundTrip(t *testing.T) {
 	if reqs[0].Headers.Get("anthropic-version") == "" {
 		t.Error("anthropic-version header absent — the SDK is expected to send it")
 	}
+	// The credential must reach the WIRE, under the header the service reads.
+	// Deleting option.WithAPIKey was previously caught only by the SDK's own
+	// client-side validation, so a key sent under the wrong header would have
+	// passed everything here.
+	if got := reqs[0].Headers.Get("x-api-key"); got != "sk-test-1234567890" {
+		t.Errorf("x-api-key = %q, want the configured key", got)
+	}
 }
 
 // The regression this exists for: content[0] is a THINKING block on any
@@ -87,7 +93,13 @@ func TestTextSkipsThinkingBlock(t *testing.T) {
 func TestThinkingSignatureIsPreserved(t *testing.T) {
 	f := llmtest.NewFake(t)
 	f.ServeRecorded("message-thinking.json")
-	got, _ := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	got, err := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Blocks) == 0 {
+		t.Fatal("no blocks")
+	}
 	if got.Blocks[0].Signature == "" {
 		t.Fatal("signature dropped — the thinking block cannot be echoed back")
 	}
@@ -112,7 +124,14 @@ func TestTruncatedIsNotSuccess(t *testing.T) {
 func TestBlocksPreserveArrivalOrder(t *testing.T) {
 	f := llmtest.NewFake(t)
 	f.ServeRecorded("message-truncated.json")
-	got, _ := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	// ErrTruncated is expected here — the capture is the truncation specimen —
+	// so the error is checked rather than discarded, and Blocks is length-checked
+	// before indexing. The earlier version panicked on any unexpected failure,
+	// which aborts the package run and masks every other result.
+	got, err := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	if !errors.Is(err, llm.ErrTruncated) {
+		t.Fatalf("err = %v, want ErrTruncated", err)
+	}
 	var kinds []string
 	for _, b := range got.Blocks {
 		kinds = append(kinds, b.Type)
@@ -141,6 +160,11 @@ func TestRetriesOn429(t *testing.T) {
 	}
 	if reqs[1].Prompt() != "hello" {
 		t.Errorf("retried body = %q, want the original prompt", reqs[1].Prompt())
+	}
+	// The credential must survive the retry too — a header rebuilt on the second
+	// attempt is exactly the kind of thing that only breaks under load.
+	if got := reqs[1].Headers.Get("x-api-key"); got != "sk-test-1234567890" {
+		t.Errorf("retry sent x-api-key = %q", got)
 	}
 }
 
@@ -256,13 +280,12 @@ func TestSlowHeadersStillHitTheDeadline(t *testing.T) {
 // A deadline is the wrong instrument for a stream: minutes of headroom for a
 // long answer, seconds of patience for a dead one. StallAfter is the difference,
 // and it is the one bound the SDK does not provide.
-func TestStreamStallIsDetected(t *testing.T) {
+//
+// A stall BEFORE any frame is a genuine outage: nothing was ever reached.
+func TestStreamStallBeforeAnyFrameIsUnavailable(t *testing.T) {
 	f := llmtest.NewFake(t)
-	f.Script("x", llmtest.Reply{Stall: true})
-	c := client(t, f.URL, func(c *llm.Config) {
-		c.StallAfter = 500 * time.Millisecond
-		c.Timeout = 30 * time.Second // deliberately far larger; StallAfter must fire first
-	})
+	f.Script("x", llmtest.Reply{StallEarly: true})
+	c := stallClient(t, f.URL)
 	start := time.Now()
 	_, err := c.Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"}, nil)
 	if !errors.Is(err, llm.ErrUnavailable) {
@@ -271,6 +294,43 @@ func TestStreamStallIsDetected(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Fatalf("stall took %s to detect with StallAfter=500ms", elapsed)
 	}
+}
+
+// A stall AFTER answer text has arrived is a truncation, not an outage — the
+// service is demonstrably reachable — and the text already received must survive.
+//
+// This case was UNREACHABLE for a whole milestone: the fake stalled on the first
+// content_block_delta, which in the capture is a thinking delta, so only the
+// before-any-text path ever ran and the defect below hid behind it. The
+// production code returned Response{} + ErrUnavailable here, discarding an
+// answer the caller had already watched arrive.
+func TestStreamStallAfterTextSalvagesAndTruncates(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Stall: true})
+
+	var seen strings.Builder
+	resp, err := stallClient(t, f.URL).Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"},
+		func(s string) { seen.WriteString(s) })
+
+	if !errors.Is(err, llm.ErrTruncated) {
+		t.Fatalf("err = %v, want ErrTruncated — frames arrived, so the service was reachable", err)
+	}
+	if errors.Is(err, llm.ErrUnavailable) {
+		t.Error("a stall after text must not read as an outage: the caller should skip the question, not stop trying")
+	}
+	if seen.Len() == 0 {
+		t.Fatal("no deltas were delivered; this test is not exercising the after-text case")
+	}
+	if resp.Text != seen.String() {
+		t.Errorf("Response.Text = %q but the caller saw %q — the partial answer was discarded", resp.Text, seen.String())
+	}
+}
+
+func stallClient(t *testing.T, url string) llm.Client {
+	return client(t, url, func(c *llm.Config) {
+		c.StallAfter = 500 * time.Millisecond
+		c.Timeout = 30 * time.Second // deliberately far larger; StallAfter must fire first
+	})
 }
 
 // Retries spend the SAME budget as the call. The SDK selects on ctx.Done()
@@ -364,8 +424,7 @@ func dribblingServer(t *testing.T) string {
 			}
 			go func(c net.Conn) {
 				defer c.Close()
-				io := []byte("HTTP/1.1 200 OK\r\nX-Pad: ")
-				c.Write(io)
+				c.Write([]byte("HTTP/1.1 200 OK\r\nX-Pad: "))
 				for {
 					if _, err := c.Write([]byte("a")); err != nil {
 						return
@@ -377,5 +436,3 @@ func dribblingServer(t *testing.T) string {
 	}()
 	return "http://" + l.Addr().String()
 }
-
-var _ = http.StatusOK

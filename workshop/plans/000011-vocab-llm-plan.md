@@ -329,9 +329,18 @@ that must still return promptly.
 **Does: detect a stalled stream, which no deadline can.** A total deadline is the
 wrong instrument for streaming — you want minutes of headroom for a long answer
 and seconds of patience for a dead one. So `Stream` carries an **idle timeout**:
-no delta for `StallAfter` and the call aborts as `ErrUnavailable`. This is the
-Go-shaped answer to findings 1–3, and it is the one thing here the SDK does not
-provide.
+no delta for `StallAfter` and the call aborts. This is the Go-shaped answer to
+findings 1–3, and it is the one thing here the SDK does not provide.
+
+*Corrected in place, M1 boundary review (C1).* This paragraph originally said a
+stall "aborts as `ErrUnavailable`", full stop — which contradicts finding 5 above
+(*an outage is not a stall*) for the case that matters, and the implementation
+followed the paragraph: it discarded every byte already accumulated. A stall is
+**not** special-cased. It routes through the same discriminator as any other
+mid-stream failure: frames already arrived → `ErrTruncated` carrying the partial
+text; nothing arrived → `ErrUnavailable`. One rule, one place. The review found
+the contradiction by reading the code against `atlas/llm.md`, which had stated the
+correct rule all along.
 
 **Does: say where the time went.** `Progress{Phase, Elapsed, Bytes}` via an
 optional `OnSlow` hook, phases `connect|waiting|streaming|done`, fired on a ticker.

@@ -110,9 +110,24 @@ type Reply struct {
 	// NoThinking omits the leading thinking block. The default INCLUDES one,
 	// because that is what the live service does on any non-trivial prompt.
 	NoThinking bool
-	// Stall replays frames up to the first content_block_delta then goes silent
-	// without closing — the shape a hung upstream actually has.
+	// Stall replays frames up to and including the first TEXT delta, then goes
+	// silent without closing — the shape a hung upstream actually has, and the
+	// case where a partial answer exists to be salvaged.
+	//
+	// It used to gate on content_block_delta, whose first occurrence in the
+	// capture is a THINKING delta — so the only reachable case was
+	// stall-before-any-text, where discarding the response is coincidentally
+	// correct. The defect that hid behind that lived in production code for a
+	// whole milestone.
 	Stall bool
+	// StallEarly goes silent before any frame at all: the genuinely-unreachable
+	// case, which must classify as ErrUnavailable rather than a truncation.
+	StallEarly bool
+	// scripted distinguishes an explicitly-scripted reply from the fake's own
+	// default. It decides whether an unstreamable Reply is a caller mistake worth
+	// failing on, or just the default fallback meeting a streaming request — the
+	// loud check fired on its own default without it.
+	scripted bool
 	// JunkFrame inserts an undecodable data line AFTER the first text delta, so
 	// the salvage path is genuinely exercised. Injecting it earlier would only
 	// prove that a stream with no content yet fails — which is the uninteresting
@@ -120,17 +135,23 @@ type Reply struct {
 	JunkFrame bool
 }
 
-// knownModel mirrors the model list the proxy actually serves (measured via
-// GET /v1/models). Deliberately a prefix check rather than the full 31-entry
-// list: the point is to reject a typo, not to be a registry that goes stale.
-func knownModel(m string) bool {
-	for _, p := range []string{"claude-", "gpt-", "gemini-", "grok-"} {
-		if strings.HasPrefix(m, p) && !strings.Contains(m, "not-a-real") {
-			return true
-		}
-	}
-	return false
+// knownModels is a subset of what the proxy actually serves, measured via
+// GET /v1/models on 2026-08-22 (31 models; these are the ones anything here is
+// plausibly configured with).
+//
+// An EXACT set, not a prefix rule. The first version accepted any "claude-"
+// prefix and excluded one magic substring — which meant it rejected exactly one
+// model name, the test's own fixture, and answered 200 for every other typo
+// while the measured proxy answers 502. That is the fake tuned to its test
+// rather than to the dependency, which is the divergence the shared obligation
+// suite exists to catch.
+var knownModels = map[string]bool{
+	"claude-opus-5": true, "claude-fable-5": true, "claude-sonnet-5": true,
+	"claude-opus-4-8": true, "claude-opus-4-7": true, "claude-opus-4-6": true,
+	"claude-sonnet-4-6": true, "claude-haiku-4-5-20251001": true,
 }
+
+func knownModel(m string) bool { return knownModels[m] }
 
 type matcher struct {
 	match string
@@ -257,6 +278,7 @@ func (f *Fake) next(prompt string) Reply {
 		if len(m.queue) > 0 && strings.Contains(prompt, m.match) {
 			r := m.queue[0]
 			m.queue = m.queue[1:]
+			r.scripted = true
 			return r
 		}
 	}
@@ -266,7 +288,17 @@ func (f *Fake) next(prompt string) Reply {
 func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 	w.Header().Set("Content-Type", "application/json")
 	if reply.Capture != "" {
-		w.Write(Capture(f.t, reply.Capture))
+		body, err := captures.ReadFile("testdata/" + reply.Capture)
+		if err != nil {
+			// NOT t.Fatalf: this runs on the server's goroutine, where Fatalf
+			// becomes a hang or a "log after test completed" panic rather than a
+			// clean failure. A 500 with the reason surfaces as an ordinary test
+			// failure at the call site.
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"llmtest: no capture %q"}}`, reply.Capture)
+			return
+		}
+		w.Write(body)
 		return
 	}
 	stop := reply.Stop
@@ -303,17 +335,39 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 // service does not have — this capture carries a `ping` event and space-padded
 // payloads that no one would have invented.
 func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
+	// Fail loudly rather than silently ignore. serveStream replays frames, so a
+	// Reply carrying invented Text or Stop cannot be honoured here — and
+	// f.Script("x", Reply{Text: "…"}) followed by a streaming request used to do
+	// nothing at all, which reads exactly like a bug in the code under test.
+	if reply.scripted && (reply.Text != "" || reply.Stop != "") {
+		f.t.Fatalf("llmtest: Reply{Text/Stop} cannot be served on a streaming request; "+
+			"script a Capture, or use Complete. got Text=%q Stop=%q", reply.Text, reply.Stop)
+	}
 	name := reply.Capture
 	if name == "" || !strings.HasSuffix(name, ".sse") {
 		name = "stream-sample.sse"
 	}
-	frames := strings.SplitAfter(string(Capture(f.t, name)), "\n\n")
+	raw, err := captures.ReadFile("testdata/" + name)
+	if err != nil {
+		// Same reason as serveJSON: no Fatalf off the test goroutine.
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"llmtest: no capture %q"}}`, name)
+		return
+	}
+	frames := strings.SplitAfter(string(raw), "\n\n")
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	flusher, _ := w.(http.Flusher)
 	for _, fr := range frames {
 		if fr == "" {
 			continue
+		}
+		if reply.StallEarly {
+			select {
+			case <-f.closing:
+			case <-time.After(30 * time.Second):
+			}
+			return
 		}
 		fmt.Fprint(w, fr)
 		if reply.JunkFrame && strings.Contains(fr, "text_delta") {
@@ -325,7 +379,7 @@ func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
 		if flusher != nil {
 			flusher.Flush()
 		}
-		if reply.Stall && strings.Contains(fr, "content_block_delta") {
+		if reply.Stall && strings.Contains(fr, "text_delta") {
 			// Silence without closing: what a hung upstream actually looks like.
 			// The client's StallAfter (or ctx cancellation) is the only thing that
 			// can end this. Waiting on `closing` rather than sleeping keeps

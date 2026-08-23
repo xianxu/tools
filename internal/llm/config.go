@@ -96,7 +96,8 @@ func orDefault(v, fallback string) string {
 }
 
 // Redact renders a credential safe to print. Every diagnostic path goes through
-// it; --llm-check prints the base URL and this, never the key.
+// it: the ErrUnavailable message below, and any future diagnostic surface. A key
+// literal must never appear in a rendered error — asserted, not assumed.
 //
 // The short-key branch is not defensive padding: the parley proxy's key is four
 // characters, so it is the common case here.
