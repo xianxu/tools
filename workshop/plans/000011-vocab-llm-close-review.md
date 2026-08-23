@@ -718,3 +718,219 @@ findings:
       fixture, confirm at least one case sets it — a field no row sets is a branch no run
       enters, and it reads as coverage in exactly the way BR-15 described.
 ```
+
+---
+
+## Re-review — 2026-08-23T12:22:13-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 11 — LLM seam: Anthropic client, stateful fake, offline degradation |
+| repo | tools |
+| issue file | workshop/issues/000011-vocab-llm.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 8b60e06b1f1aad127d240647140669bcdd317489..80aefea317a00af6b9ea5389d4dac6e61678bcf1 |
+| command | sdlc close --issue 11 |
+| reviewer | claude |
+| timestamp | 2026-08-23T12:22:13-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+BR-66 — the sole open Important — is genuinely closed, and I verified it by reverting **both** doors to the pre-fix `cmp.Or` rather than one: `TestNegativeRequestOverridesDoNotReachTheWire` reddens with exactly `max_tokens = -5 reached the wire`, and on the clean tree `Request{MaxTokens: -5}` now resolves to 8192 while `1024` still passes through. BR-70 is closed too — `hung`/`timeout` and the ~20-line listener are gone, and the comment that described a listener the table never started is corrected. Full suite green, `-race` clean across all four packages, `go vet -tags conformance` clean, tree clean at `80aefea` after every probe. I also probed the required-field walk across six shapes it has never been shown against — top-level slice, slice-of-slice, map-of-slice, pointer-to-struct, explicit null — and all six reject with a correctly-indexed path (`rows[0][0].word`, `by.k[0].why`); that generalization is real, not asserted. Nothing here blocks the gate: every remaining and newly-raised finding is Minor. What keeps it off SHIP is that the plan and issue still misdescribe the tree at a *close* boundary (BR-57, BR-60, BR-69), and four new Minors — all family repeats — surfaced, including one introduced by this window's own last commit.
+
+## 1. Strengths
+
+- **`internal/llm/task.go:135` — the generator-driven walk holds against shapes no finding ever named.** I probed `[{}]`, `{"rows":[[{}]]}`, `{"by":{"k":[{}]}}`, a pointer to `{}`, and `"ptr":null`; each returns the zero value with a path-indexed error. After four consecutive instance-fixes, driving the traversal from `properties`/`items`/`additionalProperties` rather than from payload examples is what finally closed the class.
+- **`internal/llm/anthropic.go:70` — BR-66's fix is pinned by an honest mutation.** Reverting one door leaves it green; reverting both reddens with the exact `-5`. The lesson filed at `workshop/lessons.md` ("if the fix has two sites, remove both") was applied to its own verification.
+- **`cmd/define/llmcheck_test.go:83` — BR-70 was answered with a swept enumeration, not a deletion.** Every remaining field is set by at least one row, and the commit reports sweeping every table fixture in the repo for the same shape. That is the class, not the site.
+- **`internal/llm/llmtest/cassette.go:112` — the miss message explains the encoder rule at the site.** "harnessError marshals the envelope, which escapes it once" is stated where the next person would re-add `jsonEscape`.
+- **Core concepts cross-check: clean.** All 11 PURE rows exist at their stated paths, and `render_test.go`, `schema_test.go`, `task_test.go`, `config_test.go`, `errors_test.go` run in-package with no server, clock or filesystem.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None. BR-66 was the only open Important and it is reversion-verified closed.
+
+## 4. Minor findings
+
+- **`go.mod:15` — `github.com/invopop/jsonschema` is marked `// indirect` but imported directly by `internal/llm/schema.go:9`.** `go mod tidy` moves it into the direct require block (one-line diff, nothing else). BR-7 fixed this for `anthropic-sdk-go` at M1; M2 added a second direct dependency and did not re-run tidy. **2nd in `stdlib`-adjacent family `stale-module-metadata`** — the rule is that `go mod tidy` runs at the boundary, not once per dependency.
+- **`README.md:109-111` omits `DEFINE_LLM_EFFORT`.** The sentence enumerates the configuration ("Configure it with `DEFINE_LLM_API_KEY` … `DEFINE_LLM_BASE_URL`, `DEFINE_LLM_MODEL` and `DEFINE_LLM_TIMEOUT`") and lists 4 of the 5 vars `Resolve` reads — while the sample output six lines *above* it prints `model claude-opus-5 (effort high)`. `atlas/llm.md:38-42` has all five. **2nd in `user-surface-undocumented`.**
+- **`internal/llm/llmtest/cassette.go:128-151` — the record half of the cassette handles no failure.** Measured: a replay-configured store (`Transport(nil)`, the pattern `cassette_test.go` itself uses) run under `-update` **panics** with a nil pointer dereference; and every subsequent `return nil, err` (ReadAll, MkdirAll, Marshal, WriteFile) is a raw transport error that the SDK retries and `classifyStatus(0, …)` turns into `ErrUnavailable`. Thirty lines above, the read path states the opposing rule in its own comment. **2nd in `double-covers-partial-seam`**, and it is the un-run half of BR-52's own written fix: *"store the body as bytes plus the recorded Content-Type, **and return a harness error that is not in the dependency's absorbable class**"*.
+- **`internal/llm/anthropic.go:326,337` — `positiveOrInt64` and `positiveOr` are per-type copies of one function**, in a Go 1.26 module where `func positiveOr[T cmp.Ordered](v, fallback T) T` covers both and `cmp` is already imported. Worse, the int64 copy is called at exactly **one** site while two others hand-inline the identical `if x <= 0` on the same field (`New`'s `c.MaxTokens`, `effective`'s `r.MaxTokens`). **4th in `stdlib-reimplemented`** — this is the shape BR-20 collapsed (`orInt64`/`orDuration` → generic `cmp.Or`), regrown by this window's last commit.
+
+## 5. Test coverage notes
+
+Reversion-verified green→red this round: BR-66 at both doors. Verified **not** red where it should be, each an open finding's measurement re-run rather than a proxy: reinstating `MaxTokens: 2048` in `runLLMCheck` leaves the entire `TestLLMCheck*` suite green (BR-67 — `mt < 1024` pins a range, not a derivation); diverging only `params()`'s Config fallback puts `claude-sonnet-5` on the wire while `effective()` hashes the config's model and `go test ./...` stays **fully green** (BR-61); un-sticky `next()` reddens `TestTheLastScriptedReplyIsSticky` while `TestAQueueStillAdvancesWhileItHasEntries` and `TestQueueServesInOrder` both stay green (BR-43); `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails (BR-53); a local 529 server returns `llm: unavailable: … 529`, which `mustCall` reports as drift (BR-68).
+
+Two structural gaps are unchanged and are now the ones worth fixing before consumers land. The *effective* cassette key still has no field-coverage test — `TestEveryMeaningfulFieldReachesTheHash` runs over a hand-populated struct rather than through `Run[T]`, which is why a deliberate wire-vs-key divergence is invisible to 100% of the suite. And `Cassettes`/`Transport` still has zero committed artifacts, so replay is only ever exercised against files the same test wrote seconds earlier; the record path's total absence of failure handling is the direct consequence.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag.** Two live duplications, both in `anthropic.go`. `effective()` and `params()` remain two independent defaulting implementations of Model/Effort/MaxTokens, and BR-66's fix made the class *denser* rather than closing it: the finding's own text said *"collapsing to positiveOr and one derivation (see BR-61) closes both at once,"* and the fix instead added a third range-check (`positiveOrInt64` in `params`). The one-line collapse — `r = a.effective(r)` at the top of `Complete`/`Stream`, `params()` reading already-resolved values — closes BR-61 and the new `positiveOr*` duplication together.
+- **ARCH-PURE — pass.** No business logic sits inside IO. Every PURE row is deterministic and tested with no server, clock or network; the cassette and reachability seams are injected (`Config.Transport`, an explicit `baseURL`); `runLLMCheck` is a thin shell over injected `getenv`/`newClient`.
+- **ARCH-PURPOSE — pass on the code, flag on the record.** The code half of this round is the cleanest in the ledger: BR-66 fixed at both doors with a swept `cmp.Or` enumeration, BR-70 swept across every table fixture in the repo. The unfixed residue is now almost entirely *documentation about the work* — the plan's last `## Revisions` heading is still *M2 rounds 6–7* while four rounds have landed since; `task_conformance` returns **0** grep hits in the plan although the close leans on it; `plan:2138` still claims a table row that the eight-row table at `plan:154` does not contain. At a whole-issue close, the artifact that outlives the code is the record, and it is the part that is behind.
+- **ARCH-MOCK — pass on placement, flag on the record path.** Fake at the wire, cassette beneath `Config.Transport`, taxonomy surviving replay by status, streaming recordable, reachability probed at TCP and tested in both directions — a genuinely strong seam. The gap is that the double covers reading a recording and does not cover *making* one: a harness failure there panics or wears `ErrUnavailable`, and the drift suite still reports a transient 529 as drift (BR-68), so a busy proxy tells the operator to re-record good captures.
+- **For `#10`/`#12`/`#13`/`#16`/`#17`:** the `Task[T]`/`Run[T]` surface is stable and I would not change it. One contract line belongs in the doc before it has five callers, because each will otherwise answer it privately: **`decode` guarantees presence, not non-emptiness** — `{"word":"","why":""}` and `"options":[]` are valid answers `Run[T]` returns with a nil error. BR-62 is the one place that ambiguity already cost a flaky live gate.
+
+## 7. Plan revision recommendations
+
+Append one `## Revisions` entry to `workshop/plans/000011-vocab-llm-plan.md`; the last heading is *2026-08-23 — M2 rounds 6–7* and four rounds have landed since.
+
+- **Rounds 8–11 and both close rounds are undeclared.** `missingRequired` driven by the generator's nesting vocabulary with `TestSchemaKeywordsAreCovered` as backstop; `FuzzDecode` over four result shapes with an independent oracle; `runLLMCheck` taking `run`'s signal context; `DEFINE_LLM_TIMEOUT` as new env surface; `Config` normalised per field; `Request.MaxTokens` normalised at the override door.
+- **`internal/llm/task_conformance_test.go` / `TestTypedTaskAgainstTheLiveService` appears nowhere in the plan** (0 grep hits) — no Task, no Revisions entry, no Integration points row.
+- **Correct `plan:2138`.** Write the `llmtest.SkipIfUnreachable` and `llm.RequestFromContext` rows into the table at `plan:154` *first*, then the sentence that claims they are there.
+- **Task 10 / Core concepts:** state that the required check enforces **presence**, not non-emptiness.
+- **Also outside the plan:** `task_conformance_test.go:22` and `atlas/llm.md:207` still claim the live typed-task suite asserts fields are populated, which round 11 deliberately removed (BR-69).
+
+```findings
+dispose:
+  - id: BR-43
+    disposition: not-addressed
+    note: |
+      Re-verified by reversion — with sticky reverted, TestTheLastScriptedReplyIsSticky reddens while TestAQueueStillAdvancesWhileItHasEntries and TestQueueServesInOrder both stay green.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      Re-measured against the built binary — `define -llm-check hello` runs the check and discards the word, while `-forget foo bar` correctly answers the arity guard.
+  - id: BR-46
+    disposition: not-addressed
+    note: |
+      Measured — a top-level slice type now yields {"type":"array","additionalProperties":false}; SchemaFor[string]() likewise sets it on a scalar schema.
+  - id: BR-53
+    disposition: not-addressed
+    note: |
+      Re-measured — `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still fails; cassette_test.go:32 restores the literal false.
+  - id: BR-56
+    disposition: not-addressed
+    note: |
+      Ran the enumeration — ErrorForStop (errors.go:92) has 0 references tree-wide including tests; `_ = c` still at cassette_test.go:242 guarding an unused llm.New at :231.
+  - id: BR-57
+    disposition: not-addressed
+    note: |
+      Plan's last Revisions heading is still M2 rounds 6-7; rounds 8-11 and both close rounds undeclared, and task_conformance returns 0 grep hits in the plan.
+  - id: BR-60
+    disposition: not-addressed
+    note: |
+      plan:2138 still claims SkipIfUnreachable was added to the Integration points table; the eight-row table at plan:154 contains neither it nor RequestFromContext (0 grep hits).
+  - id: BR-61
+    disposition: not-addressed
+    note: |
+      Re-measured — diverging only params()'s Model fallback puts claude-sonnet-5 on the wire while effective() hashes the config model, and go test ./... stays fully green. BR-66's fix added a THIRD range-check to params() rather than collapsing, as BR-66's own text asked.
+  - id: BR-66
+    disposition: addressed
+    note: |
+      Reversion-verified at BOTH doors — restoring cmp.Or in effective() and params() reddens TestNegativeRequestOverridesDoNotReachTheWire with the exact -5; on the clean tree -5 resolves to 8192 and 1024 still passes through.
+  - id: BR-67
+    disposition: not-addressed
+    note: |
+      Re-measured — reinstating `MaxTokens: 2048` in runLLMCheck's Request leaves the entire TestLLMCheck* suite green; llmcheck_test.go:59 is still the `mt < 1024` floor.
+  - id: BR-68
+    disposition: not-addressed
+    note: |
+      Re-measured against a local 529 overloaded_error server — the call returns `llm: unavailable: ... 529`, which mustCall reports as `call failed`, i.e. drift.
+  - id: BR-69
+    disposition: not-addressed
+    note: |
+      Both clauses unchanged — task_conformance_test.go:22 still says "that the fields are populated", atlas/llm.md:207 still says "a populated struct out", against a file whose only assertions are two t.Fatalf on Run's error.
+  - id: BR-70
+    disposition: addressed
+    note: |
+      `hung` and `timeout` and the ~20-line listener are gone; every remaining field is set by at least one row; the :207 comment now describes the listener in the past tense as an earlier attempt. Suite green.
+findings:
+  - id: new
+    severity: Minor
+    family: stale-module-metadata
+    title: |
+      The second directly-imported dependency is still marked indirect; go mod tidy was not re-run at the M2 boundary
+    detail: |
+      go.mod:15 lists github.com/invopop/jsonschema v0.14.0 as `// indirect`
+      although internal/llm/schema.go:9 imports it directly. Measured: `go mod tidy`
+      moves it into the direct require block and changes nothing else (a one-line
+      diff).
+      THIS IS THE 2ND FINDING IN FAMILY `stale-module-metadata`. Do not just move
+      the line. The RULE, which BR-7 fixed as an instance: `go mod tidy` is a step
+      of the boundary, run once per boundary, not once per dependency — M1 tidied
+      after adding anthropic-sdk-go and M2 added a second direct import without
+      re-running it. The enumeration is mechanical and belongs in the close
+      checklist beside `go vet`: `go mod tidy && git diff --exit-code go.mod go.sum`.
+  - id: new
+    severity: Minor
+    family: user-surface-undocumented
+    title: |
+      README enumerates the model configuration and omits DEFINE_LLM_EFFORT, which its own sample output prints
+    detail: |
+      README.md:109-111 says "Configure it with DEFINE_LLM_API_KEY (or
+      ANTHROPIC_API_KEY), DEFINE_LLM_BASE_URL, DEFINE_LLM_MODEL and
+      DEFINE_LLM_TIMEOUT" — 4 of the 5 variables Resolve reads (config.go:104-107,
+      96). DEFINE_LLM_EFFORT is missing, while the `--llm-check` sample output six
+      lines above prints "model claude-opus-5 (effort high)" and atlas/llm.md:38-42
+      lists all five.
+      THIS IS THE 2ND FINDING IN FAMILY `user-surface-undocumented`. Do not just add
+      the word. The RULE, which BR-36 fixed as an instance: user-facing surface is
+      enumerated from the CODE, not from the surface the change happened to touch —
+      the enumeration here is `grep -o 'DEFINE_[A-Z_]*\|ANTHROPIC_[A-Z_]*'` over
+      non-test sources, diffed against the same grep over README.md. Run that diff
+      at the boundary; it also confirms DEFINE_NO_CAPTURE, the only other one, is
+      documented.
+  - id: new
+    severity: Minor
+    family: double-covers-partial-seam
+    title: |
+      The cassette's record path handles no failure: it panics on a nil next, and every IO error reaches the caller as ErrUnavailable
+    detail: |
+      Measured: a replay-configured store run under -update — `Cassettes(t, dir)
+      .Transport(nil)`, the exact pattern cassette_test.go uses for replay — panics
+      with "runtime error: invalid memory address or nil pointer dereference" at
+      cassette.go:128 (`c.next.RoundTrip`). And every subsequent `return nil, err`
+      (io.ReadAll, os.MkdirAll, json.MarshalIndent, os.WriteFile) is a raw transport
+      error: the SDK retries it twice, then mapError falls to classifyStatus(0, err)
+      and it arrives as ErrUnavailable. Thirty lines above, the READ path states the
+      opposing rule in its own comment ("t.Fatalf is wrong here" / a miss is
+      reported as a 400 the caller surfaces as ErrRequest), and cassette.go:23 says
+      "a problem with the HARNESS ... is returned as ErrRequest, never
+      ErrUnavailable: a broken cassette that reads as an outage looks exactly like
+      flight mode."
+      THIS IS THE 2ND FINDING IN FAMILY `double-covers-partial-seam`, and it is the
+      un-run half of BR-52's own written fix, which said: "store the body as bytes
+      plus the recorded Content-Type, AND return a harness error that is not in the
+      dependency's absorbable class." The first clause landed; the second was
+      applied to the read path only. The RULE: a double covers a seam only when
+      every direction of it — read and write, Complete and Stream — reports a
+      harness fault in the loud class and never panics. THE ENUMERATION is one
+      question per `return nil, err` and per unchecked field in cassetteTransport
+      .RoundTrip: is this the dependency failing, or the harness? Every "harness"
+      answer routes through harnessError, which already exists.
+  - id: new
+    severity: Minor
+    family: stdlib-reimplemented
+    title: |
+      positiveOr and positiveOrInt64 are per-type copies of one function, and the int64 copy is used at one of the three sites doing that work
+    detail: |
+      anthropic.go:326 and :337 are byte-identical modulo type (`if v <= 0 { return
+      fallback }; return v`) in a module targeting Go 1.26, where
+      `func positiveOr[T cmp.Ordered](v, fallback T) T` covers both — and `cmp` is
+      already imported by the file. positiveOrInt64 is called at exactly one site
+      (params, anthropic.go:94) while two others hand-inline the identical guard on
+      the same field: New's `if c.MaxTokens <= 0` and effective's `if r.MaxTokens
+      <= 0`. So one idea has three spellings, and the helper written for it is used
+      least.
+      THIS IS THE 4TH FINDING IN FAMILY `stdlib-reimplemented`. Do not just merge
+      the two functions. The RULE is BR-20's, and this is that exact shape regrown:
+      BR-20 replaced three per-type helpers (orDefault/orInt64/orDuration) with one
+      generic call, and this window reintroduced two. State it as "a per-type copy
+      of a function the language expresses once generically is the same defect as a
+      reimplementation of stdlib", and run the enumeration BR-23 widened it with —
+      the sweep covers _test.go as well as production files, and it is a grep for
+      near-identical function bodies, not a reading of the diff.
+```

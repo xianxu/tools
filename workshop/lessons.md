@@ -825,3 +825,20 @@ the table no longer started.
 The check is mechanical and worth running over the whole repo rather than the file
 in front of you; a field nothing sets is a branch nothing enters, and in a test it
 looks exactly like a case that is covered.
+
+## A crashed boundary review can leave the tree mutated (define #11 close)
+
+The reviewer verifies findings by reverting a fix and re-running the tests. A
+transient API 502 killed it mid-verification, so it never restored — and
+`anthropic.go` sat in the working tree with a committed fix silently backed out.
+The suite still passed, because the reversion step it was in had already finished.
+
+HEAD was correct, so nothing was lost, but re-running without looking would have
+meant testing a tree with a fix removed. **After a boundary review fails or
+crashes, `git status` before anything else** — and revert what it left behind,
+including the half-written sidecar and ledger entries for the round that never
+completed.
+
+The gate's own behaviour here is the model to copy: given no parseable verdict it
+recorded `unknown`, said "a gate/prompt bug?", and refused to close. An
+unparseable result is not a pass and not a fail.

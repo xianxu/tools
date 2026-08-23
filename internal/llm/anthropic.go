@@ -47,9 +47,7 @@ func New(c Config) Client {
 	if c.StallAfter == 0 {
 		c.StallAfter = defaultStallAfter // negative stays: it means disabled
 	}
-	if c.MaxTokens <= 0 {
-		c.MaxTokens = defaultMaxTokens
-	}
+	c.MaxTokens = positiveOr(c.MaxTokens, defaultMaxTokens)
 	c.Model = cmp.Or(c.Model, defaultModel)
 	c.Effort = cmp.Or(c.Effort, defaultEffort)
 	c.BaseURL = cmp.Or(c.BaseURL, defaultBaseURL)
@@ -80,9 +78,7 @@ func (a *anthropicClient) effective(r Request) Request {
 	// and normalising only Config left it open: cmp.Or replaces the zero value,
 	// so a negative override reached the wire as -5 with a nil error. Any field
 	// with a per-request override needs the same treatment at both doors.
-	if r.MaxTokens <= 0 {
-		r.MaxTokens = a.cfg.MaxTokens
-	}
+	r.MaxTokens = positiveOr(r.MaxTokens, a.cfg.MaxTokens)
 	return r
 }
 
@@ -91,7 +87,7 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 		Model: anthropic.Model(cmp.Or(r.Model, a.cfg.Model)),
 		// effective() has already normalised this; the guard stays because params
 		// is reachable from a future caller that has not been through it.
-		MaxTokens: positiveOrInt64(r.MaxTokens, a.cfg.MaxTokens),
+		MaxTokens: positiveOr(r.MaxTokens, a.cfg.MaxTokens),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(r.Prompt)),
 		},
@@ -322,20 +318,15 @@ func (a *anthropicClient) watch(ctx context.Context, task, phase string) func() 
 	return func() { once.Do(func() { close(stop) }) }
 }
 
-// positiveOrInt64 is positiveOr for a token count.
-func positiveOrInt64(v, fallback int64) int64 {
-	if v <= 0 {
-		return fallback
-	}
-	return v
-}
-
 // positiveOr takes the fallback unless v is meaningfully positive.
 //
-// Distinct from cmp.Or, which only replaces the zero value — that distinction is
-// what let three separate negative-Config bugs through at once.
-func positiveOr(v, fallback time.Duration) time.Duration {
-	if v <= 0 {
+// Generic, because the duration and token-count versions were byte-identical
+// modulo type. Distinct from cmp.Or, which replaces only the ZERO value — that
+// distinction is what let four separate negative-value bugs through at once
+// (SlowEvery, Timeout, Config.MaxTokens, Request.MaxTokens).
+func positiveOr[T cmp.Ordered](v, fallback T) T {
+	var zero T
+	if v <= zero {
 		return fallback
 	}
 	return v

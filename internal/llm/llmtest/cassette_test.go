@@ -322,3 +322,31 @@ func TestAHarnessFailureIsLoudNotAbsorbable(t *testing.T) {
 		t.Error("a corrupt cassette was reported as the service being unavailable")
 	}
 }
+
+// -update needs somewhere to record FROM. A replay-shaped store run under
+// -update used to panic on the nil transport — and a panic inside a
+// RoundTripper surfaces as an opaque transport failure rather than as the
+// test-setup mistake it is.
+func TestRecordingWithNoUpstreamFailsLoudly(t *testing.T) {
+	dir := t.TempDir()
+	r := llm.Request{Task: "veto", Model: "claude-opus-5", Prompt: "x"}
+
+	var err error
+	withUpdate(t, func() {
+		_, err = llm.New(llm.Config{
+			BaseURL: "http://example.invalid", APIKey: "sk-test-1234567890",
+			Model: "claude-opus-5", Timeout: 10 * time.Second,
+			Transport: Cassettes(t, dir).Transport(nil), // replay-shaped, under -update
+		}).Complete(t.Context(), r)
+	})
+
+	if err == nil {
+		t.Fatal("recording with no upstream silently succeeded")
+	}
+	if !errors.Is(err, llm.ErrRequest) {
+		t.Errorf("err = %v, want ErrRequest — a harness mistake must not read as an outage", err)
+	}
+	if !strings.Contains(err.Error(), "live transport") {
+		t.Errorf("err = %v, want it to name the fix", err)
+	}
+}

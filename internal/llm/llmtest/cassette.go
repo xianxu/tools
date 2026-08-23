@@ -125,6 +125,14 @@ func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return replay(ex), nil
 	}
 
+	// -update needs somewhere to record FROM. A replay-shaped store (Transport(nil))
+	// run under -update used to panic here on a nil next — and a panic in a
+	// RoundTripper surfaces as an opaque transport failure, not as the test-setup
+	// mistake it is.
+	if c.next == nil {
+		return harnessError(path, "-update needs a live transport to record from; "+
+			"pass http.DefaultTransport to Transport(), not nil"), nil
+	}
 	resp, err := c.next.RoundTrip(req)
 	if err != nil {
 		return nil, err
@@ -135,7 +143,9 @@ func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, err
 	}
 	if err := os.MkdirAll(c.store.dir, 0o755); err != nil {
-		return nil, err
+		// An IO failure here is a HARNESS problem, so it must not wear the
+		// dependency's absorbable class — the same rule the miss path follows.
+		return harnessError(path, fmt.Sprintf("creating the cassette directory: %v", err)), nil
 	}
 	out, err := json.MarshalIndent(exchange{
 		Request:     json.RawMessage(body),
@@ -147,7 +157,7 @@ func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, err
 	}
 	if err := os.WriteFile(path, out, 0o644); err != nil {
-		return nil, err
+		return harnessError(path, fmt.Sprintf("writing the cassette: %v", err)), nil
 	}
 	c.store.t.Logf("cassette: recorded %s", path)
 	resp.Body = io.NopCloser(bytes.NewReader(respBody))

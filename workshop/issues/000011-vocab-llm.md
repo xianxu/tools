@@ -1,12 +1,13 @@
 ---
 id: 000011
-status: working
+status: codecomplete
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-22
+updated: 2026-08-23
 estimate_hours: 7.98
 started: 2026-08-22T17:11:23-07:00
+actual_hours: 12.38
 ---
 
 # LLM seam: Anthropic client, stateful fake, offline degradation
@@ -273,6 +274,7 @@ though it had applied (the `Reply.Capture` comment in M1, the atlas sections
 here). Every edit batch now re-greps for what it wrote and reports APPLIED/FAILED.
 
 ### 2026-08-23 — M2 boundary review: REWORK, then fixed
+- 2026-08-23: closed — go test ./... green; -race clean; three live conformance suites pass against the real proxy incl. Run[T] end-to-end on flat and nested result types. Every fix mutation-checked by reversion, each mutation verified to apply AND compile — BR-66 reproduces the exact -5 on the wire. Dead-table-field class swept repo-wide. define --llm-check verified by the operator on their own shell.; review verdict: FIX-THEN-SHIP
 - 2026-08-23: closed M2 — go test ./... green; -race clean; live conformance 39.9s; all four round-7 fixes mutation-checked by reversion (array walk, explicit null, effective-request key, endpoint probe); identifier grep run over plan+issue+atlas, llmtest.Golden corrected to AssertGolden with 0 refs remaining; review verdict: FIX-THEN-SHIP
 
 17 findings, one Critical, verdict REWORK. The two that mattered:
