@@ -724,3 +724,34 @@ measurement was a restatement of what I already believed.
 **When a finding is re-raised against a fix you believe landed, reproduce the
 finding's own case** — not your test suite. The suite is what missed it the first
 time.
+
+## Drive a traversal from the generator's vocabulary, not the reproduction (define #11 M2)
+
+Four fixes in a row for one bug — missing required fields decoding to a partial
+value with a nil error. Top level, then nested object, then array item, then map
+value. Each fix covered the case the finding named and missed the next, and each
+time my doc comment made a universal claim ("EVERY depth", "the WHOLE schema
+tree") that the code had not earned.
+
+The fix that finally held was not a fifth case. It was writing down **what the
+schema generator can emit** — `properties`, `items`, `additionalProperties`, plus
+`$ref`/`$defs`/`oneOf`/`anyOf` as latent under the current configuration — putting
+that enumeration in the doc comment, covering each arm, and adding a test that
+fails when a schema arrives carrying a keyword the walk does not know.
+
+**When a bug recurs at a new shape, stop fixing shapes.** Find the thing that
+*produces* the shapes and enumerate its outputs. And the test-side half matters
+just as much: my fuzz target asserted a named field of one fixture type, so it
+ranged over the one shape that already had cases — which is why every other
+vehicle had to be found by a reviewer rather than by 900K executions.
+
+## Fixing the helper is not fixing its inline twin (define #11 M2)
+
+I rewrote `SkipIfUnreachable` so it probes the endpoint rather than the API,
+because skipping on `ErrUnavailable` swallowed the drift it existed to catch. Then
+I left, ten lines below the call, a local closure doing exactly the thing I had
+just removed — so all four drift subtests still skipped on a renamed model.
+
+**After changing a helper's behaviour, grep for the behaviour, not the helper.**
+The name changed; the mistake had been copy-pasted before the rename, and it does
+not answer to the new name.

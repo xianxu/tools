@@ -110,7 +110,12 @@ returns success on garbage and nothing downstream can tell.
 
 `decode`'s strategy, once: strip one optional markdown fence, decode exactly one
 JSON value, require the payload **consumed to EOF**, require every field the
-schema marks required, and allow unknown fields. The required check derives its
+schema marks required — at every point of the schema tree — and allow unknown
+fields. The walk is driven by the generator's nesting vocabulary (`properties`,
+`items`, `additionalProperties`), not by payload shapes, because four successive
+fixes each covered the example a finding used and missed the next one;
+`TestSchemaKeywordsAreCovered` fails if a schema ever arrives carrying a keyword
+the walk does not know. The required check derives its
 set from `SchemaFor[T]` rather than restating it — without it `encoding/json`
 zero-fills, so `{}` decodes to a veto verdict of `Fits:false` that a consumer
 cannot tell from a real "no".

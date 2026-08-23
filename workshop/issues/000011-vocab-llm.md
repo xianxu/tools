@@ -244,6 +244,7 @@ though it had applied (the `Reply.Capture` comment in M1, the atlas sections
 here). Every edit batch now re-greps for what it wrote and reports APPLIED/FAILED.
 
 ### 2026-08-23 — M2 boundary review: REWORK, then fixed
+- 2026-08-23: closed M2 — go test ./... green; -race clean; live conformance 39.9s; all four round-7 fixes mutation-checked by reversion (array walk, explicit null, effective-request key, endpoint probe); identifier grep run over plan+issue+atlas, llmtest.Golden corrected to AssertGolden with 0 refs remaining; review verdict: FIX-THEN-SHIP
 
 17 findings, one Critical, verdict REWORK. The two that mattered:
 
@@ -298,6 +299,32 @@ caller poison every later `Run[T]` process-wide.
 Three lessons filed. Verified: full suite green, `-race` clean, live conformance
 39.4s, and every fix mutation-checked — including two mutations I had to redo
 because the first attempt did not compile or did not reproduce the bug.
+
+### 2026-08-23 — M2 boundary passed (8 rounds, FIX-THEN-SHIP)
+
+`Review-Verdict: FIX-THEN-SHIP` · `Review-Window: 85f6c953..b157e642`.
+
+Eight rounds. The arc worth recording is one bug fixed four times: a payload
+missing a required field decoded to a partially populated value with a nil error,
+found first at the top level, then in a nested object, then in an array item,
+then in a map value. Each fix covered the case the finding named, and each time
+the doc comment claimed a coverage the code had not earned.
+
+The fix that held was not a fifth case: the walk is now driven by the schema
+GENERATOR's nesting vocabulary (`properties`, `items`, `additionalProperties`,
+with `$ref`/`$defs`/`oneOf`/`anyOf` latent), that enumeration is written into the
+doc comment, each arm is covered, and `TestSchemaKeywordsAreCovered` fails if a
+schema ever arrives carrying a keyword the walk does not know. `FuzzDecode` now
+ranges over four shapes with an oracle written independently of the traversal it
+checks — 906K executions.
+
+Also closed at this boundary: the `SkipIfUnreachable` rewrite had left an inline
+closure doing exactly what the rewrite removed, so a renamed model (502 →
+`ErrUnavailable`) still skipped all four drift subtests.
+
+Two lessons filed. Verified: `go test ./...` green, `-race` clean, live
+conformance 39.9s, both demoted findings mutation-checked from the table test AND
+from the fuzz corpus.
 
 ## Revisions
 

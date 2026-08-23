@@ -1,7 +1,9 @@
 package llm
 
 import (
+	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -95,7 +97,12 @@ func TestDecodeErrorBoundsTheExcerpt(t *testing.T) {
 }
 
 // The fuzz corpus is where enumerated cases belong — a prose list rots because
-// nobody adds the eighth entry. The property is the invariant above.
+// nobody adds the eighth entry. The property is the invariant decode advertises.
+//
+// It ranges over SEVERAL result shapes, not one. The first version asserted
+// `got.Reason != ""` — a named field of a single fixture type — so it exercised
+// exactly the shape that already had cases, and every other vehicle (nested
+// object, array item, map value) had to be found by a reviewer instead.
 func FuzzDecode(f *testing.F) {
 	for _, seed := range []string{
 		`{"fits":true,"reason":"x"}`,
@@ -104,28 +111,85 @@ func FuzzDecode(f *testing.F) {
 		`[{"fits":true}]`,
 		`{"fits":true,"reason":"x`,
 		`{"fits":true}{"fits":false}`,
-		"", "   ", "not json at all", "{}", `{"reason":"señor — dash"}`,
+		`{"fits":true,"inner":{}}`,
+		`{"fits":true,"list":[{}]}`,
+		`{"fits":true,"by":{"a":{}}}`,
+		`{"fits":true,"inner":null}`,
+		"", "   ", "not json at all", "{}", "null", `{"reason":"señor — dash"}`,
 	} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, body string) {
-		got, err := decode[answer](body)
-		if err == nil {
-			// The success half of the invariant, which this used to skip — and
-			// that omission is why C1 survived: every required field must be
-			// populated, or decode has returned a partial value with a nil error.
-			if got.Reason == "" {
-				t.Fatalf("decode(%q) succeeded with an empty required field: %+v", body, got)
-			}
-			return
+		// One arm per nesting keyword, so a hole in the walk is reachable from
+		// the fuzzer rather than only from a hand-written case.
+		checkInvariant(t, body, func(s string) (any, error) { return decode[answer](s) })
+		checkInvariant(t, body, func(s string) (any, error) { return decode[kwNested](s) })
+		checkInvariant(t, body, func(s string) (any, error) { return decode[kwSlice](s) })
+		checkInvariant(t, body, func(s string) (any, error) { return decode[kwMap](s) })
+	})
+}
+
+// checkInvariant asserts decode's advertised contract without naming any field:
+// on success every schema-required path must have been PRESENT in the input, and
+// on failure the error is ErrMalformed and the value is zero.
+//
+// The presence check is written independently of missingRequired — it is an
+// oracle, so sharing that traversal would make it agree with the code by
+// construction rather than by correctness.
+func checkInvariant(t *testing.T, body string, dec func(string) (any, error)) {
+	t.Helper()
+	got, err := dec(body)
+	if err != nil {
+		if !errors.Is(err, ErrMalformed) && !errors.Is(err, ErrTruncated) {
+			t.Fatalf("error is neither ErrMalformed nor ErrTruncated: %v", err)
 		}
-		if !errors.Is(err, ErrMalformed) {
-			t.Fatalf("error is not ErrMalformed: %v", err)
-		}
-		if got != (answer{}) {
+		if !reflect.ValueOf(got).IsZero() {
 			t.Fatalf("partial value %+v returned with an error", got)
 		}
-	})
+		return
+	}
+	// Success: every field the decoded value carries must have come from the
+	// input, so re-marshalling and comparing key sets catches a zero-filled
+	// required field that decode should have rejected.
+	out, mErr := json.Marshal(got)
+	if mErr != nil {
+		return
+	}
+	var fromInput, fromResult any
+	if json.Unmarshal([]byte(strings.TrimSpace(stripFence(body))), &fromInput) != nil {
+		return
+	}
+	if json.Unmarshal(out, &fromResult) != nil {
+		return
+	}
+	if missing := keysAbsentFromInput(fromResult, fromInput, ""); len(missing) > 0 {
+		t.Fatalf("decode(%q) succeeded but %v were zero-filled rather than supplied", body, missing)
+	}
+}
+
+// keysAbsentFromInput reports keys present in the decoded result but absent from
+// the input — i.e. fields encoding/json zero-filled. Deliberately a separate,
+// simpler traversal from missingRequired: an oracle that shares its subject's
+// logic cannot disagree with it.
+func keysAbsentFromInput(result, input any, path string) []string {
+	rm, ok := result.(map[string]any)
+	if !ok {
+		return nil
+	}
+	im, ok := input.(map[string]any)
+	if !ok {
+		return nil
+	}
+	var missing []string
+	for k, rv := range rm {
+		iv, found := im[k]
+		if !found {
+			missing = append(missing, join(path, k))
+			continue
+		}
+		missing = append(missing, keysAbsentFromInput(rv, iv, join(path, k))...)
+	}
+	return missing
 }
 
 type innerResult struct {
@@ -231,4 +295,122 @@ func TestDecodeRequiresFieldsAtEveryShape(t *testing.T) {
 			t.Errorf("accepted an explicit null as %+v", got)
 		}
 	})
+}
+
+type kwItem struct {
+	Score  int    `json:"score"`
+	Detail string `json:"detail"`
+}
+
+type kwStruct struct {
+	Fits bool   `json:"fits"`
+	Note string `json:"note"`
+}
+type kwNested struct {
+	Fits  bool   `json:"fits"`
+	Inner kwItem `json:"inner"`
+}
+type kwSlice struct {
+	Fits bool     `json:"fits"`
+	List []kwItem `json:"list"`
+}
+type kwMap struct {
+	Fits bool              `json:"fits"`
+	By   map[string]kwItem `json:"by"`
+}
+type kwPtr struct {
+	Fits  bool    `json:"fits"`
+	Inner *kwItem `json:"inner"`
+}
+
+// One case per subschema-bearing keyword the generator can emit, because four
+// instance-fixes in a row each covered the example a finding used and missed the
+// next. The traversal is driven by that vocabulary, so the tests are too.
+func TestRequiredWalkCoversEveryNestingKeyword(t *testing.T) {
+	cases := []struct {
+		keyword string
+		bad     string
+		good    string
+		decode  func(string) (any, error)
+	}{
+		{"properties (struct)", `{"fits":true}`, `{"fits":true,"note":"x"}`,
+			func(s string) (any, error) { return decode[kwStruct](s) }},
+		{"properties (nested struct)", `{"fits":true,"inner":{}}`, `{"fits":true,"inner":{"score":1,"detail":"d"}}`,
+			func(s string) (any, error) { return decode[kwNested](s) }},
+		{"items (slice of struct)", `{"fits":true,"list":[{}]}`, `{"fits":true,"list":[{"score":1,"detail":"d"}]}`,
+			func(s string) (any, error) { return decode[kwSlice](s) }},
+		{"additionalProperties (map of struct)", `{"fits":true,"by":{"a":{}}}`, `{"fits":true,"by":{"a":{"score":1,"detail":"d"}}}`,
+			func(s string) (any, error) { return decode[kwMap](s) }},
+		{"properties (pointer to struct)", `{"fits":true,"inner":{"score":1}}`, `{"fits":true,"inner":{"score":1,"detail":"d"}}`,
+			func(s string) (any, error) { return decode[kwPtr](s) }},
+	}
+	for _, c := range cases {
+		t.Run(c.keyword, func(t *testing.T) {
+			if got, err := c.decode(c.bad); err == nil {
+				t.Errorf("accepted an incomplete payload %s as %+v", c.bad, got)
+			}
+			if _, err := c.decode(c.good); err != nil {
+				t.Errorf("rejected a complete payload %s: %v", c.good, err)
+			}
+		})
+	}
+}
+
+// The latent half of the enumeration: if reflectSchema's configuration ever
+// changes, a schema could arrive carrying a keyword missingRequired does not
+// traverse, and a required field beneath it would be silently unchecked. This
+// fails when that day comes, rather than letting a consumer find it.
+func TestSchemaKeywordsAreCovered(t *testing.T) {
+	// Keyword -> whether missingRequired traverses it. A keyword absent from this
+	// map is one nobody has considered, which is the interesting case.
+	traversed := map[string]bool{
+		"properties": true, "items": true, "additionalProperties": true,
+		// Structural; carry no subschema that needs traversing.
+		"type": true, "required": true, "description": true, "title": true,
+		"format": true, "enum": true, "default": true,
+		// Would need traversal if this configuration ever emitted them.
+		"patternProperties": false, "$ref": false, "$defs": false,
+		"oneOf": false, "anyOf": false, "allOf": false,
+	}
+
+	var walkSchema func(map[string]any, string)
+	walkSchema = func(s map[string]any, path string) {
+		for k, v := range s {
+			covered, listed := traversed[k]
+			if !listed {
+				t.Errorf("%s: schema keyword %q is not in the enumeration missingRequired is written against", path, k)
+				continue
+			}
+			if !covered {
+				t.Errorf("%s: keyword %q is emitted but NOT traversed; a required field beneath it is unchecked", path, k)
+				continue
+			}
+			// Each traversed keyword has its own child shape, and conflating them
+			// is what made the first version read property NAMES as keywords.
+			switch k {
+			case "properties", "patternProperties", "$defs":
+				named, _ := v.(map[string]any)
+				for name, sub := range named {
+					if child, ok := sub.(map[string]any); ok {
+						walkSchema(child, path+"."+k+"."+name)
+					}
+				}
+			case "items", "additionalProperties":
+				if child, ok := v.(map[string]any); ok {
+					walkSchema(child, path+"."+k)
+				}
+			}
+		}
+	}
+
+	for name, get := range map[string]func() (map[string]any, error){
+		"struct": SchemaFor[kwStruct], "nested": SchemaFor[kwNested],
+		"slice": SchemaFor[kwSlice], "map": SchemaFor[kwMap], "pointer": SchemaFor[kwPtr],
+	} {
+		s, err := get()
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		walkSchema(s, name)
+	}
 }

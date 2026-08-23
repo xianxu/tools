@@ -232,8 +232,8 @@ this row should not be treated as clean evidence for the ledger.
 ### tools#11 M2 — typed tasks, goldens, conformance
 
 **est:** 7.98 (whole issue)
-**actual:** 3.75h (increment: 7.20h measured total − 3.45h recorded at M1)
-**closed:** 2026-08-22
+**actual:** 3.75h
+**closed:** 2026-08-23
 
 A consumer now writes a prompt and a result type and gets a typed answer:
 `SchemaFor[T]` reflects the schema from the struct, `Run[T]` calls and decodes,

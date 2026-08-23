@@ -625,3 +625,178 @@ findings:
       cassette.go:206. The envelope is built with json.Marshal, which escapes already, so the operator sees `request was: {\\\"max_tokens\\\":8192,...\\\\\\\"obsequious\\\\\\\"...}` — measured. The message's whole purpose is to be readable without recomputing a hash.
       THIS IS THE 3RD FINDING IN FAMILY `stdlib-reimplemented`. The RULE: before hand-rolling a string transform, check whether the encoder that consumes the value already performs it — a manual escape applied to a value that is later marshalled is always a double-escape, never a no-op. Sweep the diff for hand-written quoting/escaping helpers and confirm each sits outside an encoder, not inside one.
 ```
+
+---
+
+## Re-review — 2026-08-23T08:43:06-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 11 — LLM seam: Anthropic client, stateful fake, offline degradation |
+| repo | tools |
+| issue file | workshop/issues/000011-vocab-llm.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 85f6c9531b32c7798f2aaefe850f50a6ed0705fd..b157e642d00aacdb16519d741398c9cb26e6c5d4 |
+| command | sdlc milestone-close --issue 11 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-23T08:43:06-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 8. The round-7 rework holds where I could test it, and I verified by reversion rather than by reading commit messages: removing the `case []any:` branch from `missingRequired` reddens all three assertions of `TestDecodeRequiresFieldsAtEveryShape/objects_inside_arrays`; dropping `a.effective(r)` from `Complete`/`Stream` reddens `TestRequestInContextCarriesTheEffectiveModel` with "the context carried an unresolved model: \"\" / \"\""; `jsonEscape` is gone and the cassette miss message now carries the minimum escaping JSON-in-JSON allows (measured). `go test ./...`, `go test -race`, and `go vet -tags conformance ./...` are all green and the tree is clean at `b157e64`. Two things keep this off SHIP, and both are the same recurrence the ledger has been reporting for three rounds. First, `missingRequired` walks `properties` and `items` but not `additionalProperties` — JSON Schema's third nesting vehicle, and the one `jsonschema` emits for a Go map. Measured on the clean tree: `decode[zzMapOuter]({"fits":true,"by":{"a":{}}})` returns `{Fits:true By:map[a:{Score:0 Detail:""}]}` with **err=nil**, while the emitted schema plainly declares `by.additionalProperties.required = ["score","detail"]` — the original Critical, one vehicle over, with `task.go:126` now claiming the walk covers "the WHOLE schema tree". Second, BR-39 is still open in the form round 7 re-raised it: the helper was fixed and tested, but the four-call closure in the same file (`capture_conformance_test.go:42`) still skips on `llm.ErrUnavailable`, and I measured that a renamed model answers 502 through this proxy and classifies as `ErrUnavailable` — so all four drift subtests SKIP on exactly the drift they exist to catch, a fact the tree itself documents three sections down at `atlas/llm.md:208`.
+
+## 1. Strengths
+
+- **`internal/llm/llmtest/reachable.go:45` — the TCP probe, with a test in both directions.** `reachable_test.go` asserts a closed port skips *and* that a 502-serving server does **not** — the second is the assertion that would have caught the previous version. This is the lesson filed at `workshop/lessons.md` ("a guard needs a test in both directions") applied in the same round it was written, which is rarer than it sounds.
+- **`internal/llm/anthropic.go:70` — `effective()` resolves the Request before it is hashed, and the mutation is honest.** Reverting `withRequest(ctx, a.effective(r))` to `withRequest(ctx, r)` reddens the test naming the exact property. The collision BR-55 measured (two configured models, one cassette file) is now structurally impossible.
+- **`internal/llm/task.go:166,179` — the array branch indexes its paths, and the `default:` branch is load-bearing.** Measured: `decode[[]Item]("[{}]")` → `missing required field(s) [0].score, [0].detail`; `decode` of a scalar or `null` against a required-bearing schema fails rather than zero-filling. A bad item in a long list is diagnosable, which is what a path is for.
+- **`internal/llm/llmtest/cassette.go:112-119` — the comment explains the *encoder* reasoning, not just the change.** "harnessError marshals the envelope, which escapes it once" is the general rule BR-58 asked for, stated at the site where the next person would re-add the bug.
+- **ARCH-PURE holds across the whole Core-concepts table.** Every PURE row (`Request`/`Response`/`Usage`, `Config`+`Resolve`, taxonomy, `Task[T]`/`Run[T]`, `SchemaFor[T]`, `decode`, `requireSchemaFields`, `renderRequest`/`RequestHash`, `Redact`) exists at its stated path, and `render_test.go`, `schema_test.go`, `task_test.go` are all `package llm` with no server, clock, or filesystem.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — `internal/llm/task.go:154` the required-field walk covers two of the schema's three nesting vehicles, so a map-valued object still decodes to a partial value with a nil error.** Measured on the clean tree with `type zzMapOuter{Fits bool; By map[string]zzItem}` where `zzItem{Score int; Detail string}`:
+
+```
+schema:  {"properties":{"by":{"type":"object","additionalProperties":
+           {"type":"object","required":["score","detail"],...}}},"required":["fits","by"]}
+decode(`{"fits":true,"by":{"a":{}}}`)          -> {Fits:true By:map[a:{Score:0 Detail:}]} err=<nil>
+decode(`{"fits":true,"by":{"a":{"score":1}}}`) -> {Fits:true By:map[a:{Score:1 Detail:}]} err=<nil>
+```
+
+`missingRequired` recurses through `schema["properties"]` (`task.go:154`) and `schema["items"]` (`task.go:169`); it never descends through `additionalProperties`, which is what `jsonschema.Reflector` emits for a Go map. Two doc claims are false as a result: `task.go:126` says the walk covers "the WHOLE schema tree: object properties, array items, and non-object payloads" — an enumeration of three where there are four — and `atlas/llm.md:112` says "require every field the schema marks required". A third is *stale in the other direction*: `task.go:108` still says "Only object payloads are checked", which round 7's own array and scalar branches falsified.
+
+**This is the 6th finding in family `enforcement-not-pinned-by-a-test`.** Do not add an `additionalProperties` case and stop. The rule the family has now failed three times in one milestone — top-level (BR-33), nested object (BR-51), array item (BR-51 re-raise), map value (here) — is that **the walk must be driven by the schema generator's nesting vocabulary, not by the payload shapes a finding happened to name.** The enumeration is mechanically available: it is the set of subschema-bearing keywords `jsonschema.Reflector` can emit for a Go type under this configuration — `properties`, `items`, `additionalProperties`, and (`DoNotReference: true` today, so latent) `$defs`/`$ref` and `oneOf`/`anyOf`. Write that list into the doc comment, cover each arm, and pin each with a table row; or state the covered vocabulary as the contract and reject types outside it. The corresponding test-side rule: `FuzzDecode`'s success branch asserts `got.Reason != ""` — a named field of one fixture type — so it ranges over `answer` and nothing else, which is precisely why each new vehicle has had to be found by a reviewer rather than by the suite.
+
+*(Rated Important, not Critical: unlike BR-33's top-level case, no declared consumer's result type is map-valued today. What makes it Important rather than Minor is that five downstream issues will read `task.go:73`'s "never returns a partially populated value with a nil error" and not defend against it.)*
+
+**BR-39 remains open.** `internal/llm/capture_conformance_test.go:42-50` defines a per-call `skipUnreachable` closure that skips on `errors.Is(err, llm.ErrUnavailable)`. Measured through the wire fake, which models the proxy's observed behaviour:
+
+```
+model "claude-opus-9-does-not-exist" -> llm: unavailable: 502 "unknown provider for model …"
+                                        ErrUnavailable=true  ErrRequest=false
+=> the drift subtest would SKIP on this
+```
+
+The preflight `SkipIfUnreachable` correctly does *not* skip (the proxy is up), and then all four subtests skip one by one. `conformance_test.go:18` records the very fact that makes this happen — "the proxy answers 502 for an unknown model" — and `atlas/llm.md:208` repeats it under Known limitations, while `atlas/llm.md:204` simultaneously promises "an **unreachable** service skips rather than reporting drift". The fix went to the helper the finding named; the inline duplicate in the same file, which round 7 flagged as "one rule, two spellings", was left — and the two spellings now *disagree*, which is worse than when they agreed. The consolidation is an exported `SkipIfUnavailable(t, err)` sibling that classifies on transport failure (`syscall.ECONNREFUSED` / `*net.OpError`), not on the taxonomy class, with the same both-directions test `reachable_test.go` already models.
+
+## 4. Minor findings
+
+- `internal/llm/errors.go:88` — **BR-56 unfixed.** I ran BR-56's own enumeration: `ErrorForStop` has 0 non-test references tree-wide, and `_ = c` at `cassette_test.go:242` (guarding an `llm.New` at line 231 that is never used) is also unchanged. Both sites the finding named by file and line are untouched, so the grep it asked for was not run.
+- `internal/llm/llmtest/fake_test.go:166` — **BR-43 unfixed**, re-verified by reversion: with sticky reverted, `TestTheLastScriptedReplyIsSticky` reddens and `TestAQueueStillAdvancesWhileItHasEntries` stays green alongside `TestQueueServesInOrder` (`fake_test.go:82`).
+- `cmd/define/main.go:278` — **BR-44 unfixed.** Measured: `define -llm-check hello` runs the check and discards `hello` (exit 1 from the key error, not a usage error).
+- `cmd/define/llmcheck.go:41` — **BR-45 unfixed**, still `MaxTokens: 2048` rather than `cfg.MaxTokens`.
+- `internal/llm/schema.go:100` — **BR-46 unfixed**, and now measurably broader: `SchemaFor[string]()` → `{"type":"string","additionalProperties":false}`, and a top-level slice type → `{"type":"array","additionalProperties":false,"items":{…}}`. The keyword is applied to array and scalar schemas where it has no meaning.
+- `internal/llm/llmtest/cassette_test.go:32` — **BR-53 unfixed**, re-measured: `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still FAILS ("a changed prompt passed its golden") because the defer restores the literal `false`.
+- `internal/llm/llmtest/cassette.go:128-151` — the record path still returns raw IO/marshal errors from `RoundTrip`, which classify as `ErrUnavailable`. BR-52 removed the SSE instance; its clause "return a harness error that is not in the dependency's absorbable class" is applied on the read path only.
+- `README.md:115` is 120 characters in a file otherwise wrapped near 80 — still the unwrapped edit artifact in the exit-code paragraph.
+
+## 5. Test coverage notes
+
+Reversion-verified green→red this round, each mutation being the honest absence of the fix: the array-items branch (3 assertions in `TestDecodeRequiresFieldsAtEveryShape/objects_inside_arrays`) and `a.effective(r)` (`TestRequestInContextCarriesTheEffectiveModel`). Verified *not* red where it should not be: reverting `effective` leaves `TestTheKeyDerivesFromTheRequestNotTheBody` green, because that test's fixtures set `Model` explicitly — so the `anthropic_test.go` site is the only real pin for BR-55, and it is the right one. `go test ./...` green; `go test -race ./internal/llm/... ./cmd/define/` green; `go vet -tags conformance ./...` clean; tree clean after every probe.
+
+The gap remains structural and is the same one three rounds have found: coverage of `decode` is a list of examples, and the invariant is a universal. `FuzzDecode`'s success assertion names `answer.Reason`, so no result type with a slice, a map, or a pointer field is ever fuzzed; `TestDecodeRequiresFieldsAtEveryShape` is a hand-written table whose rows are exactly the shapes prior findings mentioned. A single reflective helper — "for result type T, build a payload where every leaf required field is absent, assert `decode` rejects it" — driven over a fixture list of struct/nested/slice/map/pointer/top-level-slice would have caught all four instances at once and would catch the fifth. Second gap: `Cassettes`/`Transport` still has zero committed artifacts, so replay is only ever exercised against files the same test wrote seconds earlier — defensible while no consumer exists, but the first real recording will also be the first real test of that path.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag.** Two live duplications. (a) `anthropic.go:70` `effective()` and `anthropic.go:77` `params()` are now two independent defaulting implementations of the same three fields; they agree today, so nothing is broken, but the fix added a third derivation instead of collapsing to one — `r = a.effective(r)` at the top of `Complete`/`Stream`, with `params` reading the already-resolved value, removes the class. (b) `capture_conformance_test.go:42`'s closure re-derives `SkipIfUnreachable`'s judgement inline, and the two now disagree — that disagreement *is* the open BR-39.
+- **ARCH-PURE — pass.** No business logic sits inside IO in this diff. `runLLMCheck` remains a thin shell over injected `getenv`/`newClient`; `missingRequired`/`asStrings`/`join`/`stripFence`/`excerpt`/`clone` are deterministic and tested without a server. The cassette and reachability seams are the only new IO and both are injected (`Config.Transport`, an explicit `baseURL`).
+- **ARCH-PURPOSE — flag, and this is now the milestone's signature.** Three consecutive rounds have answered a finding at the shape it named while the class stayed open, *after the finding text wrote the enumeration out*: BR-51 named nested objects → objects fixed; BR-51 re-raised named arrays → arrays fixed; `additionalProperties` is the third vehicle and was never on anyone's list because no finding had said the word. BR-56 wrote "run that grep and paste it" and neither of the two sites it named changed. The corrective is mechanical, not attitudinal: when a finding hands you an enumeration, the *first* commit of the round should be the enumeration written down as a checklist in the issue Log, before any code moves.
+- **ARCH-MOCK — pass on placement, flag on the live check.** The fake at the wire, the cassette beneath `Config.Transport`, taxonomy surviving replay via status, streaming recordable, and a reachability helper tested in both directions is a genuinely strong seam — better than the plan asked for. What is not sound is the drift check itself: on the single most likely real drift (a renamed or withdrawn model) it can pass or skip but not fail. Fix that before `#10` starts trusting the captures, because a green-or-skip check reads as coverage in every report that counts it.
+- **For the consumers next up:** the `Task[T]`/`Run[T]` surface is stable and I would not change it. One contract question must be *written down* before it has five callers, since each consumer will otherwise answer it privately and differently: does `decode` enforce required fields through map values? Today the doc says yes and the code says no. Pick one and pin it.
+
+## 7. Plan revision recommendations
+
+The round-6/7 Revisions entry is real and the identifier grep was genuinely run for `llmtest.Golden` — that part landed. Two corrections belong in the *next* entry rather than as edits to that one:
+
+- **`workshop/plans/000011-vocab-llm-plan.md:2138`** asserts "`llmtest.SkipIfUnreachable` is new exported surface (added to the Integration points table above)". The table at line 152 has no such row, and no row for `llm.RequestFromContext` either. Add both rows, and correct the parenthetical — an entry written to establish grep-verification should not itself contain an unverified claim about the document it is in.
+- **Task 10 / Core concepts:** `requireSchemaFields` enforces required fields through object properties, array items, explicit nulls and scalars, but **not** through map values (`additionalProperties`). Either implement the fourth arm and leave the wording, or state the covered vocabulary explicitly — the plan and `atlas/llm.md:112` currently both promise the whole tree.
+
+```findings
+dispose:
+  - id: BR-39
+    disposition: not-addressed
+    note: |
+      Helper fixed and tested, but capture_conformance_test.go:42's inline closure still skips on ErrUnavailable — measured: a renamed model answers 502, classifies ErrUnavailable, and all four drift subtests SKIP.
+  - id: BR-42
+    disposition: addressed
+    note: |
+      `_ = llmtest.Capture` is gone; the llmtest import is now load-bearing via SkipIfUnreachable.
+  - id: BR-43
+    disposition: not-addressed
+    note: |
+      Re-verified by reversion: with sticky reverted, TestTheLastScriptedReplyIsSticky reddens while TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      Measured: `define -llm-check hello` runs the check and discards the word; main.go:278 still returns before the arity switch.
+  - id: BR-45
+    disposition: not-addressed
+    note: |
+      llmcheck.go:41 still hardcodes MaxTokens 2048 rather than reading cfg.MaxTokens.
+  - id: BR-46
+    disposition: not-addressed
+    note: |
+      Measured: SchemaFor[string]() = {type:string, additionalProperties:false}; a top-level slice type now also gets it on a type:array schema.
+  - id: BR-51
+    disposition: addressed
+    note: |
+      Reversion-verified for arrays: removing the []any branch reddens all three assertions of TestDecodeRequiresFieldsAtEveryShape. Map values are a new finding, not this one re-raised.
+  - id: BR-53
+    disposition: not-addressed
+    note: |
+      Re-measured: `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still FAILS; cassette_test.go:32 restores the literal false.
+  - id: BR-55
+    disposition: addressed
+    note: |
+      Reversion-verified: dropping a.effective(r) reddens TestRequestInContextCarriesTheEffectiveModel ("the context carried an unresolved model"). Residual duplication raised separately.
+  - id: BR-56
+    disposition: not-addressed
+    note: |
+      Ran the enumeration: ErrorForStop still has 0 non-test refs (errors.go:88), and `_ = c` is still at cassette_test.go:242 guarding an unused llm.New at :231.
+  - id: BR-57
+    disposition: not-addressed
+    note: |
+      Revisions entry appended and llmtest.Golden corrected in plan and issue, but the Integration points table (plan:152) still has no SkipIfUnreachable row — one of the three deltas the finding named.
+  - id: BR-58
+    disposition: addressed
+    note: |
+      jsonEscape removed; measured miss message now carries only the single escaping JSON-in-JSON requires.
+findings:
+  - id: new
+    severity: Important
+    family: enforcement-not-pinned-by-a-test
+    title: |
+      The required-field walk skips additionalProperties, so a map-valued object still decodes to a partial value with a nil error
+    detail: |
+      Measured on the clean tree with type zzMapOuter{Fits bool; By map[string]zzItem} where zzItem{Score int; Detail string}: SchemaFor emits by.additionalProperties = {type:object, required:[score,detail]}, and decode(`{"fits":true,"by":{"a":{}}}`) returns {Fits:true By:map[a:{Score:0 Detail:""}]} with err=nil; `{"fits":true,"by":{"a":{"score":1}}}` likewise. missingRequired recurses through schema["properties"] (task.go:154) and schema["items"] (task.go:169) and never through additionalProperties, which is what jsonschema.Reflector emits for a Go map. task.go:126 claims the walk covers "the WHOLE schema tree: object properties, array items, and non-object payloads" — an enumeration of three where there are four — and atlas/llm.md:112 claims "require every field the schema marks required". Separately, task.go:108 still says "Only object payloads are checked", which round 7's own array and scalar branches falsified.
+      THIS IS THE 6TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. Do not add an additionalProperties case and stop — that is the fourth instance-fix in a row (top-level BR-33, nested object BR-51, array item BR-51 re-raise, map value here). The RULE: the walk must be driven by the schema GENERATOR's nesting vocabulary, not by the payload shapes a finding happened to name. THE ENUMERATION, mechanically available: the subschema-bearing keywords jsonschema.Reflector can emit for a Go type under this configuration — properties, items, additionalProperties, and (latent under DoNotReference:true) $defs/$ref and oneOf/anyOf. Write that list into the doc comment, cover each arm, and pin each. The test-side half of the same rule: FuzzDecode's success branch asserts got.Reason != "" — a named field of one fixture type — so it ranges over `answer` alone, which is why every vehicle has had to be found by a reviewer. Replace it with a reflective check driven over a fixture list of struct / nested struct / slice-of-struct / map-of-struct / pointer-to-struct / top-level-slice.
+  - id: new
+    severity: Minor
+    family: docs-claim-absent-surface
+    title: |
+      The Revisions entry written to establish grep-verification claims a table row that does not exist
+    detail: |
+      workshop/plans/000011-vocab-llm-plan.md:2138 states "`llmtest.SkipIfUnreachable` is new exported surface (added to the Integration points table above)". The table at plan:152 has eight rows and none of them is SkipIfUnreachable; llm.RequestFromContext is likewise absent. The claim sits inside the entry whose stated purpose is that the boundary "greps every identifier the plan and the issue name in the same pass".
+      THIS IS THE 5TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not just add the row. The RULE, first stated at BR-34 and unchanged: a doc claim naming a code identifier or an on-disk artifact must be grep-verified against the tree in the SAME edit that writes it — and that applies to a claim about the document being edited, not only to claims about code. A revision entry asserting "added to X" is a claim about X's current contents; check X. The cheap enforcement is to write the table row first and the sentence second, so the sentence describes a state that already exists.
+  - id: new
+    severity: Minor
+    family: single-source-consumer-not-derived
+    title: |
+      effective() and params() are now two independent defaulting implementations of the same three fields
+    detail: |
+      anthropic.go:70 resolves Model/Effort/MaxTokens against a.cfg for the context-carried Request; anthropic.go:77 params() independently re-does cmp.Or on the same three fields for the wire body. They agree today, so nothing is currently broken — but the fix for BR-55 added a third derivation of "what was asked" rather than collapsing to one, so a fourth Config-defaulted field added to params() would silently move the wire body without moving the cassette key, and no test would catch it because the field-coverage table (render_test.go:57) still runs over a hand-populated struct rather than through Run[T].
+      THIS IS THE 4TH FINDING IN FAMILY `single-source-consumer-not-derived`. Do not add a fourth field to both functions when that day comes. The RULE, stated at BR-50 and again at BR-55: where two derivations of one fact exist, one must derive from the other. Here that is one line — `r = a.effective(r)` at the top of Complete and Stream, with params() reading the already-resolved values and its cmp.Or calls deleted — after which the wire body and RenderRequest agree by construction rather than by coincidence.
+```

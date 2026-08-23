@@ -104,9 +104,6 @@ func decode[T any](raw string) (T, error) {
 
 // requireSchemaFields rejects a payload missing any field the schema marks
 // required, deriving the set from SchemaFor[T] rather than restating it.
-//
-// Only object payloads are checked: a T that is not a struct has no required
-// set, and a non-object body is rejected by the decode below anyway.
 func requireSchemaFields[T any](body string) error {
 	var payload any
 	if err := json.Unmarshal([]byte(body), &payload); err != nil {
@@ -123,16 +120,26 @@ func requireSchemaFields[T any](body string) error {
 	return nil
 }
 
-// missingRequired walks the schema and the payload together over the WHOLE
-// schema tree: object properties, array items, and non-object payloads.
+// missingRequired walks the schema and the payload together over the whole
+// schema tree.
 //
-// The shape matters more than any one example. Written against the nested-object
-// case alone, it left an object inside an ARRAY unchecked —
-// `{"fits":true,"list":[{}]}` passed while every item's required fields were
-// absent — and #10's authoring result (an item with its distractors) is exactly a
-// list of objects. The invariant quantifies over the tree, so the walk does too.
+// THE TRAVERSAL IS DRIVEN BY THE GENERATOR'S VOCABULARY, not by payload shapes.
+// Four instance-fixes in a row (top level, then nested object, then array item,
+// then map value) each covered the example a finding used and missed the next
+// one, so the enumeration is written down here and each arm is covered:
 //
-// Paths are dotted, with [i] for array positions, so the error names WHERE.
+//	properties            — struct fields
+//	items                 — slice/array elements
+//	additionalProperties  — MAP VALUES (what Reflector emits for a Go map)
+//	$ref / $defs          — not emitted: DoNotReference is true in reflectSchema
+//	oneOf / anyOf         — not emitted for a Go type by this configuration
+//
+// The last two are latent rather than handled: if reflectSchema's configuration
+// ever changes, they become reachable, and schemaKeywordsAreCovered is the test
+// that fails when a schema arrives carrying a keyword this walk does not know.
+//
+// Paths are dotted, with [i] for array positions and .key for map entries, so
+// the error names WHERE.
 func missingRequired(schema map[string]any, payload any, path string) []string {
 	required := asStrings(schema["required"])
 
@@ -159,6 +166,17 @@ func missingRequired(schema map[string]any, payload any, path string) []string {
 			}
 			if child, found := v[name]; found && child != nil {
 				missing = append(missing, missingRequired(subSchema, child, join(path, name))...)
+			}
+		}
+		// additionalProperties carries the value schema for a Go map. Without
+		// this arm, `{"by":{"a":{}}}` passed while every map value was missing
+		// its own required fields.
+		if extra, ok := schema["additionalProperties"].(map[string]any); ok {
+			for name, child := range v {
+				if _, declared := props[name]; declared || child == nil {
+					continue
+				}
+				missing = append(missing, missingRequired(extra, child, join(path, name))...)
 			}
 		}
 		return missing

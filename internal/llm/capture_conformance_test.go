@@ -5,7 +5,6 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -39,11 +38,17 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 	// goes down mid-run must skip the remaining checks rather than report drift.
 	llmtest.SkipIfUnreachable(t, cfg.BaseURL)
 
-	skipUnreachable := func(t *testing.T, err error) {
+	// Reachability was settled ONCE, above, by probing the endpoint. Past that
+	// point every error belongs to the suite.
+	//
+	// This used to be a closure that skipped on ErrUnavailable — which is what
+	// SkipIfUnreachable was rewritten to stop doing, and it survived the rewrite:
+	// a renamed model answers 502, classifies as ErrUnavailable, and all four
+	// drift subtests SKIPPED on precisely the drift they exist to catch. Fixing
+	// the helper while leaving its inline twin is how a fix comes to be reported
+	// as landed and measurably is not.
+	mustCall := func(t *testing.T, err error) {
 		t.Helper()
-		if errors.Is(err, llm.ErrUnavailable) {
-			t.Skipf("service unreachable, not drifted: %v", err)
-		}
 		if err != nil {
 			t.Fatalf("call failed: %v", err)
 		}
@@ -54,7 +59,7 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 			Task:   "drift-blocks",
 			Prompt: "Which of obsequious, ephemeral, meticulous would ALSO fill the blank in: \"The board produced nothing but ______ agreement — every executive praised a plan they had privately called unworkable.\" Think it through, then answer.",
 		})
-		skipUnreachable(t, err)
+		mustCall(t, err)
 		var kinds []string
 		var sawThinking, sawText bool
 		for _, b := range got.Blocks {
@@ -91,7 +96,7 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 				"additionalProperties": false,
 			},
 		})
-		skipUnreachable(t, err)
+		mustCall(t, err)
 		var out map[string]any
 		if err := json.Unmarshal([]byte(strings.TrimSpace(got.Text)), &out); err != nil {
 			t.Fatalf("schema'd response no longer decodes: %v\nbody: %q\n"+
@@ -107,7 +112,7 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 			Task:   "drift-stream",
 			Prompt: "Name one synonym for sycophantic, then explain the nuance in two sentences.",
 		}, func(string) { deltas++ })
-		skipUnreachable(t, err)
+		mustCall(t, err)
 		if deltas == 0 {
 			t.Error("no text deltas delivered — re-record: scripts/llm-probe.sh record")
 		}
@@ -125,7 +130,7 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 
 	t.Run("the injected preamble has not moved materially", func(t *testing.T) {
 		got, err := c.Complete(ctx, llm.Request{Task: "drift-preamble", Prompt: "Reply with exactly: PONG"})
-		skipUnreachable(t, err)
+		mustCall(t, err)
 		p := got.Usage.PreambleTokens()
 		// Measured at ~1,900 on 2026-08-22. A broad band: the point is to notice a
 		// change of kind, not of a few tokens — every prompt in this repo was

@@ -870,6 +870,85 @@ rounds:
           round: 7
       boundary: M2
       blocked: true
+    - "n": 8
+      timestamp: "2026-08-23T08:43:06-07:00"
+      agent: claude
+      dispose:
+        - id: BR-39
+          disposition: not-addressed
+          note: 'Helper fixed and tested, but capture_conformance_test.go:42''s inline closure still skips on ErrUnavailable — measured: a renamed model answers 502, classifies ErrUnavailable, and all four drift subtests SKIP.'
+          round: 8
+        - id: BR-42
+          disposition: addressed
+          note: '`_ = llmtest.Capture` is gone; the llmtest import is now load-bearing via SkipIfUnreachable.'
+          round: 8
+        - id: BR-43
+          disposition: not-addressed
+          note: 'Re-verified by reversion: with sticky reverted, TestTheLastScriptedReplyIsSticky reddens while TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green.'
+          round: 8
+        - id: BR-44
+          disposition: not-addressed
+          note: 'Measured: `define -llm-check hello` runs the check and discards the word; main.go:278 still returns before the arity switch.'
+          round: 8
+        - id: BR-45
+          disposition: not-addressed
+          note: llmcheck.go:41 still hardcodes MaxTokens 2048 rather than reading cfg.MaxTokens.
+          round: 8
+        - id: BR-46
+          disposition: not-addressed
+          note: 'Measured: SchemaFor[string]() = {type:string, additionalProperties:false}; a top-level slice type now also gets it on a type:array schema.'
+          round: 8
+        - id: BR-51
+          disposition: addressed
+          note: 'Reversion-verified for arrays: removing the []any branch reddens all three assertions of TestDecodeRequiresFieldsAtEveryShape. Map values are a new finding, not this one re-raised.'
+          round: 8
+        - id: BR-53
+          disposition: not-addressed
+          note: 'Re-measured: `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still FAILS; cassette_test.go:32 restores the literal false.'
+          round: 8
+        - id: BR-55
+          disposition: addressed
+          note: 'Reversion-verified: dropping a.effective(r) reddens TestRequestInContextCarriesTheEffectiveModel ("the context carried an unresolved model"). Residual duplication raised separately.'
+          round: 8
+        - id: BR-56
+          disposition: not-addressed
+          note: 'Ran the enumeration: ErrorForStop still has 0 non-test refs (errors.go:88), and `_ = c` is still at cassette_test.go:242 guarding an unused llm.New at :231.'
+          round: 8
+        - id: BR-57
+          disposition: not-addressed
+          note: Revisions entry appended and llmtest.Golden corrected in plan and issue, but the Integration points table (plan:152) still has no SkipIfUnreachable row — one of the three deltas the finding named.
+          round: 8
+        - id: BR-58
+          disposition: addressed
+          note: jsonEscape removed; measured miss message now carries only the single escaping JSON-in-JSON requires.
+          round: 8
+      findings:
+        - id: BR-59
+          severity: Important
+          title: The required-field walk skips additionalProperties, so a map-valued object still decodes to a partial value with a nil error
+          detail: |-
+            Measured on the clean tree with type zzMapOuter{Fits bool; By map[string]zzItem} where zzItem{Score int; Detail string}: SchemaFor emits by.additionalProperties = {type:object, required:[score,detail]}, and decode(`{"fits":true,"by":{"a":{}}}`) returns {Fits:true By:map[a:{Score:0 Detail:""}]} with err=nil; `{"fits":true,"by":{"a":{"score":1}}}` likewise. missingRequired recurses through schema["properties"] (task.go:154) and schema["items"] (task.go:169) and never through additionalProperties, which is what jsonschema.Reflector emits for a Go map. task.go:126 claims the walk covers "the WHOLE schema tree: object properties, array items, and non-object payloads" — an enumeration of three where there are four — and atlas/llm.md:112 claims "require every field the schema marks required". Separately, task.go:108 still says "Only object payloads are checked", which round 7's own array and scalar branches falsified.
+            THIS IS THE 6TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. Do not add an additionalProperties case and stop — that is the fourth instance-fix in a row (top-level BR-33, nested object BR-51, array item BR-51 re-raise, map value here). The RULE: the walk must be driven by the schema GENERATOR's nesting vocabulary, not by the payload shapes a finding happened to name. THE ENUMERATION, mechanically available: the subschema-bearing keywords jsonschema.Reflector can emit for a Go type under this configuration — properties, items, additionalProperties, and (latent under DoNotReference:true) $defs/$ref and oneOf/anyOf. Write that list into the doc comment, cover each arm, and pin each. The test-side half of the same rule: FuzzDecode's success branch asserts got.Reason != "" — a named field of one fixture type — so it ranges over `answer` alone, which is why every vehicle has had to be found by a reviewer. Replace it with a reflective check driven over a fixture list of struct / nested struct / slice-of-struct / map-of-struct / pointer-to-struct / top-level-slice.
+          family: enforcement-not-pinned-by-a-test
+          round: 8
+        - id: BR-60
+          severity: Minor
+          title: The Revisions entry written to establish grep-verification claims a table row that does not exist
+          detail: |-
+            workshop/plans/000011-vocab-llm-plan.md:2138 states "`llmtest.SkipIfUnreachable` is new exported surface (added to the Integration points table above)". The table at plan:152 has eight rows and none of them is SkipIfUnreachable; llm.RequestFromContext is likewise absent. The claim sits inside the entry whose stated purpose is that the boundary "greps every identifier the plan and the issue name in the same pass".
+            THIS IS THE 5TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not just add the row. The RULE, first stated at BR-34 and unchanged: a doc claim naming a code identifier or an on-disk artifact must be grep-verified against the tree in the SAME edit that writes it — and that applies to a claim about the document being edited, not only to claims about code. A revision entry asserting "added to X" is a claim about X's current contents; check X. The cheap enforcement is to write the table row first and the sentence second, so the sentence describes a state that already exists.
+          family: docs-claim-absent-surface
+          round: 8
+        - id: BR-61
+          severity: Minor
+          title: effective() and params() are now two independent defaulting implementations of the same three fields
+          detail: |-
+            anthropic.go:70 resolves Model/Effort/MaxTokens against a.cfg for the context-carried Request; anthropic.go:77 params() independently re-does cmp.Or on the same three fields for the wire body. They agree today, so nothing is currently broken — but the fix for BR-55 added a third derivation of "what was asked" rather than collapsing to one, so a fourth Config-defaulted field added to params() would silently move the wire body without moving the cassette key, and no test would catch it because the field-coverage table (render_test.go:57) still runs over a hand-populated struct rather than through Run[T].
+            THIS IS THE 4TH FINDING IN FAMILY `single-source-consumer-not-derived`. Do not add a fourth field to both functions when that day comes. The RULE, stated at BR-50 and again at BR-55: where two derivations of one fact exist, one must derive from the other. Here that is one line — `r = a.effective(r)` at the top of Complete and Stream, with params() reading the already-resolved values and its cmp.Or calls deleted — after which the wire body and RenderRequest agree by construction rather than by coincidence.
+          family: single-source-consumer-not-derived
+          round: 8
+      boundary: M2
+      blocked: false
 ---
 
 # Gate ledger — tools#11 (boundary-review)
@@ -1306,6 +1385,35 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   cassette.go:206. The envelope is built with json.Marshal, which escapes already, so the operator sees `request was: {\\\"max_tokens\\\":8192,...\\\\\\\"obsequious\\\\\\\"...}` — measured. The message's whole purpose is to be readable without recomputing a hash.
   THIS IS THE 3RD FINDING IN FAMILY `stdlib-reimplemented`. The RULE: before hand-rolling a string transform, check whether the encoder that consumes the value already performs it — a manual escape applied to a value that is later marshalled is always a double-escape, never a no-op. Sweep the diff for hand-written quoting/escaping helpers and confirm each sits outside an encoder, not inside one.
 
+## Round 8 — 2026-08-23T08:43:06-07:00 (claude) — passed
+
+### Disposed
+
+- BR-39 — not-addressed — Helper fixed and tested, but capture_conformance_test.go:42's inline closure still skips on ErrUnavailable — measured: a renamed model answers 502, classifies ErrUnavailable, and all four drift subtests SKIP.
+- BR-42 — addressed — `_ = llmtest.Capture` is gone; the llmtest import is now load-bearing via SkipIfUnreachable.
+- BR-43 — not-addressed — Re-verified by reversion: with sticky reverted, TestTheLastScriptedReplyIsSticky reddens while TestAQueueStillAdvancesWhileItHasEntries (fake_test.go:166) stays green.
+- BR-44 — not-addressed — Measured: `define -llm-check hello` runs the check and discards the word; main.go:278 still returns before the arity switch.
+- BR-45 — not-addressed — llmcheck.go:41 still hardcodes MaxTokens 2048 rather than reading cfg.MaxTokens.
+- BR-46 — not-addressed — Measured: SchemaFor[string]() = {type:string, additionalProperties:false}; a top-level slice type now also gets it on a type:array schema.
+- BR-51 — addressed — Reversion-verified for arrays: removing the []any branch reddens all three assertions of TestDecodeRequiresFieldsAtEveryShape. Map values are a new finding, not this one re-raised.
+- BR-53 — not-addressed — Re-measured: `go test ./internal/llm/llmtest -update -run TestGoldenDetectsAChangedPrompt` still FAILS; cassette_test.go:32 restores the literal false.
+- BR-55 — addressed — Reversion-verified: dropping a.effective(r) reddens TestRequestInContextCarriesTheEffectiveModel ("the context carried an unresolved model"). Residual duplication raised separately.
+- BR-56 — not-addressed — Ran the enumeration: ErrorForStop still has 0 non-test refs (errors.go:88), and `_ = c` is still at cassette_test.go:242 guarding an unused llm.New at :231.
+- BR-57 — not-addressed — Revisions entry appended and llmtest.Golden corrected in plan and issue, but the Integration points table (plan:152) still has no SkipIfUnreachable row — one of the three deltas the finding named.
+- BR-58 — addressed — jsonEscape removed; measured miss message now carries only the single escaping JSON-in-JSON requires.
+
+### Raised
+
+- **BR-59** [Important] `enforcement-not-pinned-by-a-test` The required-field walk skips additionalProperties, so a map-valued object still decodes to a partial value with a nil error
+  Measured on the clean tree with type zzMapOuter{Fits bool; By map[string]zzItem} where zzItem{Score int; Detail string}: SchemaFor emits by.additionalProperties = {type:object, required:[score,detail]}, and decode(`{"fits":true,"by":{"a":{}}}`) returns {Fits:true By:map[a:{Score:0 Detail:""}]} with err=nil; `{"fits":true,"by":{"a":{"score":1}}}` likewise. missingRequired recurses through schema["properties"] (task.go:154) and schema["items"] (task.go:169) and never through additionalProperties, which is what jsonschema.Reflector emits for a Go map. task.go:126 claims the walk covers "the WHOLE schema tree: object properties, array items, and non-object payloads" — an enumeration of three where there are four — and atlas/llm.md:112 claims "require every field the schema marks required". Separately, task.go:108 still says "Only object payloads are checked", which round 7's own array and scalar branches falsified.
+  THIS IS THE 6TH FINDING IN FAMILY `enforcement-not-pinned-by-a-test`. Do not add an additionalProperties case and stop — that is the fourth instance-fix in a row (top-level BR-33, nested object BR-51, array item BR-51 re-raise, map value here). The RULE: the walk must be driven by the schema GENERATOR's nesting vocabulary, not by the payload shapes a finding happened to name. THE ENUMERATION, mechanically available: the subschema-bearing keywords jsonschema.Reflector can emit for a Go type under this configuration — properties, items, additionalProperties, and (latent under DoNotReference:true) $defs/$ref and oneOf/anyOf. Write that list into the doc comment, cover each arm, and pin each. The test-side half of the same rule: FuzzDecode's success branch asserts got.Reason != "" — a named field of one fixture type — so it ranges over `answer` alone, which is why every vehicle has had to be found by a reviewer. Replace it with a reflective check driven over a fixture list of struct / nested struct / slice-of-struct / map-of-struct / pointer-to-struct / top-level-slice.
+- **BR-60** [Minor] `docs-claim-absent-surface` The Revisions entry written to establish grep-verification claims a table row that does not exist
+  workshop/plans/000011-vocab-llm-plan.md:2138 states "`llmtest.SkipIfUnreachable` is new exported surface (added to the Integration points table above)". The table at plan:152 has eight rows and none of them is SkipIfUnreachable; llm.RequestFromContext is likewise absent. The claim sits inside the entry whose stated purpose is that the boundary "greps every identifier the plan and the issue name in the same pass".
+  THIS IS THE 5TH FINDING IN FAMILY `docs-claim-absent-surface`. Do not just add the row. The RULE, first stated at BR-34 and unchanged: a doc claim naming a code identifier or an on-disk artifact must be grep-verified against the tree in the SAME edit that writes it — and that applies to a claim about the document being edited, not only to claims about code. A revision entry asserting "added to X" is a claim about X's current contents; check X. The cheap enforcement is to write the table row first and the sentence second, so the sentence describes a state that already exists.
+- **BR-61** [Minor] `single-source-consumer-not-derived` effective() and params() are now two independent defaulting implementations of the same three fields
+  anthropic.go:70 resolves Model/Effort/MaxTokens against a.cfg for the context-carried Request; anthropic.go:77 params() independently re-does cmp.Or on the same three fields for the wire body. They agree today, so nothing is currently broken — but the fix for BR-55 added a third derivation of "what was asked" rather than collapsing to one, so a fourth Config-defaulted field added to params() would silently move the wire body without moving the cassette key, and no test would catch it because the field-coverage table (render_test.go:57) still runs over a hand-populated struct rather than through Run[T].
+  THIS IS THE 4TH FINDING IN FAMILY `single-source-consumer-not-derived`. Do not add a fourth field to both functions when that day comes. The RULE, stated at BR-50 and again at BR-55: where two derivations of one fact exist, one must derive from the other. Here that is one line — `r = a.effective(r)` at the top of Complete and Stream, with params() reading the already-resolved values and its cmp.Or calls deleted — after which the wire body and RenderRequest agree by construction rather than by coincidence.
+
 ## Open findings
 
 - **BR-27** [Important] `partial-constructor-defaults` A negative SlowEvery panics on the watcher goroutine, where no caller can recover
@@ -1315,14 +1423,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-31** [Minor] `docs-claim-absent-surface` The plan's Task 1 contract block still declares four Progress phases and a Bytes field
 - **BR-32** [Minor] `dead-code` Reply.Body and Reply.NoThinking are documented knobs that no fixture in the tree turns
 - **BR-39** [Important] `unclassified-failure-mode` The capture-drift conformance suite reports drift when the proxy is merely unreachable
-- **BR-42** [Minor] `dead-code` `_ = llmtest.Capture` exists only to keep an import alive
 - **BR-43** [Minor] `redundant-test-duplicates-existing` TestAQueueStillAdvancesWhileItHasEntries duplicates TestQueueServesInOrder
 - **BR-44** [Minor] `mode-flag-arity-guard` `define -llm-check <word>` silently ignores the word
 - **BR-45** [Minor] `diagnostic-ignores-config` --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
 - **BR-46** [Minor] `schema-metadata-applied-blindly` additionalProperties:false is set unconditionally, including on non-object schemas
-- **BR-51** [Important] `enforcement-not-pinned-by-a-test` requireSchemaFields checks only top-level required fields, so a nested object still decodes to a partial value with a nil error
 - **BR-53** [Minor] `test-flag-mutation-leaks` withUpdate restores *update to the literal false rather than its prior value, silently cancelling a real -update run
-- **BR-55** [Important] `single-source-consumer-not-derived` The cassette key is taken before the Request is defaulted, so two different effective models collide into one recording
 - **BR-56** [Minor] `dead-code` ErrorForStop is an exported function with zero references whose doc still asserts the role the rework removed
 - **BR-57** [Minor] `plan-revision-not-appended` Round 6 changed the design again with no Revisions entry, and two artifacts still name llmtest.Golden
-- **BR-58** [Minor] `stdlib-reimplemented` jsonEscape double-escapes the request the cassette miss message exists to show
+- **BR-59** [Important] `enforcement-not-pinned-by-a-test` The required-field walk skips additionalProperties, so a map-valued object still decodes to a partial value with a nil error
+- **BR-60** [Minor] `docs-claim-absent-surface` The Revisions entry written to establish grep-verification claims a table row that does not exist
+- **BR-61** [Minor] `single-source-consumer-not-derived` effective() and params() are now two independent defaulting implementations of the same three fields
