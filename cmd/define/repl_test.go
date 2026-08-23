@@ -35,7 +35,16 @@ func TestParseREPLLine(t *testing.T) {
 			replCommand{kind: cmdDefine, word: "how so", literal: true}},
 		{"a backslash collapses whitespace like any word", `\hot   dog`, false,
 			replCommand{kind: cmdDefine, word: "hot dog", literal: true}},
-		{"a bare backslash is blank", `\`, false, replCommand{kind: cmdNothing}},
+		// Both hatches, both session states: a hatch with no payload is a
+		// malformed line whatever is current, so neither may fall through to the
+		// blank-line rules. The "\" arm used to strip its prefix and land in the
+		// empty-word test, which REPLAYED audio when a word was current.
+		{"a bare backslash says so", `\`, false,
+			replCommand{kind: cmdNothing, note: noteEmptyLiteral}},
+		{"a bare backslash says so even with a current word", `\`, true,
+			replCommand{kind: cmdNothing, note: noteEmptyLiteral}},
+		{"a bare question mark says so even with a current word", "?", true,
+			replCommand{kind: cmdNothing, note: noteEmptyQuestion}},
 		{"a question mark inside a word is part of it", "what?", false,
 			replCommand{kind: cmdDefine, word: "what?"}},
 		{"a slash still wins over a question mark", "/help", false,

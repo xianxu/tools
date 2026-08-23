@@ -220,7 +220,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 						// eraseLine like replayInPlace's siblings: without it the
 						// note is appended to the line the user typed and reads
 						// as `› ?define: type a question after "?"`.
-						fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, cmd.note)
+						fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, nothingSays(cmd, true))
 						draw()
 						continue
 					}

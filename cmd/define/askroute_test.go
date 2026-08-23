@@ -226,27 +226,33 @@ func TestTheCapturerInjectionIsLive(t *testing.T) {
 func TestRawNeverAsks(t *testing.T) {
 	rawOpt := options{times: 3, locale: "us", raw: true}
 
+	// The unforced cells must produce the miss the scripting contract promises;
+	// the forced ones must produce the refusal. Both are POSITIVE observables —
+	// see assertDidNotAsk.
+	const wantMiss, wantRefusal = "no dictionary entry", "-raw does not ask"
+
 	t.Run("one-shot/unforced", func(t *testing.T) {
 		var out, errb bytes.Buffer
 		code := run(t.Context(), []string{"-raw", aQuestion}, testDeps(t), strings.NewReader(""), &out, &errb)
-		assertDidNotAsk(t, code, 1, errb.String())
+		assertDidNotAsk(t, code, 1, errb.String(), wantMiss)
 	})
 	t.Run("one-shot/forced", func(t *testing.T) {
 		var out, errb bytes.Buffer
 		code := run(t.Context(), []string{"-raw", "?why"}, testDeps(t), strings.NewReader(""), &out, &errb)
-		assertDidNotAsk(t, code, 2, errb.String())
+		assertDidNotAsk(t, code, 2, errb.String(), wantRefusal)
 	})
 	t.Run("piped/unforced", func(t *testing.T) {
 		rig := newAudioRig(t, "sycophantic", true)
 		var out, errb bytes.Buffer
-		replLines(t.Context(), rig.deps, rawOpt, strings.NewReader(aQuestion+"\n"), &out, &errb, true, false)
-		assertDidNotAsk(t, 0, 0, errb.String())
+		code := replLines(t.Context(), rig.deps, rawOpt, strings.NewReader(aQuestion+"\n"), &out, &errb, true, false)
+		assertDidNotAsk(t, code, 1, errb.String(), wantMiss)
 	})
 	t.Run("piped/forced", func(t *testing.T) {
 		rig := newAudioRig(t, "sycophantic", true)
 		var out, errb bytes.Buffer
-		replLines(t.Context(), rig.deps, rawOpt, strings.NewReader("?why\n"), &out, &errb, true, false)
-		assertDidNotAsk(t, 0, 0, errb.String())
+		// BR-15: ask() computes 2 and the loop must not collapse it to 1.
+		code := replLines(t.Context(), rig.deps, rawOpt, strings.NewReader("?why\n"), &out, &errb, true, false)
+		assertDidNotAsk(t, code, 2, errb.String(), wantRefusal)
 	})
 	t.Run("editor/unforced", func(t *testing.T) {
 		rig, _, cooked, finish := editorRig(t, "sycophantic", true)
@@ -254,7 +260,7 @@ func TestRawNeverAsks(t *testing.T) {
 		opt.tty = true
 		var out, errb bytes.Buffer
 		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), rig.deps, opt, cooked, finish, &out, &errb)
-		assertDidNotAsk(t, 0, 0, errb.String())
+		assertDidNotAsk(t, 0, 0, errb.String(), wantMiss)
 	})
 	t.Run("editor/forced", func(t *testing.T) {
 		rig, _, cooked, finish := editorRig(t, "sycophantic", true)
@@ -262,16 +268,28 @@ func TestRawNeverAsks(t *testing.T) {
 		opt.tty = true
 		var out, errb bytes.Buffer
 		runEditor(t.Context(), scriptKeys("?why\r"), rig.deps, opt, cooked, finish, &out, &errb)
-		assertDidNotAsk(t, 0, 0, errb.String())
+		assertDidNotAsk(t, 0, 0, errb.String(), wantRefusal)
 	})
 }
 
-// assertDidNotAsk checks the one thing every -raw cell must have in common.
-// wantCode of 0 means "this route has no exit code of its own" (the loops).
-func assertDidNotAsk(t *testing.T, code, wantCode int, stderr string) {
+// assertDidNotAsk pins "it did not ask" by asserting what DID happen.
+//
+// The first version checked only that stderr lacked "no model configured", and
+// two of the six cells then passed for the very failure the test exists to
+// catch: with the miss-branch guard removed, a -raw miss reaches ask(), which
+// refuses with advice to drop a "?" the line never contained — no ask message,
+// assertion satisfied, scripting contract broken (BR-14). The rule: an assertion
+// that pins "X did not happen" must assert the positive observable that
+// distinguishes X from every other outcome, not the absence of one string.
+//
+// wantCode of 0 means the route has no exit code of its own (the raw editor).
+func assertDidNotAsk(t *testing.T, code, wantCode int, stderr, want string) {
 	t.Helper()
 	if strings.Contains(stderr, "no model configured") {
 		t.Errorf("-raw routed to the model: %q", stderr)
+	}
+	if !strings.Contains(stderr, want) {
+		t.Errorf("stderr = %q, want it to contain %q — the ABSENCE of the ask message is not evidence the right thing happened", stderr, want)
 	}
 	if wantCode != 0 && code != wantCode {
 		t.Errorf("exit = %d, want %d", code, wantCode)
@@ -318,13 +336,35 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 		{"an unforced ask", aQuestion + "\r", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+			rig, opt, _, finish := editorRig(t, "sycophantic", true)
 			var out, errb bytes.Buffer
+			// A RECORDING cooked. The rig's is a no-op closure, so the two ask
+			// rows previously asserted only on stdout while `ask` writes to
+			// stderr — and deleting `cooked(...)` from askInSession, which in
+			// production is the thing that makes the message's "\n" translate
+			// at all, left the suite green (BR-13).
+			var duringCooked strings.Builder
+			cooked := func(run func()) error {
+				before := errb.Len()
+				run()
+				duringCooked.WriteString(errb.String()[before:])
+				return nil
+			}
 			runEditor(t.Context(), scriptKeys(tc.keys), rig.deps, opt, cooked, finish, &out, &errb)
 
 			assertNoBareNewline(t, out.String(), "stdout")
-			if tc.wantErase && !strings.Contains(errb.String(), eraseLine) {
-				t.Errorf("no eraseLine: the message is appended to the line the user typed: %q", errb.String())
+			if tc.wantErase {
+				// Written in RAW mode, so it carries its own escapes.
+				if !strings.Contains(errb.String(), eraseLine) {
+					t.Errorf("no eraseLine: the message is appended to the line the user typed: %q", errb.String())
+				}
+				assertNoBareNewline(t, errb.String(), "stderr")
+				return
+			}
+			// Written in COOKED mode, which is what lets it use a bare "\n".
+			if !strings.Contains(duringCooked.String(), "define:") {
+				t.Errorf("the message was not written inside cooked mode; cooked saw %q, stderr = %q",
+					duringCooked.String(), errb.String())
 			}
 		})
 	}

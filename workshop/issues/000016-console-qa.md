@@ -376,3 +376,50 @@ Two more families closed the same way rather than at their sites:
 
 Every fix mutation-verified: reverting each of the four rules reddens its test,
 and the `-raw` revert reddens exactly the three forced cells.
+
+### 2026-08-23 — M1 boundary round 3: assertions that pass for the failure they exist to catch
+
+Two Important, both third-or-later occurrences of families I had already
+"fixed" — which is itself the finding worth keeping.
+
+- **BR-14, family `test-asserts-nothing` (3rd).** `assertDidNotAsk` checked only
+  that stderr LACKED "no model configured". Measured by the reviewer: remove the
+  miss-branch `mayAsk` guard — a plausible cleanup, since `ask` guards too — and
+  2 of the 6 cells stay GREEN, because the unforced miss then reaches `ask` and
+  gets refused with advice to *drop the "?"* for a line containing no `?`. No ask
+  message, assertion satisfied, scripting contract broken. **The rule: an
+  assertion that pins "X did not happen" must assert the positive observable that
+  distinguishes X from every other outcome, not the absence of one string.** Each
+  cell now asserts what DID happen — `no dictionary entry` for the unforced
+  cells, the refusal for the forced ones — and the mutation reddens all three
+  unforced cells instead of one. The two guards are also no longer described as
+  redundant in the comment that invited the cleanup: they produce different
+  observables, and deleting either changes what a script sees.
+- **BR-15, family `doc-overstates-code` (3rd).** `echo '?why' | define -raw`
+  exited 1 where `ask` computed 2 and README stated 2: the piped loop collapsed
+  the code into `anyFailed`. The comment 45 lines above names this exact defect
+  by number (BR-16, #15, for commands) — so #16 reintroduced a fixed bug in a new
+  branch. **The rule: one sink for a per-line dispatch's exit code, and every
+  exit-code absolute in README measured across `{one-shot, piped}` before it is
+  written.** All four branches now feed one `fail(code)`. Swept and measured on
+  the built binary: 8 of 8 cells match README.
+
+Round 3's Minor findings, fixed rather than carried:
+
+- **4th occurrence of `raw-mode-message-placement`.** My own byte-stream
+  assertion executed for 1 of the 3 classes it enumerated: `ask` writes to
+  **stderr**, and the two ask rows asserted only on stdout. Deleting `cooked(...)`
+  from `askInSession` — in production the thing that makes the message's `\n`
+  translate — left the suite green, because the rig's `cooked` is a no-op. Fixed
+  with a **recording `cooked`**: the ask rows now assert the message was written
+  inside cooked mode.
+- A bare `\` with a current word parsed to `cmdReplay` and replayed audio, while
+  a bare `?` got its note. Both hatches are now symmetric in both session states,
+  with rows for all four.
+- `cmdNothing`'s note had three reporting sites with three defaults; M2 would
+  have added a fourth. One `nothingSays`.
+
+The pattern across three rounds is worth naming: **every one of my "class" fixes
+was itself an instance until the test asserted the positive observable.** Stating
+a rule in a comment and enumerating cells in a table are not the same as having
+each cell fail on its own.

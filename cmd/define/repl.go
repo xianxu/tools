@@ -40,6 +40,9 @@ const (
 // answer to a key the user pressed on purpose.
 const noteEmptyQuestion = `type a question after "?"`
 
+// noteEmptyLiteral is its counterpart for the other hatch.
+const noteEmptyLiteral = `type a word after "\\"`
+
 // parseREPLLine is the loop's decision table, kept pure so it is a unit test
 // rather than something only reachable through a fake terminal.
 //
@@ -71,6 +74,13 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	}
 	var literal bool
 	if rest, ok := strings.CutPrefix(trimmed, `\`); ok {
+		if strings.TrimSpace(rest) == "" {
+			// Symmetric with a bare "?": a hatch typed with no payload is a
+			// malformed line, whatever the session state. Without this it fell
+			// through to the empty-line test and REPLAYED audio when there was a
+			// current word, so the two hatches disagreed at the prompt.
+			return replCommand{kind: cmdNothing, note: noteEmptyLiteral}
+		}
 		literal, line = true, rest
 	}
 	word := strings.TrimSpace(line)
@@ -83,6 +93,23 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	// Multi-word headwords are real — "hot dog", "a priori" — so the whole line
 	// is the word, with interior whitespace collapsed.
 	return replCommand{kind: cmdDefine, word: strings.Join(strings.Fields(word), " "), literal: literal}
+}
+
+// nothingSays is the ONE answer to "this line meant nothing — why, and what
+// should the user do about it".
+//
+// #16 gave that question three sites — the one-shot, the piped loop and the raw
+// editor — each with its own default text and line ending, and M2 was about to
+// add a fourth. The line ending stays with the caller, because only the raw loop
+// needs "\r\n"; the words do not vary by caller and so do not live there.
+func nothingSays(c replCommand, canReplay bool) string {
+	if c.note != "" {
+		return c.note
+	}
+	if canReplay {
+		return "type a word, or press return to replay the last one"
+	}
+	return "type a word"
 }
 
 // recallLine is the canonical, re-submittable form of this line: what Up-arrow
@@ -181,16 +208,29 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 	// README documents 2 for a usage error (BR-16).
 	var cmdCode int
 	var sess session
+	// fail is the ONE place a per-line dispatch's exit code reaches the loop's.
+	//
+	// The loop's code is not a boolean: a usage error (2) has to survive
+	// alongside a lookup failure (1). The comment on cmdCode records BR-16, where
+	// collapsing a command's code into anyFailed made `echo /histry | define`
+	// exit 1 where dispatch computed 2 — and #16 reintroduced exactly that for
+	// questions, because the new branch collapsed ask()'s code the same way
+	// (BR-15). One helper, so the next branch cannot repeat it a third time.
+	fail := func(code int) {
+		if code == 0 {
+			return
+		}
+		anyFailed = true
+		if code > cmdCode {
+			cmdCode = code
+		}
+	}
 	// ONE entry into the ask path, reached from two places: a forced question
 	// ("?…", decided by the parser) and an unforced one (a dictionary miss that
 	// reads as a question). They differ only in whether the dictionary was
 	// consulted, so wiring them separately would mean maintaining the answer
 	// path twice (ARCH-DRY).
-	askHere := func(q question) {
-		if ask(opt, stderr, q) != 0 {
-			anyFailed = true
-		}
-	}
+	askHere := func(q question) { fail(ask(opt, stderr, q)) }
 
 	for {
 		if showPrompt {
@@ -214,11 +254,13 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 		case line := <-lines:
 			switch cmd := parseREPLLine(line, sess.hasCurrent()); cmd.kind {
 			case cmdNothing:
+				fmt.Fprintf(stderr, "define: %s\n", nothingSays(cmd, true))
+				// A hatch typed with no payload is a malformed LINE, the same
+				// shape as a malformed /command — so it carries the same usage
+				// code, and README's "exit 2" holds piped as well as one-shot.
 				if cmd.note != "" {
-					fmt.Fprintf(stderr, "define: %s\n", cmd.note)
-					break
+					fail(2)
 				}
-				fmt.Fprintln(stderr, "define: type a word, or press return to replay the last one")
 			case cmdReplay:
 				if opt.noAudio || opt.times <= 0 {
 					fmt.Fprintln(stderr, "define: nothing to replay: audio is off")
@@ -233,12 +275,7 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				// only in the raw editor's submit path (PQ-2).
 				cc := newCommandCtx(d, opt, stdout, stderr)
 				cc.setTimes = func(n int) { opt.times = n }
-				if code := dispatchCommand(cmd, commands, cc); code != 0 {
-					anyFailed = true
-					if code > cmdCode {
-						cmdCode = code
-					}
-				}
+				fail(dispatchCommand(cmd, commands, cc))
 			case cmdAsk:
 				askHere(question{text: cmd.question, forced: true})
 			case cmdDefine:
@@ -252,7 +289,7 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 				case out.code == 0:
 					sess.sawLookup(cmd.word, out)
 				default:
-					anyFailed = true
+					fail(out.code)
 				}
 			}
 		}

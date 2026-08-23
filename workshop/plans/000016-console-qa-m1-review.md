@@ -412,3 +412,228 @@ findings:
       soft, but leaving M1's boxes open makes "where does M2 resume" ambiguous
       when the plan is picked up in a fresh session.
 ```
+
+---
+
+## Re-review — 2026-08-23T16:29:26-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 16 — free-form Q&A in the console: input classification + the directory as context |
+| repo | tools |
+| issue file | workshop/issues/000016-console-qa.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | aab71caeb1303528c1cd8db9641e83402612a4ed^..a2a9f9422791c6893eec5f5a64e507c8bb284f3f |
+| command | sdlc milestone-close --issue 16 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-23T16:29:26-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Three of the five open findings are genuinely closed and I confirmed each by mutation rather than by reading the diff: `mayAsk` is now consulted inside `ask` itself, so deleting that guard reddens exactly the three forced cells of `TestRawNeverAsks` (BR-9); the capturer injection is live and `TestTheCapturerInjectionIsLive` is a real control that goes red the moment `withStore` starts overwriting a supplied double (BR-10); and both round-1 placement fixes are now pinned on the emitted byte stream — removing `eraseLine` reddens `TestRawLoopMessagePlacement/the_bare-?_note`, and a *faithful* BR-6 revert (leading `\r\n` back inside `askInSession`, removed from the forced caller) reddens `TestForcedAndUnforcedAsksRenderAtTheSameHeight` (BR-11). What keeps this off SHIP is that the round's own claim — "every fix mutation-verified" — is measurably false for **BR-12**: both of its halves can be reverted with `go test ./cmd/define/` fully green (`hist.Add(cmd.recallLine())` → `hist.Add(line)` restores the `\how so` → `how so` inversion; the entire `q.forced` branch in `ask` can be *deleted*). The behaviour is right, the wiring is unpinned, so by this gate's own rule that is `not-addressed`. Two new Important findings: `assertDidNotAsk` cannot distinguish "did not ask" from "asked and printed the other message", so 2 of `TestRawNeverAsks`'s 6 cells pass under the mutation they exist to catch; and `echo '?why' | define -raw` exits **1** where `ask` computed 2 and README states 2, because the ask branch collapses the code into `anyFailed` — precisely the BR-16 defect the `cmdCode` variable 50 lines above exists to prevent. `go vet ./...` and `go test ./...` are green.
+
+## 1. Strengths
+
+- **The `-raw` fix went to the point the thing happens, not to a route.** `mayAsk` (cmd/define/ask.go:28) is consulted inside `ask` *and* at cmd/define/main.go:425, and the enumeration is real where it counts: deleting the `!mayAsk` block from `ask` reddens `one-shot/forced`, `piped/forced` and `editor/forced` and leaves the unforced three green — exactly the three cells BR-9 named.
+- **`TestTheCapturerInjectionIsLive` (askroute_test.go:203) is a control that actually controls.** I made `withStore` fill `d.capture` unconditionally; it goes red, along with four subtests of `TestCaptureArityIsOnePerLookup`. The BR-10 rule is now enforced by a test rather than by a comment.
+- **Both hatches are pinned far deeper than the parser.** Deleting the `?` arm from `parseREPLLine` reddens 6 tests / 10 subtests spanning the parser, both loop shells, the one-shot, the decision table and message placement; deleting the `\` arm reddens 3 tests / 5 subtests. The issue's ticked Done-when row "each is exercised by a test that fails when the hatch is removed" is honestly ticked now.
+- **`recallLine` (repl.go:91) is the right shape for the fix**, and its round-trip assertion (`first.kind != again.kind || first.literal != again.literal`, askroute_test.go:328) is the assertion that makes "same meaning" falsifiable rather than "same string" — it just isn't reached from the wiring.
+- **BR-13 closed cleanly:** Chunk 1 is 29/29 ticked and Chunk 2 is 0/31, so "where does M2 resume" reads off the plan without inference.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N-1 — `assertDidNotAsk` passes for the failure it was written to catch, in 2 of 6 cells (cmd/define/askroute_test.go:269).**
+**This is the 3rd finding in family `test-asserts-nothing`.** Do not fix the two cells — state the rule.
+
+The rule: **an assertion that pins "X did not happen" must assert the positive observable that distinguishes X from every other outcome, not the absence of one string.** `assertDidNotAsk` checks only that stderr lacks `"no model configured"` (plus, in 2 of 6 cells, an exit code). Measured — remove `mayAsk(opt)` from the miss branch at main.go:425 (a plausible cleanup: `ask` guards too, and the comment there flags the redundancy) and:
+
+```
+one-shot/unforced  RED   (via the exit code, 2 != 1 — not the message)
+piped/unforced     GREEN → stderr = `define: -raw does not ask; drop -raw, or drop the "?"`
+editor/unforced    GREEN → same
+```
+
+Both green cells are printing advice to "drop the `?`" for a line containing no `?` at all, and the assertion is satisfied. atlas/define.md:538 and the test's own comment both state the enumeration "covers every cell"; measured, 4 of 6 cells can fail and 2 cannot. The distinguishing observable is available and cheap: assert stderr *contains* `no dictionary entry` (the miss the scripting contract promises), not merely that it lacks the ask message.
+
+**N-2 — `echo '?why' | define -raw` exits 1; `ask` computed 2 and README states 2 (cmd/define/repl.go:189).**
+**This is the 3rd finding in family `doc-overstates-code`.** Do not patch the one site — state the rule.
+
+The rule: **a non-zero code a dispatch computes inside `replLines` must survive the loop, and every exit-code absolute in README must be measured across `{one-shot, piped, editor}` before it is written.** `askHere` (repl.go:189-193) collapses `ask`'s return into `anyFailed`, discarding the 2. The `cmdCommand` branch 45 lines below does it correctly (repl.go:236-240), and the comment introducing `cmdCode` at repl.go:180 names this exact defect by number: *"Collapsing it into anyFailed made `echo /histry | define` exit 1 where dispatchCommand computes 2 and the README documents 2 for a usage error (BR-16)."* Measured against the built binary:
+
+```
+define -raw '?why'              exit 2   ✓ README.md:81-83
+echo '?why' | define -raw       exit 1   ✗ (ask returns 2; anyFailed swallows it)
+echo '/histry' | define         exit 2   ✓ (cmdCode path)
+```
+
+README.md:81 states the claim unqualified ("on either route … a usage error (exit `2`)"), and `TestRawNeverAsks`'s piped cells pass `wantCode 0`, so no cell asserts it. The one-line fix is to give `askHere` the `cmdCode` treatment; the rule is the sweep of README's four exit-code absolutes across the three entry modes (I measured the other three: bare `?`/`\` one-shot both exit 2 ✓; bare `\` piped exits 0 with the generic "type a word" message; bare `?` piped exits 0 — defensible under README's separate piped sentence, worth a deliberate call rather than an accident).
+
+## 4. Minor findings
+
+- **This is the 4th finding in family `raw-mode-message-placement`.** Do not re-fix the site. The rule BR-11 stated — every message class the raw loop writes gets an assertion on the emitted byte stream — is executed for 1 of the 3 classes `TestRawLoopMessagePlacement` enumerates. The two ask rows assert only `assertNoBareNewline(stdout)`, but `ask` writes to **stderr**, so those rows never touch the message. Verified: removing `cooked(...)` from `askInSession` (replraw.go:134) — which in production is what makes the ask message's `\n` translate at all — leaves the suite fully green. The rig's `cooked` is a no-op closure (editorloop_test.go:34), so a recording `cooked` is the missing observable.
+- cmd/define/repl.go:53 — a bare `\` with a current word parses to `cmdReplay`, so typing `\` and Enter at the prompt replays the pronunciation, while a bare `?` gets its note. `TestParseREPLLine`'s `"a bare backslash is blank"` row only covers `hasCurrent=false`. Asymmetric between the two hatches; harmless today.
+- cmd/define/main.go:347, repl.go:217, replraw.go:219 — `cmdNothing`'s note is reported at three sites, each with its own line ending and default text. Round 2 noted this; still three. Worth collapsing before M2 adds a fourth.
+- atlas/define.md:517 writes the ask entry as `ask(opt, w, question)`; the signature is `ask(opt options, errOut io.Writer, q question)`.
+
+## 5. Test coverage notes
+
+All mutations run in a scratch `git archive` of HEAD, working tree untouched:
+
+| mutation | result |
+|---|---|
+| delete `!mayAsk` guard inside `ask` | RED — `TestRawNeverAsks` {one-shot,piped,editor}/forced |
+| drop `mayAsk(opt)` from `lookupAndRender` | **RED in 1 of 3** unforced cells (N-1) |
+| `withStore` overwrites a supplied capturer | RED — `TestTheCapturerInjectionIsLive` + 4 arity subtests |
+| drop `eraseLine` from the bare-`?` note | RED — `TestRawLoopMessagePlacement/the_bare-?_note` |
+| faithful BR-6 revert (leading CRLF back in `askInSession`) | RED — `TestForcedAndUnforcedAsksRenderAtTheSameHeight` |
+| delete the `?` arm from `parseREPLLine` | RED — 6 tests / 10 subtests |
+| delete the `\` arm from `parseREPLLine` | RED — 3 tests / 5 subtests |
+| `submitLine`: `hist.Add(cmd.recallLine())` → `hist.Add(line)` | **GREEN** — probe confirms `\how so` again records `how so` |
+| delete `ask`'s entire `q.forced` branch | **GREEN** |
+| `askInSession` stops running the ask cooked | **GREEN** |
+
+The two green rows against BR-12 are why it is disposed `not-addressed`: the behaviour is correct (probed — `\how so` → `["\how so"]`, `?why` → `["?why"]`, `/history 7` → `["/history 7"]`, `hot  dog` → `["hot dog"]`; `?why` prints ``cannot answer `why` `` and the unforced route prints ``is not a word``), but neither half has a test that fails without it. `TestRecallPreservesWhatALineMeant` pins `recallLine` as a pure function only; `TestAQuestionIsRecalledByUpArrow/unforced` uses a question whose `recallLine()` equals its `word`, so it cannot distinguish the two. One row typed `\how so` through `runEditor` against the injected `memHistory`, and one assertion on the forced message text, close both.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass**, one Minor. `ask` is one function reached from four call sites covering all six cells (main.go:337, :362; repl.go:190; replraw.go:134); `mayAsk` is one predicate; `recallLine` collapsed three recall sites; `session` collapsed three `current` declarations. Only the three `cmdNothing` note sites are flagged.
+- **ARCH-PURE — pass.** `readsAsQuestion`, `openerStem`, `truncateQuestion`, `parseREPLLine`, `recallLine` and `session` are deterministic and unit-tested with no fake. `route_test.go` drives the real `d.dict` seam against the committed corpus via `loadFakeDictionary`, not a stubbed `Lookup`. `ask` is a writer-only shell with the terminal-mode wiring kept in the raw loop's closure — the right seam for M2's stream.
+- **ARCH-PURPOSE — flagged (BR-12 not-addressed, N-1).** Both are the same shape one level up from where the family sits: the *rule* was stated and the *enumeration* was written into a test's name, and the sweep stopped at the statement. BR-12 fixed both named sites and pinned neither; BR-9's enumeration names six cells and falsifies four. The class here is not "recall" or "-raw" — it is **a fix is not swept until the revert is run**, which is what the issue `## Log` claims was done and measurably was not for three of this round's reverts.
+- **ARCH-MOCK — pass for M1.** No external binary or service introduced. The dictionary stays behind `d.dict` with a committed corpus plus `dict_conformance_test.go` for live drift; production and test share that boundary. M2 brings `llm.Client.Stream` — hold the line that tests hit `llmtest`'s httptest server, not a stubbed `Client`.
+- **M2 watch — `session.entry` and `lookupOutcome.entry` are written at one site and read nowhere** (session.go:27 is the only reference). Declared M2 intent, but it is the "field set, never read" shape that reads as protection; give it a consuming assertion the moment Task 9 lands.
+- **M2 watch — `askInSession` discards `ask`'s return code entirely** (replraw.go:134). Fine while the code is only a diagnostic; when `runAsk` returns a real taxonomy (`ErrTruncated`, `ErrRequest`), that closure needs to do something with it.
+
+## 7. Plan revision recommendations
+
+**This is the 2nd finding in family `plan-bookkeeping`.** Round 2 recommended a `## Revisions` entry and none was written; the plan's last entry is still `plan-quality round 2`. The rule rather than the site: **when a boundary round changes what the code does relative to the plan, the plan gets the entry in the same commit as the code** — otherwise the next session designs M2 against a plan that describes a different M1. Concretely, `workshop/plans/000016-console-qa-plan.md` needs one entry covering everything M1 shipped that the plan does not contain:
+
+> ### 2026-08-23 — M1 boundary rounds 1–2: what M1 actually shipped
+>
+> **Reason:** two boundary-review rounds (ledger: `000016-console-qa-close-gate.md`) changed the code away from the plan. The plan is now stale in four places and was cited as current by round 2's own recommendation.
+>
+> **Delta:**
+> - **`-raw` never asks, pulled forward from M2.** D3/D4 and Task 3's snippet give the miss-branch condition as `!literal && readsAsQuestion(word)`; the code is `!cmd.literal && mayAsk(opt) && readsAsQuestion(word)` (main.go:425), with a second `mayAsk` guard inside `ask` covering the forced route. The enumeration `{forced, unforced} × {one-shot, piped, raw editor}` is added to D4, with the note that an explicit `?` under `-raw` is a **usage error** (exit 2 one-shot; see the open finding on the piped cell).
+> - **`askUnavailable(stderr, question)` → `ask(opt, errOut, question)`** (Task 4's closing paragraph), and `question` carries `forced` because the honest sentence differs by route.
+> - **Core concepts gains four M1 rows** the table does not list: `lookupOutcome` (main.go, new — described in Task 3 prose only), `recallLine` (repl.go, new), `question` / `mayAsk` / `ask` (ask.go, new). `ask.go` exists at M1, not M2 as the Integration table implies.
+> - **Task 4's contract row** "does add the line to editor recall (`hist.Add`)" gains *what* is added: `cmd.recallLine()` at all three sites, because a stripped prefix re-submits to the opposite meaning.
+
+No contradiction between the Core-concepts table and the tree for the rows it *does* list: `readsAsQuestion`, `truncateQuestion`, `parseREPLLine`/`replCommand` and `session` all exist at their stated paths with their stated status, and every absent row (`askContext`, `renderAskPrompt`, `recentTurns`, `exchange`, `crlfWriter`, `ReviewEvent`/`complete`, `gatherAskContext`, `runAsk`, `Store.UserModel`, `interrupter`, `deps.notifySignals`) is explicitly M2's.
+
+```findings
+dispose:
+  - id: BR-9
+    disposition: addressed
+    note: |
+      mayAsk moved into ask(); deleting that guard reddens exactly the three forced cells. Assertion strength raised separately.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      Injection moved to d.capture and probe-verified live; making withStore overwrite it reddens TestTheCapturerInjectionIsLive.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Both fixes now redden on a faithful revert — eraseLine removal and the BR-6 CRLF move each go red.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Behaviour is correct but neither half is pinned - submitLine's recallLine and ask's whole q.forced branch both revert with the suite green.
+  - id: BR-13
+    disposition: addressed
+    note: |
+      Chunk 1 is 29/29 ticked and Chunk 2 is 0/31, so the M2 resume point is unambiguous.
+findings:
+  - id: new
+    severity: Important
+    family: test-asserts-nothing
+    title: |
+      assertDidNotAsk passes for the failure it exists to catch, in 2 of TestRawNeverAsks's 6 cells
+    detail: |
+      This is the 3rd finding in family test-asserts-nothing, so the deliverable
+      is the rule. Rule - an assertion that pins "X did not happen" must assert
+      the positive observable that distinguishes X from every other outcome, not
+      the absence of one string. assertDidNotAsk (askroute_test.go:269) checks
+      only that stderr lacks "no model configured". Measured - removing
+      mayAsk(opt) from the miss branch at main.go:425 (a plausible cleanup; the
+      comment there flags the redundancy with ask's own guard) reddens
+      one-shot/unforced via its EXIT CODE only, while piped/unforced and
+      editor/unforced stay green printing
+      `define: -raw does not ask; drop -raw, or drop the "?"` for a line
+      containing no "?" at all. atlas/define.md:538 and the test's own comment
+      both claim the enumeration "covers every cell"; 4 of 6 can fail, 2 cannot.
+      The distinguishing observable is cheap - assert stderr CONTAINS
+      `no dictionary entry`, the miss the scripting contract promises.
+  - id: new
+    severity: Important
+    family: doc-overstates-code
+    title: |
+      the piped loop discards the usage code ask() computes, so -raw plus "?" exits 1 where README states 2
+    detail: |
+      This is the 3rd finding in family doc-overstates-code, so state the rule -
+      a non-zero code a dispatch computes inside replLines must survive the loop,
+      and every exit-code absolute in README must be measured across
+      {one-shot, piped, editor} before it is written. askHere (repl.go:189-193)
+      collapses ask's return into anyFailed, discarding the 2; the cmdCommand
+      branch 45 lines below feeds cmdCode correctly (repl.go:236-240) and the
+      comment at repl.go:180 names this defect by number - BR-16, "Collapsing it
+      into anyFailed made echo /histry | define exit 1 where dispatchCommand
+      computes 2". Measured against the built binary -
+      `define -raw '?why'` exits 2, `echo '?why' | define -raw` exits 1,
+      `echo '/histry' | define` exits 2. README.md:81 states the claim
+      unqualified ("on either route ... a usage error (exit 2)") and
+      TestRawNeverAsks passes wantCode 0 for both piped cells, so nothing
+      asserts it. Sweep the other three absolutes too - bare "?" and bare "\"
+      exit 2 one-shot but 0 piped.
+  - id: new
+    severity: Minor
+    family: raw-mode-message-placement
+    title: |
+      the two ask rows of TestRawLoopMessagePlacement assert nothing about the ask message
+    detail: |
+      This is the 4th finding in family raw-mode-message-placement. Do not
+      re-fix the site. BR-11's rule was executed for 1 of the 3 message classes
+      the test enumerates - the ask rows assert only
+      assertNoBareNewline(stdout), but ask writes to STDERR, so they never touch
+      the message. Verified - removing cooked(...) from askInSession
+      (replraw.go:134), which in production is the only reason the ask message's
+      "\n" translates at all, leaves go test ./cmd/define/ fully green. The
+      rig's cooked is a no-op closure (editorloop_test.go:34), so a recording
+      cooked is the missing observable.
+  - id: new
+    severity: Minor
+    family: plan-bookkeeping
+    title: |
+      the plan still describes an M1 the code no longer implements, despite round 2 recommending the Revisions entry
+    detail: |
+      workshop/plans/000016-console-qa-plan.md - last Revisions entry is
+      "plan-quality round 2"; nothing records the two boundary rounds. Stale in
+      four places - Task 3's snippet gives the miss condition as
+      `!literal && readsAsQuestion(word)` where the code is
+      `!cmd.literal && mayAsk(opt) && readsAsQuestion(word)`; "-raw" and
+      "mayAsk" appear nowhere in the plan; Task 4 names askUnavailable where the
+      code has ask(opt, errOut, question); and Core concepts lists none of
+      lookupOutcome, recallLine, question or mayAsk, while placing ask.go in M2.
+      Rule - when a boundary round changes what the code does relative to the
+      plan, the plan gets the entry in the same commit as the code.
+  - id: new
+    severity: Minor
+    family: forced-route-enumeration
+    title: |
+      a bare "\" with a current word replays audio while a bare "?" gets its note
+    detail: |
+      repl.go:53 - the "\" arm strips the prefix and falls into the
+      empty-word test, so `\` alone with hasCurrent returns cmdReplay.
+      TestParseREPLLine's "a bare backslash is blank" row only covers
+      hasCurrent=false, so the asymmetry between the two hatches at the prompt
+      is unasserted. Harmless today; worth one row.
+```

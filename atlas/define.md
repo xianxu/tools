@@ -519,7 +519,7 @@ declarations of "what is this session holding" (`replLines`, `runEditor`,
 **One ask entry, six cells.** A question arrives by two routes — forced (`?…`,
 decided by the parser without a dictionary call) and unforced (a miss that reads
 as one) — across three entry modes. That is the enumeration every claim about
-asking quantifies over, and all six go through one `ask(opt, w, question)`.
+asking quantifies over, and all six go through one `ask(opt options, errOut io.Writer, q question)`.
 
 `question` carries **how** it arrived, because the route changes what can
 honestly be said: an unforced question is one the dictionary missed, so "is not a
@@ -536,6 +536,23 @@ fallback left three of the six cells asking anyway while the README stated the
 absolute. **A rule stated as an absolute has to be enforced where the thing
 happens, not on one route to it** — and the test that asserts it names the
 enumeration and covers every cell.
+
+**A per-line exit code has to survive the loop.** `replLines` computes one code
+for the whole run, and collapsing a dispatch's code into a boolean loses the
+difference between a lookup failure (1) and a usage error (2). That is BR-16,
+fixed for commands in #15 — and #16 reintroduced it for questions, because the
+new branch collapsed `ask`'s code the same way. There is now one `fail(code)`
+sink every branch feeds, so a third branch cannot repeat it. The four exit-code
+absolutes README states are measured across `{one-shot, piped}`, which is the
+enumeration they quantify over; the raw editor has no exit code of its own,
+because an interactive typo does not fail a session.
+
+**A hatch with no payload is a malformed line, in both hatches and every mode.**
+`?` and `\` alone are usage errors (exit 2) rather than blank lines — a bare `\`
+used to strip its prefix, fall into the empty-line test, and *replay audio* when
+a word was current, so the two hatches disagreed at the prompt. `nothingSays` is
+the one place that answers "this line meant nothing — why"; the line ending stays
+with the caller, because only the raw loop needs `\r\n`.
 
 **Recall stores what a line MEANT.** A forcing prefix is part of that: `\how so`
 recorded as `how so` comes back from Up-arrow and re-submits as a *question* —

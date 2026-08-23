@@ -344,11 +344,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// no word, which the log then discards at read time as indistinguishable
 		// from a torn record (BR-4).
 		if oneShot.kind != cmdDefine {
-			if oneShot.note != "" {
-				fmt.Fprintf(stderr, "define: %s\n", oneShot.note)
-			} else {
-				fmt.Fprintln(stderr, "define: type a word")
-			}
+			// canReplay is false: there is no session here to replay into.
+			fmt.Fprintf(stderr, "define: %s\n", nothingSays(oneShot, false))
 			return 2
 		}
 		// oneShot, not fs.Arg(0): the parsed line is what carries #16's hatches,
@@ -421,6 +418,12 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		// session's (-raw, the scripting form). mayAsk lives in ask.go because
 		// the forced route needs the same predicate and guarding only this one
 		// left three of six cells open (BR-9).
+		//
+		// NOT redundant with ask()'s own mayAsk check, however much it looks it:
+		// this one decides the OBSERVABLE. Without it a -raw miss reaches ask(),
+		// which refuses with advice to "drop the ?" for a line that contains no
+		// "?" — instead of the `no dictionary entry` the scripting contract
+		// promises. Deleting either changes what a script sees (BR-14).
 		if !cmd.literal && mayAsk(opt) && readsAsQuestion(word) {
 			return lookupOutcome{ask: word}
 		}
