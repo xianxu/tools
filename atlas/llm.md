@@ -201,6 +201,11 @@ Two tagged suites, both on-demand (`-tags conformance`), neither in merge-check:
 
 - `TestConformanceAgainstTheLiveService` — the obligation suite against the real
   service, so "the fake behaves like the real thing" is a test.
+- `TestTypedTaskAgainstTheLiveService` — `Run[T]` end to end against the real
+  model, flat and nested result types. The only place the layer consumers write
+  against is proven rather than argued: a Go struct in, a populated struct out,
+  through a reflected schema and a defensive decode. Asserts shape, never the
+  model's judgment — whether a verdict is *correct* is #12's problem.
 - `TestCaptureDriftAgainstTheLiveService` — do the committed captures still
   describe reality: thinking blocks still returned, `output_config` still passing
   the proxy, signature deltas still in the stream, preamble still ~1,900 tokens.
