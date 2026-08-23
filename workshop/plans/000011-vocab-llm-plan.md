@@ -217,7 +217,7 @@ should be able to re-run the measurement rather than trust the prose.
   deltas; a cancelled context returns promptly with `ctx.Err()`; an unknown model
   returns `ErrRequest`, not a panic.
 
-- **`llmtest.Golden`** — `AssertGolden(t, name, req)` renders a `Request`
+- **`llmtest.AssertGolden`** — `AssertGolden(t, name, req)` renders a `Request`
   (model, effort, system, prompt, schema) to a stable text form and compares it
   with `testdata/golden/<name>.txt`, rewriting under `-update`. This is the
   mechanism the issue's *"prompt regressions are visible in a diff"* requires;
@@ -1620,7 +1620,7 @@ Run: `go test -tags conformance -run Capture ./internal/llm/ -count=1`
       raw body — a malformed-response error that does not show the response is
       undiagnosable.
 
-### Task 11: `renderRequest` + `llmtest.Golden`
+### Task 11: `renderRequest` + `llmtest.AssertGolden`
 
 **Files:** `internal/llm/render.go`, `internal/llm/llmtest/golden.go`, their tests
 
@@ -1635,7 +1635,7 @@ show in one artifact and not the other (ARCH-DRY).
 // prompt, schema, in a fixed order with fixed separators.
 //
 // Exactly one renderer, consumed by two things that must never disagree:
-// llmtest.Golden prints it for humans to diff, and llmtest.Cassette hashes it to
+// llmtest.AssertGolden prints it for humans to diff, and llmtest.Cassette hashes it to
 // key a recording. If they rendered separately, a prompt edit could move the
 // golden while the cassette kept matching — the change would be visible in one
 // artifact and invisible in the other.
@@ -2094,7 +2094,7 @@ shipped with **zero committed artifacts anywhere in the tree**, which made
 `schema.go`'s justification for reflecting the schema aspirational; there is now a
 committed snapshot, and adding a struct field reddens it. The Core concepts tables
 above are corrected in place to name what exists (`AssertGolden`, not
-`llmtest.Golden`) and to add the rows for `renderRequest`/`RequestHash`,
+`llmtest.AssertGolden`) and to add the rows for `renderRequest`/`RequestHash`,
 `requireSchemaFields`, `Cassette` and `Config.Transport`.
 
 **And a rule about claims, now on its fourth finding.** A doc claim of universal
@@ -2103,3 +2103,47 @@ form — "every", "always", "never", "is held by" — is a claim about an
 each. Four such claims in this milestone were false when written, including one
 that said every drift failure names the fix when 2 of 7 did (now 7 of 7), and one
 that cited a golden file that did not exist.
+
+### 2026-08-23 — M2 rounds 6–7: the plan/tree diff, run as a step
+
+**Reason.** Third finding in `plan-revision-not-appended`. The rule stated at BR-41
+was *"diff the plan's Core concepts and Task lists against the tree at each
+boundary and append what moved"* — and it was run once, at round 5, then not at
+round 6. The correction is procedural: **the diff is a step of the boundary, not a
+response to a finding**, and it greps every identifier the plan and the issue name
+in the same pass.
+
+That grep, run now over `llmtest.Golden`, `llmtest.Cassette`, `RequestHash`,
+`SkipIfUnreachable`, `requireSchemaFields` and `renderRequest`, found
+`llmtest.Golden` in two documents and **zero** Go files — it was never an
+identifier; the function is `AssertGolden`. Corrected in the plan and the issue.
+It had been named by BR-34 and again by BR-50, each time as the example of a claim
+that grep would have settled, and each time I patched the sentence around it.
+
+**Deltas since the round-5 entry.**
+
+- **The cassette key moved to a context-carried `RequestHash`.** An
+  `http.RoundTripper` cannot see `Task` — it is never sent — so keying on the wire
+  body collided: two requests differing only in task shared a recording and the
+  second overwrote the first. `Config`'s in-flight `Request` now travels by
+  context, restoring one key definition for the golden and the cassette.
+- **And it hashes the EFFECTIVE request**, with zero fields resolved against the
+  `Config`. Hashing the caller's raw `Request` meant two clients with different
+  default models shared a recording while putting different models on the wire.
+- **`exchange` gained `ContentType` and stores the body as text.** An SSE body is
+  not JSON, so `json.RawMessage` could not marshal a streamed exchange at all —
+  half the `Client` interface was unrecordable, and the harness's own marshalling
+  failure surfaced as `ErrUnavailable`, the class consumers absorb silently.
+  Harness failures now return `ErrRequest`.
+- **`llmtest.SkipIfUnreachable` is new exported surface** (added to the Integration
+  points table above), and it probes the TCP endpoint rather than the API. Probing
+  with a real call was worse than no guard: a renamed model answers `502` through
+  this proxy, that classifies as `ErrUnavailable`, and the suite would have
+  *skipped* on exactly the drift it exists to catch. A connection that cannot be
+  established is the only signal meaning "nothing is there".
+- **`requireSchemaFields` walks the whole schema tree** — object properties, array
+  items, and explicit nulls — not just the top level. Written against the
+  nested-object example alone it left `{"fits":true,"list":[{}]}` accepted, and
+  #10's authoring result is precisely a list of objects.
+- **`SchemaFor[T]` clones before returning**, since handing out the memoised map
+  let one consumer's write poison every later `Run[T]` process-wide.

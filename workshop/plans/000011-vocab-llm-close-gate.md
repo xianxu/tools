@@ -787,6 +787,89 @@ rounds:
           round: 6
       boundary: M2
       blocked: true
+    - "n": 7
+      timestamp: "2026-08-23T07:45:26-07:00"
+      agent: claude
+      dispose:
+        - id: BR-39
+          disposition: not-addressed
+          note: Both sites now call SkipIfUnreachable, but the helper is untested and skips on a renamed model (502 to ErrUnavailable) — the drift it exists to catch.
+          round: 7
+        - id: BR-42
+          disposition: not-addressed
+          note: '`_ = llmtest.Capture` still present at capture_conformance_test.go:142.'
+          round: 7
+        - id: BR-43
+          disposition: not-addressed
+          note: TestAQueueStillAdvancesWhileItHasEntries unchanged at fake_test.go:167, still the shape of TestQueueServesInOrder (fake_test.go:82).
+          round: 7
+        - id: BR-44
+          disposition: not-addressed
+          note: main.go:278 still returns on *llmCheck before the arity switch; `define -llm-check hello` ignores the word.
+          round: 7
+        - id: BR-45
+          disposition: not-addressed
+          note: llmcheck.go:41 still hardcodes MaxTokens 2048 rather than reading cfg.MaxTokens.
+          round: 7
+        - id: BR-46
+          disposition: not-addressed
+          note: 'Measured on the shipped tree: SchemaFor[string]() = {type:string, additionalProperties:false}; SchemaFor[map[string]string]() = an object permitting no keys.'
+          round: 7
+        - id: BR-50
+          disposition: addressed
+          note: 'Reversion-verified: removing the context lookup in key() reddens TestTheKeyDerivesFromTheRequestNotTheBody with the collision printed. See the new finding for the pre-defaulting residual.'
+          round: 7
+        - id: BR-51
+          disposition: not-addressed
+          note: Objects and explicit nulls are walked; array items are not — decode[arrOuter](`{"fits":true,"list":[{}]}`) still returns a partial value with err=nil, and task.go:129 now claims "EVERY depth".
+          round: 7
+        - id: BR-52
+          disposition: addressed
+          note: 'Reversion-verified: restoring json.RawMessage reproduces the exact ErrUnavailable marshalling failure in TestCassetteRecordsAndReplaysAStream.'
+          round: 7
+        - id: BR-53
+          disposition: not-addressed
+          note: cassette_test.go:32 still does `defer func() { *update = false }()` — the literal, not the prior value.
+          round: 7
+        - id: BR-54
+          disposition: addressed
+          note: 'Reversion-verified with the clone removed from BOTH return paths: all three assertions of TestSchemaIsolationAcrossCallers redden, including the nested one.'
+          round: 7
+      findings:
+        - id: BR-55
+          severity: Important
+          title: The cassette key is taken before the Request is defaulted, so two different effective models collide into one recording
+          detail: |-
+            Measured on the clean tree: llm.Task[T]{Name:"veto", Prompt:"near-synonym?"} — the documented shape, since task.go:27 says a zero Model means "use the Config default" — recorded under Config{Model:"claude-opus-5"} and then Config{Model:"claude-sonnet-5"} wrote to ONE file, 4ea325a60ca6.json, whose on-disk request.model is claude-sonnet-5; the opus recording is gone. renderRequest hashes r.Model/r.Effort as DECLARED while params() (anthropic.go:66) resolves them from a.cfg below the hash. Two further consequences: TestEveryMeaningfulFieldReachesTheHash (render_test.go:57) passes while the property it names is false on the only production path, and a consumer's golden and its cassette describe different requests — golden_schema_test.go:31 hand-writes Model/Effort (hash a11b39ae49fe) where Run[T] sends them empty (hash fae0974f64b3).
+            THIS IS THE 3RD FINDING IN FAMILY `single-source-consumer-not-derived`. Do not fix Model alone. The RULE, already stated at BR-50 and now failing on a different axis: where two derivations of one fact exist, one must derive from the other — here renderRequest is a restatement of params() that omits defaulting. Resolve Model/Effort/System onto the Request before withRequest(ctx, r) in Complete and Stream, so RenderRequest and the wire body agree by construction, and drive the field-coverage table through Run[T] end to end rather than over a hand-populated struct.
+          family: single-source-consumer-not-derived
+          round: 7
+        - id: BR-56
+          severity: Minor
+          title: ErrorForStop is an exported function with zero references whose doc still asserts the role the rework removed
+          detail: |-
+            grep for ErrorForStop across the tree returns only its own definition and comment (errors.go:88-92). It was added this window so "a replayed recording reconstructs the same taxonomy member", and BR-38's fix replaced that mechanism with status replay. Also in this class: `c := llm.New(...)` followed by `_ = c` in withReq (cassette_test.go:217), and BR-42's `_ = llmtest.Capture`.
+            THIS IS THE 5TH FINDING IN FAMILY `dead-code`. Do not delete only this function. The RULE is BR-50's own enumeration, which was run for RequestHash and RenderRequest and not for the rest: for every exported identifier in internal/llm, confirm a non-test caller exists or the export is justified in its doc — and for every `_ = X` statement, confirm it does something other than satisfy the compiler. Run that grep and paste it, rather than fixing the three sites this finding happens to name.
+          family: dead-code
+          round: 7
+        - id: BR-57
+          severity: Minor
+          title: Round 6 changed the design again with no Revisions entry, and two artifacts still name llmtest.Golden
+          detail: |-
+            The plan's last `## Revisions` entry is the round-5 one. Undeclared since: the cassette key moved to a context-carried RequestHash, `exchange` gained ContentType and became text, and llmtest.SkipIfUnreachable is new exported surface with no row in the Integration points table. Plan line 1638 and issue line 146 both still say `llmtest.Golden`, which is not an identifier — the same string BR-34 and BR-50 each named for grep-verification.
+            THIS IS THE 3RD FINDING IN FAMILY `plan-revision-not-appended`. The RULE stated at BR-41 was "diff the plan's Core concepts and Task lists against the tree at each boundary and append what moved" — it was run once, at round 5, and not at round 6. Make the diff a step of the boundary itself rather than a response to a finding, and grep the plan and issue for every identifier they name in the same pass.
+          family: plan-revision-not-appended
+          round: 7
+        - id: BR-58
+          severity: Minor
+          title: jsonEscape double-escapes the request the cassette miss message exists to show
+          detail: |-
+            cassette.go:206. The envelope is built with json.Marshal, which escapes already, so the operator sees `request was: {\\\"max_tokens\\\":8192,...\\\\\\\"obsequious\\\\\\\"...}` — measured. The message's whole purpose is to be readable without recomputing a hash.
+            THIS IS THE 3RD FINDING IN FAMILY `stdlib-reimplemented`. The RULE: before hand-rolling a string transform, check whether the encoder that consumes the value already performs it — a manual escape applied to a value that is later marshalled is always a double-escape, never a no-op. Sweep the diff for hand-written quoting/escaping helpers and confirm each sits outside an encoder, not inside one.
+          family: stdlib-reimplemented
+          round: 7
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (boundary-review)
@@ -1192,6 +1275,37 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-54** [Minor] `memoised-value-is-caller-mutable` SchemaFor returns the memoised map by reference, so any consumer mutation poisons the cache process-wide
   schema.go:27 returns the cached map[string]any itself. A consumer doing `s, _ := llm.SchemaFor[T](); s["description"] = "..."` permanently changes what every later Run[T] sends on the wire and what requireSchemaFields reads. Either clone on read or document the value as read-only and return it through a type that says so; this is a new internal package five downstream issues will consume.
 
+## Round 7 — 2026-08-23T07:45:26-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-39 — not-addressed — Both sites now call SkipIfUnreachable, but the helper is untested and skips on a renamed model (502 to ErrUnavailable) — the drift it exists to catch.
+- BR-42 — not-addressed — `_ = llmtest.Capture` still present at capture_conformance_test.go:142.
+- BR-43 — not-addressed — TestAQueueStillAdvancesWhileItHasEntries unchanged at fake_test.go:167, still the shape of TestQueueServesInOrder (fake_test.go:82).
+- BR-44 — not-addressed — main.go:278 still returns on *llmCheck before the arity switch; `define -llm-check hello` ignores the word.
+- BR-45 — not-addressed — llmcheck.go:41 still hardcodes MaxTokens 2048 rather than reading cfg.MaxTokens.
+- BR-46 — not-addressed — Measured on the shipped tree: SchemaFor[string]() = {type:string, additionalProperties:false}; SchemaFor[map[string]string]() = an object permitting no keys.
+- BR-50 — addressed — Reversion-verified: removing the context lookup in key() reddens TestTheKeyDerivesFromTheRequestNotTheBody with the collision printed. See the new finding for the pre-defaulting residual.
+- BR-51 — not-addressed — Objects and explicit nulls are walked; array items are not — decode[arrOuter](`{"fits":true,"list":[{}]}`) still returns a partial value with err=nil, and task.go:129 now claims "EVERY depth".
+- BR-52 — addressed — Reversion-verified: restoring json.RawMessage reproduces the exact ErrUnavailable marshalling failure in TestCassetteRecordsAndReplaysAStream.
+- BR-53 — not-addressed — cassette_test.go:32 still does `defer func() { *update = false }()` — the literal, not the prior value.
+- BR-54 — addressed — Reversion-verified with the clone removed from BOTH return paths: all three assertions of TestSchemaIsolationAcrossCallers redden, including the nested one.
+
+### Raised
+
+- **BR-55** [Important] `single-source-consumer-not-derived` The cassette key is taken before the Request is defaulted, so two different effective models collide into one recording
+  Measured on the clean tree: llm.Task[T]{Name:"veto", Prompt:"near-synonym?"} — the documented shape, since task.go:27 says a zero Model means "use the Config default" — recorded under Config{Model:"claude-opus-5"} and then Config{Model:"claude-sonnet-5"} wrote to ONE file, 4ea325a60ca6.json, whose on-disk request.model is claude-sonnet-5; the opus recording is gone. renderRequest hashes r.Model/r.Effort as DECLARED while params() (anthropic.go:66) resolves them from a.cfg below the hash. Two further consequences: TestEveryMeaningfulFieldReachesTheHash (render_test.go:57) passes while the property it names is false on the only production path, and a consumer's golden and its cassette describe different requests — golden_schema_test.go:31 hand-writes Model/Effort (hash a11b39ae49fe) where Run[T] sends them empty (hash fae0974f64b3).
+  THIS IS THE 3RD FINDING IN FAMILY `single-source-consumer-not-derived`. Do not fix Model alone. The RULE, already stated at BR-50 and now failing on a different axis: where two derivations of one fact exist, one must derive from the other — here renderRequest is a restatement of params() that omits defaulting. Resolve Model/Effort/System onto the Request before withRequest(ctx, r) in Complete and Stream, so RenderRequest and the wire body agree by construction, and drive the field-coverage table through Run[T] end to end rather than over a hand-populated struct.
+- **BR-56** [Minor] `dead-code` ErrorForStop is an exported function with zero references whose doc still asserts the role the rework removed
+  grep for ErrorForStop across the tree returns only its own definition and comment (errors.go:88-92). It was added this window so "a replayed recording reconstructs the same taxonomy member", and BR-38's fix replaced that mechanism with status replay. Also in this class: `c := llm.New(...)` followed by `_ = c` in withReq (cassette_test.go:217), and BR-42's `_ = llmtest.Capture`.
+  THIS IS THE 5TH FINDING IN FAMILY `dead-code`. Do not delete only this function. The RULE is BR-50's own enumeration, which was run for RequestHash and RenderRequest and not for the rest: for every exported identifier in internal/llm, confirm a non-test caller exists or the export is justified in its doc — and for every `_ = X` statement, confirm it does something other than satisfy the compiler. Run that grep and paste it, rather than fixing the three sites this finding happens to name.
+- **BR-57** [Minor] `plan-revision-not-appended` Round 6 changed the design again with no Revisions entry, and two artifacts still name llmtest.Golden
+  The plan's last `## Revisions` entry is the round-5 one. Undeclared since: the cassette key moved to a context-carried RequestHash, `exchange` gained ContentType and became text, and llmtest.SkipIfUnreachable is new exported surface with no row in the Integration points table. Plan line 1638 and issue line 146 both still say `llmtest.Golden`, which is not an identifier — the same string BR-34 and BR-50 each named for grep-verification.
+  THIS IS THE 3RD FINDING IN FAMILY `plan-revision-not-appended`. The RULE stated at BR-41 was "diff the plan's Core concepts and Task lists against the tree at each boundary and append what moved" — it was run once, at round 5, and not at round 6. Make the diff a step of the boundary itself rather than a response to a finding, and grep the plan and issue for every identifier they name in the same pass.
+- **BR-58** [Minor] `stdlib-reimplemented` jsonEscape double-escapes the request the cassette miss message exists to show
+  cassette.go:206. The envelope is built with json.Marshal, which escapes already, so the operator sees `request was: {\\\"max_tokens\\\":8192,...\\\\\\\"obsequious\\\\\\\"...}` — measured. The message's whole purpose is to be readable without recomputing a hash.
+  THIS IS THE 3RD FINDING IN FAMILY `stdlib-reimplemented`. The RULE: before hand-rolling a string transform, check whether the encoder that consumes the value already performs it — a manual escape applied to a value that is later marshalled is always a double-escape, never a no-op. Sweep the diff for hand-written quoting/escaping helpers and confirm each sits outside an encoder, not inside one.
+
 ## Open findings
 
 - **BR-27** [Important] `partial-constructor-defaults` A negative SlowEvery panics on the watcher goroutine, where no caller can recover
@@ -1206,8 +1320,9 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-44** [Minor] `mode-flag-arity-guard` `define -llm-check <word>` silently ignores the word
 - **BR-45** [Minor] `diagnostic-ignores-config` --llm-check hardcodes MaxTokens 2048 instead of the resolved cfg.MaxTokens
 - **BR-46** [Minor] `schema-metadata-applied-blindly` additionalProperties:false is set unconditionally, including on non-object schemas
-- **BR-50** [Important] `single-source-consumer-not-derived` The cassette no longer derives from renderRequest, leaving RequestHash dead and five artifacts asserting a coupling that is measurably false
 - **BR-51** [Important] `enforcement-not-pinned-by-a-test` requireSchemaFields checks only top-level required fields, so a nested object still decodes to a partial value with a nil error
-- **BR-52** [Important] `double-covers-partial-seam` A cassette cannot record a streaming exchange, and the failure is delivered as ErrUnavailable
 - **BR-53** [Minor] `test-flag-mutation-leaks` withUpdate restores *update to the literal false rather than its prior value, silently cancelling a real -update run
-- **BR-54** [Minor] `memoised-value-is-caller-mutable` SchemaFor returns the memoised map by reference, so any consumer mutation poisons the cache process-wide
+- **BR-55** [Important] `single-source-consumer-not-derived` The cassette key is taken before the Request is defaulted, so two different effective models collide into one recording
+- **BR-56** [Minor] `dead-code` ErrorForStop is an exported function with zero references whose doc still asserts the role the rework removed
+- **BR-57** [Minor] `plan-revision-not-appended` Round 6 changed the design again with no Revisions entry, and two artifacts still name llmtest.Golden
+- **BR-58** [Minor] `stdlib-reimplemented` jsonEscape double-escapes the request the cassette miss message exists to show

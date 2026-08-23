@@ -682,3 +682,45 @@ reproduce the bug.
 Two clauses: **a fix ships with a test whose failure you have observed**, and
 **the mutation must be the honest absence of the fix**, not a partial one. If the
 fix has two sites, remove both.
+
+## Write the check against the SHAPE, not the example (define #11 M2)
+
+A finding showed a missing-required-field bug with a nested object. I fixed
+nested objects. The next round showed the same bug with an object inside an
+**array** — and my comment now claimed the walk covered "EVERY depth", which was
+a universal claim about a tree I had only walked two shapes of.
+
+The invariant quantified over the whole schema tree; the fix quantified over the
+example. **Before fixing, write down the set the invariant ranges over** — for a
+schema that is objects, arrays, nulls and scalars; for a fuzz target it is both
+branches; for a seam double it is every method — then confirm a test exists at
+every point of it. A fix scoped to the reproduction is a fix that gets re-raised.
+
+## A guard that cannot fail is worse than no guard (define #11 M2)
+
+To stop a live suite reporting "drift" when the proxy was merely stopped, I made
+it skip on `ErrUnavailable`. But a **renamed or withdrawn model** answers 502
+through that proxy, which classifies as `ErrUnavailable` — so the suite would have
+skipped silently on precisely the drift it exists to catch. The guard converted a
+loud failure into a green run.
+
+Two rules:
+
+- **A skip condition must be narrower than the failure it protects against.**
+  "Cannot establish a connection" means nothing is there; anything that *answers*,
+  even with an error, is the dependency talking and belongs to the suite. Probe
+  the endpoint, not the API.
+- **A guard needs a test in both directions** — skips when it should, and
+  *doesn't* when the dependency is merely broken. Mine had neither, and the
+  reviewer found it by reading, not running.
+
+## Verifying only what you have tests for proves nothing new (define #11 M2)
+
+Told two findings were still open, I re-ran my own tests, saw green, and reported
+that the reviewer was wrong. Both findings were real: they named cases my tests
+did not cover (an array of objects; a 502 from a reachable service). My
+measurement was a restatement of what I already believed.
+
+**When a finding is re-raised against a fix you believe landed, reproduce the
+finding's own case** — not your test suite. The suite is what missed it the first
+time.

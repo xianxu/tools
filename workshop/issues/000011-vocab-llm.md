@@ -143,7 +143,7 @@ Two review boundaries — each closes with its own `sdlc milestone-close`.
       driven at that fake; the obligation suite; the `AGENTS.local.md` carve-out.
 - [x] M2 — typed tasks, goldens, conformance. Recorded live SSE sample;
       `SchemaFor[T]` with a golden snapshot; `Task[T]`/`Run[T]` with defensive
-      decode; `llmtest.Golden`; live conformance behind the build tag;
+      decode; `llmtest.AssertGolden`; live conformance behind the build tag;
       `define --llm-check`; atlas page.
 
 ## Log
@@ -223,7 +223,7 @@ conformance`), capture shapes enforced offline in Go, and `--race` clean.
 ### 2026-08-22 — M2 built
 
 `renderRequest` + `RequestHash`, `SchemaFor[T]`, `Task[T]`/`Run[T]` with defensive
-decode, `llmtest.Golden`, `llmtest.Cassette`, capture-drift conformance, and
+decode, `llmtest.AssertGolden`, `llmtest.Cassette`, capture-drift conformance, and
 `define --llm-check`. Full repo suite green; both conformance suites pass live.
 
 Three things worth keeping:

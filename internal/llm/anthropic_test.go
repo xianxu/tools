@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -724,3 +726,60 @@ func TestRunPreservesTheTaxonomy(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnavailable to survive Run's wrapping", err)
 	}
 }
+
+// The cassette key must be the EFFECTIVE request, not the caller's raw one:
+// two clients with different default models would otherwise share a recording
+// while putting different models on the wire.
+func TestRequestInContextCarriesTheEffectiveModel(t *testing.T) {
+	var mu sync.Mutex
+	var seen []llm.Request
+	// Answers 200 rather than erroring: a transport error is RETRIED, and an
+	// earlier version of this test blocked forever when the retries overran a
+	// buffered channel. The double must not perturb the thing it observes.
+	capture := roundTripStub(func(req *http.Request) (*http.Response, error) {
+		if r, ok := llm.RequestFromContext(req.Context()); ok {
+			mu.Lock()
+			seen = append(seen, r)
+			mu.Unlock()
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"type":"message","role":"assistant","id":"m","model":"x",` +
+					`"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn",` +
+					`"usage":{"input_tokens":1,"output_tokens":1}}`)),
+		}, nil
+	})
+
+	for _, model := range []string{"claude-opus-5", "claude-sonnet-5"} {
+		c := llm.New(llm.Config{
+			BaseURL: "http://example", APIKey: "sk-test-1234567890",
+			Model: model, Timeout: 10 * time.Second, Transport: capture,
+		})
+		// The Request leaves Model unset, so the CONFIG decides what is sent.
+		if _, err := c.Complete(t.Context(), llm.Request{Task: "veto", Prompt: "x"}); err != nil {
+			t.Fatalf("model %s: %v", model, err)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 {
+		t.Fatalf("captured %d requests, want 2", len(seen))
+	}
+	a, b := seen[0], seen[1]
+	if a.Model == "" || b.Model == "" {
+		t.Fatalf("the context carried an unresolved model: %q / %q", a.Model, b.Model)
+	}
+	if a.Model == b.Model {
+		t.Fatal("two configs with different models produced the same effective request")
+	}
+	if llm.RequestHash(a) == llm.RequestHash(b) {
+		t.Error("different effective models share a cassette key; one recording would answer for both")
+	}
+}
+
+type roundTripStub func(*http.Request) (*http.Response, error)
+
+func (f roundTripStub) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

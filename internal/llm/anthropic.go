@@ -61,6 +61,19 @@ func New(c Config) Client {
 	return &anthropicClient{cfg: c, api: anthropic.NewClient(opts...)}
 }
 
+// effective resolves a Request's zero fields against the Config, so what is
+// hashed is what was SENT.
+//
+// Hashing the caller's raw Request instead means two clients with different
+// default models share one recording while putting different models on the wire —
+// the collision this seam exists to make impossible.
+func (a *anthropicClient) effective(r Request) Request {
+	r.Model = cmp.Or(r.Model, a.cfg.Model)
+	r.Effort = cmp.Or(r.Effort, a.cfg.Effort)
+	r.MaxTokens = cmp.Or(r.MaxTokens, a.cfg.MaxTokens)
+	return r
+}
+
 func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 	p := anthropic.MessageNewParams{
 		Model:     anthropic.Model(cmp.Or(r.Model, a.cfg.Model)),
@@ -85,7 +98,7 @@ func (a *anthropicClient) params(r Request) anthropic.MessageNewParams {
 }
 
 func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, error) {
-	ctx = withRequest(ctx, r)
+	ctx = withRequest(ctx, a.effective(r))
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
 	defer cancel()
 
@@ -100,7 +113,7 @@ func (a *anthropicClient) Complete(ctx context.Context, r Request) (Response, er
 }
 
 func (a *anthropicClient) Stream(ctx context.Context, r Request, onDelta func(string)) (Response, error) {
-	ctx = withRequest(ctx, r)
+	ctx = withRequest(ctx, a.effective(r))
 	ctx, cancel := context.WithTimeout(ctx, a.cfg.Timeout)
 	defer cancel()
 

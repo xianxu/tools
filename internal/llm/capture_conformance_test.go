@@ -37,7 +37,7 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 
 	// One preflight for the whole suite, plus a per-call guard: a service that
 	// goes down mid-run must skip the remaining checks rather than report drift.
-	llmtest.SkipIfUnreachable(t, c)
+	llmtest.SkipIfUnreachable(t, cfg.BaseURL)
 
 	skipUnreachable := func(t *testing.T, err error) {
 		t.Helper()
@@ -139,5 +139,4 @@ func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 			p, got.Usage.CacheCreationTokens, got.Usage.CacheReadTokens)
 	})
 
-	_ = llmtest.Capture // the committed artifacts this run is checking
 }

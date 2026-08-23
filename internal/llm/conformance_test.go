@@ -36,6 +36,6 @@ func TestConformanceAgainstTheLiveService(t *testing.T) {
 	t.Logf("conformance against %s (model %s, key %s)", cfg.BaseURL, cfg.Model, llm.Redact(cfg.APIKey))
 	// A stopped proxy would otherwise fail all six obligations, reporting "the
 	// fake does not behave like the real thing" when the real thing is simply off.
-	llmtest.SkipIfUnreachable(t, llm.New(cfg))
+	llmtest.SkipIfUnreachable(t, cfg.BaseURL)
 	llmtest.Suite(t, func(t *testing.T) llm.Client { return llm.New(cfg) })
 }

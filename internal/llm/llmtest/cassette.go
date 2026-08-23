@@ -112,8 +112,11 @@ func (c *cassetteTransport) RoundTrip(req *http.Request) (*http.Response, error)
 			// A miss is a test-authoring problem, so it is reported as a 400 the
 			// caller surfaces as ErrRequest — loud, and not retried. t.Fatalf is
 			// wrong here: RoundTrip runs on whatever goroutine the SDK is using.
+			// body is passed RAW: harnessError marshals the envelope, which escapes
+			// it once. Escaping here too produced \\\" chains in the very message
+			// whose purpose is to be readable without recomputing a hash.
 			return harnessError(path, fmt.Sprintf(
-				"no cassette — re-run with -update to record it. request was: %s", jsonEscape(body))), nil
+				"no cassette — re-run with -update to record it. request was: %s", body)), nil
 		}
 		var ex exchange
 		if err := json.Unmarshal(raw, &ex); err != nil {
@@ -197,12 +200,4 @@ func harnessError(path, msg string) *http.Response {
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(bytes.NewReader(body)),
 	}
-}
-
-func jsonEscape(b []byte) string {
-	q, err := json.Marshal(string(b))
-	if err != nil {
-		return `"<unquotable>"`
-	}
-	return string(q[1 : len(q)-1])
 }

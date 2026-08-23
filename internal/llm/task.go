@@ -123,48 +123,71 @@ func requireSchemaFields[T any](body string) error {
 	return nil
 }
 
-// missingRequired walks the schema and the payload together, at EVERY depth.
+// missingRequired walks the schema and the payload together over the WHOLE
+// schema tree: object properties, array items, and non-object payloads.
 //
-// A top-level-only check leaves the bug it was written for alive one level down:
-// with a nested result type, `{"fits":true,"inner":{}}` passed while inner's own
-// required fields were absent. #10's authoring result — an item with its
-// distractors — is the first consumer likely to be nested, so this is not a
-// hypothetical depth.
+// The shape matters more than any one example. Written against the nested-object
+// case alone, it left an object inside an ARRAY unchecked —
+// `{"fits":true,"list":[{}]}` passed while every item's required fields were
+// absent — and #10's authoring result (an item with its distractors) is exactly a
+// list of objects. The invariant quantifies over the tree, so the walk does too.
 //
-// Paths are dotted so the error names WHERE, not just what.
+// Paths are dotted, with [i] for array positions, so the error names WHERE.
 func missingRequired(schema map[string]any, payload any, path string) []string {
 	required := asStrings(schema["required"])
-	obj, ok := payload.(map[string]any)
-	if !ok {
-		// A schema that requires fields cannot be satisfied by a non-object —
-		// `null` and `[]` included. Reporting them as missing is what makes
-		// decode("null") fail rather than yield a zero value with a nil error.
-		if len(required) > 0 {
-			out := make([]string, 0, len(required))
-			for _, k := range required {
-				out = append(out, join(path, k))
+
+	switch v := payload.(type) {
+	case map[string]any:
+		var missing []string
+		for _, k := range required {
+			child, found := v[k]
+			if !found {
+				missing = append(missing, join(path, k))
+				continue
 			}
-			return out
+			// An explicit null is PRESENT but carries nothing, so a required
+			// object field set to null would otherwise zero-fill silently.
+			if child == nil {
+				missing = append(missing, join(path, k))
+			}
 		}
-		return nil
-	}
-	var missing []string
-	for _, k := range required {
-		if _, found := obj[k]; !found {
-			missing = append(missing, join(path, k))
+		props, _ := schema["properties"].(map[string]any)
+		for name, sub := range props {
+			subSchema, ok := sub.(map[string]any)
+			if !ok {
+				continue
+			}
+			if child, found := v[name]; found && child != nil {
+				missing = append(missing, missingRequired(subSchema, child, join(path, name))...)
+			}
 		}
-	}
-	props, _ := schema["properties"].(map[string]any)
-	for name, sub := range props {
-		subSchema, ok := sub.(map[string]any)
+		return missing
+
+	case []any:
+		// Every item is checked against the schema's `items`. One bad element in
+		// a list of authored distractors is a bad question.
+		items, ok := schema["items"].(map[string]any)
 		if !ok {
-			continue
+			return nil
 		}
-		if child, found := obj[name]; found {
-			missing = append(missing, missingRequired(subSchema, child, join(path, name))...)
+		var missing []string
+		for i, e := range v {
+			missing = append(missing, missingRequired(items, e, fmt.Sprintf("%s[%d]", path, i))...)
 		}
+		return missing
+
+	default:
+		// A schema that requires fields cannot be satisfied by a scalar or null,
+		// which is what makes decode("null") fail rather than zero-fill.
+		if len(required) == 0 {
+			return nil
+		}
+		out := make([]string, 0, len(required))
+		for _, k := range required {
+			out = append(out, join(path, k))
+		}
+		return out
 	}
-	return missing
 }
 
 func asStrings(v any) []string {

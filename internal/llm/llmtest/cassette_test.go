@@ -177,13 +177,26 @@ func TestTheKeyDerivesFromTheRequestNotTheBody(t *testing.T) {
 	a := llm.Request{Task: "veto", Model: "m", Prompt: "x"}
 	b := llm.Request{Task: "author", Model: "m", Prompt: "x"} // same wire body, different task
 
-	ka := key(withReq(a), body)
-	kb := key(withReq(b), body)
+	ctxA, ctxB := withReq(a), withReq(b)
+	ka := key(ctxA, body)
+	kb := key(ctxB, body)
 	if ka == kb {
 		t.Error("two tasks with the same wire body share a cassette; the second would overwrite the first")
 	}
-	if ka != llm.RequestHash(a) {
-		t.Errorf("key = %s, want llm.RequestHash = %s — the golden and the cassette must share one renderer", ka, llm.RequestHash(a))
+	// One renderer: the key is RequestHash of the request actually carried down,
+	// which is the EFFECTIVE one — zero fields resolved against the Config, so
+	// what is hashed is what was sent. Comparing against the caller's raw Request
+	// would pass while two different default models shared a recording.
+	effA, ok := llm.RequestFromContext(ctxA)
+	if !ok {
+		t.Fatal("no Request reached the transport")
+	}
+	if effA.Model == "" {
+		t.Error("the context carried an unresolved model; the key would not distinguish two configs")
+	}
+	if ka != llm.RequestHash(effA) {
+		t.Errorf("key = %s, want llm.RequestHash(effective) = %s — the golden and the cassette must share one renderer",
+			ka, llm.RequestHash(effA))
 	}
 }
 

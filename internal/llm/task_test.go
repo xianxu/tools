@@ -170,3 +170,65 @@ func TestDecodeRequiresNestedFieldsToo(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 }
+
+type arrInner struct {
+	Score  int    `json:"score"`
+	Detail string `json:"detail"`
+}
+
+type arrOuter struct {
+	Fits bool       `json:"fits"`
+	List []arrInner `json:"list"`
+}
+
+type nullableOuter struct {
+	Fits  bool     `json:"fits"`
+	Inner arrInner `json:"inner"`
+}
+
+// The invariant quantifies over the whole schema TREE, so the check must cover
+// every shape a schema can nest — not just the example a finding used. Written
+// against nested objects alone, it left objects inside ARRAYS unchecked, and
+// #10's authoring result is exactly a list of objects.
+func TestDecodeRequiresFieldsAtEveryShape(t *testing.T) {
+	t.Run("objects inside arrays", func(t *testing.T) {
+		for _, body := range []string{
+			`{"fits":true,"list":[{}]}`,
+			`{"fits":true,"list":[{"score":1}]}`,
+			`{"fits":true,"list":[{"score":1,"detail":"ok"},{"score":2}]}`,
+		} {
+			got, err := decode[arrOuter](body)
+			if err == nil {
+				t.Errorf("accepted %s as %+v", body, got)
+				continue
+			}
+			if got.Fits || got.List != nil {
+				t.Errorf("returned a partial value %+v with an error", got)
+			}
+			// The path names the position, or a bad item in a long list is
+			// undiagnosable.
+			if !strings.Contains(err.Error(), "list[") {
+				t.Errorf("error does not name the array position: %v", err)
+			}
+		}
+	})
+
+	t.Run("a complete list is accepted", func(t *testing.T) {
+		got, err := decode[arrOuter](`{"fits":true,"list":[{"score":1,"detail":"a"},{"score":2,"detail":"b"}]}`)
+		if err != nil {
+			t.Fatalf("rejected a complete payload: %v", err)
+		}
+		if len(got.List) != 2 || got.List[1].Detail != "b" {
+			t.Errorf("got %+v", got)
+		}
+	})
+
+	t.Run("an explicit null for a required object", func(t *testing.T) {
+		// Present but carrying nothing: without the nil check this zero-fills
+		// silently, which is the original Critical wearing a different hat.
+		got, err := decode[nullableOuter](`{"fits":true,"inner":null}`)
+		if err == nil {
+			t.Errorf("accepted an explicit null as %+v", got)
+		}
+	})
+}

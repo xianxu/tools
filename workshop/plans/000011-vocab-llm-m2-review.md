@@ -446,3 +446,182 @@ findings:
     detail: |
       schema.go:27 returns the cached map[string]any itself. A consumer doing `s, _ := llm.SchemaFor[T](); s["description"] = "..."` permanently changes what every later Run[T] sends on the wire and what requireSchemaFields reads. Either clone on read or document the value as read-only and return it through a type that says so; this is a new internal package five downstream issues will consume.
 ```
+
+---
+
+## Re-review — 2026-08-23T07:45:26-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 11 — LLM seam: Anthropic client, stateful fake, offline degradation |
+| repo | tools |
+| issue file | workshop/issues/000011-vocab-llm.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 85f6c9531b32c7798f2aaefe850f50a6ed0705fd..2ee0a68c101231c247324b2eda5f10b6c5077383 |
+| command | sdlc milestone-close --issue 11 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-23T07:45:26-07:00 |
+| verdict | REWORK |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The round-6 rework is real and I verified it by reversion, not by reading commit messages: removing the recursion from `missingRequired` reddens both subtests of `TestDecodeRequiresNestedFieldsToo`; stripping the context lookup out of `key()` reddens `TestTheKeyDerivesFromTheRequestNotTheBody` with the exact collision message; reverting `exchange.Response` to `json.RawMessage` reproduces BR-52's `ErrUnavailable` marshalling failure verbatim; and removing `clone` from *both* return paths reddens all three assertions of `TestSchemaIsolationAcrossCallers`, including the nested one. What blocks the boundary is that two of the round-6 findings were fixed at the site they named rather than across the class they named, and both residuals are silent-correctness failures that the shipped documentation asserts are fixed. Measured on the clean tree at `2ee0a68`: `decode[outer]({"fits":true,"list":[{}]})` returns `{Fits:true List:[{Score:0 Detail:""}]}` with `err=nil` while `task.go:129` now says the walk covers "EVERY depth" — BR-51 named "an object inside an array" in its own enumeration text; and two `Run[T]` calls under configured models `claude-opus-5` and `claude-sonnet-5` recorded to **one** cassette file (`4ea325a60ca6.json`), the second overwriting the first, because the key is taken before `params()` defaults `Model`/`Effort` — the identical silent-overwrite collision BR-50 was raised for, one field over. Neither is expensive to fix, but both land in the harness that five downstream issues are about to build on.
+
+## 1. Strengths
+
+- **`internal/llm/render.go:78` + `anthropic.go:87,102` — carrying the `Request` down by context is the right answer to a genuinely hard constraint.** A `RoundTripper` cannot see `Task`, and rather than inventing a second key definition the fix restored the single one. Reversion-verified: `key = body-c4aa8688543c, want llm.RequestHash = 360ebf3bb80e`.
+- **`internal/llm/llmtest/cassette.go:55` — storing the body as text plus its recorded `Content-Type` makes the whole `Client` interface recordable, and `TestCassetteRecordsAndReplaysAStream` asserts the thinking *signature* survives**, which only holds if the SDK's SSE decoder actually ran on replay. That is the property the transport placement was chosen for, now pinned rather than argued.
+- **`internal/llm/schema.go:45` — `clone` is deep, and the test that pins it is deep too.** `TestSchemaIsolationAcrossCallers` asserts a top-level write, a delete, *and* a nested write; the third is the one a shallow copy would pass. This is the direct application of the lesson filed at `workshop/lessons.md:668` ("the mutation must be the honest absence of the fix"), written and then honoured in the same round.
+- **`internal/llm/task.go:141` — the non-object branch is what makes `null` fail.** Measured: `decode[nullOuter]({"fits":true,"inner":null})` now returns the zero value and `missing required field(s) inner.score, inner.detail`. BR-51 listed explicit-null as an open question; that half was swept.
+- **`internal/llm/llmtest/reachable.go:21` — one helper rather than a check per suite** is the correct structural answer to BR-39's "the next site will forget", and both live suites call it (`conformance_test.go:37`, `capture_conformance_test.go:39`).
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**BR-51 remains open — the required check does not walk array items, and the doc comment now makes a stronger universal claim than before.** Measured against the shipped tree with `type arrOuter{Fits bool; List []arrInner}` where `arrInner{Score int; Detail string}`:
+
+```
+schema emitted: list.items = {required:[score detail], additionalProperties:false}
+decode[arrOuter](`{"fits":true,"list":[{}]}`)          -> {Fits:true List:[{Score:0 Detail:}]} err=<nil>
+decode[arrOuter](`{"fits":true,"list":[{"score":3}]}`) -> {Fits:true List:[{Score:3 Detail:}]} err=<nil>
+```
+
+`missingRequired` (`task.go:135`) recurses through `schema["properties"]` only; there is no `items` branch. `task.go:129` says *"walks the schema and the payload together, at EVERY depth"*, `task.go:61` says *"require every field the schema marks REQUIRED"*, `task.go:75` says *"it never returns a partially populated value with a nil error"*, and `atlas/llm.md:112` repeats it. `FuzzDecode` cannot catch it: its success assertion is hand-written for `answer.Reason`, so it does not range over result types with slices. #10's authoring result — an item with its distractors — is a slice by construction, so this is the shape the next consumer will hit first. Fix: add an `items` branch (and index the path, `list[0].detail`), and make the fuzz target's success assertion derive from the required set rather than naming a field.
+
+**BR-39 remains open in a new form — `SkipIfUnreachable` classifies a renamed model as "unreachable", so both live suites now silently skip on the drift they exist to detect.** Both named sites were wired to the helper, but the helper is untested and its one classification test is `errors.Is(err, llm.ErrUnavailable)`. Measured through the wire fake, which models the proxy's observed behaviour:
+
+```
+unknown model -> llm: unavailable: 502 ... "unknown provider for model claude-opus-9-does-not-exist"  ErrUnavailable=true
+400           -> llm: bad request: 400 ...                                                            ErrUnavailable=false
+```
+
+`atlas/llm.md`'s own "Known limitations" records that an unknown model reads as `ErrUnavailable`. So the day the proxy drops or renames `claude-opus-5`, `TestConformanceAgainstTheLiveService` and every subtest of `TestCaptureDriftAgainstTheLiveService` report SKIP — the quietest possible outcome for the loudest possible drift. Fix: probe reachability with something that cannot be confused with a model problem (a bare TCP/HTTP probe of `cfg.BaseURL`, or classify on `errors.Is(err, syscall.ECONNREFUSED)` / a `*net.OpError` rather than on the taxonomy class), and pin the helper with two tests — dead port → skip, fake serving a 502 for an unknown model → **no** skip.
+
+**N-A — the cassette key is computed before the Request is defaulted, so two different effective models share one recording (`single-source-consumer-not-derived`, 3rd in family).** Measured: `llm.Task[T]{Name:"veto", Prompt:"near-synonym?"}` — the documented shape, `Task.Model` zero means "use the Config default" (`task.go:27`) — run under `Config{Model:"claude-opus-5"}` and then `Config{Model:"claude-sonnet-5"}` wrote to the same file; the on-disk `request.model` is `claude-sonnet-5` and the opus recording is gone. `renderRequest` hashes `r.Model`/`r.Effort` as *declared*, while `params()` (`anthropic.go:66`) resolves them from `a.cfg` **below** the hash. Two consequences beyond the overwrite: `TestEveryMeaningfulFieldReachesTheHash` (`render_test.go:57`) passes while the property it asserts is false on the only production path; and a consumer's golden and its cassette describe different requests — `golden_schema_test.go:31` hand-writes `Model:"claude-opus-5", Effort:"high"` (hash `a11b39ae49fe`) where `Run[T]` sends `Model:""` (hash `fae0974f64b3`). **Do not fix this one field.** The rule BR-50 stated covers it: when two derivations of "what was asked" exist, one must derive from the other. Here `renderRequest` is a restatement of `params()` that omits defaulting. Either resolve `Model`/`Effort`/`System` onto the `Request` *before* `withRequest(ctx, r)` (one line in `Complete`/`Stream`, and then `RenderRequest` and the wire body agree by construction), or render from the marshalled params. Then the field-coverage table should be driven through `Run[T]` end-to-end, not over a hand-populated struct.
+
+## 4. Minor findings
+
+- `internal/llm/errors.go:92` — `ErrorForStop` has **zero references anywhere in the tree**, including tests, yet its doc says it "exposes the stop-reason mapping to llmtest, so a replayed recording reconstructs the same taxonomy member". The mechanism it existed for was removed by BR-38's fix (status replay). This is exactly the enumeration BR-50 wrote out — "for every exported identifier in `internal/llm` confirm a non-test caller exists or the export is justified in its doc" — run for `RequestHash`/`RenderRequest` and not for `ErrorForStop`. (`Run`/`SchemaFor` also have no non-test caller, but those are the declared M2 handoff and the plan says so.)
+- `internal/llm/llmtest/cassette_test.go:217` — `c := llm.New(...)` … `_ = c` inside `withReq`: a client constructed, never used, silenced. Same class as the `_ = llmtest.Capture` still sitting at `capture_conformance_test.go:142` (BR-42).
+- `internal/llm/llmtest/cassette.go:206` — `jsonEscape` is redundant: the envelope is built with `json.Marshal`, which escapes already. Measured, the miss message reaches the operator as `request was: {\\\"max_tokens\\\":8192,...\\\\\\\"obsequious\\\\\\\"...}` — triple-escaped, in the message whose whole job is to show what was asked. Drop `jsonEscape` and pass `string(body)`.
+- `internal/llm/capture_conformance_test.go:41` — the `skipUnreachable` closure re-derives `SkipIfUnreachable`'s classification inline. One rule, two spellings (ARCH-DRY); export a `SkipIfUnavailable(t, err)` sibling instead.
+- `internal/llm/llmtest/cassette.go:132-146` — the record path still returns raw IO/marshal errors from `RoundTrip`, which classify as `ErrUnavailable`. BR-52's fix removed the SSE instance; the *clause* "return a harness error that is not in the dependency's absorbable class" is only applied on the read path.
+- `workshop/plans/000011-vocab-llm-plan.md:1638` and `workshop/issues/000011-vocab-llm.md:146` both still say `llmtest.Golden`, which is not an identifier — the same string BR-34 and BR-50 each named for grep-verification. No `## Revisions` entry was appended for round 6's design changes (context-carried key, `exchange` shape, `SkipIfUnreachable` as new `llmtest` surface); the last entry is the round-5 one.
+- `README.md:115` is 120 characters in a file otherwise wrapped near 80 — an unwrapped edit artifact; base had no line over 102.
+- `internal/llm/llmtest/cassette_test.go:197-204` — `withReq` performs a real `Complete` with `MaxRetries(2)`, so `TestMaxTokensDoesNotMoveTheKey` spends ~4s in backoff. Cheap to avoid by exporting a context helper from `llm`.
+
+## 5. Test coverage notes
+
+Reversion-verified green→red this round, each mutation being the honest absence of the fix: `missingRequired`'s recursion (2 subtests), `key()`'s context lookup (2 tests, with the collision printed), `exchange.Response`'s type (the stream test, reproducing BR-52's exact error text), and `clone` removed from **both** return paths (3 assertions). `go test ./...` green, `go test -race ./internal/llm/...` clean, `go vet -tags conformance ./...` clean, tree clean at `2ee0a68` after every probe.
+
+The gaps are structural rather than incidental. `FuzzDecode`'s success branch asserts `got.Reason != ""` — a literal field of one fixture type — so it ranges over `answer` and nothing else; the invariant it is cited for ("never a partial value", `atlas/llm.md:114`) quantifies over all `T`, which is why the slice shape walked straight through. `SkipIfUnreachable` is new non-test code with no test at all, and it is the only thing standing between an operator and a false "everything is fine" on both live suites. The *effective* cassette key still has no field-coverage test — `TestEveryMeaningfulFieldReachesTheHash` tests `RequestHash` over a fully-populated struct, not over what `Run[T]` actually sends, which is how N-A stayed invisible. And `Cassettes`/`Transport` still has zero committed artifacts, so replay is only ever exercised against files the same test wrote seconds earlier; that is defensible while no consumer exists, but it means the first real recording is also the first real test of the path.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag.** Three duplications, all in the diff: `renderRequest` vs `params()` as two disagreeing derivations of "what was asked" (N-A, the consequential one); `skipUnreachable` re-deriving `SkipIfUnreachable`'s classification inline; `jsonEscape` re-doing `json.Marshal`'s escaping. The first is the one to fix structurally — defaulting the `Request` before it is hashed collapses all of it.
+- **ARCH-PURE — pass.** `renderRequest`, `renderSchema`, `RequestHash`, `decode`, `requireSchemaFields`, `missingRequired`, `asStrings`, `join`, `stripFence`, `excerpt`, `SchemaFor`, `clone` are all deterministic and unit-tested with no server, clock or filesystem; `render_test.go`, `task_test.go` and `schema_test.go` run with zero IO. `runLLMCheck` remains a thin shell over injected `getenv`/`newClient`. Every PURE row in the plan's Core concepts table exists at its stated path and holds.
+- **ARCH-PURPOSE — flag, and this is the recurring one.** Two findings this round were answered at the instance rather than the class *after the finding text had already written out the enumeration*: BR-51 named "an object inside an array" and got objects only; BR-50 named "for every exported identifier confirm a non-test caller" and got `RequestHash` but not `ErrorForStop`. The pattern is not carelessness — it is that the enumeration is being read as context rather than as the work item, which is precisely what `workshop/lessons.md:637` was filed to prevent. Before the next round, run each enumeration as a literal checklist and paste the grep.
+- **ARCH-MOCK — flag on coverage, pass on placement.** Production and test flow share the transport boundary, `Stream` is now recordable, and the taxonomy survives replay structurally — that is a strong seam. What is not sound is the live conformance check itself: it now skips on a class of drift it was built to catch (BR-39, above). A conformance check that can only ever pass or skip is not a conformance check. Fix that before `#10` starts trusting the captures.
+- **For the consumers next up:** `Task[T]`/`Run[T]` is well shaped and I would not change the surface. Two contract questions must be *written down* before it has five callers, because each consumer will otherwise answer them privately: does `decode` enforce required fields through slices (say yes, and implement it), and is the cassette keyed on the declared or the effective request (say effective, and default before hashing). Both are currently answered one way in the doc and the other way in the code.
+
+## 7. Plan revision recommendations
+
+Append a `## Revisions` entry to `workshop/plans/000011-vocab-llm-plan.md` — the last entry is the round-5 one, and round 6 changed the design again:
+
+- **Task 4 / Task 11:** the cassette key now derives from `llm.RequestHash` over a `Request` carried by context (`render.go:78`, `anthropic.go:87/102`), not from the wire body. Record that, and record the residual: the hash is taken **before** `params()` defaults `Model`/`Effort`, so the key does not cover the effective request. Task 11's embedded contract block still reads `// llmtest.Golden prints it for humans to diff, and llmtest.Cassette hashes it` — `llmtest.Golden` is still not an identifier, in the block BR-34's rule named for grep-verification.
+- **Task 4:** `exchange` now stores the response as text plus `ContentType`, so `Stream` is recordable; note that the record path's IO errors still surface as `ErrUnavailable`.
+- **Integration points table:** add rows for `llmtest.SkipIfUnreachable` (`internal/llm/llmtest/reachable.go`, new) and `llm.RequestFromContext` (`internal/llm/render.go`, new); both shipped and neither is listed.
+- **Task 10:** amend *"require every schema-required field present"* to what is true — required fields are enforced through nested objects and explicit nulls, **not** through array items — or implement the `items` walk and leave the wording.
+- **Task 12 / Task 8:** `SkipIfUnreachable` distinguishes unreachable from drifted only for transport failures; a renamed model skips. State the limit or fix it.
+- **`workshop/issues/000011-vocab-llm.md:146`:** the M2 checkbox text says `llmtest.Golden`; correct it to `AssertGolden` in the same edit.
+
+```findings
+dispose:
+  - id: BR-39
+    disposition: not-addressed
+    note: |
+      Both sites now call SkipIfUnreachable, but the helper is untested and skips on a renamed model (502 to ErrUnavailable) — the drift it exists to catch.
+  - id: BR-42
+    disposition: not-addressed
+    note: |
+      `_ = llmtest.Capture` still present at capture_conformance_test.go:142.
+  - id: BR-43
+    disposition: not-addressed
+    note: |
+      TestAQueueStillAdvancesWhileItHasEntries unchanged at fake_test.go:167, still the shape of TestQueueServesInOrder (fake_test.go:82).
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      main.go:278 still returns on *llmCheck before the arity switch; `define -llm-check hello` ignores the word.
+  - id: BR-45
+    disposition: not-addressed
+    note: |
+      llmcheck.go:41 still hardcodes MaxTokens 2048 rather than reading cfg.MaxTokens.
+  - id: BR-46
+    disposition: not-addressed
+    note: |
+      Measured on the shipped tree: SchemaFor[string]() = {type:string, additionalProperties:false}; SchemaFor[map[string]string]() = an object permitting no keys.
+  - id: BR-50
+    disposition: addressed
+    note: |
+      Reversion-verified: removing the context lookup in key() reddens TestTheKeyDerivesFromTheRequestNotTheBody with the collision printed. See the new finding for the pre-defaulting residual.
+  - id: BR-51
+    disposition: not-addressed
+    note: |
+      Objects and explicit nulls are walked; array items are not — decode[arrOuter](`{"fits":true,"list":[{}]}`) still returns a partial value with err=nil, and task.go:129 now claims "EVERY depth".
+  - id: BR-52
+    disposition: addressed
+    note: |
+      Reversion-verified: restoring json.RawMessage reproduces the exact ErrUnavailable marshalling failure in TestCassetteRecordsAndReplaysAStream.
+  - id: BR-53
+    disposition: not-addressed
+    note: |
+      cassette_test.go:32 still does `defer func() { *update = false }()` — the literal, not the prior value.
+  - id: BR-54
+    disposition: addressed
+    note: |
+      Reversion-verified with the clone removed from BOTH return paths: all three assertions of TestSchemaIsolationAcrossCallers redden, including the nested one.
+findings:
+  - id: new
+    severity: Important
+    family: single-source-consumer-not-derived
+    title: |
+      The cassette key is taken before the Request is defaulted, so two different effective models collide into one recording
+    detail: |
+      Measured on the clean tree: llm.Task[T]{Name:"veto", Prompt:"near-synonym?"} — the documented shape, since task.go:27 says a zero Model means "use the Config default" — recorded under Config{Model:"claude-opus-5"} and then Config{Model:"claude-sonnet-5"} wrote to ONE file, 4ea325a60ca6.json, whose on-disk request.model is claude-sonnet-5; the opus recording is gone. renderRequest hashes r.Model/r.Effort as DECLARED while params() (anthropic.go:66) resolves them from a.cfg below the hash. Two further consequences: TestEveryMeaningfulFieldReachesTheHash (render_test.go:57) passes while the property it names is false on the only production path, and a consumer's golden and its cassette describe different requests — golden_schema_test.go:31 hand-writes Model/Effort (hash a11b39ae49fe) where Run[T] sends them empty (hash fae0974f64b3).
+      THIS IS THE 3RD FINDING IN FAMILY `single-source-consumer-not-derived`. Do not fix Model alone. The RULE, already stated at BR-50 and now failing on a different axis: where two derivations of one fact exist, one must derive from the other — here renderRequest is a restatement of params() that omits defaulting. Resolve Model/Effort/System onto the Request before withRequest(ctx, r) in Complete and Stream, so RenderRequest and the wire body agree by construction, and drive the field-coverage table through Run[T] end to end rather than over a hand-populated struct.
+  - id: new
+    severity: Minor
+    family: dead-code
+    title: |
+      ErrorForStop is an exported function with zero references whose doc still asserts the role the rework removed
+    detail: |
+      grep for ErrorForStop across the tree returns only its own definition and comment (errors.go:88-92). It was added this window so "a replayed recording reconstructs the same taxonomy member", and BR-38's fix replaced that mechanism with status replay. Also in this class: `c := llm.New(...)` followed by `_ = c` in withReq (cassette_test.go:217), and BR-42's `_ = llmtest.Capture`.
+      THIS IS THE 5TH FINDING IN FAMILY `dead-code`. Do not delete only this function. The RULE is BR-50's own enumeration, which was run for RequestHash and RenderRequest and not for the rest: for every exported identifier in internal/llm, confirm a non-test caller exists or the export is justified in its doc — and for every `_ = X` statement, confirm it does something other than satisfy the compiler. Run that grep and paste it, rather than fixing the three sites this finding happens to name.
+  - id: new
+    severity: Minor
+    family: plan-revision-not-appended
+    title: |
+      Round 6 changed the design again with no Revisions entry, and two artifacts still name llmtest.Golden
+    detail: |
+      The plan's last `## Revisions` entry is the round-5 one. Undeclared since: the cassette key moved to a context-carried RequestHash, `exchange` gained ContentType and became text, and llmtest.SkipIfUnreachable is new exported surface with no row in the Integration points table. Plan line 1638 and issue line 146 both still say `llmtest.Golden`, which is not an identifier — the same string BR-34 and BR-50 each named for grep-verification.
+      THIS IS THE 3RD FINDING IN FAMILY `plan-revision-not-appended`. The RULE stated at BR-41 was "diff the plan's Core concepts and Task lists against the tree at each boundary and append what moved" — it was run once, at round 5, and not at round 6. Make the diff a step of the boundary itself rather than a response to a finding, and grep the plan and issue for every identifier they name in the same pass.
+  - id: new
+    severity: Minor
+    family: stdlib-reimplemented
+    title: |
+      jsonEscape double-escapes the request the cassette miss message exists to show
+    detail: |
+      cassette.go:206. The envelope is built with json.Marshal, which escapes already, so the operator sees `request was: {\\\"max_tokens\\\":8192,...\\\\\\\"obsequious\\\\\\\"...}` — measured. The message's whole purpose is to be readable without recomputing a hash.
+      THIS IS THE 3RD FINDING IN FAMILY `stdlib-reimplemented`. The RULE: before hand-rolling a string transform, check whether the encoder that consumes the value already performs it — a manual escape applied to a value that is later marshalled is always a double-escape, never a no-op. Sweep the diff for hand-written quoting/escaping helpers and confirm each sits outside an encoder, not inside one.
+```
