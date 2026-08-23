@@ -344,7 +344,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// no word, which the log then discards at read time as indistinguishable
 		// from a torn record (BR-4).
 		if oneShot.kind != cmdDefine {
-			// canReplay is false: there is no session here to replay into.
+			// inSession is false: a one-shot has no loop to press return in.
 			fmt.Fprintf(stderr, "define: %s\n", nothingSays(oneShot, false))
 			return 2
 		}

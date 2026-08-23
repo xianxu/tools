@@ -842,3 +842,49 @@ completed.
 The gate's own behaviour here is the model to copy: given no parseable verdict it
 recorded `unknown`, said "a gate/prompt bug?", and refused to close. An
 unparseable result is not a pass and not a fail.
+
+## A rule stated in a comment is not a rule the suite enforces (define #16 M1)
+
+Four boundary-review rounds on one milestone, and the same two families kept
+coming back — `test-asserts-nothing` reached its 4th finding, `doc-overstates-code`
+its 4th. Each round I fixed what the finding named, wrote the rule in a comment,
+and the next round found the same family somewhere else. The gate's own summary
+was the diagnosis: *not converging: fix rules, not instances.*
+
+What actually made them converge was narrower than "state the rule":
+
+**Name the enumeration the rule quantifies over, and make every cell fail on its
+own.** "`-raw` never asks" quantifies over `{forced, unforced} × {one-shot, piped,
+editor}` — six cells. The guard went on the unforced fallback, the README stated
+the absolute, and three cells asked anyway. A table with six rows in the test is
+not enough either: two of the six passed for the very failure they existed to
+catch, because they asserted the *absence* of a string.
+
+**An assertion that pins "X did not happen" must assert the positive observable
+that distinguishes X from every other outcome.** Checking that stderr lacks the
+ask message is satisfied by a *different wrong* message. Assert what did happen —
+the `no dictionary entry` the scripting contract promises.
+
+**An assertion on a message compares the bytes the user receives to a literal
+written in the test.** `note: noteEmptyLiteral` is the constant compared to
+itself: it proves a branch was selected and nothing about what the reader sees.
+A doubled backslash shipped behind exactly that assertion — `define '\'` printed
+`type a word after "\\"` — and four rounds of placement fixes never touched it,
+because every round pinned *where* a message was written and none pinned *what
+it said*.
+
+**A test that injects a double must inject where production reads, or prove the
+injection is live.** `withStore` only fills nils, so a `newStore` supplied
+alongside an already-set field is silently discarded and every assertion over the
+double ranges over an empty slice. Keep one control assertion that goes red when
+the injection dies.
+
+**In a loop that echoes, an assertion on stdout is satisfied by the echo.** The
+recall test passed with `hist.Add` deleted, because the raw editor re-renders the
+line on every keystroke and the text was there from *typing*.
+
+And one that is not about tests: **a defect fixed once will be reintroduced by
+the next branch that needs the same shape.** `replLines` collapsed a dispatch's
+exit code into a boolean — the defect a comment 45 lines above names by number,
+fixed for commands in #15 and re-made for questions in #16. The fix is a single
+sink every branch feeds, not a third careful branch.

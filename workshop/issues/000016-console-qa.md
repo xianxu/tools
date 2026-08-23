@@ -215,6 +215,7 @@ Created from the operator conversation that broadened `define-learn` to an adapt
 program. See the project file's `## Log` scope event for the surrounding decisions.
 
 ### 2026-08-23
+- 2026-08-23: closed M1 — go test ./... + go vet green. Boundary rounds 1-3 (BR-1..BR-17) all fixed as rules with their enumerations, none deferred. Round 3: (BR-14) assertDidNotAsk now asserts the POSITIVE observable per cell — "no dictionary entry" unforced, the refusal forced — so the miss-branch guard removal reddens 3 unforced cells instead of 1; the two mayAsk guards are documented as producing different observables rather than as redundant. (BR-15) one fail(code) sink so a per-line dispatch code survives the loop (the BR-16 defect #15 fixed for commands, reintroduced by #16 for questions); READMEs four exit-code absolutes measured 8/8 on the built binary across {one-shot,piped}. Also: a recording cooked() proves the ask message is written inside cooked mode (the placement family had passed 4 rounds unasserted); both hatches symmetric in both session states; one nothingSays for what had been three note sites. Every rule mutation-verified individually.; review verdict: FIX-THEN-SHIP
 
 `sdlc start-plan` run; durable plan written to
 `workshop/plans/000016-console-qa-plan.md`. Three decisions worth surfacing
@@ -423,3 +424,40 @@ The pattern across three rounds is worth naming: **every one of my "class" fixes
 was itself an instance until the test asserted the positive observable.** Stating
 a rule in a comment and enumerating cells in a table are not the same as having
 each cell fail on its own.
+
+### 2026-08-23 — M1 round 4: the message nobody read
+
+The gate cleared (round cap reached), and demoted BR-19 past it with a warning
+worth more than the pass: *no later gate picks this up.* It was right to say so —
+it had found a **shipped bug**.
+
+`define '\'` printed ``type a word after "\\"``, two backslashes. `noteEmptyLiteral`
+is a Go **raw** string, so the escape I wrote survived into the output; and
+`repl_test.go` asserted `note: noteEmptyLiteral` — the constant compared to
+itself, which proves a branch was selected and nothing about what the user reads.
+Four rounds had pinned every message's *placement* and none its *text*.
+
+Its grid measured three more behaviours as unasserted, all now covered by
+literal-text assertions and each mutation-verified: the note text, the bare-hatch
+piped exit code, and the elision in both ask messages (`truncateQuestion(q.text)`
+→ `q.text` was green).
+
+Two Minor findings of the same shape, fixed rather than carried:
+
+- **"the ONE place" is an absolute too.** `nothingSays`'s own doc comment and the
+  atlas both claimed uniqueness while `replayInPlace` held a byte-identical copy
+  of its replay sentence — and that copy is the *live* path for a bare Enter with
+  nothing current. Routed through the one function.
+- **The parameter I introduced to distinguish two cases was fed a literal at both
+  loop sites.** `canReplay: true` where a note-less `cmdNothing` is reachable only
+  when nothing IS current (a blank line with a current word parses to
+  `cmdReplay`), so it named a condition it could not mean. Renamed to `inSession`,
+  which is what actually varies: the one-shot has no loop to press return in.
+- The `lost the terminal` report went from two copies to four in this diff, with
+  M2's streaming positioned to add a fifth. One `lostTerminal` helper.
+
+Verified on the built binary, not just in tests: `define '\'` and `echo '\' |
+define` both print ``type a word after "\"`` and exit 2.
+
+`workshop/lessons.md` gains the rules these four rounds cost, under *"A rule
+stated in a comment is not a rule the suite enforces"*.

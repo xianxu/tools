@@ -400,3 +400,74 @@ func assertNoBareNewline(t *testing.T, s, where string) {
 		}
 	}
 }
+
+// What #16's messages SAY, asserted against literals written here.
+//
+// Every earlier round pinned a message's PLACEMENT and none pinned its text, so
+// the family recurred four times and a wrong message shipped: `define '\'`
+// printed `type a word after "\\"`, two backslashes, because noteEmptyLiteral is
+// a Go RAW string and the escape survived into the output. repl_test.go asserted
+// `note: noteEmptyLiteral` — the constant compared to itself, which proves a
+// branch was selected and nothing about what the user reads (BR-19).
+//
+// The rule: an assertion on a message compares the bytes the user receives
+// against a literal expectation written in the test. Never the constant.
+func TestWhatTheMessagesSay(t *testing.T) {
+	for _, tc := range []struct {
+		name, line string
+		wantCode   int
+		wantErr    string
+	}{
+		{"a bare question mark", "?", 2, `define: type a question after "?"` + "\n"},
+		{"a bare backslash", `\`, 2, `define: type a word after "\"` + "\n"},
+	} {
+		// {?, \} x {one-shot, piped}: the same bytes and the same code from both,
+		// which is what README's "exit 2" absolute quantifies over.
+		t.Run(tc.name+"/one-shot", func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := run(t.Context(), []string{tc.line}, testDeps(t), strings.NewReader(""), &out, &errb)
+			assertMessage(t, code, tc.wantCode, errb.String(), tc.wantErr)
+		})
+		t.Run(tc.name+"/piped", func(t *testing.T) {
+			rig := newAudioRig(t, "sycophantic", true)
+			var out, errb bytes.Buffer
+			code := replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+				strings.NewReader(tc.line+"\n"), &out, &errb, true, false)
+			assertMessage(t, code, tc.wantCode, errb.String(), tc.wantErr)
+		})
+	}
+}
+
+// The ask messages, both routes — including that the question is ELIDED, which
+// nothing asserted: replacing truncateQuestion(q.text) with q.text was green.
+func TestWhatTheAskMessagesSay(t *testing.T) {
+	long := "what is the difference between sycophantic and obsequious in formal writing"
+	for _, tc := range []struct {
+		name    string
+		q       question
+		wantErr string
+	}{
+		{"unforced names the word it could not find", question{text: "how so"},
+			"define: no model configured; `how so` is not a word\n"},
+		{"forced claims nothing about the text", question{text: "why", forced: true},
+			"define: no model configured; cannot answer `why`\n"},
+		{"a long question is elided", question{text: long},
+			"define: no model configured; `what is the difference between sycophant…` is not a word\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var errb bytes.Buffer
+			code := ask(options{}, &errb, tc.q)
+			assertMessage(t, code, 1, errb.String(), tc.wantErr)
+		})
+	}
+}
+
+func assertMessage(t *testing.T, code, wantCode int, got, want string) {
+	t.Helper()
+	if got != want {
+		t.Errorf("stderr = %q, want %q", got, want)
+	}
+	if code != wantCode {
+		t.Errorf("exit = %d, want %d", code, wantCode)
+	}
+}

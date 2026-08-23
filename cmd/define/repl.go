@@ -41,7 +41,7 @@ const (
 const noteEmptyQuestion = `type a question after "?"`
 
 // noteEmptyLiteral is its counterpart for the other hatch.
-const noteEmptyLiteral = `type a word after "\\"`
+const noteEmptyLiteral = `type a word after "\"`
 
 // parseREPLLine is the loop's decision table, kept pure so it is a unit test
 // rather than something only reachable through a fake terminal.
@@ -102,11 +102,18 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 // editor — each with its own default text and line ending, and M2 was about to
 // add a fourth. The line ending stays with the caller, because only the raw loop
 // needs "\r\n"; the words do not vary by caller and so do not live there.
-func nothingSays(c replCommand, canReplay bool) string {
+// inSession, not "canReplay": what varies between the callers is whether there
+// IS a loop to press return in, not whether something is currently loaded. A
+// note-less cmdNothing is reachable only when nothing is current — a blank line
+// WITH a current word parses to cmdReplay — so a "can replay right now" reading
+// would have selected the replay sentence in the one state where there is
+// definitionally nothing to replay, and both loop sites were passing a literal
+// true to a parameter that could not mean what it said.
+func nothingSays(c replCommand, inSession bool) string {
 	if c.note != "" {
 		return c.note
 	}
-	if canReplay {
+	if inSession {
 		return "type a word, or press return to replay the last one"
 	}
 	return "type a word"

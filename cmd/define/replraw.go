@@ -119,6 +119,15 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	}
 	draw()
 
+	// One report for "raw mode could not be re-entered", because the editor would
+	// then keep drawing frames a cooked terminal echoes over — silently unusable.
+	// #16 took this from two copies to four, and M2's streaming adds a fifth.
+	lostTerminal := func(err error) int {
+		finish()
+		fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
+		return 1
+	}
+
 	// ONE entry into the ask path for this loop, reached from two places: a
 	// forced question ("?…") and a dictionary miss that reads as one. M2 hangs
 	// the interrupter and the streaming writer here, so a second copy of this
@@ -191,9 +200,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 						cc.setTimes = func(n int) { opt.times = n }
 						dispatchCommand(cmd, commands, cc)
 					}); err != nil {
-						finish()
-						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
-						return 1
+						return lostTerminal(err)
 					}
 					fmt.Fprint(stdout, "\r\n")
 					draw()
@@ -207,9 +214,7 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 					hist.Add(cmd.recallLine())
 					fmt.Fprint(stdout, "\r\n")
 					if err := askInSession(question{text: cmd.question, forced: true}); err != nil {
-						finish()
-						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
-						return 1
+						return lostTerminal(err)
 					}
 					continue
 				}
@@ -234,21 +239,14 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 				fmt.Fprint(stdout, "\r\n")
 				out, err := submitLine(ctx, cooked, d, opt, cmd, hist, &sess, stdout, stderr)
 				if err != nil {
-					// Raw mode could not be re-entered. The editor would keep
-					// drawing frames a cooked terminal echoes over — silently
-					// unusable — so stop and say why rather than swallow it.
-					finish()
-					fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
-					return 1
+					return lostTerminal(err)
 				}
 				if out.ask != "" {
 					// The unforced route into the SAME closure the forced one
 					// uses. submitLine has already recorded the line for recall
 					// and left the session's current word alone.
 					if err := askInSession(question{text: out.ask}); err != nil {
-						finish()
-						fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
-						return 1
+						return lostTerminal(err)
 					}
 					continue
 				}
@@ -270,7 +268,11 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 func replayInPlace(ctx context.Context, d deps, opt options, current string, stdout, stderr io.Writer) {
 	switch {
 	case current == "":
-		fmt.Fprint(stderr, eraseLine+"define: type a word, or press return to replay the last one\r\n")
+		// Through nothingSays, not a copy of its sentence: this is the live path
+		// for a bare Enter with nothing current, and a byte-identical duplicate
+		// is what made "the one place that answers this" false the moment it was
+		// written (BR-20).
+		fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, nothingSays(replCommand{}, true))
 	case opt.noAudio || opt.times <= 0:
 		fmt.Fprint(stderr, eraseLine+"define: nothing to replay: audio is off\r\n")
 	default:

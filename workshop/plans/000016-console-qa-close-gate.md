@@ -329,6 +329,97 @@ rounds:
           round: 3
       boundary: M1
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-23T16:50:25-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: not-addressed
+          note: Third round unchanged - hist.Add(cmd.recallLine())->hist.Add(line) and deleting ask's whole q.forced branch both revert with the suite green.
+          round: 4
+        - id: BR-14
+          disposition: addressed
+          note: assertDidNotAsk asserts the positive observable; dropping the miss-branch mayAsk now reddens 3 of 3 unforced cells, not 1.
+          round: 4
+        - id: BR-15
+          disposition: addressed
+          note: fail(code) sink reddens piped/forced on revert; measured 8 of 8 exit-code cells on the built binary against README. Coverage of the swept cells raised in N-1.
+          round: 4
+        - id: BR-16
+          disposition: addressed
+          note: Recording cooked is a live observable - removing cooked(...) from askInSession reddens both ask rows.
+          round: 4
+        - id: BR-17
+          disposition: not-addressed
+          note: Plan still has three Revisions entries, none a boundary round; askUnavailable still named, -raw/mayAsk absent, Core concepts still places ask.go in M2.
+          round: 4
+        - id: BR-18
+          disposition: addressed
+          note: Reverting the bare-backslash arm reddens both hasCurrent rows of TestParseREPLLine.
+          round: 4
+      findings:
+        - id: BR-19
+          severity: Important
+          title: 'no test asserts what any of #16''s messages say, and a doubled backslash shipped as a result'
+          detail: |-
+            This is the 4th finding in family test-asserts-nothing, so the deliverable
+            is the rule. Rule - an assertion on a message must compare the bytes the
+            user receives against a literal expectation written in the test;
+            referencing the production constant asserts only that a branch was
+            selected, not that its text is right. Shipped defect - noteEmptyLiteral
+            (repl.go:44) is a Go RAW string literal containing `\\`, so both
+            `define '\'` and `echo '\' | define` print
+            `define: type a word after "\\"` with a doubled backslash, while its
+            sibling bare-"?" note is correct. The only assertions are repl_test.go:43
+            and :45, which compare note to noteEmptyLiteral - the constant to itself.
+            Measured prevalence, 4 of 5 message/code behaviours this milestone
+            introduced are unasserted at the point of delivery, all GREEN on revert -
+            deleting nothingSays's `if c.note != ""` early return; deleting
+            `if cmd.note != "" { fail(2) }` at repl.go:261 (BR-15's own sweep, correct
+            in code but unpinned, so README's "a bare ? or \ with nothing after it"
+            exit 2 has no piped assertion); and replacing truncateQuestion(q.text)
+            with q.text in ask's two messages. Only the placement fix (eraseLine) goes
+            red, which is why the family recurs - each round pinned a placement and
+            never a text. One table over {?, \} x {one-shot, piped} asserting exit code
+            AND literal stderr text closes all four rows.
+          family: test-asserts-nothing
+          round: 4
+        - id: BR-20
+          severity: Minor
+          title: nothingSays is documented as "the ONE place" while replayInPlace holds a live duplicate of its replay sentence
+          detail: |-
+            This is the 4th finding in family doc-overstates-code. Do not re-fix the
+            site. Rule - a consolidation claimed as "the ONE place" must be verified by
+            enumerating the copies it consolidated; a uniqueness claim is an absolute
+            and it quantifies over the whole tree. nothingSays's doc comment
+            (repl.go:100-104) and atlas/define.md:553 both assert it is the one place
+            that answers "this line meant nothing - why", but replayInPlace
+            (replraw.go, `case current == ""`) still holds a byte-identical copy of
+            that sentence, and it is the LIVE path for the raw editor's bare Enter
+            with nothing current - pinned by TestEditorLoopBareEnterWithNoCurrentWord
+            (editorloop_test.go:235). Same rule, second half - nothingSays(cmd, true)
+            at repl.go:257 hardcodes true where sess.hasCurrent() is in scope, and a
+            note-less cmdNothing is reachable ONLY when hasCurrent is false (a blank
+            line with a current word parses to cmdReplay), so that site selects "press
+            return to replay the last one" in the one state where there is nothing to
+            replay. Measured on the built binary. The text is pre-#16 and faithfully
+            ported; the parameter introduced to distinguish the two cases is what is
+            fed a literal.
+          family: doc-overstates-code
+          round: 4
+        - id: BR-21
+          severity: Minor
+          title: four byte-identical "lost the terminal" blocks in runEditor, two added by this diff
+          detail: |-
+            replraw.go:195, :211, :241, :250 - the same
+            finish(); Fprintf("define: lost the terminal: %v"); return 1 three-liner,
+            up from 2 copies before this window. M2's Task 11 adds streaming inside
+            askInSession and is positioned to add a fifth. One helper, on the same
+            argument nothingSays was extracted on (ARCH-DRY).
+          family: stdlib-reuse
+          round: 4
+      boundary: M1
+      blocked: false
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -534,11 +625,69 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   hasCurrent=false, so the asymmetry between the two hatches at the prompt
   is unasserted. Harmless today; worth one row.
 
+## Round 4 — 2026-08-23T16:50:25-07:00 (claude) — passed
+
+### Disposed
+
+- BR-12 — not-addressed — Third round unchanged - hist.Add(cmd.recallLine())->hist.Add(line) and deleting ask's whole q.forced branch both revert with the suite green.
+- BR-14 — addressed — assertDidNotAsk asserts the positive observable; dropping the miss-branch mayAsk now reddens 3 of 3 unforced cells, not 1.
+- BR-15 — addressed — fail(code) sink reddens piped/forced on revert; measured 8 of 8 exit-code cells on the built binary against README. Coverage of the swept cells raised in N-1.
+- BR-16 — addressed — Recording cooked is a live observable - removing cooked(...) from askInSession reddens both ask rows.
+- BR-17 — not-addressed — Plan still has three Revisions entries, none a boundary round; askUnavailable still named, -raw/mayAsk absent, Core concepts still places ask.go in M2.
+- BR-18 — addressed — Reverting the bare-backslash arm reddens both hasCurrent rows of TestParseREPLLine.
+
+### Raised
+
+- **BR-19** [Important] `test-asserts-nothing` no test asserts what any of #16's messages say, and a doubled backslash shipped as a result
+  This is the 4th finding in family test-asserts-nothing, so the deliverable
+  is the rule. Rule - an assertion on a message must compare the bytes the
+  user receives against a literal expectation written in the test;
+  referencing the production constant asserts only that a branch was
+  selected, not that its text is right. Shipped defect - noteEmptyLiteral
+  (repl.go:44) is a Go RAW string literal containing `\\`, so both
+  `define '\'` and `echo '\' | define` print
+  `define: type a word after "\\"` with a doubled backslash, while its
+  sibling bare-"?" note is correct. The only assertions are repl_test.go:43
+  and :45, which compare note to noteEmptyLiteral - the constant to itself.
+  Measured prevalence, 4 of 5 message/code behaviours this milestone
+  introduced are unasserted at the point of delivery, all GREEN on revert -
+  deleting nothingSays's `if c.note != ""` early return; deleting
+  `if cmd.note != "" { fail(2) }` at repl.go:261 (BR-15's own sweep, correct
+  in code but unpinned, so README's "a bare ? or \ with nothing after it"
+  exit 2 has no piped assertion); and replacing truncateQuestion(q.text)
+  with q.text in ask's two messages. Only the placement fix (eraseLine) goes
+  red, which is why the family recurs - each round pinned a placement and
+  never a text. One table over {?, \} x {one-shot, piped} asserting exit code
+  AND literal stderr text closes all four rows.
+- **BR-20** [Minor] `doc-overstates-code` nothingSays is documented as "the ONE place" while replayInPlace holds a live duplicate of its replay sentence
+  This is the 4th finding in family doc-overstates-code. Do not re-fix the
+  site. Rule - a consolidation claimed as "the ONE place" must be verified by
+  enumerating the copies it consolidated; a uniqueness claim is an absolute
+  and it quantifies over the whole tree. nothingSays's doc comment
+  (repl.go:100-104) and atlas/define.md:553 both assert it is the one place
+  that answers "this line meant nothing - why", but replayInPlace
+  (replraw.go, `case current == ""`) still holds a byte-identical copy of
+  that sentence, and it is the LIVE path for the raw editor's bare Enter
+  with nothing current - pinned by TestEditorLoopBareEnterWithNoCurrentWord
+  (editorloop_test.go:235). Same rule, second half - nothingSays(cmd, true)
+  at repl.go:257 hardcodes true where sess.hasCurrent() is in scope, and a
+  note-less cmdNothing is reachable ONLY when hasCurrent is false (a blank
+  line with a current word parses to cmdReplay), so that site selects "press
+  return to replay the last one" in the one state where there is nothing to
+  replay. Measured on the built binary. The text is pre-#16 and faithfully
+  ported; the parameter introduced to distinguish the two cases is what is
+  fed a literal.
+- **BR-21** [Minor] `stdlib-reuse` four byte-identical "lost the terminal" blocks in runEditor, two added by this diff
+  replraw.go:195, :211, :241, :250 - the same
+  finish(); Fprintf("define: lost the terminal: %v"); return 1 three-liner,
+  up from 2 copies before this window. M2's Task 11 adds streaming inside
+  askInSession and is positioned to add a fifth. One helper, on the same
+  argument nothingSays was extracted on (ARCH-DRY).
+
 ## Open findings
 
 - **BR-12** [Minor] `forced-route-enumeration` the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
-- **BR-14** [Important] `test-asserts-nothing` assertDidNotAsk passes for the failure it exists to catch, in 2 of TestRawNeverAsks's 6 cells
-- **BR-15** [Important] `doc-overstates-code` the piped loop discards the usage code ask() computes, so -raw plus "?" exits 1 where README states 2
-- **BR-16** [Minor] `raw-mode-message-placement` the two ask rows of TestRawLoopMessagePlacement assert nothing about the ask message
 - **BR-17** [Minor] `plan-bookkeeping` the plan still describes an M1 the code no longer implements, despite round 2 recommending the Revisions entry
-- **BR-18** [Minor] `forced-route-enumeration` a bare "\" with a current word replays audio while a bare "?" gets its note
+- **BR-19** [Important] `test-asserts-nothing` no test asserts what any of #16's messages say, and a doubled backslash shipped as a result
+- **BR-20** [Minor] `doc-overstates-code` nothingSays is documented as "the ONE place" while replayInPlace holds a live duplicate of its replay sentence
+- **BR-21** [Minor] `stdlib-reuse` four byte-identical "lost the terminal" blocks in runEditor, two added by this diff
