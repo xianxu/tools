@@ -153,6 +153,7 @@ Two review boundaries — each closes with its own `sdlc milestone-close`.
 Created as part of the `define-learn` project.
 
 ### 2026-08-22 — M1 built
+- 2026-08-22: closed M1 — go test ./... green; suite passes against fake AND live proxy (-tags conformance 6/6); 10 behaviours mutation-checked by reversion incl. all four BR-22 fixtures; doc-claim sweep re-grepped across code AND plan; review verdict: FIX-THEN-SHIP
 
 Seven tasks: contract, taxonomy, config, wire fake, real client, obligation
 suite, `AGENTS.local.md` carve-out. Full repo suite green (`go test ./...`).
@@ -184,6 +185,40 @@ Three things the build discovered that the plan did not predict:
 Also: a stalled-stream fake that `time.Sleep`s blocks `httptest.Server.Close`,
 which turned every stall test into a 30-second cleanup hang — the package suite
 ran 65s instead of 6s. It waits on a cleanup channel now.
+
+### 2026-08-22 — M1 boundary review (4 rounds, FIX-THEN-SHIP)
+
+`Review-Verdict: FIX-THEN-SHIP` · `Review-Window: b5d50ea2..78dedc02` · sidecar
+`workshop/plans/000011-vocab-llm-m1-review.md`.
+
+Four rounds, 27 findings, twice returning *"not converging: fix rules, not
+instances"* — a fair call: round 1 patched sites, and two of those patches created
+new instances of families the review had already named.
+
+**The one real defect.** `Stream` had two branches doing opposite things for the
+same situation: the stall path discarded every accumulated byte and returned
+`ErrUnavailable`, while the salvage path fifteen lines below preserved the partial
+answer as `ErrTruncated` — and the atlas stated the preserving behaviour as the
+contract. A mid-answer hang told the caller "stop trying" when the right
+instruction was "skip this question". It survived because no fixture could reach
+it: the fake stalled on the first `content_block_delta`, which is a *thinking*
+delta in the capture.
+
+**Three rules the rounds established**, all now in `lessons.md`:
+
+1. *Reversion-check the test you add, not only the fix it pins.* Three tests I
+   wrote could not fail — a bound dominated by a second bound distinguishes
+   nothing.
+2. *"Captures, never literals" is about content, not framing.* Over-applying it
+   left four named invariants untestable; block count and header presence are
+   transport shape, so constructing a fixture is legitimate.
+3. *A finding is a claim about the tree.* One "fix" never applied and was reported
+   as done; one sweep stopped at the package boundary while the finding named the
+   plan.
+
+**Closed at the boundary:** 10 behaviours mutation-checked by reversion, the
+obligation suite green against the fake **and** the live proxy (6/6, `-tags
+conformance`), capture shapes enforced offline in Go, and `--race` clean.
 
 ## Revisions
 

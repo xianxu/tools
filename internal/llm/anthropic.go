@@ -36,7 +36,12 @@ func New(c Config) Client {
 	// one protection the SDK does not supply.
 	c.Timeout = cmp.Or(c.Timeout, defaultTimeout)
 	c.StallAfter = cmp.Or(c.StallAfter, defaultStallAfter) // negative = disabled, preserved
-	c.SlowEvery = cmp.Or(c.SlowEvery, defaultSlowEvery)
+	// cmp.Or only replaces the ZERO value, so a negative slipped through to
+	// time.NewTicker, which panics — on the watcher goroutine, where no caller
+	// can recover. Config is public input; out-of-range is as ordinary as unset.
+	if c.SlowEvery <= 0 {
+		c.SlowEvery = defaultSlowEvery
+	}
 	c.MaxTokens = cmp.Or(c.MaxTokens, defaultMaxTokens)
 	c.Model = cmp.Or(c.Model, defaultModel)
 	c.Effort = cmp.Or(c.Effort, defaultEffort)

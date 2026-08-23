@@ -715,3 +715,253 @@ findings:
       survives. Round 2 recommended this in its advisory section, where it was never
       tracked as a finding and therefore never disposed.
 ```
+
+---
+
+## Re-review — 2026-08-22T20:26:51-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 11 — LLM seam: Anthropic client, stateful fake, offline degradation |
+| repo | tools |
+| issue file | workshop/issues/000011-vocab-llm.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | b5d50ea29e4041e5681696fd47bc4e973c8f6c10^..78dedc02fea1a5f50873473e3972524b4024ec4b |
+| command | sdlc milestone-close --issue 11 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-22T20:26:51-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Ignoring 6 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["/Users/xianxu/workspace/tools"].hasTrustDialogAccepted: true in /Users/xianxu/.claude.json.
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Every open finding from round 3 is genuinely closed, and I verified the hard one by reversion rather than by reading: all four BR-22 instances now go red when deleted (`TestTextJoinsEveryTextBlock`, `TestSystemPromptReachesTheWire`, `TestOnSlowReportsThePhase`, `TestRefusalCarriesItsReason` — six reversions run this round, six red). BR-16's cited sites are all corrected, `Fake.t` is gone, `next()` moved below the unknown-model check, both hand-rolled `contains` helpers are stdlib now, and the plan carries an appended `## Revisions` entry for the boundary rounds. Full suite green including `-race`, `go mod tidy` a no-op, `-tags conformance` vets, `llm-probe.sh verify` exits 0 offline. What keeps this from SHIP is one shipped latent panic — a negative `SlowEvery` with `OnSlow` set panics `non-positive interval for NewTicker` on a background goroutine, unrecoverable, in a package whose *sibling* duration field documents negative as "disabled" — plus a fake gap where the branch adjacent to the one this round made loud is still silent. Worth naming plainly: **every finding below is a family repeat.** The code is converging; the enumerations are not.
+
+## 1. Strengths
+
+- **The BR-22 fixtures are constructed where captures couldn't reach, and each one is load-bearing.** `Reply.SplitText` (fake.go:127) exists solely so "Text is every text block joined" can be told apart from "Text takes the first" — I deleted the join and `TestTextJoinsEveryTextBlock` went red. Same for the system-prompt plumbing, `watch()`, and the fake's refusal `stop_details`. That is the rule applied, not the instance patched.
+- **`TestNewDefaultsEveryConfigField` (response_test.go:114) asserts on the constructed config, in-package.** It fails naming whichever default was dropped, so it covers the class rather than the field the finding happened to name — and its own comment explains why the behavioural version couldn't work.
+- **`TestScriptedTextOnAStreamingRequestFailsLoudly` finally enters BR-15c's branch**, and reverting the guard reddens it. The choice of 400 over 500 (fake.go:388) is right and the comment says why: 5xx is in the SDK's retry set, so a retried complaint would draw the next queue entry and swallow itself.
+- **`transient()` (errors.go:42) derives the retryable set from the transport's own policy** instead of restating it — the structural answer to BR-14, not two added cases.
+- **`AGENTS.local.md:15-25` amends the rule in the same change that breaks it**, and bounds the carve-out ("If a would-be `internal/` package could be described without naming an external service, the first-consumer rule still applies"). That is how an exception stays an exception.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — `internal/llm/anthropic.go:270`: a negative `SlowEvery` panics on a goroutine the caller cannot recover from.** *2nd in family `partial-constructor-defaults`.*
+
+Measured:
+
+```
+panic: non-positive interval for NewTicker
+time.NewTicker(0x0?)
+github.com/xianxu/tools/internal/llm.(*anthropicClient).watch.func2()
+	/Users/xianxu/workspace/tools/internal/llm/anthropic.go:270
+```
+
+from `llm.New(llm.Config{BaseURL: …, APIKey: …, SlowEvery: -1, OnSlow: f})`. It fires on the watcher goroutine, so no `recover` at the call site can catch it — the process dies.
+
+This is invited by the package's own API. `config.go:52-55` documents `StallAfter` as *"disabling requires a NEGATIVE value"*; `config.go:59` documents `SlowEvery` only as *"Zero takes the default"*. Two duration fields on one struct, opposite conventions, one of them fatal.
+
+Do NOT fix this site. The rule BR-4 needed and never got: **`New` must give every `Config` field a defined meaning for every value it can hold, and sibling fields must not disagree about what a sentinel means.** Measured prevalence 3, all three verified:
+
+| field | negative value does | documented? |
+|---|---|---|
+| `StallAfter` | disables the bound | yes |
+| `SlowEvery` | **panics** off-goroutine | no |
+| `Timeout` | every call returns `ErrUnavailable: context deadline exceeded` instantly — silently absorbed, not a config error | no |
+
+`TestNewDefaultsEveryConfigField` cannot catch any of these: it asserts non-zero, and `-1` is non-zero. The sweep is the four numeric `Config` fields, and the fix is one rule applied in `New` (clamp or reject), not a guard at line 270.
+
+**I2 — `internal/llm/llmtest/fake.go:403`: a `.json` capture scripted against a streaming request is silently replaced by a different capture.** *3rd in family `fake-silently-ignores-inputs`.*
+
+```go
+name := reply.Capture
+if name == "" || !strings.HasSuffix(name, ".sse") {
+    name = "stream-sample.sse"
+}
+```
+
+Measured — `f.Script("x", Reply{Capture: "message-truncated.json"})` then `Stream`:
+
+```
+err  = <nil>
+Text = "**Obsequious.**\n\nThe clue after the dash — public praise for"
+Stop = "end_turn"   blocks=2
+```
+
+The test asked for the `max_tokens` truncation specimen and got the healthy `end_turn` stream, with no error. A test written to pin truncation-during-stream would pass while asserting nothing about its own fixture — the same shape as `lessons.md`'s new "an assertion whose subject is empty cannot fail" entry, one level up.
+
+This is the un-swept half of BR-11's own enumeration. BR-11's rule was *"either honour them or fail loudly on the combination"*; this round made `Reply{Text/Stop}` loud (fake.go:381) and left `Reply{Capture}` silent, ten lines above. Do NOT fix this site — state the rule (**every `Reply` field that cannot be served on the path a request took is a caller mistake and answers with a 400 naming the field; silence is never the alternative**) and sweep the `Reply` struct field by field. M2's cassette sequences run through this path.
+
+## 4. Minor findings
+
+- `internal/llm/anthropic_test.go:444` — *3rd in family `enforcement-not-pinned-by-a-test`.* `TestNegativeStallAfterDisablesTheBound` survives full reversion: I changed `New` to `if c.StallAfter <= 0 { c.StallAfter = defaultStallAfter }` and only `TestNewPreservesADisabledStallBound` went red. Its assertion (`elapsed >= 1s` against `Timeout: 2s`) cannot distinguish "stall disabled, deadline ends it at 2s" from "stall defaulted to 90s, deadline ends it at 2s" — the 2s bound dominates either way. Its comment claims otherwise. The rule the family never enumerated: **reversion-check the test you add, not only the fix it pins; a bound dominated by a second bound distinguishes nothing.** Prevalence 1 of the 6 tests added this round (the other 5 verified red).
+- `internal/llm/llmtest/fake.go:162` — *2nd in family `fake-tuned-to-its-fixture`.* `splitInto` chops on byte offsets, so multibyte text is cut mid-rune and `json.Marshal` substitutes U+FFFD. Measured: `Reply{Text: "obséquieux — très flagorneur, vraiment", SplitText: 3}` round-trips as `"obséquieux ��� très flagorneur, vraiment"`. `TestTextJoinsEveryTextBlock` passes only because its fixture is ASCII, and every committed capture contains em-dashes. Introduced by this round's own BR-22.1 fix.
+- `internal/llm/llmtest/fake.go:114,118` — *3rd in family `dead-code`.* `Reply.Body` and `Reply.NoThinking` have zero setters anywhere in the tree; `NoThinking` gates fake.go:339 and `Body` gates fake.go:289, so both are documented knobs no fixture turns. Round 3 named them in prose (§5) and never raised them, so they were never disposed. The rule needs widening from "a field whose last reader a fix removed" to "**the sweep enumerates the fake's exported surface, and a knob no fixture turns is dead the same as an unread field.**"
+- `workshop/plans/000011-vocab-llm-plan.md:516-518` — *3rd in family `docs-claim-absent-surface`.* The Task 1 contract block still declares `Phase string // "connect" | "waiting" | "streaming" | "done"` and `Bytes int`, which the same document's Revisions entry at :2040 says are gone and the tree agrees are gone. Round 3's sweep covered the plan's prose (:837, :345-346, both now correct) and stopped at its embedded code blocks — which Task 1 Step 3 explicitly warns "get pasted verbatim."
+
+## 5. Test coverage notes
+
+Six reversions run this round, six results, all recorded above. Coverage of the transport's named invariants is now genuinely complete: text joining, system plumbing, `OnSlow`/`Progress`, `StopDetails`, the unknown-model set, the loud unstreamable-`Reply` branch, and both `New` defaulting behaviours all fail against pre-fix code.
+
+Remaining gaps, in order of how likely they are to bite M2:
+
+- **Out-of-range `Config` values are untested entirely** (I1). `TestNewDefaultsEveryConfigField` covers zero; nothing covers negative, and one of the three is a panic.
+- **`Usage.InputTokens` and `CacheCreationTokens` are never asserted individually** — only via `PreambleTokens()`, which sums `CacheCreation + CacheRead`, so swapping the two field assignments in `buildResponse` is invisible to the suite. Round 3 noted this in prose; still open, still untracked.
+- **The `.sse` capture path has one fixture.** `serveStream` accepts a `Capture` name but only `stream-sample.sse` exists, so I2's silent substitution has never had a second file to substitute *away from*.
+- **Live conformance is unexercised here** — no key on this machine; it skipped, which is the correct shape.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `transient()` is one answer to "is this worth retrying," derived rather than restated. `buildResponse` and `watch` stay shared across both paths so `Text` assembly and the phase vocabulary cannot fork. `cmp.Or` replaced the three `or*` helpers and the two `contains` helpers are gone from `_test.go` as well. No new duplication in the diff.
+- **ARCH-PURE — pass.** `buildResponse` is package-level, side-effect free, and now tested from a capture with `os.ReadFile` and no server — the claim its doc comment makes is true this round. `Resolve` stays pure over the lookup. `splitInto`, `knownModel`, `joinBlocks`, `classifyStop`, `classifyStatus`, `transient` are all pure; nothing in the diff buries logic in IO.
+- **ARCH-PURPOSE — flag.** BR-22 was answered at the class with constructed fixtures, which is the right instinct and reversion-proven. But six findings this round, six family repeats, and three of them (I2, `dead-code`, `enforcement-not-pinned-by-a-test`) are the *adjacent half* of an enumeration a prior fix wrote too narrowly: `Reply{Text}` made loud and `Reply{Capture}` left silent; a field whose reader vanished removed while two fields no fixture ever sets stayed; the fix reversion-checked while the test added to pin it was not. The ledger is reporting that "name the class" is being read as "name the sites the finding listed."
+- **ARCH-MOCK — flag.** Placement stays exemplary — the double is on the wire, stateful across calls, models the *measured* 502 rather than the direct API's 400, and the live half exists and vets under the tag. Two flags, both new: the fake silently serves a capture other than the one scripted (I2), and its one constructed-content helper corrupts non-ASCII (`splitInto`). A fake that answers a question different from the one asked is the failure mode the shared obligation suite exists to prevent, one layer down.
+
+**For M2:** `Run[T]` must call `classifyStop` before `decode`, with `message-truncated.json` as the fixture and a test that fails against a decode-first implementation. `renderRequest` must marshal the schema `map[string]any` with sorted keys or cassettes miss at random. And `--llm-check` is the first *production* caller of `Resolve`/`Redact` — both are test-only today, so the whole config path lands unexercised by production flow until then, and I1's negative-`SlowEvery` panic sits on that path.
+
+## 7. Plan revision recommendations
+
+1. **Append a `## Revisions` entry recording that M1 over-delivered the M1/M2 split.** Three items the issue (`workshop/issues/000011-vocab-llm.md`) and the plan both assign to M2 shipped in M1: the atlas page (Task 14, landed at `4505160`), live conformance behind the build tag (Task 12, `internal/llm/conformance_test.go`), and the recorded SSE sample (Task 8, `testdata/stream-sample.sse`). Both artifacts now under-describe what M1 delivered, and M2's checklist claims work already done.
+2. **Correct plan:516-518** — the `Progress` struct in Task 1 Step 2 still declares four phases and `Bytes`, contradicting the tree and the plan's own Revisions entry at :2040 (Minor finding above).
+3. **Record the `SlowEvery` sentinel decision in the Robustness bar.** The bar specifies `StallAfter`'s semantics precisely and says nothing about `SlowEvery`'s, which is how the two fields came to disagree (I1). State what a negative value means for every duration field, so `New`'s clamp has a spec to satisfy.
+
+```findings
+dispose:
+  - id: BR-16
+    disposition: addressed
+    note: |
+      All four cited sites plus round 3's three re-cited sites verified correct against the tree; one uncited instance survives at plan:516 and is raised as the family repeat.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      All four instances pinned by constructed fixtures; each verified red by reversion this round against go test ./internal/llm/...
+  - id: BR-23
+    disposition: addressed
+    note: |
+      Both hand-rolled contains helpers gone; errors_test.go:87 and captures_test.go:70,123 now use strings.Contains / slices.Contains.
+  - id: BR-24
+    disposition: addressed
+    note: |
+      Fake.t is gone from the struct and from NewFake; grep for a testing.T field in fake.go returns only the Capture and NewFake parameters.
+  - id: BR-25
+    disposition: addressed
+    note: |
+      f.next() now runs after the unknown-model check, with the rationale recorded at the call site.
+  - id: BR-26
+    disposition: addressed
+    note: |
+      A fifth Revisions entry ("M1 boundary review, three rounds") is appended at plan:1986 with the rules the rounds produced.
+findings:
+  - id: new
+    severity: Important
+    family: partial-constructor-defaults
+    title: |
+      A negative SlowEvery panics on the watcher goroutine, where no caller can recover
+    detail: |
+      This is the 2nd finding in family partial-constructor-defaults. Do NOT fix
+      this site — the rule is: New must give every Config field a defined meaning
+      for every value it can hold, and sibling duration fields must not disagree
+      about what a sentinel means. Measured prevalence 3, all verified this round.
+      llm.New(Config{BaseURL, APIKey, SlowEvery: -1, OnSlow: f}) panics
+      "non-positive interval for NewTicker" at anthropic.go:270 on a goroutine the
+      caller cannot recover from, killing the process. Negative Timeout instead
+      makes every call return ErrUnavailable instantly — silently absorbed rather
+      than reported as misconfiguration. Only StallAfter has a documented negative
+      meaning (config.go:52-55 says disabling REQUIRES a negative value), which is
+      what invites a caller to try the same on SlowEvery, documented at config.go:59
+      as "Zero takes the default" and nothing more. TestNewDefaultsEveryConfigField
+      asserts non-zero, so -1 passes it.
+  - id: new
+    severity: Important
+    family: fake-silently-ignores-inputs
+    title: |
+      A .json capture scripted against a streaming request is silently replaced by stream-sample.sse
+    detail: |
+      This is the 3rd finding in family fake-silently-ignores-inputs. Do NOT fix
+      this site — the rule is: every Reply field that cannot be served on the path
+      a request took is a caller mistake and answers with a 400 naming the field,
+      and the sweep covers the Reply struct field by field rather than the one
+      branch a finding named. internal/llm/llmtest/fake.go:403 falls back to
+      stream-sample.sse for any Capture not ending in .sse. Measured: scripting
+      Reply{Capture: "message-truncated.json"} against Stream returns err=nil,
+      Stop="end_turn" and the Obsequious text from stream-sample.sse — a different
+      capture with a different stop_reason than the one asked for. This is the
+      un-swept half of BR-11's own enumeration: the adjacent Reply{Text/Stop}
+      branch was made loud this round at fake.go:381, ten lines above. M2's
+      cassette sequences run through this path.
+  - id: new
+    severity: Minor
+    family: enforcement-not-pinned-by-a-test
+    title: |
+      TestNegativeStallAfterDisablesTheBound survives full reversion of the behaviour it names
+    detail: |
+      This is the 3rd finding in family enforcement-not-pinned-by-a-test. Do NOT
+      fix this site — the rule the family never enumerated is: reversion-check the
+      TEST you add, not only the fix it pins, because a bound dominated by a second
+      bound distinguishes nothing. Verified: changing New to
+      "if c.StallAfter <= 0 { c.StallAfter = defaultStallAfter }" reddens only
+      TestNewPreservesADisabledStallBound; anthropic_test.go:444 stays green,
+      because its assertion (elapsed >= 1s against Timeout 2s) holds whether the
+      stall bound is disabled or defaulted to 90s — the total deadline ends the
+      call at ~2s either way. Its comment claims it makes the documented escape
+      hatch reachable and tested. Prevalence 1 of the 6 tests added this round; the
+      other 5 were each verified red.
+  - id: new
+    severity: Minor
+    family: fake-tuned-to-its-fixture
+    title: |
+      splitInto chops on byte offsets, so any multibyte scripted text round-trips corrupted
+    detail: |
+      This is the 2nd finding in family fake-tuned-to-its-fixture. Do NOT fix this
+      site — the rule is: a constructed fixture helper must be correct for the
+      inputs the committed captures actually contain, not only for the ASCII string
+      its first caller passes. internal/llm/llmtest/fake.go:162 slices on len(s)/n,
+      so a rune spanning a boundary is cut and json.Marshal substitutes U+FFFD.
+      Measured: Reply{Text: "obsequieux — tres flagorneur, vraiment", SplitText: 3}
+      comes back with the em-dash replaced by three U+FFFD, so Response.Text is not
+      what was scripted. TestTextJoinsEveryTextBlock passes only because its
+      fixture is ASCII; every committed capture contains em-dashes. Introduced by
+      this round's own BR-22.1 fix.
+  - id: new
+    severity: Minor
+    family: docs-claim-absent-surface
+    title: |
+      The plan's Task 1 contract block still declares four Progress phases and a Bytes field
+    detail: |
+      This is the 3rd finding in family docs-claim-absent-surface. Do NOT fix this
+      site — the rule needs widening: the sweep's enumeration includes embedded
+      code blocks in plan artifacts, not only prose and production files.
+      workshop/plans/000011-vocab-llm-plan.md:516-518 declares
+      Phase string // "connect" | "waiting" | "streaming" | "done" and Bytes int,
+      which llm.go corrected to two phases with Bytes removed and which the same
+      document's own Revisions entry at plan:2040 declares gone. Round 3's sweep
+      fixed the plan's prose (plan:837, plan:345-346, both verified correct now)
+      and stopped before its code blocks — which Task 1 Step 3 explicitly warns
+      "get pasted verbatim", the reason a stale one is a hazard rather than a typo.
+  - id: new
+    severity: Minor
+    family: dead-code
+    title: |
+      Reply.Body and Reply.NoThinking are documented knobs that no fixture in the tree turns
+    detail: |
+      This is the 3rd finding in family dead-code. Do NOT fix these two instances —
+      the rule needs widening from "a field whose last reader a fix removed" to
+      "the sweep enumerates the fake's exported surface, and a knob no fixture
+      turns is dead the same as an unread field." internal/llm/llmtest/fake.go:114
+      (Body) and :118 (NoThinking) each gate a production branch in the fake
+      (fake.go:289 and :339) and neither is set anywhere in the tree, so both
+      branches are reachable but unexercised — the shape BR-15c named. Round 3
+      identified both in its prose section 5 and never raised them, so they were
+      never tracked or disposed.
+```

@@ -2,6 +2,7 @@ package llm_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"strings"
@@ -438,28 +439,6 @@ func dribblingServer(t *testing.T) string {
 	return "http://" + l.Addr().String()
 }
 
-// Negative StallAfter disables the bound, which is what the doc now promises.
-// Without this the documented escape hatch would be unreachable and untested —
-// the exact shape of the claim BR-16 caught.
-func TestNegativeStallAfterDisablesTheBound(t *testing.T) {
-	f := llmtest.NewFake(t)
-	f.Script("x", llmtest.Reply{Stall: true})
-	c := llm.New(llm.Config{
-		BaseURL: f.URL, APIKey: "sk-test-1234567890",
-		StallAfter: -1, Timeout: 2 * time.Second,
-	})
-	start := time.Now()
-	_, err := c.Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"}, nil)
-	if err == nil {
-		t.Fatal("expected the total deadline to end it")
-	}
-	// With stall detection off, the TOTAL deadline is what ends the call — so it
-	// must last past the stall default's reaction time, not be cut short by it.
-	if elapsed := time.Since(start); elapsed < time.Second {
-		t.Errorf("returned after %s — stall detection is still active despite StallAfter < 0", elapsed)
-	}
-}
-
 // BR-15c — the loud branch for an unstreamable scripted Reply was entered by
 // nothing in the tree.
 func TestScriptedTextOnAStreamingRequestFailsLoudly(t *testing.T) {
@@ -578,5 +557,94 @@ func TestRefusalCarriesItsReason(t *testing.T) {
 	}
 	if got.StopDetails.Category == "" || got.StopDetails.Explanation == "" {
 		t.Errorf("StopDetails = %+v, want category and explanation", got.StopDetails)
+	}
+}
+
+// Out-of-range Config values are as ordinary as unset ones, and one of them used
+// to panic on the watcher goroutine where no caller could recover: cmp.Or only
+// replaces the ZERO value, so a negative SlowEvery reached time.NewTicker.
+func TestNegativeConfigValuesDoNotPanic(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Text: "ok"})
+	c := llm.New(llm.Config{
+		BaseURL: f.URL, APIKey: "sk-test-1234567890",
+		SlowEvery: -1, MaxTokens: -5,
+		OnSlow: func(llm.Progress) {},
+	})
+	if _, err := c.Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"}); err != nil {
+		t.Fatalf("negative config values broke the call: %v", err)
+	}
+}
+
+// The fixture is deliberately NOT ASCII. splitInto chopped byte offsets, so
+// multibyte text was cut mid-rune and json.Marshal substituted U+FFFD — invisible
+// to an ASCII fixture, while every committed capture contains em-dashes.
+func TestTextJoinsMultibyteBlocksWithoutCorruption(t *testing.T) {
+	const answer = "obséquieux — très flagorneur, vraiment"
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Text: answer, SplitText: 3})
+	got, err := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != answer {
+		t.Errorf("Text = %q, want %q — blocks were split mid-rune", got.Text, answer)
+	}
+	if strings.ContainsRune(got.Text, '�') {
+		t.Error("replacement character in the joined text")
+	}
+}
+
+// A .json capture on a streaming request used to be silently swapped for
+// stream-sample.sse, so a test would assert against a response it never asked for.
+func TestJSONCaptureOnAStreamingRequestFailsLoudly(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Capture: "message-thinking.json"})
+	_, err := client(t, f.URL).Stream(t.Context(), llm.Request{Task: "t", Prompt: "x"}, nil)
+	if err == nil {
+		t.Fatal("a .json capture was silently served as the SSE sample")
+	}
+	if !strings.Contains(err.Error(), "not a stream") {
+		t.Errorf("err = %v, want the fake's explanation", err)
+	}
+}
+
+// InputTokens and CacheCreationTokens were only ever asserted through
+// PreambleTokens(), which SUMS CacheCreation + CacheRead — so swapping the two
+// assignments in buildResponse was invisible to the whole suite.
+func TestUsageFieldsAreCarriedIndividually(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.ServeRecorded("message-thinking.json")
+	got, err := client(t, f.URL).Complete(t.Context(), llm.Request{Task: "t", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := struct {
+		Usage struct {
+			InputTokens         int64 `json:"input_tokens"`
+			OutputTokens        int64 `json:"output_tokens"`
+			CacheCreationTokens int64 `json:"cache_creation_input_tokens"`
+			CacheReadTokens     int64 `json:"cache_read_input_tokens"`
+			Details             struct {
+				ThinkingTokens int64 `json:"thinking_tokens"`
+			} `json:"output_tokens_details"`
+		} `json:"usage"`
+	}{}
+	if err := json.Unmarshal(llmtest.Capture(t, "message-thinking.json"), &raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []struct {
+		name      string
+		got, want int64
+	}{
+		{"InputTokens", got.Usage.InputTokens, raw.Usage.InputTokens},
+		{"OutputTokens", got.Usage.OutputTokens, raw.Usage.OutputTokens},
+		{"CacheCreationTokens", got.Usage.CacheCreationTokens, raw.Usage.CacheCreationTokens},
+		{"CacheReadTokens", got.Usage.CacheReadTokens, raw.Usage.CacheReadTokens},
+		{"ThinkingTokens", got.Usage.ThinkingTokens, raw.Usage.Details.ThinkingTokens},
+	} {
+		if f.got != f.want {
+			t.Errorf("%s = %d, want %d (from the capture)", f.name, f.got, f.want)
+		}
 	}
 }

@@ -111,11 +111,6 @@ type Reply struct {
 	Text    string // invented text, wrapped in a realistic envelope
 	Stop    string // "" means "end_turn"
 	Status  int    // non-zero: reply with this HTTP status instead
-	Body    string // non-zero Status only: exact error body
-
-	// NoThinking omits the leading thinking block. The default INCLUDES one,
-	// because that is what the live service does on any non-trivial prompt.
-	NoThinking bool
 	// SplitText serves the answer as N separate text blocks rather than one.
 	//
 	// Constructed rather than captured, deliberately: no committed capture has
@@ -160,18 +155,23 @@ func knownModel(m string) bool { return knownModels[m] }
 // splitInto chops s into n roughly equal pieces, so a multi-text-block response
 // can be served without inventing what the model said — only how it was framed.
 func splitInto(s string, n int) []string {
-	if n < 2 || len(s) < n {
+	// RUNES, not bytes. Byte offsets cut multibyte text mid-character and
+	// json.Marshal then substitutes U+FFFD, so a fixture containing an em-dash —
+	// which every committed capture does — would round-trip corrupted while an
+	// ASCII fixture passed.
+	r := []rune(s)
+	if n < 2 || len(r) < n {
 		return []string{s}
 	}
-	size := len(s) / n
+	size := len(r) / n
 	var out []string
 	for i := 0; i < n; i++ {
 		start := i * size
 		end := start + size
 		if i == n-1 {
-			end = len(s)
+			end = len(r)
 		}
-		out = append(out, s[start:end])
+		out = append(out, string(r[start:end]))
 	}
 	return out
 }
@@ -286,11 +286,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	if reply.Status != 0 {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(reply.Status)
-		b := reply.Body
-		if b == "" {
-			b = fmt.Sprintf(`{"type":"error","error":{"type":"api_error","message":"scripted %d"}}`, reply.Status)
-		}
-		fmt.Fprint(w, b)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":"scripted %d"}}`, reply.Status)
 		return
 	}
 	if rec.Streaming() {
@@ -335,14 +331,13 @@ func (f *Fake) serveJSON(w http.ResponseWriter, reply Reply) {
 	if stop == "" {
 		stop = "end_turn"
 	}
-	var blocks []map[string]any
-	if !reply.NoThinking {
-		// The default has a thinking block, because the live service does. A fake
-		// whose default is the easy case is how a suite goes green against a
-		// client that returns "" in production.
-		blocks = append(blocks, map[string]any{
-			"type": "thinking", "thinking": "", "signature": "scripted-signature",
-		})
+	// A scripted reply always carries a thinking block, because the live service
+	// does on any non-trivial prompt. A fake whose default is the easy case is how
+	// a suite goes green against a client that returns "" in production. The
+	// text-only shape is covered by a real capture (message-schema.json), so it
+	// needs no knob here — and a knob no fixture turns is dead code.
+	blocks := []map[string]any{
+		{"type": "thinking", "thinking": "", "signature": "scripted-signature"},
 	}
 	if reply.SplitText > 1 {
 		for _, part := range splitInto(reply.Text, reply.SplitText) {
@@ -400,7 +395,14 @@ func (f *Fake) serveStream(w http.ResponseWriter, reply Reply) {
 		return
 	}
 	name := reply.Capture
-	if name == "" || !strings.HasSuffix(name, ".sse") {
+	if name != "" && !strings.HasSuffix(name, ".sse") {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"type":"error","error":{"type":"api_error","message":`+
+			`"llmtest: capture %q is not a stream; a .json capture on a streaming request `+
+			`would silently serve stream-sample.sse instead"}}`, name)
+		return
+	}
+	if name == "" {
 		name = "stream-sample.sse"
 	}
 	raw, err := captures.ReadFile("testdata/" + name)

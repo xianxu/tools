@@ -503,3 +503,67 @@ Same shape as this repo's older `ErrNoAudio`/`ErrFetchFailed` split. When adding
 error, ask what a caller does differently on it — if the answer is "nothing", it
 does not need to be a new class; if two existing classes lead to opposite actions,
 they must not be one.
+
+## Reversion-check the test you ADD, not only the fix it pins (define #11)
+
+Three times in one boundary review I added a test that could not fail:
+
+1. a containment check against a needle the fixture leaves empty;
+2. a stall-default test bounded by a 3s context, which ends the call whether or
+   not the default applied;
+3. a "negative disables the bound" test with a 2s `Timeout`, which dominates
+   either way.
+
+Each read as a guard. Each was green with the thing it "pinned" deleted.
+
+The rule that covers all three: **a bound dominated by a second bound
+distinguishes nothing.** After adding a test, revert the fix and watch THAT test
+redden — the same discipline already applied to production fixes, applied to the
+test itself. And when the honest observable is a config value rather than a
+behaviour, assert the config: an in-package check on the constructed value caught
+the deletion of *any* default, where the behavioural version caught none.
+
+## A fixture tuned to itself proves nothing (define #11)
+
+Two instances, one round apart:
+
+- The unknown-model fixture was `claude-not-a-real-model`, and the buggy rule it
+  was meant to pin special-cased any name containing `not-a-real`. Reverting the
+  fix left the suite green. **A fixture must not encode the pre-fix
+  implementation's escape hatch** — use ordinary values (`claude-opus-6`).
+- A multi-block splitter chopped byte offsets, cutting multibyte text mid-rune.
+  Its test passed because the fixture was ASCII, while every real capture contains
+  em-dashes. **Pick fixture data from the shape of real inputs, not from what is
+  convenient to type.**
+
+## "Captures, never literals" is about content, not framing (define #11)
+
+A rule that a fake must serve only recorded responses — never invented ones —
+prevented tests from asserting against a guess at what a model says. Correct, and
+over-applied: it left four load-bearing behaviours untestable, because no
+committed capture happened to exhibit the needed *shape*. All three captures carry
+exactly one text block, so "join every text block" could not be distinguished from
+"take the first" — a property asserted in three separate places and pinned by
+nothing.
+
+The line: **what the model SAID must come from a capture; how the response is
+FRAMED — block count, header presence, stop_details — is transport shape, and
+constructing it is legitimate.** Where the code singles a behaviour out as
+load-bearing, the fixture must separate it from the alternative it warns against,
+even if that fixture has to be built.
+
+## A finding is a claim about the tree; sweep the tree, not the diff (define #11)
+
+Two failures of the same shape in one review:
+
+- I reported an edit as applied when the batch had aborted before writing it. The
+  reviewer found the unchanged line by reading the file. **Re-grep after a scripted
+  edit; a script that raised halfway is not a partial success.**
+- A doc-claim sweep covered `internal/llm/*.go` and stopped, while the finding had
+  explicitly named the plan file — and a later round found the same stale sentences
+  still alive in the plan's *embedded code blocks*, which the plan itself warns
+  "get pasted verbatim".
+
+**Enumerate where the class can live before fixing any instance of it**: source,
+tests, embedded code blocks, plan prose, atlas, and the script comments. Then
+re-run the finding's own measurement, not a proxy for it.

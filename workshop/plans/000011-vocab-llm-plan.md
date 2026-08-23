@@ -513,9 +513,8 @@ type StopDetails struct {
 // identical from outside.
 type Progress struct {
 	Task    string
-	Phase   string // "connect" | "waiting" | "streaming" | "done"
+	Phase   string // "waiting" | "streaming" — the two the transport distinguishes
 	Elapsed time.Duration
-	Bytes   int
 }
 ```
 
