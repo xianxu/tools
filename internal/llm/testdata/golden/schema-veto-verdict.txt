@@ -1,0 +1,24 @@
+task:   veto-distractor
+model:  claude-opus-5
+effort: high
+--- system ---
+You judge whether a candidate distractor would also fit a cloze blank.
+--- prompt ---
+Would `obsequious` also correctly fill the blank?
+--- schema ---
+{
+  "additionalProperties": false,
+  "properties": {
+    "fits": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "fits",
+    "reason"
+  ],
+  "type": "object"
+}

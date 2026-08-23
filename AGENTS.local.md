@@ -12,6 +12,18 @@ no shared runtime, no daemon, no cross-tool coupling beyond `internal/`.
 - **`internal/` is earned, not anticipated.** Code moves there on the *second*
   consumer, never the first (ARCH-DRY cuts both ways — a one-caller "shared"
   package is speculative generality).
+
+  **One carve-out, and it is narrow: an external service transport.** A package
+  that owns a seam to something outside this repo — its auth, its retries, its
+  error taxonomy, its stateful fake and its live conformance suite — is repo
+  infrastructure from the first consumer, because the alternative is the second
+  tool copying all five. `internal/llm` was created under this rule (operator
+  decision, 2026-08-22, tools#11).
+
+  The carve-out does NOT extend to domain logic. `internal/llm` owns the
+  transport and owns no prompts: a prompt is domain knowledge and lives with the
+  consumer that needs it. If a would-be `internal/` package could be described
+  without naming an external service, the first-consumer rule still applies.
 - **A tool must justify a slot on `$PATH`** in one sentence. If it can't, it
   belongs in `construct/dev-aliases.sh` as a shell function instead.
 

@@ -1,0 +1,136 @@
+package llm
+
+import (
+	"cmp"
+	"fmt"
+	"net/http"
+	"time"
+)
+
+const (
+	// The local cli-proxy-api is the DEFAULT, not a fallback (operator,
+	// 2026-08-22): it fronts a subscription plan, so the good model is also the
+	// cheap path. api.anthropic.com is reached by setting DEFINE_LLM_BASE_URL.
+	//
+	// The instance is parley-managed (~/.local/share/nvim/parley/cliproxy/),
+	// which carries auto-healing a standalone install does not.
+	defaultBaseURL = "http://127.0.0.1:8317"
+	defaultModel   = "claude-opus-5"
+	defaultEffort  = "high"
+	// Generous on purpose, and not arbitrary: with adaptive thinking on,
+	// max_tokens must cover the THINKING AND the answer. A 512-token budget
+	// during this issue's probes let thinking consume the lot and returned an
+	// answer cut mid-rune that still parsed — the specimen is committed at
+	// llmtest/testdata/message-truncated.json. Budget for the answer alone and
+	// the answer is what gets cut.
+	defaultMaxTokens = 8192
+	// Total budget for one call: attempts, backoff and body read. Enforced as a
+	// context deadline, which in Go covers every phase — including the header
+	// read that in Python needed a worker thread to bound.
+	defaultTimeout = 5 * time.Minute
+	// Silence inside a stream, which defaultTimeout cannot express: a long answer
+	// legitimately takes minutes, a dead connection should fail in seconds.
+	defaultStallAfter = 90 * time.Second
+	// How often OnSlow reports while a call is still in flight.
+	defaultSlowEvery = 10 * time.Second
+)
+
+// Config is where the model lives and who we are.
+type Config struct {
+	BaseURL   string
+	APIKey    string
+	Model     string
+	Effort    string
+	MaxTokens int64
+	// Timeout is the TOTAL budget for a call: attempts, backoff and body read.
+	Timeout time.Duration
+	// StallAfter bounds SILENCE inside a stream, which Timeout cannot: a long
+	// answer legitimately takes minutes while a dead connection should fail in
+	// seconds.
+	//
+	// Zero means "use the default" — New applies it — so disabling requires a
+	// NEGATIVE value. Zero used to mean disabled, and that stopped being true the
+	// moment New started defaulting it, leaving the documented way to turn stall
+	// detection off unreachable.
+	StallAfter time.Duration
+	// Transport, when set, replaces the HTTP transport. The seam a cassette sits
+	// BENEATH: below it the SDK still serialises the request, applies retries and
+	// parses SSE, so a test driven through it exercises the same code production
+	// does. Above it — replacing Client — none of that runs.
+	Transport http.RoundTripper
+	// OnSlow, when set, is called on a ticker while a call is still running, with
+	// the phase it is in. Optional, off by default, never called on a fast path —
+	// this is for answering "slow where", not for logging.
+	OnSlow func(Progress)
+	// SlowEvery is that ticker's interval. Zero takes the default; it is a field
+	// rather than a constant so the behaviour is testable in under ten seconds.
+	SlowEvery time.Duration
+}
+
+// Resolve reads configuration from an env lookup function.
+//
+// It takes the lookup rather than calling os.Getenv so precedence is a table
+// test instead of a process-state mutation, and so a test can assert what
+// happens with NOTHING set without unsetting the developer's own environment
+// (ARCH-PURE: this is the pure half; main() supplies os.Getenv).
+//
+// It deliberately does NOT probe reachability. A probe here would put a network
+// round trip on `define <word>`, whose whole promise is that it is instant and
+// offline. An unreachable proxy shows up as ErrUnavailable at the first real
+// call, which is the same path as having no key at all — one degradation story,
+// not two.
+func Resolve(getenv func(string) string) (Config, error) {
+	first := func(keys ...string) string {
+		for _, k := range keys {
+			if v := getenv(k); v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	// Timeout is configurable because it was otherwise unreachable: nothing could
+	// shorten it, so the outer deadline in a caller like --llm-check could only
+	// fire after five minutes of a hung proxy — untestable, and unadjustable by
+	// an operator whose proxy is simply slow.
+	timeout := defaultTimeout
+	if v := first("DEFINE_LLM_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			timeout = d
+		}
+		// A malformed or non-positive value takes the default rather than
+		// failing: a typo in an optional tuning knob must not stop a lookup.
+	}
+	c := Config{
+		BaseURL:    cmp.Or(first("DEFINE_LLM_BASE_URL"), defaultBaseURL),
+		APIKey:     first("DEFINE_LLM_API_KEY", "ANTHROPIC_API_KEY"),
+		Model:      cmp.Or(first("DEFINE_LLM_MODEL"), defaultModel),
+		Effort:     cmp.Or(first("DEFINE_LLM_EFFORT"), defaultEffort),
+		MaxTokens:  defaultMaxTokens,
+		Timeout:    timeout,
+		StallAfter: defaultStallAfter,
+	}
+	if c.APIKey == "" {
+		// Names what to do, not just what is wrong. The parley pointer is a hint
+		// in a message, not a dependency: nothing here reads parley's files.
+		return c, fmt.Errorf("%w: no API key — set DEFINE_LLM_API_KEY or ANTHROPIC_API_KEY "+
+			"(the parley-managed proxy keeps one in ~/.local/share/nvim/parley/cliproxy/config.yaml)",
+			ErrUnavailable)
+	}
+	return c, nil
+}
+
+// Redact renders a credential safe to print. Every diagnostic path goes through
+// it: the ErrUnavailable message below, and any future diagnostic surface. A key
+// literal must never appear in a rendered error — asserted, not assumed.
+//
+// The short-key branch is not defensive padding: the parley proxy's key is four
+// characters, so it is the common case here.
+func Redact(key string) string {
+	if key == "" {
+		return "(unset)"
+	}
+	if len(key) <= 8 {
+		return "(set, short)"
+	}
+	return key[:6] + "…" + key[len(key)-4:]
+}

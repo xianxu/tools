@@ -7,6 +7,7 @@ status: defined
 created: 2026-08-20
 updated: 2026-08-22
 mvp_scope: ["tools#5", "tools#6", "tools#7", "tools#8", "tools#9", "tools#10", "tools#11", "tools#12", "tools#13", "tools#16", "tools#17"]
+explicitly_out_note: "tools#18 (Spanish) is real and filed, but OUT of this project's MVP: define-learn is done when the English loop works end to end. #18 M1 (audio) is independently shippable at any time."
 explicitly_out: ["multi-learner accounts", "sync/replication beyond whichever directory you run it in", "languages other than English", "generated (TTS) pronunciation — recorded audio only", "a GUI or mobile client"]
 sources: ["workshop/parley/ — define-learn ideation", "operator conversation 2026-08-22 (adaptive scope)"]
 ---
@@ -177,7 +178,8 @@ once `#6` is producing misses.
 - [x] vocabulary store — Store seam, YAML in the working directory, clock injected [tools#3]
 - [x] capture on lookup — successful lookups build the deck [tools#4]
 - [x] REPL command mode — `/`-commands with type-ahead, starting `/history` [tools#15]
-- [ ] LLM harness — `internal/llm`, transport + fake + prompt goldens + conformance [tools#11]
+- [x] LLM harness — transport, wire fake, obligation suite [tools#11 M1]
+- [x] LLM harness — typed tasks, goldens, conformance, `--llm-check` [tools#11 M2]
 - [ ] free-form Q&A in the console — three-way input classification, directory as context [tools#16]
 - [ ] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [ ] news seam — Google News RSS (not the SERP) [tools#9]
@@ -189,19 +191,76 @@ once `#6` is producing misses.
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
 - [ ] learner model — weakness taxonomy from review events, steers authoring [tools#17 M2]
+- [ ] Spanish — pronunciation locale (independently shippable) [tools#18 M1]
+- [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
-<a id="tools-11"></a>
-### tools#11 — LLM harness
+<a id="tools-11-m1"></a>
+### tools#11 M1 — transport, wire fake, obligation suite
 
-**status:** open — first in execution order; everything model-shaped depends on it
+**est:** 7.98 (whole issue)
+**actual:** 3.45h
+**closed:** 2026-08-22
 
-Revised 2026-08-22 from "Anthropic client behind a narrow interface" to the base of
-a harness: one transport (`internal/llm`), configurable base URL defaulting to the
-local `cli-proxy-api`, a stateful fake that records prompts so prompt regressions
-show up in a diff, prompts as versioned artifacts with goldens, structured-response
-parsing that degrades rather than crashes, and a live conformance check behind the
-build tag. The per-task prompts do **not** live here — they live with their
-consumers; this issue owns the transport and the contract.
+`internal/llm` exists: a provider-independent `Client` over `anthropic-sdk-go`
+pointed at the parley-managed proxy, a five-member error taxonomy, pure config
+resolution, a wire-level stateful fake, and one obligation suite that runs against
+both the fake and (under `-tags conformance`) the live service. Prompts
+deliberately live with consumers, not here.
+
+The decision worth preserving is where the test double sits: an httptest server
+speaking the Anthropic protocol, **not** a stubbed `Client`. Placement decides
+what a test can see, and a stubbed client sits above every bug this harness can
+actually have. Content in tests comes from committed captures rather than
+literals — you cannot fake judgment, but you can freeze a real answer.
+
+Three surprises, all from measurement rather than reasoning. `claude-opus-5`
+returns a **thinking block first** on any non-trivial prompt, so `content[0]` is
+not the text — and one capture has a thinking block *after* the text, so no
+sequence may be asserted at all. A **truncated structured answer parses**
+(`{"verdict":"yes","reason":": Ā"}`, every required field present), so the stop
+reason must be checked before decoding; that specimen is preserved as a fixture.
+And the **proxy answers 502 for an unknown model** where the direct API answers
+400, so an our-bug-class error is absorbed as `ErrUnavailable` — recorded as a
+known limitation rather than papered over.
+
+Cost note for calibration: `sdlc actual` measured 3.45h against a window whose
+wall clock is 1.83h (`b5d50ea2` 17:20 → `bd94021` 19:10). The measured value was
+recorded rather than a hand-typed one, but it is **1.9× the window it names**, so
+this row should not be treated as clean evidence for the ledger.
+
+<a id="tools-11-m2"></a>
+### tools#11 M2 — typed tasks, goldens, conformance
+
+**est:** 7.98 (whole issue)
+**actual:** 3.75h
+**closed:** 2026-08-23
+
+A consumer now writes a prompt and a result type and gets a typed answer:
+`SchemaFor[T]` reflects the schema from the struct, `Run[T]` calls and decodes,
+and the stop reason is checked **before** decoding because a truncated structured
+answer parses cleanly.
+
+The decision worth preserving is that goldens and cassettes are two views of one
+request, both deriving from a single `renderRequest`. Two renderers would have
+drifted in the worst direction — a prompt edit visible in the golden while a stale
+cassette kept matching — so it landed before either consumer.
+
+The cassette is the answer to "how do you mock an LLM": you don't. You freeze a
+real response, key it by the request hash, and a miss fails loudly rather than
+falling back, because falling back is how an edited prompt comes to pass against a
+recording of the question it no longer asks.
+
+`decode` needed one real fix: "another token" is not "consumed cleanly" —
+`dec.Token()` returns an *error* for trailing prose, so `{...} — hope that helps!`
+was accepted with a populated value. 1.2M fuzz executions now hold the invariant.
+
+**Calibration caveat, stronger than M1's.** `sdlc actual` reports 7.20h for the
+issue, but its attribution warnings show it reaching into sessions from 2026-07-27
+and 2026-08-20/21 — days before this issue was claimed — and the window is shared
+with [tools#18]. Two spans are attributed to #11 by *mention fallback* rather than
+by commit boundary. The increment above is derived by subtraction from a
+measurement, not typed, but this row should not be treated as clean ledger
+evidence.
 
 <a id="tools-16"></a>
 ### tools#16 — free-form Q&A in the console
@@ -239,6 +298,28 @@ section is human-owned and never rewritten.
 ### tools#17 M2 — weakness taxonomy
 
 **status:** blocked — needs review events from [tools#6]
+
+<a id="tools-18-m1"></a>
+### tools#18 M1 — Spanish pronunciation locale
+
+**status:** open — independently shippable, blocked on nothing
+
+`AudioCandidates` hardcodes `_en_`, so a Spanish word is only ever requested as an
+English one. Measured: `madrugar_en_us_1` 404s while `madrugar_es_es_1` and
+`madrugar_es_us_1` both return 200. The locale is phonemically load-bearing here
+rather than cosmetic — `es_es` is Castilian /θ/, `es_us` is *seseo* — and since
+Spanish orthography is phonemic, dictionary entries carry no phonetic notation at
+all, so the recording is the only place that information exists.
+
+<a id="tools-18-m2"></a>
+### tools#18 M2 — language-aware deck, agreement-safe distractors
+
+**status:** blocked — needs [tools#10] and [tools#12]
+
+The one that would otherwise break #12: Spanish leaks answers grammatically.
+*"La actitud del jefe era claramente ______"* eliminates every masculine option
+without the learner knowing a single word's meaning, so distractor selection needs
+a gender/number agreement filter beside the semantic-distance one.
 
 ## Log
 
@@ -283,7 +364,8 @@ still showed open here.
 [tools#8]: #tools-8
 [tools#9]: #tools-9
 [tools#10]: #tools-10
-[tools#11]: #tools-11
+[tools#11 M1]: #tools-11-m1
+[tools#11 M2]: #tools-11-m2
 [tools#12]: #tools-12
 [tools#13]: #tools-13
 [tools#14]: #tools-14
@@ -291,3 +373,5 @@ still showed open here.
 [tools#16]: #tools-16
 [tools#17 M1]: #tools-17-m1
 [tools#17 M2]: #tools-17-m2
+[tools#18 M1]: #tools-18-m1
+[tools#18 M2]: #tools-18-m2
