@@ -147,6 +147,54 @@ rounds:
           family: fake-models-unobserved-shape
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-22T18:29:47-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-9
+          disposition: addressed
+          note: |-
+            Verified field-by-field against all three JSON captures on disk; the block-order,
+            stop_reason, thinking-key, stop_details and split-cache findings all landed.
+          round: 3
+        - id: PQ-1
+          disposition: not-addressed
+          note: |-
+            4 of 5 bullets landed; Measured fact 2 (plan :34-38) and the whole Open question
+            section (plan :1665-1680) still assert the proxy facts Delta 1 retracts.
+          round: 3
+      findings:
+        - id: PQ-10
+          severity: Important
+          title: The committed SSE capture has no thinking or signature frames, so the streaming path's block preservation is untestable
+          detail: |-
+            This is the 3rd finding in family fake-models-unobserved-shape. Do not fix this
+            instance; the rule is: a capture is evidence only for the shape its recording
+            conditions elicit, so every probe must be recorded under conditions that produce
+            the shape the fake models, and those conditions live in the probe script beside
+            the capture. Measured prevalence 3, all in scripts/llm-probe.sh: probe_blocks
+            (trivial prompt returned ["text"] alone - PQ-3), probe_schema (max_tokens 512 ate
+            the budget - PQ-9), probe_stream (still "Say: one two three" at max_tokens 128).
+            stream-sample.sse opens content_block_start index 0 on a text block; the SDK
+            shows thinking_delta/signature_delta at message.go:7093,7095,8214. So a Stream
+            that drops thinking blocks, or that feeds thinking deltas to onDelta, passes the
+            whole fake-backed suite while breaking the byte-for-byte echo that #16 is named
+            as depending on (ARCH-MOCK).
+          family: fake-models-unobserved-shape
+          round: 3
+        - id: PQ-11
+          severity: Minor
+          title: Two illustrative code blocks do not compile as written
+          detail: |-
+            Task 1 Step 2's Block struct uses json.RawMessage but llm.go's import block lists
+            only context and time, and Step 3 asserts `go build ./internal/...` exits 0. Task 4
+            Step 1's NewFake initializes `replies: map[string][]Reply{}` and Script writes
+            f.replies[match], but the struct field became `matchers []matcher` in the PQ-7 fix
+            and `matcher` is never defined. Plan code blocks get pasted verbatim, so a half-applied
+            refactor in one propagates.
+          family: plan-code-not-buildable
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (plan-quality)
@@ -231,7 +279,40 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   while Done-when 3 silently fails. The taxonomy is what all five consumers branch on,
   so this is cheap now and a contract break later (ARCH-MOCK).
 
+## Round 3 — 2026-08-22T18:29:47-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-9 — addressed — Verified field-by-field against all three JSON captures on disk; the block-order,
+stop_reason, thinking-key, stop_details and split-cache findings all landed.
+- PQ-1 — not-addressed — 4 of 5 bullets landed; Measured fact 2 (plan :34-38) and the whole Open question
+section (plan :1665-1680) still assert the proxy facts Delta 1 retracts.
+
+### Raised
+
+- **PQ-10** [Important] `fake-models-unobserved-shape` The committed SSE capture has no thinking or signature frames, so the streaming path's block preservation is untestable
+  This is the 3rd finding in family fake-models-unobserved-shape. Do not fix this
+  instance; the rule is: a capture is evidence only for the shape its recording
+  conditions elicit, so every probe must be recorded under conditions that produce
+  the shape the fake models, and those conditions live in the probe script beside
+  the capture. Measured prevalence 3, all in scripts/llm-probe.sh: probe_blocks
+  (trivial prompt returned ["text"] alone - PQ-3), probe_schema (max_tokens 512 ate
+  the budget - PQ-9), probe_stream (still "Say: one two three" at max_tokens 128).
+  stream-sample.sse opens content_block_start index 0 on a text block; the SDK
+  shows thinking_delta/signature_delta at message.go:7093,7095,8214. So a Stream
+  that drops thinking blocks, or that feeds thinking deltas to onDelta, passes the
+  whole fake-backed suite while breaking the byte-for-byte echo that #16 is named
+  as depending on (ARCH-MOCK).
+- **PQ-11** [Minor] `plan-code-not-buildable` Two illustrative code blocks do not compile as written
+  Task 1 Step 2's Block struct uses json.RawMessage but llm.go's import block lists
+  only context and time, and Step 3 asserts `go build ./internal/...` exits 0. Task 4
+  Step 1's NewFake initializes `replies: map[string][]Reply{}` and Script writes
+  f.replies[match], but the struct field became `matchers []matcher` in the PQ-7 fix
+  and `matcher` is never defined. Plan code blocks get pasted verbatim, so a half-applied
+  refactor in one propagates.
+
 ## Open findings
 
 - **PQ-1** [Important] `revision-not-propagated` The 2026-08-22 revision's five "Task list changes" never landed in any task body
-- **PQ-9** [Important] `fake-models-unobserved-shape` The plan's response model is narrower than its own committed captures, in block order and in stop_reason
+- **PQ-10** [Important] `fake-models-unobserved-shape` The committed SSE capture has no thinking or signature frames, so the streaming path's block preservation is untestable
+- **PQ-11** [Minor] `plan-code-not-buildable` Two illustrative code blocks do not compile as written

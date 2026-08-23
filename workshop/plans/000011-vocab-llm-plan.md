@@ -32,11 +32,19 @@ should be able to re-run the measurement rather than trust the prose.
    `{"error":"Invalid API key"}`, 401, with the request body logged intact at
    `~/.cli-proxy-api/logs/error-v1-messages-2026-08-22T171220-*.log`. So the
    transport question is settled and only credentials are open.
-2. **The operator's proxy currently rejects every key we have.** `~/.cli-proxy-api/config.yaml`
-   (133 bytes) declares no `api-keys:`, yet the running v7.1.71 demands one.
-   **This blocks the live conformance check only.** Everything else in this plan
-   runs against the fake, so implementation is not blocked — see *Open question*
-   at the end.
+2. **The proxy is parley-managed, and it works.** `~/.local/share/nvim/parley/cliproxy/`
+   — binary and config both — reached from `DEFINE_LLM_BASE_URL=http://127.0.0.1:8317`
+   with the `api-keys` entry from that config. 31 models are reachable including
+   `claude-opus-5`, `claude-fable-5` and `claude-sonnet-5`; `scripts/llm-probe.sh`
+   exercises it and every capture under `internal/llm/llmtest/testdata/` came from it.
+
+   *Corrected in place.* This entry previously read "the operator's proxy currently
+   rejects every key we have" and declared live conformance blocked. That was
+   measured against `~/.cli-proxy-api/config.yaml` — the **homebrew install's**
+   config, since removed. Wrong file, wrong conclusion, and it produced an `## Open
+   question` asking the operator to fix something that was never broken. Left as a
+   caution: a measurement is only as good as the thing it was taken from, and
+   "which config does the RUNNING process use" is a `ps` away.
 3. **The SDK is fetchable and costs 12 transitive dependencies.** `go get
    github.com/anthropics/anthropic-sdk-go@latest` → v1.66.0, adding `bahlo/generic-list-go`,
    `buger/jsonparser`, `invopop/jsonschema`, `pb33f/ordered-map/v2`,
@@ -374,6 +382,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
@@ -504,6 +513,13 @@ type Progress struct {
 
 Run: `go build ./internal/... && go vet ./internal/...`
 Expected: no output, exit 0.
+
+**If a code block in this plan does not compile, fix the plan, not just your
+paste.** These blocks get pasted verbatim, so a half-applied refactor in one
+propagates into the tree — which already happened once here: a fix renamed
+`Fake.replies` to `Fake.matchers` in one block and left three others writing to
+the old field. Every subsequent edit to a struct in this document must sweep the
+constructor and every method that touches it.
 
 - [ ] **Step 4: Commit**
 
@@ -990,6 +1006,13 @@ type Reply struct {
 //     failure degrades. A single canned reply per key cannot express either.
 //   - served count — so "the second call was served from cache" stays assertable
 //     by consumers that add caching later (#9/#10 will).
+// matcher is one scripted rule: a prompt substring and the queue of replies to
+// serve for it, in order.
+type matcher struct {
+	match string
+	queue []Reply
+}
+
 type Fake struct {
 	*httptest.Server
 
@@ -1005,10 +1028,7 @@ type Fake struct {
 // NewFake starts a fake and registers cleanup.
 func NewFake(t *testing.T) *Fake {
 	t.Helper()
-	f := &Fake{
-		replies:  map[string][]Reply{},
-		fallback: Reply{Text: "ok"},
-	}
+	f := &Fake{fallback: Reply{Text: "ok"}}
 	f.Server = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.Close)
 	return f
@@ -1017,10 +1037,19 @@ func NewFake(t *testing.T) *Fake {
 // Script queues replies for requests whose prompt contains match. Matching on
 // the prompt rather than on a header keeps the fake honest: it knows only what a
 // real server would know.
+//
+// Appends to the existing matcher when one exists, so two Script calls with the
+// same key extend one queue rather than creating a shadowed duplicate.
 func (f *Fake) Script(match string, replies ...Reply) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.replies[match] = append(f.replies[match], replies...)
+	for i := range f.matchers {
+		if f.matchers[i].match == match {
+			f.matchers[i].queue = append(f.matchers[i].queue, replies...)
+			return
+		}
+	}
+	f.matchers = append(f.matchers, matcher{match: match, queue: replies})
 }
 
 // Requests returns everything received, in order.
@@ -1664,20 +1693,17 @@ func RequestHash(r Request) string   // sha256 of renderRequest, first 12 hex
 
 ## Open question for the operator
 
-**The live conformance check cannot pass until `cli-proxy-api` accepts a key from
-us.** Measured today: `~/.cli-proxy-api/config.yaml` declares no `api-keys:`, and
-the running v7.1.71 rejects both an absent key (`Missing API key`) and an
-arbitrary one (`Invalid API key`).
+**None. Retracted 2026-08-22 — it rested on a misreading.**
 
-Nothing in M1 is blocked — it all runs against the fake. Blocked in M2: Task 8
-(recording the real SSE sample) and Task 12 (live conformance). Both are
-`t.Skipf`-shaped, so the suite stays green; they would simply not be *evidence*.
+This section previously asked the operator to add an `api-keys:` entry to the
+proxy, on the strength of measured fact 2. That measurement read the wrong config
+file (the removed homebrew install's, not the running parley-managed instance's).
+The proxy was working the whole time; live conformance was never blocked, and the
+captures the fake is built on were recorded from it the same afternoon.
 
-Either add an `api-keys:` entry to the proxy config and tell me the value to put
-in `DEFINE_LLM_API_KEY`, or point `DEFINE_LLM_BASE_URL` at `api.anthropic.com`
-with a direct key for conformance runs. I will not hand-write the SSE sample as a
-substitute — a fake modelling invented behaviour is the failure ARCH-MOCK exists
-to prevent, and it would be discovered by #16 at the worst possible time.
+Kept rather than deleted, because the shape of the mistake is worth having in the
+record: every fact in it was individually true, the conclusion was false, and
+nothing in the reasoning would have caught it. Only `ps` would have.
 
 ---
 
@@ -1884,3 +1910,60 @@ and made two of them. Task 5's content assertions were still
 existed to remove. Content now enters every test through `ServeRecorded` from a
 committed capture; only transport shapes (a 429, a 400, a refusal) stay invented,
 because those are protocol rather than judgment.
+
+### 2026-08-22 — PQ-10: a capture is evidence only for the shape its conditions elicit
+
+**Reason.** Third finding in the `fake-models-unobserved-shape` family, and the
+finding stated the rule rather than the fix: *every probe must be recorded under
+conditions that produce the shape the fake models, and those conditions must live
+beside the capture.* Measured prevalence 3, all in `scripts/llm-probe.sh` — and
+all three had already been committed and modelled on:
+
+| probe | condition that made it useless | found by |
+|---|---|---|
+| `probe_blocks` | trivial prompt → `["text"]` alone | PQ-3 |
+| `probe_schema` | `max_tokens: 512` → thinking ate the budget | PQ-9 |
+| `probe_stream` | `"Say: one two three"` at 128 tokens → no thinking frames | PQ-10 |
+
+The third mattered for a specific reason: `stream-sample.sse` opened
+`content_block_start` on a *text* block, so a `Stream` that dropped thinking
+blocks — or fed `thinking_delta` to `onDelta` as if it were answer text — would
+have passed the entire fake-backed suite while breaking the byte-for-byte thinking
+echo #16 is named as depending on.
+
+**The class fix: make a capture's required shape checkable at record time.**
+`scripts/llm-probe.sh verify` declares, per capture, the shape it must exhibit,
+and `record` refuses to promote one that does not. So the failure mode — an
+artifact that looks like evidence and is not — is now caught by the tool that
+produces it rather than by a reviewer three rounds later.
+
+Two things fell out of building it, both worth keeping:
+
+- **The check caught a real failure on its first run.** A re-record returned
+  `{"type":"error","error":{"type":"overloaded_error"}}` and would have been
+  committed as a capture. `verify` now rejects an error envelope by name.
+- **Verifying after writing protects nothing.** The first version wrote into
+  `testdata/` and verified afterwards, so that overloaded response clobbered a good
+  capture *before* the check failed. `record` now stages, verifies, and only then
+  promotes — with three attempts, since the upstream is genuinely flaky, and
+  `testdata/` left untouched if all three fail.
+
+`internal/llm/llmtest/testdata/README.md` states the rule beside the artifacts and
+tabulates what each exists to show. The re-recorded set now exhibits `[thinking,
+text]`, `[text]` **and** `[thinking, text, thinking]`, plus `thinking_delta` and
+`signature_delta` in the stream — so "presence and order both vary" is
+demonstrated by the evidence rather than asserted in prose.
+
+**PQ-1, the stale-retraction half.** Measured fact 2 and the whole `## Open
+question` section still asserted the proxy facts an earlier revision retracted —
+a correction recorded in the log while the original text kept its claim, which is
+the exact failure `lessons.md` names ("verify the deletion, don't assert it"). Both
+corrected **in place**, with the mistake left visible: every fact in that section
+was individually true, the conclusion was false, and no amount of re-reading would
+have caught it — only `ps` would have.
+
+**Minor: the plan's own code must compile.** A `Fake.replies` → `Fake.matchers`
+rename landed in one block and left three others writing the old field, and
+`Block.Raw` used `json.RawMessage` without the import. Fixed, plus a standing
+instruction in Task 1 Step 3: these blocks get pasted verbatim, so a struct edit
+sweeps its constructor and every method that touches it.
