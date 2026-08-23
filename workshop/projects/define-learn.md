@@ -180,7 +180,8 @@ once `#6` is producing misses.
 - [x] REPL command mode — `/`-commands with type-ahead, starting `/history` [tools#15]
 - [x] LLM harness — transport, wire fake, obligation suite [tools#11 M1]
 - [x] LLM harness — typed tasks, goldens, conformance, `--llm-check` [tools#11 M2]
-- [ ] free-form Q&A in the console — three-way input classification, directory as context [tools#16]
+- [x] free-form Q&A — the console knows a question from a word [tools#16 M1]
+- [ ] free-form Q&A — the answer: context pack, streaming, scoped Ctrl-C [tools#16 M2]
 - [ ] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [ ] news seam — Google News RSS (not the SERP) [tools#9]
 - [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
@@ -262,17 +263,57 @@ by commit boundary. The increment above is derived by subtraction from a
 measurement, not typed, but this row should not be treated as clean ledger
 evidence.
 
-<a id="tools-16"></a>
-### tools#16 — free-form Q&A in the console
+<a id="tools-16-m1"></a>
+### tools#16 M1 — the console knows a question from a word
 
-**status:** open — new, 2026-08-22
+**est:** 6.49 (whole issue)
+**actual:** 1.46h
+**closed:** 2026-08-23
 
-The third verb. Free-form input at the prompt routes to the model with the recent
-session's words as context; the context is the directory `define` was started in
-(`words/`, `events/`, `user-model.md`), so it survives a fresh process and is
-inspectable as files. The classifier is the hard part and gets one decision table:
-NOAD answers "is this a headword" offline and for free, and what is left splits into
-interrogative → Q&A and everything else → the existing not-found path.
+Typing a question at the prompt is now understood as one, in all three entry
+modes, and answered with an honest "no model configured" until M2 wires the seam.
+The classifier is the part worth preserving: **the dictionary is the classifier.**
+Word count cannot be the signal — `hot dog` is a two-word headword and
+`defenestrate` is one word — so the tool asks NOAD first and classifies only what
+it misses. `hot dog`, `a priori` and `use` stay lookups because the dictionary
+says so, not because a predicate was careful. One decision table in two pure
+halves (`parseREPLLine` syntactic, `readsAsQuestion` semantic), asserted end to
+end by `TestConsoleDecisionTable` rather than half-by-half — the half-by-half
+version proves each half correct and leaves the table unasserted.
+
+A draft had a fourth arm, "≥5 words → question", to catch `difference between
+sycophantic and obsequious`. Operator call: that is a word count wearing a
+different hat, and the spec rejects word count. It was dropped, the cost named in
+the atlas, and `?` is the recovery.
+
+Two defects were caught **at the plan gate rather than in code**, which is the
+strongest argument for the gate this project has produced. PQ-3: the ask outcome
+carries exit code 0 — a question is not a failed lookup — so `if out.code == 0 {
+current = word }` was exactly wrong, and a question would have become the word a
+bare Enter replays. PQ-1/PQ-6: the scoped-interrupt design (M2's) rested on
+`rawterm.go`'s comment that Ctrl-C is a byte in raw mode, while the pty suite's
+own header records the measured opposite — and the first fix would have left every
+piped run uninterruptible. Three plan rounds, zero of those found by running the
+code.
+
+Cost note: 1.46h measured against a window that is mostly design — the plan and
+its three gate rounds sit inside it. The first estimate (3.72) priced only the
+tasks and was revised to 6.49 for exactly that reason before any code was written.
+
+<a id="tools-16-m2"></a>
+### tools#16 M2 — the answer
+
+**status:** open — M1 shipped 2026-08-23
+
+The question reaches the model: the directory as context (recent words, the
+current entry, `user-model.md`), a pure prompt renderer over a pure `askContext`,
+a streamed answer, an `asked` event, and multi-turn within a session. Two designs
+are already settled by M1's plan gate and worth not re-deriving: an interrupt has
+**one** sink fed by **both** transports (the raw key reader's byte and a SIGINT),
+installed where the loop is chosen rather than above it; and a cancelled stream is
+recognised by asking the **context**, not the error, because `mapError` has by
+then classified a statusless failure as `ErrUnavailable` — so the user's own
+Ctrl-C would otherwise print "no model configured" as its answer.
 
 <a id="tools-10"></a>
 ### tools#10 — item authoring + harvest
@@ -370,7 +411,9 @@ still showed open here.
 [tools#13]: #tools-13
 [tools#14]: #tools-14
 [tools#15]: #tools-15
-[tools#16]: #tools-16
+[tools#16]: #tools-16-m1
+[tools#16 M1]: #tools-16-m1
+[tools#16 M2]: #tools-16-m2
 [tools#17 M1]: #tools-17-m1
 [tools#17 M2]: #tools-17-m2
 [tools#18 M1]: #tools-18-m1
