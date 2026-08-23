@@ -5,7 +5,7 @@ deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-22
-estimate_hours:
+estimate_hours: 5.78
 started: 2026-08-22T17:11:23-07:00
 ---
 
@@ -44,6 +44,66 @@ An LLM seam with a stateful fake.
 - [ ] Every prompt has a fake-backed test; no test hits the live API by default.
 - [ ] Structured responses are parsed defensively — a malformed reply degrades to
       "skip this question", never a crash.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: greenfield-go-module   design=1.5  impl=0.24
+item: api-integration        design=1.0  impl=0.48
+item: greenfield-go-module   design=0.75 impl=0.32
+item: smaller-go-module      design=0.2  impl=0.14
+item: real-api-discovery     design=0.0  impl=0.18
+item: milestone-review       design=0.0  impl=0.14
+item: milestone-review       design=0.0  impl=0.14
+item: atlas-docs             design=0.1  impl=0.06
+design-buffer: 0.15
+total: 5.78
+```
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+**What each item is.** `greenfield-go-module` ×2 — the `internal/llm` core
+(contract, config, taxonomy, `Task[T]`/`Run[T]`, schema, `renderRequest`) and
+`llmtest` (wire fake, captures, cassettes, obligation suite, golden), which are
+separate concerns with separate test surfaces. `api-integration` — the SDK client
+with retry, streaming, stall detection and the error mapping; the slug's own
+definition is "API integration with batch + retry + tests", which is this exactly.
+`smaller-go-module` — `define --llm-check`, extending an existing command surface.
+`real-api-discovery` — the per-external-API budget: proxy shape, captures,
+conformance. `milestone-review` ×2 — M1 and M2 are two real boundaries, so two.
+
+**Step 2.5 (library availability) applied, and it moved two numbers.**
+`api-integration` design halved 2.0 → 1.0: the official `anthropic-sdk-go` exists,
+is already fetched and vetted, and collapses the wire-format, retry and SSE-parsing
+design dialogue that the primitive's range assumes. `llmtest` design halved
+1.5 → 0.75: `net/http/httptest` is stdlib and this repo already carries the pattern
+to mirror (`fakeCDN` in `cmd/define/fetch_fake_test.go`). The `internal/llm` core
+keeps full design hours — no library supplies a provider-independent contract or
+the degradation taxonomy, which is where the actual decisions were.
+
+**Step 3 (spec-quality discount) deliberately NOT applied — the honest call.**
+The ×0.2 discount credits a spec that *pre-existed* the work. Here the plan was
+authored inside the measurement window: `sdlc claim` ran before any design, so
+today's brainstorm, the four plan-quality rounds and the prior-art study are all
+inside what `sdlc actual` will measure. Discounting design to ~0.7h would produce a
+row that reads 4× over for a reason that is an artifact of the method, not of the
+work. The +15% design buffer *is* applied, since a thorough plan doc now exists for
+the implementation half.
+
+**Reconciliation.** Σdesign 3.55 × 1.15 = 4.0825; Σimpl 1.70 × 1.0 = 1.70;
+total 5.78. Impl values are already written at v3.1's 40% of the v2 table, per the
+model's instruction not to carry a separate scale field.
+
+**Where this is most likely wrong.** The two `greenfield-go-module` design figures
+are the soft numbers — if the wire fake turns out to be mostly mechanical once the
+captures are in hand (they are already recorded and verified), design lands lower
+and the row reads over. Conversely `api-integration` impl assumes the SDK behaves
+as read; a surprise in streaming or `output_config` pass-through through the proxy
+is the one thing that could double it.
+
 
 ## Plan
 

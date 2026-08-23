@@ -1113,8 +1113,13 @@ FIXED.** Three captures are committed under
 | capture | blocks | stop_reason |
 |---|---|---|
 | `message-thinking.json` | `[thinking, text]` | `end_turn` |
-| `message-schema.json` | `[thinking, text]` | `end_turn` |
+| `message-schema.json` | `[text]` — **no thinking block at all** | `end_turn` |
 | `message-truncated.json` | `[thinking, text, **thinking**]` | `max_tokens` |
+
+Three captures, three different shapes. Presence varies, order varies, and count
+varies — so the disk is the authority and this table is a summary of it. Re-read
+it after any `llm-probe.sh record`; an earlier version of this table said
+`message-schema.json` was `[thinking, text]` and a re-record made that false.
 
 Thinking blocks carry empty text (`display` defaults to `"omitted"` on opus-5) but
 **the blocks are present**, thinking is on by default and cannot be disabled at

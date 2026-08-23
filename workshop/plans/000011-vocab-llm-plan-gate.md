@@ -195,6 +195,24 @@ rounds:
           family: plan-code-not-buildable
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-22T18:38:14-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: All five task-body changes landed; measured fact 2 and the Open question are corrected in place, and Usage now has the preamble/thinking fields Tasks 12/13 read.
+          round: 4
+        - id: PQ-10
+          disposition: addressed
+          note: llm-probe.sh verify declares each capture's required shape and record stages-verifies-promotes; stream-sample.sse now carries thinking_delta and signature_delta.
+          round: 4
+        - id: PQ-11
+          disposition: addressed
+          note: 'Both blocks extracted from the plan and built: contract block compiles with encoding/json; fake block compiles and vets with matcher defined and matchers used throughout.'
+          round: 4
+      blocked: false
+content_hash: 266bfdc03332e27f01991014a98c808ad4cea2fc781087cc8e0e9a12b1536799
 ---
 
 # Gate ledger — tools#11 (plan-quality)
@@ -311,8 +329,14 @@ section (plan :1665-1680) still assert the proxy facts Delta 1 retracts.
   and `matcher` is never defined. Plan code blocks get pasted verbatim, so a half-applied
   refactor in one propagates.
 
+## Round 4 — 2026-08-22T18:38:14-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — All five task-body changes landed; measured fact 2 and the Open question are corrected in place, and Usage now has the preamble/thinking fields Tasks 12/13 read.
+- PQ-10 — addressed — llm-probe.sh verify declares each capture's required shape and record stages-verifies-promotes; stream-sample.sse now carries thinking_delta and signature_delta.
+- PQ-11 — addressed — Both blocks extracted from the plan and built: contract block compiles with encoding/json; fake block compiles and vets with matcher defined and matchers used throughout.
+
 ## Open findings
 
-- **PQ-1** [Important] `revision-not-propagated` The 2026-08-22 revision's five "Task list changes" never landed in any task body
-- **PQ-10** [Important] `fake-models-unobserved-shape` The committed SSE capture has no thinking or signature frames, so the streaming path's block preservation is untestable
-- **PQ-11** [Minor] `plan-code-not-buildable` Two illustrative code blocks do not compile as written
+(none — every finding has been disposed)
