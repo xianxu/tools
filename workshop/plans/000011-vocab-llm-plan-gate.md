@@ -91,6 +91,62 @@ rounds:
           family: tidy-before-import
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-22T18:22:04-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: not-addressed
+          note: Four of five task bullets landed; the retracted-facts sweep did not — plan :35, :246 and :1525 still assert the retracted proxy blocker unmarked.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: All three captures now tracked in git, recorded by the committed scripts/llm-probe.sh.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: Fake emits thinking-then-text, Response.Text joins text blocks, TestTextSkipsThinkingBlock serves the real capture.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: Task 11 names one renderRequest, printed by Golden and hashed by Cassette, with a test that a prompt edit moves both.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: One strategy line plus a seeded fuzz target with a stated invariant.
+          round: 2
+        - id: PQ-6
+          disposition: addressed
+          note: 'Verified in all three destinations: 000006:38, 000012:56, 000013:52; #11''s own row struck in place.'
+          round: 2
+        - id: PQ-7
+          disposition: addressed
+          note: Ordered matchers, first-match-wins, with the rationale recorded; leftover replies refs at :946/:960 folded into PQ-1.
+          round: 2
+        - id: PQ-8
+          disposition: addressed
+          note: Task 1 Step 1 now forbids tidy there and defers it to Tasks 5 and 9.
+          round: 2
+      findings:
+        - id: PQ-9
+          severity: Important
+          title: The plan's response model is narrower than its own committed captures, in block order and in stop_reason
+          detail: |-
+            Second in this family, so the fix is the rule, not the site: every field of every
+            committed capture must be reconciled against the response model and the assertions
+            built on it. Measured prevalence, two dimensions from two captures — message-thinking
+            is [thinking, text] but message-schema is [thinking, text, thinking], so Task 8 Step 1
+            and Task 4 Step 4 (plan :1069) assert a live block sequence the plan's own artifact
+            contradicts; and message-schema carries stop_reason max_tokens, which the taxonomy
+            never maps (only "refusal" is special-cased). That capture's payload is
+            {"verdict":"yes", "reason":": Ā"} at output_tokens 512 against max_tokens 512 —
+            syntactically valid, every required field present, semantically truncated. decode
+            returns it with a nil error, so Task 10's "never partially populates" invariant holds
+            while Done-when 3 silently fails. The taxonomy is what all five consumers branch on,
+            so this is cheap now and a contract break later (ARCH-MOCK).
+          family: fake-models-unobserved-shape
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#11 (plan-quality)
@@ -146,13 +202,36 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   stated expectation that go.mod gains them as direct requires will not hold. Move the
   tidy after the first import.
 
+## Round 2 — 2026-08-22T18:22:04-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — not-addressed — Four of five task bullets landed; the retracted-facts sweep did not — plan :35, :246 and :1525 still assert the retracted proxy blocker unmarked.
+- PQ-2 — addressed — All three captures now tracked in git, recorded by the committed scripts/llm-probe.sh.
+- PQ-3 — addressed — Fake emits thinking-then-text, Response.Text joins text blocks, TestTextSkipsThinkingBlock serves the real capture.
+- PQ-4 — addressed — Task 11 names one renderRequest, printed by Golden and hashed by Cassette, with a test that a prompt edit moves both.
+- PQ-5 — addressed — One strategy line plus a seeded fuzz target with a stated invariant.
+- PQ-6 — addressed — Verified in all three destinations: 000006:38, 000012:56, 000013:52; #11's own row struck in place.
+- PQ-7 — addressed — Ordered matchers, first-match-wins, with the rationale recorded; leftover replies refs at :946/:960 folded into PQ-1.
+- PQ-8 — addressed — Task 1 Step 1 now forbids tidy there and defers it to Tasks 5 and 9.
+
+### Raised
+
+- **PQ-9** [Important] `fake-models-unobserved-shape` The plan's response model is narrower than its own committed captures, in block order and in stop_reason
+  Second in this family, so the fix is the rule, not the site: every field of every
+  committed capture must be reconciled against the response model and the assertions
+  built on it. Measured prevalence, two dimensions from two captures — message-thinking
+  is [thinking, text] but message-schema is [thinking, text, thinking], so Task 8 Step 1
+  and Task 4 Step 4 (plan :1069) assert a live block sequence the plan's own artifact
+  contradicts; and message-schema carries stop_reason max_tokens, which the taxonomy
+  never maps (only "refusal" is special-cased). That capture's payload is
+  {"verdict":"yes", "reason":": Ā"} at output_tokens 512 against max_tokens 512 —
+  syntactically valid, every required field present, semantically truncated. decode
+  returns it with a nil error, so Task 10's "never partially populates" invariant holds
+  while Done-when 3 silently fails. The taxonomy is what all five consumers branch on,
+  so this is cheap now and a contract break later (ARCH-MOCK).
+
 ## Open findings
 
 - **PQ-1** [Important] `revision-not-propagated` The 2026-08-22 revision's five "Task list changes" never landed in any task body
-- **PQ-2** [Important] `unpersisted-measurement` Task 8 says "commit the captured SSE sample" but no such artifact exists on disk
-- **PQ-3** [Important] `fake-models-unobserved-shape` Fake envelope is single-text-block, but opus-5 with adaptive thinking always returns a thinking block first
-- **PQ-4** [Important] `single-request-rendering` Golden and Cassette independently render the same Request tuple (ARCH-DRY)
-- **PQ-5** [Important] `test-enumeration-in-prose` Task 10 enumerates seven decode cases in prose instead of naming a strategy
-- **PQ-6** [Important] `revision-not-propagated` The relocated degradation Done-when landed in no destination issue
-- **PQ-7** [Minor] `nondeterministic-fake-matching` Fake.next iterates a Go map, so overlapping scripted keys serve a random reply
-- **PQ-8** [Minor] `tidy-before-import` Task 1 Step 1 runs go mod tidy before anything imports the SDK
+- **PQ-9** [Important] `fake-models-unobserved-shape` The plan's response model is narrower than its own committed captures, in block order and in stop_reason

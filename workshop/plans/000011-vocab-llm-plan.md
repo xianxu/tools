@@ -415,8 +415,18 @@ type Request struct {
 
 // Response is one answer.
 type Response struct {
+	// ID is the provider's message id. Kept because it is the ONLY handle that
+	// correlates a call with the proxy's own error logs
+	// (~/.cli-proxy-api/logs/error-v1-messages-*.log), which is how the first
+	// probe in this issue was diagnosed at all.
+	ID    string
 	Text  string
 	Model string
+	// StopDetails carries the refusal category and explanation, populated only
+	// when Stop == "refusal" and nil otherwise — so every read must guard.
+	// Without it ErrRefused says a call was refused but never why, and "why" is
+	// the difference between a prompt to fix and a topic to avoid.
+	StopDetails *StopDetails
 	// Blocks is every content block as received, unflattened — including
 	// thinking blocks and their signatures.
 	//
@@ -443,17 +453,37 @@ type Usage struct {
 	// whose text is empty by default. Without this the output token count looks
 	// inexplicably high, which is how it becomes folklore.
 	ThinkingTokens int64
-	// PreambleTokens is what the PROXY prepended, not what we sent — measured at
-	// ~1,900 cached tokens on the parley instance. Surfaced so nobody tunes a
-	// prompt believing our System field is the only system prompt.
-	PreambleTokens int64
+	// The proxy prepends ~1,900 tokens of system preamble that we did not send.
+	// It lands in cache_creation on a cold call and cache_read on a warm one —
+	// BOTH captures exist, so one field would report zero half the time and the
+	// preamble would look like it came and went. Kept apart, and summed by
+	// PreambleTokens(), which is the number a human wants.
+	CacheCreationTokens int64
+	CacheReadTokens     int64
 }
 
+// PreambleTokens is what arrived that we did not send, cold or warm.
+func (u Usage) PreambleTokens() int64 { return u.CacheCreationTokens + u.CacheReadTokens }
+
 // Block is one content block, preserved as received.
+//
+// Raw is the load-bearing field. A text block carries its content under "text"
+// and a thinking block under "thinking" — DIFFERENT KEYS, confirmed across the
+// committed captures — so a struct with one Text field cannot round-trip both,
+// and #16's multi-turn follow-ups must echo thinking blocks back byte for byte.
+// Text is the decoded convenience; Raw is the truth.
 type Block struct {
-	Type      string // "text" | "thinking" | anything a future model adds
-	Text      string
-	Signature string // thinking blocks carry one; it must round-trip unchanged
+	Type      string          // "text" | "thinking" | anything a future model adds
+	Text      string          // "text"/"thinking" content, whichever this block uses
+	Signature string          // thinking blocks carry one; it must round-trip unchanged
+	Raw       json.RawMessage // exactly as received — what gets echoed back
+}
+
+// StopDetails is the structured reason behind a refusal.
+type StopDetails struct {
+	Type        string
+	Category    string // open set: "cyber", "bio", … or ""
+	Explanation string
 }
 
 // Progress reports where a slow call currently is. Fired on a ticker via
@@ -578,7 +608,40 @@ var (
 	// ErrMalformed means the answer did not decode into the caller's type. The
 	// caller skips this question; it does not crash the session.
 	ErrMalformed = errors.New("llm: malformed response")
+	// ErrTruncated means the answer was CUT OFF — stop_reason "max_tokens".
+	//
+	// Separate from ErrMalformed because a truncated structured answer commonly
+	// PARSES. Measured, and the specimen is committed at
+	// testdata/message-truncated.json: a schema'd request hit the cap and returned
+	//
+	//     {"verdict":"yes", "reason":": \u0100"}
+	//
+	// — valid JSON, both required fields present, the reason cut mid-rune. decode
+	// accepts it and every consumer would have believed it. Nothing downstream can
+	// detect this; only stop_reason can, so the transport is the only place it can
+	// be caught (ARCH-PURPOSE: catching it here is the purpose, not the extra).
+	ErrTruncated = errors.New("llm: truncated response")
 )
+
+// classifyStop maps a stop_reason onto the taxonomy. The two that are not
+// outcomes are the two that matter.
+//
+// Enumerated rather than defaulted-to-success: an unrecognised stop_reason is a
+// reason to be suspicious, not to proceed. A future stop_reason we have never
+// seen returns ErrMalformed naming it, so it surfaces on the first occurrence
+// instead of silently passing garbage to a learner.
+func classifyStop(stop string) error {
+	switch stop {
+	case "end_turn", "stop_sequence", "tool_use", "":
+		return nil
+	case "max_tokens":
+		return fmt.Errorf("%w: hit max_tokens", ErrTruncated)
+	case "refusal":
+		return ErrRefused
+	default:
+		return fmt.Errorf("%w: unknown stop_reason %q", ErrMalformed, stop)
+	}
+}
 
 // classifyStatus maps an HTTP status (0 when the request never got one) onto the
 // taxonomy, preserving the cause so errors.Is reaches it.
@@ -1014,35 +1077,63 @@ func (f *Fake) next(prompt string) Reply {
 
 - [ ] **Step 2: Build `serveJSON` from the RECORDED envelope, not from memory**
 
-**The envelope is multi-block, and `content[0]` is not the text.** Measured
-2026-08-22 against the live proxy and committed at
-`internal/llm/llmtest/testdata/message-thinking.json`: `claude-opus-5` answering a
-non-trivial prompt returns
+**The envelope is multi-block, `content[0]` is not the text, and THE ORDER IS NOT
+FIXED.** Three captures are committed under
+`internal/llm/llmtest/testdata/`, and no two agree on shape:
 
-```
-content: [ {type: "thinking", thinking: ""}, {type: "text", text: "…"} ]
-usage.output_tokens_details.thinking_tokens: 212
-```
+| capture | blocks | stop_reason |
+|---|---|---|
+| `message-thinking.json` | `[thinking, text]` | `end_turn` |
+| `message-schema.json` | `[thinking, text]` | `end_turn` |
+| `message-truncated.json` | `[thinking, text, **thinking**]` | `max_tokens` |
 
-The thinking block's text is empty (`display` defaults to `"omitted"` on opus-5)
-but **the block is present and it is first**. Thinking is on by default on this
-model and cannot be turned off at `xhigh`/`max` effort, so this is the normal
-shape, not an edge case.
+Thinking blocks carry empty text (`display` defaults to `"omitted"` on opus-5) but
+**the blocks are present**, thinking is on by default and cannot be disabled at
+`xhigh`/`max` effort, and a thinking block can appear **after** the text.
 
-This nearly went in wrong: the first probe of this proxy used a trivial prompt,
-got `["text"]` alone, and would have produced a single-block fake that every test
-passed against while the live service returned `""`. A fake modelled on the easy
-case is how a suite goes green against a broken client.
+**Every field of every capture, reconciled** — this is the rule the finding asks
+for, applied rather than promised. Running it found four more instances beyond the
+block order:
 
-So `serveJSON` emits **thinking-then-text by default**, with a `Reply.NoThinking`
-escape for the trivial-prompt shape (also real — the second committed artifact,
-`message-schema.json`, shows it). `serveStream` replays
-`testdata/stream-sample.sse`, which carries the `ping` event and the
+| capture field | model | fix |
+|---|---|---|
+| `content[].thinking` | a thinking block's content is under `thinking`, **not** `text` | `Block.Raw` preserves the block verbatim; `Text` is convenience only |
+| `stop_details` | absent | `Response.StopDetails` — `ErrRefused` said *that* but never *why* |
+| `id` | absent | `Response.ID` — the only handle that correlates with the proxy's own logs |
+| `cache_creation_input_tokens` / `cache_read_input_tokens` | one `PreambleTokens` field | both kept; the preamble lands in creation when cold and read when warm, so one field reports zero half the time |
+| `service_tier`, `speed`, `inference_geo`, `context_management` | absent | left absent **deliberately** — informational, no consumer, and adding a field per observed key is how a contract becomes a mirror of one provider |
+
+**Any new capture is reconciled the same way before it is committed.** That is the
+rule; the table above is what it produced this time.
+
+**And never assert a block *sequence* or index into `content`.** Collect every `text` block in order and
+join them; treat every other block as opaque and preserve it. An earlier draft of
+this plan asserted `[thinking, text]` as *the* shape — which its own third capture
+contradicts.
+
+This nearly went in wrong twice, in the same family. First the trivial probe
+returned `["text"]` alone and would have produced a single-block fake the whole
+suite passed against while the live client returned `""`. Then the two-block model
+that replaced it was contradicted by the third capture. **The rule, not the site:
+every field of every committed capture is reconciled against the response model
+and the assertions built on it** — block sequence, stop_reason, usage fields — and
+a new capture is reconciled the same way before it is committed.
+
+So `serveJSON` serves **a committed capture by name** (`f.ServeRecorded(t,
+"message-truncated.json")`) rather than a shape assembled from a struct. A fake
+that builds its own envelope can only ever model what its author believed;
+replaying an artifact cannot. `Reply` stays for scripted transport failures.
+`serveStream` replays `testdata/stream-sample.sse`, with its `ping` event and
 space-padded `data:` payloads.
 
 - [ ] **Step 3: Add `Cassette` — replies are RECORDED, never invented**
 
 ```go
+// ServeRecorded serves a committed capture verbatim for the next matching
+// request. This is how CONTENT enters a test: from an artifact, never a literal.
+func (f *Fake) ServeRecorded(t *testing.T, capture string)
+func (f *Fake) ThenServeRecorded(match, capture string)
+
 // Cassette is a real response, frozen. Keyed by renderRequest's hash so a prompt
 // edit misses LOUDLY rather than passing against a stale recording.
 //
@@ -1066,8 +1157,10 @@ func Cassette(t *testing.T, r llm.Request) Reply
 - [ ] **Step 4: Self-test that the envelope is well-formed**
 
 `internal/llm/llmtest/fake_test.go` — POST a minimal body with `net/http`, assert
-200, that `content` is `[thinking, text]` in that order, that the text is the
-scripted one, and that the recorded request carries the prompt. This is the
+200, that the served body is **byte-identical to the named capture** (which is the
+only assertion that cannot drift from reality), and that the recorded request
+carries the prompt. Note what is NOT asserted: a block sequence — the captures
+disagree on it, and asserting one here would re-introduce the finding. This is the
 *floor*: if the fake's own envelope is wrong, every later failure is misattributed
 to the client.
 
@@ -1092,15 +1185,20 @@ git commit -m "#11 M1: stateful wire fake — httptest server, not a stubbed Cli
 - [ ] **Step 1: Write the failing tests** — drive the **real** client at the fake:
 
 ```go
+// CONTENT comes from a committed capture, never from a literal. `Reply{Text:
+// "flattering, servile"}` would assert against the plan author's guess at what a
+// model says — and every consumer test for #12/#13 would inherit that guess.
 func TestCompleteRoundTrip(t *testing.T) {
 	f := llmtest.NewFake(t)
-	f.Script("define sycophantic", llmtest.Reply{Text: "flattering, servile"})
-	c := llm.New(llm.Config{BaseURL: f.URL, APIKey: "sk-test-1234567890", Model: "claude-opus-5", MaxTokens: 256, Timeout: time.Minute})
+	f.ServeRecorded(t, "message-thinking.json")
+	c := llm.New(llm.Config{BaseURL: f.URL, APIKey: "sk-test-1234567890", Model: "claude-opus-5", MaxTokens: 8192, Timeout: time.Minute})
 
-	got, err := c.Complete(t.Context(), llm.Request{Task: "t", Prompt: "define sycophantic"})
+	got, err := c.Complete(t.Context(), llm.Request{Task: "t", Prompt: "which also fits"})
 	if err != nil { t.Fatal(err) }
-	if got.Text != "flattering, servile" { t.Errorf("Text = %q", got.Text) }
+	if got.Text == "" { t.Error("Text empty — the text blocks were not collected") }
+	if len(got.Blocks) < 2 { t.Errorf("Blocks = %d, want the thinking block preserved too", len(got.Blocks)) }
 	if got.Usage.Duration == 0 { t.Error("Duration not recorded") }
+	if got.Usage.ThinkingTokens == 0 { t.Error("ThinkingTokens not carried through") }
 
 	reqs := f.Requests()
 	if len(reqs) != 1 { t.Fatalf("%d requests, want 1", len(reqs)) }
@@ -1114,11 +1212,14 @@ func TestCompleteRoundTrip(t *testing.T) {
 // retried request arrives INTACT (a consumed body would arrive empty).
 func TestRetriesOn429(t *testing.T) {
 	f := llmtest.NewFake(t)
-	f.Script("hello", llmtest.Reply{Status: 429}, llmtest.Reply{Text: "second try"})
+	// Status codes ARE invented, deliberately: a 429 is protocol, not judgment.
+	// The success that follows is a capture.
+	f.Script("hello", llmtest.Reply{Status: 429})
+	f.ThenServeRecorded("hello", "message-thinking.json")
 	c := llm.New(...)
 	got, err := c.Complete(t.Context(), llm.Request{Task: "t", Prompt: "hello"})
 	if err != nil { t.Fatal(err) }
-	if got.Text != "second try" { t.Errorf("Text = %q", got.Text) }
+	if got.Text == "" { t.Error("retry produced no text") }
 	reqs := f.Requests()
 	if len(reqs) != 2 { t.Fatalf("%d requests, want 2 (a retry)", len(reqs)) }
 	if reqs[1].Prompt() != "hello" { t.Errorf("retried body = %q, want the original prompt", reqs[1].Prompt()) }
@@ -1137,8 +1238,34 @@ func TestTextSkipsThinkingBlock(t *testing.T) {
 	if strings.Contains(got.Text, "thinking") { t.Errorf("thinking leaked into Text: %q", got.Text) }
 }
 
-func TestRefusalBecomesErrRefused(t *testing.T) { /* Reply{Text:"", Stop:"refusal"} */ }
+func TestRefusalBecomesErrRefused(t *testing.T) { /* Reply{Stop:"refusal"} → ErrRefused */ }
 func TestBadRequestIsLoud(t *testing.T)         { /* Reply{Status:400} → errors.Is(err, llm.ErrRequest) */ }
+
+// The capture that decodes and lies. See ErrTruncated.
+func TestTruncatedIsNotSuccess(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.ServeRecorded(t, "message-truncated.json") // stop_reason max_tokens, parses fine
+	c := llm.New(...)
+	_, err := c.Complete(t.Context(), llm.Request{Task: "t", Prompt: "near-synonym?"})
+	if !errors.Is(err, llm.ErrTruncated) {
+		t.Fatalf("err = %v, want ErrTruncated — a cut-off answer that happens to parse is not an answer", err)
+	}
+}
+
+// Blocks are preserved in arrival order, whatever that order is. The truncated
+// capture is [thinking, text, thinking], so an implementation that assumes
+// thinking-then-text fails here.
+func TestBlocksPreserveArrivalOrder(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.ServeRecorded(t, "message-truncated.json")
+	c := llm.New(...)
+	got, _ := c.Complete(t.Context(), llm.Request{Task: "t", Prompt: "near-synonym?"}) // ErrTruncated expected
+	kinds := []string{}
+	for _, b := range got.Blocks { kinds = append(kinds, b.Type) }
+	if len(kinds) != 3 || kinds[2] != "thinking" {
+		t.Errorf("Blocks = %v, want the trailing thinking block preserved", kinds)
+	}
+}
 func TestServerDownIsUnavailable(t *testing.T)  { /* point at a closed port → ErrUnavailable */ }
 func TestStreamDeltasConcatToText(t *testing.T) { /* deltas collected == Response.Text */ }
 func TestStreamCancellation(t *testing.T)       { /* cancel mid-stream → ctx.Err(), returns promptly */ }
@@ -1377,11 +1504,16 @@ rather than a one-off someone did in a terminal once. So this task is no longer
 "record them"; it is "detect when they stop being true".
 
 - [ ] **Step 1:** Write a conformance-tagged test that re-runs each probe against
-      the live proxy and compares *shape* with the committed capture: the block
-      sequence (`thinking`, `text`), the SSE event sequence (`message_start`,
-      `content_block_start`, `ping`, `content_block_delta`+, `content_block_stop`,
-      `message_delta`, `message_stop`), and that a schema'd request still returns
-      decodable JSON. Compare shape, never content — the text differs every run.
+      the live proxy and compares *shape* with the committed capture. Compare
+      shape, never content — the text differs every run. And assert **invariants,
+      not sequences**, because the captures disagree on sequence:
+      - at least one `text` block is present, and the joined text is non-empty;
+      - every block type seen is one the model knows (`text`, `thinking`), so a new
+        block type surfaces here rather than in a learner's session;
+      - `stop_reason` is one `classifyStop` enumerates;
+      - the SSE stream carries `message_start` … `message_stop` with at least one
+        `content_block_delta` between them — a *set* obligation with an ordering
+        only on the endpoints, since `ping` may appear anywhere.
 - [ ] **Step 2:** Skip, do not fail, when the service is unavailable — the
       `t.Skipf("network unavailable: %v", err)` shape `fetch_conformance_test.go`
       already uses.
@@ -1424,6 +1556,14 @@ Run: `go test -tags conformance -run Capture ./internal/llm/ -count=1`
       *`decode` either returns a fully populated `T` and `nil`, or the zero `T`
       and an error matching `ErrMalformed`. It never panics, and it never returns
       a partially populated value with a nil error.*
+
+- [ ] **`Run[T]` checks `classifyStop` BEFORE it decodes.** This is not an
+      ordering nicety: a truncated structured answer commonly parses cleanly, so a
+      decode-first implementation returns success on garbage. Pinned by a test that
+      feeds `testdata/message-truncated.json` — which decodes to
+      `{"verdict":"yes","reason":": Ā"}` with both required fields present — and
+      asserts `ErrTruncated`. That test fails against any implementation that
+      trusts the parser, which is exactly what makes it worth writing.
 
       Run: `go test ./internal/llm/ -run FuzzDecode -fuzz FuzzDecode -fuzztime 60s`
       Enumerated cases are what a fuzz corpus is for; prose enumerations rot
@@ -1693,3 +1833,54 @@ Two conclusions worth keeping separate from the code:
 The one bound Go does not provide is stall detection inside a stream, because a
 total deadline cannot express "minutes for a long answer, seconds for a dead
 connection". `StallAfter` is that, and it is implemented once in the streaming loop.
+
+### 2026-08-22 — PQ-9: the response model was narrower than our own captures
+
+**Reason.** Second finding in the `fake-models-unobserved-shape` family, so the
+deliverable is the enumeration, not the site: *every field of every committed
+capture reconciled against the response model and the assertions built on it.*
+
+**What the reconciliation found — five instances, one of them serious.**
+
+1. **Block order is not fixed.** `message-truncated.json` is
+   `[thinking, text, thinking]` while the other two are `[thinking, text]`. The
+   previous revision "fixed" PQ-3 by asserting `[thinking, text]` as *the* shape —
+   replacing one wrong model with another wrong model. Rule now: collect all `text`
+   blocks in order, treat everything else as opaque, assert no sequence anywhere.
+2. **A truncated answer parses.** `message-truncated.json` carries
+   `stop_reason: max_tokens` and the payload `{"verdict":"yes", "reason":": Ā"}` —
+   valid JSON, both required fields present, the reason cut mid-rune. `decode`
+   accepts it and returns nil. So `ErrTruncated` joins the taxonomy, `classifyStop`
+   enumerates stop reasons rather than defaulting to success, and **`Run[T]`
+   checks the stop reason BEFORE decoding** — a decode-first implementation
+   returns success on garbage, which is the whole point.
+3. **A thinking block's content is under `thinking`, not `text`.** A single `Text`
+   field cannot round-trip both, and #16 must echo thinking blocks back byte for
+   byte. `Block.Raw` added; `Text` demoted to convenience.
+4. **`stop_details` was absent**, so `ErrRefused` could say a call was refused but
+   never why — the difference between a prompt to fix and a topic to avoid.
+5. **The preamble spans two usage fields.** It lands in `cache_creation` cold and
+   `cache_read` warm; one field would report zero half the time and make the
+   preamble look intermittent. Both kept, summed by a method.
+
+Deliberately *not* modelled: `service_tier`, `speed`, `inference_geo`,
+`context_management`. They are informational with no consumer, and adding a field
+per observed key turns a provider-independent contract into a mirror of one
+provider.
+
+**How the specimen was preserved.** The truncated capture was produced by the
+probe script asking for 512 tokens with adaptive thinking on — thinking ate the
+budget and the answer got the remainder. Rather than delete it, it is kept as
+`message-truncated.json`, the probe script is annotated never to re-record it
+("re-recording would destroy the very thing it exists to show"), and `max_tokens`
+in the script moved to 8192 so a healthy `message-schema.json` sits beside it. The
+general rule went into the script's comments too: **with adaptive thinking on,
+`max_tokens` must cover the thinking AND the answer** — budget for the answer
+alone and the answer is what gets cut. It is also why `defaultMaxTokens` is 8192.
+
+**PQ-1 finally landed.** The previous revision *described* five task-body changes
+and made two of them. Task 5's content assertions were still
+`Reply{Text: "flattering, servile"}` — the invented literal the cassette decision
+existed to remove. Content now enters every test through `ServeRecorded` from a
+committed capture; only transport shapes (a 429, a 400, a refusal) stay invented,
+because those are protocol rather than judgment.

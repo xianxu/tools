@@ -36,8 +36,20 @@ probe_blocks() {
 }
 
 # Fact 2: output_config.format (structured outputs) survives the proxy.
+#
+# max_tokens is 8192, NOT 512. At 512 with adaptive thinking on, thinking ate the
+# whole budget: the answer returned stop_reason=max_tokens carrying
+# {"verdict":"yes", "reason":": <cut mid-rune>"} -- syntactically valid, every
+# required field present, semantically destroyed. It DECODED, so a parser-only
+# check called it a success. That capture is preserved as message-truncated.json
+# because it is the only honest specimen of the failure mode we have; this probe
+# records the healthy case beside it.
+#
+# The general rule, and it is why the default MaxTokens is 8192: with adaptive
+# thinking on, max_tokens must cover the thinking AND the answer. Budget it for
+# the answer alone and the answer is what gets cut.
 probe_schema() {
-  post '{"model":"'"$MODEL"'","max_tokens":512,"output_config":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"verdict":{"type":"string","enum":["yes","no"]},"reason":{"type":"string"}},"required":["verdict","reason"],"additionalProperties":false}}},"messages":[{"role":"user","content":"Is obsequious a near-synonym of sycophantic?"}]}'
+  post '{"model":"'"$MODEL"'","max_tokens":8192,"output_config":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"verdict":{"type":"string","enum":["yes","no"]},"reason":{"type":"string"}},"required":["verdict","reason"],"additionalProperties":false}}},"messages":[{"role":"user","content":"Is obsequious a near-synonym of sycophantic?"}]}'
 }
 
 # Fact 3: the streamed frame sequence, including the ping event and the
@@ -65,6 +77,9 @@ case "${1:-summary}" in
     mkdir -p "$OUT"
     probe_blocks  > "$OUT/message-thinking.json"
     probe_schema  > "$OUT/message-schema.json"
+    # message-truncated.json is deliberately NOT re-recorded: it is a preserved
+    # specimen of a max_tokens truncation, and re-recording would destroy the very
+    # thing it exists to show.
     probe_stream  > "$OUT/stream-sample.sse"
     echo "recorded into $OUT"
     ;;
