@@ -454,6 +454,72 @@ personal word list is the right trade today; when it stops being, the fix belong
 in the store — an index, or a filename pre-filter that still *decides* on
 timestamps — not in this command.
 
+## Free-form input
+
+A line that is not a word and reads as a question is answered by the model rather
+than looked up. There is no mode and no prefix to remember — which is the whole
+claim, so the interesting part is how "is this a word" gets decided.
+
+**The dictionary is the classifier.** Word count cannot be the signal: `hot dog`
+is a two-word headword and `defenestrate` is one word. What works is free,
+offline and already on the path — **ask NOAD first**, and classify only what it
+misses. `hot dog`, `a priori` and `use` are lookups because the dictionary has
+them, not because a predicate was careful.
+
+**One decision table, in two pure halves.** `parseREPLLine` is the syntactic half
+(command / blank / forced question / forced literal / word); `readsAsQuestion` is
+the semantic half, and it is only ever asked about a line NOAD already missed.
+Both loops and the one-shot route through the same two functions —
+`TestConsoleDecisionTable` drives the whole table end to end through the real
+route, because asserting each half separately proves each is correct and leaves
+the *table* unasserted.
+
+| input | classified as |
+|---|---|
+| `/history 7` | command — `/` in column 1 still wins |
+| `sycophantic`, `hot dog` | lookup — NOAD has an entry |
+| `what's the difference to obsequious?` | question — no entry, reads interrogative |
+| `sycophanti` | not found — no entry, does not read interrogative |
+| `?hot dog` | question, forced — the dictionary is not consulted at all |
+| `\how so` | not found, forced — the question fallback is suppressed |
+
+`readsAsQuestion` has three arms: a trailing `?`, a leading interrogative or
+auxiliary (`what's` → what, `isn't` → is, and `when` is not a negation), or a
+leading request verb with an object (`use it in a sentence`). Single-word lines
+are never questions — that is a headword shape, and a miss is a typo.
+
+**There is deliberately no length arm.** A draft had "≥5 words → question" to
+catch `difference between sycophantic and obsequious`, which reads as neither
+interrogative nor imperative. That is a word count wearing a different hat, and
+word count is the signal that cannot work. The cost is real and named: that line
+answers "not found", and `?` is its recovery.
+
+**Both hatches, and why neither is exclusive.** `?` forces a question and `\`
+forces a lookup; a bare question still asks and a bare word still looks up, so
+each hatch is a recovery rather than syntax. They are decided in `parseREPLLine`
+next to the `/` test, for the reason that test is there: a prefix checked in
+either loop alone makes the loops disagree about what a line means.
+
+**A question is not a lookup, and the log knows it.** The route decision sits
+*before* `d.capture.Capture` in `lookupAndRender`'s miss branch — deliberately,
+because the event log is what `#8`'s statistics and `#17`'s learner model fold
+over, and a question recorded as a not-found lookup is data that was never a
+lookup. Verified end to end: six lines in, four events out, neither question
+among them.
+
+**A question does not become the current word** either. The ask outcome carries
+exit code 0 — it is not a failure — so the guard is `out.ask == "" && out.code ==
+0`, not the code alone. Testing the code alone made a bare Enter "replay" the
+question, and would have made the question the word `#16`'s context claims the
+next one is about. `session` exists for this: it replaced three separate
+declarations of "what is this session holding" (`replLines`, `runEditor`,
+`submitLine`), because the rule would otherwise have been written three times.
+
+**One ask entry per loop.** The forced route (`?…`, decided by the parser) and
+the unforced one (a dictionary miss that reads as a question) differ only in
+whether the dictionary was consulted, so each loop funnels both into a single
+closure — the place the streaming writer and the scoped interrupt will hang.
+
 ## Entry modes
 
 `run` dispatches modes first (`-forget`), then on argument count. The function

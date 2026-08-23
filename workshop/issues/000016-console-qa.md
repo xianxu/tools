@@ -76,10 +76,10 @@ the generated items are.
 
 ## Done when
 
-- [ ] Classification is a pure function with a fixture table; every row in the
+- [x] Classification is a pure function with a fixture table; every row in the
       table above is asserted, including `hot dog` as a lookup and a typo as
       not-found.
-- [ ] Both escape hatches work, and each is exercised by a test that fails when the
+- [x] Both escape hatches work, and each is exercised by a test that fails when the
       hatch is removed.
 - [ ] A full Q&A round trip runs against the fake, with recent words and
       `user-model.md` visible in the recorded prompt.
@@ -201,7 +201,7 @@ ledger rather than netted against the findings above.
 Design: [`workshop/plans/000016-console-qa-plan.md`](../plans/000016-console-qa-plan.md).
 
 - [x] Design via `sdlc start-plan` before implementing.
-- [ ] M1 — the console knows a question from a word: `readsAsQuestion`, the `?`
+- [x] M1 — the console knows a question from a word: `readsAsQuestion`, the `?`
       and `\` hatches on `parseREPLLine`, routing from the NOAD miss branch, and
       the honest "no model configured" message in all three entry modes.
 - [ ] M2 — the answer: `askContext` + pure prompt, `runAsk` streaming through
@@ -255,3 +255,30 @@ the miss:
 Counterweight the judge itself supplied: #14 — the closest analogue, raw-mode
 editor work — came in at **0.35×** its estimate. So the exposure is real but not
 one-directional.
+
+### 2026-08-23 — M1 closed: the console knows a question from a word
+
+Five tasks, five commits, in plan order. The decision table is asserted
+end-to-end by `TestConsoleDecisionTable` through the real route rather than
+half-by-half, which is the only version that can catch the two halves disagreeing.
+
+Three things worth keeping:
+
+- **The ask outcome carries exit code 0**, because a question is not a failed
+  lookup — which makes `if out.code == 0 { current = word }` exactly wrong. The
+  guard is `out.ask == "" && out.code == 0`; mutation-checked by deleting the ask
+  half, which reddens `TestAQuestionDoesNotBecomeTheCurrentWord`. This was PQ-3,
+  found at the plan gate rather than in code.
+- **`git checkout <file>` after a deliberate mutation restores HEAD, not the
+  working tree**, so it silently discarded Task 4's uncommitted edits. Recovered
+  from a copy made before the mutation. `lessons.md`'s "check `git status` after a
+  mutation experiment" now has a second shape: *make the backup first, and restore
+  from the backup, not from git.*
+- **The sandbox blocks CoreServices**, so a piped run of the built binary reports
+  "no dictionary entry" for every word and looks exactly like a regression.
+  Verified unsandboxed instead.
+
+Verified by hand against the real dictionary (not the fake): `sycophantic` and
+`hot dog` define, `sycophanti` misses, `how so` routes to the model, `\how so`
+stays a miss, `?why` asks despite `why` being a headword. Event log after six
+lines: four events, neither question among them.
