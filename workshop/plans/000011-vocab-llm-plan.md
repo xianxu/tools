@@ -1185,3 +1185,101 @@ in `DEFINE_LLM_API_KEY`, or point `DEFINE_LLM_BASE_URL` at `api.anthropic.com`
 with a direct key for conformance runs. I will not hand-write the SSE sample as a
 substitute — a fake modelling invented behaviour is the failure ARCH-MOCK exists
 to prevent, and it would be discovered by #16 at the worst possible time.
+
+---
+
+## Revisions
+
+### 2026-08-22 — cassettes replace invented replies; proxy facts corrected
+
+**Reason.** Operator asked two things this plan answered badly: *"mocking an LLM
+maybe hard? what's your plan to mock?"* and *"which proxy are you hitting, is it
+the one managed by parley or one installed locally"*. The second exposed a
+measurement error, and the first exposed a design weakness.
+
+**Delta 1 — the proxy identity was wrong, and the `## Open question` is retracted.**
+
+The running instance is **parley-managed**:
+
+```
+/Users/xianxu/.local/share/nvim/parley/cliproxy/bin/cli-proxy-api
+  -config /Users/xianxu/.local/share/nvim/parley/cliproxy/config.yaml
+```
+
+Measured fact 2 above read `~/.cli-proxy-api/config.yaml` instead — the homebrew
+install's config, which the operator has since removed. Parley's config declares
+`api-keys`, and parley's instance is the target from here (operator, 2026-08-22:
+it carries auto-healing the standalone install does not). **Nothing is blocked.**
+Verified live: `claude-opus-5` answers, and 31 models are reachable including
+`claude-fable-5` and `claude-sonnet-5`, so `defaultModel = "claude-opus-5"` stands.
+
+**Delta 2 — the proxy speaks both protocols.** `internal/api/server.go:429-446`
+routes OpenAI (`/v1/chat/completions`, `/v1/completions`, `/v1/responses`) *and*
+Anthropic (`/v1/messages`, `/v1/messages/count_tokens`). We take the Anthropic
+path because we use the Anthropic SDK; recorded because the OpenAI path is how
+parley itself drives it, so "which protocol does cliproxyapi use" has two right
+answers and only one of them is ours.
+
+**Delta 3 — two named risks retired by measurement.**
+
+- `output_config.format` **passes through**. A schema'd request returned JSON that
+  decoded first try. The Risks table's first row is answered: keep the defensive
+  decode (an intermediary could still drop it), but it is no longer an open
+  question.
+- The SSE frame sequence is **captured**: `message_start`, `content_block_start`,
+  `ping`, `content_block_delta`×N, `content_block_stop`, `message_delta`,
+  `message_stop` — with `data:` payloads right-padded with spaces, and a `ping`
+  event that hand-written frames would have omitted. Task 8 drops from "record the
+  sample" to "commit the captured sample and assert it still matches".
+
+**Delta 4 — new measured fact: the proxy prepends ~1,900 tokens of system prompt.**
+
+A 22-token user message reported `cache_creation_input_tokens: 1902`, and the next
+call reported `cache_read_input_tokens: 1902`. That is Claude Code's own system
+prompt riding the OAuth path. Consequences, both worth stating before anyone tunes
+a prompt: our `Request.System` is **additive to a preamble we do not control**, and
+token accounting for a task will never be just our prompt. Cost impact is nil (it
+caches); behavioural impact is not. `--llm-check` should print it so it is visible
+rather than folklore.
+
+**Delta 5 — the fake replays RECORDED responses, not invented ones.**
+
+The original Task 4/5 scripted replies as literals (`Reply{Text: "flattering,
+servile"}`). That is *my guess at what a model says*, and every consumer test for
+#12 and #13 would then assert against that guess. Three things a fake must be kept
+honest about, and only the first two are testable at all:
+
+| concern | mechanism | model involved |
+|---|---|---|
+| transport correctness — protocol, retry, SSE, degradation, redaction | wire fake | no |
+| prompt stability — did this prompt change unintentionally | golden files | no |
+| output quality — is the authored question any good | **not a test** — see below | yes |
+
+So: **`llmtest.Cassette`**. A recorded real response, keyed by a stable hash of the
+rendered `Request` (model, effort, system, prompt, schema), stored at
+`internal/llm/llmtest/testdata/cassettes/<hash>.json`, replayed byte-for-byte.
+
+- `-record` re-runs the request against the live proxy and rewrites the cassette;
+  the diff is then a visible record of how the model's answer moved.
+- A **miss** in non-record mode is a loud failure naming the task and the hash, not
+  a fallback. A prompt edit therefore *cannot* silently pass against a stale
+  recording.
+- `Fake.Script` survives for the cases where an invented body is the point —
+  scripted `429`s, a refusal, a truncated payload. Those are transport shapes, and
+  inventing them is correct.
+
+Limits, stated now rather than discovered by #12: a cassette is **one sample of a
+stochastic process**, so it pins *our handling* of a real answer, not the model's
+reliability at producing one; and cassettes go stale as models move, which is
+exactly what the live conformance run exists to detect (ARCH-MOCK).
+
+**Delta 6 — output quality is explicitly out of scope here.** It is an evaluation
+problem, not a transport problem, and its home is #10's material-quality
+checkpoint. Recorded so that "the harness has tests" is never mistaken for "the
+generated questions are good" — different claims, different evidence.
+
+**Task list changes.** Task 4 gains `Cassette` and loses its invented reply
+literals; Task 5's tests use cassettes for content and `Script` for failure shapes;
+Task 8 becomes "commit the captured SSE sample + assert no drift"; Task 12 adds an
+assertion that the recorded preamble size has not changed materially; Task 13
+prints the preamble token count.
