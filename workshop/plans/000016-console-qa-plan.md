@@ -32,7 +32,8 @@ Each of these is a fork the implementation should not silently re-take.
 have an entry", and for an ordinary word that lookup *is* the feature. So routing
 happens inside `lookupAndRender`, after its single `d.dict.Lookup` call, rather
 than in a pre-pass that would look every line up twice (ARCH-DRY). This also keeps
-`lookupAndRender` the one capture site, an invariant `capture_test.go` pins.
+`lookupAndRender` the one capture site, an invariant
+`TestCaptureArityIsOnePerLookup` (`capture_test.go:89`) pins.
 
 **D2 — A question is never captured as a lookup.** The route decision sits
 *before* `d.capture.Capture(word, false, opt)` in the miss branch. A question
@@ -70,13 +71,35 @@ and no request verb answers `not found`, and `?` is its recovery. If real use
 shows that landing often, the arm is one line — but it is an operator decision,
 not a drift.
 
-**D5 — Ctrl-C mid-stream cancels the question, not the session.** Today
-`readKeys` calls the session `cancel()` the moment it decodes an interrupt, which
-is load-bearing during playback (the loop is blocked inside `speak` and cannot
-read the key itself). During a stream the loop is *not* blocked — it selects on
-keys — so the same byte must mean something narrower. One mechanism covers both:
-`readKeys` fires a swappable sink whose default is the session cancel and which
-the ask path temporarily points at the question's own `context.CancelFunc`.
+**D5 — One answer to "what does an interrupt mean right now", and it is not the
+transport's.** Ctrl-C reaches this program two ways, and the design must not bet
+on either. In raw mode `term.MakeRaw` clears ISIG so `\x03` is a byte the key
+reader decodes; but `main` also installs `signal.NotifyContext`, and the pty
+suite's own header records the measurement that a `\x03` written to a master
+**reached define as a SIGINT** and left through `NotifyContext`, not the key
+reader (`pty_conformance_test.go:13-25`). A scoped interrupter that only the byte
+path feeds would therefore be cancelled out from under by the signal path, ending
+the session while a question streams.
+
+So the sink is the single answer and **both** transports feed it:
+
+| transport | reaches the sink via |
+|---|---|
+| byte `\x03` (raw mode, ISIG off) | `readKeys` decoding `KeyInterrupt` |
+| SIGINT (startup race, a terminal that kept ISIG, `kill -INT`) | a `signal.Notify` channel the loop owns |
+
+For that to hold, the interactive loop's context must not *also* be cancelled
+behind the sink's back, so `run` detaches it — `context.WithoutCancel(ctx)` —
+before deriving the loop's own cancellable context. `main` keeps
+`signal.NotifyContext` unchanged for the one-shot and piped paths, whose contract
+really is "SIGINT ends the program".
+
+The default sink is the session cancel, so quitting at the prompt and Ctrl-C
+during playback behave exactly as they do today; the ask path points it at the
+question's own `CancelFunc` for the duration of a stream. The signal source is
+injected as a `<-chan os.Signal` so a test drives it without raising a real
+signal in the test binary.
+
 
 **D6 — Stream raw, translate newlines.** "Render cooked, play raw" (#14) cannot
 extend to a stream: deltas arrive continuously and flapping the terminal per
@@ -120,7 +143,7 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `askContext` | `cmd/define/askctx.go` | new |
 | `renderAskPrompt` | `cmd/define/askctx.go` | new |
 | `recentTurns` | `cmd/define/askctx.go` | new |
-| `session` | `cmd/define/session.go` | new |
+| `session` / `exchange` | `cmd/define/session.go` | new |
 | `crlfWriter` | `cmd/define/crlf.go` | new |
 | `ReviewEvent` / `complete` | `cmd/define/store/event.go` | modified |
 
@@ -155,11 +178,17 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
     context; when it lands, this struct is what it reuses.
 
 - **session** — the per-session state both loops carry: `current` word, `entry`
-  text of that word, and `turns` (the Q&A transcript).
-  - **Relationships:** one per loop invocation; replaces the bare `current string`
-    both loops declare today.
-  - **DRY rationale:** without it, "the last few words + the last exchange" gets
-    declared twice, once per loop, and the two drift.
+  text of that word, and `turns` (the Q&A transcript, added in M2).
+  - **Relationships:** one per loop invocation. It **replaces** the bare
+    `current string` declared in `replLines` (`repl.go:145`), in `runEditor`
+    (`replraw.go`), and threaded through `submitLine` as `current *string`
+    (`replraw.go:229`) — all three migrate in Task 4, not later.
+  - **DRY rationale:** three declarations of "what is this session holding" is
+    already one too many, and #16 adds two more facts to hold. It is also where
+    the ask contract lives: a question must not become the current word, and one
+    struct is what makes that a single assignment site to not make.
+  - **Future extensions:** `#17`'s per-session signal and `#6`'s review state
+    both want a home that is not a loop-local variable.
 
 - **crlfWriter** — an `io.Writer` decorator mapping `\n` → `\r\n` for raw-mode
   output (D6).
@@ -172,7 +201,8 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `runAsk` | `cmd/define/ask.go` | new | `llm.Client.Stream` |
 | `deps.newLLM` / `deps.getenv` | `cmd/define/main.go` | new | `llm.New` + `llm.Resolve` |
 | `Store.UserModel` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
-| `interrupter` | `cmd/define/rawterm.go` | new | the raw key reader's cancel |
+| `interrupter` | `cmd/define/rawterm.go` | new | what Ctrl-C means right now |
+| `deps.notifySignals` | `cmd/define/main.go` | new | `signal.Notify` |
 | `askCapturer` (on `Capturer`) | `cmd/define/capture.go` | modified | event append |
 
 - **gatherAskContext** — reads the deck, the user model and the session's own
@@ -193,9 +223,11 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
   - **Injected into:** `gatherAskContext`. `Mem` holds it in a field, so the
     conformance suite runs both.
 
-- **interrupter** — a mutex-guarded holder of the current cancel func (D5).
+- **interrupter** — a mutex-guarded holder of what Ctrl-C means right now (D5).
   `Set(fn)` returns a restore func; `Fire()` calls whatever is installed.
-  - **Injected into:** `readKeys`, replacing its `context.CancelFunc` parameter.
+  - **Injected into:** `readKeys` (replacing its `context.CancelFunc` parameter)
+    **and** the loop's signal watcher — the two transports, one sink. If only one
+    of them fed it, the other would still end the session mid-stream.
 
 **Test surface.** Every pure entity above gets a colocated table test that runs
 with no fake at all. The integration points are exercised against the existing
@@ -601,19 +633,36 @@ git add cmd/define/main.go cmd/define/route_test.go cmd/define/capture_test.go
 git commit -m "#16 M1: a NOAD miss that reads as a question routes to the model"
 ```
 
-### Task 4: both loops and the one-shot path learn `cmdAsk`
+### Task 4: one session, and an ask that touches none of the lookup state
 
 **Files:**
-- Modify: `cmd/define/repl.go:147-180` (line loop), `cmd/define/replraw.go:140-200`
-  (raw loop), `cmd/define/main.go:286-330` (one-shot)
+- Create: `cmd/define/session.go`
+- Modify: `cmd/define/repl.go:145,147-180` (line loop), `cmd/define/replraw.go:71,140-200,228-246`
+  (raw loop + `submitLine`), `cmd/define/main.go:286-330` (one-shot)
 - Test: `cmd/define/commandloop_test.go`, `cmd/define/editorloop_test.go`, `cmd/define/main_test.go`
+
+Two things land together because they are one class: the loops have three
+separate declarations of "what is this session holding" (`repl.go:145`,
+`runEditor`'s `var current string`, `submitLine`'s `current *string`), and #16
+adds an outcome none of them has a rule for. Wiring the outcome into three
+places without unifying them is how the rule comes to be written twice and
+believed once.
+
+**The ask outcome's contract**, stated once here and asserted per entry mode:
+
+| the ask path… | because |
+|---|---|
+| does **not** set `sess.current` | a bare Enter would then "replay" a question, and M2's `askContext.CurrentWord` would be the previous question rather than the word it was about |
+| does **not** capture anything | D2 — the log is lookups |
+| **does** add the line to editor recall (`hist.Add`) | Up-arrow must recall the question you just asked, exactly as it recalls a `/command` |
+| returns the ask path's own exit code | not `defineOnce`'s; a question that could not be answered is not a failed lookup |
 
 Until M2 the ask path is one function that prints the degradation message —
 `askUnavailable(stderr, question)`. That is what makes M1 a shippable boundary.
 
-- [ ] **Step 1: Write the failing tests** — one per entry mode, all asserting the
-      same message, because "every entry mode reaches it" is the invariant BR-13
-      cost us:
+- [ ] **Step 1: Write the failing tests** — one per entry mode, because "every
+      entry mode reaches it" is the invariant BR-13 cost us, plus one per
+      contract row:
 
 ```go
 // line loop
@@ -622,29 +671,70 @@ func TestLineLoopRoutesAQuestion(t *testing.T) { /* echo "what is the difference
 func TestEditorLoopRoutesAQuestion(t *testing.T) { /* scripted key channel through runEditor */ }
 // one-shot
 func TestOneShotRoutesAQuestion(t *testing.T) { /* run(ctx, []string{"?what is X"}, ...) */ }
-```
 
-Each asserts stderr contains `no model configured` and the question, elided.
+// the contract rows
+func TestAQuestionDoesNotBecomeTheCurrentWord(t *testing.T) {
+	// look up "sycophantic", ask a question, press Enter: the REPLAY is
+	// sycophantic. Deleting the guard in the ask branch reddens this.
+}
+func TestAQuestionIsNotCaptured(t *testing.T) {
+	// a fake Capturer at the seam sees exactly one Capture for the lookup and
+	// none for the question.
+}
+func TestAQuestionIsRecalledByUpArrow(t *testing.T) {
+	// scripted keys: question, Up — the editor line is the question.
+}
+```
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `go test ./cmd/define/ -run 'RoutesAQuestion' -v`
+Run: `go test ./cmd/define/ -run 'RoutesAQuestion|AQuestion' -v`
 Expected: FAIL — the question is looked up, or the one-shot exits 2.
 
 - [ ] **Step 3: Implement**
 
-1. `repl.go`'s switch gains `case cmdAsk:` calling the ask path, and its
-   `cmdDefine` case branches on `outcome.ask`.
-2. `replraw.go`'s `ActSubmit` gains the same two branches. Ask output goes
-   through `crlfWriter` (Task 7 wires the real thing; M1 writes the one-line
-   message with an explicit `"\r\n"`).
-3. `main.go`'s one-shot: `cmdAsk` dispatches like `cmdCommand` does, using the
-   **joined** line, and is exempted from the `fs.NArg() > 1` usage guard for the
-   same reason a command is — a question is multi-word by nature:
+1. `cmd/define/session.go`:
+
+```go
+// session is what one REPL session is holding. It replaced three separate
+// declarations of the same idea — repl.go's `current`, runEditor's `current`,
+// and submitLine's `current *string` — because #16 added a rule ("an ask
+// touches none of this") that would otherwise have been written three times.
+type session struct {
+	// current is the word a bare Enter replays. Only a SUCCESSFUL lookup sets
+	// it: not a typo, and not a question.
+	current string
+	// entry is the raw NOAD text of current, kept so a question that follows a
+	// lookup can carry it as context without a second dictionary call (#16 D1).
+	entry string
+}
+```
+
+`exchange` and `turns` are M2's (Task 9); do not add them here.
+
+2. `replLines`, `runEditor` and `submitLine` take `*session` in place of their
+   `current` variables. `submitLine` sets `sess.current`/`sess.entry` from the
+   `lookupOutcome` on a zero code, and returns without touching either when the
+   outcome is an ask.
+3. `repl.go`'s switch gains `case cmdAsk:`, and its `cmdDefine` case branches on
+   `outcome.ask` — **both reaching the same** `askUnavailable` call, not two.
+4. `replraw.go`'s `ActSubmit` gains the same two entries into **one** closure
+   (`askInSession`), for the same reason: the forced (`?…`) and unforced
+   (NOAD-miss) routes differ only in whether the dictionary was consulted, and
+   Task 11 gives that closure the interrupter and `crlfWriter` wiring exactly
+   once (ARCH-DRY).
+5. `main.go`'s one-shot: `cmdAsk` dispatches like `cmdCommand` does, using the
+   **joined** line and returning the ask path's code; and it is exempted from the
+   `fs.NArg() > 1` usage guard for the same reason a command is — a question is
+   multi-word by nature:
 
 ```go
 	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 ```
+
+The one-shot's unforced route (`define "what is X?"`, one quoted arg) reaches the
+ask through `lookupOutcome.ask` in `defineOnce`, which must therefore return the
+ask path's code too.
 
 ⚠️ An unquoted, *unforced* multi-word question (`define what is X`) stays a usage
 error, exactly as `define hot dog` is today. Quoting works
@@ -660,7 +750,7 @@ Expected: PASS.
 
 ```bash
 git add cmd/define
-git commit -m "#16 M1: every entry mode routes a question, none looks it up"
+git commit -m "#16 M1: one session, and an ask that touches none of the lookup state"
 ```
 
 ### Task 5: discoverability and the messages
@@ -700,12 +790,13 @@ git commit -am "#16 M1: /help names both hatches"
 
 ## Chunk 2 — M2: the answer
 
-### Task 7: `crlfWriter` and the scoped interrupt
+### Task 7: `crlfWriter`, and one sink for both interrupt transports
 
 **Files:**
 - Create: `cmd/define/crlf.go`, `cmd/define/crlf_test.go`
-- Modify: `cmd/define/rawterm.go:43-75`, `cmd/define/replraw.go:15-45`
-- Test: `cmd/define/rawterm_test.go`
+- Modify: `cmd/define/rawterm.go:37-75`, `cmd/define/replraw.go:15-45`,
+  `cmd/define/main.go:318-324` (the loop's context), `cmd/define/main.go` (`deps.notifySignals`)
+- Test: `cmd/define/rawterm_test.go`, `cmd/define/main_test.go`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -728,20 +819,30 @@ func TestCRLFWriterSplitAcrossWrites(t *testing.T) {
 func TestInterrupterFiresWhatIsInstalled(t *testing.T) {
 	// default fires the session cancel; Set swaps it; the restore func puts it back.
 }
+
+// The finding this task exists for (PQ-1). Both transports, one observable.
+func TestBothInterruptTransportsReachTheSink(t *testing.T) {
+	// (a) a KeyInterrupt decoded by readKeys fires the sink;
+	// (b) a value on the injected signal channel fires the SAME sink;
+	// (c) with the sink pointed at a question cancel, NEITHER cancels the
+	//     loop's context — which is what makes "the session survives" true.
+}
 ```
 
 - [ ] **Step 2: Run and watch them fail.**
-- [ ] **Step 3: Implement.** `crlfWriter` holds a `lastWasCR bool` so the
-      split-across-writes case works. `interrupter`:
+
+- [ ] **Step 3: Implement.**
+
+`crlfWriter` holds a `lastWasCR bool` so the split-across-writes case works.
 
 ```go
 // interrupter is what Ctrl-C means RIGHT NOW.
 //
-// The reader must cancel immediately — during playback the loop is blocked
-// inside speak and cannot read the key itself — but "immediately cancel the
-// session" is wrong while a question is streaming, where the answer should stop
-// and the prompt should come back. One holder, swapped by whoever owns the
-// foreground.
+// Two transports deliver it and neither may own the meaning: raw mode clears
+// ISIG so \x03 is a byte the key reader decodes, but the pty suite measured a
+// \x03 arriving as a SIGINT instead (pty_conformance_test.go:13-25), which
+// would leave through NotifyContext and end a session mid-answer. Both feed
+// this holder; whoever owns the foreground decides what it does.
 type interrupter struct {
 	mu sync.Mutex
 	fn context.CancelFunc
@@ -751,14 +852,39 @@ func (i *interrupter) Set(fn context.CancelFunc) (restore func())
 func (i *interrupter) Fire()
 ```
 
-`readKeys` takes `*interrupter` instead of a `context.CancelFunc` and calls
-`Fire()`.
+Three wirings, and the third is the one that makes the other two mean anything:
 
-- [ ] **Step 4: Run the tests.** `go test ./cmd/define/`
+1. `readKeys` takes `*interrupter` instead of a `context.CancelFunc`, and calls
+   `Fire()` where it called `cancel()`. Update its doc comment — it currently
+   asserts Ctrl-C is a byte "not a signal", which the pty suite disproved.
+2. `replRaw` starts a watcher over `d.notifySignals(os.Interrupt)` — a
+   `func(...os.Signal) <-chan os.Signal` seam on `deps`, defaulting to
+   `signal.Notify` — that also calls `Fire()`. Injected rather than called
+   directly so a test drives it without raising a real signal in the test binary.
+3. `run`'s `NArg() == 0` branch detaches from the signal context before deriving
+   the loop's own:
+
+```go
+		// The loop owns what an interrupt means (#16 D5), so it must not ALSO be
+		// cancelled behind the sink's back by main's NotifyContext — a SIGINT
+		// would end the session while an answer streams no matter what the sink
+		// points at. The one-shot and piped paths keep the signal context, where
+		// "SIGINT ends the program" is the right contract.
+		ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		defer cancel()
+```
+
+⚠️ The default sink is that same `cancel`, so quitting at the prompt and Ctrl-C
+during playback are byte-for-byte what they are today. Verify by running the
+existing `TestEditorLoopCtrlCExitsZero` and the pty suite unchanged — if either
+needs editing, the default sink is wired wrong.
+
+- [ ] **Step 4: Run the tests.** `go test ./cmd/define/` and
+      `go test -tags conformance -run PTY ./cmd/define/`
 - [ ] **Step 5: Commit.**
 
 ```bash
-git commit -am "#16 M2: raw-mode newlines and a Ctrl-C that can mean something narrower"
+git commit -am "#16 M2: one sink for both ways Ctrl-C arrives"
 ```
 
 ### Task 8: the store learns `user-model.md` and the `asked` event
@@ -876,23 +1002,31 @@ git commit -am "#16 M2: the directory, rendered as a prompt"
 - Modify: `cmd/define/main.go` (`deps.getenv`, `deps.newLLM`, `realDeps`)
 
 - [ ] **Step 1: Write the failing test** — against the **wire-level** fake, not a
-      stubbed client:
+      stubbed client. The API below is the real one
+      (`internal/llm/llmtest/fake.go`): `Fake` embeds `*httptest.Server`, so
+      `fake.URL` is a field; replies are queued with `Script(match, replies...)`;
+      and what was received comes back as `Requests() []Recorded`, whose
+      `Prompt()` and `System()` are what the assertions read.
 
 ```go
 func TestAskStreamsAnAnswerWithTheDirectoryAsContext(t *testing.T) {
-	fake := llmtest.NewFake(t)          // httptest server speaking the wire protocol
+	fake := llmtest.NewFake(t)
+	fake.Script("obsequious", llmtest.Reply{Text: "Obsequious is stronger…"})
 	d := testDeps(t)
-	d.getenv = envFor(fake.URL())        // DEFINE_LLM_BASE_URL + a key
+	d.getenv = envFor(fake.URL)      // DEFINE_LLM_BASE_URL + DEFINE_LLM_API_KEY
 	d.newLLM = llm.New
 	// a deck with two words and a user-model.md in the temp dir
 	...
 	code := runAsk(ctx, d, opt, sess, "what's the difference to obsequious?", &out, &errb)
+
 	// The recorded REQUEST is the assertion: the context reached the model.
-	body := fake.LastRequestBody()
+	got := fake.Requests()
+	if len(got) != 1 { t.Fatalf("requests = %d, want 1", len(got)) }
+	body := got[0].System() + "\n" + got[0].Prompt()
 	for _, want := range []string{"sycophantic", "ephemeral", "reads judicial opinions"} {
 		if !strings.Contains(body, want) { t.Errorf("prompt is missing %q", want) }
 	}
-	if !strings.Contains(out.String(), fake.LastAnswer()) { ... }
+	if !strings.Contains(out.String(), "Obsequious is stronger") { ... }
 }
 
 func TestAskDegradesWhenTheSeamIsUnavailable(t *testing.T) {
@@ -900,13 +1034,22 @@ func TestAskDegradesWhenTheSeamIsUnavailable(t *testing.T) {
 	// afterwards in the same session.
 }
 
+// PQ-4: a cancelled stream is the user's own keypress, not a failure.
+func TestAskSaysNothingWhenTheUserCancels(t *testing.T) {
+	// ctx cancelled mid-stream: stderr is EMPTY and the code is 0. Without the
+	// guard this prints "no model configured", because a cancelled request has
+	// no HTTP status and mapError classifies statusless failures as
+	// ErrUnavailable (anthropic.go:282-290) — the degradation message would be
+	// the answer to pressing Ctrl-C.
+}
+
 func TestAskRecordsAnAskedEvent(t *testing.T) {
 	// One event, kind "asked", carrying the question and the current word.
 }
 
 func TestAskFollowUpCarriesThePreviousExchange(t *testing.T) {
-	// Two questions in one session; the second request body contains the first
-	// answer.
+	// Two questions in one session; the second request's Prompt() contains the
+	// first answer.
 }
 ```
 
@@ -923,12 +1066,19 @@ func TestAskFollowUpCarriesThePreviousExchange(t *testing.T) {
 func runAsk(ctx context.Context, d deps, opt options, sess *session, question string, out, errOut io.Writer) int
 ```
 
-Degradation: `llm.Resolve` error or `errors.Is(err, llm.ErrUnavailable)` →
-```
-define: no model configured; `what's the difference…` is not a word
-```
-on stderr, exit 1 for the one-shot path, loop continues otherwise.
-`llm.ErrRequest` stays **loud** (our bug), per the taxonomy in `atlas/llm.md`.
+Its taxonomy, in the order it must be asked:
+
+| condition | behaviour |
+|---|---|
+| `ctx.Err() != nil` after the stream | **nothing printed, code 0** — this is the user's own Ctrl-C. Asked FIRST, before the error is classified at all. Precedent: `playAnnounced`'s cancelled-context guard, `llmcheck.go:62`'s `parent.Err()` check |
+| `llm.Resolve` error, or `llm.ErrUnavailable` | ``define: no model configured; `what's the difference…` is not a word`` on stderr; code 1 |
+| `llm.ErrTruncated` with partial text | keep what arrived, warn once that it was cut |
+| `llm.ErrRequest` | **loud** — our bad prompt or model, per the taxonomy in `atlas/llm.md` |
+
+⚠️ The cancel guard cannot be a `errors.Is(err, context.Canceled)` test:
+`mapError` has already turned a statusless failure into `ErrUnavailable` by the
+time `runAsk` sees it, so the original cause is gone. Ask the **context**, not
+the error.
 
 - [ ] **Step 4: Run the tests.** `go test ./cmd/define/...`
 - [ ] **Step 5: Commit.**
@@ -940,36 +1090,51 @@ git commit -am "#16 M2: runAsk — the question, the directory, and the stream"
 ### Task 11: Ctrl-C mid-stream, in the loop that actually owns the terminal
 
 **Files:**
-- Modify: `cmd/define/replraw.go` (the `cmdAsk` branch)
+- Modify: `cmd/define/replraw.go` (the single `askInSession` closure from Task 4)
 - Test: `cmd/define/editorloop_test.go`, `cmd/define/pty_conformance_test.go`
 
-- [ ] **Step 1: Write the failing test** — drive `runEditor` with a scripted key
+- [ ] **Step 1: Write the failing tests** — drive `runEditor` with a scripted key
       channel: submit a question, let the fake stream two deltas, send
       `KeyInterrupt`, then submit a word and assert its definition renders. The
       session must survive; the process must not exit.
 
 ```go
-func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) { ... }
+func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) { /* byte transport */ }
+func TestEditorSignalMidStreamReturnsToThePrompt(t *testing.T) {
+	// The SAME assertion driven through the injected signal channel. Two tests,
+	// not one, because the two transports are exactly what PQ-1 showed a design
+	// can silently serve only half of.
+}
+func TestForcedAndUnforcedAsksShareOneWiring(t *testing.T) {
+	// "?why" and a NOAD-missing question both stream through crlfWriter and both
+	// cancel on Ctrl-C. Deleting either call site's route into askInSession
+	// reddens this — a second copy of the wiring would not (ARCH-DRY).
+}
 ```
 
-Add a pty conformance row alongside `TestPTYCtrlCDuringPlaybackExitsPromptly`,
-because an in-process test proves the bytes were emitted, not that the terminal
-came back.
+Add a **pty conformance** row too, and note what makes it different from the
+three already there: those assert "exited, and the terminal is sane", an
+observable the byte path, the signal path and a crash all produce — which is why
+that suite's header says it cannot pin the byte path. "Ctrl-C mid-answer, then a
+lookup renders" is an observable **only a surviving session** produces, so it
+distinguishes what the existing rows cannot. That closes the gap that file
+documents rather than restating a claim it disproved.
 
-- [ ] **Step 2: Run and watch it fail** (today the interrupt ends the loop).
-- [ ] **Step 3: Implement.** The `cmdAsk` branch:
+- [ ] **Step 2: Run and watch them fail** (today the interrupt ends the loop).
+- [ ] **Step 3: Implement.** Inside `askInSession` — the ONE closure both the
+      forced and unforced routes enter (Task 4):
 
 ```go
 	qctx, qcancel := context.WithCancel(ctx)
 	restore := interrupts.Set(qcancel)
 	done := make(chan int, 1)
-	go func() { done <- runAsk(qctx, d, opt, &sess, cmd.question, &crlfWriter{w: stdout}, stderr) }()
+	go func() { done <- runAsk(qctx, d, opt, sess, question, &crlfWriter{w: stdout}, stderr) }()
 	for streaming := true; streaming; {
 		select {
 		case <-done:
 			streaming = false
 		case k := <-keys:
-			// Swallowed deliberately: the reader has already fired the scoped
+			// Swallowed deliberately: the sink has already fired the scoped
 			// cancel, and letting this key reach Apply would exit the session —
 			// which is what Ctrl-C means everywhere EXCEPT here.
 			if k.Kind != KeyInterrupt {
@@ -982,7 +1147,9 @@ came back.
 ```
 
 ⚠️ Order matters: `restore()` before the next `draw()`, so a Ctrl-C landing
-between the stream ending and the prompt returning still means "quit".
+between the stream ending and the prompt returning still means "quit". And
+`qcancel()` after `restore()`, so the deferred cancel cannot fire a sink that is
+no longer this question's.
 
 - [ ] **Step 4: Run the tests.** `go test ./cmd/define/` and
       `go test -tags conformance ./cmd/define/ -run PTY`
@@ -1017,7 +1184,7 @@ git commit -am "#16 M2: Ctrl-C stops the answer, not the session"
 | both hatches work, each pinned by a test that fails without it | 2, 3 |
 | full round trip against the fake, deck + user-model in the prompt | 10 |
 | a follow-up resolves against the previous exchange | 9, 10 |
-| Ctrl-C mid-stream returns to the prompt, session intact | 7, 11 |
+| Ctrl-C mid-stream returns to the prompt, session intact (both transports) | 7, 11 |
 | seam unavailable → explanatory message, lookup still works | 4, 10 |
 | driven through the raw TUI loop, not only the piped loop | 4, 11 |
 
@@ -1048,3 +1215,39 @@ fixture row `difference between sycophantic and obsequious please` flips from
 `true` to `false`, and the end-to-end decision table in Task 3 gains a row
 asserting the same line routes to `not-found` — so the limit is pinned by a test
 rather than remembered.
+
+### 2026-08-23 — plan-quality round 1 (PQ-1 … PQ-5)
+
+**Reason:** `sdlc change-code` plan gate, four blocking findings and one minor.
+Ledger: `workshop/plans/000016-console-qa-plan-gate.md`.
+
+**Delta:**
+
+- **PQ-1 (Critical) — addressed.** D5 rewritten. The draft assumed Ctrl-C is a
+  byte in raw mode; the pty suite's own header records the measurement that a
+  `\x03` reached define as a **SIGINT** and left through `NotifyContext`, which
+  would have ended the session mid-answer whatever the scoped sink pointed at.
+  The sink is now the single answer with **both** transports feeding it, and the
+  interactive loop detaches from the signal context
+  (`context.WithoutCancel`) so nothing cancels it behind the sink's back. Task 7
+  wires all three pieces and tests both transports against one observable; Task
+  11 adds the pty row that only a surviving session can produce.
+- **PQ-2 (Important) — addressed.** `session` is created and wired in **Task 4**
+  (M1), not assumed: it replaces `repl.go:145`'s `current`, `runEditor`'s
+  `current`, and `submitLine`'s `current *string`. `exchange`/`turns` are
+  explicitly M2's, in Task 9.
+- **PQ-3 (Important) — addressed.** Task 4 states the ask outcome's contract as
+  a table — no `current`, no capture, yes recall, its own exit code — with a
+  test per row, and routes the forced and unforced asks into **one**
+  `askInSession` closure so Task 11's interrupter and `crlfWriter` wiring exists
+  once (the ARCH-DRY half of the finding).
+- **PQ-4 (Important) — addressed.** `runAsk`'s taxonomy now leads with
+  `ctx.Err() != nil` → print nothing, code 0. The finding's sharpest edge is
+  recorded with it: `mapError` classifies a statusless failure as
+  `ErrUnavailable`, so a cancelled stream would otherwise print "no model
+  configured" as the answer to the user's own keypress. The guard therefore asks
+  the context, not the error.
+- **PQ-5 (Minor) — addressed.** Task 10 uses the real `llmtest` API (`fake.URL`
+  as an embedded field, `Script`, `Requests() []Recorded` with
+  `Prompt()`/`System()`), and D1 cites `TestCaptureArityIsOnePerLookup`
+  (`capture_test.go:89`).
