@@ -297,13 +297,23 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // next pops the queue whose key matches the prompt, else the fallback.
+//
+// The LAST scripted reply is STICKY: once a queue is down to one entry it keeps
+// serving it rather than draining to the fallback. This is not a convenience —
+// it removes a real trap. The SDK retries 5xx, so scripting a single 503 used to
+// mean attempt 1 got the 503 and attempt 2 got the fallback's cheerful success,
+// and the test saw a decode error instead of the outage it scripted. A scripted
+// failure means "the upstream is in this state", which persists across a retry.
+//
 // Callers hold f.mu.
 func (f *Fake) next(prompt string) Reply {
 	for i := range f.matchers {
 		m := &f.matchers[i]
 		if len(m.queue) > 0 && strings.Contains(prompt, m.match) {
 			r := m.queue[0]
-			m.queue = m.queue[1:]
+			if len(m.queue) > 1 {
+				m.queue = m.queue[1:]
+			}
 			r.scripted = true
 			return r
 		}

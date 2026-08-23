@@ -648,3 +648,79 @@ func TestUsageFieldsAreCarriedIndividually(t *testing.T) {
 		}
 	}
 }
+
+type vetoResult struct {
+	Fits   bool   `json:"fits"`
+	Reason string `json:"reason"`
+}
+
+func TestRunDecodesIntoTheResultType(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("near-synonym", llmtest.Reply{Text: `{"fits":true,"reason":"both describe servile flattery"}`})
+	got, err := llm.Run(t.Context(), client(t, f.URL), llm.Task[vetoResult]{
+		Name: "veto-distractor", Prompt: "Is obsequious a near-synonym of sycophantic?",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Fits || got.Reason == "" {
+		t.Errorf("got %+v", got)
+	}
+	// The schema derived from vetoResult must reach the wire, or the constraint
+	// exists only in our imagination.
+	schema := f.Requests()[0].Schema()
+	if schema == nil {
+		t.Fatal("no schema on the request")
+	}
+	props, _ := schema["properties"].(map[string]any)
+	if _, ok := props["fits"]; !ok {
+		t.Errorf("schema does not describe the result type: %+v", schema)
+	}
+}
+
+// THE ordering test. A truncated structured answer parses cleanly, so a
+// decode-first implementation returns success on garbage and nothing downstream
+// can tell. The capture is the specimen: it decodes to
+// {"verdict":"yes","reason":": Ā"} with both required fields present.
+func TestRunChecksTheStopReasonBeforeDecoding(t *testing.T) {
+	type verdict struct {
+		Verdict string `json:"verdict"`
+		Reason  string `json:"reason"`
+	}
+	f := llmtest.NewFake(t)
+	f.ServeRecorded("message-truncated.json")
+	_, err := llm.Run(t.Context(), client(t, f.URL), llm.Task[verdict]{
+		Name: "veto-distractor", Prompt: "near-synonym?",
+	})
+	if !errors.Is(err, llm.ErrTruncated) {
+		t.Fatalf("err = %v, want ErrTruncated — this payload DECODES, so only the stop reason can catch it", err)
+	}
+	if errors.Is(err, llm.ErrMalformed) {
+		t.Error("reported as malformed; the answer parsed fine, it was cut short")
+	}
+}
+
+// Every error names its task, or a failure in a batch of five authoring calls is
+// unattributable.
+func TestRunErrorsNameTheTask(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Text: "not json at all"})
+	_, err := llm.Run(t.Context(), client(t, f.URL), llm.Task[vetoResult]{Name: "author-cloze", Prompt: "x"})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "author-cloze") {
+		t.Errorf("err = %v, want the task name", err)
+	}
+}
+
+// An unavailable seam must stay recognisable THROUGH Run, or consumers cannot
+// degrade — the property #12 and #13 both depend on.
+func TestRunPreservesTheTaxonomy(t *testing.T) {
+	f := llmtest.NewFake(t)
+	f.Script("x", llmtest.Reply{Status: 503})
+	_, err := llm.Run(t.Context(), client(t, f.URL), llm.Task[vetoResult]{Name: "veto", Prompt: "x"})
+	if !errors.Is(err, llm.ErrUnavailable) {
+		t.Fatalf("err = %v, want ErrUnavailable to survive Run's wrapping", err)
+	}
+}

@@ -146,3 +146,31 @@ func TestUnknownModelIsRejectedLikeTheProxyDoes(t *testing.T) {
 		t.Errorf("a real model got %d", code)
 	}
 }
+
+// The last scripted reply is sticky. Without it, scripting one 503 meant attempt
+// 1 saw the 503 and the SDK's retry saw the fallback's success — so a test that
+// scripted an outage observed a decode error instead.
+func TestTheLastScriptedReplyIsSticky(t *testing.T) {
+	f := NewFake(t)
+	f.Script("hello", Reply{Status: 503})
+	for i := 0; i < 3; i++ {
+		if code := postStatus(t, f.URL, `{"model":"claude-opus-5","messages":[{"role":"user","content":"hello"}]}`); code != 503 {
+			t.Fatalf("request %d = %d, want a sticky 503", i+1, code)
+		}
+	}
+}
+
+// …but a queue with more than one entry still advances, or a scripted SEQUENCE
+// (429 then success, which is how the retry is proven) would never reach its
+// second entry.
+func TestAQueueStillAdvancesWhileItHasEntries(t *testing.T) {
+	f := NewFake(t)
+	f.Script("hello", Reply{Status: 429}, Reply{Text: "recovered"})
+	if code := postStatus(t, f.URL, `{"model":"claude-opus-5","messages":[{"role":"user","content":"hello"}]}`); code != 429 {
+		t.Fatalf("first = %d, want 429", code)
+	}
+	body := post(t, f.URL, `{"model":"claude-opus-5","messages":[{"role":"user","content":"hello"}]}`)
+	if !strings.Contains(string(body), "recovered") {
+		t.Errorf("second = %s, want the queue to have advanced", body)
+	}
+}
