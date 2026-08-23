@@ -5,7 +5,7 @@ deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
 updated: 2026-08-23
-estimate_hours: 3.72
+estimate_hours: 6.49
 started: 2026-08-23T13:35:58-07:00
 ---
 
@@ -106,49 +106,95 @@ decision table, both hatches, the outcome contract, the interrupt enumeration an
 the prompt's shape, so what is left at design time is reading rather than
 deciding. Implementation hours are written at v3.1's 40% of the v2 primitive
 table. Familiarity is 1.0 — same repo, same files, `internal/llm` and both REPL
-loops shipped in the last two issues. Step 2.5 finds nothing to short-circuit: the
-transport, the wire fake, the store and the editor all already exist here, which
-is why this is roughly half of #11 rather than comparable to it.
+loops shipped in the last two issues. Step 2.5 **is** satisfied and the credit
+is taken at the slug rather than as a halving: #11 already built the transport,
+the wire fake and the conformance suite, so T10 is priced `greenfield-go-module`
+(0.47) rather than `api-integration` (0.80).
 
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
+item: issue-spec             design=1.00 impl=0.08
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
 item: smaller-go-module      design=0.03 impl=0.14
 item: smaller-go-module      design=0.03 impl=0.14
 item: cross-cutting-refactor design=0.12 impl=0.14
 item: cross-cutting-refactor design=0.12 impl=0.14
-item: smaller-go-module      design=0.03 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
 item: smaller-go-module      design=0.03 impl=0.14
 item: milestone-review       design=0.02 impl=0.14
 item: atlas-docs             design=0.03 impl=0.05
 item: greenfield-go-module   design=0.25 impl=0.22
+item: scope-pivot            design=0.35 impl=0.14
 item: smaller-go-module      design=0.03 impl=0.14
 item: greenfield-go-module   design=0.25 impl=0.22
 item: greenfield-go-module   design=0.25 impl=0.22
 item: cross-cutting-refactor design=0.12 impl=0.14
+item: smaller-go-module      design=0.02 impl=0.10
 item: milestone-review       design=0.02 impl=0.14
 item: atlas-docs             design=0.03 impl=0.05
 design-buffer: 0.15
-total: 3.72
+total: 6.49
 ```
 
 | item | plan task |
 |---|---|
+| issue-spec | plan authoring — `000016-console-qa-plan.md`, **inside the measured window** |
+| milestone-review ×3 | the three plan-quality gate rounds (PQ-1…PQ-6), also inside it |
 | smaller-go-module | T1 `question.go` — `readsAsQuestion`, `truncateQuestion` |
 | smaller-go-module | T2 `parseREPLLine` — `cmdAsk`, the `?` and `\` hatches |
 | cross-cutting-refactor | T3 `lookupOutcome` through three call sites + the decision table |
 | cross-cutting-refactor | T4a `session` replaces three `current` declarations |
-| smaller-go-module | T4b ask routing in both loops and the one-shot |
+| cross-cutting-refactor | T4b ask routing — two switches, `askInSession`, the one-shot dispatch **and** its usage guard, six named tests |
 | smaller-go-module | T5 `/help` and the messages |
 | milestone-review | M1 boundary review |
 | atlas-docs | M1 atlas update |
 | greenfield-go-module | T7 `crlfWriter`, `interrupter`, the signal seam, the detach |
+| scope-pivot | T7's design has already moved twice on paper (PQ-1 → PQ-6 → the relocation); budgeting zero for a third move is the optimistic read |
 | smaller-go-module | T8 store — `UserModel`, the `asked` event, suite rows |
 | greenfield-go-module | T9 `askContext` + the pure prompt + golden |
 | greenfield-go-module | T10 `runAsk` — seams, streaming, taxonomy, wire-fake tests |
 | cross-cutting-refactor | T11 Ctrl-C through `readKeys`/`repl`/`replRaw` + pty row |
+| smaller-go-module | T12 the hand-driven session check — operator-at-the-terminal, not autonomous impl |
 | milestone-review | close review |
 | atlas-docs | close — atlas + the project row |
+
+### Revision — 2026-08-23, after estimate-quality
+
+First derivation was **3.72**, and it priced only the tasks. The estimate-quality
+judge pointed at the two nearest neighbours in this repo — #15 (1.82 est / 6.77
+actual, 3.7×) and #11 (7.98 / 12.38, 1.55×) — whose `## Log`s name the same cause
+this one inherited: *plan authoring and the plan-gate rounds sit inside what
+`sdlc actual` measures*. This issue was claimed at 13:35 and the plan cleared at
+15:04 after three gate rounds; none of that was in the first block, so the first
+block was measuring a different thing than the actual will.
+
+Five changes, four of them the judge's findings:
+
+- **+`issue-spec` and +3×`milestone-review`** for the plan and its gate rounds —
+  design-time work already spent inside the window. No ×0.2 discount: the
+  discount credits a plan for collapsing later design, and this **is** that plan
+  being written.
+- **T4b `smaller-go-module` → `cross-cutting-refactor`.** It creates a file,
+  changes three signatures, adds two switch cases, a closure, the one-shot
+  dispatch and its usage guard, and ships six tests — it was priced at the same
+  0.17 as T5, which adds one `/help` line.
+- **+`scope-pivot` for T7.** Its design opened as Critical (PQ-1), reopened
+  (PQ-6), and moved a third time; the primitive for "this shifts again" exists
+  and was unused.
+- **+`smaller-go-module` (0.02/0.10) for T12's hand-driven check**, which was
+  folded into a 0.08 `atlas-docs` item alongside two other jobs.
+- **Step 2.5 wording corrected.** The credit for "#11 already built the
+  transport" *was* taken — at the slug: T10 is priced `greenfield-go-module`
+  (0.47) rather than `api-integration` (0.80). The prose said the step found
+  nothing, which named a satisfied condition and then skipped it.
+
+Not taken: the judge's advisory that fanning M1's independent tasks out to
+subagents compresses wall-clock below a sequential sum. Real, but it is a
+within-session parallelism effect on the same unit — recorded here for #117's
+ledger rather than netted against the findings above.
 
 ## Plan
 
