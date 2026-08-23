@@ -1,11 +1,12 @@
 ---
 id: 000016
-status: open
+status: working
 deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
-updated: 2026-08-22
+updated: 2026-08-23
 estimate_hours:
+started: 2026-08-23T13:35:58-07:00
 ---
 
 # free-form Q&A in the console: input classification + the directory as context
