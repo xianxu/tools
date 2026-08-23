@@ -38,12 +38,41 @@ An LLM seam with a stateful fake.
       this could only ever have been ticked dishonestly here. Now carried by #6
       (the loop degrades), #12 (veto skipped — it already held this row) and #13
       (form skipped). What stays here is the property they all rest on, below.
-- [ ] `ErrUnavailable` is returned for no key, no network, 429 and 5xx, and is
-      distinguishable from `ErrRequest`, which stays loud. This is the half of
-      the degradation contract that IS testable in this issue.
-- [ ] Every prompt has a fake-backed test; no test hits the live API by default.
-- [ ] Structured responses are parsed defensively — a malformed reply degrades to
+- [x] `ErrUnavailable` is returned for no key, no network, 429 and 5xx, and is
+      distinguishable from `ErrRequest`, which stays loud.
+      *Evidence:* `TestClassifyStatus` tables 408/409/429/500/502/503/529/401/403
+      → `ErrUnavailable` and 400/404/422 → `ErrRequest`; `TestResolveWithNoKeyIs
+      Unavailable`, `TestServerDownIsUnavailable` (a real closed port), and
+      `TestBadRequestIsLoud`, which asserts a 400 is **not** absorbable as
+      `ErrUnavailable`. Mutation-checked: routing 401/403 to the `ErrRequest` arm
+      reddens the table. The transient set is derived from the SDK's own retry
+      policy rather than restated, which is what stopped 408 being retried twice
+      and then reported as our bad request.
+- [x] No test hits the live API by default.
+      *Evidence:* every file constructing a live client — `conformance_test.go`,
+      `capture_conformance_test.go`, `task_conformance_test.go` — carries
+      `//go:build conformance`. `go test ./... -list '.*'` shows the only
+      remaining matches are the store's `TestMemConformance`/`TestYAMLConformance`,
+      which are in-memory-vs-YAML, not network.
+      **The "every prompt has a fake-backed test" half does not apply here and is
+      not silently ticked:** this issue deliberately owns NO prompts — a prompt is
+      domain knowledge and lives with its consumer. What it owns is the mechanism,
+      and that is tested: `TestGoldenDetectsAChangedPrompt` reddens on an edited
+      prompt, and `TestAPromptEditMissesItsCassetteLoudly` proves a stale recording
+      fails loudly rather than answering the question it no longer asks. The
+      obligation itself transfers to #10, #12, #13, #16 and #17.
+- [x] Structured responses are parsed defensively — a malformed reply degrades to
       "skip this question", never a crash.
+      *Evidence:* `decode` returns either a fully populated `T` and `nil`, or the
+      zero `T` and `ErrMalformed`/`ErrTruncated` — held by `FuzzDecode` over four
+      result shapes (flat, nested, slice-of-struct, map-of-struct) with an oracle
+      written independently of the traversal it checks, ~900K executions. Required
+      fields are enforced at every point of the schema tree, driven by the
+      generator's nesting vocabulary rather than by payload shapes;
+      `TestSchemaKeywordsAreCovered` fails if a schema ever arrives carrying a
+      keyword the walk does not know. A truncated answer that *parses* is caught by
+      the stop reason before decoding (`TestRunChecksTheStopReasonBeforeDecoding`,
+      against the committed specimen).
 
 ## Estimate
 
