@@ -23,17 +23,22 @@ func (c *crlfWriter) Write(p []byte) (int, error) {
 	// case lastWasCR exists for exactly backwards — "a\r" then "\nb".
 	entryWasCR := c.lastWasCR
 	out := make([]byte, 0, len(p)+8)
+	lastWasCR := entryWasCR
 	for _, b := range p {
-		if b == '\n' && !c.lastWasCR {
+		if b == '\n' && !lastWasCR {
 			out = append(out, '\r')
 		}
 		out = append(out, b)
-		c.lastWasCR = b == '\r'
+		lastWasCR = b == '\r'
 	}
 	n, err := c.w.Write(out)
 	if err == nil && n < len(out) {
 		err = io.ErrShortWrite
 	}
+	// Advanced only over what the writer actually TOOK. Advancing over all of p
+	// on a short write leaves the carry describing bytes the terminal never saw,
+	// so the retry's first "\n" is judged against a CR that was never emitted.
+	c.lastWasCR = carriedCR(out, n, entryWasCR)
 	if err != nil {
 		// Report progress in the CALLER's units. Returning 0 on a partial write
 		// claims nothing was consumed, which makes a retry duplicate whatever
@@ -44,6 +49,17 @@ func (c *crlfWriter) Write(p []byte) (int, error) {
 	// io.Writer that reports more bytes than it was given breaks io.Copy and
 	// every wrapper that checks n against len(p).
 	return len(p), nil
+}
+
+// carriedCR is the carry state after n translated bytes reached the writer.
+func carriedCR(out []byte, n int, entry bool) bool {
+	if n <= 0 {
+		return entry
+	}
+	if n > len(out) {
+		n = len(out)
+	}
+	return out[n-1] == '\r'
 }
 
 // consumed maps a byte count in translated units back to the caller's, by

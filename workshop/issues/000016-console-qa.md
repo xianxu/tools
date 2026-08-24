@@ -611,6 +611,7 @@ as one fixture-driven test whose rows ARE the cells"*. `TestTheAskWiringTable` i
 scoped}, and all three previously-green mutations now redden.
 
 ### 2026-08-24 — M2 round 3: four findings, all about the previous round's fixes
+- 2026-08-24: closed M2 — go test ./... + go vet + go test -race + pty conformance all green. M2 boundary rounds 1-3, every finding fixed, none deferred. Round 3 disposed all five of round 2s and raised four more, each about round 2s own fixes: the line-loop scoping fix had made a SECOND copy of the five-step scope sequence (one askScoped owns it now, and since reversing its order reddens nothing — the window is too narrow to test without a flaky race — defers LIFO enforces the order rather than a comment that cannot fail); countingCapturer.asked was appended at one site and read at zero (now read at the seam, with a wired fake so the question genuinely reaches a model); the UserModel conformance row asserted the only value Mem could produce because the method arrived as a getter with no writer anywhere (Store.SetUserModel closes it, atomically for YAML, and #17 inherits the setter it needs); and the atlas store section plus the plans entity tables are now resolved against enumerations — yaml.go/event.go/storetest against the three normative blocks, and git diff base..HEAD +func/+type against Core concepts — rather than patched at the lines a finding named.; review verdict: FIX-THEN-SHIP
 
 Round 2's five findings all disposed; four new, and every one of them is about
 scaffolding or duplication that round 2's own fixes created. That is the pattern
@@ -644,3 +645,32 @@ refused to accept a fix that could not fail.
   `git diff <boundary>..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) '`,
   which lists 29 additions here; `askScoped` and `consumed` went in by the same
   pass rather than waiting to be named by a round 4.
+
+### 2026-08-24 — M2 round 4: the gate passed, and found a bug I would have shipped
+
+FIX-THEN-SHIP with no open blockers; three findings, all fixed before the close
+commit per #174. Two of them matter:
+
+- **BR-48 corrected my own reasoning from round 3.** I had probed ONE mutation of
+  `askScoped` (reversing the two defers), found it unobservable, and concluded
+  the mechanism could not be tested. `askScoped` has FOUR mutations, and the
+  enumeration is the deliverable — not the verdict on the one probed. Measured:
+  omitting `interrupts.Set` reddens ten tests; **omitting `defer restore()` left
+  the entire suite green while making the session unquittable** — the sink keeps
+  pointing at the dead question's cancel, so `readKeys` swallows every later
+  `\x03` and Ctrl-C does nothing for the rest of the session; omitting
+  `defer qcancel()` leaks the question's context; only the reordering is
+  genuinely unobservable. Every existing test asserted the sink DURING an answer
+  and none asserted it AFTER one. The enumeration now sits in `askScoped`'s doc
+  comment so nobody re-derives it.
+- **BR-49 — an answer the user READ was dropped when they stopped it.** README
+  states two halves in adjacent paragraphs: Ctrl-C stops the answer rather than
+  the session, and a follow-up resolves against the answer before it. The cancel
+  path returned before `recordExchange`, so the claim was true in three of four
+  cells and the false one was the flow this milestone is named after. A stopped
+  answer is now recorded — the user read it, which is the same reason a truncated
+  one is kept — with a row test over how the answer ended.
+
+Also: `crlfWriter` advanced its `lastWasCR` carry over bytes the underlying
+writer never took, so after a short write the retry's first newline was judged
+against a carriage return the terminal never saw.

@@ -792,3 +792,103 @@ func TestAnUnreadableUserModelIsReported(t *testing.T) {
 		t.Errorf("the answer did not arrive: %q", out.String())
 	}
 }
+
+// askScoped has four mutations, and the round that created it probed ONE.
+//
+// Finding it unobservable, that round concluded the mechanism could not be
+// tested and made the ordering structural instead. The enumeration says
+// otherwise: omitting interrupts.Set reddens five tests; omitting restore leaves
+// the whole suite GREEN and the session unquittable; omitting qcancel leaves the
+// suite green AND go vet silent, since qcancel is used as a value so lostcancel
+// never fires; only the reordering is genuinely unobservable.
+//
+// The rule: when a probe finds one mutation untestable, the deliverable is the
+// ENUMERATION of mutations to that mechanism, not the verdict on the one probed.
+//
+// This is the restore cell, and it is user-visible: without restore,
+// interrupter.scoped stays true and fn stays the DEAD question's cancel, so
+// readKeys swallows every later \x03 and Ctrl-C at the prompt does nothing for
+// the rest of the session. Every other test asserts the sink DURING an answer;
+// this one asserts it AFTER.
+func TestCtrlCQuitsAgainOnceTheAnswerIsOver(t *testing.T) {
+	d, fake, _, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture}) // completes, not stalled
+	d.stdinIsTerminal = func() bool { return true }
+
+	quit := make(chan struct{})
+	interrupts := &interrupter{fn: func() { close(quit) }}
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { pw.Close() })
+	keys := readKeys(t.Context(), pr, interrupts)
+
+	var out, errb syncBuf
+	done := make(chan int, 1)
+	go func() {
+		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true},
+			func(r func()) error { r(); return nil }, func() {}, &out, &errb)
+	}()
+
+	io.WriteString(pw, "?why\r")
+	// Let the answer FINISH — the scope must be handed back when it does.
+	waitFor(t, func() bool { return strings.Contains(out.String(), "insincerely") })
+
+	io.WriteString(pw, "\x03")
+	select {
+	case <-quit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the session cancel never fired: the scope was never handed back, so Ctrl-C is dead for the rest of the session")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loop did not return on the interrupt")
+	}
+}
+
+// README states two halves in adjacent paragraphs — "Ctrl-C stops the answer
+// rather than the session" and "a follow-up resolves against the answer before
+// it" — so the transcript claim quantifies over how the answer ENDED. It was
+// true in 3 of 4 cells, and the false one was the cancel: the flow this
+// milestone is named after.
+func TestAnAnswerTheUserReadSurvivesHowItEnded(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reply  llmtest.Reply
+		cancel bool
+	}{
+		{"answered", llmtest.Reply{Capture: streamCapture}, false},
+		{"cut off by the service", llmtest.Reply{Capture: streamCapture, Stall: true}, false},
+		{"stopped by the user", llmtest.Reply{Capture: streamCapture, Stall: true}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, _, _ := askRig(t)
+			fake.Script("", tc.reply)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			sess := &session{current: "sycophantic"}
+			var out syncBuf
+			var errb bytes.Buffer
+			if tc.cancel {
+				go func() {
+					for out.Len() == 0 {
+						time.Sleep(time.Millisecond)
+					}
+					cancel()
+				}()
+			}
+			runAsk(ctx, d, options{}, sess, question{text: "is it pejorative?"}, &out, &errb)
+
+			if len(sess.turns) != 1 {
+				t.Fatalf("turns = %+v, want the exchange the user READ", sess.turns)
+			}
+			if sess.turns[0].Question != "is it pejorative?" || sess.turns[0].Answer == "" {
+				t.Errorf("turn = %+v, want the question and what arrived of the answer", sess.turns[0])
+			}
+			// And it reaches the follow-up, which is the only reason to keep it.
+			if got := renderAskPrompt(gatherAskContext(d, sess, question{text: "give me two more"}, io.Discard)); !strings.Contains(got.Prompt, "is it pejorative?") {
+				t.Errorf("the follow-up prompt does not carry the earlier exchange:\n%s", got.Prompt)
+			}
+		})
+	}
+}

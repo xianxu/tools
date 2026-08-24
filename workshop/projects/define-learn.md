@@ -304,8 +304,8 @@ tasks and was revised to 6.49 for exactly that reason before any code was writte
 ### tools#16 M2 — the answer
 
 **est:** 6.49 (whole issue)
-**actual:** see the issue Log
-**closed:** 2026-08-23
+**actual:** 4.88h
+**closed:** 2026-08-24
 
 The third verb works. A question goes to the model with the DIRECTORY as its
 context — the word on screen and its entry, the session's lookups, the deck,

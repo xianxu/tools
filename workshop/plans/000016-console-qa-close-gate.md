@@ -996,6 +996,105 @@ rounds:
           round: 7
       boundary: M2
       blocked: true
+    - "n": 8
+      timestamp: "2026-08-24T14:30:32-07:00"
+      agent: claude
+      dispose:
+        - id: BR-44
+          disposition: addressed
+          note: All three atlas claims swept at the paragraphs that own them; the conformance sentence is now true for the newest method because SetUserModel landed.
+          round: 8
+        - id: BR-45
+          disposition: addressed
+          note: Both verified by reversion — a no-op Mem.SetUserModel reddens the suite row, and mutating the captured word reddens countingCapturer.askedWord.
+          round: 8
+        - id: BR-46
+          disposition: addressed
+          note: One askScoped, called by both loops; removing the scope reddens 7 cells across both. The residual — 3 of its 4 mutations undefended — is raised separately.
+          round: 8
+        - id: BR-47
+          disposition: not-addressed
+          note: The three named rows are fixed, but the enumeration the finding demanded was run in the commit that stated it and missed Store.SetUserModel, which that same commit created.
+          round: 8
+        - id: BR-48
+          disposition: not-addressed
+          note: Still no Revisions entry for boundary round 2's four forks or round 6's Task 11 item; and Task 12's `sdlc close` checkbox is ticked while the issue is status:working at a milestone-close gate.
+          round: 8
+        - id: BR-49
+          disposition: not-addressed
+          note: Unchanged — replRaw (replraw.go:15) still passes the seam straight to readKeys with no policy, and 44 test call sites still pass nil.
+          round: 8
+        - id: BR-50
+          disposition: not-addressed
+          note: All four residues present verbatim — replraw.go:132's "adds a fifth", capture.go:96's guard, repl_test.go:199's hanging arm, ask.go:199's per-question Deck().
+          round: 8
+      findings:
+        - id: BR-51
+          severity: Important
+          title: askScoped's sequence has four mutations and one is defended; omitting restore makes the session unquittable, suite green
+          detail: |-
+            This is the 8th finding in this family, so the rule rather than the site.
+            cmd/define/ask.go:40-45. The commit that created askScoped probed ONE
+            mutation (reversing the two defers), found it unobservable, and concluded
+            "a rationale no test can defend is scaffolding". Measured, all four:
+            omitting interrupts.Set reddens 5 tests across both loops; omitting
+            `defer restore()` leaves the FULL suite green; omitting `defer qcancel()`
+            leaves it green AND go vet silent, because qcancel is used as a value so
+            lostcancel never fires; reordering is genuinely unobservable. The restore
+            cell is user-visible: interrupter.scoped stays true and fn stays the dead
+            question cancel, so readKeys (rawterm.go:70) swallows every subsequent
+            \x03 and Ctrl-C at the prompt does nothing after the first question. I
+            wrote the test — drive runEditor through the real readKeys, ask ?why, let
+            the answer COMPLETE, send \x03, require the loop to return — and it fails
+            mutated and passes unmutated in 0.67s. Every existing test asserts the
+            sink DURING an answer; none asserts it AFTER one. The rule: when a probe
+            finds a mutation untestable, the deliverable is the ENUMERATION of
+            mutations to that mechanism, not the verdict on the one probed.
+          family: test-asserts-nothing
+          round: 8
+        - id: BR-52
+          severity: Important
+          title: An interrupted answer is dropped from the transcript, so the follow-up README promises resolves against nothing
+          detail: |-
+            This is the 10th finding in this family; the rule has been stated five
+            times, so do NOT weaken the sentence. cmd/define/ask.go:140-145 returns 0
+            on the cancel path BEFORE sess.recordExchange, so an answer the user read
+            and then stopped leaves no trace — not the partial answer, not even the
+            question. README:79-88 states both halves in adjacent paragraphs:
+            "Ctrl-C stops the answer rather than the session" and "the earlier
+            questions in this session — so a follow-up like `give me two more
+            examples` resolves against the answer before it". Measured against the
+            wire fake: after 32 bytes streamed and cancelled, sess.turns is empty and
+            the follow-up prompt contains only "## The word on screen / sycophantic"
+            and the new question. Across the cells the claim quantifies over —
+            answered, ErrTruncated, ErrUnavailable-with-partial, cancelled — it is
+            true in 3 of 4, and the false cell is the flow the milestone is named
+            after. The fix is to record the partial exchange (the user READ it, the
+            same reason ask.go:153 keeps a truncated one) and give the claim a
+            named-enumeration row test, the way TestRawNeverAsks does its six.
+          family: doc-overstates-code
+          round: 8
+        - id: BR-53
+          severity: Minor
+          title: crlfWriter.Write advances lastWasCR over bytes the underlying writer never took
+          detail: |-
+            This is the 3rd finding in this family, so recorded rather than fixed at
+            the site. crlf.go:19-42: entryWasCR is captured for consumed()'s benefit,
+            but c.lastWasCR is still advanced across the WHOLE buffer even when only
+            part of it was written, so the state carried into a retry describes bytes
+            that never reached the terminal. Verified: Write("\r\nz") short at 1 byte
+            returns n=1 correctly (BR-41's fix), and the retry with p[1:] = "\nz" then
+            inserts a carriage return already on the wire — measured "\r\r\nz", the
+            exact doubling lastWasCR exists to prevent and the one consumed()'s
+            comment claims it prevents. BR-41 corrected the return value and left the
+            carried state. Low reach: nothing in the tree retries and runAsk discards
+            fmt.Fprint's error, so the symptom is one stray \r garbling a line on an
+            already-degraded path. The rule: a translation materialised once must not
+            be re-derived — Write and consumed are still two derivations of it.
+          family: second-implementation-drifts
+          round: 8
+      boundary: M2
+      blocked: false
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -1620,6 +1719,70 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   negligible beside a network round-trip today, worth remembering when #10
   reuses askContext.
 
+## Round 8 — 2026-08-24T14:30:32-07:00 (claude) — passed
+
+### Disposed
+
+- BR-44 — addressed — All three atlas claims swept at the paragraphs that own them; the conformance sentence is now true for the newest method because SetUserModel landed.
+- BR-45 — addressed — Both verified by reversion — a no-op Mem.SetUserModel reddens the suite row, and mutating the captured word reddens countingCapturer.askedWord.
+- BR-46 — addressed — One askScoped, called by both loops; removing the scope reddens 7 cells across both. The residual — 3 of its 4 mutations undefended — is raised separately.
+- BR-47 — not-addressed — The three named rows are fixed, but the enumeration the finding demanded was run in the commit that stated it and missed Store.SetUserModel, which that same commit created.
+- BR-48 — not-addressed — Still no Revisions entry for boundary round 2's four forks or round 6's Task 11 item; and Task 12's `sdlc close` checkbox is ticked while the issue is status:working at a milestone-close gate.
+- BR-49 — not-addressed — Unchanged — replRaw (replraw.go:15) still passes the seam straight to readKeys with no policy, and 44 test call sites still pass nil.
+- BR-50 — not-addressed — All four residues present verbatim — replraw.go:132's "adds a fifth", capture.go:96's guard, repl_test.go:199's hanging arm, ask.go:199's per-question Deck().
+
+### Raised
+
+- **BR-51** [Important] `test-asserts-nothing` askScoped's sequence has four mutations and one is defended; omitting restore makes the session unquittable, suite green
+  This is the 8th finding in this family, so the rule rather than the site.
+  cmd/define/ask.go:40-45. The commit that created askScoped probed ONE
+  mutation (reversing the two defers), found it unobservable, and concluded
+  "a rationale no test can defend is scaffolding". Measured, all four:
+  omitting interrupts.Set reddens 5 tests across both loops; omitting
+  `defer restore()` leaves the FULL suite green; omitting `defer qcancel()`
+  leaves it green AND go vet silent, because qcancel is used as a value so
+  lostcancel never fires; reordering is genuinely unobservable. The restore
+  cell is user-visible: interrupter.scoped stays true and fn stays the dead
+  question cancel, so readKeys (rawterm.go:70) swallows every subsequent
+  \x03 and Ctrl-C at the prompt does nothing after the first question. I
+  wrote the test — drive runEditor through the real readKeys, ask ?why, let
+  the answer COMPLETE, send \x03, require the loop to return — and it fails
+  mutated and passes unmutated in 0.67s. Every existing test asserts the
+  sink DURING an answer; none asserts it AFTER one. The rule: when a probe
+  finds a mutation untestable, the deliverable is the ENUMERATION of
+  mutations to that mechanism, not the verdict on the one probed.
+- **BR-52** [Important] `doc-overstates-code` An interrupted answer is dropped from the transcript, so the follow-up README promises resolves against nothing
+  This is the 10th finding in this family; the rule has been stated five
+  times, so do NOT weaken the sentence. cmd/define/ask.go:140-145 returns 0
+  on the cancel path BEFORE sess.recordExchange, so an answer the user read
+  and then stopped leaves no trace — not the partial answer, not even the
+  question. README:79-88 states both halves in adjacent paragraphs:
+  "Ctrl-C stops the answer rather than the session" and "the earlier
+  questions in this session — so a follow-up like `give me two more
+  examples` resolves against the answer before it". Measured against the
+  wire fake: after 32 bytes streamed and cancelled, sess.turns is empty and
+  the follow-up prompt contains only "## The word on screen / sycophantic"
+  and the new question. Across the cells the claim quantifies over —
+  answered, ErrTruncated, ErrUnavailable-with-partial, cancelled — it is
+  true in 3 of 4, and the false cell is the flow the milestone is named
+  after. The fix is to record the partial exchange (the user READ it, the
+  same reason ask.go:153 keeps a truncated one) and give the claim a
+  named-enumeration row test, the way TestRawNeverAsks does its six.
+- **BR-53** [Minor] `second-implementation-drifts` crlfWriter.Write advances lastWasCR over bytes the underlying writer never took
+  This is the 3rd finding in this family, so recorded rather than fixed at
+  the site. crlf.go:19-42: entryWasCR is captured for consumed()'s benefit,
+  but c.lastWasCR is still advanced across the WHOLE buffer even when only
+  part of it was written, so the state carried into a retry describes bytes
+  that never reached the terminal. Verified: Write("\r\nz") short at 1 byte
+  returns n=1 correctly (BR-41's fix), and the retry with p[1:] = "\nz" then
+  inserts a carriage return already on the wire — measured "\r\r\nz", the
+  exact doubling lastWasCR exists to prevent and the one consumed()'s
+  comment claims it prevents. BR-41 corrected the return value and left the
+  carried state. Low reach: nothing in the tree retries and runAsk discards
+  fmt.Fprint's error, so the symptom is one stray \r garbling a line on an
+  already-degraded path. The rule: a translation materialised once must not
+  be re-derived — Write and consumed are still two derivations of it.
+
 ## Open findings
 
 - **BR-12** [Minor] `forced-route-enumeration` the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
@@ -1627,10 +1790,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-19** [Important] `test-asserts-nothing` no test asserts what any of #16's messages say, and a doubled backslash shipped as a result
 - **BR-20** [Minor] `doc-overstates-code` nothingSays is documented as "the ONE place" while replayInPlace holds a live duplicate of its replay sentence
 - **BR-21** [Minor] `stdlib-reuse` four byte-identical "lost the terminal" blocks in runEditor, two added by this diff
-- **BR-44** [Important] `doc-overstates-code` Three claims in atlas's store section were falsified by this window, in the paragraphs that own them
-- **BR-45** [Important] `test-asserts-nothing` Two pieces of scaffolding added this round read as protection and cannot fail
-- **BR-46** [Important] `second-implementation-drifts` The scoped-ask wiring is now written twice, and only one copy carries the ordering rationale
 - **BR-47** [Important] `plan-contract-drift` The Core concepts tables do not describe the entities this boundary's rounds created
 - **BR-48** [Minor] `plan-bookkeeping` Boundary round 2 has no Revisions entry, including the one the previous round asked for
 - **BR-49** [Minor] `nil-seam-policy` The interrupter seam has three consumers and two nil policies; one of them dereferences
 - **BR-50** [Minor] `dead-branch` Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read
+- **BR-51** [Important] `test-asserts-nothing` askScoped's sequence has four mutations and one is defended; omitting restore makes the session unquittable, suite green
+- **BR-52** [Important] `doc-overstates-code` An interrupted answer is dropped from the transcript, so the follow-up README promises resolves against nothing
+- **BR-53** [Minor] `second-implementation-drifts` crlfWriter.Write advances lastWasCR over bytes the underlying writer never took

@@ -31,12 +31,22 @@ type question struct {
 // in each loop's closure, since those are what legitimately differ (a raw
 // terminal needs crlfWriter and a prompt redrawn; a piped run needs neither).
 //
-// The order — restore, THEN cancel — is enforced by defer's LIFO rather than by
-// this comment. Written as two statements it is silent when wrong: reversing it
-// leaves the sink pointed at a cancelled question for an instant, so a Ctrl-C
-// arriving in that window is swallowed instead of quitting. That window is too
-// narrow to test without a flaky race, and a rationale no test can defend is
-// scaffolding — so the sequence is made unwriteable in the wrong order instead.
+// Four things can go wrong here, and the enumeration is the deliverable — an
+// earlier round probed only the reordering, found it unobservable, and concluded
+// the whole mechanism was untestable. Measured:
+//
+//	omit interrupts.Set   10 tests red — the scope never exists
+//	omit defer restore()  TestCtrlCQuitsAgainOnceTheAnswerIsOver — and this one
+//	                      is user-visible: the sink keeps pointing at the DEAD
+//	                      question, so readKeys swallows every later \x03 and
+//	                      Ctrl-C does nothing for the rest of the session
+//	omit defer qcancel()  1 test red — the question's context leaks
+//	reorder them          unobservable: the window where it matters is an
+//	                      instant, so defer's LIFO enforces it instead of a
+//	                      comment no test can defend
+//
+// The order is restore-then-cancel: the deferred cancel must not fire a sink
+// that is no longer this question's.
 func askScoped(ctx context.Context, interrupts *interrupter, run func(context.Context) int) int {
 	qctx, qcancel := context.WithCancel(ctx)
 	defer qcancel() // registered first, so LIFO runs it LAST
@@ -143,6 +153,11 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	if ctx.Err() != nil {
 		if answer.Len() > 0 {
 			fmt.Fprintln(out) // close the partial line the stream left open
+			// The user READ this before stopping it, and README promises a
+			// follow-up resolves against the answer before it. Dropping a
+			// stopped answer made that false in exactly the flow this milestone
+			// is named after — the same reason a TRUNCATED answer is kept below.
+			sess.recordExchange(q.text, answer.String())
 		}
 		return 0
 	}

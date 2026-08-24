@@ -948,3 +948,214 @@ findings:
       negligible beside a network round-trip today, worth remembering when #10
       reuses askContext.
 ```
+
+---
+
+## Re-review — 2026-08-24T14:30:32-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 16 — free-form Q&A in the console: input classification + the directory as context |
+| repo | tools |
+| issue file | workshop/issues/000016-console-qa.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 993fccc020f3a003c792154917585f998ecbbe7c..baee6793a1a9200a88702b6c03d61f66001adbb4 |
+| command | sdlc milestone-close --issue 16 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-24T14:30:32-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 3's four fixes are real and I verified each by reversion rather than by reading: a no-op `Mem.SetUserModel` reddens the conformance row, mutating the captured word reddens `countingCapturer.askedWord`, and removing the scope from `askScoped` reddens five tests across **both** loops — so the one-owner refactor is genuinely reachable from each. `go test ./...`, `go vet ./...` are clean, and I re-checked two claims round 3's refactor could have broken (unwrapping stderr's `crlfWriter`, sending the piped answer to `io.Discard`) — both still redden. Nothing is Critical. What keeps it from SHIP is two things the round created and one it inherited: `askScoped`'s own sequence has **four** mutations and only **one** is defended — deleting `defer restore()` leaves the entire suite green while making the session unquittable with Ctrl-C after the first question (probe verified red mutated, green unmutated); and the milestone's two headline features do not compose — an interrupted answer is dropped from `sess.turns`, so the follow-up README promises "resolves against the answer before it" reaches the model carrying neither the answer nor the question. Separately, the mechanical enumeration BR-47 demanded was run in the commit that stated it and missed `Store.SetUserModel`, which the same commit created.
+
+## 1. Strengths
+
+- **The round-3 fixes are pinned, and I confirmed it by mutation, not by reading.** `cmd/define/store/mem.go:91` — a no-op `SetUserModel` fails `TestMemConformance/the_user_model_round-trips` with a concrete diff. `cmd/define/ask.go:139` — passing `""` as the captured word fails both `askroute_test.go:151` and `askrun_test.go:207`. This is the BR-24 rule ("the disposal is the test") actually applied.
+- `cmd/define/ask.go:40` — `askScoped` is the right consolidation, and it is reachable from both loops rather than being structurally tidy only: deleting `interrupts.Set` reddens `TestTheAskWiringTable` (piped **and** editor), `TestForcedAndUnforcedAsksShareOneWiring` (both routes), `TestEditorCtrlCMidStreamReturnsToThePrompt` and `TestAKeyTypedBeforeCtrlCDoesNotBlockTheReader`. Seven cells, one function.
+- `cmd/define/store/store.go:29` — adding the setter alongside the getter is the correct answer to ARCH-MOCK rather than the cheap one. `Mem` can now hold the state `YAML` holds, so `atlas/define.md:281`'s conformance-parity sentence is true for the newest method for the first time in this window.
+- `atlas/define.md:214` / `:251` — the two normative blocks were swept at the paragraphs that own them, not patched beside a new section: the artifact list now names `user-model.md` as the third artifact, and "carries every field" became "identifies its subject", matching `store/event.go:45`'s generalisation.
+- `cmd/define/store/storetest/suite.go:84` — the hostile-question row remains the strongest test in the diff; five adversarial questions including a complete forged event record, run against both implementations.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — `askScoped`'s five-step sequence has four mutations and one is defended; the undefended one makes the session unquittable.** *(8th in `test-asserts-nothing`.)*
+
+`cmd/define/ask.go:40-45`. The commit that created this function probed **one** mutation (reversing the two defers), found it unobservable, and concluded *"a rationale no test can defend is scaffolding — so the sequence is made unwriteable in the wrong order instead."* That reasoning is sound for the reorder and stops one mutation short of the class. Measured, all four:
+
+| mutation | defended by |
+|---|---|
+| omit `interrupts.Set(qcancel)` | 5 tests, both loops — **red** |
+| omit `defer restore()` | **nothing** — full suite green |
+| omit `defer qcancel()` | **nothing** — `go vet ./cmd/define/` is silent, because `qcancel` *is* used (passed to `Set`), so `lostcancel` never fires |
+| reorder the two defers | genuinely unobservable — correctly judged |
+
+The `restore` cell is not theoretical. With it omitted, `interrupter.scoped` stays `true` and `fn` stays the already-cancelled question cancel, so `readKeys` (`rawterm.go:70`) swallows every subsequent `\x03` and fires a dead cancel: **after asking one question, Ctrl-C at the prompt does nothing.** I wrote the test that catches it — drive `runEditor` through the real `readKeys`, ask `?why`, let the answer *complete*, then send `\x03` and require the loop to return — and confirmed it fails under the mutation (`Ctrl-C after a completed answer did not quit the session`) and passes unmutated in 0.67s. Every existing test asserts the sink's state **during** an answer; none asserts it **after** one.
+
+**The rule, which is the one this family keeps needing:** when a probe finds a mutation untestable, the deliverable is the enumeration of mutations to that mechanism, not the verdict on the one probed. Enumerate `{install, restore, cancel, order}` before concluding "no test can defend this", and pin the cells that *are* observable. Two of the three unpinned cells here are cheap; `defer restore()` is a five-second test.
+
+**I2 — Ctrl-C mid-answer and multi-turn do not compose, and README says they do.** *(10th in `doc-overstates-code`.)*
+
+`cmd/define/ask.go:140-145`. The cancel branch returns `0` **before** `sess.recordExchange`, so an answer the user read and then interrupted leaves no trace in the transcript — not the partial answer, and not even the question. README:79-88 states both halves in adjacent paragraphs: *"Ctrl-C stops the answer rather than the session — you land back at the prompt with the word you were reading still current"* and *"the earlier questions in this session — so a follow-up like `give me two more examples` resolves against the answer before it."*
+
+Measured with a probe against the wire fake: after streaming 32 bytes and cancelling, `sess.turns` is empty and the follow-up's prompt is
+
+```
+## The word on screen
+sycophantic
+
+## The question
+give me two more examples
+```
+
+Measured across the outcome cells the sentence quantifies over: answered → recorded; `ErrTruncated` → recorded; `ErrUnavailable` with partial text → recorded; **cancelled → not recorded**. True in 3 of 4, and the false cell is the one the milestone is named after — the flow README describes is exactly *read half an answer, Ctrl-C, ask a follow-up*.
+
+The fix is **not** to weaken the sentence: the user read that text, so it is part of the conversation the same way a truncated answer is (which this code already keeps, `ask.go:153`). Record the partial exchange on the cancel path, and give the claim the named-enumeration row test `TestRawNeverAsks` sets the precedent for — the family's own stated rule, applied to a sentence that has now survived two rounds unquantified.
+
+## 4. Minor findings
+
+- `cmd/define/crlf.go:19-42` — `Write` advances `c.lastWasCR` over the **whole** buffer even when the underlying writer took only part of it, so the state carried into a retry describes bytes that never reached the terminal. Verified: `Write("\r\nz")` short at 1 byte returns `n=1` correctly (BR-41's fix), but the retry with `p[1:]` = `"\nz"` then inserts a carriage return that is already on the wire — measured `"\r\r\nz"`, the exact doubling `lastWasCR` exists to prevent and the one `consumed()`'s comment claims it prevents. BR-41 corrected the return value and left the carried state. Low reach (nothing in the tree retries; `runAsk` discards `fmt.Fprint`'s error), so the realistic symptom is one stray `\r` garbling a line on an already-degraded path. *(3rd in `second-implementation-drifts` — recorded, not to be fixed at the site: the rule is that a translation materialised once must not be re-derived, and `Write`/`consumed` are still two derivations of it.)*
+- `cmd/define/ask.go:199` — `gatherAskContext` calls `Deck()` per question, reading every file under `words/` to pick twelve. Already noted in BR-50(4); repeating only because `#10` is about to reuse `askContext`.
+- Asked events are written with `found: false` (`store/event.go:26` has no `omitempty` on `Found`), a field with no meaning for a question. Harmless today — `/history` and `storeHistory.Load` both filter on `EventLookedUp` — but it is noise in a log `#17` will fold.
+
+## 5. Test coverage notes
+
+- **Verified red under reversion this round:** `Mem.SetUserModel` (conformance row); the captured word (`countingCapturer.askedWord` + the store-level assertion); `askScoped`'s `interrupts.Set` (7 cells across both loops); `replraw.go`'s stderr `crlfWriter` (`TestRawLoopMessagePlacement`, 2 rows); the piped answer destination (`TestTheAskWiringTable/piped`). Round 3's refactor of `askHere`/`askInSession` broke none of the previously-pinned claims.
+- **Verified green under mutation (the two Importants):** `defer restore()` in `askScoped`; `defer qcancel()` in `askScoped`; the cancel path's missing `recordExchange`.
+- `go test ./...` ok (`cmd/define` 29.1s); `go vet ./...` clean. I did not re-run `-race` — round 2 verified it and nothing in round 3 touched concurrent test observation.
+- `TestPTYCtrlCMidAnswerKeepsTheSession` and the other four PTY rows **skip** in this environment (`pty.Start`: operation not permitted), so their claims rest on the implementor's note. `builtBinary` does run, so staleness is impossible by construction — BR-43's fix is structural rather than a check that can itself go stale.
+- `repl_test.go:199` uses `t.Context().Done()` as its failure arm, so a loop that never returns hangs to the package timeout rather than failing — I hit exactly that shape while mutating (a 60s `TestTheAskWiringTable` under the never-scope mutation, where sibling tests using `time.After(5*time.Second)` reported in 5s). Already open as BR-50(3).
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one standing flag.** `askScoped` is a real consolidation and I confirmed it is load-bearing in both loops rather than cosmetic; `writeBytesAtomic` is correctly shared by `writeAtomic` and `SetUserModel`; `syncBuf`, `fail(code)` and the single `AppendEvent` caller file all hold. The flag is unchanged from round 2: `crlfWriter.Write` materialises the translation into `out` and `consumed()` re-derives it, and the two still disagree (Minor above).
+- **ARCH-PURE — pass.** `renderAskPrompt`, `recentTurns`, `recentDeck` and `consumed` are pure and table-tested without a store or a socket; `gatherAskContext` is a thin read whose only judgement is the nil-deck check; `askScoped` is control flow with no policy in it. The `policy-in-io-shell` family that produced BR-22 has no live instance left in the diff.
+- **ARCH-PURPOSE — flag, twice.** The shadow-sweep over "the directory is the context" passes: one-shot, piped and raw editor all derive from the store and session, and all three are pinned by one table. The flags are (a) I2 — the deferred point is the *interaction* of the milestone's two headline features, which is the purpose rather than a separable extension; and (b) the enumeration in I3 below — the class fix was written down and the commit that wrote it missed an entity it created in the same commit, which is the family's own definition of fixing the instance.
+- **ARCH-MOCK — pass.** This is the round that closed it. `Store` gained `SetUserModel`, so `Mem` can hold the state `YAML` holds and the conformance suite covers both cells for the newest method — verified by mutation. `llmtest.Fake` remains a wire-level httptest server (serialisation, headers, SSE parsing all exercised), `askRig` uses a real YAML store in a temp dir, `deps.notifySignals` seams the signal transport, and the pty suite builds what it tests.
+- **For `#17` and `#10`:** `askContext` is a stable surface to reuse now that every selection policy in it is pure. Two things to hand over deliberately — `repl`'s `context.WithoutCancel` (`repl.go:180`) means the loop honours **no** caller cancellation, which is correct while `main` is the only caller and a trap for the next one; and `#17` now inherits `SetUserModel` rather than an inert field, so its first write has a seam and a conformance row already waiting.
+
+## 7. Plan revision recommendations
+
+**I3 — the mechanical enumeration was run and missed the entity the same commit created.** *(4th in `plan-contract-drift`; disposed `not-addressed` below rather than raised as a new id.)*
+
+The round-3 Revisions entry (`workshop/plans/000016-console-qa-plan.md:1371`) states the rule and the command:
+
+```
+git diff <boundary>..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) '
+```
+
+I ran it. It lists `func (m *Mem) SetUserModel` and `func (y *YAML) SetUserModel`, and **`Store.SetUserModel` appears nowhere in the plan** — not in Integration points, and not in the `Store.UserModel` bullet, which still reads *"`Mem` holds it in a field, so the conformance suite runs both"* as though the field had no writer. Every other row I cross-checked resolves correctly: all 12 Pure-entity rows and all 8 Integration-point rows exist at their stated paths, `recentDeck`/`consumed`/`askScoped` landed, and `exchange` is correctly split out to `askctx.go`.
+
+Two `## Revisions` entries are owed in the milestone-close commit:
+
+1. **The enumeration, re-run and closed.** Add a `Store.SetUserModel` row to Integration points and extend the `Store.UserModel` bullet. Record *why* the sweep missed it — the enumeration was run against the boundary base while the commit was still being written, so an entity added by the same commit fell outside it. The mechanised rule needs that clause: run the enumeration against the **staged tree**, not the base-to-previous-HEAD range.
+2. **Boundary round 2 (BR-38…BR-43), still absent** — the four forks it took that the plan does not describe: `TestThePipedLoopsAskWiring` folded into `TestTheAskWiringTable`; `replLines` gained the interrupt scope the plan gave only to the raw loop; the pty suite builds its own binary rather than using `bin/define`; `newestFirst` became `recentDeck` and moved to `askctx.go` (recorded as a table row, not as a fork). Include round 6's outstanding item verbatim: **Task 11 ships one test with two subtests rather than the two the plan named, and the "signal transport" subtest bridges `sigs` to `interrupts.Fire()` itself, so "SIGINT through `repl`'s watcher during a *scoped* stream" remains unasserted.**
+
+Also correct one false checkbox in the same pass: Task 12's `- [x] sdlc close --issue 16 --verified '<evidence>'` (`plan-quality.md:1221`) is ticked while the issue is `status: working` and the command at this gate is `sdlc milestone-close`. A ticked box for an action not performed is the same defect as an unticked box for one that was.
+
+```findings
+dispose:
+  - id: BR-44
+    disposition: addressed
+    note: |
+      All three atlas claims swept at the paragraphs that own them; the conformance sentence is now true for the newest method because SetUserModel landed.
+  - id: BR-45
+    disposition: addressed
+    note: |
+      Both verified by reversion — a no-op Mem.SetUserModel reddens the suite row, and mutating the captured word reddens countingCapturer.askedWord.
+  - id: BR-46
+    disposition: addressed
+    note: |
+      One askScoped, called by both loops; removing the scope reddens 7 cells across both. The residual — 3 of its 4 mutations undefended — is raised separately.
+  - id: BR-47
+    disposition: not-addressed
+    note: |
+      The three named rows are fixed, but the enumeration the finding demanded was run in the commit that stated it and missed Store.SetUserModel, which that same commit created.
+  - id: BR-48
+    disposition: not-addressed
+    note: |
+      Still no Revisions entry for boundary round 2's four forks or round 6's Task 11 item; and Task 12's `sdlc close` checkbox is ticked while the issue is status:working at a milestone-close gate.
+  - id: BR-49
+    disposition: not-addressed
+    note: |
+      Unchanged — replRaw (replraw.go:15) still passes the seam straight to readKeys with no policy, and 44 test call sites still pass nil.
+  - id: BR-50
+    disposition: not-addressed
+    note: |
+      All four residues present verbatim — replraw.go:132's "adds a fifth", capture.go:96's guard, repl_test.go:199's hanging arm, ask.go:199's per-question Deck().
+findings:
+  - id: new
+    severity: Important
+    family: test-asserts-nothing
+    title: |
+      askScoped's sequence has four mutations and one is defended; omitting restore makes the session unquittable, suite green
+    detail: |
+      This is the 8th finding in this family, so the rule rather than the site.
+      cmd/define/ask.go:40-45. The commit that created askScoped probed ONE
+      mutation (reversing the two defers), found it unobservable, and concluded
+      "a rationale no test can defend is scaffolding". Measured, all four:
+      omitting interrupts.Set reddens 5 tests across both loops; omitting
+      `defer restore()` leaves the FULL suite green; omitting `defer qcancel()`
+      leaves it green AND go vet silent, because qcancel is used as a value so
+      lostcancel never fires; reordering is genuinely unobservable. The restore
+      cell is user-visible: interrupter.scoped stays true and fn stays the dead
+      question cancel, so readKeys (rawterm.go:70) swallows every subsequent
+      \x03 and Ctrl-C at the prompt does nothing after the first question. I
+      wrote the test — drive runEditor through the real readKeys, ask ?why, let
+      the answer COMPLETE, send \x03, require the loop to return — and it fails
+      mutated and passes unmutated in 0.67s. Every existing test asserts the
+      sink DURING an answer; none asserts it AFTER one. The rule: when a probe
+      finds a mutation untestable, the deliverable is the ENUMERATION of
+      mutations to that mechanism, not the verdict on the one probed.
+  - id: new
+    severity: Important
+    family: doc-overstates-code
+    title: |
+      An interrupted answer is dropped from the transcript, so the follow-up README promises resolves against nothing
+    detail: |
+      This is the 10th finding in this family; the rule has been stated five
+      times, so do NOT weaken the sentence. cmd/define/ask.go:140-145 returns 0
+      on the cancel path BEFORE sess.recordExchange, so an answer the user read
+      and then stopped leaves no trace — not the partial answer, not even the
+      question. README:79-88 states both halves in adjacent paragraphs:
+      "Ctrl-C stops the answer rather than the session" and "the earlier
+      questions in this session — so a follow-up like `give me two more
+      examples` resolves against the answer before it". Measured against the
+      wire fake: after 32 bytes streamed and cancelled, sess.turns is empty and
+      the follow-up prompt contains only "## The word on screen / sycophantic"
+      and the new question. Across the cells the claim quantifies over —
+      answered, ErrTruncated, ErrUnavailable-with-partial, cancelled — it is
+      true in 3 of 4, and the false cell is the flow the milestone is named
+      after. The fix is to record the partial exchange (the user READ it, the
+      same reason ask.go:153 keeps a truncated one) and give the claim a
+      named-enumeration row test, the way TestRawNeverAsks does its six.
+  - id: new
+    severity: Minor
+    family: second-implementation-drifts
+    title: |
+      crlfWriter.Write advances lastWasCR over bytes the underlying writer never took
+    detail: |
+      This is the 3rd finding in this family, so recorded rather than fixed at
+      the site. crlf.go:19-42: entryWasCR is captured for consumed()'s benefit,
+      but c.lastWasCR is still advanced across the WHOLE buffer even when only
+      part of it was written, so the state carried into a retry describes bytes
+      that never reached the terminal. Verified: Write("\r\nz") short at 1 byte
+      returns n=1 correctly (BR-41's fix), and the retry with p[1:] = "\nz" then
+      inserts a carriage return already on the wire — measured "\r\r\nz", the
+      exact doubling lastWasCR exists to prevent and the one consumed()'s
+      comment claims it prevents. BR-41 corrected the return value and left the
+      carried state. Low reach: nothing in the tree retries and runAsk discards
+      fmt.Fprint's error, so the symptom is one stray \r garbling a line on an
+      already-degraded path. The rule: a translation materialised once must not
+      be re-derived — Write and consumed are still two derivations of it.
+```
