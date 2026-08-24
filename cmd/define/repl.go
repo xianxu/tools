@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -166,7 +167,27 @@ const eraseLine = "\r\x1b[K"
 // It reads stdin unconditionally and prompts only when interactive, so there is
 // no separate batch path to keep in sync and the whole loop is testable from a
 // string.
-func repl(ctx context.Context, cancel context.CancelFunc, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
+func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
+	// The loop owns what an interrupt means (#16 D5), so it must not ALSO be
+	// cancelled behind the sink's back by main's NotifyContext — a SIGINT would
+	// end the session while an answer streams, whatever the sink points at.
+	//
+	// This sits HERE, above the replRaw/replLines choice, because BOTH loops need
+	// a transport. Detaching in run() and watching only in replRaw leaves every
+	// piped, redirected or raw-mode-fallback run with a ctx.Done() nothing can
+	// reach: SIGINT diverted from default termination by NotifyContext, and then
+	// delivered to no one (PQ-6).
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	interrupts := &interrupter{fn: cancel}
+	if d.notifySignals != nil {
+		go func() {
+			for range d.notifySignals(os.Interrupt) {
+				interrupts.Fire()
+			}
+		}()
+	}
+
 	interactive := d.stdinIsTerminal != nil && d.stdinIsTerminal()
 	// ONE predicate for "there is a human looking at a terminal", used for every
 	// byte of interactive UI: the prompt, the indicator, and the cursor control.
@@ -184,7 +205,7 @@ func repl(ctx context.Context, cancel context.CancelFunc, d deps, opt options, s
 	if terminalUI {
 		// Raw mode: keystrokes, a rendered frame, no terminal echo. Everything
 		// #2 did with cursor arithmetic against an echoed Enter is gone.
-		return replRaw(ctx, cancel, d, opt, stdin, stdout, stderr)
+		return replRaw(ctx, interrupts, d, opt, stdin, stdout, stderr)
 	}
 	return replLines(ctx, d, opt, stdin, stdout, stderr, !interactive, terminalUI)
 }

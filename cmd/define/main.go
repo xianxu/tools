@@ -43,6 +43,12 @@ type deps struct {
 	// reason storeCapturer's is: /history's window is a local-DAY computation,
 	// so a test has to be able to stand at a chosen instant in a chosen zone.
 	clock store.Clock
+	// notifySignals is the SIGNAL half of the interrupt story — the other half is
+	// the raw key reader's byte. Injected so a test can drive it without raising
+	// a real signal in the test binary, which `go test` would treat as a failure.
+	// nil means "no signal transport", which is what every test that does not
+	// care about interrupts gets.
+	notifySignals func(...os.Signal) <-chan os.Signal
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
 	// which would make the interactive path unwritable. Note this is a different
@@ -57,7 +63,17 @@ func realDeps() deps {
 		player:          afplayPlayer{},
 		newStore:        openStore,
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
+		notifySignals:   notifySignals,
 	}
+}
+
+// notifySignals is the production signal transport: a channel signal.Notify
+// feeds. Buffered by one, per os/signal's contract — an unbuffered channel a
+// receiver is not sitting on drops the signal.
+func notifySignals(sigs ...os.Signal) <-chan os.Signal {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, sigs...)
+	return ch
 }
 
 // storeDeps is the trio openStore produces. One value rather than three returns
@@ -319,13 +335,14 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 
 	switch fs.NArg() {
 	case 0:
-		// The loop needs a cancel it can call itself: in raw mode Ctrl-C arrives
-		// as a byte, so signal.NotifyContext cannot deliver it and the key reader
-		// must cancel instead. NotifyContext stays for the one-shot and piped
-		// paths, which still receive it as a signal.
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
+		// The loop derives its OWN context and owns what an interrupt means —
+		// see repl, where the detach sits above the choice of loop so both are
+		// served. This branch used to derive the cancel itself, which put the
+		// decision one level above the thing that makes it (#16 D5).
+		//
+		// NotifyContext stays for the one-shot, -forget and --llm-check paths,
+		// where "SIGINT ends the program" is the right contract.
+		return repl(ctx, d, opt, stdin, stdout, stderr)
 	default:
 		// A command is a command from every entry mode, arguments and all.
 		if oneShot.kind == cmdCommand {

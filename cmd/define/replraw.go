@@ -12,7 +12,7 @@ import (
 //
 // The whole editing model is Apply + RenderLine, both pure — this function is
 // the thin shell that reads keys, draws frames, and dispatches lookups.
-func replRaw(ctx context.Context, cancel context.CancelFunc, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
+func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer) int {
 	f, ok := stdin.(*os.File)
 	if !ok {
 		// Not a real terminal handle (a test harness, a wrapper): fall back to the
@@ -26,7 +26,7 @@ func replRaw(ctx context.Context, cancel context.CancelFunc, d deps, opt options
 	}
 	defer sess.restore()
 
-	keys := readKeys(ctx, f, cancel)
+	keys := readKeys(ctx, f, interrupts)
 	// cooked drops raw mode around a lookup so the definition scrolls normally,
 	// then re-enters for the next frame.
 	// Dropping and re-entering raw mode around a lookup. If re-entry fails the
