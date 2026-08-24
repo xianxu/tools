@@ -888,3 +888,24 @@ the next branch that needs the same shape.** `replLines` collapsed a dispatch's
 exit code into a boolean — the defect a comment 45 lines above names by number,
 fixed for commands in #15 and re-made for questions in #16. The fix is a single
 sink every branch feeds, not a third careful branch.
+
+## The `Review-Verdict:` trailer marks a boundary — never put it on a fix commit (define #16 M2)
+
+A REWORK verdict prints trailers alongside its findings, the same way
+FIX-THEN-SHIP does. I pasted them into the commit that FIXED the findings. The
+gate finds the previous boundary with `git log --grep 'Review-Verdict'`, so that
+commit became the boundary, and the next review ran over a window of
+`471b376..471b376` — **empty**. It reported "0 new findings, converging" while
+all eleven prior findings sat undisposed, and produced no verdict at all.
+
+The rule: **that trailer is a claim that this commit CLOSES a boundary.**
+
+- **FIX-THEN-SHIP** — the verdict sanctions shipping after the fixes, so the
+  fixes and the close mutations are ONE commit and it carries the trailer.
+- **REWORK** — the verdict is "address the findings, then re-run". The fix
+  commit carries no trailer; the trailer arrives with the close that follows.
+
+Costly in a quiet way: nothing errored, the gate said "converging", and only the
+window in the output — start SHA equal to end SHA — showed the review had been
+handed nothing to look at. **When a review reports zero findings on a diff you
+know is large, read the window before believing it.**
