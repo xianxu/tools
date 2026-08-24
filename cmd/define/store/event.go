@@ -8,6 +8,11 @@ type EventKind string
 const (
 	EventLookedUp EventKind = "looked-up"
 	EventReviewed EventKind = "reviewed"
+	// EventAsked is a free-form question put to the model (#16). The QUESTION is
+	// recorded and the answer is not: #17 wants to know what the learner asked
+	// about — a strong signal of what they are working on — and every consumer of
+	// this log is a fold, which answers would bloat for nothing.
+	EventAsked EventKind = "asked"
 )
 
 // ReviewEvent is one thing that happened, at a time.
@@ -16,11 +21,20 @@ const (
 // lists — words per day, streak, active days, accuracy — is a fold over these.
 // Storing counters alongside would create a second source of truth that drifts.
 type ReviewEvent struct {
-	Word    string    `yaml:"word"`
+	Word    string    `yaml:"word,omitempty"`
 	Kind    EventKind `yaml:"kind"`
 	Found   bool      `yaml:"found"`
 	Correct bool      `yaml:"correct,omitempty"`
-	At      time.Time `yaml:"at"`
+	// Question is set on EventAsked. Word may be empty beside it — a question
+	// asked before any lookup has no word — which is what generalised complete()
+	// below from "has a word" to "has a subject".
+	Question string `yaml:"question,omitempty"`
+	// At stays LAST, and a field added after it would break the torn-record rule
+	// silently. See complete(): the rule is termination PLUS completeness, and
+	// completeness leans on a cut record losing its timestamp. A field written
+	// after `at:` would survive the cut that drops `at`, and a fragment would
+	// then look whole.
+	At time.Time `yaml:"at"`
 }
 
 // complete reports whether an event carries every field a real one does.
@@ -29,5 +43,9 @@ type ReviewEvent struct {
 // something. The other half is termination — see parseDay, which needs both,
 // because a cut inside the timestamp leaves a shorter date that IS a valid time.
 func (e ReviewEvent) complete() bool {
-	return e.Word != "" && e.Kind != "" && !e.At.IsZero()
+	// A record identifies its SUBJECT — a word for a lookup, a question for an
+	// asked event. That generalisation is what the asked event forced: requiring
+	// a word would have dropped every question asked before a lookup, which is
+	// exactly the history #17 reads.
+	return (e.Word != "" || e.Question != "") && e.Kind != "" && !e.At.IsZero()
 }

@@ -72,6 +72,7 @@ func (failingStore) AppendEvent(store.ReviewEvent) error { return errFail }
 func (failingStore) Events(time.Time) ([]store.ReviewEvent, error) {
 	return nil, errFail
 }
+func (failingStore) UserModel() (string, error)  { return "", errFail }
 func (failingStore) Forget(string) (bool, error) { return false, errFail }
 
 var errFail = &failErr{}

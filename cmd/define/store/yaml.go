@@ -34,6 +34,27 @@ func NewYAML(dir string, warn io.Writer) *YAML { return &YAML{dir: dir, warn: wa
 func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, "words") }
 func (y *YAML) eventsDir() string { return filepath.Join(y.dir, "events") }
 
+// userModelFile is the third artifact in the directory, beside words/ and
+// events/. Markdown rather than YAML because a person edits it: #17 regenerates
+// the inferred sections and never touches the human-owned ## Corrections.
+func (y *YAML) userModelFile() string { return filepath.Join(y.dir, "user-model.md") }
+
+// UserModel reads the learner model, or "" when there is none.
+//
+// Absent is not an error — it is the normal state until #17 first writes one —
+// but an UNREADABLE file is, because silently answering "" for a model that
+// exists would make every answer pitched at the wrong level with no way to tell.
+func (y *YAML) UserModel() (string, error) {
+	b, err := os.ReadFile(y.userModelFile())
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
 func (y *YAML) Upsert(w Word) error {
 	k := Key(w.Text)
 	if k == "" {

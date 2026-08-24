@@ -14,6 +14,10 @@ type Mem struct {
 	mu     sync.Mutex
 	words  map[string]Word
 	events []ReviewEvent
+	// userModel is what YAML reads from user-model.md. A field so the reference
+	// implementation can hold one at all — SetUserModel is #17's to add, and the
+	// conformance suite only needs "absent reads as empty" until then.
+	userModel string
 }
 
 func NewMem() *Mem { return &Mem{words: map[string]Word{}} }
@@ -82,6 +86,12 @@ func (m *Mem) Events(since time.Time) ([]ReviewEvent, error) {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out, nil
+}
+
+func (m *Mem) UserModel() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.userModel, nil
 }
 
 func (m *Mem) Forget(key string) (bool, error) {

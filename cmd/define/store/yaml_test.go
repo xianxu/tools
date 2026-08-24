@@ -3,6 +3,7 @@ package store_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,6 +148,39 @@ func TestYAMLRecoversFromATornEventRecord(t *testing.T) {
 	}
 }
 
+// A whole asked record survives beside the lookups, so the torn cases below are
+// asserting truncation rather than an event kind the reader cannot parse.
+func TestYAMLKeepsAWholeAskedRecord(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewYAML(dir, nil)
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
+	_ = s.AppendEvent(store.ReviewEvent{
+		Kind: store.EventAsked, Question: "what's the difference?", At: day.Add(time.Hour),
+	})
+
+	ev, err := s.Events(time.Time{})
+	if err != nil {
+		t.Fatalf("Events: %v", err)
+	}
+	if len(ev) != 2 {
+		t.Fatalf("got %d events, want 2: %+v", len(ev), ev)
+	}
+	if ev[1].Kind != store.EventAsked || ev[1].Question != "what's the difference?" {
+		t.Errorf("asked event = %+v", ev[1])
+	}
+	// The field ORDER on disk is load-bearing: `at:` must be last, or a cut that
+	// drops it would leave a fragment that still looks whole.
+	b, err := os.ReadFile(filepath.Join(dir, "events", "2026-08-20.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := string(b)
+	if strings.LastIndex(rec, "at:") < strings.LastIndex(rec, "question:") {
+		t.Errorf("`at:` is not written last; the torn-record rule depends on it:\n%s", rec)
+	}
+}
+
 // Truncation cases, each cut at a different point in the record. The earlier
 // completeness check admitted two of these: "- word: thi" parses into an event
 // with no timestamp, and a cut inside the timestamp leaves a SHORTER DATE THAT
@@ -166,6 +200,12 @@ func TestYAMLDropsEveryShapeOfTornRecord(t *testing.T) {
 		{"cut just before the terminator", "- word: third\n  kind: looked-up\n  found: true\n  at: 2026-08-20T09:00:00Z"},
 		{"unterminated quote", `- word: "third`},
 		{"cut mid-key of last field", "- word: third\n  kind: looked-up\n  found: true\n  a"},
+		// #16's asked event, cut at each field it added. `question:` is written
+		// BEFORE `at:`, so the timestamp is still the last thing a cut removes —
+		// which is what the completeness half of the rule leans on.
+		{"an asked record cut mid-question", "- kind: asked\n  question: what is the diff"},
+		{"an asked record cut before its timestamp", "- kind: asked\n  question: what is the difference?\n"},
+		{"an asked record cut inside its timestamp", "- kind: asked\n  question: what is it?\n  at: 2026-08-20"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

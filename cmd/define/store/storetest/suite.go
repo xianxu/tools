@@ -35,6 +35,61 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("UserModel is empty before anything writes one", func(t *testing.T) {
+		// The normal first-run state, and NOT an error: #17 writes this file,
+		// and #16 reads it to pitch an answer. "Not there yet" is the common
+		// case for the whole of #16's life.
+		s := newStore(t)
+		got, err := s.UserModel()
+		if err != nil {
+			t.Fatalf("UserModel: %v", err)
+		}
+		if got != "" {
+			t.Errorf("UserModel = %q, want empty", got)
+		}
+	})
+
+	t.Run("an asked event round-trips with its question", func(t *testing.T) {
+		s := newStore(t)
+		// Word is the word the question FOLLOWED, and may be empty — a question
+		// asked cold has no word. Question is what #17 reads.
+		e := store.ReviewEvent{
+			Word: "sycophantic", Kind: store.EventAsked,
+			Question: "what's the difference to obsequious?", At: day(2),
+		}
+		if err := s.AppendEvent(e); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+		got, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("Events = %v, want 1", got)
+		}
+		if got[0].Question != e.Question || got[0].Kind != store.EventAsked || got[0].Word != e.Word {
+			t.Errorf("round-tripped %+v, want %+v", got[0], e)
+		}
+	})
+
+	t.Run("a question with no word is still a whole record", func(t *testing.T) {
+		// Completeness generalised from "has a word" to "has a SUBJECT" when the
+		// asked event arrived. A question asked before any lookup has no word,
+		// and dropping it at read time would lose exactly the events #17 wants.
+		s := newStore(t)
+		e := store.ReviewEvent{Kind: store.EventAsked, Question: "why is it pejorative?", At: day(3)}
+		if err := s.AppendEvent(e); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+		got, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(got) != 1 || got[0].Question != e.Question {
+			t.Errorf("Events = %v, want the wordless question to survive", got)
+		}
+	})
+
 	t.Run("upsert round-trips", func(t *testing.T) {
 		s := newStore(t)
 		w := store.Word{Text: "sycophantic", FirstSeen: day(1), LastSeen: day(1), Lookups: 1}
