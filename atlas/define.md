@@ -180,11 +180,15 @@ acts. Candidates arrive as a plain slice rather than a `History` handle, so
 **`Apply` never queries**; the loop resolves matches once per keystroke and hands
 the same slice to both the state machine and the suggestion.
 
-**Cancellation changes shape in raw mode, and this is the subtle part.** Ctrl-C
-arrives as byte `0x03`, not a signal, so `signal.NotifyContext` — which the
-one-shot and piped paths still rely on — never fires. The key reader owns
-cancellation instead, calling `cancel()` the moment it decodes an interrupt, which
-works even while the loop is blocked in playback.
+**Cancellation changes shape in raw mode, and this is the subtle part.** Raw mode
+clears ISIG, so Ctrl-C arrives as byte `0x03` and the key reader can act on it
+even while the loop is blocked in playback. It does not *own* the meaning,
+though, and the three claims this paragraph used to make were each disproved:
+the pty suite measured a `\x03` arriving as a **SIGINT** anyway; the loop no
+longer relies on `NotifyContext` at all (`repl` detaches with
+`context.WithoutCancel` above its choice of loop, so both loops are served); and
+the reader fires an **interrupt sink** rather than a cancel. See "Free-form
+input" below for what the sink is and why both transports feed it.
 
 That forced a second decision: **render cooked, play raw.** Printing a definition
 needs cooked mode so newlines translate; playback must stay raw so the key reader

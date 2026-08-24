@@ -147,7 +147,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// already written one before submitLine — emitting a second here put the two
 	// routes' output at different heights, which is exactly the divergence one
 	// shared closure exists to prevent.
-	askInSession := func(q question) error {
+	askInSession := func(q question) {
 		// Ctrl-C here means "stop this answer", not "quit" — the one place in
 		// this program where it means something narrower. Scoping the sink
 		// covers BOTH transports for the duration (#16 D5), and the reader
@@ -171,7 +171,6 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 
 		fmt.Fprint(stdout, "\r\n")
 		draw()
-		return nil
 	}
 
 	for {
@@ -238,9 +237,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// submitLine has already recorded the line.
 					hist.Add(cmd.recallLine())
 					fmt.Fprint(stdout, "\r\n")
-					if err := askInSession(question{text: cmd.question, forced: true}); err != nil {
-						return lostTerminal(err)
-					}
+					askInSession(question{text: cmd.question, forced: true})
 					continue
 				}
 				if cmd.kind != cmdDefine {
@@ -270,9 +267,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// The unforced route into the SAME closure the forced one
 					// uses. submitLine has already recorded the line for recall
 					// and left the session's current word alone.
-					if err := askInSession(question{text: out.ask}); err != nil {
-						return lostTerminal(err)
-					}
+					askInSession(question{text: out.ask})
 					continue
 				}
 				// A blank line between the entry and the next prompt: without it

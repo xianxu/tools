@@ -497,3 +497,58 @@ overloaded service is what `ErrUnavailable` exists for. So a transient overload
 reaches the user as a raw JSON blob and exit 1. The defect is in `internal/llm`'s
 taxonomy, which has its own fake and conformance obligations; folding it into this
 close would have changed #11's contract without its own review boundary.
+
+### 2026-08-23 — M2 boundary review: REWORK, 16 findings, two Critical
+
+The harshest round of the issue, and it found two REAL BUGS that every test I
+had written passed over. Both were mine, and both were the same shape — a
+comment asserting the opposite of what the code did:
+
+- **BR-22 (Critical) — "Recently in the deck" carried the twelve OLDEST words.**
+  `Deck()` is documented newest-first; I took `lastN`. My own comment beside it
+  said *"the newest are the ones worth keeping"*. The section labelled *recent*
+  had been sending the words the learner had touched least recently.
+- **BR-23 (Critical) — the one-shot put question TEXT into the word field.**
+  `&session{current: oneShot.word}` — for an unforced question the word IS the
+  whole line, so it reached "## The word on screen" and the event log's `word:`.
+  That is exactly the pollution routing-before-capture exists to prevent, arriving
+  through a door D2 did not cover.
+
+The meta-finding is the one worth keeping. `test-asserts-nothing` reached its
+**5th** occurrence, and the rule that finally names it is sharper than the one I
+had been applying:
+
+> An assertion that a value reached an output must use a value **only that
+> source can supply**. A fixture shared with another source makes the assertion
+> vacuous.
+
+`TestAskStreamsAnAnswerWithTheDirectoryAsContext` asserted `"sycophantic"` for
+the session-words list — a string `CurrentWord` also supplies — so deleting
+`SessionWords` entirely left it green. Four claims in the diff survived the
+mutation they existed to catch, each for that reason. Every context source now
+has a fixture only it can supply.
+
+Fixed, all mutation-verified individually:
+
+- Both Criticals, plus tests using deck-only and one-shot-only observables.
+- **I1** — `UserModel`'s error was discarded at its only call site, defeating the
+  reason `store/yaml.go` returns one. Warned now, like a store that cannot open.
+- **I2** — `go test -race` failed with eleven reports: two new tests read a
+  `bytes.Buffer` while the code under test wrote it. One `syncBuf`, and
+  `ptyOut` folded onto it — the package already owned that shape.
+- **I3** — the plan's `askCapturer` was not built; events appended through a
+  second write path. `Capturer` gained `CaptureAsk`, so the log has one writer.
+- **I4/I5** — README did not say questions are persisted; `atlas` still stated
+  the pre-M2 cancellation model in the paragraph that OWNS it while the new
+  section sat below. The rule: a corrected fact is swept at its restatements,
+  not appended beside them.
+- **I6** — the piped loop's ask wiring was entirely unpinned (both the answer
+  destination and the session were deletable green).
+- **I8** — `assertNoBareNewline` excused a trailing newline, which made it
+  unfalsifiable for a single-line message: vacuous for 3 of 3 rows. Replaced by
+  `assertCRLFTerminated`, which counts the terminator itself.
+- **I9** — 31 unticked plan steps and no `## Revisions` entry for any boundary
+  round or M2 departure. Both now recorded, including M1's four rounds.
+- Minors: `crlf.Write` reported 0 on a short write, `askInSession`'s error branch
+  was unreachable, `keysFor` was dead, `bytesReader` was `strings.NewReader`
+  renamed, and `DEFINE_NO_CAPTURE` silently un-adapts answers (documented).

@@ -92,18 +92,22 @@ says so and exits `1` rather than looking up a sentence.
 miss stays a miss, and an explicit `?` alongside it is a usage error (exit `2`)
 rather than a guess at which of the two contradicting flags you meant.
 
-**`define` writes to the current directory.** *Every* successful lookup — one-shot,
-piped, or in the editor — records the word under `words/` and `events/` where you
-started `define`, so your deck and history build themselves:
+**`define` reads and writes the current directory.** *Every* successful lookup —
+one-shot, piped, or in the editor — records the word where you started `define`,
+so your deck and history build themselves. **Every question you ask is recorded
+too, by its text**, because what you ask about is the clearest signal of what you
+are working on:
 
 ```
 words/sycophantic.yaml     one file per word
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
+                           kinds: looked-up, asked  (answers are NOT stored)
+user-model.md              optional, yours to write — read to pitch answers
 ```
 
 A failed lookup is recorded as history but never enters the deck, so typos are
 recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
-scripting a dictionary should not mutate a deck.
+scripting a dictionary should not mutate a deck — and neither does it ask.
 
 ```sh
 define --forget sycophantic   # drop a word from the deck (history is kept)
@@ -111,7 +115,9 @@ DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
 ```
 
 `DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
-which is what persists your history, so with it set, history is session-only.
+which is what persists your history, so with it set, history is session-only. It
+also means the directory is not **read**: answers come back un-adapted, with no
+deck and no `user-model.md` behind them.
 
 The directory *is* the deck: run `define` somewhere else and you get a different
 one. If that directory happens to be synced, so is your vocabulary; `define`

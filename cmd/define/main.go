@@ -26,8 +26,9 @@ type deps struct {
 	// history is the durable word history. Constructed at the boundary so the
 	// loop takes a seam rather than deciding where state lives.
 	history History
-	// capture is the only thing that RECORDS lookups. deck below is the other
-	// way the store is mutated: --forget deletes through it.
+	// capture is the only thing that RECORDS — lookups (Capture) and questions
+	// (CaptureAsk). deck below is the other way the store is mutated: --forget
+	// deletes through it.
 	capture Capturer
 	// deck is the store --forget acts on. Separate from capture because capture
 	// deliberately cannot fail loudly and --forget deliberately must.
@@ -384,7 +385,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			// The unforced route: the dictionary missed and the line reads as a
 			// question. Returning out.code here would exit 0 having printed
 			// nothing, since an ask outcome carries no failure.
-			return ask(ctx, d, opt, &session{current: oneShot.word}, stdout, stderr, question{text: out.ask})
+			// NO current word: the dictionary missed, so nothing was defined and
+			// the line IS the question. Passing oneShot.word here put the
+			// question text into session.current — and from there into "## The
+			// word on screen" and the event log's word field, which is the exact
+			// pollution routing-before-capture exists to prevent (BR-23).
+			return ask(ctx, d, opt, &session{}, stdout, stderr, question{text: out.ask})
 		}
 		return out.code
 	}

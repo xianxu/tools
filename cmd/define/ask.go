@@ -96,10 +96,7 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		return unavailable(errOut, q)
 	}
 
-	req := renderAskPrompt(gatherAskContext(d, sess, q))
-	// parent is kept so the two reasons ctx can be done stay distinguishable —
-	// llmcheck.go draws the same line for the same reason.
-	parent := ctx
+	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))
 	answer := &strings.Builder{}
 	_, err = d.newLLM(cfg).Stream(ctx, req, func(delta string) {
 		answer.WriteString(delta)
@@ -111,8 +108,10 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// failures as ErrUnavailable — so a decode-the-error version answers the
 	// user's own Ctrl-C with "no model configured". The same distinction
 	// playAnnounced draws for interrupted playback.
-	if parent.Err() != nil {
-		fmt.Fprintln(out) // close the partial line the stream left open
+	if ctx.Err() != nil {
+		if answer.Len() > 0 {
+			fmt.Fprintln(out) // close the partial line the stream left open
+		}
 		return 0
 	}
 	switch {
@@ -137,26 +136,10 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		fmt.Fprintln(out)
 	}
 	sess.recordExchange(q.text, answer.String())
-	recordAsked(d, sess, q)
-	return 0
-}
-
-// recordAsked appends the question to the event log — the QUESTION and not the
-// answer, because #17 wants to know what the learner asked about and every
-// consumer of that log is a fold.
-//
-// Best-effort and silent: a question that was answered on screen has already
-// been delivered, and a log write that fails is not worth interrupting it for.
-func recordAsked(d deps, sess *session, q question) {
-	if d.deck == nil || d.clock == nil {
-		return
+	if d.capture != nil {
+		d.capture.CaptureAsk(sess.current, q.text, opt)
 	}
-	_ = d.deck.AppendEvent(store.ReviewEvent{
-		Word:     sess.current,
-		Kind:     store.EventAsked,
-		Question: q.text,
-		At:       d.clock.Now(),
-	})
+	return 0
 }
 
 // gatherAskContext is the thin IO step: read what the directory holds.
@@ -164,7 +147,7 @@ func recordAsked(d deps, sess *session, q question) {
 // It formats nothing and truncates nothing beyond the counts — those are the
 // pure renderer's, which is what keeps "what did we send" assertable from a
 // struct literal.
-func gatherAskContext(d deps, sess *session, q question) askContext {
+func gatherAskContext(d deps, sess *session, q question, warnOut io.Writer) askContext {
 	c := askContext{
 		Question:     q.text,
 		CurrentWord:  sess.current,
@@ -175,19 +158,38 @@ func gatherAskContext(d deps, sess *session, q question) askContext {
 	if d.deck == nil {
 		return c
 	}
-	if model, err := d.deck.UserModel(); err == nil {
-		c.UserModel = model
+	model, err := d.deck.UserModel()
+	if err != nil {
+		// NOT silently empty. store/yaml.go says why it returns an error at all:
+		// answering "" for a model that exists pitches every answer at the wrong
+		// level with no way to tell. Warned like a store that cannot be opened.
+		fmt.Fprintf(warnOut, "define: could not read user-model.md (%v); answering without it\n", err)
 	}
-	if deck, err := d.deck.Deck(); err == nil {
-		// Deck() is newest-first; the prompt reads better oldest-first, and the
-		// newest are the ones worth keeping.
-		var words []string
-		for _, w := range deck {
-			words = append(words, w.Text)
-		}
-		c.DeckWords = lastN(words, maxContextWords)
+	c.UserModel = model
+
+	if deck, err := d.deck.Deck(); err != nil {
+		fmt.Fprintf(warnOut, "define: could not read the deck (%v); answering without it\n", err)
+	} else {
+		c.DeckWords = newestFirst(deck, maxContextWords)
 	}
 	return c
+}
+
+// newestFirst takes the n most RECENT deck words and returns them oldest-first.
+//
+// Deck() is ordered by LastSeen DESCENDING, so the head is the newest — taking
+// the tail took the twelve words the learner has touched least recently and
+// labelled them "Recently in the deck" (BR-22). Reversing after the cut is what
+// makes the section read forwards while still carrying the newest words.
+func newestFirst(deck []store.Word, n int) []string {
+	if len(deck) > n {
+		deck = deck[:n]
+	}
+	words := make([]string, 0, len(deck))
+	for i := len(deck) - 1; i >= 0; i-- {
+		words = append(words, deck[i].Text)
+	}
+	return words
 }
 
 func lastN(s []string, n int) []string {

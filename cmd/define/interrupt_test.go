@@ -43,7 +43,7 @@ func TestBothInterruptTransportsReachTheSink(t *testing.T) {
 	t.Run("the byte transport fires the sink", func(t *testing.T) {
 		fired := make(chan struct{}, 1)
 		i := &interrupter{fn: func() { fired <- struct{}{} }}
-		keys := readKeys(t.Context(), bytesReader("\x03"), i)
+		keys := readKeys(t.Context(), strings.NewReader("\x03"), i)
 		<-keys // the key still reaches the loop
 		select {
 		case <-fired:
@@ -94,5 +94,3 @@ func assertSignalEndsTheLoop(t *testing.T, d deps, sigs chan os.Signal) {
 		t.Fatal("the loop did not return: this transport reaches no sink")
 	}
 }
-
-func bytesReader(s string) io.Reader { return strings.NewReader(s) }

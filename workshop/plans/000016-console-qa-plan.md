@@ -162,7 +162,8 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `askContext` | `cmd/define/askctx.go` | new |
 | `renderAskPrompt` | `cmd/define/askctx.go` | new |
 | `recentTurns` | `cmd/define/askctx.go` | new |
-| `session` / `exchange` | `cmd/define/session.go` | new |
+| `session` | `cmd/define/session.go` | new |
+| `exchange` | `cmd/define/askctx.go` | new |
 | `crlfWriter` | `cmd/define/crlf.go` | new |
 | `ReviewEvent` / `complete` | `cmd/define/store/event.go` | modified |
 
@@ -220,7 +221,7 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `runAsk` | `cmd/define/ask.go` | new | `llm.Client.Stream` |
 | `deps.newLLM` / `deps.getenv` | `cmd/define/main.go` | new | `llm.New` + `llm.Resolve` |
 | `Store.UserModel` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
-| `interrupter` | `cmd/define/rawterm.go` | new | what Ctrl-C means right now |
+| `interrupter` | `cmd/define/interrupt.go` | new | what Ctrl-C means right now |
 | `deps.notifySignals` | `cmd/define/main.go` | new | `signal.Notify` |
 | `askCapturer` (on `Capturer`) | `cmd/define/capture.go` | modified | event append |
 
@@ -818,7 +819,7 @@ git commit -am "#16 M1: /help names both hatches"
   `cmd/define/main.go` (`deps.notifySignals`)
 - Test: `cmd/define/rawterm_test.go`, `cmd/define/main_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestCRLFWriterTranslatesNewlines(t *testing.T) {
@@ -855,9 +856,9 @@ func TestThePipedLoopStillExitsOnASignal(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and watch them fail.**
+- [x] **Step 2: Run and watch them fail.**
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
 
 `crlfWriter` holds a `lastWasCR bool` so the split-across-writes case works.
 
@@ -920,9 +921,9 @@ unchanged — if either needs editing, the default sink is wired wrong. Add one
 test that a piped run still exits on a signal, because that is the path this
 finding showed a plausible wiring silently strands.
 
-- [ ] **Step 4: Run the tests.** `go test ./cmd/define/` and
+- [x] **Step 4: Run the tests.** `go test ./cmd/define/` and
       `go test -tags conformance -run PTY ./cmd/define/`
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#16 M2: one sink for both ways Ctrl-C arrives"
@@ -935,7 +936,7 @@ git commit -am "#16 M2: one sink for both ways Ctrl-C arrives"
 - Test: `cmd/define/store/storetest/suite.go` (the conformance suite — both
   implementations), `cmd/define/store/yaml_test.go`
 
-- [ ] **Step 1: Write the failing suite rows**
+- [x] **Step 1: Write the failing suite rows**
 
 ```go
 // in storetest.Suite — runs against Mem AND YAML, so "the fake behaves like the
@@ -945,8 +946,8 @@ t.Run("an asked event round-trips with its question", ...)
 t.Run("a torn asked record is dropped", ...) // cut before `at:`
 ```
 
-- [ ] **Step 2: Run and watch them fail.** `go test ./cmd/define/store/...`
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run and watch them fail.** `go test ./cmd/define/store/...`
+- [x] **Step 3: Implement.**
 
 ```go
 // event.go
@@ -980,8 +981,8 @@ like on disk. It does not — a lookup always has a word — but check
 `yaml_test.go`'s golden day-file assertions and update them deliberately if they
 render the field.
 
-- [ ] **Step 4: Run the tests.** `go test ./cmd/define/store/...`
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the tests.** `go test ./cmd/define/store/...`
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#16 M2: the log records a question; the store reads user-model.md"
@@ -994,7 +995,7 @@ git commit -am "#16 M2: the log records a question; the store reads user-model.m
   `cmd/define/testdata/golden/ask-prompt.txt`
 - Test: golden + table
 
-- [ ] **Step 1: Write the failing test** — build an `askContext` literal with a
+- [x] **Step 1: Write the failing test** — build an `askContext` literal with a
       current word and entry, three session words, a deck, a user model and one
       prior turn; assert the rendered prompt against a committed golden.
 
@@ -1024,13 +1025,13 @@ func TestRecentTurnsBoundsTheTranscript(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and watch them fail.**
-- [ ] **Step 3: Implement.** `renderAskPrompt` is pure: an `askContext` in, two
+- [x] **Step 2: Run and watch them fail.**
+- [x] **Step 3: Implement.** `renderAskPrompt` is pure: an `askContext` in, two
       strings out. Sections are omitted entirely when their data is absent.
       `maxTurns = 6`. Keep the prompt itself short and specific — it is domain
       knowledge and it lives here, not in `internal/llm` (D9).
-- [ ] **Step 4: Run the tests.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the tests.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#16 M2: the directory, rendered as a prompt"
@@ -1042,7 +1043,7 @@ git commit -am "#16 M2: the directory, rendered as a prompt"
 - Create: `cmd/define/ask.go`, `cmd/define/ask_test.go`
 - Modify: `cmd/define/main.go` (`deps.getenv`, `deps.newLLM`, `realDeps`)
 
-- [ ] **Step 1: Write the failing test** — against the **wire-level** fake, not a
+- [x] **Step 1: Write the failing test** — against the **wire-level** fake, not a
       stubbed client. The API below is the real one
       (`internal/llm/llmtest/fake.go`): `Fake` embeds `*httptest.Server`, so
       `fake.URL` is a field; replies are queued with `Script(match, replies...)`;
@@ -1094,8 +1095,8 @@ func TestAskFollowUpCarriesThePreviousExchange(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and watch them fail.**
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run and watch them fail.**
+- [x] **Step 3: Implement.**
 
 ```go
 // runAsk is the one place a question reaches the network.
@@ -1121,8 +1122,8 @@ Its taxonomy, in the order it must be asked:
 time `runAsk` sees it, so the original cause is gone. Ask the **context**, not
 the error.
 
-- [ ] **Step 4: Run the tests.** `go test ./cmd/define/...`
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the tests.** `go test ./cmd/define/...`
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#16 M2: runAsk — the question, the directory, and the stream"
@@ -1134,7 +1135,7 @@ git commit -am "#16 M2: runAsk — the question, the directory, and the stream"
 - Modify: `cmd/define/replraw.go` (the single `askInSession` closure from Task 4)
 - Test: `cmd/define/editorloop_test.go`, `cmd/define/pty_conformance_test.go`
 
-- [ ] **Step 1: Write the failing tests** — drive `runEditor` with a scripted key
+- [x] **Step 1: Write the failing tests** — drive `runEditor` with a scripted key
       channel: submit a question, let the fake stream two deltas, send
       `KeyInterrupt`, then submit a word and assert its definition renders. The
       session must survive; the process must not exit.
@@ -1161,8 +1162,8 @@ lookup renders" is an observable **only a surviving session** produces, so it
 distinguishes what the existing rows cannot. That closes the gap that file
 documents rather than restating a claim it disproved.
 
-- [ ] **Step 2: Run and watch them fail** (today the interrupt ends the loop).
-- [ ] **Step 3: Implement.** Inside `askInSession` — the ONE closure both the
+- [x] **Step 2: Run and watch them fail** (today the interrupt ends the loop).
+- [x] **Step 3: Implement.** Inside `askInSession` — the ONE closure both the
       forced and unforced routes enter (Task 4):
 
 ```go
@@ -1192,9 +1193,9 @@ between the stream ending and the prompt returning still means "quit". And
 `qcancel()` after `restore()`, so the deferred cancel cannot fire a sink that is
 no longer this question's.
 
-- [ ] **Step 4: Run the tests.** `go test ./cmd/define/` and
+- [x] **Step 4: Run the tests.** `go test ./cmd/define/` and
       `go test -tags conformance ./cmd/define/ -run PTY`
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#16 M2: Ctrl-C stops the answer, not the session"
@@ -1202,17 +1203,17 @@ git commit -am "#16 M2: Ctrl-C stops the answer, not the session"
 
 ### Task 12: close the issue
 
-- [ ] Full suite: `go test ./... && go vet ./...`
-- [ ] Live check by hand, recorded in `## Log`:
+- [x] Full suite: `go test ./... && go vet ./...`
+- [x] Live check by hand, recorded in `## Log`:
       `define` → `sycophantic` → `what's the difference to obsequious?` →
       `give me three more examples` → Ctrl-C mid-answer → `hot dog`.
-- [ ] Confirm the event log: `cat events/*.yaml` shows `kind: asked` records
+- [x] Confirm the event log: `cat events/*.yaml` shows `kind: asked` records
       carrying their questions.
-- [ ] Update `atlas/define.md` (the ask path, the context pack, the scoped
+- [x] Update `atlas/define.md` (the ask path, the context pack, the scoped
       interrupt) and `atlas/index.md` if a new file warrants a pointer.
-- [ ] Tick the project row for `tools#16` in `workshop/projects/define-learn.md`
+- [x] Tick the project row for `tools#16` in `workshop/projects/define-learn.md`
       and add its `**actual:**` / `**closed:**` block.
-- [ ] `sdlc close --issue 16 --verified '<evidence>'` — omit `--actual`; the
+- [x] `sdlc close --issue 16 --verified '<evidence>'` — omit `--actual`; the
       binary measures and adopts it (AGENTS.md §5).
 
 ---
@@ -1323,3 +1324,41 @@ the second finding in family `interrupt-delivery-path`.
   `completionsFor`, `menuLines`, `newCommandCtx`, `TestParseREPLLine`) was
   confirmed to exist. The enumeration is what disposes of the family — a line
   number fixed by eye is the instance again.
+
+### 2026-08-23 — M2's design departures, and the M1 rounds
+
+**Reason:** the plan gate's own rule, restated by the M2 boundary review (I9):
+the plan artifact's state is part of the milestone deliverable, and a
+`## Revisions` entry is owed for every fork taken differently from the plan —
+in the milestone-close commit, not at issue close. M1's four boundary rounds
+went unrecorded here, which is the same gap.
+
+**M1 rounds (BR-1…BR-19), recorded late.** Four rounds; every finding fixed
+rather than deferred. The through-line is one rule the plan did not state and
+should have: *an assertion must be able to fail.* Four separate findings in
+family `test-asserts-nothing` — a branch deletable with the suite green, a
+recall test satisfied by the editor's own echo, an injected double `withStore`
+discarded, and a message asserted against the production constant rather than
+its bytes (which shipped a doubled backslash). The full round-by-round record is
+in the issue's `## Log` and the gate ledger.
+
+**M2 departures from the plan as written:**
+
+1. **`renderAskPrompt` returns an `llm.Request`, not `(system, prompt string)`.**
+   `llmtest.AssertGolden` snapshots a Request through the same renderer the
+   transport hashes, so the golden is what gets SENT rather than a string the
+   test concatenates. Strictly better, and it composes with the cassette key.
+2. **The interrupt swallow lives in the READER, not the loop.** Task 11 sketched
+   the loop reading keys during the stream and swallowing the interrupt there.
+   That works and silently eats type-ahead: keys typed during a long answer
+   vanish. `interrupter.Fire` now reports whether a scope consumed the
+   interrupt and `readKeys` drops it, which made the key channel's buffering
+   load-bearing — the loop stops reading during a stream, so on an unbuffered
+   channel the reader blocks on the first key typed and never decodes the
+   Ctrl-C behind it.
+3. **The `asked` event goes through the `Capturer` seam, not `store.AppendEvent`.**
+   The plan's Integration-points table named `askCapturer`; the first
+   implementation appended directly through `deps.deck`, creating a second write
+   path into the event log beside `capture` and falsifying `deps`' own comment.
+   `Capturer` gained `CaptureAsk`, so the log keeps one writer (M2 boundary
+   review, I3).

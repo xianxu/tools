@@ -40,3 +40,29 @@ func TestCRLFWriter(t *testing.T) {
 		})
 	}
 }
+
+// An io.Writer must report progress in the CALLER's units, and a short write is
+// not success. Returning 0 on a partial write claims nothing was consumed, so a
+// retry duplicates whatever did reach the terminal.
+func TestCRLFWriterReportsProgressOnAShortWrite(t *testing.T) {
+	// A writer that accepts 5 translated bytes and then stops.
+	short := &shortWriter{limit: 5}
+	w := &crlfWriter{w: short}
+
+	n, err := io.WriteString(w, "ab\ncd") // translates to "ab\r\ncd", 6 bytes
+	if err == nil {
+		t.Fatal("a short underlying write was reported as success")
+	}
+	if n <= 0 || n >= len("ab\ncd") {
+		t.Errorf("n = %d, want progress in caller units strictly between 0 and %d", n, len("ab\ncd"))
+	}
+}
+
+type shortWriter struct{ limit int }
+
+func (s *shortWriter) Write(p []byte) (int, error) {
+	if len(p) > s.limit {
+		return s.limit, nil // short, no error: the io.Writer contract's other half
+	}
+	return len(p), nil
+}

@@ -353,14 +353,17 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 			}
 			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
-			assertNoBareNewline(t, out.String(), "stdout")
 			// EVERY message this loop writes is written in RAW mode, so every
-			// one carries its own carriage returns. The ask path is raw for a
-			// reason Task 11 depends on: staying raw is what keeps the key
-			// reader seeing bytes, so Ctrl-C can cancel a stream rather than the
-			// session (#16 D6). Running it under cooked() would be invisible
-			// here without this assertion.
-			assertNoBareNewline(t, errb.String(), "stderr")
+			// one carries its own carriage returns — asserted as the POSITIVE
+			// observable, the terminator itself. The predecessor checked for the
+			// ABSENCE of a bare "\n" while excusing a trailing one, which made
+			// it unfalsifiable for a single-line message: all three rows passed
+			// with the terminator removed (I8).
+			//
+			// The ask path is raw for a reason Task 11 depends on: staying raw
+			// is what keeps the key reader decoding bytes, so Ctrl-C can cancel
+			// a stream rather than the session (#16 D6).
+			assertCRLFTerminated(t, errb.String(), "stderr")
 			if duringCooked.Len() != 0 {
 				t.Errorf("a message was written inside cooked mode; the stream must stay raw: %q", duringCooked.String())
 			}
@@ -384,21 +387,6 @@ func TestForcedAndUnforcedAsksRenderAtTheSameHeight(t *testing.T) {
 	if forced, unforced := framing("?why\r"), framing(aQuestion+"\r"); forced != unforced {
 		t.Errorf("forced ask wrote %d newlines, unforced wrote %d — the two routes render at different heights",
 			forced, unforced)
-	}
-}
-
-func assertNoBareNewline(t *testing.T, s, where string) {
-	t.Helper()
-	// The loop's LAST newline is written after finish() has restored cooked
-	// mode, so a bare "\n" there is correct — the terminal translates it again.
-	// Everything before it is emitted in raw mode and must carry its own \r.
-	s = strings.TrimSuffix(s, "\n")
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' && (i == 0 || s[i-1] != '\r') {
-			t.Errorf("bare \\n in %s at %d — the next line starts at the current column: %q",
-				where, i, s[max(0, i-24):min(len(s), i+1)])
-			return
-		}
 	}
 }
 

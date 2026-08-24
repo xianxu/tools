@@ -420,6 +420,242 @@ rounds:
           round: 4
       boundary: M1
       blocked: false
+    - "n": 5
+      timestamp: "2026-08-23T23:03:30-07:00"
+      agent: claude
+      findings:
+        - id: BR-22
+          severity: Critical
+          title: '"Recently in the deck" sends the twelve OLDEST deck words, unreversed'
+          detail: |-
+            cmd/define/ask.go:180-187. Store.Deck() is newest-first (store.go:14,
+            sortDeck at mem.go:62-69) and lastN takes the tail, so a deck larger than
+            maxContextWords sends the oldest twelve and drops the most recent. Measured
+            with a 15-word deck: the section renders "wl, wk, ... wa" and the three
+            newest words never reach the model. The code's own comment states both
+            intentions it fails ("reads better oldest-first", "the newest are the ones
+            worth keeping"), and README:82 plus atlas/define.md:522 both promise "the
+            recent deck". The selection is a PURE decision inlined in the IO gatherer,
+            which is why no test above the bound exists (ARCH-PURE) — fix by extracting
+            recentDeck() beside recentTurns and table-testing it.
+          family: policy-in-io-shell
+          round: 5
+        - id: BR-23
+          severity: Critical
+          title: One-shot unforced ask puts the question text into session.current and the event log's word field
+          detail: |-
+            This is the 3rd finding in family forced-route-enumeration; earlier rounds
+            fixed instances, so fix the CLASS. cmd/define/main.go:387 passes
+            &session{current: oneShot.word}, where oneShot.word is the line the
+            dictionary just missed — the question. Measured with a live seam and a real
+            YAML store: the prompt renders "## The word on screen\n<the question>" with
+            no entry, and recordAsked (ask.go:150) writes ReviewEvent{Word: "<the
+            question>"} into the append-only log #17 folds over. That violates plan D2
+            and Task 4's contract table ("does not set sess.current"). The forced
+            one-shot cell passes &session{} and is correct, so the two routes diverge.
+            The rule: every fact the ask path carries is quantified over {forced,
+            unforced} x {one-shot, piped, editor} and each cell asserted for THAT fact.
+            M2 added three such facts (which session, where the answer is written,
+            whether the interrupt is scoped); measured coverage is 2 of 18 cells.
+          family: forced-route-enumeration
+          round: 5
+        - id: BR-24
+          severity: Important
+          title: gatherAskContext discards UserModel's error, defeating the reason it returns one
+          detail: |-
+            cmd/define/ask.go:172-174 writes `if model, err := d.deck.UserModel(); err
+            == nil`. store/yaml.go:44-48 justifies returning an error precisely to
+            prevent this: "silently answering \"\" for a model that exists would make
+            every answer pitched at the wrong level with no way to tell." Warn on
+            stderr (the storeCapturer/storeHistory precedent) or delete the
+            justification.
+          family: silent-error-swallow
+          round: 5
+        - id: BR-25
+          severity: Important
+          title: go test -race ./cmd/define/ now fails; two new tests read a bytes.Buffer concurrently
+          detail: |-
+            Verified: base 993fccc is race-clean, HEAD 686913c reports eleven races and
+            two failures. askrun_test.go:147-151 spins on out.Len() while runAsk writes
+            out; askrun_test.go:267,280 read out.String() via waitFor while runEditor
+            writes it. The package already owns the correct shape — ptyOut's
+            mutex-guarded buffer at pty_conformance_test.go:88-124 — so this is also
+            ARCH-DRY. Extract one syncBuf and use it in all three places.
+          family: unsynchronised-test-observation
+          round: 5
+        - id: BR-26
+          severity: Important
+          title: The plan's askCapturer integration point was not built; events append through a second write path
+          detail: |-
+            Core concepts -> Integration points lists askCapturer on Capturer in
+            capture.go wrapping the event append. The code appends directly via
+            d.deck.AppendEvent from ask.go:145-152. Behaviour is safe (DEFINE_NO_CAPTURE
+            leaves sd.deck nil so recordAsked no-ops), but it adds a second writer to
+            the event log beside capture and makes main.go:31-34 stale ("capture is the
+            only thing that RECORDS lookups. deck ... --forget deletes through it").
+            Either route it through the seam or add a "## Revisions" entry and fix the
+            comment.
+          family: plan-contract-drift
+          round: 5
+        - id: BR-27
+          severity: Important
+          title: README does not say that question text is persisted to events/
+          detail: |-
+            This is the 2nd finding in family readme-surface-gate, so state the rule
+            rather than adding one line. README:95-105 is the block documenting what
+            define writes to the working directory; M2 makes every question's text
+            persist into events/*.yaml and that block does not say so. The rule: any
+            new record type or field written into the working directory is named in
+            that block in the same change. Enumeration: {words/, events/,
+            user-model.md} x {looked-up, reviewed, asked}; README currently names 2 of
+            3 files and 0 of 3 kinds.
+          family: readme-surface-gate
+          round: 5
+        - id: BR-28
+          severity: Important
+          title: atlas/define.md:182-186 still states the pre-M2 cancellation model the diff disproved
+          detail: |-
+            This is the 5th finding in family doc-overstates-code; do NOT fix only this
+            paragraph. It claims Ctrl-C is "not a signal", that the piped path "still
+            relies on" signal.NotifyContext, and that the key reader calls cancel().
+            All three are false after this diff: the pty suite measured \x03 arriving
+            as SIGINT (D5's premise), repl.go:180 detaches with WithoutCancel, and
+            readKeys calls interrupts.Fire(). The diff corrected the code comment at
+            rawterm.go:44-46 and added a NEW atlas section at :544 while leaving the
+            old statement standing. The rule: when a diff corrects a claim in a code
+            comment, every restatement of that fact elsewhere is a consumer of the same
+            source and must be swept in the same change (ARCH-PURPOSE shadow-sweep) —
+            grep the fact, do not append beside the stale copy. Measured: 1 of 2
+            NotifyContext mentions in atlas/ is now false.
+          family: doc-overstates-code
+          round: 5
+        - id: BR-29
+          severity: Important
+          title: The piped loop's ask wiring is unpinned — answer destination and session both deletable green
+          detail: |-
+            This is the 2nd finding in family loop-shell-branch-untested; state the
+            rule. Two mutations at repl.go:261 each leave go test ./cmd/define/ fully
+            green: replacing stdout with io.Discard (the answer goes nowhere), and
+            replacing &sess with &session{} (the piped loop loses multi-turn and
+            session words). lessons.md define #15 already states the rule; M2 obeyed it
+            for runEditor and skipped it for replLines and the one-shot. That skipped
+            cell is where the one-shot Critical lives — the same six-cell enumeration
+            fixes both.
+          family: loop-shell-branch-untested
+          round: 5
+        - id: BR-30
+          severity: Important
+          title: Four claims in this diff survive the mutation they exist to catch
+          detail: |-
+            This is the 5th finding in family test-asserts-nothing; do NOT fix the four
+            instances, state the rule. Measured individually, all green: (1) the
+            key-channel buffering rawterm.go:49-54 calls "load-bearing" — make(chan
+            Key) instead of make(chan Key, 256); (2) session words reaching the prompt,
+            an issue Done-when row — SessionWords: nil in gatherAskContext; (3)
+            recordExchange's empty-answer guard, session.go:44-46 — delete it; (4)
+            askrun_test.go:293-296 claims to pin "the interrupt scoping and the CRLF
+            writer" for both routes but passes nil for interrupts, so it can only pin
+            the writer. Row (2) is the BR-2 shape exactly: the test asserts
+            "sycophantic" is in the prompt, but CurrentWord supplies that string, so
+            the SessionWords assertion is satisfied by a different source. The rule: an
+            assertion that a value reached an output must use a value only that source
+            can supply. Also applies to
+            TestEditorCtrlCMidStreamReturnsToThePrompt/the_signal_transport, which
+            calls interrupter.Fire() directly and never touches d.notifySignals.
+          family: test-asserts-nothing
+          round: 5
+        - id: BR-31
+          severity: Important
+          title: assertNoBareNewline is vacuous for all three rows of TestRawLoopMessagePlacement
+          detail: |-
+            This is the 5th finding in family raw-mode-message-placement; state the
+            rule. The helper does strings.TrimSuffix(s, "\n") at askroute_test.go:395
+            to excuse the loop's post-finish() newline, and all three rows write
+            exactly one line to stderr — so the excused newline is the only one under
+            test. Measured: unwrapping stderr from crlfWriter at replraw.go:141 leaves
+            the suite green, and changing the bare-? note's "\r\n" to "\n" at
+            replraw.go:226 leaves TestRawLoopMessagePlacement green. The test's own
+            header claims "EVERY message this loop writes ... carries its own carriage
+            returns" — vacuous for 3 of 3 rows. The rule (BR-14's rule applied to
+            placement): a placement assertion asserts the POSITIVE observable, that the
+            message's own terminator IS "\r\n", never the absence of a bare "\n".
+          family: raw-mode-message-placement
+          round: 5
+        - id: BR-32
+          severity: Important
+          title: 31 unticked M2 plan steps and no Revisions entry for any boundary round or M2 design departure
+          detail: |-
+            This is the 3rd finding in family plan-bookkeeping; state the rule.
+            workshop/plans/000016-console-qa-plan.md Chunk 2 has 31 unticked steps and
+            0 ticked, while the issue's ## Plan and the project row both mark M2 [x].
+            The plan still carries three ## Revisions entries, none of which is a
+            boundary round (BR-17, raised in M1, never disposed), and none covering
+            M2's three design departures. The rule: the plan artifact's state is part
+            of the milestone deliverable — the checkbox sweep plus a ## Revisions entry
+            for every fork taken differently from the plan happen in the
+            milestone-close commit, not at issue close.
+          family: plan-bookkeeping
+          round: 5
+        - id: BR-33
+          severity: Minor
+          title: runAsk's `parent := ctx` is a bare alias with no derived context
+          detail: |-
+            ask.go:100-102 copies llmcheck.go:45-47's idiom, but llmcheck derives a
+            WithTimeout child so parent and ctx genuinely differ. Here they are the
+            same value and the comment describes a distinction that does not exist. The
+            observed cancel path also returns ErrTruncated, not ErrUnavailable, so the
+            failure mode the comment names is the pre-text case only.
+          family: doc-overstates-code
+          round: 5
+        - id: BR-34
+          severity: Minor
+          title: Core concepts table cites the wrong file for `exchange` and `interrupter`
+          detail: |-
+            `exchange` is in askctx.go:9-12, not session.go; `interrupter` is in the
+            new interrupt.go, not rawterm.go. Both entities exist, are pure and are
+            tested, so this is a stale table rather than a missing deliverable —
+            correct the rows in the plan revision.
+          family: plan-contract-drift
+          round: 5
+        - id: BR-35
+          severity: Minor
+          title: bytesReader is strings.NewReader under a new name; keysFor is dead
+          detail: |-
+            This is the 3rd finding in family stdlib-reuse. interrupt_test.go:98
+            defines `func bytesReader(s string) io.Reader { return
+            strings.NewReader(s) }` for one call site. The rule (same as
+            contains->slices.Contains two rounds ago): before adding a helper, check
+            whether the stdlib already names it. Separately, askrun_test.go:334-347's
+            keysFor is defined and never called, with a doc comment describing a use
+            case that does not exist.
+          family: stdlib-reuse
+          round: 5
+        - id: BR-36
+          severity: Minor
+          title: DEFINE_NO_CAPTURE now also suppresses READING user-model.md and the deck
+          detail: |-
+            openStore leaves deck nil under noCapture, so gatherAskContext (ask.go:167)
+            skips both the learner model and the deck. README documents the variable as
+            "write nothing in this directory"; answers silently become un-adapted. Also
+            note unavailable() reports "no model configured" for a configured but
+            unreachable model — plan-specified, but the same misdiagnosis surface as
+            the already-filed tools#19.
+          family: doc-overstates-code
+          round: 5
+        - id: BR-37
+          severity: Minor
+          title: askInSession always returns nil, so lostTerminal is unreachable at both ask call sites
+          detail: |-
+            replraw.go:130-155 no longer calls cooked(), so the closure cannot fail;
+            the `if err := askInSession(...); err != nil { return lostTerminal(err) }`
+            guards at both call sites are dead. Also crlf.go:28 returns 0 on a write
+            error rather than the bytes consumed, and reports len(p) on a short
+            underlying write; and ask.go:114 prints a newline on cancel even when no
+            delta ever arrived.
+          family: dead-branch
+          round: 5
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -684,6 +920,161 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   askInSession and is positioned to add a fifth. One helper, on the same
   argument nothingSays was extracted on (ARCH-DRY).
 
+## Round 5 — 2026-08-23T23:03:30-07:00 (claude) — BLOCKED
+
+### Raised
+
+- **BR-22** [Critical] `policy-in-io-shell` "Recently in the deck" sends the twelve OLDEST deck words, unreversed
+  cmd/define/ask.go:180-187. Store.Deck() is newest-first (store.go:14,
+  sortDeck at mem.go:62-69) and lastN takes the tail, so a deck larger than
+  maxContextWords sends the oldest twelve and drops the most recent. Measured
+  with a 15-word deck: the section renders "wl, wk, ... wa" and the three
+  newest words never reach the model. The code's own comment states both
+  intentions it fails ("reads better oldest-first", "the newest are the ones
+  worth keeping"), and README:82 plus atlas/define.md:522 both promise "the
+  recent deck". The selection is a PURE decision inlined in the IO gatherer,
+  which is why no test above the bound exists (ARCH-PURE) — fix by extracting
+  recentDeck() beside recentTurns and table-testing it.
+- **BR-23** [Critical] `forced-route-enumeration` One-shot unforced ask puts the question text into session.current and the event log's word field
+  This is the 3rd finding in family forced-route-enumeration; earlier rounds
+  fixed instances, so fix the CLASS. cmd/define/main.go:387 passes
+  &session{current: oneShot.word}, where oneShot.word is the line the
+  dictionary just missed — the question. Measured with a live seam and a real
+  YAML store: the prompt renders "## The word on screen\n<the question>" with
+  no entry, and recordAsked (ask.go:150) writes ReviewEvent{Word: "<the
+  question>"} into the append-only log #17 folds over. That violates plan D2
+  and Task 4's contract table ("does not set sess.current"). The forced
+  one-shot cell passes &session{} and is correct, so the two routes diverge.
+  The rule: every fact the ask path carries is quantified over {forced,
+  unforced} x {one-shot, piped, editor} and each cell asserted for THAT fact.
+  M2 added three such facts (which session, where the answer is written,
+  whether the interrupt is scoped); measured coverage is 2 of 18 cells.
+- **BR-24** [Important] `silent-error-swallow` gatherAskContext discards UserModel's error, defeating the reason it returns one
+  cmd/define/ask.go:172-174 writes `if model, err := d.deck.UserModel(); err
+  == nil`. store/yaml.go:44-48 justifies returning an error precisely to
+  prevent this: "silently answering \"\" for a model that exists would make
+  every answer pitched at the wrong level with no way to tell." Warn on
+  stderr (the storeCapturer/storeHistory precedent) or delete the
+  justification.
+- **BR-25** [Important] `unsynchronised-test-observation` go test -race ./cmd/define/ now fails; two new tests read a bytes.Buffer concurrently
+  Verified: base 993fccc is race-clean, HEAD 686913c reports eleven races and
+  two failures. askrun_test.go:147-151 spins on out.Len() while runAsk writes
+  out; askrun_test.go:267,280 read out.String() via waitFor while runEditor
+  writes it. The package already owns the correct shape — ptyOut's
+  mutex-guarded buffer at pty_conformance_test.go:88-124 — so this is also
+  ARCH-DRY. Extract one syncBuf and use it in all three places.
+- **BR-26** [Important] `plan-contract-drift` The plan's askCapturer integration point was not built; events append through a second write path
+  Core concepts -> Integration points lists askCapturer on Capturer in
+  capture.go wrapping the event append. The code appends directly via
+  d.deck.AppendEvent from ask.go:145-152. Behaviour is safe (DEFINE_NO_CAPTURE
+  leaves sd.deck nil so recordAsked no-ops), but it adds a second writer to
+  the event log beside capture and makes main.go:31-34 stale ("capture is the
+  only thing that RECORDS lookups. deck ... --forget deletes through it").
+  Either route it through the seam or add a "## Revisions" entry and fix the
+  comment.
+- **BR-27** [Important] `readme-surface-gate` README does not say that question text is persisted to events/
+  This is the 2nd finding in family readme-surface-gate, so state the rule
+  rather than adding one line. README:95-105 is the block documenting what
+  define writes to the working directory; M2 makes every question's text
+  persist into events/*.yaml and that block does not say so. The rule: any
+  new record type or field written into the working directory is named in
+  that block in the same change. Enumeration: {words/, events/,
+  user-model.md} x {looked-up, reviewed, asked}; README currently names 2 of
+  3 files and 0 of 3 kinds.
+- **BR-28** [Important] `doc-overstates-code` atlas/define.md:182-186 still states the pre-M2 cancellation model the diff disproved
+  This is the 5th finding in family doc-overstates-code; do NOT fix only this
+  paragraph. It claims Ctrl-C is "not a signal", that the piped path "still
+  relies on" signal.NotifyContext, and that the key reader calls cancel().
+  All three are false after this diff: the pty suite measured \x03 arriving
+  as SIGINT (D5's premise), repl.go:180 detaches with WithoutCancel, and
+  readKeys calls interrupts.Fire(). The diff corrected the code comment at
+  rawterm.go:44-46 and added a NEW atlas section at :544 while leaving the
+  old statement standing. The rule: when a diff corrects a claim in a code
+  comment, every restatement of that fact elsewhere is a consumer of the same
+  source and must be swept in the same change (ARCH-PURPOSE shadow-sweep) —
+  grep the fact, do not append beside the stale copy. Measured: 1 of 2
+  NotifyContext mentions in atlas/ is now false.
+- **BR-29** [Important] `loop-shell-branch-untested` The piped loop's ask wiring is unpinned — answer destination and session both deletable green
+  This is the 2nd finding in family loop-shell-branch-untested; state the
+  rule. Two mutations at repl.go:261 each leave go test ./cmd/define/ fully
+  green: replacing stdout with io.Discard (the answer goes nowhere), and
+  replacing &sess with &session{} (the piped loop loses multi-turn and
+  session words). lessons.md define #15 already states the rule; M2 obeyed it
+  for runEditor and skipped it for replLines and the one-shot. That skipped
+  cell is where the one-shot Critical lives — the same six-cell enumeration
+  fixes both.
+- **BR-30** [Important] `test-asserts-nothing` Four claims in this diff survive the mutation they exist to catch
+  This is the 5th finding in family test-asserts-nothing; do NOT fix the four
+  instances, state the rule. Measured individually, all green: (1) the
+  key-channel buffering rawterm.go:49-54 calls "load-bearing" — make(chan
+  Key) instead of make(chan Key, 256); (2) session words reaching the prompt,
+  an issue Done-when row — SessionWords: nil in gatherAskContext; (3)
+  recordExchange's empty-answer guard, session.go:44-46 — delete it; (4)
+  askrun_test.go:293-296 claims to pin "the interrupt scoping and the CRLF
+  writer" for both routes but passes nil for interrupts, so it can only pin
+  the writer. Row (2) is the BR-2 shape exactly: the test asserts
+  "sycophantic" is in the prompt, but CurrentWord supplies that string, so
+  the SessionWords assertion is satisfied by a different source. The rule: an
+  assertion that a value reached an output must use a value only that source
+  can supply. Also applies to
+  TestEditorCtrlCMidStreamReturnsToThePrompt/the_signal_transport, which
+  calls interrupter.Fire() directly and never touches d.notifySignals.
+- **BR-31** [Important] `raw-mode-message-placement` assertNoBareNewline is vacuous for all three rows of TestRawLoopMessagePlacement
+  This is the 5th finding in family raw-mode-message-placement; state the
+  rule. The helper does strings.TrimSuffix(s, "\n") at askroute_test.go:395
+  to excuse the loop's post-finish() newline, and all three rows write
+  exactly one line to stderr — so the excused newline is the only one under
+  test. Measured: unwrapping stderr from crlfWriter at replraw.go:141 leaves
+  the suite green, and changing the bare-? note's "\r\n" to "\n" at
+  replraw.go:226 leaves TestRawLoopMessagePlacement green. The test's own
+  header claims "EVERY message this loop writes ... carries its own carriage
+  returns" — vacuous for 3 of 3 rows. The rule (BR-14's rule applied to
+  placement): a placement assertion asserts the POSITIVE observable, that the
+  message's own terminator IS "\r\n", never the absence of a bare "\n".
+- **BR-32** [Important] `plan-bookkeeping` 31 unticked M2 plan steps and no Revisions entry for any boundary round or M2 design departure
+  This is the 3rd finding in family plan-bookkeeping; state the rule.
+  workshop/plans/000016-console-qa-plan.md Chunk 2 has 31 unticked steps and
+  0 ticked, while the issue's ## Plan and the project row both mark M2 [x].
+  The plan still carries three ## Revisions entries, none of which is a
+  boundary round (BR-17, raised in M1, never disposed), and none covering
+  M2's three design departures. The rule: the plan artifact's state is part
+  of the milestone deliverable — the checkbox sweep plus a ## Revisions entry
+  for every fork taken differently from the plan happen in the
+  milestone-close commit, not at issue close.
+- **BR-33** [Minor] `doc-overstates-code` runAsk's `parent := ctx` is a bare alias with no derived context
+  ask.go:100-102 copies llmcheck.go:45-47's idiom, but llmcheck derives a
+  WithTimeout child so parent and ctx genuinely differ. Here they are the
+  same value and the comment describes a distinction that does not exist. The
+  observed cancel path also returns ErrTruncated, not ErrUnavailable, so the
+  failure mode the comment names is the pre-text case only.
+- **BR-34** [Minor] `plan-contract-drift` Core concepts table cites the wrong file for `exchange` and `interrupter`
+  `exchange` is in askctx.go:9-12, not session.go; `interrupter` is in the
+  new interrupt.go, not rawterm.go. Both entities exist, are pure and are
+  tested, so this is a stale table rather than a missing deliverable —
+  correct the rows in the plan revision.
+- **BR-35** [Minor] `stdlib-reuse` bytesReader is strings.NewReader under a new name; keysFor is dead
+  This is the 3rd finding in family stdlib-reuse. interrupt_test.go:98
+  defines `func bytesReader(s string) io.Reader { return
+  strings.NewReader(s) }` for one call site. The rule (same as
+  contains->slices.Contains two rounds ago): before adding a helper, check
+  whether the stdlib already names it. Separately, askrun_test.go:334-347's
+  keysFor is defined and never called, with a doc comment describing a use
+  case that does not exist.
+- **BR-36** [Minor] `doc-overstates-code` DEFINE_NO_CAPTURE now also suppresses READING user-model.md and the deck
+  openStore leaves deck nil under noCapture, so gatherAskContext (ask.go:167)
+  skips both the learner model and the deck. README documents the variable as
+  "write nothing in this directory"; answers silently become un-adapted. Also
+  note unavailable() reports "no model configured" for a configured but
+  unreachable model — plan-specified, but the same misdiagnosis surface as
+  the already-filed tools#19.
+- **BR-37** [Minor] `dead-branch` askInSession always returns nil, so lostTerminal is unreachable at both ask call sites
+  replraw.go:130-155 no longer calls cooked(), so the closure cannot fail;
+  the `if err := askInSession(...); err != nil { return lostTerminal(err) }`
+  guards at both call sites are dead. Also crlf.go:28 returns 0 on a write
+  error rather than the bytes consumed, and reports len(p) on a short
+  underlying write; and ask.go:114 prints a newline on cancel even when no
+  delta ever arrived.
+
 ## Open findings
 
 - **BR-12** [Minor] `forced-route-enumeration` the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
@@ -691,3 +1082,19 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-19** [Important] `test-asserts-nothing` no test asserts what any of #16's messages say, and a doubled backslash shipped as a result
 - **BR-20** [Minor] `doc-overstates-code` nothingSays is documented as "the ONE place" while replayInPlace holds a live duplicate of its replay sentence
 - **BR-21** [Minor] `stdlib-reuse` four byte-identical "lost the terminal" blocks in runEditor, two added by this diff
+- **BR-22** [Critical] `policy-in-io-shell` "Recently in the deck" sends the twelve OLDEST deck words, unreversed
+- **BR-23** [Critical] `forced-route-enumeration` One-shot unforced ask puts the question text into session.current and the event log's word field
+- **BR-24** [Important] `silent-error-swallow` gatherAskContext discards UserModel's error, defeating the reason it returns one
+- **BR-25** [Important] `unsynchronised-test-observation` go test -race ./cmd/define/ now fails; two new tests read a bytes.Buffer concurrently
+- **BR-26** [Important] `plan-contract-drift` The plan's askCapturer integration point was not built; events append through a second write path
+- **BR-27** [Important] `readme-surface-gate` README does not say that question text is persisted to events/
+- **BR-28** [Important] `doc-overstates-code` atlas/define.md:182-186 still states the pre-M2 cancellation model the diff disproved
+- **BR-29** [Important] `loop-shell-branch-untested` The piped loop's ask wiring is unpinned — answer destination and session both deletable green
+- **BR-30** [Important] `test-asserts-nothing` Four claims in this diff survive the mutation they exist to catch
+- **BR-31** [Important] `raw-mode-message-placement` assertNoBareNewline is vacuous for all three rows of TestRawLoopMessagePlacement
+- **BR-32** [Important] `plan-bookkeeping` 31 unticked M2 plan steps and no Revisions entry for any boundary round or M2 design departure
+- **BR-33** [Minor] `doc-overstates-code` runAsk's `parent := ctx` is a bare alias with no derived context
+- **BR-34** [Minor] `plan-contract-drift` Core concepts table cites the wrong file for `exchange` and `interrupter`
+- **BR-35** [Minor] `stdlib-reuse` bytesReader is strings.NewReader under a new name; keysFor is dead
+- **BR-36** [Minor] `doc-overstates-code` DEFINE_NO_CAPTURE now also suppresses READING user-model.md and the deck
+- **BR-37** [Minor] `dead-branch` askInSession always returns nil, so lostTerminal is unreachable at both ask call sites

@@ -43,7 +43,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -88,10 +87,11 @@ func startDefineWithEnv(t *testing.T, env []string, args ...string) (*exec.Cmd, 
 // ptyOut collects everything the pty emits in the background.
 //
 // A pty master does not honour SetReadDeadline reliably, so a foreground read
-// loop hangs. A dedicated reader plus a snapshot is the shape that works.
+// loop hangs. A dedicated reader plus a snapshot is the shape that works — and
+// it is the same shape syncBuf provides for the in-process tests, so the
+// locking lives in one place rather than two (ARCH-DRY).
 type ptyOut struct {
-	mu  sync.Mutex
-	buf strings.Builder
+	buf syncBuf
 }
 
 func watch(f *os.File) *ptyOut {
@@ -101,9 +101,7 @@ func watch(f *os.File) *ptyOut {
 		for {
 			n, err := f.Read(buf)
 			if n > 0 {
-				o.mu.Lock()
 				o.buf.Write(buf[:n])
-				o.mu.Unlock()
 			}
 			if err != nil {
 				return
@@ -116,11 +114,7 @@ func watch(f *os.File) *ptyOut {
 // take waits d, then returns everything collected since the last take.
 func (o *ptyOut) take(d time.Duration) string {
 	time.Sleep(d)
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	s := o.buf.String()
-	o.buf.Reset()
-	return s
+	return o.buf.TakeAll()
 }
 
 func TestPTYSuggestionAndAcceptance(t *testing.T) {
