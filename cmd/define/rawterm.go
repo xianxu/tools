@@ -46,7 +46,12 @@ func (r *rawSession) restore() {
 // suite measured a \x03 arriving as a SIGINT. Both feed the same interrupter,
 // which is what decides the meaning (#16 D5).
 func readKeys(ctx context.Context, r io.Reader, interrupts *interrupter) <-chan Key {
-	out := make(chan Key)
+	// BUFFERED, and that is load-bearing. The loop stops reading while an answer
+	// streams; on an unbuffered channel the reader would block on the first key
+	// typed during it and never decode the bytes behind — including a Ctrl-C
+	// meant to stop that very answer. Buffering also gives type-ahead during a
+	// long answer for free: the keys are simply waiting when the prompt returns.
+	out := make(chan Key, 256)
 	go func() {
 		defer close(out)
 		var buf []byte
@@ -62,7 +67,15 @@ func readKeys(ctx context.Context, r io.Reader, interrupts *interrupter) <-chan 
 					}
 					buf = buf[used:]
 					if k.Kind == KeyInterrupt {
-						interrupts.Fire() // reaches the sink even mid-playback
+						// Fires the sink even mid-playback, when the loop is
+						// blocked and cannot act on anything itself.
+						if interrupts.Fire() {
+							// A scope consumed it — a streaming answer was
+							// cancelled. Delivering it as well would have the
+							// loop quit the session as soon as the answer ended,
+							// which is the opposite of what was asked for.
+							continue
+						}
 					}
 					select {
 					case out <- k:

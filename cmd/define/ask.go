@@ -50,11 +50,10 @@ func ask(ctx context.Context, d deps, opt options, sess *session, out, errOut io
 		fmt.Fprintln(errOut, `define: -raw does not ask; drop -raw, or drop the "?"`)
 		return 2
 	}
-	if q.forced {
-		// Nothing may be claimed about the text: the dictionary was skipped.
-		fmt.Fprintf(errOut, "define: no model configured; cannot answer `%s`\n", truncateQuestion(q.text))
-		return 1
-	}
+	// Both routes go to the model. The forced/unforced distinction decides what
+	// can be SAID when there is no model to reach — see unavailable — and never
+	// whether the question is asked at all: M1 short-circuited the forced route
+	// here, so `?why` never reached the seam even when one was configured.
 	return runAsk(ctx, d, opt, sess, q, out, errOut)
 }
 

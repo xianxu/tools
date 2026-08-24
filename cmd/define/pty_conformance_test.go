@@ -21,8 +21,15 @@ package main
 //
 // The byte path is pinned in-process by TestEditorLoopCtrlCExitsZero, which
 // scripts "syc\x03" through runEditor: the same mutation reddens it with
-// "exit = 9, want 0" (verified). That this suite cannot reach that path is a
-// real gap in it — see the issue Log — not a reason to restate the claim here.
+// "exit = 9, want 0" (verified).
+//
+// #16 closed the OTHER half of that gap. TestPTYCtrlCMidAnswerKeepsTheSession
+// asserts an observable only a SURVIVING session produces — the answer stopped
+// AND the next lookup rendered — which "exited cleanly" cannot imitate;
+// unscoping the interrupt reddens it through a real pty (verified). It still
+// does not distinguish byte from signal, and by design cannot: both transports
+// feed one sink (#16 D5), so the outcome is the same either way. What it pins is
+// that the scope reaches a real terminal, which no in-process test can say.
 //
 // Cadence is on-demand with the rest of the conformance suite; it needs a real
 // pty and a built binary.
@@ -41,11 +48,18 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/xianxu/tools/internal/llm/llmtest"
 	"golang.org/x/term"
 )
 
 // startDefine launches the built binary on a pty and returns it plus the master.
 func startDefine(t *testing.T, args ...string) (*exec.Cmd, *os.File) {
+	return startDefineWithEnv(t, nil, args...)
+}
+
+// startDefineWithEnv is startDefine plus environment, so a test can point the
+// binary's model seam at a fake served from this process.
+func startDefineWithEnv(t *testing.T, env []string, args ...string) (*exec.Cmd, *os.File) {
 	t.Helper()
 	bin, err := filepath.Abs("../../bin/define")
 	if err != nil {
@@ -55,6 +69,9 @@ func startDefine(t *testing.T, args ...string) (*exec.Cmd, *os.File) {
 		t.Skipf("run `make build` first: %v", err)
 	}
 	cmd := exec.Command(bin, args...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	// define writes its deck to the CURRENT directory, and a test's cwd is the
 	// PACKAGE directory — so this suite used to write a deck into the source
 	// tree and then rewrite it on every run, which is how three deck files
@@ -226,4 +243,43 @@ func TestPTYCommandMenuAppearsAndClears(t *testing.T) {
 	}
 
 	f.Write([]byte("\x03"))
+}
+
+// Ctrl-C mid-answer returns to the prompt with the session INTACT.
+//
+// This is the row the header above says the other three cannot supply. They
+// assert "exited, and the terminal is sane" — an observable the byte path, the
+// signal path and a crash all produce alike, which is why mutating the byte
+// branch left them green. "The answer stopped AND the next lookup rendered" is
+// produced only by a session that survived, so it separates what they cannot.
+//
+// The model seam points at a wire-level fake served from this process, so the
+// answer is a real recorded stream and the interrupt lands mid-flight.
+func TestPTYCtrlCMidAnswerKeepsTheSession(t *testing.T) {
+	fake := llmtest.NewFake(t)
+	fake.Script("", llmtest.Reply{Capture: "stream-sample.sse", Stall: true})
+
+	_, f := startDefineWithEnv(t, []string{
+		"DEFINE_LLM_BASE_URL=" + fake.URL,
+		"DEFINE_LLM_API_KEY=pty-conformance",
+	}, "--no-audio")
+	out := watch(f)
+	out.take(300 * time.Millisecond)
+
+	// A forced question, so the dictionary is never consulted and the only way
+	// to the model is the branch under test.
+	f.WriteString("?why\r")
+	answer := out.take(1500 * time.Millisecond)
+	if !strings.Contains(answer, "Obsequious") {
+		t.Fatalf("the answer never streamed; the seam may be misconfigured:\n%q", answer)
+	}
+
+	f.WriteString("\x03") // Ctrl-C: stop the answer, keep the session
+	out.take(300 * time.Millisecond)
+
+	f.WriteString("sycophantic\r")
+	after := out.take(2 * time.Second)
+	if !strings.Contains(after, "sikəˈfan(t)ik") {
+		t.Errorf("the session did not survive the interrupt — no definition after Ctrl-C:\n%q", after)
+	}
 }

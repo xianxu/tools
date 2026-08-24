@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,4 +221,127 @@ func TestAskWithNoSeamWiredDegrades(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Ctrl-C mid-stream returns to the prompt with the session INTACT — the one
+// place in this program where an interrupt means something narrower than quit.
+//
+// Two tests, not one, because the two transports are exactly what a design can
+// silently serve only half of: the byte the raw reader decodes, and a SIGINT.
+// Both must stop the answer and leave the loop running, and the observable that
+// proves it is a LOOKUP AFTER the interrupt — a session that quit cannot answer.
+func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		byteKey bool
+	}{
+		{"the byte transport", true},
+		{"the signal transport", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, _, _ := askRig(t)
+			// Stall: frames up to the first text delta, then silence — the shape
+			// a hung upstream has, and the case an interrupt exists for.
+			fake.Script("", llmtest.Reply{Capture: streamCapture, Stall: true})
+			d.stdinIsTerminal = func() bool { return true }
+			opt := options{noAudio: true, locale: "us", tty: true, color: true}
+
+			// Driven through the REAL reader, not a scripted channel: the byte
+			// transport's swallow happens inside readKeys, so a test that feeds
+			// the key channel directly cannot exercise it at all.
+			interrupts := &interrupter{fn: func() {
+				t.Error("the SESSION cancel fired: the interrupt was not scoped to the answer")
+			}}
+			pr, pw := io.Pipe()
+			t.Cleanup(func() { pw.Close() })
+			keys := readKeys(t.Context(), pr, interrupts)
+
+			var out, errb bytes.Buffer
+			done := make(chan int, 1)
+			go func() {
+				done <- runEditor(t.Context(), keys, interrupts, d, opt,
+					func(run func()) error { run(); return nil }, func() {}, &out, &errb)
+			}()
+
+			io.WriteString(pw, "?why\r")
+			waitFor(t, func() bool { return strings.Contains(out.String(), "Obsequious") })
+
+			// Interrupt it the way this transport does.
+			if tc.byteKey {
+				io.WriteString(pw, "\x03")
+			} else {
+				interrupts.Fire()
+			}
+
+			// THE observable: a lookup after the interrupt still answers. A
+			// session that quit cannot, and "exited cleanly" is produced by the
+			// byte path, the signal path AND a crash alike.
+			io.WriteString(pw, "sycophantic\r")
+			waitFor(t, func() bool { return strings.Contains(out.String(), "sikəˈfan(t)ik") })
+			pw.Close()
+
+			select {
+			case code := <-done:
+				if code != 0 {
+					t.Errorf("exit = %d, want 0", code)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("the loop never returned")
+			}
+			if strings.Contains(errb.String(), "define: llm") || strings.Contains(errb.String(), "no model") {
+				t.Errorf("the interrupt was reported as a failure: %q", errb.String())
+			}
+		})
+	}
+}
+
+// Both routes into the ask reach the SAME wiring, so the interrupt scoping and
+// the CRLF writer exist once. A second copy would pass the tests above while
+// diverging on everything they do not assert.
+func TestForcedAndUnforcedAsksShareOneWiring(t *testing.T) {
+	framing := func(keys string) (string, bool) {
+		d, fake, _, _ := askRig(t)
+		fake.Script("", llmtest.Reply{Capture: streamCapture})
+		d.stdinIsTerminal = func() bool { return true }
+		var out, errb bytes.Buffer
+		runEditor(t.Context(), scriptKeys(keys), nil, d, options{noAudio: true, locale: "us", tty: true},
+			func(run func()) error { run(); return nil }, func() {}, &out, &errb)
+		s := out.String()
+		return s, strings.Contains(s, "Obsequious")
+	}
+	forced, okF := framing("?why\r")
+	unforced, okU := framing("what's the difference to obsequious?\r")
+
+	if !okF || !okU {
+		t.Fatalf("an answer did not stream: forced=%v unforced=%v", okF, okU)
+	}
+	// Both go through crlfWriter, so neither may carry a bare newline.
+	assertNoBareNewline(t, strings.TrimSuffix(forced, "\n"), "forced stdout")
+	assertNoBareNewline(t, strings.TrimSuffix(unforced, "\n"), "unforced stdout")
+}
+
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the stream")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// keysFor turns a string into keypresses for a channel a test feeds by hand —
+// scriptKeys' shape, without closing the channel, so a test can keep typing.
+func keysFor(s string) []Key {
+	var ks []Key
+	for _, r := range s {
+		switch r {
+		case '\r', '\n':
+			ks = append(ks, Key{Kind: KeyEnter})
+		default:
+			ks = append(ks, Key{Kind: KeyRune, Rune: r})
+		}
+	}
+	return ks
 }

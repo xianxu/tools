@@ -34,7 +34,7 @@ func TestLineLoopRoutesAQuestion(t *testing.T) {
 func TestEditorLoopRoutesAQuestion(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys(aQuestion+"\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
 }
@@ -58,7 +58,7 @@ func TestLineLoopRoutesAForcedQuestion(t *testing.T) {
 func TestEditorLoopRoutesAForcedQuestion(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("?why\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
 	if rig.player.count() != 0 {
@@ -110,7 +110,7 @@ func TestAQuestionDoesNotBecomeTheCurrentWord(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	// Look up a word, ask a question, then press Enter: the REPLAY is the word.
-	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	// 3 plays for the lookup, 3 more for the replay. If the question had become
 	// the current word the replay would have found no audio for it.
@@ -124,7 +124,7 @@ func TestAQuestionIsNotCaptured(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	rig.deps.capture = cap
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if len(cap.calls) != 1 || cap.calls[0] != "sycophantic" {
 		t.Errorf("captured %v, want just the lookup — a question is not a lookup", cap.calls)
@@ -150,7 +150,7 @@ func TestAQuestionIsRecalledByUpArrow(t *testing.T) {
 			hist := &memHistory{}
 			rig.deps.history = hist
 			var out, errb bytes.Buffer
-			runEditor(t.Context(), scriptKeys(tc.keys), rig.deps, opt, cooked, finish, &out, &errb)
+			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 			if len(hist.lines) != 1 || hist.lines[0] != tc.want {
 				t.Fatalf("history = %q, want [%q] — the question was not recorded for recall", hist.lines, tc.want)
@@ -260,7 +260,7 @@ func TestRawNeverAsks(t *testing.T) {
 		opt := rawOpt
 		opt.tty = true
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 		assertDidNotAsk(t, 0, 0, errb.String(), wantMiss)
 	})
 	t.Run("editor/forced", func(t *testing.T) {
@@ -268,7 +268,7 @@ func TestRawNeverAsks(t *testing.T) {
 		opt := rawOpt
 		opt.tty = true
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("?why\r"), rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 		assertDidNotAsk(t, 0, 0, errb.String(), wantRefusal)
 	})
 }
@@ -351,7 +351,7 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 				duringCooked.WriteString(errb.String()[before:])
 				return nil
 			}
-			runEditor(t.Context(), scriptKeys(tc.keys), rig.deps, opt, cooked, finish, &out, &errb)
+			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 			assertNoBareNewline(t, out.String(), "stdout")
 			// EVERY message this loop writes is written in RAW mode, so every
@@ -378,7 +378,7 @@ func TestForcedAndUnforcedAsksRenderAtTheSameHeight(t *testing.T) {
 	framing := func(keys string) int {
 		rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys(keys), rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys(keys), nil, rig.deps, opt, cooked, finish, &out, &errb)
 		return strings.Count(out.String(), "\r\n")
 	}
 	if forced, unforced := framing("?why\r"), framing(aQuestion+"\r"); forced != unforced {

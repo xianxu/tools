@@ -84,7 +84,7 @@ func TestRawEditorDispatchesCommands(t *testing.T) {
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("/help\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	code := runEditor(t.Context(), scriptKeys("/help\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if code != 0 {
 		t.Errorf("exit = %d, stderr = %s", code, errb.String())
@@ -99,7 +99,7 @@ func TestUnknownCommandSuggestsWithoutDefining(t *testing.T) {
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/histry\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/histry\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if !strings.Contains(errb.String(), "/histry") {
 		t.Errorf("the unknown command was not named: %q", errb.String())
@@ -159,7 +159,7 @@ func TestEditorSuggestsFromCommands(t *testing.T) {
 	rig.deps.history = h
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/hel\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/hel\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if !strings.Contains(out.String(), greyOn+"p") {
 		t.Errorf("no grey completion from the command set: %q", out.String())
@@ -176,7 +176,7 @@ func TestEditorShowsTheCommandMenu(t *testing.T) {
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if !strings.Contains(out.String(), "list the commands") {
 		t.Errorf("typing / did not show the menu: %q", out.String())
@@ -189,7 +189,7 @@ func TestTypingNarrowsTheMenuAndAWordHidesIt(t *testing.T) {
 
 	var out, errb bytes.Buffer
 	// A word, not a command: the screen must not sprout a menu under it.
-	runEditor(t.Context(), scriptKeys("syc\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 	if strings.Contains(out.String(), "list the commands") {
 		t.Errorf("a word drew the command menu: %q", out.String())
 	}
@@ -197,7 +197,7 @@ func TestTypingNarrowsTheMenuAndAWordHidesIt(t *testing.T) {
 	// A prefix that matches nothing: the menu must disappear rather than
 	// leaving a stale set on screen.
 	out.Reset()
-	runEditor(t.Context(), scriptKeys("/zzz\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/zzz\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 	last := out.String()[strings.LastIndex(out.String(), "/zzz"):]
 	if strings.Contains(last, "list the commands") {
 		t.Errorf("a non-matching prefix left the menu on screen: %q", last)
@@ -223,7 +223,7 @@ func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
 	rig.deps.history = h
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if strings.Contains(out.String(), greyOn+"history") {
 		t.Errorf("typing / suggested from HISTORY; the menu below it lists commands: %q", out.String())
@@ -234,7 +234,7 @@ func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
 
 	// And the acceptance agrees: Tab commits the tail that was shown.
 	out.Reset()
-	runEditor(t.Context(), scriptKeys("/\t\x03"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/\t\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 	if !strings.Contains(out.String(), "/help") {
 		t.Errorf("Tab did not accept the suggestion that was displayed: %q", out.String())
 	}
@@ -266,7 +266,7 @@ func TestRawEditorSoundChangesTheSession(t *testing.T) {
 	ks := append(runes("/sound 1"), Key{Kind: KeyEnter})
 	ks = append(ks, runes("sycophantic")...)
 	ks = append(ks, Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
-	runEditor(t.Context(), keySeq(ks...), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if got := rig.player.count(); got != 1 {
 		t.Errorf("played %d times after /sound 1 at the raw prompt, want 1", got)
@@ -280,7 +280,7 @@ func TestRawEditorRecallsSubmittedCommands(t *testing.T) {
 	var out, errb bytes.Buffer
 
 	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyUp}, Key{Kind: KeyInterrupt})
-	runEditor(t.Context(), keySeq(ks...), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	// Asserted only on what came AFTER the command ran. The submitted line is
 	// ECHOED through RenderLine, which uses the same inputOn sequence, so
@@ -406,7 +406,7 @@ func TestSubmitClearsTheMenuBeforeOutput(t *testing.T) {
 	// /help's output is nearly identical to its own menu row, which is exactly
 	// the kind of coincidence that makes a marker match the wrong thing.
 	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
-	runEditor(t.Context(), keySeq(ks...), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	s := out.String()
 	i := strings.Index(s, "playing")

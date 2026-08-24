@@ -37,7 +37,7 @@ func editorRig(t *testing.T, word string, audioPresent bool) (*audioRig, options
 func TestEditorLoopDefinesTypedWord(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	code := runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
@@ -54,7 +54,7 @@ func TestEditorLoopDefinesTypedWord(t *testing.T) {
 func TestEditorLoopBareEnterReplays(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if got := rig.player.count(); got != 6 {
 		t.Errorf("played %d times, want 6", got)
@@ -71,7 +71,7 @@ func TestEditorLoopBareEnterReplays(t *testing.T) {
 func TestEditorLoopFeedsHistory(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rsyc"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rsyc"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	// The final frame should carry the grey remainder of the earlier word.
 	if !strings.Contains(out.String(), greyOn+"ophantic"+greyOff) {
@@ -83,7 +83,7 @@ func TestEditorLoopCtrlCExitsZero(t *testing.T) {
 	rig, opt, cooked, _ := editorRig(t, "sycophantic", true)
 	restored := false
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("syc\x03"), rig.deps, opt, cooked,
+	code := runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, cooked,
 		func() { restored = true }, &out, &errb)
 
 	if code != 0 {
@@ -103,7 +103,7 @@ func TestEditorLoopCancellationRestoresTerminal(t *testing.T) {
 	restored := false
 	var out, errb bytes.Buffer
 
-	runEditor(ctx, make(chan Key), rig.deps, opt, cooked, func() { restored = true }, &out, &errb)
+	runEditor(ctx, make(chan Key), nil, rig.deps, opt, cooked, func() { restored = true }, &out, &errb)
 	if !restored {
 		t.Error("cancellation exited without restoring the terminal")
 	}
@@ -121,12 +121,12 @@ func tailOf(s string) string {
 func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 	baseline := strings.Count(out.String(), "\n")
 
 	rig2, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
 	var out2 bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r\r\r\r"), rig2.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
+	runEditor(t.Context(), scriptKeys("sycophantic\r\r\r\r"), nil, rig2.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
 
 	// Three extra replays, zero extra lines.
 	if got := strings.Count(out2.String(), "\n"); got != baseline {
@@ -143,7 +143,7 @@ func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
 func TestEditorLoopUsesCarriageReturnsInRawMode(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	s := out.String()
 	// Find the newline the loop writes to commit the input line.
@@ -192,7 +192,7 @@ func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	// Define the long word, then type a prefix of it and submit.
-	runEditor(t.Context(), scriptKeys("sycophantic\rsyc\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rsyc\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	s := out.String()
 	// The last frame written before the second submit must carry no grey.
@@ -216,7 +216,7 @@ func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
 func TestEditorLoopNormalisesTheSubmittedLine(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "hot dog", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("  hot   dog  \r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("  hot   dog  \r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if strings.Contains(errb.String(), "no dictionary entry") {
 		t.Errorf("the line was not normalised before lookup: %q", errb.String())
@@ -230,7 +230,7 @@ func TestEditorLoopNormalisesTheSubmittedLine(t *testing.T) {
 func TestEditorLoopBareEnterWithNoCurrentWord(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if !strings.Contains(errb.String(), "press return to replay") {
 		t.Errorf("want the hint, got %q", errb.String())
@@ -245,7 +245,7 @@ func TestEditorLoopBareEnterWithNoCurrentWord(t *testing.T) {
 func TestEditorLoopFailedLookupKeepsPreviousWord(t *testing.T) {
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rrizz\r\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rrizz\r\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if !strings.Contains(errb.String(), "rizz") {
 		t.Error("the failed lookup was not reported")

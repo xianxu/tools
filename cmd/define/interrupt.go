@@ -20,29 +20,38 @@ import (
 type interrupter struct {
 	mu sync.Mutex
 	fn context.CancelFunc
+	// scoped is set while something narrower than the session owns the
+	// interrupt — a streaming answer. It is what lets Fire tell its caller that
+	// the interrupt has been CONSUMED, which the key reader needs: an interrupt
+	// that cancelled a stream must not also be delivered to the loop, where it
+	// would be applied as "quit" the moment the answer ended.
+	scoped bool
 }
 
-// Set installs fn until the returned func puts back what was there.
+// Set installs fn until the returned func puts back what was there, and marks
+// the interrupt as owned by something narrower than the session.
 func (i *interrupter) Set(fn context.CancelFunc) (restore func()) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	prev := i.fn
-	i.fn = fn
+	prevFn, prevScoped := i.fn, i.scoped
+	i.fn, i.scoped = fn, true
 	return func() {
 		i.mu.Lock()
 		defer i.mu.Unlock()
-		i.fn = prev
+		i.fn, i.scoped = prevFn, prevScoped
 	}
 }
 
-// Fire calls whatever is installed. Safe with nothing installed: it races with
-// whatever the loop is doing, and a panic here would be a panic in the key
-// reader's goroutine.
-func (i *interrupter) Fire() {
+// Fire calls whatever is installed and reports whether a SCOPE consumed it.
+//
+// Safe with nothing installed: it races with whatever the loop is doing, and a
+// panic here would be a panic in the key reader's goroutine.
+func (i *interrupter) Fire() (consumed bool) {
 	i.mu.Lock()
-	fn := i.fn
+	fn, consumed := i.fn, i.scoped
 	i.mu.Unlock()
 	if fn != nil {
 		fn()
 	}
+	return consumed
 }

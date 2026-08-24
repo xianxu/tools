@@ -42,15 +42,23 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 		*sess = *s
 		return nil
 	}
-	return runEditor(ctx, keys, d, opt, cooked, sess.restore, stdout, stderr)
+	return runEditor(ctx, keys, interrupts, d, opt, cooked, sess.restore, stdout, stderr)
 }
 
 // runEditor is the editor loop with the terminal factored out: keys arrive on a
 // channel, `cooked` runs a lookup outside raw mode, and `finish` restores the
 // terminal. Tests drive it with a scripted channel and no terminal at all —
 // which is the whole point of keeping Apply and RenderLine pure.
-func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
+// interrupts sits beside keys because they are two halves of one story: the
+// channel carries the byte transport, and the sink decides what an interrupt
+// from EITHER transport means while this loop owns the foreground.
+func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d deps, opt options,
 	cooked func(func()) error, finish func(), stdout, stderr io.Writer) int {
+	if interrupts == nil {
+		// A loop with no sink still runs; nothing can scope an interrupt, which
+		// is the honest behaviour for a caller that supplied no cancellation.
+		interrupts = &interrupter{}
+	}
 
 	// Same wiring as replLines: cached behind the seam, in the function that uses
 	// it, so a test driving runEditor gets exactly what production gets.
@@ -140,15 +148,27 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	// routes' output at different heights, which is exactly the divergence one
 	// shared closure exists to prevent.
 	askInSession := func(q question) error {
+		// Ctrl-C here means "stop this answer", not "quit" — the one place in
+		// this program where it means something narrower. Scoping the sink
+		// covers BOTH transports for the duration (#16 D5), and the reader
+		// swallows the interrupt it consumed rather than also handing it to this
+		// loop, where it would quit the session the moment the answer ended.
+		qctx, qcancel := context.WithCancel(ctx)
+		restore := interrupts.Set(qcancel)
+
 		// Streamed in RAW mode through crlfWriter rather than under cooked():
 		// deltas arrive continuously and flapping the terminal per delta is not
-		// a thing, and staying raw is also what keeps the key reader seeing
-		// bytes — which is what lets Ctrl-C mean something narrower here (D6).
-		ask(ctx, d, opt, &sess, &crlfWriter{w: stdout}, &crlfWriter{w: stderr}, q)
-		var err error
-		if err != nil {
-			return err
-		}
+		// a thing, and staying raw is also what keeps the key reader decoding
+		// bytes — which is what makes the scoping above reachable at all (D6).
+		ask(qctx, d, opt, &sess, &crlfWriter{w: stdout}, &crlfWriter{w: stderr}, q)
+
+		// restore BEFORE draw(), so a Ctrl-C landing between the answer ending
+		// and the prompt returning means quit again; qcancel after restore, so
+		// the deferred cancel cannot fire a sink that is no longer this
+		// question's.
+		restore()
+		qcancel()
+
 		fmt.Fprint(stdout, "\r\n")
 		draw()
 		return nil
