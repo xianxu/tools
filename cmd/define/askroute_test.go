@@ -5,6 +5,9 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/internal/llm"
+	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
 const aQuestion = "what's the difference to obsequious?"
@@ -123,11 +126,29 @@ func TestAQuestionIsNotCaptured(t *testing.T) {
 	cap := &countingCapturer{}
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	rig.deps.capture = cap
+	// A WIRED seam, so the question actually reaches a model: nothing is
+	// recorded for a question that never reached one, which is the rule the
+	// enumeration in TestAQuestionIsRecordedWhateverBecameOfTheAnswer states.
+	// Without it the assertions below would pass for a routing that records
+	// nothing at all.
+	fake := llmtest.NewFake(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture})
+	rig.deps.getenv, rig.deps.newLLM = envFor(fake.URL), llm.New
 	var out, errb bytes.Buffer
 	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	if len(cap.calls) != 1 || cap.calls[0] != "sycophantic" {
 		t.Errorf("captured %v, want just the lookup — a question is not a lookup", cap.calls)
+	}
+	// The other half, at the same seam: the question DID reach the log, as a
+	// question. Asserting only the absence above would pass for a routing that
+	// records nothing at all — and countingCapturer.asked existed for exactly
+	// this and was read nowhere (BR-45).
+	if len(cap.asked) != 1 || cap.asked[0] != aQuestion {
+		t.Errorf("asked = %v, want the question recorded once as a question", cap.asked)
+	}
+	if len(cap.askedWord) != 1 || cap.askedWord[0] != "sycophantic" {
+		t.Errorf("askedWord = %v, want the word the question followed", cap.askedWord)
 	}
 }
 

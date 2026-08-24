@@ -210,6 +210,8 @@ arrives later.
 ```
 words/<slug>.yaml        one file per word
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
+                         kinds: looked-up, asked
+user-model.md            the learner model — markdown, because a person edits it
 ```
 
 **What that layout buys, stated precisely:** it does *not* make sync conflicts
@@ -249,10 +251,25 @@ That last one is the trap worth remembering: it is the strictest rule and it
 destroys the history it exists to protect the moment a person, an editor, or a
 sync tool rewrites the file's quoting.
 
-A whole record therefore **ends with a newline** and **carries every field**. The
-writer always terminates a record, and `AppendEvent` repairs a missing terminator
-before writing — without which one interrupted write costs *two* events, because
-the next append lands on the fragment's line and is parsed as part of it.
+A whole record therefore **ends with a newline** and **identifies its subject** —
+a word for a lookup, a question for an `asked` event. It was "carries every
+field" until #16 added a question that may have no word; a reader still following
+that rule discards exactly the wordless events the generalisation exists to keep.
+`at:` stays the LAST field for the same reason it always was: completeness leans
+on a cut record losing its timestamp, so a field written after it would survive
+the cut and make a fragment look whole.
+
+The writer always terminates a record, and `AppendEvent` repairs a missing
+terminator before writing — without which one interrupted write costs *two*
+events, because the next append lands on the fragment's line and is parsed as
+part of it.
+
+**`question:` is the first free-form USER TEXT this log holds.** Every value
+before it was a single dictionary headword, and the record boundary a reader
+looks for is a literal top-level `- `. What keeps a typed question off column 0
+is the writer's quoting, and `storetest` now round-trips five adversarial
+questions — including one whose text is a complete forged event record — against
+both implementations.
 
 Parsing is one path, always record-by-record. A fast-path-plus-fallback version
 double-counted whatever the failed whole-file parse had already collected, and
@@ -262,6 +279,12 @@ a truncation produces.
 **Two Store implementations, one conformance suite.** `Mem` is the reference and
 ships as production code; `storetest.Suite` runs against both, so "the fake
 behaves like the real thing" is a test rather than an assumption.
+
+That claim is only as strong as the fake's ability to HOLD the state, which is
+the trap #16 fell into: `UserModel` arrived as a getter with no writer anywhere,
+so the suite row asserting "empty before anything writes one" asserted the only
+value `Mem` could produce. A method added to `Store` brings its setter with it,
+or the row that covers it is unfalsifiable for the reference implementation.
 
 ### Capture: one site, one policy
 

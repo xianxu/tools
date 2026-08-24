@@ -88,6 +88,13 @@ func (m *Mem) Events(since time.Time) ([]ReviewEvent, error) {
 	return out, nil
 }
 
+func (m *Mem) SetUserModel(text string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.userModel = text
+	return nil
+}
+
 func (m *Mem) UserModel() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

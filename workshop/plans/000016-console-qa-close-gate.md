@@ -825,6 +825,177 @@ rounds:
           round: 6
       boundary: M2
       blocked: true
+    - "n": 7
+      timestamp: "2026-08-24T14:08:16-07:00"
+      agent: claude
+      dispose:
+        - id: BR-24
+          disposition: addressed
+          note: Reverting the warn to a discarded error reddens TestAnUnreadableUserModelIsReported; failingStore.UserModel now has a live call site.
+          round: 7
+        - id: BR-30
+          disposition: addressed
+          note: Deleting repl's signal watcher now reddens TestBothInterruptTransportsReachTheSink and TestThePipedLoopStillExitsOnASignal (verified); the subtest still bridges sigs itself, recorded as a plan revision rather than re-raised.
+          round: 7
+        - id: BR-38
+          disposition: addressed
+          note: TestTheAskWiringTable is the table, not a fourth one-off; all three named mutations plus the piped session cell redden against the full suite (verified).
+          round: 7
+        - id: BR-39
+          disposition: addressed
+          note: All four measured claims fixed and the two behavioural gaps pinned by enumeration tests; the surviving stale restatements are elsewhere in atlas and raised as the 9th in the family.
+          round: 7
+        - id: BR-40
+          disposition: addressed
+          note: The hostile-question suite row reddens when AppendEvent is replaced with a naive hand-written record (verified), so it is not vacuous.
+          round: 7
+        - id: BR-41
+          disposition: addressed
+          note: The out parameter is gone and entryWasCR is captured before the loop; re-seeding from false reddens TestCRLFWriterProgressAcrossACarriedCR (verified).
+          round: 7
+        - id: BR-42
+          disposition: addressed
+          note: recentDeck is pure, lives beside recentTurns in askctx.go and is table-tested without a store; un-reversing it reddens three rows (verified).
+          round: 7
+        - id: BR-43
+          disposition: addressed
+          note: builtBinary compiles from the tree per run; bin/define survives only in a comment. Staleness is impossible by construction.
+          round: 7
+      findings:
+        - id: BR-44
+          severity: Important
+          title: Three claims in atlas's store section were falsified by this window, in the paragraphs that own them
+          detail: |-
+            This is the 9th finding in this family; the rule has now been stated four
+            times, so do NOT patch the three lines. Measured: (1) atlas/define.md:210-213,
+            the normative artifact block, lists words/ and events/ while the code
+            (store/yaml.go:37) and README both say user-model.md is the third — the atlas
+            names it only in M2 prose at :527, so 2 of 3 restatements were swept;
+            (2) atlas/define.md:252 "a whole record ... carries every field", contradicted
+            by complete()'s generalisation to "has a SUBJECT" (store/event.go:45) that
+            this window shipped precisely so a wordless asked record is whole — a reader
+            following the atlas discards exactly the events it was generalised to keep;
+            (3) atlas/define.md:576 "the fake behaves like the real thing is a test rather
+            than an assumption", false for the newest interface method (see the
+            test-asserts-nothing finding). The mechanical fix: a normative block in atlas
+            is a CONSUMER of the code, so a change to what the code enumerates sweeps
+            every block that enumerates it in the same commit. The enumeration is three
+            blocks in the store section, resolved against yaml.go, event.go and
+            storetest/suite.go mechanically, the way PQ-5 resolved every line citation.
+          family: doc-overstates-code
+          round: 7
+        - id: BR-45
+          severity: Important
+          title: Two pieces of scaffolding added this round read as protection and cannot fail
+          detail: |-
+            This is the 7th finding in this family, and both instances are the shape
+            BR-24's own disposal note named — "the disposal is the test". Measured, 2 of
+            the 14 test helpers and fake fields this window added: (1) capture_test.go:85
+            countingCapturer.asked and askedWord are appended at one site and read at
+            ZERO, while their comment claims "so a test can assert that a question was
+            NOT counted as one"; no test reads either field (the distinction is asserted
+            at the store level instead, so this is dead scaffolding). (2)
+            storetest/suite.go:38 "UserModel is empty before anything writes one" runs
+            against both implementations, but store/mem.go:20 userModel has no setter and
+            no writer anywhere in the tree, so for Mem the row asserts the only value the
+            type can produce — unfalsifiable, and ARCH-MOCK: the fake cannot hold the
+            state the real one holds for the method Store gained in this window. The
+            rule: a fixture, field or suite row added to defend a finding must have a
+            read site that can fail in the same commit, and a fake added to a conformance
+            suite must be able to hold the state the row asserts about.
+          family: test-asserts-nothing
+          round: 7
+        - id: BR-46
+          severity: Important
+          title: The scoped-ask wiring is now written twice, and only one copy carries the ordering rationale
+          detail: |-
+            This is the 2nd finding in family second-implementation-drifts, so state the
+            rule rather than fixing one site. repl.go:273-279 and replraw.go:148-168 each
+            contain the identical five-step sequence — derive qctx, interrupts.Set,
+            call ask, restore, qcancel — and the ordering is load-bearing in a way that
+            is silent when wrong: only replraw.go:163-166 records why restore precedes
+            qcancel. The second copy was created by round 2's BR-39 fix, while
+            replraw.go:140-143 and atlas/define.md:568 both still say a second copy of
+            this wiring would be a second copy of Ctrl-C's meaning (ARCH-DRY). The rule,
+            same shape as fail(code) and nothingSays: one function owns the scope and
+            both loops call it — askScoped(ctx, interrupts, run) — with the writers and
+            the post-answer redraw staying in each loop's closure, since those are what
+            legitimately differ.
+          family: second-implementation-drifts
+          round: 7
+        - id: BR-47
+          severity: Important
+          title: The Core concepts tables do not describe the entities this boundary's rounds created
+          detail: |-
+            This is the 3rd finding in this family; BR-34 fixed two rows by eye and the
+            next round created three more discrepancies, so fix the enumeration rather
+            than the rows. Measured against workshop/plans/000016-console-qa-plan.md:
+            (1) recentDeck (askctx.go:86) is a NEW pure entity with its own table test,
+            extracted by round 1 in answer to a Critical, and is absent from the
+            Pure-entities table entirely; (2) Integration points names "askCapturer (on
+            Capturer)" where the code's method is CaptureAsk (capture.go:49) — the
+            Revisions entry says so, the table does not; (3) the session bullet lists
+            current, entry, turns while the code also has words (session.go:20), the
+            field an issue Done-when row quantifies over. 3 of 3 entity changes made by
+            the two boundary rounds are unrecorded or wrong. The rule, mechanised: at a
+            boundary close the enumeration is
+            git diff base..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) ',
+            resolved against the Core concepts tables — a row fixed because a finding
+            named it is the instance again.
+          family: plan-contract-drift
+          round: 7
+        - id: BR-48
+          severity: Minor
+          title: Boundary round 2 has no Revisions entry, including the one the previous round asked for
+          detail: |-
+            This is the 4th finding in family plan-bookkeeping. The round-1 entry states
+            the rule ("a Revisions entry is owed for every fork taken differently from
+            the plan, in the milestone-close commit") and round 2 then took four forks
+            and recorded none: newestFirst became recentDeck and moved to askctx.go,
+            TestThePipedLoopsAskWiring was folded into TestTheAskWiringTable, replLines
+            gained the interrupt scope the plan gave only to the raw loop, and the pty
+            suite now builds its own binary. Round 6's explicit recommendation — Task
+            11's test decomposition, and that "SIGINT through repl's watcher DURING a
+            scoped stream" is still unasserted — is also absent. Checkboxes are 60 of 60,
+            so this is the entry half of the rule only.
+          family: plan-bookkeeping
+          round: 7
+        - id: BR-49
+          severity: Minor
+          title: The interrupter seam has three consumers and two nil policies; one of them dereferences
+          detail: |-
+            runEditor (replraw.go:56) and replLines (repl.go:226) substitute
+            &interrupter{} when handed nil, while replRaw (replraw.go:15) passes it
+            straight to readKeys, which dereferences it on the first Ctrl-C. Not
+            production-reachable — repl is replRaw's only caller and always supplies one
+            — but 44 test call sites now pass nil, exercising a configuration production
+            never has, and the two policies will diverge again when #17 consumes the
+            seam. Either the seam is required (tests pass &interrupter{}) or optional
+            (one policy applied at every entry that consumes it).
+          family: nil-seam-policy
+          round: 7
+        - id: BR-50
+          severity: Minor
+          title: 'Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read'
+          detail: |-
+            This is the 2nd finding in family dead-branch, so these are recorded rather
+            than individually fixed. (1) replraw.go:132 "M2's streaming adds a fifth"
+            predicts a lostTerminal call site that M2 deliberately did not create; two
+            live sites remain — belongs to the atlas sweep above. (2) capture.go:97's
+            decideCapture guard in CaptureAsk is deletable with the suite green and is
+            unreachable in production, since -raw refuses in ask() before runAsk and
+            noCapture yields a noopCapturer; correct as a mirror of Capture's guard, but
+            not a tested policy. (3) repl_test.go:174 uses t.Context().Done() as its
+            failure arm, so a loop that never returns HANGS to the package timeout
+            instead of failing — measured at 600s during a mutation; its sibling
+            assertSignalEndsTheLoop uses a 5s time.After. (4) gatherAskContext calls
+            Deck() on every question, reading every file under words/ to pick twelve —
+            negligible beside a network round-trip today, worth remembering when #10
+            reuses askContext.
+          family: dead-branch
+          round: 7
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -1336,6 +1507,119 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   — a live conformance check that cannot fail on the change it exists to
   check. Compare against the newest source mtime, or build in TestMain.
 
+## Round 7 — 2026-08-24T14:08:16-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-24 — addressed — Reverting the warn to a discarded error reddens TestAnUnreadableUserModelIsReported; failingStore.UserModel now has a live call site.
+- BR-30 — addressed — Deleting repl's signal watcher now reddens TestBothInterruptTransportsReachTheSink and TestThePipedLoopStillExitsOnASignal (verified); the subtest still bridges sigs itself, recorded as a plan revision rather than re-raised.
+- BR-38 — addressed — TestTheAskWiringTable is the table, not a fourth one-off; all three named mutations plus the piped session cell redden against the full suite (verified).
+- BR-39 — addressed — All four measured claims fixed and the two behavioural gaps pinned by enumeration tests; the surviving stale restatements are elsewhere in atlas and raised as the 9th in the family.
+- BR-40 — addressed — The hostile-question suite row reddens when AppendEvent is replaced with a naive hand-written record (verified), so it is not vacuous.
+- BR-41 — addressed — The out parameter is gone and entryWasCR is captured before the loop; re-seeding from false reddens TestCRLFWriterProgressAcrossACarriedCR (verified).
+- BR-42 — addressed — recentDeck is pure, lives beside recentTurns in askctx.go and is table-tested without a store; un-reversing it reddens three rows (verified).
+- BR-43 — addressed — builtBinary compiles from the tree per run; bin/define survives only in a comment. Staleness is impossible by construction.
+
+### Raised
+
+- **BR-44** [Important] `doc-overstates-code` Three claims in atlas's store section were falsified by this window, in the paragraphs that own them
+  This is the 9th finding in this family; the rule has now been stated four
+  times, so do NOT patch the three lines. Measured: (1) atlas/define.md:210-213,
+  the normative artifact block, lists words/ and events/ while the code
+  (store/yaml.go:37) and README both say user-model.md is the third — the atlas
+  names it only in M2 prose at :527, so 2 of 3 restatements were swept;
+  (2) atlas/define.md:252 "a whole record ... carries every field", contradicted
+  by complete()'s generalisation to "has a SUBJECT" (store/event.go:45) that
+  this window shipped precisely so a wordless asked record is whole — a reader
+  following the atlas discards exactly the events it was generalised to keep;
+  (3) atlas/define.md:576 "the fake behaves like the real thing is a test rather
+  than an assumption", false for the newest interface method (see the
+  test-asserts-nothing finding). The mechanical fix: a normative block in atlas
+  is a CONSUMER of the code, so a change to what the code enumerates sweeps
+  every block that enumerates it in the same commit. The enumeration is three
+  blocks in the store section, resolved against yaml.go, event.go and
+  storetest/suite.go mechanically, the way PQ-5 resolved every line citation.
+- **BR-45** [Important] `test-asserts-nothing` Two pieces of scaffolding added this round read as protection and cannot fail
+  This is the 7th finding in this family, and both instances are the shape
+  BR-24's own disposal note named — "the disposal is the test". Measured, 2 of
+  the 14 test helpers and fake fields this window added: (1) capture_test.go:85
+  countingCapturer.asked and askedWord are appended at one site and read at
+  ZERO, while their comment claims "so a test can assert that a question was
+  NOT counted as one"; no test reads either field (the distinction is asserted
+  at the store level instead, so this is dead scaffolding). (2)
+  storetest/suite.go:38 "UserModel is empty before anything writes one" runs
+  against both implementations, but store/mem.go:20 userModel has no setter and
+  no writer anywhere in the tree, so for Mem the row asserts the only value the
+  type can produce — unfalsifiable, and ARCH-MOCK: the fake cannot hold the
+  state the real one holds for the method Store gained in this window. The
+  rule: a fixture, field or suite row added to defend a finding must have a
+  read site that can fail in the same commit, and a fake added to a conformance
+  suite must be able to hold the state the row asserts about.
+- **BR-46** [Important] `second-implementation-drifts` The scoped-ask wiring is now written twice, and only one copy carries the ordering rationale
+  This is the 2nd finding in family second-implementation-drifts, so state the
+  rule rather than fixing one site. repl.go:273-279 and replraw.go:148-168 each
+  contain the identical five-step sequence — derive qctx, interrupts.Set,
+  call ask, restore, qcancel — and the ordering is load-bearing in a way that
+  is silent when wrong: only replraw.go:163-166 records why restore precedes
+  qcancel. The second copy was created by round 2's BR-39 fix, while
+  replraw.go:140-143 and atlas/define.md:568 both still say a second copy of
+  this wiring would be a second copy of Ctrl-C's meaning (ARCH-DRY). The rule,
+  same shape as fail(code) and nothingSays: one function owns the scope and
+  both loops call it — askScoped(ctx, interrupts, run) — with the writers and
+  the post-answer redraw staying in each loop's closure, since those are what
+  legitimately differ.
+- **BR-47** [Important] `plan-contract-drift` The Core concepts tables do not describe the entities this boundary's rounds created
+  This is the 3rd finding in this family; BR-34 fixed two rows by eye and the
+  next round created three more discrepancies, so fix the enumeration rather
+  than the rows. Measured against workshop/plans/000016-console-qa-plan.md:
+  (1) recentDeck (askctx.go:86) is a NEW pure entity with its own table test,
+  extracted by round 1 in answer to a Critical, and is absent from the
+  Pure-entities table entirely; (2) Integration points names "askCapturer (on
+  Capturer)" where the code's method is CaptureAsk (capture.go:49) — the
+  Revisions entry says so, the table does not; (3) the session bullet lists
+  current, entry, turns while the code also has words (session.go:20), the
+  field an issue Done-when row quantifies over. 3 of 3 entity changes made by
+  the two boundary rounds are unrecorded or wrong. The rule, mechanised: at a
+  boundary close the enumeration is
+  git diff base..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) ',
+  resolved against the Core concepts tables — a row fixed because a finding
+  named it is the instance again.
+- **BR-48** [Minor] `plan-bookkeeping` Boundary round 2 has no Revisions entry, including the one the previous round asked for
+  This is the 4th finding in family plan-bookkeeping. The round-1 entry states
+  the rule ("a Revisions entry is owed for every fork taken differently from
+  the plan, in the milestone-close commit") and round 2 then took four forks
+  and recorded none: newestFirst became recentDeck and moved to askctx.go,
+  TestThePipedLoopsAskWiring was folded into TestTheAskWiringTable, replLines
+  gained the interrupt scope the plan gave only to the raw loop, and the pty
+  suite now builds its own binary. Round 6's explicit recommendation — Task
+  11's test decomposition, and that "SIGINT through repl's watcher DURING a
+  scoped stream" is still unasserted — is also absent. Checkboxes are 60 of 60,
+  so this is the entry half of the rule only.
+- **BR-49** [Minor] `nil-seam-policy` The interrupter seam has three consumers and two nil policies; one of them dereferences
+  runEditor (replraw.go:56) and replLines (repl.go:226) substitute
+  &interrupter{} when handed nil, while replRaw (replraw.go:15) passes it
+  straight to readKeys, which dereferences it on the first Ctrl-C. Not
+  production-reachable — repl is replRaw's only caller and always supplies one
+  — but 44 test call sites now pass nil, exercising a configuration production
+  never has, and the two policies will diverge again when #17 consumes the
+  seam. Either the seam is required (tests pass &interrupter{}) or optional
+  (one policy applied at every entry that consumes it).
+- **BR-50** [Minor] `dead-branch` Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read
+  This is the 2nd finding in family dead-branch, so these are recorded rather
+  than individually fixed. (1) replraw.go:132 "M2's streaming adds a fifth"
+  predicts a lostTerminal call site that M2 deliberately did not create; two
+  live sites remain — belongs to the atlas sweep above. (2) capture.go:97's
+  decideCapture guard in CaptureAsk is deletable with the suite green and is
+  unreachable in production, since -raw refuses in ask() before runAsk and
+  noCapture yields a noopCapturer; correct as a mirror of Capture's guard, but
+  not a tested policy. (3) repl_test.go:174 uses t.Context().Done() as its
+  failure arm, so a loop that never returns HANGS to the package timeout
+  instead of failing — measured at 600s during a mutation; its sibling
+  assertSignalEndsTheLoop uses a 5s time.After. (4) gatherAskContext calls
+  Deck() on every question, reading every file under words/ to pick twelve —
+  negligible beside a network round-trip today, worth remembering when #10
+  reuses askContext.
+
 ## Open findings
 
 - **BR-12** [Minor] `forced-route-enumeration` the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
@@ -1343,11 +1627,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-19** [Important] `test-asserts-nothing` no test asserts what any of #16's messages say, and a doubled backslash shipped as a result
 - **BR-20** [Minor] `doc-overstates-code` nothingSays is documented as "the ONE place" while replayInPlace holds a live duplicate of its replay sentence
 - **BR-21** [Minor] `stdlib-reuse` four byte-identical "lost the terminal" blocks in runEditor, two added by this diff
-- **BR-24** [Important] `silent-error-swallow` gatherAskContext discards UserModel's error, defeating the reason it returns one
-- **BR-30** [Important] `test-asserts-nothing` Four claims in this diff survive the mutation they exist to catch
-- **BR-38** [Important] `loop-shell-branch-untested` Three cells of the ask-wiring table still survive their mutation with the full suite green
-- **BR-39** [Important] `doc-overstates-code` Four measured doc claims contradict the code, three of them created by this window
-- **BR-40** [Important] `user-text-in-record-format` The event log's first free-form user field has no test defending the record-boundary invariant
-- **BR-41** [Minor] `second-implementation-drifts` crlf.go's consumed() ignores the `out` it is handed and re-derives the translation from a wrong seed
-- **BR-42** [Minor] `policy-in-io-shell` newestFirst returns oldest-first, sits in the IO shell, and is only reachable through a store-backed test
-- **BR-43** [Minor] `test-asserts-nothing` The pty conformance suite runs whatever bin/define is on disk, with no staleness check
+- **BR-44** [Important] `doc-overstates-code` Three claims in atlas's store section were falsified by this window, in the paragraphs that own them
+- **BR-45** [Important] `test-asserts-nothing` Two pieces of scaffolding added this round read as protection and cannot fail
+- **BR-46** [Important] `second-implementation-drifts` The scoped-ask wiring is now written twice, and only one copy carries the ordering rationale
+- **BR-47** [Important] `plan-contract-drift` The Core concepts tables do not describe the entities this boundary's rounds created
+- **BR-48** [Minor] `plan-bookkeeping` Boundary round 2 has no Revisions entry, including the one the previous round asked for
+- **BR-49** [Minor] `nil-seam-policy` The interrupter seam has three consumers and two nil policies; one of them dereferences
+- **BR-50** [Minor] `dead-branch` Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read

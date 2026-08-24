@@ -39,6 +39,15 @@ func (y *YAML) eventsDir() string { return filepath.Join(y.dir, "events") }
 // the inferred sections and never touches the human-owned ## Corrections.
 func (y *YAML) userModelFile() string { return filepath.Join(y.dir, "user-model.md") }
 
+// SetUserModel writes the learner model.
+//
+// Atomically, like a word file and unlike the append-only day log: this file is
+// REPLACED wholesale, and a torn one would lose the human-owned corrections #17
+// promises never to rewrite.
+func (y *YAML) SetUserModel(text string) error {
+	return writeBytesAtomic(y.userModelFile(), []byte(text))
+}
+
 // UserModel reads the learner model, or "" when there is none.
 //
 // Absent is not an error — it is the normal state until #17 first writes one —
@@ -223,11 +232,19 @@ func readWord(path string) (Word, error) {
 // rather than exceptional. A half-written YAML file would be a corrupted deck
 // entry; a rename is atomic, so a reader sees the old file or the new one.
 func writeAtomic(path string, w Word) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	b, err := yaml.Marshal(w)
 	if err != nil {
+		return err
+	}
+	return writeBytesAtomic(path, b)
+}
+
+// writeBytesAtomic is the atomic write itself, without the marshalling. Split
+// out when user-model.md arrived: it is markdown a person edits rather than a
+// serialised Word, and the alternative was a second temp-file-then-rename dance
+// that could drift from this one (ARCH-DRY).
+func writeBytesAtomic(path string, b []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")

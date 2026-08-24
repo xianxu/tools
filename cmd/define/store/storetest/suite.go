@@ -35,10 +35,14 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
-	t.Run("UserModel is empty before anything writes one", func(t *testing.T) {
-		// The normal first-run state, and NOT an error: #17 writes this file,
-		// and #16 reads it to pitch an answer. "Not there yet" is the common
-		// case for the whole of #16's life.
+	t.Run("the user model round-trips, and is empty before anything writes one", func(t *testing.T) {
+		// Absent reads as "" and NOT an error: the normal first-run state for the
+		// whole of #16's life, since #17 is what writes it.
+		//
+		// The write half is here because a row that only reads asserts the only
+		// value a store with no setter can produce — unfalsifiable for the
+		// reference implementation, and a fake that cannot hold the real one's
+		// state is the gap this suite exists to close.
 		s := newStore(t)
 		got, err := s.UserModel()
 		if err != nil {
@@ -46,6 +50,18 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 		if got != "" {
 			t.Errorf("UserModel = %q, want empty", got)
+		}
+
+		const model = "## Level\nC1, reads judicial opinions.\n\n## Corrections\nHuman-owned.\n"
+		if err := s.SetUserModel(model); err != nil {
+			t.Fatalf("SetUserModel: %v", err)
+		}
+		got, err = s.UserModel()
+		if err != nil {
+			t.Fatalf("UserModel after write: %v", err)
+		}
+		if got != model {
+			t.Errorf("UserModel = %q, want %q", got, model)
 		}
 	})
 

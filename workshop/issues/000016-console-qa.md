@@ -609,3 +609,38 @@ adversarial questions against both store implementations.
 as one fixture-driven test whose rows ARE the cells"*. `TestTheAskWiringTable` is
 {one-shot, piped, editor} × {answer destination, session carried, interrupt
 scoped}, and all three previously-green mutations now redden.
+
+### 2026-08-24 — M2 round 3: four findings, all about the previous round's fixes
+
+Round 2's five findings all disposed; four new, and every one of them is about
+scaffolding or duplication that round 2's own fixes created. That is the pattern
+of this whole issue in miniature, and it converged this time because the review
+refused to accept a fix that could not fail.
+
+- **BR-46** — my BR-39 fix (scoping the interrupt in the line loop) created a
+  SECOND copy of the five-step scope sequence, and only the raw loop's copy
+  carried the ordering rationale. One `askScoped` owns it now; the writers and
+  the post-answer redraw stay per-loop, since those are what legitimately differ.
+  Then, probing it: **reversing the order reddens nothing** — the window where it
+  matters is an instant too narrow to test without a flaky race. A rationale no
+  test can defend is exactly the scaffolding BR-45 names, so the sequence is
+  written with `defer`'s LIFO instead: it can no longer be written in the wrong
+  order.
+- **BR-45** — two things I added last round *read as protection and could not
+  fail*: `countingCapturer.asked`/`askedWord` were appended at one site and read
+  at zero (the seam-level assertion now reads them, with a wired fake so the
+  question genuinely reaches a model), and the `UserModel` conformance row
+  asserted the only value `Mem` could produce, because the method arrived as a
+  getter with **no writer anywhere in the tree**. `Store.SetUserModel` closes
+  that: a fake that cannot hold the real one's state is the gap `storetest`
+  exists to close, and #17 inherits the setter it needs anyway.
+- **BR-44** — three claims in the atlas's store section, in the paragraphs that
+  OWN them: the artifact block still listed two files of three, "carries every
+  field" contradicted the completeness rule this window generalised, and the
+  conformance claim was false for the newest method. Swept against `yaml.go`,
+  `event.go` and `storetest/suite.go` rather than patched line by line.
+- **BR-47** — the Core-concepts tables were fixed by eye last round and drifted
+  again. Now resolved mechanically against
+  `git diff <boundary>..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) '`,
+  which lists 29 additions here; `askScoped` and `consumed` went in by the same
+  pass rather than waiting to be named by a round 4.

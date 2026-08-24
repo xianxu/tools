@@ -162,6 +162,8 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `askContext` | `cmd/define/askctx.go` | new |
 | `renderAskPrompt` | `cmd/define/askctx.go` | new |
 | `recentTurns` | `cmd/define/askctx.go` | new |
+| `recentDeck` | `cmd/define/askctx.go` | new |
+| `consumed` | `cmd/define/crlf.go` | new |
 | `session` | `cmd/define/session.go` | new |
 | `exchange` | `cmd/define/askctx.go` | new |
 | `crlfWriter` | `cmd/define/crlf.go` | new |
@@ -198,7 +200,9 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
     context; when it lands, this struct is what it reuses.
 
 - **session** — the per-session state both loops carry: `current` word, `entry`
-  text of that word, and `turns` (the Q&A transcript, added in M2).
+  text of that word, `words` (this session's lookups — the signal an issue
+  Done-when row quantifies over, distinct from the durable deck), and `turns`
+  (the Q&A transcript). The last two are M2's.
   - **Relationships:** one per loop invocation. It **replaces** the bare
     `current string` declared in `replLines` (`repl.go:125`), in `runEditor`
     (`replraw.go`), and threaded through `submitLine` as `current *string`
@@ -223,7 +227,8 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `Store.UserModel` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
 | `interrupter` | `cmd/define/interrupt.go` | new | what Ctrl-C means right now |
 | `deps.notifySignals` | `cmd/define/main.go` | new | `signal.Notify` |
-| `askCapturer` (on `Capturer`) | `cmd/define/capture.go` | modified | event append |
+| `Capturer.CaptureAsk` | `cmd/define/capture.go` | modified | event append |
+| `askScoped` | `cmd/define/ask.go` | new | the interrupt sink, for the duration of one answer |
 
 - **gatherAskContext** — reads the deck, the user model and the session's own
   state into an `askContext`. Thin: no formatting, no truncation decisions beyond
@@ -1362,3 +1367,27 @@ in the issue's `## Log` and the gate ledger.
    path into the event log beside `capture` and falsifying `deps`' own comment.
    `Capturer` gained `CaptureAsk`, so the log keeps one writer (M2 boundary
    review, I3).
+
+### 2026-08-24 — the entity tables, resolved mechanically
+
+**Reason:** M2 boundary round 3 (BR-47), the 3rd finding in `plan-contract-drift`.
+Round 2 fixed two table rows by eye and the next round found three more
+discrepancies, which is the definition of fixing instances.
+
+**Delta:** the tables above are now resolved against the enumeration the code
+actually produces, rather than against the rows a finding named:
+
+```
+git diff <boundary>..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) '
+```
+
+Run at this boundary it lists 29 additions; the three the tables were missing or
+wrong about were `recentDeck` (a new pure entity, extracted in answer to a
+Critical, absent entirely), `askCapturer` (the method is `CaptureAsk`), and
+`session.words`. `askScoped` and `consumed`, created by rounds 2 and 3, are
+added by the same pass rather than waiting to be named by a round 4.
+
+**The rule this encodes:** at a boundary close the Core-concepts tables are a
+CONSUMER of the diff, so they are resolved against it mechanically — the way
+PQ-5 resolved every file:line citation. A row corrected because a review named
+it is the instance again.

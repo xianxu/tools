@@ -137,9 +137,10 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	}
 
 	// ONE entry into the ask path for this loop, reached from two places: a
-	// forced question ("?…") and a dictionary miss that reads as one. M2 hangs
-	// the interrupter and the streaming writer here, so a second copy of this
-	// wiring would be a second copy of Ctrl-C's meaning (ARCH-DRY).
+	// forced question ("?…") and a dictionary miss that reads as one. The
+	// streaming writers hang here because a raw terminal is what makes them
+	// differ; the interrupt SCOPE does not hang here — askScoped owns that, so
+	// both loops cannot drift on an ordering that is silent when wrong.
 	//
 	// The caller supplies the leading "\r\n", because the unforced route has
 	// already written one before submitLine — emitting a second here put the two
@@ -147,25 +148,18 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// shared closure exists to prevent.
 	askInSession := func(q question) {
 		// Ctrl-C here means "stop this answer", not "quit" — the one place in
-		// this program where it means something narrower. Scoping the sink
-		// covers BOTH transports for the duration (#16 D5), and the reader
-		// swallows the interrupt it consumed rather than also handing it to this
-		// loop, where it would quit the session the moment the answer ended.
-		qctx, qcancel := context.WithCancel(ctx)
-		restore := interrupts.Set(qcancel)
-
+		// this program where it means something narrower. askScoped owns the
+		// sequence and its ordering; the reader swallows the interrupt it
+		// consumed rather than also handing it to this loop, where it would quit
+		// the session the moment the answer ended (#16 D5).
+		//
 		// Streamed in RAW mode through crlfWriter rather than under cooked():
 		// deltas arrive continuously and flapping the terminal per delta is not
 		// a thing, and staying raw is also what keeps the key reader decoding
-		// bytes — which is what makes the scoping above reachable at all (D6).
-		ask(qctx, d, opt, &sess, &crlfWriter{w: stdout}, &crlfWriter{w: stderr}, q)
-
-		// restore BEFORE draw(), so a Ctrl-C landing between the answer ending
-		// and the prompt returning means quit again; qcancel after restore, so
-		// the deferred cancel cannot fire a sink that is no longer this
-		// question's.
-		restore()
-		qcancel()
+		// bytes — which is what makes the scoping reachable at all (D6).
+		askScoped(ctx, interrupts, func(qctx context.Context) int {
+			return ask(qctx, d, opt, &sess, &crlfWriter{w: stdout}, &crlfWriter{w: stderr}, q)
+		})
 
 		fmt.Fprint(stdout, "\r\n")
 		draw()

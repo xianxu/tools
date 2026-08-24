@@ -22,6 +22,29 @@ type question struct {
 	forced bool
 }
 
+// askScoped runs one answer with the interrupt scoped to it.
+//
+// ONE owner for the five-step sequence — derive, Set, run, restore, cancel —
+// because the ORDER is load-bearing in a way that is silent when wrong, and a
+// second copy carrying no rationale is a copy that will be reordered by someone
+// tidying it. Both loops call this; the writers and the post-answer redraw stay
+// in each loop's closure, since those are what legitimately differ (a raw
+// terminal needs crlfWriter and a prompt redrawn; a piped run needs neither).
+//
+// The order — restore, THEN cancel — is enforced by defer's LIFO rather than by
+// this comment. Written as two statements it is silent when wrong: reversing it
+// leaves the sink pointed at a cancelled question for an instant, so a Ctrl-C
+// arriving in that window is swallowed instead of quitting. That window is too
+// narrow to test without a flaky race, and a rationale no test can defend is
+// scaffolding — so the sequence is made unwriteable in the wrong order instead.
+func askScoped(ctx context.Context, interrupts *interrupter, run func(context.Context) int) int {
+	qctx, qcancel := context.WithCancel(ctx)
+	defer qcancel() // registered first, so LIFO runs it LAST
+	restore := interrupts.Set(qcancel)
+	defer restore() // registered second, so it runs FIRST
+	return run(qctx)
+}
+
 // mayAsk is the single answer to "may this session reach the model at all".
 //
 // One predicate, consulted by BOTH dispatches — the unforced fallback in

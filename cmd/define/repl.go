@@ -263,20 +263,16 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 	// reads as a question). They differ only in whether the dictionary was
 	// consulted, so wiring them separately would mean maintaining the answer
 	// path twice (ARCH-DRY).
-	// Scoped exactly as the raw loop scopes it. README says "Ctrl-C stops the
-	// answer rather than the session", and that was true in ONE of the two
-	// loops: this one passed its own ctx, which the default sink cancels, so an
-	// interrupt during an answer ended the session here (BR-39). The interrupt
-	// sink is the single answer to what Ctrl-C means (#16 D5) — a loop that
-	// streams an answer and does not scope it is a loop where the sink is not
-	// the answer after all.
+	// Scoped through the same askScoped both loops use. README says "Ctrl-C
+	// stops the answer rather than the session", and that was true in ONE of the
+	// two loops until #16 M2 round 2: this one passed its own ctx, which the
+	// default sink cancels, so an interrupt during an answer ended the session
+	// here. A loop that streams an answer and does not scope it is a loop where
+	// the sink is not the single answer after all.
 	askHere := func(q question) {
-		qctx, qcancel := context.WithCancel(ctx)
-		restore := interrupts.Set(qcancel)
-		code := ask(qctx, d, opt, &sess, stdout, stderr, q)
-		restore()
-		qcancel()
-		fail(code)
+		fail(askScoped(ctx, interrupts, func(qctx context.Context) int {
+			return ask(qctx, d, opt, &sess, stdout, stderr, q)
+		}))
 	}
 
 	for {

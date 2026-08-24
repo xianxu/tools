@@ -673,3 +673,278 @@ findings:
       — a live conformance check that cannot fail on the change it exists to
       check. Compare against the newest source mtime, or build in TestMain.
 ```
+
+---
+
+## Re-review — 2026-08-24T14:08:16-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 16 — free-form Q&A in the console: input classification + the directory as context |
+| repo | tools |
+| issue file | workshop/issues/000016-console-qa.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 993fccc020f3a003c792154917585f998ecbbe7c..ed9c78ba96d4995097040f1d4ee7c9979df9f5de |
+| command | sdlc milestone-close --issue 16 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-24T14:08:16-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All eight open findings dispose as **addressed**, and I verified them by reversion rather than by reading: reverting the `UserModel` warn (BR-24), `consumed()`'s entry-state seed (BR-41), `recentDeck`'s reversal (BR-42), and each of BR-38's three named cells (`replraw.go:161` `&sess`, `main.go:366`+`:393` `stdout`, plus the piped session and piped interrupt scope) each turn a test red against the **full** `./cmd/define/` suite; a naive hand-written event record reddens BR-40's new hostile-question conformance row; and deleting `repl`'s signal watcher — the mutation BR-30 said left the suite green — now reddens `TestBothInterruptTransportsReachTheSink` and `TestThePipedLoopStillExitsOnASignal`. `go test ./...`, `go test -race ./cmd/define/...`, `go vet ./...` and `go vet -tags conformance ./cmd/define/` are all clean, and BR-38's answer is the table BR-23 asked for two rounds ago rather than a fourth one-off. Nothing here is Critical and nothing blocks the boundary. What keeps it from SHIP is that the *round's own class-fixes stopped at the code*: `doc-overstates-code` reaches its 9th occurrence with three measured stale claims in the atlas paragraph that **owns** the store's contract — including "carries every field", which contradicts the `complete()` generalisation this window shipped and would tell a reader that a wordless `asked` record is torn.
+
+## 1. Strengths
+
+- **The fixes are pinned where the last two rounds' were not.** Ten reversions, ten reds, every one measured against the whole package rather than a `-run` subset. `TestTheAskWiringTable` (`cmd/define/askrun_test.go:664`) is a genuine fixture-driven table — `askModes()` × three facts, 7 applicable cells, 2 explicit skips — and all three of BR-38's green mutations now fail through it.
+- `cmd/define/store/storetest/suite.go:84` — the hostile-question row is the strongest new test in the diff. I replaced `yaml.Marshal` with a naive `fmt.Sprintf` writer and it reddens immediately, alongside `event fields survive the round trip`. That is a real invariant defended, not a round-trip restated.
+- `cmd/define/crlf.go:24` — `entryWasCR` captured before the loop is the correct fix, and `TestCRLFWriterProgressAcrossACarriedCR` fails with `n = 0, want 1` when re-seeded from `false`. The dead `out` parameter is gone rather than silenced.
+- `cmd/define/pty_conformance_test.go:96` — `builtBinary` builds from the tree into the test's own temp space. The staleness class is retired by construction, not by a check that can itself go stale.
+- `cmd/define/askrun_test.go:98` — `deckword00..19` as the deck fixture is BR-30's rule *applied*: a value only the deck can supply, so the assertion cannot be satisfied by `CurrentWord`.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — `atlas/define.md`'s store section: three measured claims this window falsified, in the paragraphs that own them.** *(9th in `doc-overstates-code`.)*
+
+The rule has now been stated four times (BR-9's absolute-names-its-enumeration, BR-28's grep-the-fact shadow-sweep, BR-39's stop-restating). Round 2 fixed BR-39's four named instances and swept nothing else. Measured:
+
+1. `atlas/define.md:210-213` — the normative layout block lists `words/` and `events/`. This window makes `user-model.md` a **third artifact the store reads**, and both the code (`cmd/define/store/yaml.go:37` — *"the third artifact in the directory, beside words/ and events/"*) and README's own block say three. The atlas names it only in M2 prose at `:527`. 2 of 3 restatements swept.
+2. `atlas/define.md:252` — *"A whole record therefore ends with a newline and **carries every field**."* `complete()` (`cmd/define/store/event.go:45`) was generalised in this window from "has a word" to "has a SUBJECT", precisely so a wordless `asked` record is whole. A reader following the atlas concludes the opposite of what the code does, on the rule that decides whether an append-only record is discarded.
+3. `atlas/define.md:576` — *"`storetest.Suite` runs against both, so 'the fake behaves like the real thing' is a test rather than an assumption."* False for the newest interface method: see I2.
+
+**Do not patch these three lines.** The mechanical fix BR-39 asked for and did not get: **a normative block in `atlas/` is a consumer of the code, so a change to what the code enumerates sweeps every block that enumerates it in the same commit.** The enumeration is greppable and small — the artifact list, the record-completeness rule, and the conformance-parity sentence are the three normative blocks in `atlas/define.md`'s store section; resolve each against `yaml.go`, `event.go` and `storetest/suite.go` mechanically, the way PQ-5's line-number sweep was done, rather than by eye.
+
+**I2 — two new pieces of test scaffolding read as protection and cannot fail.** *(7th in `test-asserts-nothing`.)*
+
+BR-24's disposal note stated the rule for the production half — *"failingStore.UserModel, added FOR it, sat at zero call sites; fixing a finding is not disposing of it, the disposal is the test."* The same round then added two more of the same shape. Measured, both instances:
+
+- `cmd/define/capture_test.go:85-90` — `countingCapturer.asked` and `askedWord` are appended at exactly **one** site and read at **zero**. Their comment claims a purpose that does not exist: *"so a test can assert that a question was NOT counted as one — the distinction D2 exists to keep."* No test reads either field. (The D2 distinction *is* asserted, at the store level in `TestAskRecordsAnAskedEvent` — so this is dead scaffolding, not a coverage hole.)
+- `cmd/define/store/storetest/suite.go:38` — *"UserModel is empty before anything writes one"* runs against both implementations, but `Mem.userModel` (`cmd/define/store/mem.go:20`) has **no setter and no writer anywhere in the tree**. For `Mem` the row asserts the only value the type can produce; it is unfalsifiable. This is also **ARCH-MOCK**: `Store` gained `UserModel()` in this window and the fake cannot hold the state the real one holds, so the conformance suite covers 1 of 2 cells for the newest method and the atlas sentence in I1.3 is not true of it.
+
+The rule, which covers both and the BR-24 precedent: **a fixture, field or suite row added to defend a finding must have a read site that can fail in the same commit — and a fake added to a conformance suite must be able to hold the state it is asserting about, or the row is a claim about one implementation wearing two names.** Enumeration: every test helper and fake field added in this window (11 helpers, 3 fields) resolved against its read sites; 12 of 14 have one, these 2 do not.
+
+**I3 — the scoped-ask wiring is now written twice, and only one copy carries the reasoning.** *(2nd in `second-implementation-drifts`.)*
+
+`cmd/define/repl.go:273-279` and `cmd/define/replraw.go:148-168` each contain the identical five-step sequence — derive `qctx`, `interrupts.Set(qcancel)`, call `ask`, `restore()`, `qcancel()` — and the ordering is load-bearing in a way that is silent when wrong: only `replraw.go:163-166` records *why* `restore()` precedes `qcancel()`. The second copy was created by round 2's BR-39 fix, and `replraw.go:140-143` still says a second copy of this wiring would be a second copy of Ctrl-C's meaning (ARCH-DRY). The atlas states the same at `:568`.
+
+State the rule rather than adding a third careful copy: **one function owns the scope, both loops call it** — e.g. `askScoped(ctx, interrupts, run func(context.Context) int) int`, with the writers and the post-answer redraw staying in each loop's own closure (they are what legitimately differ). Same shape as `fail(code)` and `nothingSays`.
+
+**I4 — the Core concepts tables do not describe the entities this boundary's rounds created.** *(3rd in `plan-contract-drift`.)*
+
+BR-34 fixed two rows by eye; the next round created three new discrepancies. Measured against `workshop/plans/000016-console-qa-plan.md`:
+
+- `recentDeck` (`cmd/define/askctx.go:86`) — a **new pure entity with its own table test**, extracted by round 1 in direct response to a Critical. Absent from the Pure-entities table entirely.
+- Integration points names `askCapturer (on Capturer)`; the code's method is `CaptureAsk` (`cmd/define/capture.go:49`). The Revisions entry says so; the table row does not.
+- The `session` bullet lists `current`, `entry`, `turns`; the code also has `words` (`cmd/define/session.go:20`), which is the field an issue Done-when row quantifies over.
+
+3 of 3 entity changes made by the two boundary rounds are unrecorded or wrong. **The rule (BR-34's, mechanised):** at a boundary close, `git diff <base>..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) '` is the enumeration — resolve every new or renamed top-level entity against the Core concepts tables, the way PQ-5 resolved every line-number citation. A row fixed because a finding named it is the instance again.
+
+## 4. Minor findings
+
+- `workshop/plans/000016-console-qa-plan.md` has no `## Revisions` entry for boundary round 2 at all — including the one round 6 explicitly recommended (Task 11's test decomposition, and that "SIGINT through `repl`'s watcher **during a scoped stream**" is still unasserted). Round 2's own forks — `newestFirst` → `recentDeck` relocated to `askctx.go`, `TestThePipedLoopsAskWiring` folded into the table, `replLines` gaining the scope, the pty suite building its own binary — are unrecorded, and the round-1 entry states the rule they violate. *(4th in `plan-bookkeeping`.)*
+- Three consumers of the `*interrupter` seam apply two nil policies: `runEditor` (`replraw.go:56`) and `replLines` (`repl.go:226`) substitute `&interrupter{}`, while `replRaw` (`replraw.go:15`) passes it straight to `readKeys`, which dereferences it on the first Ctrl-C. Not production-reachable — `repl` is `replRaw`'s only caller — but 44 test call sites now exercise a nil configuration production never has. Either the seam is required (tests pass `&interrupter{}`) or optional (one policy, applied at every entry).
+- `cmd/define/replraw.go:132` — *"#16 took this from two copies to four, and M2's streaming adds a fifth."* M2's streaming deliberately does **not** call `lostTerminal`; there are two live call sites and no fifth. Belongs to I1's sweep.
+- `storeCapturer.CaptureAsk`'s `decideCapture(true, opt) == captureNothing` guard (`cmd/define/capture.go:97`) is deletable with the suite green and is unreachable in production — `-raw` refuses in `ask()` before `runAsk`, and `noCapture` yields a `noopCapturer`. Correct and cheap as a mirror of `Capture`'s guard; noted only so it is not mistaken for a tested policy.
+- `TestREPLCancelledContextReturnsPromptly` (`cmd/define/repl_test.go:174`) uses `t.Context().Done()` as its failure arm, so a loop that never returns **hangs to the package timeout** instead of failing — I hit exactly that during the watcher mutation (600s). Its sibling `assertSignalEndsTheLoop` uses a 5s `time.After`; use the same.
+- `gatherAskContext` calls `d.deck.Deck()` on every question, which reads every file under `words/`. Fine beside a network round-trip today; worth remembering when `#10` reuses `askContext`.
+
+## 5. Test coverage notes
+
+- **Verified red under reversion (this round):** the `UserModel` warn; `consumed()`'s entry state; `recentDeck`'s ordering; the editor's session; both one-shot answer destinations; the piped session; the piped interrupt scope; `repl`'s signal watcher; the hostile-question record boundary.
+- **Verified green under mutation (unpinned, all Minor above):** `CaptureAsk`'s opt-out guard; `storeHistory.Load`'s `EventLookedUp` filter (deleting it lets a previous session's questions into Up-arrow recall — no doc claim depends on it, so noted rather than filed).
+- `TestEditorCtrlCMidStreamReturnsToThePrompt/the_signal_transport` sets `d.notifySignals` but `runEditor` never reads it — the row's own goroutine bridges `sigs` to `interrupts.Fire()`. Deleting `repl`'s watcher leaves that row green. It no longer matters for BR-30, because `TestBothInterruptTransportsReachTheSink` and `TestThePipedLoopStillExitsOnASignal` pin the production watcher (both verified red) — but the composed cell "SIGINT → `repl`'s watcher → a *scoped* stream" is still unasserted, which is the Revisions entry round 6 asked for and did not get.
+- `TestPTYCtrlCMidAnswerKeepsTheSession` **skips here** (`no pty available: operation not permitted`), as do the other four PTY rows; `builtBinary` does run, so the binary is current by construction. Its claim rests on the implementor's note.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag (I3).** The positives are real and held: `syncBuf` collapsing `ptyOut`, one `fail(code)` sink, `capture.go` as the only non-test `AppendEvent` caller, one `askInSession` for both routes. The flag is the scoped-ask sequence now existing in both loops — created by the previous round's fix, which is the same way `consumed()` was created by the round before.
+- **ARCH-PURE — pass.** `renderAskPrompt`, `recentTurns` and now `recentDeck` are pure, table-tested and free of IO; `gatherAskContext` is a genuinely thin read step whose only judgement is the `nil` deck check. BR-22's defect and BR-42's shape are both gone: the ordering policy lives beside its sibling and its test needs neither a store nor a socket.
+- **ARCH-PURPOSE — pass on the code, flag on the docs.** Shadow-sweep over "the directory is the context": raw editor, piped loop and one-shot all derive correctly, and all three are now pinned by the same table. The flag is I1 — the fact that changed (`complete()`'s rule, the artifact list) was corrected at its source and its restatements were not swept, which is the same axis: the finding named the instance, the class was the enumeration.
+- **ARCH-MOCK — flag (I2).** `llmtest.Fake` is a wire-level `httptest` server so serialisation, headers and SSE parsing are exercised; `askRig` uses a real YAML store in a temp dir; `deps.notifySignals` seams the signal transport; the pty suite is the live conformance check and now builds what it tests. The flag is `Mem.userModel`: a fake field that no code can set is not modelling the dependency's state, and the conformance suite's parity claim does not hold for the method this window added.
+- **For #17 and #10:** `askContext` is a good stable surface to reuse now that the selection policy is pure. Two things to hand over deliberately — `repl`'s `context.WithoutCancel` means the loop honours **no** caller cancellation (correct while `main` is the only caller; say so at the signature or take an explicit stop channel), and `#17` should add `SetUserModel` plus a non-empty conformance row rather than inherit an inert field.
+
+## 7. Plan revision recommendations
+
+Two `## Revisions` entries are owed, both in the milestone-close commit:
+
+1. **Boundary round 2 (BR-22…BR-43).** The forks it took that the plan does not describe: `newestFirst` became `recentDeck` and moved from `ask.go` to `askctx.go`; `TestThePipedLoopsAskWiring` was folded into `TestTheAskWiringTable`; `replLines` gained the interrupt scope the plan gave only to the raw loop; the pty suite builds its own binary rather than using `bin/define`. Include round 6's outstanding item verbatim — **Task 11 ships one test with two subtests rather than the two the plan named, and the "signal transport" subtest bridges `sigs` itself, so "SIGINT through `repl`'s watcher during a scoped stream" is unasserted.**
+2. **Core concepts, swept by enumeration rather than by row (I4).** Add `recentDeck` to the Pure-entities table; rename the `askCapturer` row to `CaptureAsk`; add `words` to the `session` bullet — and record that the sweep was mechanical, so the next boundary repeats the enumeration and not the eye.
+
+```findings
+dispose:
+  - id: BR-24
+    disposition: addressed
+    note: |
+      Reverting the warn to a discarded error reddens TestAnUnreadableUserModelIsReported; failingStore.UserModel now has a live call site.
+  - id: BR-30
+    disposition: addressed
+    note: |
+      Deleting repl's signal watcher now reddens TestBothInterruptTransportsReachTheSink and TestThePipedLoopStillExitsOnASignal (verified); the subtest still bridges sigs itself, recorded as a plan revision rather than re-raised.
+  - id: BR-38
+    disposition: addressed
+    note: |
+      TestTheAskWiringTable is the table, not a fourth one-off; all three named mutations plus the piped session cell redden against the full suite (verified).
+  - id: BR-39
+    disposition: addressed
+    note: |
+      All four measured claims fixed and the two behavioural gaps pinned by enumeration tests; the surviving stale restatements are elsewhere in atlas and raised as the 9th in the family.
+  - id: BR-40
+    disposition: addressed
+    note: |
+      The hostile-question suite row reddens when AppendEvent is replaced with a naive hand-written record (verified), so it is not vacuous.
+  - id: BR-41
+    disposition: addressed
+    note: |
+      The out parameter is gone and entryWasCR is captured before the loop; re-seeding from false reddens TestCRLFWriterProgressAcrossACarriedCR (verified).
+  - id: BR-42
+    disposition: addressed
+    note: |
+      recentDeck is pure, lives beside recentTurns in askctx.go and is table-tested without a store; un-reversing it reddens three rows (verified).
+  - id: BR-43
+    disposition: addressed
+    note: |
+      builtBinary compiles from the tree per run; bin/define survives only in a comment. Staleness is impossible by construction.
+findings:
+  - id: new
+    severity: Important
+    family: doc-overstates-code
+    title: |
+      Three claims in atlas's store section were falsified by this window, in the paragraphs that own them
+    detail: |
+      This is the 9th finding in this family; the rule has now been stated four
+      times, so do NOT patch the three lines. Measured: (1) atlas/define.md:210-213,
+      the normative artifact block, lists words/ and events/ while the code
+      (store/yaml.go:37) and README both say user-model.md is the third — the atlas
+      names it only in M2 prose at :527, so 2 of 3 restatements were swept;
+      (2) atlas/define.md:252 "a whole record ... carries every field", contradicted
+      by complete()'s generalisation to "has a SUBJECT" (store/event.go:45) that
+      this window shipped precisely so a wordless asked record is whole — a reader
+      following the atlas discards exactly the events it was generalised to keep;
+      (3) atlas/define.md:576 "the fake behaves like the real thing is a test rather
+      than an assumption", false for the newest interface method (see the
+      test-asserts-nothing finding). The mechanical fix: a normative block in atlas
+      is a CONSUMER of the code, so a change to what the code enumerates sweeps
+      every block that enumerates it in the same commit. The enumeration is three
+      blocks in the store section, resolved against yaml.go, event.go and
+      storetest/suite.go mechanically, the way PQ-5 resolved every line citation.
+  - id: new
+    severity: Important
+    family: test-asserts-nothing
+    title: |
+      Two pieces of scaffolding added this round read as protection and cannot fail
+    detail: |
+      This is the 7th finding in this family, and both instances are the shape
+      BR-24's own disposal note named — "the disposal is the test". Measured, 2 of
+      the 14 test helpers and fake fields this window added: (1) capture_test.go:85
+      countingCapturer.asked and askedWord are appended at one site and read at
+      ZERO, while their comment claims "so a test can assert that a question was
+      NOT counted as one"; no test reads either field (the distinction is asserted
+      at the store level instead, so this is dead scaffolding). (2)
+      storetest/suite.go:38 "UserModel is empty before anything writes one" runs
+      against both implementations, but store/mem.go:20 userModel has no setter and
+      no writer anywhere in the tree, so for Mem the row asserts the only value the
+      type can produce — unfalsifiable, and ARCH-MOCK: the fake cannot hold the
+      state the real one holds for the method Store gained in this window. The
+      rule: a fixture, field or suite row added to defend a finding must have a
+      read site that can fail in the same commit, and a fake added to a conformance
+      suite must be able to hold the state the row asserts about.
+  - id: new
+    severity: Important
+    family: second-implementation-drifts
+    title: |
+      The scoped-ask wiring is now written twice, and only one copy carries the ordering rationale
+    detail: |
+      This is the 2nd finding in family second-implementation-drifts, so state the
+      rule rather than fixing one site. repl.go:273-279 and replraw.go:148-168 each
+      contain the identical five-step sequence — derive qctx, interrupts.Set,
+      call ask, restore, qcancel — and the ordering is load-bearing in a way that
+      is silent when wrong: only replraw.go:163-166 records why restore precedes
+      qcancel. The second copy was created by round 2's BR-39 fix, while
+      replraw.go:140-143 and atlas/define.md:568 both still say a second copy of
+      this wiring would be a second copy of Ctrl-C's meaning (ARCH-DRY). The rule,
+      same shape as fail(code) and nothingSays: one function owns the scope and
+      both loops call it — askScoped(ctx, interrupts, run) — with the writers and
+      the post-answer redraw staying in each loop's closure, since those are what
+      legitimately differ.
+  - id: new
+    severity: Important
+    family: plan-contract-drift
+    title: |
+      The Core concepts tables do not describe the entities this boundary's rounds created
+    detail: |
+      This is the 3rd finding in this family; BR-34 fixed two rows by eye and the
+      next round created three more discrepancies, so fix the enumeration rather
+      than the rows. Measured against workshop/plans/000016-console-qa-plan.md:
+      (1) recentDeck (askctx.go:86) is a NEW pure entity with its own table test,
+      extracted by round 1 in answer to a Critical, and is absent from the
+      Pure-entities table entirely; (2) Integration points names "askCapturer (on
+      Capturer)" where the code's method is CaptureAsk (capture.go:49) — the
+      Revisions entry says so, the table does not; (3) the session bullet lists
+      current, entry, turns while the code also has words (session.go:20), the
+      field an issue Done-when row quantifies over. 3 of 3 entity changes made by
+      the two boundary rounds are unrecorded or wrong. The rule, mechanised: at a
+      boundary close the enumeration is
+      git diff base..HEAD -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) ',
+      resolved against the Core concepts tables — a row fixed because a finding
+      named it is the instance again.
+  - id: new
+    severity: Minor
+    family: plan-bookkeeping
+    title: |
+      Boundary round 2 has no Revisions entry, including the one the previous round asked for
+    detail: |
+      This is the 4th finding in family plan-bookkeeping. The round-1 entry states
+      the rule ("a Revisions entry is owed for every fork taken differently from
+      the plan, in the milestone-close commit") and round 2 then took four forks
+      and recorded none: newestFirst became recentDeck and moved to askctx.go,
+      TestThePipedLoopsAskWiring was folded into TestTheAskWiringTable, replLines
+      gained the interrupt scope the plan gave only to the raw loop, and the pty
+      suite now builds its own binary. Round 6's explicit recommendation — Task
+      11's test decomposition, and that "SIGINT through repl's watcher DURING a
+      scoped stream" is still unasserted — is also absent. Checkboxes are 60 of 60,
+      so this is the entry half of the rule only.
+  - id: new
+    severity: Minor
+    family: nil-seam-policy
+    title: |
+      The interrupter seam has three consumers and two nil policies; one of them dereferences
+    detail: |
+      runEditor (replraw.go:56) and replLines (repl.go:226) substitute
+      &interrupter{} when handed nil, while replRaw (replraw.go:15) passes it
+      straight to readKeys, which dereferences it on the first Ctrl-C. Not
+      production-reachable — repl is replRaw's only caller and always supplies one
+      — but 44 test call sites now pass nil, exercising a configuration production
+      never has, and the two policies will diverge again when #17 consumes the
+      seam. Either the seam is required (tests pass &interrupter{}) or optional
+      (one policy applied at every entry that consumes it).
+  - id: new
+    severity: Minor
+    family: dead-branch
+    title: |
+      Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read
+    detail: |
+      This is the 2nd finding in family dead-branch, so these are recorded rather
+      than individually fixed. (1) replraw.go:132 "M2's streaming adds a fifth"
+      predicts a lostTerminal call site that M2 deliberately did not create; two
+      live sites remain — belongs to the atlas sweep above. (2) capture.go:97's
+      decideCapture guard in CaptureAsk is deletable with the suite green and is
+      unreachable in production, since -raw refuses in ask() before runAsk and
+      noCapture yields a noopCapturer; correct as a mirror of Capture's guard, but
+      not a tested policy. (3) repl_test.go:174 uses t.Context().Done() as its
+      failure arm, so a loop that never returns HANGS to the package timeout
+      instead of failing — measured at 600s during a mutation; its sibling
+      assertSignalEndsTheLoop uses a 5s time.After. (4) gatherAskContext calls
+      Deck() on every question, reading every file under words/ to pick twelve —
+      negligible beside a network round-trip today, worth remembering when #10
+      reuses askContext.
+```
