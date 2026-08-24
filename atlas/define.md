@@ -28,6 +28,8 @@ and there is no second consumer yet.
 | `Dictionary` | CoreServices `DCSCopyTextDefinition` (cgo) | `fakeDictionary` over the captured corpus |
 | `AudioSource` | Google's gstatic MP3 CDN | `fakeCDN`, an `httptest` server recording request order |
 | `Player` | `afplay(1)` | `fakePlayer`, recording play count |
+| `deps.newLLM` + `getenv` | `internal/llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
+| `deps.notifySignals` | `signal.Notify` | a channel a test writes to |
 
 Pure: `ParseEntry` (flat text → `Entry`), `Render` (`Entry` → string),
 `AudioCandidates` (word → ordered URLs), `isPronunciation`, `opensBlock`,
@@ -515,6 +517,52 @@ question, and would have made the question the word `#16`'s context claims the
 next one is about. `session` exists for this: it replaced three separate
 declarations of "what is this session holding" (`replLines`, `runEditor`,
 `submitLine`), because the rule would otherwise have been written three times.
+
+**The answer.** A question goes to `internal/llm` with the DIRECTORY as its
+context: the word on screen and its dictionary entry, this session's lookups, the
+recent deck, `user-model.md`, and the session's own earlier exchanges. Three
+consequences fall out, and they are the reason for this shape — a fresh process
+answers as well as a long-running one, the context is inspectable as files rather
+than trapped in memory, and the answer is adaptive for the same reason the
+generated items will be.
+
+`askContext` is that context as DATA and `renderAskPrompt` is pure, which is what
+makes "what did we send" assertable without a socket: the golden snapshots the
+`llm.Request` through the same renderer the transport hashes, so a field added to
+the prompt without thought shows up in its diff. An absent section is **omitted**,
+never rendered empty — an empty `## The learner` says there IS a model and it is
+blank, a different claim, and the one that produces a confident generic answer.
+
+Measured end to end against the live proxy with a two-line `user-model.md` ("B2,
+reads business news, weak on near-synonym distinctions"): the answer came back
+with a *"Business-news nuance"* paragraph and *"Related near-synonyms in your
+range"*, and quoted the NOAD entry back — *"the dictionary definition you looked
+up actually contains both"*. The adaptation is visible in the output, which is
+the only place it counts.
+
+**Ctrl-C stops the answer, not the session — and the swallow lives in the
+READER.** An interrupt that a scope consumed must not ALSO be delivered as a key,
+or the loop applies it as "quit" the moment the answer ends. Having the loop race
+for keys during a stream would have worked too, and would have eaten type-ahead;
+`interrupter.Fire` reports whether a scope took the interrupt, and `readKeys`
+drops it when one did.
+
+That made the key channel's buffering load-bearing: the loop stops reading while
+an answer streams, and on an unbuffered channel the reader blocks on the first
+key typed during it and never decodes the Ctrl-C behind it.
+
+`TestPTYCtrlCMidAnswerKeepsTheSession` is the row that suite's own header said it
+lacked — "the answer stopped AND the next lookup rendered" is an observable only
+a surviving session produces, where "exited cleanly" is produced by the byte
+path, the signal path and a crash alike.
+
+**The log records the question, not the answer.** `#17` wants to know what the
+learner asked about — a strong signal of what they are working on — and every
+consumer of that log is a fold, which answers would bloat for nothing.
+`complete()` generalised from "has a word" to "has a SUBJECT" to allow it: a
+question asked before any lookup has no word, and requiring one would drop
+exactly the events `#17` reads. `at:` stays the last field in the struct, because
+the torn-record rule leans on a cut record losing its timestamp.
 
 **One ask entry, six cells.** A question arrives by two routes — forced (`?…`,
 decided by the parser without a dictionary call) and unforced (a miss that reads

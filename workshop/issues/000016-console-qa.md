@@ -81,13 +81,13 @@ the generated items are.
       not-found.
 - [x] Both escape hatches work, and each is exercised by a test that fails when the
       hatch is removed.
-- [ ] A full Q&A round trip runs against the fake, with recent words and
+- [x] A full Q&A round trip runs against the fake, with recent words and
       `user-model.md` visible in the recorded prompt.
-- [ ] A follow-up question resolves against the previous exchange.
-- [ ] Ctrl-C mid-stream returns to the prompt with the session intact.
-- [ ] With the seam unavailable, a question produces the explanatory message and a
+- [x] A follow-up question resolves against the previous exchange.
+- [x] Ctrl-C mid-stream returns to the prompt with the session intact.
+- [x] With the seam unavailable, a question produces the explanatory message and a
       lookup still works.
-- [ ] Driven through the raw TUI loop, not only the piped loop — a wiring only a
+- [x] Driven through the raw TUI loop, not only the piped loop — a wiring only a
       loop shell supplies must be pinned by a test that drives that loop shell
       (`lessons.md`, define #15).
 
@@ -204,7 +204,7 @@ Design: [`workshop/plans/000016-console-qa-plan.md`](../plans/000016-console-qa-
 - [x] M1 — the console knows a question from a word: `readsAsQuestion`, the `?`
       and `\` hatches on `parseREPLLine`, routing from the NOAD miss branch, and
       the honest "no model configured" message in all three entry modes.
-- [ ] M2 — the answer: `askContext` + pure prompt, `runAsk` streaming through
+- [x] M2 — the answer: `askContext` + pure prompt, `runAsk` streaming through
       `internal/llm`, `Store.UserModel`, the `asked` event, scoped Ctrl-C.
 
 ## Log
@@ -461,3 +461,39 @@ define` both print ``type a word after "\"`` and exit 2.
 
 `workshop/lessons.md` gains the rules these four rounds cost, under *"A rule
 stated in a comment is not a rule the suite enforces"*.
+
+### 2026-08-23 — M2: the answer
+
+Five tasks in plan order. Two things the plan did not predict, both found by
+running the thing rather than by reading it:
+
+- **`ask()` short-circuited the FORCED route.** M1 left the degradation message
+  as an early return, so `?why` printed "no model configured" and never reached
+  the seam — even with one configured. Every M1 test still passed, because M1 had
+  no seam to reach. Found by Task 11's test timing out waiting for a stream that
+  was never requested. The forced/unforced distinction decides what can honestly
+  be SAID when there is no model, never whether the question is asked.
+- **The interrupt swallow belongs in the READER, not the loop.** The first draft
+  had the loop reading keys while the answer streamed, which worked and ate
+  type-ahead: keys typed during a long answer vanished. `interrupter.Fire` now
+  reports whether a scope consumed the interrupt and `readKeys` drops it when one
+  did. That made the key channel's buffering load-bearing — the loop stops
+  reading during a stream, and on an unbuffered channel the reader blocks on the
+  first key typed and never decodes the Ctrl-C behind it.
+
+Verified against the LIVE proxy, not only the fake. With a two-line
+`user-model.md` ("B2, reads business news, weak on near-synonym distinctions"),
+`sycophantic` then *"what is the difference to obsequious?"* returned an answer
+carrying a **"Business-news nuance"** paragraph and **"Related near-synonyms in
+your range"**, and quoting the entry back: *"the dictionary definition you looked
+up actually contains both"*. The follow-up *"give me two more examples"* resolved
+against it — same word, same near-synonym thread. The log held `kind: asked`
+records carrying their questions, and no answers.
+
+**Filed rather than fixed: [tools#19](000019-llm-overloaded.md).** Mid-verification
+the proxy began answering **HTTP 200 with `{"type":"error","type":"overloaded_error"}`**,
+which `classifyStatus` reads as `ErrRequest` — *our* bug, stay loud — where an
+overloaded service is what `ErrUnavailable` exists for. So a transient overload
+reaches the user as a raw JSON blob and exit 1. The defect is in `internal/llm`'s
+taxonomy, which has its own fake and conformance obligations; folding it into this
+close would have changed #11's contract without its own review boundary.

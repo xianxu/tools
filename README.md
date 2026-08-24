@@ -75,6 +75,16 @@ outcome:
 | `?` | ask, even if it is a word — `?why` asks about *why* instead of defining it |
 | `\` | define, even if it reads as a question — `\how so` answers `no dictionary entry` |
 
+The answer is streamed, and **Ctrl-C stops the answer rather than the session** —
+you land back at the prompt with the word you were reading still current.
+
+What the model is told is the directory you are in: the word on screen and its
+dictionary entry, what you have looked up this session, your recent deck,
+`user-model.md` if you keep one, and the earlier questions in this session — so a
+follow-up like `give me two more examples` resolves against the answer before it.
+Nothing is remembered between runs except the files, which means a fresh process
+answers as well as a long-running one and you can read the context with `cat`.
+
 Questions need a model configured (see `--llm-check` below); without one, `define`
 says so and exits `1` rather than looking up a sentence.
 
