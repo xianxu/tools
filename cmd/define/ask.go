@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
+	"github.com/xianxu/tools/internal/llm"
 )
 
 // question is a line on its way to the model, and HOW it got here.
@@ -30,11 +36,10 @@ func mayAsk(opt options) bool { return !opt.raw }
 // ask is the ONE entry into the question path, from all six cells of
 // {forced, unforced} x {one-shot, piped loop, raw editor}.
 //
-// M2 replaces the body with a real request; it must stay the single entry the
-// way this is, so the resolve/gather/stream/record sequence cannot fork. The
-// terminal-mode wiring (the interrupter, the CRLF writer) belongs to the raw
-// loop's closure around this call, not inside it.
-func ask(opt options, errOut io.Writer, q question) int {
+// It refuses, or hands off to runAsk. The terminal-mode wiring — the interrupt
+// sink, the CRLF writer — belongs to the raw loop's closure around the call,
+// not inside it, because it is the only caller that owns a terminal.
+func ask(ctx context.Context, d deps, opt options, sess *session, out, errOut io.Writer, q question) int {
 	if !mayAsk(opt) {
 		// -raw's output contract is an unparsed dictionary entry, and a model
 		// answer is not one — so the two cannot both be honoured. An explicit
@@ -50,10 +55,145 @@ func ask(opt options, errOut io.Writer, q question) int {
 		fmt.Fprintf(errOut, "define: no model configured; cannot answer `%s`\n", truncateQuestion(q.text))
 		return 1
 	}
-	// The message says what happened rather than what failed: the line was
-	// understood as a question, and there is nowhere to send it. Looking a
-	// sentence up instead — the pre-#16 behaviour — reported "not found" for
-	// something that was never a word.
+	return runAsk(ctx, d, opt, sess, q, out, errOut)
+}
+
+// unavailable is what a question gets when there is nowhere to send it.
+//
+// The message says what happened rather than what failed: the line was
+// understood as a question, and no model is configured. Looking a sentence up
+// instead — the pre-#16 behaviour — reported "not found" for something that was
+// never a word.
+func unavailable(errOut io.Writer, q question) int {
+	if q.forced {
+		// Nothing may be claimed about the text: the dictionary was skipped.
+		fmt.Fprintf(errOut, "define: no model configured; cannot answer `%s`\n", truncateQuestion(q.text))
+		return 1
+	}
 	fmt.Fprintf(errOut, "define: no model configured; `%s` is not a word\n", truncateQuestion(q.text))
 	return 1
+}
+
+// maxContextWords bounds each of the two word lists in the prompt. The deck is
+// unbounded on disk and a year of it would crowd out the question.
+const maxContextWords = 12
+
+// runAsk is the one place a question reaches the network.
+//
+// Thin on purpose: resolve, gather, render, stream, record. Every decision it
+// looks like it makes — what context to include, how to phrase it, how many
+// turns to keep — belongs to renderAskPrompt and is unit-tested without a
+// socket (ARCH-PURE).
+func runAsk(ctx context.Context, d deps, opt options, sess *session, q question, out, errOut io.Writer) int {
+	// A nil seam is "no model wired", not a crash: llm.Resolve dereferences the
+	// getenv it is handed, and every test that does not care about the model
+	// leaves these unset. Degrading here is also the honest answer for a build
+	// where the seam was never wired at all.
+	if d.getenv == nil || d.newLLM == nil {
+		return unavailable(errOut, q)
+	}
+	cfg, err := llm.Resolve(d.getenv)
+	if err != nil {
+		return unavailable(errOut, q)
+	}
+
+	req := renderAskPrompt(gatherAskContext(d, sess, q))
+	// parent is kept so the two reasons ctx can be done stay distinguishable —
+	// llmcheck.go draws the same line for the same reason.
+	parent := ctx
+	answer := &strings.Builder{}
+	_, err = d.newLLM(cfg).Stream(ctx, req, func(delta string) {
+		answer.WriteString(delta)
+		fmt.Fprint(out, delta)
+	})
+
+	// Asked FIRST, and asked of the CONTEXT rather than the error. A cancelled
+	// request never reached a status, and mapError classifies statusless
+	// failures as ErrUnavailable — so a decode-the-error version answers the
+	// user's own Ctrl-C with "no model configured". The same distinction
+	// playAnnounced draws for interrupted playback.
+	if parent.Err() != nil {
+		fmt.Fprintln(out) // close the partial line the stream left open
+		return 0
+	}
+	switch {
+	case err == nil:
+	case errors.Is(err, llm.ErrUnavailable):
+		if answer.Len() > 0 {
+			break // the answer arrived; the failure was in the teardown
+		}
+		return unavailable(errOut, q)
+	case errors.Is(err, llm.ErrTruncated):
+		// Partial text is kept: once frames have arrived the service is
+		// demonstrably reachable, and half an answer beats none.
+		fmt.Fprintf(errOut, "define: the answer was cut off\n")
+	default:
+		// ErrRequest and ErrMalformed are OURS — a bad prompt, a bad model, a
+		// body nothing could decode. Loud, per the taxonomy in atlas/llm.md.
+		fmt.Fprintf(errOut, "define: %v\n", err)
+		return 1
+	}
+
+	if answer.Len() > 0 && !strings.HasSuffix(answer.String(), "\n") {
+		fmt.Fprintln(out)
+	}
+	sess.recordExchange(q.text, answer.String())
+	recordAsked(d, sess, q)
+	return 0
+}
+
+// recordAsked appends the question to the event log — the QUESTION and not the
+// answer, because #17 wants to know what the learner asked about and every
+// consumer of that log is a fold.
+//
+// Best-effort and silent: a question that was answered on screen has already
+// been delivered, and a log write that fails is not worth interrupting it for.
+func recordAsked(d deps, sess *session, q question) {
+	if d.deck == nil || d.clock == nil {
+		return
+	}
+	_ = d.deck.AppendEvent(store.ReviewEvent{
+		Word:     sess.current,
+		Kind:     store.EventAsked,
+		Question: q.text,
+		At:       d.clock.Now(),
+	})
+}
+
+// gatherAskContext is the thin IO step: read what the directory holds.
+//
+// It formats nothing and truncates nothing beyond the counts — those are the
+// pure renderer's, which is what keeps "what did we send" assertable from a
+// struct literal.
+func gatherAskContext(d deps, sess *session, q question) askContext {
+	c := askContext{
+		Question:     q.text,
+		CurrentWord:  sess.current,
+		CurrentEntry: sess.entry,
+		SessionWords: lastN(sess.words, maxContextWords),
+		Turns:        sess.turns,
+	}
+	if d.deck == nil {
+		return c
+	}
+	if model, err := d.deck.UserModel(); err == nil {
+		c.UserModel = model
+	}
+	if deck, err := d.deck.Deck(); err == nil {
+		// Deck() is newest-first; the prompt reads better oldest-first, and the
+		// newest are the ones worth keeping.
+		var words []string
+		for _, w := range deck {
+			words = append(words, w.Text)
+		}
+		c.DeckWords = lastN(words, maxContextWords)
+	}
+	return c
+}
+
+func lastN(s []string, n int) []string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
 }

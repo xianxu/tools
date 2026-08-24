@@ -43,6 +43,12 @@ type deps struct {
 	// reason storeCapturer's is: /history's window is a local-DAY computation,
 	// so a test has to be able to stand at a chosen instant in a chosen zone.
 	clock store.Clock
+	// getenv and newLLM are the model seam, split the way llmcheck already splits
+	// it: configuration is resolved from the environment, then a client is built
+	// from it. Injected together because a test that redirects one and not the
+	// other builds a real client pointed at a real proxy.
+	getenv func(string) string
+	newLLM func(llm.Config) llm.Client
 	// notifySignals is the SIGNAL half of the interrupt story — the other half is
 	// the raw key reader's byte. Injected so a test can drive it without raising
 	// a real signal in the test binary, which `go test` would treat as a failure.
@@ -64,6 +70,8 @@ func realDeps() deps {
 		newStore:        openStore,
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
 		notifySignals:   notifySignals,
+		getenv:          os.Getenv,
+		newLLM:          llm.New,
 	}
 }
 
@@ -351,7 +359,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// So is a question. The forced route ("?…") skips the dictionary here
 		// exactly as it does at the prompt.
 		if oneShot.kind == cmdAsk {
-			return ask(opt, stderr, question{text: oneShot.question, forced: true})
+			// A one-shot session holds nothing but this question: the DIRECTORY
+			// is the context, which is what makes a fresh process answer as well
+			// as a long-running one.
+			return ask(ctx, d, opt, &session{}, stdout, stderr, question{text: oneShot.question, forced: true})
 		}
 		// EXHAUSTIVE over what parseREPLLine can return, not "handle the two I
 		// added and let the rest fall through". #16 gave the parser a kind this
@@ -373,7 +384,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			// The unforced route: the dictionary missed and the line reads as a
 			// question. Returning out.code here would exit 0 having printed
 			// nothing, since an ask outcome carries no failure.
-			return ask(opt, stderr, question{text: out.ask})
+			return ask(ctx, d, opt, &session{current: oneShot.word}, stdout, stderr, question{text: out.ask})
 		}
 		return out.code
 	}

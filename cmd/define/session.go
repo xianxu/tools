@@ -16,6 +16,16 @@ type session struct {
 	// follows a lookup can carry it as context without a second dictionary
 	// call (#16 D1).
 	entry string
+	// words is every word looked up in THIS session, oldest first. Distinct from
+	// the deck, which survives the process: "the last few words of this session"
+	// is a different signal from "what this learner has been studying", and the
+	// prompt carries both.
+	words []string
+	// turns is the Q&A transcript, so a follow-up ("give me three more
+	// examples") resolves against the answer it follows. Session-scoped by
+	// design: a fresh process answers just as well, with the directory rather
+	// than a chat history as its context.
+	turns []exchange
 }
 
 // hasCurrent is what parseREPLLine needs to know to read a blank line.
@@ -25,4 +35,16 @@ func (s *session) hasCurrent() bool { return s.current != "" }
 // reach here — see lookupOutcome.
 func (s *session) sawLookup(word string, out lookupOutcome) {
 	s.current, s.entry = word, out.entry
+	s.words = append(s.words, word)
+}
+
+// recordExchange remembers one question and its answer for the next follow-up.
+// An empty answer is not recorded: a question that produced nothing gives a
+// follow-up nothing to resolve against, and "Q: … A: " in the prompt reads as a
+// refusal the model then imitates.
+func (s *session) recordExchange(q, answer string) {
+	if answer == "" {
+		return
+	}
+	s.turns = append(s.turns, exchange{Question: q, Answer: answer})
 }

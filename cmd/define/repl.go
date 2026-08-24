@@ -258,7 +258,7 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 	// reads as a question). They differ only in whether the dictionary was
 	// consulted, so wiring them separately would mean maintaining the answer
 	// path twice (ARCH-DRY).
-	askHere := func(q question) { fail(ask(opt, stderr, q)) }
+	askHere := func(q question) { fail(ask(ctx, d, opt, &sess, stdout, stderr, q)) }
 
 	for {
 		if showPrompt {

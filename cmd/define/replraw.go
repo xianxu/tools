@@ -140,7 +140,12 @@ func runEditor(ctx context.Context, keys <-chan Key, d deps, opt options,
 	// routes' output at different heights, which is exactly the divergence one
 	// shared closure exists to prevent.
 	askInSession := func(q question) error {
-		err := cooked(func() { ask(opt, stderr, q) })
+		// Streamed in RAW mode through crlfWriter rather than under cooked():
+		// deltas arrive continuously and flapping the terminal per delta is not
+		// a thing, and staying raw is also what keeps the key reader seeing
+		// bytes — which is what lets Ctrl-C mean something narrower here (D6).
+		ask(ctx, d, opt, &sess, &crlfWriter{w: stdout}, &crlfWriter{w: stderr}, q)
+		var err error
 		if err != nil {
 			return err
 		}

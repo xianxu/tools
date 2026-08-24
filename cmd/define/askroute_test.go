@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 )
@@ -353,18 +354,18 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 			runEditor(t.Context(), scriptKeys(tc.keys), rig.deps, opt, cooked, finish, &out, &errb)
 
 			assertNoBareNewline(t, out.String(), "stdout")
-			if tc.wantErase {
-				// Written in RAW mode, so it carries its own escapes.
-				if !strings.Contains(errb.String(), eraseLine) {
-					t.Errorf("no eraseLine: the message is appended to the line the user typed: %q", errb.String())
-				}
-				assertNoBareNewline(t, errb.String(), "stderr")
-				return
+			// EVERY message this loop writes is written in RAW mode, so every
+			// one carries its own carriage returns. The ask path is raw for a
+			// reason Task 11 depends on: staying raw is what keeps the key
+			// reader seeing bytes, so Ctrl-C can cancel a stream rather than the
+			// session (#16 D6). Running it under cooked() would be invisible
+			// here without this assertion.
+			assertNoBareNewline(t, errb.String(), "stderr")
+			if duringCooked.Len() != 0 {
+				t.Errorf("a message was written inside cooked mode; the stream must stay raw: %q", duringCooked.String())
 			}
-			// Written in COOKED mode, which is what lets it use a bare "\n".
-			if !strings.Contains(duringCooked.String(), "define:") {
-				t.Errorf("the message was not written inside cooked mode; cooked saw %q, stderr = %q",
-					duringCooked.String(), errb.String())
+			if tc.wantErase && !strings.Contains(errb.String(), eraseLine) {
+				t.Errorf("no eraseLine: the message is appended to the line the user typed: %q", errb.String())
 			}
 		})
 	}
@@ -456,7 +457,9 @@ func TestWhatTheAskMessagesSay(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var errb bytes.Buffer
-			code := ask(options{}, &errb, tc.q)
+			// No model configured (testDeps supplies no getenv), which is the
+			// degradation path these messages belong to.
+			code := ask(t.Context(), testDeps(t), options{}, &session{}, io.Discard, &errb, tc.q)
 			assertMessage(t, code, 1, errb.String(), tc.wantErr)
 		})
 	}
