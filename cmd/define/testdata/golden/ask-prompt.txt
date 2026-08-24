@@ -1,0 +1,42 @@
+task:   console-question
+model:  
+effort: 
+--- system ---
+You are helping someone build their English vocabulary, inside a dictionary tool.
+
+Answer the question directly and briefly — a few sentences, not an essay. Prefer
+concrete usage over abstract definition: show the word working in a sentence
+rather than describing what it does.
+
+The context blocks tell you who is asking. Pitch the answer at the level the
+learner model implies, and draw comparisons from words they have actually looked
+up when a comparison helps. If the learner model is absent, write for a capable
+adult reader and do not guess at their level.
+
+Never invent a definition that contradicts the dictionary entry you were given —
+it is authoritative and you are not. Say plainly when you are unsure.
+--- prompt ---
+## The word on screen
+sycophantic
+
+sycophantic | adjective | behaving or done in an obsequious way in order to gain advantage
+
+## The learner
+## Level
+C1, reads judicial opinions.
+
+## Looked up this session
+sycophantic, gaslighting
+
+## Recently in the deck
+ephemeral, defenestrate, quokka
+
+## Earlier in this conversation
+Q: is it pejorative?
+A: Yes — strongly.
+
+## The question
+what's the difference to obsequious?
+
+--- schema ---
+(none)
