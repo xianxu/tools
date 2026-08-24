@@ -552,3 +552,60 @@ Fixed, all mutation-verified individually:
 - Minors: `crlf.Write` reported 0 on a short write, `askInSession`'s error branch
   was unreachable, `keysFor` was dead, `bytesReader` was `strings.NewReader`
   renamed, and `DEFINE_NO_CAPTURE` silently un-adapts answers (documented).
+
+### 2026-08-23 — M2 round 2: the fixes that were right and unpinned
+
+Verdict improved to FIX-THEN-SHIP, both Criticals disposed, five findings open —
+and the shape of them is the lesson. Two were marked **not-addressed** on code I
+had genuinely fixed:
+
+- **BR-24** — the `UserModel` warn was *"correct and reachable, but no test fails
+  without it"*, and `failingStore.UserModel`, which I added FOR it, sat at zero
+  call sites. Fixing a finding is not disposing of it; the disposal is the test.
+- **BR-30** — three of its four claims were pinned, and the fourth was my own
+  test naming a transport it never touched: the "signal transport" row called
+  `interrupts.Fire()`, which is the sink itself, so deleting `repl`'s signal
+  watcher left it green. It now drives `d.notifySignals`.
+
+Three findings were created by the previous round's fixes — worth stating
+plainly, since "I fixed it" was the claim each time:
+
+- **`consumed()` ignored the `out` it was handed** and re-seeded the translation
+  from `false`, getting exactly the case `lastWasCR` exists for backwards.
+- **`newestFirst` returned oldest-first**, sat in the IO shell, and was reachable
+  only through a real store and a wire fake — the shape BR-22's defect hid in.
+  Now `recentDeck`, beside `recentTurns`, table-tested.
+- **The pty suite ran whatever `bin/define` was on disk**, with no staleness
+  check. Measured: the binary was 34 minutes older than the commit under test, so
+  a conformance run would have validated pre-fix code and reported ok. It builds
+  from the tree now — verified by mutating source and watching it fail with no
+  rebuild step.
+
+**BR-39 found a real behavioural gap in a claim I wrote.** README said "Ctrl-C
+stops the answer rather than the session"; measured, that was true in ONE of the
+two loops. `replLines` passed its own ctx, which the default sink cancels, so an
+interrupt during an answer ended the session there. The interrupt sink is
+supposed to be the single answer to what Ctrl-C means — a loop that streams an
+answer and does not scope it is a loop where the sink is not the answer after
+all. Both loops scope it now.
+
+**BR-39 also caught a claim that was true in 1 of 4 cells**: "every question is
+recorded". Measured 0 events for an errored ask, an unwired seam, and a cancelled
+one. Rather than qualifying the sentence away, the question is now recorded on
+every path where a request was actually SENT — a cancelled or refused question is
+still what the learner wanted to know — and NOT when no model was ever reached.
+Four cells, four assertions.
+
+**BR-40 is the one I would not have thought to write.** `question:` is the first
+free-form user text this log has ever held; every value before it was a single
+dictionary headword. The reader's record boundary is a literal top-level `- `,
+and nothing pinned that user text cannot reach column 0. The reviewer verified
+today's behaviour is correct — including a question whose text is a complete
+forged event record — and filed it anyway, because a regression there corrupts an
+append-only log irreversibly. The conformance suite now round-trips five
+adversarial questions against both store implementations.
+
+**BR-38 was refused a third round of one-off tests**, correctly: *"write the table
+as one fixture-driven test whose rows ARE the cells"*. `TestTheAskWiringTable` is
+{one-shot, piped, editor} × {answer destination, session carried, interrupt
+scoped}, and all three previously-green mutations now redden.

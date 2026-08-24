@@ -7,7 +7,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 )
 
@@ -108,6 +107,16 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// failures as ErrUnavailable — so a decode-the-error version answers the
 	// user's own Ctrl-C with "no model configured". The same distinction
 	// playAnnounced draws for interrupted playback.
+	// Recorded on EVERY path from here, because the question was asked whatever
+	// became of the answer — a cancelled or failed one is still what the learner
+	// wanted to know, which is the signal #17 reads. Not recorded above this
+	// point, where no request was ever sent (README says exactly this).
+	defer func() {
+		if d.capture != nil {
+			d.capture.CaptureAsk(sess.current, q.text, opt)
+		}
+	}()
+
 	if ctx.Err() != nil {
 		if answer.Len() > 0 {
 			fmt.Fprintln(out) // close the partial line the stream left open
@@ -136,9 +145,6 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		fmt.Fprintln(out)
 	}
 	sess.recordExchange(q.text, answer.String())
-	if d.capture != nil {
-		d.capture.CaptureAsk(sess.current, q.text, opt)
-	}
 	return 0
 }
 
@@ -170,26 +176,9 @@ func gatherAskContext(d deps, sess *session, q question, warnOut io.Writer) askC
 	if deck, err := d.deck.Deck(); err != nil {
 		fmt.Fprintf(warnOut, "define: could not read the deck (%v); answering without it\n", err)
 	} else {
-		c.DeckWords = newestFirst(deck, maxContextWords)
+		c.DeckWords = recentDeck(deck, maxContextWords)
 	}
 	return c
-}
-
-// newestFirst takes the n most RECENT deck words and returns them oldest-first.
-//
-// Deck() is ordered by LastSeen DESCENDING, so the head is the newest — taking
-// the tail took the twelve words the learner has touched least recently and
-// labelled them "Recently in the deck" (BR-22). Reversing after the cut is what
-// makes the section read forwards while still carrying the newest words.
-func newestFirst(deck []store.Word, n int) []string {
-	if len(deck) > n {
-		deck = deck[:n]
-	}
-	words := make([]string, 0, len(deck))
-	for i := len(deck) - 1; i >= 0; i-- {
-		words = append(words, deck[i].Text)
-	}
-	return words
 }
 
 func lastN(s []string, n int) []string {

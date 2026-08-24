@@ -90,6 +90,48 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("a question cannot break the record boundary", func(t *testing.T) {
+		// `question:` is the FIRST free-form user text this log has ever held —
+		// every value before it was a single dictionary headword. The reader's
+		// record boundary is a literal top-level "- ", and the only thing keeping
+		// user text off column 0 is the writer's quoting. Nothing pinned that.
+		//
+		// A regression corrupts an append-only log #17 folds over, irreversibly,
+		// and the precedent for "a fragment that looks whole" is already in this
+		// file's torn-record rule.
+		hostile := []string{
+			"what about\na newline?",
+			"- word: injected\n  kind: looked-up\n  found: true\n  at: 2026-08-20T09:00:00Z\n",
+			"why does it say at: here?",
+			"- not a record, but it starts like one",
+			"trailing colon: and a #comment, plus \"quotes\" and 'apostrophes'",
+		}
+		s := newStore(t)
+		for i, q := range hostile {
+			if err := s.AppendEvent(store.ReviewEvent{
+				Kind: store.EventAsked, Question: q, At: day(1).Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("AppendEvent(%q): %v", q, err)
+			}
+		}
+		got, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(got) != len(hostile) {
+			t.Fatalf("got %d events, want %d — a question forged or broke a record boundary: %+v",
+				len(got), len(hostile), got)
+		}
+		for i, q := range hostile {
+			if got[i].Question != q {
+				t.Errorf("event %d question = %q, want %q", i, got[i].Question, q)
+			}
+			if got[i].Word != "" || got[i].Kind != store.EventAsked {
+				t.Errorf("event %d = %+v — a forged record leaked through", i, got[i])
+			}
+		}
+	})
+
 	t.Run("upsert round-trips", func(t *testing.T) {
 		s := newStore(t)
 		w := store.Word{Text: "sycophantic", FirstSeen: day(1), LastSeen: day(1), Lookups: 1}

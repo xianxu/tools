@@ -37,12 +37,14 @@ package main
 //	go test -tags conformance -run PTY ./cmd/define/
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,13 +62,7 @@ func startDefine(t *testing.T, args ...string) (*exec.Cmd, *os.File) {
 // binary's model seam at a fake served from this process.
 func startDefineWithEnv(t *testing.T, env []string, args ...string) (*exec.Cmd, *os.File) {
 	t.Helper()
-	bin, err := filepath.Abs("../../bin/define")
-	if err != nil {
-		t.Fatalf("resolving the binary: %v", err)
-	}
-	if _, err := os.Stat(bin); err != nil {
-		t.Skipf("run `make build` first: %v", err)
-	}
+	bin := builtBinary(t)
 	cmd := exec.Command(bin, args...)
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
@@ -82,6 +78,45 @@ func startDefineWithEnv(t *testing.T, env []string, args ...string) (*exec.Cmd, 
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); f.Close() })
 	return cmd, f
+}
+
+// builtBinary is the binary these tests drive, BUILT FROM THE SOURCE IN THE TREE.
+//
+// It used to be whatever `../../bin/define` happened to be, with a skip if it
+// was absent and no check that it was current — so a conformance run could
+// validate pre-fix code and report ok. Measured once: the binary on disk was 34
+// minutes older than the fix commit under test. A live conformance check that
+// cannot fail on the change it exists to check is worse than no check, because
+// it reads as evidence.
+//
+// Built once per run into the test's own temp space, so it cannot be stale and
+// cannot collide with `make build`'s output.
+var builtBinaryOnce struct {
+	sync.Once
+	path string
+	err  error
+}
+
+func builtBinary(t *testing.T) string {
+	t.Helper()
+	builtBinaryOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "define-pty")
+		if err != nil {
+			builtBinaryOnce.err = err
+			return
+		}
+		path := filepath.Join(dir, "define")
+		out, err := exec.Command("go", "build", "-o", path, ".").CombinedOutput()
+		if err != nil {
+			builtBinaryOnce.err = fmt.Errorf("building define: %v\n%s", err, out)
+			return
+		}
+		builtBinaryOnce.path = path
+	})
+	if builtBinaryOnce.err != nil {
+		t.Fatalf("%v", builtBinaryOnce.err)
+	}
+	return builtBinaryOnce.path
 }
 
 // ptyOut collects everything the pty emits in the background.

@@ -409,3 +409,267 @@ findings:
       underlying write; and ask.go:114 prints a newline on cancel even when no
       delta ever arrived.
 ```
+
+---
+
+## Re-review — 2026-08-23T23:40:16-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 16 — free-form Q&A in the console: input classification + the directory as context |
+| repo | tools |
+| issue file | workshop/issues/000016-console-qa.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 993fccc020f3a003c792154917585f998ecbbe7c..99dfd89ef58d48eda3f7780a45e59df0445281dc |
+| command | sdlc milestone-close --issue 16 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-23T23:40:16-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 5's two Criticals are genuinely dead: I reverted each fix in a scratch worktree and both tests went red (`TestTheDeckSectionCarriesTheNewestWords`, `TestOneShotQuestionHasNoCurrentWord`), and the same held for eight more claimed fixes I mutation-checked — the piped loop's two wirings, the key-channel buffering, `SessionWords`, the empty-answer guard, the shared-wiring interrupt scope, and both halves of `assertCRLFTerminated`. `go test ./...` and `go test -race ./cmd/define/...` are both green (the base was race-clean and HEAD now is too), `go vet ./...` and `go vet -tags conformance ./cmd/define/` are clean, and the plan is fully ticked with a Revisions entry. This is the strongest round of the issue. What keeps it from SHIP is that the round fixed the *cells the review named* rather than the *table the review asked for*: with the full suite green I can still hand the raw editor's ask a fresh `&session{}` and send both one-shot answers to `io.Discard`. Underneath that, `doc-overstates-code` reaches its 8th occurrence with four measured instances, one of them a comment that contradicts the code five lines below it inside the function this milestone rewrote.
+
+## 1. Strengths
+
+- **The fixes are pinned, not asserted.** Ten reversions, ten reds. `cmd/define/askrun_test.go:98` uses `deckword00..19` — a fixture only the deck can supply — which is the BR-30 rule actually applied rather than restated.
+- `cmd/define/syncbuf_test.go:13` folds `ptyOut` onto one mutex-guarded buffer instead of adding a third copy (`pty_conformance_test.go:91`). ARCH-DRY done right, and it turned a real `-race` failure green.
+- `cmd/define/capture.go:49` — `CaptureAsk` on `Capturer`. `AppendEvent` now has exactly one non-test caller file (`capture.go`), so `deps`' "capture is the only thing that RECORDS" comment is true again.
+- `cmd/define/askroute_test.go:366` — `assertCRLFTerminated` counts terminators instead of excusing one. Both mutations the old helper survived now redden it.
+- **The store is robust against the new free-form field.** I round-tripped five adversarial questions through `store.YAML` — including one whose text is a complete forged `- word: injected` record — and all five survived intact: `yaml.Marshal` emits an indented block scalar, so `splitRecords` (`yaml.go:300`) never sees a top-level `- `. Correct by construction, just unasserted (finding I3).
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — three cells of the ask-wiring table still survive their mutation, full suite green.** *(3rd in family `loop-shell-branch-untested`.)*
+
+BR-23 and BR-29 both asked for the enumeration to be written as a table with each cell asserted. Three targeted tests were added instead. Measured against the **whole** `./cmd/define/` suite, not a `-run` subset:
+
+| fact \ mode | one-shot | piped | raw editor |
+|---|---|---|---|
+| which session the ask carries | ✓ `TestOneShotQuestionHasNoCurrentWord` | ✓ `TestThePipedLoopsAskWiring` | **GREEN** |
+| where the answer is written | **GREEN** (both routes) | ✓ | ✓ |
+| whether the interrupt is scoped | n/a | see I2 | ✓ |
+
+- `cmd/define/replraw.go:161` — `&sess` → `&session{}`: `ok github.com/xianxu/tools/cmd/define 28.160s`. The raw editor is the primary UI, and "a follow-up resolves against the previous exchange" is a Done-when row.
+- `cmd/define/main.go:366` and `main.go:393` — `stdout` → `io.Discard` on both one-shot routes, together: `ok … 28.391s`. `define "what's the difference to obsequious?"` printing nothing at all is caught by no test.
+
+Do NOT add three more one-off tests. The deliverable is the table above, written once as a fixture-driven test whose rows are the cells — the repo already has the working precedent in `TestRawNeverAsks`, which names its six cells and covers every one.
+
+**I2 — `doc-overstates-code`, 8th occurrence: four measured instances, three of them created by this window.**
+
+The rule has now been stated three times (BR-9's absolute-names-its-enumeration, BR-28's grep-the-fact shadow-sweep) and keeps recurring, so the escalation has to be mechanical rather than another sentence. Measured:
+
+1. `cmd/define/replraw.go:143` — *"It runs COOKED for the same reason a command does"*, five lines above `replraw.go:157`'s *"Streamed in RAW mode … rather than under `cooked()`"* and the code that does exactly that. The comment block contradicts itself; commit `1f28d54` rewrote the body and left the header.
+2. `atlas/define.md:574` — *"all six go through one `ask(opt options, errOut io.Writer, q question)`"*. That signature became false in this window (`ask.go:41` is now seven parameters). Enumeration is greppable: 3 quoted Go signatures in `atlas/define.md`, 1 stale, and it is the one this diff changed.
+3. `README.md:78` — *"Ctrl-C stops the answer rather than the session"*, stated unconditionally. Measured by driving `repl` with the injected signal transport, stdin a tty and stdout redirected: **the line loop ends the session** (`replLines`' `askHere` at `repl.go:261` passes the loop's own `ctx`, which the default sink cancels). True in 1 of 2 interactive loops.
+4. `README.md:97` — *"**Every question you ask is recorded too, by its text**"*. Measured: an errored ask (HTTP 400) → **0 events**; an unwired seam → **0 events**; a cancelled ask → **0 events and 0 turns**. True in 1 of 4 outcome cells.
+
+The mechanical fix that retires the class: **atlas and README stop restating a signature or an absolute** — name the function and let the code be the source; and every absolute that survives gets the `TestRawNeverAsks` treatment (its enumeration named in the test, one row per cell). Instances 3 and 4 are each one row.
+
+**I3 — the event log gained its first user-controlled free-form field and nothing pins the format invariant.** `cmd/define/store/storetest/suite.go:52` round-trips one plain question. Until #16 every value written to `events/*.yaml` was a single dictionary headword; `question:` is now arbitrary text the user typed. The reader's record boundary is a literal top-level `- ` (`yaml.go:307`), and the only thing keeping user text off column 0 is that `yaml.Marshal` indents block scalars. I verified today's behaviour is correct (see Strengths) — but that invariant is defended by nothing, and a regression corrupts an append-only log #17 folds over, irreversibly. BR-4's precedent is exactly this shape: an event that looked whole was silently discarded at read time. Add a suite row with a question containing a newline, a leading `- `, and an embedded `at:`, asserting count and content survive.
+
+## 4. Minor findings
+
+- `cmd/define/crlf.go:41` — `consumed(p, out, n)` never reads `out`, and re-derives the translation with `lastWasCR := false` instead of the writer's carried state. Split `"a\r"` then `"\nb"` with a 1-byte short write and it reports 0 consumed where 1 was written — the duplicate-on-retry the fix exists to prevent, surviving in the one case `lastWasCR` exists for. `TestCRLFWriterReportsProgressOnAShortWrite` covers only the fresh-state cell. Derive from `out`, or save the entry-state flag.
+- `cmd/define/ask.go:176` — `newestFirst` returns oldest-first, and lives in the IO shell rather than beside `recentTurns` in `askctx.go`; its only test needs a real YAML store plus a wire fake to exercise a pure ordering decision. (2nd in `policy-in-io-shell`; BR-22's defect itself is gone.)
+- `cmd/define/pty_conformance_test.go:63` — `startDefine` skips when `bin/define` is absent but never checks it is current. The binary on disk is timestamped 22:45, **34 minutes before** the round-5 fix commit, so a `-tags conformance` run right now validates pre-fix code and reports `ok`. Compare against the source mtime, or build in `TestMain`.
+- `cmd/define/ask.go:113` — a Ctrl-C'd partial answer is printed to the user but dropped from `sess.turns`, so the follow-up the feature is built for cannot refer to what was just read.
+- `cmd/define/main.go:366` / `main.go:393` — the two one-shot `ask(...)` call sites differ only in `forced` and could be one expression.
+
+## 5. Test coverage notes
+
+- **Verified red under reversion:** the deck ordering; the one-shot session; `CaptureAsk`; both piped-loop wirings; the key-channel buffering (fails via timeout, ~35s); `SessionWords`; the empty-answer guard; the shared-wiring interrupt scope; `assertCRLFTerminated` for both the unwrapped-stderr and the bare-`\n` mutation; `YAML.UserModel`'s file read.
+- **Unpinned:** the three cells in I1; the `UserModel` warn (I1 of round 5 — see the disposition); the format invariant in I3.
+- **`store.Mem.userModel` still has zero setters** (`mem.go:19`), so the conformance suite can only assert the empty case for the fake, while YAML's non-empty read is pinned elsewhere. ARCH-MOCK: the fake does not model the state the real one holds. #17 should add `SetUserModel` and a non-empty suite row rather than inherit a field that does nothing.
+- `TestPTYCtrlCMidAnswerKeepsTheSession` **skips here** (`no pty available: operation not permitted`), so its claim rests on the implementor's note — and see the staleness Minor above.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one flag.** `syncBuf` collapsing `ptyOut`, one `askInSession`, one `fail(code)` sink, one `AppendEvent` caller: all real. Flagged: `consumed()` is a second implementation of a translation the first one already materialised into `out`, and the two copies already disagree.
+- **ARCH-PURE — pass, one note.** `renderAskPrompt` and `recentTurns` are pure and table-tested; `gatherAskContext` is a genuinely thin IO step. `newestFirst` is now a named pure function — the defect is gone — but its location and its store-backed-only test keep the smell BR-22 named.
+- **ARCH-PURPOSE — flag.** Shadow-sweep over the consumers of "the directory is the context": raw editor, piped loop and one-shot all derive correctly today. The flag is the principle's own second clause — *a finding names one instance; the deliverable is the CLASS.* BR-23 and BR-29 each named the table; the round fixed the cells and skipped the table, and 3 of 7 applicable cells are still green under mutation. `family:` repeating across rounds is the ledger reporting the enumeration was never written.
+- **ARCH-MOCK — pass, two notes.** `llmtest.Fake` is a wire-level httptest server (so serialisation, headers and SSE parsing are exercised), `askRig` uses a real YAML store in a temp dir, `deps.notifySignals` seams the signal transport, and the pty suite is the live conformance check. Notes: `Mem.userModel`'s missing setter, and the pty suite's unversioned binary.
+- **For upcoming work (#17, #10):** `askContext` is a good stable surface to reuse — move `newestFirst` beside `recentTurns` before a second consumer copies its location. And `repl`'s `context.WithoutCancel` means the loop honours no caller cancellation at all; correct while `main` is the only caller, but the next caller will not expect it — say so at the signature or take an explicit stop channel.
+
+## 7. Plan revision recommendations
+
+The plan now matches the code on the two entity rows and carries an M2 departures entry. One item from round 5's §7 was not recorded — add it to `## Revisions`:
+
+> **Task 11's test decomposition changed.** The plan specified `TestEditorCtrlCMidStreamReturnsToThePrompt` *and* `TestEditorSignalMidStreamReturnsToThePrompt`; the code ships one test with two subtests, and the "signal transport" subtest calls `interrupter.Fire()` directly (`askrun_test.go:377`) rather than driving `d.notifySignals` through `repl`'s watcher. Record that the cell "SIGINT through `repl`'s watcher **during a scoped stream**" is therefore still unasserted — `TestBothInterruptTransportsReachTheSink` covers the unscoped session only.
+
+```findings
+dispose:
+  - id: BR-22
+    disposition: addressed
+    note: |
+      newestFirst takes the head and reverses; reverting to lastN reddens TestTheDeckSectionCarriesTheNewestWords (verified).
+  - id: BR-23
+    disposition: addressed
+    note: |
+      main.go:393 passes &session{}; restoring current: oneShot.word reddens TestOneShotQuestionHasNoCurrentWord (verified).
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      The warn is correct and reachable, but no test fails without it — and failingStore.UserModel, added by this same diff, is at zero call sites.
+  - id: BR-25
+    disposition: addressed
+    note: |
+      go test -race ./cmd/define/... is ok at HEAD; syncBuf is used in all three places and ptyOut folds onto it.
+  - id: BR-26
+    disposition: addressed
+    note: |
+      capture.go is the only non-test AppendEvent caller; a no-op CaptureAsk reddens three tests (verified). Plan Revisions records the departure.
+  - id: BR-27
+    disposition: addressed
+    note: |
+      README:99-103 names events kinds, user-model.md and "answers are NOT stored"; pinned by TestTheEventLogHoldsQuestionsAndNotAnswers.
+  - id: BR-28
+    disposition: addressed
+    note: |
+      atlas/define.md:182-191 rewritten; the surviving NotifyContext mention at :676 is about the one-shot path and is still true. The family recurs elsewhere — raised separately.
+  - id: BR-29
+    disposition: addressed
+    note: |
+      Both repl.go:261 mutations now redden TestThePipedLoopsAskWiring (verified). The sibling cells the finding did not name are raised separately.
+  - id: BR-30
+    disposition: not-addressed
+    note: |
+      Four of the five named items are fixed and mutation-verified red; the fifth is untouched — the "signal transport" subtest still calls interrupts.Fire() directly and never reaches d.notifySignals, and no Revisions entry records it.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      assertCRLFTerminated counts terminators; both the unwrapped-stderr and the bare-newline mutation now redden TestRawLoopMessagePlacement (verified).
+  - id: BR-32
+    disposition: addressed
+    note: |
+      60 of 60 plan checkboxes ticked, and a "M2's design departures, and the M1 rounds" Revisions entry now exists.
+  - id: BR-33
+    disposition: addressed
+    note: |
+      The parent alias is gone; runAsk asks ctx.Err() directly.
+  - id: BR-34
+    disposition: addressed
+    note: |
+      Core concepts now cites askctx.go for exchange and interrupt.go for interrupter.
+  - id: BR-35
+    disposition: addressed
+    note: |
+      Neither bytesReader nor keysFor appears anywhere in cmd/define.
+  - id: BR-36
+    disposition: addressed
+    note: |
+      README:118-120 documents that DEFINE_NO_CAPTURE also suppresses reading the deck and user-model.md.
+  - id: BR-37
+    disposition: addressed
+    note: |
+      askInSession returns nothing and lostTerminal still has two live call sites; crlf reports caller-unit progress; the cancel newline is guarded by answer.Len(). The new consumed() helper has its own defect, raised separately.
+findings:
+  - id: new
+    severity: Important
+    family: loop-shell-branch-untested
+    title: |
+      Three cells of the ask-wiring table still survive their mutation with the full suite green
+    detail: |
+      This is the 3rd finding in family loop-shell-branch-untested, and the 2nd
+      round in which the enumeration BR-23 wrote out was answered with targeted
+      tests instead of the table. Measured against the whole ./cmd/define/ suite,
+      not a -run subset: replraw.go:161 &sess -> &session{} leaves it green (ok,
+      28.160s) — the raw editor is the primary UI and multi-turn is a Done-when
+      row; main.go:366 and main.go:393 stdout -> io.Discard, applied together,
+      leave it green (ok, 28.391s) — `define "what is the difference to
+      obsequious?"` printing nothing is caught by nothing. Coverage of the
+      {one-shot, piped, editor} x {which session, answer destination, interrupt
+      scope} table is 4 of 7 applicable cells. Do NOT add three more one-off
+      tests: write the table as one fixture-driven test whose rows ARE the cells,
+      the way TestRawNeverAsks already does for its six.
+  - id: new
+    severity: Important
+    family: doc-overstates-code
+    title: |
+      Four measured doc claims contradict the code, three of them created by this window
+    detail: |
+      This is the 8th finding in this family; the rule has been stated three
+      times (BR-9's absolute-names-its-enumeration, BR-28's shadow-sweep) and
+      keeps recurring, so the escalation must be mechanical. Measured:
+      (1) replraw.go:143 "It runs COOKED for the same reason a command does",
+      five lines above the code and comment saying it streams RAW through
+      crlfWriter; (2) atlas/define.md:574 restates ask's pre-M2 signature `ask(opt
+      options, errOut io.Writer, q question)` — 1 of the 3 quoted Go signatures in
+      that file is stale and it is the one this diff changed; (3) README:78
+      "Ctrl-C stops the answer rather than the session" — measured through the
+      injected signal transport with stdin a tty and stdout redirected, the LINE
+      loop ends the session, because replLines' askHere (repl.go:261) passes the
+      loop's own ctx that the default sink cancels; true in 1 of 2 interactive
+      loops; (4) README:97 "Every question you ask is recorded too, by its text" —
+      measured 0 events for an errored (400) ask, 0 for an unwired seam, and 0
+      events plus 0 turns for a cancelled ask; true in 1 of 4 outcome cells. The
+      mechanical fix: atlas and README stop restating signatures and unqualified
+      absolutes, and each surviving absolute gets a named-enumeration row test
+      like TestRawNeverAsks.
+  - id: new
+    severity: Important
+    family: user-text-in-record-format
+    title: |
+      The event log's first free-form user field has no test defending the record-boundary invariant
+    detail: |
+      Until this window every value written to events/*.yaml was a single
+      dictionary headword; `question:` is now arbitrary text the user typed. The
+      reader's record boundary is a literal top-level "- " (yaml.go:307) and the
+      only thing keeping user text off column 0 is that yaml.Marshal indents
+      block scalars. I verified today's behaviour is correct — five adversarial
+      questions round-trip intact, including one whose text is a complete forged
+      "- word: injected / kind: looked-up / at: ..." record — but
+      storetest/suite.go:52 round-trips one plain question and nothing pins the
+      invariant. A regression corrupts an append-only log #17 folds over,
+      irreversibly; BR-4 is the precedent for an event that looked whole being
+      silently discarded at read time. Add a suite row with a newline, a leading
+      "- " and an embedded "at:".
+  - id: new
+    severity: Minor
+    family: second-implementation-drifts
+    title: |
+      crlf.go's consumed() ignores the `out` it is handed and re-derives the translation from a wrong seed
+    detail: |
+      consumed(p, out, n) at crlf.go:41 never reads `out` — a dead parameter —
+      and restarts the translation with `lastWasCR := false` instead of the
+      writer's carried entry state. Write "a\r" then "\nb" with a 1-byte short
+      write and it reports 0 consumed where 1 byte was written, so a retry
+      duplicates the newline: the exact defect the fix's own comment says it
+      prevents, surviving in the one case lastWasCR exists for.
+      TestCRLFWriterReportsProgressOnAShortWrite covers only the fresh-state
+      cell. Derive from `out`, or capture the entry flag before the loop.
+  - id: new
+    severity: Minor
+    family: policy-in-io-shell
+    title: |
+      newestFirst returns oldest-first, sits in the IO shell, and is only reachable through a store-backed test
+    detail: |
+      This is the 2nd finding in family policy-in-io-shell; BR-22's defect itself
+      is genuinely gone. What remains is the shape BR-22 named: a pure ordering
+      policy living in ask.go rather than beside recentTurns in askctx.go, whose
+      only test (TestTheDeckSectionCarriesTheNewestWords) needs a real YAML store
+      and a wire-level fake to exercise a slice reversal. The name also says
+      newest-first while the function returns oldest-first.
+  - id: new
+    severity: Minor
+    family: test-asserts-nothing
+    title: |
+      The pty conformance suite runs whatever bin/define is on disk, with no staleness check
+    detail: |
+      startDefine (pty_conformance_test.go:63) skips when ../../bin/define is
+      absent but never checks it is current. The binary here is timestamped
+      22:45, 34 minutes before the round-5 fix commit at 23:19, so a `go test
+      -tags conformance` run right now would validate pre-fix code and report ok
+      — a live conformance check that cannot fail on the change it exists to
+      check. Compare against the newest source mtime, or build in TestMain.
+```

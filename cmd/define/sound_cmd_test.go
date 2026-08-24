@@ -102,7 +102,7 @@ func TestSoundChangesPlaybackForTheRestOfTheSession(t *testing.T) {
 	rig.deps.stdinIsTerminal = func() bool { return false }
 
 	var out, errb bytes.Buffer
-	replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+	replLines(t.Context(), nil, rig.deps, options{times: 3, locale: "us"},
 		strings.NewReader("/sound 1\nsycophantic\n"), &out, &errb, true, false)
 
 	if got := rig.player.count(); got != 1 {

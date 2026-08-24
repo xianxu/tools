@@ -17,12 +17,12 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	if !ok {
 		// Not a real terminal handle (a test harness, a wrapper): fall back to the
 		// line path rather than pretending raw mode succeeded.
-		return replLines(ctx, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
+		return replLines(ctx, interrupts, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
 	}
 	sess, err := enterRaw(f)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: cannot enter raw mode (%v); falling back to line input\n", err)
-		return replLines(ctx, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
+		return replLines(ctx, interrupts, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
 	}
 	defer sess.restore()
 
@@ -141,8 +141,6 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// the interrupter and the streaming writer here, so a second copy of this
 	// wiring would be a second copy of Ctrl-C's meaning (ARCH-DRY).
 	//
-	// It runs COOKED for the same reason a command does: in raw mode "\n" is a
-	// line feed with no carriage return.
 	// The caller supplies the leading "\r\n", because the unforced route has
 	// already written one before submitLine — emitting a second here put the two
 	// routes' output at different heights, which is exactly the divergence one

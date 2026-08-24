@@ -207,7 +207,7 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 		// #2 did with cursor arithmetic against an echoed Enter is gone.
 		return replRaw(ctx, interrupts, d, opt, stdin, stdout, stderr)
 	}
-	return replLines(ctx, d, opt, stdin, stdout, stderr, !interactive, terminalUI)
+	return replLines(ctx, interrupts, d, opt, stdin, stdout, stderr, !interactive, terminalUI)
 }
 
 // replLines is the line-oriented loop: piped input, a redirected stdout, or a
@@ -221,7 +221,12 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 // Collapsing them writes a prompt to stdout whenever stdin is a tty, which
 // pollutes `define > out.txt`. That is the same bug as #2 close rounds 2, 4 and
 // 5, and it recurred here the moment the two were passed as one flag.
-func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer, pipedInput, showPrompt bool) int {
+func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options, stdin io.Reader, stdout, stderr io.Writer, pipedInput, showPrompt bool) int {
+	if interrupts == nil {
+		// No sink supplied: nothing can scope an interrupt, which is the honest
+		// behaviour for a caller that supplied no cancellation.
+		interrupts = &interrupter{}
+	}
 	// Wrapped HERE rather than in the caller, so the line the tests exercise is
 	// the line production runs — #2's I-1 lesson, applied to both loops.
 	d.audio = newCachingAudioSource(d.audio)
@@ -258,7 +263,21 @@ func replLines(ctx context.Context, d deps, opt options, stdin io.Reader, stdout
 	// reads as a question). They differ only in whether the dictionary was
 	// consulted, so wiring them separately would mean maintaining the answer
 	// path twice (ARCH-DRY).
-	askHere := func(q question) { fail(ask(ctx, d, opt, &sess, stdout, stderr, q)) }
+	// Scoped exactly as the raw loop scopes it. README says "Ctrl-C stops the
+	// answer rather than the session", and that was true in ONE of the two
+	// loops: this one passed its own ctx, which the default sink cancels, so an
+	// interrupt during an answer ended the session here (BR-39). The interrupt
+	// sink is the single answer to what Ctrl-C means (#16 D5) — a loop that
+	// streams an answer and does not scope it is a loop where the sink is not
+	// the answer after all.
+	askHere := func(q question) {
+		qctx, qcancel := context.WithCancel(ctx)
+		restore := interrupts.Set(qcancel)
+		code := ask(qctx, d, opt, &sess, stdout, stderr, q)
+		restore()
+		qcancel()
+		fail(code)
+	}
 
 	for {
 		if showPrompt {

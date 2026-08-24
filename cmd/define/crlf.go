@@ -18,6 +18,10 @@ type crlfWriter struct {
 }
 
 func (c *crlfWriter) Write(p []byte) (int, error) {
+	// The entry state, captured before the loop advances it: consumed() has to
+	// replay the SAME translation, and re-seeding it from false gets the one
+	// case lastWasCR exists for exactly backwards — "a\r" then "\nb".
+	entryWasCR := c.lastWasCR
 	out := make([]byte, 0, len(p)+8)
 	for _, b := range p {
 		if b == '\n' && !c.lastWasCR {
@@ -34,7 +38,7 @@ func (c *crlfWriter) Write(p []byte) (int, error) {
 		// Report progress in the CALLER's units. Returning 0 on a partial write
 		// claims nothing was consumed, which makes a retry duplicate whatever
 		// did reach the terminal.
-		return consumed(p, out, n), err
+		return consumed(p, entryWasCR, n), err
 	}
 	// n is what the CALLER handed over, not what reached the terminal: an
 	// io.Writer that reports more bytes than it was given breaks io.Copy and
@@ -43,13 +47,13 @@ func (c *crlfWriter) Write(p []byte) (int, error) {
 }
 
 // consumed maps a byte count in translated units back to the caller's, by
-// replaying the same translation and stopping where the write stopped.
-func consumed(p, out []byte, n int) int {
+// replaying the same translation from the same entry state and stopping where
+// the write stopped.
+func consumed(p []byte, lastWasCR bool, n int) int {
 	if n <= 0 {
 		return 0
 	}
 	var written int
-	lastWasCR := false
 	for i, b := range p {
 		if b == '\n' && !lastWasCR {
 			written++

@@ -64,7 +64,7 @@ func TestLineLoopDispatchesCommands(t *testing.T) {
 	rig.deps.stdinIsTerminal = func() bool { return false }
 
 	var out, errb bytes.Buffer
-	code := replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+	code := replLines(t.Context(), nil, rig.deps, options{times: 3, locale: "us"},
 		strings.NewReader("/help\n"), &out, &errb, true, false)
 
 	if code != 0 {
@@ -319,7 +319,7 @@ func TestPipedLoopReturnsTheCommandsExitCode(t *testing.T) {
 	rig.deps.stdinIsTerminal = func() bool { return false }
 
 	var out, errb bytes.Buffer
-	code := replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+	code := replLines(t.Context(), nil, rig.deps, options{times: 3, locale: "us"},
 		strings.NewReader("/histry\n"), &out, &errb, true, false)
 	if code != 2 {
 		t.Errorf("exit = %d, want 2 — a usage error, not the generic failure 1", code)

@@ -25,7 +25,7 @@ const aQuestion = "what's the difference to obsequious?"
 func TestLineLoopRoutesAQuestion(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+	replLines(t.Context(), nil, rig.deps, options{times: 3, locale: "us"},
 		strings.NewReader(aQuestion+"\n"), &out, &errb, true, false)
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
@@ -46,7 +46,7 @@ func TestLineLoopRoutesAForcedQuestion(t *testing.T) {
 	var out, errb bytes.Buffer
 	// "why" IS a headword, so only the hatch can make this a question — which is
 	// what makes it a test of the forced branch rather than of the classifier.
-	replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+	replLines(t.Context(), nil, rig.deps, options{times: 3, locale: "us"},
 		strings.NewReader("?why\n"), &out, &errb, true, false)
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
@@ -245,14 +245,14 @@ func TestRawNeverAsks(t *testing.T) {
 	t.Run("piped/unforced", func(t *testing.T) {
 		rig := newAudioRig(t, "sycophantic", true)
 		var out, errb bytes.Buffer
-		code := replLines(t.Context(), rig.deps, rawOpt, strings.NewReader(aQuestion+"\n"), &out, &errb, true, false)
+		code := replLines(t.Context(), nil, rig.deps, rawOpt, strings.NewReader(aQuestion+"\n"), &out, &errb, true, false)
 		assertDidNotAsk(t, code, 1, errb.String(), wantMiss)
 	})
 	t.Run("piped/forced", func(t *testing.T) {
 		rig := newAudioRig(t, "sycophantic", true)
 		var out, errb bytes.Buffer
 		// BR-15: ask() computes 2 and the loop must not collapse it to 1.
-		code := replLines(t.Context(), rig.deps, rawOpt, strings.NewReader("?why\n"), &out, &errb, true, false)
+		code := replLines(t.Context(), nil, rig.deps, rawOpt, strings.NewReader("?why\n"), &out, &errb, true, false)
 		assertDidNotAsk(t, code, 2, errb.String(), wantRefusal)
 	})
 	t.Run("editor/unforced", func(t *testing.T) {
@@ -420,7 +420,7 @@ func TestWhatTheMessagesSay(t *testing.T) {
 		t.Run(tc.name+"/piped", func(t *testing.T) {
 			rig := newAudioRig(t, "sycophantic", true)
 			var out, errb bytes.Buffer
-			code := replLines(t.Context(), rig.deps, options{times: 3, locale: "us"},
+			code := replLines(t.Context(), nil, rig.deps, options{times: 3, locale: "us"},
 				strings.NewReader(tc.line+"\n"), &out, &errb, true, false)
 			assertMessage(t, code, tc.wantCode, errb.String(), tc.wantErr)
 		})

@@ -76,7 +76,8 @@ outcome:
 | `\` | define, even if it reads as a question — `\how so` answers `no dictionary entry` |
 
 The answer is streamed, and **Ctrl-C stops the answer rather than the session** —
-you land back at the prompt with the word you were reading still current.
+you land back at the prompt with the word you were reading still current. (In a
+one-shot, `define "…?"`, there is no session to return to, so it ends the run.)
 
 What the model is told is the directory you are in: the word on screen and its
 dictionary entry, what you have looked up this session, your recent deck,
@@ -94,9 +95,10 @@ rather than a guess at which of the two contradicting flags you meant.
 
 **`define` reads and writes the current directory.** *Every* successful lookup —
 one-shot, piped, or in the editor — records the word where you started `define`,
-so your deck and history build themselves. **Every question you ask is recorded
-too, by its text**, because what you ask about is the clearest signal of what you
-are working on:
+so your deck and history build themselves. **Every question that reaches the model
+is recorded too, by its text** — whatever became of the answer, since what you
+asked is the signal, not whether it arrived. (A question with no model
+configured never reaches one, and is not recorded.)
 
 ```
 words/sycophantic.yaml     one file per word

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
@@ -87,4 +89,42 @@ func TestAskRequestNamesItsTask(t *testing.T) {
 		t.Errorf("Task = %q, want %q", got.Task, askTask)
 	}
 	var _ llm.Request = renderAskPrompt(askContext{})
+}
+
+// A pure ordering policy gets a table test, not a store and a wire fake.
+//
+// This is the shape BR-22's defect hid in: inlined in the IO gatherer, taking
+// the wrong end of a newest-first slice was only observable through a real
+// store, a real prompt and a recorded request.
+func TestRecentDeckTakesTheNewestAndReadsForwards(t *testing.T) {
+	deck := func(n int) []store.Word { // newest first, as Store.Deck() promises
+		var out []store.Word
+		for i := n; i >= 1; i-- {
+			out = append(out, store.Word{Text: fmt.Sprintf("w%d", i)})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name string
+		deck []store.Word
+		n    int
+		want []string
+	}{
+		{"shorter than the bound, reversed to reading order", deck(3), 5, []string{"w1", "w2", "w3"}},
+		{"longer: the NEWEST survive, oldest-first", deck(5), 3, []string{"w3", "w4", "w5"}},
+		{"exactly the bound", deck(3), 3, []string{"w1", "w2", "w3"}},
+		{"empty deck renders no section", nil, 3, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := recentDeck(tc.deck, tc.n)
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
 }

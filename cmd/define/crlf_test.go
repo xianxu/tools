@@ -66,3 +66,29 @@ func (s *shortWriter) Write(p []byte) (int, error) {
 	}
 	return len(p), nil
 }
+
+// consumed() must replay the translation from the writer's ENTRY state.
+//
+// Re-seeding it from false gets exactly the case lastWasCR exists for backwards:
+// "a\r" then "\nb" needs no inserted carriage return, so a fresh-state replay
+// counts one byte that was never written and reports the wrong progress — the
+// defect the short-write fix's own comment says it prevents.
+func TestCRLFWriterProgressAcrossACarriedCR(t *testing.T) {
+	short := &shortWriter{limit: 8}
+	w := &crlfWriter{w: short}
+
+	// First write ends with a CR, so lastWasCR carries into the second.
+	if _, err := io.WriteString(w, "a\r"); err != nil {
+		t.Fatalf("first write: %v", err)
+	}
+	short.limit = 1 // now cut the next one short
+	// "\nb" translates to "\nb" — 2 bytes, NOT 3 — because the CR already
+	// arrived. One byte lands.
+	n, err := io.WriteString(w, "\nb")
+	if err == nil {
+		t.Fatal("a short underlying write was reported as success")
+	}
+	if n != 1 {
+		t.Errorf("n = %d, want 1 — the carried CR means \"\\n\" cost one byte, not two", n)
+	}
+}

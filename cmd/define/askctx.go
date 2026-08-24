@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 )
 
@@ -70,6 +71,27 @@ func recentTurns(all []exchange) []exchange {
 		return all
 	}
 	return all[len(all)-maxTurns:]
+}
+
+// recentDeck picks the n most RECENTLY seen deck words and returns them
+// oldest-first, so the section reads forwards.
+//
+// Pure, and here beside recentTurns rather than in the IO gatherer, because it
+// is a POLICY: which words the model is told about. Inlined in gatherAskContext
+// it was only reachable through a real store and a wire-level fake, which is
+// why nothing caught it taking the wrong end of a newest-first slice and
+// labelling the result "Recently in the deck" (BR-22, then BR-41).
+//
+// Store.Deck() is ordered by LastSeen DESCENDING — the head is the newest.
+func recentDeck(deck []store.Word, n int) []string {
+	if len(deck) > n {
+		deck = deck[:n]
+	}
+	words := make([]string, 0, len(deck))
+	for i := len(deck) - 1; i >= 0; i-- {
+		words = append(words, deck[i].Text)
+	}
+	return words
 }
 
 // renderAskPrompt turns the context into the request that will be sent.

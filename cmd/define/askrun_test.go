@@ -355,6 +355,15 @@ func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) {
 			interrupts := &interrupter{fn: func() {
 				t.Error("the SESSION cancel fired: the interrupt was not scoped to the answer")
 			}}
+			// The signal row drives the real seam, so the watcher repl installs
+			// is part of what this pins.
+			sigs := make(chan os.Signal, 1)
+			d.notifySignals = func(...os.Signal) <-chan os.Signal { return sigs }
+			go func() {
+				for range sigs {
+					interrupts.Fire()
+				}
+			}()
 			pr, pw := io.Pipe()
 			t.Cleanup(func() { pw.Close() })
 			keys := readKeys(t.Context(), pr, interrupts)
@@ -370,11 +379,14 @@ func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) {
 			io.WriteString(pw, "?why\r")
 			waitFor(t, func() bool { return strings.Contains(out.String(), "Obsequious") })
 
-			// Interrupt it the way this transport does.
+			// Interrupt it the way this transport ACTUALLY does. The earlier
+			// version called interrupts.Fire() for the signal row, which is the
+			// sink itself — so the row named a transport it never touched, and
+			// deleting repl's signal watcher left it green (BR-30).
 			if tc.byteKey {
 				io.WriteString(pw, "\x03")
 			} else {
-				interrupts.Fire()
+				sigs <- os.Interrupt
 			}
 
 			// THE observable: a lookup after the interrupt still answers. A
@@ -516,46 +528,6 @@ func TestAnEmptyAnswerIsNotATurn(t *testing.T) {
 	}
 }
 
-// The ask wiring, per LOOP. lessons.md's define #15 rule — a wiring only a loop
-// shell supplies must be pinned by a test that drives that loop shell — applies
-// to every cell, and M2 obeyed it for runEditor only. Both mutations below were
-// green: the piped loop's answer destination (→ io.Discard) and its session
-// (→ &session{}, losing multi-turn and the session words).
-func TestThePipedLoopsAskWiring(t *testing.T) {
-	t.Run("the answer reaches stdout", func(t *testing.T) {
-		d, fake, _, _ := askRig(t)
-		fake.Script("", llmtest.Reply{Capture: streamCapture})
-		var out, errb bytes.Buffer
-		replLines(t.Context(), d, options{noAudio: true, locale: "us"},
-			strings.NewReader("?why\n"), &out, &errb, true, false)
-
-		if !strings.Contains(out.String(), "Obsequious") {
-			t.Errorf("the answer did not reach stdout: %q / %q", out.String(), errb.String())
-		}
-	})
-
-	t.Run("the session carries across lines", func(t *testing.T) {
-		d, fake, _, _ := askRig(t)
-		fake.Script("", llmtest.Reply{Capture: streamCapture}, llmtest.Reply{Capture: streamCapture})
-		var out, errb bytes.Buffer
-		// A lookup, then two questions: the second must carry BOTH the word the
-		// lookup made current and the first exchange.
-		replLines(t.Context(), d, options{noAudio: true, locale: "us"},
-			strings.NewReader("sycophantic\n?is it pejorative\n?give me two more\n"), &out, &errb, true, false)
-
-		reqs := fake.Requests()
-		if len(reqs) != 2 {
-			t.Fatalf("requests = %d, want 2: %q", len(reqs), errb.String())
-		}
-		second := reqs[1].Prompt()
-		for _, want := range []string{"sycophantic", "is it pejorative", "servile deference"} {
-			if !strings.Contains(second, want) {
-				t.Errorf("the piped loop lost its session — %q missing from the second prompt:\n%s", want, second)
-			}
-		}
-	})
-}
-
 // rawterm.go claims the key channel's buffering is load-bearing: the loop stops
 // reading while an answer streams, so on an unbuffered channel the reader blocks
 // on the first key typed during it and never decodes the Ctrl-C BEHIND it. The
@@ -603,6 +575,63 @@ func TestAKeyTypedBeforeCtrlCDoesNotBlockTheReader(t *testing.T) {
 // the working directory is named there. The enumeration is
 // {words/, events/, user-model.md} x {looked-up, asked} — and the claim that
 // answers are NOT stored is the one a reader most needs to be able to trust.
+// README: "every question that reaches the model is recorded, whatever became of
+// the answer". An absolute, so it names its enumeration and asserts every cell —
+// three rounds of doc-overstates-code findings say a claim written without one
+// is a claim measured in exactly one cell (BR-39 measured this one true in 1 of 4).
+func TestAQuestionIsRecordedWhateverBecameOfTheAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reply  llmtest.Reply
+		cancel bool
+	}{
+		{"answered", llmtest.Reply{Capture: streamCapture}, false},
+		{"refused by the service", llmtest.Reply{Status: 400}, false},
+		{"cut off mid-answer", llmtest.Reply{Capture: streamCapture, Stall: true}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, st, _ := askRig(t)
+			fake.Script("", tc.reply)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var out syncBuf
+			var errb bytes.Buffer
+			if tc.cancel {
+				go func() {
+					for out.Len() == 0 {
+						time.Sleep(time.Millisecond)
+					}
+					cancel()
+				}()
+			}
+			runAsk(ctx, d, options{}, &session{}, question{text: "is it pejorative?"}, &out, &errb)
+
+			ev, err := st.Events(time.Time{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(ev) != 1 || ev[0].Question != "is it pejorative?" {
+				t.Fatalf("events = %+v, want the question recorded", ev)
+			}
+		})
+	}
+
+	t.Run("but not when no model was ever reached", func(t *testing.T) {
+		_, _, st, _ := askRig(t)
+		d := testDeps(t)
+		d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil)
+		d.getenv = func(string) string { return "" } // no seam at all
+
+		var out, errb bytes.Buffer
+		runAsk(t.Context(), d, options{}, &session{}, question{text: "why"}, &out, &errb)
+
+		ev, _ := st.Events(time.Time{})
+		if len(ev) != 0 {
+			t.Errorf("events = %+v, want none — nothing was asked of anything", ev)
+		}
+	})
+}
+
 func TestTheEventLogHoldsQuestionsAndNotAnswers(t *testing.T) {
 	d, fake, st, _ := askRig(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
@@ -626,5 +655,140 @@ func TestTheEventLogHoldsQuestionsAndNotAnswers(t *testing.T) {
 		if strings.Contains(e.Question, "Obsequious") || strings.Contains(e.Word, "Obsequious") {
 			t.Errorf("answer text reached the log: %+v", e)
 		}
+	}
+}
+
+// THE ASK-WIRING TABLE. Its rows ARE the cells.
+//
+// M2 adds three facts to the ask path — which session it carries, where the
+// answer is written, and whether the interrupt is scoped — across three entry
+// modes. Two rounds answered that enumeration with targeted one-off tests, and
+// three cells kept surviving their mutation with the full suite green (BR-38).
+// One fixture-driven test, the way TestRawNeverAsks does its six.
+type askMode struct {
+	name string
+	// carriesSession is false for the one-shot: one line, one process, so there
+	// is no session to carry and no interrupt to return to.
+	carriesSession bool
+	drive          func(t *testing.T, d deps, lines []string, ints *interrupter, out, errOut io.Writer)
+}
+
+func askModes() []askMode {
+	return []askMode{
+		{
+			name: "one-shot",
+			drive: func(t *testing.T, d deps, lines []string, _ *interrupter, out, errOut io.Writer) {
+				run(t.Context(), append([]string{"-no-audio"}, lines[0]), d, strings.NewReader(""), out, errOut)
+			},
+		},
+		{
+			name: "piped", carriesSession: true,
+			drive: func(t *testing.T, d deps, lines []string, ints *interrupter, out, errOut io.Writer) {
+				replLines(t.Context(), ints, d, options{noAudio: true, locale: "us"},
+					strings.NewReader(strings.Join(lines, "\n")+"\n"), out, errOut, true, false)
+			},
+		},
+		{
+			name: "editor", carriesSession: true,
+			drive: func(t *testing.T, d deps, lines []string, ints *interrupter, out, errOut io.Writer) {
+				d.stdinIsTerminal = func() bool { return true }
+				runEditor(t.Context(), scriptKeys(strings.Join(lines, "\r")+"\r"), ints, d,
+					options{noAudio: true, locale: "us", tty: true},
+					func(r func()) error { r(); return nil }, func() {}, out, errOut)
+			},
+		},
+	}
+}
+
+func TestTheAskWiringTable(t *testing.T) {
+	for _, mode := range askModes() {
+		t.Run(mode.name+"/the answer reaches stdout", func(t *testing.T) {
+			d, fake, _, _ := askRig(t)
+			fake.Script("", llmtest.Reply{Capture: streamCapture})
+			var out, errb bytes.Buffer
+			mode.drive(t, d, []string{"?why"}, &interrupter{}, &out, &errb)
+
+			if !strings.Contains(out.String(), "Obsequious") {
+				t.Errorf("the answer did not reach stdout: %q / %q", out.String(), errb.String())
+			}
+		})
+
+		t.Run(mode.name+"/the session carries across lines", func(t *testing.T) {
+			if !mode.carriesSession {
+				t.Skip("one line, one process: nothing to carry")
+			}
+			d, fake, _, _ := askRig(t)
+			fake.Script("", llmtest.Reply{Capture: streamCapture}, llmtest.Reply{Capture: streamCapture})
+			var out, errb bytes.Buffer
+			// A lookup, then two questions: the second must carry the word the
+			// lookup made current AND the first exchange.
+			mode.drive(t, d, []string{"sycophantic", "?is it pejorative", "?give me two more"},
+				&interrupter{}, &out, &errb)
+
+			reqs := fake.Requests()
+			if len(reqs) != 2 {
+				t.Fatalf("requests = %d, want 2: %q", len(reqs), errb.String())
+			}
+			second := reqs[1].Prompt()
+			for _, want := range []string{"sycophantic", "is it pejorative", "servile deference"} {
+				if !strings.Contains(second, want) {
+					t.Errorf("%s lost its session — %q missing from the second prompt:\n%s", mode.name, want, second)
+				}
+			}
+		})
+
+		t.Run(mode.name+"/the interrupt is scoped to the answer", func(t *testing.T) {
+			if !mode.carriesSession {
+				t.Skip("a one-shot has no session to return to: ending it IS correct")
+			}
+			d, fake, _, _ := askRig(t)
+			fake.Script("", llmtest.Reply{Capture: streamCapture, Stall: true})
+			// The sink must be pointed at the QUESTION while the answer streams,
+			// so firing it must not reach this.
+			fired := false
+			ints := &interrupter{fn: func() { fired = true }}
+
+			var out, errb syncBuf
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				mode.drive(t, d, []string{"?why"}, ints, &out, &errb)
+			}()
+			waitFor(t, func() bool { return strings.Contains(out.String(), "Obsequious") })
+			ints.Fire()
+			<-done
+
+			if fired {
+				t.Errorf("%s: the SESSION cancel fired — the interrupt was not scoped to the answer", mode.name)
+			}
+		})
+	}
+}
+
+// A user-model.md that exists but cannot be READ must say so.
+//
+// store/yaml.go returns an error for exactly this case, and its comment gives
+// the reason: answering "" for a model that exists pitches every answer at the
+// wrong level with no way to tell. The warn was correct and nothing failed
+// without it — and failingStore.UserModel, added for it, had zero call sites
+// (BR-24).
+func TestAnUnreadableUserModelIsReported(t *testing.T) {
+	d, fake, _, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture})
+	d.deck = failingStore{}
+
+	var out, errb bytes.Buffer
+	code := runAsk(t.Context(), d, options{}, &session{}, question{text: "why"}, &out, &errb)
+
+	if code != 0 {
+		t.Errorf("exit = %d — an unreadable model must not fail the answer", code)
+	}
+	if !strings.Contains(errb.String(), "user-model.md") {
+		t.Errorf("stderr = %q, want it to name user-model.md", errb.String())
+	}
+	// And the answer still came: a missing model degrades the answer's aim, not
+	// the answer itself.
+	if !strings.Contains(out.String(), "Obsequious") {
+		t.Errorf("the answer did not arrive: %q", out.String())
 	}
 }

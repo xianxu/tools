@@ -571,7 +571,7 @@ the torn-record rule leans on a cut record losing its timestamp.
 **One ask entry, six cells.** A question arrives by two routes — forced (`?…`,
 decided by the parser without a dictionary call) and unforced (a miss that reads
 as one) — across three entry modes. That is the enumeration every claim about
-asking quantifies over, and all six go through one `ask(opt options, errOut io.Writer, q question)`.
+asking quantifies over, and all six go through one `ask(ctx, d, opt, sess, out, errOut, q)`.
 
 `question` carries **how** it arrived, because the route changes what can
 honestly be said: an unforced question is one the dictionary missed, so "is not a
