@@ -1,11 +1,12 @@
 ---
 id: 000017
-status: open
+status: working
 deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
-updated: 2026-08-22
+updated: 2026-08-25
 estimate_hours:
+started: 2026-08-25T16:45:07-07:00
 ---
 
 # learner model: batch analysis into a durable user-model.md
