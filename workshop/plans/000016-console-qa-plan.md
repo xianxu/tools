@@ -161,15 +161,15 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `parseREPLLine` / `replCommand` | `cmd/define/repl.go` | modified |
 | `recallLine` / `nothingSays` | `cmd/define/repl.go` | new |
 | `lookupOutcome` | `cmd/define/main.go` | new |
-| `question` / `mayAsk` | `cmd/define/ask.go` | new |
+| `question` / `mayAsk` / `lastN` | `cmd/define/ask.go` | new |
 | `askContext` | `cmd/define/askctx.go` | new |
 | `renderAskPrompt` | `cmd/define/askctx.go` | new |
 | `recentTurns` | `cmd/define/askctx.go` | new |
 | `recentDeck` | `cmd/define/askctx.go` | new |
 | `consumed` / `carriedCR` | `cmd/define/crlf.go` | new |
-| `session` | `cmd/define/session.go` | new |
+| `session` (`hasCurrent`, `sawLookup`, `recordExchange`) | `cmd/define/session.go` | new |
 | `exchange` | `cmd/define/askctx.go` | new |
-| `crlfWriter` | `cmd/define/crlf.go` | new |
+| `crlfWriter` (`Write`) | `cmd/define/crlf.go` | new |
 | `ReviewEvent` / `complete` | `cmd/define/store/event.go` | modified |
 
 - **readsAsQuestion** — the semantic half of the decision table: does this line,
@@ -227,13 +227,14 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `gatherAskContext` | `cmd/define/ask.go` | new | store reads |
 | `runAsk` | `cmd/define/ask.go` | new | `llm.Client.Stream` |
 | `deps.newLLM` / `deps.getenv` | `cmd/define/main.go` | new | `llm.New` + `llm.Resolve` |
-| `Store.UserModel` / `SetUserModel` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
+| `Store.UserModel` / `SetUserModel` / `userModelFile` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
 | `writeBytesAtomic` | `cmd/define/store/yaml.go` | new | temp file + rename |
 | `interrupter` | `cmd/define/interrupt.go` | new | what Ctrl-C means right now |
 | `deps.notifySignals` | `cmd/define/main.go` | new | `signal.Notify` |
-| `Capturer.CaptureAsk` | `cmd/define/capture.go` | modified | event append |
+| `defineOnce` / `replRaw` | `cmd/define/{main,replraw}.go` | modified | signature carries the outcome and the sink |
+| `Capturer.CaptureAsk` / `Capture` | `cmd/define/capture.go` | modified | event append |
 | `askScoped` | `cmd/define/ask.go` | new | the interrupt sink, for the duration of one answer |
-| `unavailable` / `unavailableAfterSending` | `cmd/define/ask.go` | new | the two degradation messages |
+| `unavailable` / `unavailableAfterSending` / `sayUnavailable` | `cmd/define/ask.go` | new | the two degradation messages |
 
 - **gatherAskContext** — reads the deck, the user model and the session's own
   state into an `askContext`. Thin: no formatting, no truncation decisions beyond
@@ -1421,7 +1422,19 @@ git diff <boundary> -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) '
 ```
 
 No `..HEAD`: comparing the boundary to the working tree is what makes it a check
-of the thing being shipped. Its output is reconciled against the two tables
-above, and this pass added the rows for `openerStem`, `recallLine`,
-`nothingSays`, `lookupOutcome`, `question`, `mayAsk`, `carriedCR`,
-`writeBytesAtomic`, `SetUserModel` and the two degradation messages.
+of the thing being shipped.
+
+**And the reconciliation is a set difference, not a reading.** Running the
+command and then scanning its output against the tables by eye is what failed the
+fifth time: three symbols were simply missed, one of them (`ask`) present since
+M1. Word boundaries matter too — a substring test reports `ask` as present
+because `askContext` contains it.
+
+```python
+syms    = {every +func/+type name in the diff}
+tables  = the Core-concepts section
+missing = [s for s in syms if not re.search(r'\b'+s+r'\b', tables)]
+```
+
+`missing` must be empty before the close commit. It is the check; the rows above
+are its output.

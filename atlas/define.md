@@ -619,10 +619,18 @@ for the whole run, and collapsing a dispatch's code into a boolean loses the
 difference between a lookup failure (1) and a usage error (2). That is BR-16,
 fixed for commands in #15 — and #16 reintroduced it for questions, because the
 new branch collapsed `ask`'s code the same way. There is now one `fail(code)`
-sink every branch feeds, so a third branch cannot repeat it. The four exit-code
-absolutes README states are measured across `{one-shot, piped}`, which is the
-enumeration they quantify over; the raw editor has no exit code of its own,
-because an interactive typo does not fail a session.
+sink every branch feeds, so a third branch cannot repeat it.
+
+**The exit-code absolutes README states are measured across `{one-shot, piped}`**
+— the enumeration they quantify over; the raw editor has no exit code of its own,
+because an interactive typo does not fail a session. This paragraph used to say
+"the FOUR absolutes", and a later change added ask-path exit sites without
+touching it: a count is a measured claim that drifts the moment anything is
+added, and it drifts silently. What the ask path can exit with is enumerated by
+the degradation messages themselves — `unavailable` when nothing was configured,
+`unavailableAfterSending` carrying the underlying cause when something was, and
+the loud `ErrRequest` arm — each of which is the subject of a row test rather
+than of a number here.
 
 **A hatch with no payload is a malformed line, in both hatches and every mode.**
 `?` and `\` alone are usage errors (exit 2) rather than blank lines — a bare `\`

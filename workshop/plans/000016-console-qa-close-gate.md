@@ -1302,6 +1302,103 @@ rounds:
           family: doc-overstates-code
           round: 10
       blocked: true
+    - "n": 11
+      timestamp: "2026-08-24T21:20:42-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: not-addressed
+          note: Fifth round unchanged - behaviour correct (recallLine round-trips all four kinds, measured), but submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the full suite green.
+          round: 11
+        - id: BR-17
+          disposition: not-addressed
+          note: Task 3's snippet at line 637 and askUnavailable at 691/750 are verbatim unchanged; "-raw" and "lostTerminal" appear zero times. Only the Core concepts half was swept.
+          round: 11
+        - id: BR-47
+          disposition: not-addressed
+          note: Fifth round. The timing fix was applied and the enumeration still misses ask, sayUnavailable and lastN - two of them in the file the closing commit rewrote, and ask since M1.
+          round: 11
+        - id: BR-48
+          disposition: not-addressed
+          note: Six Revisions entries, still none for round 2's forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" all appear zero times.
+          round: 11
+        - id: BR-49
+          disposition: not-addressed
+          note: Unchanged - replRaw still passes the seam straight to readKeys with no policy, two nil guards elsewhere, and 47 test call sites still pass nil.
+          round: 11
+        - id: BR-50
+          disposition: not-addressed
+          note: All four residues verbatim; residue (1) still predicts a fifth lostTerminal site that has two, and residue (2) is mutation-verified green again this round.
+          round: 11
+        - id: BR-53
+          disposition: not-addressed
+          note: The site fix stands but carriedCR still reverts green (measured), and the rule is unapplied - Write materialises the translation into out while consumed re-derives it from p.
+          round: 11
+        - id: BR-56
+          disposition: addressed
+          note: Measured through the fake at 401/403/429/503 - all four now carry the underlying cause and none says "did not answer"; a fixed-message revert reddens the test.
+          round: 11
+        - id: BR-57
+          disposition: not-addressed
+          note: Unchanged and re-measured - can't->"ca", won't->"wo", shan't->"sha" all miss questionOpeners while isn't/don't/didn't/couldn't reach it.
+          round: 11
+      findings:
+        - id: BR-58
+          severity: Important
+          title: atlas states a COUNT for the ask path's exit codes, and this window's own message split made it wrong
+          detail: |-
+            This is the 14th finding in this family; the rule has been stated seven
+            times, so do NOT patch the two lines. atlas/define.md:622 says "The FOUR
+            exit-code absolutes README states are measured across {one-shot, piped}".
+            Measured: the ask path alone has three return-1 sites - ask.go:129 and
+            ask.go:132 (sayUnavailable's two route branches) and ask.go:209 (runAsk's
+            default arm) - and README:164's exit-1 clause names one of them. Probed
+            through the fake: a 400 exits 1 with `define: llm: bad request: ...`, a 401
+            exits 1 with `the model is unavailable (...)`; neither appears in either
+            document, and atlas/define.md has ZERO occurrences of "no model
+            configured", "unavailable" or "did not answer" while devoting a paragraph
+            to which degradation sentence each route selects. The count is the sharp
+            part: the SAME commit that created unavailableAfterSending and
+            sayUnavailable wrote a plan Revisions entry stating "the entry must not
+            carry a count - a count is a measured claim that drifts the moment
+            anything is added, and it drifts silently", twenty lines above the atlas
+            paragraph carrying one. The rule the evidence supports, spanning this
+            family and plan-contract-drift both: two families here have been answered
+            with "here is a greppable command to run at the boundary" (BR-44's
+            normative-block sweep, BR-47's entity enumeration) and BOTH recurred in
+            the commit that wrote the command down - BR-47 five times. The command was
+            never the problem; reconciling its output by eye, against prose, inside a
+            commit still being edited is. The repo already knows the working shape -
+            builtBinary made pty staleness impossible rather than checkable, and
+            TestTheCapturerInjectionIsLive is a control that goes red. If a claim is
+            worth writing down, make something FAIL when it stops being true, or write
+            it without a count and without an enumeration it does not own. Note the
+            README block was already partial before this window (lostTerminal, the
+            reading-input failure), so the deliverable is the sweep, not the clause.
+          family: doc-overstates-code
+          round: 11
+        - id: BR-59
+          severity: Minor
+          title: The row added this round to the recording table is the only one of nine that never reads the event log
+          detail: |-
+            This is the 9th finding in this family. askrun_test.go:658's "configured
+            but never reached" row sits inside
+            TestAQuestionIsRecordedWhateverBecameOfTheAnswer - a test whose NAME is the
+            claim - and asserts only that stderr carries the connection failure. Its
+            eight siblings (answered, refused-by-the-service, cut-off, and the four
+            status rows added by the same commit) all assert len(ev) != 1. Behaviour is
+            correct: I probed it and the event IS recorded (code=1, events=1), so this
+            is a cell present in the enumeration and absent from the coverage. The
+            rule, which is new for this family: a row added to a table whose name is an
+            absolute INHERITS that table's assertions, and a row asserting less than
+            its siblings is exactly the shape a coverage gap hides in - diffing a new
+            row's assertion set against its siblings' is mechanical and would have
+            caught it. Adjacent and cheap: the same row is the one README's recording
+            sentence is loosest about, since a connection-refused sends no request yet
+            records.
+          family: test-asserts-nothing
+          round: 11
+      blocked: true
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -2118,6 +2215,68 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   than the class. Low harm, since "?" is the documented recovery; worth one
   row and three stems when the arm is next touched.
 
+## Round 11 — 2026-08-24T21:20:42-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-12 — not-addressed — Fifth round unchanged - behaviour correct (recallLine round-trips all four kinds, measured), but submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the full suite green.
+- BR-17 — not-addressed — Task 3's snippet at line 637 and askUnavailable at 691/750 are verbatim unchanged; "-raw" and "lostTerminal" appear zero times. Only the Core concepts half was swept.
+- BR-47 — not-addressed — Fifth round. The timing fix was applied and the enumeration still misses ask, sayUnavailable and lastN - two of them in the file the closing commit rewrote, and ask since M1.
+- BR-48 — not-addressed — Six Revisions entries, still none for round 2's forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" all appear zero times.
+- BR-49 — not-addressed — Unchanged - replRaw still passes the seam straight to readKeys with no policy, two nil guards elsewhere, and 47 test call sites still pass nil.
+- BR-50 — not-addressed — All four residues verbatim; residue (1) still predicts a fifth lostTerminal site that has two, and residue (2) is mutation-verified green again this round.
+- BR-53 — not-addressed — The site fix stands but carriedCR still reverts green (measured), and the rule is unapplied - Write materialises the translation into out while consumed re-derives it from p.
+- BR-56 — addressed — Measured through the fake at 401/403/429/503 - all four now carry the underlying cause and none says "did not answer"; a fixed-message revert reddens the test.
+- BR-57 — not-addressed — Unchanged and re-measured - can't->"ca", won't->"wo", shan't->"sha" all miss questionOpeners while isn't/don't/didn't/couldn't reach it.
+
+### Raised
+
+- **BR-58** [Important] `doc-overstates-code` atlas states a COUNT for the ask path's exit codes, and this window's own message split made it wrong
+  This is the 14th finding in this family; the rule has been stated seven
+  times, so do NOT patch the two lines. atlas/define.md:622 says "The FOUR
+  exit-code absolutes README states are measured across {one-shot, piped}".
+  Measured: the ask path alone has three return-1 sites - ask.go:129 and
+  ask.go:132 (sayUnavailable's two route branches) and ask.go:209 (runAsk's
+  default arm) - and README:164's exit-1 clause names one of them. Probed
+  through the fake: a 400 exits 1 with `define: llm: bad request: ...`, a 401
+  exits 1 with `the model is unavailable (...)`; neither appears in either
+  document, and atlas/define.md has ZERO occurrences of "no model
+  configured", "unavailable" or "did not answer" while devoting a paragraph
+  to which degradation sentence each route selects. The count is the sharp
+  part: the SAME commit that created unavailableAfterSending and
+  sayUnavailable wrote a plan Revisions entry stating "the entry must not
+  carry a count - a count is a measured claim that drifts the moment
+  anything is added, and it drifts silently", twenty lines above the atlas
+  paragraph carrying one. The rule the evidence supports, spanning this
+  family and plan-contract-drift both: two families here have been answered
+  with "here is a greppable command to run at the boundary" (BR-44's
+  normative-block sweep, BR-47's entity enumeration) and BOTH recurred in
+  the commit that wrote the command down - BR-47 five times. The command was
+  never the problem; reconciling its output by eye, against prose, inside a
+  commit still being edited is. The repo already knows the working shape -
+  builtBinary made pty staleness impossible rather than checkable, and
+  TestTheCapturerInjectionIsLive is a control that goes red. If a claim is
+  worth writing down, make something FAIL when it stops being true, or write
+  it without a count and without an enumeration it does not own. Note the
+  README block was already partial before this window (lostTerminal, the
+  reading-input failure), so the deliverable is the sweep, not the clause.
+- **BR-59** [Minor] `test-asserts-nothing` The row added this round to the recording table is the only one of nine that never reads the event log
+  This is the 9th finding in this family. askrun_test.go:658's "configured
+  but never reached" row sits inside
+  TestAQuestionIsRecordedWhateverBecameOfTheAnswer - a test whose NAME is the
+  claim - and asserts only that stderr carries the connection failure. Its
+  eight siblings (answered, refused-by-the-service, cut-off, and the four
+  status rows added by the same commit) all assert len(ev) != 1. Behaviour is
+  correct: I probed it and the event IS recorded (code=1, events=1), so this
+  is a cell present in the enumeration and absent from the coverage. The
+  rule, which is new for this family: a row added to a table whose name is an
+  absolute INHERITS that table's assertions, and a row asserting less than
+  its siblings is exactly the shape a coverage gap hides in - diffing a new
+  row's assertion set against its siblings' is mechanical and would have
+  caught it. Adjacent and cheap: the same row is the one README's recording
+  sentence is loosest about, since a connection-refused sends no request yet
+  records.
+
 ## Open findings
 
 - **BR-12** [Minor] `forced-route-enumeration` the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
@@ -2127,5 +2286,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-49** [Minor] `nil-seam-policy` The interrupter seam has three consumers and two nil policies; one of them dereferences
 - **BR-50** [Minor] `dead-branch` Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read
 - **BR-53** [Minor] `second-implementation-drifts` crlfWriter.Write advances lastWasCR over bytes the underlying writer never took
-- **BR-56** [Important] `doc-overstates-code` unreachable splits ErrUnavailable into two halves; it has three producers and the credential one gets the wrong half
 - **BR-57** [Minor] `doc-overstates-code` openerStem cannot reach can't, won't or shan't, while can, will and shall are all openers
+- **BR-58** [Important] `doc-overstates-code` atlas states a COUNT for the ask path's exit codes, and this window's own message split made it wrong
+- **BR-59** [Minor] `test-asserts-nothing` The row added this round to the recording table is the only one of nine that never reads the event log

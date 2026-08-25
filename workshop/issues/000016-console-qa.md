@@ -740,3 +740,24 @@ Also swept, and it is the sharpest instance of the family in the issue: my own
 test comment still asserted *"omitting restore leaves the whole suite GREEN"* —
 a measured fact that the very fix beneath it had falsified, left standing because
 nobody re-ran it.
+
+### 2026-08-24 — close review round 3: docs only
+
+Nine disposed, two open, both documentation.
+
+- **BR-47, fifth round.** The timing fix from last round was right and not
+  enough: I ran the enumeration against the working tree and then *read* its
+  output against the tables by eye, missing three symbols — one (`ask`) present
+  since M1. Reconciliation is now an actual **set difference** with word
+  boundaries (a substring test reports `ask` as present because `askContext`
+  contains it), run to empty before the commit. The check, not its output, is
+  what the plan records.
+- **BR-58** is the one worth keeping. The atlas said *"the FOUR exit-code
+  absolutes"*, and this window's own message split added exit sites without
+  touching it — while **the same commit**, twenty lines away, wrote *"the entry
+  must not carry a count: a count is a measured claim that drifts the moment
+  anything is added, and it drifts silently."* Stating a rule and breaking it in
+  the same change is the most compact version of this issue's whole pattern.
+
+Both fixes are documentation. No code, no tests, no new symbols — so the
+enumeration is empty by construction rather than by inspection.

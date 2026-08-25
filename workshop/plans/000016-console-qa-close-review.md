@@ -418,3 +418,199 @@ findings:
       than the class. Low harm, since "?" is the documented recovery; worth one
       row and three stems when the arm is next touched.
 ```
+
+---
+
+## Re-review — 2026-08-24T21:20:42-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 16 — free-form Q&A in the console: input classification + the directory as context |
+| repo | tools |
+| issue file | workshop/issues/000016-console-qa.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | ba0162169f48d72983ff7f21d3a6479c9e6535a3..e6dec7cda5ad120833035ab1f3d625df1536cb77 |
+| command | sdlc close --issue 16 |
+| reviewer | claude |
+| timestamp | 2026-08-24T21:20:42-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+All measurements complete. Race-clean, vet-clean, suite green.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Eleven rounds in, and this round's two claimed fixes are both real — I confirmed them by reversion, not by reading. BR-56's split is genuinely retired: `unavailableAfterSending` now hands over the underlying error, and I measured all four `ErrUnavailable` producers through the wire fake (`401 Unauthorized`, `403 Forbidden`, `429`, `503` each reach stderr verbatim), with a fixed-message mutation reddening `TestAQuestionIsRecordedWhateverBecameOfTheAnswer`. BR-54's flake is gone: `TestCtrlCQuitsAgainOnceTheAnswerIsOver` is **30/30** clean (was 12 failures in 30), and each of `askScoped`'s three observable cells reddens exactly the subtest its doc comment names it by — `omit interrupts.Set` → `/the_sink_is_scoped_to_the_question_WHILE_it_runs` (plus 8 more cells), `omit defer restore()` → `/the_sink_is_handed_back_when_it_returns` **and** the end-to-end row, `omit defer qcancel()` → `/the_question's_context_is_cancelled_when_it_returns`. `go test ./...`, `go test -race ./cmd/define/...`, `go vet ./...` and `go vet -tags conformance` are all clean. What keeps this off SHIP is that the closing commit repeated, in the same commit, the two rules it wrote down: the atlas still says the ask path has **"four exit-code absolutes"** twenty lines from the section that commit edited, while this window's own message split made that count wrong — and the plan's entity enumeration, whose new Revisions entry declares it "runs against the working tree", still omits `ask`, `sayUnavailable` and `lastN`, two of them from the file the closing commit rewrote. Three prior findings (BR-12, BR-50(2), BR-53) remain behaviourally correct and mutation-green for the 5th, 3rd and 3rd round.
+
+## 1. Strengths
+
+- **BR-56's fix is the right shape and it is pinned.** `cmd/define/ask.go:122` reports the taxonomy's word and hands over the cause, the conclusion `llmcheck.go` reaches by not deciding. Measured through `llmtest.Fake`: a wrong key now prints `the model is unavailable (llm: unavailable: POST …: 401 Unauthorized …)` instead of being told to wait. Replacing it with a fixed sentence reddens the test.
+- **The `askScoped` enumeration is now honest, and checkable.** Swapping counts for test *names* was the correct correction — I opened each name and ran each mutation, and all three land on the cell they claim. `omit interrupts.Set` reddens 5 top-level tests spanning both loop shells.
+- **BR-54's fix removed the race rather than widening a timeout.** Waiting for `prompt` to reappear *after* `"insincerely"` (`askrun_test.go:860`) synchronises on an effect `askInSession` produces strictly after `askScoped` returns. Each run now costs ~0.01s instead of being timing-dependent.
+- **The wire-fake discipline held.** The new rows drive `llmtest.Reply{Status: …}` through the fake rather than dialling `127.0.0.1:1`, and the never-reached producer keeps its own row — so all three `ErrUnavailable` producers are covered at the seam production uses (ARCH-MOCK).
+- **The route/capture ordering still holds end to end.** `recentDeck`, `renderAskPrompt`, `recentTurns`, `consumed`, `parseREPLLine` and `session` are all pure and tested without a store, socket or terminal; `TestTheAskWiringTable` still reddens on `&sess → &session{}` and `stdout → io.Discard`.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — the atlas states a COUNT for the ask path's exit codes, and this window made it wrong** (`atlas/define.md:622`, `README.md:164`).
+
+**This is the 14th finding in family `doc-overstates-code`.** The rule has been stated seven times. Do NOT patch the two lines.
+
+`atlas/define.md:622` reads *"The **four** exit-code absolutes README states are measured across `{one-shot, piped}`, which is the enumeration they quantify over."* Measured, the ask path alone now has three `return 1` sites — `ask.go:129`, `ask.go:132` (`sayUnavailable`'s two route branches) and `ask.go:209` (`runAsk`'s `default:` arm for `ErrRequest`/`ErrMalformed`) — and README's exit-`1` clause (`no dictionary entry, a question with no model configured, --forget…, --llm-check…`) names one of them. Probed against the fake: a 400 exits **1** with `define: llm: bad request: … 400 Bad Request …`; a 401 exits **1** with `the model is unavailable (…)`. Neither appears in either document, and `atlas/define.md` has **zero** occurrences of `no model configured`, `unavailable` or `did not answer` anywhere — while it devotes a paragraph to *which* of the degradation sentences each route selects.
+
+The sharp part is not the gap; it is where the gap came from. The closing commit's own plan Revisions entry states the rule it broke:
+
+> **The entry must not carry a count.** A count is a measured claim that drifts the moment anything is added, and it drifts silently. Same rule BR-56 states for taxonomy messages…
+
+That entry was written in the same commit that created `unavailableAfterSending` and `sayUnavailable`, twenty lines above the atlas paragraph that carries the count, in a section the previous commit had just edited.
+
+**The rule this window's evidence actually supports** — and it spans this family and `plan-contract-drift` both: two families here have now been answered with *"here is a greppable command to run at the boundary"* (BR-44's normative-block sweep, BR-47's `git diff | grep '^+\(func\|type\)'`), and **both recurred in the very commit that wrote the command down** — BR-47 five times. The command was never the problem; reconciling its output *by eye, against prose, inside a commit still being edited* is. This repo already knows the working shape: `builtBinary` retired the pty-staleness class by making staleness impossible rather than checkable, and `TestTheCapturerInjectionIsLive` is a control that goes red. A checklist item that must be remembered at the exact moment attention is lowest is not a fix. If a claim is worth writing down, make something fail when it stops being true — or write it without a count and without an enumeration it does not own.
+
+*Cheap version if the sweep is deferred:* drop `four` from `atlas/define.md:622`, and add the two ask-path causes to README's exit-`1` clause. Note that block was already partial before this window (`lostTerminal`, the `reading input` failure), so the deliverable is the sweep, not the clause.
+
+## 4. Minor findings
+
+- **This is the 9th finding in family `test-asserts-nothing`.** `askrun_test.go:658`'s `configured but never reached` row is inside `TestAQuestionIsRecordedWhateverBecameOfTheAnswer` — a test whose *name* is the claim — and it is the only one of its nine rows that never reads `st.Events`. Its eight siblings all assert `len(ev) != 1`. Behaviour is correct (probed: `code=1`, `events=1`), so this is a covered cell that isn't checked. The rule, and it is new: **a row added to a table whose name is an absolute inherits that table's assertions; a row asserting less than its siblings is a cell that is present in the enumeration but absent from the coverage.** Diffing a new row against its siblings' assertion set is mechanical and would have caught it.
+- `sayUnavailable` now embeds a full HTTP error — URL plus JSON body, ~200 chars — into a message whose *other* half is bounded to 40 runes by `truncateQuestion`, and it renders at an interactive prompt through `crlfWriter`. `--llm-check` prints verbatim because a user ran a diagnostic on purpose; this fires mid-session. The trade is deliberate and documented, but the two halves of one sentence now disagree about brevity.
+- `Store.SetUserModel` still has zero production call sites — its only caller is `storetest/suite.go`. Legitimate (it is BR-45's fix), unrecorded as test-only surface.
+- All five PTY conformance rows **SKIP** here (`no pty available: operation not permitted`), so `TestPTYCtrlCMidAnswerKeepsTheSession`'s claim still rests on the implementor's note. `builtBinary` does compile from the tree, so staleness is impossible by construction.
+
+## 5. Test coverage notes
+
+Every mutation ran in a scratch `git archive` of `e6dec7c` under `$TMPDIR`; the working tree was never modified and is clean. Scratch baseline: `ok 62.3s`.
+
+| mutation | result |
+|---|---|
+| `askScoped`: omit `interrupts.Set` | RED — `…/the_sink_is_scoped_to_the_question_WHILE_it_runs` + 4 tests / 8 subtests |
+| `askScoped`: omit `defer restore()` | RED — `…/the_sink_is_handed_back_when_it_returns`, `TestCtrlCQuitsAgainOnceTheAnswerIsOver` |
+| `askScoped`: omit `defer qcancel()` | RED — `…/the_question's_context_is_cancelled_when_it_returns` |
+| `unavailableAfterSending` → fixed sentence | RED — `TestAQuestionIsRecordedWhateverBecameOfTheAnswer` |
+| `TestCtrlCQuitsAgainOnceTheAnswerIsOver` `-count=30` | **30/30 PASS** (was 12 failures in 30) |
+| `submitLine`: `recallLine()` → `line` | **GREEN** — BR-12, 5th round |
+| `crlf.go:41`: `carriedCR(...)` → `lastWasCR` | **GREEN** — BR-53, 3rd round |
+| delete `CaptureAsk`'s `decideCapture` guard | **GREEN** — BR-50(2), 3rd round |
+
+`go test ./...` ok; `go test -race ./cmd/define/...` ok (64.2s); `go vet ./...` and `go vet -tags conformance ./cmd/define/` silent. Probed behaviour: `401/403/429/503` → exit 1, event recorded, cause carried; connection-refused → exit 1, event recorded, `connection refused` carried; `400` → exit 1, `llm: bad request`; unwired seam → exit 1, `no model configured`, **no** event. `openerStem`: `isn't→is`, `don't→do`, `didn't→did`, `couldn't→could`, but `can't→"ca"`, `won't→"wo"`, `shan't→"sha"` (BR-57 unchanged). `recallLine`: `\how so`→`\how so`, `?why`→`?why` (BR-12 behaviour correct, wiring unpinned).
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one standing flag.** `askScoped` is one owner reachable from both loops and I re-proved it (7 cells); `sayUnavailable` correctly collapses the two degradation messages onto one route-aware sentence rather than duplicating the `q.forced` branch — the right instinct, applied the round after the family that produced BR-46. The flag is unchanged: `crlfWriter.Write` materialises the translation into `out` while `consumed` re-derives it from `p` — two derivations of one fact, which is how they disagreed originally (BR-53's stated rule, still unapplied).
+- **ARCH-PURE — pass.** Every entity the plan calls PURE is deterministic and its test runs with no store, socket, clock or terminal. `askScoped` is control flow with no policy; `gatherAskContext` is a thin read whose only judgement is the nil-deck check. The three new `TestAskScopedHandsTheScopeBackAndCleansUp` subtests are the principle paying off — three timing-free unit assertions replacing what two rounds tried to measure through a stream.
+- **ARCH-PURPOSE — flag on the class/instance axis, twice.** The shadow-sweep over "the directory is the context" passes: one-shot, piped and editor all derive from the store and session, all three pinned by one table. The flags are that two class-fixes again landed as instances — the exit-code/message enumeration (I1) and the entity enumeration (BR-47, fifth round) — and in both cases the commit that stated the rule is the commit that broke it.
+- **ARCH-MOCK — pass, and this round closed the last gap.** The `ErrUnavailable` rows now drive `llmtest.Fake` at the statuses the fake models rather than dialling past it, so production flow and test flow share the boundary for all three producers. `askRig` uses a real YAML store in a temp dir, `storetest.Suite` runs both implementations with a setter, `deps.notifySignals` seams `signal.Notify`, and the pty suite builds what it tests. The only remaining gap is environmental (no pty here), not structural.
+- **For `#17` and `#10`:** `askContext` is stable now that every selection policy in it is pure. Hand over deliberately: `repl`'s `context.WithoutCancel` (`repl.go:180`) means the loop honours no caller cancellation — correct while `main` is the only caller, a trap for the next; and `gatherAskContext` reads the whole deck per question (`ask.go:244`), negligible beside a round-trip today and not once `#10` loops on it.
+
+## 7. Plan revision recommendations
+
+Three `## Revisions` entries are owed in `workshop/plans/000016-console-qa-plan.md`:
+
+1. **The entity enumeration, fifth attempt — and a different kind of fix (BR-47).** I ran the plan's own command against the boundary: 35 entities, and `ask`, `sayUnavailable` and `lastN` appear nowhere in the file (`grep -c` returns 0 for each). Two of the three are in `ask.go`, the file the closing commit rewrote, and `sayUnavailable` was created one commit before the pass that added its two siblings' rows. `ask` — *"the ONE entry into the question path, from all six cells"*, the function the issue is about — has been missing since M1. The entry should record that the timing correction ("run against the working tree") was applied and the enumeration still missed three, so the remaining variable is the by-eye reconciliation, not the moment: either drop the tables to a generated list, or accept that they are illustrative and stop claiming they are the enumeration.
+2. **Boundary round 2's forks and round 6's outstanding item (BR-48).** Six entries exist; `TestThePipedLoopsAskWiring`, `builds its own binary` and `scoped stream` all appear **zero** times. Still unrecorded: the piped-wiring test folded into `TestTheAskWiringTable`, `replLines` gaining the interrupt scope the plan gave only to the raw loop, the pty suite building its own binary — and round 6's item, that **"SIGINT through `repl`'s watcher *during a scoped stream*" remains unasserted** (`TestBothInterruptTransportsReachTheSink` covers the unscoped session only).
+3. **What M1 actually shipped (BR-17, unchanged since round 3).** Task 3's snippet at line 637 still reads `if !literal && readsAsQuestion(word)` where the code is `!cmd.literal && mayAsk(opt) && readsAsQuestion(word)`; `askUnavailable(stderr, question)` is still named at lines 691 and 750 where the code has `unavailable`/`unavailableAfterSending`/`sayUnavailable`; `-raw` and `lostTerminal` appear **zero** times. The Core-concepts tables were swept for `mayAsk`/`recallLine`/`nothingSays`/`lookupOutcome`/`question`; the task prose was not.
+
+Bookkeeping otherwise checks out: 60/60 plan checkboxes ticked, every issue Done-when row ticked and traceable to a named test, and `workshop/projects/define-learn.md` carries per-milestone rows with `actual:`/`closed:` for M1 and M2.
+
+```findings
+dispose:
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Fifth round unchanged - behaviour correct (recallLine round-trips all four kinds, measured), but submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the full suite green.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      Task 3's snippet at line 637 and askUnavailable at 691/750 are verbatim unchanged; "-raw" and "lostTerminal" appear zero times. Only the Core concepts half was swept.
+  - id: BR-47
+    disposition: not-addressed
+    note: |
+      Fifth round. The timing fix was applied and the enumeration still misses ask, sayUnavailable and lastN - two of them in the file the closing commit rewrote, and ask since M1.
+  - id: BR-48
+    disposition: not-addressed
+    note: |
+      Six Revisions entries, still none for round 2's forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" all appear zero times.
+  - id: BR-49
+    disposition: not-addressed
+    note: |
+      Unchanged - replRaw still passes the seam straight to readKeys with no policy, two nil guards elsewhere, and 47 test call sites still pass nil.
+  - id: BR-50
+    disposition: not-addressed
+    note: |
+      All four residues verbatim; residue (1) still predicts a fifth lostTerminal site that has two, and residue (2) is mutation-verified green again this round.
+  - id: BR-53
+    disposition: not-addressed
+    note: |
+      The site fix stands but carriedCR still reverts green (measured), and the rule is unapplied - Write materialises the translation into out while consumed re-derives it from p.
+  - id: BR-56
+    disposition: addressed
+    note: |
+      Measured through the fake at 401/403/429/503 - all four now carry the underlying cause and none says "did not answer"; a fixed-message revert reddens the test.
+  - id: BR-57
+    disposition: not-addressed
+    note: |
+      Unchanged and re-measured - can't->"ca", won't->"wo", shan't->"sha" all miss questionOpeners while isn't/don't/didn't/couldn't reach it.
+findings:
+  - id: new
+    severity: Important
+    family: doc-overstates-code
+    title: |
+      atlas states a COUNT for the ask path's exit codes, and this window's own message split made it wrong
+    detail: |
+      This is the 14th finding in this family; the rule has been stated seven
+      times, so do NOT patch the two lines. atlas/define.md:622 says "The FOUR
+      exit-code absolutes README states are measured across {one-shot, piped}".
+      Measured: the ask path alone has three return-1 sites - ask.go:129 and
+      ask.go:132 (sayUnavailable's two route branches) and ask.go:209 (runAsk's
+      default arm) - and README:164's exit-1 clause names one of them. Probed
+      through the fake: a 400 exits 1 with `define: llm: bad request: ...`, a 401
+      exits 1 with `the model is unavailable (...)`; neither appears in either
+      document, and atlas/define.md has ZERO occurrences of "no model
+      configured", "unavailable" or "did not answer" while devoting a paragraph
+      to which degradation sentence each route selects. The count is the sharp
+      part: the SAME commit that created unavailableAfterSending and
+      sayUnavailable wrote a plan Revisions entry stating "the entry must not
+      carry a count - a count is a measured claim that drifts the moment
+      anything is added, and it drifts silently", twenty lines above the atlas
+      paragraph carrying one. The rule the evidence supports, spanning this
+      family and plan-contract-drift both: two families here have been answered
+      with "here is a greppable command to run at the boundary" (BR-44's
+      normative-block sweep, BR-47's entity enumeration) and BOTH recurred in
+      the commit that wrote the command down - BR-47 five times. The command was
+      never the problem; reconciling its output by eye, against prose, inside a
+      commit still being edited is. The repo already knows the working shape -
+      builtBinary made pty staleness impossible rather than checkable, and
+      TestTheCapturerInjectionIsLive is a control that goes red. If a claim is
+      worth writing down, make something FAIL when it stops being true, or write
+      it without a count and without an enumeration it does not own. Note the
+      README block was already partial before this window (lostTerminal, the
+      reading-input failure), so the deliverable is the sweep, not the clause.
+  - id: new
+    severity: Minor
+    family: test-asserts-nothing
+    title: |
+      The row added this round to the recording table is the only one of nine that never reads the event log
+    detail: |
+      This is the 9th finding in this family. askrun_test.go:658's "configured
+      but never reached" row sits inside
+      TestAQuestionIsRecordedWhateverBecameOfTheAnswer - a test whose NAME is the
+      claim - and asserts only that stderr carries the connection failure. Its
+      eight siblings (answered, refused-by-the-service, cut-off, and the four
+      status rows added by the same commit) all assert len(ev) != 1. Behaviour is
+      correct: I probed it and the event IS recorded (code=1, events=1), so this
+      is a cell present in the enumeration and absent from the coverage. The
+      rule, which is new for this family: a row added to a table whose name is an
+      absolute INHERITS that table's assertions, and a row asserting less than
+      its siblings is exactly the shape a coverage gap hides in - diffing a new
+      row's assertion set against its siblings' is mechanical and would have
+      caught it. Adjacent and cheap: the same row is the one README's recording
+      sentence is loosest about, since a connection-refused sends no request yet
+      records.
+```
