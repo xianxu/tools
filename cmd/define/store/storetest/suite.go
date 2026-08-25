@@ -35,6 +35,119 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 		}
 	})
 
+	t.Run("the user model round-trips, and is empty before anything writes one", func(t *testing.T) {
+		// Absent reads as "" and NOT an error: the normal first-run state for the
+		// whole of #16's life, since #17 is what writes it.
+		//
+		// The write half is here because a row that only reads asserts the only
+		// value a store with no setter can produce — unfalsifiable for the
+		// reference implementation, and a fake that cannot hold the real one's
+		// state is the gap this suite exists to close.
+		s := newStore(t)
+		got, err := s.UserModel()
+		if err != nil {
+			t.Fatalf("UserModel: %v", err)
+		}
+		if got != "" {
+			t.Errorf("UserModel = %q, want empty", got)
+		}
+
+		const model = "## Level\nC1, reads judicial opinions.\n\n## Corrections\nHuman-owned.\n"
+		if err := s.SetUserModel(model); err != nil {
+			t.Fatalf("SetUserModel: %v", err)
+		}
+		got, err = s.UserModel()
+		if err != nil {
+			t.Fatalf("UserModel after write: %v", err)
+		}
+		if got != model {
+			t.Errorf("UserModel = %q, want %q", got, model)
+		}
+	})
+
+	t.Run("an asked event round-trips with its question", func(t *testing.T) {
+		s := newStore(t)
+		// Word is the word the question FOLLOWED, and may be empty — a question
+		// asked cold has no word. Question is what #17 reads.
+		e := store.ReviewEvent{
+			Word: "sycophantic", Kind: store.EventAsked,
+			Question: "what's the difference to obsequious?", At: day(2),
+		}
+		if err := s.AppendEvent(e); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+		got, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("Events = %v, want 1", got)
+		}
+		if got[0].Question != e.Question || got[0].Kind != store.EventAsked || got[0].Word != e.Word {
+			t.Errorf("round-tripped %+v, want %+v", got[0], e)
+		}
+	})
+
+	t.Run("a question with no word is still a whole record", func(t *testing.T) {
+		// Completeness generalised from "has a word" to "has a SUBJECT" when the
+		// asked event arrived. A question asked before any lookup has no word,
+		// and dropping it at read time would lose exactly the events #17 wants.
+		s := newStore(t)
+		e := store.ReviewEvent{Kind: store.EventAsked, Question: "why is it pejorative?", At: day(3)}
+		if err := s.AppendEvent(e); err != nil {
+			t.Fatalf("AppendEvent: %v", err)
+		}
+		got, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(got) != 1 || got[0].Question != e.Question {
+			t.Errorf("Events = %v, want the wordless question to survive", got)
+		}
+	})
+
+	t.Run("a question cannot break the record boundary", func(t *testing.T) {
+		// `question:` is the FIRST free-form user text this log has ever held —
+		// every value before it was a single dictionary headword. The reader's
+		// record boundary is a literal top-level "- ", and the only thing keeping
+		// user text off column 0 is the writer's quoting. Nothing pinned that.
+		//
+		// A regression corrupts an append-only log #17 folds over, irreversibly,
+		// and the precedent for "a fragment that looks whole" is already in this
+		// file's torn-record rule.
+		hostile := []string{
+			"what about\na newline?",
+			"- word: injected\n  kind: looked-up\n  found: true\n  at: 2026-08-20T09:00:00Z\n",
+			"why does it say at: here?",
+			"- not a record, but it starts like one",
+			"trailing colon: and a #comment, plus \"quotes\" and 'apostrophes'",
+		}
+		s := newStore(t)
+		for i, q := range hostile {
+			if err := s.AppendEvent(store.ReviewEvent{
+				Kind: store.EventAsked, Question: q, At: day(1).Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("AppendEvent(%q): %v", q, err)
+			}
+		}
+		got, err := s.Events(time.Time{})
+		if err != nil {
+			t.Fatalf("Events: %v", err)
+		}
+		if len(got) != len(hostile) {
+			t.Fatalf("got %d events, want %d — a question forged or broke a record boundary: %+v",
+				len(got), len(hostile), got)
+		}
+		for i, q := range hostile {
+			if got[i].Question != q {
+				t.Errorf("event %d question = %q, want %q", i, got[i].Question, q)
+			}
+			if got[i].Word != "" || got[i].Kind != store.EventAsked {
+				t.Errorf("event %d = %+v — a forged record leaked through", i, got[i])
+			}
+		}
+	})
+
 	t.Run("upsert round-trips", func(t *testing.T) {
 		s := newStore(t)
 		w := store.Word{Text: "sycophantic", FirstSeen: day(1), LastSeen: day(1), Lookups: 1}

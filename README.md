@@ -51,18 +51,66 @@ On a terminal, `define` with no word opens a line editor:
 
 Definitions wrap to your terminal width at word boundaries.
 
-**`define` writes to the current directory.** *Every* successful lookup — one-shot,
-piped, or in the editor — records the word under `words/` and `events/` where you
-started `define`, so your deck and history build themselves:
+**Type a question and it is answered instead of looked up.** There is no mode and
+no prefix to remember:
+
+```
+› sycophantic                            # a word: the dictionary entry
+› what's the difference to obsequious?   # a question: answered by the model
+› hot dog                                # still a word — two of them
+```
+
+The dictionary decides which is which, and that is why multi-word headwords keep
+working: `define` asks it first, and only classifies what it does not have. So
+`hot dog` and `a priori` are definitions, while a line it has no entry for that
+reads as a question — a wh-word, a question mark, or a request like `use it in a
+sentence` — goes to the model. Anything else is still a miss, so a typo says
+`no dictionary entry` rather than starting a conversation.
+
+Both directions have a one-key escape, and neither is the only way to reach its
+outcome:
+
+| prefix | means |
+|---|---|
+| `?` | ask, even if it is a word — `?why` asks about *why* instead of defining it |
+| `\` | define, even if it reads as a question — `\how so` answers `no dictionary entry` |
+
+The answer is streamed, and **Ctrl-C stops the answer rather than the session** —
+you land back at the prompt with the word you were reading still current. (In a
+one-shot, `define "…?"`, there is no session to return to, so it ends the run.)
+
+What the model is told is the directory you are in: the word on screen and its
+dictionary entry, what you have looked up this session, your recent deck,
+`user-model.md` if you keep one, and the earlier questions in this session — so a
+follow-up like `give me two more examples` resolves against the answer before it.
+Nothing is remembered between runs except the files, which means a fresh process
+answers as well as a long-running one and you can read the context with `cat`.
+
+Questions need a model configured (see `--llm-check` below); without one, `define`
+says so and exits `1` rather than looking up a sentence.
+
+**`-raw` never asks**, on either route: it is the scripting form, so an unforced
+miss stays a miss, and an explicit `?` alongside it is a usage error (exit `2`)
+rather than a guess at which of the two contradicting flags you meant.
+
+**`define` reads and writes the current directory.** *Every* successful lookup —
+one-shot, piped, or in the editor — records the word where you started `define`,
+so your deck and history build themselves. **Every question that reaches the model
+is recorded too, by its text** — whatever became of the answer, since what you
+asked is the signal, not whether it arrived. (What decides it is whether a request
+was actually sent: with no model configured nothing is, so nothing is recorded.
+A model that is configured but does not answer says so, and the question is kept.)
 
 ```
 words/sycophantic.yaml     one file per word
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
+                           kinds: looked-up, asked  (answers are NOT stored)
+user-model.md              optional, yours to write — read to pitch answers
 ```
 
 A failed lookup is recorded as history but never enters the deck, so typos are
 recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
-scripting a dictionary should not mutate a deck.
+scripting a dictionary should not mutate a deck — and neither does it ask.
 
 ```sh
 define --forget sycophantic   # drop a word from the deck (history is kept)
@@ -70,7 +118,9 @@ DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
 ```
 
 `DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
-which is what persists your history, so with it set, history is session-only.
+which is what persists your history, so with it set, history is session-only. It
+also means the directory is not **read**: answers come back un-adapted, with no
+deck and no `user-model.md` behind them.
 
 The directory *is* the deck: run `define` somewhere else and you get a different
 one. If that directory happens to be synced, so is your vocabulary; `define`
@@ -111,15 +161,23 @@ non-zero and names the reason. Configure it with `DEFINE_LLM_API_KEY` (or `ANTHR
 `DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) — all five the tool reads. The
 default base URL is a local proxy on `127.0.0.1:8317`.
 
-Exit codes: `0` success; `1` the request failed (no dictionary entry, `--forget`
-found nothing to remove, or `--llm-check` found no usable model configuration);
-`2` usage error, which includes an unknown `/command`. A piped run exits `1` if any word failed and `2` if a command was
-malformed, so `echo "$w" | define || …` works in a script; an interactive typo
-does not fail the session.
+Exit codes: `0` success; `1` the request failed; `2` usage error. What produces
+each is enumerated rather than sampled, because a list of examples goes stale the
+moment a new one is added and nothing says so:
+
+| code | produced by |
+|---|---|
+| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration |
+| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?` |
+
+A piped run exits `1` if any word failed and `2` if a command was malformed, so
+`echo "$w" | define || …` works in a script; an interactive typo does not fail
+the session.
 
 A line beginning with `/` is a command rather than a word — `/` is safe as a
 marker because no English headword starts with one, and `define` needs whole
-lines for multi-word headwords like `hot dog`. Type `/` to see what there is,
+lines for multi-word headwords like `hot dog`. The same reasoning picks `?` and
+`\` for the two question hatches above: no headword begins with either. Type `/` to see what there is,
 Tab to complete, `/help` to list them. It works the same from every entry mode:
 `define /help`, `echo /help | define`, and `/help` typed at the prompt are one
 thing.

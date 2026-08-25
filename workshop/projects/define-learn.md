@@ -180,7 +180,8 @@ once `#6` is producing misses.
 - [x] REPL command mode — `/`-commands with type-ahead, starting `/history` [tools#15]
 - [x] LLM harness — transport, wire fake, obligation suite [tools#11 M1]
 - [x] LLM harness — typed tasks, goldens, conformance, `--llm-check` [tools#11 M2]
-- [ ] free-form Q&A in the console — three-way input classification, directory as context [tools#16]
+- [x] free-form Q&A — the console knows a question from a word [tools#16 M1]
+- [x] free-form Q&A — the answer: context pack, streaming, scoped Ctrl-C [tools#16 M2]
 - [ ] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [ ] news seam — Google News RSS (not the SERP) [tools#9]
 - [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
@@ -262,17 +263,77 @@ by commit boundary. The increment above is derived by subtraction from a
 measurement, not typed, but this row should not be treated as clean ledger
 evidence.
 
-<a id="tools-16"></a>
-### tools#16 — free-form Q&A in the console
+<a id="tools-16-m1"></a>
+### tools#16 M1 — the console knows a question from a word
 
-**status:** open — new, 2026-08-22
+**est:** 6.49 (whole issue)
+**actual:** 1.46h
+**closed:** 2026-08-23
 
-The third verb. Free-form input at the prompt routes to the model with the recent
-session's words as context; the context is the directory `define` was started in
-(`words/`, `events/`, `user-model.md`), so it survives a fresh process and is
-inspectable as files. The classifier is the hard part and gets one decision table:
-NOAD answers "is this a headword" offline and for free, and what is left splits into
-interrogative → Q&A and everything else → the existing not-found path.
+Typing a question at the prompt is now understood as one, in all three entry
+modes, and answered with an honest "no model configured" until M2 wires the seam.
+The classifier is the part worth preserving: **the dictionary is the classifier.**
+Word count cannot be the signal — `hot dog` is a two-word headword and
+`defenestrate` is one word — so the tool asks NOAD first and classifies only what
+it misses. `hot dog`, `a priori` and `use` stay lookups because the dictionary
+says so, not because a predicate was careful. One decision table in two pure
+halves (`parseREPLLine` syntactic, `readsAsQuestion` semantic), asserted end to
+end by `TestConsoleDecisionTable` rather than half-by-half — the half-by-half
+version proves each half correct and leaves the table unasserted.
+
+A draft had a fourth arm, "≥5 words → question", to catch `difference between
+sycophantic and obsequious`. Operator call: that is a word count wearing a
+different hat, and the spec rejects word count. It was dropped, the cost named in
+the atlas, and `?` is the recovery.
+
+Two defects were caught **at the plan gate rather than in code**, which is the
+strongest argument for the gate this project has produced. PQ-3: the ask outcome
+carries exit code 0 — a question is not a failed lookup — so `if out.code == 0 {
+current = word }` was exactly wrong, and a question would have become the word a
+bare Enter replays. PQ-1/PQ-6: the scoped-interrupt design (M2's) rested on
+`rawterm.go`'s comment that Ctrl-C is a byte in raw mode, while the pty suite's
+own header records the measured opposite — and the first fix would have left every
+piped run uninterruptible. Three plan rounds, zero of those found by running the
+code.
+
+Cost note: 1.46h measured against a window that is mostly design — the plan and
+its three gate rounds sit inside it. The first estimate (3.72) priced only the
+tasks and was revised to 6.49 for exactly that reason before any code was written.
+
+<a id="tools-16-m2"></a>
+### tools#16 M2 — the answer
+
+**est:** 6.49 (whole issue)
+**actual:** 4.88h
+**closed:** 2026-08-24
+
+The third verb works. A question goes to the model with the DIRECTORY as its
+context — the word on screen and its entry, the session's lookups, the deck,
+`user-model.md`, and the session's earlier exchanges — and the answer streams
+back interruptibly.
+
+The adaptation is visible in the output, which is the only place it counts:
+against the live proxy with a two-line learner model ("B2, reads business news,
+weak on near-synonym distinctions"), the answer came back with a *"Business-news
+nuance"* paragraph and *"Related near-synonyms in your range"*, and quoted the
+NOAD entry back at the learner. A follow-up resolved against it.
+
+Two decisions worth not re-deriving. **The interrupt swallow lives in the
+reader**: an interrupt a scope consumed must not also be delivered as a key, or
+the loop quits the session the moment the answer ends — and the alternative, the
+loop racing for keys during the stream, silently ate type-ahead. That made the
+key channel's buffering load-bearing. **The prompt renderer returns an
+`llm.Request`**, so the golden is what the transport actually sends rather than a
+string assembled for the test.
+
+The bug worth remembering was invisible to every M1 test: `ask()` short-circuited
+the FORCED route to "no model configured", so `?why` never reached the seam. M1
+had no seam to reach, so nothing could have caught it there — it surfaced the
+first time a test waited for a stream that was never requested.
+
+Filed out of this milestone rather than fixed in it: [tools#19] — the proxy
+answers **200 with an error body** on overload, which the taxonomy reads as our
+bug rather than an unavailable service.
 
 <a id="tools-10"></a>
 ### tools#10 — item authoring + harvest
@@ -370,8 +431,11 @@ still showed open here.
 [tools#13]: #tools-13
 [tools#14]: #tools-14
 [tools#15]: #tools-15
-[tools#16]: #tools-16
+[tools#16]: #tools-16-m1
+[tools#16 M1]: #tools-16-m1
+[tools#16 M2]: #tools-16-m2
 [tools#17 M1]: #tools-17-m1
 [tools#17 M2]: #tools-17-m2
 [tools#18 M1]: #tools-18-m1
 [tools#18 M2]: #tools-18-m2
+[tools#19]: ../issues/000019-llm-overloaded.md

@@ -72,6 +72,8 @@ func (failingStore) AppendEvent(store.ReviewEvent) error { return errFail }
 func (failingStore) Events(time.Time) ([]store.ReviewEvent, error) {
 	return nil, errFail
 }
+func (failingStore) UserModel() (string, error)  { return "", errFail }
+func (failingStore) SetUserModel(string) error   { return errFail }
 func (failingStore) Forget(string) (bool, error) { return false, errFail }
 
 var errFail = &failErr{}
@@ -94,7 +96,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	first.deps.history = newStoreHistory(st1, nil)
 	first.deps.capture = newStoreCapturer(st1, fixedClock(1), nil)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), first.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, first.deps, opt, cooked, finish, &out, &errb)
 
 	// A second editor over the same directory: the restart case.
 	second, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
@@ -102,7 +104,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	second.deps.history = newStoreHistory(st2, nil)
 	second.deps.capture = newStoreCapturer(st2, fixedClock(2), nil)
 	var out2 bytes.Buffer
-	runEditor(t.Context(), scriptKeys("syc"), second.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
+	runEditor(t.Context(), scriptKeys("syc"), nil, second.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
 
 	if !strings.Contains(out2.String(), greyOn+"ophantic") {
 		t.Errorf("the previous session's word was not suggested: %q", tailOf(out2.String()))

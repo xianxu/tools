@@ -26,8 +26,9 @@ type deps struct {
 	// history is the durable word history. Constructed at the boundary so the
 	// loop takes a seam rather than deciding where state lives.
 	history History
-	// capture is the only thing that RECORDS lookups. deck below is the other
-	// way the store is mutated: --forget deletes through it.
+	// capture is the only thing that RECORDS — lookups (Capture) and questions
+	// (CaptureAsk). deck below is the other way the store is mutated: --forget
+	// deletes through it.
 	capture Capturer
 	// deck is the store --forget acts on. Separate from capture because capture
 	// deliberately cannot fail loudly and --forget deliberately must.
@@ -43,6 +44,18 @@ type deps struct {
 	// reason storeCapturer's is: /history's window is a local-DAY computation,
 	// so a test has to be able to stand at a chosen instant in a chosen zone.
 	clock store.Clock
+	// getenv and newLLM are the model seam, split the way llmcheck already splits
+	// it: configuration is resolved from the environment, then a client is built
+	// from it. Injected together because a test that redirects one and not the
+	// other builds a real client pointed at a real proxy.
+	getenv func(string) string
+	newLLM func(llm.Config) llm.Client
+	// notifySignals is the SIGNAL half of the interrupt story — the other half is
+	// the raw key reader's byte. Injected so a test can drive it without raising
+	// a real signal in the test binary, which `go test` would treat as a failure.
+	// nil means "no signal transport", which is what every test that does not
+	// care about interrupts gets.
+	notifySignals func(...os.Signal) <-chan os.Signal
 	// stdinIsTerminal decides whether the loop prints a prompt. Injected rather
 	// than probed directly because a test harness's stdin is never a terminal,
 	// which would make the interactive path unwritable. Note this is a different
@@ -57,7 +70,19 @@ func realDeps() deps {
 		player:          afplayPlayer{},
 		newStore:        openStore,
 		stdinIsTerminal: func() bool { return isTerminal(os.Stdin) },
+		notifySignals:   notifySignals,
+		getenv:          os.Getenv,
+		newLLM:          llm.New,
 	}
+}
+
+// notifySignals is the production signal transport: a channel signal.Notify
+// feeds. Buffered by one, per os/signal's contract — an unbuffered channel a
+// receiver is not sitting on drops the signal.
+func notifySignals(sigs ...os.Signal) <-chan os.Signal {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, sigs...)
+	return ch
 }
 
 // storeDeps is the trio openStore produces. One value rather than three returns
@@ -207,6 +232,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"shows what you looked up in the last two days (/history 7, or\n"+
 			"--days 7, for a wider window); /sound sets how many times a\n"+
 			"pronunciation plays for the rest of the session.\n\n"+
+			"A line that is not a word and reads as a question is answered by\n"+
+			"the model rather than looked up — there is no mode to switch. The\n"+
+			"dictionary is asked first, so multi-word headwords (hot dog) are\n"+
+			"still definitions. Force either way: ? asks, \\ defines.\n\n"+
 			"define records what you look up under words/ and events/ in the\n"+
 			"CURRENT DIRECTORY, so your deck follows whichever directory you run\n"+
 			"it in. A word that was found is added to the deck; a word that was\n"+
@@ -291,7 +320,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case forgetting && fs.NArg() != 0:
 		fmt.Fprintln(stderr, "define: -forget takes the word to remove; do not also pass one")
 		return 2
-	case !forgetting && oneShot.kind != cmdCommand && fs.NArg() > 1:
+	// cmdAsk is exempted for the same reason cmdCommand is: a question is
+	// multi-word by nature, so counting words would reject the thing the flag
+	// exists to accept (BR-20's shape).
+	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 		fs.Usage()
 		return 2
 	}
@@ -312,34 +344,88 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 
 	switch fs.NArg() {
 	case 0:
-		// The loop needs a cancel it can call itself: in raw mode Ctrl-C arrives
-		// as a byte, so signal.NotifyContext cannot deliver it and the key reader
-		// must cancel instead. NotifyContext stays for the one-shot and piped
-		// paths, which still receive it as a signal.
-		ctx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		return repl(ctx, cancel, d, opt, stdin, stdout, stderr)
+		// The loop derives its OWN context and owns what an interrupt means —
+		// see repl, where the detach sits above the choice of loop so both are
+		// served. This branch used to derive the cancel itself, which put the
+		// decision one level above the thing that makes it (#16 D5).
+		//
+		// NotifyContext stays for the one-shot, -forget and --llm-check paths,
+		// where "SIGINT ends the program" is the right contract.
+		return repl(ctx, d, opt, stdin, stdout, stderr)
 	default:
 		// A command is a command from every entry mode, arguments and all.
 		if oneShot.kind == cmdCommand {
 			return dispatchCommand(oneShot, commands, newCommandCtx(d, opt, stdout, stderr))
 		}
-		return defineOnce(ctx, d, opt, fs.Arg(0), stdout, stderr)
+		// So is a question. The forced route ("?…") skips the dictionary here
+		// exactly as it does at the prompt.
+		if oneShot.kind == cmdAsk {
+			// A one-shot session holds nothing but this question: the DIRECTORY
+			// is the context, which is what makes a fresh process answer as well
+			// as a long-running one.
+			return ask(ctx, d, opt, &session{}, stdout, stderr, question{text: oneShot.question, forced: true})
+		}
+		// EXHAUSTIVE over what parseREPLLine can return, not "handle the two I
+		// added and let the rest fall through". #16 gave the parser a kind this
+		// branch had never seen — cmdNothing, from a bare "?" or "\" — and
+		// falling through handed lookupAndRender an EMPTY word: `define "?"`
+		// printed `define: : no dictionary entry` and appended a ReviewEvent with
+		// no word, which the log then discards at read time as indistinguishable
+		// from a torn record (BR-4).
+		if oneShot.kind != cmdDefine {
+			// inSession is false: a one-shot has no loop to press return in.
+			fmt.Fprintf(stderr, "define: %s\n", nothingSays(oneShot, false))
+			return 2
+		}
+		// oneShot, not fs.Arg(0): the parsed line is what carries #16's hatches,
+		// and a one-shot that re-derived the word from argv would send `define
+		// "?what is X"` to the dictionary — BR-13's shape, in a new place.
+		out := defineOnce(ctx, d, opt, oneShot, stdout, stderr)
+		if out.ask != "" {
+			// The unforced route: the dictionary missed and the line reads as a
+			// question. Returning out.code here would exit 0 having printed
+			// nothing, since an ask outcome carries no failure.
+			// NO current word: the dictionary missed, so nothing was defined and
+			// the line IS the question. Passing oneShot.word here put the
+			// question text into session.current — and from there into "## The
+			// word on screen" and the event log's word field, which is the exact
+			// pollution routing-before-capture exists to prevent (BR-23).
+			return ask(ctx, d, opt, &session{}, stdout, stderr, question{text: out.ask})
+		}
+		return out.code
 	}
 }
 
 // defineOnce is the whole define path for a single word: look up, render, print,
 // speak. Extracted so the loop calls exactly this rather than growing a parallel
 // copy (ARCH-DRY).
-func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, stderr io.Writer) int {
-	code, play := lookupAndRender(d, opt, word, stdout, stderr)
-	if play {
+func defineOnce(ctx context.Context, d deps, opt options, cmd replCommand, stdout, stderr io.Writer) lookupOutcome {
+	out := lookupAndRender(d, opt, cmd, stdout, stderr)
+	if out.ask != "" {
+		// Not this function's to answer: the caller decides where an answer is
+		// rendered, because the raw loop streams it in a terminal mode this path
+		// knows nothing about (#16 D6).
+		return out
+	}
+	if out.play {
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
+		playAnnounced(ctx, d, opt, cmd.word, defaultIndicator(opt), stdout, stderr)
 	}
-	return code
+	return out
+}
+
+// lookupOutcome is what one line turned out to be, once the dictionary has
+// answered. It carries a third possibility the define path did not used to have:
+// the line was a question. That has to travel as DATA rather than be acted on
+// here, because the raw loop renders a definition cooked and streams an answer
+// raw — one function cannot do both (#16 D6).
+type lookupOutcome struct {
+	code  int    // exit semantics, unchanged
+	play  bool   // audio should follow
+	ask   string // non-empty: this line is a question for the model
+	entry string // the raw dictionary text, kept for the ask context
 }
 
 // lookupAndRender is also the ONE capture site. Verified against the call graph
@@ -352,12 +438,32 @@ func defineOnce(ctx context.Context, d deps, opt options, word string, stdout, s
 // render, print. Split out because the raw-mode loop must run it in cooked mode
 // (so newlines translate) while playing in RAW mode (so Ctrl-C arrives as a byte
 // the key reader can see). Returns whether audio should follow.
-func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer) (code int, play bool) {
+func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Writer) lookupOutcome {
+	word := cmd.word
 	text, err := d.dict.Lookup(word)
 	if err != nil {
+		// The route decision comes BEFORE capture, and that order is the point:
+		// a question recorded as a not-found lookup lands in the event log that
+		// #8's statistics and #17's learner model both fold over — data that is
+		// not a lookup at all. The dictionary is asked once and its miss is the
+		// free, offline signal the classifier runs on (#16 D1).
+		// Two conditions, one question: may this miss fall back to a question?
+		// cmd.literal is the user's per-line answer ("\\"), mayAsk is the
+		// session's (-raw, the scripting form). mayAsk lives in ask.go because
+		// the forced route needs the same predicate and guarding only this one
+		// left three of six cells open (BR-9).
+		//
+		// NOT redundant with ask()'s own mayAsk check, however much it looks it:
+		// this one decides the OBSERVABLE. Without it a -raw miss reaches ask(),
+		// which refuses with advice to "drop the ?" for a line that contains no
+		// "?" — instead of the `no dictionary entry` the scripting contract
+		// promises. Deleting either changes what a script sees (BR-14).
+		if !cmd.literal && mayAsk(opt) && readsAsQuestion(word) {
+			return lookupOutcome{ask: word}
+		}
 		fmt.Fprintf(stderr, "define: %s: %v\n", word, err)
 		d.capture.Capture(word, false, opt)
-		return 1, false
+		return lookupOutcome{code: 1}
 	}
 	if opt.raw {
 		fmt.Fprintln(stdout, text)
@@ -365,11 +471,11 @@ func lookupAndRender(d deps, opt options, word string, stdout, stderr io.Writer)
 		// it must be the thing that says so — returning early made that branch
 		// unreachable and gave "capture is off" a second home.
 		d.capture.Capture(word, true, opt)
-		return 0, false
+		return lookupOutcome{entry: text}
 	}
 	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
 	d.capture.Capture(word, true, opt)
-	return 0, !opt.noAudio && opt.times > 0
+	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
 }
 
 // defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.

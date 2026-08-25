@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -21,6 +22,34 @@ func TestParseREPLLine(t *testing.T) {
 		{"blank replays when there is a current word", "", true, replCommand{kind: cmdReplay}},
 		{"blank with nothing current", "", false, replCommand{kind: cmdNothing}},
 		{"whitespace only is blank", "   \t ", true, replCommand{kind: cmdReplay}},
+		// #16's two escape hatches. Both are decided HERE for the same reason "/"
+		// is: one decision table, or the loops disagree about what a line means.
+		{"a question mark in column 1 forces a question", "?what is X", false,
+			replCommand{kind: cmdAsk, question: "what is X"}},
+		{"a forced question keeps its own punctuation", "?is it pejorative?", false,
+			replCommand{kind: cmdAsk, question: "is it pejorative?"}},
+		{"a forced question collapses interior whitespace", "?what   is   X", false,
+			replCommand{kind: cmdAsk, question: "what is X"}},
+		{"a bare question mark asks nothing", "?", false,
+			replCommand{kind: cmdNothing, note: noteEmptyQuestion}},
+		{"a backslash forces a literal lookup", `\how so`, false,
+			replCommand{kind: cmdDefine, word: "how so", literal: true}},
+		{"a backslash collapses whitespace like any word", `\hot   dog`, false,
+			replCommand{kind: cmdDefine, word: "hot dog", literal: true}},
+		// Both hatches, both session states: a hatch with no payload is a
+		// malformed line whatever is current, so neither may fall through to the
+		// blank-line rules. The "\" arm used to strip its prefix and land in the
+		// empty-word test, which REPLAYED audio when a word was current.
+		{"a bare backslash says so", `\`, false,
+			replCommand{kind: cmdNothing, note: noteEmptyLiteral}},
+		{"a bare backslash says so even with a current word", `\`, true,
+			replCommand{kind: cmdNothing, note: noteEmptyLiteral}},
+		{"a bare question mark says so even with a current word", "?", true,
+			replCommand{kind: cmdNothing, note: noteEmptyQuestion}},
+		{"a question mark inside a word is part of it", "what?", false,
+			replCommand{kind: cmdDefine, word: "what?"}},
+		{"a slash still wins over a question mark", "/help", false,
+			replCommand{kind: cmdCommand, name: "help"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -28,7 +57,9 @@ func TestParseREPLLine(t *testing.T) {
 			// args slice in #15, which makes the struct incomparable.
 			got := parseREPLLine(tc.line, tc.hasCurrent)
 			if got.kind != tc.want.kind || got.word != tc.want.word ||
-				got.name != tc.want.name || !reflect.DeepEqual(got.args, tc.want.args) {
+				got.name != tc.want.name || !reflect.DeepEqual(got.args, tc.want.args) ||
+				got.question != tc.want.question || got.literal != tc.want.literal ||
+				got.note != tc.want.note {
 				t.Errorf("parseREPLLine(%q, %v) = %+v, want %+v", tc.line, tc.hasCurrent, got, tc.want)
 			}
 		})
@@ -64,7 +95,7 @@ func TestREPLBareReturnReplaysWithoutRefetching(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 	var out, errb bytes.Buffer
 
-	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb); code != 0 {
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb); code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
 	}
 	if got := rig.player.count(); got != 6 {
@@ -81,7 +112,7 @@ func TestREPLBareReturnReplaysWithoutRefetching(t *testing.T) {
 func TestREPLSecondWordBecomesCurrent(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\nephemeral\n\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\nephemeral\n\n"), &out, &errb)
 
 	if n := strings.Count(out.String(), "/ˌsikəˈfan(t)ik/"); n != 1 {
 		t.Errorf("sycophantic printed %d times, want 1", n)
@@ -95,7 +126,7 @@ func TestREPLSecondWordBecomesCurrent(t *testing.T) {
 func TestREPLUnknownWordLeavesCurrentUnchanged(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\nrizz\n\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\nrizz\n\n"), &out, &errb)
 
 	if !strings.Contains(errb.String(), "rizz") {
 		t.Error("the unknown word should be reported on stderr")
@@ -108,7 +139,7 @@ func TestREPLUnknownWordLeavesCurrentUnchanged(t *testing.T) {
 func TestREPLBlankWithNothingCurrentIsAHint(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 	var out, errb bytes.Buffer
-	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("\nsycophantic\n"), &out, &errb); code != 0 {
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader("\nsycophantic\n"), &out, &errb); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
 	if !strings.Contains(errb.String(), "press return to replay") {
@@ -123,7 +154,7 @@ func TestREPLReplayWithAudioOffIsAHint(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 	opt.noAudio = true
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
 
 	if !strings.Contains(errb.String(), "audio is off") {
 		t.Errorf("want a hint on stderr, got %q", errb.String())
@@ -133,7 +164,7 @@ func TestREPLReplayWithAudioOffIsAHint(t *testing.T) {
 func TestREPLEndOfInputExitsZero(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 	var out, errb bytes.Buffer
-	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader(""), &out, &errb); code != 0 {
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader(""), &out, &errb); code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
 }
@@ -142,22 +173,31 @@ func TestREPLEndOfInputExitsZero(t *testing.T) {
 // Ctrl-C work while the loop is waiting for input.
 func TestREPLCancelledContextReturnsPromptly(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
+	// Driven through the SIGNAL TRANSPORT, not a pre-cancelled parent.
+	//
+	// #16 D5 detached the loop's context from the caller's on purpose: main
+	// wraps its context in signal.NotifyContext, so a parent cancellation IS the
+	// SIGINT, and honouring it directly would end the session mid-answer no
+	// matter what the interrupt sink points at. The loop now owns its lifetime
+	// and ends on EOF or when its sink fires — so the sink is what this asserts.
+	sigs := make(chan os.Signal, 1)
+	rig.deps.notifySignals = func(...os.Signal) <-chan os.Signal { return sigs }
 
 	var out, errb bytes.Buffer
 	done := make(chan int, 1)
 	go func() {
-		// A reader that never yields a line and never ends: only ctx can end this.
-		done <- repl(ctx, cancel, rig.deps, opt, blockingReader{}, &out, &errb)
+		// A reader that never yields a line and never ends: only the sink can
+		// end this.
+		done <- repl(t.Context(), rig.deps, opt, blockingReader{}, &out, &errb)
 	}()
+	sigs <- os.Interrupt
 	select {
 	case code := <-done:
 		if code != 0 {
 			t.Errorf("exit = %d, want 0", code)
 		}
 	case <-t.Context().Done():
-		t.Fatal("repl did not return on a cancelled context")
+		t.Fatal("repl did not return when its interrupt sink fired")
 	}
 }
 
@@ -170,7 +210,7 @@ func TestREPLPromptOnlyWhenInteractive(t *testing.T) {
 	for _, interactive := range []bool{true, false} {
 		rig, opt := replRig(t, "sycophantic", true, interactive)
 		var out, errb bytes.Buffer
-		repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
+		repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
 		if got := strings.Contains(out.String(), prompt); got != interactive {
 			t.Errorf("interactive=%v: prompt present=%v", interactive, got)
 		}
@@ -183,11 +223,11 @@ func TestREPLReplayWritesNothingToStdout(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 
 	var once bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n"), &once, &bytes.Buffer{})
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n"), &once, &bytes.Buffer{})
 
 	rig2, opt2 := replRig(t, "sycophantic", true, false)
 	var twice bytes.Buffer
-	repl(t.Context(), func() {}, rig2.deps, opt2, strings.NewReader("sycophantic\n\n\n"), &twice, &bytes.Buffer{})
+	repl(t.Context(), rig2.deps, opt2, strings.NewReader("sycophantic\n\n\n"), &twice, &bytes.Buffer{})
 
 	if once.String() != twice.String() {
 		t.Errorf("two replays changed stdout:\n one: %q\n two: %q", once.String(), twice.String())
@@ -204,7 +244,7 @@ func TestREPLOverlongLineIsReportedNotSilentEOF(t *testing.T) {
 	var out, errb bytes.Buffer
 	huge := strings.Repeat("a", maxLineBytes+1) + "\n"
 
-	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader(huge), &out, &errb); code != 1 {
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader(huge), &out, &errb); code != 1 {
 		t.Errorf("exit = %d, want 1 — an unreadable line must not be mistaken for EOF", code)
 	}
 	if !strings.Contains(errb.String(), "reading input") {
@@ -219,7 +259,7 @@ func TestREPLLongButReadableLineIsJustAWord(t *testing.T) {
 	var out, errb bytes.Buffer
 	long := strings.Repeat("a", 100_000) + "\n"
 
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader(long), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader(long), &out, &errb)
 
 	// It is looked up (and fails, since it is not a word) rather than being
 	// reported as an unreadable line — that distinction is the point of the test.
@@ -238,7 +278,7 @@ func TestREPLLongButReadableLineIsJustAWord(t *testing.T) {
 func TestREPLNonInteractiveReplayEmitsNoEscapes(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false)
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
 
 	if strings.Contains(out.String(), "\x1b[") {
 		t.Error("ANSI escapes leaked into non-interactive output")
@@ -251,7 +291,7 @@ func TestREPLNonInteractiveReplayEmitsNoEscapes(t *testing.T) {
 func TestREPLDefineIndicatorIsErasedAfterPlayback(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, true)
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
 
 	s := out.String()
 	i := strings.Index(s, "♫")
@@ -268,7 +308,7 @@ func TestREPLDefineIndicatorIsErasedAfterPlayback(t *testing.T) {
 func TestREPLMismatchedStreamsEmitNoEscapes(t *testing.T) {
 	rig, opt := replRigStreams(t, "sycophantic", true, true /*stdin tty*/, false /*stdout redirected*/)
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
 
 	if strings.Contains(out.String(), "\x1b[") {
 		t.Errorf("ANSI escapes leaked into a redirected stdout: %q", out.String())
@@ -281,7 +321,7 @@ func TestREPLFailedReplayDoesNotEatThePrompt(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, true)
 	opt.noAudio = true
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
 
 	if !strings.Contains(errb.String(), "audio is off") {
 		t.Errorf("want the hint on stderr, got %q", errb.String())
@@ -310,7 +350,7 @@ func TestREPLFailedReplayDoesNotEatThePrompt(t *testing.T) {
 func TestREPLFailedReplayDoesNotWriteOntoThePrompt(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", false /* no recording */, true)
 	var screen bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &screen, &screen)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &screen, &screen)
 
 	s := screen.String()
 	i := strings.Index(s, "define: sycophantic: no recorded pronunciation")
@@ -336,8 +376,9 @@ func TestCancellationPrintsNoDiagnostic(t *testing.T) {
 	cancel()
 
 	var out, errb bytes.Buffer
-	if code := defineOnce(ctx, rig.deps, options{times: 3, locale: "us"}, "sycophantic", &out, &errb); code != 0 {
-		t.Fatalf("exit = %d, want 0", code)
+	cmd := replCommand{kind: cmdDefine, word: "sycophantic"}
+	if out := defineOnce(ctx, rig.deps, options{times: 3, locale: "us"}, cmd, &out, &errb); out.code != 0 {
+		t.Fatalf("exit = %d, want 0", out.code)
 	}
 	if errb.Len() != 0 {
 		t.Errorf("Ctrl-C printed a diagnostic: %q", errb.String())
@@ -350,7 +391,7 @@ func TestCancellationPrintsNoDiagnostic(t *testing.T) {
 func TestREPLPipedFailedLookupExitsNonZero(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, false /* piped */)
 	var out, errb bytes.Buffer
-	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("rizz\n"), &out, &errb); code != 1 {
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader("rizz\n"), &out, &errb); code != 1 {
 		t.Errorf("exit = %d, want 1", code)
 	}
 }
@@ -359,7 +400,7 @@ func TestREPLPipedFailedLookupExitsNonZero(t *testing.T) {
 func TestREPLInteractiveFailedLookupExitsZero(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, true)
 	var out, errb bytes.Buffer
-	if code := repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("rizz\nsycophantic\n"), &out, &errb); code != 0 {
+	if code := repl(t.Context(), rig.deps, opt, strings.NewReader("rizz\nsycophantic\n"), &out, &errb); code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
 }
@@ -369,7 +410,7 @@ func TestNoColorSuppressesAllANSI(t *testing.T) {
 	rig, opt := replRig(t, "sycophantic", true, true)
 	opt.color, opt.tty = false, false // what -no-color produces on a terminal
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n\n"), &out, &errb)
 
 	if strings.Contains(out.String(), "\x1b") {
 		t.Errorf("-no-color emitted ANSI: %q", out.String())
@@ -383,7 +424,7 @@ func TestNoColorSuppressesAllANSI(t *testing.T) {
 func TestREPLPromptRequiresBothStreams(t *testing.T) {
 	rig, opt := replRigStreams(t, "sycophantic", true, true /*stdin tty*/, false /*stdout redirected*/)
 	var out, errb bytes.Buffer
-	repl(t.Context(), func() {}, rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
+	repl(t.Context(), rig.deps, opt, strings.NewReader("sycophantic\n"), &out, &errb)
 
 	if strings.Contains(out.String(), prompt) {
 		t.Errorf("prompt polluted a redirected stdout: %q", out.String())

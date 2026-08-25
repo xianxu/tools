@@ -16,7 +16,7 @@ func collect(t *testing.T, in string, n int) []Key {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	keys := readKeys(ctx, strings.NewReader(in), cancel)
+	keys := readKeys(ctx, strings.NewReader(in), &interrupter{fn: cancel})
 	var got []Key
 	for i := 0; i < n; i++ {
 		select {
@@ -52,7 +52,7 @@ func TestReadKeysHandlesSequencesSplitAcrossReads(t *testing.T) {
 	pr, pw := io.Pipe()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	keys := readKeys(ctx, pr, cancel)
+	keys := readKeys(ctx, pr, &interrupter{fn: cancel})
 
 	go func() {
 		pw.Write([]byte("\x1b"))
@@ -72,18 +72,23 @@ func TestReadKeysHandlesSequencesSplitAcrossReads(t *testing.T) {
 	}
 }
 
-// Ctrl-C cancels from the READER, because in raw mode it is a byte and the loop
+// Ctrl-C fires from the READER, because in raw mode it is a byte and the loop
 // may be blocked in playback and unable to act on it.
-func TestReadKeysCancelsOnInterrupt(t *testing.T) {
+//
+// It fires the interrupt SINK rather than a context directly: #16 D5 made the
+// sink the one answer to what an interrupt means, so that a question can scope
+// it without the key reader knowing anything about questions.
+func TestReadKeysFiresTheSinkOnInterrupt(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	keys := readKeys(ctx, strings.NewReader("a\x03"), cancel)
+	fired := make(chan struct{}, 1)
+	keys := readKeys(ctx, strings.NewReader("a\x03"), &interrupter{fn: func() { fired <- struct{}{} }})
 	<-keys // the rune
 
 	select {
-	case <-ctx.Done():
+	case <-fired:
 	case <-time.After(2 * time.Second):
-		t.Fatal("Ctrl-C did not cancel the context — cancellation would not reach a blocked loop")
+		t.Fatal("Ctrl-C did not reach the sink — cancellation would not reach a blocked loop")
 	}
 }
 

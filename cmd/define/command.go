@@ -210,6 +210,12 @@ func runHelp(c commandCtx, _ []string) int {
 	for _, cmd := range c.cmds {
 		fmt.Fprintf(c.stdout, "  /%-10s %s\n", cmd.name, cmd.summary)
 	}
+	// The two hatches are one keystroke each and otherwise invisible: nothing on
+	// screen suggests a line can be forced either way. This is the only place
+	// that lists what the console understands, so it is where they go.
+	fmt.Fprintln(c.stdout)
+	fmt.Fprintln(c.stdout, "  a word is defined, a question is asked — no mode to switch")
+	fmt.Fprintln(c.stdout, `  ?  ask, even if it is a word     \  define, even if it reads as a question`)
 	return 0
 }
 

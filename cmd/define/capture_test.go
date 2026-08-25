@@ -71,13 +71,22 @@ func TestStoreCapturerDegradesOnWriteFailure(t *testing.T) {
 
 // countingCapturer records every Capture call, so arity is assertable.
 type countingCapturer struct {
-	calls []string
-	found []bool
+	calls     []string
+	found     []bool
+	asked     []string
+	askedWord []string
 }
 
 func (c *countingCapturer) Capture(word string, found bool, _ options) {
 	c.calls = append(c.calls, word)
 	c.found = append(c.found, found)
+}
+
+// asked records questions separately from lookups, so a test can assert that a
+// question was NOT counted as one — the distinction D2 exists to keep.
+func (c *countingCapturer) CaptureAsk(word, question string, _ options) {
+	c.asked = append(c.asked, question)
+	c.askedWord = append(c.askedWord, word)
 }
 
 // ONE lookup, ONE capture — on every entry path.
@@ -112,7 +121,7 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
@@ -122,7 +131,7 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
@@ -271,7 +280,7 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
 
 	deck, err := st.Deck()
 	if err != nil {

@@ -842,3 +842,122 @@ completed.
 The gate's own behaviour here is the model to copy: given no parseable verdict it
 recorded `unknown`, said "a gate/prompt bug?", and refused to close. An
 unparseable result is not a pass and not a fail.
+
+## A rule stated in a comment is not a rule the suite enforces (define #16 M1)
+
+Four boundary-review rounds on one milestone, and the same two families kept
+coming back — `test-asserts-nothing` reached its 4th finding, `doc-overstates-code`
+its 4th. Each round I fixed what the finding named, wrote the rule in a comment,
+and the next round found the same family somewhere else. The gate's own summary
+was the diagnosis: *not converging: fix rules, not instances.*
+
+What actually made them converge was narrower than "state the rule":
+
+**Name the enumeration the rule quantifies over, and make every cell fail on its
+own.** "`-raw` never asks" quantifies over `{forced, unforced} × {one-shot, piped,
+editor}` — six cells. The guard went on the unforced fallback, the README stated
+the absolute, and three cells asked anyway. A table with six rows in the test is
+not enough either: two of the six passed for the very failure they existed to
+catch, because they asserted the *absence* of a string.
+
+**An assertion that pins "X did not happen" must assert the positive observable
+that distinguishes X from every other outcome.** Checking that stderr lacks the
+ask message is satisfied by a *different wrong* message. Assert what did happen —
+the `no dictionary entry` the scripting contract promises.
+
+**An assertion on a message compares the bytes the user receives to a literal
+written in the test.** `note: noteEmptyLiteral` is the constant compared to
+itself: it proves a branch was selected and nothing about what the reader sees.
+A doubled backslash shipped behind exactly that assertion — `define '\'` printed
+`type a word after "\\"` — and four rounds of placement fixes never touched it,
+because every round pinned *where* a message was written and none pinned *what
+it said*.
+
+**A test that injects a double must inject where production reads, or prove the
+injection is live.** `withStore` only fills nils, so a `newStore` supplied
+alongside an already-set field is silently discarded and every assertion over the
+double ranges over an empty slice. Keep one control assertion that goes red when
+the injection dies.
+
+**In a loop that echoes, an assertion on stdout is satisfied by the echo.** The
+recall test passed with `hist.Add` deleted, because the raw editor re-renders the
+line on every keystroke and the text was there from *typing*.
+
+And one that is not about tests: **a defect fixed once will be reintroduced by
+the next branch that needs the same shape.** `replLines` collapsed a dispatch's
+exit code into a boolean — the defect a comment 45 lines above names by number,
+fixed for commands in #15 and re-made for questions in #16. The fix is a single
+sink every branch feeds, not a third careful branch.
+
+## The `Review-Verdict:` trailer marks a boundary — never put it on a fix commit (define #16 M2)
+
+A REWORK verdict prints trailers alongside its findings, the same way
+FIX-THEN-SHIP does. I pasted them into the commit that FIXED the findings. The
+gate finds the previous boundary with `git log --grep 'Review-Verdict'`, so that
+commit became the boundary, and the next review ran over a window of
+`471b376..471b376` — **empty**. It reported "0 new findings, converging" while
+all eleven prior findings sat undisposed, and produced no verdict at all.
+
+The rule: **that trailer is a claim that this commit CLOSES a boundary.**
+
+- **FIX-THEN-SHIP** — the verdict sanctions shipping after the fixes, so the
+  fixes and the close mutations are ONE commit and it carries the trailer.
+- **REWORK** — the verdict is "address the findings, then re-run". The fix
+  commit carries no trailer; the trailer arrives with the close that follows.
+
+Costly in a quiet way: nothing errored, the gate said "converging", and only the
+window in the output — start SHA equal to end SHA — showed the review had been
+handed nothing to look at. **When a review reports zero findings on a diff you
+know is large, read the window before believing it.**
+
+## A backup is only as good as the tree it was taken from (define #16 M2)
+
+M1's lesson was *make the backup first, and restore from the backup, not from
+git*. That is necessary and not sufficient. Here is the shape it missed:
+
+1. A background mutation job was killed mid-flight, before its restore step, so
+   it left `ask.go` MUTATED.
+2. The next command started with `cp cmd/define/ask.go /tmp/…` — snapshotting the
+   corrupted tree as its "known good" copy.
+3. Restoring from that snapshot put a `restore := func() {}` stub into the
+   working tree, disabling the very interrupt scoping the round had just added a
+   test for.
+
+Nothing errored. The command printed `tree restored, builds`, and it was true —
+it built fine, with the mechanism disabled.
+
+**Before snapshotting a file as a backup, confirm nothing else is mid-mutation on
+it**, and after any killed job, restore from GIT (plus re-apply intended edits by
+hand) rather than from a snapshot whose provenance you cannot vouch for. The
+mutation experiments in this repo take longer than the tool timeout, so they run
+in the background, which makes "is anything else editing this file right now" a
+real question rather than a rhetorical one.
+
+The generalisable half: **`git status` and "it builds" both pass on a tree with a
+mechanism silently removed.** What catches it is diffing the file against HEAD
+and reading every hunk — which is also what caught it here, one step before a
+commit.
+
+## A mechanical check can pass vacuously too (define #16 close)
+
+The entity-table check failed five rounds running, and each fix made it *more*
+mechanical: run the enumeration → run it against the working tree, not HEAD →
+reconcile by set difference rather than by eye. The sixth round found the set
+difference **passing because the tables contain the string `cmd/define/ask.go`**,
+which matches `\bask\b`. The function `ask` — the single entry into the question
+path — was in no row, and the check said everything was covered.
+
+Two rules, and the second is the general one:
+
+- **Match where a thing is NAMED, not anywhere in the document.** Table rows and
+  bullet headers name entities; prose contains the English word "ask" and paths
+  contain `ask.go`. Both satisfied a whole-text search.
+- **A check you wrote to defend a finding is itself a claim, so probe it.** The
+  fix for "the tables drift" was a script, and the script needed exactly the
+  falsification test its own finding was about: feed it something you KNOW is
+  missing and confirm it says so. I never did, so it reported "none missing" for
+  three rounds while three symbols were missing.
+
+Same rule as the mutation-table and the message-count entries above, applied one
+level up: the check is a claim, and an unfalsified claim is scaffolding whatever
+language it is written in.

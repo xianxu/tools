@@ -28,6 +28,8 @@ and there is no second consumer yet.
 | `Dictionary` | CoreServices `DCSCopyTextDefinition` (cgo) | `fakeDictionary` over the captured corpus |
 | `AudioSource` | Google's gstatic MP3 CDN | `fakeCDN`, an `httptest` server recording request order |
 | `Player` | `afplay(1)` | `fakePlayer`, recording play count |
+| `deps.newLLM` + `getenv` | `internal/llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
+| `deps.notifySignals` | `signal.Notify` | a channel a test writes to |
 
 Pure: `ParseEntry` (flat text → `Entry`), `Render` (`Entry` → string),
 `AudioCandidates` (word → ordered URLs), `isPronunciation`, `opensBlock`,
@@ -178,11 +180,15 @@ acts. Candidates arrive as a plain slice rather than a `History` handle, so
 **`Apply` never queries**; the loop resolves matches once per keystroke and hands
 the same slice to both the state machine and the suggestion.
 
-**Cancellation changes shape in raw mode, and this is the subtle part.** Ctrl-C
-arrives as byte `0x03`, not a signal, so `signal.NotifyContext` — which the
-one-shot and piped paths still rely on — never fires. The key reader owns
-cancellation instead, calling `cancel()` the moment it decodes an interrupt, which
-works even while the loop is blocked in playback.
+**Cancellation changes shape in raw mode, and this is the subtle part.** Raw mode
+clears ISIG, so Ctrl-C arrives as byte `0x03` and the key reader can act on it
+even while the loop is blocked in playback. It does not *own* the meaning,
+though, and the three claims this paragraph used to make were each disproved:
+the pty suite measured a `\x03` arriving as a **SIGINT** anyway; the loop no
+longer relies on `NotifyContext` at all (`repl` detaches with
+`context.WithoutCancel` above its choice of loop, so both loops are served); and
+the reader fires an **interrupt sink** rather than a cancel. See "Free-form
+input" below for what the sink is and why both transports feed it.
 
 That forced a second decision: **render cooked, play raw.** Printing a definition
 needs cooked mode so newlines translate; playback must stay raw so the key reader
@@ -204,6 +210,8 @@ arrives later.
 ```
 words/<slug>.yaml        one file per word
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
+                         kinds: looked-up, asked
+user-model.md            the learner model — markdown, because a person edits it
 ```
 
 **What that layout buys, stated precisely:** it does *not* make sync conflicts
@@ -243,10 +251,25 @@ That last one is the trap worth remembering: it is the strictest rule and it
 destroys the history it exists to protect the moment a person, an editor, or a
 sync tool rewrites the file's quoting.
 
-A whole record therefore **ends with a newline** and **carries every field**. The
-writer always terminates a record, and `AppendEvent` repairs a missing terminator
-before writing — without which one interrupted write costs *two* events, because
-the next append lands on the fragment's line and is parsed as part of it.
+A whole record therefore **ends with a newline** and **identifies its subject** —
+a word for a lookup, a question for an `asked` event. It was "carries every
+field" until #16 added a question that may have no word; a reader still following
+that rule discards exactly the wordless events the generalisation exists to keep.
+`at:` stays the LAST field for the same reason it always was: completeness leans
+on a cut record losing its timestamp, so a field written after it would survive
+the cut and make a fragment look whole.
+
+The writer always terminates a record, and `AppendEvent` repairs a missing
+terminator before writing — without which one interrupted write costs *two*
+events, because the next append lands on the fragment's line and is parsed as
+part of it.
+
+**`question:` is the first free-form USER TEXT this log holds.** Every value
+before it was a single dictionary headword, and the record boundary a reader
+looks for is a literal top-level `- `. What keeps a typed question off column 0
+is the writer's quoting, and `storetest` now round-trips five adversarial
+questions — including one whose text is a complete forged event record — against
+both implementations.
 
 Parsing is one path, always record-by-record. A fast-path-plus-fallback version
 double-counted whatever the failed whole-file parse had already collected, and
@@ -256,6 +279,12 @@ a truncation produces.
 **Two Store implementations, one conformance suite.** `Mem` is the reference and
 ships as production code; `storetest.Suite` runs against both, so "the fake
 behaves like the real thing" is a test rather than an assumption.
+
+That claim is only as strong as the fake's ability to HOLD the state, which is
+the trap #16 fell into: `UserModel` arrived as a getter with no writer anywhere,
+so the suite row asserting "empty before anything writes one" asserted the only
+value `Mem` could produce. A method added to `Store` brings its setter with it,
+or the row that covers it is unfalsifiable for the reference implementation.
 
 ### Capture: one site, one policy
 
@@ -453,6 +482,168 @@ Known cost: `Events` is O(all history) per call. One read per `/history` on a
 personal word list is the right trade today; when it stops being, the fix belongs
 in the store — an index, or a filename pre-filter that still *decides* on
 timestamps — not in this command.
+
+## Free-form input
+
+A line that is not a word and reads as a question is answered by the model rather
+than looked up. There is no mode and no prefix to remember — which is the whole
+claim, so the interesting part is how "is this a word" gets decided.
+
+**The dictionary is the classifier.** Word count cannot be the signal: `hot dog`
+is a two-word headword and `defenestrate` is one word. What works is free,
+offline and already on the path — **ask NOAD first**, and classify only what it
+misses. `hot dog`, `a priori` and `use` are lookups because the dictionary has
+them, not because a predicate was careful.
+
+**One decision table, in two pure halves.** `parseREPLLine` is the syntactic half
+(command / blank / forced question / forced literal / word); `readsAsQuestion` is
+the semantic half, and it is only ever asked about a line NOAD already missed.
+Both loops and the one-shot route through the same two functions —
+`TestConsoleDecisionTable` drives the whole table end to end through the real
+route, because asserting each half separately proves each is correct and leaves
+the *table* unasserted.
+
+| input | classified as |
+|---|---|
+| `/history 7` | command — `/` in column 1 still wins |
+| `sycophantic`, `hot dog` | lookup — NOAD has an entry |
+| `what's the difference to obsequious?` | question — no entry, reads interrogative |
+| `sycophanti` | not found — no entry, does not read interrogative |
+| `?hot dog` | question, forced — the dictionary is not consulted at all |
+| `\how so` | not found, forced — the question fallback is suppressed |
+
+`readsAsQuestion` has three arms: a trailing `?`, a leading interrogative or
+auxiliary (`what's` → what, `isn't` → is, and `when` is not a negation), or a
+leading request verb with an object (`use it in a sentence`). A single-word line
+with no question mark is never a question — that is a headword shape, and a miss
+is a typo. `why?` is, because the mark is explicit and its arm is tested first.
+
+**There is deliberately no length arm.** A draft had "≥5 words → question" to
+catch `difference between sycophantic and obsequious`, which reads as neither
+interrogative nor imperative. That is a word count wearing a different hat, and
+word count is the signal that cannot work. The cost is real and named: that line
+answers "not found", and `?` is its recovery.
+
+**Both hatches, and why neither is exclusive.** `?` forces a question and `\`
+forces a lookup; a bare question still asks and a bare word still looks up, so
+each hatch is a recovery rather than syntax. They are decided in `parseREPLLine`
+next to the `/` test, for the reason that test is there: a prefix checked in
+either loop alone makes the loops disagree about what a line means.
+
+**A question is not a lookup, and the log knows it.** The route decision sits
+*before* `d.capture.Capture` in `lookupAndRender`'s miss branch — deliberately,
+because the event log is what `#8`'s statistics and `#17`'s learner model fold
+over, and a question recorded as a not-found lookup is data that was never a
+lookup. Verified end to end: six lines in, four events out, neither question
+among them.
+
+**A question does not become the current word** either. The ask outcome carries
+exit code 0 — it is not a failure — so the guard is `out.ask == "" && out.code ==
+0`, not the code alone. Testing the code alone made a bare Enter "replay" the
+question, and would have made the question the word `#16`'s context claims the
+next one is about. `session` exists for this: it replaced three separate
+declarations of "what is this session holding" (`replLines`, `runEditor`,
+`submitLine`), because the rule would otherwise have been written three times.
+
+**The answer.** A question goes to `internal/llm` with the DIRECTORY as its
+context: the word on screen and its dictionary entry, this session's lookups, the
+recent deck, `user-model.md`, and the session's own earlier exchanges. Three
+consequences fall out, and they are the reason for this shape — a fresh process
+answers as well as a long-running one, the context is inspectable as files rather
+than trapped in memory, and the answer is adaptive for the same reason the
+generated items will be.
+
+`askContext` is that context as DATA and `renderAskPrompt` is pure, which is what
+makes "what did we send" assertable without a socket: the golden snapshots the
+`llm.Request` through the same renderer the transport hashes, so a field added to
+the prompt without thought shows up in its diff. An absent section is **omitted**,
+never rendered empty — an empty `## The learner` says there IS a model and it is
+blank, a different claim, and the one that produces a confident generic answer.
+
+Measured end to end against the live proxy with a two-line `user-model.md` ("B2,
+reads business news, weak on near-synonym distinctions"): the answer came back
+with a *"Business-news nuance"* paragraph and *"Related near-synonyms in your
+range"*, and quoted the NOAD entry back — *"the dictionary definition you looked
+up actually contains both"*. The adaptation is visible in the output, which is
+the only place it counts.
+
+**Ctrl-C stops the answer, not the session — and the swallow lives in the
+READER.** An interrupt that a scope consumed must not ALSO be delivered as a key,
+or the loop applies it as "quit" the moment the answer ends. Having the loop race
+for keys during a stream would have worked too, and would have eaten type-ahead;
+`interrupter.Fire` reports whether a scope took the interrupt, and `readKeys`
+drops it when one did.
+
+That made the key channel's buffering load-bearing: the loop stops reading while
+an answer streams, and on an unbuffered channel the reader blocks on the first
+key typed during it and never decodes the Ctrl-C behind it.
+
+`TestPTYCtrlCMidAnswerKeepsTheSession` is the row that suite's own header said it
+lacked — "the answer stopped AND the next lookup rendered" is an observable only
+a surviving session produces, where "exited cleanly" is produced by the byte
+path, the signal path and a crash alike.
+
+**The log records the question, not the answer.** `#17` wants to know what the
+learner asked about — a strong signal of what they are working on — and every
+consumer of that log is a fold, which answers would bloat for nothing.
+`complete()` generalised from "has a word" to "has a SUBJECT" to allow it: a
+question asked before any lookup has no word, and requiring one would drop
+exactly the events `#17` reads. `at:` stays the last field in the struct, because
+the torn-record rule leans on a cut record losing its timestamp.
+
+**One ask entry, six cells.** A question arrives by two routes — forced (`?…`,
+decided by the parser without a dictionary call) and unforced (a miss that reads
+as one) — across three entry modes. That is the enumeration every claim about
+asking quantifies over, and all six go through one `ask(ctx, d, opt, sess, out, errOut, q)`.
+
+`question` carries **how** it arrived, because the route changes what can
+honestly be said: an unforced question is one the dictionary missed, so "is not a
+word" is true by construction; a forced one skipped the dictionary, and `?why`
+*is* a headword. Each loop wraps that one call in its own closure — the raw
+loop's is where the streaming writers hang, because a raw terminal is what makes
+them differ; the interrupt SCOPE is not in either closure, since `askScoped`
+owns it for both — but the
+decision itself does not fork.
+
+**`-raw` never asks, and "never" names its cells.** It is the scripting form, so
+an unforced miss simply does not fall back, and an explicit `?` alongside it is a
+usage error rather than a guess between contradicting flags. The predicate
+(`mayAsk`) lives with the ask rather than with either dispatch: guarding only the
+fallback left three of the six cells asking anyway while the README stated the
+absolute. **A rule stated as an absolute has to be enforced where the thing
+happens, not on one route to it** — and the test that asserts it names the
+enumeration and covers every cell.
+
+**A per-line exit code has to survive the loop.** `replLines` computes one code
+for the whole run, and collapsing a dispatch's code into a boolean loses the
+difference between a lookup failure (1) and a usage error (2). That is BR-16,
+fixed for commands in #15 — and #16 reintroduced it for questions, because the
+new branch collapsed `ask`'s code the same way. There is now one `fail(code)`
+sink every branch feeds, so a third branch cannot repeat it.
+
+**The exit-code absolutes README states are measured across `{one-shot, piped}`**
+— the enumeration they quantify over; the raw editor has no exit code of its own,
+because an interactive typo does not fail a session. This paragraph used to say
+"the FOUR absolutes", and a later change added ask-path exit sites without
+touching it: a count is a measured claim that drifts the moment anything is
+added, and it drifts silently. What the ask path can exit with is enumerated by
+the degradation messages themselves — `unavailable` when nothing was configured,
+`unavailableAfterSending` carrying the underlying cause when something was, and
+the loud `ErrRequest` arm — each of which is the subject of a row test rather
+than of a number here.
+
+**A hatch with no payload is a malformed line, in both hatches and every mode.**
+`?` and `\` alone are usage errors (exit 2) rather than blank lines — a bare `\`
+used to strip its prefix, fall into the empty-line test, and *replay audio* when
+a word was current, so the two hatches disagreed at the prompt. `nothingSays` is
+the one place that answers "this line meant nothing — why"; the line ending stays
+with the caller, because only the raw loop needs `\r\n`.
+
+**Recall stores what a line MEANT.** A forcing prefix is part of that: `\how so`
+recorded as `how so` comes back from Up-arrow and re-submits as a *question* —
+the opposite of what the hatch was typed to force. So `recallLine` is the one
+canonical, re-submittable form, and all three recall sites use it. Whitespace is
+still collapsed, because that changes no meaning.
 
 ## Entry modes
 

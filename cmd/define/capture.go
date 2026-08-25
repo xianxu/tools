@@ -46,6 +46,15 @@ func decideCapture(found bool, opt options) captureDecision {
 // still prints.
 type Capturer interface {
 	Capture(word string, found bool, opt options)
+	// CaptureAsk records a question (#16). Here rather than through the store
+	// directly, so the event log keeps ONE write path: main.go's deps comment
+	// says capture is the only thing that records, and a second appender beside
+	// it is how that stops being true without anyone noticing.
+	//
+	// word is the word the question followed, and may be empty. The QUESTION is
+	// recorded and the answer is not — #17 wants what the learner asked about,
+	// and every consumer of this log is a fold.
+	CaptureAsk(word, question string, opt options)
 }
 
 // storeCapturer is the only thing that RECORDS a lookup. It is not the only
@@ -84,6 +93,22 @@ func (c *storeCapturer) Capture(word string, found bool, opt options) {
 	}
 }
 
+func (c *storeCapturer) CaptureAsk(word, question string, opt options) {
+	// The same opt-out governs both: DEFINE_NO_CAPTURE and -raw mean "write
+	// nothing in this directory", and a question is a write. decideCapture is
+	// asked with found=true because an answered question is not a failed
+	// lookup — the distinction it draws is about the DECK, which an ask never
+	// reaches.
+	if decideCapture(true, opt) == captureNothing {
+		return
+	}
+	if err := c.st.AppendEvent(store.ReviewEvent{
+		Word: word, Kind: store.EventAsked, Question: question, At: c.clock.Now(),
+	}); err != nil {
+		c.warnf("could not record the question: %v", err)
+	}
+}
+
 // warnf reports at most once per process. A directory that cannot be written is
 // a standing condition, not news on every lookup.
 func (c *storeCapturer) warnf(format string, args ...any) {
@@ -100,4 +125,5 @@ func (c *storeCapturer) warnf(format string, args ...any) {
 // decideCapture. This is only "there is nowhere to write".
 type noopCapturer struct{}
 
-func (noopCapturer) Capture(string, bool, options) {}
+func (noopCapturer) Capture(string, bool, options)      {}
+func (noopCapturer) CaptureAsk(string, string, options) {}

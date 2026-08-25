@@ -36,12 +36,22 @@ func (r *rawSession) restore() {
 
 // readKeys decodes keypresses from r onto a channel.
 //
-// It also owns CANCELLATION. In raw mode Ctrl-C arrives as byte 0x03, not a
-// signal, so signal.NotifyContext never fires — and the moment that matters is
-// during playback, when the loop is blocked inside speak for seconds and cannot
-// act on anything. Cancelling here fires regardless of what the loop is doing.
-func readKeys(ctx context.Context, r io.Reader, cancel context.CancelFunc) <-chan Key {
-	out := make(chan Key)
+// It also delivers one of the two CANCELLATION transports. In raw mode Ctrl-C
+// arrives as byte 0x03 — term.MakeRaw clears ISIG — and the moment that matters
+// is during playback, when the loop is blocked inside speak for seconds and
+// cannot act on anything, so firing here works regardless of what the loop is
+// doing.
+//
+// It is NOT the only transport, though this comment used to say so: the pty
+// suite measured a \x03 arriving as a SIGINT. Both feed the same interrupter,
+// which is what decides the meaning (#16 D5).
+func readKeys(ctx context.Context, r io.Reader, interrupts *interrupter) <-chan Key {
+	// BUFFERED, and that is load-bearing. The loop stops reading while an answer
+	// streams; on an unbuffered channel the reader would block on the first key
+	// typed during it and never decode the bytes behind — including a Ctrl-C
+	// meant to stop that very answer. Buffering also gives type-ahead during a
+	// long answer for free: the keys are simply waiting when the prompt returns.
+	out := make(chan Key, 256)
 	go func() {
 		defer close(out)
 		var buf []byte
@@ -57,7 +67,15 @@ func readKeys(ctx context.Context, r io.Reader, cancel context.CancelFunc) <-cha
 					}
 					buf = buf[used:]
 					if k.Kind == KeyInterrupt {
-						cancel() // reaches the loop even mid-playback
+						// Fires the sink even mid-playback, when the loop is
+						// blocked and cannot act on anything itself.
+						if interrupts.Fire() {
+							// A scope consumed it — a streaming answer was
+							// cancelled. Delivering it as well would have the
+							// loop quit the session as soon as the answer ended,
+							// which is the opposite of what was asked for.
+							continue
+						}
 					}
 					select {
 					case out <- k:

@@ -14,6 +14,10 @@ type Mem struct {
 	mu     sync.Mutex
 	words  map[string]Word
 	events []ReviewEvent
+	// userModel is what YAML reads from user-model.md. A field so the reference
+	// implementation can hold the state the real one holds: a getter the fake
+	// cannot back makes the conformance row asserting it unfalsifiable.
+	userModel string
 }
 
 func NewMem() *Mem { return &Mem{words: map[string]Word{}} }
@@ -82,6 +86,19 @@ func (m *Mem) Events(since time.Time) ([]ReviewEvent, error) {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 	return out, nil
+}
+
+func (m *Mem) SetUserModel(text string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.userModel = text
+	return nil
+}
+
+func (m *Mem) UserModel() (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.userModel, nil
 }
 
 func (m *Mem) Forget(key string) (bool, error) {
