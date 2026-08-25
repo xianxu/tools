@@ -12,22 +12,6 @@ estimate_hours:
 
 ## Problem
 
-## Spec
-
-## Done when
-
--
-
-## Plan
-
-- [ ]
-
-## Log
-
-### 2026-08-23
-
-## Problem
-
 Measured while hand-verifying #16 M2 against the live proxy, 2026-08-23:
 
 ```
@@ -87,6 +71,22 @@ every consumer, so it is a decision, not an implementation detail.
 - [ ] `atlas/llm.md`'s taxonomy table and Known Limitations say what a 200 with
       an error body means.
 - [ ] `define` degrades quietly on an overload — no raw JSON at the user.
+
+## Plan
+
+- [ ] Design via `sdlc start-plan` before implementing — the fix touches
+      `internal/llm`'s taxonomy, which has its own fake and conformance suite.
+- [ ] Decide the retry question first: a 200-with-error-body is transient, so
+      whether the transport RETRIES it or merely absorbs it changes the latency
+      story for every consumer. It is a decision, not an implementation detail.
+- [ ] Read the error body's `type` in `classifyStatus`'s neighbourhood and route
+      the transient kinds to `ErrUnavailable`, with the enumeration of body types
+      written down rather than sampled.
+- [ ] Teach `llmtest` to script a 200 carrying an error body, and cover it in the
+      obligation suite against both the fake and the live service.
+- [ ] Add a capture-drift row: "the proxy answers 200 for an overload" is a claim
+      about the real service that can change.
+- [ ] Sweep `atlas/llm.md`'s taxonomy table and Known Limitations.
 
 ## Log
 
