@@ -13,8 +13,9 @@ order and with nothing else between them. `foldLookups` turns the store's raw
 rows into the evidence the prompt carries; `llm.Run[learnerModel]` returns a
 typed answer; `checkEvidence` **drops any claim whose evidence is not in the
 deck** before anything is written; `renderUserModel` and `spliceCorrections` are
-pure text. The whole path is one mode flag beside `--llm-check` — no model call
-ever moves onto the lookup or review path (ARCH-PURE).
+pure text. The whole path is one mode flag, dispatched where the store exists
+(beside `--forget`, see D5) — no model call ever moves onto the lookup or review
+path (ARCH-PURE).
 
 **Tech Stack:** Go, `internal/llm` (`Run[T]`, the wire-level `llmtest` fake),
 `cmd/define/store` (deck + events + `UserModel`/`SetUserModel`, both
@@ -58,14 +59,40 @@ exists before anyone needs it.
 injectable; the model's answer comes from a committed capture under the fake. Two
 runs against the same three produce byte-identical files, asserted.
 
-**D5 — `--reflect` is a mode, dispatched beside `--llm-check`.** Same shape: it
-answers a question about the directory rather than looking a word up, so it is
-validated and dispatched before the argument count is judged. It is also the
-second consumer of `deps.getenv`/`newLLM`, which #16 introduced.
+**D5 — `--reflect` is a mode dispatched where the store EXISTS, which is beside
+`--forget` and not beside `--llm-check`.** The two modes look alike and are not:
+`--llm-check` runs at `main.go:307` with `os.Getenv`/`llm.New` precisely because
+it needs no directory, while `d = d.withStore(opt, stderr)` does not run until
+`main.go:339`. Dispatching there would hand `--reflect` a nil `d.deck` and a nil
+`d.clock` — the two things D4's idempotency rests on (`PQ-2`). So it follows
+`--forget`: arity judged in the switch, dispatched after `withStore`.
 
-**D6 — The prompt carries counts and dates, never the raw event log.** A year of
-events is thousands of rows; the fold summarises to one line per word plus the
-window. That is also what makes `foldLookups` a pure function worth testing.
+A nil deck is still reachable after that, under `DEFINE_NO_CAPTURE`. `--reflect`
+then refuses through the existing `noDeckMessage(opt.noCapture)`
+(`main.go:596`) — the same sentence `--forget` and `/history` use, because a
+third phrasing of one fact is how #4's atlas contradictions started.
+
+It is the second consumer of `deps.getenv`/`newLLM`, which #16 introduced.
+
+**D6 — The prompt carries counts and dates, never the raw event log**, and the
+fold that produces them **already exists**. `summariseLookups`
+(`history_cmd.go:105-144`) folds the log into per-word rows with the same
+`EventLookedUp && Found` filter, the same `store.Key` keying and the same
+FirstAt/LastAt/Lookups accumulation that `/history` needs; `historyRow` is the
+row this wanted. `foldLookups` calls it with a zero `since` (the whole log) and
+adds only what is genuinely new: the questions count and the window. Writing a
+second fold would have been a second answer to "how many times has this learner
+looked this up" (ARCH-DRY, `PQ-1`).
+
+**D7 — Two sources, one rule: the DECK decides which words are evidence, the LOG
+decides how many times and when.** `store.Word` carries a `Lookups` count and so
+does the log, and a plan that reads both without saying which wins is a plan with
+two answers to one question (`PQ-4`). The rule follows from what `--forget`
+already promises: it removes a word from the deck and deliberately leaves its
+events, because *"the deck is a working set, the log is history"*. So a forgotten
+word stops being evidence for a claim while its history survives — which is the
+behaviour a learner asking to forget something expects, and it falls out of the
+rule rather than needing a case.
 
 ---
 
@@ -77,11 +104,13 @@ window. That is also what makes `foldLookups` a pure function worth testing.
 |------|----------|--------|
 | `deckEvidence` | `cmd/define/reflect.go` | new |
 | `foldLookups` | `cmd/define/reflect.go` | new |
+| `summariseLookups` / `historyRow` | `cmd/define/history_cmd.go` | reused, unchanged |
 | `learnerModel` / `domainClaim` | `cmd/define/reflect.go` | new |
 | `checkEvidence` | `cmd/define/reflect.go` | new |
 | `renderUserModel` | `cmd/define/usermodel.go` | new |
 | `spliceCorrections` | `cmd/define/usermodel.go` | new |
 | `minDeckForReflection` | `cmd/define/reflect.go` | new |
+| `assertGoldenFile` | `cmd/define/usermodel_test.go` | new |
 
 - **deckEvidence** — the folded input: one row per word (text, lookups,
   first/last seen), plus the window and the totals. What the prompt carries.
@@ -94,8 +123,19 @@ window. That is also what makes `foldLookups` a pure function worth testing.
 
 - **foldLookups** — `([]store.Word, []store.ReviewEvent, time.Time) → deckEvidence`.
   Pure: no store, no clock (the instant is a parameter).
-  - **DRY rationale:** the one place that decides what "recent" and "the window"
-    mean for the model, rather than each prompt deciding again.
+  - **DRY rationale:** it **calls `summariseLookups`** rather than repeating it.
+    What is left over — the questions count, the window, and the deck-membership
+    filter D7 defines — is genuinely new, and that is the whole of what this
+    function adds.
+  - **Note:** `wordRow` from the first draft is **deleted before it exists**;
+    `historyRow` is that row and already carries `Word`/`FirstAt`/`LastAt`/`Lookups`.
+
+- **assertGoldenFile** — `(t, path, got string)`, for the markdown golden.
+  `llmtest.AssertGolden` takes an `llm.Request` and renders it, so it cannot
+  compare a rendered file.
+  - **DRY rationale:** it reads `llmtest.Updating()` rather than registering a
+    second `-update` flag — two flags of that name in one test binary is a panic
+    at init, and one of them refreshing half the artifacts is worse.
 
 - **learnerModel / domainClaim** — the typed answer: a level band with its
   rationale and evidence words, and N domain claims each with a share, evidence
@@ -205,32 +245,37 @@ Expected: FAIL — `undefined: foldLookups`.
 // deckEvidence is what the model is shown: one row per word plus the totals.
 //
 // NOT the raw event log — a year of it is thousands of rows, and the claims we
-// want back are about words, not about individual lookups. Summarising here is
-// also what keeps the decision testable without a store (#17 D6).
+// want back are about words, not about individual lookups (#17 D6).
 type deckEvidence struct {
-	Words     []wordRow
-	Lookups   int       // found lookups only: a miss is not vocabulary
-	Questions int       // #16's asked events, counted apart from lookups
-	From, To  time.Time // the window the claims may speak about
-}
-
-type wordRow struct {
-	Text     string
-	Lookups  int
-	FirstAt  time.Time
-	LastAt   time.Time
+	Words     []historyRow // reused: /history's row already IS this row
+	Lookups   int          // found lookups only: a miss is not vocabulary
+	Questions int          // #16's asked events, counted apart from lookups
+	From, To  time.Time    // the window the claims may speak about
 }
 
 // foldLookups summarises the store for one --reflect run.
+//
+// The per-word fold is summariseLookups', called with a zero `since` so it
+// covers the whole log: same filter, same keying, same accumulation that
+// /history needs, and writing a second one would be a second answer to "how many
+// times has this learner looked this up" (ARCH-DRY, PQ-1).
+//
+// What this adds is the part that is genuinely new: the questions count, the
+// window, and D7's rule — the DECK decides which words are evidence, the LOG
+// decides how many times and when. A word removed by --forget therefore stops
+// being evidence while its history survives, which is what --forget promises.
 //
 // Pure — the instant is a parameter, not a clock — so "what does the window mean
 // when the deck spans one day" is a table row rather than a timing test.
 func foldLookups(deck []store.Word, events []store.ReviewEvent, now time.Time) deckEvidence
 ```
 
-⚠️ Count `EventLookedUp && Found` for `Lookups` and `EventAsked` for `Questions`.
-Counting all events conflates three different facts and inflates every share the
-model is asked to reason about.
+⚠️ `Questions` counts `EventAsked` and must NOT reach `summariseLookups`, which
+filters to found lookups by design. Conflating the two inflates every share the
+model is asked to reason about, and #16's asked events made that reachable.
+
+⚠️ Filter the folded rows by deck membership (D7) — `summariseLookups` reads the
+whole log, which still holds words `--forget` removed.
 
 - [ ] **Step 4: Run the tests** — `go test ./cmd/define/ -run TestFoldLookups -v` → PASS
 - [ ] **Step 5: Commit**
@@ -404,10 +449,64 @@ func TestSpliceCorrections(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and watch it fail.**
-- [ ] **Step 3: Implement.** Scan line by line, tracking fence state (```` ``` ````
-      toggles it); the first `## Corrections` **outside a fence** is the boundary.
-      Everything from that line on is copied verbatim.
+- [ ] **Step 1b: Write the PROPERTY, because the examples miss a class**
+
+Five hand-picked cases cannot cover malformed human-edited text, and the failure
+mode here is silently discarding the learner's own writing — with byte-for-byte
+survival as a Done-when row (`PQ-3`). The property is one line and it quantifies
+over inputs nobody thought to type:
+
+```go
+// FuzzSpliceCorrectionsPreservesEverythingBelowTheMarker asserts the ONE thing
+// that must hold for any existing file: whatever follows the first out-of-fence
+// marker comes out byte-identical.
+//
+// Seeded with the shapes a table would not have reached — tilde fences, an
+// UNTERMINATED fence, an indented fence, a marker with trailing whitespace, and
+// CRLF line endings, which this repo already handles elsewhere (crlf.go) and so
+// will certainly meet here.
+func FuzzSpliceCorrectionsPreservesEverythingBelowTheMarker(f *testing.F) {
+	for _, seed := range []string{
+		"## Corrections\nkeep me\n",
+		"~~~\n## Corrections\n~~~\n## Corrections\nreal\n",
+		"```\nunterminated fence\n## Corrections\nstill inside\n",
+		"    ```\n    indented\n    ```\n## Corrections\nreal\n",
+		"## Corrections   \ntrailing space on the marker\n",
+		"## Corrections\r\nCRLF body\r\n",
+		"no marker at all\n",
+		"",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, existing string) {
+		got := spliceCorrections(existing, "GENERATED\n")
+		i := firstMarkerOutsideAFence(existing)
+		if i < 0 {
+			if got != "GENERATED\n" {
+				t.Fatalf("no marker, yet something was carried over: %q", got)
+			}
+			return
+		}
+		if tail := existing[i:]; !strings.HasSuffix(got, tail) {
+			t.Fatalf("the learner's own text was altered\nwant suffix: %q\ngot: %q", tail, got)
+		}
+	})
+}
+```
+
+⚠️ `firstMarkerOutsideAFence` is the same function `spliceCorrections` uses — the
+property asserts the SPLICE against the SCANNER, not the scanner against itself.
+That is deliberate and it is the honest scope: the scanner's own rules are the
+table's job; the property's job is that nothing below the boundary is ever
+rewritten, whatever the boundary turns out to be.
+
+- [ ] **Step 2: Run and watch them fail.**
+- [ ] **Step 3: Implement.** Scan line by line tracking fence state — ```` ``` ````
+      **and** `~~~`, since both are markdown fences, and an indented fence still
+      opens one. The first `## Corrections` **outside a fence** is the boundary;
+      everything from that line on is copied verbatim. Trailing whitespace on the
+      marker line still makes it a marker; a marker inside an unterminated fence
+      is not one.
 
 ⚠️ The fence case is not hypothetical: this file's own format is documented in
 the issue using a fenced block that contains `## Corrections`, and a learner may
@@ -459,8 +558,10 @@ func TestReflectIsAModeFromEveryEntryPoint(t *testing.T)   // `define --reflect 
 ```
 
 - [ ] **Step 2: Run and watch them fail.**
-- [ ] **Step 3: Implement.** `runReflect` composes the pure parts; the flag sits
-      beside `--llm-check` and dispatches before the argument count is judged.
+- [ ] **Step 3: Implement.** `runReflect` composes the pure parts. The flag is
+      declared beside `--llm-check` but DISPATCHED beside `--forget`, after
+      `d = d.withStore(opt, stderr)` — see D5 for why the two modes look alike
+      and are not. A nil deck refuses through `noDeckMessage(opt.noCapture)`.
 - [ ] **Step 4: Run the tests + `go test -race ./cmd/define/`.**
 - [ ] **Step 5: Commit.**
 
@@ -512,3 +613,39 @@ SKIP (not fail) when the seam is unreachable — "not running" is not "wrong".
   row's substance is already satisfied by a live consumer; #10 inherits it. Task
   8 verifies it rather than assuming it.
 - **M2 is deliberately unplanned.** It needs review events from #6.
+
+## Revisions
+
+### 2026-08-25 — plan-quality round 1 (PQ-1 … PQ-5)
+
+**Reason:** `sdlc change-code` plan gate, three blocking findings and two Minor.
+Ledger: `workshop/plans/000017-user-model-plan-gate.md`.
+
+- **PQ-1 (Important) — addressed.** `foldLookups` was re-implementing
+  `summariseLookups`: same `EventLookedUp && Found` filter, same `store.Key`
+  keying, same accumulation, and `historyRow` was the `wordRow` I had declared.
+  It now calls it, and `wordRow` is deleted before it existed. The DRY rationale
+  claiming to create "the one place" was the tell — that place was already there,
+  in the file `/history` reads.
+- **PQ-2 (Important) — addressed.** D5 had `--reflect` dispatching beside
+  `--llm-check`, which runs BEFORE `withStore` precisely because it needs no
+  directory — so the mode whose idempotency rests on `d.clock` and the store
+  would have got nil for both. It follows `--forget` now, and a nil deck under
+  `DEFINE_NO_CAPTURE` refuses through the existing `noDeckMessage` rather than a
+  third phrasing of one fact. The header and Task 6 were swept for the same
+  claim, not just D5 — that restatement drift is the family #16 hit nine times.
+- **PQ-3 (Important) — addressed.** `spliceCorrections` is a line scanner over
+  human-edited text whose failure mode is silently discarding the learner's own
+  writing. Five examples cannot cover that class, so there is now a fuzz property
+  — *everything below the first out-of-fence marker survives byte-identical* —
+  seeded with tilde fences, an unterminated fence, an indented fence, a marker
+  with trailing whitespace and CRLF. The implementation step gained the rules
+  those seeds imply.
+- **PQ-4 (Minor) — addressed as D7.** The draft read per-word counts from
+  `store.Word` and the total from the log, which is two answers to one question.
+  The rule now follows from what `--forget` already promises: the DECK decides
+  which words are evidence, the LOG decides how many times and when.
+- **PQ-5 (Minor) — addressed.** `assertGoldenFile` is genuinely new surface
+  (`llmtest.AssertGolden` takes an `llm.Request`, not a string) and has a table
+  row. It reads `llmtest.Updating()` rather than registering a second `-update`,
+  which would be a flag redefinition panic in a binary that links both.
