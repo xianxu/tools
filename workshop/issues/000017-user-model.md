@@ -107,7 +107,14 @@ M2:
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Design: [`workshop/plans/000017-user-model-plan.md`](../plans/000017-user-model-plan.md)
+— M1 only; M2 needs review events #6 does not yet produce.
+
+- [x] Design via `sdlc start-plan` before implementing.
+- [ ] M1 — the model from lookups: `foldLookups`, a typed `learnerModel` whose
+      evidence is CHECKED against the deck, `renderUserModel` +
+      `spliceCorrections`, and `--reflect` as a mode beside `--llm-check`.
+- [ ] M2 — weaknesses. Blocked on #6's review events; planned when they exist.
 
 ## Log
 
@@ -121,3 +128,28 @@ adaptive."*
 
 Batch analysis over accumulated errors was specified in preference to diagnosing
 each miss as it happens.
+
+### 2026-08-25
+
+`sdlc start-plan` run; durable plan at `workshop/plans/000017-user-model-plan.md`,
+**M1 only** — M2's error taxonomy needs review events #6 does not yet produce, and
+planning against a data shape nobody has seen is how a plan becomes fiction.
+
+The decision worth surfacing before code: **the model's evidence is checked, not
+trusted.** The typed answer carries the deck words behind each claim and
+`checkEvidence` drops any claim citing a word the deck does not hold. That is
+this project's existing rule — *distractors are selected, never invented* — applied
+to the learner model: the model may READ the deck and may not ADD to it. Without
+it, "every claim names its evidence" is a formatting convention that a plausible
+hallucination satisfies, and the file's whole promise is that a claim can be
+checked.
+
+Two smaller ones: a floor of 12 deck words, because a model built from four
+lookups is noise that would then steer authoring (absence already degrades
+cleanly — #16's `gatherAskContext` handles it); and `## Corrections` is spliced
+by scanning outside fenced code blocks, because the file documents its own format
+in a fence that contains the marker.
+
+The fourth M1 Done-when row names #10, which does not exist. #16's ask path reads
+`user-model.md` today and degrades on absence, so the row's substance has a live
+consumer already; Task 8 verifies that rather than assuming it.
