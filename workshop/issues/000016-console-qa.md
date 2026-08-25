@@ -1,12 +1,13 @@
 ---
 id: 000016
-status: working
+status: codecomplete
 deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
-updated: 2026-08-23
+updated: 2026-08-24
 estimate_hours: 6.49
 started: 2026-08-23T13:35:58-07:00
+actual_hours: 17.63
 ---
 
 # free-form Q&A in the console: input classification + the directory as context
@@ -611,6 +612,7 @@ as one fixture-driven test whose rows ARE the cells"*. `TestTheAskWiringTable` i
 scoped}, and all three previously-green mutations now redden.
 
 ### 2026-08-24 — M2 round 3: four findings, all about the previous round's fixes
+- 2026-08-24: closed — Both milestones closed with boundary verdicts. go test ./... + go vet + go test -race + pty conformance all green; the previously flaky test is 0/30 unmutated and 10/10 mutated. Every Done-when row asserted: the 9-row decision table drives the real route end to end; both hatches pinned by tests that redden when removed; a full Q&A round trip against the wire-level fake with the deck, session words and user-model.md each asserted by a fixture only that source can supply; a follow-up resolves against the previous exchange in every mode that has a session, including after the user stops an answer; Ctrl-C mid-stream returns to the prompt with the session intact, driven through the REAL readKeys over both transports, with askScoped unit-tested on all three observable cells and a pty row that reddens through a real terminal when the interrupt is unscoped; with the seam unavailable a question produces the explanatory message and a lookup still works; the raw TUI loop driven directly. Verified against the LIVE proxy with a real user-model.md: the answer carried a "Business-news nuance" paragraph and "Related near-synonyms in your range", quoted the NOAD entry back, and a follow-up resolved against it. Close-review round 3 fixed both remaining findings, and both were DOCUMENTATION: the entity reconciliation is now a word-boundary set difference run to empty rather than an eye pass over the enumeration output, and the atlas paragraph that carried a COUNT of exit-code absolutes — written in the same commit as the rule saying entries must not carry counts — now names the enumeration instead. No code, no tests and no new symbols changed in this round. Filed rather than fixed: tools#19.; review verdict: FIX-THEN-SHIP
 - 2026-08-24: closed M2 — go test ./... + go vet + go test -race + pty conformance all green. M2 boundary rounds 1-3, every finding fixed, none deferred. Round 3 disposed all five of round 2s and raised four more, each about round 2s own fixes: the line-loop scoping fix had made a SECOND copy of the five-step scope sequence (one askScoped owns it now, and since reversing its order reddens nothing — the window is too narrow to test without a flaky race — defers LIFO enforces the order rather than a comment that cannot fail); countingCapturer.asked was appended at one site and read at zero (now read at the seam, with a wired fake so the question genuinely reaches a model); the UserModel conformance row asserted the only value Mem could produce because the method arrived as a getter with no writer anywhere (Store.SetUserModel closes it, atomically for YAML, and #17 inherits the setter it needs); and the atlas store section plus the plans entity tables are now resolved against enumerations — yaml.go/event.go/storetest against the three normative blocks, and git diff base..HEAD +func/+type against Core concepts — rather than patched at the lines a finding named.; review verdict: FIX-THEN-SHIP
 
 Round 2's five findings all disposed; four new, and every one of them is about

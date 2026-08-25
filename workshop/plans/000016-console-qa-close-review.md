@@ -614,3 +614,133 @@ findings:
       sentence is loosest about, since a connection-refused sends no request yet
       records.
 ```
+
+---
+
+## Re-review — 2026-08-24T21:34:42-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 16 — free-form Q&A in the console: input classification + the directory as context |
+| repo | tools |
+| issue file | workshop/issues/000016-console-qa.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | ba0162169f48d72983ff7f21d3a6479c9e6535a3..7f372fb0375a908aaf72417d6f4946d335ba0fde |
+| command | sdlc close --issue 16 |
+| reviewer | claude |
+| timestamp | 2026-08-24T21:34:42-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The window's final commit is docs-only, so the code is exactly what round 11 measured — and I re-measured rather than assumed. The suite is green, `go test -race ./cmd/define/...` is clean (64.1s), `go vet ./...` and `go vet -tags conformance` are silent, and `TestCtrlCQuitsAgainOnceTheAnswerIsOver` — the flake BR-54 named — is 20/20 clean. I probed every README exit-code absolute against the built binary in a temp directory and all six hold, including BR-56's fix: a configured-but-unreachable model exits 1 carrying `dial tcp 127.0.0.1:1: connect: connection refused` rather than a guess, and the question is recorded while an unconfigured one records nothing. The three uniqueness claims this issue fought over all hold by grep: one `lost the terminal` site, one production occurrence of the replay sentence, one `AppendEvent` caller file. **I raise no new findings** — that is a measured result, not a shrug: every probe I ran either confirmed a fix or reproduced a finding already on the ledger. What keeps this off SHIP is that both remaining Important findings are, for the sixth round, the same shape — a class-fix written down and then satisfied vacuously. BR-47's set-difference check passes only because `ask.go` matches `\bask\b`; the function `ask` itself, the single entry into the question path from all six cells, is still in no table row. And BR-58's atlas half landed cleanly while the README sweep it named as *the* deliverable is untouched.
+
+## 1. Strengths
+
+- **The one-shot path is correct end to end, including the case its own test doesn't assert.** `main.go:315` parses `strings.Join(fs.Args(), " ")`, so `define ?what is the difference` reaches the model with the whole line — I checked, because `TestOneShotForcedQuestionIsNotAUsageError` asserts only that it isn't a usage error and would have passed had `oneShot.question` been `"what"`.
+- **`readKeys`' swallow is correct in the detail that matters** (`rawterm.go:63-77`): `buf = buf[used:]` precedes the `continue`, so a consumed interrupt advances the buffer rather than spinning on it. The 256-slot buffer and the type-ahead claim above it both survive.
+- **The event log stayed clean under a real run.** Six one-shot invocations in a temp directory produced exactly the right records — a `looked-up` miss, one `asked` carrying its question and no word, and nothing at all for the unconfigured ask. Both consumers filter on kind (`history_cmd.go:108`, `history_store.go:51`), so the new kind cannot leak into `/history` or Up-arrow recall.
+- **BR-58's atlas half is the right fix, not a patch.** The paragraph drops the count and delegates the enumeration to the row tests that own it — `unavailable`, `unavailableAfterSending`, the loud `ErrRequest` arm — and I confirmed each of the three genuinely has a defending test. That is the finding's own stated escape ("write it without a count and without an enumeration it does not own"), applied rather than restated.
+- **`consumed` is arithmetically right.** I traced it by hand for the short-write and carried-CR cases (`"ab\ncd"` cut at 5 → 4 caller bytes; `"\nb"` after a carried CR cut at 1 → 1) and both are correct. The defect BR-53 names is the *duplication*, not the answer.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+Both are prior findings re-disposed `not-addressed`; neither is re-raised as new.
+
+**BR-47 — the enumeration now passes because a filename satisfies it.** The plan's new Revisions entry (`000016-console-qa-plan.md:1425`) says the reconciliation "is a set difference, not a reading" and warns that "word boundaries matter too — a substring test reports `ask` as present because `askContext` contains it." I ran the check as written: 46 symbols, `missing == []`. Then I ran it against table *rows* only, excluding filename matches, and `ask` falls out — it matched `` `cmd/define/ask.go` ``, because `.` is a word boundary. `func ask(...)` (`ask.go:79`) is the function the issue is about and it has been absent from the tables since M1, through six rounds. The same stricter check also drops `lookupAndRender`, `readKeys`, `repl`, `replLines`, `runEditor` and `submitLine` — six functions whose signatures changed in this window exactly as `defineOnce` and `replRaw` did, and those two *were* given a "modified" row this round while their six siblings were not. The rule the ledger has been asking for holds: a check that is run by a person and read by a person is a reading. Make it a test, or stop claiming the tables are the enumeration.
+
+**BR-58 — the atlas count is gone; the README sweep it named as the deliverable is not.** Measured: the ask path has three `return 1` sites (`ask.go:129`, `:132`, `:209`) and README:164's exit-`1` clause names one. Probed against the binary, a configured model that fails exits `1` with `define: the model is unavailable (…)` and a 400 exits `1` with `define: llm: bad request: …` — neither is a cause README lists. The pre-existing gaps the finding flagged (`replraw.go:136` lost-terminal, `repl.go:288`/`:294` reading-input) are also still unlisted. This is a partial enumeration in the block that *owns* the user-facing exit-code contract, which is the one place the finding's own rule does not let it stand.
+
+## 4. Minor findings
+
+- BR-12, sixth round: `hist.Add(cmd.recallLine())` → `hist.Add(line)` at `replraw.go:314` leaves the suite green (only the four repo-guard tests fail, and those fail in any non-git tree). Behaviour correct, wiring unpinned.
+- BR-53, fourth round: `c.lastWasCR = carriedCR(out, n, entryWasCR)` → `lastWasCR` at `crlf.go:41` leaves the suite green. `Write` and `consumed` are still two derivations of one translation.
+- BR-57, third round, re-measured: `can't→"ca"`, `won't→"wo"`, `shan't→"sha"` all miss `questionOpeners`, while `isn't`/`don't`/`didn't`/`couldn't` reach it.
+- BR-49, BR-50, BR-59: all verbatim unchanged — 47 nil `interrupter` call sites with `replRaw` applying no policy; the "adds a fifth" prediction beside a helper with two call sites; `t.Context().Done()` as a failure arm at `repl_test.go:199`; the `CaptureAsk` guard; the per-question `Deck()` at `ask.go:244`; and the one recording-table row of nine that never reads `st.Events`.
+- Not filed, noted only: `asked` events carry `found: false` on disk because `ReviewEvent.Found` has no `omitempty` while `Word`, `Question` and `Correct` do — a field with no meaning for a question, in a log `#17` folds. Harmless (both consumers filter on `Kind`) and the fix would change the on-disk shape of every existing lookup record, so leaving it is defensible; recording it so the next reader of that format knows it was a decision.
+
+## 5. Test coverage notes
+
+| check | result |
+|---|---|
+| `go test ./...` | ok |
+| `go test -race ./cmd/define/...` | ok, 64.1s |
+| `go vet ./...`, `go vet -tags conformance` | silent |
+| `TestCtrlCQuitsAgainOnceTheAnswerIsOver -count=20` | 20/20 pass, 0.44s |
+| `submitLine`: `recallLine()` → `line` | **green** (BR-12) |
+| `crlf.go:41`: revert `carriedCR` | **green** (BR-53) |
+| built-binary exit codes, 6 cells | all match README |
+| PTY conformance, 5 rows | **all SKIP** — `operation not permitted`, environmental |
+
+The PTY skips are the same environmental gap every round has hit; `builtBinary` does run, so staleness is impossible by construction and only the pty device is missing. `TestPTYCtrlCMidAnswerKeepsTheSession`'s claim still rests on the implementor's note.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one standing flag.** Verified by grep this round, not assumed: one `lost the terminal` site, one production occurrence of the replay sentence, `capture.go` as the sole non-test `AppendEvent` caller. `askScoped`, `fail(code)`, `recallLine`, `syncBuf` and `writeBytesAtomic` all hold as single owners. The flag is BR-53's rule, still unapplied.
+- **ARCH-PURE — pass.** I exercised `openerStem`/`readsAsQuestion` from a throwaway test in the package with no store, socket, clock or terminal; the same holds for `recentDeck`, `recentTurns`, `renderAskPrompt`, `consumed`, `carriedCR`, `parseREPLLine`, `recallLine`, `nothingSays` and `session`. `gatherAskContext` remains a thin read whose only judgement is the nil-deck check.
+- **ARCH-PURPOSE — flag, on the class/instance axis.** The shadow-sweep over "the directory is the context" passes: one-shot, piped and editor all derive from the store and session, all three pinned by one table, and I confirmed the one-shot end to end against the binary. The flag is that both open Important findings are class-fixes that landed as instances — and BR-47 is now the sharper case, because the class-fix *itself* is what passes vacuously.
+- **ARCH-MOCK — pass.** `llmtest.Fake` is a wire-level httptest server, `askRig` uses a real YAML store in a temp dir, `storetest.Suite` runs both implementations with a setter so the fake holds the real one's state, `deps.notifySignals` seams `signal.Notify`, and the pty suite builds what it tests. The only gap is environmental.
+- **For `#17` and `#10`:** `askContext` is stable now that every selection policy in it is pure. Two things to hand over deliberately — `repl`'s `context.WithoutCancel` (`repl.go:180`) means the loop honours no caller cancellation, correct while `main` is the only caller and a trap for the next; and `gatherAskContext` reads the whole deck per question, negligible beside a round-trip today and not once `#10` loops on it.
+
+## 7. Plan revision recommendations
+
+Two entries owed, both narrow:
+
+1. **BR-47, and stop claiming the check is mechanical.** Add an `ask` row (and, for consistency with the `defineOnce`/`replRaw` row added this round, rows for `lookupAndRender`, `readKeys`, `repl`, `replLines`, `runEditor`, `submitLine` — six functions whose signatures changed the same way). Then correct the Revisions entry's own sketch: it must exclude filename matches, or the `ask`/`ask.go` collision recurs. Better, per the finding's rule: make it a test that fails, the way `builtBinary` retired pty staleness rather than checking for it.
+2. **BR-48 and BR-17, unchanged.** Six Revisions entries, still none for round 2's forks (`TestThePipedLoopsAskWiring`, "builds its own binary", the `replLines` scope) — all three strings appear **zero** times — nor for round 6's outstanding item, that SIGINT through `repl`'s watcher *during a scoped stream* is unasserted. And Task 3's snippet at line 637 still gives the miss condition as `!literal && readsAsQuestion(word)` where the code is `!cmd.literal && mayAsk(opt) && readsAsQuestion(word)`, with `askUnavailable` named at lines 692 and 751 and `-raw`/`lostTerminal` appearing zero times.
+
+Bookkeeping otherwise checks out: 60/60 plan checkboxes, all seven issue Done-when rows ticked and traceable, `atlas/index.md` links `define.md`, and both `README.md` and `atlas/define.md` were updated in the window.
+
+```findings
+dispose:
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Sixth round unchanged - submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the suite green (only the four repo-guard artifacts fail, as in any non-git tree).
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      Verbatim unchanged - Task 3's snippet at line 637, askUnavailable at 692/751, and zero occurrences of "-raw" or "lostTerminal".
+  - id: BR-47
+    disposition: not-addressed
+    note: |
+      Sixth round. The set-difference check now passes, but vacuously - `ask` matches the filename `cmd/define/ask.go` under the entry's own word-boundary rule; restricted to table rows, `ask` plus six modified-signature siblings fall out.
+  - id: BR-48
+    disposition: not-addressed
+    note: |
+      Six Revisions entries, still none for round 2's forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" all appear zero times.
+  - id: BR-49
+    disposition: not-addressed
+    note: |
+      Unchanged - replRaw (replraw.go:29) still passes the seam straight to readKeys with no policy, and 47 test call sites still pass nil.
+  - id: BR-50
+    disposition: not-addressed
+    note: |
+      All four residues verbatim - replraw.go:132's "adds a fifth" beside a helper with two call sites, capture.go:102's guard, repl_test.go:199's t.Context() failure arm, ask.go:244's per-question Deck().
+  - id: BR-53
+    disposition: not-addressed
+    note: |
+      Fourth round - carriedCR still reverts green (measured), and Write still materialises the translation into out while consumed re-derives it from p.
+  - id: BR-57
+    disposition: not-addressed
+    note: |
+      Re-measured through the package - can't->"ca", won't->"wo", shan't->"sha" all miss questionOpeners while isn't/don't/didn't/couldn't reach it.
+  - id: BR-58
+    disposition: not-addressed
+    note: |
+      The atlas half landed well - the count is gone and each named degradation message genuinely has a row test - but the README sweep the finding called the deliverable is untouched: README:164 still names one of the ask path's three return-1 sites, plus the two pre-existing gaps.
+  - id: BR-59
+    disposition: not-addressed
+    note: |
+      Unchanged - askrun_test.go:659's "configured but never reached" row still asserts only stderr while its eight siblings read st.Events; probed again, the event IS recorded.
+```

@@ -229,10 +229,13 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `deps.newLLM` / `deps.getenv` | `cmd/define/main.go` | new | `llm.New` + `llm.Resolve` |
 | `Store.UserModel` / `SetUserModel` / `userModelFile` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
 | `writeBytesAtomic` | `cmd/define/store/yaml.go` | new | temp file + rename |
-| `interrupter` | `cmd/define/interrupt.go` | new | what Ctrl-C means right now |
+| `interrupter` (`Set`, `Fire`) | `cmd/define/interrupt.go` | new | what Ctrl-C means right now |
+| `readKeys` | `cmd/define/rawterm.go` | modified | the byte transport; swallows a consumed interrupt |
 | `deps.notifySignals` | `cmd/define/main.go` | new | `signal.Notify` |
-| `defineOnce` / `replRaw` | `cmd/define/{main,replraw}.go` | modified | signature carries the outcome and the sink |
+| `defineOnce` / `lookupAndRender` | `cmd/define/main.go` | modified | return `lookupOutcome`, the third answer |
+| `repl` / `replLines` / `replRaw` / `runEditor` / `submitLine` | `cmd/define/{repl,replraw}.go` | modified | carry the sink and the session |
 | `Capturer.CaptureAsk` / `Capture` | `cmd/define/capture.go` | modified | event append |
+| `ask` | `cmd/define/ask.go` | new | the ONE entry into the question path, from all six cells |
 | `askScoped` | `cmd/define/ask.go` | new | the interrupt sink, for the duration of one answer |
 | `unavailable` / `unavailableAfterSending` / `sayUnavailable` | `cmd/define/ask.go` | new | the two degradation messages |
 

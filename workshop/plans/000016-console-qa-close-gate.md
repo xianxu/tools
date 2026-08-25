@@ -1399,6 +1399,51 @@ rounds:
           family: test-asserts-nothing
           round: 11
       blocked: true
+    - "n": 12
+      timestamp: "2026-08-24T21:34:42-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: not-addressed
+          note: Sixth round unchanged - submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the suite green (only the four repo-guard artifacts fail, as in any non-git tree).
+          round: 12
+        - id: BR-17
+          disposition: not-addressed
+          note: Verbatim unchanged - Task 3's snippet at line 637, askUnavailable at 692/751, and zero occurrences of "-raw" or "lostTerminal".
+          round: 12
+        - id: BR-47
+          disposition: not-addressed
+          note: Sixth round. The set-difference check now passes, but vacuously - `ask` matches the filename `cmd/define/ask.go` under the entry's own word-boundary rule; restricted to table rows, `ask` plus six modified-signature siblings fall out.
+          round: 12
+        - id: BR-48
+          disposition: not-addressed
+          note: Six Revisions entries, still none for round 2's forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" all appear zero times.
+          round: 12
+        - id: BR-49
+          disposition: not-addressed
+          note: Unchanged - replRaw (replraw.go:29) still passes the seam straight to readKeys with no policy, and 47 test call sites still pass nil.
+          round: 12
+        - id: BR-50
+          disposition: not-addressed
+          note: All four residues verbatim - replraw.go:132's "adds a fifth" beside a helper with two call sites, capture.go:102's guard, repl_test.go:199's t.Context() failure arm, ask.go:244's per-question Deck().
+          round: 12
+        - id: BR-53
+          disposition: not-addressed
+          note: Fourth round - carriedCR still reverts green (measured), and Write still materialises the translation into out while consumed re-derives it from p.
+          round: 12
+        - id: BR-57
+          disposition: not-addressed
+          note: Re-measured through the package - can't->"ca", won't->"wo", shan't->"sha" all miss questionOpeners while isn't/don't/didn't/couldn't reach it.
+          round: 12
+        - id: BR-58
+          disposition: not-addressed
+          note: 'The atlas half landed well - the count is gone and each named degradation message genuinely has a row test - but the README sweep the finding called the deliverable is untouched: README:164 still names one of the ask path''s three return-1 sites, plus the two pre-existing gaps.'
+          round: 12
+        - id: BR-59
+          disposition: not-addressed
+          note: Unchanged - askrun_test.go:659's "configured but never reached" row still asserts only stderr while its eight siblings read st.Events; probed again, the event IS recorded.
+          round: 12
+      blocked: false
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -2276,6 +2321,21 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   caught it. Adjacent and cheap: the same row is the one README's recording
   sentence is loosest about, since a connection-refused sends no request yet
   records.
+
+## Round 12 — 2026-08-24T21:34:42-07:00 (claude) — passed
+
+### Disposed
+
+- BR-12 — not-addressed — Sixth round unchanged - submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the suite green (only the four repo-guard artifacts fail, as in any non-git tree).
+- BR-17 — not-addressed — Verbatim unchanged - Task 3's snippet at line 637, askUnavailable at 692/751, and zero occurrences of "-raw" or "lostTerminal".
+- BR-47 — not-addressed — Sixth round. The set-difference check now passes, but vacuously - `ask` matches the filename `cmd/define/ask.go` under the entry's own word-boundary rule; restricted to table rows, `ask` plus six modified-signature siblings fall out.
+- BR-48 — not-addressed — Six Revisions entries, still none for round 2's forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" all appear zero times.
+- BR-49 — not-addressed — Unchanged - replRaw (replraw.go:29) still passes the seam straight to readKeys with no policy, and 47 test call sites still pass nil.
+- BR-50 — not-addressed — All four residues verbatim - replraw.go:132's "adds a fifth" beside a helper with two call sites, capture.go:102's guard, repl_test.go:199's t.Context() failure arm, ask.go:244's per-question Deck().
+- BR-53 — not-addressed — Fourth round - carriedCR still reverts green (measured), and Write still materialises the translation into out while consumed re-derives it from p.
+- BR-57 — not-addressed — Re-measured through the package - can't->"ca", won't->"wo", shan't->"sha" all miss questionOpeners while isn't/don't/didn't/couldn't reach it.
+- BR-58 — not-addressed — The atlas half landed well - the count is gone and each named degradation message genuinely has a row test - but the README sweep the finding called the deliverable is untouched: README:164 still names one of the ask path's three return-1 sites, plus the two pre-existing gaps.
+- BR-59 — not-addressed — Unchanged - askrun_test.go:659's "configured but never reached" row still asserts only stderr while its eight siblings read st.Events; probed again, the event IS recorded.
 
 ## Open findings
 

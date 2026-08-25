@@ -937,3 +937,27 @@ The generalisable half: **`git status` and "it builds" both pass on a tree with 
 mechanism silently removed.** What catches it is diffing the file against HEAD
 and reading every hunk — which is also what caught it here, one step before a
 commit.
+
+## A mechanical check can pass vacuously too (define #16 close)
+
+The entity-table check failed five rounds running, and each fix made it *more*
+mechanical: run the enumeration → run it against the working tree, not HEAD →
+reconcile by set difference rather than by eye. The sixth round found the set
+difference **passing because the tables contain the string `cmd/define/ask.go`**,
+which matches `\bask\b`. The function `ask` — the single entry into the question
+path — was in no row, and the check said everything was covered.
+
+Two rules, and the second is the general one:
+
+- **Match where a thing is NAMED, not anywhere in the document.** Table rows and
+  bullet headers name entities; prose contains the English word "ask" and paths
+  contain `ask.go`. Both satisfied a whole-text search.
+- **A check you wrote to defend a finding is itself a claim, so probe it.** The
+  fix for "the tables drift" was a script, and the script needed exactly the
+  falsification test its own finding was about: feed it something you KNOW is
+  missing and confirm it says so. I never did, so it reported "none missing" for
+  three rounds while three symbols were missing.
+
+Same rule as the mutation-table and the message-count entries above, applied one
+level up: the check is a claim, and an unfalsified claim is scaffolding whatever
+language it is written in.

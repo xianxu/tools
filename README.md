@@ -161,12 +161,18 @@ non-zero and names the reason. Configure it with `DEFINE_LLM_API_KEY` (or `ANTHR
 `DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) — all five the tool reads. The
 default base URL is a local proxy on `127.0.0.1:8317`.
 
-Exit codes: `0` success; `1` the request failed (no dictionary entry, a question
-with no model configured, `--forget` found nothing to remove, or `--llm-check`
-found no usable model configuration); `2` usage error, which includes an unknown
-`/command` and a bare `?` or `\` with nothing after it. A piped run exits `1` if any word failed and `2` if a command was
-malformed, so `echo "$w" | define || …` works in a script; an interactive typo
-does not fail the session.
+Exit codes: `0` success; `1` the request failed; `2` usage error. What produces
+each is enumerated rather than sampled, because a list of examples goes stale the
+moment a new one is added and nothing says so:
+
+| code | produced by |
+|---|---|
+| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration |
+| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?` |
+
+A piped run exits `1` if any word failed and `2` if a command was malformed, so
+`echo "$w" | define || …` works in a script; an interactive typo does not fail
+the session.
 
 A line beginning with `/` is a command rather than a word — `/` is safe as a
 marker because no English headword starts with one, and `define` needs whole
