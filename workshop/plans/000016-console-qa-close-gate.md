@@ -1212,6 +1212,96 @@ rounds:
           family: doc-overstates-code
           round: 9
       blocked: true
+    - "n": 10
+      timestamp: "2026-08-24T21:05:46-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: not-addressed
+          note: Fourth round unchanged - submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the suite green; only the pure recallLine is pinned.
+          round: 10
+        - id: BR-17
+          disposition: not-addressed
+          note: Unchanged verbatim - Task 3's snippet at line 632, askUnavailable at 687/746, and zero mentions of mayAsk, recallLine, nothingSays or lostTerminal.
+          round: 10
+        - id: BR-47
+          disposition: not-addressed
+          note: Fourth round, same failure mode - the entry says the enumeration "runs LAST" and reports 34, which is the count at 993fccc..eb624f3; the close commit then added unreachable and sayUnavailable, neither in the tables.
+          round: 10
+        - id: BR-48
+          disposition: not-addressed
+          note: Six Revisions entries, still none for round 2's four forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" appear zero times in the plan.
+          round: 10
+        - id: BR-49
+          disposition: not-addressed
+          note: Unchanged - replRaw (replraw.go:29) still passes the seam straight to readKeys with no policy, two nil guards elsewhere, and 47 test call sites now pass nil.
+          round: 10
+        - id: BR-50
+          disposition: not-addressed
+          note: All four residues present verbatim; residue (1) is now doubly wrong - one lostTerminal helper with two call sites, and M2's streaming created no fifth. Residue (2) mutation-verified green.
+          round: 10
+        - id: BR-53
+          disposition: not-addressed
+          note: The site fix stands but carriedCR reverts green (measured), and the rule is unapplied - Write materialises the translation into out while consumed re-derives it from p.
+          round: 10
+        - id: BR-54
+          disposition: addressed
+          note: Measured 30 of 30 clean on unmutated HEAD (was 12 failures in 30), and it still reddens under omit defer restore(); the wait is now on the post-askScoped prompt redraw.
+          round: 10
+        - id: BR-55
+          disposition: addressed
+          note: All four claims corrected and the qcancel cell genuinely defended - each of askScoped's three observable mutations reddens the subtest its row now names. The new unavailable/unreachable split misroutes 401/403; raised separately.
+          round: 10
+      findings:
+        - id: BR-56
+          severity: Important
+          title: unreachable splits ErrUnavailable into two halves; it has three producers and the credential one gets the wrong half
+          detail: |-
+            This is the 12th finding in this family; the rule has been stated six
+            times, so do NOT patch the one message. Rule, in the shape this window
+            needs it - a taxonomy branch must be exhaustive over what PRODUCES the
+            error it dispatches on, and that enumeration is greppable in the producer
+            rather than guessable in the consumer. ask.go:115's own comment states the
+            contract ("one is something to set up, the other something to wait out"),
+            while internal/llm's classifyStatus emits ErrUnavailable from three places
+            and says of the third that "a missing or wrong credential is an operator
+            configuration state, not a crash". Measured through llmtest.Fake at
+            statuses 401, 403, 503 and 429: all four print
+            `define: the model did not answer; ...` and exit 1, so an expired or wrong
+            DEFINE_LLM_API_KEY - the one ErrUnavailable cell a user can fix - is told
+            to wait. llmcheck.go:69 gets this right by not deciding, printing the
+            underlying error verbatim; the ask path now gives strictly less
+            information than the diagnostic beside it and points the wrong way. The
+            gap survived because the cell added for this split
+            (askrun_test.go:619-645) reaches past the wire fake to
+            envFor("http://127.0.0.1:1"), exercising only the status==0 arm - ARCH-MOCK:
+            a cell that dials past the fake cannot cover the states the fake models.
+            Second instance of the same rule, in the comment the previous finding
+            named: askrun_test.go:828-831 still says "omitting restore leaves the whole
+            suite GREEN" and "omitting qcancel leaves the suite green AND go vet
+            silent", both measured false, both falsified by the SAME commit that edited
+            the adjacent clause on line 828 - a line-level patch where the finding
+            asked for a sweep of the paragraph that owns the claim.
+          family: doc-overstates-code
+          round: 10
+        - id: BR-57
+          severity: Minor
+          title: openerStem cannot reach can't, won't or shan't, while can, will and shall are all openers
+          detail: |-
+            This is the 13th finding in this family, so it is recorded as an instance
+            of the rule above rather than fixed at the site. question.go:71-80 claims
+            negated auxiliaries are matched "on the stem before n't ... so the set
+            stays the vocabulary rather than its inflections". Measured: isn't->is,
+            don't->do, didn't->did and couldn't->could all reach questionOpeners, but
+            the three irregular English negatives do not - can't->"ca", won't->"wo",
+            shan't->"sha" - so `can't you use it in a sentence` and `won't that sound
+            rude` both answer "no dictionary entry". question_test.go's negation row
+            uses isn't, a regular form, so the table covers the representative rather
+            than the class. Low harm, since "?" is the documented recovery; worth one
+            row and three stems when the arm is next touched.
+          family: doc-overstates-code
+          round: 10
+      blocked: true
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -1973,6 +2063,61 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   "not recorded" on "no model configured" - and it is the one outcome cell
   TestAQuestionIsRecordedWhateverBecameOfTheAnswer does not enumerate.
 
+## Round 10 — 2026-08-24T21:05:46-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-12 — not-addressed — Fourth round unchanged - submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the suite green; only the pure recallLine is pinned.
+- BR-17 — not-addressed — Unchanged verbatim - Task 3's snippet at line 632, askUnavailable at 687/746, and zero mentions of mayAsk, recallLine, nothingSays or lostTerminal.
+- BR-47 — not-addressed — Fourth round, same failure mode - the entry says the enumeration "runs LAST" and reports 34, which is the count at 993fccc..eb624f3; the close commit then added unreachable and sayUnavailable, neither in the tables.
+- BR-48 — not-addressed — Six Revisions entries, still none for round 2's four forks or round 6's Task 11 item; TestThePipedLoopsAskWiring, "builds its own binary" and "scoped stream" appear zero times in the plan.
+- BR-49 — not-addressed — Unchanged - replRaw (replraw.go:29) still passes the seam straight to readKeys with no policy, two nil guards elsewhere, and 47 test call sites now pass nil.
+- BR-50 — not-addressed — All four residues present verbatim; residue (1) is now doubly wrong - one lostTerminal helper with two call sites, and M2's streaming created no fifth. Residue (2) mutation-verified green.
+- BR-53 — not-addressed — The site fix stands but carriedCR reverts green (measured), and the rule is unapplied - Write materialises the translation into out while consumed re-derives it from p.
+- BR-54 — addressed — Measured 30 of 30 clean on unmutated HEAD (was 12 failures in 30), and it still reddens under omit defer restore(); the wait is now on the post-askScoped prompt redraw.
+- BR-55 — addressed — All four claims corrected and the qcancel cell genuinely defended - each of askScoped's three observable mutations reddens the subtest its row now names. The new unavailable/unreachable split misroutes 401/403; raised separately.
+
+### Raised
+
+- **BR-56** [Important] `doc-overstates-code` unreachable splits ErrUnavailable into two halves; it has three producers and the credential one gets the wrong half
+  This is the 12th finding in this family; the rule has been stated six
+  times, so do NOT patch the one message. Rule, in the shape this window
+  needs it - a taxonomy branch must be exhaustive over what PRODUCES the
+  error it dispatches on, and that enumeration is greppable in the producer
+  rather than guessable in the consumer. ask.go:115's own comment states the
+  contract ("one is something to set up, the other something to wait out"),
+  while internal/llm's classifyStatus emits ErrUnavailable from three places
+  and says of the third that "a missing or wrong credential is an operator
+  configuration state, not a crash". Measured through llmtest.Fake at
+  statuses 401, 403, 503 and 429: all four print
+  `define: the model did not answer; ...` and exit 1, so an expired or wrong
+  DEFINE_LLM_API_KEY - the one ErrUnavailable cell a user can fix - is told
+  to wait. llmcheck.go:69 gets this right by not deciding, printing the
+  underlying error verbatim; the ask path now gives strictly less
+  information than the diagnostic beside it and points the wrong way. The
+  gap survived because the cell added for this split
+  (askrun_test.go:619-645) reaches past the wire fake to
+  envFor("http://127.0.0.1:1"), exercising only the status==0 arm - ARCH-MOCK:
+  a cell that dials past the fake cannot cover the states the fake models.
+  Second instance of the same rule, in the comment the previous finding
+  named: askrun_test.go:828-831 still says "omitting restore leaves the whole
+  suite GREEN" and "omitting qcancel leaves the suite green AND go vet
+  silent", both measured false, both falsified by the SAME commit that edited
+  the adjacent clause on line 828 - a line-level patch where the finding
+  asked for a sweep of the paragraph that owns the claim.
+- **BR-57** [Minor] `doc-overstates-code` openerStem cannot reach can't, won't or shan't, while can, will and shall are all openers
+  This is the 13th finding in this family, so it is recorded as an instance
+  of the rule above rather than fixed at the site. question.go:71-80 claims
+  negated auxiliaries are matched "on the stem before n't ... so the set
+  stays the vocabulary rather than its inflections". Measured: isn't->is,
+  don't->do, didn't->did and couldn't->could all reach questionOpeners, but
+  the three irregular English negatives do not - can't->"ca", won't->"wo",
+  shan't->"sha" - so `can't you use it in a sentence` and `won't that sound
+  rude` both answer "no dictionary entry". question_test.go's negation row
+  uses isn't, a regular form, so the table covers the representative rather
+  than the class. Low harm, since "?" is the documented recovery; worth one
+  row and three stems when the arm is next touched.
+
 ## Open findings
 
 - **BR-12** [Minor] `forced-route-enumeration` the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
@@ -1982,5 +2127,5 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-49** [Minor] `nil-seam-policy` The interrupter seam has three consumers and two nil policies; one of them dereferences
 - **BR-50** [Minor] `dead-branch` Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read
 - **BR-53** [Minor] `second-implementation-drifts` crlfWriter.Write advances lastWasCR over bytes the underlying writer never took
-- **BR-54** [Important] `unsynchronised-test-observation` TestCtrlCQuitsAgainOnceTheAnswerIsOver fails 12 of 30 runs on unmutated HEAD
-- **BR-55** [Important] `doc-overstates-code` Four measured doc claims contradict the code, all created by the last two rounds
+- **BR-56** [Important] `doc-overstates-code` unreachable splits ErrUnavailable into two halves; it has three producers and the credential one gets the wrong half
+- **BR-57** [Minor] `doc-overstates-code` openerStem cannot reach can't, won't or shan't, while can, will and shall are all openers

@@ -616,17 +616,54 @@ func TestAQuestionIsRecordedWhateverBecameOfTheAnswer(t *testing.T) {
 		})
 	}
 
-	t.Run("configured but unreachable: recorded, and SAID so", func(t *testing.T) {
-		// The cell this enumeration was missing. ErrUnavailable covers both
-		// "no key" and "did not answer", and the message used to say "no model
-		// configured" for a model the user had configured — while the question
-		// WAS recorded, contradicting the README sentence that keys on it.
+	// ErrUnavailable has THREE producers (internal/llm's classifyStatus): never
+	// reached, retryable-and-gave-up, and 401/403 — a wrong credential, which is
+	// the one cell a user can actually fix. A message that diagnoses picks one
+	// and is wrong for the others, so the message must carry the underlying
+	// cause instead. Every producer gets a row.
+	//
+	// Driven THROUGH the wire fake, not past it: the first version of this cell
+	// dialled 127.0.0.1:1, which exercises only the never-reached arm and cannot
+	// reach the states the fake models at all (ARCH-MOCK).
+	for _, tc := range []struct {
+		name, want string
+		status     int
+	}{
+		{"a wrong credential", "401", 401},
+		{"a forbidden key", "403", 403},
+		{"a rate limit the transport gave up on", "429", 429},
+		{"the service failing", "503", 503},
+	} {
+		t.Run("configured but unavailable: "+tc.name, func(t *testing.T) {
+			d, fake, st, _ := askRig(t)
+			fake.Script("", llmtest.Reply{Status: tc.status})
+
+			var out, errb bytes.Buffer
+			runAsk(t.Context(), d, options{}, &session{}, question{text: "is it pejorative?"}, &out, &errb)
+
+			if strings.Contains(errb.String(), "no model configured") {
+				t.Errorf("a configured model was reported as unconfigured: %q", errb.String())
+			}
+			// The cause, not a guess at it: a user with an expired key must not
+			// be told to wait for something only they can fix.
+			if !strings.Contains(errb.String(), tc.want) {
+				t.Errorf("stderr = %q, want it to carry the underlying cause (%s)", errb.String(), tc.want)
+			}
+			ev, _ := st.Events(time.Time{})
+			if len(ev) != 1 {
+				t.Errorf("events = %+v, want the question recorded — a request WAS sent", ev)
+			}
+		})
+	}
+
+	t.Run("configured but never reached", func(t *testing.T) {
+		// The third producer: nothing listening at all.
 		_, _, st, _ := askRig(t)
 		d := testDeps(t)
 		d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil)
 		d.deck = st
 		d.newLLM = llm.New
-		d.getenv = envFor("http://127.0.0.1:1") // configured, nothing listening
+		d.getenv = envFor("http://127.0.0.1:1")
 
 		var out, errb bytes.Buffer
 		runAsk(t.Context(), d, options{}, &session{}, question{text: "is it pejorative?"}, &out, &errb)
@@ -634,12 +671,8 @@ func TestAQuestionIsRecordedWhateverBecameOfTheAnswer(t *testing.T) {
 		if strings.Contains(errb.String(), "no model configured") {
 			t.Errorf("a configured model was reported as unconfigured: %q", errb.String())
 		}
-		if !strings.Contains(errb.String(), "did not answer") {
-			t.Errorf("stderr = %q, want it to say the model did not answer", errb.String())
-		}
-		ev, _ := st.Events(time.Time{})
-		if len(ev) != 1 {
-			t.Errorf("events = %+v, want the question recorded — a request WAS sent", ev)
+		if !strings.Contains(errb.String(), "connect") && !strings.Contains(errb.String(), "refused") {
+			t.Errorf("stderr = %q, want it to carry the connection failure", errb.String())
 		}
 	})
 
@@ -824,11 +857,11 @@ func TestAnUnreadableUserModelIsReported(t *testing.T) {
 //
 // Finding it unobservable, that round concluded the mechanism could not be
 // tested and made the ordering structural instead. The enumeration says
-// otherwise: omitting interrupts.Set reddens the scoped-during-the-answer cell;
-// omitting restore leaves
-// the whole suite GREEN and the session unquittable; omitting qcancel leaves the
-// suite green AND go vet silent, since qcancel is used as a value so lostcancel
-// never fires; only the reordering is genuinely unobservable.
+// otherwise. Each cell now has a defending test — askScoped's own doc comment
+// names them. The claims that USED to sit here ("omitting restore leaves the
+// whole suite green", "omitting qcancel leaves it green and go vet silent")
+// described the tree BEFORE those tests existed: measured facts that the fix
+// itself falsified, left standing because nobody re-ran them.
 //
 // The rule: when a probe finds one mutation untestable, the deliverable is the
 // ENUMERATION of mutations to that mechanism, not the verdict on the one probed.

@@ -104,16 +104,22 @@ func unavailable(errOut io.Writer, q question) int {
 	return sayUnavailable(errOut, q, "no model configured")
 }
 
-// unreachable is the OTHER half of ErrUnavailable: a model that is configured
-// and did not answer.
+// unavailableAfterSending is what a CONFIGURED model's failure says, and it
+// deliberately does not diagnose.
 //
-// Worth distinguishing, because the two need opposite responses — one is
-// something to set up, the other something to wait out — and because the
-// question IS recorded in this case and is NOT in the other, which README keys
-// on. Telling a user with a working key that they have no model configured
-// makes both halves of that unreadable.
-func unreachable(errOut io.Writer, q question) int {
-	return sayUnavailable(errOut, q, "the model did not answer")
+// `ErrUnavailable` has three producers (`internal/llm`'s classifyStatus): the
+// service was never reached, the transport gave up on something retryable, and
+// **401/403 — a missing or wrong credential**, which that function's own comment
+// calls "an operator configuration state". A message that picks one of the three
+// is wrong for the other two, and the first version of this picked "did not
+// answer", which tells a user with an expired key to wait for a problem only
+// they can fix.
+//
+// So it reports the taxonomy's own word and hands over the underlying error,
+// which names the actual cause. `--llm-check` reaches the same conclusion by
+// the same route: it prints the error verbatim rather than deciding.
+func unavailableAfterSending(errOut io.Writer, q question, err error) int {
+	return sayUnavailable(errOut, q, fmt.Sprintf("the model is unavailable (%v)", err))
 }
 
 func sayUnavailable(errOut io.Writer, q question, why string) int {
@@ -188,10 +194,10 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		if answer.Len() > 0 {
 			break // the answer arrived; the failure was in the teardown
 		}
-		// Configured, and did not answer — a different thing from having no
+		// Configured, and did not deliver — a different thing from having no
 		// model at all, and the question was recorded either way by the defer
 		// above, which is what README keys on.
-		return unreachable(errOut, q)
+		return unavailableAfterSending(errOut, q, err)
 	case errors.Is(err, llm.ErrTruncated):
 		// Partial text is kept: once frames have arrived the service is
 		// demonstrably reachable, and half an answer beats none.

@@ -156,9 +156,12 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 
 | Name | Lives in | Status |
 |------|----------|--------|
-| `readsAsQuestion` | `cmd/define/question.go` | new |
+| `readsAsQuestion` / `openerStem` | `cmd/define/question.go` | new |
 | `truncateQuestion` | `cmd/define/question.go` | new |
 | `parseREPLLine` / `replCommand` | `cmd/define/repl.go` | modified |
+| `recallLine` / `nothingSays` | `cmd/define/repl.go` | new |
+| `lookupOutcome` | `cmd/define/main.go` | new |
+| `question` / `mayAsk` | `cmd/define/ask.go` | new |
 | `askContext` | `cmd/define/askctx.go` | new |
 | `renderAskPrompt` | `cmd/define/askctx.go` | new |
 | `recentTurns` | `cmd/define/askctx.go` | new |
@@ -230,6 +233,7 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `deps.notifySignals` | `cmd/define/main.go` | new | `signal.Notify` |
 | `Capturer.CaptureAsk` | `cmd/define/capture.go` | modified | event append |
 | `askScoped` | `cmd/define/ask.go` | new | the interrupt sink, for the duration of one answer |
+| `unavailable` / `unavailableAfterSending` | `cmd/define/ask.go` | new | the two degradation messages |
 
 - **gatherAskContext** — reads the deck, the user model and the session's own
   state into an `askContext`. Thin: no formatting, no truncation decisions beyond
@@ -1393,19 +1397,31 @@ CONSUMER of the diff, so they are resolved against it mechanically — the way
 PQ-5 resolved every file:line citation. A row corrected because a review named
 it is the instance again.
 
-### 2026-08-24 — the enumeration, run LAST
+### 2026-08-24 — the enumeration, run against the tree being committed
 
-**Reason:** BR-47, third occurrence, `not-addressed` twice. Both earlier attempts
-ran the enumeration and then kept editing, so the same commit that ran it created
-entities it did not list — `Store.SetUserModel` and `carriedCR` the second time.
-Re-running the same command was never the fix; running it at the wrong MOMENT
-was the defect.
+**Reason:** BR-47, four rounds, `not-addressed` three times. Each attempt ran the
+command and then kept editing, so the commit that ran it created entities it did
+not list — and the third attempt's entry even said "runs LAST" while reporting a
+count taken before the last two functions existed.
 
-**Delta:** the enumeration is run as the LAST step before the close commit, and
-its output reconciled here in full. At this boundary it lists 34 additions; the
-tables were missing `SetUserModel`, `carriedCR` and `writeBytesAtomic`, all
-created by rounds 3 and 4.
+**What was actually wrong** was never the command. Two things:
 
-**The rule this encodes:** a mechanical check placed before the last edit is a
-check of a tree nobody shipped. Enumerations that describe a commit run against
-the commit — last, not first.
+1. **"Last" has to mean against the WORKING TREE**, not `base..HEAD`. Run against
+   HEAD it lists what the previous commits added, which is a different set from
+   what this commit ships — it showed a function this very change had renamed.
+2. **The entry must not carry a count.** A count is a measured claim that drifts
+   the moment anything is added, and it drifts silently. Same rule BR-56 states
+   for taxonomy messages and BR-55 for mutation tables: name the check, not the
+   number it produced once.
+
+**The check, to be re-run at any future boundary:**
+
+```
+git diff <boundary> -- 'cmd/**/*.go' ':!*_test.go' | grep -E '^\+(func|type) '
+```
+
+No `..HEAD`: comparing the boundary to the working tree is what makes it a check
+of the thing being shipped. Its output is reconciled against the two tables
+above, and this pass added the rows for `openerStem`, `recallLine`,
+`nothingSays`, `lookupOutcome`, `question`, `mayAsk`, `carriedCR`,
+`writeBytesAtomic`, `SetUserModel` and the two degradation messages.

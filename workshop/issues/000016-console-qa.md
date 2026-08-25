@@ -708,3 +708,35 @@ One user-visible fix fell out of BR-55: `ErrUnavailable` covers both "no key" an
 both — while the question IS recorded in the second case and is NOT in the first,
 which is exactly what README keys on. The two now say different things, and the
 outcome enumeration gained the cell it was missing.
+
+### 2026-08-24 — close review round 2: the fix from the round before was wrong
+
+Nine disposed, two open, and the first is a defect in the previous round's fix —
+which by now is the recognisable rhythm of this issue.
+
+- **BR-56.** I split `ErrUnavailable` into "no model configured" and "the model
+  did not answer". It has **three** producers in `internal/llm`'s
+  `classifyStatus`: never reached, retryable-and-gave-up, and **401/403 — a wrong
+  or expired credential**, which that function's own comment calls *"an operator
+  configuration state"*. So the split told the one user who CAN fix their problem
+  to wait for it to pass. The message now reports the taxonomy's word and hands
+  over the underlying error, which names the cause — the conclusion `--llm-check`
+  reaches by not deciding either. **A taxonomy branch must be exhaustive over what
+  PRODUCES the error it dispatches on, and that enumeration is greppable in the
+  producer rather than guessable in the consumer.**
+
+  The test cell I added for the split **dialled past the wire fake**
+  (`127.0.0.1:1`), so it exercised only the never-reached arm and could not touch
+  the states the fake models (ARCH-MOCK). A row per producer now, through the
+  fake.
+- **BR-47, fourth time.** The command was never wrong. Two things were: "last"
+  has to mean against the **working tree** — run against `..HEAD` it lists what
+  earlier commits added, and it showed me a function this change had renamed —
+  and the entry must carry **no count**, because a count is a measured claim that
+  drifts silently. Same rule as BR-55's mutation table and BR-56's message: name
+  the check, not the number it produced once.
+
+Also swept, and it is the sharpest instance of the family in the issue: my own
+test comment still asserted *"omitting restore leaves the whole suite GREEN"* —
+a measured fact that the very fix beneath it had falsified, left standing because
+nobody re-ran it.
