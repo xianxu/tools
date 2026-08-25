@@ -1095,6 +1095,123 @@ rounds:
           round: 8
       boundary: M2
       blocked: false
+    - "n": 9
+      timestamp: "2026-08-24T20:42:05-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: not-addressed
+          note: Half (b) is now pinned; half (a)'s wiring still reverts green — submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the full suite green on two runs.
+          round: 9
+        - id: BR-17
+          disposition: not-addressed
+          note: Unchanged verbatim — Task 3's snippet at line 632, askUnavailable at 686/745, and zero mentions of mayAsk, recallLine, nothingSays or lostTerminal.
+          round: 9
+        - id: BR-19
+          disposition: addressed
+          note: All four cells verified red individually — the doubled backslash, nothingSays's note branch, the piped fail(2), and truncateQuestion's elision.
+          round: 9
+        - id: BR-20
+          disposition: addressed
+          note: replayInPlace routes through nothingSays; one production occurrence of the replay sentence in the whole tree, and the parameter is inSession where true is correct.
+          round: 9
+        - id: BR-21
+          disposition: addressed
+          note: One "lost the terminal" site in cmd/, via lostTerminal. The doc comment above it still predicts a fifth call site — that belongs to BR-50.
+          round: 9
+        - id: BR-47
+          disposition: not-addressed
+          note: 'Third round, same failure mode — the enumeration was re-run and again missed what the same commit created: Store.SetUserModel and carriedCR are both absent from the plan.'
+          round: 9
+        - id: BR-48
+          disposition: not-addressed
+          note: Still no Revisions entry for round 2's four forks, round 6's Task 11 item, round 3's askScoped/SetUserModel, or the close round.
+          round: 9
+        - id: BR-49
+          disposition: not-addressed
+          note: Unchanged — replRaw still passes the seam straight to readKeys with no policy, and 44 test call sites still pass nil.
+          round: 9
+        - id: BR-50
+          disposition: not-addressed
+          note: All four residues present verbatim — replraw.go:132's "adds a fifth", capture.go's CaptureAsk guard, repl_test.go's t.Context() failure arm, ask.go's per-question Deck().
+          round: 9
+        - id: BR-51
+          disposition: addressed
+          note: 'The restore cell is genuinely pinned — omitting defer restore() reddens TestCtrlCQuitsAgainOnceTheAnswerIsOver (verified). Two residuals raised separately: that test is racy, and the enumeration''s qcancel row is false.'
+          round: 9
+        - id: BR-52
+          disposition: addressed
+          note: Dropping the cancel-path recordExchange reddens TestAnAnswerTheUserReadSurvivesHowItEnded/stopped_by_the_user (verified).
+          round: 9
+        - id: BR-53
+          disposition: not-addressed
+          note: The site defect is fixed and behaviourally verified, but no test fails without carriedCR, and the rule the finding asked for is unapplied — Write and consumed are still two derivations.
+          round: 9
+      findings:
+        - id: BR-54
+          severity: Important
+          title: TestCtrlCQuitsAgainOnceTheAnswerIsOver fails 12 of 30 runs on unmutated HEAD
+          detail: |-
+            This is the 2nd finding in family unsynchronised-test-observation. BR-25
+            fixed the instance (data races on a bytes.Buffer); state the rule instead.
+            Rule - a test must synchronise on the state it ASSERTS, not on a proxy that
+            merely precedes it. askrun_test.go:831 waits for "insincerely", the LAST
+            text delta of stream-sample.sse (line 35 of 45), then immediately writes
+            \x03 and requires the scope to already be restored. Everything between is
+            unsynchronised: the remaining SSE frames parse, Stream returns,
+            recordExchange runs, and runAsk's deferred CaptureAsk does a real
+            AppendEvent to DISK (ask.go:147-151) - all inside askScoped, before
+            restore(). Lose that race and readKeys swallows the \x03 as
+            scope-consumed, quit never closes, and the test fails at its 5s deadline
+            printing the message it reserves for the real defect. Measured on
+            unmutated HEAD: `-count=30` isolated gives 12 failures; under full-package
+            load it is rarer (3 of 3 clean in a dedicated sweep, one spontaneous
+            failure across ~10 full-package runs during this review). It is the only
+            test in the file that drives a COMPLETING stream and then asserts
+            post-scope state - the eight `Stall: true` tests never leave the scope - and
+            it is the sole defender of the cell BR-51 named, while the close's
+            --verified evidence is a `go test ./...` run. Fix: wait on a happens-after
+            marker for restore() rather than on answer text; askInSession
+            (replraw.go:164-165) writes "\r\n" then draw() strictly after askScoped
+            returns. Consider separately moving the CaptureAsk disk write outside the
+            scope, which also shrinks the window where a user's real Ctrl-C is
+            silently swallowed.
+          family: unsynchronised-test-observation
+          round: 9
+        - id: BR-55
+          severity: Important
+          title: Four measured doc claims contradict the code, all created by the last two rounds
+          detail: |-
+            This is the 11th finding in this family; the rule has been stated five
+            times, so do NOT patch the four lines. Rule, in the shape this window
+            needs it - a measured claim written into a comment is a claim, and it is
+            falsified the same way any other absolute is: by running the mutation it
+            names. Measured: (1) ask.go:43 records
+            `omit defer qcancel()  1 test red - the question's context leaks`;
+            measured, `go test ./cmd/define/` is ok 58.078s with 0 tests red and
+            `go vet ./cmd/define/` silent, because qcancel is passed as a value to
+            interrupts.Set so lostcancel never fires - which is exactly what BR-51's
+            own detail reported, so the commit answering it wrote the opposite into
+            the table whose thesis is "the deliverable is the enumeration"; the cell
+            is a real per-question context leak and is undefended. (2) ask.go:38 says
+            `omit interrupts.Set  10 tests red` while askrun_test.go:800, same commit,
+            says "reddens five tests"; I measure 4 top-level / 10 with subtests - two
+            numbers in one commit is the signature of a recollection, not a
+            measurement. (3) atlas/define.md:602-603 still says the raw loop's closure
+            "is where M2's streaming writer and scoped interrupt hang", which round 3
+            falsified by moving the scope into askScoped - replraw.go:142-143 says so
+            explicitly, so the code comment was corrected and the atlas paragraph that
+            OWNS the claim was left standing, BR-28/BR-44's rule a third time.
+            (4) store/mem.go:18 says "SetUserModel is #17's to add ... until then"
+            while mem.go:91, same commit, implements it and the suite writes through
+            it. A fifth, adjacent: a CONFIGURED but unreachable model prints
+            "no model configured" and exits 1 while the question IS recorded as an
+            asked event (probed against http://127.0.0.1:1), where README:97-101 keys
+            "not recorded" on "no model configured" - and it is the one outcome cell
+            TestAQuestionIsRecordedWhateverBecameOfTheAnswer does not enumerate.
+          family: doc-overstates-code
+          round: 9
+      blocked: true
 ---
 
 # Gate ledger — tools#16 (boundary-review)
@@ -1783,17 +1900,87 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   already-degraded path. The rule: a translation materialised once must not
   be re-derived — Write and consumed are still two derivations of it.
 
+## Round 9 — 2026-08-24T20:42:05-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-12 — not-addressed — Half (b) is now pinned; half (a)'s wiring still reverts green — submitLine's hist.Add(cmd.recallLine()) -> hist.Add(line) leaves the full suite green on two runs.
+- BR-17 — not-addressed — Unchanged verbatim — Task 3's snippet at line 632, askUnavailable at 686/745, and zero mentions of mayAsk, recallLine, nothingSays or lostTerminal.
+- BR-19 — addressed — All four cells verified red individually — the doubled backslash, nothingSays's note branch, the piped fail(2), and truncateQuestion's elision.
+- BR-20 — addressed — replayInPlace routes through nothingSays; one production occurrence of the replay sentence in the whole tree, and the parameter is inSession where true is correct.
+- BR-21 — addressed — One "lost the terminal" site in cmd/, via lostTerminal. The doc comment above it still predicts a fifth call site — that belongs to BR-50.
+- BR-47 — not-addressed — Third round, same failure mode — the enumeration was re-run and again missed what the same commit created: Store.SetUserModel and carriedCR are both absent from the plan.
+- BR-48 — not-addressed — Still no Revisions entry for round 2's four forks, round 6's Task 11 item, round 3's askScoped/SetUserModel, or the close round.
+- BR-49 — not-addressed — Unchanged — replRaw still passes the seam straight to readKeys with no policy, and 44 test call sites still pass nil.
+- BR-50 — not-addressed — All four residues present verbatim — replraw.go:132's "adds a fifth", capture.go's CaptureAsk guard, repl_test.go's t.Context() failure arm, ask.go's per-question Deck().
+- BR-51 — addressed — The restore cell is genuinely pinned — omitting defer restore() reddens TestCtrlCQuitsAgainOnceTheAnswerIsOver (verified). Two residuals raised separately: that test is racy, and the enumeration's qcancel row is false.
+- BR-52 — addressed — Dropping the cancel-path recordExchange reddens TestAnAnswerTheUserReadSurvivesHowItEnded/stopped_by_the_user (verified).
+- BR-53 — not-addressed — The site defect is fixed and behaviourally verified, but no test fails without carriedCR, and the rule the finding asked for is unapplied — Write and consumed are still two derivations.
+
+### Raised
+
+- **BR-54** [Important] `unsynchronised-test-observation` TestCtrlCQuitsAgainOnceTheAnswerIsOver fails 12 of 30 runs on unmutated HEAD
+  This is the 2nd finding in family unsynchronised-test-observation. BR-25
+  fixed the instance (data races on a bytes.Buffer); state the rule instead.
+  Rule - a test must synchronise on the state it ASSERTS, not on a proxy that
+  merely precedes it. askrun_test.go:831 waits for "insincerely", the LAST
+  text delta of stream-sample.sse (line 35 of 45), then immediately writes
+  \x03 and requires the scope to already be restored. Everything between is
+  unsynchronised: the remaining SSE frames parse, Stream returns,
+  recordExchange runs, and runAsk's deferred CaptureAsk does a real
+  AppendEvent to DISK (ask.go:147-151) - all inside askScoped, before
+  restore(). Lose that race and readKeys swallows the \x03 as
+  scope-consumed, quit never closes, and the test fails at its 5s deadline
+  printing the message it reserves for the real defect. Measured on
+  unmutated HEAD: `-count=30` isolated gives 12 failures; under full-package
+  load it is rarer (3 of 3 clean in a dedicated sweep, one spontaneous
+  failure across ~10 full-package runs during this review). It is the only
+  test in the file that drives a COMPLETING stream and then asserts
+  post-scope state - the eight `Stall: true` tests never leave the scope - and
+  it is the sole defender of the cell BR-51 named, while the close's
+  --verified evidence is a `go test ./...` run. Fix: wait on a happens-after
+  marker for restore() rather than on answer text; askInSession
+  (replraw.go:164-165) writes "\r\n" then draw() strictly after askScoped
+  returns. Consider separately moving the CaptureAsk disk write outside the
+  scope, which also shrinks the window where a user's real Ctrl-C is
+  silently swallowed.
+- **BR-55** [Important] `doc-overstates-code` Four measured doc claims contradict the code, all created by the last two rounds
+  This is the 11th finding in this family; the rule has been stated five
+  times, so do NOT patch the four lines. Rule, in the shape this window
+  needs it - a measured claim written into a comment is a claim, and it is
+  falsified the same way any other absolute is: by running the mutation it
+  names. Measured: (1) ask.go:43 records
+  `omit defer qcancel()  1 test red - the question's context leaks`;
+  measured, `go test ./cmd/define/` is ok 58.078s with 0 tests red and
+  `go vet ./cmd/define/` silent, because qcancel is passed as a value to
+  interrupts.Set so lostcancel never fires - which is exactly what BR-51's
+  own detail reported, so the commit answering it wrote the opposite into
+  the table whose thesis is "the deliverable is the enumeration"; the cell
+  is a real per-question context leak and is undefended. (2) ask.go:38 says
+  `omit interrupts.Set  10 tests red` while askrun_test.go:800, same commit,
+  says "reddens five tests"; I measure 4 top-level / 10 with subtests - two
+  numbers in one commit is the signature of a recollection, not a
+  measurement. (3) atlas/define.md:602-603 still says the raw loop's closure
+  "is where M2's streaming writer and scoped interrupt hang", which round 3
+  falsified by moving the scope into askScoped - replraw.go:142-143 says so
+  explicitly, so the code comment was corrected and the atlas paragraph that
+  OWNS the claim was left standing, BR-28/BR-44's rule a third time.
+  (4) store/mem.go:18 says "SetUserModel is #17's to add ... until then"
+  while mem.go:91, same commit, implements it and the suite writes through
+  it. A fifth, adjacent: a CONFIGURED but unreachable model prints
+  "no model configured" and exits 1 while the question IS recorded as an
+  asked event (probed against http://127.0.0.1:1), where README:97-101 keys
+  "not recorded" on "no model configured" - and it is the one outcome cell
+  TestAQuestionIsRecordedWhateverBecameOfTheAnswer does not enumerate.
+
 ## Open findings
 
 - **BR-12** [Minor] `forced-route-enumeration` the "\" hatch is dropped from editor recall while "?" is kept, and the no-model message calls a headword "not a word"
 - **BR-17** [Minor] `plan-bookkeeping` the plan still describes an M1 the code no longer implements, despite round 2 recommending the Revisions entry
-- **BR-19** [Important] `test-asserts-nothing` no test asserts what any of #16's messages say, and a doubled backslash shipped as a result
-- **BR-20** [Minor] `doc-overstates-code` nothingSays is documented as "the ONE place" while replayInPlace holds a live duplicate of its replay sentence
-- **BR-21** [Minor] `stdlib-reuse` four byte-identical "lost the terminal" blocks in runEditor, two added by this diff
 - **BR-47** [Important] `plan-contract-drift` The Core concepts tables do not describe the entities this boundary's rounds created
 - **BR-48** [Minor] `plan-bookkeeping` Boundary round 2 has no Revisions entry, including the one the previous round asked for
 - **BR-49** [Minor] `nil-seam-policy` The interrupter seam has three consumers and two nil policies; one of them dereferences
 - **BR-50** [Minor] `dead-branch` Four small residues: a stale prediction, an unreachable guard, a hanging test arm, and a per-question full deck read
-- **BR-51** [Important] `test-asserts-nothing` askScoped's sequence has four mutations and one is defended; omitting restore makes the session unquittable, suite green
-- **BR-52** [Important] `doc-overstates-code` An interrupted answer is dropped from the transcript, so the follow-up README promises resolves against nothing
 - **BR-53** [Minor] `second-implementation-drifts` crlfWriter.Write advances lastWasCR over bytes the underlying writer never took
+- **BR-54** [Important] `unsynchronised-test-observation` TestCtrlCQuitsAgainOnceTheAnswerIsOver fails 12 of 30 runs on unmutated HEAD
+- **BR-55** [Important] `doc-overstates-code` Four measured doc claims contradict the code, all created by the last two rounds

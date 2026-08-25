@@ -909,3 +909,31 @@ Costly in a quiet way: nothing errored, the gate said "converging", and only the
 window in the output — start SHA equal to end SHA — showed the review had been
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
+
+## A backup is only as good as the tree it was taken from (define #16 M2)
+
+M1's lesson was *make the backup first, and restore from the backup, not from
+git*. That is necessary and not sufficient. Here is the shape it missed:
+
+1. A background mutation job was killed mid-flight, before its restore step, so
+   it left `ask.go` MUTATED.
+2. The next command started with `cp cmd/define/ask.go /tmp/…` — snapshotting the
+   corrupted tree as its "known good" copy.
+3. Restoring from that snapshot put a `restore := func() {}` stub into the
+   working tree, disabling the very interrupt scoping the round had just added a
+   test for.
+
+Nothing errored. The command printed `tree restored, builds`, and it was true —
+it built fine, with the mechanism disabled.
+
+**Before snapshotting a file as a backup, confirm nothing else is mid-mutation on
+it**, and after any killed job, restore from GIT (plus re-apply intended edits by
+hand) rather than from a snapshot whose provenance you cannot vouch for. The
+mutation experiments in this repo take longer than the tool timeout, so they run
+in the background, which makes "is anything else editing this file right now" a
+real question rather than a rhetorical one.
+
+The generalisable half: **`git status` and "it builds" both pass on a tree with a
+mechanism silently removed.** What catches it is diffing the file against HEAD
+and reading every hunk — which is also what caught it here, one step before a
+commit.

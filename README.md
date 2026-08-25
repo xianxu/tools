@@ -97,8 +97,9 @@ rather than a guess at which of the two contradicting flags you meant.
 one-shot, piped, or in the editor — records the word where you started `define`,
 so your deck and history build themselves. **Every question that reaches the model
 is recorded too, by its text** — whatever became of the answer, since what you
-asked is the signal, not whether it arrived. (A question with no model
-configured never reaches one, and is not recorded.)
+asked is the signal, not whether it arrived. (What decides it is whether a request
+was actually sent: with no model configured nothing is, so nothing is recorded.
+A model that is configured but does not answer says so, and the question is kept.)
 
 ```
 words/sycophantic.yaml     one file per word

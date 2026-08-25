@@ -600,7 +600,9 @@ asking quantifies over, and all six go through one `ask(ctx, d, opt, sess, out, 
 honestly be said: an unforced question is one the dictionary missed, so "is not a
 word" is true by construction; a forced one skipped the dictionary, and `?why`
 *is* a headword. Each loop wraps that one call in its own closure — the raw
-loop's is where M2's streaming writer and scoped interrupt hang — but the
+loop's is where the streaming writers hang, because a raw terminal is what makes
+them differ; the interrupt SCOPE is not in either closure, since `askScoped`
+owns it for both — but the
 decision itself does not fork.
 
 **`-raw` never asks, and "never" names its cells.** It is the scripting form, so

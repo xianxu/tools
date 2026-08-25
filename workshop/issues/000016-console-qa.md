@@ -674,3 +674,37 @@ commit per #174. Two of them matter:
 Also: `crlfWriter` advanced its `lastWasCR` carry over bytes the underlying
 writer never took, so after a short write the retry's first newline was judged
 against a carriage return the terminal never saw.
+
+### 2026-08-24 — issue close review: a flaky test, and a measurement I got wrong
+
+Twelve findings disposed, three open. Two of the three are about the round that
+was supposed to fix this family, which is the honest summary of this issue.
+
+- **BR-54 — the test I wrote last round is FLAKY**, failing 12 of 30 runs on
+  unmutated HEAD. It waited for the last text delta to appear, then sent `\x03`
+  and required the scope to already be back. Everything between is unsynchronised:
+  the remaining SSE frames parse, `Stream` returns, `recordExchange` runs, and the
+  deferred `CaptureAsk` writes to DISK — all inside `askScoped`, before
+  `restore()`. Lose that race and it fails printing the message it reserves for
+  the real defect, which is worse than no test: it trains you to re-run. **A test
+  must synchronise on the state it ASSERTS, not on a proxy that merely precedes
+  it.** It now waits for the prompt to be redrawn, which happens strictly after
+  `askScoped` returns: 0 of 30 clean, 10 of 10 mutated.
+- **BR-55 caught a measurement I reported wrongly.** The comment I added to
+  `askScoped` claims `omit defer qcancel() → 1 test red`. There were 0; the "1" I
+  read came from the flaky test failing beside it. The cell was UNDEFENDED and I
+  had written the opposite into the table whose whole thesis is that the
+  enumeration is the deliverable. `TestAskScopedHandsTheScopeBackAndCleansUp`
+  now asserts all three observable cells directly against `askScoped` — no
+  stream, no timing — including that the question's context is cancelled when it
+  returns.
+- **BR-47, third time.** The entity enumeration was re-run and again missed what
+  the same commit created (`Store.SetUserModel`, `carriedCR`). Re-running the
+  command was never the fix: **a mechanical check placed before the last edit is
+  a check of a tree nobody shipped.** It runs LAST now, reconciled in full.
+
+One user-visible fix fell out of BR-55: `ErrUnavailable` covers both "no key" and
+"configured but did not answer", and the message said *no model configured* for
+both — while the question IS recorded in the second case and is NOT in the first,
+which is exactly what README keys on. The two now say different things, and the
+outcome enumeration gained the cell it was missing.

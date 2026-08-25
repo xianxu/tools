@@ -163,7 +163,7 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `renderAskPrompt` | `cmd/define/askctx.go` | new |
 | `recentTurns` | `cmd/define/askctx.go` | new |
 | `recentDeck` | `cmd/define/askctx.go` | new |
-| `consumed` | `cmd/define/crlf.go` | new |
+| `consumed` / `carriedCR` | `cmd/define/crlf.go` | new |
 | `session` | `cmd/define/session.go` | new |
 | `exchange` | `cmd/define/askctx.go` | new |
 | `crlfWriter` | `cmd/define/crlf.go` | new |
@@ -224,7 +224,8 @@ directly rather than `llm.Run[T]`. Nothing here has a schema.
 | `gatherAskContext` | `cmd/define/ask.go` | new | store reads |
 | `runAsk` | `cmd/define/ask.go` | new | `llm.Client.Stream` |
 | `deps.newLLM` / `deps.getenv` | `cmd/define/main.go` | new | `llm.New` + `llm.Resolve` |
-| `Store.UserModel` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
+| `Store.UserModel` / `SetUserModel` | `cmd/define/store/{store,yaml,mem}.go` | modified | `user-model.md` on disk |
+| `writeBytesAtomic` | `cmd/define/store/yaml.go` | new | temp file + rename |
 | `interrupter` | `cmd/define/interrupt.go` | new | what Ctrl-C means right now |
 | `deps.notifySignals` | `cmd/define/main.go` | new | `signal.Notify` |
 | `Capturer.CaptureAsk` | `cmd/define/capture.go` | modified | event append |
@@ -1391,3 +1392,20 @@ added by the same pass rather than waiting to be named by a round 4.
 CONSUMER of the diff, so they are resolved against it mechanically — the way
 PQ-5 resolved every file:line citation. A row corrected because a review named
 it is the instance again.
+
+### 2026-08-24 — the enumeration, run LAST
+
+**Reason:** BR-47, third occurrence, `not-addressed` twice. Both earlier attempts
+ran the enumeration and then kept editing, so the same commit that ran it created
+entities it did not list — `Store.SetUserModel` and `carriedCR` the second time.
+Re-running the same command was never the fix; running it at the wrong MOMENT
+was the defect.
+
+**Delta:** the enumeration is run as the LAST step before the close commit, and
+its output reconciled here in full. At this boundary it lists 34 additions; the
+tables were missing `SetUserModel`, `carriedCR` and `writeBytesAtomic`, all
+created by rounds 3 and 4.
+
+**The rule this encodes:** a mechanical check placed before the last edit is a
+check of a tree nobody shipped. Enumerations that describe a commit run against
+the commit — last, not first.

@@ -33,17 +33,22 @@ type question struct {
 //
 // Four things can go wrong here, and the enumeration is the deliverable — an
 // earlier round probed only the reordering, found it unobservable, and concluded
-// the whole mechanism was untestable. Measured:
+// the whole mechanism was untestable. Each cell names the test that defends it,
+// NOT a count of reddened tests: the count version of this table asserted "1
+// test red" for a cell that had none, because the 1 was a flaky test failing
+// beside it. A name can be checked by opening the file; a count cannot.
 //
-//	omit interrupts.Set   10 tests red — the scope never exists
-//	omit defer restore()  TestCtrlCQuitsAgainOnceTheAnswerIsOver — and this one
-//	                      is user-visible: the sink keeps pointing at the DEAD
+//	omit interrupts.Set   TestAskScopedHandsTheScopeBackAndCleansUp
+//	                      /the_sink_is_scoped_to_the_question_WHILE_it_runs
+//	omit defer restore()  .../the_sink_is_handed_back_when_it_returns, and
+//	                      TestCtrlCQuitsAgainOnceTheAnswerIsOver end to end.
+//	                      User-visible: the sink keeps pointing at the DEAD
 //	                      question, so readKeys swallows every later \x03 and
 //	                      Ctrl-C does nothing for the rest of the session
-//	omit defer qcancel()  1 test red — the question's context leaks
-//	reorder them          unobservable: the window where it matters is an
-//	                      instant, so defer's LIFO enforces it instead of a
-//	                      comment no test can defend
+//	omit defer qcancel()  .../the_question's_context_is_cancelled_when_it_returns
+//	reorder them          nothing: the window where it matters is an instant, so
+//	                      defer's LIFO enforces the order instead of a comment
+//	                      no test can defend
 //
 // The order is restore-then-cancel: the deferred cancel must not fire a sink
 // that is no longer this question's.
@@ -96,12 +101,28 @@ func ask(ctx context.Context, d deps, opt options, sess *session, out, errOut io
 // instead — the pre-#16 behaviour — reported "not found" for something that was
 // never a word.
 func unavailable(errOut io.Writer, q question) int {
+	return sayUnavailable(errOut, q, "no model configured")
+}
+
+// unreachable is the OTHER half of ErrUnavailable: a model that is configured
+// and did not answer.
+//
+// Worth distinguishing, because the two need opposite responses — one is
+// something to set up, the other something to wait out — and because the
+// question IS recorded in this case and is NOT in the other, which README keys
+// on. Telling a user with a working key that they have no model configured
+// makes both halves of that unreadable.
+func unreachable(errOut io.Writer, q question) int {
+	return sayUnavailable(errOut, q, "the model did not answer")
+}
+
+func sayUnavailable(errOut io.Writer, q question, why string) int {
 	if q.forced {
 		// Nothing may be claimed about the text: the dictionary was skipped.
-		fmt.Fprintf(errOut, "define: no model configured; cannot answer `%s`\n", truncateQuestion(q.text))
+		fmt.Fprintf(errOut, "define: %s; cannot answer `%s`\n", why, truncateQuestion(q.text))
 		return 1
 	}
-	fmt.Fprintf(errOut, "define: no model configured; `%s` is not a word\n", truncateQuestion(q.text))
+	fmt.Fprintf(errOut, "define: %s; `%s` is not a word\n", why, truncateQuestion(q.text))
 	return 1
 }
 
@@ -167,7 +188,10 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		if answer.Len() > 0 {
 			break // the answer arrived; the failure was in the teardown
 		}
-		return unavailable(errOut, q)
+		// Configured, and did not answer — a different thing from having no
+		// model at all, and the question was recorded either way by the defer
+		// above, which is what README keys on.
+		return unreachable(errOut, q)
 	case errors.Is(err, llm.ErrTruncated):
 		// Partial text is kept: once frames have arrived the service is
 		// demonstrably reachable, and half an answer beats none.

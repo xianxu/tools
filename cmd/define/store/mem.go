@@ -15,8 +15,8 @@ type Mem struct {
 	words  map[string]Word
 	events []ReviewEvent
 	// userModel is what YAML reads from user-model.md. A field so the reference
-	// implementation can hold one at all — SetUserModel is #17's to add, and the
-	// conformance suite only needs "absent reads as empty" until then.
+	// implementation can hold the state the real one holds: a getter the fake
+	// cannot back makes the conformance row asserting it unfalsifiable.
 	userModel string
 }
 

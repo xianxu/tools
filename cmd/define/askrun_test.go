@@ -616,6 +616,33 @@ func TestAQuestionIsRecordedWhateverBecameOfTheAnswer(t *testing.T) {
 		})
 	}
 
+	t.Run("configured but unreachable: recorded, and SAID so", func(t *testing.T) {
+		// The cell this enumeration was missing. ErrUnavailable covers both
+		// "no key" and "did not answer", and the message used to say "no model
+		// configured" for a model the user had configured — while the question
+		// WAS recorded, contradicting the README sentence that keys on it.
+		_, _, st, _ := askRig(t)
+		d := testDeps(t)
+		d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil)
+		d.deck = st
+		d.newLLM = llm.New
+		d.getenv = envFor("http://127.0.0.1:1") // configured, nothing listening
+
+		var out, errb bytes.Buffer
+		runAsk(t.Context(), d, options{}, &session{}, question{text: "is it pejorative?"}, &out, &errb)
+
+		if strings.Contains(errb.String(), "no model configured") {
+			t.Errorf("a configured model was reported as unconfigured: %q", errb.String())
+		}
+		if !strings.Contains(errb.String(), "did not answer") {
+			t.Errorf("stderr = %q, want it to say the model did not answer", errb.String())
+		}
+		ev, _ := st.Events(time.Time{})
+		if len(ev) != 1 {
+			t.Errorf("events = %+v, want the question recorded — a request WAS sent", ev)
+		}
+	})
+
 	t.Run("but not when no model was ever reached", func(t *testing.T) {
 		_, _, st, _ := askRig(t)
 		d := testDeps(t)
@@ -797,7 +824,8 @@ func TestAnUnreadableUserModelIsReported(t *testing.T) {
 //
 // Finding it unobservable, that round concluded the mechanism could not be
 // tested and made the ordering structural instead. The enumeration says
-// otherwise: omitting interrupts.Set reddens five tests; omitting restore leaves
+// otherwise: omitting interrupts.Set reddens the scoped-during-the-answer cell;
+// omitting restore leaves
 // the whole suite GREEN and the session unquittable; omitting qcancel leaves the
 // suite green AND go vet silent, since qcancel is used as a value so lostcancel
 // never fires; only the reordering is genuinely unobservable.
@@ -829,8 +857,21 @@ func TestCtrlCQuitsAgainOnceTheAnswerIsOver(t *testing.T) {
 	}()
 
 	io.WriteString(pw, "?why\r")
-	// Let the answer FINISH — the scope must be handed back when it does.
-	waitFor(t, func() bool { return strings.Contains(out.String(), "insincerely") })
+	// Wait for the PROMPT to come back, not for the answer text.
+	//
+	// The text arriving says the deltas were written; it does NOT say askScoped
+	// has returned — the stream still has frames to finish — so a \x03 sent on
+	// that signal is often still swallowed by the live scope. That is a race in
+	// the TEST, and it failed 12 of 30 runs on unmutated HEAD (BR-54).
+	//
+	// The prompt is redrawn by askInSession AFTER askScoped returns, so it is
+	// the observable that actually means "the scope was handed back" — the
+	// effect this test depends on, rather than a proxy for it.
+	waitFor(t, func() bool {
+		s := out.String()
+		i := strings.Index(s, "insincerely")
+		return i >= 0 && strings.Contains(s[i:], prompt)
+	})
 
 	io.WriteString(pw, "\x03")
 	select {
@@ -891,4 +932,58 @@ func TestAnAnswerTheUserReadSurvivesHowItEnded(t *testing.T) {
 			}
 		})
 	}
+}
+
+// askScoped's own contract, asserted directly rather than through a stream.
+//
+// Three of its four cells are observable in isolation, and doing it here makes
+// them deterministic — the loop-level tests that covered the first two were
+// timing-dependent, and the third (the leaked question context) was reported as
+// "1 test red" from a run whose failure was actually the flaky test beside it.
+// A measured claim is a claim; this is the measurement.
+func TestAskScopedHandsTheScopeBackAndCleansUp(t *testing.T) {
+	t.Run("the sink is scoped to the question WHILE it runs", func(t *testing.T) {
+		var sessionFired bool
+		ints := &interrupter{fn: func() { sessionFired = true }}
+		var cancelledInside bool
+		askScoped(t.Context(), ints, func(qctx context.Context) int {
+			ints.Fire()
+			cancelledInside = qctx.Err() != nil
+			return 0
+		})
+		if !cancelledInside {
+			t.Error("firing during the answer did not cancel the question")
+		}
+		if sessionFired {
+			t.Error("firing during the answer reached the SESSION cancel")
+		}
+	})
+
+	t.Run("the sink is handed back when it returns", func(t *testing.T) {
+		var sessionFired bool
+		ints := &interrupter{fn: func() { sessionFired = true }}
+		askScoped(t.Context(), ints, func(context.Context) int { return 0 })
+
+		ints.Fire()
+		if !sessionFired {
+			t.Error("the scope was never handed back: Ctrl-C is dead for the rest of the session")
+		}
+		// And the reader must stop swallowing it, or the loop never sees a quit.
+		if consumed := ints.Fire(); consumed {
+			t.Error("the interrupter still reports the interrupt as scope-consumed")
+		}
+	})
+
+	t.Run("the question's context is cancelled when it returns", func(t *testing.T) {
+		// The undefended cell: without `defer qcancel()` this leaks one context
+		// per question, registered on the parent until the session ends.
+		var qctx context.Context
+		askScoped(t.Context(), &interrupter{}, func(c context.Context) int {
+			qctx = c
+			return 0
+		})
+		if qctx.Err() == nil {
+			t.Error("the question's context outlived the question")
+		}
+	})
 }
