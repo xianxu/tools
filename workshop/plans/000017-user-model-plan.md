@@ -195,44 +195,32 @@ and are already covered against both implementations.
 - [ ] **Step 1: Write the failing test**
 
 ```go
-func TestFoldLookups(t *testing.T) {
-	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
-	day := func(n int) time.Time { return now.AddDate(0, 0, -n) }
-	deck := []store.Word{ // Deck() is newest-first
-		{Text: "certiorari", FirstSeen: day(3), LastSeen: day(1), Lookups: 4},
-		{Text: "ephemeral", FirstSeen: day(9), LastSeen: day(9), Lookups: 1},
-	}
-	events := []store.ReviewEvent{
-		{Word: "certiorari", Kind: store.EventLookedUp, Found: true, At: day(3)},
-		{Word: "zzzz", Kind: store.EventLookedUp, Found: false, At: day(2)},
-		{Word: "certiorari", Kind: store.EventAsked, Question: "vs cert?", At: day(1)},
-	}
+// The sketches below assert the PROPERTIES D6 and D7 state, not a field list.
+// The first draft asserted Words[0].Lookups == 4 from store.Word while the log
+// held one found lookup — a test that could only pass with the second fold PQ-1
+// removed. D7 is the single statement of where each field comes from; a test
+// that restates it can disagree with it.
 
-	got := foldLookups(deck, events, now)
+// D7: the DECK decides which words are evidence, the LOG decides how many times
+// and when. --forget removes a word from the deck and deliberately keeps its
+// events, so a forgotten word must stop being evidence while its history still
+// counts toward the totals.
+func TestFoldLookupsTakesMembershipFromTheDeckAndCountsFromTheLog(t *testing.T)
 
-	if got.Words[0].Text != "certiorari" || got.Words[0].Lookups != 4 {
-		t.Errorf("words = %+v, want the deck rows carried through", got.Words)
-	}
-	// A MISS is not vocabulary and an ASK is not a lookup: neither may inflate
-	// the counts a claim is later checked against.
-	if got.Lookups != 1 {
-		t.Errorf("lookups = %d, want only the found looked-up events", got.Lookups)
-	}
-	if got.Questions != 1 {
-		t.Errorf("questions = %d, want the asked events counted separately", got.Questions)
-	}
-	if got.From != day(9) || got.To != day(1) {
-		t.Errorf("window = %v..%v, want first-seen..last-seen across the deck", got.From, got.To)
-	}
-}
+// D6: EventAsked is counted apart from lookups, and a miss is not vocabulary.
+// Conflating them inflates every share the model is asked to reason about.
+func TestFoldLookupsCountsAsksAndMissesApartFromLookups(t *testing.T)
 
-func TestFoldLookupsOnAnEmptyDeck(t *testing.T) {
-	got := foldLookups(nil, nil, time.Now())
-	if len(got.Words) != 0 || !got.From.IsZero() {
-		t.Errorf("got %+v, want an empty fold rather than a zero-day window", got)
-	}
-}
+// The window is the span the claims may speak about; an empty deck yields an
+// empty fold rather than a zero-day window the prompt would then assert over.
+func TestFoldLookupsWindowSpansTheEvidence(t *testing.T)
+func TestFoldLookupsOnAnEmptyDeck(t *testing.T)
 ```
+
+Each is a table over `([]store.Word, []store.ReviewEvent, now)`, asserting the
+stated property rather than a field-by-field snapshot — the same shape Task 4's
+fuzz property takes, and for the same reason: a snapshot of a struct I am about
+to change is a test of my memory.
 
 - [ ] **Step 2: Run it and watch it fail**
 

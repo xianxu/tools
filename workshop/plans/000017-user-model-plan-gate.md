@@ -67,6 +67,47 @@ rounds:
           family: entity-table-completeness
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-25T16:59:17-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: D6 now calls summariseLookups (verified history_cmd.go:105-144); wordRow deleted, historyRow in the entity table as reused.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: D5 + Task 6 both dispatch after main.go:339 withStore, beside --forget; nil deck refuses via noDeckMessage (main.go:598).
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: Fuzz property added asserting byte-identical survival below the first out-of-fence marker, seeded with the malformed classes.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: 'D7 states the rule: the deck decides which words are evidence, the log decides how many times and when.'
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: assertGoldenFile has an entity row and reads llmtest.Updating() rather than registering a second -update flag.
+          round: 2
+      findings:
+        - id: PQ-6
+          severity: Minor
+          title: Task 1's test sketch restates field origins that D7 already decides, and now contradicts it
+          detail: |-
+            Second finding in this family. The sketch asserts got.Words[0].Text (historyRow's field
+            is Word, history_cmd.go:82) and Lookups == 4 (store.Word's count; the log holds one
+            found lookup, so D6+D7 yield 1) — passing it as written requires the second fold PQ-1
+            removed. Rule, not instance: D7 is the one statement of where each deckEvidence field
+            comes from, so the test sketches must derive from it, not restate it. Replace the
+            field-by-field assertions with the property D7 claims — a --forget-removed word stops
+            being evidence while its log history still counts — and compress Tasks 2-4's test
+            bodies to one strategy line per risky function, as Task 4's fuzz property already does.
+          family: single-source-of-truth
+          round: 2
+      blocked: false
+content_hash: c03009e8f7f1a6f611d34e5d064c68e7e04e465c88edbd46e6277d22a87d251e
 ---
 
 # Gate ledger — tools#17 (plan-quality)
@@ -113,10 +154,28 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   greps the tables against the diff. Add the row, and say it reuses llmtest's
   -update flag rather than registering a second one.
 
+## Round 2 — 2026-08-25T16:59:17-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — D6 now calls summariseLookups (verified history_cmd.go:105-144); wordRow deleted, historyRow in the entity table as reused.
+- PQ-2 — addressed — D5 + Task 6 both dispatch after main.go:339 withStore, beside --forget; nil deck refuses via noDeckMessage (main.go:598).
+- PQ-3 — addressed — Fuzz property added asserting byte-identical survival below the first out-of-fence marker, seeded with the malformed classes.
+- PQ-4 — addressed — D7 states the rule: the deck decides which words are evidence, the log decides how many times and when.
+- PQ-5 — addressed — assertGoldenFile has an entity row and reads llmtest.Updating() rather than registering a second -update flag.
+
+### Raised
+
+- **PQ-6** [Minor] `single-source-of-truth` Task 1's test sketch restates field origins that D7 already decides, and now contradicts it
+  Second finding in this family. The sketch asserts got.Words[0].Text (historyRow's field
+  is Word, history_cmd.go:82) and Lookups == 4 (store.Word's count; the log holds one
+  found lookup, so D6+D7 yield 1) — passing it as written requires the second fold PQ-1
+  removed. Rule, not instance: D7 is the one statement of where each deckEvidence field
+  comes from, so the test sketches must derive from it, not restate it. Replace the
+  field-by-field assertions with the property D7 claims — a --forget-removed word stops
+  being evidence while its log history still counts — and compress Tasks 2-4's test
+  bodies to one strategy line per risky function, as Task 4's fuzz property already does.
+
 ## Open findings
 
-- **PQ-1** [Important] `reuse-existing-helper` foldLookups re-implements the existing summariseLookups fold without naming it
-- **PQ-2** [Important] `entrypoint-dependency-availability` D5 sites --reflect where d.deck and d.clock are still nil
-- **PQ-3** [Important] `malformed-input-property` spliceCorrections needs a property over malformed input, not five examples
-- **PQ-4** [Minor] `single-source-of-truth` deckEvidence carries per-word lookups from the deck and the total from events
-- **PQ-5** [Minor] `entity-table-completeness` assertGoldenFile is new surface that appears in no entity or integration table
+- **PQ-6** [Minor] `single-source-of-truth` Task 1's test sketch restates field origins that D7 already decides, and now contradicts it

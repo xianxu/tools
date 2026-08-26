@@ -5,7 +5,7 @@ deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
 updated: 2026-08-25
-estimate_hours:
+estimate_hours: 5.23
 started: 2026-08-25T16:45:07-07:00
 ---
 
@@ -104,6 +104,72 @@ M2:
       from the log.
 - [ ] The model demonstrably changes what is authored: same deck, two different
       `user-model.md` files, different distractor domains — asserted, not asserted-ish.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187), against
+`workshop/plans/000017-user-model-plan.md` — one item per task, plus the process
+work that sits inside the measured window.
+
+**Costed with #16's overrun as evidence, not with its estimate.** #16 estimated
+6.49 and measured **17.63** (0.4×). The feature itself came in at ~6.3h, almost
+exactly as costed; the other ~11h was twelve review rounds, and per-milestone
+actuals under-report because those rounds land at and after the boundary they
+measure. So the review rounds are line items here rather than a hope: two plan
+rounds (already spent) and four boundary rounds, which is what #16 needed for
+each of its milestones.
+
+Design carries v2's ×0.2 spec-quality discount where the plan pre-resolves the
+decision — it does for the pure entities, and does not for the plan authoring
+itself or for the review rounds, which are the design work rather than a
+beneficiary of it. Implementation is v3.1's 40% of the v2 table. Familiarity 1.0:
+same repo, same files, `summariseLookups` and the store seams all shipped.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec             design=1.00 impl=0.08
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: smaller-go-module      design=0.03 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.02 impl=0.14
+item: atlas-docs             design=0.03 impl=0.05
+design-buffer: 0.15
+total: 5.23
+```
+
+| item | what |
+|---|---|
+| issue-spec | plan authoring — inside the measured window, as #16 established |
+| milestone-review ×2 | the plan-quality rounds (PQ-1…PQ-5), already spent |
+| smaller-go-module | T1 `foldLookups`, reusing `summariseLookups` |
+| smaller-go-module | T2 `learnerModel` + `checkEvidence` |
+| smaller-go-module | T3 `renderUserModel` + its golden |
+| greenfield-go-module | T4 `spliceCorrections` + the fuzz property |
+| greenfield-go-module | T5 `reflectTask` — the prompt, and prompts are design |
+| greenfield-go-module | T6 `runReflect`, the flag, seven wiring tests |
+| smaller-go-module | T7 the live conformance check for domain inference |
+| milestone-review ×4 | boundary rounds — #16 needed four per milestone |
+| milestone-review | the M1 close itself |
+| atlas-docs | the `--reflect` atlas section and the project row |
+
+**What would make this wrong in the other direction:** M1 has no terminal work,
+no interrupt semantics and no new store implementation — the three things that
+generated most of #16's second-order findings. If the review rounds converge in
+two rather than four, this lands nearer 4.3.
 
 ## Plan
 
