@@ -96,3 +96,92 @@ func TestFoldLookupsOnAnEmptyDeck(t *testing.T) {
 		t.Errorf("window = %v..%v, want zero — there is nothing to speak about", got.From, got.To)
 	}
 }
+
+// D1: the model may READ the deck and may not ADD to it.
+//
+// This is the project's existing rule — distractors are selected, never invented
+// — applied to the learner model. Without it, "every claim names its evidence"
+// is a formatting convention that a plausible hallucination satisfies: a sailing
+// domain citing `luffing` and `clew` looks exactly as checkable as a legal one
+// citing words the learner actually looked up.
+func TestCheckEvidenceDropsClaimsTheDeckCannotSupport(t *testing.T) {
+	deck := map[string]bool{"certiorari": true, "dicta": true, "ephemeral": true}
+	in := learnerModel{
+		Level: levelClaim{Band: "C1", Evidence: []string{"certiorari", "dicta"}},
+		Domains: []domainClaim{
+			{Name: "law", Share: 0.6, Evidence: []string{"certiorari", "dicta"}},
+			{Name: "sailing", Share: 0.2, Evidence: []string{"luffing", "clew"}},
+			{Name: "mixed", Share: 0.2, Evidence: []string{"ephemeral", "luffing"}},
+		},
+	}
+
+	got, dropped := checkEvidence(in, deck)
+
+	if len(got.Domains) != 2 {
+		t.Fatalf("domains = %+v, want the wholly-unsupported one dropped", got.Domains)
+	}
+	if got.Domains[0].Name != "law" {
+		t.Errorf("kept %q first, want law", got.Domains[0].Name)
+	}
+	// A PARTIALLY supported claim keeps the evidence that exists rather than
+	// being dropped whole: "mixed" is a real domain, "luffing" is not a word.
+	if len(got.Domains[1].Evidence) != 1 || got.Domains[1].Evidence[0] != "ephemeral" {
+		t.Errorf("mixed evidence = %v, want only the deck word", got.Domains[1].Evidence)
+	}
+	if len(dropped) == 0 {
+		t.Error("nothing reported: a dropped claim must be sayable out loud")
+	}
+}
+
+// The level band is a claim like any other. Unsupported, it must not reach the
+// file — an asserted band is exactly what the issue's spec forbids.
+func TestCheckEvidenceDropsALevelClaimWithNoSupport(t *testing.T) {
+	deck := map[string]bool{"certiorari": true}
+	in := learnerModel{Level: levelClaim{Band: "C2", Evidence: []string{"luffing"}}}
+
+	got, dropped := checkEvidence(in, deck)
+
+	if got.Level.Band != "" {
+		t.Errorf("band = %q, want it dropped — nothing in the deck supports it", got.Level.Band)
+	}
+	if len(dropped) == 0 {
+		t.Error("a dropped level claim must be reported")
+	}
+}
+
+// The deck's identity is case- and space-normalised (store.Key), so evidence
+// must match the same way or every capitalised citation is dropped as invented.
+func TestCheckEvidenceMatchesOnTheDeckKey(t *testing.T) {
+	deck := map[string]bool{"hot dog": true, "certiorari": true}
+	in := learnerModel{
+		Level:   levelClaim{Band: "B2", Evidence: []string{"Certiorari"}},
+		Domains: []domainClaim{{Name: "food", Share: 0.5, Evidence: []string{"Hot  Dog"}}},
+	}
+
+	got, dropped := checkEvidence(in, deck)
+
+	if got.Level.Band != "B2" {
+		t.Errorf("a capitalised citation was dropped: %+v", got.Level)
+	}
+	if len(got.Domains) != 1 {
+		t.Errorf("domains = %+v, want the multi-word citation kept", got.Domains)
+	}
+	if len(dropped) != 0 {
+		t.Errorf("dropped %v, want nothing — both cite real deck words", dropped)
+	}
+}
+
+// An empty deck supports nothing, and must not be read as supporting everything.
+func TestCheckEvidenceAgainstAnEmptyDeck(t *testing.T) {
+	got, dropped := checkEvidence(learnerModel{
+		Level:   levelClaim{Band: "C1", Evidence: []string{"anything"}},
+		Domains: []domainClaim{{Name: "law", Evidence: []string{"certiorari"}}},
+	}, map[string]bool{})
+
+	if got.Level.Band != "" || len(got.Domains) != 0 {
+		t.Errorf("got %+v, want everything dropped", got)
+	}
+	if len(dropped) != 2 {
+		t.Errorf("dropped %v, want both claims reported", dropped)
+	}
+}

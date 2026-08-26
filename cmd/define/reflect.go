@@ -75,3 +75,78 @@ func foldLookups(deck []store.Word, events []store.ReviewEvent, now time.Time) d
 	}
 	return ev
 }
+
+// learnerModel is the typed answer.
+//
+// SchemaFor[learnerModel] reflects the JSON schema from this struct, so the
+// shape has one source and a field added without thought shows up in the
+// golden's diff (internal/llm's typed-task contract).
+type learnerModel struct {
+	Level   levelClaim    `json:"level"`
+	Domains []domainClaim `json:"domains"`
+}
+
+// levelClaim is the working band, and it is a CLAIM: it carries the deck words
+// it was read off, and is dropped if none of them exist.
+type levelClaim struct {
+	Band      string   `json:"band"`
+	Rationale string   `json:"rationale"`
+	Evidence  []string `json:"evidence"`
+}
+
+// domainClaim is one domain the learner reads in, with the share of the deck it
+// accounts for, the words that are the evidence, and what authoring should DO
+// about it — the directive is the whole reason the model is worth generating.
+type domainClaim struct {
+	Name      string   `json:"name"`
+	Share     float64  `json:"share"`
+	Evidence  []string `json:"evidence"`
+	Directive string   `json:"directive"`
+}
+
+// checkEvidence enforces D1: a claim may cite only words the deck holds.
+//
+// The model may READ the deck and may not ADD to it — the same rule this project
+// applies to distractors, which are selected and never invented. Without it,
+// "every claim names its evidence" is a formatting convention: a fabricated
+// sailing domain citing `luffing` and `clew` is exactly as checkable-looking as
+// a real one, and the file's whole promise is that a claim CAN be checked.
+//
+// A partially supported claim keeps the evidence that exists rather than being
+// dropped whole: the domain may well be real even where one citation is not.
+// Returns what it dropped, so the caller can say so out loud rather than
+// silently shipping a shorter file.
+func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string) {
+	var dropped []string
+	// Matched on store.Key, the deck's own identity: raw matching would drop
+	// every capitalised or double-spaced citation as if it were invented.
+	supported := func(words []string) []string {
+		var out []string
+		for _, w := range words {
+			if deck[store.Key(w)] {
+				out = append(out, w)
+			}
+		}
+		return out
+	}
+
+	if ev := supported(m.Level.Evidence); len(ev) > 0 {
+		m.Level.Evidence = ev
+	} else {
+		dropped = append(dropped, "level "+m.Level.Band+": no evidence in the deck")
+		m.Level = levelClaim{}
+	}
+
+	var kept []domainClaim
+	for _, d := range m.Domains {
+		ev := supported(d.Evidence)
+		if len(ev) == 0 {
+			dropped = append(dropped, "domain "+d.Name+": no evidence in the deck")
+			continue
+		}
+		d.Evidence = ev
+		kept = append(kept, d)
+	}
+	m.Domains = kept
+	return m, dropped
+}
