@@ -41,7 +41,7 @@ func TestDecideCapture(t *testing.T) {
 
 func TestStoreCapturerWritesWhatWasDecided(t *testing.T) {
 	st := store.NewMem()
-	c := newStoreCapturer(st, store.FixedClock(time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)), nil)
+	c := newStoreCapturer(st, store.FixedClock(time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)), nil, nil)
 
 	c.Capture("sycophantic", true, options{})
 	c.Capture("sykophantic", false, options{})
@@ -59,7 +59,7 @@ func TestStoreCapturerWritesWhatWasDecided(t *testing.T) {
 // Moved from #3's storeHistory tests with the writes they assert.
 func TestStoreCapturerDegradesOnWriteFailure(t *testing.T) {
 	var warn strings.Builder
-	c := newStoreCapturer(failingStore{}, store.FixedClock(time.Now()), &warn)
+	c := newStoreCapturer(failingStore{}, store.FixedClock(time.Now()), &warn, nil)
 
 	for i := 0; i < 5; i++ {
 		c.Capture("sycophantic", true, options{})
@@ -154,7 +154,7 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 	t.Run("raw writes nothing", func(t *testing.T) {
 		st := store.NewMem()
 		rig := newAudioRig(t, "sycophantic", true)
-		rig.deps.capture = newStoreCapturer(st, store.FixedClock(time.Now()), nil)
+		rig.deps.capture = newStoreCapturer(st, store.FixedClock(time.Now()), nil, nil)
 		rig.deps.stdinIsTerminal = func() bool { return false }
 		var out, errb bytes.Buffer
 		run(t.Context(), []string{"-raw", "-no-audio", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
@@ -250,7 +250,7 @@ func TestForgetWithAWordIsAUsageError(t *testing.T) {
 // the policy as an input rather than as a second mechanism beside it.
 func TestNoCaptureSuppressesEverything(t *testing.T) {
 	st := store.NewMem()
-	c := newStoreCapturer(st, store.FixedClock(time.Now()), nil)
+	c := newStoreCapturer(st, store.FixedClock(time.Now()), nil, nil)
 
 	c.Capture("sycophantic", true, options{noCapture: true})
 
@@ -277,7 +277,7 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	rig.deps.history = newStoreHistory(st, nil)
-	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil)
+	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil, nil)
 
 	var out, errb bytes.Buffer
 	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
@@ -379,7 +379,7 @@ func TestOpenStoreWithoutOptOut(t *testing.T) {
 // accumulation depends on both halves agreeing.
 func TestRepeatLookupsIncrementThroughCapture(t *testing.T) {
 	st := store.NewMem()
-	c := newStoreCapturer(st, store.FixedClock(time.Now()), nil)
+	c := newStoreCapturer(st, store.FixedClock(time.Now()), nil, nil)
 
 	c.Capture("sycophantic", true, options{})
 	c.Capture("Sycophantic", true, options{}) // same word, different case
@@ -403,7 +403,7 @@ func TestRepeatLookupsIncrementThroughCapture(t *testing.T) {
 // half — the part a user actually feels — was not pinned anywhere.
 func TestFailingStoreStillDefinesAndExitsZero(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
-	rig.deps.capture = newStoreCapturer(failingStore{}, store.FixedClock(time.Now()), nil)
+	rig.deps.capture = newStoreCapturer(failingStore{}, store.FixedClock(time.Now()), nil, nil)
 	rig.deps.stdinIsTerminal = func() bool { return false }
 
 	var out, errb bytes.Buffer

@@ -73,6 +73,13 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// The RAW editor is the only thing that recalls, so it is the only thing
 	// that pays for reading the log. replLines never touches history at all.
 	hist.Load()
+	// Same shape for the highlight set: read once here, then memory. A nil vocab
+	// renders exactly as before the feature existed.
+	voc := d.vocab
+	if voc == nil {
+		voc = &memVocabulary{}
+	}
+	voc.Load()
 	e := NewEditor()
 	var sess session
 	// Apply gets the candidate list computed BEFORE the keystroke, which is
@@ -128,7 +135,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// The menu is painted FIRST and the prompt line last, so RenderLine
 		// leaves the cursor where the user is typing.
 		paintMenu(menuLines(e.String(), commands, opt.width))
-		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), opt.color))
+		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color))
 	}
 	draw()
 
@@ -206,7 +213,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				submitted := e
 				e = NewEditor()
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
-					fmt.Fprint(stdout, RenderLine(submitted, "", opt.color))
+					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color))
 				}
 				if cmd.kind == cmdCommand {
 					// Commands print multiple lines, so they run COOKED for the

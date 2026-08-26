@@ -873,6 +873,19 @@ A doubled backslash shipped behind exactly that assertion — `define '\'` print
 because every round pinned *where* a message was written and none pinned *what
 it said*.
 
+**The same trap has a second shape: `Contains(output, someConstant + "text")`.**
+Re-made in #21, two issues later, on a feature whose *entire deliverable* is a
+colour. `Contains(got, knownOn+"obsequious")` looks like it pins bold-green, but
+aliasing `knownOn = inputOn` — which removes every visible highlight — leaves it
+green, because both sides move together. The mutation survived the whole suite.
+Two rules, and the second is the one that generalises:
+- **Write the escape bytes as a literal** (`"\x1b[1;32mobsequious"`). A test is
+  the place where the expected value stops being a variable.
+- **When the constant IS the deliverable, assert the property that makes it one.**
+  Here that is `knownOn != inputOn`: the feature's claim is "easier to spot", and
+  a highlight identical to ordinary text satisfies every byte-level assertion
+  while delivering nothing.
+
 **A test that injects a double must inject where production reads, or prove the
 injection is live.** `withStore` only fills nils, so a `newStore` supplied
 alongside an already-set field is silently discarded and every assertion over the

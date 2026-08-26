@@ -180,12 +180,17 @@ func acceptSuggestion(e Editor, matches []string) (Editor, Action) {
 // then prompt + typed text + grey suggestion, then park the cursor after the
 // typed text.
 //
+// It computes its own spans from e.Line rather than taking a precomputed list,
+// for the same reason draw() computes its own match list (#15, #20): a list
+// resolved before the keystroke renders against the previous line. A nil v means
+// no highlighting.
+//
 // A whole frame rather than a partial update is the point. #2 placed its
 // indicator with cursor arithmetic against a terminal that had already echoed
 // Enter, and documented that it breaks if the user types during playback. In raw
 // mode nothing is echoed and the frame is simply redrawn, so that arithmetic —
 // eraseLineAndStepBack, skipPrompt — is deleted rather than ported.
-func RenderLine(e Editor, sug string, color bool) string {
+func RenderLine(e Editor, sug string, v Vocabulary, color bool) string {
 	var b strings.Builder
 	b.WriteString(eraseLine)
 	if color {
@@ -193,7 +198,19 @@ func RenderLine(e Editor, sug string, color bool) string {
 		// The prompt gets an accent colour and the typed word is bold, so the one
 		// line you can act on reads differently from everything you cannot.
 		b.WriteString(promptOn + prompt + sgrOff)
-		b.WriteString(inputOn + string(e.Line) + sgrOff)
+		// Words the learner has looked up get their own colour, so they are
+		// findable in a sentence. ANSI does not nest: each highlight closes and
+		// then RE-OPENS inputOn, or everything after the first known word would
+		// go plain.
+		b.WriteString(inputOn)
+		for _, sp := range highlightSpans(string(e.Line), v) {
+			if sp.known {
+				b.WriteString(knownOn + sp.text + sgrOff + inputOn)
+				continue
+			}
+			b.WriteString(sp.text)
+		}
+		b.WriteString(sgrOff)
 	} else {
 		b.WriteString(prompt)
 		b.WriteString(string(e.Line))

@@ -67,10 +67,15 @@ type storeCapturer struct {
 	clock  store.Clock
 	warn   io.Writer
 	warned bool // once per process, not once per lookup
+	vocab Vocabulary
 }
 
-func newStoreCapturer(st store.Store, clock store.Clock, warn io.Writer) *storeCapturer {
-	return &storeCapturer{st: st, clock: clock, warn: warn}
+// vocab is the highlight set this capturer grows. Explicit in the constructor
+// rather than a settable field: a set that silently stayed empty because a
+// caller forgot to wire it is the kind of quiet nothing this package has been
+// bitten by before.
+func newStoreCapturer(st store.Store, clock store.Clock, warn io.Writer, vocab Vocabulary) *storeCapturer {
+	return &storeCapturer{st: st, clock: clock, warn: warn, vocab: vocab}
 }
 
 func (c *storeCapturer) Capture(word string, found bool, opt options) {
@@ -90,6 +95,12 @@ func (c *storeCapturer) Capture(word string, found bool, opt options) {
 	}
 	if err := c.st.Upsert(store.Word{Text: word, FirstSeen: now, LastSeen: now, Lookups: 1}); err != nil {
 		c.warnf("could not record %q: %v", word, err)
+		return
+	}
+	// Only after the deck actually took it: the highlight set says "this is in
+	// your deck", so it must not claim a word the deck rejected.
+	if c.vocab != nil {
+		c.vocab.Add(word)
 	}
 }
 

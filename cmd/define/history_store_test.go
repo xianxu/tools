@@ -94,7 +94,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	first, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	st1 := store.NewYAML(dir, nil)
 	first.deps.history = newStoreHistory(st1, nil)
-	first.deps.capture = newStoreCapturer(st1, fixedClock(1), nil)
+	first.deps.capture = newStoreCapturer(st1, fixedClock(1), nil, nil)
 	var out, errb bytes.Buffer
 	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, first.deps, opt, cooked, finish, &out, &errb)
 
@@ -102,7 +102,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	second, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
 	st2 := store.NewYAML(dir, nil)
 	second.deps.history = newStoreHistory(st2, nil)
-	second.deps.capture = newStoreCapturer(st2, fixedClock(2), nil)
+	second.deps.capture = newStoreCapturer(st2, fixedClock(2), nil, nil)
 	var out2 bytes.Buffer
 	runEditor(t.Context(), scriptKeys("syc"), nil, second.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
 
@@ -119,7 +119,7 @@ func TestStoreHistoryRestoresTyposAcrossSessions(t *testing.T) {
 	st := store.NewYAML(dir, nil)
 
 	// Writes go through the CAPTURER now (#4); storeHistory only recalls.
-	c := newStoreCapturer(st, fixedClock(1), nil)
+	c := newStoreCapturer(st, fixedClock(1), nil, nil)
 	c.Capture("sykophantic", false, options{}) // a typo, never in the deck
 	c.Capture("ephemeral", true, options{})
 
@@ -135,7 +135,7 @@ func TestCapturedWordsPersistAcrossSessions(t *testing.T) {
 	dir := t.TempDir()
 	st := store.NewYAML(dir, nil)
 
-	c := newStoreCapturer(st, fixedClock(1), nil)
+	c := newStoreCapturer(st, fixedClock(1), nil, nil)
 	c.Capture("sycophantic", true, options{})
 	c.Capture("ephemeral", true, options{})
 
@@ -152,7 +152,7 @@ func TestCapturedWordsPersistAcrossSessions(t *testing.T) {
 func TestCapturerRecallsTyposButDoesNotDeckThem(t *testing.T) {
 	dir := t.TempDir()
 	st := store.NewYAML(dir, nil)
-	c := newStoreCapturer(st, fixedClock(1), nil)
+	c := newStoreCapturer(st, fixedClock(1), nil, nil)
 
 	c.Capture("sycophantic", true, options{})
 	c.Capture("sykophantic", false, options{})

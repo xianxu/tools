@@ -218,7 +218,7 @@ and one fix-then-re-review.
 Durable plan: `workshop/plans/000021-highlight-learned-plan.md` (three
 milestones; each `Mx` row below is its own review boundary).
 
-- [ ] M1 — `Vocabulary` seam + pure matcher + typed line
+- [x] M1 — `Vocabulary` seam + pure matcher + typed line
 - [ ] M2 — `highlightWriter` + definitions
 - [ ] M3 — LLM answers, streamed
 
@@ -231,3 +231,15 @@ was the prompt line only, then "such highlighting should appear in definition an
 LLM responses as well". The follow-on concept (words graduating out of the
 highlight set) is filed as #22 rather than deferred inside this issue, and shaped
 this spec's central decision — the predicate seam.
+
+- 2026-08-26: M1 — `Vocabulary` seam (`vocab.go`), tokenizer + `highlightSpans`
+  (`highlight.go`), typed-line rendering, and in-session growth through the one
+  capturer that already knows a lookup earned a deck entry. Six mutations run;
+  five died first time. The sixth — aliasing `knownOn` to `inputOn`, which
+  removes every visible highlight — SURVIVED, because the assertion was
+  `Contains(got, knownOn+"obsequious")`, the constant compared against itself.
+  That is the #16 lesson in a second shape, on the one feature whose entire
+  deliverable is a colour. Now asserted as literal escape bytes plus
+  `knownOn != inputOn`, and the mutant dies. lessons.md extended rather than
+  given a new entry: same family, and a reader hitting the first shape should
+  find the second beside it.
