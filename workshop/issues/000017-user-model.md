@@ -287,3 +287,27 @@ byte-identical.
 A dropped claim now names the words it rejected. "No evidence in the deck" is the
 same unactionable shape as a claim that names none, and that message is the only
 place a person sees why a section went missing from their file.
+
+### 2026-08-25 — M1 closed, and a measurement I did not adopt
+
+`sdlc actual --issue 17` reports **15.42h** for a window (`e777227b`→HEAD) whose
+**wall clock is 3h49m** — 16:48 to 20:37, near-continuous. Idle-removed active
+time cannot exceed the wall clock of its own window, so the number is wrong, and
+its own output names the likely cause: *"attributed across window issues: #16,
+#17"*. #16 closed at 17.63h earlier in this same session and this same transcript
+directory; the engine appears to be counting that session's events against a
+window that starts partway through it.
+
+**Recorded 3.8h instead**, which is the window's wall clock and therefore an
+upper bound on its active time. AGENTS.md §5 is right that a hand-typed actual
+pollutes calibration — but adopting a measured value I can show is impossible
+would poison the ledger harder, and silently. Reported rather than absorbed.
+
+Against the 8.39h estimate that is 0.45× — the estimate was HIGH, and for a
+reason worth keeping: it priced four boundary review rounds at #16's observed
+~0.9h each, and M1 has not been through even one yet. The estimate's own hedge
+said two rounds lands near 6.6; the honest read is that the feature work came in
+around 3.8h and the review cost is still unmeasured for this issue.
+
+This is a defect in the calibration path itself, which every close depends on —
+worth a look in ariadne, where `sdlc` lives.
