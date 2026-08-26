@@ -354,3 +354,179 @@ findings:
       plan-gate finding (PQ-2). One happy-path run(ctx, []string{"--reflect"}, ...) test in a
       temp dir pins it.
 ```
+
+---
+
+## Re-review — 2026-08-25T23:46:16-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 17 — learner model: batch analysis into a durable user-model.md |
+| repo | tools |
+| issue file | workshop/issues/000017-user-model.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | e777227b8ede348bc3aaf7d223b87c852582f385^..9bbfd4b07ca177a4727c30f70be19d034e0d0485 |
+| command | sdlc milestone-close --issue 17 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-25T23:46:16-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+BR-12's fix is real: `oneLine` collapses newlines and escapes `|` in the four model-supplied fields, and I confirmed by reverting it in a scratch copy that `TestRenderUserModelNeutralisesModelText` goes red. BR-5's second half landed too — `README.md:122` now reads "written by `--reflect` … its `## Corrections` section is yours", and I checked each of the five new exit-code cells against the code. The whole suite is green at `9bbfd4b`: `go vet ./...`, `go vet -tags conformance ./cmd/define/`, `go test ./...`, `go test -race ./cmd/define/`. What holds this back from SHIP is one thing I demonstrated rather than read: **the assertion written to pin BR-12's serious half cannot fire.** `usermodel_test.go:257` searches `got[:i]` — the region *before* the first marker — for a second marker, which is impossible by construction. I removed the sanitiser from the `## Level` section only, reintroducing exactly the "forged marker permanently freezes the file" defect, and the **entire `./cmd/define/` suite passed**, that test included. Alongside it: `EvidenceWords` are model-supplied and bypass `oneLine` entirely (verified: a citation of `hot\ndog` passes `store.Key`, survives `checkEvidence`, and renders a raw newline inside a table cell), and `atlas/define.md` was not swept for the round-2 rule — it still tells the reader the fuzz property "asserts the one thing that must hold", which this very window disproved. Seven Minors carry forward untouched across three rounds; none blocks.
+
+## 1. Strengths
+
+- **The BR-12 code fix is genuinely reachable, not decorative.** Reverting `oneLine` to `return s` reddens the test; reverting it to escape-pipes-only *also* reddens it (the pipe-count arm catches the moved trailing `|`). The behaviour is correct — my finding below is about the guard, not the fix.
+- **The fix's conceptual framing is the right one** (`usermodel.go:187-189`): the learner's text is copied byte-for-byte *because they own it*; the model's text is neutralised *because it lands in a structure the file's integrity depends on*. Same file, two opposite rules, stated explicitly. That is the insight the next section (M2's weaknesses) needs to inherit.
+- **BR-5 was swept at both sites this round**, which is the class-level answer the family asked for — the exit-code table's five new cells and the persistence block, each verified against the code.
+- **D4's idempotency rests on something real.** `summariseLookups` sorts with a total tiebreak (`history_cmd.go:136-142`, "without it, map iteration makes the output flicker between runs"), so `TestReflectIsIdempotent` passes for a reason rather than by luck.
+- **`workshop/lessons.md:965-990` generalises BR-2 into a mechanical checklist** ("comparing a file before/after → does a FAILED run also satisfy it?"). Ironically, N1 below is the *next* entry that checklist wants: "asserting an invariant → does the assertion search where the violation would be?"
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — the forged-marker assertion searches a region where a forged marker cannot be** (`cmd/define/usermodel_test.go:253-259`). The test computes `i := firstMarkerOutsideAFence(got)` — the offset of the *first* marker — then asserts `firstMarkerOutsideAFence(got[:i] + padding) < 0`. A forged marker in `Rationale`/`Directive` renders *above* the real one, so it **is** `i`; `got[:i]` is by definition marker-free. Measured directly: with the sanitiser reverted, the rendered file contains **2** out-of-fence markers (offsets 336 and 385) and the shipped expression computes `j = -1`. The decisive experiment: removing `oneLine` from the Level section only — reinstating BR-12's serious half verbatim — leaves `go test ./cmd/define/` **fully green**, `TestRenderUserModelNeutralisesModelText` included. So the milestone's most serious defect is guarded only by the pipe-count arm, which a future edit touching the Level section will not trip. Fix: count markers instead of prefix-searching — walk `got`, or assert `firstMarkerOutsideAFence(got[i+len(correctionsMarker):]) < 0`. Verify by reverting the Level-section sanitiser and confirming red. **This is the 2nd finding in family `vacuous-verification`** (BR-2 was the first). Earlier rounds fixed instances. Do NOT fix only this assertion — state the rule: *an assertion that a violation is absent must be run over the region the violation would occupy; write the positive control (construct the violation, confirm the assertion fires) before believing it.* `mustReflect` was that rule applied to exit codes; this is the same rule applied to search windows, and `lessons.md`'s mechanical list is where it belongs.
+
+**N2 — `EvidenceWords` are model-supplied and are the two render sites `oneLine` was not applied to** (`cmd/define/usermodel.go:57`, `:67` via `joinWords`, `:89-95`). Verified end-to-end: deck `{"hot dog"}`, model cites `"hot\ndog"` → `store.Key` collapses it to `hot dog` → `checkEvidence` keeps it **verbatim, with the newline** (`reflect.go:151-158` returns `w`, not the key) → `joinWords` renders `` `hot⏎dog` ``, splitting the `Read off:` line and breaking the table row mid-cell. `hot dog` is not a contrived example: it is this repo's own canonical multi-word headword (`README.md:194`). A deck word containing `|` breaks the table the same way. **This is the 2nd finding in family `model-text-unconstrained-by-format`.** Do NOT fix the two call sites — state the rule and enforce it structurally: *every model-supplied string that reaches the rendered file passes the sanitiser, and the sanitiser lives at one boundary rather than at each render site.* Put `oneLine` inside `joinWords`, or normalise citations to `store.Key(w)` in `checkEvidence`'s `supported` (which also makes what the file claims as evidence match what the deck holds); the sprinkle-at-call-sites shape is what let two of six sites be missed and is itself an ARCH-DRY smell. Related, same site: `oneLine` does not touch backticks, and `reflect_conformance_test.go:145-149` scans every backticked token above the marker as an evidence claim — a rationale that quotes `` `sailing` `` would fail the live check with "checkEvidence let an invention through" when nothing went wrong.
+
+**N3 — `atlas/define.md` was not swept for the round-2 rule, and now asserts a property this window disproved** (`atlas/define.md:693-699`). Commit `9bbfd4b` touched `README.md`, code, tests, the issue and two ledgers — not the atlas. Two gaps: the neutralisation rule and its learner/model asymmetry (the one genuinely new architectural idea in this round) appear nowhere; and the splice paragraph still tells the reader the fuzz property "asserts **the one thing that must hold**", which is precisely the claim the issue's own Log now records as false ("a property that guards one direction of an invariant is not a property that guards the invariant"). A reader trusting the atlas would conclude the file's integrity is fully covered. **This is the 3rd finding in family `docs-enumeration-not-swept`** — round 3 stated that family's rule as "grep for the surface name across `README.md` **and `atlas/`** before closing", and this round swept README and not atlas. Do NOT patch the one paragraph: apply the stated rule as a closing step (grep `user-model`, `--reflect`, `Corrections` across `README.md` and `atlas/`), and while there, replace "the one thing that must hold" with the two-directions invariant.
+
+## 4. Minor findings
+
+- **BR-13 re-confirmed.** I moved `if *reflect` to just before `d = d.withStore(...)` and `go test ./cmd/define/` passed entirely; the resulting binary, run in a fresh directory, prints `define: no deck in this directory` and exits 1 for *every* `--reflect` invocation. One happy-path `run(ctx, []string{"--reflect"}, …)` test in a temp dir pins D5.
+- **BR-7 (still open, now four sites).** `reflect.go:240` says "%d words in the deck" over deck∩log; `reflect.go:168` and `:190` pass one-element slices to `citedOrNothing`, whose `len == 0` guard can therefore never fire.
+- **BR-9 (still open, and it grew).** The plan's Pure-entities table lacks `modelMeta` **and now `oneLine`** — both reported by the plan's own cited enumeration command — while its Revisions entry still says "Reconciled to empty before this commit."
+- **BR-6 (still open).** `foldLookups`'s `now` is unread (`reflect.go:59`) while `:57-58` justifies it.
+- **BR-8 (still open).** `spliceCorrections` discards a marker-less existing file in silence (`usermodel.go:104-108`).
+- **BR-10 (still open).** No mode-count guard; `--reflect` with `--forget`/`--llm-check` silently honours one (`main.go:308`, `:347-355`).
+- **BR-11 (still open).** `learner:` absent; `# N lookups, M reviews` shipped as `M questions`; the plan still says "Two departures".
+- **BR-1 (still open).** Plan D1 (`plan.md:37-43`) still says "drops any claim citing a word the deck does not contain" against prune-then-drop-if-empty code.
+- `checkEvidence` does not dedupe citations, so a model citing one word three times renders it three times in one cell.
+
+## 5. Test coverage notes
+
+- The three round-2/3 fixes (BR-2, BR-3, BR-4) all still hold at HEAD, and the suite is clean under `-race` and under `-tags conformance` vetting.
+- The gap that matters is N1: the suite has a test *named* for the forged-marker defect that is blind to it. This is the second time on this issue that a test asserted something a no-op satisfies.
+- Still uncovered: the four store-error `return 1` paths in `runReflect` (`Deck`, `Events`, `UserModel`, `SetUserModel` — `reflect.go:225-234`, `:291-307`); no test injects a failing store, so four error messages have never been rendered.
+- `TestReflectRefusesATinyDeck`'s `len(fake.Requests()) != 0` remains the best-shaped assertion in the file — it pins that the floor is checked *before* the model is called.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag (minor, inside N2).** `foldLookups` → `summariseLookups` and `renderReflectPrompt` → `SchemaFor[learnerModel]` are both real reuse. The exception is the sanitiser: `oneLine` is called at four render sites and omitted at two, because the rule lives at the call sites rather than at one boundary. One place should decide "model text becomes safe here."
+- **ARCH-PURE — pass.** `runReflect` is read → fold → ask → check → render → splice → write; every decision sits in a pure function and every pure entity is tested with no fake.
+- **ARCH-PURPOSE — flag (N1, N2, N3).** All three are the same shape as the round-3 note: the fix takes the sites the finding enumerated. BR-12 named four fields → four fields were sanitised, and the two the finding did not enumerate were not. BR-5's rule named README *and atlas* → README was swept. And N1 means the purpose of the fix — "this cannot come back" — is not delivered even for the sites that were swept. Seven Minors have now survived three rounds untouched; at least three of them (BR-6 one-line deletion, BR-8 one line to `errOut`, BR-9 two table rows) cost less to fix than to carry.
+- **ARCH-MOCK — pass.** `llmtest.Fake` is a wire-level `httptest` server, `store.YAML` is real in a `t.TempDir()`, and `reflect_conformance_test.go` skips rather than reddens when the seam is unreachable.
+- For M2: `learnerModel` gains `Weaknesses`, which adds a *third* claim type with model-supplied free text and a new rendered section. Both the sanitiser boundary (N2) and `checkEvidence`'s per-claim usability predicate should be single functions before that lands, or M2 copies the render-safety hole into a section nobody has looked at yet.
+
+## 7. Plan revision recommendations
+
+A `## Revisions` entry in `workshop/plans/000017-user-model-plan.md` — none was written for boundary rounds 2 or 3, so this is now three rounds of drift:
+
+- **Round 2/3 dispositions:** what BR-2…BR-5 changed, that half of BR-2's sketch was correctly rejected (asserting change-between-runs contradicts idempotency under a fixed clock), and that BR-12's fix introduced `oneLine`.
+- **The enumeration still does not reconcile to empty.** Add `modelMeta` *and* `oneLine` to the Pure-entities table, and correct the entry that names eight symbols and asserts closure.
+- **Departures three and four.** Task 3 says frontmatter "exactly as the issue's Spec shows"; `learner:` is omitted and `M reviews` shipped as `M questions`. Amend the Spec's shape or add the fields — either way "Two departures" is wrong.
+- **D1's semantics** restated as prune-then-drop-if-empty, so the task bodies can cite it instead of paraphrasing it (BR-1).
+- **Task 4's fuzz property covers one direction of the invariant.** Record that `FuzzSpliceCorrections` guards preservation-below and that regeneration-above needs its own guard — with N1 noting that the guard as written does not yet fire.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      plan.md:37-43 unchanged; D1 still says "drops any claim citing a word the deck does not contain".
+  - id: BR-5
+    disposition: addressed
+    note: |
+      Both sites swept — exit-code table's five new cells verified against the code, and README.md:122 now says "written by --reflect".
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      reflect.go:59 still takes `now` and never reads it; the doc comment at :57-58 still justifies it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      All four sites unchanged — reflect.go:240 counts deck-intersect-log as "in the deck", and :168/:190 pass one-element slices to citedOrNothing.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      usermodel.go:104-108 unchanged; a marker-less existing file is still discarded without a word.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      No modelMeta row, and 9bbfd4b added a ninth unrostered symbol (oneLine); the Revisions entry still claims the enumeration reconciled to empty.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      main.go still has no mode-count guard; --reflect with --forget or --llm-check silently honours one.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      Frontmatter still omits `learner:`, `M reviews` still ships as `M questions`, and the Revisions entry still says "Two departures".
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Code fix verified by full revert (test reddens) and by escape-pipes-only revert (also reddens); but its serious half is unpinned — see the new vacuous-verification finding.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Re-verified: moving `if *reflect` before withStore leaves the whole suite green, and the resulting binary refuses every --reflect run with "no deck in this directory".
+findings:
+  - id: new
+    severity: Important
+    family: vacuous-verification
+    title: |
+      The forged-marker assertion searches only the region before the first marker, where a forged marker cannot be
+    detail: |
+      usermodel_test.go:253-259 computes i as the offset of the FIRST out-of-fence marker, then
+      asserts no marker exists in got[:i] — marker-free by construction. Measured: with oneLine
+      reverted the render holds 2 markers (offsets 336, 385) and the shipped expression yields
+      j = -1. Decisive experiment: removing oneLine from the Level section only — reinstating
+      BR-12's serious half exactly — leaves go test ./cmd/define/ fully green, that test
+      included. So the milestone's worst defect is guarded only by the pipe-count arm. 2nd in
+      this family after BR-2; the rule, not the site: an assertion that a violation is absent
+      must run over the region the violation would occupy, and the positive control (construct
+      the violation, confirm the assertion fires) is written before the assertion is believed.
+      Add it to lessons.md's mechanical list beside the before/after-comparison entry.
+  - id: new
+    severity: Important
+    family: model-text-unconstrained-by-format
+    title: |
+      EvidenceWords are model-supplied and are the two render sites oneLine was not applied to
+    detail: |
+      usermodel.go:57 and :67 render EvidenceWords through joinWords, which does not sanitise.
+      Verified end to end: deck {"hot dog"}, model cites "hot\ndog" — store.Key collapses it so
+      checkEvidence KEEPS it verbatim (reflect.go:151-158 returns w, not the key) — and
+      joinWords emits a backticked token containing a newline, splitting the "Read off:" line
+      and breaking the table row mid-cell. `hot dog` is this repo's own canonical multi-word
+      headword. 2nd in this family: do not patch the two call sites — enforce the rule that
+      every model-supplied string reaching the file passes one sanitiser at one boundary (put
+      oneLine inside joinWords, or normalise citations to store.Key in checkEvidence's
+      supported). The sprinkle-at-call-sites shape is what let two of six sites be missed
+      (ARCH-DRY). Same site: oneLine does not strip backticks, and
+      reflect_conformance_test.go:145-149 treats every backticked token above the marker as an
+      evidence claim, so a rationale quoting a word would fail the live check spuriously.
+  - id: new
+    severity: Important
+    family: docs-enumeration-not-swept
+    title: |
+      atlas/define.md was not swept for the round-2 rule and still asserts a property this window disproved
+    detail: |
+      Commit 9bbfd4b touched README, code, tests, the issue and two ledgers — not the atlas. The
+      neutralisation rule and its learner/model asymmetry, the one new architectural idea this
+      round, appear nowhere in atlas/define.md. Worse, atlas/define.md:697-699 still tells the
+      reader the fuzz property "asserts the one thing that must hold", which the issue's own Log
+      now records as false. 3rd in this family — round 3 stated the rule as "grep for the surface
+      name across README.md AND atlas/ before closing", and this round swept README only. Apply
+      the stated rule as a closing step rather than patching the paragraph, and replace "the one
+      thing that must hold" with the two-directions invariant.
+```

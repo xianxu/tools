@@ -693,8 +693,27 @@ replaced, the marker and everything below it copied byte-for-byte. The marker is
 matched only at line start and only outside fenced blocks — this file documents
 its own format, and a learner arguing with the analysis may paste that block in.
 A fuzz property over malformed input (tilde fences, unterminated fences, CRLF)
-asserts the one thing that must hold: whatever follows the first out-of-fence
-marker survives byte-identical.
+asserts that whatever follows the first out-of-fence marker survives
+byte-identical. That is **one direction of the invariant, not the invariant** —
+it says nothing about everything ABOVE the marker being replaced, which is
+exactly where a forged marker lives, so a separate test asserts regeneration.
+The atlas called it "the one thing that must hold" until a forged marker proved
+otherwise.
+
+**Model text is neutralised before it is rendered**, and that is the other half
+of the file's integrity. `user-model.md` is marker-delimited, so a directive — or
+an evidence word — containing a line-start `## Corrections` forges a second
+marker above the real one; the next run splices there and everything below,
+including the learner's actual corrections, is frozen forever. `oneLine`
+collapses whitespace and escapes `|` in every model-supplied field, which closes
+the injection outright rather than filtering for the marker: every line this
+renderer emits is prefixed by `**`, `Read off: ` or `| `, so text that cannot
+start a line cannot forge structure nobody has thought of yet.
+
+Note the asymmetry the file rests on. The corrections text is the LEARNER's and
+is copied byte-for-byte precisely because they own it; the analysis text is the
+MODEL's, and is rendered into a structure the file's integrity depends on. Same
+file, two opposite rules — conflating them is what created the hole.
 
 **What it is worth, measured.** With a deck of sailing, law and cooking words,
 asking *"what does trim mean here?"* answers well WITHOUT the model — `#16`

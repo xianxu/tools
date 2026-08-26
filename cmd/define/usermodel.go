@@ -89,7 +89,13 @@ func dateOrNone(t time.Time) string {
 func joinWords(words []string) string {
 	quoted := make([]string, 0, len(words))
 	for _, w := range words {
-		quoted = append(quoted, "`"+w+"`")
+		// oneLine here TOO. The round-2 fix sanitised Band, Rationale, Name and
+		// Directive — the four fields the finding happened to list — and left
+		// the evidence words, which are just as model-supplied and reach two
+		// render sites. checkEvidence constrains them to deck words, but it
+		// matches on store.Key, so a citation carrying a newline can match a
+		// deck word and still forge a line (BR-15).
+		quoted = append(quoted, "`"+oneLine(w)+"`")
 	}
 	return strings.Join(quoted, ", ")
 }

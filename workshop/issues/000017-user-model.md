@@ -345,3 +345,35 @@ opposite rules, and conflating them is what created the hole.
 **BR-5's other half:** the persistence block still described `user-model.md` as
 "optional, yours to write". `--reflect` writes it now; only `## Corrections` is
 theirs. I had swept that block for questions in #16 and not for this.
+
+### 2026-08-25 — M1 boundary round 3: all three findings are about round 2's fix
+
+And two of them are shapes this session has already taught me, arriving again in
+the fix for the finding that taught me one of them.
+
+- **BR-15 — `oneLine` was applied to the four fields the finding LISTED**, and
+  not to `EvidenceWords`, which are just as model-supplied and reach two render
+  sites. `checkEvidence` constrains citations to deck words, but it matches on
+  `store.Key`, so a citation carrying a newline can match a real deck word AND
+  forge a line. I fixed the instances named rather than the class — with the
+  class written in my own commit message as *"model text that cannot start a
+  line cannot forge structure"*.
+- **BR-14 — my forged-marker assertion was vacuous.** It searched
+  `got[:firstMarker]` for another marker: the one region where a forged marker
+  cannot be, since the first marker is by definition the first. It passed
+  unconditionally. Counting markers over the whole document is the honest form.
+  This is the fourth vacuous assertion of the session and the second in two
+  rounds of this milestone.
+- **BR-16 — the atlas still called the fuzz property "the one thing that must
+  hold"**, a claim round 2 disproved by finding the direction it does not guard.
+  I recorded that insight in the issue Log and left the atlas asserting the old
+  version.
+
+Both render sites now mutation-checked independently: unsanitising the four
+fields reddens the test, and unsanitising the evidence words reddens it
+separately.
+
+The through-line, stated plainly because three rounds have now said it: **I fix
+what a finding enumerates and not what it generalises, and I write assertions
+that cannot fail.** The lessons entries name both; what round 3 adds is that
+they recur *inside the fix for the round that named them*.
