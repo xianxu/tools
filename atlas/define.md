@@ -457,6 +457,44 @@ green run through the wrap indent.
 constraint is why definitions and streamed answers share a mechanism rather than
 each growing their own — see M2/M3.
 
+**`highlightWriter` is why definitions and answers are one mechanism** (M2).
+They share the hard part: the text already carries ANSI codes, and it may arrive
+in pieces. A definition is a complete string; an answer arrives as stream deltas
+where `obsequious` can land as `obseq` + `uious`. Giving them separate
+implementations would mean two sets of ANSI-resume rules to keep in agreement.
+`highlightText` is the whole-string caller; the stream wraps its writer (M3).
+
+Its contract, in the order the rules matter:
+
+1. **Nothing overtakes held text.** The writer holds a tail while a phrase is
+   still possible. An escape arriving during a hold RESOLVES the hold first, then
+   passes through — otherwise a reset can land before the word it was closing.
+   Left-to-right draining is what makes this structural rather than a check.
+2. **A phrase spans only spaces and tabs.** An escape, newline or punctuation
+   closes the window. So `hot\x1b[0m dog` is not `hot dog`: a phrase whose halves
+   are styled differently is not a phrase, and that is what makes rule 1
+   implementable.
+3. **The hold point may not cut a completed phrase.** Holding the last
+   `MaxPhraseWords` tokens is right for text that may still grow, but with
+   `hot dog` in the deck it lands inside `one hot dog please` — emitting `hot`
+   alone and losing the match forever. A known span straddling the hold point
+   drags it back to that span's start. Plain text may be cut freely.
+4. **Downstream errors poison the writer.** The first failure is remembered and
+   nothing is emitted after it, so no byte is written twice. A short write with a
+   nil error is a failure — `crlfWriter`, which this wraps in raw mode, produces
+   exactly that.
+5. **Flush is part of the contract.** Held text is invisible until it happens.
+
+`sgrState` is the pure half: it watches escapes go past and answers "what style
+would a terminal be in right now", so a highlight can hand that style back. It
+accumulates SGRs until a reset, because `Render` opens bold and colour
+separately and a terminal composes them.
+
+Highlighting wraps the RENDERED string rather than reaching into `Render`, which
+stays a pure function of the entry. `TestHighlightingLosesNothing` is `Render`'s
+own no-data-loss invariant re-asserted with highlighting on, stripping escapes
+first — the codes carry digits that `alnum()` would otherwise read as content.
+
 **The set grows mid-session, from the one place that already knows.**
 `storeCapturer.Capture` adds a word after `Upsert` succeeds — the single site that
 knows a lookup both succeeded and earned a deck entry, so a failed lookup (which

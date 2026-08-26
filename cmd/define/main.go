@@ -502,7 +502,15 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		d.capture.Capture(word, true, opt)
 		return lookupOutcome{entry: text}
 	}
-	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
+	// Highlighting wraps the RENDERED string rather than reaching into Render:
+	// Render stays a pure function of the entry, and the highlight rules live in
+	// one place shared with the answer stream. highlightSetFor equivalent for
+	// colour: with colour off there is no style to inject, so nothing wraps.
+	rendered := Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width})
+	if opt.color {
+		rendered = highlightText(rendered, d.vocab, knownOn)
+	}
+	fmt.Fprint(stdout, rendered)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
 }

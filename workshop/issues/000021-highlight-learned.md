@@ -219,7 +219,7 @@ Durable plan: `workshop/plans/000021-highlight-learned-plan.md` (three
 milestones; each `Mx` row below is its own review boundary).
 
 - [x] M1 — `Vocabulary` seam + pure matcher + typed line
-- [ ] M2 — `highlightWriter` + definitions
+- [x] M2 — `highlightWriter` + definitions
 - [ ] M3 — LLM answers, streamed
 
 ## Log
@@ -284,3 +284,19 @@ this spec's central decision — the predicate seam.
   rendered green inside `/history 7`, which leaked the vocabulary feature across
   the namespace boundary #20 decides exactly once — `highlightSetFor` withholds
   the set on a command line.
+
+- 2026-08-26: M2 — `sgrState` + `scanEscape` (`sgr.go`), `highlightWriter`
+  (`highlightwriter.go`), and definitions wired at the one `Render` print site.
+  The design fault worth recording is rule 3 of the writer's contract, which the
+  plan did not anticipate: holding the last `MaxPhraseWords` tokens is correct
+  for text that may still grow, but that hold point lands INSIDE a completed
+  phrase — with `hot dog` in the deck, "one hot dog please" emitted `hot` alone
+  and lost the match permanently, because the held remainder is re-analysed
+  without it. A known span straddling the hold point now drags it back to that
+  span's start. Found by the phrase tests, not by reasoning.
+  Chain enumerated per M1's rule: lookupAndRender reads d.vocab → highlightText →
+  writer → stdout, pinned end-to-end by TestDefinitionBodyHighlightsADeckWord
+  (driven through lookupAndRender, not through the helper); the colour gate by
+  TestDefinitionHighlightingIsOffWithoutColour. Seven mutations, all die.
+  FuzzHighlightWriterIsChunkIndependent 803k execs on byte-identity across split
+  points plus visible-text preservation.

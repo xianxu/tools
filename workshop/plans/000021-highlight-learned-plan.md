@@ -261,11 +261,11 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 - Modify: `cmd/define/highlight.go`
 - Test: `cmd/define/highlight_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Strategy: one table over "sequence in → resume code out", whose rows are the DISTINCTIONS (SGR sets the resume; reset clears it; a non-SGR CSI leaves it alone; an unterminated escape is retained rather than read as text). One row per rule, not one per escape code.
+- [x] **Step 1: Write the failing tests.** Strategy: one table over "sequence in → resume code out", whose rows are the DISTINCTIONS (SGR sets the resume; reset clears it; a non-SGR CSI leaves it alone; an unterminated escape is retained rather than read as text). One row per rule, not one per escape code.
 
-- [ ] **Step 2: Run to verify it fails. Step 3: Implement. Step 4: Verify passing.**
+- [x] **Step 2: Run to verify it fails. Step 3: Implement. Step 4: Verify passing.**
 
-- [ ] **Step 5: Commit.** `#21 M2: remember the enclosing style, because ANSI does not nest`
+- [x] **Step 5: Commit.** `#21 M2: remember the enclosing style, because ANSI does not nest`
 
 ### Task 6: `highlightWriter`
 
@@ -273,17 +273,17 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 - Modify: `cmd/define/highlight.go`
 - Test: `cmd/define/highlight_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Strategy: one BYTE-EXACT table over the contract rules above — a known word in one call; the same word split across two `Write` calls; an escape split across two calls; a known word inside a styled run (asserting the enclosing style resumes after it); and the rule-1 ordering case, deck `hot dog` against `\x1b[1;36mhot\x1b[0m dog`, whose whole point is that the reset must not move. Assert full output bytes, per contract rule 3 — escape-stripped comparison cannot see a reorder.
+- [x] **Step 1: Write the failing tests.** Strategy: one BYTE-EXACT table over the contract rules above — a known word in one call; the same word split across two `Write` calls; an escape split across two calls; a known word inside a styled run (asserting the enclosing style resumes after it); and the rule-1 ordering case, deck `hot dog` against `\x1b[1;36mhot\x1b[0m dog`, whose whole point is that the reset must not move. Assert full output bytes, per contract rule 3 — escape-stripped comparison cannot see a reorder.
 
-- [ ] **Step 2: Write the downstream-contract tests** (rule 4), against a writer that (a) short-writes and (b) returns an error mid-word: assert no byte is emitted twice across the retry, that the error reaches the caller, and that the returned count is in the caller's units. Reuse `crlf_test.go:50,:78`'s short-writer fixture rather than writing a second one.
+- [x] **Step 2: Write the downstream-contract tests** (rule 4), against a writer that (a) short-writes and (b) returns an error mid-word: assert no byte is emitted twice across the retry, that the error reaches the caller, and that the returned count is in the caller's units. Reuse `crlf_test.go:50,:78`'s short-writer fixture rather than writing a second one.
 
-- [ ] **Step 3: Run to verify they fail. Step 4: Implement.** Hold back from the first token that could still begin a phrase; resolve when the window reaches `MaxPhraseWords()` tokens, or when contract rule 2's window-breaker arrives, or on flush.
+- [x] **Step 3: Run to verify they fail. Step 4: Implement.** Hold back from the first token that could still begin a phrase; resolve when the window reaches `MaxPhraseWords()` tokens, or when contract rule 2's window-breaker arrives, or on flush.
 
-- [ ] **Step 5: Verify passing.**
+- [x] **Step 5: Verify passing.**
 
-- [ ] **Step 6: Add `FuzzHighlightWriter`.** Split a random input at a random index into two writes; assert the flushed bytes are IDENTICAL to writing it in one call. Chunk-independence is the property, and byte identity — not visible-text equality — is what makes it able to see a reorder.
+- [x] **Step 6: Add `FuzzHighlightWriter`.** Split a random input at a random index into two writes; assert the flushed bytes are IDENTICAL to writing it in one call. Chunk-independence is the property, and byte identity — not visible-text equality — is what makes it able to see a reorder.
 
-- [ ] **Step 7: Commit.**
+- [x] **Step 7: Commit.**
 
 ### Task 7: Definitions
 
@@ -291,17 +291,17 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 - Modify: `cmd/define/main.go:488`
 - Test: `cmd/define/render_test.go` or `highlight_test.go`
 
-- [ ] **Step 1: Write the failing test.** Render a real parsed entry with a vocabulary containing a word that appears in its *body*, assert the body occurrence is highlighted.
+- [x] **Step 1: Write the failing test.** Render a real parsed entry with a vocabulary containing a word that appears in its *body*, assert the body occurrence is highlighted.
 
-- [ ] **Step 2: Write the invariant test.** `invariant_test.go` holds rendered letters/digits against the raw entry as an ordered subsequence. Add a case with highlighting ON. If the existing helper does not strip escapes, it must — otherwise green codes read as data and the invariant is meaningless.
+- [x] **Step 2: Write the invariant test.** `invariant_test.go` holds rendered letters/digits against the raw entry as an ordered subsequence. Add a case with highlighting ON. If the existing helper does not strip escapes, it must — otherwise green codes read as data and the invariant is meaningless.
 
-- [ ] **Step 3: Run to verify. Step 4: Implement** via `highlightText(s, v, on)` — `highlightWriter` over a `bytes.Buffer`, flushed. When colour is off, do not wrap at all: a pass-through that emits nothing is weaker than not being in the path.
+- [x] **Step 3: Run to verify. Step 4: Implement** via `highlightText(s, v, on)` — `highlightWriter` over a `bytes.Buffer`, flushed. When colour is off, do not wrap at all: a pass-through that emits nothing is weaker than not being in the path.
 
-- [ ] **Step 5: Verify, including `-no-color` and piped output emitting zero escapes.**
+- [x] **Step 5: Verify, including `-no-color` and piped output emitting zero escapes.**
 
-- [ ] **Step 6: Mutation-check** that the invariant test bites: make `highlightText` drop a byte and confirm it reddens.
+- [x] **Step 6: Mutation-check** that the invariant test bites: make `highlightText` drop a byte and confirm it reddens.
 
-- [ ] **Step 7: `sdlc milestone-close --issue 21 --milestone M2`.**
+- [x] **Step 7: `sdlc milestone-close --issue 21 --milestone M2`.**
 
 ## Chunk 3: M3 — streamed answers
 
