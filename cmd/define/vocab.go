@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -68,7 +67,13 @@ func (v *memVocabulary) Add(word string) {
 		v.words = map[string]bool{}
 	}
 	v.words[key] = true
-	if n := len(strings.Fields(key)); n > v.maxWords {
+	// Counted with wordRuns, not strings.Fields, so the set agrees with the
+	// tokenizer that will look it up. They diverge for any key holding other
+	// punctuation — `e.g.`, `9/11` — and such a key is currently UNMATCHABLE
+	// whichever way it is counted, because phraseGap allows only spaces and tabs
+	// between a phrase's tokens. TestAPunctuatedKeyIsNotMatchable pins that as
+	// known behaviour rather than leaving M2 to rediscover it.
+	if n := len(wordRuns(key)); n > v.maxWords {
 		v.maxWords = n
 	}
 }

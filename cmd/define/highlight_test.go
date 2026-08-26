@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"strings"
 	"testing"
-	"unicode"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // vocab builds a Vocabulary for tests. Every highlight test runs against this
@@ -26,7 +28,8 @@ func TestWordRuns(t *testing.T) {
 	}{
 		{"empty", "", nil},
 		{"only spaces", "   ", nil},
-		{"only punctuation", "-- ... --", []string{"--", "--"}}, // hyphen is a word char
+		{"only joiners trims to nothing", "-- ... --", nil},
+		{"quotes and dashes are trimmed off the edges", "'obsequious' --truly--", []string{"obsequious", "truly"}},
 		{"plain words", "his manner", []string{"his", "manner"}},
 		{"trailing punctuation is not part of the word", "obsequious, truly.", []string{"obsequious", "truly"}},
 		{"an apostrophe is INSIDE a word", "don't", []string{"don't"}},
@@ -89,7 +92,6 @@ func FuzzWordRuns(f *testing.F) {
 				}
 			}
 		}
-		_ = unicode.IsLetter // keep the import honest if the helper moves
 	})
 }
 
@@ -251,5 +253,55 @@ func TestRenderLineWithoutAVocabularyIsUnchanged(t *testing.T) {
 
 	if got := RenderLine(e, "", nil, true); !strings.Contains(got, inputOn+"what is obsequious"+sgrOff) {
 		t.Errorf("nil vocabulary changed the render: %q", got)
+	}
+}
+
+// BR-1a: the set→screen link is the M1 Done-when, and nothing pinned it. Both
+// "pass nil instead of the vocabulary" and "delete voc.Load()" survived the
+// entire suite, because every other test called RenderLine directly. A test that
+// reaches around the production wiring cannot see the wiring break — the same
+// class as #20's typeKeys.
+func TestEditorLoopHighlightsADeckWordOnScreen(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	st := store.NewMem()
+	if err := st.Upsert(store.Word{Text: "sycophantic"}); err != nil {
+		t.Fatal(err)
+	}
+	// A storeVocabulary, not a pre-filled memVocabulary: this is what makes
+	// deleting voc.Load() redden, since an unloaded store set is empty.
+	rig.deps.vocab = newStoreVocabulary(st, nil)
+
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+
+	if !strings.Contains(out.String(), "\x1b[1;32msycophantic") {
+		t.Errorf("the deck word was not highlighted on screen: %q", out.String())
+	}
+}
+
+// The in-session-growth Done-when, end to end. The first submit echoes BEFORE
+// the lookup records anything, so the highlight can only appear on the retype —
+// which is exactly the behaviour worth pinning.
+func TestEditorLoopHighlightsAWordLookedUpThisSession(t *testing.T) {
+	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	st := store.NewMem()
+	voc := newStoreVocabulary(st, nil)
+	rig.deps.vocab = voc
+	rig.deps.capture = newStoreCapturer(st, store.FixedClock(aDay), nil, voc)
+
+	var out, errb bytes.Buffer
+	runEditor(t.Context(), scriptKeys("sycophantic\rsycophantic"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+
+	if !strings.Contains(out.String(), "\x1b[1;32msycophantic") {
+		t.Errorf("a word looked up this session did not highlight on retype: %q", out.String())
+	}
+}
+
+// A deck key carrying punctuation cannot currently match, because a phrase spans
+// only spaces and tabs. Pinned as KNOWN behaviour so M2 does not rediscover it
+// as a bug when definition bodies widen the input.
+func TestAPunctuatedKeyIsNotMatchable(t *testing.T) {
+	if got := marked(highlightSpans("see e.g. this", vocab("e.g."))); got != "see e.g. this" {
+		t.Errorf("got %q — if this now matches, the phrase rule changed and the comment in vocab.go is stale", got)
 	}
 }

@@ -441,7 +441,9 @@ them back into what the user sees and a lossy split silently corrupts a
 definition. Longest match wins at each position, so with both `hot` and `hot dog`
 in the set the phrase highlights rather than its first word.
 
-`wordRuns` is the single tokenizer both the prompt and the definition path use.
+`wordRuns` is the single tokenizer, used by the prompt line today and by the
+definition and answer paths from M2 — one tokenizer, so a word highlighted in a
+definition is the same word highlighted at the prompt.
 Apostrophes and hyphens are INSIDE a word, so `don't` and `hot-dog` are each one
 token — hyphens especially, since a hyphenated deck entry has `hot-dog` as its
 `store.Key` and splitting on the hyphen would make it unmatchable. Phrases are a

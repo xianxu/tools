@@ -67,7 +67,7 @@ type storeCapturer struct {
 	clock  store.Clock
 	warn   io.Writer
 	warned bool // once per process, not once per lookup
-	vocab Vocabulary
+	vocab  Vocabulary
 }
 
 // vocab is the highlight set this capturer grows. Explicit in the constructor

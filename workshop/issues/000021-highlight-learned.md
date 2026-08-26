@@ -243,3 +243,16 @@ this spec's central decision — the predicate seam.
   `knownOn != inputOn`, and the mutant dies. lessons.md extended rather than
   given a new entry: same family, and a reader hitting the first shape should
   find the second beside it.
+
+- 2026-08-26: M1 boundary round 1 — FIX-THEN-SHIP, 8 findings, 2 blocking, all
+  addressed. Both blocking findings were one rule the reviewer stated as a
+  sweepable enumeration: for each behaviour the diff asserts in a comment, does a
+  mutation that falsifies it redden a named test? The set→screen link — the M1
+  Done-when itself — was pinned by nothing, because every test called RenderLine
+  directly and none drove the loop; passing nil at both call sites and deleting
+  voc.Load() each survived the whole suite. That is #20's typeKeys class again,
+  and it was also a plan step (Task 4 Step 7) the milestone had quietly skipped.
+  The BR-2 fix was then vacuous on the first attempt for a third reason —
+  failingStore fails AppendEvent, so Capture returned before the deck write and
+  the mutant lived regardless. Five mutations now die; lessons.md gains the
+  isolating-double rule.

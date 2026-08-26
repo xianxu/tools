@@ -29,7 +29,14 @@ func isWordRune(r rune) bool {
 // wordRun is one token's byte range in the text it came from.
 type wordRun struct{ start, end int }
 
-// wordRuns returns the maximal runs of word characters, as byte offsets.
+// wordRuns returns the maximal runs of word characters, as byte offsets, with
+// leading and trailing joiners trimmed.
+//
+// The trim matters because apostrophes and hyphens are word characters only
+// INSIDE a word: `don't` is one token, but `'obsequious'` must tokenize to the
+// word, not to the word wearing quotes, or a quoted deck word never matches.
+// Definition bodies quote and dash routinely, so this is load-bearing from M2 on.
+// A run that is nothing but joiners (`--`) trims to empty and is dropped.
 //
 // Byte offsets rather than rune indices because every consumer slices the
 // original string with them, and converting to runes and back is where
@@ -42,14 +49,30 @@ func wordRuns(text string) []wordRun {
 		case isWordRune(r) && !in:
 			start, in = i, true
 		case !isWordRune(r) && in:
-			out = append(out, wordRun{start, i})
+			out = appendTrimmed(out, text, start, i)
 			in = false
 		}
 	}
 	if in {
-		out = append(out, wordRun{start, len(text)})
+		out = appendTrimmed(out, text, start, len(text))
 	}
 	return out
+}
+
+// isJoiner reports the word characters that may not stand at a token's edge.
+func isJoiner(r rune) bool { return r == '\'' || r == '-' }
+
+func appendTrimmed(out []wordRun, text string, start, end int) []wordRun {
+	for start < end && isJoiner(rune(text[start])) {
+		start++
+	}
+	for end > start && isJoiner(rune(text[end-1])) {
+		end--
+	}
+	if start >= end {
+		return out
+	}
+	return append(out, wordRun{start, end})
 }
 
 // span is one run of text plus whether it is a word the learner knows.

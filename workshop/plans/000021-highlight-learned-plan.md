@@ -117,7 +117,7 @@ until flushed. Every exit path flushes — see Task 8 Step 4.
 - Create: `cmd/define/vocab.go`
 - Test: `cmd/define/vocab_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestMemVocabularyNormalisesOnTheWayIn(t *testing.T) {
@@ -148,17 +148,17 @@ func TestEmptyVocabularyHasNothingAndNeedsNoLookahead(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails.** `go test ./cmd/define/ -run TestMemVocabulary` → build failure, `undefined: memVocabulary`.
+- [x] **Step 2: Run to verify it fails.** `go test ./cmd/define/ -run TestMemVocabulary` → build failure, `undefined: memVocabulary`.
 
-- [ ] **Step 3: Implement.** Interface + `memVocabulary` (a `map[string]bool` plus `maxWords int`, mutex-guarded because `Add` is called from the capture path while the editor reads). `Add` routes through `store.Key`; `Has` takes an already-normalised key.
+- [x] **Step 3: Implement.** Interface + `memVocabulary` (a `map[string]bool` plus `maxWords int`, mutex-guarded because `Add` is called from the capture path while the editor reads). `Add` routes through `store.Key`; `Has` takes an already-normalised key.
 
-- [ ] **Step 4: Run to verify it passes.**
+- [x] **Step 4: Run to verify it passes.**
 
-- [ ] **Step 5: Add `storeVocabulary`, EMBEDDING `memVocabulary`.** It contributes exactly one thing — `Load()` reads `Deck()` once and `Add`s each `Word.Text`; `Add`/`Has`/`MaxPhraseWords` are inherited, so the set has one implementation rather than two that must agree (ARCH-DRY). On a `Deck()` error it warns via the injected writer and leaves the set empty: a deck that cannot be read degrades to "nothing highlighted", never to a crash. Mirror `storeHistory`'s `loaded` guard so a second `Load` is free.
+- [x] **Step 5: Add `storeVocabulary`, EMBEDDING `memVocabulary`.** It contributes exactly one thing — `Load()` reads `Deck()` once and `Add`s each `Word.Text`; `Add`/`Has`/`MaxPhraseWords` are inherited, so the set has one implementation rather than two that must agree (ARCH-DRY). On a `Deck()` error it warns via the injected writer and leaves the set empty: a deck that cannot be read degrades to "nothing highlighted", never to a crash. Mirror `storeHistory`'s `loaded` guard so a second `Load` is free.
 
-- [ ] **Step 6: Test the degrade path** with a store whose `Deck()` returns an error; assert a warning is written and `Has` answers false rather than panicking.
+- [x] **Step 6: Test the degrade path** with a store whose `Deck()` returns an error; assert a warning is written and `Has` answers false rather than panicking.
 
-- [ ] **Step 7: Commit.** `#21 M1: the Vocabulary seam — a predicate, so #22 swaps one place`
+- [x] **Step 7: Commit.** `#21 M1: the Vocabulary seam — a predicate, so #22 swaps one place`
 
 ### Task 2: The tokenizer
 
@@ -166,17 +166,17 @@ func TestEmptyVocabularyHasNothingAndNeedsNoLookahead(t *testing.T) {
 - Create: `cmd/define/highlight.go`
 - Test: `cmd/define/highlight_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Strategy: a table pinning the word-character DECISIONS (apostrophe and hyphen are inside a word, so `don't` and `hot-dog` are each one token; punctuation and whitespace are not), plus a property for the offsets. Do not enumerate every punctuation mark — the property covers the class.
+- [x] **Step 1: Write the failing tests.** Strategy: a table pinning the word-character DECISIONS (apostrophe and hyphen are inside a word, so `don't` and `hot-dog` are each one token; punctuation and whitespace are not), plus a property for the offsets. Do not enumerate every punctuation mark — the property covers the class.
 
-- [ ] **Step 2: Add `FuzzWordRuns`.** `wordRuns` is the byte-offset source of truth for both consumers, so it needs a property of its own: offsets strictly increasing, runs non-overlapping and non-empty, every run slicing the input without panicking, and every sliced run containing only word characters. Seed with multi-byte input (`café`, `¿qué`) — byte offsets over multi-byte runes are where this breaks.
+- [x] **Step 2: Add `FuzzWordRuns`.** `wordRuns` is the byte-offset source of truth for both consumers, so it needs a property of its own: offsets strictly increasing, runs non-overlapping and non-empty, every run slicing the input without panicking, and every sliced run containing only word characters. Seed with multi-byte input (`café`, `¿qué`) — byte offsets over multi-byte runes are where this breaks.
 
-- [ ] **Step 3: Run to verify they fail.**
+- [x] **Step 3: Run to verify they fail.**
 
-- [ ] **Step 4: Implement `wordRuns`** returning `[]run{start, end int}` byte offsets, using `unicode.IsLetter || unicode.IsDigit || r == '\'' || r == '-'`.
+- [x] **Step 4: Implement `wordRuns`** returning `[]run{start, end int}` byte offsets, using `unicode.IsLetter || unicode.IsDigit || r == '\'' || r == '-'`.
 
-- [ ] **Step 5: Run to verify they pass.**
+- [x] **Step 5: Run to verify they pass.**
 
-- [ ] **Step 6: Commit.** `#21 M1: one tokenizer, so the prompt and definitions agree on where a word is`
+- [x] **Step 6: Commit.** `#21 M1: one tokenizer, so the prompt and definitions agree on where a word is`
 
 ### Task 3: `highlightSpans`, with longest-match phrases
 
@@ -184,7 +184,7 @@ func TestEmptyVocabularyHasNothingAndNeedsNoLookahead(t *testing.T) {
 - Modify: `cmd/define/highlight.go`
 - Test: `cmd/define/highlight_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestHighlightSpansMarksAKnownWord(t *testing.T) {
@@ -214,17 +214,17 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails.**
+- [x] **Step 2: Run to verify it fails.**
 
-- [ ] **Step 3: Implement.** Walk `wordRuns`; at each token try phrases of `MaxPhraseWords()` tokens down to 1, joining with single spaces to form the candidate key, and take the first `Has` hit. Emit the text between the previous emit point and the match as an unknown span, the match as known, and continue after it.
+- [x] **Step 3: Implement.** Walk `wordRuns`; at each token try phrases of `MaxPhraseWords()` tokens down to 1, joining with single spaces to form the candidate key, and take the first `Has` hit. Emit the text between the previous emit point and the match as an unknown span, the match as known, and continue after it.
 
-- [ ] **Step 4: Run to verify it passes.**
+- [x] **Step 4: Run to verify it passes.**
 
-- [ ] **Step 5: Add `FuzzHighlightSpans`.** Assert: concatenated span texts equal the input exactly; no span has empty text; no two adjacent spans share a `known` value (spans are maximal, so a bug that emits one span per character is caught). Seed with the table cases plus `""`, `"   "`, `"café"`, `"a-b'c"`.
+- [x] **Step 5: Add `FuzzHighlightSpans`.** Assert: concatenated span texts equal the input exactly; no span has empty text; no two adjacent spans share a `known` value (spans are maximal, so a bug that emits one span per character is caught). Seed with the table cases plus `""`, `"   "`, `"café"`, `"a-b'c"`.
 
-- [ ] **Step 6: Run the fuzzer** for 45s; expect clean.
+- [x] **Step 6: Run the fuzzer** for 45s; expect clean.
 
-- [ ] **Step 7: Commit.** `#21 M1: highlightSpans — the one answer to "which words here are yours"`
+- [x] **Step 7: Commit.** `#21 M1: highlightSpans — the one answer to "which words here are yours"`
 
 ### Task 4: The typed line
 
@@ -233,25 +233,25 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 - Modify: `cmd/define/replraw.go` (pass the vocabulary)
 - Test: `cmd/define/editor_test.go`
 
-- [ ] **Step 1: Write the failing test.** Drive `RenderLine` with a vocabulary containing `obsequious`, a line `what is obsequious`, `color=true`; assert the output contains `knownOn + "obsequious"` and that the run AFTER it returns to `inputOn` — the resume is the part a naive implementation gets wrong, and it is what keeps the rest of the line bold.
+- [x] **Step 1: Write the failing test.** Drive `RenderLine` with a vocabulary containing `obsequious`, a line `what is obsequious`, `color=true`; assert the output contains `knownOn + "obsequious"` and that the run AFTER it returns to `inputOn` — the resume is the part a naive implementation gets wrong, and it is what keeps the rest of the line bold.
 
-- [ ] **Step 2: Write the no-colour test.** `color=false` must contain no escape codes at all. Assert on the absence of `"\x1b"`, not on the absence of the green code specifically — a test that only checks for green passes while emitting bold.
+- [x] **Step 2: Write the no-colour test.** `color=false` must contain no escape codes at all. Assert on the absence of `"\x1b"`, not on the absence of the green code specifically — a test that only checks for green passes while emitting bold.
 
-- [ ] **Step 3: Run to verify both fail.**
+- [x] **Step 3: Run to verify both fail.**
 
-- [ ] **Step 4: Implement.** Add `knownOn = "\x1b[1;32m"`. Change `RenderLine(e Editor, sug string, v Vocabulary, color bool)`; it computes its own spans from `e.Line` — never accepts a precomputed list, for the reason `draw` does not accept a precomputed match list (#15/#20: a stale list rendered against the previous line). `v == nil` means no highlighting.
+- [x] **Step 4: Implement.** Add `knownOn = "\x1b[1;32m"`. Change `RenderLine(e Editor, sug string, v Vocabulary, color bool)`; it computes its own spans from `e.Line` — never accepts a precomputed list, for the reason `draw` does not accept a precomputed match list (#15/#20: a stale list rendered against the previous line). `v == nil` means no highlighting.
 
-- [ ] **Step 5: Run to verify they pass.** Fix the cursor-parking arithmetic if it moved: the parked position is computed from *rune counts of the typed text*, which highlighting must not change. There is an existing assertion on this; if it does not cover a highlighted line, add one.
+- [x] **Step 5: Run to verify they pass.** Fix the cursor-parking arithmetic if it moved: the parked position is computed from *rune counts of the typed text*, which highlighting must not change. There is an existing assertion on this; if it does not cover a highlighted line, add one.
 
-- [ ] **Step 6: Wire `deps.vocab`** in `main.go` beside `deck`, built by `newStore`; `runEditor` calls `vocab.Load()` next to `hist.Load()`.
+- [x] **Step 6: Wire `deps.vocab`** in `main.go` beside `deck`, built by `newStore`; `runEditor` calls `vocab.Load()` next to `hist.Load()`.
 
-- [ ] **Step 7: In-session growth.** In `storeCapturer.Capture`, when the decision is `captureEventAndWord`, also `vocab.Add(word)`. One recorder, and it is the only place that already knows a lookup both succeeded and earned a deck entry. Test: look up a word through the fake, assert it highlights on the next render without a reload.
+- [x] **Step 7: In-session growth.** In `storeCapturer.Capture`, when the decision is `captureEventAndWord`, also `vocab.Add(word)`. One recorder, and it is the only place that already knows a lookup both succeeded and earned a deck entry. Test: look up a word through the fake, assert it highlights on the next render without a reload.
 
-- [ ] **Step 8: Mutation-check.** (a) `knownOn` → `inputOn`: the highlight test must redden. (b) drop the style-resume after a known span: the "returns to bold" assertion must redden. (c) `Has` always false: the highlight test reddens and the no-colour test does not. Each mutation must kill a *named* test; a mutation that kills nothing means the assertion is decorative.
+- [x] **Step 8: Mutation-check.** (a) `knownOn` → `inputOn`: the highlight test must redden. (b) drop the style-resume after a known span: the "returns to bold" assertion must redden. (c) `Has` always false: the highlight test reddens and the no-colour test does not. Each mutation must kill a *named* test; a mutation that kills nothing means the assertion is decorative.
 
-- [ ] **Step 8b: Update `atlas/define.md` with M1's surface.** The plan originally deferred all atlas work to M3 Step 7; AGENTS.md §8 requires it at EACH milestone close, and the close gate enforces it. M1 introduces the predicate seam, the matcher and the tokenizer — real architectural surface, and deferring it is exactly the end-of-project sweep §8 forbids. M2 and M3 extend the same section.
+- [x] **Step 8b: Update `atlas/define.md` with M1's surface.** The plan originally deferred all atlas work to M3 Step 7; AGENTS.md §8 requires it at EACH milestone close, and the close gate enforces it. M1 introduces the predicate seam, the matcher and the tokenizer — real architectural surface, and deferring it is exactly the end-of-project sweep §8 forbids. M2 and M3 extend the same section.
 
-- [ ] **Step 9: `sdlc milestone-close --issue 21 --milestone M1`,** fix findings, commit with the verdict trailer.
+- [x] **Step 9: `sdlc milestone-close --issue 21 --milestone M1`,** fix findings, commit with the verdict trailer.
 
 ## Chunk 2: M2 — `highlightWriter` and definitions
 
@@ -368,3 +368,43 @@ Six findings, all accepted; the three blocking ones were real holes.
 - **PQ-6 `unstated-matching-rule`** — addressed by PQ-2's rule: a phrase may not
   span a line break, so a wrapped `hot\n  dog` cannot paint a green run through
   the wrap indent.
+
+### 2026-08-26 — M1 boundary review
+
+Verdict FIX-THEN-SHIP; eight findings, two blocking. Both blocking ones were the
+same rule, and the reviewer named the enumeration to sweep: *for each behaviour
+the diff states in a comment, is there a mutation that makes it false and a named
+test that reddens?*
+
+- **BR-1a/b (Important)** — the set→screen link, which IS the M1 Done-when, was
+  pinned by nothing. Passing `nil` instead of the vocabulary at both `RenderLine`
+  call sites, and deleting `voc.Load()`, each survived the whole suite: every
+  test called `RenderLine` directly and so could not see the loop's wiring break.
+  Exactly #20's `typeKeys` class. Two loop-level tests added, one of them driving
+  the in-session-growth path end to end. This is also **Task 4 Step 7, which the
+  milestone skipped** — what shipped asserted the capturer→set mechanism, not the
+  set→screen link the step specified.
+- **BR-2 (Important)** — `Capture`'s "must not claim a word the deck rejected"
+  was a comment with no test. Added one, and it was **vacuous on the first
+  attempt**: `failingStore` fails `AppendEvent` too, so `Capture` returned before
+  reaching the deck write and the mutant survived anyway. Needed a double that
+  fails ONLY `Upsert`. Fourth vacuous assertion caught by mutation this session.
+- **Minors, all addressed** — the `loaded` guard survived removal because `Add`
+  is idempotent (now counted with a `countingDeck` double); `gofmt` flagged
+  `capture.go`; `isWordRune` admitted `'` and `-` at token EDGES, so
+  `'obsequious'` never matched — real before M2, since bodies quote and dash
+  routinely, now trimmed; `MaxPhraseWords` counted with `strings.Fields`,
+  disagreeing with `wordRuns` (now counted with `wordRuns`, and the
+  punctuated-key limitation is pinned as known behaviour rather than left for M2
+  to rediscover); the atlas claimed the definition path in the present tense;
+  dead `_ = unicode.IsLetter` scaffolding dropped.
+- **README** — the reviewer noted the plan defers it to M3 while #20's analogous
+  prompt-line behaviour IS documented, and Step 8b had already overridden the
+  identical atlas deferral. Written now for the same reason.
+
+### 2026-08-26 — Task 4 Step 2 was infeasible as written
+
+The step said to assert the no-colour render contains no `\x1b` at all. It cannot:
+`eraseLine` is `\r\x1b[K` and the cursor park is `\x1b[ND`, both structural and
+both present with colour off. The shipped test asserts the absence of each STYLE
+constant instead, which is the property that was meant.

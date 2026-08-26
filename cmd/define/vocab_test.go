@@ -153,3 +153,54 @@ func TestOpenStoreSharesOneHighlightSet(t *testing.T) {
 		t.Error("openStore handed the capturer a different set than it handed the renderer")
 	}
 }
+
+// BR-2: "must not claim a word the deck rejected" was a comment with nothing
+// behind it — moving the Add above the Upsert error check survived the suite.
+//
+// The double has to fail ONLY the deck write. failingStore fails AppendEvent
+// too, so Capture returns before it ever reaches the deck, and the first version
+// of this test passed while the mutant lived — it was asserting "the event log
+// failed", not "the deck rejected the word".
+func TestCaptureDoesNotAddAWordTheDeckRejected(t *testing.T) {
+	v := &memVocabulary{}
+	c := newStoreCapturer(deckRejects{Store: store.NewMem()}, store.FixedClock(aDay), nil, v)
+
+	c.Capture("sycophantic", true, options{})
+
+	if v.Has(store.Key("sycophantic")) {
+		t.Error("a word the deck rejected entered the highlight set")
+	}
+}
+
+// deckRejects accepts events and refuses deck writes — the state that isolates
+// "the deck said no" from "the store is broken".
+type deckRejects struct{ store.Store }
+
+func (deckRejects) Upsert(store.Word) error { return errors.New("deck full") }
+
+// The `loaded` guard survived removal, because Add is idempotent and maxWords is
+// a max — the old assertion could not fail. Count the reads instead.
+func TestStoreVocabularyReadsTheDeckOnlyOnce(t *testing.T) {
+	st := &countingDeck{Store: store.NewMem()}
+	if err := st.Upsert(store.Word{Text: "obsequious"}); err != nil {
+		t.Fatal(err)
+	}
+	v := newStoreVocabulary(st, nil)
+
+	v.Load()
+	v.Load()
+
+	if st.reads != 1 {
+		t.Errorf("Deck() read %d times, want exactly 1 — Prefix-rate work must not reach the disk", st.reads)
+	}
+}
+
+type countingDeck struct {
+	store.Store
+	reads int
+}
+
+func (c *countingDeck) Deck() ([]store.Word, error) {
+	c.reads++
+	return c.Store.Deck()
+}

@@ -886,6 +886,15 @@ Two rules, and the second is the one that generalises:
   a highlight identical to ordinary text satisfies every byte-level assertion
   while delivering nothing.
 
+**A double must fail ONLY the thing under test, or it proves the wrong claim.**
+#21 M1: pinning "a word the deck rejected must not enter the highlight set", I
+reached for the existing `failingStore` — which fails `AppendEvent` too. `Capture`
+returns on that first failure and never reaches the deck write, so the test
+passed while the mutation it existed to kill survived. The assertion was true of
+"the store is broken", not of "the deck said no". When a function has several
+exits, a blanket-failing double stops at the first one; build the double that
+isolates the exit you are naming.
+
 **A test that injects a double must inject where production reads, or prove the
 injection is live.** `withStore` only fills nils, so a `newStore` supplied
 alongside an already-set field is silently discarded and every assertion over the
