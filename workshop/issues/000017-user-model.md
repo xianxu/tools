@@ -248,3 +248,42 @@ in a fence that contains the marker.
 The fourth M1 Done-when row names #10, which does not exist. #16's ask path reads
 `user-model.md` today and degrades on absence, so the row's substance has a live
 consumer already; Task 8 verifies that rather than assuming it.
+
+### 2026-08-25 — T1–T6 done; three bugs found by running it, not by testing it
+
+`define --reflect` works end to end against the live proxy. The unit tests were
+green throughout and none of these three would have been caught by them:
+
+- **The model put PROSE in the evidence array**, so every level claim was
+  correctly dropped by the deck check and `## Level` was silently missing from
+  every run. The field was named `evidence`; renaming it `evidence_words` fixed
+  it. **The JSON field name is what steers the model** — and the domain claims,
+  which have no competing `rationale` field, had been citing bare words correctly
+  the whole time, which is what made the failure look like a check bug.
+- **It stubbed claims it did not believe in** — a domain literally named `x`, a
+  rationale of `placeholder` — because a stub satisfies a schema that requires
+  every field. `checkEvidence` now drops claims authoring cannot act on: the same
+  don't-trust-check rule extended from *is this evidence real* to *is this claim
+  usable*. The prompt also now says to omit rather than stub, but the check is
+  what makes it true.
+- **It wrote an EMPTY file** when everything was dropped: frontmatter and a
+  corrections stub, a file that says "here is what we know about you" and knows
+  nothing. That is D2's floor arriving through another door; it writes nothing
+  and says so now.
+
+Fixed at the cause rather than defended: answers were **intermittently**
+degenerate at the 8192 default, because high-effort thinking shares that budget
+with a genuinely long answer (four domains, paragraph directives). Not a
+truncation — `Run` checks the stop reason first and it was `end_turn` — but the
+same squeeze that produced #11's preserved max_tokens specimen. Raised to 16384;
+consecutive clean runs since.
+
+**And my own verification was vacuous once.** The first corrections round-trip
+printed "preserved" — but the second run had failed and written nothing, so
+nothing could have changed. Re-run confirming both runs wrote and that the
+analysis actually changed (2570 → 2690 bytes) while the corrections came back
+byte-identical.
+
+A dropped claim now names the words it rejected. "No evidence in the deck" is the
+same unactionable shape as a claim that names none, and that message is the only
+place a person sees why a section went missing from their file.

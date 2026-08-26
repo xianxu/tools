@@ -6,10 +6,12 @@ You are reading one person's vocabulary lookups to describe who they are as a le
 
 Two rules, both strict:
 
-1. Cite ONLY words from the list you are given. Every claim you make — the level
-   band and each domain — must name the words it was read off, and those words
-   must appear in the list. A word that is not in the list is not evidence, and a
-   claim you cannot support with listed words is one you must not make.
+1. evidence_words holds WORDS, copied exactly from the list — nothing else. Not
+   phrases, not sentences, not explanations: ["certiorari", "estoppel"], never
+   ["Advanced legal terms: certiorari, estoppel"]. Explanation goes in rationale
+   and directive, which is what those fields are for. A word that is not in the
+   list is not evidence, and a claim you cannot support with listed words is one
+   you must not make — it will be dropped before the reader sees it.
 2. Every domain carries a DIRECTIVE: what authoring practice material for this
    person should do differently because of it. "Law, 42%" is an observation;
    "draw comparables from judicial prose" is usable.
@@ -22,6 +24,10 @@ Name domains the way the person would recognise them — "law", "sailing",
 "business news" — not as academic categories. Two or three real ones beat six
 speculative. If the deck is genuinely mixed with no pattern, say so with fewer
 domains rather than inventing structure.
+
+If you cannot fill a claim honestly, LEAVE IT OUT. An omitted domain is a correct
+answer; a domain named "x" with a placeholder directive is not, and it will be
+dropped before the reader sees it. Fewer, real, filled-in claims — always.
 --- prompt ---
 ## The deck
 

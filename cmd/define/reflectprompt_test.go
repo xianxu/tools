@@ -49,10 +49,21 @@ func TestRenderReflectPromptStatesTheRulesTheCheckerEnforces(t *testing.T) {
 	got := renderReflectPrompt(sampleEvidence())
 	sys := strings.ToLower(got.System)
 
-	for _, want := range []string{"only", "list"} { // cite only from the list
+	// Asserted on the FIELD NAME and the words-not-phrases rule, because those
+	// are what steer the answer: the first version matched the keyword "only"
+	// and went red when the rule was reworded to be clearer, which is a test of
+	// the wording rather than of the claim.
+	//
+	// The rewording was itself the fix for a measured failure: the model put
+	// whole sentences in the evidence array and lost the level claim to the
+	// deck check every run.
+	for _, want := range []string{"evidence_words", "exactly", "list"} {
 		if !strings.Contains(sys, want) {
-			t.Errorf("the system prompt does not state the citation rule: %q", got.System)
+			t.Errorf("the system prompt does not state the citation rule (%q missing): %q", want, got.System)
 		}
+	}
+	if !strings.Contains(sys, "rationale") {
+		t.Errorf("the prompt does not say where explanation goes instead: %q", got.System)
 	}
 	if !strings.Contains(sys, "authoring") && !strings.Contains(sys, "practice") {
 		t.Errorf("the system prompt does not ask what to DO about a domain: %q", got.System)

@@ -12,20 +12,20 @@ import (
 func sampleLearnerModel() learnerModel {
 	return learnerModel{
 		Level: levelClaim{
-			Band:      "C1",
-			Rationale: "Reaches for precise low-frequency words rather than looking up common ones.",
-			Evidence:  []string{"certiorari", "estoppel", "sycophantic"},
+			Band:          "C1",
+			Rationale:     "Reaches for precise low-frequency words rather than looking up common ones.",
+			EvidenceWords: []string{"certiorari", "estoppel", "sycophantic"},
 		},
 		Domains: []domainClaim{
 			{
 				Name: "law", Share: 0.42,
-				Evidence:  []string{"certiorari", "estoppel", "dicta"},
-				Directive: "Draw comparables from judicial prose; a legal register is familiar ground.",
+				EvidenceWords: []string{"certiorari", "estoppel", "dicta"},
+				Directive:     "Draw comparables from judicial prose; a legal register is familiar ground.",
 			},
 			{
 				Name: "business news", Share: 0.28,
-				Evidence:  []string{"sycophantic", "ephemeral"},
-				Directive: "Prefer corporate-governance usages when a word has one.",
+				EvidenceWords: []string{"sycophantic", "ephemeral"},
+				Directive:     "Prefer corporate-governance usages when a word has one.",
 			},
 		},
 	}

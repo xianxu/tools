@@ -220,6 +220,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
+	reflect := fs.Bool("reflect", false, "read the deck and write user-model.md")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
 			"Looks the word up in macOS's active dictionaries — normally the New\n"+
@@ -323,6 +324,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// cmdAsk is exempted for the same reason cmdCommand is: a question is
 	// multi-word by nature, so counting words would reject the thing the flag
 	// exists to accept (BR-20's shape).
+	case *reflect && fs.NArg() != 0:
+		// A mode plus a word is two commands on one line, and silently honouring
+		// one of them is how -raw came to mean two things in #2.
+		fmt.Fprintln(stderr, "define: --reflect reads the deck; do not also pass a word")
+		return 2
 	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 		fs.Usage()
 		return 2
@@ -340,6 +346,12 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 
 	if forgetting {
 		return forgetWord(d, opt, *forget, stdout, stderr)
+	}
+	// Dispatched HERE and not beside --llm-check, which runs before withStore
+	// precisely because it needs no directory. --reflect needs both the deck and
+	// the clock, so it belongs after them, where --forget is (#17 D5).
+	if *reflect {
+		return runReflect(ctx, d, opt, stdout, stderr)
 	}
 
 	switch fs.NArg() {

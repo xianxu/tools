@@ -107,11 +107,11 @@ func TestFoldLookupsOnAnEmptyDeck(t *testing.T) {
 func TestCheckEvidenceDropsClaimsTheDeckCannotSupport(t *testing.T) {
 	deck := map[string]bool{"certiorari": true, "dicta": true, "ephemeral": true}
 	in := learnerModel{
-		Level: levelClaim{Band: "C1", Evidence: []string{"certiorari", "dicta"}},
+		Level: levelClaim{Band: "C1", EvidenceWords: []string{"certiorari", "dicta"}},
 		Domains: []domainClaim{
-			{Name: "law", Share: 0.6, Evidence: []string{"certiorari", "dicta"}},
-			{Name: "sailing", Share: 0.2, Evidence: []string{"luffing", "clew"}},
-			{Name: "mixed", Share: 0.2, Evidence: []string{"ephemeral", "luffing"}},
+			{Name: "law", Share: 0.6, EvidenceWords: []string{"certiorari", "dicta"}, Directive: "judicial prose"},
+			{Name: "sailing", Share: 0.2, EvidenceWords: []string{"luffing", "clew"}, Directive: "nautical usages"},
+			{Name: "mixed", Share: 0.2, EvidenceWords: []string{"ephemeral", "luffing"}, Directive: "mixed register"},
 		},
 	}
 
@@ -125,8 +125,8 @@ func TestCheckEvidenceDropsClaimsTheDeckCannotSupport(t *testing.T) {
 	}
 	// A PARTIALLY supported claim keeps the evidence that exists rather than
 	// being dropped whole: "mixed" is a real domain, "luffing" is not a word.
-	if len(got.Domains[1].Evidence) != 1 || got.Domains[1].Evidence[0] != "ephemeral" {
-		t.Errorf("mixed evidence = %v, want only the deck word", got.Domains[1].Evidence)
+	if len(got.Domains[1].EvidenceWords) != 1 || got.Domains[1].EvidenceWords[0] != "ephemeral" {
+		t.Errorf("mixed evidence = %v, want only the deck word", got.Domains[1].EvidenceWords)
 	}
 	if len(dropped) == 0 {
 		t.Error("nothing reported: a dropped claim must be sayable out loud")
@@ -137,7 +137,7 @@ func TestCheckEvidenceDropsClaimsTheDeckCannotSupport(t *testing.T) {
 // file — an asserted band is exactly what the issue's spec forbids.
 func TestCheckEvidenceDropsALevelClaimWithNoSupport(t *testing.T) {
 	deck := map[string]bool{"certiorari": true}
-	in := learnerModel{Level: levelClaim{Band: "C2", Evidence: []string{"luffing"}}}
+	in := learnerModel{Level: levelClaim{Band: "C2", EvidenceWords: []string{"luffing"}}}
 
 	got, dropped := checkEvidence(in, deck)
 
@@ -154,8 +154,8 @@ func TestCheckEvidenceDropsALevelClaimWithNoSupport(t *testing.T) {
 func TestCheckEvidenceMatchesOnTheDeckKey(t *testing.T) {
 	deck := map[string]bool{"hot dog": true, "certiorari": true}
 	in := learnerModel{
-		Level:   levelClaim{Band: "B2", Evidence: []string{"Certiorari"}},
-		Domains: []domainClaim{{Name: "food", Share: 0.5, Evidence: []string{"Hot  Dog"}}},
+		Level:   levelClaim{Band: "B2", EvidenceWords: []string{"Certiorari"}},
+		Domains: []domainClaim{{Name: "food", Share: 0.5, EvidenceWords: []string{"Hot  Dog"}, Directive: "menu usages"}},
 	}
 
 	got, dropped := checkEvidence(in, deck)
@@ -174,8 +174,8 @@ func TestCheckEvidenceMatchesOnTheDeckKey(t *testing.T) {
 // An empty deck supports nothing, and must not be read as supporting everything.
 func TestCheckEvidenceAgainstAnEmptyDeck(t *testing.T) {
 	got, dropped := checkEvidence(learnerModel{
-		Level:   levelClaim{Band: "C1", Evidence: []string{"anything"}},
-		Domains: []domainClaim{{Name: "law", Evidence: []string{"certiorari"}}},
+		Level:   levelClaim{Band: "C1", EvidenceWords: []string{"anything"}},
+		Domains: []domainClaim{{Name: "law", EvidenceWords: []string{"certiorari"}, Directive: "judicial prose"}},
 	}, map[string]bool{})
 
 	if got.Level.Band != "" || len(got.Domains) != 0 {
@@ -183,5 +183,32 @@ func TestCheckEvidenceAgainstAnEmptyDeck(t *testing.T) {
 	}
 	if len(dropped) != 2 {
 		t.Errorf("dropped %v, want both claims reported", dropped)
+	}
+}
+
+// A claim that cannot be ACTED on is not a claim.
+//
+// Measured against the live model: under a schema requiring every field, it
+// fills the ones it does not believe in — a domain named "x", a rationale of
+// "placeholder" — because a stub satisfies the shape. checkEvidence is where
+// "don't trust, check" lives, and usability is the second thing to check.
+func TestCheckEvidenceDropsClaimsAuthoringCannotAct(t *testing.T) {
+	deck := map[string]bool{"certiorari": true}
+	in := learnerModel{
+		Level: levelClaim{Band: "C1", EvidenceWords: []string{"certiorari"}},
+		Domains: []domainClaim{
+			{Name: "law", Share: 0.5, EvidenceWords: []string{"certiorari"}, Directive: "Draw from judicial prose."},
+			{Name: "x", Share: 0.1, EvidenceWords: []string{"certiorari"}, Directive: ""},
+			{Name: "  ", Share: 0.1, EvidenceWords: []string{"certiorari"}, Directive: "something"},
+		},
+	}
+
+	got, dropped := checkEvidence(in, deck)
+
+	if len(got.Domains) != 1 || got.Domains[0].Name != "law" {
+		t.Errorf("domains = %+v, want only the one authoring could act on", got.Domains)
+	}
+	if len(dropped) != 2 {
+		t.Errorf("dropped %v, want both stubs reported", dropped)
 	}
 }
