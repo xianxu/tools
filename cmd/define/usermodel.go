@@ -53,7 +53,7 @@ func renderUserModel(m learnerModel, meta modelMeta) string {
 
 	if m.Level.Band != "" {
 		b.WriteString("## Level\n\n")
-		fmt.Fprintf(&b, "**%s** — %s\n\n", m.Level.Band, m.Level.Rationale)
+		fmt.Fprintf(&b, "**%s** — %s\n\n", oneLine(m.Level.Band), oneLine(m.Level.Rationale))
 		fmt.Fprintf(&b, "Read off: %s.\n\n", joinWords(m.Level.EvidenceWords))
 	}
 
@@ -64,7 +64,7 @@ func renderUserModel(m learnerModel, meta modelMeta) string {
 		b.WriteString("|---|---|---|---|\n")
 		for _, d := range m.Domains {
 			fmt.Fprintf(&b, "| %s | %.0f%% | %s | %s |\n",
-				d.Name, d.Share*100, joinWords(d.EvidenceWords), d.Directive)
+				oneLine(d.Name), d.Share*100, joinWords(d.EvidenceWords), oneLine(d.Directive))
 		}
 		b.WriteString("\n")
 	}
@@ -166,4 +166,27 @@ func firstMarkerOutsideAFence(s string) int {
 func isCorrectionsMarker(line string) bool {
 	rest, ok := strings.CutPrefix(line, correctionsMarker)
 	return ok && strings.TrimRight(rest, " \t\r") == ""
+}
+
+// oneLine makes a model-supplied string safe to embed in this file.
+//
+// Two things it prevents, and the second is the serious one:
+//
+//  1. A "|" in a directive breaks the markdown table it is rendered into.
+//  2. A NEWLINE lets model text start a line — and a line-start "## Corrections"
+//     in a directive creates a SECOND marker above the real one. The next run
+//     then splices there, so everything below it (including the analysis this
+//     run generated) is treated as the learner's and never regenerates again.
+//     Verified: the first run's domain table survives into every later file.
+//
+// Collapsing newlines closes the injection outright rather than filtering for
+// the marker, because every line this renderer emits is prefixed by "**",
+// "Read off: " or "| " — model text that cannot start a line cannot forge any
+// structure at all, including markers nobody has thought of yet.
+//
+// Note the asymmetry with the CORRECTIONS half: that text is the learner's and
+// is copied byte-for-byte, precisely because they own it. This text is the
+// model's, and it is rendered into a structure the file's integrity depends on.
+func oneLine(s string) string {
+	return strings.ReplaceAll(strings.Join(strings.Fields(s), " "), "|", `\|`)
 }

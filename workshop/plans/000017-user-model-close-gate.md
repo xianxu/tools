@@ -141,6 +141,86 @@ rounds:
           round: 2
       boundary: M1
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-25T21:04:42-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: D1 and the Task 2 body are unchanged at HEAD; the plan still says "drops any claim citing a word the deck does not contain".
+          round: 3
+        - id: BR-2
+          disposition: addressed
+          note: Verified by injecting a failure into runReflect — both tests now redden via mustReflect; the "assert it changed" half was correctly rejected in a comment.
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: 'Verified by reverting both arms — all three TestCheckEvidenceHoldsTheLevelToTheSameBar subtests redden; residual: Band is checked non-empty but not against A2..C2.'
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: Verified by renaming the evidence_words json tag — TestRenderReflectPrompt reddens; schema now derived from the same SchemaFor[learnerModel] llm.Run uses.
+          round: 3
+        - id: BR-5
+          disposition: not-addressed
+          note: The exit-code table is swept and correct, but README.md:122 — named in the same finding — still reads "optional, yours to write".
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: reflect.go:63 still takes `now` and never reads it; the doc comment at :57-58 still justifies it.
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: 'Both original sites unchanged, and the BR-3 fix added two more — citedOrNothing over a one-element slice can never return "nothing" (measured: "dropped level : no band or no rationale").'
+          round: 3
+        - id: BR-8
+          disposition: not-addressed
+          note: usermodel.go:120-122 unchanged; a marker-less existing file is still discarded without a word.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: No modelMeta row was added; the plan's Revisions entry still claims the enumeration reconciled to empty.
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: main.go still has no mode-count guard; --reflect with --forget or --llm-check silently honours one.
+          round: 3
+        - id: BR-11
+          disposition: not-addressed
+          note: Frontmatter still omits `learner:`, the Revisions entry still says "Two departures", and `M reviews` shipped as `M questions` (a fourth).
+          round: 3
+      findings:
+        - id: BR-12
+          severity: Important
+          title: Model free text is rendered verbatim into a markdown table and a marker-delimited file
+          detail: |-
+            usermodel.go:56-70 embeds Band, Rationale, Name and Directive unmodified; checkEvidence
+            only checks them for emptiness. Verified in a scratch copy: a directive containing a
+            newline garbles the table row, and a field containing a line-start "## Corrections"
+            permanently freezes everything below it — I ran run-1, a learner edit, then run-2 with a
+            different answer and run-1's domain table survived into the new file and will never
+            regenerate, silently breaking D3's "everything above the marker is replaced". Paragraph
+            -length directives are exactly what reflect.go:255-257 raised MaxTokens for.
+            FuzzSpliceCorrections cannot catch it: it asserts preservation below the marker, never
+            regeneration above it. Collapse newlines and escape `|` in the four model-supplied
+            fields at render time — collapsing newlines closes the injection outright, since every
+            rendered line is prefixed by `**`, `Read off: ` or `| `.
+          family: model-text-unconstrained-by-format
+          round: 3
+        - id: BR-13
+          severity: Minor
+          title: D5's dispatch site survives being moved before withStore with the whole suite green
+          detail: |-
+            Verified: moving `if *reflect` from main.go:352 to just before `d = d.withStore(...)`
+            passes go test ./cmd/define/ entirely, while in production --reflect would then refuse
+            every run with "define: no deck in this directory". The wider mis-siting is caught by
+            TestReflectWithAWordIsAUsageError; the narrow one is not, and D5 was a blocking
+            plan-gate finding (PQ-2). One happy-path run(ctx, []string{"--reflect"}, ...) test in a
+            temp dir pins it.
+          family: decision-unpinned-by-test
+          round: 3
+      boundary: M1
+      blocked: true
 ---
 
 # Gate ledger — tools#17 (boundary-review)
@@ -228,12 +308,47 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   Omitting it is defensible — nothing supplies a name — but the plan's Revisions entry says
   "Two departures from the plan as written" and this is a third.
 
+## Round 3 — 2026-08-25T21:04:42-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — D1 and the Task 2 body are unchanged at HEAD; the plan still says "drops any claim citing a word the deck does not contain".
+- BR-2 — addressed — Verified by injecting a failure into runReflect — both tests now redden via mustReflect; the "assert it changed" half was correctly rejected in a comment.
+- BR-3 — addressed — Verified by reverting both arms — all three TestCheckEvidenceHoldsTheLevelToTheSameBar subtests redden; residual: Band is checked non-empty but not against A2..C2.
+- BR-4 — addressed — Verified by renaming the evidence_words json tag — TestRenderReflectPrompt reddens; schema now derived from the same SchemaFor[learnerModel] llm.Run uses.
+- BR-5 — not-addressed — The exit-code table is swept and correct, but README.md:122 — named in the same finding — still reads "optional, yours to write".
+- BR-6 — not-addressed — reflect.go:63 still takes `now` and never reads it; the doc comment at :57-58 still justifies it.
+- BR-7 — not-addressed — Both original sites unchanged, and the BR-3 fix added two more — citedOrNothing over a one-element slice can never return "nothing" (measured: "dropped level : no band or no rationale").
+- BR-8 — not-addressed — usermodel.go:120-122 unchanged; a marker-less existing file is still discarded without a word.
+- BR-9 — not-addressed — No modelMeta row was added; the plan's Revisions entry still claims the enumeration reconciled to empty.
+- BR-10 — not-addressed — main.go still has no mode-count guard; --reflect with --forget or --llm-check silently honours one.
+- BR-11 — not-addressed — Frontmatter still omits `learner:`, the Revisions entry still says "Two departures", and `M reviews` shipped as `M questions` (a fourth).
+
+### Raised
+
+- **BR-12** [Important] `model-text-unconstrained-by-format` Model free text is rendered verbatim into a markdown table and a marker-delimited file
+  usermodel.go:56-70 embeds Band, Rationale, Name and Directive unmodified; checkEvidence
+  only checks them for emptiness. Verified in a scratch copy: a directive containing a
+  newline garbles the table row, and a field containing a line-start "## Corrections"
+  permanently freezes everything below it — I ran run-1, a learner edit, then run-2 with a
+  different answer and run-1's domain table survived into the new file and will never
+  regenerate, silently breaking D3's "everything above the marker is replaced". Paragraph
+  -length directives are exactly what reflect.go:255-257 raised MaxTokens for.
+  FuzzSpliceCorrections cannot catch it: it asserts preservation below the marker, never
+  regeneration above it. Collapse newlines and escape `|` in the four model-supplied
+  fields at render time — collapsing newlines closes the injection outright, since every
+  rendered line is prefixed by `**`, `Read off: ` or `| `.
+- **BR-13** [Minor] `decision-unpinned-by-test` D5's dispatch site survives being moved before withStore with the whole suite green
+  Verified: moving `if *reflect` from main.go:352 to just before `d = d.withStore(...)`
+  passes go test ./cmd/define/ entirely, while in production --reflect would then refuse
+  every run with "define: no deck in this directory". The wider mis-siting is caught by
+  TestReflectWithAWordIsAUsageError; the narrow one is not, and D5 was a blocking
+  plan-gate finding (PQ-2). One happy-path run(ctx, []string{"--reflect"}, ...) test in a
+  temp dir pins it.
+
 ## Open findings
 
 - **BR-1** [Minor] `single-source-of-truth` D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned
-- **BR-2** [Important] `vacuous-verification` TestReflectIsIdempotent and TestReflectPreservesCorrections pass when runReflect fails and writes nothing
-- **BR-3** [Important] `fix-the-class-not-the-instance` checkEvidence's usability arm covers domain name and directive but not level rationale, band, or share
-- **BR-4** [Important] `golden-not-the-sent-request` The prompt golden renders a request with no schema while the wire request carries one
 - **BR-5** [Important] `docs-enumeration-not-swept` README's exit-code table is not swept for --reflect, which adds four producers of 1 and one of 2
 - **BR-6** [Minor] `comment-outruns-code` foldLookups takes a `now` parameter it never uses, and the doc comment justifies it
 - **BR-7** [Minor] `message-states-what-it-measures` The floor message says "words in the deck" but counts evidence words, and a dropped empty level prints a blank band
@@ -241,3 +356,5 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-9** [Minor] `entity-table-completeness` modelMeta has no Core-concepts row, and the plan claims the enumeration reconciled to empty
 - **BR-10** [Minor] `fix-the-class-not-the-instance` --reflect combined with another mode silently honours one of them
 - **BR-11** [Minor] `spec-drift-undocumented` The rendered frontmatter omits the Spec's `learner:` field and the Revisions entry does not say so
+- **BR-12** [Important] `model-text-unconstrained-by-format` Model free text is rendered verbatim into a markdown table and a marker-delimited file
+- **BR-13** [Minor] `decision-unpinned-by-test` D5's dispatch site survives being moved before withStore with the whole suite green

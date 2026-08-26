@@ -119,7 +119,9 @@ A model that is configured but does not answer says so, and the question is kept
 words/sycophantic.yaml     one file per word
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            kinds: looked-up, asked  (answers are NOT stored)
-user-model.md              optional, yours to write — read to pitch answers
+user-model.md              written by --reflect, read to pitch answers;
+                           its ## Corrections section is yours and is never
+                           rewritten
 ```
 
 A failed lookup is recorded as history but never enters the deck, so typos are

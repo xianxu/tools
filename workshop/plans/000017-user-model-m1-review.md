@@ -193,3 +193,164 @@ findings:
       Omitting it is defensible — nothing supplies a name — but the plan's Revisions entry says
       "Two departures from the plan as written" and this is a third.
 ```
+
+---
+
+## Re-review — 2026-08-25T21:04:42-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 17 — learner model: batch analysis into a durable user-model.md |
+| repo | tools |
+| issue file | workshop/issues/000017-user-model.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | e777227b8ede348bc3aaf7d223b87c852582f385^..93515eddc91c99ed56bea0d1cb1e1b9368081bca |
+| command | sdlc milestone-close --issue 17 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-25T21:04:42-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The four Important findings from round 2 were the right ones to take, and three are genuinely fixed — I verified each by experiment rather than by reading the commit message: injecting a failure into `runReflect` now reddens both `TestReflectIsIdempotent` and `TestReflectPreservesCorrections` (BR-2); reverting the level/share arms reddens all three subtests of `TestCheckEvidenceHoldsTheLevelToTheSameBar` (BR-3); renaming the `evidence_words` JSON tag now reddens `TestRenderReflectPrompt` because the golden carries the schema (BR-4). The implementor also correctly *rejected* half of BR-2's fix sketch — asserting the generated half changed between runs contradicts idempotency under a fixed clock — and said so in the test. What holds this back from SHIP: BR-5 was fixed at the site the finding named (the exit-code table) and not at the second site the same finding named (`README.md:122`, still "optional, yours to write"), which is the `docs-enumeration-not-swept` rule failing on its own second instance; and one new defect I demonstrated end-to-end — model free text (`Band`, `Rationale`, `Name`, `Directive`) is rendered verbatim into a markdown table and a marker-delimited file, so a newline in a directive garbles the table and a line-start `## Corrections` in any of those fields permanently freezes the generated half of `user-model.md`. Seven Minors carry forward unaddressed; none blocks.
+
+## 1. Strengths
+
+- **BR-2's fix is real and swept, not patched.** `mustReflect` (`cmd/define/reflect_run_test.go:265-272`) is reachable from both comparison tests, and its failure message states *why* the comparison would prove nothing. `workshop/lessons.md:965-990` generalises it into a mechanical checklist ("comparing a file before/after → does a FAILED run also satisfy it?"), which is the class-level answer the family asked for.
+- **The correction inside the fix commit is the good kind.** The first BR-2 fix asserted the analysis changed between runs; the implementor's own test caught that this contradicts idempotency under a fixed clock, and the test now carries a comment saying exactly that (`reflect_run_test.go:136-140`). Rejecting a reviewer's flawed sketch with a reason beats implementing it.
+- **BR-4's fix closes the loop at the source.** `renderReflectPrompt` derives the schema from `llm.SchemaFor[learnerModel]()` — the same call `llm.Run` makes at `internal/llm/task.go:35` — so the golden and the wire cannot disagree. (MaxTokens staying out of the golden is `internal/llm/render.go:21-23`'s deliberate, pre-existing decision, not a gap.)
+- **`go vet ./...`, `go vet -tags conformance ./cmd/define/`, `go test ./...` and `go test -race ./cmd/define/` are all clean** at `93515ed` — I ran them.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — model free text is rendered into a structurally-significant document without being constrained to it** (`cmd/define/usermodel.go:56-70`). `Band`, `Rationale`, `Name` and `Directive` reach `renderUserModel` verbatim; `checkEvidence` only checks them for emptiness. Two demonstrated consequences, both verified in a scratch copy:
+
+- A directive containing a newline breaks the table row (`| law | 50% | \`a\` | line one` / `line two | with a pipe |`). This is not hypothetical — `reflect.go:255-257` justifies `MaxTokens: 16384` precisely because the answer is "four domains with **paragraph-length** directives."
+- A field containing a line-start `## Corrections` permanently freezes everything below it. I ran run-1 → learner edit → run-2 with a different model answer: run-1's domain table (`| law | 50% | ...`) survived into the run-2 file, below the injected marker, and will never regenerate. D3's contract — "everything above the marker is replaced" — silently stops holding, and the learner's real section is now preceded by frozen machine text.
+
+`FuzzSpliceCorrections` cannot catch this: it fuzzes `existing` against a fixed `genA` and asserts *preservation below* the marker, never *regeneration above* it. Fix sketch: collapse newlines (and escape `|`) in the four model-supplied fields at render time — this repo already collapses whitespace for the same "changes no meaning" reason (`atlas/define.md:648`), and collapsing newlines closes the injection entirely, since a marker requires a line start and every rendered line is prefixed by `**`, `Read off: ` or `| `. Pin it with a case in `TestSpliceCorrectionsIsStableOnItsOwnOutput`'s neighbourhood: a rendered file whose rationale contains the marker must splice into itself unchanged. ARCH-PURPOSE — the check's stated job is "a claim a reader can check and authoring can act on"; a claim that garbles the document it lands in fails both.
+
+**BR-5 (re-raised, not-addressed) — the enumeration was swept at one of the two sites the finding named.** The exit-code table now carries all five `--reflect` cells (`README.md:184-185`) and I confirmed each against the code. But `README.md:122` still reads `user-model.md    optional, yours to write — read to pitch answers`, which the same finding called out as "the same sweep." **This is the 2nd finding in family `docs-enumeration-not-swept`, and the second one is inside the first one.** The rule, stated: *when a change adds a producer of a documented fact, sweep every place in the docs that enumerates that fact — the exit-code table, the file-tree annotations, and the flag prose are three consumers of one model, and README's own sentence at `:182-183` is the argument for treating them as a set.* Grep for the surface name (`user-model.md`, `--reflect`) across `README.md` and `atlas/` before closing, rather than fixing the line a reviewer quoted. The remaining site needs roughly: "written by `define --reflect`; `## Corrections` is yours."
+
+## 4. Minor findings
+
+- **BR-7 (not-addressed), and the BR-3 fix added two more instances.** `citedOrNothing([]string{m.Level.Band})` (`reflect.go:163`) and `citedOrNothing([]string{d.Name})` (`reflect.go:190`) pass a *one-element* slice, so the `len(words) == 0` guard can never fire. Measured: an empty band prints `define: dropped level : no band or no rationale — nothing a reader could check`; a whitespace name prints `define: dropped domain   : no name or no directive — …`. Together with the two sites BR-7 already named (`reflect.go:225`'s "%d words in the deck" over deck∩log, and `reflect.go:168`'s blank band) the family now measures **four sites**. The rule: *a message names the set it measured, and renders "nothing" when the thing it is naming is absent* — `citedOrNothing` is the right helper called the wrong way; give it a single-value sibling (or trim-and-check before calling) and sweep all four.
+- **BR-1 (not-addressed).** `workshop/plans/000017-user-model-plan.md`'s D1 still says `checkEvidence` "drops any claim citing a word the deck does not contain", while the shipped code and `TestCheckEvidenceDropsClaimsTheDeckCannotSupport`'s `"mixed"` case prune-then-drop-if-empty. Third instance of `single-source-of-truth`; the deliverable is D1 becoming the sole statement and the task bodies citing it.
+- **BR-6 (not-addressed).** `foldLookups`'s `now` is still unread (`reflect.go:63`) while `reflect.go:57-58` justifies it.
+- **BR-8 (not-addressed).** `spliceCorrections` still discards a marker-less existing file in silence (`usermodel.go:120-122`).
+- **BR-9 (not-addressed).** `modelMeta` (`usermodel.go:19`) still has no Core-concepts row; the plan's cited enumeration command still reports it, and the Revisions entry still claims "Reconciled to empty."
+- **BR-10 (not-addressed).** `--reflect` plus `--forget`/`--llm-check` still silently honours one; `main.go:308-310` and `main.go:348-355` are two dispatches with no mode-count guard between them.
+- **BR-11 (not-addressed).** `learner:` still absent from the frontmatter and the Revisions entry still says "Two departures". A third departure, unmentioned: the Spec's `# N lookups, M reviews` ships as `# N lookups, M questions`.
+- **N2 — D5's dispatch site is unpinned.** I moved `if *reflect` to just *before* `d = d.withStore(...)` and the entire suite passed, while in production `--reflect` would then refuse every run with "define: no deck in this directory". The wider mis-siting (above the arity switch) *is* caught by `TestReflectWithAWordIsAUsageError`; the narrow one is not. D5 was a blocking plan-gate finding (PQ-2); one `run(ctx, []string{"--reflect"}, …)` happy-path test in a temp dir pins it.
+
+## 5. Test coverage notes
+
+- The three claimed fixes are each pinned by a test that fails without them — verified by reverting, not by reading. That is the standard this gate asks for, and it was met.
+- Uncovered, and each is where the next bug lands: model text containing a newline or a marker (N1); the `--reflect` happy path through `run()` (N2); `Deck()`/`Events()`/`UserModel()`/`SetUserModel()` returning errors (four `return 1` paths in `runReflect`, none exercised).
+- `TestReflectRefusesATinyDeck`'s `len(fake.Requests()) != 0` assertion remains the best-shaped test in the file: it pins that the floor is checked *before* the model is called, which is the property that matters.
+- `TestReflectPreservesCorrections` now proves the run succeeded, but still does not assert the *generated* half was regenerated. That is correctly delegated to `TestReflectWritesAModelFromTheDeck`; noted only so the next reader doesn't re-derive it.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass.** `foldLookups` → `summariseLookups`; `renderReflectPrompt` → `SchemaFor[learnerModel]`, the same call `llm.Run` makes. `runReflect` rebuilding `Name`/`System` from the `reflectTaskName`/`reflectSystem` constants rather than from the returned `Request` is duplication that cannot drift, so it is not worth a finding — but deriving them from `req` would remove the question.
+- **ARCH-PURE — pass.** `runReflect` is read → fold → ask → check → render → splice → write, with every decision in a pure function; every pure entity is tested with no fake.
+- **ARCH-PURPOSE — flagged (N1, BR-5).** The purpose is a file a learner can read and authoring can act on. A garbled table and a permanently-frozen section are failures of that purpose, not of formatting. On the finding-response axis: BR-5's fix took the site and left the class, and BR-3's fix — while it does sweep every field the finding enumerated — did it as three hand-written arms, which is the third arm M2's weakness claims will make a fourth.
+- **ARCH-MOCK — pass.** `llmtest.Fake` is a wire-level httptest server, `store.YAML` is real in a `t.TempDir()`, and `reflect_conformance_test.go` is the drift detector, correctly skipping rather than reddening when the seam is unreachable.
+- For M2: `learnerModel` gains `Weaknesses`. Both N1's sanitiser and BR-3's usability arm should become one per-claim predicate *before* that lands, or the third arm becomes a fourth and the render-safety hole is copied into a new section.
+
+## 7. Plan revision recommendations
+
+Still owed in `workshop/plans/000017-user-model-plan.md` (none were written this round):
+
+- **The enumeration did not reconcile to empty.** Add the `modelMeta` row to the Pure-entities table and correct the final Revisions entry, which names eight symbols and asserts closure while the plan's own cited command still reports a ninth.
+- **Departures three and four.** Task 3 specifies frontmatter "exactly as the issue's Spec shows" — `learner:` is omitted and `M reviews` shipped as `M questions`. Either amend the Spec's shape or add the fields; either way the "Two departures" sentence is wrong.
+- **D1's semantics.** Restate it as prune-then-drop-if-empty (BR-1) so the task bodies can cite it instead of paraphrasing it.
+- **A new entry for round 2's dispositions:** what BR-2..BR-5 changed, which half of BR-2's sketch was rejected and why, and that BR-5's `README.md:122` half remains open.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      D1 and the Task 2 body are unchanged at HEAD; the plan still says "drops any claim citing a word the deck does not contain".
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Verified by injecting a failure into runReflect — both tests now redden via mustReflect; the "assert it changed" half was correctly rejected in a comment.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Verified by reverting both arms — all three TestCheckEvidenceHoldsTheLevelToTheSameBar subtests redden; residual: Band is checked non-empty but not against A2..C2.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Verified by renaming the evidence_words json tag — TestRenderReflectPrompt reddens; schema now derived from the same SchemaFor[learnerModel] llm.Run uses.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      The exit-code table is swept and correct, but README.md:122 — named in the same finding — still reads "optional, yours to write".
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      reflect.go:63 still takes `now` and never reads it; the doc comment at :57-58 still justifies it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Both original sites unchanged, and the BR-3 fix added two more — citedOrNothing over a one-element slice can never return "nothing" (measured: "dropped level : no band or no rationale").
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      usermodel.go:120-122 unchanged; a marker-less existing file is still discarded without a word.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      No modelMeta row was added; the plan's Revisions entry still claims the enumeration reconciled to empty.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      main.go still has no mode-count guard; --reflect with --forget or --llm-check silently honours one.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      Frontmatter still omits `learner:`, the Revisions entry still says "Two departures", and `M reviews` shipped as `M questions` (a fourth).
+findings:
+  - id: new
+    severity: Important
+    family: model-text-unconstrained-by-format
+    title: |
+      Model free text is rendered verbatim into a markdown table and a marker-delimited file
+    detail: |
+      usermodel.go:56-70 embeds Band, Rationale, Name and Directive unmodified; checkEvidence
+      only checks them for emptiness. Verified in a scratch copy: a directive containing a
+      newline garbles the table row, and a field containing a line-start "## Corrections"
+      permanently freezes everything below it — I ran run-1, a learner edit, then run-2 with a
+      different answer and run-1's domain table survived into the new file and will never
+      regenerate, silently breaking D3's "everything above the marker is replaced". Paragraph
+      -length directives are exactly what reflect.go:255-257 raised MaxTokens for.
+      FuzzSpliceCorrections cannot catch it: it asserts preservation below the marker, never
+      regeneration above it. Collapse newlines and escape `|` in the four model-supplied
+      fields at render time — collapsing newlines closes the injection outright, since every
+      rendered line is prefixed by `**`, `Read off: ` or `| `.
+  - id: new
+    severity: Minor
+    family: decision-unpinned-by-test
+    title: |
+      D5's dispatch site survives being moved before withStore with the whole suite green
+    detail: |
+      Verified: moving `if *reflect` from main.go:352 to just before `d = d.withStore(...)`
+      passes go test ./cmd/define/ entirely, while in production --reflect would then refuse
+      every run with "define: no deck in this directory". The wider mis-siting is caught by
+      TestReflectWithAWordIsAUsageError; the narrow one is not, and D5 was a blocking
+      plan-gate finding (PQ-2). One happy-path run(ctx, []string{"--reflect"}, ...) test in a
+      temp dir pins it.
+```

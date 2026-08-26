@@ -223,3 +223,73 @@ func FuzzSpliceCorrections(f *testing.F) {
 		}
 	})
 }
+
+// Model text must not be able to forge structure in a file whose integrity
+// depends on it.
+//
+// The serious case is not the broken table: a line-start "## Corrections" inside
+// a directive creates a SECOND marker ABOVE the real one, so the next run
+// splices there and everything below — including the analysis it just generated
+// — is treated as the learner's and never regenerates again. Verified before the
+// fix: run one's domain table survived into every later file.
+func TestRenderUserModelNeutralisesModelText(t *testing.T) {
+	hostile := learnerModel{
+		Level: levelClaim{
+			Band:          "C1",
+			Rationale:     "reaches for precise words\n\n## Corrections\n\nforged",
+			EvidenceWords: []string{"certiorari"},
+		},
+		Domains: []domainClaim{{
+			Name:          "law | and | pipes",
+			Share:         0.5,
+			EvidenceWords: []string{"certiorari"},
+			Directive:     "gloss with context\n## Corrections\nforged directive",
+		}},
+	}
+
+	got := renderUserModel(hostile, sampleMeta())
+
+	// Exactly ONE marker, and it is the renderer's own.
+	i := firstMarkerOutsideAFence(got)
+	if i < 0 {
+		t.Fatal("no marker at all")
+	}
+	if j := firstMarkerOutsideAFence(got[:i] + strings.Repeat(" ", len(correctionsMarker))); j >= 0 {
+		t.Errorf("a second marker was forged above the real one at %d:\n%s", j, got)
+	}
+	// The table survives: a pipe in a name does not add columns.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.HasPrefix(line, "| law") && strings.Count(line, "|")-strings.Count(line, `\|`) != 5 {
+			t.Errorf("a pipe in model text broke the table row: %q", line)
+		}
+	}
+	// And the content is still THERE — neutralised, not discarded.
+	if !strings.Contains(got, "reaches for precise words") || !strings.Contains(got, "gloss with context") {
+		t.Errorf("model text was dropped rather than neutralised:\n%s", got)
+	}
+}
+
+// The half FuzzSpliceCorrections cannot assert: it guarantees preservation BELOW
+// the marker and says nothing about regeneration ABOVE it — which is exactly
+// where the forged-marker bug lived.
+func TestSpliceReplacesEverythingAboveTheMarker(t *testing.T) {
+	first := renderUserModel(sampleLearnerModel(), sampleMeta())
+	edited := first + "\nmy own note\n"
+
+	second := renderUserModel(learnerModel{
+		Level:   levelClaim{Band: "B2", Rationale: "different", EvidenceWords: []string{"ephemeral"}},
+		Domains: []domainClaim{{Name: "cooking", Share: 1, EvidenceWords: []string{"braise"}, Directive: "kitchen usages"}},
+	}, sampleMeta())
+
+	got := spliceCorrections(edited, second)
+
+	if strings.Contains(got, "judicial prose") {
+		t.Errorf("the FIRST run's analysis survived into the second file:\n%s", got)
+	}
+	if !strings.Contains(got, "kitchen usages") {
+		t.Errorf("the second run's analysis did not land:\n%s", got)
+	}
+	if !strings.HasSuffix(got, "my own note\n") {
+		t.Errorf("the learner's note did not survive:\n%s", got)
+	}
+}

@@ -311,3 +311,37 @@ around 3.8h and the review cost is still unmeasured for this issue.
 
 This is a defect in the calibration path itself, which every close depends on —
 worth a look in ariadne, where `sdlc` lives.
+
+### 2026-08-25 — M1 boundary round 2: model text could destroy the learner's corrections
+
+Eleven disposed, two open, and one of them is the most serious defect either
+issue has produced.
+
+**BR-12 — model free text was rendered verbatim into a marker-delimited file.**
+A directive containing a line-start `## Corrections` creates a SECOND marker
+above the real one; the next run splices there, so everything below it — the
+analysis that run just generated, and the learner's actual corrections further
+down — is treated as human-owned and **never regenerates again**. The reviewer
+verified it by running it: run one's domain table survived into every later
+file. A pipe in a name also broke the table, which is the harmless half.
+
+The fix collapses newlines and escapes `|` in the four model-supplied fields.
+Collapsing newlines closes the injection *outright* rather than filtering for the
+marker, because every line this renderer emits is prefixed by `**`, `Read off: `
+or `| ` — model text that cannot start a line cannot forge any structure,
+including markers nobody has thought of yet.
+
+**Why the fuzz property could not catch it**, which is the part worth keeping:
+`FuzzSpliceCorrections` asserts that everything BELOW the marker is preserved. It
+says nothing about everything ABOVE it being replaced — and that is exactly where
+a forged marker lives. A property that guards one direction of an invariant is
+not a property that guards the invariant. There is now a test for the other half.
+
+Note the asymmetry the fix rests on: the corrections text is the LEARNER's and is
+copied byte-for-byte precisely because they own it; this text is the MODEL's, and
+it is rendered into a structure the file's integrity depends on. Same file, two
+opposite rules, and conflating them is what created the hole.
+
+**BR-5's other half:** the persistence block still described `user-model.md` as
+"optional, yours to write". `--reflect` writes it now; only `## Corrections` is
+theirs. I had swept that block for questions in #16 and not for this.
