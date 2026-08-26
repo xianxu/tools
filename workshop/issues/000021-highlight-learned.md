@@ -256,3 +256,17 @@ this spec's central decision — the predicate seam.
   failingStore fails AppendEvent, so Capture returned before the deck write and
   the mutant lived regardless. Five mutations now die; lessons.md gains the
   isolating-double rule.
+
+- 2026-08-26: M1 boundary round 2 — REWORK. One Critical of my own making: the
+  round-1 joiner-trim changed the wordRuns contract and FuzzWordRuns still
+  asserted the old one, so the target was RED at HEAD and I did not know — `go
+  test` runs a fuzz target against its seed corpus only. Property rewritten,
+  seeds gained the shape I had just changed, re-fuzzed 2.24M execs clean. Two
+  Importants, both explicitly "fix the rule, not the instance": (a) round 1's
+  enumeration was over COMMENTS, and the missing hop — withStore's vocab merge —
+  carries no comment, so the sweep was structurally blind to it; deleting that
+  line kills the feature in production with the whole suite green. Replaced with
+  the production-chain enumeration (one test per hop, crossing through production
+  code) and hop 2 is now pinned. (b) The commit that fixed round 1's
+  atlas-claims-unbuilt-surface finding wrote a FRESH instance of it into README
+  in the same commit. Both rules recorded in lessons.md.

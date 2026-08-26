@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -203,4 +204,26 @@ type countingDeck struct {
 func (c *countingDeck) Deck() ([]store.Word, error) {
 	c.reads++
 	return c.Store.Deck()
+}
+
+// Hop 2 of the Vocabulary production chain: withStore merging sd.vocab into
+// deps.vocab. Deleting that merge kills the feature outright — the capturer
+// would hold openStore's real set while the renderer read a fresh empty one — and
+// the entire suite stayed green, because both loop tests set rig.deps.vocab
+// directly and so begin AFTER this hop.
+//
+// The pattern is the one BR-31 left behind at command_test.go:137: build the
+// deps a production entry point actually builds, then assert across the seam.
+func TestWithStoreCarriesTheHighlightSetThrough(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	d := deps{newStore: openStore}.withStore(options{}, io.Discard)
+	d.capture.Capture("obsequious", true, options{})
+
+	if d.vocab == nil {
+		t.Fatal("withStore left deps.vocab nil")
+	}
+	if !d.vocab.Has(store.Key("obsequious")) {
+		t.Error("withStore handed the renderer a different set than the capturer got")
+	}
 }

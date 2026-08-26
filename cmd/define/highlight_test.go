@@ -76,20 +76,30 @@ func FuzzWordRuns(f *testing.F) {
 					t.Fatalf("run %d of %q contains %q, which is not a word rune", i, text, ru)
 				}
 			}
-			// Maximal: the rune before and after a run must not be a word rune.
+			// A run never begins or ends with a joiner: that is what makes
+			// '"'"'obsequious'"'"' match a deck key rather than tokenizing with its quotes.
+			if isJoiner(rune(text[r.start])) || isJoiner(rune(text[r.end-1])) {
+				t.Fatalf("run %d of %q is %q, which has a joiner at an edge", i, text, text[r.start:r.end])
+			}
+			// Maximal MODULO the trim: a run may be adjacent to a joiner (it was
+			// trimmed off), but never to a letter or digit — that would be a word
+			// split in half.
+			//
+			// The property used to demand plain maximality, which the trim made
+			// false by design. It stayed green because `go test` runs a fuzz
+			// target against its SEED CORPUS only, and no seed happened to put a
+			// joiner beside a kept run. Re-fuzzed, not just re-run.
 			if r.start > 0 {
 				before := []rune(text[:r.start])
-				if len(before) > 0 && isWordRune(before[len(before)-1]) {
-					t.Fatalf("run %d of %q is not maximal on the left", i, text)
+				if last := before[len(before)-1]; isWordRune(last) && !isJoiner(last) {
+					t.Fatalf("run %d of %q is split from a letter on the left", i, text)
 				}
 			}
-			if r.end < len(text) {
-				for _, ru := range text[r.end:] {
-					if isWordRune(ru) {
-						t.Fatalf("run %d of %q is not maximal on the right", i, text)
-					}
-					break
+			for _, ru := range text[r.end:] {
+				if isWordRune(ru) && !isJoiner(ru) {
+					t.Fatalf("run %d of %q is split from a letter on the right", i, text)
 				}
+				break
 			}
 		}
 	})

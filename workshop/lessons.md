@@ -1054,6 +1054,66 @@ changes: it adds LINES, so count them.
 measures** — and pick payload text that is unmistakable and inert (`FORGED-LEVEL`),
 never text shaped like the thing you are checking for.
 
+## Enumerate the production chain, not the comments (define #21 M1)
+
+Four findings across two boundary rounds, one family: a behaviour with no test
+that fails when you break it. Round 1 fixed two instances and stated the
+enumeration as *"for each behaviour the diff states in a comment, is there a
+mutation that falsifies it and a named test that reddens?"* Round 2 found the
+family at full strength again — because the missing hop, `withStore`'s one-line
+merge of `sd.vocab` into `deps.vocab`, **carries no comment and makes no claim**.
+A comment-driven sweep is structurally blind to it. Deleting that line kills the
+feature outright in production and leaves the entire suite green.
+
+- **The enumeration is over hops, not sentences.** For every seam a feature
+  introduces, write out each hop from construction to use, and require one test
+  per hop that crosses it *through production code*. Writing the chain down is
+  what makes a hole visible; a prose rule about comments is what hides one.
+
+  | # | hop | pinned by |
+  |---|---|---|
+  | 1 | `openStore` builds one set, hands it to capturer + `storeDeps` | ✓ |
+  | 2 | `withStore` merges `sd.vocab` → `deps.vocab` | **was nothing** |
+  | 3 | `runEditor` reads `d.vocab`, calls `Load()` | ✓ |
+  | 4 | `RenderLine` consumes it → stdout | ✓ |
+  | 5 | `Capture` → `Add` → next frame | ✓ |
+
+- **A test that sets `rig.deps.X` directly begins AFTER the wiring hops.** Both
+  loop tests did, which is exactly why hop 2 stayed invisible while looking well
+  covered. At least one test per seam must build deps the way a production entry
+  point builds them (`deps{newStore: openStore}.withStore(...)`).
+- **A stated rule that does not name its enumeration will be declared swept while
+  the family is still live.** "I applied the rule" is a claim about the set you
+  enumerated, not about the class.
+
+## Doc prose at a boundary describes what THAT milestone shipped (define #21 M1)
+
+Round 1 flagged an atlas sentence claiming a path a later milestone builds. The
+fix commit corrected that sentence **and wrote a fresh instance of the same
+defect into README.md in the same commit** — "highlighting appears in the line
+you type, definition bodies, and answers", when only the typed line existed. A
+reader following it would look up a word, read a definition, and see no green.
+
+- **The site was fixed; the class was never enumerated.** The enumeration is
+  every doc file the boundary window touches × every sentence describing the
+  feature, each checked against what is reachable in code at HEAD.
+- **Write the milestone's scope into the sentence, or mark the rest as future.**
+  The atlas sentence that survived says "used by the prompt line today and by the
+  definition and answer paths from M2". That form cannot rot into a lie.
+
+## A stale property stays green until you actually re-fuzz (define #21 M1)
+
+I changed `wordRuns` to trim quotes and hyphens off token edges — a real fix,
+since `'obsequious'` otherwise never matches a deck key. That deliberately makes
+runs non-maximal, and `FuzzWordRuns` asserted maximality. **The target was red at
+HEAD and I did not know**, because `go test ./...` runs a fuzz target against its
+SEED CORPUS only, and no seed happened to place a joiner beside a kept run.
+
+- **Changing a contract means re-running the property that asserts it, with
+  `-fuzz`, not with `go test`.** Seeds passing is not the property holding.
+- **When you fix a tokenizer, seed the corpus with the shape you just changed.**
+  `'0`, `-a`, `a-` are three characters each and would have caught it instantly.
+
 ## A test helper that skips the production resolution makes every test under it vacuous (define #20)
 
 `typeKeys`, the helper every editor test drives through, resolved candidates with

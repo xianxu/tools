@@ -51,10 +51,10 @@ On a terminal, `define` with no word opens a line editor:
 
 Definitions wrap to your terminal width at word boundaries.
 
-**Words you have looked up show in green.** Anywhere they appear — the line you
-are typing, definition bodies, and answers — so the vocabulary you are building
-is visible in your own sentences rather than something you have to remember
-having met.
+**Words you have looked up show in green as you type them**, so the vocabulary
+you are building is visible in your own sentences rather than something you have
+to remember having met. A word looked up in this session turns green the moment
+you next type it.
 
 **The grey suggestion follows the word you are typing, anywhere in the line.** It
 completes from what you have looked up and asked before, so a long word you know

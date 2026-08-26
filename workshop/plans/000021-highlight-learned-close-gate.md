@@ -90,6 +90,12 @@ rounds:
           round: 1
       boundary: M1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-26T15:11:28-07:00"
+      agent: claude
+      boundary: M1
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#21 (boundary-review)
@@ -143,6 +149,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   the cursor park are escapes) and Task 4 Step 7 (test not delivered).
 - **BR-8** [Minor] `dead-test-scaffolding` `_ = unicode.IsLetter` in highlight_test.go:92 exists only to justify an unused import
   Drop the statement and the `unicode` import together.
+
+## Round 2 — 2026-08-26T15:11:28-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

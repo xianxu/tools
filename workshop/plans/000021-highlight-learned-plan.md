@@ -18,7 +18,7 @@
 |------|----------|--------|
 | `span` | `cmd/define/highlight.go` | new |
 | `highlightSpans` | `cmd/define/highlight.go` | new |
-| `wordRuns` | `cmd/define/highlight.go` | new |
+| `wordRuns` / `wordRun` | `cmd/define/highlight.go` | new |
 | `sgrState` | `cmd/define/highlight.go` | new |
 | `RenderLine` | `cmd/define/editor.go` | modified |
 
@@ -31,7 +31,7 @@
   - **Relationships:** Depends on `Vocabulary` (an interface), so it is pure over injected data and unit-testable with `memVocabulary` and no IO.
   - **DRY rationale:** Longest-match phrase logic lives here once. `hot dog` must beat `hot`, and both renderers need that rule.
 
-- **`wordRuns(text string) []run`** — the tokenizer: maximal runs of word characters (Unicode letter, digit, apostrophe, hyphen) with their byte offsets.
+- **`wordRuns(text string) []wordRun`** — the tokenizer: runs of word characters (Unicode letter, digit, apostrophe, hyphen) with their byte offsets, **with leading and trailing joiners trimmed**. Apostrophes and hyphens are word characters only INSIDE a word, so `don't` is one token but `'obsequious'` yields the word without its quotes. Runs are therefore maximal only modulo that trim.
   - **DRY rationale:** `highlightSpans` and `highlightWriter` must agree byte-for-byte on where a word begins and ends, or a word highlighted in a definition would not highlight at the prompt. One tokenizer, two callers.
   - **Future extensions:** The word-character set is one predicate; a locale that needs different rules changes it in one place.
 
@@ -321,7 +321,7 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 - [ ] **Step 6: Mutation-check** that dropping the flush on the interrupt path reddens a named test.
 
-- [ ] **Step 7: Atlas + README.** `atlas/define.md`'s highlight section (started at M1, extended at M2) gains the streaming half. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
+- [ ] **Step 7: Atlas + README.** `atlas/define.md`'s highlight section (started at M1, extended at M2) gains the streaming half. The README paragraph ALREADY EXISTS as of M1 and covers the typed line only — WIDEN it to name definitions and answers; do not treat this step as spent because a paragraph is there. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
 
 - [ ] **Step 8: `sdlc close --issue 21 --verified '<evidence>'`.**
 
@@ -408,3 +408,36 @@ The step said to assert the no-colour render contains no `\x1b` at all. It canno
 `eraseLine` is `\r\x1b[K` and the cursor park is `\x1b[ND`, both structural and
 both present with colour off. The shipped test asserts the absence of each STYLE
 constant instead, which is the property that was meant.
+
+### 2026-08-26 — M1 boundary round 2 (REWORK), and the wordRuns contract change
+
+- **The `wordRuns` contract changed at round 1 and only one of its three
+  statements was updated.** The BR-5 trim makes runs non-maximal by design
+  whenever a joiner sits adjacent. The new contract: *maximal runs of word
+  characters, with leading and trailing joiners trimmed — therefore NOT maximal
+  when a joiner is adjacent.* Corrected here in Core concepts (the row now reads
+  `[]wordRun` and states the trim), in the doc comment, and in
+  `FuzzWordRuns`, whose maximality property asserted the OLD contract and was
+  **red at HEAD**. It stayed invisible because `go test` runs a fuzz target
+  against its seed corpus only and no seed placed a joiner beside a kept run.
+  Property rewritten to "maximal modulo the trim, and no run edge is a joiner",
+  seeds gained `'0`, `-a`, `a-`, `'obsequious'`, and re-fuzzed for real: 2.24M
+  execs clean.
+
+- **The boundary's test-completeness rule is replaced, not amended.** Round 1
+  stated it as an enumeration over COMMENTS. Round 2 found the same family at
+  full strength, because `withStore`'s vocab merge carries no comment and makes
+  no claim — a comment-driven sweep is structurally blind to it. The rule M2 and
+  M3 inherit is the production-chain enumeration: for every seam, write out each
+  hop from construction to use and require one test per hop that crosses it
+  through production code. The five-hop `Vocabulary` table is in lessons.md.
+  Hop 2 is now pinned by `TestWithStoreCarriesTheHighlightSetThrough`, built on
+  the `deps{newStore: openStore}.withStore(...)` pattern BR-31 already left in
+  `command_test.go:137`.
+
+- **Task 8 Step 7's README job is now partly spent, and was spent wrongly.** A
+  README paragraph was written at M1 that described definition bodies and
+  streamed answers as highlighting — surface M1 does not build. It has been
+  rewritten to cover the typed line only. Step 7's remaining job is to WIDEN that
+  paragraph as M2 and M3 land, not to write a new one; without this note M3 would
+  find the step looking done and never revisit the sentence.
