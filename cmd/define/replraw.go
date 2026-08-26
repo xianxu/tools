@@ -120,6 +120,11 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// Computing here means there is one answer to "what does the current line
 	// match", and no way to hand this function a stale one.
 	draw := func() {
+		// completionsFor rather than candidatesFor: draw renders only the grey
+		// tail, so resolving the pair here would build a recall list per
+		// keystroke that nothing reads. Same function that fills .complete, so
+		// the two paths cannot disagree.
+		//
 		// The menu is painted FIRST and the prompt line last, so RenderLine
 		// leaves the cursor where the user is typing.
 		paintMenu(menuLines(e.String(), commands, opt.width))

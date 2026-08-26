@@ -131,8 +131,15 @@ func TestGreyTailStillCompletesASingleWordAtTwoRunes(t *testing.T) {
 }
 
 // A real past line always beats a word glued onto a head.
+//
+// Both entries must match, or the test cannot tell the two orderings apart: the
+// first version used hist("island", ...), whose "island" is inert for the line
+// "hot dog", so a shortest-segment-first mutant survived the whole suite while
+// Plan row 7 claimed this axis was mutation-checked. Here segment 0 ("hot dog")
+// matches "hot dog and fries" and segment 1 ("dog") matches "dog house", so
+// longest-first gives " and fries" and shortest-first gives " house".
 func TestWholeLineBeatsAnInnerSegment(t *testing.T) {
-	h := hist("island", "hot dog and fries")
+	h := hist("dog house", "hot dog and fries")
 
 	if got, want := tailFor(h, "hot dog"), " and fries"; got != want {
 		t.Errorf("tail = %q, want %q — segment 0 must win", got, want)
@@ -233,5 +240,47 @@ func TestPastQuestionCompletesWhenRetypedBare(t *testing.T) {
 	// Typing the marker still recalls it directly, as before.
 	if got, want := tailFor(h, "?what is the diff"), "erence between wry and ironic"; got != want {
 		t.Errorf("tail with marker = %q, want %q", got, want)
+	}
+}
+
+// Accepting a GLUED candidate, in the default suite. Done-when row 2 rested
+// entirely on the pty test, which is behind a build tag and skips wherever a pty
+// cannot be allocated — so the headline gesture had no coverage that always runs.
+func TestTabAcceptsAGluedCandidate(t *testing.T) {
+	h := hist("obsequious")
+
+	e := NewEditor()
+	for _, k := range append(runes("what is a obseq"), Key{Kind: KeyTab}) {
+		e, _ = Apply(e, k, candidatesFor(e.WalkBase(), h, commands))
+	}
+
+	if got, want := e.String(), "what is a obsequious"; got != want {
+		t.Errorf("line = %q, want %q", got, want)
+	}
+	if e.Cursor != len(e.Line) {
+		t.Errorf("cursor at %d, want end of line %d", e.Cursor, len(e.Line))
+	}
+}
+
+// The same word reachable both bare and behind a marker is ONE candidate.
+func TestMatchesForDedupesAcrossMarkers(t *testing.T) {
+	h := hist("obsequious", "?obsequious", `\obsequious`)
+
+	got := matchesFor(h, "obseq")
+
+	if len(got) != 1 || got[0] != "obsequious" {
+		t.Errorf("matchesFor = %v, want exactly [obsequious]", got)
+	}
+}
+
+// A segment that matches only ITSELF stops the search rather than falling
+// through to shorter ones. That is deliberate: the user has typed a complete
+// entry they have used before, and reaching past it to glue a different word
+// onto the line would be noise, not help.
+func TestASegmentMatchingOnlyItselfStopsTheSearch(t *testing.T) {
+	h := hist("hot dog", "dogma")
+
+	if got := tailFor(h, "hot dog"); got != "" {
+		t.Errorf("tail = %q, want none — %q is itself a known entry", got, "hot dog")
 	}
 }

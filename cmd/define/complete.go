@@ -68,14 +68,15 @@ func trailingSegments(line string) []segment {
 //
 // "/" is deliberately NOT here. Commands are a real separate namespace with
 // their own completion path in completionsFor, not a marker on a word.
-var submissionMarkers = []string{"?", forceLiteral}
+var submissionMarkers = []string{forceAsk, forceLiteral}
 
 // matchesFor returns the history entries that could complete text, with the
 // submission markers unwrapped so a marked entry completes as the thing behind
 // the marker.
 //
-// Bare matches come first: an unmarked line is the ordinary case, and Suggestion
-// takes the first match.
+// Bare matches come first, then each marker's unwrapped matches in turn: an
+// unmarked line is the ordinary case and Suggestion takes the first match. So
+// the result is grouped by marker rather than globally newest-first.
 func matchesFor(hist History, text string) []string {
 	out := hist.Prefix(text)
 	seen := make(map[string]bool, len(out))
@@ -99,7 +100,12 @@ func matchesFor(hist History, text string) []string {
 // were actually submitted.
 //
 // It walks the trailing segments longest-first and returns the first segment
-// that matches anything, glued back onto its head. Longest-first is what keeps
+// that matches anything, glued back onto its head. First MATCH, not first
+// useful one: a segment whose only match is itself returns that and stops,
+// rather than falling through to a shorter segment. Deliberate — the user has
+// typed a complete entry they have used before, and reaching past it to glue a
+// different word onto the line would be noise
+// (TestASegmentMatchingOnlyItselfStopsTheSearch). Longest-first is what keeps
 // pre-#20 behaviour intact and gives it precedence: segment 0 IS the whole line,
 // so a real past line always beats a word glued onto a head.
 //
@@ -111,6 +117,12 @@ func historyCompletions(base string, hist History) []string {
 	for i, s := range trailingSegments(base) {
 		if i > 0 && len([]rune(s.text)) < minInnerSegment {
 			// Segments only get shorter, so nothing after this clears the floor.
+			//
+			// A trailing space counts toward the length ("to " clears a floor of
+			// 3). That is right rather than an off-by-one: the space is a word
+			// boundary the user committed to, so the match is MORE specific —
+			// only a multi-word entry beginning "to " can satisfy it, which is
+			// the opposite of the noise the floor exists to stop.
 			break
 		}
 		if ms := matchesFor(hist, s.text); len(ms) > 0 {

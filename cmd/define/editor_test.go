@@ -160,7 +160,7 @@ func TestHistoryDedupesKeepingNewest(t *testing.T) {
 func TestSuggestionOffersNewestMatch(t *testing.T) {
 	h := hist("sycophantic", "sympathy")
 	e, _ := typeKeys(h, runes("sy")...)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "mpathy" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "mpathy" {
 		t.Errorf("suggestion = %q, want %q", got, "mpathy")
 	}
 }
@@ -242,15 +242,15 @@ func TestEnterSubmitsOnlyWhatWasTyped(t *testing.T) {
 func TestSuggestionSuppressedMidLineAndWhenUnmatched(t *testing.T) {
 	h := hist("sycophantic")
 	e, _ := typeKeys(h, append(runes("syc"), Key{Kind: KeyLeft})...)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "" {
 		t.Errorf("suggested %q with the cursor mid-line", got)
 	}
 	e, _ = typeKeys(h, runes("zzz")...)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "" {
 		t.Errorf("suggested %q with no match", got)
 	}
 	e, _ = typeKeys(h)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "" {
 		t.Errorf("suggested %q on an empty line", got)
 	}
 }

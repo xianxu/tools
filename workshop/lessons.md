@@ -1050,6 +1050,12 @@ history-only resolution that never had the bug.
 - **A new test that passes before the code exists is a finding, not luck.** That
   is the cheapest possible signal that the test is not connected to the change.
   Stop and find out what it is really asserting.
+- **Fixing the helper is not fixing the class.** The close review found four more
+  `Suggestion(e, h.Prefix(...))` sites in the same file — sites the Plan had
+  ENUMERATED by line number in the row I ticked. I fixed the helper, wrote this
+  lesson about it, and walked past the four siblings the lesson describes. When
+  you can write the enumeration, sweep the enumeration in the same round; a
+  lesson recorded is not a sweep performed.
 
 ## A regression test needs data that tells the two implementations apart (define #20)
 
@@ -1068,6 +1074,17 @@ The fix was history that only ONE order can produce: `sevenfold` in the deck and
 - **Mutate along the axis the finding named, not just any axis.** Four mutations
   of the floor and the markers all died here while the ordering mutant lived.
   Killing mutants elsewhere in the file says nothing about this one.
+- **The same defect recurred on a second axis of the same commit, after this
+  lesson was written.** `TestWholeLineBeatsAnInnerSegment` used
+  `hist("island", "hot dog and fries")` against the line `hot dog`: `island` is
+  inert, so segment-precedence — the rule the Spec, the doc comment and the atlas
+  all state — had zero coverage, and my mutation "check" of it passed because I
+  mutated `trailingSegments`' output order (which the table test catches) rather
+  than the ITERATION order in `historyCompletions` (which nothing caught). Two
+  rules fall out: **write the mutant at the site that implements the rule, not at
+  a site the rule flows through**, and **when a fixture has two entries, check
+  that BOTH can match** — a decorative entry is how a discriminating test quietly
+  becomes a tautology.
 
 ## Re-read the log you are citing; do not cite it from memory (define #20)
 

@@ -1,12 +1,13 @@
 ---
 id: 000020
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-26
 updated: 2026-08-26
 estimate_hours: 5.24
 started: 2026-08-26T11:03:49-07:00
+actual_hours: 1.35
 ---
 
 # typeahead beyond the first word: complete deck words anywhere in the line
@@ -270,6 +271,7 @@ implementation work, not review overhead.
 ## Log
 
 ### 2026-08-26
+- 2026-08-26: closed — go test ./... + go vet green; go test -race ./cmd/define green. Live pty conformance (TestPTYSuggestionAndAcceptance, darwin+conformance tag) asserts the grey tail mid-sentence on a real terminal and Tab accepting it. FuzzTrailingSegments 864k execs clean on the head+text==line invariant. Eight mutations run, each killing exactly its intended test: floor 3->1, floor applied to segment 0, each submission marker dropped, segments reversed, empty trailing segment emitted, namespace order swapped, parseCommandLine per segment; plus a pre-#20 revert of completionsFor, which reproduced the operator-reported bug in the pty frame (every keystroke to "what is a syc" with no grey tail). Two vacuous tests found and fixed by that sweep: typeKeys resolved candidates with h.Prefix instead of the production candidatesFor, so two split tests passed before the split existed; and TestCommandCompletionIsUnchanged used history that both namespace orderings answered identically. Both recorded in lessons.md.; review verdict: FIX-THEN-SHIP
 
 Opened from an operator report: "type syco would allow grayed auto completion,
 but auto complete not showing up in longer sentence I type."
@@ -357,3 +359,79 @@ path, so unwrapping it would mean two namespaces answering one line.
 
 This widens segment-0 behaviour, so the "byte-identical to today" Done-when row
 was amended rather than quietly ticked.
+
+### 2026-08-26 — close review: FIX-THEN-SHIP, and one finding is this round's own lesson
+
+Verdict FIX-THEN-SHIP, no Criticals, four Importants. The reviewer independently
+re-ran the mutation sweep and killed the same axes I had — and found the one I
+had not.
+
+- **I1 (Important) — segment precedence was NOT pinned, though Plan row 7 claimed
+  it.** My M5 mutant reversed `trailingSegments`' OUTPUT, which reddens the table
+  test on ordering; the sharper mutant reverses the ITERATION in
+  `historyCompletions`, leaving the table green. Then the whole suite passes,
+  because `TestWholeLineBeatsAnInnerSegment`'s fixture (`hist("island", …)`
+  against `hot dog`) has no inner-segment match at all — the same defect as the
+  `sevenfold` fixture I had already found and written a lesson about, on a second
+  axis of the same commit. Fixture is now `hist("dog house", "hot dog and
+  fries")`: longest-first gives `" and fries"`, shortest-first `" house"`.
+  Verified red under the iteration mutant, green on HEAD.
+- **I2 (Important) — the atlas's PRIMARY editor description was still pre-#20.**
+  My sweep matched one phrase ("matches the whole typed line") and missed
+  `Apply(Editor, Key, matches)` and "hands the same slice to both" 200 lines
+  above the new prose. Both fixed, plus the `:444-446` sibling.
+- **I3 (Important) — four of the five test sites Plan row 1 enumerated were left
+  standing.** All four were `Suggestion(e, h.Prefix(...))`, the exact anti-pattern
+  this round's own lessons.md entry names, in the same file, in the same round.
+  Instance vs class again (ARCH-PURPOSE). All four now resolve via
+  `completionsFor`.
+- **I4 (Important) — `?` stayed a bare literal at three sites while `\` got a
+  constant, in the same commit whose comment says "one constant because three
+  places have to agree".** `submissionMarkers` was literally the class variable
+  with one member a constant and one a literal. Added `forceAsk` beside
+  `forceLiteral`.
+- **Minors** — the `forceLiteral` const had been inserted between `recallLine`'s
+  doc comment and its signature (godoc attached the BR-12 rule to a
+  one-character constant); `candidates`' "newest-first" claim was false for
+  `complete`, which is grouped-by-marker; the floor counts a trailing space, and
+  "first match" is not "first useful match" — both kept and documented with the
+  reason rather than changed, since each is the behaviour I want; `draw`'s use of
+  `completionsFor` over `candidatesFor` now says why.
+- **Coverage gaps closed** — Done-when row 2 rested entirely on a pty test behind
+  `//go:build darwin && conformance`, which SKIPS wherever a pty cannot be
+  allocated (it does in the sandbox here). `TestTabAcceptsAGluedCandidate` now
+  covers glued acceptance in the default suite; `TestMatchesForDedupesAcrossMarkers`
+  covers cross-marker dedup. Both mutation-verified.
+
+### 2026-08-26 — the measured actual was wrong, and the cause is nameable
+
+`sdlc close` adopted **0.33h** (ratio 15.9×, recorded trusted). It measured only
+`e058be39 → HEAD` — 11:45 to 12:02, the two #20 code commits — while its own
+warnings say it saw and discarded the rest:
+
+    unattributed 58.4m/100% unattributed fallback without issue commit boundary
+                                          (2026-08-26 11:03 → 2026-08-26 12:02)
+
+Unlike #17's defect (an impossible 15.42h on a 3h49m window), this one has a
+clear cause: **`sdlc claim` does not plant the anchor AGENTS.md §2 promises it
+plants.** §2 says the claim commit "anchors the active-time window at the claim
+commit, so design attention is measured". But claim-on-main commits with the
+generic message `issue-sync: update issues`, which carries no issue reference —
+so the attribution engine cannot tie it to #20 and falls back to the first
+`#20`-referencing commit, discarding every minute of design, planning, both plan
+gate rounds and the estimate gate. Here the first claim additionally failed to
+commit at all (`could not find a worktree on branch 'main'`), but that is
+incidental: the 11:35 claim DID commit and still could not anchor.
+
+Recorded **1.35h** instead — wall clock from the first claim attempt (11:03) to
+this close commit, therefore an upper bound on active time; the session was
+continuous, and v3.1 counts AI execution spans as elapsed wall time. Against the
+5.24 estimate that is 3.9×, i.e. the estimate was HIGH — worth noting because the
+whole estimate rationale argued the repo's drift runs the other way. One round of
+boundary review instead of the three budgeted is most of the difference.
+
+The calibration ledger row was corrected from 0.33 to 1.35 **and flipped to
+`window_trusted: no`**: a hand-measured value should not enter the scale fit as
+clean evidence, and leaving a trusted 15.9× row would have been the worse
+pollution. This is an ariadne bug — `sdlc claim` should reference the issue in
+its commit subject — and it is the second measurement defect in two issues.

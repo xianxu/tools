@@ -40,8 +40,9 @@ const (
 // word glued onto a head, a whole line nobody ever submitted. Feeding the second
 // into walk would make Up offer, and Enter run, sentences that were never typed.
 //
-// Both are newest-first and deduped; `recall` is anchored on whatever the walk
-// began with, and `complete` is matched against the whole line by Suggestion.
+// `recall` is newest-first, deduped, and anchored on whatever the walk began
+// with. `complete` is deduped and matched against the whole line by Suggestion,
+// but only grouped-by-marker rather than globally newest-first — see matchesFor.
 type candidates struct {
 	recall   []string
 	complete []string

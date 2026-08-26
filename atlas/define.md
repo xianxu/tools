@@ -174,12 +174,16 @@ When `define` owns the terminal (**stdin and stdout both a tty, and not
   columns** because every line here is coloured. Width 0 (a pipe) disables it:
   a consumer re-wraps for itself and baked-in breaks cannot be undone.
 
-The editor is a pure state machine — `Apply(Editor, Key, matches) → (Editor,
+The editor is a pure state machine — `Apply(Editor, Key, candidates) → (Editor,
 Action)` plus `RenderLine` — so every behaviour above is a table test over key
 sequences with no terminal. `Action` is what the *loop* must do; the editor never
-acts. Candidates arrive as a plain slice rather than a `History` handle, so
-**`Apply` never queries**; the loop resolves matches once per keystroke and hands
-the same slice to both the state machine and the suggestion.
+acts. Candidates arrive as plain slices rather than a `History` handle, so
+**`Apply` never queries**; the loop resolves them once per keystroke.
+
+`candidates` carries TWO lists, and which one each key reads is part of the
+model: Up/Down walk `recall`, Tab/Right/End accept from `complete`. They were one
+slice until #20 made completions stop being past lines — see "Type-ahead" below
+for why sharing one became unsafe.
 
 **Cancellation changes shape in raw mode, and this is the subtle part.** Raw mode
 clears ISIG, so Ctrl-C arrives as byte `0x03` and the key reader can act on it
@@ -441,9 +445,11 @@ tail was rendered against the previous line. Both lists were history before
 command mode and a stale superset usually shared its first match, so nothing
 showed; the namespace switch made the stale list come from a *different set*, and
 typing `/` suggested `/history` out of recall while the menu under it listed
-commands and Tab accepted `/help`. `Apply` still receives the pre-keystroke list,
-which is correct — it is deciding what to do with that keystroke given the line
-as it stands — but nothing can hand `draw` a stale one.
+commands and Tab accepted `/help`. `Apply` still receives the pre-keystroke
+pair, which is correct — it is deciding what to do with that keystroke given the
+line as it stands — but nothing can hand `draw` a stale one. `draw` resolves only
+the completion half, because that is all it renders; resolving the pair there
+would compute a recall list per keystroke that nothing reads.
 
 **Tab accepts, Return submits what was typed.** `/his` + Return dispatches `his`
 and gets a suggestion, it does not run the unique match. That is `#14`'s contract

@@ -66,7 +66,7 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	// way to reach its outcome — a bare question still asks and a bare word still
 	// looks up — which is what makes them escape hatches rather than syntax.
 	trimmed := strings.TrimSpace(line)
-	if rest, ok := strings.CutPrefix(trimmed, "?"); ok {
+	if rest, ok := strings.CutPrefix(trimmed, forceAsk); ok {
 		q := strings.Join(strings.Fields(rest), " ")
 		if q == "" {
 			return replCommand{kind: cmdNothing, note: noteEmptyQuestion}
@@ -120,6 +120,18 @@ func nothingSays(c replCommand, inSession bool) string {
 	return "type a word"
 }
 
+// The two submission markers. Each has the same three sites that must agree —
+// the parser, recallLine's canonical form, and the completion namespace, which
+// has to see PAST the marker to reach the text behind it — so each is one
+// constant rather than a literal repeated three times.
+//
+// forceAsk sends a line to the model without consulting the dictionary;
+// forceLiteral does the reverse, suppressing the question fallback.
+const (
+	forceAsk     = "?"
+	forceLiteral = `\`
+)
+
 // recallLine is the canonical, re-submittable form of this line: what Up-arrow
 // must put back so that pressing Enter means what it meant the first time.
 //
@@ -128,16 +140,10 @@ func nothingSays(c replCommand, inSession bool) string {
 // the exact opposite of what the hatch was typed to force (BR-12). The rule the
 // three recall sites now share: what recall stores must re-submit to the same
 // meaning. Whitespace is still collapsed, because that changes no meaning.
-// forceLiteral is the hatch that suppresses the question fallback: a line typed
-// behind it is a lookup whatever it reads like. One constant because three
-// places have to agree on it — the parser, recallLine's canonical form, and the
-// completion namespace, which has to see PAST it to reach the word behind.
-const forceLiteral = `\`
-
 func (c replCommand) recallLine() string {
 	switch c.kind {
 	case cmdAsk:
-		return "?" + c.question
+		return forceAsk + c.question
 	case cmdCommand:
 		return strings.Join(append([]string{"/" + c.name}, c.args...), " ")
 	case cmdDefine:
