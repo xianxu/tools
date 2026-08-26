@@ -158,9 +158,18 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 		return out
 	}
 
-	if ev := supported(m.Level.EvidenceWords); len(ev) > 0 {
+	// The level is a claim like any other, and gets BOTH arms: unsupported
+	// evidence, and unusable content. The first version checked only evidence
+	// here while checking name-and-directive on domains — an asymmetry with no
+	// reason behind it, and a band with an empty rationale renders as "**C1** —"
+	// with nothing after the dash.
+	switch ev := supported(m.Level.EvidenceWords); {
+	case strings.TrimSpace(m.Level.Band) == "" || strings.TrimSpace(m.Level.Rationale) == "":
+		dropped = append(dropped, "level "+citedOrNothing([]string{m.Level.Band})+": no band or no rationale — nothing a reader could check")
+		m.Level = levelClaim{}
+	case len(ev) > 0:
 		m.Level.EvidenceWords = ev
-	} else {
+	default:
 		// Naming the REJECTED words, not just the fact: "no evidence in the
 		// deck" is the same unactionable shape as a claim that names none, and
 		// this message is the only place a person can see WHY the level went
@@ -179,6 +188,12 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 		// which is the only reason a domain claim is generated at all.
 		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Directive) == "" {
 			dropped = append(dropped, "domain "+citedOrNothing([]string{d.Name})+": no name or no directive — nothing authoring could act on")
+			continue
+		}
+		if d.Share < 0 || d.Share > 1 {
+			// Rendered as a percentage, so 5.0 becomes "500%" — a number a
+			// reader cannot act on and would not believe.
+			dropped = append(dropped, "domain "+d.Name+": share out of range")
 			continue
 		}
 		ev := supported(d.EvidenceWords)

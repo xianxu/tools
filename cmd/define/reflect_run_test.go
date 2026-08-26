@@ -96,11 +96,14 @@ func TestReflectIsIdempotent(t *testing.T) {
 	fake.Script("", llmtest.Reply{Text: reflectReply}, llmtest.Reply{Text: reflectReply})
 
 	var out, errb bytes.Buffer
-	runReflect(t.Context(), d, options{}, &out, &errb)
+	mustReflect(t, d, &out, &errb)
 	first, _ := st.UserModel()
-	runReflect(t.Context(), d, options{}, &out, &errb)
+	mustReflect(t, d, &out, &errb)
 	second, _ := st.UserModel()
 
+	if first == "" {
+		t.Fatal("nothing was written, so 'unchanged' proves nothing")
+	}
 	if first != second {
 		t.Errorf("regeneration changed the file:\n--- first ---\n%s\n--- second ---\n%s", first, second)
 	}
@@ -112,7 +115,7 @@ func TestReflectPreservesCorrections(t *testing.T) {
 	fake.Script("", llmtest.Reply{Text: reflectReply}, llmtest.Reply{Text: reflectReply})
 
 	var out, errb bytes.Buffer
-	runReflect(t.Context(), d, options{}, &out, &errb)
+	mustReflect(t, d, &out, &errb)
 
 	// The learner argues with it, in their own words and their own spacing.
 	const mine = "\n\nI read these for pleasure, not for the bar exam.\n\n   — me, tersely\n"
@@ -129,12 +132,17 @@ func TestReflectPreservesCorrections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runReflect(t.Context(), d, options{}, &out, &errb)
+	mustReflect(t, d, &out, &errb)
 
 	after, _ := st.UserModel()
 	if !strings.HasSuffix(after, correctionsMarker+mine) {
 		t.Errorf("the learner's own text did not survive regeneration:\n%q", after)
 	}
+	// Note deliberately NOT asserted here: that the analysis CHANGED. Under a
+	// fixed clock and a scripted reply it is byte-identical by design — that is
+	// what TestReflectIsIdempotent asserts. The hole BR-2 named is closed by
+	// mustReflect, which fails when the run did not write at all; asserting a
+	// change on top of it would contradict idempotency.
 }
 
 // D2: below the floor there is nothing worth reflecting on, and a confidently
@@ -248,5 +256,21 @@ func TestReflectNamesTheRejectedCitations(t *testing.T) {
 		if !strings.Contains(errb.String(), want) {
 			t.Errorf("stderr = %q, want it to name the rejected citation %q", errb.String(), want)
 		}
+	}
+}
+
+// mustReflect fails the test when the run did not succeed.
+//
+// Both the idempotency and the corrections tests compared a file before and
+// after — and a run that FAILS writes nothing, so "unchanged" and "suffix
+// preserved" are satisfied by a file nobody touched. I caught exactly this in
+// the live smoke test ("the second run had failed and written nothing") and did
+// not sweep it back into the unit tests, which is the whole finding: a class
+// found in one place is not fixed until it is looked for in the others.
+func mustReflect(t *testing.T, d deps, out, errOut *bytes.Buffer) {
+	t.Helper()
+	if code := runReflect(t.Context(), d, options{}, out, errOut); code != 0 {
+		t.Fatalf("runReflect failed (exit %d), so the comparison below would prove nothing: %s",
+			code, errOut.String())
 	}
 }

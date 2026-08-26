@@ -181,8 +181,8 @@ moment a new one is added and nothing says so:
 
 | code | produced by |
 |---|---|
-| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration |
-| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?` |
+| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration; `--reflect` with too small a deck, with no deck at all, with no model, or with nothing in the answer left standing after the deck check |
+| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?`; `--reflect` combined with a word |
 
 A piped run exits `1` if any word failed and `2` if a command was malformed, so
 `echo "$w" | define || …` works in a script; an interactive typo does not fail

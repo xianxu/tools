@@ -107,7 +107,7 @@ func TestFoldLookupsOnAnEmptyDeck(t *testing.T) {
 func TestCheckEvidenceDropsClaimsTheDeckCannotSupport(t *testing.T) {
 	deck := map[string]bool{"certiorari": true, "dicta": true, "ephemeral": true}
 	in := learnerModel{
-		Level: levelClaim{Band: "C1", EvidenceWords: []string{"certiorari", "dicta"}},
+		Level: levelClaim{Band: "C1", Rationale: "reaches for precise words", EvidenceWords: []string{"certiorari", "dicta"}},
 		Domains: []domainClaim{
 			{Name: "law", Share: 0.6, EvidenceWords: []string{"certiorari", "dicta"}, Directive: "judicial prose"},
 			{Name: "sailing", Share: 0.2, EvidenceWords: []string{"luffing", "clew"}, Directive: "nautical usages"},
@@ -137,7 +137,7 @@ func TestCheckEvidenceDropsClaimsTheDeckCannotSupport(t *testing.T) {
 // file — an asserted band is exactly what the issue's spec forbids.
 func TestCheckEvidenceDropsALevelClaimWithNoSupport(t *testing.T) {
 	deck := map[string]bool{"certiorari": true}
-	in := learnerModel{Level: levelClaim{Band: "C2", EvidenceWords: []string{"luffing"}}}
+	in := learnerModel{Level: levelClaim{Band: "C2", Rationale: "reaches for precise words", EvidenceWords: []string{"luffing"}}}
 
 	got, dropped := checkEvidence(in, deck)
 
@@ -154,7 +154,7 @@ func TestCheckEvidenceDropsALevelClaimWithNoSupport(t *testing.T) {
 func TestCheckEvidenceMatchesOnTheDeckKey(t *testing.T) {
 	deck := map[string]bool{"hot dog": true, "certiorari": true}
 	in := learnerModel{
-		Level:   levelClaim{Band: "B2", EvidenceWords: []string{"Certiorari"}},
+		Level:   levelClaim{Band: "B2", Rationale: "reaches for precise words", EvidenceWords: []string{"Certiorari"}},
 		Domains: []domainClaim{{Name: "food", Share: 0.5, EvidenceWords: []string{"Hot  Dog"}, Directive: "menu usages"}},
 	}
 
@@ -174,7 +174,7 @@ func TestCheckEvidenceMatchesOnTheDeckKey(t *testing.T) {
 // An empty deck supports nothing, and must not be read as supporting everything.
 func TestCheckEvidenceAgainstAnEmptyDeck(t *testing.T) {
 	got, dropped := checkEvidence(learnerModel{
-		Level:   levelClaim{Band: "C1", EvidenceWords: []string{"anything"}},
+		Level:   levelClaim{Band: "C1", Rationale: "reaches for precise words", EvidenceWords: []string{"anything"}},
 		Domains: []domainClaim{{Name: "law", EvidenceWords: []string{"certiorari"}, Directive: "judicial prose"}},
 	}, map[string]bool{})
 
@@ -195,7 +195,7 @@ func TestCheckEvidenceAgainstAnEmptyDeck(t *testing.T) {
 func TestCheckEvidenceDropsClaimsAuthoringCannotAct(t *testing.T) {
 	deck := map[string]bool{"certiorari": true}
 	in := learnerModel{
-		Level: levelClaim{Band: "C1", EvidenceWords: []string{"certiorari"}},
+		Level: levelClaim{Band: "C1", Rationale: "reaches for precise words", EvidenceWords: []string{"certiorari"}},
 		Domains: []domainClaim{
 			{Name: "law", Share: 0.5, EvidenceWords: []string{"certiorari"}, Directive: "Draw from judicial prose."},
 			{Name: "x", Share: 0.1, EvidenceWords: []string{"certiorari"}, Directive: ""},
@@ -211,4 +211,51 @@ func TestCheckEvidenceDropsClaimsAuthoringCannotAct(t *testing.T) {
 	if len(dropped) != 2 {
 		t.Errorf("dropped %v, want both stubs reported", dropped)
 	}
+}
+
+// The level is a claim like any other and gets BOTH arms of the check.
+//
+// The first version checked evidence here and name-and-directive on domains —
+// an asymmetry with no reason behind it. A band with no rationale renders as
+// "**C1** —" with nothing after the dash, and a share outside 0..1 renders as
+// "500%", which a reader cannot act on and would not believe.
+func TestCheckEvidenceHoldsTheLevelToTheSameBar(t *testing.T) {
+	deck := map[string]bool{"certiorari": true}
+
+	t.Run("a band with no rationale is not usable", func(t *testing.T) {
+		got, dropped := checkEvidence(learnerModel{
+			Level: levelClaim{Band: "C1", Rationale: "  ", EvidenceWords: []string{"certiorari"}},
+		}, deck)
+		if got.Level.Band != "" {
+			t.Errorf("level = %+v, want it dropped", got.Level)
+		}
+		if len(dropped) == 0 {
+			t.Error("nothing reported")
+		}
+	})
+
+	t.Run("a rationale with no band is not usable", func(t *testing.T) {
+		got, _ := checkEvidence(learnerModel{
+			Level: levelClaim{Rationale: "reaches for precise words", EvidenceWords: []string{"certiorari"}},
+		}, deck)
+		if got.Level.Band != "" || got.Level.Rationale != "" {
+			t.Errorf("level = %+v, want it dropped", got.Level)
+		}
+	})
+
+	t.Run("a share outside 0..1 is dropped", func(t *testing.T) {
+		got, dropped := checkEvidence(learnerModel{
+			Level: levelClaim{Band: "C1", Rationale: "x", EvidenceWords: []string{"certiorari"}},
+			Domains: []domainClaim{
+				{Name: "law", Share: 5, EvidenceWords: []string{"certiorari"}, Directive: "y"},
+				{Name: "ok", Share: 0.5, EvidenceWords: []string{"certiorari"}, Directive: "y"},
+			},
+		}, deck)
+		if len(got.Domains) != 1 || got.Domains[0].Name != "ok" {
+			t.Errorf("domains = %+v, want the 500%% one dropped", got.Domains)
+		}
+		if len(dropped) == 0 {
+			t.Error("nothing reported")
+		}
+	})
 }

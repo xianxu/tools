@@ -961,3 +961,30 @@ Two rules, and the second is the general one:
 Same rule as the mutation-table and the message-count entries above, applied one
 level up: the check is a claim, and an unfalsified claim is scaffolding whatever
 language it is written in.
+
+## A class found in one place is not fixed until you look for it in the others (define #17 M1)
+
+Smoke-testing `--reflect` live, I caught my own verification being vacuous: the
+corrections check printed "preserved", but the second run had FAILED and written
+nothing, so nothing could have changed. I fixed that check, reported it, and
+moved on.
+
+The boundary review then found the identical hole in two unit tests standing
+three feet away — `TestReflectIsIdempotent` and `TestReflectPreservesCorrections`
+both compared a file before and after, and a run that fails writes nothing, so
+"unchanged" and "suffix preserved" are satisfied by a file nobody touched.
+
+I had named the class out loud and swept exactly one instance of it.
+
+**When a finding is about a SHAPE rather than a line — a comparison that a
+no-op satisfies, an assertion the echo already satisfies, a claim that cites
+nothing — grep the shape before closing it.** The cost of looking is one search;
+the cost of not looking showed up as a blocking finding in the next round, twice
+in two issues.
+
+The mechanical version, for the shapes seen so far:
+
+- comparing a file before/after → does a FAILED run also satisfy it?
+- asserting on output a loop echoes → does typing alone satisfy it?
+- asserting a value reached an output → could a different source supply it?
+- a table of examples over human-edited text → is there a malformed class?

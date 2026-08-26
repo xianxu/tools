@@ -40,4 +40,66 @@ dropped before the reader sees it. Fewer, real, filled-in claims — always.
 | sycophantic | 2 | 2026-08-21 | 2026-08-24 |
 
 --- schema ---
-(none)
+{
+  "additionalProperties": false,
+  "properties": {
+    "domains": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "directive": {
+            "type": "string"
+          },
+          "evidence_words": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "share": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "share",
+          "evidence_words",
+          "directive"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "level": {
+      "additionalProperties": false,
+      "properties": {
+        "band": {
+          "type": "string"
+        },
+        "evidence_words": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "band",
+        "rationale",
+        "evidence_words"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "level",
+    "domains"
+  ],
+  "type": "object"
+}

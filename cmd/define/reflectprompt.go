@@ -28,7 +28,20 @@ func renderReflectPrompt(ev deckEvidence) llm.Request {
 			w.Word, w.Lookups, w.FirstAt.Format("2006-01-02"), w.LastAt.Format("2006-01-02"))
 	}
 
-	return llm.Request{Task: reflectTaskName, System: reflectSystem, Prompt: b.String()}
+	// The SCHEMA travels with the request, because llm.Run attaches one and the
+	// golden exists so that "a field added without thought shows up in its
+	// diff". Without it the golden covered the prose and not the shape — and the
+	// shape is what the model is actually constrained by, as the evidence/
+	// evidence_words rename demonstrated.
+	//
+	// Derived from the same struct Run derives it from, so the two cannot
+	// disagree; an error here means the struct cannot be reflected at all, which
+	// is a programming error rather than a runtime condition.
+	schema, err := llm.SchemaFor[learnerModel]()
+	if err != nil {
+		panic("learnerModel cannot be reflected to a schema: " + err.Error())
+	}
+	return llm.Request{Task: reflectTaskName, System: reflectSystem, Prompt: b.String(), Schema: schema}
 }
 
 // reflectSystem states the two rules the checker then enforces.
