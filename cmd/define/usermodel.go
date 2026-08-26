@@ -89,3 +89,77 @@ func joinWords(words []string) string {
 	}
 	return strings.Join(quoted, ", ")
 }
+
+// spliceCorrections replaces everything above the corrections marker and copies
+// the marker and everything below it VERBATIM.
+//
+// One function decides what to WRITE (renderUserModel) and this one decides what
+// to KEEP, because they answer different questions and the failure modes differ:
+// a bad render produces a file someone disagrees with, and a bad splice silently
+// eats what they wrote instead.
+func spliceCorrections(existing, generated string) string {
+	i := firstMarkerOutsideAFence(existing)
+	if i < 0 {
+		return generated
+	}
+	// generated already ends with its own marker section; drop it and take the
+	// existing one whole, so the learner's heading survives with its own
+	// spacing and any trailing whitespace they left there.
+	g := generated
+	if j := firstMarkerOutsideAFence(g); j >= 0 {
+		g = g[:j]
+	}
+	return g + existing[i:]
+}
+
+// firstMarkerOutsideAFence returns the byte offset of the first corrections
+// marker that is not inside a fenced code block, or -1.
+//
+// Fences matter because this file documents its own format: the issue's Spec
+// shows the layout in a fence containing the marker, and a learner arguing with
+// the analysis may well paste that block into their corrections. Both fence
+// characters count — ``` and ~~~ are both markdown — and an indented fence still
+// opens one.
+//
+// The marker must START the line (after leading whitespace): the file's own
+// header comment contains the string "## Corrections" mid-line, and matching it
+// there would cut the file above its own explanation.
+func firstMarkerOutsideAFence(s string) int {
+	var fence string // the fence currently open, "" when none
+	for off := 0; off < len(s); {
+		end := strings.IndexByte(s[off:], '\n')
+		lineEnd := len(s)
+		if end >= 0 {
+			lineEnd = off + end
+		}
+		line := s[off:lineEnd]
+		trimmed := strings.TrimLeft(line, " \t")
+
+		switch {
+		case fence != "":
+			if strings.HasPrefix(trimmed, fence) {
+				fence = "" // closed
+			}
+		case strings.HasPrefix(trimmed, "```"):
+			fence = "```"
+		case strings.HasPrefix(trimmed, "~~~"):
+			fence = "~~~"
+		case isCorrectionsMarker(trimmed):
+			return off
+		}
+
+		if end < 0 {
+			break
+		}
+		off = lineEnd + 1
+	}
+	return -1
+}
+
+// isCorrectionsMarker allows trailing whitespace and a CR (a file edited on
+// Windows, or pasted through something that added one) but nothing else: a
+// heading with more text after it is a different heading.
+func isCorrectionsMarker(line string) bool {
+	rest, ok := strings.CutPrefix(line, correctionsMarker)
+	return ok && strings.TrimRight(rest, " \t\r") == ""
+}

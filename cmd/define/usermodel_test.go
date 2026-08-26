@@ -123,3 +123,103 @@ func assertGoldenFile(t *testing.T, path, got string) {
 		t.Errorf("golden %s differs:\n--- want ---\n%s\n--- got ---\n%s", path, want, got)
 	}
 }
+
+const genA = "GENERATED\n\n## Corrections\n\ndefault invitation\n"
+
+// The human-owned half. A learner who writes "I read these for pleasure, not for
+// the bar exam" must find it there tomorrow, byte for byte.
+func TestSpliceCorrections(t *testing.T) {
+	for _, tc := range []struct{ name, existing, want string }{
+		{
+			"no existing file: the generated text stands alone",
+			"", genA,
+		},
+		{
+			"corrections are preserved verbatim",
+			"OLD\n\n## Corrections\n\nI read these for pleasure.\n",
+			"GENERATED\n\n## Corrections\n\nI read these for pleasure.\n",
+		},
+		{
+			"an existing file with NO marker keeps nothing below",
+			"OLD\n\nsome prose nobody marked\n", genA,
+		},
+		{
+			"trailing whitespace inside corrections survives",
+			"OLD\n## Corrections\nkept   \n\n\n",
+			"GENERATED\n\n## Corrections\nkept   \n\n\n",
+		},
+		{
+			"a marker inside a fenced block is not the marker",
+			"OLD\n```\n## Corrections\n```\n## Corrections\nreal\n",
+			"GENERATED\n\n## Corrections\nreal\n",
+		},
+		{
+			"a marker inside a TILDE fence is not the marker",
+			"OLD\n~~~\n## Corrections\n~~~\n## Corrections\nreal\n",
+			"GENERATED\n\n## Corrections\nreal\n",
+		},
+		{
+			"the marker mid-line is not a marker",
+			"OLD\n<!-- above ## Corrections is regenerated -->\n## Corrections\nreal\n",
+			"GENERATED\n\n## Corrections\nreal\n",
+		},
+		{
+			"a marker with trailing whitespace is still the marker",
+			"OLD\n## Corrections   \nkept\n",
+			"GENERATED\n\n## Corrections   \nkept\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := spliceCorrections(tc.existing, genA); got != tc.want {
+				t.Errorf("got:\n%q\nwant:\n%q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Splicing a rendered file into itself must be a no-op. This is the shape
+// --reflect actually performs on every run after the first, and the rendered
+// file's own header comment contains the marker string — so it is also the
+// regression test for matching the marker mid-line.
+func TestSpliceCorrectionsIsStableOnItsOwnOutput(t *testing.T) {
+	rendered := renderUserModel(sampleLearnerModel(), sampleMeta())
+
+	if got := spliceCorrections(rendered, rendered); got != rendered {
+		t.Errorf("splicing a rendered file into itself changed it:\n%q", got)
+	}
+}
+
+// FuzzSpliceCorrections asserts the ONE thing that must hold for any existing
+// file: whatever follows the first out-of-fence marker comes out byte-identical.
+//
+// Five examples cannot cover malformed human-edited text, and the failure mode
+// here is silently discarding the learner's own writing — with byte-for-byte
+// survival as a Done-when row. Seeded with the shapes a table would not reach.
+func FuzzSpliceCorrections(f *testing.F) {
+	for _, seed := range []string{
+		"## Corrections\nkeep me\n",
+		"~~~\n## Corrections\n~~~\n## Corrections\nreal\n",
+		"```\nunterminated fence\n## Corrections\nstill inside\n",
+		"   ```\n   indented\n   ```\n## Corrections\nreal\n",
+		"## Corrections   \ntrailing space on the marker\n",
+		"## Corrections\r\nCRLF body\r\n",
+		"<!-- above ## Corrections -->\n## Corrections\nreal\n",
+		"no marker at all\n",
+		"",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, existing string) {
+		got := spliceCorrections(existing, genA)
+		i := firstMarkerOutsideAFence(existing)
+		if i < 0 {
+			if got != genA {
+				t.Fatalf("no marker, yet something was carried over: %q", got)
+			}
+			return
+		}
+		if tail := existing[i:]; !strings.HasSuffix(got, tail) {
+			t.Fatalf("the learner's own text was altered\nwant suffix: %q\ngot: %q", tail, got)
+		}
+	})
+}
