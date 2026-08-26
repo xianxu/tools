@@ -73,16 +73,10 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// The RAW editor is the only thing that recalls, so it is the only thing
 	// that pays for reading the log. replLines never touches history at all.
 	hist.Load()
-	// Same shape for the highlight set: read once here, then memory. A nil vocab
-	// renders exactly as before the feature existed.
-	//
-	// Skipped entirely without colour: RenderLine's no-colour branch cannot show
-	// a highlight, so reading the whole deck would be IO for a feature that is
-	// off. The capture path still Adds — that is memory, and free.
-	voc := d.vocab
-	if voc != nil && opt.color {
-		voc.Load()
-	}
+	// The highlight set, resolved the same way every other render path resolves
+	// it. Not a local policy: vocabularyFor owns "loaded, and only with colour",
+	// so a path that forgets to ask cannot silently render against an empty set.
+	voc := vocabularyFor(d, opt)
 	e := NewEditor()
 	var sess session
 	// Apply gets the candidate list computed BEFORE the keystroke, which is

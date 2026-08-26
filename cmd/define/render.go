@@ -9,6 +9,14 @@ import (
 // terminal — the caller decides Color.
 type RenderOpts struct {
 	Color bool
+	// Vocab highlights the words the learner knows. Nil means no highlighting.
+	//
+	// It reaches Render rather than wrapping Render's OUTPUT because the
+	// decision is per REGION and only Render knows where its regions are.
+	// Wrapping the whole string re-styled the headword — which the Spec puts out
+	// of scope — because a finished string has no structure left to consult.
+	// admitsHighlight below is the table.
+	Vocab Vocabulary
 	// Width is the terminal width used for word wrapping. 0 disables wrapping,
 	// which is what a pipe wants — a consumer re-wraps for itself, and hard
 	// breaks baked into piped output cannot be undone.
@@ -27,6 +35,42 @@ func newPalette(on bool) palette {
 		num: "\x1b[1m", ex: "\x1b[3;32m", sect: "\x1b[1;34m",
 		dim: "\x1b[2m", off: "\x1b[0m",
 	}
+}
+
+// admitsHighlight is the per-region decision, written out so it can be read and
+// tested rather than inferred from where a call happens to be.
+//
+// The rule: highlighting marks vocabulary in PROSE. A label is not prose — it is
+// the dictionary's own scaffolding, and colouring "adjective" because the
+// learner once looked it up says nothing about the word being defined.
+//
+//	region                     decision
+//	------------------------   --------
+//	headword                   withhold — Spec, out of scope; already bold cyan
+//	syllabification            withhold — a label
+//	IPA pronunciation          withhold — not prose
+//	part-of-speech label       withhold — a label
+//	sense number marker        withhold — scaffolding
+//	sense gloss                ADMIT    — prose
+//	example label              withhold — a label
+//	example text               ADMIT    — prose
+//	section name               withhold — a label
+//	section text               ADMIT    — prose
+//
+// -raw is withheld earlier still, at the print site: it is by contract the
+// unparsed entry.
+func (o RenderOpts) admitsHighlight() bool { return o.Color && o.Vocab != nil }
+
+// prose highlights one admitted region, resuming the style that encloses it.
+//
+// base is what the terminal is in when the region starts, because ANSI does not
+// nest: an example is written inside p.ex, so a highlight closing with a reset
+// would leave the rest of the example unstyled.
+func (o RenderOpts) prose(s, base string) string {
+	if !o.admitsHighlight() {
+		return s
+	}
+	return highlightRegion(s, o.Vocab, knownOn, base)
 }
 
 // Render turns an Entry into the printed block.
@@ -105,7 +149,12 @@ func Render(e Entry, opt RenderOpts) string {
 			if s.Gloss != "" {
 				body := prettyPronunciations(s.Gloss, p)
 				lead := len(indent) + visibleLen(marker)
-				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, wrapText(body, opt.Width, lead))
+				// Highlight AFTER wrapping: wrapText measures visible columns and
+				// breaks at spaces, so a highlight inserted first would widen the
+				// text it measures. Wrapping first also means a phrase cannot span
+				// a line break, which is the writer's rule 2 falling out rather
+				// than being enforced twice.
+				fmt.Fprintf(&b, "%s%s%s\n", indent, marker, opt.prose(wrapText(body, opt.Width, lead), ""))
 			} else if marker != "" {
 				fmt.Fprintf(&b, "%s%s\n", indent, strings.TrimSpace(marker))
 			}
@@ -123,7 +172,7 @@ func Render(e Entry, opt RenderOpts) string {
 				// stays readable: “"This blows," she sighs” rather than
 				// ""This blows," she sighs".
 				fmt.Fprintf(&b, "%s\u201c%s\u201d%s\n", p.ex,
-					wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.off)
+					opt.prose(wrapText(prettyPronunciations(ex.Text, p), opt.Width, len(indent)+2), p.ex), p.off)
 			}
 		}
 	}
@@ -143,7 +192,7 @@ func Render(e Entry, opt RenderOpts) string {
 				if i > 0 {
 					indent = "      "
 				}
-				fmt.Fprintf(&b, "%s%s\n", indent, wrapText(seg, opt.Width, len(indent)))
+				fmt.Fprintf(&b, "%s%s\n", indent, opt.prose(wrapText(seg, opt.Width, len(indent)), ""))
 			}
 		}
 	}

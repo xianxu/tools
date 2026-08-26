@@ -138,7 +138,9 @@ func TestHighlightWriterPropagatesDownstreamErrors(t *testing.T) {
 		t.Fatal("a downstream failure never reached the caller")
 	}
 	// Poisoned: a later Write must not emit anything more, so nothing can be
-	// written twice.
+	// written twice. That is WHY (0, err) is the right answer here while
+	// crlfWriter — which can be written to again — returns caller-unit progress.
+	// The two writers answer the same question differently on purpose.
 	before := written.Len()
 	if n, err := w.Write([]byte("more")); err == nil || n != 0 {
 		t.Errorf("Write after failure = (%d, %v), want (0, err)", n, err)
@@ -178,14 +180,40 @@ func (f *failAfter) Write(p []byte) (int, error) {
 	return f.out.Write(p)
 }
 
+// fuzzDeck is the vocabulary the writer property runs against.
+//
+// Derived from TestWordRuns' table — the package's own enumeration of word
+// character classes — rather than hand-picked. The first version pinned
+// vocab("obsequious", "hot dog", "hot"), which holds no joiner and no multi-byte
+// entry, so the whole "a chunk splits inside a joiner or a rune" failure class
+// was UNREACHABLE: 803k execs proved nothing about it, and two real data-loss
+// bugs sat underneath. The vocabulary is part of the input space this property
+// quantifies over, so it has to cover the same classes the tokenizer does.
+var fuzzDeck = vocab(
+	"obsequious", // plain
+	"hot dog",    // a phrase, so the hold window is > 1 token
+	"hot",        // and its prefix, so longest-match is exercised
+	"don't",      // an apostrophe INSIDE a word
+	"hot-dog",    // a hyphen inside a word
+	"covid-19",   // digits
+	"café",       // multi-byte: a chunk can split mid-rune
+	"a priori",   // a phrase whose first token is one rune
+)
+
 // Chunk-independence is the property; byte identity is what makes it able to
 // see a reorder, which visible-text equality cannot.
 func FuzzHighlightWriterIsChunkIndependent(f *testing.F) {
-	for _, s := range []string{"his obsequious day", "\x1b[3;32mhot dog\x1b[0m", "hot\n dog", "'obsequious'", "a", ""} {
+	// Seeds carry the shapes the deck can match, including the split points that
+	// broke it: a joiner at a chunk edge and a rune cut in half.
+	for _, s := range []string{
+		"his obsequious day", "\x1b[3;32mhot dog\x1b[0m", "hot\n dog", "'obsequious'", "a", "",
+		"don't stop", "a hot-dog stand", "covid-19 era", "café society", "a priori truth",
+		"'obsequious' don't café a priori",
+	} {
 		f.Add(s, 1)
 	}
-	v := vocab("obsequious", "hot dog", "hot")
 	f.Fuzz(func(t *testing.T, text string, at int) {
+		v := fuzzDeck
 		if at < 0 || at > len(text) {
 			at = len(text) / 2
 		}
@@ -197,28 +225,33 @@ func FuzzHighlightWriterIsChunkIndependent(f *testing.F) {
 		// And no visible text may be lost, whatever the styling. Both sides are
 		// stripped: the INPUT carries escapes too, so comparing against the raw
 		// text asserts that highlighting removes styling, which is not the claim.
-		if got, want := stripEscapes(two), stripEscapes(text); got != want {
+		if got, want := stripANSI(two), stripANSI(text); got != want {
 			t.Fatalf("visible text changed: got %q, want %q", got, want)
 		}
 	})
 }
 
-// stripEscapes removes every escape sequence, leaving what a reader sees.
-func stripEscapes(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); {
-		if s[i] == 0x1b {
-			n := scanEscape(s[i:])
-			if n < 0 {
-				n = len(s) - i
+// Byte-at-a-time is the harshest split schedule there is: every joiner and every
+// multi-byte rune is cut. A table can only sample the split points this covers
+// exhaustively for a given text.
+func TestHighlightWriterByteAtATimeMatchesOneCall(t *testing.T) {
+	for _, text := range []string{
+		"'obsequious' don't café a priori",
+		"a hot-dog and a hot dog",
+		"\x1b[3;32mdon't café\x1b[0m",
+		"covid-19, obsequious.",
+	} {
+		t.Run(text, func(t *testing.T) {
+			var bytes []string
+			for i := 0; i < len(text); i++ {
+				bytes = append(bytes, text[i:i+1])
 			}
-			i += n
-			continue
-		}
-		b.WriteByte(s[i])
-		i++
+			one := writeChunks(t, fuzzDeck, text)
+			if got := writeChunks(t, fuzzDeck, bytes...); got != one {
+				t.Errorf("byte-at-a-time differs:\n got  %q\n want %q", got, one)
+			}
+		})
 	}
-	return b.String()
 }
 
 // The motivating case, end to end through the production print path: the
@@ -248,8 +281,11 @@ func TestDefinitionHighlightingIsOffWithoutColour(t *testing.T) {
 
 	lookupAndRender(rig.deps, opt, replCommand{kind: cmdDefine, word: "sycophantic"}, &out, &errb)
 
-	if strings.Contains(out.String(), "\x1b[1;32m") {
-		t.Errorf("-no-color emitted a highlight: %q", out.String())
+	// Absence of ANY escape, not just of green: a test that only checks for the
+	// highlight code passes while emitting bold, and Render with Color:false
+	// makes the stronger assertion available for free.
+	if strings.Contains(out.String(), "\x1b") {
+		t.Errorf("-no-color emitted an escape sequence: %q", out.String())
 	}
 	if !strings.Contains(out.String(), "obsequious") {
 		t.Error("the word itself went missing")
@@ -269,10 +305,40 @@ func TestHighlightingLosesNothing(t *testing.T) {
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			plain := Render(ParseEntry(raw), RenderOpts{Color: false})
-			lit := stripEscapes(highlightText(Render(ParseEntry(raw), RenderOpts{Color: false}), v, knownOn))
+			lit := stripANSI(Render(ParseEntry(raw), RenderOpts{Color: true, Vocab: v}))
+			if lit != stripANSI(Render(ParseEntry(raw), RenderOpts{Color: true})) {
+				t.Errorf("highlighting changed the visible text of %q", word)
+			}
+			if strings.Contains(plain, "\x1b") {
+				t.Fatal("the colour-off baseline carries escapes; this comparison would be vacuous")
+			}
 			if lit != plain {
 				t.Errorf("highlighting changed the visible text of %q", word)
 			}
 		})
+	}
+}
+
+// The Spec's out-of-scope list: "Re-styling the headword line. The head is
+// already bold cyan; highlighting is for body text, answers, and input."
+//
+// A learner revisits words constantly, so looking up a word already in the deck
+// is the COMMON case, and wrapping the whole rendered string put green inside
+// the cyan headword. The decision is now per region (RenderOpts.admitsHighlight)
+// and this pins the withhold half; TestDefinitionBodyHighlightsADeckWord pins
+// the admit half.
+func TestTheHeadwordLineIsNotHighlighted(t *testing.T) {
+	raw := fixture(t, "sycophantic")
+
+	out := Render(ParseEntry(raw), RenderOpts{Color: true, Vocab: vocab("sycophantic")})
+
+	head := strings.SplitN(out, "\n", 2)[0]
+	if strings.Contains(head, knownOn) {
+		t.Errorf("the headword line was highlighted: %q", head)
+	}
+	// ...and the withhold is scoped to the region, not to the word: the same
+	// word inside a sense body still highlights.
+	if !strings.Contains(out, knownOn) {
+		t.Error("nothing at all was highlighted; the withhold is too wide")
 	}
 }

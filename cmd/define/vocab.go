@@ -138,3 +138,25 @@ func warnTo(w io.Writer, format string, args ...any) {
 	}
 	fmt.Fprintf(w, "define: "+format+"\n", args...)
 }
+
+// vocabularyFor answers "what should be highlighted right now" for every caller
+// that renders, and it is the ONE place that answers it.
+//
+// It exists because the same two questions were being asked in different places
+// and one of them was missed. Highlighting needs the set LOADED, and Load lived
+// in runEditor — so `define <word>` and piped stdin, which never enter the raw
+// editor, rendered definitions against an empty set and silently highlighted
+// nothing. Two of three entry paths were dead while every test passed, because
+// the tests injected a pre-filled set and so began one hop after the gap.
+//
+// Load is idempotent, so calling this per render costs one map read after the
+// first. Colour off returns nil rather than a loaded set: with no style to
+// inject there is nothing to show, and reading the whole deck for it would be IO
+// for a disabled feature.
+func vocabularyFor(d deps, opt options) Vocabulary {
+	if d.vocab == nil || !opt.color {
+		return nil
+	}
+	d.vocab.Load()
+	return d.vocab
+}

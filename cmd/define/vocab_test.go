@@ -227,3 +227,55 @@ func TestWithStoreCarriesTheHighlightSetThrough(t *testing.T) {
 		t.Error("withStore handed the renderer a different set than the capturer got")
 	}
 }
+
+// EVERY process entry path that can render a definition, each driven through
+// production wiring with an UNLOADED store vocabulary.
+//
+// The enumeration is the point. M2 shipped highlighting into lookupAndRender
+// while Load() lived in runEditor, so `define <word>` and piped stdin rendered
+// against an empty set — two of three paths dead, with the whole suite green,
+// because every test injected a pre-filled memVocabulary and so began one hop
+// after the gap. A test that starts at the dependency it injects can never see
+// the thing that fills it.
+//
+// A new entry path that renders belongs in this table.
+func TestEveryEntryPathHighlightsDefinitions(t *testing.T) {
+	// sycophantic's gloss contains "obsequious" — the issue's motivating case.
+	deck := func(t *testing.T) Vocabulary {
+		t.Helper()
+		st := store.NewMem()
+		if err := st.Upsert(store.Word{Text: "obsequious"}); err != nil {
+			t.Fatal(err)
+		}
+		return newStoreVocabulary(st, nil) // deliberately NOT loaded
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func(t *testing.T, d deps, opt options, out, errb *bytes.Buffer)
+	}{
+		{"one-shot: define <word>", func(t *testing.T, d deps, opt options, out, errb *bytes.Buffer) {
+			defineOnce(t.Context(), d, opt, replCommand{kind: cmdDefine, word: "sycophantic"}, out, errb)
+		}},
+		{"piped stdin", func(t *testing.T, d deps, opt options, out, errb *bytes.Buffer) {
+			replLines(t.Context(), nil, d, opt, strings.NewReader("sycophantic\n"), out, errb, true, false)
+		}},
+		{"raw editor", func(t *testing.T, d deps, opt options, out, errb *bytes.Buffer) {
+			runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, d, opt,
+				func(run func()) error { run(); return nil }, func() {}, out, errb)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rig, opt, _, _ := editorRig(t, "sycophantic", true)
+			rig.deps.vocab = deck(t)
+			opt.noAudio = true
+			var out, errb bytes.Buffer
+
+			tc.run(t, rig.deps, opt, &out, &errb)
+
+			if !strings.Contains(out.String(), "\x1b[1;32mobsequious") {
+				t.Errorf("no highlight on this entry path: %q", out.String())
+			}
+		})
+	}
+}

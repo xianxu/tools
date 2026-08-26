@@ -1054,6 +1054,65 @@ changes: it adds LINES, so count them.
 measures** — and pick payload text that is unmistakable and inert (`FORGED-LEVEL`),
 never text shaped like the thing you are checking for.
 
+## A property is only as wide as its fixtures — the deck is input too (define #21 M2)
+
+`FuzzHighlightWriterIsChunkIndependent` asserted that splitting a stream anywhere
+produces identical bytes. 803k execs, clean. It proved almost nothing: the
+vocabulary was pinned as a constant — `vocab("obsequious", "hot dog", "hot")` —
+and with no joiner-bearing or multi-byte entry in it, the entire class of "a
+chunk splits inside a joiner or mid-rune" was **unreachable at any exec count**.
+Two real data-loss bugs sat underneath: `don'`+`t` lost `don't`, and a chunk cut
+mid-rune lost `café`.
+
+- **Everything the function reads is input, not just the fuzzed argument.** A
+  fixture held constant silently removes a dimension from the property. If the
+  behaviour depends on it, fuzz it or derive it.
+- **Derive fixtures from the package's own enumeration.** `TestWordRuns`' table
+  already listed every word-character class this code distinguishes — apostrophe,
+  hyphen, digits, multi-byte. Hand-picking a deck instead of reusing that table
+  is how the gap got in.
+- **Exec count is not coverage.** "803k execs clean" reads like assurance and
+  measures only how long an unreachable class stayed unreachable.
+
+## Enumerate the production chain from the ENTRY POINTS (define #21 M2)
+
+I wrote this rule at M1 — *enumerate the production dependency chain, not the
+comments* — and the same family came back one milestone later, because my chain
+started in the wrong place. M1's table began at `openStore`. But `openStore` is
+itself a hop *in*: the thing being enumerated has to start where the PROCESS
+starts.
+
+M2 wired highlighting into `lookupAndRender` while `Load()` sat in `runEditor`.
+Three entry paths reach that render — one-shot `define <word>`, piped stdin, and
+the raw editor — and only the third loaded the set. Two of three were dead, the
+suite was green, and the README sentence I had just written was false for the
+exact command it named.
+
+- **A test that injects a filled dependency begins after the thing that fills
+  it.** Every test set `rig.deps.vocab` to a pre-populated set, so the load hop
+  was invisible in exactly the way `withStore`'s merge had been invisible one
+  round earlier. Drive at least one case with the dependency in its REAL initial
+  state (here: an unloaded store vocabulary).
+- **The enumeration is "every entry path that reaches this surface", and it
+  belongs in a table test.** A new entry path then either appears as a row or is
+  conspicuously missing.
+- **When a rule recurs, the rule was too narrow — do not just re-apply it
+  harder.** Twice now the fix was to widen where the enumeration STARTS.
+
+## The vocabulary is withheld per region, decided at the boundary (define #21 M2)
+
+Highlighting wrapped the whole rendered definition, so a word the learner
+revisits — the common case for a learning tool — rendered green inside its own
+bold-cyan headword, which the Spec explicitly puts out of scope.
+
+- **A finished string has no structure left to consult.** Per-region decisions
+  have to be made where the regions still exist. `RenderOpts.Vocab` reaches
+  `Render`; `admitsHighlight`'s doc comment is the ten-region admit/withhold
+  table.
+- **State the decision for every region, including the obvious ones.** "Prose is
+  admitted, labels are withheld" is a rule; "I wrapped the string I had" is not,
+  and cannot be reviewed.
+
 ## Enumerate the production chain, not the comments (define #21 M1)
 
 Four findings across two boundary rounds, one family: a behaviour with no test

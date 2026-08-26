@@ -300,3 +300,24 @@ this spec's central decision — the predicate seam.
   TestDefinitionHighlightingIsOffWithoutColour. Seven mutations, all die.
   FuzzHighlightWriterIsChunkIndependent 803k execs on byte-identity across split
   points plus visible-text preservation.
+
+- 2026-08-26: M2 boundary round 1 — REWORK, 10 findings, 9 repeat families, gate
+  verdict "not converging: fix rules, not instances". Two Criticals, both real.
+  (1) The writer released bytes that could still change: wordRuns trims joiners
+  off token edges, so a region ending in one looked like "punctuation closed the
+  token" when the token was actually mid-word — don'+t lost don't, a chunk cut
+  mid-rune lost café. Data loss on the exact streaming path M3 builds. The deeper
+  fault was the fuzz corpus: the deck was pinned as a constant with no
+  joiner-bearing or multi-byte entry, so that failure class was unreachable at
+  any exec count and 803k execs proved nothing. Deck now derived from
+  TestWordRuns' table, plus a byte-at-a-time table. (2) Definitions never
+  highlighted outside the raw editor — Load() had one call site there while M2
+  wired highlighting into lookupAndRender, which defineOnce and replLines also
+  reach. Two of three entry paths dead, suite green, and the README sentence I
+  wrote at M2 was false for `define sycophantic`, the command it described. My
+  M1 rule was too narrow: the chain must start at PROCESS ENTRY POINTS, not at
+  the dependency a test injects. Also: the headword was being re-styled against
+  the Spec's own out-of-scope list, fixed by moving the decision into Render as
+  an explicit ten-region admit/withhold table. Three rules recorded in
+  lessons.md; a prior boundary review left an untracked probe file in the tree,
+  deleted.

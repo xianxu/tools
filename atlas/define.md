@@ -481,7 +481,7 @@ Its contract, in the order the rules matter:
    drags it back to that span's start. Plain text may be cut freely.
 4. **Downstream errors poison the writer.** The first failure is remembered and
    nothing is emitted after it, so no byte is written twice. A short write with a
-   nil error is a failure — `crlfWriter`, which this wraps in raw mode, produces
+   nil error is a failure — `crlfWriter`, which M3 will nest this inside, produces
    exactly that.
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 

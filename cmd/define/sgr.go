@@ -9,7 +9,15 @@ import "strings"
 // example and then closing it with a reset would leave the REST of the example
 // unstyled; the writer has to re-open what was in effect, and something has to
 // know what that was.
+// maxOpenSGR bounds the styles remembered between resets. Render emits at most
+// two or three; the cap exists for streams this code does not control.
+const maxOpenSGR = 16
+
 type sgrState struct {
+	// base is the style in effect before this stream began — set when a caller
+	// hands the writer a REGION cut out of already-styled text, where the
+	// opening escape lies outside what the writer sees.
+	base string
 	// open is every SGR seen since the last reset, in order. A terminal composes
 	// them (bold, then colour), so resuming means replaying them — keeping only
 	// the last would drop the bold that Render opened separately.
@@ -26,11 +34,18 @@ func (s *sgrState) observe(seq string) {
 		s.open = s.open[:0]
 		return
 	}
+	if len(s.open) >= maxOpenSGR {
+		// Arbitrary model output (M3) can emit styles without ever resetting, and
+		// an unbounded resume string would be re-emitted after every highlight.
+		// Dropping the OLDEST keeps the most recent styles, which is what a
+		// terminal shows anyway once enough have accumulated.
+		s.open = append(s.open[:0], s.open[1:]...)
+	}
 	s.open = append(s.open, seq)
 }
 
 // resume is what to emit to put the style back after a highlight.
-func (s sgrState) resume() string { return strings.Join(s.open, "") }
+func (s sgrState) resume() string { return s.base + strings.Join(s.open, "") }
 
 // isSGR reports whether a sequence is a CSI ending in 'm'.
 func isSGR(seq string) bool {

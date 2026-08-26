@@ -19,8 +19,10 @@
 | `span` | `cmd/define/highlight.go` | new |
 | `highlightSpans` | `cmd/define/highlight.go` | new |
 | `wordRuns` / `wordRun` | `cmd/define/highlight.go` | new |
-| `sgrState` | `cmd/define/highlight.go` | new |
+| `sgrState` | `cmd/define/sgr.go` | new |
 | `RenderLine` | `cmd/define/editor.go` | modified |
+| `RenderOpts.admitsHighlight` | `cmd/define/render.go` | new |
+| `tokenStillOpen` | `cmd/define/highlightwriter.go` | new |
 
 - **`span`** — one run of text plus whether it is a word the learner knows.
   - **Relationships:** N spans per rendered line; concatenating their `text` reproduces the input exactly. That invariant is the whole safety story, exactly as `head+text == line` was in #20 — a renderer joins spans back into what the user sees, so a lossy split silently corrupts a definition. Fuzz target, not a table row.
@@ -47,9 +49,11 @@
 | `Vocabulary` | `cmd/define/vocab.go` | new | the deck |
 | `storeVocabulary` | `cmd/define/vocab.go` | new | `store.Store` |
 | `memVocabulary` | `cmd/define/vocab.go` | new | nothing (the double) |
-| `highlightWriter` | `cmd/define/highlight.go` | new | `io.Writer` |
+| `highlightWriter` | `cmd/define/highlightwriter.go` | new | `io.Writer` |
 | `storeCapturer.Capture` | `cmd/define/capture.go` | modified | store writes |
 | `deps.vocab` | `cmd/define/main.go` | modified | dependency wiring |
+| `vocabularyFor` | `cmd/define/vocab.go` | new | the load+colour decision |
+| `Render` | `cmd/define/render.go` | modified | per-region highlight decision |
 
 - **`Vocabulary`** — `Load()`, `Add(word string)`, `Has(key string) bool`, `MaxPhraseWords() int`.
   - **Injected into:** `highlightSpans`, `highlightWriter`, `RenderLine`. This is the seam #22 replaces: today `storeVocabulary` fills the set from `Deck()`; later it fills from the active-learning subset, and nothing above changes.
@@ -93,16 +97,19 @@ proposed — visible-text equality and one-call equivalence — are blind to a
 reorder of escapes against text. Byte-for-byte assertions on full output, for at
 least the styled-headword case above.
 
-**4. Downstream errors propagate; counts are in the caller's units.** The writer
-emits more bytes than it receives (added escapes) and sometimes fewer (held
-back), so the count returned to the caller can never be the count the downstream
-writer returned. `Write(p)` returns `(len(p), nil)` when every byte of `p` has
-been accepted or held. On a downstream error it returns `(n, err)` where `n` is
-the number of `p`'s bytes whose output was fully written, and it must not
-double-emit those bytes on a subsequent call. This is not hypothetical:
-`highlightWriter` will wrap `crlfWriter` (`replraw.go:166`), which returns short
-counts on partial writes and is already tested for it (`crlf_test.go:50, :78`).
-Byte loss is this feature's worst failure mode.
+**4. Downstream errors propagate; the writer POISONS rather than reporting
+partial progress.** `Write(p)` returns `(len(p), nil)` when every byte of `p` has
+been accepted or held, and `(0, err)` on a downstream failure — after which every
+later `Write` returns the same error and emits nothing.
+
+The zero is deliberate, and it is the opposite of `crlfWriter` in the same
+package, which returns caller-unit progress on a short write. The difference is
+retry: `crlfWriter` can be written to again, so a caller must know how far it
+got (`crlf_test.go:47` defends exactly that). This writer cannot be resumed, so
+there is no retry to inform and no byte can be double-emitted; reporting a
+partial count would invite a resume it will never honour. A short write with a
+NIL error still counts as a failure — `crlfWriter`, which M3 nests this inside,
+produces exactly that. Byte loss is this feature's worst failure mode.
 
 **5. `Flush` is part of the contract, not a convenience.** Held text is invisible
 until flushed. Every exit path flushes — see Task 8 Step 4.
@@ -441,3 +448,62 @@ constant instead, which is the property that was meant.
   rewritten to cover the typed line only. Step 7's remaining job is to WIDEN that
   paragraph as M2 and M3 land, not to write a new one; without this note M3 would
   find the step looking done and never revisit the sentence.
+
+### 2026-08-26 — M2 boundary round 1 (REWORK): two Criticals, and three rules that were too narrow
+
+The gate's summary was the diagnosis: *round 5 — 10 new findings, 9 repeat
+families. Not converging: fix rules, not instances.* Every recurrence was a rule
+I had written one notch too narrow to cover the next instance.
+
+- **C1 `decidedEnd` released bytes that could still change.** `wordRuns` TRIMS
+  joiners off token edges, so a region ending in `'` or `-` has a trimmed token
+  end followed by a non-gap character — which read exactly like "punctuation
+  closed the token". It is the opposite: the token is mid-word. `don'`+`t` lost
+  `don't`; `hot-`+`dog` lost `hot-dog`; a chunk cut mid-rune lost `café`. Real
+  data loss on the streaming path M3 is about to build. `tokenStillOpen` now
+  requires evidence the last token cannot grow.
+- **C1's real lesson is the fuzz corpus.** `FuzzHighlightWriterIsChunkIndependent`
+  pinned `vocab("obsequious", "hot dog", "hot")` as a CONSTANT. The vocabulary is
+  part of the input space the property quantifies over, and with no joiner-bearing
+  or multi-byte entry the whole failing class was unreachable — 803k execs proved
+  nothing about it. The deck is now derived from `TestWordRuns`' table, the
+  package's own enumeration of word-character classes, and a byte-at-a-time table
+  test covers every split point exhaustively for its inputs.
+- **C2 definitions never highlighted outside the raw editor.** `Load()` had one
+  call site, in `runEditor`; M2 wired highlighting into `lookupAndRender`, which
+  `defineOnce` and `replLines` also reach. Two of three entry paths dead, whole
+  suite green, and the README sentence I wrote at M2 was false for `define
+  sycophantic` — the exact command it described. **The rule, corrected: the
+  production-chain enumeration begins at the PROCESS ENTRY POINTS, not at the
+  dependency the test injects.** M1's version started at `openStore`, which is
+  itself one hop in; a test that injects a filled `memVocabulary` begins after
+  the thing that fills it. `vocabularyFor` is now the single answer to "loaded,
+  and only with colour", and `TestEveryEntryPathHighlightsDefinitions` is the
+  table — one row per entry path, all three driven with an UNLOADED set.
+- **I3 the headword was re-styled, which the Spec puts out of scope.** Wrapping
+  the whole rendered string cannot make per-region decisions, because a finished
+  string has no structure left to consult. **The rule: the vocabulary is withheld
+  per region by an explicit decision at the boundary.** `RenderOpts.Vocab` now
+  reaches `Render`, and `admitsHighlight`'s doc comment IS the table — ten
+  regions, each marked admit or withhold, with prose admitted and labels
+  withheld. Highlighting happens after wrapping, so a phrase cannot span a line
+  break without that being enforced twice.
+- **I4 the `Write` count contract contradicted itself.** The plan said return
+  caller-unit progress, the code returned 0, and the test asserted the code. Both
+  are now the same and the reasoning is written down: this writer poisons on
+  first failure, so unlike `crlfWriter` there is no retry to inform and a partial
+  count would invite a resume it will never honour. **The rule: a `## Revisions`
+  entry lands in the same commit as the deviation** — this section is that entry,
+  and the Core-concepts rows above are corrected in it.
+- **I5 two more copy-pasted helper pairs.** `stripEscapes`/`stripANSI` and
+  `onlyPhraseGap`/`phraseGap`. The existing `stripANSI` was the WORSE of the two
+  (it runs past any CSI not ending in `m`), so it was extended rather than
+  replaced; `phraseGapOrEmpty` now delegates. Both instances crossed the
+  production/test line, which is where the previous `warnTo` sweep stopped
+  looking.
+- **Minors** — an untracked probe file was sitting in the tree awaiting a
+  `git add -A`; the atlas claimed `crlfWriter` nesting that M3 has not built; the
+  no-colour assertion checked only for green where absence of ANY escape was
+  available; `newHighlightWriter` accepted an empty style and would have wrapped
+  every word in a bare reset for M3's direct construction; `sgrState.open` grew
+  unbounded, which matters once arbitrary model output flows through it.

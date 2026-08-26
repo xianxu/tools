@@ -3,6 +3,7 @@ package main
 import (
 	"io"
 	"strings"
+	"unicode/utf8"
 )
 
 // highlightWriter rewrites words the learner knows as it copies a byte stream,
@@ -37,10 +38,29 @@ type highlightWriter struct {
 	err  error
 }
 
+// newHighlightWriter returns a writer that highlights, or a plain pass-through
+// when there is nothing to highlight with.
+//
+// The guard lives HERE rather than in highlightText because M3 constructs this
+// directly for the answer stream: an empty style would otherwise wrap every
+// known word in a bare reset, stripping the enclosing style for no benefit.
+// A guard only one of two callers gets is not a guard.
 func newHighlightWriter(out io.Writer, v Vocabulary, on string) *highlightWriter {
+	if on == "" {
+		v = nil // nothing to inject: highlightSpans then returns one plain span
+	}
 	return &highlightWriter{out: out, v: v, on: on}
 }
 
+// Write reports (len(p), nil) on success and (0, err) on failure.
+//
+// The zero is deliberate and differs from crlfWriter in the same package, which
+// returns caller-unit PROGRESS on a partial write. The difference is retry:
+// crlfWriter can be written to again, so a caller must know how far it got, and
+// crlf_test.go defends that. This writer POISONS on the first failure — every
+// later Write returns the same error and emits nothing — so there is no retry to
+// inform, and no byte can be written twice. Reporting a partial count here would
+// invite a resume that the writer will never honour.
 func (w *highlightWriter) Write(p []byte) (int, error) {
 	if w.err != nil {
 		return 0, w.err
@@ -170,12 +190,12 @@ func decidedEnd(region string, v Vocabulary, maxWords int) int {
 	}
 	toks := wordRuns(region)
 	if len(toks) == 0 {
-		if onlyPhraseGap(region) {
+		if phraseGapOrEmpty(region) {
 			return 0 // trailing spaces could still join a phrase
 		}
 		return len(region)
 	}
-	if !onlyPhraseGap(region[toks[len(toks)-1].end:]) {
+	if !tokenStillOpen(region) && !phraseGapOrEmpty(region[toks[len(toks)-1].end:]) {
 		return len(region) // punctuation closed the last token
 	}
 	k := len(toks) - maxWords
@@ -194,13 +214,35 @@ func decidedEnd(region string, v Vocabulary, maxWords int) int {
 	return hold
 }
 
-func onlyPhraseGap(s string) bool {
-	for _, r := range s {
-		if r != ' ' && r != '\t' {
-			return false
-		}
+// phraseGapOrEmpty is phraseGap plus the empty case. The matcher's phraseGap
+// answers false for "" because wordRuns are maximal so tokens are never
+// adjacent; the writer asks the same question about a region's TAIL, where empty
+// means "the token runs to the end". One rule, two entry conditions — rather
+// than a second near-identical predicate that could drift from it.
+func phraseGapOrEmpty(s string) bool { return s == "" || phraseGap(s) }
+
+// tokenStillOpen reports whether the region's last token could grow if more
+// bytes arrive, in which case nothing may be released.
+//
+// Three ways it can be open, and the last two are why this exists — wordRuns
+// TRIMS joiners off token edges, so a region ending in one has a trimmed token
+// end followed by a character that is not a phrase gap, which reads exactly like
+// "punctuation closed the token". It is the opposite: the token is mid-word.
+//
+//	"don'"  + "t"      -> don't      (a joiner at the end)
+//	"hot-"  + "dog"    -> hot-dog
+//	"caf\xc3" + "\xa9"  -> café       (an incomplete rune)
+//
+// Each of those lost its match before this check existed.
+func tokenStillOpen(region string) bool {
+	if region == "" {
+		return false
 	}
-	return true
+	if r, size := utf8.DecodeLastRuneInString(region); r == utf8.RuneError && size <= 1 {
+		return true // an incomplete final rune: more bytes are coming
+	}
+	last, _ := utf8.DecodeLastRuneInString(region)
+	return isWordRune(last)
 }
 
 // highlightText runs a complete, already-rendered string through the writer.
@@ -213,11 +255,18 @@ func onlyPhraseGap(s string) bool {
 // Returns the input unchanged when there is nothing to highlight, so a caller
 // with colour off never pays for a pass that cannot do anything.
 func highlightText(s string, v Vocabulary, on string) string {
+	return highlightRegion(s, v, on, "")
+}
+
+// highlightRegion is highlightText with a base style: what the terminal is in
+// when the region starts, and therefore what each highlight must hand back.
+func highlightRegion(s string, v Vocabulary, on, base string) string {
 	if v == nil || on == "" || s == "" {
 		return s
 	}
 	var b strings.Builder
 	w := newHighlightWriter(&b, v, on)
+	w.sgr.base = base
 	if _, err := io.WriteString(w, s); err != nil {
 		return s
 	}
