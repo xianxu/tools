@@ -315,3 +315,185 @@ findings:
       sgrOff around every known span (highlightwriter.go:127). M3 wires the
       stream by constructing the writer directly and will not inherit that guard.
 ```
+
+---
+
+## Re-review — 2026-08-26T16:39:10-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 21 — highlight the words you are learning wherever they appear |
+| repo | tools |
+| issue file | workshop/issues/000021-highlight-learned.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 5cbcc80c7c02e3f341c65b405e048ffe5e28dec6..5cbcc80c7c02e3f341c65b405e048ffe5e28dec6 |
+| command | sdlc milestone-close --issue 21 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-26T16:39:10-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Both round-1 Criticals are genuinely fixed and I verified each by reverting it in an overlay: reverting `tokenStillOpen` reddens all four rows of `TestHighlightWriterByteAtATimeMatchesOneCall`, and deleting `d.vocab.Load()` from `vocabularyFor` reddens all three rows of `TestEveryEntryPathHighlightsDefinitions` plus the editor-loop test. The headword withhold is real and pinned (re-styling the headword reddens `TestTheHeadwordLineIsNotHighlighted`). Suite, `go vet` and `gofmt` are clean; the tree is clean. What keeps this from SHIP is two Importants, both cheap and both worth landing before M3 wires the stream: (1) `decidedEnd`'s *other* release path still releases bytes that can grow — measured, a deck word whose first rune is multi-byte loses its match when a chunk splits that rune, the same class as BR-13 in the one branch the fix did not touch; (2) four behaviours this window added by comment are pinned by nothing — most importantly the enclosing-style resume at the example region, which is the M2 Done-when clause itself and whose deletion passes the entire suite. Two prior findings are disposed `not-addressed`: the plan's Task Files blocks still name files that do not exist, and the atlas sweep BR-18 asked for was not run, leaving a paragraph that states the opposite of what this commit built.
+
+**1. Strengths**
+
+- `vocabularyFor` (`cmd/define/vocab.go:156`) is the right shape for the BR-14 fix: one answer to "loaded, and only with colour", consumed by both `runEditor` and `lookupAndRender`, with `TestEveryEntryPathHighlightsDefinitions` (`vocab_test.go:242`) as a table over *process entry points* driven with a deliberately unloaded `storeVocabulary`. Verified: the mutation the fix targets kills all three rows.
+- `tokenStillOpen` (`highlightwriter.go:225`) states its evidence rather than its symptom — three named ways a token can still grow, with the byte-at-a-time table (`highlightwriter_test.go:237`) as the harshest split schedule. Verified by revert.
+- Moving the per-region decision into `Render` via `RenderOpts.Vocab` + `admitsHighlight` (`render.go:62`) is the correct structural answer to "a finished string has no structure left to consult", and it keeps `Render` pure over injected data (ARCH-PURE holds — `Load` stays at the boundary).
+- `fuzzDeck` (`highlightwriter_test.go:192`) deriving from `TestWordRuns`' table instead of a hand-picked constant is exactly the right generalisation of the round-1 lesson, and the lessons.md entry ("a property is only as wide as its fixtures") states it well.
+- `phraseGapOrEmpty` delegating to `phraseGap`, and `stripANSI` extended rather than duplicated, resolve BR-17 properly — no near-duplicate helper pairs remain in `cmd/define` (ARCH-DRY passes).
+
+**2. Critical findings**
+
+None.
+
+**3. Important findings**
+
+- **`cmd/define/highlightwriter.go:187` — `decidedEnd`'s no-token branch releases without the growth check.** When `wordRuns(region)` is empty the function returns `len(region)` on anything that is not a pure phrase gap, never consulting `tokenStillOpen`. Measured with the shipped code: `writeChunks(vocab("über"), "!über")` → `"!\x1b[1;32müber\x1b[0m"`, but `writeChunks(vocab("über"), "!\xc3", "\xbcber")` → `"!über"`, and the same for a three-chunk `"hi!"|" "|"\xc3"|"\xbcber now"`. Bytes survive; the match does not. Fix sketch: make the empty-token branch return 0 when `tokenStillOpen(region)`, so both release paths ask the same question.
+- **`cmd/define/render.go:175` — the enclosing-style resume at the one production site that has one is pinned by nothing.** Replacing `p.ex` with `""` in the example region passes the whole suite, yet it changes the bytes: correct output is `\x1b[3;32m“an \x1b[1;32mobsequious\x1b[0m\x1b[3;32m smile followed”\x1b[0m`, the mutant drops the resume and leaves the rest of the example unstyled. That is the M2 Done-when ("the enclosing style resumes after it") with no proof at the surface it applies to. Three siblings measured in the same window: `sgrState.base` dies with it; `maxOpenSGR` (`sgr.go:14`) has no test at all; and dropping `!opt.color` from `vocabularyFor` (`vocab.go:157`) — the M1-round-3 "no IO for a disabled feature" guard — passes the full suite. Fix sketch: assert the production bytes for a highlight inside a styled region, and use a spying double (`countingDeck` already exists at `vocab_test.go:199`) for the guards whose only effect is *absence* of IO.
+
+**4. Minor findings**
+
+- `cmd/define/highlightwriter.go:257` — `highlightText` has zero call sites in production or tests; `RenderOpts.prose` → `highlightRegion` replaced it. Both `atlas/define.md` and the plan still name it as the definition path.
+- `cmd/define/render.go:47` — the admit/withhold table lists 10 regions, but `Render` produces more: `HeadHomograph` and `HeadOther` (which carries real prose, e.g. `read verb (past and past participle read | red |)`) and the block label at `render.go:130` have no row. Behaviour is correct for all of them; the enumeration that is supposed to force the decision is a subset of the regions.
+
+**5. Test coverage notes**
+
+- Mutation results this round: 4 killed (`tokenStillOpen` revert, `Load()` deletion, headword re-styling, plus the existing suite), 2 survived (example base-resume, `vocabularyFor` colour gate).
+- `TestHighlightingLosesNothing` now runs over the colour-ON render — the substantive half of BR-20 — but still has no "at least one entry highlighted" guard. Measured at HEAD: 6 of 32 corpus entries highlight, so it is not vacuous today, and nothing would say so if a corpus refresh made it vacuous.
+- `FuzzHighlightWriterIsChunkIndependent`'s deck reproduces the tokenizer's character *classes* but not their *positions*: `café` is the only multi-byte entry and its multi-byte rune is word-final. Adding one word-initial multi-byte entry makes the Important finding above reachable at low exec counts.
+
+**6. Architectural notes for upcoming work**
+
+- ARCH-DRY: pass. One tokenizer, one matcher, one writer; `phraseGapOrEmpty` delegates; `storeVocabulary` embeds `memVocabulary`; the round-1 duplicate pairs are gone and a sweep of `cmd/define`'s function list turns up no new ones.
+- ARCH-PURE: pass. `wordRuns`/`highlightSpans`/`sgrState`/`decidedEnd`/`tokenStillOpen` are pure and unit-tested without IO; `highlightWriter` is the thin shell; `Render` takes the predicate rather than performing the load.
+- ARCH-PURPOSE: pass on the milestone's substance (definitions highlight on all three entry paths, verified end to end), flagged on the two enumerations above — the region table and the fuzz deck each name a class and then write a subset of it, which is the axis this issue keeps recurring on.
+- ARCH-MOCK: pass. No new external dependency; `memVocabulary` is the double at the same seam production uses, and `store.NewMem()` backs the store-side tests.
+- For M3: the writer's `base` field and the flush-on-every-exit-path requirement are the two things with no test pressure today. Land the Important findings first — M3 is where the release gap stops being theoretical.
+
+**7. Plan revision recommendations**
+
+- `## Revisions` entry for the file-layout deviations still outstanding: Task 5 Files (`plan:268-269`) → `cmd/define/sgr.go` / `sgr_test.go`; Task 6 Files (`plan:280-281`) → `highlightwriter.go` / `highlightwriter_test.go`; Task 7 Files (`plan:298-299`) → `cmd/define/render.go` (the region table) plus `main.go:505`, tests in `highlightwriter_test.go`; Task 6 Step 6 (`plan:291`) names `FuzzHighlightWriter`, shipped as `FuzzHighlightWriterIsChunkIndependent`; Task 7 Step 2 (`plan:303`) places the invariant in `invariant_test.go`, shipped as `TestHighlightingLosesNothing` in `highlightwriter_test.go`.
+- Core concepts, `plan:70`: `highlightWriter`'s "Injected into: the definition print site (`main.go:488`)" describes the design this round replaced — the injection is now `RenderOpts.Vocab` into `Render`'s admitted regions.
+- `atlas/define.md:498-500` needs the same correction in the opposite direction: it claims highlighting "wraps the RENDERED string rather than reaching into `Render`", which is what 5cbcc80 removed.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: addressed
+    note: |
+      Verified by revert — stubbing tokenStillOpen to false reddens all four rows of TestHighlightWriterByteAtATimeMatchesOneCall.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Verified by revert — deleting d.vocab.Load() reddens all three entry-path rows plus TestEditorLoopHighlightsADeckWordOnScreen.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Verified by mutation — routing the head token through opt.prose reddens TestTheHeadwordLineIsNotHighlighted.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Core-concepts rows and contract rule 4 are corrected; Task 5/6/7 Files blocks, the main.go:488 injection point, the fuzz target name and Task 7 Step 2's invariant location still name what does not exist.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      stripEscapes and onlyPhraseGap are gone; phraseGapOrEmpty delegates to phraseGap; a sweep of cmd/define's function list finds no remaining near-duplicate pair.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      The crlfWriter line was fixed but the window sweep it demanded was not run — atlas/define.md:498 now claims highlighting wraps the rendered string rather than reaching into Render, the opposite of what this commit built.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      Working tree is clean; no zz_probe file in cmd/define.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      The colour-ON half landed; the hits-greater-than-zero vacuity guard did not — measured 6 of 32 corpus entries highlight at HEAD.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      highlightwriter_test.go:287 now asserts absence of any escape byte.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      newHighlightWriter nils the vocabulary when on is empty, so a direct M3 caller inherits the guard.
+findings:
+  - id: new
+    severity: Important
+    family: release-only-what-cannot-change
+    title: |
+      decidedEnd's no-token branch still releases bytes that can grow, so a chunk splitting a word-initial multi-byte rune loses the match
+    detail: |
+      This is the 2nd finding in family `release-only-what-cannot-change` — do NOT fix
+      only this instance. THE RULE: every release path in decidedEnd must consult the
+      same "can the tail still grow?" predicate. There are two, and only one calls
+      tokenStillOpen: when wordRuns(region) is empty (highlightwriter.go:187) the
+      function returns len(region) for anything that is not a pure phrase gap, so a
+      region holding only non-word bytes plus an incomplete rune is released.
+      Measured at HEAD: writeChunks(vocab("uber-with-umlaut"), "!<word>") highlights,
+      writeChunks(..., "!\xc3", "\xbcber") does not; likewise "hi!"|" "|"\xc3"|"\xbcber now".
+      Bytes survive, the match does not, and the property that should quantify over
+      this is blind because fuzzDeck reproduces the tokenizer's character CLASSES but
+      not their POSITIONS — cafe is the only multi-byte entry and its multi-byte rune
+      is word-final, so no exec count reaches a word-initial one. The enumeration to
+      write is class x position (initial / medial / final) for each word-character
+      class, applied to both the derived deck and the byte-at-a-time table.
+  - id: new
+    severity: Important
+    family: behaviour-claimed-without-a-failing-test
+    title: |
+      Four behaviours added this window are pinned by nothing, including the M2 Done-when's own enclosing-style resume
+    detail: |
+      This is the 7th finding in family `behaviour-claimed-without-a-failing-test` —
+      do NOT fix only this instance. Measured survivals at HEAD: (1) render.go:175,
+      replacing the p.ex base with "" passes the whole suite while changing production
+      bytes — correct output is \x1b[3;32m"an \x1b[1;32mobsequious\x1b[0m\x1b[3;32m
+      smile followed"\x1b[0m and the mutant drops the resume, leaving the rest of the
+      example unstyled; sgrState.base dies with the same mutation. (2) sgr.go:14,
+      maxOpenSGR has no test at all. (3) vocab.go:157, deleting !opt.color from
+      vocabularyFor passes — the whole deck is read under -no-color, which is exactly
+      M1 round 3's io-for-a-disabled-feature finding, now unpinned again after the
+      refactor moved it. THE RULE, in the shape this window needs: the prior
+      enumerations covered hops that change OUTPUT, and every survivor here is either a
+      wiring argument (base) or a guard whose only effect is the ABSENCE of work. So
+      the enumeration is: for each behaviour this diff's comments claim, name the
+      observation that would falsify it — output bytes at the production site for
+      wiring, and a counting/spying double for guards. The package already has
+      countingDeck (vocab_test.go:199) doing precisely this for "read the deck once";
+      the colour gate can reuse it verbatim.
+  - id: new
+    severity: Minor
+    family: dead-test-scaffolding
+    title: |
+      highlightText has zero call sites after the per-region refactor, while atlas and plan both name it as the definition path
+    detail: |
+      highlightwriter.go:257. RenderOpts.prose -> highlightRegion replaced it; go vet
+      does not flag unused functions, so it survives silently. Same rule as the earlier
+      dead-scaffolding instances, widened to production code: when a refactor replaces a
+      helper, the helper goes with it, and so do the docs that name it.
+  - id: new
+    severity: Minor
+    family: feature-leaks-across-namespace
+    title: |
+      admitsHighlight's region table lists 10 regions; Render produces more
+    detail: |
+      This is the 3rd finding in family `feature-leaks-across-namespace` — do NOT fix
+      only this instance. render.go:47's table omits HeadHomograph, HeadOther (which
+      carries real prose, e.g. "read verb (past and past participle read | red |)") and
+      the block label at render.go:130. All three are withheld by construction today, so
+      behaviour is correct; the enumeration that is supposed to force a decision is a
+      subset of the regions, and nothing makes a newly added region declare itself. THE
+      RULE: the table is only a decision procedure if it is complete and something
+      fails when a region is missing from it — enumerate from Render's emit sites, and
+      pin the withholds with one assertion that a highlight appears only inside admitted
+      regions.
+```

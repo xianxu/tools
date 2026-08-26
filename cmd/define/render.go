@@ -44,12 +44,27 @@ func newPalette(on bool) palette {
 // the dictionary's own scaffolding, and colouring "adjective" because the
 // learner once looked it up says nothing about the word being defined.
 //
+// The table has to be COMPLETE to be a decision procedure. The first version
+// listed ten regions and Render emits thirteen — HeadHomograph, HeadOther and
+// the block label were missing, all withheld by construction, so behaviour was
+// right and the enumeration was a subset pretending to be the whole.
+// TestHighlightsAppearOnlyInAdmittedRegions is what makes an omission FAIL: it
+// derives the admitted text from the parsed Entry, so a region that starts
+// leaking is caught without anyone remembering to add a row here.
+//
 //	region                     decision
 //	------------------------   --------
-//	headword                   withhold — Spec, out of scope; already bold cyan
+//	headword (HeadWord)        withhold — Spec, out of scope; already bold cyan
+//	homograph (HeadHomograph)  withhold — an index number
 //	syllabification            withhold — a label
-//	IPA pronunciation          withhold — not prose
-//	part-of-speech label       withhold — a label
+//	POS in the head (HeadPOS)  withhold — a label
+//	other head tokens          withhold — carries prose ("read verb (past and
+//	  (HeadOther)                         past participle read | red |)") but it
+//	                                      is head material, styled as the head
+//	entry IPA                  withhold — not prose
+//	block POS label            withhold — a label
+//	block grammar label        withhold — a label
+//	block IPA                  withhold — not prose
 //	sense number marker        withhold — scaffolding
 //	sense gloss                ADMIT    — prose
 //	example label              withhold — a label

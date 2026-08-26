@@ -279,3 +279,28 @@ func TestEveryEntryPathHighlightsDefinitions(t *testing.T) {
 		})
 	}
 }
+
+// BR-24(3): the colour gate's only effect is the ABSENCE of work, so no output
+// assertion can see it — deleting `!opt.color` passed the whole suite while
+// reading the entire deck under -no-color. That was M1 round 3's finding,
+// unpinned again by M2's refactor moving the check.
+//
+// A guard whose effect is absence needs a counting double, not an output check.
+func TestNoColourReadsNoDeck(t *testing.T) {
+	st := &countingDeck{Store: store.NewMem()}
+	d := deps{vocab: newStoreVocabulary(st, nil)}
+
+	if got := vocabularyFor(d, options{color: false}); got != nil {
+		t.Error("colour off returned a vocabulary; nothing can render it")
+	}
+	if st.reads != 0 {
+		t.Errorf("read the deck %d times with colour off — IO for a disabled feature", st.reads)
+	}
+
+	if got := vocabularyFor(d, options{color: true}); got == nil {
+		t.Fatal("colour on returned no vocabulary")
+	}
+	if st.reads != 1 {
+		t.Errorf("read the deck %d times with colour on, want exactly 1", st.reads)
+	}
+}

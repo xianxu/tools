@@ -1054,6 +1054,29 @@ changes: it adds LINES, so count them.
 measures** — and pick payload text that is unmistakable and inert (`FORGED-LEVEL`),
 never text shaped like the thing you are checking for.
 
+## A guard whose effect is ABSENCE needs a counting double (define #21 M2)
+
+Seventh finding in one family across three rounds, and the survivors had a shape
+my earlier enumerations could not reach. Every rule I had written quantified over
+things that change OUTPUT. These do not:
+
+- a **wiring argument** — passing `p.ex` as the style to resume. Replace it with
+  `""` and production bytes change (the rest of the example goes unstyled) but no
+  test looked at those bytes, only at whether a highlight appeared.
+- a **guard whose only effect is work not happening** — `!opt.color` in
+  `vocabularyFor`. Delete it and the whole deck is read under `-no-color`. No
+  output assertion can ever see that, because the output is identical.
+
+The rule that reaches both: **for each behaviour a comment claims, name the
+observation that would falsify it.** Production output bytes for wiring; a
+counting or spying double for a guard. The package already had `countingDeck`
+doing exactly this for "read the deck once", and the colour gate reused it
+verbatim — the tool existed, the enumeration just never asked for it.
+
+Sharper still: that colour gate had been found and fixed one milestone earlier.
+A refactor moved it, and nothing was watching, because nothing ever had been.
+**A fix without a test is a fix with a half-life.**
+
 ## A property is only as wide as its fixtures — the deck is input too (define #21 M2)
 
 `FuzzHighlightWriterIsChunkIndependent` asserted that splitting a stream anywhere
@@ -1073,6 +1096,11 @@ mid-rune lost `café`.
   is how the gap got in.
 - **Exec count is not coverage.** "803k execs clean" reads like assurance and
   measures only how long an unreachable class stayed unreachable.
+- **Enumerate class × POSITION, not class alone.** The round-1 fix derived the
+  deck from the tokenizer's character classes and still missed the bug: `café`
+  was the only multi-byte entry and its multi-byte rune is word-FINAL, so a
+  word-INITIAL one was unreachable — and that was precisely the shape the broken
+  code path needed. Where a character sits in a token is part of the class.
 
 ## Enumerate the production chain from the ENTRY POINTS (define #21 M2)
 

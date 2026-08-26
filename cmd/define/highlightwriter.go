@@ -41,7 +41,7 @@ type highlightWriter struct {
 // newHighlightWriter returns a writer that highlights, or a plain pass-through
 // when there is nothing to highlight with.
 //
-// The guard lives HERE rather than in highlightText because M3 constructs this
+// The guard lives HERE rather than in the region helper because M3 constructs this
 // directly for the answer stream: an empty style would otherwise wrap every
 // known word in a bare reset, stripping the enclosing style for no benefit.
 // A guard only one of two callers gets is not a guard.
@@ -188,10 +188,17 @@ func decidedEnd(region string, v Vocabulary, maxWords int) int {
 	if maxWords <= 0 {
 		return len(region) // nothing to match, so nothing to wait for
 	}
+	// BOTH release paths ask the same growth question. The first version asked it
+	// on only one, and a region of pure punctuation ending in half a rune
+	// ("!\xc3") has no tokens at all — so it took the no-token path, was
+	// released, and "!über" arriving split lost its match while every byte
+	// survived.
 	toks := wordRuns(region)
 	if len(toks) == 0 {
-		if phraseGapOrEmpty(region) {
-			return 0 // trailing spaces could still join a phrase
+		// Nothing to hold against yet: release unless the tail could still grow
+		// into a token, or is a gap a phrase could span.
+		if tokenStillOpen(region) || phraseGapOrEmpty(region) {
+			return 0
 		}
 		return len(region)
 	}
@@ -245,21 +252,19 @@ func tokenStillOpen(region string) bool {
 	return isWordRune(last)
 }
 
-// highlightText runs a complete, already-rendered string through the writer.
+// highlightRegion runs one complete region through the writer.
 //
-// The same mechanism the stream uses, which is the point: a definition and an
-// answer differ only in whether the text arrives at once, and giving them
-// separate implementations would mean two sets of ANSI-resume rules to keep in
-// agreement.
+// The same mechanism the answer stream uses, which is the point: a definition
+// region and an answer differ only in whether the text arrives at once, and
+// giving them separate implementations would mean two sets of ANSI-resume rules
+// to keep in agreement.
+//
+// base is what the terminal is in when the region starts, and therefore what
+// each highlight must hand back — ANSI does not nest, so an example written
+// inside p.ex would otherwise lose its style after the first highlighted word.
 //
 // Returns the input unchanged when there is nothing to highlight, so a caller
 // with colour off never pays for a pass that cannot do anything.
-func highlightText(s string, v Vocabulary, on string) string {
-	return highlightRegion(s, v, on, "")
-}
-
-// highlightRegion is highlightText with a base style: what the terminal is in
-// when the region starts, and therefore what each highlight must hand back.
 func highlightRegion(s string, v Vocabulary, on, base string) string {
 	if v == nil || on == "" || s == "" {
 		return s

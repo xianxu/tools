@@ -321,3 +321,20 @@ this spec's central decision — the predicate seam.
   an explicit ten-region admit/withhold table. Three rules recorded in
   lessons.md; a prior boundary review left an untracked probe file in the tree,
   deleted.
+
+- 2026-08-26: M2 boundary round 2 — FIX-THEN-SHIP, 3 blocking. My round-1 fixes
+  were themselves instances twice over. (1) The growth check went on ONE of
+  decidedEnd's two release paths, so a region of punctuation ending in half a
+  rune still released and "!über" split lost its match; both paths now ask it.
+  Hoisting the check above both was wrong and the suite caught it — it made every
+  text ending mid-word hold entirely, defeating streaming. (2) The fuzz deck was
+  derived from character CLASSES but not POSITIONS, and café's multi-byte rune is
+  word-final, so the word-initial shape the broken path needed was unreachable at
+  any exec count. Now class × position. (3) Seventh finding in the
+  behaviour-claimed-without-a-failing-test family, and the survivors were a
+  wiring argument and a guard whose only effect is absence of work — neither
+  reachable by enumerations that quantify over output changes. The colour gate
+  among them had been found and fixed at M1 round 3 and went unpinned again when
+  the refactor moved it. (4) The region table listed ten regions where Render
+  emits thirteen; now complete AND derived from the parsed Entry, so an omission
+  fails rather than passing quietly. Two rules recorded in lessons.md.

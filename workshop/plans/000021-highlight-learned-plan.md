@@ -67,7 +67,7 @@
 - **`memVocabulary`** — the in-memory double (ARCH-MOCK). Production and tests share the `Vocabulary` boundary; no test reaches around it.
 
 - **`highlightWriter`** — stateful `io.Writer` that rewrites known words in a byte stream that already carries ANSI codes.
-  - **Injected into:** the definition print site (`main.go:488`) and the answer stream sink (`ask.go:160`).
+  - **Injected into:** `Render`'s admitted regions (`render.go`, via `RenderOpts.Vocab`) and the answer stream sink (`ask.go:160`). The plan said the definition print site; the decision moved into `Render` so it can be made per region.
   - **State model:** active SGR (`sgrState`); a held-back tail beginning at the first token that could still extend into a phrase; a partial escape sequence. `Write` always reports `len(p)` consumed even while holding bytes back — the `io.Writer` contract, and the same problem `crlfWriter.consumed` already solves in this tree.
   - **Future extensions:** any other styled stream (a `--stats` table) wraps the same writer.
 
@@ -265,7 +265,8 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 ### Task 5: SGR tracking
 
 **Files:**
-- Modify: `cmd/define/highlight.go`
+- Create: `cmd/define/sgr.go` (planned as `highlight.go`; split out because it is
+  a self-contained pure entity with its own table test)
 - Test: `cmd/define/highlight_test.go`
 
 - [x] **Step 1: Write the failing tests.** Strategy: one table over "sequence in → resume code out", whose rows are the DISTINCTIONS (SGR sets the resume; reset clears it; a non-SGR CSI leaves it alone; an unterminated escape is retained rather than read as text). One row per rule, not one per escape code.
@@ -277,7 +278,7 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 ### Task 6: `highlightWriter`
 
 **Files:**
-- Modify: `cmd/define/highlight.go`
+- Create: `cmd/define/highlightwriter.go` (planned as `highlight.go`)
 - Test: `cmd/define/highlight_test.go`
 
 - [x] **Step 1: Write the failing tests.** Strategy: one BYTE-EXACT table over the contract rules above — a known word in one call; the same word split across two `Write` calls; an escape split across two calls; a known word inside a styled run (asserting the enclosing style resumes after it); and the rule-1 ordering case, deck `hot dog` against `\x1b[1;36mhot\x1b[0m dog`, whose whole point is that the reset must not move. Assert full output bytes, per contract rule 3 — escape-stripped comparison cannot see a reorder.
@@ -288,25 +289,30 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 - [x] **Step 5: Verify passing.**
 
-- [x] **Step 6: Add `FuzzHighlightWriter`.** Split a random input at a random index into two writes; assert the flushed bytes are IDENTICAL to writing it in one call. Chunk-independence is the property, and byte identity — not visible-text equality — is what makes it able to see a reorder.
+- [x] **Step 6: Add `FuzzHighlightWriterIsChunkIndependent`** (named `FuzzHighlightWriter` in the plan). Split a random input at a random index into two writes; assert the flushed bytes are IDENTICAL to writing it in one call. Chunk-independence is the property, and byte identity — not visible-text equality — is what makes it able to see a reorder.
 
 - [x] **Step 7: Commit.**
 
 ### Task 7: Definitions
 
 **Files:**
-- Modify: `cmd/define/main.go:488`
+- Modify: `cmd/define/render.go` — the per-region decision (`RenderOpts.Vocab`,
+  `admitsHighlight`, `prose`). Planned as a wrap of `Render`'s OUTPUT at the
+  print site; that could not withhold the headword, which the Spec puts out of
+  scope, because a finished string has no structure left to consult.
+- Modify: `cmd/define/main.go` — the print site now passes `vocabularyFor(d, opt)`
+  into `RenderOpts` instead of wrapping
 - Test: `cmd/define/render_test.go` or `highlight_test.go`
 
 - [x] **Step 1: Write the failing test.** Render a real parsed entry with a vocabulary containing a word that appears in its *body*, assert the body occurrence is highlighted.
 
-- [x] **Step 2: Write the invariant test.** `invariant_test.go` holds rendered letters/digits against the raw entry as an ordered subsequence. Add a case with highlighting ON. If the existing helper does not strip escapes, it must — otherwise green codes read as data and the invariant is meaningless.
+- [x] **Step 2: Write the invariant test.** Landed as `TestHighlightingLosesNothing` in `highlightwriter_test.go` rather than as a case inside `invariant_test.go`: it needs the escape-stripped comparison, and bolting a second property onto the existing table would have made both harder to read. Same claim — rendered text with highlighting on is byte-identical to rendered text without it, once escapes are stripped.
 
-- [x] **Step 3: Run to verify. Step 4: Implement** via `highlightText(s, v, on)` — `highlightWriter` over a `bytes.Buffer`, flushed. When colour is off, do not wrap at all: a pass-through that emits nothing is weaker than not being in the path.
+- [x] **Step 3: Run to verify. Step 4: Implement** via `highlightRegion(s, v, on, base)` — `highlightWriter` over a `bytes.Buffer`, flushed, with `base` carrying the enclosing style so an example hands its italic-green back. (The plan named a whole-string `highlightText`; that form has no callers after the per-region refactor and was deleted.) When colour is off nothing wraps at all.
 
 - [x] **Step 5: Verify, including `-no-color` and piped output emitting zero escapes.**
 
-- [x] **Step 6: Mutation-check** that the invariant test bites: make `highlightText` drop a byte and confirm it reddens.
+- [x] **Step 6: Mutation-check** that the invariant test bites: make `highlightRegion` drop a byte and confirm it reddens.
 
 - [x] **Step 7: `sdlc milestone-close --issue 21 --milestone M2`.**
 
@@ -507,3 +513,46 @@ I had written one notch too narrow to cover the next instance.
   available; `newHighlightWriter` accepted an empty style and would have wrapped
   every word in a bare reset for M3's direct construction; `sgrState.open` grew
   unbounded, which matters once arbitrary model output flows through it.
+
+### 2026-08-26 — M2 boundary round 2 (FIX-THEN-SHIP): three families still open
+
+- **BR-23 `release-only-what-cannot-change`, 2nd instance.** My round-1 fix put
+  the growth check on ONE of `decidedEnd`'s two release paths. A region of pure
+  punctuation ending in half a rune (`"!\xc3"`) has no tokens at all, so it took
+  the no-token path and was released — `"!über"` arriving split lost its match
+  while every byte survived. Both paths now consult `tokenStillOpen`. Hoisting
+  the check above both was the wrong shape and I caught it in the suite: it made
+  every text ending mid-word hold entirely, defeating streaming.
+- **BR-23's real lesson, again the corpus.** Round 1 derived the fuzz deck from
+  the tokenizer's character CLASSES. Not enough: `café` was the only multi-byte
+  entry and its multi-byte rune is word-FINAL, so no exec count reached a
+  word-INITIAL one — the exact shape the broken path needed. The deck is now
+  class × POSITION (initial/medial/final), and reverting the fix reddens both the
+  byte-at-a-time table and the new targeted test.
+- **BR-24 `behaviour-claimed-without-a-failing-test`, 7th instance.** Every
+  survivor this round was either a wiring ARGUMENT or a guard whose only effect
+  is the ABSENCE of work — neither of which the previous enumerations covered,
+  since those quantified over hops that change output. The corrected rule: for
+  each behaviour a comment claims, name the observation that would falsify it —
+  production output bytes for wiring, a counting double for a guard. Pinned: the
+  `p.ex` base resume (`TestExampleTextResumesItsStyleAfterAHighlight`, asserting
+  production bytes), `maxOpenSGR`, and the colour gate (`TestNoColourReadsNoDeck`,
+  reusing `countingDeck` — that gate was M1 round 3's finding, unpinned again
+  when this refactor moved it).
+- **BR-26 `feature-leaks-across-namespace`, 3rd instance.** The region table
+  listed ten regions; `Render` emits thirteen. All three omissions were withheld
+  by construction, so behaviour was right and the enumeration was a subset
+  pretending to be the whole. The table is now complete AND
+  `TestHighlightsAppearOnlyInAdmittedRegions` derives admitted text from the
+  parsed `Entry`, so an omission FAILS rather than going unnoticed: leaking the
+  section name reddens 59 cases, the POS label 29, and `HeadOther` — the region
+  the hand-written table omitted — 11.
+- **BR-16 `plan-record-not-updated`, and BR-18's atlas sweep.** Round 1 fixed the
+  rows the finding named and left the rest. Swept properly this time: Task 5/6/7
+  `Files` blocks, the `main.go:488` injection point, the fuzz target name, Task 7
+  Step 2's invariant location, and every atlas sentence describing the definition
+  path — which still said highlighting wraps the rendered string, the opposite of
+  what round 1 built.
+- **BR-25** — `highlightText` had zero call sites after the per-region refactor.
+  `go vet` does not flag unused functions, so it survived silently. Deleted, and
+  the docs naming it corrected.

@@ -462,7 +462,7 @@ They share the hard part: the text already carries ANSI codes, and it may arrive
 in pieces. A definition is a complete string; an answer arrives as stream deltas
 where `obsequious` can land as `obseq` + `uious`. Giving them separate
 implementations would mean two sets of ANSI-resume rules to keep in agreement.
-`highlightText` is the whole-string caller; the stream wraps its writer (M3).
+`Render` calls it per admitted REGION; the stream wraps its writer (M3).
 
 Its contract, in the order the rules matter:
 
@@ -490,10 +490,28 @@ would a terminal be in right now", so a highlight can hand that style back. It
 accumulates SGRs until a reset, because `Render` opens bold and colour
 separately and a terminal composes them.
 
-Highlighting wraps the RENDERED string rather than reaching into `Render`, which
-stays a pure function of the entry. `TestHighlightingLosesNothing` is `Render`'s
-own no-data-loss invariant re-asserted with highlighting on, stripping escapes
-first — the codes carry digits that `alnum()` would otherwise read as content.
+**The decision is per region, and the table has to be complete.**
+`RenderOpts.Vocab` reaches `Render` rather than wrapping its output, because a
+finished string has no structure left to consult — wrapping re-styled the
+headword, which the Spec puts out of scope and which is the COMMON case for a
+learning tool, since you revisit words. `admitsHighlight`'s doc comment is the
+table: thirteen regions, prose admitted and labels withheld. It is a decision
+procedure only because `TestHighlightsAppearOnlyInAdmittedRegions` derives the
+admitted text from the parsed `Entry`, so a region that starts leaking fails
+without anyone remembering to add a row. `Render` stays pure — `Vocabulary` is
+injected data and `highlightSpans` is a pure function of it.
+
+`TestHighlightingLosesNothing` is `Render`'s own no-data-loss invariant
+re-asserted with highlighting on, stripping escapes first — the codes carry
+digits that `alnum()` would otherwise read as content.
+
+**`vocabularyFor` answers "what should be highlighted right now" for every
+render path.** Highlighting needs the set LOADED, and `Load` used to live in
+`runEditor` — so `define <word>` and piped stdin rendered against an empty set
+and highlighted nothing, two of three entry paths dead while the suite was
+green. One function now owns "loaded, and only with colour", and
+`TestEveryEntryPathHighlightsDefinitions` is the enumeration: one row per
+process entry path, each driven with an unloaded set.
 
 **The set grows mid-session, from the one place that already knows.**
 `storeCapturer.Capture` adds a word after `Upsert` succeeds — the single site that

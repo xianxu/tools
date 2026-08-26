@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // writeChunks feeds the writer one chunk at a time, then flushes.
@@ -189,15 +191,31 @@ func (f *failAfter) Write(p []byte) (int, error) {
 // was UNREACHABLE: 803k execs proved nothing about it, and two real data-loss
 // bugs sat underneath. The vocabulary is part of the input space this property
 // quantifies over, so it has to cover the same classes the tokenizer does.
+// The enumeration is class × POSITION. Deriving only the classes was not
+// enough: `café` was the sole multi-byte entry and its multi-byte rune is
+// word-FINAL, so no exec count ever reached a word-initial one — and the
+// no-token release path, which only a word-initial multi-byte rune exercises,
+// stayed broken through a whole round of fuzzing.
+//
+//	class          initial      medial       final
+//	-----------    ---------    ---------    ---------
+//	multi-byte     über         naïve        café
+//	apostrophe     —            don't        —          (joiners are trimmed
+//	hyphen         —            hot-dog      —           off token edges, so
+//	digits         19th         covid-19     —           they have no edge
+//	                                                     positions)
 var fuzzDeck = vocab(
 	"obsequious", // plain
 	"hot dog",    // a phrase, so the hold window is > 1 token
 	"hot",        // and its prefix, so longest-match is exercised
-	"don't",      // an apostrophe INSIDE a word
-	"hot-dog",    // a hyphen inside a word
-	"covid-19",   // digits
-	"café",       // multi-byte: a chunk can split mid-rune
 	"a priori",   // a phrase whose first token is one rune
+	"über",       // multi-byte, word-INITIAL
+	"naïve",      // multi-byte, medial
+	"café",       // multi-byte, final
+	"don't",      // an apostrophe inside a word
+	"hot-dog",    // a hyphen inside a word
+	"19th",       // digits, initial
+	"covid-19",   // digits, medial
 )
 
 // Chunk-independence is the property; byte identity is what makes it able to
@@ -209,6 +227,7 @@ func FuzzHighlightWriterIsChunkIndependent(f *testing.F) {
 		"his obsequious day", "\x1b[3;32mhot dog\x1b[0m", "hot\n dog", "'obsequious'", "a", "",
 		"don't stop", "a hot-dog stand", "covid-19 era", "café society", "a priori truth",
 		"'obsequious' don't café a priori",
+		"!über", "hi! über now", "naïve café", "the 19th of covid-19",
 	} {
 		f.Add(s, 1)
 	}
@@ -240,6 +259,8 @@ func TestHighlightWriterByteAtATimeMatchesOneCall(t *testing.T) {
 		"a hot-dog and a hot dog",
 		"\x1b[3;32mdon't café\x1b[0m",
 		"covid-19, obsequious.",
+		"!über and naïve café",
+		"the 19th of covid-19",
 	} {
 		t.Run(text, func(t *testing.T) {
 			var bytes []string
@@ -258,7 +279,7 @@ func TestHighlightWriterByteAtATimeMatchesOneCall(t *testing.T) {
 // definition of `sycophantic` uses `obsequious` in its gloss, and a learner who
 // has looked that up should see the connection.
 //
-// Driven through lookupAndRender, not through highlightText — a test that calls
+// Driven through lookupAndRender, not through the render helper — a test that calls
 // the helper directly begins after the wiring hop, which is how M1's set-to-screen
 // link stayed unpinned.
 func TestDefinitionBodyHighlightsADeckWord(t *testing.T) {
@@ -341,4 +362,152 @@ func TestTheHeadwordLineIsNotHighlighted(t *testing.T) {
 	if !strings.Contains(out, knownOn) {
 		t.Error("nothing at all was highlighted; the withhold is too wide")
 	}
+}
+
+// BR-23: the no-token release path did not ask the growth question, so a region
+// of punctuation ending in half a rune was released and a word-initial
+// multi-byte match was lost — bytes survived, the match did not.
+func TestHighlightWriterHoldsAWordInitialMultiByteRune(t *testing.T) {
+	v := vocab("über")
+
+	if got, want := writeChunks(t, v, "!\xc3", "\xbcber"), writeChunks(t, v, "!über"); got != want {
+		t.Errorf("split before the rune changed the result:\n got  %q\n want %q", got, want)
+	}
+	if got, want := writeChunks(t, v, "hi!", " ", "\xc3", "\xbcber now"), writeChunks(t, v, "hi! über now"); got != want {
+		t.Errorf("four-way split changed the result:\n got  %q\n want %q", got, want)
+	}
+}
+
+// BR-24(1): the enclosing-style resume for an EXAMPLE, asserted as production
+// bytes. Replacing the p.ex base with "" passed the whole suite while changing
+// what a terminal shows — everything after the first highlighted word in an
+// example went unstyled. Nothing observed the base until this.
+//
+// The M2 Done-when says "the enclosing style resumes after it", so this is that
+// row, not an extra.
+func TestExampleTextResumesItsStyleAfterAHighlight(t *testing.T) {
+	// bank's example is "willows lined the bank."
+	out := Render(ParseEntry(fixture(t, "bank")), RenderOpts{Color: true, Vocab: vocab("willows")})
+
+	const want = "\x1b[3;32m“\x1b[1;32mwillows\x1b[0m\x1b[3;32m lined the bank”\x1b[0m"
+	if !strings.Contains(out, want) {
+		t.Errorf("example highlight did not hand the style back.\n want substring %q\n in %q", want, out)
+	}
+}
+
+// BR-24(2): maxOpenSGR had no test at all. It exists for M3, where arbitrary
+// model output can open styles without ever resetting.
+func TestSGRStateBoundsWhatItRemembers(t *testing.T) {
+	var s sgrState
+	for i := 0; i < maxOpenSGR*3; i++ {
+		s.observe("\x1b[1m")
+	}
+
+	if got := len(s.open); got > maxOpenSGR {
+		t.Errorf("remembered %d styles, want at most %d", got, maxOpenSGR)
+	}
+	// The most recent styles are the ones kept, so the resume still styles text.
+	if !strings.Contains(s.resume(), "\x1b[1m") {
+		t.Errorf("resume() = %q, want it to still carry the recent style", s.resume())
+	}
+}
+
+// BR-26: the admit/withhold table is only a decision procedure if it is
+// COMPLETE and something fails when a region is missing from it. The hand-written
+// list omitted HeadHomograph, HeadOther (which carries real prose) and the block
+// label — all withheld by construction, so behaviour was right and the
+// enumeration was a subset pretending to be the whole.
+//
+// This derives the admitted text from the parsed Entry instead of listing
+// regions, so a new region that leaks fails here without anyone remembering to
+// add a row: any word that appears ONLY outside gloss/example/section text must
+// never highlight.
+func TestHighlightsAppearOnlyInAdmittedRegions(t *testing.T) {
+	d := testDict(t)
+	if len(d.entries) == 0 {
+		t.Fatal("empty corpus — this test would be vacuous")
+	}
+	checked := 0
+	for word, raw := range d.entries {
+		e := ParseEntry(raw)
+
+		// Keyed by store.Key, the same identity matching uses. Keying by raw text
+		// classified "ORIGIN" (a section NAME) as withheld-only while "origin"
+		// sat in the section text, and reported a leak that was correct
+		// behaviour — the test has to normalise wherever production does.
+		admitted := map[string]bool{}
+		for _, blk := range e.Blocks {
+			for _, s := range blk.Senses {
+				for _, w := range wordsOf(s.Gloss) {
+					admitted[store.Key(w)] = true
+				}
+				for _, ex := range s.Examples {
+					for _, w := range wordsOf(ex.Text) {
+						admitted[store.Key(w)] = true
+					}
+				}
+			}
+		}
+		for _, sec := range e.Sections {
+			for _, w := range wordsOf(sec.Text) {
+				admitted[store.Key(w)] = true
+			}
+		}
+
+		// Every word the entry shows OUTSIDE those regions: the headword and its
+		// homograph, other head tokens, pronunciations, POS and block labels,
+		// example labels, section names.
+		var withheldOnly []string
+		for _, region := range headAndLabelText(e) {
+			for _, w := range wordsOf(region) {
+				if !admitted[store.Key(w)] {
+					withheldOnly = append(withheldOnly, w)
+				}
+			}
+		}
+
+		for _, w := range withheldOnly {
+			checked++
+			out := Render(e, RenderOpts{Color: true, Vocab: vocab(w)})
+			if strings.Contains(out, knownOn) {
+				t.Errorf("%s: %q appears only in a withheld region but was highlighted", word, w)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no withheld-only word in the whole corpus — this test asserted nothing")
+	}
+	t.Logf("checked %d withheld-only words across %d entries", checked, len(d.entries))
+}
+
+// headAndLabelText is every region Render emits that is NOT prose, enumerated
+// from Render's own emit sites rather than from memory.
+func headAndLabelText(e Entry) []string {
+	out := []string{e.IPA}
+	for _, tok := range e.Head {
+		out = append(out, tok.Text)
+	}
+	for _, blk := range e.Blocks {
+		out = append(out, blk.POS, blk.Label, blk.IPA)
+		for _, s := range blk.Senses {
+			out = append(out, s.Number)
+			for _, ex := range s.Examples {
+				out = append(out, ex.Label)
+			}
+		}
+	}
+	for _, sec := range e.Sections {
+		out = append(out, sec.Name)
+	}
+	return out
+}
+
+// wordsOf is the tokenizer the highlighter itself uses, so this test cannot
+// disagree with production about where a word is.
+func wordsOf(s string) []string {
+	var out []string
+	for _, r := range wordRuns(s) {
+		out = append(out, s[r.start:r.end])
+	}
+	return out
 }
