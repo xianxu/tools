@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-26
 updated: 2026-08-26
-estimate_hours:
+estimate_hours: 5.24
 started: 2026-08-26T11:03:49-07:00
 ---
 
@@ -133,12 +133,103 @@ relationship to); completing at a cursor that is not at end of line
 - [ ] `/history 7` completes exactly as today; no segment re-enters the command branch.
 - [ ] An in-session `\word` lookup completes mid-line as `word`.
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187), one item per Plan row plus
+the process work inside the measured window. No separate plan doc: per AGENTS.md
+§1 this is single-file work, so the issue's Spec + Plan *is* the plan artifact —
+and the gate certified it executable as-written, which is what the "thorough plan
+doc" buffer condition proxies for. Hence +15%, not +30%.
+
+Design carries v2's ×0.2 spec-quality discount on every primitive the plan
+pre-resolves — which is all of the code items: the segment rule, the precedence
+order, the floor, the namespace split and the `\`-strip are all decided above,
+so what is left at design time is reading. No discount on spec authoring or on
+review rounds; those *are* the design work rather than beneficiaries of it.
+Implementation is v3.1's 40% of the v2 table.
+
+`issue-spec` is priced at the **bottom** of its 0.5–1.5 band rather than the mid.
+The band assumes a brainstorm; this spec had exactly one open fork (the mid-line
+candidate source), the operator resolved it in a single exchange, and everything
+else fell out of reading four existing functions.
+
+**Review rounds are priced from the only round cost anyone has actually
+measured: #16's ≈0.9h.** An earlier draft of this block priced them *below* that,
+citing #17 as having come in under estimate with three boundary rounds included.
+That citation was wrong, and #17's own log says so
+(`workshop/issues/000017-user-model.md:308-312`): its review cost "is still
+unmeasured for this issue", the 3.8h figure covers the feature work only, and it
+was hand-recorded as a wall-clock upper bound after `sdlc actual` returned an
+impossible 15.42h on a 3h49m window — not a measurement at all. So the rounds
+are written `design=0.30 impl=0.60` (= 0.90, #16's observed rate), and **three**
+are budgeted, not two.
+
+Three because the Plan carries no `Mx` tags: per AGENTS.md §3 this is single-pass
+atomic work with exactly ONE mandatory boundary review, at `sdlc close`. The
+other two rows are the fix-then-re-review cycles that verdict reliably produces —
+#16 needed 3–4 per milestone and #17 M1 needed 3. Budgeting one round would be
+budgeting for a CLEAN first pass this repo has not yet produced.
+
+**Disclosure: the drift in this repo runs the other way, and nothing here
+corrects for it.** `calibration-ledger.tsv`, newest-per-issue with
+`window_trusted=yes`: tools#1 0.59, #3 0.96, #4 0.20, #11 0.64, #14 2.83, #15
+0.27, #16 0.37 — six of seven under 1.0. The nearest analogue is the closest one
+possible: **#15 (0.27×) is the command-mode typeahead work in these exact
+functions.** If that ratio held, this lands near 10h rather than 5.24. The items
+are *not* inflated to meet that prediction — hand-correcting a derivation to hit
+a guessed actual is the back-fitting the estimate gate exists to catch, and it
+would destroy this row's value as evidence. Familiarity stays 1.0 (same package,
+same files) even though #15 shows familiarity did not help there. If this closes
+near 10h, that is the v3.1 model drifting (ariadne#127) and this row is data for
+the recalibration, not a mistake to have hidden.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec             design=0.50 impl=0.08
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: atlas-docs             design=0.03 impl=0.05
+item: milestone-review       design=0.30 impl=0.60
+item: milestone-review       design=0.30 impl=0.60
+item: milestone-review       design=0.30 impl=0.60
+design-buffer: 0.15
+total: 5.24
+```
+
+Item-to-Plan-row map, one row each and none unmapped: `issue-spec` = the Spec
+(spent); `milestone-review` ×2 = plan-quality round 1 (spent) and round 2 +
+estimate-quality (spent); `cross-cutting-refactor` = Plan row 1, the `candidates`
+split; `smaller-go-module` ×5 = rows 2, 3, 4+5, 6, 7 — rows 4 and 5 are one item
+because "write the failing test" and "add `historyCompletions`" are one TDD
+cycle, not two; `atlas-docs` = row 8; `milestone-review` ×3 = the close boundary.
+
+Two mappings are deliberately *not* the obvious ones. `historyCompletions` is
+`smaller-go-module`, not `greenfield-go-module`: it is explicitly the else-branch
+of an existing function, which is the table's own "well-specced; mirror or
+extend" definition, and pricing it as greenfield alongside `trailingSegments` as
+smaller would have been two prices for two comparable pure functions. The
+mutation check is `smaller-go-module`, not `milestone-review`: mutating a
+constant, an ordering and a struct split and re-running the suite each time is
+implementation work, not review overhead.
+
 ## Plan
 
 - [ ] Split the candidate list: `candidates{recall, complete}`, `Apply` takes it,
-      `walk` gets `recall`, `acceptSuggestion` gets `complete`. Update the one
-      production call site (replraw.go:180) and the editor tests. Assert Up never
-      surfaces a glued line, and that Up in command mode now recalls.
+      `walk` gets `recall`, `acceptSuggestion` gets `complete`. Two production
+      call sites, not one: `Apply` at replraw.go:180 takes the pair, and `draw`
+      at replraw.go:126 already feeds `Suggestion` the complete list (correct
+      as-is). Plus ~5 test sites (editor_test.go:15,157,239,243,247). Assert Up
+      never surfaces a glued line, and that Up in command mode now recalls.
 - [ ] Write `trailingSegments` + table test (pure, no IO): boundaries, unicode,
       runs of spaces, trailing space, empty line, single word.
 - [ ] Add `FuzzTrailingSegments` for the `head+text == line` invariant — the
@@ -191,3 +282,38 @@ Five findings, all accepted; the two blocking ones were real design holes.
   #17 is `working` on the current branch with M2 blocked on #6, so the branch
   point for #20 is a merge-ordering question (stacking on #17 means merging #20
   would merge #17's M1 too), not a purely technical one.
+
+### 2026-08-26 — estimate-quality round 1
+
+Verdict INFO (non-blocking), eight findings, and the two Importants were right in
+a way worth recording: **I cited #17's log for the opposite of what it says.**
+
+- **F1 (Important)** — addressed. The block justified pricing review rounds
+  *below* #17's figure by claiming #17 "came in under, three boundary rounds
+  included, measured ~3.8h". #17's log (`:308-312`) says the review cost "is
+  still unmeasured for this issue", that M1 had not been through even one round
+  at the time of writing, and that 3.8h was **hand-recorded as a wall-clock upper
+  bound** because `sdlc actual` returned an impossible 15.42h. I wrote a sentence
+  contradicting an entry I made the day before. Rounds are now priced at #16's
+  ≈0.9h — the only round cost ever measured — and three are budgeted, not two.
+  Estimate 3.87 → 5.24.
+- **F2 (Important)** — addressed by disclosure rather than by inflation. The
+  ledger's trusted tools rows run 0.20–0.96 (six of seven under 1.0), and #15 —
+  this exact `completionsFor` code — ran 0.27×. Stated in the block, with the
+  reason the items were not adjusted to meet it: back-fitting a derivation to a
+  predicted actual is what the gate exists to catch, and it would make this row
+  worthless as recalibration evidence.
+- **F3 (Minor)** — addressed. `historyCompletions` re-priced `greenfield-go-module`
+  → `smaller-go-module`; it is the else-branch of an existing function, i.e. the
+  table's "mirror or extend".
+- **F4 (Minor)** — addressed. Plan row 4 had no line item while the prose claimed
+  one item per row. Rows 4+5 are now explicitly one TDD item.
+- **F5 (Minor)** — addressed. The mutation check moved `milestone-review` →
+  `smaller-go-module`; it is implementation, not review overhead.
+- **F6 (Minor)** — addressed. The block now states the boundary structure it is
+  pricing: no `Mx` tags, one mandatory review at close, two fix-then-re-review
+  cycles.
+- **F7 (Nit)** — addressed; the second process item is named as plan round 2 plus
+  estimate-quality.
+- **F8 (Nit)** — addressed in the Plan itself: two production call sites plus
+  ~5 test sites, not "the one production call site".
