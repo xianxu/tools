@@ -86,6 +86,20 @@ follow-up like `give me two more examples` resolves against the answer before it
 Nothing is remembered between runs except the files, which means a fresh process
 answers as well as a long-running one and you can read the context with `cat`.
 
+**`define --reflect` writes down who it thinks you are.** It reads your deck and
+your lookup history and produces `user-model.md`: a working level, the domains
+you read in, and — the part that matters — what practice material should DO about
+each. Every claim names the words it was read off, and a claim citing a word your
+deck does not hold is dropped before you see it.
+
+It is batch and on demand: nothing calls a model while you are looking a word up.
+Below a dozen words it declines and says so, because a learner model built from
+four lookups is a confident guess.
+
+**`## Corrections` is yours.** Disagree with it in your own words and re-run
+`--reflect`: everything from that heading down comes back byte-for-byte, and a
+correction outranks anything inferred above it.
+
 Questions need a model configured (see `--llm-check` below); without one, `define`
 says so and exits `1` rather than looking up a sentence.
 
@@ -105,7 +119,9 @@ A model that is configured but does not answer says so, and the question is kept
 words/sycophantic.yaml     one file per word
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            kinds: looked-up, asked  (answers are NOT stored)
-user-model.md              optional, yours to write — read to pitch answers
+user-model.md              written by --reflect, read to pitch answers;
+                           its ## Corrections section is yours and is never
+                           rewritten
 ```
 
 A failed lookup is recorded as history but never enters the deck, so typos are
@@ -167,8 +183,8 @@ moment a new one is added and nothing says so:
 
 | code | produced by |
 |---|---|
-| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration |
-| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?` |
+| `1` | no dictionary entry; a question with no model configured; a question whose model **was** configured and did not deliver (the message carries the cause); a model answer that could not be used; `--forget` found nothing to remove; `--llm-check` found no usable configuration; `--reflect` with too small a deck, with no deck at all, with no model, or with nothing in the answer left standing after the deck check |
+| `2` | an unknown `/command`; a bare `?` or `\` with nothing after it; `-raw` combined with an explicit `?`; `--reflect` combined with a word |
 
 A piped run exits `1` if any word failed and `2` if a command was malformed, so
 `echo "$w" | define || …` works in a script; an interactive typo does not fail

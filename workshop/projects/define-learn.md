@@ -182,7 +182,7 @@ once `#6` is producing misses.
 - [x] LLM harness — typed tasks, goldens, conformance, `--llm-check` [tools#11 M2]
 - [x] free-form Q&A — the console knows a question from a word [tools#16 M1]
 - [x] free-form Q&A — the answer: context pack, streaming, scoped Ctrl-C [tools#16 M2]
-- [ ] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
+- [x] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [ ] news seam — Google News RSS (not the SERP) [tools#9]
 - [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
 - [ ] scheduling engine — Leitner, pure [tools#5]
@@ -347,13 +347,36 @@ the project's central question gets answered — stop here and read the output b
 building the forms that consume it.
 
 <a id="tools-17-m1"></a>
-### tools#17 M1 — learner model from lookups
+### tools#17 M1 — the learner model, from lookups
 
-**status:** open — new, 2026-08-22
+**est:** 8.39 (M1)
+**actual:** 3.8h
+**closed:** 2026-08-26
 
-Level and domain fall out of the deck that already exists, so this lands before any
-review events do. Batch analysis writes `user-model.md`; the `## Corrections`
-section is human-owned and never rewritten.
+`define --reflect` writes `user-model.md`: a working level and the domains the
+learner reads in, each naming the deck words it was read off, each carrying what
+authoring should DO about it. Batch and on demand — no model call moved onto the
+lookup path.
+
+The decision worth not re-deriving: **evidence is checked, not trusted.**
+`checkEvidence` drops any claim citing a word the deck does not hold — the
+*selected, never invented* rule arriving in its second place. It grew a second
+arm from a measured failure: under a schema requiring every field the model fills
+the ones it does not believe in, so a domain with no name or no directive is
+dropped too. A claim authoring cannot act on is not a claim.
+
+Three bugs that only RUNNING it found, with the unit suite green throughout: the
+model put prose in the `evidence` array (renaming the JSON field to
+`evidence_words` fixed it — the field name is what steers); it stubbed claims it
+did not believe in; and it wrote an empty file when everything was dropped, which
+reads as an answer. Two floors now, both preferring nothing to something
+confident.
+
+Measured honestly at the end: with the model present an answer leads with the
+right domain and reaches into the deck's structure, but WITHOUT it the answer is
+already good, because #16 already sends the deck. Depth and ordering, not a
+different topic — the `directive` fields are aimed at #10, which is where the
+payoff is designed to land.
 
 <a id="tools-17-m2"></a>
 ### tools#17 M2 — weakness taxonomy

@@ -5,7 +5,7 @@ deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
 updated: 2026-08-25
-estimate_hours:
+estimate_hours: 8.39
 started: 2026-08-25T16:45:07-07:00
 ---
 
@@ -87,14 +87,14 @@ Error kinds with counts, each naming the events it was derived from.
 ## Done when
 
 M1:
-- [ ] `--reflect` writes a `user-model.md` whose level and domain claims each name
+- [x] `--reflect` writes a `user-model.md` whose level and domain claims each name
       the deck words they were derived from.
-- [ ] Regeneration is idempotent against a fake seam, fixed clock and fixed store.
-- [ ] A hand-written `## Corrections` section survives regeneration byte-for-byte,
+- [x] Regeneration is idempotent against a fake seam, fixed clock and fixed store.
+- [x] A hand-written `## Corrections` section survives regeneration byte-for-byte,
       asserted by a test that fails when the preservation is removed.
-- [ ] Authoring (#10) reads the file, and its absence degrades to generic authoring
+- [x] Authoring (#10) reads the file, and its absence degrades to generic authoring
       rather than an error.
-- [ ] Domain inference is checked against a held-out sample of deck words, not
+- [x] Domain inference is checked against a held-out sample of deck words, not
       asserted — the same bar #10 sets for level bucketing.
 
 M2:
@@ -105,12 +105,116 @@ M2:
 - [ ] The model demonstrably changes what is authored: same deck, two different
       `user-model.md` files, different distractor domains — asserted, not asserted-ish.
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187), against
+`workshop/plans/000017-user-model-plan.md` — one item per task, plus the process
+work that sits inside the measured window.
+
+**Costed with #16's overrun as evidence, not with its estimate.** #16 estimated
+6.49 and measured **17.63** (0.4×). The feature itself came in at ~6.3h, almost
+exactly as costed; the other ~11h was twelve review rounds, and per-milestone
+actuals under-report because those rounds land at and after the boundary they
+measure. So the review rounds are line items here rather than a hope: two plan
+rounds (already spent) and four boundary rounds, which is what #16 needed for
+each of its milestones.
+
+Design carries v2's ×0.2 spec-quality discount where the plan pre-resolves the
+decision — it does for the pure entities, and does not for the plan authoring
+itself or for the review rounds, which are the design work rather than a
+beneficiary of it. Implementation is v3.1's 40% of the v2 table. Familiarity 1.0:
+same repo, same files, `summariseLookups` and the store seams all shipped.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec             design=1.00 impl=0.08
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.10 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: atlas-docs             design=0.03 impl=0.05
+design-buffer: 0.15
+total: 8.39
+```
+
+| item | what |
+|---|---|
+| issue-spec | plan authoring — inside the measured window, as #16 established |
+| milestone-review ×2 @0.24 | the plan-quality rounds (PQ-1…PQ-5), already spent |
+| smaller-go-module | T1 `foldLookups`, reusing `summariseLookups` |
+| smaller-go-module | T2 `learnerModel` + `checkEvidence` |
+| smaller-go-module | T3 `renderUserModel` + its golden |
+| greenfield-go-module | T4 `spliceCorrections` + the fuzz property |
+| greenfield-go-module | T5 `reflectTask` — the prompt |
+| greenfield-go-module | T6 `runReflect`, the flag, seven wiring tests |
+| greenfield-go-module | T7 the live conformance check — a held-out-sample assertion against a live model is the class that needs prompt iteration before it converges, not a mirror-and-extend |
+| milestone-review ×4 @0.90 | boundary rounds, **at #16's observed cost** — see below |
+| milestone-review | the M1 close itself, un-discounted like the other rounds |
+| smaller-go-module | T8's live hand-run and the cross-issue ask-path check — integration verification, not review overhead |
+| atlas-docs | the `--reflect` atlas section and the project row |
+
+### Revision — 2026-08-25, after estimate-quality
+
+First derivation was **5.23**, and it made the mistake it was written to avoid:
+it cited #16's overrun as evidence and then priced review rounds at the
+primitive table's default anyway. Measured, #16 was 17.63h total against ~6.34h
+of feature — **11.3h across twelve rounds, ≈0.9h each**. I had priced four rounds
+at 0.24h. Quoting a number and then not using it is the same failure as a comment
+asserting what the code does not do.
+
+Four changes, three of them the judge's findings:
+
+- **Boundary rounds at the observed cost** (0.30/0.55 ≈ 0.90 each). This is most
+  of the +3.2h. If M1 converges in two rounds the actual will say so, and that
+  becomes the next data point — but assuming it without evidence is the optimism
+  the whole revision exists to remove.
+- **T7 is not mirror-and-extend.** A held-out-sample assertion against a live
+  model converges after prompt iteration, not on the first run.
+- **T8's live verification gets its own item.** The hand-run, the cross-issue
+  ask-path check and the entity enumeration were folded into 0.24h — and #16's
+  log shows the enumeration alone took five rounds to get right.
+- **The final `milestone-review` is un-discounted** (0.02 → 0.10). The prose said
+  the ×0.2 discount does not apply to review rounds and the number applied it
+  anyway; T5's "prompts are design" gloss is dropped for the same reason — it
+  argued for a number it was not attached to.
+
+**Both directions, since the first version hedged only one.** M1 has no terminal
+work, no interrupt semantics and no new store implementation — the three things
+that generated most of #16's second-order findings — so two rounds rather than
+four lands this near **6.6**. The symmetric case is the one the evidence actually
+supports: four rounds at #16's cost is exactly what is priced, and #16 needed
+four per milestone plus five at the close, which would put it near **11**.
+
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Design: [`workshop/plans/000017-user-model-plan.md`](../plans/000017-user-model-plan.md)
+— M1 only; M2 needs review events #6 does not yet produce.
+
+- [x] Design via `sdlc start-plan` before implementing.
+- [x] M1 — the model from lookups: `foldLookups`, a typed `learnerModel` whose
+      evidence is CHECKED against the deck, `renderUserModel` +
+      `spliceCorrections`, and `--reflect` as a mode beside `--llm-check`.
+- [ ] M2 — weaknesses. Blocked on #6's review events; planned when they exist.
 
 ## Log
 
+
+- 2026-08-26: closed M1 — go test ./... + go vet + go test -race green; live conformance stable; fuzz 1.47M execs. All M1 Done-when rows asserted. Boundary rounds 1-3 all fixed, plus a self-run sweep of round 3s class BEFORE this round. Round 3: BR-15 (oneLine applied to the four fields the finding LISTED, not to EvidenceWords which reach two more sites), BR-14 (my forged-marker assertion searched the region before the first marker, where a forged marker cannot be by definition — it passed unconditionally; now counts markers over the whole document), BR-16 (atlas still called the fuzz property "the one thing that must hold", which round 2 disproved). The sweep then found three MORE sinks the findings had not named: the frontmatter model name, and every diagnostic message — these go to a terminal one line each, so a band carrying a newline forges a "define: ..." line a reader cannot tell from a real one. The fix changed shape rather than growing: sanitisation is now ONE pass over the whole struct at the point the file structure is built, so a render site added later is safe by construction. Two vacuous assertions of my own caught during that sweep, both in the new diagnostic test — the payload satisfied my own prefix check, and Contains(text+newline) missed because the forged line carries the rest of the message; the honest observable is that injection adds LINES, and the test counts them. Every fix mutation-verified with the mutation confirmed to have landed. lessons.md gains both rules.; review verdict: FIX-THEN-SHIP
 ### 2026-08-22
 
 Created from the operator conversation that broadened `define-learn` to an adaptive
@@ -121,3 +225,179 @@ adaptive."*
 
 Batch analysis over accumulated errors was specified in preference to diagnosing
 each miss as it happens.
+
+### 2026-08-25
+
+`sdlc start-plan` run; durable plan at `workshop/plans/000017-user-model-plan.md`,
+**M1 only** — M2's error taxonomy needs review events #6 does not yet produce, and
+planning against a data shape nobody has seen is how a plan becomes fiction.
+
+The decision worth surfacing before code: **the model's evidence is checked, not
+trusted.** The typed answer carries the deck words behind each claim and
+`checkEvidence` drops any claim citing a word the deck does not hold. That is
+this project's existing rule — *distractors are selected, never invented* — applied
+to the learner model: the model may READ the deck and may not ADD to it. Without
+it, "every claim names its evidence" is a formatting convention that a plausible
+hallucination satisfies, and the file's whole promise is that a claim can be
+checked.
+
+Two smaller ones: a floor of 12 deck words, because a model built from four
+lookups is noise that would then steer authoring (absence already degrades
+cleanly — #16's `gatherAskContext` handles it); and `## Corrections` is spliced
+by scanning outside fenced code blocks, because the file documents its own format
+in a fence that contains the marker.
+
+The fourth M1 Done-when row names #10, which does not exist. #16's ask path reads
+`user-model.md` today and degrades on absence, so the row's substance has a live
+consumer already; Task 8 verifies that rather than assuming it.
+
+### 2026-08-25 — T1–T6 done; three bugs found by running it, not by testing it
+
+`define --reflect` works end to end against the live proxy. The unit tests were
+green throughout and none of these three would have been caught by them:
+
+- **The model put PROSE in the evidence array**, so every level claim was
+  correctly dropped by the deck check and `## Level` was silently missing from
+  every run. The field was named `evidence`; renaming it `evidence_words` fixed
+  it. **The JSON field name is what steers the model** — and the domain claims,
+  which have no competing `rationale` field, had been citing bare words correctly
+  the whole time, which is what made the failure look like a check bug.
+- **It stubbed claims it did not believe in** — a domain literally named `x`, a
+  rationale of `placeholder` — because a stub satisfies a schema that requires
+  every field. `checkEvidence` now drops claims authoring cannot act on: the same
+  don't-trust-check rule extended from *is this evidence real* to *is this claim
+  usable*. The prompt also now says to omit rather than stub, but the check is
+  what makes it true.
+- **It wrote an EMPTY file** when everything was dropped: frontmatter and a
+  corrections stub, a file that says "here is what we know about you" and knows
+  nothing. That is D2's floor arriving through another door; it writes nothing
+  and says so now.
+
+Fixed at the cause rather than defended: answers were **intermittently**
+degenerate at the 8192 default, because high-effort thinking shares that budget
+with a genuinely long answer (four domains, paragraph directives). Not a
+truncation — `Run` checks the stop reason first and it was `end_turn` — but the
+same squeeze that produced #11's preserved max_tokens specimen. Raised to 16384;
+consecutive clean runs since.
+
+**And my own verification was vacuous once.** The first corrections round-trip
+printed "preserved" — but the second run had failed and written nothing, so
+nothing could have changed. Re-run confirming both runs wrote and that the
+analysis actually changed (2570 → 2690 bytes) while the corrections came back
+byte-identical.
+
+A dropped claim now names the words it rejected. "No evidence in the deck" is the
+same unactionable shape as a claim that names none, and that message is the only
+place a person sees why a section went missing from their file.
+
+### 2026-08-25 — M1 closed, and a measurement I did not adopt
+
+`sdlc actual --issue 17` reports **15.42h** for a window (`e777227b`→HEAD) whose
+**wall clock is 3h49m** — 16:48 to 20:37, near-continuous. Idle-removed active
+time cannot exceed the wall clock of its own window, so the number is wrong, and
+its own output names the likely cause: *"attributed across window issues: #16,
+#17"*. #16 closed at 17.63h earlier in this same session and this same transcript
+directory; the engine appears to be counting that session's events against a
+window that starts partway through it.
+
+**Recorded 3.8h instead**, which is the window's wall clock and therefore an
+upper bound on its active time. AGENTS.md §5 is right that a hand-typed actual
+pollutes calibration — but adopting a measured value I can show is impossible
+would poison the ledger harder, and silently. Reported rather than absorbed.
+
+Against the 8.39h estimate that is 0.45× — the estimate was HIGH, and for a
+reason worth keeping: it priced four boundary review rounds at #16's observed
+~0.9h each, and M1 has not been through even one yet. The estimate's own hedge
+said two rounds lands near 6.6; the honest read is that the feature work came in
+around 3.8h and the review cost is still unmeasured for this issue.
+
+This is a defect in the calibration path itself, which every close depends on —
+worth a look in ariadne, where `sdlc` lives.
+
+### 2026-08-25 — M1 boundary round 2: model text could destroy the learner's corrections
+
+Eleven disposed, two open, and one of them is the most serious defect either
+issue has produced.
+
+**BR-12 — model free text was rendered verbatim into a marker-delimited file.**
+A directive containing a line-start `## Corrections` creates a SECOND marker
+above the real one; the next run splices there, so everything below it — the
+analysis that run just generated, and the learner's actual corrections further
+down — is treated as human-owned and **never regenerates again**. The reviewer
+verified it by running it: run one's domain table survived into every later
+file. A pipe in a name also broke the table, which is the harmless half.
+
+The fix collapses newlines and escapes `|` in the four model-supplied fields.
+Collapsing newlines closes the injection *outright* rather than filtering for the
+marker, because every line this renderer emits is prefixed by `**`, `Read off: `
+or `| ` — model text that cannot start a line cannot forge any structure,
+including markers nobody has thought of yet.
+
+**Why the fuzz property could not catch it**, which is the part worth keeping:
+`FuzzSpliceCorrections` asserts that everything BELOW the marker is preserved. It
+says nothing about everything ABOVE it being replaced — and that is exactly where
+a forged marker lives. A property that guards one direction of an invariant is
+not a property that guards the invariant. There is now a test for the other half.
+
+Note the asymmetry the fix rests on: the corrections text is the LEARNER's and is
+copied byte-for-byte precisely because they own it; this text is the MODEL's, and
+it is rendered into a structure the file's integrity depends on. Same file, two
+opposite rules, and conflating them is what created the hole.
+
+**BR-5's other half:** the persistence block still described `user-model.md` as
+"optional, yours to write". `--reflect` writes it now; only `## Corrections` is
+theirs. I had swept that block for questions in #16 and not for this.
+
+### 2026-08-25 — M1 boundary round 3: all three findings are about round 2's fix
+
+And two of them are shapes this session has already taught me, arriving again in
+the fix for the finding that taught me one of them.
+
+- **BR-15 — `oneLine` was applied to the four fields the finding LISTED**, and
+  not to `EvidenceWords`, which are just as model-supplied and reach two render
+  sites. `checkEvidence` constrains citations to deck words, but it matches on
+  `store.Key`, so a citation carrying a newline can match a real deck word AND
+  forge a line. I fixed the instances named rather than the class — with the
+  class written in my own commit message as *"model text that cannot start a
+  line cannot forge structure"*.
+- **BR-14 — my forged-marker assertion was vacuous.** It searched
+  `got[:firstMarker]` for another marker: the one region where a forged marker
+  cannot be, since the first marker is by definition the first. It passed
+  unconditionally. Counting markers over the whole document is the honest form.
+  This is the fourth vacuous assertion of the session and the second in two
+  rounds of this milestone.
+- **BR-16 — the atlas still called the fuzz property "the one thing that must
+  hold"**, a claim round 2 disproved by finding the direction it does not guard.
+  I recorded that insight in the issue Log and left the atlas asserting the old
+  version.
+
+Both render sites now mutation-checked independently: unsanitising the four
+fields reddens the test, and unsanitising the evidence words reddens it
+separately.
+
+The through-line, stated plainly because three rounds have now said it: **I fix
+what a finding enumerates and not what it generalises, and I write assertions
+that cannot fail.** The lessons entries name both; what round 3 adds is that
+they recur *inside the fix for the round that named them*.
+
+### 2026-08-26 — M1 round 4: the gate passed, and named the gap my own sweep left
+
+One finding, and it is the right one: **four neutralisation sites, and not all of
+them had a positive control.** Deleting `sanitiseMeta`'s body — the frontmatter's
+model name — left the whole suite green.
+
+That is the same rule as #16's BR-45 (*a fix added to defend a finding must have
+a read site that can fail*) applied to the sweep I ran proactively last round. I
+found three unprotected sinks and protected them; I tested the two the story was
+about and left the other two covered by nothing. **"The fields I remembered" is
+not a site list.**
+
+There is now one row per untrusted field, each injected alone so a row going
+green names exactly which site stopped being defended. Verified per site:
+removing any single field's neutralisation reddens its own row.
+
+What is worth keeping from four rounds on one milestone: the sweep DID move the
+work — round 4 raised one finding where rounds 1–3 raised four, three, and three
+— and what it missed was not another sink but the *evidence* that the sinks are
+defended. The gap moved from the code to the proof of the code, which is the
+direction it should move.

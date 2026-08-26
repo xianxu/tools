@@ -30,6 +30,7 @@ and there is no second consumer yet.
 | `Player` | `afplay(1)` | `fakePlayer`, recording play count |
 | `deps.newLLM` + `getenv` | `internal/llm` (the model) | `llmtest.Fake`, an httptest server on the wire |
 | `deps.notifySignals` | `signal.Notify` | a channel a test writes to |
+| `--reflect` | the model, batch | `llmtest.Fake` + a live conformance check |
 
 Pure: `ParseEntry` (flat text → `Entry`), `Render` (`Entry` → string),
 `AudioCandidates` (word → ordered URLs), `isPronunciation`, `opensBlock`,
@@ -644,6 +645,83 @@ recorded as `how so` comes back from Up-arrow and re-submits as a *question* —
 the opposite of what the hatch was typed to force. So `recallLine` is the one
 canonical, re-submittable form, and all three recall sites use it. Whitespace is
 still collapsed, because that changes no meaning.
+
+## The learner model
+
+`define --reflect` folds the deck and the lookup log into `user-model.md`, the
+third artifact in the working directory. Batch and on demand: no model call ever
+sits on the lookup or review path, which is what keeps a lookup instant and
+offline.
+
+**Every claim names its evidence, and the evidence is CHECKED.** The typed answer
+carries the deck words behind each claim and `checkEvidence` drops any claim
+citing a word the deck does not hold — the same rule this project applies to
+distractors, *selected and never invented*, arriving in a second place. Without
+the check, "every claim names its evidence" is a formatting convention that a
+plausible hallucination satisfies: a fabricated sailing domain citing `luffing`
+and `clew` looks exactly as checkable as a real legal one.
+
+It checks **usability** too, and that arm was written from a measured failure.
+Under a schema requiring every field, the model fills the ones it does not
+believe in — a domain literally named `x`, a rationale of `placeholder` — because
+a stub satisfies the shape. A domain with no name or no directive tells authoring
+nothing, which is the only reason a domain claim is generated, so it is dropped
+and said out loud.
+
+**The field name is what steers the model.** `evidence` invited whole sentences
+(*"Advanced specialist items looked up: 'certiorari', 'estoppel' — near-native
+legal register"*), and every level claim was then correctly dropped, so `## Level`
+went silently missing from every run. Renaming it `evidence_words` fixed it. The
+tell was that DOMAIN claims had been citing bare words correctly the whole time:
+they have no `rationale` field competing for the explanation.
+
+**Two sources, one rule.** The DECK decides which words are evidence; the LOG
+decides how many times and when. It follows from what `--forget` already
+promises — remove a word from the deck, keep its events — so a forgotten word
+stops being evidence while its history still counts, without a special case.
+The per-word fold is `summariseLookups`, the same one `/history` reads: a second
+fold would be a second answer to "how many times has this learner looked this up".
+
+**Two floors, both preferring nothing to something confident.** Below 12 deck
+words `--reflect` writes nothing and says how far off you are; and when every
+claim is dropped it writes nothing rather than a file with frontmatter and an
+empty promise, which reads as an answer. `#16`'s ask path degrades cleanly on an
+ABSENT file and not on an empty one.
+
+**`## Corrections` is spliced, never regenerated.** Everything above the marker is
+replaced, the marker and everything below it copied byte-for-byte. The marker is
+matched only at line start and only outside fenced blocks — this file documents
+its own format, and a learner arguing with the analysis may paste that block in.
+A fuzz property over malformed input (tilde fences, unterminated fences, CRLF)
+asserts that whatever follows the first out-of-fence marker survives
+byte-identical. That is **one direction of the invariant, not the invariant** —
+it says nothing about everything ABOVE the marker being replaced, which is
+exactly where a forged marker lives, so a separate test asserts regeneration.
+The atlas called it "the one thing that must hold" until a forged marker proved
+otherwise.
+
+**Model text is neutralised before it is rendered**, and that is the other half
+of the file's integrity. `user-model.md` is marker-delimited, so a directive — or
+an evidence word — containing a line-start `## Corrections` forges a second
+marker above the real one; the next run splices there and everything below,
+including the learner's actual corrections, is frozen forever. `oneLine`
+collapses whitespace and escapes `|` in every model-supplied field, which closes
+the injection outright rather than filtering for the marker: every line this
+renderer emits is prefixed by `**`, `Read off: ` or `| `, so text that cannot
+start a line cannot forge structure nobody has thought of yet.
+
+Note the asymmetry the file rests on. The corrections text is the LEARNER's and
+is copied byte-for-byte precisely because they own it; the analysis text is the
+MODEL's, and is rendered into a structure the file's integrity depends on. Same
+file, two opposite rules — conflating them is what created the hole.
+
+**What it is worth, measured.** With a deck of sailing, law and cooking words,
+asking *"what does trim mean here?"* answers well WITHOUT the model — `#16`
+already sends the deck. With it, the answer leads with the right domain and
+reaches into the deck's structure (*"the clew is where the sheet attaches, so
+trimming acts on the clew"*). Depth and ordering, not a different topic. The
+`directive` fields are aimed at `#10`'s authoring, which is where the payoff is
+designed to land.
 
 ## Entry modes
 

@@ -961,3 +961,73 @@ Two rules, and the second is the general one:
 Same rule as the mutation-table and the message-count entries above, applied one
 level up: the check is a claim, and an unfalsified claim is scaffolding whatever
 language it is written in.
+
+## A class found in one place is not fixed until you look for it in the others (define #17 M1)
+
+Smoke-testing `--reflect` live, I caught my own verification being vacuous: the
+corrections check printed "preserved", but the second run had FAILED and written
+nothing, so nothing could have changed. I fixed that check, reported it, and
+moved on.
+
+The boundary review then found the identical hole in two unit tests standing
+three feet away — `TestReflectIsIdempotent` and `TestReflectPreservesCorrections`
+both compared a file before and after, and a run that fails writes nothing, so
+"unchanged" and "suffix preserved" are satisfied by a file nobody touched.
+
+I had named the class out loud and swept exactly one instance of it.
+
+**When a finding is about a SHAPE rather than a line — a comparison that a
+no-op satisfies, an assertion the echo already satisfies, a claim that cites
+nothing — grep the shape before closing it.** The cost of looking is one search;
+the cost of not looking showed up as a blocking finding in the next round, twice
+in two issues.
+
+The mechanical version, for the shapes seen so far:
+
+- comparing a file before/after → does a FAILED run also satisfy it?
+- asserting on output a loop echoes → does typing alone satisfy it?
+- asserting a value reached an output → could a different source supply it?
+- a table of examples over human-edited text → is there a malformed class?
+
+## Sanitise where the structure is built, not at each place text is used (define #17 M1)
+
+A finding said "model text is rendered verbatim into a markdown table". I
+sanitised the four fields it listed. The next round found the evidence words —
+same text, two more render sites, not on the finding's list. A sweep after that
+found the frontmatter's model name and every diagnostic message, which go to a
+terminal one line each and can forge a `define: …` line a reader cannot tell from
+a real one.
+
+Three rounds, one class, because each fix was a LIST of call sites and the list
+drifts from the type.
+
+**The fix that ends it is structural: one pass over the whole struct, at the
+point the structure is created.** `renderUserModel` is where the file's shape
+exists, so it sanitises the model it was handed before rendering anything. A
+render site added later is safe without anyone remembering.
+
+Two general forms worth carrying:
+
+- **"Untrusted text in a table" is never the class.** The class is untrusted text
+  reaching any structured output — the file, the frontmatter, the diagnostics,
+  the terminal. Enumerate the SINKS, not the fields.
+- **Collapsing newlines beats filtering for the dangerous string.** Every line
+  the renderer emits is prefixed by `**`, `Read off: ` or `| `, so text that
+  cannot start a line cannot forge structure *nobody has thought of yet*.
+  Filtering for `## Corrections` would have to be updated for the next marker.
+
+## Choose injection text that does not satisfy your own assertion (define #17 M1)
+
+Testing the above, I wrote two assertions in a row that could not fail:
+
+1. *"every stderr line starts with `define: `"* — with injection text that itself
+   began `define: `, the forged line passed.
+2. *`Contains(injected + "\n")`* — missed, because the forged line carries the
+   rest of the message after it.
+
+The mutation passed both. What works is asserting the thing injection actually
+changes: it adds LINES, so count them.
+
+**When testing an injection, ask what the injection changes that the assertion
+measures** — and pick payload text that is unmistakable and inert (`FORGED-LEVEL`),
+never text shaped like the thing you are checking for.
