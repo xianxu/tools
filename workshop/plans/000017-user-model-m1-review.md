@@ -530,3 +530,173 @@ findings:
       the stated rule as a closing step rather than patching the paragraph, and replace "the one
       thing that must hold" with the two-directions invariant.
 ```
+
+---
+
+## Re-review — 2026-08-26T09:13:34-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 17 — learner model: batch analysis into a durable user-model.md |
+| repo | tools |
+| issue file | workshop/issues/000017-user-model.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | e777227b8ede348bc3aaf7d223b87c852582f385^..692ec0977233d66971ccf4016299392f637a694e |
+| command | sdlc milestone-close --issue 17 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-26T09:13:34-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All three round-4 Importants are genuinely fixed, and I confirmed each by mutation rather than by reading. BR-14's decisive experiment — removing sanitisation from the `## Level` section only, which left the whole suite green last round — now reddens `TestRenderUserModelNeutralisesModelText`, because `countMarkers` searches the whole document instead of the region a forged marker cannot occupy. BR-15's fix is the structural one the finding asked for, not the two call sites it named: `sanitiseModel` is one pass over the struct at `renderUserModel`'s entry, and reverting either the evidence-word arm or the pipe escape reddens independently. BR-16's atlas sweep landed, including replacing the claim this window disproved. The round-4 commit went further than any finding asked and swept a sink nobody had named — the stderr diagnostics — with a test that counts lines, the one assertion shape injection cannot satisfy. `go vet ./...`, `go vet -tags conformance ./cmd/define/`, `go test ./...` and `go test -race ./cmd/define/` are all clean at `692ec09`. What holds this back from SHIP is measured, not read: **four of the neutralisation sites this milestone now depends on have no test at all.** Deleting `sanitiseMeta`'s entire body leaves the full suite green, and unsanitising three of `checkEvidence`'s five diagnostic arms leaves it green too. The class work was done (the sinks were enumerated); the positive controls were written for two arms and not the rest, which is the same shape — an unfalsified guard — that BR-14 was. Eight Minors now carry a fifth round untouched; none blocks.
+
+## 1. Strengths
+
+- **BR-14's assertion is honest now, and I proved it fires.** `countMarkers` (`cmd/define/usermodel_test.go:303-320`) walks the whole document instead of `got[:firstMarker]`. Removing only `m.Level.Band/Rationale/EvidenceWords = oneLine(...)` from `sanitiseModel` — reinstating BR-12's serious half exactly — reddens `TestRenderUserModelNeutralisesModelText` with "the file has 2 markers, want exactly 1". Last round that mutation was invisible.
+- **BR-15's fix is the rule, not the sites.** `sanitiseModel`/`sanitiseMeta`/`oneLineAll` (`usermodel.go:204-241`) run once at `renderUserModel:45`, before any structure exists. Two independent mutations redden it: dropping `oneLineAll` on both evidence-word fields, and dropping the `|` escape alone. A render site added later is safe without anyone remembering — which is exactly what the finding asked for and what the four-fields-at-call-sites shape could not give.
+- **The sweep found a sink no finding named.** `cite`/`citeAll` (`reflect.go:125-153`) treat stderr as structured output, which it is — one line per message, and a forged `define: …` line is worse than no message because these messages are the only place a learner sees why a section vanished. `TestDroppedClaimDiagnosticsCannotForgeALine` (`reflect_run_test.go:291-318`) asserts by **counting lines**; unsanitising `cite`/`citeAll` produces 5 lines instead of 3 and it fails. Non-vacuous, verified.
+- **`atlas/define.md:693-701` says the true thing now.** "That is **one direction of the invariant, not the invariant**" replaces "the one thing that must hold", and the learner/model asymmetry — same file, two opposite rules — is written down where the next reader will meet it. That was BR-16's actual ask, applied as a sweep rather than a patch.
+- **`workshop/lessons.md:965-1035`** turns three rounds into three stated classes, each with the mechanical form. The injection-payload entry ("pick text unmistakable and inert, never text shaped like the thing you are checking for") is the kind of lesson that transfers.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — four neutralisation sites have no positive control; deleting one of them entirely is invisible to the suite** (`cmd/define/usermodel.go:230-233`, `cmd/define/reflect.go:188`, `:210`, `:216`).
+
+**This is the 3rd finding in family `model-text-unconstrained-by-format`** (BR-12, BR-15). Earlier rounds fixed instances. Do NOT fix these four sites — state the rule and enforce it structurally.
+
+Measured in a scratch copy, each mutation run against the full `./cmd/define/` suite:
+
+| mutation | result |
+|---|---|
+| delete `sanitiseMeta`'s body (`meta.Model = oneLine(meta.Model)`) | **suite green** |
+| `cite(m.Level.Band)` → `m.Level.Band` in the no-band/no-rationale arm | **suite green** |
+| `cite(d.Name)` → `d.Name` in the no-name/no-directive arm | **suite green** |
+| `cite(d.Name)` → `d.Name` in the share-out-of-range arm | **suite green** |
+
+(The three `checkEvidence` mutations were applied together and the suite still passed; the four repo-guard tests that fail in a scratch copy fail identically at baseline there, so they are not the signal.)
+
+`TestDroppedClaimDiagnosticsCannotForgeALine` injects a claim whose citations are absent, so it reaches only two of the five diagnostic arms — the level `default` arm and the domain `cites …` arm. The other three, and `sanitiseMeta`, are protected by nothing. `sampleMeta().Model` is `"claude-opus-5"`, which carries no injection, so the frontmatter sanitiser was never exercised.
+
+The rule, which `workshop/lessons.md:993` already states for the file and the code contradicts for the diagnostics: **a sink that renders untrusted text has one neutralising constructor, and one positive-control test that constructs the violation and confirms the assertion fires.** `renderUserModel` is that shape; `checkEvidence` is not — it sanitises at five call sites, which is the list-that-drifts the commit message says it replaced. The structural fix is the same move applied once more: make `dropped` carry `{kind, subject, why}` and give it one formatter that calls `oneLine(subject)`, so no arm can forget and one injection test covers all five by construction. `sanitiseMeta` is already a boundary and needs only the control — a hostile `modelMeta.Model` in `TestRenderUserModelNeutralisesModelText` costs one line.
+
+Same site, worth correcting while there: `sanitiseModel`'s doc comment (`usermodel.go:210-211`) claims "adding a field to `learnerModel` now makes this function fail to compile against it". It does not — a new field compiles fine and silently bypasses sanitisation. M2 adds `Weaknesses []weaknessClaim` with model-supplied `Name`/`Rationale`/`Directive` text, so that sentence is load-bearing and wrong. Either delete the claim or make it true (a reflection-driven test asserting every `string`/`[]string` field of `learnerModel` is neutralised would).
+
+## 4. Minor findings
+
+The eight carried findings, re-verified at `692ec09`:
+
+- **BR-6** — `foldLookups`'s `now` (`reflect.go:59`) is still never read while `:57-58` justifies it as what makes the window table-testable. One-line deletion.
+- **BR-7** — half addressed. `cite` (`reflect.go:134-139`) fixes the blank-band case: an empty band now prints `level nothing: …` rather than `level : …`. The floor message (`reflect.go:260`) still says "%d words **in the deck**" while printing `len(ev.Words)`, which is deck ∩ found-lookup log; the success message at `:329` says "from %d words" over the same count.
+- **BR-8** — `spliceCorrections` (`usermodel.go:114-118`) still discards a marker-less existing file in silence.
+- **BR-9** — the plan's Core-concepts tables are now **seven rows short and one row stale**. The plan's own cited enumeration reports 22 symbols; the tables omit `modelMeta`, `oneLine`, `cite`, `citeAll`, `sanitiseModel`, `sanitiseMeta`, `oneLineAll`, and still list `citedOrNothing`, which `692ec09` deleted. The Revisions entry still says "Reconciled to empty before this commit."
+- **BR-10** — no mode-count guard. `--llm-check` short-circuits at `main.go:308` before the `--reflect` arity check, and `--forget` dispatches at `:347` before `if *reflect` at `:352`, so `define --llm-check --reflect` and `define --forget x --reflect` each silently honour one flag.
+- **BR-11** — frontmatter still omits `learner:`; the Spec's `# N lookups, M reviews` still ships as `M questions` (`usermodel.go:52`); the Revisions entry still says "Two departures".
+- **BR-13** — re-verified on the current code: moving `if *reflect` to just before `d = d.withStore(...)` leaves every reflect test green, and the resulting binary run in an empty directory prints `define: no deck in this directory` and exits 1 for **every** `--reflect` invocation. One happy-path `run(ctx, []string{"--reflect"}, …)` in a temp dir pins D5.
+- **BR-1** — plan D1 (`plan.md:37-43`) still reads "drops any claim citing a word the deck does not contain" against prune-then-drop-if-empty code.
+
+Six of these eight are one-line or two-line edits (BR-6 a deletion, BR-8 one `Fprintln`, BR-9 eight table rows, BR-11 one format string). At four rounds and ~0.9h each they have now cost more to carry than to fix.
+
+## 5. Test coverage notes
+
+- The three claimed fixes are each pinned by a test that fails without them, verified by reverting rather than by reading. That is the bar this gate asks for and it was met on all three.
+- `failingStore` (`history_store_test.go:67-77`) already implements `Deck`, `Events`, `UserModel` and `SetUserModel` in this package, yet no `--reflect` test uses it — so five `return 1` paths in `runReflect` (`:245-254`, `:311-315`, `:324-327`) have never rendered their messages. This was noted as prose in round 4 and is cheaper to close than to keep noting: `d.deck = failingStore{}` is one line per path.
+- Still uncovered beyond N1: the `--reflect` happy path through `run()` (BR-13), and `--reflect` combined with another mode (BR-10).
+- `TestReflectRefusesATinyDeck`'s `len(fake.Requests()) != 0` remains the best-shaped assertion in the file — it pins that the floor is checked *before* the model is called, which is the property that matters.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag (N1).** `foldLookups` → `summariseLookups`, `renderReflectPrompt` → `SchemaFor[learnerModel]`, and `oneLine`/`oneLineAll` as one helper are all real reuse. The exception is the diagnostics: five call sites each responsible for remembering `cite`, which is the shape `renderUserModel` was just refactored away from. One formatter, one rule.
+- **ARCH-PURE — pass.** `runReflect` is read → fold → ask → check → render → splice → write; every decision sits in a pure function and every pure entity is tested with no fake. Worth keeping as the shape for #10's authoring path.
+- **ARCH-PURPOSE — flag (N1).** The round-4 sweep did the class work a finding asks for: it enumerated the *sinks* rather than the fields, which is the harder and more valuable half. What it did not do is finish the enumeration in the tests — two arms got a positive control and four sites got none, so "this cannot come back" holds for the sites a test happens to reach. The purpose of a neutralisation fix is that a later edit cannot silently undo it; four of these can.
+- **ARCH-MOCK — pass.** `llmtest.Fake` is a wire-level `httptest` server, `store.YAML` is real in a `t.TempDir()`, and `reflect_conformance_test.go` skips rather than reddens when the seam is unreachable, with the cadence stated in its header.
+- **For M2:** `learnerModel` gains `Weaknesses`, which is a third claim type with model-supplied free text, a new rendered section, and new diagnostic arms. Both the diagnostic formatter (N1) and `checkEvidence`'s per-claim usability predicate should be single functions before that lands, or M2 copies three hand-maintained enumerations into a section nobody has looked at yet. Note also `reflect_conformance_test.go:145-159`: `oneLine` does not strip backticks, and the live check treats every backticked token above the marker as an evidence claim, so a rationale that quotes a non-deck word would fail it spuriously — cheap to close by normalising citations to `store.Key` in `checkEvidence`'s `supported`.
+
+## 7. Plan revision recommendations
+
+`workshop/plans/000017-user-model-plan.md` has not been touched since `9f1b45c` — four boundary rounds of drift, and the entity tables now misdescribe the code. Owed:
+
+- **The enumeration is seven rows short and one row stale.** Add `modelMeta`, `oneLine`, `oneLineAll`, `sanitiseModel`, `sanitiseMeta`, `cite`, `citeAll`; delete the `citedOrNothing` row, which names a symbol `692ec09` removed. Correct the entry that names eight symbols and asserts "Reconciled to empty before this commit" — re-running the plan's own cited command still reports the gap.
+- **Departures three and four.** Task 3 says frontmatter "exactly as the issue's Spec shows"; `learner:` is omitted and `M reviews` ships as `M questions`. Amend the Spec's shape or add the fields — either way "Two departures" is wrong.
+- **D1's semantics** restated as prune-then-drop-if-empty, so the task bodies can cite it instead of paraphrasing it (BR-1).
+- **A round-2-through-5 entry:** what BR-2…BR-5 changed, that half of BR-2's sketch was correctly rejected (asserting change-between-runs contradicts idempotency under a fixed clock), that BR-12 introduced `oneLine`, that BR-14/BR-15 turned per-site sanitisation into `sanitiseModel` at the render boundary, and that the sweep added the diagnostics sink.
+- **Task 4's fuzz property guards one direction.** Record that `FuzzSpliceCorrections` covers preservation-below and `TestSpliceReplacesEverythingAboveTheMarker` covers regeneration-above — the atlas already says this; the plan still does not.
+
+```findings
+dispose:
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Verified by the decisive experiment — removing Level sanitisation alone now reddens the test via countMarkers; the requested lessons.md mechanical-list line is still absent, but the adjacent class entry was written.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Structural fix verified by two independent mutations (evidence-word arm, pipe escape); residual named in the finding — oneLine still does not strip backticks, so the live check can fail spuriously on a quoted non-deck word.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      atlas/define.md:693-701 now states the two-directions invariant and the learner/model asymmetry; the disproved "one thing that must hold" claim is gone.
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      plan.md:37-43 unchanged; D1 still says "drops any claim citing a word the deck does not contain".
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      reflect.go:59 still takes `now` and never reads it; the doc comment at :57-58 still justifies it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Half fixed — cite() means an empty band now prints "level nothing" — but reflect.go:260 and :329 still call deck-intersect-log "words in the deck".
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      usermodel.go:114-118 unchanged; a marker-less existing file is still discarded without a word.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Now seven rows short (modelMeta, oneLine, oneLineAll, sanitiseModel, sanitiseMeta, cite, citeAll) and one row stale (citedOrNothing, deleted in 692ec09); the Revisions entry still claims closure.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      main.go still has no mode-count guard; --llm-check short-circuits at :308 and --forget dispatches at :347, both before `if *reflect` at :352.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      Frontmatter still omits `learner:`, `M reviews` still ships as `M questions`, and the Revisions entry still says "Two departures".
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Re-verified on the current code: moving `if *reflect` before withStore leaves the suite green, and the built binary then refuses every --reflect run with "no deck in this directory".
+findings:
+  - id: new
+    severity: Important
+    family: model-text-unconstrained-by-format
+    title: |
+      Four neutralisation sites have no positive control — deleting sanitiseMeta's body leaves the whole suite green
+    detail: |
+      3rd in this family after BR-12 and BR-15, so the deliverable is the rule, not these four sites.
+      Measured against the full ./cmd/define/ suite, each mutation applied in a scratch copy: deleting
+      sanitiseMeta's body (usermodel.go:230-233) — green; unsanitising cite(d.Name) at reflect.go:210
+      and :216 and cite(m.Level.Band) at :188 — green. TestDroppedClaimDiagnosticsCannotForgeALine
+      reaches only two of checkEvidence's five diagnostic arms, and sampleMeta().Model carries no
+      injection, so the frontmatter sanitiser was never exercised. The rule lessons.md:993 already
+      states for the file and the code contradicts for the diagnostics: a sink that renders untrusted
+      text has ONE neutralising constructor plus ONE positive-control test that constructs the
+      violation and confirms the assertion fires. checkEvidence sanitises at five call sites, which is
+      the list-that-drifts renderUserModel was just refactored away from (ARCH-DRY); make `dropped`
+      carry a struct and give it one formatter that calls oneLine on the subject, so no arm can forget
+      and one injection test covers all five by construction. Same site: sanitiseModel's comment
+      (usermodel.go:210-211) claims adding a learnerModel field "makes this function fail to compile" —
+      it does not, and M2's Weaknesses would silently bypass it.
+```

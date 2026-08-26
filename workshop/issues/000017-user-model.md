@@ -213,6 +213,8 @@ Design: [`workshop/plans/000017-user-model-plan.md`](../plans/000017-user-model-
 
 ## Log
 
+
+- 2026-08-26: closed M1 — go test ./... + go vet + go test -race green; live conformance stable; fuzz 1.47M execs. All M1 Done-when rows asserted. Boundary rounds 1-3 all fixed, plus a self-run sweep of round 3s class BEFORE this round. Round 3: BR-15 (oneLine applied to the four fields the finding LISTED, not to EvidenceWords which reach two more sites), BR-14 (my forged-marker assertion searched the region before the first marker, where a forged marker cannot be by definition — it passed unconditionally; now counts markers over the whole document), BR-16 (atlas still called the fuzz property "the one thing that must hold", which round 2 disproved). The sweep then found three MORE sinks the findings had not named: the frontmatter model name, and every diagnostic message — these go to a terminal one line each, so a band carrying a newline forges a "define: ..." line a reader cannot tell from a real one. The fix changed shape rather than growing: sanitisation is now ONE pass over the whole struct at the point the file structure is built, so a render site added later is safe by construction. Two vacuous assertions of my own caught during that sweep, both in the new diagnostic test — the payload satisfied my own prefix check, and Contains(text+newline) missed because the forged line carries the rest of the message; the honest observable is that injection adds LINES, and the test counts them. Every fix mutation-verified with the mutation confirmed to have landed. lessons.md gains both rules.; review verdict: FIX-THEN-SHIP
 ### 2026-08-22
 
 Created from the operator conversation that broadened `define-learn` to an adaptive
@@ -377,3 +379,25 @@ The through-line, stated plainly because three rounds have now said it: **I fix
 what a finding enumerates and not what it generalises, and I write assertions
 that cannot fail.** The lessons entries name both; what round 3 adds is that
 they recur *inside the fix for the round that named them*.
+
+### 2026-08-26 — M1 round 4: the gate passed, and named the gap my own sweep left
+
+One finding, and it is the right one: **four neutralisation sites, and not all of
+them had a positive control.** Deleting `sanitiseMeta`'s body — the frontmatter's
+model name — left the whole suite green.
+
+That is the same rule as #16's BR-45 (*a fix added to defend a finding must have
+a read site that can fail*) applied to the sweep I ran proactively last round. I
+found three unprotected sinks and protected them; I tested the two the story was
+about and left the other two covered by nothing. **"The fields I remembered" is
+not a site list.**
+
+There is now one row per untrusted field, each injected alone so a row going
+green names exactly which site stopped being defended. Verified per site:
+removing any single field's neutralisation reddens its own row.
+
+What is worth keeping from four rounds on one milestone: the sweep DID move the
+work — round 4 raised one finding where rounds 1–3 raised four, three, and three
+— and what it missed was not another sink but the *evidence* that the sinks are
+defended. The gap moved from the code to the proof of the code, which is the
+direction it should move.

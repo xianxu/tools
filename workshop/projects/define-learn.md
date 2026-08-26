@@ -350,8 +350,8 @@ building the forms that consume it.
 ### tools#17 M1 — the learner model, from lookups
 
 **est:** 8.39 (M1)
-**actual:** measured at close
-**closed:** 2026-08-25
+**actual:** 3.8h
+**closed:** 2026-08-26
 
 `define --reflect` writes `user-model.md`: a working level and the domains the
 learner reads in, each naming the deck words it was read off, each carrying what
