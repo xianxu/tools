@@ -87,14 +87,14 @@ Error kinds with counts, each naming the events it was derived from.
 ## Done when
 
 M1:
-- [ ] `--reflect` writes a `user-model.md` whose level and domain claims each name
+- [x] `--reflect` writes a `user-model.md` whose level and domain claims each name
       the deck words they were derived from.
-- [ ] Regeneration is idempotent against a fake seam, fixed clock and fixed store.
-- [ ] A hand-written `## Corrections` section survives regeneration byte-for-byte,
+- [x] Regeneration is idempotent against a fake seam, fixed clock and fixed store.
+- [x] A hand-written `## Corrections` section survives regeneration byte-for-byte,
       asserted by a test that fails when the preservation is removed.
-- [ ] Authoring (#10) reads the file, and its absence degrades to generic authoring
+- [x] Authoring (#10) reads the file, and its absence degrades to generic authoring
       rather than an error.
-- [ ] Domain inference is checked against a held-out sample of deck words, not
+- [x] Domain inference is checked against a held-out sample of deck words, not
       asserted — the same bar #10 sets for level bucketing.
 
 M2:
@@ -206,7 +206,7 @@ Design: [`workshop/plans/000017-user-model-plan.md`](../plans/000017-user-model-
 — M1 only; M2 needs review events #6 does not yet produce.
 
 - [x] Design via `sdlc start-plan` before implementing.
-- [ ] M1 — the model from lookups: `foldLookups`, a typed `learnerModel` whose
+- [x] M1 — the model from lookups: `foldLookups`, a typed `learnerModel` whose
       evidence is CHECKED against the deck, `renderUserModel` +
       `spliceCorrections`, and `--reflect` as a mode beside `--llm-check`.
 - [ ] M2 — weaknesses. Blocked on #6's review events; planned when they exist.

@@ -86,6 +86,20 @@ follow-up like `give me two more examples` resolves against the answer before it
 Nothing is remembered between runs except the files, which means a fresh process
 answers as well as a long-running one and you can read the context with `cat`.
 
+**`define --reflect` writes down who it thinks you are.** It reads your deck and
+your lookup history and produces `user-model.md`: a working level, the domains
+you read in, and — the part that matters — what practice material should DO about
+each. Every claim names the words it was read off, and a claim citing a word your
+deck does not hold is dropped before you see it.
+
+It is batch and on demand: nothing calls a model while you are looking a word up.
+Below a dozen words it declines and says so, because a learner model built from
+four lookups is a confident guess.
+
+**`## Corrections` is yours.** Disagree with it in your own words and re-run
+`--reflect`: everything from that heading down comes back byte-for-byte, and a
+correction outranks anything inferred above it.
+
 Questions need a model configured (see `--llm-check` below); without one, `define`
 says so and exits `1` rather than looking up a sentence.
 

@@ -105,10 +105,10 @@ rule rather than needing a case.
 | `deckEvidence` | `cmd/define/reflect.go` | new |
 | `foldLookups` | `cmd/define/reflect.go` | new |
 | `summariseLookups` / `historyRow` | `cmd/define/history_cmd.go` | reused, unchanged |
-| `learnerModel` / `domainClaim` | `cmd/define/reflect.go` | new |
-| `checkEvidence` | `cmd/define/reflect.go` | new |
-| `renderUserModel` | `cmd/define/usermodel.go` | new |
-| `spliceCorrections` | `cmd/define/usermodel.go` | new |
+| `learnerModel` / `levelClaim` / `domainClaim` | `cmd/define/reflect.go` | new |
+| `checkEvidence` / `citedOrNothing` | `cmd/define/reflect.go` | new |
+| `renderUserModel` / `dateOrNone` / `joinWords` | `cmd/define/usermodel.go` | new |
+| `spliceCorrections` / `firstMarkerOutsideAFence` / `isCorrectionsMarker` | `cmd/define/usermodel.go` | new |
 | `minDeckForReflection` | `cmd/define/reflect.go` | new |
 | `assertGoldenFile` | `cmd/define/usermodel_test.go` | new |
 
@@ -163,8 +163,8 @@ rule rather than needing a case.
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `runReflect` | `cmd/define/reflect.go` | new | `llm.Run` + the store |
-| `reflectTask` | `cmd/define/reflectprompt.go` | new | the prompt (domain knowledge) |
+| `runReflect` / `unavailableToReflect` | `cmd/define/reflect.go` | new | `llm.Run` + the store |
+| `renderReflectPrompt` | `cmd/define/reflectprompt.go` | new | the prompt (domain knowledge) |
 | `--reflect` dispatch | `cmd/define/main.go` | modified | flag parsing |
 
 - **runReflect** — read store → fold → `llm.Run[learnerModel]` → check → render →
@@ -637,3 +637,30 @@ Ledger: `workshop/plans/000017-user-model-plan-gate.md`.
   (`llmtest.AssertGolden` takes an `llm.Request`, not a string) and has a table
   row. It reads `llmtest.Updating()` rather than registering a second `-update`,
   which would be a flag redefinition panic in a binary that links both.
+
+### 2026-08-25 — M1 shipped; the plan's own tasks, revised by what running it found
+
+Tasks 1–8 done. Two departures from the plan as written, both forced by
+measurement rather than by taste:
+
+1. **`evidence` became `evidence_words`, and `checkEvidence` grew a second arm.**
+   The plan had the check enforcing one rule (cite only deck words). Live, the
+   model put whole sentences in the array — so every level claim was correctly
+   dropped and `## Level` went missing from every run — and under a schema
+   requiring every field it stubbed claims it did not believe in. The field name
+   is what steers; the check now also drops claims authoring cannot act on.
+2. **A second floor.** D2 covered a deck too small to reflect on. Nothing covered
+   an ANSWER with nothing left in it, and `--reflect` wrote frontmatter plus an
+   empty promise — a file that reads as an answer. It writes nothing now.
+
+Also: `llm.Task.MaxTokens` is set explicitly (16384). At the 8192 default,
+answers were intermittently degenerate because high-effort thinking shares that
+budget with a genuinely long answer — not a truncation, which `Run` catches
+first, but the same squeeze that produced #11's preserved specimen.
+
+**The enumeration, run LAST against the working tree, found eight symbols with no
+row** — `citedOrNothing`, `dateOrNone`, `firstMarkerOutsideAFence`,
+`isCorrectionsMarker`, `joinWords`, `levelClaim`, `renderReflectPrompt`,
+`unavailableToReflect` — every one of them created after the tables were written.
+That is the check working as #16 finally learned to run it: not the command, but
+the MOMENT. Reconciled to empty before this commit.
