@@ -34,6 +34,16 @@ type modelMeta struct {
 // from "nothing was inferred" — the same distinction #16's prompt sections draw,
 // and the one that makes a generic answer sound confident.
 func renderUserModel(m learnerModel, meta modelMeta) string {
+	// Neutralised HERE, once, over every field — not at each render site.
+	//
+	// The first fix sanitised the four fields a finding happened to list and
+	// missed the evidence words, which reach two more sites; the sweep after
+	// that found the frontmatter's model name as well. Per-site calls are a list
+	// to keep in step with the struct, and the struct is the thing that grows.
+	// This function is where the file's structure is created, so it is where the
+	// text that must not forge structure is made safe.
+	m, meta = sanitiseModel(m), sanitiseMeta(meta)
+
 	var b strings.Builder
 
 	b.WriteString("---\n")
@@ -53,7 +63,7 @@ func renderUserModel(m learnerModel, meta modelMeta) string {
 
 	if m.Level.Band != "" {
 		b.WriteString("## Level\n\n")
-		fmt.Fprintf(&b, "**%s** — %s\n\n", oneLine(m.Level.Band), oneLine(m.Level.Rationale))
+		fmt.Fprintf(&b, "**%s** — %s\n\n", m.Level.Band, m.Level.Rationale)
 		fmt.Fprintf(&b, "Read off: %s.\n\n", joinWords(m.Level.EvidenceWords))
 	}
 
@@ -64,7 +74,7 @@ func renderUserModel(m learnerModel, meta modelMeta) string {
 		b.WriteString("|---|---|---|---|\n")
 		for _, d := range m.Domains {
 			fmt.Fprintf(&b, "| %s | %.0f%% | %s | %s |\n",
-				oneLine(d.Name), d.Share*100, joinWords(d.EvidenceWords), oneLine(d.Directive))
+				d.Name, d.Share*100, joinWords(d.EvidenceWords), d.Directive)
 		}
 		b.WriteString("\n")
 	}
@@ -89,13 +99,7 @@ func dateOrNone(t time.Time) string {
 func joinWords(words []string) string {
 	quoted := make([]string, 0, len(words))
 	for _, w := range words {
-		// oneLine here TOO. The round-2 fix sanitised Band, Rationale, Name and
-		// Directive — the four fields the finding happened to list — and left
-		// the evidence words, which are just as model-supplied and reach two
-		// render sites. checkEvidence constrains them to deck words, but it
-		// matches on store.Key, so a citation carrying a newline can match a
-		// deck word and still forge a line (BR-15).
-		quoted = append(quoted, "`"+oneLine(w)+"`")
+		quoted = append(quoted, "`"+w+"`")
 	}
 	return strings.Join(quoted, ", ")
 }
@@ -195,4 +199,43 @@ func isCorrectionsMarker(line string) bool {
 // model's, and it is rendered into a structure the file's integrity depends on.
 func oneLine(s string) string {
 	return strings.ReplaceAll(strings.Join(strings.Fields(s), " "), "|", `\|`)
+}
+
+// sanitiseModel neutralises every model-supplied string in one pass.
+//
+// One pass over the STRUCT rather than a call at each use: the failure mode this
+// replaces is a list of fields that drifts from the type, which is what happened
+// twice — the evidence words were missed because they were not in the finding's
+// list, and the frontmatter's model name because it is not part of the claim.
+// Adding a field to learnerModel now makes this function fail to compile against
+// it only if someone removes a line; adding a RENDER site is automatically safe.
+func sanitiseModel(m learnerModel) learnerModel {
+	m.Level.Band = oneLine(m.Level.Band)
+	m.Level.Rationale = oneLine(m.Level.Rationale)
+	m.Level.EvidenceWords = oneLineAll(m.Level.EvidenceWords)
+	out := make([]domainClaim, 0, len(m.Domains))
+	for _, d := range m.Domains {
+		d.Name = oneLine(d.Name)
+		d.Directive = oneLine(d.Directive)
+		d.EvidenceWords = oneLineAll(d.EvidenceWords)
+		out = append(out, d)
+	}
+	m.Domains = out
+	return m
+}
+
+// sanitiseMeta covers the provenance line. Not model-supplied — the model name
+// comes from DEFINE_LLM_MODEL — but the same class: untrusted text rendered into
+// a structured file, where a newline breaks the frontmatter it sits in.
+func sanitiseMeta(meta modelMeta) modelMeta {
+	meta.Model = oneLine(meta.Model)
+	return meta
+}
+
+func oneLineAll(words []string) []string {
+	out := make([]string, 0, len(words))
+	for _, w := range words {
+		out = append(out, oneLine(w))
+	}
+	return out
 }

@@ -274,3 +274,44 @@ func mustReflect(t *testing.T, d deps, out, errOut *bytes.Buffer) {
 			code, errOut.String())
 	}
 }
+
+// A diagnostic is structured output too: one line each, to a terminal.
+//
+// The file's table was the instance a finding named first; the class is
+// untrusted text reaching ANY structured output. A band or domain name carrying
+// a newline forges an extra line the reader cannot tell from a real one — and
+// these messages exist precisely so a person can see WHY a section went missing,
+// so a forged one is worse than none.
+//
+// Asserted by COUNTING lines, because the obvious assertions are both vacuous
+// and I wrote both before noticing: "every line starts with define: " is
+// satisfied when the injected text itself starts with "define: ", and
+// `Contains(text+"\n")` misses when the forged line has the rest of the message
+// appended after it. Injection adds LINES; that is the observable.
+func TestDroppedClaimDiagnosticsCannotForgeALine(t *testing.T) {
+	d, fake, _, _ := reflectRig(t, 14)
+	// Both claims are dropped (their citations are not in the deck), so exactly
+	// three messages are expected: the level, the domain, and nothing-survived.
+	fake.Script("", llmtest.Reply{Text: `{"level":{"band":"C1\nFORGED-LEVEL","rationale":"r",` +
+		`"evidence_words":["luffing"]},` +
+		`"domains":[{"name":"law\nFORGED-DOMAIN","share":0.5,` +
+		`"evidence_words":["clew"],"directive":"d"}]}`})
+
+	var out, errb bytes.Buffer
+	runReflect(t.Context(), d, options{}, &out, &errb)
+
+	lines := strings.Split(strings.TrimRight(errb.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Errorf("stderr has %d lines, want 3 — model text started a line of its own:\n%s",
+			len(lines), errb.String())
+	}
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "define: ") {
+			t.Errorf("a diagnostic line does not start with the program name: %q", line)
+		}
+	}
+	// Neutralised, not discarded: the message must still name what it rejected.
+	if !strings.Contains(errb.String(), "FORGED-LEVEL") {
+		t.Errorf("the rejected text was dropped rather than neutralised:\n%s", errb.String())
+	}
+}

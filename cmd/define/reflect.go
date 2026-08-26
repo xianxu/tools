@@ -122,14 +122,34 @@ type domainClaim struct {
 	Directive     string   `json:"directive"`
 }
 
-// citedOrNothing renders what a dropped claim tried to cite. A claim that cited
-// NOTHING is a different failure from one that cited words we do not have, and
-// the message has to tell them apart or it cannot be acted on.
-func citedOrNothing(words []string) string {
+// cite renders one piece of model text for a DIAGNOSTIC, and neutralises it on
+// the way.
+//
+// The file is not the only structured output here: these messages go to a
+// terminal one per line, and a band or a domain name carrying a newline forges a
+// second diagnostic — a fabricated "define: ..." line the reader has no way to
+// tell from a real one. The sweep that found this also found the frontmatter's
+// model name; the class is untrusted text reaching ANY structured output, and
+// the file's table was simply the instance a finding named first.
+func cite(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "nothing"
+	}
+	return oneLine(s)
+}
+
+// citeAll is cite over a list. A claim that cited NOTHING is a different failure
+// from one that cited words we do not have, and the message must tell them apart
+// or it cannot be acted on.
+func citeAll(words []string) string {
 	if len(words) == 0 {
 		return "nothing"
 	}
-	return strings.Join(words, ", ")
+	out := make([]string, 0, len(words))
+	for _, w := range words {
+		out = append(out, oneLine(w))
+	}
+	return strings.Join(out, ", ")
 }
 
 // checkEvidence enforces D1: a claim may cite only words the deck holds.
@@ -165,7 +185,7 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 	// with nothing after the dash.
 	switch ev := supported(m.Level.EvidenceWords); {
 	case strings.TrimSpace(m.Level.Band) == "" || strings.TrimSpace(m.Level.Rationale) == "":
-		dropped = append(dropped, "level "+citedOrNothing([]string{m.Level.Band})+": no band or no rationale — nothing a reader could check")
+		dropped = append(dropped, "level "+cite(m.Level.Band)+": no band or no rationale — nothing a reader could check")
 		m.Level = levelClaim{}
 	case len(ev) > 0:
 		m.Level.EvidenceWords = ev
@@ -174,7 +194,7 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 		// deck" is the same unactionable shape as a claim that names none, and
 		// this message is the only place a person can see WHY the level went
 		// missing from their file.
-		dropped = append(dropped, "level "+m.Level.Band+": cites "+citedOrNothing(m.Level.EvidenceWords)+", none of which is in the deck")
+		dropped = append(dropped, "level "+cite(m.Level.Band)+": cites "+citeAll(m.Level.EvidenceWords)+", none of which is in the deck")
 		m.Level = levelClaim{}
 	}
 
@@ -187,18 +207,18 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 		// shape. A domain with no name or no directive tells authoring nothing,
 		// which is the only reason a domain claim is generated at all.
 		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Directive) == "" {
-			dropped = append(dropped, "domain "+citedOrNothing([]string{d.Name})+": no name or no directive — nothing authoring could act on")
+			dropped = append(dropped, "domain "+cite(d.Name)+": no name or no directive — nothing authoring could act on")
 			continue
 		}
 		if d.Share < 0 || d.Share > 1 {
 			// Rendered as a percentage, so 5.0 becomes "500%" — a number a
 			// reader cannot act on and would not believe.
-			dropped = append(dropped, "domain "+d.Name+": share out of range")
+			dropped = append(dropped, "domain "+cite(d.Name)+": share out of range")
 			continue
 		}
 		ev := supported(d.EvidenceWords)
 		if len(ev) == 0 {
-			dropped = append(dropped, "domain "+d.Name+": cites "+citedOrNothing(d.EvidenceWords)+", none of which is in the deck")
+			dropped = append(dropped, "domain "+cite(d.Name)+": cites "+citeAll(d.EvidenceWords)+", none of which is in the deck")
 			continue
 		}
 		d.EvidenceWords = ev

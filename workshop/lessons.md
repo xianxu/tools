@@ -988,3 +988,46 @@ The mechanical version, for the shapes seen so far:
 - asserting on output a loop echoes → does typing alone satisfy it?
 - asserting a value reached an output → could a different source supply it?
 - a table of examples over human-edited text → is there a malformed class?
+
+## Sanitise where the structure is built, not at each place text is used (define #17 M1)
+
+A finding said "model text is rendered verbatim into a markdown table". I
+sanitised the four fields it listed. The next round found the evidence words —
+same text, two more render sites, not on the finding's list. A sweep after that
+found the frontmatter's model name and every diagnostic message, which go to a
+terminal one line each and can forge a `define: …` line a reader cannot tell from
+a real one.
+
+Three rounds, one class, because each fix was a LIST of call sites and the list
+drifts from the type.
+
+**The fix that ends it is structural: one pass over the whole struct, at the
+point the structure is created.** `renderUserModel` is where the file's shape
+exists, so it sanitises the model it was handed before rendering anything. A
+render site added later is safe without anyone remembering.
+
+Two general forms worth carrying:
+
+- **"Untrusted text in a table" is never the class.** The class is untrusted text
+  reaching any structured output — the file, the frontmatter, the diagnostics,
+  the terminal. Enumerate the SINKS, not the fields.
+- **Collapsing newlines beats filtering for the dangerous string.** Every line
+  the renderer emits is prefixed by `**`, `Read off: ` or `| `, so text that
+  cannot start a line cannot forge structure *nobody has thought of yet*.
+  Filtering for `## Corrections` would have to be updated for the next marker.
+
+## Choose injection text that does not satisfy your own assertion (define #17 M1)
+
+Testing the above, I wrote two assertions in a row that could not fail:
+
+1. *"every stderr line starts with `define: `"* — with injection text that itself
+   began `define: `, the forged line passed.
+2. *`Contains(injected + "\n")`* — missed, because the forged line carries the
+   rest of the message after it.
+
+The mutation passed both. What works is asserting the thing injection actually
+changes: it adds LINES, so count them.
+
+**When testing an injection, ask what the injection changes that the assertion
+measures** — and pick payload text that is unmistakable and inert (`FORGED-LEVEL`),
+never text shaped like the thing you are checking for.
