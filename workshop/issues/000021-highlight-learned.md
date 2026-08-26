@@ -225,6 +225,7 @@ milestones; each `Mx` row below is its own review boundary).
 ## Log
 
 ### 2026-08-26
+- 2026-08-26: closed M1 — go test ./... + go vet + gofmt clean. FuzzWordRuns re-fuzzed 2.24M execs clean after its property was corrected to the trimmed contract (it was RED at HEAD; go test runs seeds only). FuzzHighlightSpans 792k execs on the span-join invariant. Round 2 findings addressed as rules, not instances: (a) the test-completeness enumeration is now over the production dependency chain rather than over comments — hop 2, withStore merging sd.vocab into deps.vocab, carries no comment and was invisible to the round-1 sweep while its deletion kills the feature with the suite green; now pinned by TestWithStoreCarriesTheHighlightSetThrough using the deps{newStore: openStore}.withStore pattern, and MUT-G dies. (b) doc prose at a boundary describes only what that milestone shipped — the round-1 fix commit had written a fresh over-claim into README while fixing the atlas one; README now covers the typed line only and Task 8 Step 7 records that its job is to widen it. Twelve mutations die across M1. ACTUAL 2.9h is wall clock 12:40-15:35; sdlc actual reports 0.84h while its own warning says it discarded 117.6m as unattributed — the sdlc claim anchoring defect from #20.; review verdict: SHIP
 
 Opened from the operator's request. Scope grew mid-specification: the first ask
 was the prompt line only, then "such highlighting should appear in definition and
@@ -270,3 +271,16 @@ this spec's central decision — the predicate seam.
   code) and hop 2 is now pinned. (b) The commit that fixed round 1's
   atlas-claims-unbuilt-surface finding wrote a FRESH instance of it into README
   in the same commit. Both rules recorded in lessons.md.
+
+- 2026-08-26: M1 boundary round 3 — SHIP. 8 findings disposed, 4 advisory
+  recorded. Took all four now rather than at the close review, since M2 builds
+  directly on this code: the "define: " warning prefix was written out in three
+  seams (one `warnTo`, each seam keeping its own policy — capture's warn-once,
+  history's session-only suffix); the Vocabulary seam had TWO absence
+  representations (nil and an empty stand-in) with four guards, now nil only,
+  interpreted in `highlightSpans` and guarded elsewhere only where nil would
+  panic; `voc.Load()` read the whole deck under `-no-color`, where the render
+  cannot show a highlight, now skipped; and a deck word sharing a command name
+  rendered green inside `/history 7`, which leaked the vocabulary feature across
+  the namespace boundary #20 decides exactly once — `highlightSetFor` withholds
+  the set on a command line.

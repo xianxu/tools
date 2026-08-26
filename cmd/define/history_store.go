@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -80,8 +79,5 @@ func (h *storeHistory) Prefix(p string) []string {
 // with a different home, from storeCapturer's failed-write warning. Conflating
 // the two is what stranded the warn-once rule when the writes moved.
 func (h *storeHistory) warnf(format string, args ...any) {
-	if h.warn == nil {
-		return
-	}
-	fmt.Fprintf(h.warn, "define: "+format+" (history is session-only)\n", args...)
+	warnTo(h.warn, format+" (history is session-only)", args...)
 }

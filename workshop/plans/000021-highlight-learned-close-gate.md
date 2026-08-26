@@ -96,6 +96,87 @@ rounds:
       boundary: M1
       blocked: true
       protocol_error: no valid findings block
+    - "n": 3
+      timestamp: "2026-08-26T15:33:16-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Verified by mutation: nil at both RenderLine call sites and deleting voc.Load() each redden TestEditorLoopHighlightsADeckWordOnScreen.'
+          round: 3
+        - id: BR-2
+          disposition: addressed
+          note: Hoisting vocab.Add above the Upsert error check reddens TestCaptureDoesNotAddAWordTheDeckRejected via the Upsert-only double.
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: Removing the loaded guard reddens TestStoreVocabularyReadsTheDeckOnlyOnce; countingDeck counts Deck() reads.
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: gofmt -l over cmd/ and internal/ reports nothing.
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: appendTrimmed trims joiners at token edges; MaxPhraseWords counts with wordRuns; the punctuated-key limit is pinned by TestAPunctuatedKeyIsNotMatchable.
+          round: 3
+        - id: BR-6
+          disposition: addressed
+          note: atlas/define.md now reads "used by the prompt line today and by the definition and answer paths from M2".
+          round: 3
+        - id: BR-7
+          disposition: addressed
+          note: All 26 M1 steps are ticked and three Revisions entries record the Task 4 Step 2 infeasibility, the skipped Step 7, and the wordRuns contract change.
+          round: 3
+        - id: BR-8
+          disposition: addressed
+          note: The statement and the unicode import are both gone from highlight_test.go.
+          round: 3
+      findings:
+        - id: BR-9
+          severity: Minor
+          title: 'A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)'
+          detail: |-
+            vocab.go:126 is a copy of history_store.go:82 minus its suffix, and capture.go:125
+            is the same shape with a once-per-process flag. The shared part — the nil-writer
+            guard and the "define: " prefix — should be one helper the three wrap; today
+            renaming the program means finding three string literals.
+          family: copy-pasted-helper
+          round: 3
+        - id: BR-10
+          severity: Minor
+          title: voc.Load() reads the whole deck even with -no-color, where nothing can consume it
+          detail: |-
+            replraw.go:82 loads unconditionally, but RenderLine only calls highlightSpans
+            inside its `if color` branch, so with colour off the deck walk and YAML parse
+            buy nothing. hist.Load() beside it is needed either way, which is what makes
+            the unconditional shape look right.
+          family: io-for-a-disabled-feature
+          round: 3
+        - id: BR-11
+          severity: Minor
+          title: The Vocabulary seam has two absent-representations and four guards, one of them already unreachable
+          detail: |-
+            nil and an empty memVocabulary both mean "nothing highlighted", defended at
+            highlight.go:113, replraw.go:79, main.go:134 and capture.go:102. run() calls
+            withStore before repl(), so replraw.go:79 cannot fire in production. M2 adds two
+            more consumers of the same seam; picking one representation now keeps this at one
+            guard rather than six.
+          family: one-absence-representation-per-seam
+          round: 3
+        - id: BR-12
+          severity: Minor
+          title: A deck word used as a command name highlights inside the command namespace
+          detail: |-
+            Confirmed by direct render: with "history" in the deck, typing "/history 7" emits
+            "\x1b[1m/\x1b[1;32mhistory\x1b[0m\x1b[1m 7". parseCommandLine's own comment says
+            "/" opens a real separate namespace, not a marker on a word, so highlighting
+            inside it reads as the vocabulary feature leaking across that boundary. It may be
+            intended and harmless; nothing in the Spec's out-of-scope list decides it either way.
+          family: feature-leaks-across-namespace
+          round: 3
+      boundary: M1
+      blocked: false
 ---
 
 # Gate ledger — tools#21 (boundary-review)
@@ -154,13 +235,47 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 
+## Round 3 — 2026-08-26T15:33:16-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — addressed — Verified by mutation: nil at both RenderLine call sites and deleting voc.Load() each redden TestEditorLoopHighlightsADeckWordOnScreen.
+- BR-2 — addressed — Hoisting vocab.Add above the Upsert error check reddens TestCaptureDoesNotAddAWordTheDeckRejected via the Upsert-only double.
+- BR-3 — addressed — Removing the loaded guard reddens TestStoreVocabularyReadsTheDeckOnlyOnce; countingDeck counts Deck() reads.
+- BR-4 — addressed — gofmt -l over cmd/ and internal/ reports nothing.
+- BR-5 — addressed — appendTrimmed trims joiners at token edges; MaxPhraseWords counts with wordRuns; the punctuated-key limit is pinned by TestAPunctuatedKeyIsNotMatchable.
+- BR-6 — addressed — atlas/define.md now reads "used by the prompt line today and by the definition and answer paths from M2".
+- BR-7 — addressed — All 26 M1 steps are ticked and three Revisions entries record the Task 4 Step 2 infeasibility, the skipped Step 7, and the wordRuns contract change.
+- BR-8 — addressed — The statement and the unicode import are both gone from highlight_test.go.
+
+### Raised
+
+- **BR-9** [Minor] `copy-pasted-helper` A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)
+  vocab.go:126 is a copy of history_store.go:82 minus its suffix, and capture.go:125
+  is the same shape with a once-per-process flag. The shared part — the nil-writer
+  guard and the "define: " prefix — should be one helper the three wrap; today
+  renaming the program means finding three string literals.
+- **BR-10** [Minor] `io-for-a-disabled-feature` voc.Load() reads the whole deck even with -no-color, where nothing can consume it
+  replraw.go:82 loads unconditionally, but RenderLine only calls highlightSpans
+  inside its `if color` branch, so with colour off the deck walk and YAML parse
+  buy nothing. hist.Load() beside it is needed either way, which is what makes
+  the unconditional shape look right.
+- **BR-11** [Minor] `one-absence-representation-per-seam` The Vocabulary seam has two absent-representations and four guards, one of them already unreachable
+  nil and an empty memVocabulary both mean "nothing highlighted", defended at
+  highlight.go:113, replraw.go:79, main.go:134 and capture.go:102. run() calls
+  withStore before repl(), so replraw.go:79 cannot fire in production. M2 adds two
+  more consumers of the same seam; picking one representation now keeps this at one
+  guard rather than six.
+- **BR-12** [Minor] `feature-leaks-across-namespace` A deck word used as a command name highlights inside the command namespace
+  Confirmed by direct render: with "history" in the deck, typing "/history 7" emits
+  "\x1b[1m/\x1b[1;32mhistory\x1b[0m\x1b[1m 7". parseCommandLine's own comment says
+  "/" opens a real separate namespace, not a marker on a word, so highlighting
+  inside it reads as the vocabulary feature leaking across that boundary. It may be
+  intended and harmless; nothing in the Spec's out-of-scope list decides it either way.
+
 ## Open findings
 
-- **BR-1** [Important] `behaviour-claimed-without-a-failing-test` The editor loop's use of the vocabulary is pinned by no test — highlighting can be switched fully off and the suite stays green
-- **BR-2** [Important] `behaviour-claimed-without-a-failing-test` Capture's "must not claim a word the deck rejected" is a comment with no test behind it
-- **BR-3** [Minor] `behaviour-claimed-without-a-failing-test` storeVocabulary's once-only Load guard survives removal; the test asserting it cannot fail
-- **BR-4** [Minor] `unformatted-source` cmd/define/capture.go is not gofmt-clean
-- **BR-5** [Minor] `tokenizer-edge-admits-punctuation` isWordRune admits apostrophe and hyphen at token edges, so 'obsequious' and word--word never match
-- **BR-6** [Minor] `atlas-claims-unbuilt-surface` atlas/define.md describes the definition path in the present tense before M2 builds it
-- **BR-7** [Minor] `plan-record-not-updated` All 26 M1 plan steps remain unchecked while the issue marks M1 complete
-- **BR-8** [Minor] `dead-test-scaffolding` `_ = unicode.IsLetter` in highlight_test.go:92 exists only to justify an unused import
+- **BR-9** [Minor] `copy-pasted-helper` A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)
+- **BR-10** [Minor] `io-for-a-disabled-feature` voc.Load() reads the whole deck even with -no-color, where nothing can consume it
+- **BR-11** [Minor] `one-absence-representation-per-seam` The Vocabulary seam has two absent-representations and four guards, one of them already unreachable
+- **BR-12** [Minor] `feature-leaks-across-namespace` A deck word used as a command name highlights inside the command namespace

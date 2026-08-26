@@ -75,11 +75,14 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	hist.Load()
 	// Same shape for the highlight set: read once here, then memory. A nil vocab
 	// renders exactly as before the feature existed.
+	//
+	// Skipped entirely without colour: RenderLine's no-colour branch cannot show
+	// a highlight, so reading the whole deck would be IO for a feature that is
+	// off. The capture path still Adds — that is memory, and free.
 	voc := d.vocab
-	if voc == nil {
-		voc = &memVocabulary{}
+	if voc != nil && opt.color {
+		voc.Load()
 	}
-	voc.Load()
 	e := NewEditor()
 	var sess session
 	// Apply gets the candidate list computed BEFORE the keystroke, which is

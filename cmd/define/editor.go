@@ -203,7 +203,7 @@ func RenderLine(e Editor, sug string, v Vocabulary, color bool) string {
 		// then RE-OPENS inputOn, or everything after the first known word would
 		// go plain.
 		b.WriteString(inputOn)
-		for _, sp := range highlightSpans(string(e.Line), v) {
+		for _, sp := range highlightSpans(string(e.Line), highlightSetFor(e, v)) {
 			if sp.known {
 				b.WriteString(knownOn + sp.text + sgrOff + inputOn)
 				continue

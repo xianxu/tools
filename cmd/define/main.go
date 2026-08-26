@@ -130,8 +130,11 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	if d.deck == nil {
 		d.deck = sd.deck
 	}
+	// nil is the ONE representation of "nothing to highlight" — no second
+	// empty-set stand-in. highlightSpans is where that nil is interpreted; the
+	// only other guards are where a nil would panic (Load, Add).
 	if d.vocab == nil {
-		d.vocab = orElse[Vocabulary](sd.vocab, &memVocabulary{})
+		d.vocab = sd.vocab
 	}
 	// Same shape as the memHistory/noopCapturer fallbacks above: a test that
 	// supplies no newStore still gets a usable process. A test that wants to
@@ -164,12 +167,12 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// whether a given lookup counts.
 	clk := store.SystemClock()
 	if opt.noCapture {
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, vocab: &memVocabulary{}, clock: clk}
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
 	}
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, vocab: &memVocabulary{}, clock: clk}
+		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
 	}
 	st := store.NewYAML(dir, warn)
 	// ONE highlight set, handed to both the capturer that grows it and the

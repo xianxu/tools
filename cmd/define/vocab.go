@@ -124,8 +124,17 @@ func (v *storeVocabulary) Load() {
 }
 
 func (v *storeVocabulary) warnf(format string, args ...any) {
-	if v.warn == nil {
+	warnTo(v.warn, format, args...)
+}
+
+// warnTo is the one place the "define: " prefix and the trailing newline are
+// written. Three seams warn — history, capture and this one — and each keeps its
+// OWN policy (capture warns once behind a mutex, history appends "history is
+// session-only"); what they share is the shape of the line, and that was written
+// out three times.
+func warnTo(w io.Writer, format string, args ...any) {
+	if w == nil {
 		return
 	}
-	fmt.Fprintf(v.warn, "define: "+format+"\n", args...)
+	fmt.Fprintf(w, "define: "+format+"\n", args...)
 }

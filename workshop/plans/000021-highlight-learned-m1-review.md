@@ -328,3 +328,152 @@ Other verification: `go vet` clean; `gofmt -l ./cmd ./internal` empty (BR-4 conf
 1. **A `## Revisions` entry for the `wordRuns` contract change.** The BR-5 fix made runs non-maximal at joiner edges. That contract is stated in three places and only one was updated. The entry should record: the new contract ("maximal runs of word characters, with leading and trailing joiners trimmed — therefore NOT maximal when a joiner is adjacent"), that the Core-concepts row at line 34 is corrected to `[]wordRun` and re-worded, and that `FuzzWordRuns`' maximality property was updated and re-fuzzed. This is the fix for both Critical (a) and the Minor plan-record item.
 2. **A `## Revisions` entry recording the boundary's test-completeness rule, replacing the comment-scoped one.** The existing M1-boundary entry records the round-1 enumeration as *"for each behaviour the diff states in a comment…"*. That enumeration is now known to be blind to unclaimed wiring hops. Replace it with the production-chain enumeration in Important (a), including the five-hop `Vocabulary` table, so M2/M3 inherit the working rule rather than the one that let hop 2 through.
 3. **Task 8 Step 7's README line is now partly spent, and wrongly.** The step says "README gains a line under 'On a terminal'." That line has already been written at M1 and over-claims M2/M3 behaviour. Record that the README paragraph exists as of M1 covering the typed line only, and that Step 7's remaining job is to *widen* it as M2 and M3 land — otherwise M3 finds the step already ticked-looking and never revisits the sentence.
+
+---
+
+## Re-review — 2026-08-26T15:33:16-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 21 — highlight the words you are learning wherever they appear |
+| repo | tools |
+| issue file | workshop/issues/000021-highlight-learned.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 911c32c0e86329da149ab8b91345fc39a22d1e59..911c32c0e86329da149ab8b91345fc39a22d1e59 |
+| command | sdlc milestone-close --issue 21 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-26T15:33:16-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+All eight prior findings are genuinely closed, and I verified each by reverting the fix in the working tree rather than by reading the commit message: the nil-vocabulary mutation at both `RenderLine` call sites, deleting `voc.Load()`, hoisting `vocab.Add` above the `Upsert` error check, removing the `loaded` guard, deleting `withStore`'s vocab merge, handing the capturer a second set in `openStore`, and dropping the `Add` altogether each redden a *named* test. `gofmt -l` is clean, `go vet` is clean, `go test ./cmd/define/` passes, `-race` passes on the wiring tests, and — the round-2 Critical's specific lesson — I re-fuzzed both new targets for real (`FuzzWordRuns` 888k execs, `FuzzHighlightSpans` 919k execs, both green, corpus additions land in GOCACHE and leave the tree clean). The plan's Core-concepts table matches the code for every M1 row (`sgrState` / `highlightWriter` are M2 rows and correctly absent), all 26 M1 plan steps are now ticked with three `## Revisions` entries recording the two contract changes, and atlas + README both describe only what M1 actually ships. What remains is three Minors, none of which block the boundary.
+
+### 1. Strengths
+
+- **The production-chain enumeration is real, not a slogan.** The five-hop table in `workshop/lessons.md` is backed hop-for-hop: I mutated all five and each killed a distinct named test. `TestWithStoreCarriesTheHighlightSetThrough` (`vocab_test.go:200`) is the one that matters most — it builds `deps{newStore: openStore}.withStore(...)` the way production does instead of setting `rig.deps.vocab`, which is exactly the injection-past-the-wiring failure round 2 identified.
+- **The double that isolates one exit.** `deckRejects` (`vocab_test.go:186`) fails only `Upsert`, where the blanket `failingStore` returned at `AppendEvent` and proved the wrong claim. The comment above the test names why, so the next reader can't re-make it.
+- **`countingDeck` (`vocab_test.go:216`) converted an unfalsifiable assertion into a falsifiable one.** "Second `Load` is free" could not fail against an idempotent `Add`; counting `Deck()` reads makes it bite.
+- **The tokenizer trim is contained and correct.** `appendTrimmed` (`highlight.go:64`) operates on ASCII joiner bytes only, so `start`/`end` stay on rune boundaries — the multi-byte corruption the plan worried about can't occur, and 888k fuzz execs agree.
+- **`storeVocabulary` embeds `memVocabulary` (`vocab.go:92`)**, so "what is in the set" has one implementation; `Load` contributes exactly one behaviour and degrades to an empty set with a warning rather than a crash (`vocab.go:110`, pinned by `TestStoreVocabularyDegradesWhenTheDeckCannotBeRead`).
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+None.
+
+### 4. Minor findings
+
+- `cmd/define/vocab.go:126` — third near-identical `warnf` (`capture.go:125`, `history_store.go:82`), with the `"define: "` prefix literal now written in three places (ARCH-DRY).
+- `cmd/define/replraw.go:82` — `voc.Load()` reads the whole deck even when `opt.color` is false, where `RenderLine` can never call `highlightSpans`.
+- One seam, two absent-representations (`nil` and empty `memVocabulary`) and four guards: `highlight.go:113`, `replraw.go:79`, `main.go:134`, `capture.go:102`. `run()` calls `withStore` before `repl()`, so `replraw.go:79` is already unreachable in production.
+- `/history 7` renders `history` bold green when the deck holds that word (confirmed: `"\x1b[1m/\x1b[1;32mhistory\x1b[0m\x1b[1m 7"`). `parseCommandLine`'s own comment calls `/` "a real separate namespace, not a marker on a word" — highlighting inside it crosses that line. May well be intended; it is not stated anywhere.
+- `knownOn` lives in `highlight.go:15` while the rest of the palette is in `editor.go:236`. Defensible (M2's writer will need it), noted only so the split is deliberate.
+
+### 5. Test coverage notes
+
+- **The `RenderLine` span join is pinned only incidentally.** Making the loop at `editor.go:206` emit known spans and drop unknown ones — i.e. losing every character of typed text — is killed by exactly one test, `TestTypingNarrowsTheMenuAndAWordHidesIt`, which is about the menu and knows nothing about highlighting. `TestRenderLineHighlightsAKnownWord` and `TestRenderLineResumesInputStyleAfterAHighlight` both survive it (the latter because `rest` still begins `\x1b[0m\x1b[1m`). The plan's Risks section calls text loss "the real danger" and defends it with `FuzzHighlightSpans` at the pure layer; the renderer's join has no equivalent. One line — assert the colour render still contains every typed character with escapes stripped — would put a named test on the feature's worst failure mode before M2 adds two more renderers over the same spans.
+- `TestHighlightingDoesNotMoveTheCursor` can only fail if someone recomputes `back` from the rendered string. That is a plausible future bug, so the test earns its place, but it is a guard against an alternative implementation rather than a property of this one.
+- `FuzzHighlightSpans` seeds a fixed vocabulary; phrase-match behaviour is fuzzed only against `{obsequious, hot, hot dog, café, a-b'c}`. Adequate here since `MaxPhraseWords` ≤ 2 in the corpus, but M2's writer will want a seed with a 3+ word key.
+
+### 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass, with one nit.** `wordRuns` is genuinely the single tokenizer and `storeVocabulary` genuinely has one set implementation. The only duplication introduced is the third `warnf` (Minor above).
+- **ARCH-PURE — pass.** `wordRuns`, `phraseGap`, `phraseRunsJoin`, `highlightSpans` and `RenderLine` are all string-in/string-out; every test in `highlight_test.go` runs against `memVocabulary` with no IO. The IO is confined to `storeVocabulary.Load` at the boundary and injected via `deps`.
+- **ARCH-PURPOSE — pass for this boundary.** M1's scope (seam + matcher + typed line) is a milestone split, not a deferred purpose; definitions and answers are M2/M3 with concrete plan tasks. The shadow-sweep over consumers finds no hand-maintained restatement: every highlight decision at HEAD reaches `Vocabulary.Has`, and the atlas/README describe M1's surface with M2/M3 explicitly marked future.
+- **ARCH-MOCK — pass.** `store.NewMem()` is the stateful fake behind the same `store.Store` seam production uses; `errDeck`, `deckRejects` and `countingDeck` are behaviour doubles over it, not function mocks, and each models a distinct store state. No test reaches around the seam.
+- **For M2, `MaxPhraseWords` is the wrong shape for the streaming writer.** It answers "how long is the longest key" when the writer needs "can this token prefix still extend into a key". One five-word deck entry forces a five-token hold-back on every chunk of every answer. The Risks section notes the cost but not the fix: a `HasPrefix(tokens []string) bool` on the interface turns the hold into a trie walk that resolves at the first non-extending token. Adding it now is one method on a seam with three implementations; adding it after `highlightWriter` ships means reworking the writer's state model.
+- **The absent-representation question compounds at M2.** `highlightText` and the stream sink are two more consumers that will each need a nil/empty answer. Deciding now that `deps.vocab` is never nil above the seam — and deleting `replraw.go:79` — keeps that at one guard instead of six.
+- **Contract rule 1 has no counterpart at the prompt.** `RenderLine` writes `sgrOff + inputOn` after each known span; `highlightWriter` will write `sgrOff + <enclosing SGR>`. Those are the same rule with two implementations. Worth deciding at M2 whether the resume string is a parameter of one shared emit function.
+
+### 7. Plan revision recommendations
+
+None. The three `## Revisions` entries (plan-quality round 1, M1 boundary rounds 1 and 2, plus the Task 4 Step 2 infeasibility note) already record every place the code diverged from the plan as written, including the `wordRuns` contract change and the README's partly-spent Task 8 Step 7. The Core-concepts table now reads `[]wordRun` and states the trim, matching `highlight.go:32`.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Verified by mutation: nil at both RenderLine call sites and deleting voc.Load() each redden TestEditorLoopHighlightsADeckWordOnScreen.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Hoisting vocab.Add above the Upsert error check reddens TestCaptureDoesNotAddAWordTheDeckRejected via the Upsert-only double.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Removing the loaded guard reddens TestStoreVocabularyReadsTheDeckOnlyOnce; countingDeck counts Deck() reads.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      gofmt -l over cmd/ and internal/ reports nothing.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      appendTrimmed trims joiners at token edges; MaxPhraseWords counts with wordRuns; the punctuated-key limit is pinned by TestAPunctuatedKeyIsNotMatchable.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      atlas/define.md now reads "used by the prompt line today and by the definition and answer paths from M2".
+  - id: BR-7
+    disposition: addressed
+    note: |
+      All 26 M1 steps are ticked and three Revisions entries record the Task 4 Step 2 infeasibility, the skipped Step 7, and the wordRuns contract change.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      The statement and the unicode import are both gone from highlight_test.go.
+findings:
+  - id: new
+    severity: Minor
+    family: copy-pasted-helper
+    title: |
+      A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)
+    detail: |
+      vocab.go:126 is a copy of history_store.go:82 minus its suffix, and capture.go:125
+      is the same shape with a once-per-process flag. The shared part — the nil-writer
+      guard and the "define: " prefix — should be one helper the three wrap; today
+      renaming the program means finding three string literals.
+  - id: new
+    severity: Minor
+    family: io-for-a-disabled-feature
+    title: |
+      voc.Load() reads the whole deck even with -no-color, where nothing can consume it
+    detail: |
+      replraw.go:82 loads unconditionally, but RenderLine only calls highlightSpans
+      inside its `if color` branch, so with colour off the deck walk and YAML parse
+      buy nothing. hist.Load() beside it is needed either way, which is what makes
+      the unconditional shape look right.
+  - id: new
+    severity: Minor
+    family: one-absence-representation-per-seam
+    title: |
+      The Vocabulary seam has two absent-representations and four guards, one of them already unreachable
+    detail: |
+      nil and an empty memVocabulary both mean "nothing highlighted", defended at
+      highlight.go:113, replraw.go:79, main.go:134 and capture.go:102. run() calls
+      withStore before repl(), so replraw.go:79 cannot fire in production. M2 adds two
+      more consumers of the same seam; picking one representation now keeps this at one
+      guard rather than six.
+  - id: new
+    severity: Minor
+    family: feature-leaks-across-namespace
+    title: |
+      A deck word used as a command name highlights inside the command namespace
+    detail: |
+      Confirmed by direct render: with "history" in the deck, typing "/history 7" emits
+      "\x1b[1m/\x1b[1;32mhistory\x1b[0m\x1b[1m 7". parseCommandLine's own comment says
+      "/" opens a real separate namespace, not a marker on a word, so highlighting
+      inside it reads as the vocabulary feature leaking across that boundary. It may be
+      intended and harmless; nothing in the Spec's out-of-scope list decides it either way.
+```

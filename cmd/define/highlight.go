@@ -162,3 +162,17 @@ func nonEmptySpan(text string, known bool) []span {
 	}
 	return []span{{text: text, known: known}}
 }
+
+// highlightSetFor withholds the vocabulary on a command line.
+//
+// "/" opens a genuinely separate namespace — parseCommandLine's own comment says
+// so, and #20 was careful to decide that namespace exactly once, on the whole
+// line. A deck word that happens to share a command's name ("history") would
+// otherwise render green inside "/history 7", which reads as the vocabulary
+// feature leaking across the boundary rather than as a word the learner knows.
+func highlightSetFor(e Editor, v Vocabulary) Vocabulary {
+	if _, _, isCommand := parseCommandLine(string(e.Line)); isCommand {
+		return nil
+	}
+	return v
+}

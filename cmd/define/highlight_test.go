@@ -315,3 +315,25 @@ func TestAPunctuatedKeyIsNotMatchable(t *testing.T) {
 		t.Errorf("got %q — if this now matches, the phrase rule changed and the comment in vocab.go is stale", got)
 	}
 }
+
+// "/" opens a real separate namespace, not a marker on a word (parseCommandLine).
+// With "history" in the deck, "/history 7" was rendering the command name green,
+// which reads as the vocabulary feature leaking across that boundary — the same
+// boundary #20 was careful to decide exactly once, on the whole line.
+func TestACommandLineIsNotHighlighted(t *testing.T) {
+	got := RenderLine(editorOn("/history 7"), "", vocab("history"), true)
+
+	if strings.Contains(got, "\x1b[1;32m") {
+		t.Errorf("the command namespace was highlighted: %q", got)
+	}
+}
+
+// ...and the same word outside the command namespace still highlights, so the
+// suppression is scoped to command lines rather than to the word.
+func TestTheSameWordHighlightsOutsideACommandLine(t *testing.T) {
+	got := RenderLine(editorOn("my history"), "", vocab("history"), true)
+
+	if !strings.Contains(got, "\x1b[1;32mhistory") {
+		t.Errorf("the word stopped highlighting everywhere: %q", got)
+	}
+}
