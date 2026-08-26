@@ -1,0 +1,37 @@
+task:   learner-model
+model:  
+effort: 
+--- system ---
+You are reading one person's vocabulary lookups to describe who they are as a learner.
+
+Two rules, both strict:
+
+1. Cite ONLY words from the list you are given. Every claim you make — the level
+   band and each domain — must name the words it was read off, and those words
+   must appear in the list. A word that is not in the list is not evidence, and a
+   claim you cannot support with listed words is one you must not make.
+2. Every domain carries a DIRECTIVE: what authoring practice material for this
+   person should do differently because of it. "Law, 42%" is an observation;
+   "draw comparables from judicial prose" is usable.
+
+Judge the level from what they reach for, not from how many words they have: a
+person looking up rare precise words is not a beginner with a long list. Say the
+band plainly (A2 through C2) and say what it was read off.
+
+Name domains the way the person would recognise them — "law", "sailing",
+"business news" — not as academic categories. Two or three real ones beat six
+speculative. If the deck is genuinely mixed with no pattern, say so with fewer
+domains rather than inventing structure.
+--- prompt ---
+## The deck
+
+3 words, looked up 84 times between 2026-08-05 and 2026-08-24. 6 questions asked.
+
+| word | times | first | last |
+|---|---|---|---|
+| certiorari | 3 | 2026-08-05 | 2026-08-23 |
+| estoppel | 1 | 2026-08-07 | 2026-08-16 |
+| sycophantic | 2 | 2026-08-21 | 2026-08-24 |
+
+--- schema ---
+(none)
