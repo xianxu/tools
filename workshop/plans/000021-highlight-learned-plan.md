@@ -249,6 +249,8 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 - [ ] **Step 8: Mutation-check.** (a) `knownOn` → `inputOn`: the highlight test must redden. (b) drop the style-resume after a known span: the "returns to bold" assertion must redden. (c) `Has` always false: the highlight test reddens and the no-colour test does not. Each mutation must kill a *named* test; a mutation that kills nothing means the assertion is decorative.
 
+- [ ] **Step 8b: Update `atlas/define.md` with M1's surface.** The plan originally deferred all atlas work to M3 Step 7; AGENTS.md §8 requires it at EACH milestone close, and the close gate enforces it. M1 introduces the predicate seam, the matcher and the tokenizer — real architectural surface, and deferring it is exactly the end-of-project sweep §8 forbids. M2 and M3 extend the same section.
+
 - [ ] **Step 9: `sdlc milestone-close --issue 21 --milestone M1`,** fix findings, commit with the verdict trailer.
 
 ## Chunk 2: M2 — `highlightWriter` and definitions
@@ -319,7 +321,7 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 - [ ] **Step 6: Mutation-check** that dropping the flush on the interrupt path reddens a named test.
 
-- [ ] **Step 7: Atlas + README.** `atlas/define.md` gains the highlight model — the predicate seam, why two renderers, and the ANSI-resume rule. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
+- [ ] **Step 7: Atlas + README.** `atlas/define.md`'s highlight section (started at M1, extended at M2) gains the streaming half. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
 
 - [ ] **Step 8: `sdlc close --issue 21 --verified '<evidence>'`.**
 

@@ -419,6 +419,49 @@ requiring the user to type one to complete a question they asked without one
 would make past questions uncompletable. `/` is deliberately not unwrapped:
 commands are a real separate namespace, not a marker on a word.
 
+## Highlighting the words you are learning
+
+**One predicate, and it is the point.** Every highlight decision goes through
+`Vocabulary.Has` (`vocab.go`). Today the set is the deck; #22 narrows it to the
+words still being learned, so a word that has become the learner's own stops
+being highlighted. That swap is one constructor, and nothing above the seam
+moves — which is why the seam exists now rather than being introduced later.
+
+**Not `History`, though the shapes rhyme.** Different source (`words/` vs the
+event log), different query (set membership vs ordered prefix search), and
+decisively different contents: history carries typos on purpose so they stay
+recallable (#20), and highlighting a misspelling as a word you know is the
+opposite of reinforcement. `storeVocabulary` embeds `memVocabulary` rather than
+growing a second set, so "what is in the set" has one implementation.
+
+**`highlightSpans` is the pure core** (`highlight.go`): text plus a `Vocabulary`
+in, alternating known/unknown `span`s out. Concatenating the spans reproduces the
+input exactly — the invariant a fuzz target defends, because a renderer joins
+them back into what the user sees and a lossy split silently corrupts a
+definition. Longest match wins at each position, so with both `hot` and `hot dog`
+in the set the phrase highlights rather than its first word.
+
+`wordRuns` is the single tokenizer both the prompt and the definition path use.
+Apostrophes and hyphens are INSIDE a word, so `don't` and `hot-dog` are each one
+token — hyphens especially, since a hyphenated deck entry has `hot-dog` as its
+`store.Key` and splitting on the hyphen would make it unmatchable. Phrases are a
+level up: `phraseGap` lets a multi-word key span only spaces and tabs, so a
+`Render`-wrapped `hot\n  dog` cannot form the candidate `hot dog` and paint a
+green run through the wrap indent.
+
+**ANSI does not nest, and that shapes every renderer.** `RenderLine` writes
+`knownOn + word + sgrOff + inputOn` for each known span: without re-opening
+`inputOn`, everything after the first highlighted word goes plain. The same
+constraint is why definitions and streamed answers share a mechanism rather than
+each growing their own — see M2/M3.
+
+**The set grows mid-session, from the one place that already knows.**
+`storeCapturer.Capture` adds a word after `Upsert` succeeds — the single site that
+knows a lookup both succeeded and earned a deck entry, so a failed lookup (which
+is history, not vocabulary) never enters. `openStore` hands the SAME instance to
+the capturer and the renderers; two instances would mean lookups landing in a set
+nothing draws from, which has its own test.
+
 **Typing `/` shows the menu.** The inline grey suggestion and the dropdown
 answer different questions, which is why both exist: completion answers "what
 single string extends this line" and only helps someone who already knows the
