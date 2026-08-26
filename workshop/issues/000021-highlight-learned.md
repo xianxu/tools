@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-26
 updated: 2026-08-26
-estimate_hours: 7.57
+estimate_hours: 9.28
 started: 2026-08-26T12:40:00-07:00
 ---
 
@@ -137,6 +137,19 @@ minutes of gate time plus ~25 minutes of fixes, ≈0.5h, so a round is written
 each of which owes a `milestone-close`, plus one fix-then-re-review cycle — #20
 needed exactly one and its verdict was FIX-THEN-SHIP.
 
+**Two UX iteration rounds are line items, not hope.** The entire deliverable is a
+colour choice: the operator has already changed scope once mid-spec (prompt line
+→ all three surfaces, recorded in the Log), the palette decision is contested in
+the Spec, and the plan's own Risks section says the green-inside-italic-green
+case must be looked at on a real terminal rather than reasoned about. v2.1's
+known-limitations names this directly — 3–5 iteration rounds are typical for TUI
+features, not 1. Two is the conservative read given the colour is already chosen.
+
+**M3 is two `cross-cutting` items, not one.** Task 8 carries three flush exit
+paths to enumerate and test, the `highlightWriter`/`crlfWriter` nesting order to
+determine *and* pin, and a capture-derived test helper. Pricing that as one item
+made M3 cost a third of M1 while containing the riskiest integration in the plan.
+
 **Disclosure: the two populations of evidence disagree, and averaging them would
 be a fudge.** The trusted ledger rows say this repo under-estimates: tools#1 0.59,
 #3 0.96, #4 0.20, #11 0.64, #14 2.83, #15 0.27, #16 0.37 — six of seven below
@@ -148,6 +161,16 @@ deriving from the primitive table and reporting the tension rather than applying
 correction factor to land somewhere between — a back-fitted total is what the
 estimate gate exists to catch, and #20 is already in the ledger as evidence for
 whichever way this resolves.
+
+The estimate-quality judge offered a sharper hypothesis than "the populations
+disagree", and it is worth naming because this issue can test it: the
+over-pricing may be in **design/process** while the under-pricing is in
+**implementation**. That reconciles both populations — #16 (est 6.49 → 17.63) and
+#11 (est 7.98 → 12.38) ran long on implementation-heavy work, while #17 and #20,
+whose estimates were dominated by process and review rounds, ran short. This
+block is 54% design after buffering; if it closes short again, that is the
+hypothesis confirming, and the fix is to the design side of the primitive table
+rather than to a global factor.
 
 ```estimate
 model: estimate-logic-v3.1
@@ -167,11 +190,14 @@ item: cross-cutting-refactor design=0.12 impl=0.14
 item: milestone-review       design=0.20 impl=0.30
 item: smaller-go-module      design=0.03 impl=0.14
 item: cross-cutting-refactor design=0.12 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: ux-rename-iteration    design=0.55 impl=0.08
+item: ux-rename-iteration    design=0.55 impl=0.08
 item: atlas-docs             design=0.03 impl=0.05
 item: milestone-review       design=0.20 impl=0.30
 item: milestone-review       design=0.20 impl=0.30
 design-buffer: 0.15
-total: 7.57
+total: 9.28
 ```
 
 Item-to-task map. Process: spec+plan, then plan rounds 1 and 2 (both spent).
