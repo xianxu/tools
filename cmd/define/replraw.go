@@ -177,9 +177,9 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				fmt.Fprintln(stdout)
 				return 0
 			}
-			matches := completionsFor(e.WalkBase(), hist, commands)
+			cands := candidatesFor(e.WalkBase(), hist, commands)
 			var act Action
-			e, act = Apply(e, k, matches)
+			e, act = Apply(e, k, cands)
 			switch act {
 			case ActInterrupt, ActEOF:
 				clearMenu()

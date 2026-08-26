@@ -42,7 +42,7 @@ func completionsFor(base string, hist History, cmds []command) []string {
 	if name, _, ok := parseCommandLine(base); ok {
 		return commandCompletions(name, cmds)
 	}
-	return hist.Prefix(base)
+	return historyCompletions(base, hist)
 }
 
 // parseCommandLine reports whether a submitted line is a command, and splits it.
@@ -275,4 +275,18 @@ func menuNameWidth(cmds []command) int {
 		}
 	}
 	return w + 2
+}
+
+// candidatesFor resolves both candidate lists for one keystroke.
+//
+// Two lists rather than one because they answer different questions, and #20 is
+// where the answers diverged: recall is what you SUBMITTED, complete is what the
+// line could BECOME. Until now every completion was itself a past line, so one
+// slice served both and nobody noticed — except in command mode, where feeding
+// the menu to walk made Up put "/help" on a line that had never been submitted.
+func candidatesFor(base string, hist History, cmds []command) candidates {
+	return candidates{
+		recall:   hist.Prefix(base),
+		complete: completionsFor(base, hist, cmds),
+	}
 }

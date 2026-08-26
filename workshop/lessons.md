@@ -1031,3 +1031,61 @@ changes: it adds LINES, so count them.
 **When testing an injection, ask what the injection changes that the assertion
 measures** — and pick payload text that is unmistakable and inert (`FORGED-LEVEL`),
 never text shaped like the thing you are checking for.
+
+## A test helper that skips the production resolution makes every test under it vacuous (define #20)
+
+`typeKeys`, the helper every editor test drives through, resolved candidates with
+`h.Prefix(e.WalkBase())`. Production resolves them with `completionsFor`, which
+picks a *namespace* first. So the helper had been quietly testing a path that
+does not exist since #15: no editor test could see command mode at all.
+
+Two tests written specifically to pin #20's recall/complete split passed the
+moment they were written, before the split existed. They were asserting against a
+history-only resolution that never had the bug.
+
+- **A helper is part of the production path or it is a second implementation of
+  it.** Wire helpers to the same function the loop calls. If the helper needs
+  arguments the loop has (here, `commands`), give it them — the seam that is
+  awkward to reach in a test is usually the one carrying the behaviour.
+- **A new test that passes before the code exists is a finding, not luck.** That
+  is the cheapest possible signal that the test is not connected to the change.
+  Stop and find out what it is really asserting.
+
+## A regression test needs data that tells the two implementations apart (define #20)
+
+`TestCommandCompletionIsUnchanged` typed `/his` and `/history 7` against a
+history holding `historic`, and asserted the tail. It was written to defend the
+exact hazard the plan gate had named: the segment loop must not re-enter the
+command namespace. Mutating the namespace order — history tried before commands —
+left it green, because with that history both orders returned the same answer.
+
+The fix was history that only ONE order can produce: `sevenfold` in the deck and
+`/history seven` typed. Correct code offers nothing; the mutant offers `fold`.
+
+- **"I wrote a test for that finding" is a claim about the test's data, not about
+  the assertion.** The assertion can be perfect and still never run over a state
+  where the implementations differ.
+- **Mutate along the axis the finding named, not just any axis.** Four mutations
+  of the floor and the markers all died here while the ordering mutant lived.
+  Killing mutants elsewhere in the file says nothing about this one.
+
+## Re-read the log you are citing; do not cite it from memory (define #20)
+
+Deriving #20's estimate, I priced review rounds below the only measured figure
+and justified it: "#17 came in under, three boundary rounds included, measured
+~3.8h." #17's log — written by me the day before — says the review cost "is still
+unmeasured for this issue", that M1 had not been through even one round at the
+time of writing, and that 3.8h was hand-recorded as a wall-clock upper bound
+after `sdlc actual` returned an impossible value. Every clause of my citation was
+wrong, and it moved the estimate in the wrong direction.
+
+- **A remembered number loses its qualifiers first.** "3.8h" survived; "not a
+  measurement", "feature work only", "reviews not yet run" did not. Those
+  qualifiers were the entire reason the number existed.
+- **When a past issue is your evidence, open it.** The cost is one `sed -n`. The
+  cost of not doing it is an estimate that pollutes calibration while carrying a
+  citation that makes it look grounded.
+- **Check which direction the repo's drift actually runs before correcting for
+  it.** The ledger had six of seven `tools` rows under 1.0 — systematic
+  under-estimation — and the nearest analogue (#15, the same functions) at 0.27×.
+  I was correcting downward.

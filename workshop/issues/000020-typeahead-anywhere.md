@@ -102,12 +102,14 @@ Two knowing consequences:
 - **A recall line is not always a word.** `hist.Add` stores `cmd.recallLine()`
   (repl.go:131-144), the canonical *re-submittable* form — so an in-session
   force-literal lookup is stored `\word`, asks as `?…`, commands as `/…`. The
-  completion namespace wants the WORD, so `historyCompletions` strips a leading
-  `\` from candidates before matching and after gluing. `?` and `/` are left
-  alone: those mark genuinely different namespaces, whereas `\` exists only to
-  disambiguate submission and the thing behind it is exactly a deck word.
-  (Durable entries carry no marker — `Load` reads `e.Word` — so this is an
-  in-session-only gap, but it is one line to close.)
+  completion namespace wants the WORD, so `matchesFor` unwraps the marker before
+  matching and after gluing. **`?` is unwrapped too** — see Revisions, this
+  changed during implementation: the `?` on an asked line is added by the SYSTEM
+  (`readsAsQuestion` classifies a bare sentence, `recallLine` stores `?…`), so
+  requiring the user to type one to complete a question they asked without one
+  would make past questions uncompletable — the opposite of what this issue is
+  for. `/` stays alone: commands are a real separate namespace with their own
+  completion path, not a marker on a word.
 
 **Inner segments need three runes.** A one- or two-rune tail is far more likely
 to be a preposition than a word being reached for: without a floor, typing
@@ -122,16 +124,36 @@ relationship to); completing at a cursor that is not at end of line
 
 ## Done when
 
-- [ ] Typing a partial deck word anywhere in a multi-word line shows the grey tail.
-- [ ] Tab / Right / End accept it, producing the whole line with the word completed.
-- [ ] A past line still wins over an inner segment when both match.
-- [ ] Single-word typeahead is byte-identical to today, including 2-rune prefixes.
-- [ ] `/command` completion is untouched.
-- [ ] A line ending in a space suggests nothing (no empty-prefix flood).
-- [ ] `head + segment == line` for every segment, so gluing cannot corrupt the line.
-- [ ] Up/Down walk ONLY really-submitted lines — never a glued candidate.
-- [ ] `/history 7` completes exactly as today; no segment re-enters the command branch.
-- [ ] An in-session `\word` lookup completes mid-line as `word`.
+- [x] Typing a partial deck word anywhere in a multi-word line shows the grey tail.
+      `TestGreyTailCompletesADeckWordMidSentence`, and on a real terminal in
+      `TestPTYSuggestionAndAcceptance`.
+- [x] Tab / Right / End accept it, producing the whole line with the word
+      completed. Tab asserted through a pty.
+- [x] A past line still wins over an inner segment when both match.
+      `TestWholeLineBeatsAnInnerSegment`.
+- [x] Single-word typeahead still completes at 2 runes.
+      `TestGreyTailStillCompletesASingleWordAtTwoRunes`. **Amended:** this row
+      first read "byte-identical to today". It is not, and the difference is
+      wanted — unwrapping `?` means a past question can now complete at segment 0
+      where before only a lookup could. What is preserved is that every line that
+      completed before still completes to the same thing; what is added is lines
+      that could not complete at all.
+- [x] `/command` completion is untouched. `TestCommandCompletionIsUnchanged`.
+- [x] A line ending in a space suggests nothing (no empty-prefix flood).
+      `TestTrailingSpaceSuggestsNothing`, and structurally: a segment starts only
+      where a word starts.
+- [x] `head + segment == line` for every segment. `FuzzTrailingSegments`, 864k
+      execs clean.
+- [x] Up/Down walk ONLY really-submitted lines — never a glued candidate.
+      `TestUpRecallsSubmittedLinesNotTheCommandMenu`,
+      `TestUpOffersNothingWhenNoSubmittedLineMatches`.
+- [x] `/history 7` completes exactly as today; no segment re-enters the command
+      branch. `TestACommandArgumentDoesNotDrawFromHistory`,
+      `TestASlashSegmentMidLineDoesNotCompleteACommand`.
+- [x] An in-session `\word` lookup completes mid-line as `word`.
+      `TestForcedLiteralLookupCompletesAsThePlainWord`.
+- [x] A past question completes when retyped bare.
+      `TestPastQuestionCompletesWhenRetypedBare`. Added during implementation.
 
 ## Estimate
 
@@ -224,26 +246,26 @@ implementation work, not review overhead.
 
 ## Plan
 
-- [ ] Split the candidate list: `candidates{recall, complete}`, `Apply` takes it,
+- [x] Split the candidate list: `candidates{recall, complete}`, `Apply` takes it,
       `walk` gets `recall`, `acceptSuggestion` gets `complete`. Two production
       call sites, not one: `Apply` at replraw.go:180 takes the pair, and `draw`
       at replraw.go:126 already feeds `Suggestion` the complete list (correct
       as-is). Plus ~5 test sites (editor_test.go:15,157,239,243,247). Assert Up
       never surfaces a glued line, and that Up in command mode now recalls.
-- [ ] Write `trailingSegments` + table test (pure, no IO): boundaries, unicode,
+- [x] Write `trailingSegments` + table test (pure, no IO): boundaries, unicode,
       runs of spaces, trailing space, empty line, single word.
-- [ ] Add `FuzzTrailingSegments` for the `head+text == line` invariant — the
+- [x] Add `FuzzTrailingSegments` for the `head+text == line` invariant — the
       repo idiom (invariant_test.go, live_property_test.go); a table is blind to
       the malformed-input class by construction.
-- [ ] Write the failing completion test: multi-word line, deck word tail.
-- [ ] Add `historyCompletions` (segment loop + glue + `\` strip); leave
+- [x] Write the failing completion test: multi-word line, deck word tail.
+- [x] Add `historyCompletions` (segment loop + glue + `\` strip); leave
       `completionsFor`'s command branch untouched. Unit-test it directly.
-- [ ] Regression tests: whole-line precedence beats an inner segment, 2-rune
+- [x] Regression tests: whole-line precedence beats an inner segment, 2-rune
       first segment still completes, `/history 7`, trailing space, multi-word
       headword, in-session `\word`.
-- [ ] Mutation-check that the floor constant, the precedence order, and the
+- [x] Mutation-check that the floor constant, the precedence order, and the
       recall/complete split each actually bite.
-- [ ] Sweep atlas/define.md for the "matches the whole typed line" claim.
+- [x] Sweep atlas/define.md for the "matches the whole typed line" claim.
 
 ## Log
 
@@ -317,3 +339,21 @@ a way worth recording: **I cited #17's log for the opposite of what it says.**
   estimate-quality.
 - **F8 (Nit)** — addressed in the Plan itself: two production call sites plus
   ~5 test sites, not "the one production call site".
+
+### 2026-08-26 — implementation: one spec decision reversed
+
+The Spec said `?` would be left alone, on the reasoning that it "marks a
+genuinely different namespace". Writing the tests made that wrong: unlike `\`,
+which the user types, the `?` on an asked line is added by the SYSTEM —
+`readsAsQuestion` classifies a bare sentence as a question and `recallLine`
+stores the canonical `?…` form. So a question asked the ordinary way (typed bare)
+is stored with a marker the user never typed, and leaving `?` alone would mean
+past questions can only be completed by typing a character nobody types.
+
+Since the operator's request was explicitly "including free form questions", that
+is the purpose rather than an extension of it (ARCH-PURPOSE). `matchesFor`
+unwraps both markers. `/` still stands alone — commands have their own completion
+path, so unwrapping it would mean two namespaces answering one line.
+
+This widens segment-0 behaviour, so the "byte-identical to today" Done-when row
+was amended rather than quietly ticked.

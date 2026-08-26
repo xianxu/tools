@@ -32,11 +32,23 @@ const (
 	ActEOF
 )
 
-// Apply is the state machine: one key in, the next editor state out.
+// candidates is what the caller resolved for this keystroke.
 //
-// matches is a newest-first, deduped snapshot of history entries that begin with
-// whatever the walk is anchored on — resolved by the caller.
-func Apply(e Editor, k Key, matches []string) (Editor, Action) {
+// Two lists, because at #20 they stopped being one. `recall` is lines that were
+// really submitted, so Up/Down can only ever surface something the user typed.
+// `complete` is what the line could BECOME — and since #20 that includes a deck
+// word glued onto a head, a whole line nobody ever submitted. Feeding the second
+// into walk would make Up offer, and Enter run, sentences that were never typed.
+//
+// Both are newest-first and deduped; `recall` is anchored on whatever the walk
+// began with, and `complete` is matched against the whole line by Suggestion.
+type candidates struct {
+	recall   []string
+	complete []string
+}
+
+// Apply is the state machine: one key in, the next editor state out.
+func Apply(e Editor, k Key, c candidates) (Editor, Action) {
 	switch k.Kind {
 	case KeyRune:
 		e = e.stopWalk()
@@ -60,14 +72,14 @@ func Apply(e Editor, k Key, matches []string) (Editor, Action) {
 	case KeyRight:
 		// At end of line, Right ACCEPTS the suggestion; elsewhere it moves.
 		if e.Cursor == len(e.Line) {
-			return acceptSuggestion(e, matches)
+			return acceptSuggestion(e, c.complete)
 		}
 		e.Cursor++
 	case KeyHome:
 		e.Cursor = 0
 	case KeyEnd:
 		if e.Cursor == len(e.Line) {
-			return acceptSuggestion(e, matches)
+			return acceptSuggestion(e, c.complete)
 		}
 		e.Cursor = len(e.Line)
 	case KeyTab:
@@ -75,11 +87,11 @@ func Apply(e Editor, k Key, matches []string) (Editor, Action) {
 		// bindings, but Tab is what a hand reaches for after typing a prefix —
 		// and #15's command mode gives Tab a complementary job (completing a
 		// /command), not a conflicting one.
-		return acceptSuggestion(e, matches)
+		return acceptSuggestion(e, c.complete)
 	case KeyUp:
-		return walk(e, matches, +1), ActNone
+		return walk(e, c.recall, +1), ActNone
 	case KeyDown:
-		return walk(e, matches, -1), ActNone
+		return walk(e, c.recall, -1), ActNone
 	case KeyEnter:
 		return e, ActSubmit
 	case KeyInterrupt:

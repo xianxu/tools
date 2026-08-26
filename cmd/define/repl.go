@@ -74,7 +74,7 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 		return replCommand{kind: cmdAsk, question: q}
 	}
 	var literal bool
-	if rest, ok := strings.CutPrefix(trimmed, `\`); ok {
+	if rest, ok := strings.CutPrefix(trimmed, forceLiteral); ok {
 		if strings.TrimSpace(rest) == "" {
 			// Symmetric with a bare "?": a hatch typed with no payload is a
 			// malformed line, whatever the session state. Without this it fell
@@ -128,6 +128,12 @@ func nothingSays(c replCommand, inSession bool) string {
 // the exact opposite of what the hatch was typed to force (BR-12). The rule the
 // three recall sites now share: what recall stores must re-submit to the same
 // meaning. Whitespace is still collapsed, because that changes no meaning.
+// forceLiteral is the hatch that suppresses the question fallback: a line typed
+// behind it is a lookup whatever it reads like. One constant because three
+// places have to agree on it — the parser, recallLine's canonical form, and the
+// completion namespace, which has to see PAST it to reach the word behind.
+const forceLiteral = `\`
+
 func (c replCommand) recallLine() string {
 	switch c.kind {
 	case cmdAsk:
@@ -136,7 +142,7 @@ func (c replCommand) recallLine() string {
 		return strings.Join(append([]string{"/" + c.name}, c.args...), " ")
 	case cmdDefine:
 		if c.literal {
-			return `\` + c.word
+			return forceLiteral + c.word
 		}
 		return c.word
 	}

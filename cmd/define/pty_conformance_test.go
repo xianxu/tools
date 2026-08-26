@@ -173,6 +173,24 @@ func TestPTYSuggestionAndAcceptance(t *testing.T) {
 	if got := out.take(time.Second); !strings.Contains(got, "sycophantic") {
 		t.Errorf("Right did not accept the suggestion: %q", got)
 	}
+
+	// #20, on a real terminal: the same grey tail mid-sentence. Before #20 the
+	// suggestion matched only against the WHOLE line, so it vanished the moment
+	// a space was typed — which is exactly where a question gets asked.
+	f.Write([]byte("\x15")) // Ctrl-U clears the accepted line
+	out.take(500 * time.Millisecond)
+
+	f.Write([]byte("what is a syc"))
+	frame = out.take(1500 * time.Millisecond)
+	if !strings.Contains(frame, greyOn+"ophantic") {
+		t.Errorf("no mid-sentence grey suggestion: %q", frame)
+	}
+
+	f.Write([]byte("\t")) // Tab accepts
+	if got := out.take(time.Second); !strings.Contains(got, "what is a sycophantic") {
+		t.Errorf("Tab did not accept mid-sentence: %q", got)
+	}
+	f.Write([]byte("\x15")) // leave the prompt clean for the next assertion
 }
 
 // The Critical from the plan gate: raw mode makes Ctrl-C a byte, so

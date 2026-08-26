@@ -168,7 +168,11 @@ func TestCompletionsFor(t *testing.T) {
 		{"bare slash offers every command", "/", []string{"/help", "/history", "/stats"}},
 		{"a word draws from history", "syc", []string{"sycophantic"}},
 		{"a shared word prefix draws several", "sy", []string{"sybarite", "sycophantic"}},
-		{"an empty line draws all history", "", []string{"ephemeral", "sybarite", "sycophantic"}},
+		// An empty line has nothing to COMPLETE — there is no segment to match,
+		// and Suggestion returns "" for an empty line anyway. Drawing all of
+		// history here was harmless but meaningless; the empty-line namespace
+		// that matters is recall, asserted just below.
+		{"an empty line has nothing to complete", "", nil},
 		{"a slash mid-word is not a command", "and/or", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,6 +183,19 @@ func TestCompletionsFor(t *testing.T) {
 				t.Errorf("completionsFor(%q) = %v, want %v (as a set)", tc.base, got, tc.want)
 			}
 		})
+	}
+}
+
+// The behaviour the old "empty line draws all history" row was really about:
+// pressing Up on an empty prompt walks the whole log. #20 moved that from the
+// completion list to the recall list, which is its honest home.
+func TestEmptyLineStillRecallsAllHistory(t *testing.T) {
+	h := hist("ephemeral", "sybarite", "sycophantic")
+
+	got := candidatesFor("", h, testCmds).recall
+
+	if !sameSet(got, []string{"ephemeral", "sybarite", "sycophantic"}) {
+		t.Errorf("recall on an empty line = %v, want the whole log", got)
 	}
 }
 

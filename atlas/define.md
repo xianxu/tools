@@ -363,14 +363,57 @@ command. The plan gate caught exactly that draft (PQ-2), and
 `TestLineLoopDispatchesCommands` is the pin — deleting the `cmdCommand` case from
 `replLines` reddens it.
 
-**Type-ahead needed no change to the pure editor.** `Apply(e, k, matches)` always
-took its candidate list from the caller, so command mode is a different match
-*source*, not a different editor. `completionsFor` is the one place that decides
-which namespace a line draws from, and it replaced four `hist.Prefix(...)` call
-sites. Candidates come back `/`-prefixed because `Suggestion` matches against the
-whole typed line: with `/his` typed, `/history` is what completes it. Once an
-argument is typed (`/history 7`) the completion is shorter than the line, so no
-suggestion is offered — that falls out rather than being special-cased.
+**Type-ahead needed no change to the pure editor.** `Apply` always took its
+candidate list from the caller, so command mode is a different match *source*,
+not a different editor. `completionsFor` is the one place that decides which
+namespace a line draws from, and it replaced four `hist.Prefix(...)` call sites.
+Candidates come back `/`-prefixed because `Suggestion` matches against the whole
+typed line: with `/his` typed, `/history` is what completes it. Once an argument
+is typed (`/history 7`) the completion is shorter than the line, so no suggestion
+is offered — that falls out rather than being special-cased.
+
+**#20 extended type-ahead past the first word without touching the editor
+either**, by the same move. `Suggestion` still byte-prefix-matches the WHOLE
+line; what changed is where candidates come from. `trailingSegments` cuts the
+line into its trailing word-boundary slices, longest first — `what is a syc`
+becomes `[what is a syc, is a syc, a syc, syc]`, each carrying the head it was
+cut from, with `head+text == line` as an invariant a fuzz target defends.
+`historyCompletions` returns the first segment that matches anything, glued back
+onto its head, so a deck word arrives as a whole line (`what is a sycophantic`)
+and the editor never learns what a word boundary is. Longest-first is also the
+precedence rule: segment 0 IS the whole line, so a real past line always beats a
+word glued onto a head.
+
+Three constraints keep it quiet rather than chatty. A segment starts only where a
+word starts, so a trailing space produces none — load-bearing, because
+`History.Prefix("")` returns every entry by contract and an empty segment would
+suggest an unrelated line after every space. Inner segments need
+`minInnerSegment` runes, so `to` does not suggest `torpid`; the floor skips
+segment 0 so two-rune single-word completion is unchanged. And the namespace is
+decided ONCE, on the whole line: `completionsFor` tests `parseCommandLine(base)`
+before `historyCompletions`, and the segment loop never re-tests it — otherwise
+the `7` in `/history 7` would draw from the deck, and a mid-line `/his` would
+complete a command. Both are pinned
+(`TestACommandArgumentDoesNotDrawFromHistory`,
+`TestASlashSegmentMidLineDoesNotCompleteACommand`); an earlier version of the
+first passed over the bug it was written for, because its history matched nothing
+either way.
+
+**Recall and completion are two lists.** They were one until #20, when
+completions stopped being past lines: `walk` assigns `e.Line = matches[next]` and
+Enter submits it, so a glued candidate in that list would let Up offer — and
+Enter run — a sentence nobody typed. `Apply` takes `candidates{recall, complete}`;
+`recall` is `hist.Prefix(base)`, only ever really-submitted lines. That also
+retired a pre-existing wart: command mode used to feed the MENU to `walk`, so Up
+inside `/his` put `/help` on the line rather than recalling.
+
+**The completion namespace sees past submission markers.** `recallLine` stores
+the canonical re-submittable form, so an asked question is `?…` and a forced
+literal is `\word`. `matchesFor` unwraps both — the `?` especially, because
+`readsAsQuestion` classifies a bare sentence and the system adds that marker, so
+requiring the user to type one to complete a question they asked without one
+would make past questions uncompletable. `/` is deliberately not unwrapped:
+commands are a real separate namespace, not a marker on a word.
 
 **Typing `/` shows the menu.** The inline grey suggestion and the dropdown
 answer different questions, which is why both exist: completion answers "what
