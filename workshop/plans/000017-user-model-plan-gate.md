@@ -107,7 +107,28 @@ rounds:
           family: single-source-of-truth
           round: 2
       blocked: false
-content_hash: c03009e8f7f1a6f611d34e5d064c68e7e04e465c88edbd46e6277d22a87d251e
+    - "n": 3
+      timestamp: "2026-08-25T17:02:45-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-6
+          disposition: addressed
+          note: Task 1 is now four named properties with one strategy line each; the D7 contradiction is gone.
+          round: 3
+      findings:
+        - id: PQ-7
+          severity: Minor
+          title: D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned
+          detail: |-
+            Third instance in this family (PQ-1 duplicated fold, PQ-4 two count sources, PQ-6 test restating D7),
+            so the deliverable is the rule, not the site: a `## Decisions` entry is the sole statement of its fact
+            and task bodies cite it (D1/D7) rather than restate it. D1's sentence needs the prune-then-drop-if-empty
+            semantics that `TestCheckEvidenceDropsALevelClaimWithNoSupport` and the `"mixed"` case actually specify,
+            then the task bodies can cite D1 instead of paraphrasing it.
+          family: single-source-of-truth
+          round: 3
+      blocked: false
+content_hash: 728d2016634861e024a7ee9421402fcb457c73cb2988fa59405c7e62ba25315e
 ---
 
 # Gate ledger — tools#17 (plan-quality)
@@ -176,6 +197,21 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   being evidence while its log history still counts — and compress Tasks 2-4's test
   bodies to one strategy line per risky function, as Task 4's fuzz property already does.
 
+## Round 3 — 2026-08-25T17:02:45-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-6 — addressed — Task 1 is now four named properties with one strategy line each; the D7 contradiction is gone.
+
+### Raised
+
+- **PQ-7** [Minor] `single-source-of-truth` D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned
+  Third instance in this family (PQ-1 duplicated fold, PQ-4 two count sources, PQ-6 test restating D7),
+  so the deliverable is the rule, not the site: a `## Decisions` entry is the sole statement of its fact
+  and task bodies cite it (D1/D7) rather than restate it. D1's sentence needs the prune-then-drop-if-empty
+  semantics that `TestCheckEvidenceDropsALevelClaimWithNoSupport` and the `"mixed"` case actually specify,
+  then the task bodies can cite D1 instead of paraphrasing it.
+
 ## Open findings
 
-- **PQ-6** [Minor] `single-source-of-truth` Task 1's test sketch restates field origins that D7 already decides, and now contradicts it
+- **PQ-7** [Minor] `single-source-of-truth` D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned

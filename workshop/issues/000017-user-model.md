@@ -5,7 +5,7 @@ deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
 updated: 2026-08-25
-estimate_hours: 5.23
+estimate_hours: 8.39
 started: 2026-08-25T16:45:07-07:00
 ---
 
@@ -140,36 +140,65 @@ item: smaller-go-module      design=0.03 impl=0.14
 item: greenfield-go-module   design=0.25 impl=0.22
 item: greenfield-go-module   design=0.25 impl=0.22
 item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.30 impl=0.55
+item: milestone-review       design=0.10 impl=0.14
 item: smaller-go-module      design=0.03 impl=0.14
-item: milestone-review       design=0.10 impl=0.14
-item: milestone-review       design=0.10 impl=0.14
-item: milestone-review       design=0.10 impl=0.14
-item: milestone-review       design=0.10 impl=0.14
-item: milestone-review       design=0.02 impl=0.14
 item: atlas-docs             design=0.03 impl=0.05
 design-buffer: 0.15
-total: 5.23
+total: 8.39
 ```
 
 | item | what |
 |---|---|
 | issue-spec | plan authoring — inside the measured window, as #16 established |
-| milestone-review ×2 | the plan-quality rounds (PQ-1…PQ-5), already spent |
+| milestone-review ×2 @0.24 | the plan-quality rounds (PQ-1…PQ-5), already spent |
 | smaller-go-module | T1 `foldLookups`, reusing `summariseLookups` |
 | smaller-go-module | T2 `learnerModel` + `checkEvidence` |
 | smaller-go-module | T3 `renderUserModel` + its golden |
 | greenfield-go-module | T4 `spliceCorrections` + the fuzz property |
-| greenfield-go-module | T5 `reflectTask` — the prompt, and prompts are design |
+| greenfield-go-module | T5 `reflectTask` — the prompt |
 | greenfield-go-module | T6 `runReflect`, the flag, seven wiring tests |
-| smaller-go-module | T7 the live conformance check for domain inference |
-| milestone-review ×4 | boundary rounds — #16 needed four per milestone |
-| milestone-review | the M1 close itself |
+| greenfield-go-module | T7 the live conformance check — a held-out-sample assertion against a live model is the class that needs prompt iteration before it converges, not a mirror-and-extend |
+| milestone-review ×4 @0.90 | boundary rounds, **at #16's observed cost** — see below |
+| milestone-review | the M1 close itself, un-discounted like the other rounds |
+| smaller-go-module | T8's live hand-run and the cross-issue ask-path check — integration verification, not review overhead |
 | atlas-docs | the `--reflect` atlas section and the project row |
 
-**What would make this wrong in the other direction:** M1 has no terminal work,
-no interrupt semantics and no new store implementation — the three things that
-generated most of #16's second-order findings. If the review rounds converge in
-two rather than four, this lands nearer 4.3.
+### Revision — 2026-08-25, after estimate-quality
+
+First derivation was **5.23**, and it made the mistake it was written to avoid:
+it cited #16's overrun as evidence and then priced review rounds at the
+primitive table's default anyway. Measured, #16 was 17.63h total against ~6.34h
+of feature — **11.3h across twelve rounds, ≈0.9h each**. I had priced four rounds
+at 0.24h. Quoting a number and then not using it is the same failure as a comment
+asserting what the code does not do.
+
+Four changes, three of them the judge's findings:
+
+- **Boundary rounds at the observed cost** (0.30/0.55 ≈ 0.90 each). This is most
+  of the +3.2h. If M1 converges in two rounds the actual will say so, and that
+  becomes the next data point — but assuming it without evidence is the optimism
+  the whole revision exists to remove.
+- **T7 is not mirror-and-extend.** A held-out-sample assertion against a live
+  model converges after prompt iteration, not on the first run.
+- **T8's live verification gets its own item.** The hand-run, the cross-issue
+  ask-path check and the entity enumeration were folded into 0.24h — and #16's
+  log shows the enumeration alone took five rounds to get right.
+- **The final `milestone-review` is un-discounted** (0.02 → 0.10). The prose said
+  the ×0.2 discount does not apply to review rounds and the number applied it
+  anyway; T5's "prompts are design" gloss is dropped for the same reason — it
+  argued for a number it was not attached to.
+
+**Both directions, since the first version hedged only one.** M1 has no terminal
+work, no interrupt semantics and no new store implementation — the three things
+that generated most of #16's second-order findings — so two rounds rather than
+four lands this near **6.6**. The symmetric case is the one the evidence actually
+supports: four rounds at #16's cost is exactly what is priced, and #16 needed
+four per milestone plus five at the close, which would put it near **11**.
 
 ## Plan
 
