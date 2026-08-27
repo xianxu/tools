@@ -75,6 +75,7 @@ type countingCapturer struct {
 	found     []bool
 	asked     []string
 	askedWord []string
+	reviews   int
 }
 
 func (c *countingCapturer) Capture(word string, found bool, _ options) {
@@ -88,6 +89,8 @@ func (c *countingCapturer) CaptureAsk(word, question string, _ options) {
 	c.asked = append(c.asked, question)
 	c.askedWord = append(c.askedWord, word)
 }
+
+func (c *countingCapturer) CaptureReview(string, bool, options) { c.reviews++ }
 
 // ONE lookup, ONE capture — on every entry path.
 //
@@ -524,4 +527,88 @@ func TestWithStoreCarriesTheClock(t *testing.T) {
 			t.Error("withStore left a nil or zero clock; a command would panic")
 		}
 	})
+}
+
+// A review appends exactly one event, with the verdict, immediately.
+//
+// Immediately matters and is not decoration: recording as it happens is what
+// makes Ctrl-C mid-session lossless by construction rather than by a flush, and
+// that property is free from the append-only log (#3).
+func TestCaptureReviewAppendsOneEvent(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		correct bool
+	}{
+		{"a correct answer", true},
+		{"a wrong answer", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := store.NewMem()
+			c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
+
+			c.CaptureReview("obsequious", tc.correct, options{})
+
+			events, err := st.Events(time.Time{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(events) != 1 {
+				t.Fatalf("got %d events, want 1", len(events))
+			}
+			e := events[0]
+			if e.Kind != store.EventReviewed {
+				t.Errorf("kind = %q, want %q", e.Kind, store.EventReviewed)
+			}
+			if e.Correct != tc.correct {
+				t.Errorf("correct = %v, want %v", e.Correct, tc.correct)
+			}
+			if !e.At.Equal(aDay) {
+				t.Errorf("at = %v, want the injected clock's time", e.At)
+			}
+		})
+	}
+}
+
+// The word is normalised, so schedule.Fold reads it back under one key.
+func TestCaptureReviewNormalisesTheWord(t *testing.T) {
+	st := store.NewMem()
+	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
+
+	c.CaptureReview("Obsequious", true, options{})
+
+	events, _ := st.Events(time.Time{})
+	if len(events) != 1 || events[0].Word != store.Key("obsequious") {
+		t.Errorf("recorded word %q, want the normalised key", events[0].Word)
+	}
+}
+
+// DEFINE_NO_CAPTURE means "write nothing into this directory", and a review is a
+// write. It routes through decideCapture rather than a second policy.
+func TestCaptureReviewRespectsNoCapture(t *testing.T) {
+	st := store.NewMem()
+	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
+
+	c.CaptureReview("obsequious", true, options{noCapture: true})
+
+	if events, _ := st.Events(time.Time{}); len(events) != 0 {
+		t.Errorf("recorded %d events under DEFINE_NO_CAPTURE", len(events))
+	}
+}
+
+// A review must never touch the DECK — that is #4's job, on lookup. A review
+// that upserted would make reviewing a word count as looking it up, inflating
+// the lookup count #5's queue orders fresh words by.
+func TestCaptureReviewDoesNotTouchTheDeck(t *testing.T) {
+	st := store.NewMem()
+	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
+
+	c.CaptureReview("obsequious", true, options{})
+
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck) != 0 {
+		t.Errorf("the deck gained %d words from a review: %+v", len(deck), deck)
+	}
 }

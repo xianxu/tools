@@ -235,6 +235,12 @@ type options struct {
 	noAudio bool
 	times   int
 	locale  string
+	// count bounds a review session (#6). A flag rather than a constant because
+	// twenty is a guess about one learner's attention span — exactly the kind of
+	// guess that should be changeable without a rebuild. 0 means "no budget" and
+	// returns nothing, matching schedule.Queue's contract rather than inventing a
+	// second meaning for it.
+	count int
 	// noCapture means "write nothing in this directory". Read ONCE here, at flag
 	// parse, so the environment is an input to decideCapture rather than a second
 	// mechanism beside it. Note it also drops history to session-only, because
@@ -267,6 +273,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	reflect := fs.Bool("reflect", false, "read the deck and write user-model.md")
+	playFlag := fs.Bool("play", false, "review the words due today")
+	count := fs.Int("count", 20, "how many words a review session offers")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
 			"Looks the word up in macOS's active dictionaries — normally the New\n"+
@@ -339,6 +347,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		noCapture: os.Getenv("DEFINE_NO_CAPTURE") != "",
 		times:     *times,
 		locale:    *locale,
+		count:     *count,
 	}
 
 	// Usage errors are settled BEFORE a store is opened. A mistyped command must
@@ -353,6 +362,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// argument count is judged.
 	if *llmCheck {
 		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
+	}
+	// --play is a mode like --forget and --llm-check: it runs a session rather
+	// than looking a word up, so it is dispatched before the argument count is
+	// judged. It needs a store, so it goes through withStore first.
+	if *playFlag {
+		d = d.withStore(opt, stderr)
+		return runPlay(ctx, d, opt, stdin, stdout, stderr)
 	}
 	forgetting := isSet(fs, "forget")
 	// A command may take arguments, so the WHOLE argument list is one line:

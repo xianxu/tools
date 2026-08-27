@@ -501,12 +501,40 @@ was self-enforcing because "a test needing a fake would not compile" — false, 
 test may import anything — so the claim now has a guard that reads the import set.
 This repo keeps being bitten by facts that live only in comments.
 
+<a id="tools-6-m1"></a>
+### tools#6 M1 — a session that does not know what its forms ask
+
+**est:** 6.15 (whole issue)
+**actual:** 0.8h (M1)
+**closed:** 2026-08-27
+
+`Question`, form 2.1 (`Recall`), and the `Session`/`Apply` state machine, in a
+second pure package beside `schedule`.
+
+**The decision worth not re-deriving: `Grade` lives on the FORM.** The Done-when
+asks that a second form need no loop change, and putting key interpretation in
+the form is what makes that a property rather than a promise — 2.1 grades `y`/`n`,
+`#7`'s 2.3 will grade digits, and the session never learns either. It is tested
+before a second form exists by driving the same table through a fake form using
+entirely different keys, and asserting 2.1's own keys mean nothing there.
+
+Two things surfaced that were not about review at all. The plan's interface named
+`main.Key`, which a subpackage cannot reach — and that compile error was the
+import direction telling the truth: `main` owns the terminal and knows Ctrl-C is
+`0x03`, `play` must not. And the purity guards `#5` wrote inline were EXTRACTED
+into `puretest`, because `#7`, `#12` and `#13` each add a form package and
+copying would have meant five sets to keep in agreement. That extraction also
+closed a gap recorded at `#5`'s close: its "the mutant reddens it" claims were all
+verified in scratch copies and thrown away, so nothing in the tree proved the
+guards could fail.
+
 [tools#2]: #tools-2
 [tools#3]: #tools-3
 [tools#4]: #tools-4
 [tools#5]: #tools-5
 [tools#5 M1]: #tools-5-m1
 [tools#6]: #tools-6
+[tools#6 M1]: #tools-6-m1
 [tools#7]: #tools-7
 [tools#8]: #tools-8
 [tools#9]: #tools-9
