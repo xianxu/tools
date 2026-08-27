@@ -932,6 +932,24 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## A guard that allows a PACKAGE allows everything in it (define #5 close)
+
+`schedule`'s purity had two guards — an import allowlist and a wall-clock grep —
+and both passed a package that called `store.NewYAML(dir, w)`. That constructor
+opens a directory and reads and writes files. The import guard allowed it because
+`store` is on the allowlist; the clock guard allowed it because it names no time
+function. **The purity claim would have been false with every guard green.**
+
+- **Allowlisting a package grants its whole surface, including the parts that
+  contradict what you were guarding.** `store` holds both the pure types this
+  package needs and the disk this package must not touch.
+- **When a dependency is mixed, guard SYMBOLS, not packages.** The new guard lists
+  the eight pure things `schedule` may name; anything else fails. Adding a ninth
+  becomes a visible decision rather than an implicit one.
+- **Two guards agreeing is not two independent checks** if they share the same
+  blind spot. Both of these reasoned about names — one about package names, one
+  about function names — and neither about what the named thing DOES.
+
 ## A t.Skip on the only pin for a fix is not a pin (define #5 close)
 
 The Critical this round found — `Due` firing on the day of review — was pinned by
@@ -949,6 +967,10 @@ away from the fix.
   so absence becomes a failure rather than a shrug.
 - **Before writing a skip, grep for how the repo handles that dependency
   already.** The answer existed and cost one line.
+- **And the follow-up fix has to be verified, not assumed.** My first pass added
+  the import to one of the two files and wrote the explanatory comment into BOTH.
+  The second file then carried a comment stating the import was there when it was
+  not — a false claim minted by the fix for a false claim.
 
 ## Consolidating two implementations? Keep the one whose comment explains itself (define #5 close)
 

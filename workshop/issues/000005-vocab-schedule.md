@@ -239,3 +239,18 @@ Two decisions worth recording before implementation:
   done — while three of five sites stood, because I grepped one exact wording and
   the others said the same thing differently. The residue check inherited the
   sweep's blind spot. Swept by the concept this time.
+
+- 2026-08-26: close round 3 — three findings. BR-12 was a genuine hole the earlier
+  guards left wide: the import allowlist admits `store` WHOLESALE, and `store` is
+  where the disk lives, so `store.NewYAML(dir, w)` inside `schedule` would open,
+  read and write files while passing both guards — the purity claim false with
+  everything green. Two guards agreeing is not two independent checks when they
+  share a blind spot: both reasoned about NAMES, neither about what the named
+  thing does. A third guard now lists the eight pure store symbols this package
+  may use, and the constructor mutant reddens it.
+  BR-3 and BR-11 were both open a further round because my own fixes minted new
+  instances of the very classes they named: the atlas still said "a mastered word
+  leaves the rotation", which is the behaviour BR-6 removed; and I added the
+  tzdata import to one of two files while writing the comment claiming it into
+  BOTH, so the second file asserted an import it did not have. A fix is not done
+  until it is verified in every artifact it touched.
