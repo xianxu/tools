@@ -1020,3 +1020,41 @@ cmd/define/testdata/capture.sh            # re-capture the corpus
 Trigger: after a macOS upgrade, or when a parse/audio bug is reported.
 `DCSCopyTextDefinition` returns *silence, not an error*, without real access to
 `/System/Library/AssetsV2` — which is why `capture.sh` enforces a byte floor.
+
+## Usage sources: real sentences for a word
+
+**Two sources, one shape.** `Usage` is a sentence worth showing, tagged by
+provenance — `news` from Google News RSS, `noad` from the dictionary's own
+examples. One shape because the consumer (#10 authoring) wants "sentences for
+this word", and two parallel lists would push the join into every caller. NOAD's
+examples cost no network and are not current, which is exactly why they are here:
+the feed's thematic collapse is measured and real (10 of 14 `sycophantic`
+headlines were about AI chatbots), and a word taught only through this week's
+news cycle is taught narrowly.
+
+**Raw is cached; usable is derived.** `store.NewsItem` is what goes to disk — the
+feed's own words, knowing nothing about filtering or provenance. `Usage` is
+computed at read time. That split is what lets `containsWord` improve and every
+word already cached improve with it, with no re-fetch; caching the filtered
+result would freeze today's judgment onto disk. The plan's first draft had `Usage`
+in `package main` while `store.Store` returned it, which cannot compile — the
+Critical that forced the split was really the design telling the truth.
+
+**`containsWord` is the one place judgment lives, and it delegates.** The feed is
+queried with the word quoted and still returns items that do not contain it
+(measured: 12–99 matching out of 41–100), so the filter is load-bearing. It calls
+`highlightSpans` with a one-word vocabulary rather than matching itself — that is
+the whole matcher, `store.Key` normalisation and phrase gaps and joiner trimming
+included. Reimplementing any part would put the same word in two states on one
+screen: a headline rendering green while the filter rejected that headline.
+`TestContainsWordAgreesWithTheHighlighter` is the pin.
+
+**Headlines carry attribution, and stripping it is not "cut at the last dash".**
+Every Google News title ends `" - Publisher"`, and `<source>` names the
+publisher — so the suffix is removed only when it IS that publisher. A headline
+like `Ephemeral - a study in impermanence` keeps its dash. Found by capturing a
+real feed rather than reasoning about one.
+
+**The feed is licensed for personal, non-commercial feed-reader use** — the
+copyright notice is in the feed body itself. A personal vocabulary tool fits;
+nothing here redistributes content.

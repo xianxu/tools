@@ -53,7 +53,7 @@ Google News **RSS**, behind a seam.
 Durable plan: `workshop/plans/000009-vocab-news-plan.md` (three milestones; each
 `Mx` row is its own review boundary).
 
-- [ ] M1 — `parseRSS`, `Usage`, `containsWord`, and NOAD's examples as the second source
+- [x] M1 — `parseRSS`, `Usage`, `containsWord`, and NOAD's examples as the second source
 - [ ] M2 — `Store.Usages`, the `NewsSource` seam, the caching wrapper, the stateful fake
 - [ ] M3 — wiring, `/usage` to see it, live conformance, docs
 
@@ -200,3 +200,19 @@ Two decisions worth recording before implementation:
 - **A failed fetch is not cached.** Caching it would turn one network blip into a
   permanently empty answer for that word. That asymmetry is why the cache is its
   own type rather than a flag on the HTTP source.
+
+- 2026-08-26: M1 — `parseRSS` (`rss.go`), `store.NewsItem`, and the usage layer
+  (`usage.go`). Capturing a real feed paid for itself twice: it turned up the
+  `" - Publisher"` suffix the plan had not anticipated, and it showed the first
+  fixture slice was 10 copies of one article — the thematic collapse the Spec
+  measured, in miniature. The committed fixture is 13 items chosen for diversity:
+  10 matches across 10 publishers plus 3 non-matches, so the filter has work to do
+  and a test over it can tell `containsWord` from `return true`.
+  The fuzz property was WRONG on its first run and the fuzzer said so in two
+  seconds: a parsed title must be an ordered SUBSEQUENCE of the input, not a
+  substring, because mixed content like `0<![CDATA[0]]>` legitimately
+  concatenates to `00`. 1.69M execs clean after the correction.
+  Five mutations run; four died first time. The survivor was "strip anything after
+  the last dash" — my fixture ended in the publisher, so both rules cut at the
+  same place. Fixed with a title carrying NO attribution, where the correct rule
+  keeps the headline and the mutant truncates it.
