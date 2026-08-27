@@ -1,12 +1,13 @@
 ---
 id: 000021
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-26
 updated: 2026-08-26
 estimate_hours: 9.28
 started: 2026-08-26T12:40:00-07:00
+actual_hours: 6.0
 ---
 
 # highlight the words you are learning wherever they appear
@@ -225,6 +226,7 @@ milestones; each `Mx` row below is its own review boundary).
 ## Log
 
 ### 2026-08-26
+- 2026-08-26: closed — go test ./... + go vet + gofmt + go test -race all green. Three milestones each closed with a boundary review. Fuzz: FuzzWordRuns 2.24M, FuzzHighlightSpans 792k, FuzzHighlightWriterIsChunkIndependent 1.17M against a deck derived by class x position x phrase length. Round-3 close findings all addressed, including two real defects the earlier rounds had not reached: storeVocabulary.loaded was UNGUARDED while vocabularyFor calls Load on every render — a genuine data race that go test -race could never surface, because every existing test drives a single goroutine; TestVocabularyIsSafeUnderConcurrency drives eight and the unguarded mutant reports WARNING: DATA RACE immediately. And MaxPhraseWords, the only input to the streaming hold arithmetic, counted keys that can never match (e.g., and rock-apostrophe-n-roll whose gaps carry an apostrophe), widening the held tail every stream pays for in exchange for nothing — measured 5 bytes held becoming 9. Both pinned by mutation. BR-16 closed at its sixth round by sweeping MECHANICALLY rather than by the note list: grep every code line number, every test-file placement, every instructed assertion shape — which found the plan still telling a future implementer to write knownOn + "text", the exact vacuous shape lessons.md forbids and the one that let M1 mutation survive. Also: the poison report is now tested rather than asserted in a comment (discarding the Flush error reddens TestAPoisonedWriterIsReported), the exit-path table gained its fifth cell, and the atlas gained highlightSetFor and the stderr report. All Done-when ticked, including the one that matters for #22: every highlight decision routes through Vocabulary.Has, so narrowing to actively-learned words is one constructor with nothing downstream moving. ACTUAL 6.0h wall clock 12:40-18:30; sdlc actual under-reports for the claim-anchoring defect recorded in #20.; review verdict: FIX-THEN-SHIP
 - 2026-08-26: closed M2 — go test ./... + go vet + gofmt clean; 1.08M fuzz execs on the position-widened deck. Round-2 findings addressed as classes. BR-23: both of decidedEnd release paths now consult tokenStillOpen — the round-1 fix guarded only one, so a region of pure punctuation ending in half a rune took the no-token path and released, losing a word-initial multi-byte match while every byte survived. Hoisting the check above both paths was the wrong shape and the suite caught it (it held every text ending mid-word, defeating streaming). The corpus fault was deeper: the deck derived character CLASSES but not POSITIONS, and cafe multi-byte rune is word-final, so the word-initial shape was unreachable at any exec count. Deck is now class x position; reverting the fix reddens both the byte-at-a-time table and TestHighlightWriterHoldsAWordInitialMultiByteRune. BR-24, seventh in its family: the survivors were a wiring ARGUMENT and a guard whose only effect is ABSENCE of work, neither reachable by enumerations over output changes. Pinned the p.ex base resume by asserting production bytes, maxOpenSGR, and the colour gate with countingDeck — that gate was M1 round 3 own finding and went unpinned again when this refactor moved it. BR-26: the region table listed ten regions where Render emits thirteen; now complete AND TestHighlightsAppearOnlyInAdmittedRegions derives admitted text from the parsed Entry, so leaking the section name reddens 59 cases, the POS label 29, and HeadOther — the region the hand-written table omitted — 11. BR-16/BR-18 record sweeps run in full this time: Task 5/6/7 Files blocks, the main.go:488 injection point, the fuzz target name, Task 7 Step 2 invariant location, and every atlas sentence still describing the pre-refactor whole-string wrap. BR-25: highlightText had zero call sites after the per-region refactor and go vet does not flag unused functions; deleted with its docs. ACTUAL 2.1h wall clock from the M1 close through this close, spanning three review rounds including one killed by a revoked OAuth token.; review verdict: FIX-THEN-SHIP
 - 2026-08-26: closed M1 — go test ./... + go vet + gofmt clean. FuzzWordRuns re-fuzzed 2.24M execs clean after its property was corrected to the trimmed contract (it was RED at HEAD; go test runs seeds only). FuzzHighlightSpans 792k execs on the span-join invariant. Round 2 findings addressed as rules, not instances: (a) the test-completeness enumeration is now over the production dependency chain rather than over comments — hop 2, withStore merging sd.vocab into deps.vocab, carries no comment and was invisible to the round-1 sweep while its deletion kills the feature with the suite green; now pinned by TestWithStoreCarriesTheHighlightSetThrough using the deps{newStore: openStore}.withStore pattern, and MUT-G dies. (b) doc prose at a boundary describes only what that milestone shipped — the round-1 fix commit had written a fresh over-claim into README while fixing the atlas one; README now covers the typed line only and Task 8 Step 7 records that its job is to widen it. Twelve mutations die across M1. ACTUAL 2.9h is wall clock 12:40-15:35; sdlc actual reports 0.84h while its own warning says it discarded 117.6m as unattributed — the sdlc claim anchoring defect from #20.; review verdict: SHIP
 
@@ -415,3 +417,23 @@ this spec's central decision — the predicate seam.
   report is now tested rather than asserted in a comment, the exit-path table
   gained its fifth cell, and the atlas gained highlightSetFor and the stderr
   report.
+
+- 2026-08-26: close round 4 — gate passed, and the advisory ledger named two
+  things worth the extra pass. BR-39's enumeration was not swept: storeHistory
+  has the IDENTICAL shape — a bare `loaded` beside a mutex Add and Prefix both
+  take, plus an append outside it — and races under the same driver. Fixed and
+  pinned; unguarding it reports three DATA RACEs. The vocabulary comment also
+  over-licensed, so it now states what the lock does NOT buy: Load releases the
+  mutex before reading the deck, so a concurrent Load can return before the set
+  is visible (measured 97 of 200 trials). Safe, and the right trade against
+  serialising every render behind IO, but not a barrier. BR-16 reached its
+  seventh round because MY OWN FIX created a fresh instance: I corrected a plan
+  step to say "this mutation reddens nothing" — true when written — and the next
+  commit added the test that makes it redden. A statement about what a mutation
+  does is invalidated by any change to the code it describes, including one that
+  improves it. Also: BR-9 (4th round) — capture.go was still writing the
+  "define: " prefix itself while warnTo claimed to be the one place; BR-37 — my
+  added exit-path row did not reach a distinct branch (instrumenting showed
+  `stalled upstream` returns through the same `err == nil` case as clean
+  completion), so the genuinely distinct interrupt-with-partial-text branch now
+  has its own test at color=true.

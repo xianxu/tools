@@ -366,3 +366,30 @@ func TestAnUnmatchableKeyDoesNotWidenTheHoldWindow(t *testing.T) {
 		t.Errorf("MaxPhraseWords = %d, want 3 from the phrase that CAN match", got)
 	}
 }
+
+// The class BR-39 named, swept: storeHistory has the identical shape — a bare
+// `loaded` beside a mutex that Add and Prefix both take — and races under the
+// same driver. Fixing only the vocabulary would have been the instance.
+func TestHistoryIsSafeUnderConcurrency(t *testing.T) {
+	st := store.NewMem()
+	if err := st.AppendEvent(store.ReviewEvent{Word: "obsequious", Kind: store.EventLookedUp, Found: true, At: aDay}); err != nil {
+		t.Fatal(err)
+	}
+	h := newStoreHistory(st, nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			h.Load()
+			h.Add(fmt.Sprintf("word%d", i))
+			_ = h.Prefix("")
+		}(i)
+	}
+	wg.Wait()
+
+	if got := h.Prefix("obsequious"); len(got) == 0 {
+		t.Error("the loaded entry did not survive concurrent access")
+	}
+}

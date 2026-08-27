@@ -530,10 +530,10 @@ The `Flush` is DEFERRED rather than written at each return, and that is
 structural: `runAsk` returns on five paths and held text is invisible until a
 flush, so a per-path flush is four chances to forget one silently-dropped last
 word. On four of those paths the hold is already released before the return (the
-answer's own newline, or the trailing `Fprintln`), so deleting the defer leaves
-the suite green — `askhighlight_test.go` records that honestly rather than
-implying coverage, and names what a fake would need to make the fifth path
-reachable.
+answer's own newline, or the trailing `Fprintln`), and the fifth is unreachable
+through `llmtest` — `askhighlight_test.go` records that scope in full rather than
+implying coverage, and names what a fake would need to reach it. What DOES
+observe the defer is the error report below.
 
 **The command namespace is withheld, like every other boundary decision.**
 `highlightSetFor` hands `RenderLine` a nil vocabulary on a `/command` line, so a

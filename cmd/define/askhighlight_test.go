@@ -4,12 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-
 	"encoding/json"
-	"github.com/xianxu/tools/cmd/define/store"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 )
 
@@ -125,11 +125,13 @@ func TestEveryStreamExitPathFlushes(t *testing.T) {
 		{"truncated mid-answer", func(f *llmtest.Fake) {
 			f.Script("", llmtest.Reply{Capture: streamCapture, JunkFrame: true})
 		}, false, false},
-		// The fifth cell: an upstream that goes silent without closing. Slow
-		// (it waits out the client timeout) but it is the one remaining exit
-		// path, and a table missing a row is the shape this issue kept being
-		// bitten by.
-		{"stalled upstream", func(f *llmtest.Fake) {
+		// NOT a distinct exit path, and the first version of this row claimed it
+		// was: instrumenting every return showed `stalled upstream` arrives with
+		// err=nil and ctxErr=nil, i.e. the same `case err == nil:` branch as
+		// clean completion. Kept as a transport-shape row, labelled for what it
+		// is — a table whose rows do not say which branch they reach is how a
+		// missing path hides behind a full-looking list.
+		{"stalled upstream (same branch as clean)", func(f *llmtest.Fake) {
 			f.Script("", llmtest.Reply{Capture: streamCapture, Stall: true})
 		}, false, false},
 	} {
@@ -171,6 +173,33 @@ func TestEveryStreamExitPathFlushes(t *testing.T) {
 				t.Errorf("the word arrived but was not highlighted: %q", got)
 			}
 		})
+	}
+}
+
+// The genuinely distinct fifth branch: interrupted WITH text already delivered,
+// at color=true so the highlight path is live. The exit-path table's cancel row
+// cancels before any delta and so returns with nothing held; this one returns
+// through `if ctx.Err() != nil` with a partial answer, which is the branch that
+// writes the closing newline and records the exchange.
+func TestInterruptedMidStreamKeepsWhatArrivedHighlighted(t *testing.T) {
+	d, fake, _, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture, Stall: true})
+	d.vocab = vocab("Obsequious")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	var out, errOut bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- runAsk(ctx, d, options{color: true}, &session{}, question{text: "q?"}, &out, &errOut)
+	}()
+	// The stall delivers its first text block, then goes silent; cancelling then
+	// exercises the interrupt branch with text already held/emitted.
+	<-time.After(200 * time.Millisecond)
+	cancel()
+	<-done
+
+	if got := out.String(); got != "" && !strings.Contains(got, knownOn+"Obsequious") {
+		t.Errorf("an interrupted answer lost its highlight: %q", got)
 	}
 }
 

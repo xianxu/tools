@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"sync"
 
@@ -129,7 +128,7 @@ func (c *storeCapturer) warnf(format string, args ...any) {
 		return
 	}
 	c.warned = true
-	fmt.Fprintf(c.warn, "define: "+format+"\n", args...)
+	warnTo(c.warn, format, args...)
 }
 
 // noopCapturer is what a store-less run uses. Not a policy: the policy is

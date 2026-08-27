@@ -811,6 +811,68 @@ rounds:
           family: behaviour-claimed-without-a-failing-test
           round: 10
       blocked: true
+    - "n": 11
+      timestamp: "2026-08-26T18:58:22-07:00"
+      agent: claude
+      dispose:
+        - id: BR-9
+          disposition: not-addressed
+          note: '4th round, unchanged — capture.go:132 still writes "define: " and the trailing newline itself while warnTo''s comment (vocab.go:151) claims to be the one place both are written.'
+          round: 11
+        - id: BR-16
+          disposition: not-addressed
+          note: '7th round. The three round-10 residues ARE fixed (no .go:NNN left in the plan, Task 4''s Files/Step 1 corrected). But the same commit created a fresh instance: TestAPoisonedWriterIsReported makes plan Task 8 Step 6 and atlas/define.md:533 measurably false — verified by mutation that deleting the defer now reddens a named test.'
+          round: 11
+        - id: BR-33
+          disposition: addressed
+          note: Verified both ways — reverting to `defer hw.Flush()` AND deleting the defer entirely each redden TestAPoisonedWriterIsReported, via the package's existing shortWriter.
+          round: 11
+        - id: BR-34
+          disposition: addressed
+          note: atlas/define.md:538-543 now documents highlightSetFor and the command-namespace withhold.
+          round: 11
+        - id: BR-35
+          disposition: addressed
+          note: The dangling conjunction and orphaned clause are gone; the sentence reads correctly at atlas/define.md:512-514.
+          round: 11
+        - id: BR-36
+          disposition: not-addressed
+          note: Unchanged — askhighlight_test.go:3-13 still splits the stdlib block around the store import, and re-verified no Makefile/Makefile.workflow/Makefile.local/scripts/.github target runs gofmt, goimports, go vet, go test or -race anywhere in the repo. That last one now also leaves BR-39's fix falsifiable only by hand.
+          round: 11
+        - id: BR-37
+          disposition: not-addressed
+          note: 'The added row does not cover the named path. Instrumented every runAsk exit: `stalled upstream` returns err=nil ctxErr=nil, i.e. `case err == nil:` — the same branch as `clean completion`. The interrupt-with-held-text path is still exercised only at color=false with a nil vocabulary (measured: ctxErr answerLen=31 color=false vocabNil=true).'
+          round: 11
+        - id: BR-38
+          disposition: addressed
+          note: Verified by revert — dropping the phraseRunsJoin condition reddens TestAnUnmatchableKeyDoesNotWidenTheHoldWindow on both assertions; fuzzDeck.MaxPhraseWords() still measures 3, so the phrase-length axis survived the narrowing.
+          round: 11
+        - id: BR-39
+          disposition: not-addressed
+          note: 'The instance is fixed and verified (unguarding `loaded` reports a race at vocab.go:130/133 and reddens the new test under -race; it passes without -race). The enumeration the finding wrote was not swept: storeHistory.Load is the same shape and races under the same driver — read at history_store.go:40, write at :43, with h.lines appended outside the mutex Add/Prefix both take. storeCapturer is clean. Separately, the comment still over-licenses: Load releases the mutex before reading the deck, so it is not a barrier — 97 of 200 two-goroutine trials had a Load() return before the deck was readable.'
+          round: 11
+      findings:
+        - id: BR-40
+          severity: Minor
+          title: The row added to close BR-37 enters no new branch and costs 30 seconds of every suite run
+          detail: |-
+            This is the 12th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+            fix only this instance. askhighlight_test.go:128-135. Instrumented every exit of
+            runAsk and ran the table: `clean completion` returns err=nil ctxErr=nil answerLen=532
+            and `stalled upstream` returns err=nil ctxErr=nil answerLen=31 — both take
+            `case err == nil:`. The row's comment calls it "the fifth cell ... the one remaining
+            exit path" while the comment eight lines above rejects Stall for JunkFrame as "Same
+            path" and "two orders of magnitude" more expensive; the row then pays that cost.
+            Measured: TestEveryStreamExitPathFlushes is 30.02s, of which stalled_upstream is
+            30.01s, and go test ./cmd/define/ is 93.6s against the 63.6s recorded at #20's close.
+            THE RULE, which this family had not stated for TESTS rather than production code: a
+            row added to close a coverage finding is a claim about which branch it reaches, and
+            its falsifier is instrumentation, not the fake's documentation. Measure the branch
+            before writing "the one remaining exit path". Measured prevalence this window: 1 of 1
+            rows added to answer a coverage finding entered a branch already covered.
+          family: behaviour-claimed-without-a-failing-test
+          round: 11
+      blocked: false
 ---
 
 # Gate ledger — tools#21 (boundary-review)
@@ -1282,14 +1344,43 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   without it, or state the real invariant so the comment stops licensing what the type
   cannot support.
 
+## Round 11 — 2026-08-26T18:58:22-07:00 (claude) — passed
+
+### Disposed
+
+- BR-9 — not-addressed — 4th round, unchanged — capture.go:132 still writes "define: " and the trailing newline itself while warnTo's comment (vocab.go:151) claims to be the one place both are written.
+- BR-16 — not-addressed — 7th round. The three round-10 residues ARE fixed (no .go:NNN left in the plan, Task 4's Files/Step 1 corrected). But the same commit created a fresh instance: TestAPoisonedWriterIsReported makes plan Task 8 Step 6 and atlas/define.md:533 measurably false — verified by mutation that deleting the defer now reddens a named test.
+- BR-33 — addressed — Verified both ways — reverting to `defer hw.Flush()` AND deleting the defer entirely each redden TestAPoisonedWriterIsReported, via the package's existing shortWriter.
+- BR-34 — addressed — atlas/define.md:538-543 now documents highlightSetFor and the command-namespace withhold.
+- BR-35 — addressed — The dangling conjunction and orphaned clause are gone; the sentence reads correctly at atlas/define.md:512-514.
+- BR-36 — not-addressed — Unchanged — askhighlight_test.go:3-13 still splits the stdlib block around the store import, and re-verified no Makefile/Makefile.workflow/Makefile.local/scripts/.github target runs gofmt, goimports, go vet, go test or -race anywhere in the repo. That last one now also leaves BR-39's fix falsifiable only by hand.
+- BR-37 — not-addressed — The added row does not cover the named path. Instrumented every runAsk exit: `stalled upstream` returns err=nil ctxErr=nil, i.e. `case err == nil:` — the same branch as `clean completion`. The interrupt-with-held-text path is still exercised only at color=false with a nil vocabulary (measured: ctxErr answerLen=31 color=false vocabNil=true).
+- BR-38 — addressed — Verified by revert — dropping the phraseRunsJoin condition reddens TestAnUnmatchableKeyDoesNotWidenTheHoldWindow on both assertions; fuzzDeck.MaxPhraseWords() still measures 3, so the phrase-length axis survived the narrowing.
+- BR-39 — not-addressed — The instance is fixed and verified (unguarding `loaded` reports a race at vocab.go:130/133 and reddens the new test under -race; it passes without -race). The enumeration the finding wrote was not swept: storeHistory.Load is the same shape and races under the same driver — read at history_store.go:40, write at :43, with h.lines appended outside the mutex Add/Prefix both take. storeCapturer is clean. Separately, the comment still over-licenses: Load releases the mutex before reading the deck, so it is not a barrier — 97 of 200 two-goroutine trials had a Load() return before the deck was readable.
+
+### Raised
+
+- **BR-40** [Minor] `behaviour-claimed-without-a-failing-test` The row added to close BR-37 enters no new branch and costs 30 seconds of every suite run
+  This is the 12th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+  fix only this instance. askhighlight_test.go:128-135. Instrumented every exit of
+  runAsk and ran the table: `clean completion` returns err=nil ctxErr=nil answerLen=532
+  and `stalled upstream` returns err=nil ctxErr=nil answerLen=31 — both take
+  `case err == nil:`. The row's comment calls it "the fifth cell ... the one remaining
+  exit path" while the comment eight lines above rejects Stall for JunkFrame as "Same
+  path" and "two orders of magnitude" more expensive; the row then pays that cost.
+  Measured: TestEveryStreamExitPathFlushes is 30.02s, of which stalled_upstream is
+  30.01s, and go test ./cmd/define/ is 93.6s against the 63.6s recorded at #20's close.
+  THE RULE, which this family had not stated for TESTS rather than production code: a
+  row added to close a coverage finding is a claim about which branch it reaches, and
+  its falsifier is instrumentation, not the fake's documentation. Measure the branch
+  before writing "the one remaining exit path". Measured prevalence this window: 1 of 1
+  rows added to answer a coverage finding entered a branch already covered.
+
 ## Open findings
 
 - **BR-9** [Minor] `copy-pasted-helper` A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)
 - **BR-16** [Important] `plan-record-not-updated` Plan file layout, contract rule 4 and two test names no longer match the code
-- **BR-33** [Minor] `contract-error-unread-by-consumer` Every error highlightWriter is designed to report is discarded by its only production caller
-- **BR-34** [Minor] `atlas-omits-a-shipped-rule` The atlas highlight section never mentions highlightSetFor, the command-namespace withhold
-- **BR-35** [Minor] `doc-edit-not-read-back` The atlas sentence the close commit itself edited is malformed prose
 - **BR-36** [Minor] `unformatted-source` A third-party import sits inside the stdlib group, and nothing in the repo enforces import grouping
 - **BR-37** [Minor] `behaviour-claimed-without-a-failing-test` The interrupt-with-held-text exit path lost its row when BR-31's fix renamed it, and nothing noticed
-- **BR-38** [Minor] `bound-includes-unusable-input` MaxPhraseWords is inflated by deck keys that can never match, and M3 made that streaming latency
 - **BR-39** [Minor] `behaviour-claimed-without-a-failing-test` The Vocabulary seam advertises concurrency safety it does not have, and nothing in the package can falsify a concurrency claim
+- **BR-40** [Minor] `behaviour-claimed-without-a-failing-test` The row added to close BR-37 enters no new branch and costs 30 seconds of every suite run

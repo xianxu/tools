@@ -1186,6 +1186,15 @@ The rule the recurrence taught: **sweep the class of claim, not the list in the
 finding.** A note that names three divergences is a sample, and treating it as
 the enumeration is how one finding survives five rounds.
 
+And it survived two more, for a reason worth its own line: **a fix can create a
+fresh instance of the finding it is fixing.** I corrected a plan step to say "this
+mutation reddens nothing" — true and honest when written. The next commit added
+the test that makes it redden, so my correction became false in the same change
+that made it obsolete. A statement about what a mutation does is invalidated by
+any change to the code it describes, *including one that improves it*. That is
+why the stale-claim sweep belongs on every commit touching the code, not only on
+the commits where a reviewer lists instances.
+
 ## An assertion guarded on the run's own output is not an assertion (define #21 close)
 
 A row meant to pin "an interrupted stream leaves nothing dangling" read

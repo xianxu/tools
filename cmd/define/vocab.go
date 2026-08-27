@@ -54,6 +54,15 @@ type Vocabulary interface {
 // it: vocabularyFor calls Load on every render, so an unguarded flag was a real
 // data race the moment any second goroutine rendered — TestVocabularyIsSafeUnder
 // Concurrency drives it.
+//
+// What that does NOT buy, stated so the comment stops over-licensing: Load is
+// not a barrier. It releases the mutex before reading the deck, so a concurrent
+// caller's Load can return while the set is still filling — measured, 97 of 200
+// two-goroutine trials. That is safe (no torn state, no race) and it is the
+// right trade, since holding the lock across a file read would serialise every
+// render behind IO. It just means "Load returned" does not mean "the deck is
+// visible". Nothing needs it to: the render that follows shows one frame without
+// the highlight, and the next keystroke redraws with it.
 type memVocabulary struct {
 	mu       sync.RWMutex
 	words    map[string]bool

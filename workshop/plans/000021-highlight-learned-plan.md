@@ -337,19 +337,26 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 - [x] **Step 5: Interaction with `crlfWriter`.** The raw loop already wraps `out`. Determine and TEST the order: highlighting must see logical text, and CRLF translation must apply to the final bytes, so `highlightWriter` wraps *inside* `crlfWriter`. Assert a highlighted word emitted during raw mode carries correct line endings.
 
-- [x] **Step 6: Mutation-check the flush — and record the honest result, which is
-      that it does NOT redden anything.** This step was written expecting a
-      failing test and got one that passes: on four of `runAsk`'s five exit paths
-      the hold is already released before the return (the answer's own newline,
-      or the trailing `Fprintln`), and the fifth — `default:`, returning before
-      that newline with partial text held — is unreachable through `llmtest`,
-      because `Status` short-circuits before any body and both partial-then-fail
-      shapes classify as `ErrTruncated`. The defer stays on STRUCTURE: five
-      returns is four chances to forget one silently-dropped last word, and a
-      path added later gets it free. `askhighlight_test.go` records that scope in
-      full rather than implying coverage. A plan step that asserts a mutation
-      result is a claim like any other and gets corrected when measurement
-      disagrees, not quietly ticked.
+- [x] **Step 6: Mutation-check the flush.** Deleting the deferred flush reddens
+      `TestAPoisonedWriterIsReported`, which drives `runAsk` into the package's
+      existing `shortWriter` and asserts the "could not be fully written" report.
+      Reverting the defer to a bare `hw.Flush()` (discarding the error) reddens it
+      too.
+
+      This step has been rewritten twice and the history is the useful part. It
+      was first written expecting a redness that did not exist: at the time,
+      nothing observed the flush, because on four of `runAsk`'s five exit paths
+      the hold is already released before the return (the answer's own newline, or
+      the trailing `Fprintln`), and the fifth — `default:`, returning before that
+      newline with partial text held — is unreachable through `llmtest`, since
+      `Status` short-circuits before any body and both partial-then-fail shapes
+      classify as `ErrTruncated`. So the step was corrected to say "it reddens
+      nothing", which was true and honest. Then BR-33's fix added the error
+      REPORT, and that correction became false in the same commit that made it
+      obsolete. **A statement about what a mutation does is invalidated by any
+      change to the code it describes, including a change that improves it** —
+      which is why the sweep for stale plan claims has to run on every commit that
+      touches the code, not only when a reviewer lists instances.
 
 - [x] **Step 7: Atlas + README.** `atlas/define.md`'s highlight section (started at M1, extended at M2) gains the streaming half. The README paragraph ALREADY EXISTS as of M1 and covers the typed line only — WIDEN it to name definitions and answers; do not treat this step as spent because a paragraph is there. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
 
