@@ -556,3 +556,28 @@ I had written one notch too narrow to cover the next instance.
 - **BR-25** — `highlightText` had zero call sites after the per-region refactor.
   `go vet` does not flag unused functions, so it survived silently. Deleted, and
   the docs naming it corrected.
+
+### 2026-08-26 — M2 boundary round 3 (FIX-THEN-SHIP): closed with three Minors taken
+
+Gate clean of blocking findings. All three Minors taken now rather than carried,
+because M3 builds directly on this code.
+
+- **BR-27 `atlas-claims-unbuilt-surface`, 3rd.** Three places wrote a COUNT
+  beside the region table — "ten", "thirteen" — and the table has fifteen rows,
+  because round 2's correction also SPLIT two rows and nobody redid the
+  arithmetic. The rule is not "get the number right": a count in prose beside an
+  enumeration is a second source of truth that nothing checks and that drifts on
+  the next edit. Deleted everywhere; the derived test is the record.
+- **BR-28 `sgr-resume-outlives-an-inner-reset`.** A reset arriving INSIDE a
+  region cleared `open` but not `base`, so a highlight after it resumed the
+  enclosing style and painted text that is plain in the un-highlighted render.
+  `prettyPronunciations` emits exactly that shape inside any example mentioning a
+  pronunciation, and M3's model output will carry resets routinely. Invisible to
+  `TestHighlightingLosesNothing` by construction — it strips escapes, and this is
+  a styling difference, not a text one. A reset now clears both: it means the
+  terminal is plain, whatever enclosed the region when it started.
+- **BR-29 `fuzz-fixture-axis-missing`.** Third time on the same rule and one
+  notch wider again: the deck covered character class and position but had no
+  phrase longer than two tokens, so `MaxPhraseWords` never drove
+  `k := len(toks) - maxWords` or the straddle pull-back above 2. Phrase LENGTH is
+  a fixture axis too. `in spite of` added, with seeds.

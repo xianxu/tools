@@ -497,3 +497,145 @@ findings:
       pin the withholds with one assertion that a highlight appears only inside admitted
       regions.
 ```
+
+---
+
+## Re-review — 2026-08-26T17:05:08-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 21 — highlight the words you are learning wherever they appear |
+| repo | tools |
+| issue file | workshop/issues/000021-highlight-learned.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | 10de17d99a08858c44f5f9714f3f7c6cf3552675..10de17d99a08858c44f5f9714f3f7c6cf3552675 |
+| command | sdlc milestone-close --issue 21 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-26T17:05:08-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Every code-level finding from round 2 is genuinely fixed, and I verified each by reverting it in a scratch copy and confirming a *named* test goes red — BR-23 (both `decidedEnd` release paths), BR-24 (the `p.ex` base, `maxOpenSGR`, the `!opt.color` gate), BR-26 (the region table, whose leak counts reproduce the Log's 59/29/11 exactly), BR-25 (`highlightText` gone, zero references in the tree). I also fuzzed the shipped property for 2.47M execs clean, ran an independent differential property (byte-at-a-time vs one-call, deck derived from the text's own 1–4-token windows) for 284k execs clean, and ran `go test -race ./cmd/define/` green; `go vet` and `gofmt` are clean. What is left is not correctness: BR-16 is still open with three concrete residues in the plan record (a third round of the same family), and BR-20's second half — the vacuity guard — never landed, so `TestHighlightingLosesNothing` still passes with an unmatchable deck. Neither blocks the boundary; both are one-line fixes and the family escalation is the reason to take them now rather than at close.
+
+### 1. Strengths
+
+- **`decidedEnd`'s two release paths now ask one question, and the test proves it.** `cmd/define/highlightwriter.go:187-197` — reverting to `if phraseGapOrEmpty(region)` reddens `TestHighlightWriterHoldsAWordInitialMultiByteRune` *and* `TestHighlightWriterByteAtATimeMatchesOneCall/!über_and_naïve_café`. The fix is reachable, and the fixture that reaches it (`fuzzDeck`, class × position, `highlightwriter_test.go:207`) is derived rather than hand-picked.
+- **`TestHighlightsAppearOnlyInAdmittedRegions` (`highlightwriter_test.go:427`) is a real decision procedure, not a restated table.** It derives admitted text from the parsed `Entry` and normalises through `store.Key`, so it catches regions nobody remembered. I mutated three separate withheld regions; the failure counts were exactly the ones the Log claims — section name 59, block POS 29, `HeadOther` 11 — and `checked=269` across 32 entries with a `checked == 0` fatal guard.
+- **The guards whose only effect is absence are now watched by counting doubles.** `TestNoColourReadsNoDeck` (`vocab_test.go:290`) reuses the package's existing `countingDeck` rather than inventing a fixture; deleting `!opt.color` from `vocabularyFor` reddens it on both assertions. This is the right shape for the class the round-2 lesson names.
+- **`vocabularyFor` (`vocab.go:157`) is a genuine single answer to "loaded, and only with colour"**, and `TestEveryEntryPathHighlightsDefinitions` drives all three process entry points with a deliberately *unloaded* `storeVocabulary` — the enumeration starts where the process starts, which is the corrected rule.
+- **Only one production `Render` call site** (`main.go:505`), so the per-region decision has exactly one place it can be got wrong.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**BR-16 residue — `workshop/plans/000021-highlight-learned-plan.md:270`, `:282`, `:286`.** The round-2 sweep corrected the `Create:` lines and the Core-concepts rows but not the `Test:` lines or the step text: Task 5 and Task 6 both still say `Test: cmd/define/highlight_test.go` while the tests live in `sgr_test.go` and `highlightwriter_test.go`; Task 6 Step 2 still instructs "assert … that the returned count is in the caller's units", which is the exact contradiction the finding named — contract rule 4 (`:100-110`) and the shipped `TestHighlightWriterPropagatesDownstreamErrors` both say `(0, err)`. (Lines 374 and 498 also say "caller-unit", but those are `## Revisions` history and should stay.) Third round of `plan-record-not-updated`, so the fix is not these three lines: the class is "every path and name the plan asserts, versus the tree at HEAD", and it is mechanically enumerable. `cmd/define/repo_guard_test.go` is in-tree precedent for a guard that shells to git and `Fatal`s rather than `Skip`s.
+
+### 4. Minor findings
+
+- **The region table has 15 rows; three live documents say otherwise.** `render.go:48` ("Render emits thirteen"), `atlas/define.md:498` ("thirteen regions"), `lessons.md:1138` ("the ten-region admit/withhold table"). The table itself is complete and enforced — the count is a second source of truth that nothing checks.
+- **A highlight resumes `base` even after a reset that arrived inside the region**, so a deck word changes the colour of its *neighbours*. `highlightRegion(region, vocab("known"), knownOn, "\x1b[3;32m")` over `"foo \x1b[35m/aI/\x1b[0m bar known baz"` yields `… \x1b[1;32mknown\x1b[0m\x1b[3;32m baz"` — ` baz` is italic-green with highlighting on and plain without it. `sgrState.resume()` (`sgr.go:48`) clears `open` on a reset but never `base`. Escape-stripped-equal, so `TestHighlightingLosesNothing` cannot see it, and M3's model output will carry resets.
+- **`fuzzDeck` has no phrase longer than two tokens**, so `decidedEnd`'s `k := len(toks) - maxWords` arithmetic is never fuzzed at `maxWords ≥ 3`. I ran that axis separately (text-derived decks up to 4-token windows, byte-at-a-time, 284k execs) and it is clean today — this is coverage, not a bug — but `in spite of` is a realistic deck entry and the axis is one `fuzzDeck` line.
+- `decidedEnd` runs `highlightSpans(region, v)` and then `emitText` runs it again on the released prefix. Not hot-path; noted only so M3 doesn't inherit it as a per-delta cost on long streams.
+
+### 5. Test coverage notes
+
+The M2 Done-when rows are each pinned by a named test that dies to a mutation: definition body → `TestDefinitionBodyHighlightsADeckWord` (driven through `lookupAndRender`, not the helper); enclosing-style resume → `TestExampleTextResumesItsStyleAfterAHighlight` (production bytes); `-no-color` → `TestDefinitionHighlightingIsOffWithoutColour` (absence of *any* escape); no-data-loss → `TestHighlightingLosesNothing`, whose byte-drop mutation I confirmed reddens.
+
+The one gap is that last test's vacuity: swapping its deck for `vocab("zzzznotinanycorpusentry")` leaves it green. Measured at HEAD, 6 of 32 corpus entries highlight and 4 exercise a non-empty `resume()`. So the colour-ON half of BR-20 did land (it is `Color: true, Vocab: v` since 5cbcc80, and `sgrState.resume` *is* exercised over the corpus) — only the `hits > 0` guard is missing, and a corpus refresh or a deck typo would silently empty the test.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** One writer for both styled surfaces; `phraseGapOrEmpty` delegates to `phraseGap` instead of forking it; `stripANSI` now defers to `scanEscape` so production and tests share one escape scanner; `storeVocabulary` embeds `memVocabulary`; the leak test's `wordsOf` calls production `wordRuns`, so it cannot disagree with the tokenizer. `failAfter` next to `shortWriter` is not a copy-paste — it models a different downstream behaviour.
+- **ARCH-PURE — pass.** `wordRuns`, `highlightSpans`, `sgrState`, `scanEscape`, `decidedEnd`, `tokenStillOpen` are pure and their tests need no IO. `highlightWriter`'s only IO is the injected `io.Writer`, exercised with `bytes.Buffer` and two doubles. `Render` stays pure by taking `Vocabulary` as injected data; the single IO decision (load + colour) is isolated in `vocabularyFor` and pinned by a counting double.
+- **ARCH-PURPOSE — pass on the feature, flag on the finding-answering axis.** Shadow-sweep of the "one predicate" source: `RenderLine → highlightSpans → v.Has` and `Render → prose → highlightRegion → highlightWriter → highlightSpans → v.Has`; every render consumer derives, `ask.go` is M3 and is marked as future tense in both atlas and README rather than claimed. The flag is BR-16: for the third round the class was answered instance-by-instance. Answering it as a class means writing the enumeration, not sweeping harder by hand.
+- **ARCH-MOCK — pass.** M2 adds no external dependency. `store.NewMem()` is the portable non-production backend; `countingDeck` wraps it rather than reaching around the seam; the erroring/short doubles sit exactly at the `io.Writer` boundary production uses. The package's live-conformance pattern (`dict_conformance_test.go`, `pty_conformance_test.go`, …) is untouched and still applies.
+
+For M3: the writer's poisoning contract is the piece most likely to bite. `crlfWriter` short-writes with a nil error and `highlightWriter` correctly treats that as failure (`emit`, `highlightwriter.go:152`), but the composed pair means one short write kills highlighting for the rest of the answer with no visible signal. Task 8 Step 4's flush enumeration should include "what does the user see when the writer is already poisoned".
+
+### 7. Plan revision recommendations
+
+- **`## Revisions` — "M2 boundary round 3: the plan-record sweep, written down instead of repeated"**: correct `Test:` on Task 5 (`sgr_test.go`) and Task 6 (`highlightwriter_test.go`); delete "and that the returned count is in the caller's units" from Task 6 Step 2 and point it at contract rule 4; record that the enumeration for this family is now a guard over the plan's own path references rather than a per-round manual sweep.
+- **Same entry, region count**: state that `admitsHighlight` enumerates 15 regions and that the number is not to be restated in prose — the derived test is the record. Correct `render.go:48`, `atlas/define.md:498` and `lessons.md:1138` in the same commit.
+
+```findings
+dispose:
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Plan Task 5/6 still say Test: cmd/define/highlight_test.go, and Task 6 Step 2 still promises caller-unit counts.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      atlas rule 4 now reads "crlfWriter, which M3 will nest this inside"; swept the rest of this window's atlas/README claims, all true at HEAD except the region count raised below.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      Colour-ON half fixed (Color:true+Vocab; 4 of 32 entries exercise resume); the hits>0 guard is still absent — an unmatchable deck leaves the test green.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      Verified by revert — both the targeted test and the byte-at-a-time table redden; 2.47M-exec fuzz plus an independent 284k-exec differential property clean.
+  - id: BR-24
+    disposition: addressed
+    note: |
+      All three mutations verified red — p.ex base to "", maxOpenSGR cap disabled, !opt.color deleted.
+  - id: BR-25
+    disposition: addressed
+    note: |
+      highlightText deleted; zero references anywhere in the tree, docs corrected.
+  - id: BR-26
+    disposition: addressed
+    note: |
+      Table complete and derived-test enforced; leak mutations reproduce the claimed 59/29/11 exactly.
+findings:
+  - id: new
+    severity: Minor
+    family: atlas-claims-unbuilt-surface
+    title: |
+      admitsHighlight enumerates 15 regions; render.go, atlas and lessons.md say thirteen or ten
+    detail: |
+      This is the 3rd finding in family `atlas-claims-unbuilt-surface`. Do NOT fix
+      only this instance. render.go:48 says "Render emits thirteen", atlas/define.md:498
+      says "thirteen regions", lessons.md:1138 says "the ten-region admit/withhold table";
+      the table has 15 rows (the round-2 correction also SPLIT two rows, which the
+      arithmetic missed). THE RULE: a count written in prose beside an enumeration is a
+      second source of truth that nothing checks and that drifts on the next edit — the
+      derived test is the record, so the number should be deleted rather than corrected.
+  - id: new
+    severity: Minor
+    family: sgr-resume-outlives-an-inner-reset
+    title: |
+      A highlight resumes base after a reset that arrived inside the region, restyling neighbouring plain text
+    detail: |
+      sgr.go:48 clears `open` on a reset but never `base`, so a region carrying its own
+      reset (what prettyPronunciations emits inside an example) resumes to the enclosing
+      style for text that is unstyled without highlighting. Measured: highlightRegion of
+      "foo \x1b[35m/aI/\x1b[0m bar known baz" with base \x1b[3;32m returns
+      "... \x1b[1;32mknown\x1b[0m\x1b[3;32m baz", where " baz" is plain in the no-highlight
+      render. Escape-stripped-equal, so TestHighlightingLosesNothing cannot see it. Decide
+      once whether an inner reset also clears base, and pin it — M3's model output will
+      carry resets routinely.
+  - id: new
+    severity: Minor
+    family: fuzz-fixture-axis-missing
+    title: |
+      fuzzDeck has no phrase longer than two tokens, so decidedEnd's hold arithmetic is never fuzzed at maxWords >= 3
+    detail: |
+      highlightwriter_test.go:207. The class-x-position table added this round covers
+      character classes and their positions but not phrase LENGTH, which is the input
+      MaxPhraseWords feeds straight into `k := len(toks) - maxWords` and the straddle
+      pull-back. Not a live bug — I ran the axis independently (decks derived from each
+      text's own 1..4-token windows, byte-at-a-time vs one-call, 284k execs) and it is
+      clean — but it is the same "the deck is input too" rule one notch wider, and
+      `in spite of` is a realistic entry. One line in fuzzDeck plus a seed.
+```

@@ -57,3 +57,23 @@ func TestScanEscape(t *testing.T) {
 		})
 	}
 }
+
+// A reset arriving inside a region clears the ENCLOSING style too.
+//
+// Without this, highlighting a word after an inner reset resumed to base and
+// styled text that is plain in the un-highlighted render — a styling change no
+// escape-stripped comparison can see. prettyPronunciations emits an inner reset
+// inside every example that mentions a pronunciation.
+func TestAnInnerResetClearsTheEnclosingStyle(t *testing.T) {
+	s := sgrState{base: "\x1b[3;32m"}
+
+	if got := s.resume(); got != "\x1b[3;32m" {
+		t.Fatalf("before any reset, resume() = %q, want the base", got)
+	}
+	s.observe("\x1b[35m")
+	s.observe("\x1b[0m")
+
+	if got := s.resume(); got != "" {
+		t.Errorf("after an inner reset, resume() = %q, want nothing — the terminal is plain", got)
+	}
+}

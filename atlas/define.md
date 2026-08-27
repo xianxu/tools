@@ -495,8 +495,9 @@ separately and a terminal composes them.
 finished string has no structure left to consult — wrapping re-styled the
 headword, which the Spec puts out of scope and which is the COMMON case for a
 learning tool, since you revisit words. `admitsHighlight`'s doc comment is the
-table: thirteen regions, prose admitted and labels withheld. It is a decision
-procedure only because `TestHighlightsAppearOnlyInAdmittedRegions` derives the
+table — prose admitted, labels withheld, with no count written beside it because
+a number in prose beside an enumeration is a second source of truth that drifts.
+It is a decision procedure only because `TestHighlightsAppearOnlyInAdmittedRegions` derives the
 admitted text from the parsed `Entry`, so a region that starts leaking fails
 without anyone remembering to add a row. `Render` stays pure — `Vocabulary` is
 injected data and `highlightSpans` is a pure function of it.

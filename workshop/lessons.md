@@ -1135,8 +1135,12 @@ bold-cyan headword, which the Spec explicitly puts out of scope.
 
 - **A finished string has no structure left to consult.** Per-region decisions
   have to be made where the regions still exist. `RenderOpts.Vocab` reaches
-  `Render`; `admitsHighlight`'s doc comment is the ten-region admit/withhold
-  table.
+  `Render`; `admitsHighlight`'s doc comment is the admit/withhold table.
+- **Do not write a COUNT beside an enumeration.** "the ten-region table" was
+  wrong within one round — the correction that completed the table also split two
+  rows, and the arithmetic was not redone. A number in prose next to a list is a
+  second source of truth that nothing checks; delete it and let the derived test
+  be the record.
 - **State the decision for every region, including the obvious ones.** "Prose is
   admitted, labels are withheld" is a rule; "I wrapped the string I had" is not,
   and cannot be reviewed.

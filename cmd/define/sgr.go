@@ -31,7 +31,16 @@ func (s *sgrState) observe(seq string) {
 		return
 	}
 	if isReset(seq) {
-		s.open = s.open[:0]
+		// base goes too. A reset arriving INSIDE a region means the terminal is
+		// now plain, whatever style enclosed the region when it started — so
+		// resuming to base after a later highlight would style text that is
+		// unstyled without highlighting. prettyPronunciations emits exactly that
+		// shape inside an example, and M3's model output will carry resets
+		// routinely.
+		//
+		// Invisible to TestHighlightingLosesNothing, which strips escapes and so
+		// compares equal either way: this is a STYLING difference, not a text one.
+		s.open, s.base = s.open[:0], ""
 		return
 	}
 	if len(s.open) >= maxOpenSGR {

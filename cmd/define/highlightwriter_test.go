@@ -205,17 +205,22 @@ func (f *failAfter) Write(p []byte) (int, error) {
 //	digits         19th         covid-19     —           they have no edge
 //	                                                     positions)
 var fuzzDeck = vocab(
-	"obsequious", // plain
-	"hot dog",    // a phrase, so the hold window is > 1 token
-	"hot",        // and its prefix, so longest-match is exercised
-	"a priori",   // a phrase whose first token is one rune
-	"über",       // multi-byte, word-INITIAL
-	"naïve",      // multi-byte, medial
-	"café",       // multi-byte, final
-	"don't",      // an apostrophe inside a word
-	"hot-dog",    // a hyphen inside a word
-	"19th",       // digits, initial
-	"covid-19",   // digits, medial
+	"obsequious",  // plain
+	"hot dog",     // a phrase, so the hold window is > 1 token
+	"hot",         // and its prefix, so longest-match is exercised
+	"a priori",    // a phrase whose first token is one rune
+	"über",        // multi-byte, word-INITIAL
+	"naïve",       // multi-byte, medial
+	"café",        // multi-byte, final
+	"don't",       // an apostrophe inside a word
+	"hot-dog",     // a hyphen inside a word
+	"19th",        // digits, initial
+	"covid-19",    // digits, medial
+	"in spite of", // THREE tokens: the only input to decidedEnd's hold
+	// arithmetic (k := len(toks) - maxWords) and the straddle
+	// pull-back is MaxPhraseWords, and a deck topping out at two
+	// never drives either above 2. Phrase length is a fixture
+	// axis like class and position.
 )
 
 // Chunk-independence is the property; byte identity is what makes it able to
@@ -228,6 +233,7 @@ func FuzzHighlightWriterIsChunkIndependent(f *testing.F) {
 		"don't stop", "a hot-dog stand", "covid-19 era", "café society", "a priori truth",
 		"'obsequious' don't café a priori",
 		"!über", "hi! über now", "naïve café", "the 19th of covid-19",
+		"done in spite of it", "in spite", "spite of",
 	} {
 		f.Add(s, 1)
 	}
@@ -510,4 +516,19 @@ func wordsOf(s string) []string {
 		out = append(out, s[r.start:r.end])
 	}
 	return out
+}
+
+// The production shape BR-28 was measured on: an example carrying its own reset
+// (what prettyPronunciations emits) must not re-style the plain text after it.
+func TestHighlightAfterAnInnerResetDoesNotRestylePlainText(t *testing.T) {
+	const in = "foo \x1b[35m/aI/\x1b[0m bar obsequious baz"
+
+	got := highlightRegion(in, vocab("obsequious"), knownOn, "\x1b[3;32m")
+
+	if strings.Contains(got, "\x1b[0m\x1b[3;32m baz") {
+		t.Errorf("the enclosing style outlived an inner reset: %q", got)
+	}
+	if !strings.Contains(got, knownOn+"obsequious\x1b[0m baz") {
+		t.Errorf("want the highlight to close to plain: %q", got)
+	}
 }

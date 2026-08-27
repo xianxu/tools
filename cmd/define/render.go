@@ -44,13 +44,18 @@ func newPalette(on bool) palette {
 // the dictionary's own scaffolding, and colouring "adjective" because the
 // learner once looked it up says nothing about the word being defined.
 //
-// The table has to be COMPLETE to be a decision procedure. The first version
-// listed ten regions and Render emits thirteen — HeadHomograph, HeadOther and
-// the block label were missing, all withheld by construction, so behaviour was
-// right and the enumeration was a subset pretending to be the whole.
+// The table has to be COMPLETE to be a decision procedure. Its first version
+// omitted HeadHomograph, HeadOther and the block label — all withheld by
+// construction, so behaviour was right and the enumeration was a subset
+// pretending to be the whole.
+//
 // TestHighlightsAppearOnlyInAdmittedRegions is what makes an omission FAIL: it
 // derives the admitted text from the parsed Entry, so a region that starts
-// leaking is caught without anyone remembering to add a row here.
+// leaking is caught without anyone remembering to add a row here. That test —
+// not this comment — is the record. Deliberately no COUNT is written beside the
+// rows: a number in prose next to an enumeration is a second source of truth
+// nothing checks, and it drifted twice in two rounds (once when the correction
+// also split two rows and the arithmetic was not redone).
 //
 //	region                     decision
 //	------------------------   --------

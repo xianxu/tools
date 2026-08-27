@@ -225,6 +225,7 @@ milestones; each `Mx` row below is its own review boundary).
 ## Log
 
 ### 2026-08-26
+- 2026-08-26: closed M2 — go test ./... + go vet + gofmt clean; 1.08M fuzz execs on the position-widened deck. Round-2 findings addressed as classes. BR-23: both of decidedEnd release paths now consult tokenStillOpen — the round-1 fix guarded only one, so a region of pure punctuation ending in half a rune took the no-token path and released, losing a word-initial multi-byte match while every byte survived. Hoisting the check above both paths was the wrong shape and the suite caught it (it held every text ending mid-word, defeating streaming). The corpus fault was deeper: the deck derived character CLASSES but not POSITIONS, and cafe multi-byte rune is word-final, so the word-initial shape was unreachable at any exec count. Deck is now class x position; reverting the fix reddens both the byte-at-a-time table and TestHighlightWriterHoldsAWordInitialMultiByteRune. BR-24, seventh in its family: the survivors were a wiring ARGUMENT and a guard whose only effect is ABSENCE of work, neither reachable by enumerations over output changes. Pinned the p.ex base resume by asserting production bytes, maxOpenSGR, and the colour gate with countingDeck — that gate was M1 round 3 own finding and went unpinned again when this refactor moved it. BR-26: the region table listed ten regions where Render emits thirteen; now complete AND TestHighlightsAppearOnlyInAdmittedRegions derives admitted text from the parsed Entry, so leaking the section name reddens 59 cases, the POS label 29, and HeadOther — the region the hand-written table omitted — 11. BR-16/BR-18 record sweeps run in full this time: Task 5/6/7 Files blocks, the main.go:488 injection point, the fuzz target name, Task 7 Step 2 invariant location, and every atlas sentence still describing the pre-refactor whole-string wrap. BR-25: highlightText had zero call sites after the per-region refactor and go vet does not flag unused functions; deleted with its docs. ACTUAL 2.1h wall clock from the M1 close through this close, spanning three review rounds including one killed by a revoked OAuth token.; review verdict: FIX-THEN-SHIP
 - 2026-08-26: closed M1 — go test ./... + go vet + gofmt clean. FuzzWordRuns re-fuzzed 2.24M execs clean after its property was corrected to the trimmed contract (it was RED at HEAD; go test runs seeds only). FuzzHighlightSpans 792k execs on the span-join invariant. Round 2 findings addressed as rules, not instances: (a) the test-completeness enumeration is now over the production dependency chain rather than over comments — hop 2, withStore merging sd.vocab into deps.vocab, carries no comment and was invisible to the round-1 sweep while its deletion kills the feature with the suite green; now pinned by TestWithStoreCarriesTheHighlightSetThrough using the deps{newStore: openStore}.withStore pattern, and MUT-G dies. (b) doc prose at a boundary describes only what that milestone shipped — the round-1 fix commit had written a fresh over-claim into README while fixing the atlas one; README now covers the typed line only and Task 8 Step 7 records that its job is to widen it. Twelve mutations die across M1. ACTUAL 2.9h is wall clock 12:40-15:35; sdlc actual reports 0.84h while its own warning says it discarded 117.6m as unattributed — the sdlc claim anchoring defect from #20.; review verdict: SHIP
 
 Opened from the operator's request. Scope grew mid-specification: the first ask
@@ -338,3 +339,18 @@ this spec's central decision — the predicate seam.
   the refactor moved it. (4) The region table listed ten regions where Render
   emits thirteen; now complete AND derived from the parsed Entry, so an omission
   fails rather than passing quietly. Two rules recorded in lessons.md.
+
+- 2026-08-26: M2 boundary round 3 — FIX-THEN-SHIP, no blocking findings; three
+  Minors taken in the close commit rather than carried, since M3 builds on this
+  code. The substantive one: a reset arriving inside a region cleared the
+  accumulated styles but not the enclosing base, so a highlight after it resumed
+  that base and painted text that is plain without highlighting —
+  prettyPronunciations emits that shape inside any example mentioning a
+  pronunciation, and M3 model output carries resets routinely. Escape-stripped
+  comparison cannot see it, being a styling rather than a text difference. Also:
+  three places wrote a COUNT beside the region table and all three were wrong,
+  because round 2 split two rows without redoing the arithmetic — deleted rather
+  than corrected, since a number in prose beside an enumeration is a second
+  source of truth nothing checks. And the fuzz deck gained a three-token phrase:
+  third instance of "the deck is input too", one notch wider each time (class,
+  then position, now phrase length).

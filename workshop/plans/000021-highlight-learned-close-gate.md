@@ -443,6 +443,81 @@ rounds:
           round: 6
       boundary: M2
       blocked: true
+    - "n": 7
+      timestamp: "2026-08-26T17:05:08-07:00"
+      agent: claude
+      dispose:
+        - id: BR-16
+          disposition: not-addressed
+          note: 'Plan Task 5/6 still say Test: cmd/define/highlight_test.go, and Task 6 Step 2 still promises caller-unit counts.'
+          round: 7
+        - id: BR-18
+          disposition: addressed
+          note: atlas rule 4 now reads "crlfWriter, which M3 will nest this inside"; swept the rest of this window's atlas/README claims, all true at HEAD except the region count raised below.
+          round: 7
+        - id: BR-20
+          disposition: not-addressed
+          note: Colour-ON half fixed (Color:true+Vocab; 4 of 32 entries exercise resume); the hits>0 guard is still absent — an unmatchable deck leaves the test green.
+          round: 7
+        - id: BR-23
+          disposition: addressed
+          note: Verified by revert — both the targeted test and the byte-at-a-time table redden; 2.47M-exec fuzz plus an independent 284k-exec differential property clean.
+          round: 7
+        - id: BR-24
+          disposition: addressed
+          note: All three mutations verified red — p.ex base to "", maxOpenSGR cap disabled, !opt.color deleted.
+          round: 7
+        - id: BR-25
+          disposition: addressed
+          note: highlightText deleted; zero references anywhere in the tree, docs corrected.
+          round: 7
+        - id: BR-26
+          disposition: addressed
+          note: Table complete and derived-test enforced; leak mutations reproduce the claimed 59/29/11 exactly.
+          round: 7
+      findings:
+        - id: BR-27
+          severity: Minor
+          title: admitsHighlight enumerates 15 regions; render.go, atlas and lessons.md say thirteen or ten
+          detail: |-
+            This is the 3rd finding in family `atlas-claims-unbuilt-surface`. Do NOT fix
+            only this instance. render.go:48 says "Render emits thirteen", atlas/define.md:498
+            says "thirteen regions", lessons.md:1138 says "the ten-region admit/withhold table";
+            the table has 15 rows (the round-2 correction also SPLIT two rows, which the
+            arithmetic missed). THE RULE: a count written in prose beside an enumeration is a
+            second source of truth that nothing checks and that drifts on the next edit — the
+            derived test is the record, so the number should be deleted rather than corrected.
+          family: atlas-claims-unbuilt-surface
+          round: 7
+        - id: BR-28
+          severity: Minor
+          title: A highlight resumes base after a reset that arrived inside the region, restyling neighbouring plain text
+          detail: |-
+            sgr.go:48 clears `open` on a reset but never `base`, so a region carrying its own
+            reset (what prettyPronunciations emits inside an example) resumes to the enclosing
+            style for text that is unstyled without highlighting. Measured: highlightRegion of
+            "foo \x1b[35m/aI/\x1b[0m bar known baz" with base \x1b[3;32m returns
+            "... \x1b[1;32mknown\x1b[0m\x1b[3;32m baz", where " baz" is plain in the no-highlight
+            render. Escape-stripped-equal, so TestHighlightingLosesNothing cannot see it. Decide
+            once whether an inner reset also clears base, and pin it — M3's model output will
+            carry resets routinely.
+          family: sgr-resume-outlives-an-inner-reset
+          round: 7
+        - id: BR-29
+          severity: Minor
+          title: fuzzDeck has no phrase longer than two tokens, so decidedEnd's hold arithmetic is never fuzzed at maxWords >= 3
+          detail: |-
+            highlightwriter_test.go:207. The class-x-position table added this round covers
+            character classes and their positions but not phrase LENGTH, which is the input
+            MaxPhraseWords feeds straight into `k := len(toks) - maxWords` and the straddle
+            pull-back. Not a live bug — I ran the axis independently (decks derived from each
+            text's own 1..4-token windows, byte-at-a-time vs one-call, 284k execs) and it is
+            clean — but it is the same "the deck is input too" rule one notch wider, and
+            `in spite of` is a realistic entry. One line in fuzzDeck plus a seed.
+          family: fuzz-fixture-axis-missing
+          round: 7
+      boundary: M2
+      blocked: false
 ---
 
 # Gate ledger — tools#21 (boundary-review)
@@ -703,6 +778,46 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   pin the withholds with one assertion that a highlight appears only inside admitted
   regions.
 
+## Round 7 — 2026-08-26T17:05:08-07:00 (claude) — passed
+
+### Disposed
+
+- BR-16 — not-addressed — Plan Task 5/6 still say Test: cmd/define/highlight_test.go, and Task 6 Step 2 still promises caller-unit counts.
+- BR-18 — addressed — atlas rule 4 now reads "crlfWriter, which M3 will nest this inside"; swept the rest of this window's atlas/README claims, all true at HEAD except the region count raised below.
+- BR-20 — not-addressed — Colour-ON half fixed (Color:true+Vocab; 4 of 32 entries exercise resume); the hits>0 guard is still absent — an unmatchable deck leaves the test green.
+- BR-23 — addressed — Verified by revert — both the targeted test and the byte-at-a-time table redden; 2.47M-exec fuzz plus an independent 284k-exec differential property clean.
+- BR-24 — addressed — All three mutations verified red — p.ex base to "", maxOpenSGR cap disabled, !opt.color deleted.
+- BR-25 — addressed — highlightText deleted; zero references anywhere in the tree, docs corrected.
+- BR-26 — addressed — Table complete and derived-test enforced; leak mutations reproduce the claimed 59/29/11 exactly.
+
+### Raised
+
+- **BR-27** [Minor] `atlas-claims-unbuilt-surface` admitsHighlight enumerates 15 regions; render.go, atlas and lessons.md say thirteen or ten
+  This is the 3rd finding in family `atlas-claims-unbuilt-surface`. Do NOT fix
+  only this instance. render.go:48 says "Render emits thirteen", atlas/define.md:498
+  says "thirteen regions", lessons.md:1138 says "the ten-region admit/withhold table";
+  the table has 15 rows (the round-2 correction also SPLIT two rows, which the
+  arithmetic missed). THE RULE: a count written in prose beside an enumeration is a
+  second source of truth that nothing checks and that drifts on the next edit — the
+  derived test is the record, so the number should be deleted rather than corrected.
+- **BR-28** [Minor] `sgr-resume-outlives-an-inner-reset` A highlight resumes base after a reset that arrived inside the region, restyling neighbouring plain text
+  sgr.go:48 clears `open` on a reset but never `base`, so a region carrying its own
+  reset (what prettyPronunciations emits inside an example) resumes to the enclosing
+  style for text that is unstyled without highlighting. Measured: highlightRegion of
+  "foo \x1b[35m/aI/\x1b[0m bar known baz" with base \x1b[3;32m returns
+  "... \x1b[1;32mknown\x1b[0m\x1b[3;32m baz", where " baz" is plain in the no-highlight
+  render. Escape-stripped-equal, so TestHighlightingLosesNothing cannot see it. Decide
+  once whether an inner reset also clears base, and pin it — M3's model output will
+  carry resets routinely.
+- **BR-29** [Minor] `fuzz-fixture-axis-missing` fuzzDeck has no phrase longer than two tokens, so decidedEnd's hold arithmetic is never fuzzed at maxWords >= 3
+  highlightwriter_test.go:207. The class-x-position table added this round covers
+  character classes and their positions but not phrase LENGTH, which is the input
+  MaxPhraseWords feeds straight into `k := len(toks) - maxWords` and the straddle
+  pull-back. Not a live bug — I ran the axis independently (decks derived from each
+  text's own 1..4-token windows, byte-at-a-time vs one-call, 284k execs) and it is
+  clean — but it is the same "the deck is input too" rule one notch wider, and
+  `in spite of` is a realistic entry. One line in fuzzDeck plus a seed.
+
 ## Open findings
 
 - **BR-9** [Minor] `copy-pasted-helper` A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)
@@ -710,9 +825,7 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-11** [Minor] `one-absence-representation-per-seam` The Vocabulary seam has two absent-representations and four guards, one of them already unreachable
 - **BR-12** [Minor] `feature-leaks-across-namespace` A deck word used as a command name highlights inside the command namespace
 - **BR-16** [Important] `plan-record-not-updated` Plan file layout, contract rule 4 and two test names no longer match the code
-- **BR-18** [Minor] `atlas-claims-unbuilt-surface` atlas says highlightWriter wraps crlfWriter in raw mode; that is M3
 - **BR-20** [Minor] `behaviour-claimed-without-a-failing-test` The no-data-loss invariant runs only over the colour-OFF render
-- **BR-23** [Important] `release-only-what-cannot-change` decidedEnd's no-token branch still releases bytes that can grow, so a chunk splitting a word-initial multi-byte rune loses the match
-- **BR-24** [Important] `behaviour-claimed-without-a-failing-test` Four behaviours added this window are pinned by nothing, including the M2 Done-when's own enclosing-style resume
-- **BR-25** [Minor] `dead-test-scaffolding` highlightText has zero call sites after the per-region refactor, while atlas and plan both name it as the definition path
-- **BR-26** [Minor] `feature-leaks-across-namespace` admitsHighlight's region table lists 10 regions; Render produces more
+- **BR-27** [Minor] `atlas-claims-unbuilt-surface` admitsHighlight enumerates 15 regions; render.go, atlas and lessons.md say thirteen or ten
+- **BR-28** [Minor] `sgr-resume-outlives-an-inner-reset` A highlight resumes base after a reset that arrived inside the region, restyling neighbouring plain text
+- **BR-29** [Minor] `fuzz-fixture-axis-missing` fuzzDeck has no phrase longer than two tokens, so decidedEnd's hold arithmetic is never fuzzed at maxWords >= 3
