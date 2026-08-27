@@ -169,7 +169,18 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// it — highlighting sees logical text and CRLF translation applies to the
 	// final bytes, including the ones highlighting inserted.
 	hw := newHighlightWriter(out, vocabularyFor(d, opt), knownOn)
-	defer hw.Flush()
+	defer func() {
+		// REPORTED, not discarded. The writer poisons on its first downstream
+		// failure, so one failed write silently drops the REST of an answer —
+		// before M3 the same failure lost a single delta. Flush returns the
+		// poisoning error, so checking it here covers every write the stream
+		// made without checking each delta.
+		//
+		// stderr, because stdout is what just failed.
+		if err := hw.Flush(); err != nil {
+			fmt.Fprintf(errOut, "define: the answer could not be fully written: %v\n", err)
+		}
+	}()
 	out = hw
 
 	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))

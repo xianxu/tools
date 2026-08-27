@@ -267,7 +267,7 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 **Files:**
 - Create: `cmd/define/sgr.go` (planned as `highlight.go`; split out because it is
   a self-contained pure entity with its own table test)
-- Test: `cmd/define/highlight_test.go`
+- Test: `cmd/define/sgr_test.go`
 
 - [x] **Step 1: Write the failing tests.** Strategy: one table over "sequence in → resume code out", whose rows are the DISTINCTIONS (SGR sets the resume; reset clears it; a non-SGR CSI leaves it alone; an unterminated escape is retained rather than read as text). One row per rule, not one per escape code.
 
@@ -279,7 +279,7 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 **Files:**
 - Create: `cmd/define/highlightwriter.go` (planned as `highlight.go`)
-- Test: `cmd/define/highlight_test.go`
+- Test: `cmd/define/highlightwriter_test.go`
 
 - [x] **Step 1: Write the failing tests.** Strategy: one BYTE-EXACT table over the contract rules above — a known word in one call; the same word split across two `Write` calls; an escape split across two calls; a known word inside a styled run (asserting the enclosing style resumes after it); and the rule-1 ordering case, deck `hot dog` against `\x1b[1;36mhot\x1b[0m dog`, whose whole point is that the reset must not move. Assert full output bytes, per contract rule 3 — escape-stripped comparison cannot see a reorder.
 
@@ -302,7 +302,9 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
   scope, because a finished string has no structure left to consult.
 - Modify: `cmd/define/main.go` — the print site now passes `vocabularyFor(d, opt)`
   into `RenderOpts` instead of wrapping
-- Test: `cmd/define/render_test.go` or `highlight_test.go`
+- Test: `cmd/define/highlightwriter_test.go` (the definition rows sit beside the
+  writer's, since both assert rendered bytes) and `cmd/define/vocab_test.go` (the
+  entry-path enumeration)
 
 - [x] **Step 1: Write the failing test.** Render a real parsed entry with a vocabulary containing a word that appears in its *body*, assert the body occurrence is highlighted.
 
@@ -321,8 +323,9 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 ### Task 8: The answer stream
 
 **Files:**
-- Modify: `cmd/define/ask.go` (the `Stream` sink, ~:160)
-- Test: `cmd/define/askrun_test.go`
+- Modify: `cmd/define/ask.go` (the `Stream` sink)
+- Test: `cmd/define/askhighlight_test.go` (new; kept out of `askrun_test.go` so
+  the capture-derivation helper sits beside the tests that need it)
 
 - [x] **Step 1: Write the failing test — but NOT by scripting the answer.** `llmtest.Fake` cannot serve invented streamed text: `misapplied()` (`internal/llm/llmtest/fake.go:188-215`) rejects a scripted `Reply{Text}` on a streaming request with a 400, and `serveStream` (`:461-472`) always replays the committed capture. So the test must take its word FROM the capture. Add a helper that reads `stream-sample.sse`, reconstructs the full text and the delta boundaries, and returns a word that a boundary splits — the capture currently splits `rather` (`...authority r` / `ather than`) and `painstakingly` (`(painstak` / `ingly`), but derive it, do not hardcode it. Seed the vocabulary with what the helper returns. If the helper finds no split word, `t.Fatalf` with "re-record the capture or pick another" — a `t.Skip` there would let the test go quietly inert, which is the failure mode this plan's own lessons keep naming.
 
@@ -581,3 +584,42 @@ because M3 builds directly on this code.
   phrase longer than two tokens, so `MaxPhraseWords` never drove
   `k := len(toks) - maxWords` or the straddle pull-back above 2. Phrase LENGTH is
   a fixture axis too. `in spite of` added, with seeds.
+
+### 2026-08-26 — close boundary round 1 (FIX-THEN-SHIP)
+
+- **BR-30, 8th in `behaviour-claimed-without-a-failing-test`, and the sharpest of
+  the session: the rule failed on its own author.** M2 ended by writing
+  `TestEveryEntryPathHighlightsDefinitions` precisely so a render path could not
+  be added without a row. M3 then added a render SURFACE — the answer stream —
+  and did not widen it. A mutant keeping the nil/colour gate but dropping
+  `d.vocab.Load()` passed the entire suite, which in production is M2's shipped
+  Critical one surface over: streamed answers never highlight on piped stdin or
+  one-shot. **The enumeration's axis is entry path × RENDER SURFACE**, not entry
+  path alone; the table covered 3 of 6 cells while the atlas called it the guard
+  for "every render path". `TestEveryEntryPathHighlightsAnswers` adds the other
+  three, each driven with an UNLOADED store vocabulary, and the mutant now dies
+  on exactly the two paths it breaks.
+- **BR-31, 9th in the same family, naming a shape it had not yet named: an
+  assertion guarded on the run's OWN output is not an assertion until something
+  proves the guard fires.** My "interrupted mid-stream" row checked
+  `tc.cancel && got != ""` — and an already-cancelled context returns before any
+  delta, so `got` is empty and the row asserted nothing while its comment claimed
+  it pinned that no path leaves text dangling. Rewritten with an explicit
+  `wantEmpty` expectation per row and a `t.Fatal` when the observable is empty,
+  the idiom the package already uses at five sites. Its sibling: the comment
+  "which only a flush can emit" was refuted by mutation and is now corrected in
+  place rather than left as a claim.
+- **BR-32, 3rd in `copy-pasted-helper`, one word wider: the language's own
+  builtins are part of what you grep before adding a helper.** `func max` in a
+  test file shadowed the Go 1.26 builtin across the whole package test build —
+  eight existing call sites silently rebound to it while `min` beside them still
+  resolved to the builtin. Deleted.
+- **BR-33.** M2 round 3 left "what does the user see when the writer is already
+  poisoned" as an open question for this task and nothing recorded a decision.
+  Decided: REPORT it. `Flush`'s error is checked in the defer and written to
+  stderr, since the writer poisons on first failure and one failed write
+  otherwise drops the rest of an answer in silence.
+- **BR-16.** Task 5/6/7/8 `Files` blocks corrected to the files that exist.
+- Also swapped `Stall` for `JunkFrame` in the truncated row: same `ErrTruncated`
+  path, but `Stall` goes silent without closing and the row waited out the
+  client's 30s timeout — 30s to 0.01s.

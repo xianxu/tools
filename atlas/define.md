@@ -511,8 +511,14 @@ render path.** Highlighting needs the set LOADED, and `Load` used to live in
 `runEditor` — so `define <word>` and piped stdin rendered against an empty set
 and highlighted nothing, two of three entry paths dead while the suite was
 green. One function now owns "loaded, and only with colour", and
-`TestEveryEntryPathHighlightsDefinitions` is the enumeration: one row per
-process entry path, each driven with an unloaded set.
+The enumeration that
+guards it is **entry path × render surface**, not entry path alone:
+`TestEveryEntryPathHighlightsDefinitions` and
+`TestEveryEntryPathHighlightsAnswers`, each row driven with an UNLOADED set,
+because a pre-filled one begins after the hop that fills it. M3 added the answer
+surface without widening the first table, and a mutant dropping the `Load` passed
+the whole suite — the same Critical one surface over. A new surface needs its own
+rows.
 
 **The answer stream is the writer's other caller**, and the nesting order is
 fixed by what each writer needs. The raw loop has already wrapped stdout in

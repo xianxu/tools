@@ -1126,6 +1126,28 @@ exact command it named.
   conspicuously missing.
 - **When a rule recurs, the rule was too narrow — do not just re-apply it
   harder.** Twice now the fix was to widen where the enumeration STARTS.
+- **The axis is entry path × RENDER SURFACE.** I wrote the entry-path table
+  specifically so a render path could not be added without a row — and then added
+  a whole new surface (the answer stream) one milestone later and did not widen
+  it. Three of six cells, while the atlas called it the guard for "every render
+  path". A table guards the axes it enumerates and nothing else, so when you add
+  a dimension, the table is stale even though every row in it still passes.
+
+## An assertion guarded on the run's own output is not an assertion (define #21 close)
+
+A row meant to pin "an interrupted stream leaves nothing dangling" read
+`if tc.cancel && got != "" && !strings.HasSuffix(got, "\n")`. With an
+already-cancelled context `runAsk` returns before any delta, so `got` is empty,
+the guard never fires, and the row asserted nothing — while the test's own
+comment said it pinned that no path leaves text dangling.
+
+- **Guarding on the fixture is fine; guarding on the RUN's output is not.** The
+  first is a precondition you control, the second silently converts "the
+  behaviour held" into "the behaviour never happened".
+- **Write the expectation per row, including the empty one.** `wantEmpty: true`
+  is an assertion; `if got != ""` is an escape hatch.
+- **When the observable is empty, `t.Fatal`.** The package already had that idiom
+  at five sites; the vacuous row was the one place it was missing.
 
 ## The vocabulary is withheld per region, decided at the boundary (define #21 M2)
 

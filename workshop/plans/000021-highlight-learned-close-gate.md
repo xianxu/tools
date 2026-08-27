@@ -518,6 +518,128 @@ rounds:
           round: 7
       boundary: M2
       blocked: false
+    - "n": 8
+      timestamp: "2026-08-26T17:41:46-07:00"
+      agent: claude
+      dispose:
+        - id: BR-9
+          disposition: not-addressed
+          note: 'Two of three seams wrap warnTo; capture.go:132 still writes "define: " itself, and warnTo''s own comment (vocab.go:130) claims to be the one place it is written.'
+          round: 8
+        - id: BR-10
+          disposition: addressed
+          note: Verified by revert — dropping !opt.color from vocabularyFor reddens TestNoColourReadsNoDeck and TestStreamedAnswerCarriesNoEscapesWithoutColour.
+          round: 8
+        - id: BR-11
+          disposition: addressed
+          note: nil is the single representation; no memVocabulary{} fallback remains in production and the unreachable replraw.go guard is gone.
+          round: 8
+        - id: BR-12
+          disposition: addressed
+          note: Verified by revert — neutering highlightSetFor's parseCommandLine test reddens TestACommandLineIsNotHighlighted.
+          round: 8
+        - id: BR-16
+          disposition: not-addressed
+          note: 4th round. plan:270/:282 still name highlight_test.go, plan:286 still promises caller-unit counts, plan:70 still says ask.go:160, and Task 8 Steps 4 and 6 are ticked while undelivered (2 of 5 paths tabled; the Step 6 mutation reddens nothing).
+          round: 8
+        - id: BR-20
+          disposition: not-addressed
+          note: 3rd round for the vacuity guard — measured 6 of 32 corpus entries highlight, and swapping the deck for an unmatchable word leaves TestHighlightingLosesNothing green.
+          round: 8
+        - id: BR-27
+          disposition: addressed
+          note: Counts deleted from render.go and atlas/define.md; lessons.md:1139's "ten-region" is the lesson quoting its own mistake, which is the record rather than a restatement.
+          round: 8
+        - id: BR-28
+          disposition: addressed
+          note: Verified by revert — leaving base set on a reset reddens TestAnInnerResetClearsTheEnclosingStyle and TestHighlightAfterAnInnerResetDoesNotRestylePlainText.
+          round: 8
+        - id: BR-29
+          disposition: addressed
+          note: fuzzDeck.MaxPhraseWords() measured at 3 with seeds; 1.12M execs clean this round.
+          round: 8
+      findings:
+        - id: BR-30
+          severity: Important
+          title: M3 added a render surface and the entry-path enumeration written to prevent exactly this was not widened
+          detail: |-
+            This is the 8th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+            fix only this instance. Measured at HEAD: replacing vocabularyFor(d, opt) in runAsk
+            (ask.go:171) with an inline equivalent that keeps the nil/colour gate but drops
+            d.vocab.Load() passes the ENTIRE suite. In production that mutant means a streamed
+            answer never highlights on piped stdin or one-shot, since only runEditor loads —
+            BR-14's shipped Critical, one surface over. It survives because every askhighlight
+            test injects a pre-filled memVocabulary and so begins after the hop that fills it.
+            THE RULE, widened: the enumeration's axis is entry path x RENDER SURFACE, not entry
+            path alone. TestEveryEntryPathHighlightsDefinitions (vocab_test.go:242) covers 3 of
+            6 cells while atlas/define.md:517 calls it the guard for "every render path". Each
+            surface needs at least one row driven with the dependency in its real initial state;
+            verified in both directions that swapping vocab(word) for an unloaded
+            newStoreVocabulary passes on HEAD and kills the mutant.
+          family: behaviour-claimed-without-a-failing-test
+          round: 8
+        - id: BR-31
+          severity: Minor
+          title: An assertion guarded on the run's own output never fires, and two comments claim what it does not pin
+          detail: |-
+            This is the 9th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+            fix only this instance. askhighlight_test.go:143's only check sits behind
+            `tc.cancel && got != ""`, and with an already-cancelled context runAsk returns before
+            any delta, so out is empty (measured: code=0 out="" len=0) and the "interrupted
+            mid-stream" row asserts nothing — while the test's own comment says the table pins
+            that no path leaves text dangling. Same file, :163: "the capture's final characters,
+            which only a flush can emit" is refuted by mutation — deleting `defer hw.Flush()`
+            leaves that test green because the trailing Fprintln emits them. THE RULE the family
+            had not yet named: an assertion guarded on the run's OWN output is not an assertion
+            until something proves the guard fires. Measured prevalence: 4 output-conditional
+            assertions in cmd/define; three guard on a fixture the author controls and are
+            legitimate, this one is the only vacuous one. The package already owns the fix idiom
+            at 5 sites (highlightwriter_test.go:328/433/483, invariant_test.go:79,
+            dict_fake_test.go:69) — a t.Fatal when the observable is empty.
+          family: behaviour-claimed-without-a-failing-test
+          round: 8
+        - id: BR-32
+          severity: Minor
+          title: func max in askhighlight_test.go shadows the Go builtin across the whole package's test build
+          detail: |-
+            This is the 3rd finding in family `copy-pasted-helper`. Do NOT fix only this
+            instance. askhighlight_test.go:66 redeclares max(a, b int); deleting it leaves
+            `go vet ./cmd/define/` clean (verified), so it is pure shadowing on Go 1.26. Eight
+            other call sites now resolve to it — invariant_test.go:43,95, live_property_test.go
+            :51,81,101, render_test.go:235, editorloop_test.go:155 — while min beside them still
+            resolves to the builtin, so the package's two halves of the same idiom now come from
+            different places. THE RULE needs one word: the language's own builtins are part of
+            what you grep before adding a helper.
+          family: copy-pasted-helper
+          round: 8
+        - id: BR-33
+          severity: Minor
+          title: Every error highlightWriter is designed to report is discarded by its only production caller
+          detail: |-
+            ask.go:171. `fmt.Fprint(out, delta)` ignores its error and `defer hw.Flush()`
+            discards its return, while the writer poisons on first failure by contract
+            (highlightwriter.go:120) — so one downstream failure silently drops the REST of an
+            answer with no message, where before M3 it would have lost one delta. Practically
+            unreachable with an os.File, but it is exactly the question M2 round 3 left as a note
+            for Task 8 Step 4 ("what does the user see when the writer is already poisoned") and
+            nothing in the window records a decision. Same defer, related: on the `default:` path
+            the error line reaches errOut BEFORE the deferred flush pushes held text to out, so
+            the last partial word lands after the error rather than before it.
+          family: contract-error-unread-by-consumer
+          round: 8
+        - id: BR-34
+          severity: Minor
+          title: The atlas highlight section never mentions highlightSetFor, the command-namespace withhold
+          detail: |-
+            highlight.go:173 withholds the vocabulary on a command line, so a deck word named
+            like a command is not green inside "/history 7" — a real user-visible rule shipped at
+            M1 round 3. atlas/define.md's "Highlighting the words you are learning" section
+            documents every other rule in the feature and omits this one. New slug rather than
+            atlas-claims-unbuilt-surface: that family names prose asserting surface that does not
+            exist; this is the inverse, and the two need different slugs to match a recurrence.
+          family: atlas-omits-a-shipped-rule
+          round: 8
+      blocked: true
 ---
 
 # Gate ledger — tools#21 (boundary-review)
@@ -818,14 +940,85 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   clean — but it is the same "the deck is input too" rule one notch wider, and
   `in spite of` is a realistic entry. One line in fuzzDeck plus a seed.
 
+## Round 8 — 2026-08-26T17:41:46-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-9 — not-addressed — Two of three seams wrap warnTo; capture.go:132 still writes "define: " itself, and warnTo's own comment (vocab.go:130) claims to be the one place it is written.
+- BR-10 — addressed — Verified by revert — dropping !opt.color from vocabularyFor reddens TestNoColourReadsNoDeck and TestStreamedAnswerCarriesNoEscapesWithoutColour.
+- BR-11 — addressed — nil is the single representation; no memVocabulary{} fallback remains in production and the unreachable replraw.go guard is gone.
+- BR-12 — addressed — Verified by revert — neutering highlightSetFor's parseCommandLine test reddens TestACommandLineIsNotHighlighted.
+- BR-16 — not-addressed — 4th round. plan:270/:282 still name highlight_test.go, plan:286 still promises caller-unit counts, plan:70 still says ask.go:160, and Task 8 Steps 4 and 6 are ticked while undelivered (2 of 5 paths tabled; the Step 6 mutation reddens nothing).
+- BR-20 — not-addressed — 3rd round for the vacuity guard — measured 6 of 32 corpus entries highlight, and swapping the deck for an unmatchable word leaves TestHighlightingLosesNothing green.
+- BR-27 — addressed — Counts deleted from render.go and atlas/define.md; lessons.md:1139's "ten-region" is the lesson quoting its own mistake, which is the record rather than a restatement.
+- BR-28 — addressed — Verified by revert — leaving base set on a reset reddens TestAnInnerResetClearsTheEnclosingStyle and TestHighlightAfterAnInnerResetDoesNotRestylePlainText.
+- BR-29 — addressed — fuzzDeck.MaxPhraseWords() measured at 3 with seeds; 1.12M execs clean this round.
+
+### Raised
+
+- **BR-30** [Important] `behaviour-claimed-without-a-failing-test` M3 added a render surface and the entry-path enumeration written to prevent exactly this was not widened
+  This is the 8th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+  fix only this instance. Measured at HEAD: replacing vocabularyFor(d, opt) in runAsk
+  (ask.go:171) with an inline equivalent that keeps the nil/colour gate but drops
+  d.vocab.Load() passes the ENTIRE suite. In production that mutant means a streamed
+  answer never highlights on piped stdin or one-shot, since only runEditor loads —
+  BR-14's shipped Critical, one surface over. It survives because every askhighlight
+  test injects a pre-filled memVocabulary and so begins after the hop that fills it.
+  THE RULE, widened: the enumeration's axis is entry path x RENDER SURFACE, not entry
+  path alone. TestEveryEntryPathHighlightsDefinitions (vocab_test.go:242) covers 3 of
+  6 cells while atlas/define.md:517 calls it the guard for "every render path". Each
+  surface needs at least one row driven with the dependency in its real initial state;
+  verified in both directions that swapping vocab(word) for an unloaded
+  newStoreVocabulary passes on HEAD and kills the mutant.
+- **BR-31** [Minor] `behaviour-claimed-without-a-failing-test` An assertion guarded on the run's own output never fires, and two comments claim what it does not pin
+  This is the 9th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+  fix only this instance. askhighlight_test.go:143's only check sits behind
+  `tc.cancel && got != ""`, and with an already-cancelled context runAsk returns before
+  any delta, so out is empty (measured: code=0 out="" len=0) and the "interrupted
+  mid-stream" row asserts nothing — while the test's own comment says the table pins
+  that no path leaves text dangling. Same file, :163: "the capture's final characters,
+  which only a flush can emit" is refuted by mutation — deleting `defer hw.Flush()`
+  leaves that test green because the trailing Fprintln emits them. THE RULE the family
+  had not yet named: an assertion guarded on the run's OWN output is not an assertion
+  until something proves the guard fires. Measured prevalence: 4 output-conditional
+  assertions in cmd/define; three guard on a fixture the author controls and are
+  legitimate, this one is the only vacuous one. The package already owns the fix idiom
+  at 5 sites (highlightwriter_test.go:328/433/483, invariant_test.go:79,
+  dict_fake_test.go:69) — a t.Fatal when the observable is empty.
+- **BR-32** [Minor] `copy-pasted-helper` func max in askhighlight_test.go shadows the Go builtin across the whole package's test build
+  This is the 3rd finding in family `copy-pasted-helper`. Do NOT fix only this
+  instance. askhighlight_test.go:66 redeclares max(a, b int); deleting it leaves
+  `go vet ./cmd/define/` clean (verified), so it is pure shadowing on Go 1.26. Eight
+  other call sites now resolve to it — invariant_test.go:43,95, live_property_test.go
+  :51,81,101, render_test.go:235, editorloop_test.go:155 — while min beside them still
+  resolves to the builtin, so the package's two halves of the same idiom now come from
+  different places. THE RULE needs one word: the language's own builtins are part of
+  what you grep before adding a helper.
+- **BR-33** [Minor] `contract-error-unread-by-consumer` Every error highlightWriter is designed to report is discarded by its only production caller
+  ask.go:171. `fmt.Fprint(out, delta)` ignores its error and `defer hw.Flush()`
+  discards its return, while the writer poisons on first failure by contract
+  (highlightwriter.go:120) — so one downstream failure silently drops the REST of an
+  answer with no message, where before M3 it would have lost one delta. Practically
+  unreachable with an os.File, but it is exactly the question M2 round 3 left as a note
+  for Task 8 Step 4 ("what does the user see when the writer is already poisoned") and
+  nothing in the window records a decision. Same defer, related: on the `default:` path
+  the error line reaches errOut BEFORE the deferred flush pushes held text to out, so
+  the last partial word lands after the error rather than before it.
+- **BR-34** [Minor] `atlas-omits-a-shipped-rule` The atlas highlight section never mentions highlightSetFor, the command-namespace withhold
+  highlight.go:173 withholds the vocabulary on a command line, so a deck word named
+  like a command is not green inside "/history 7" — a real user-visible rule shipped at
+  M1 round 3. atlas/define.md's "Highlighting the words you are learning" section
+  documents every other rule in the feature and omits this one. New slug rather than
+  atlas-claims-unbuilt-surface: that family names prose asserting surface that does not
+  exist; this is the inverse, and the two need different slugs to match a recurrence.
+
 ## Open findings
 
 - **BR-9** [Minor] `copy-pasted-helper` A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)
-- **BR-10** [Minor] `io-for-a-disabled-feature` voc.Load() reads the whole deck even with -no-color, where nothing can consume it
-- **BR-11** [Minor] `one-absence-representation-per-seam` The Vocabulary seam has two absent-representations and four guards, one of them already unreachable
-- **BR-12** [Minor] `feature-leaks-across-namespace` A deck word used as a command name highlights inside the command namespace
 - **BR-16** [Important] `plan-record-not-updated` Plan file layout, contract rule 4 and two test names no longer match the code
 - **BR-20** [Minor] `behaviour-claimed-without-a-failing-test` The no-data-loss invariant runs only over the colour-OFF render
-- **BR-27** [Minor] `atlas-claims-unbuilt-surface` admitsHighlight enumerates 15 regions; render.go, atlas and lessons.md say thirteen or ten
-- **BR-28** [Minor] `sgr-resume-outlives-an-inner-reset` A highlight resumes base after a reset that arrived inside the region, restyling neighbouring plain text
-- **BR-29** [Minor] `fuzz-fixture-axis-missing` fuzzDeck has no phrase longer than two tokens, so decidedEnd's hold arithmetic is never fuzzed at maxWords >= 3
+- **BR-30** [Important] `behaviour-claimed-without-a-failing-test` M3 added a render surface and the entry-path enumeration written to prevent exactly this was not widened
+- **BR-31** [Minor] `behaviour-claimed-without-a-failing-test` An assertion guarded on the run's own output never fires, and two comments claim what it does not pin
+- **BR-32** [Minor] `copy-pasted-helper` func max in askhighlight_test.go shadows the Go builtin across the whole package's test build
+- **BR-33** [Minor] `contract-error-unread-by-consumer` Every error highlightWriter is designed to report is discarded by its only production caller
+- **BR-34** [Minor] `atlas-omits-a-shipped-rule` The atlas highlight section never mentions highlightSetFor, the command-namespace withhold

@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+
 	"encoding/json"
+	"github.com/xianxu/tools/cmd/define/store"
 	"strings"
 	"testing"
 
@@ -63,13 +65,6 @@ func splitWordInCapture(t *testing.T, name string) string {
 	return ""
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
 // M3's headline behaviour: a deck word in a streamed answer highlights even when
 // the model delivers it in two pieces.
 func TestStreamedAnswerHighlightsAWordSplitAcrossDeltas(t *testing.T) {
@@ -113,16 +108,23 @@ func TestEveryStreamExitPathFlushes(t *testing.T) {
 	word := splitWordInCapture(t, streamCapture)
 
 	for _, tc := range []struct {
-		name   string
-		script func(f *llmtest.Fake)
-		cancel bool
+		name      string
+		script    func(f *llmtest.Fake)
+		cancel    bool
+		wantEmpty bool
 	}{
 		{"clean completion", func(f *llmtest.Fake) {
 			f.Script("", llmtest.Reply{Capture: streamCapture})
-		}, false},
-		{"interrupted mid-stream", func(f *llmtest.Fake) {
+		}, false, false},
+		{"cancelled before any delta", func(f *llmtest.Fake) {
 			f.Script("", llmtest.Reply{Capture: streamCapture})
-		}, true},
+		}, true, true},
+		// JunkFrame rather than Stall: both classify as ErrTruncated, but Stall
+		// goes silent WITHOUT closing and the row then waits out the client's
+		// 30s timeout. Same path, two orders of magnitude cheaper.
+		{"truncated mid-answer", func(f *llmtest.Fake) {
+			f.Script("", llmtest.Reply{Capture: streamCapture, JunkFrame: true})
+		}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, fake, _, _ := askRig(t)
@@ -138,13 +140,28 @@ func TestEveryStreamExitPathFlushes(t *testing.T) {
 			var out, errOut bytes.Buffer
 			runAsk(ctx, d, options{color: true}, &session{}, question{text: "what is obsequious?"}, &out, &errOut)
 
-			// Nothing may be left held. The writer's own accounting is the
-			// observable: after a flush there is no pending text.
-			if got := out.String(); tc.cancel && got != "" && !strings.HasSuffix(got, "\n") {
-				t.Errorf("interrupted path left text unterminated (unflushed?): %q", got)
+			got := out.String()
+			if tc.wantEmpty {
+				// The row's whole claim. An already-cancelled context returns
+				// before any delta, so guarding an assertion on `got != ""`
+				// would make this row assert NOTHING — which is what the first
+				// version did while its comment claimed otherwise.
+				if got != "" {
+					t.Errorf("a stream that never delivered wrote %q", got)
+				}
+				return
 			}
-			if !tc.cancel && !strings.Contains(out.String(), knownOn+word) {
-				t.Errorf("clean path did not flush the highlight: %q", out.String())
+			if got == "" {
+				t.Fatal("no output at all — this row would assert nothing")
+			}
+			if !strings.HasSuffix(got, "\n") {
+				t.Errorf("the answer was left unterminated: %q", got)
+			}
+			// The split word only arrives on a stream that ran to completion; a
+			// truncated one stops before it. Asserting it unconditionally would
+			// be asserting the fixture, not the behaviour.
+			if strings.Contains(stripANSI(got), word) && !strings.Contains(got, knownOn+word) {
+				t.Errorf("the word arrived but was not highlighted: %q", got)
 			}
 		})
 	}
@@ -160,9 +177,13 @@ func TestTheLastWordOfAnAnswerSurvives(t *testing.T) {
 	var out, errOut bytes.Buffer
 	runAsk(t.Context(), d, options{color: true}, &session{}, question{text: "q?"}, &out, &errOut)
 
-	// The capture's final characters, which only a flush can emit.
+	// The capture's final characters. NOT "which only a flush can emit" — the
+	// first version of this comment said that and mutation refutes it: deleting
+	// the deferred Flush leaves this green, because runAsk's trailing Fprintln
+	// supplies a newline that releases the hold. What this pins is that the tail
+	// arrives, which is worth pinning on its own.
 	if !strings.Contains(out.String(), "given insincerely.") {
-		t.Errorf("the answer's tail was never flushed: %q", out.String())
+		t.Errorf("the answer's tail never arrived: %q", out.String())
 	}
 }
 
@@ -206,5 +227,63 @@ func TestHighlightingNestsInsideCRLFTranslation(t *testing.T) {
 	// highlighted bytes rather than before them.
 	if strings.Count(got, "\n") != strings.Count(got, "\r\n") {
 		t.Errorf("a bare newline escaped CRLF translation: %q", got)
+	}
+}
+
+// The enumeration's axis is entry path x RENDER SURFACE, not entry path alone.
+//
+// TestEveryEntryPathHighlightsDefinitions covers the DEFINITION surface. M3 added
+// a second one — the answer stream — and did not widen that table, which is how a
+// mutant that keeps the nil/colour gate but drops d.vocab.Load() passed the whole
+// suite: in production it means a streamed answer never highlights on piped stdin
+// or one-shot, since only runEditor loads. That is M2's shipped Critical, one
+// surface over, and the guard written to prevent it did not reach.
+//
+// Every row drives an UNLOADED store vocabulary, because a pre-filled one begins
+// after the hop that fills it.
+func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
+	// The capture answers a question about "obsequious" and says the word.
+	const inAnswer = "Obsequious"
+
+	newDeck := func(t *testing.T) Vocabulary {
+		t.Helper()
+		st := store.NewMem()
+		if err := st.Upsert(store.Word{Text: inAnswer}); err != nil {
+			t.Fatal(err)
+		}
+		return newStoreVocabulary(st, nil) // deliberately NOT loaded
+	}
+
+	for _, tc := range []struct {
+		name string
+		run  func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer)
+	}{
+		{"one-shot: define '?question'", func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer) {
+			ask(t.Context(), d, opt, &session{}, out, errOut, question{text: "what is obsequious?", forced: true})
+		}},
+		{"piped stdin", func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer) {
+			replLines(t.Context(), nil, d, opt, strings.NewReader("?what is obsequious\n"), out, errOut, true, false)
+		}},
+		{"raw editor", func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer) {
+			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt,
+				func(run func()) error { run(); return nil }, func() {}, out, errOut)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, fake, _, _ := askRig(t)
+			fake.Script("", llmtest.Reply{Capture: streamCapture})
+			d.dict = testDict(t)
+			d.audio = noAudioSource{}
+			d.player = &fakePlayer{}
+			d.stdinIsTerminal = func() bool { return true }
+			d.vocab = newDeck(t)
+
+			var out, errOut bytes.Buffer
+			tc.run(t, d, options{color: true, times: 1, locale: "us", tty: true, noAudio: true}, &out, &errOut)
+
+			if !strings.Contains(out.String(), knownOn+inAnswer) {
+				t.Errorf("no highlight in the answer on this entry path: %q", out.String())
+			}
+		})
 	}
 }

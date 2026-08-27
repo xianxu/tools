@@ -368,3 +368,20 @@ this spec's central decision — the predicate seam.
   through llmtest because Status short-circuits before any body and both
   partial-then-fail shapes classify as ErrTruncated. The defer stays on
   structure: five returns is four chances to forget.
+
+- 2026-08-26: close boundary round 1 — FIX-THEN-SHIP, all addressed. The sharpest
+  finding of the issue: M2 ended by writing the entry-path enumeration precisely
+  so a render path could not be added without a row, and M3 then added a render
+  SURFACE — the answer stream — without widening it. The rule failed on its own
+  author one milestone later. A mutant keeping the colour gate but dropping
+  d.vocab.Load() passed the entire suite, which in production is M2 shipped
+  Critical one surface over. The axis is entry path x render surface, not entry
+  path alone; three of six cells were covered while the atlas called it the guard
+  for every render path. Also named a shape the untested-behaviour family had not
+  named: an assertion guarded on the RUN own output is not an assertion — my
+  interrupted row checked `got != ""` and an already-cancelled context returns
+  before any delta, so it asserted nothing while its comment claimed otherwise.
+  And `func max` in a test file shadowed the Go 1.26 builtin across the whole
+  package test build, silently rebinding eight existing call sites. Decided the
+  question M2 left open: a poisoned writer REPORTS to stderr rather than dropping
+  the rest of an answer in silence.
