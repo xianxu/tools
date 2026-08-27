@@ -59,7 +59,9 @@ Enter or space to reveal, d = remove from deck, Ctrl-C to stop
 
 Words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days — and a
 miss drops one step rather than all the way back. `-count` bounds a sitting
-(default 20). No key and no network: the deck and the dictionary are enough.
+(default 20). No API key: the deck and the dictionary are enough, and the review
+loop never reaches for the model. Pronunciation audio IS fetched over the
+network as each word is revealed — `--no-audio` makes a sitting fully offline.
 
 On a terminal, `define` with no word opens a line editor:
 

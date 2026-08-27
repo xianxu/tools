@@ -122,25 +122,37 @@ func TestInterruptPreservesRecordedEvents(t *testing.T) {
 	}
 }
 
-// THE DONE-WHEN: a full session with the LLM seam unavailable.
+// THE DONE-WHEN: a full session that NEVER REACHES for the model.
 //
-// Asserted with a client that fails, not by unsetting an env var — the point is
-// that the loop degrades, and form 2.1 needs no model at all, so it should never
-// reach for one.
+// This used to point the seam at a dead address and assert the session finished
+// — which a session using a WORKING model would also do, since d.newLLM is read
+// only by ask.go and reflect.go and the play path never touches it. The seam was
+// unreachable from the code under test, so the test was byte-identical in
+// meaning to TestFullSessionRecordsOneEventPerAnswer and the Done-when row it
+// stood for could not fail (BR-48).
+//
+// The discriminating double is this repo's refusingDict shape: a seam that fails
+// the test WHEN USED. "Degrades when the model is unavailable" and "never asks"
+// are different claims, and only the second one is form 2.1's.
+//
+// Scope, measured: this drives playSession, so it pins the SESSION. Adding the
+// same construction to runPlay leaves it green — the first mutation of this test
+// did exactly that and passed. runPlay's own reach is pinned by its coverage,
+// not here.
 func TestSessionRunsWithTheModelUnavailable(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic")
-	// A seam that RESOLVES but fails on every call — the Done-when is explicit
-	// that this is asserted with a failing client, not by unsetting an env var:
-	// the point is that the loop degrades, not that config resolution does.
-	d.getenv = envFor("http://127.0.0.1:1") // nothing listens there
-	d.newLLM = llm.New
+	d.getenv = envFor("http://127.0.0.1:1")
+	d.newLLM = func(llm.Config) llm.Client {
+		t.Error("the review loop constructed a model client; form 2.1 needs no model at all")
+		return llm.New(llm.Config{})
+	}
 	qs := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
 	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\ry"), rawTerm{}, &out, &errb)
 
 	if len(reviewEvents(t, st)) != 1 {
-		t.Error("the session did not complete with no model configured")
+		t.Error("the session did not complete")
 	}
 }
 
@@ -570,4 +582,53 @@ func TestEmptyQueueNamesItsCause(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Every claim in this file's neighbourhood that had NO named test, pinned
+// together (BR-48).
+//
+// The enumeration these came from was built by running `go tool cover` over the
+// close window and reading the zero-count blocks, not by remembering what had
+// been written — which is how it stayed at "five sites" for four rounds while
+// the true count grew.
+func TestClaimsWithoutTestsUntilNow(t *testing.T) {
+	// play_loop.go:182 — space reveals. README:54 and draw() both promise this to
+	// the learner, and nothing asserted it: Enter was covered, space was not.
+	t.Run("space reveals, like Enter", func(t *testing.T) {
+		got, ok := toInput(Key{Kind: KeyRune, Rune: ' '})
+		if !ok || got.Kind != play.InputReveal {
+			t.Errorf("space produced (%+v, %v), want an InputReveal — README:54 promises it", got, ok)
+		}
+	})
+
+	// main.go:333 — the guard added for BR-46, itself shipped unpinned, which is
+	// what made BR-48 the sixth in its family rather than the fifth.
+	t.Run("-count rejects a negative", func(t *testing.T) {
+		d, _, _ := playRig(t)
+		var out, errb bytes.Buffer
+		code := run(t.Context(), []string{"-no-audio", "-count", "-1", "--play"},
+			d, strings.NewReader(""), &out, &errb)
+		if code != 2 {
+			t.Errorf("exit = %d, want 2 — a negative budget is a typo, like -times and -sound", code)
+		}
+		if !strings.Contains(errb.String(), "-count must not be negative") {
+			t.Errorf("stderr = %q, want it to name the flag", errb.String())
+		}
+	})
+
+	// main.go:425 — the --play dispatch itself. BR-14 fixed the argument guard
+	// here and the dispatch stayed uncovered, so "define --play" reaching the
+	// review loop at all rested on nothing.
+	t.Run("--play reaches the review loop", func(t *testing.T) {
+		d, _, _ := playRig(t) // no words: the empty-deck message proves runPlay ran
+		var out, errb bytes.Buffer
+		code := run(t.Context(), []string{"-no-audio", "--play"},
+			d, strings.NewReader(""), &out, &errb)
+		if code != 0 {
+			t.Fatalf("exit = %d, want 0; stderr=%q", code, errb.String())
+		}
+		if !strings.Contains(out.String(), "the deck is empty") {
+			t.Errorf("stdout = %q — --play did not reach runPlay", out.String())
+		}
+	})
 }

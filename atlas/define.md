@@ -1141,9 +1141,12 @@ N at or below that would make "mastered" mean "arrived".
 
 **The package is pure, and that is ENFORCED by three guards.** `schedule` imports
 `store` and pure standard-library packages only; one guard reads the import set
-against an allowlist, and a second greps for every wall-clock reader
-(`time.Now`, `time.Since`, `time.Until`, `time.After`, the timer constructors) —
-the hazard an import list structurally cannot see, since `time` is legitimately
+against an allowlist, a second greps for every wall-clock reader
+(`time.Now`, `time.Since`, `time.Until`, `time.After`, the timer constructors),
+and a third holds `store` to its pure types and helpers — allowlisting the
+package would otherwise grant the disk along with it. The second exists because
+it is the hazard an import list structurally cannot see, since `time` is
+legitimately
 imported for its types. The allowlist itself was wrong first and fired on `sort`:
 it said "exactly two imports" when the claim is "no IO and no hidden clock", and
 a guard that reddens on correct code invites deleting the guard. The plan's first draft claimed a test needing a
@@ -1176,8 +1179,8 @@ reading is a way to sit down to four hundred words by accident.
 ## Review sessions: how a word is asked
 
 **`play` is the second pure package, and `puretest` is why there will not be a
-third copy of the guards.** `#5` wrote three purity guards inline; `#6` needs the
-same three and `#7`/`#12`/`#13` each add a form package, so they were extracted
+third copy of the guards.** `#5` wrote three purity guards inline; `#6` needs two
+of them and `#7`/`#12`/`#13` each add a form package, so they were extracted
 into `cmd/define/puretest` — one body, many callers, the shape `storetest.Suite`
 already established here. Each guard sees a hazard the others structurally
 cannot: an import allowlist misses that allowlisting `store` grants the disk with

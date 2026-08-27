@@ -1778,3 +1778,41 @@ it encoded the conflation rather than catching it.
 **Rule:** when a result is empty, the message names WHICH cause produced it, and
 the reassuring sentence is reserved for the reassuring case. A message shared by
 an error path and a success path will be read as the success.
+
+## The claim → test map, and the check that makes it real (#6, BR-48)
+
+BR-48 was the SIXTH finding in `claim-without-failing-test` and the rule behind
+it had never actually been executed: *a claim in an artifact is complete only
+when a NAMED test fails without it, and the map from claim to test is written
+where the claim lives.*
+
+Two things made this the sharpest finding of the issue.
+
+**The commit that closed one unpinned fix shipped another.** `-count must not be
+negative`, added to fix BR-46, went in at coverage 0 — so the round that closed
+the family's previous instance created a new member of it. A fix is not done
+because the defect is gone; it is done when something fails without it.
+
+**A test can configure a seam the code under test cannot reach.**
+`TestSessionRunsWithTheModelUnavailable` set `d.newLLM` to a failing client and
+asserted the session finished — but the play path never reads `d.newLLM` at all,
+so a WORKING client produced the same result. The test was byte-identical in
+meaning to the one above it, and the Done-when row it stood for could not fail.
+"Degrades when the model is unavailable" and "never reaches for a model" are
+different claims; only a double that fails WHEN USED asserts the second.
+
+**And then, writing the map: four of the fourteen test names I typed did not
+exist.** In the artifact whose whole purpose was to close the
+write-it-from-memory family. A loop over `grep -qE "func <name>\("` caught them.
+
+**Rules:**
+1. Build the enumeration by RUNNING `go tool cover` over the close window and
+   reading the zero-count blocks. Never from memory of what was written.
+2. Every name you write into an artifact — test, function, file, flag — gets
+   grepped before the artifact is committed. The error rate on names typed from
+   memory in this session was 4 in 14.
+3. A seam a test configures must be READ by the code under test. Check with
+   grep; an unreachable seam makes the assertion vacuous while looking rigorous.
+4. State the SCOPE a mutation proved. Mutating `runPlay` left the session test
+   green — correctly, since it drives `playSession`. Knowing which is which is
+   the difference between a pin and a belief.

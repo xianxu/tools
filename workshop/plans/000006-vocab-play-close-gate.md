@@ -1157,6 +1157,69 @@ rounds:
           family: duplicated-guard-logic
           round: 11
       blocked: false
+    - "n": 12
+      timestamp: "2026-08-27T14:07:50-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: not-addressed
+          note: 'Measured again on the shipped tree: main.go:425.15,431.3 at coverage 0, runPlay at 33.3%. Only the usage-error path enters run() with --play.'
+          round: 12
+        - id: BR-21
+          disposition: not-addressed
+          note: 'No row-to-test map exists in issue or plan, and the enumeration has grown: main.go:333 (-count negative guard, added this round) and the LLM Done-when row join site 4 and toInput''s space branch as unpinned.'
+          round: 12
+        - id: BR-25
+          disposition: not-addressed
+          note: play_loop.go:217-220 still does not say a stale entry costs a slot, and only the all-fail path (missingDict) enters the branch; no partial-failure fixture exists.
+          round: 12
+        - id: BR-26
+          disposition: not-addressed
+          note: No mode-pair guard added. Re-verified that openStore branches only on noCapture, so -raw --play runs a full session and every CaptureReview returns at decideCapture == captureNothing with no message.
+          round: 12
+        - id: BR-28
+          disposition: not-addressed
+          note: README.md:41-62 unchanged; "No key and no network" is now contradicted by playSession's OutcomeReveal branch, which fetches and plays audio by default.
+          round: 12
+        - id: BR-29
+          disposition: not-addressed
+          note: atlas/define.md:1180 still says "#6 needs the same three", contradicted at :1187; :1142 says three and enumerates two. The other four artifacts are correct.
+          round: 12
+        - id: BR-45
+          disposition: addressed
+          note: TestPTYPlayRendersEveryLineAtColumnZero exists over the real pty harness and asserts the one observable only a terminal produces; I could not execute it here (pty.Start returns "operation not permitted"), so this rests on reading, not running.
+          round: 12
+        - id: BR-46
+          disposition: addressed
+          note: emptyQueueReason is table-tested including the reserved-sentence assertion, and argument-swap at the call site reddens TestEmptyQueueExitsZero; the negative-count guard it also added is unpinned and folded into the finding below.
+          round: 12
+        - id: BR-47
+          disposition: addressed
+          note: detachedInterrupts is one body with both callers, 100% covered via repl, and grep for WithoutCancel returns exactly one production site.
+          round: 12
+      findings:
+        - id: BR-48
+          severity: Important
+          title: The unpinned-claim enumeration is still incomplete, and the round that closed the family's last instance created a new member of it
+          detail: |-
+            This is the 6th finding in family claim-without-failing-test. Do NOT fix only these sites — the rule
+            is BR-21's and it has never been executed: a claim in an artifact is complete only when a NAMED test
+            in the tree fails without it, and the map from claim to test is written down where the claim lives.
+            Measured with go tool cover on the shipped tree, the enumeration BR-21 called five sites is at least
+            seven. Two are new to this round. (a) main.go:333.16,336.3, the "-count must not be negative" guard
+            added by d0ed783 for BR-46, is at coverage 0 — the commit that closed one unpinned fix shipped
+            another. (b) play_loop_test.go:130, TestSessionRunsWithTheModelUnavailable, sets d.getenv and
+            d.newLLM, but grep shows newLLM is read only by ask.go:188 and reflect.go:272, never by the play
+            path — so the seam the test configures is unreachable from the code under test and the assertion is
+            byte-identical to TestFullSessionRecordsOneEventPerAnswer's. The ticked Done-when row it stands for
+            ("the loop must never reach for it") therefore cannot fail; the discriminating double is this repo's
+            own refusingDict shape, a newLLM whose client calls t.Fatal when used. Still open from BR-21's own
+            list: main.go:425 (--play dispatch) and play_loop.go:182 (toInput's space branch, which both
+            README:54 and draw() promise the learner). ARCH-PURPOSE: the deliverable is the enumeration, built
+            by running go tool cover over the window and pasting what it returned, not the two sites named here.
+          family: claim-without-failing-test
+          round: 12
+      blocked: false
 ---
 
 # Gate ledger — tools#6 (boundary-review)
@@ -1730,6 +1793,39 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   records the PQ-6 reasoning a third copy would have to re-derive. Consolidation: detachedInterrupts(ctx, d)
   returning (ctx, *interrupter, cancel). ARCH-DRY.
 
+## Round 12 — 2026-08-27T14:07:50-07:00 (claude) — passed
+
+### Disposed
+
+- BR-13 — not-addressed — Measured again on the shipped tree: main.go:425.15,431.3 at coverage 0, runPlay at 33.3%. Only the usage-error path enters run() with --play.
+- BR-21 — not-addressed — No row-to-test map exists in issue or plan, and the enumeration has grown: main.go:333 (-count negative guard, added this round) and the LLM Done-when row join site 4 and toInput's space branch as unpinned.
+- BR-25 — not-addressed — play_loop.go:217-220 still does not say a stale entry costs a slot, and only the all-fail path (missingDict) enters the branch; no partial-failure fixture exists.
+- BR-26 — not-addressed — No mode-pair guard added. Re-verified that openStore branches only on noCapture, so -raw --play runs a full session and every CaptureReview returns at decideCapture == captureNothing with no message.
+- BR-28 — not-addressed — README.md:41-62 unchanged; "No key and no network" is now contradicted by playSession's OutcomeReveal branch, which fetches and plays audio by default.
+- BR-29 — not-addressed — atlas/define.md:1180 still says "#6 needs the same three", contradicted at :1187; :1142 says three and enumerates two. The other four artifacts are correct.
+- BR-45 — addressed — TestPTYPlayRendersEveryLineAtColumnZero exists over the real pty harness and asserts the one observable only a terminal produces; I could not execute it here (pty.Start returns "operation not permitted"), so this rests on reading, not running.
+- BR-46 — addressed — emptyQueueReason is table-tested including the reserved-sentence assertion, and argument-swap at the call site reddens TestEmptyQueueExitsZero; the negative-count guard it also added is unpinned and folded into the finding below.
+- BR-47 — addressed — detachedInterrupts is one body with both callers, 100% covered via repl, and grep for WithoutCancel returns exactly one production site.
+
+### Raised
+
+- **BR-48** [Important] `claim-without-failing-test` The unpinned-claim enumeration is still incomplete, and the round that closed the family's last instance created a new member of it
+  This is the 6th finding in family claim-without-failing-test. Do NOT fix only these sites — the rule
+  is BR-21's and it has never been executed: a claim in an artifact is complete only when a NAMED test
+  in the tree fails without it, and the map from claim to test is written down where the claim lives.
+  Measured with go tool cover on the shipped tree, the enumeration BR-21 called five sites is at least
+  seven. Two are new to this round. (a) main.go:333.16,336.3, the "-count must not be negative" guard
+  added by d0ed783 for BR-46, is at coverage 0 — the commit that closed one unpinned fix shipped
+  another. (b) play_loop_test.go:130, TestSessionRunsWithTheModelUnavailable, sets d.getenv and
+  d.newLLM, but grep shows newLLM is read only by ask.go:188 and reflect.go:272, never by the play
+  path — so the seam the test configures is unreachable from the code under test and the assertion is
+  byte-identical to TestFullSessionRecordsOneEventPerAnswer's. The ticked Done-when row it stands for
+  ("the loop must never reach for it") therefore cannot fail; the discriminating double is this repo's
+  own refusingDict shape, a newLLM whose client calls t.Fatal when used. Still open from BR-21's own
+  list: main.go:425 (--play dispatch) and play_loop.go:182 (toInput's space branch, which both
+  README:54 and draw() promise the learner). ARCH-PURPOSE: the deliverable is the enumeration, built
+  by running go tool cover over the window and pasting what it returned, not the two sites named here.
+
 ## Open findings
 
 - **BR-13** [Important] `dead-entry-path` The --play and -count flag wiring at main.go:369 has zero test coverage, the class #21 already shipped twice
@@ -1738,6 +1834,4 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-26** [Important] `mode-silently-ignores-argument` Mode flags are guarded against a word but not against each other, and "define -raw --play" runs a full session that records nothing
 - **BR-28** [Minor] `docs-not-updated-for-new-surface` README's new --play section never mentions that the pronunciation plays on every reveal, or that -no-audio applies to a session
 - **BR-29** [Important] `plan-table-contradicts-code` play runs TWO purity guards, but question.go, purity_test.go and the atlas all still claim three
-- **BR-45** [Important] `missing-live-conformance-check` --play is the newest raw-terminal surface and the only one with no pty conformance test, though the harness already exists
-- **BR-46** [Minor] `budget-counted-before-filter` define --play -count 0 reports "nothing due today", naming the schedule for an empty queue the budget produced
-- **BR-47** [Minor] `duplicated-guard-logic` play_loop.go:38-47 is a verbatim copy of repl.go:192-201, the detach-plus-interrupter-sink block
+- **BR-48** [Important] `claim-without-failing-test` The unpinned-claim enumeration is still incomplete, and the round that closed the family's last instance created a new member of it

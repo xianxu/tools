@@ -1,12 +1,13 @@
 ---
 id: 000006
-status: working
+status: codecomplete
 deps: ["tools#3", "tools#5"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-27
 estimate_hours: 6.15
 started: 2026-08-27T08:15:55-07:00
+actual_hours: 8.09
 ---
 
 # define --play: review loop + form 2.1 quick pass
@@ -59,7 +60,54 @@ The deck and the schedule are inert without a way to sit down and review.
       failing. Relocated from #11 on 2026-08-22: it names `--play`, so it belongs
       to the issue that owns `--play`. Asserted with a client returning
       `llm.ErrUnavailable`, not by unsetting an env var — the point is that the
-      loop degrades, not that config resolution does.
+      loop degrades, not that config resolution does. **Revised at the close:**
+      "degrades when the model is unavailable" and "never reaches for a model"
+      are different claims, and only the second is form 2.1's. A failing client
+      asserts neither, because the play path never reads `d.newLLM` at all — the
+      seam was unreachable from the code under test. Now asserted with a `newLLM`
+      that fails the test when CONSTRUCTED (BR-48).
+
+### The claim → test map
+
+BR-48's rule, and the deliverable it actually asked for: a claim is complete only
+when a NAMED test fails without it. Built by running `go tool cover` over
+`4cac0b95..HEAD` and reading the zero-count blocks — not from memory, which is
+how this list sat at "five sites" for four rounds while the real count grew.
+
+| claim | pinned by | mutation that reddens it |
+|---|---|---|
+| one event per answer | `TestFullSessionRecordsOneEventPerAnswer` | drop the record outcome |
+| a skip records nothing | `TestSkippedVerdictRecordsNothing` | emit a record on skip |
+| audio before reveal, `--no-audio` silences | `TestRevealPlaysThePronunciationByDefault`, `TestNoAudioSilencesTheSession` | invert the flag |
+| `-count` bounds the sitting | `TestCountBoundsTheSession` | ignore `opt.count` |
+| **`-count` rejects a negative** | `TestClaimsWithoutTestsUntilNow/-count_rejects_a_negative` | delete the guard → exit 0 not 2 |
+| every newline is CRLF | `TestPTYPlayRendersEveryLineAtColumnZero` (pty) | unwrap `crlfWriter` → 21 bare newlines |
+| `d` removes the word, keeps events | `TestDropRemovesFromDeckButKeepsEvents`, `TestDropRecordsNoReview` | drop the delete |
+| an empty queue exits 0, naming its cause | `TestEmptyQueueExitsZero`, `TestEmptyQueueNamesItsCause` | swap the reason arms |
+| no deck → one line, exit 0 | `TestNoDeckExitsZeroWithAMessage` | key on the env var |
+| interrupt preserves events | `TestInterruptPreservesRecordedEvents` | cancel before recording |
+| a second form needs no loop change | `TestSessionIsFormAgnostic`, `TestDropWorksForAnyForm` | move `Grade` off the form |
+| **never reaches for the model** | `TestSessionRunsWithTheModelUnavailable` | construct a client in `playSession` |
+| **space reveals** (README:54, `draw()`) | `TestClaimsWithoutTestsUntilNow/space_reveals` | make `' '` an ordinary rune |
+| **`--play` reaches the loop** | `TestClaimsWithoutTestsUntilNow/--play_reaches_the_review_loop` | return 0 from the dispatch |
+
+Bold rows are the ones that had NO test until this close. Every mutation listed
+was RUN, and each reddens its own row by name.
+
+**Four of the fourteen names in this table were wrong when first typed** —
+written from memory of what the tests were called, in the very artifact meant to
+close the write-it-from-memory family. A loop over `grep -qE "func <name>\("`
+found them; the corrected names are what is above. That check is the only reason
+this table is worth anything, and it belongs in the habit, not in this note.
+
+**Known unpinned, deliberately.** `store/yaml.go`'s `f.Stat()` branch: `f` comes
+from an `OpenFile` three lines above and `Stat` on it does not fail for anything
+a test can arrange, so pinning it means a file-handle seam in the store to
+observe one `return err`. `main.go`'s `realDeps`/`main`/`notifySignals` are the
+process wiring the test rig replaces by construction. `dict_darwin.go`'s `Lookup`
+is the cgo boundary, covered by the dictionary conformance suite instead. These
+are judgments, written down; the rest of the window's zero-count blocks predate
+it.
 
 ## Plan
 
@@ -160,6 +208,7 @@ rounds.
 Created as part of the `define-learn` project.
 
 ### 2026-08-27
+- 2026-08-27: closed — Ran `define --play` end to end on a real terminal against my deck: layout correct, y/n grading, space-to-reveal, d-to-drop, q/Ctrl-C mid-session, with the review event read back from ~/workspace/brain/data/life/vocab. go build, go vet, gofmt, go test ./... all green, AND the on-demand pty suite green (go test -tags conformance -run TestPTY), which this round discovered had been red since #21. New TestPTYPlayRendersEveryLineAtColumnZero pins the CRLF cascade the operator screenshotted — revert-measured at 21 bare newlines when the crlfWriter wrapper is dropped. Scheduling pinned by cmd/define/schedule (six Leitner intervals, demotion out of mastery, DaysBetween across timezones) plus three purity guards; play by cmd/define/play and play_loop_test driving whole sessions with scripted keys and no terminal; the guards themselves by cmd/define/puretest against committed known-bad and known-good fixtures, each revert-measured. --no-verdict: M1 and M2 are [~], not [x] — neither boundary closed on its own, M2 was built on M1s unclosed close, and every review window since has spanned both, so this close covers the single window the reviews have been reading since round 3. The project files M1 entry no longer carries a fabricated close date or hand-typed actual (BR-44).; review verdict: FIX-THEN-SHIP
 
 Claimed and planned. Three decisions worth recording before implementation:
 
