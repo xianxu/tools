@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/schedule"
-	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // runPlay is a review session: today's queue, one question at a time.
@@ -69,7 +69,7 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	// own format strings and forgot that Render's output has bare newlines
 	// throughout, which is most of what a session prints.
 	return playSession(ctx, d, opt, play.NewSession(questions),
-		readKeys(ctx, f, interrupts), sess,
+		readKeys(ctx, f, interrupts), rawTerm{sess: sess, f: f},
 		&crlfWriter{w: stdout}, &crlfWriter{w: stderr})
 }
 
@@ -77,8 +77,19 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 //
 // Split from runPlay so a test can drive a whole session with a scripted key
 // channel and no terminal at all — the setup above is the part that needs one.
+// rawTerm is the terminal a session borrows during playback and takes back
+// after.
+//
+// It carries the FILE, because re-entering raw mode has to use the descriptor
+// runPlay was handed — the first version hardcoded os.Stdin, which is right only
+// by coincidence and silently wrong for any caller given another descriptor.
+type rawTerm struct {
+	sess *rawSession
+	f    *os.File
+}
+
 func playSession(ctx context.Context, d deps, opt options, s play.Session,
-	keys <-chan Key, raw *rawSession, stdout, stderr io.Writer) int {
+	keys <-chan Key, raw rawTerm, stdout, stderr io.Writer) int {
 
 	draw(stdout, s)
 	for !s.Done {
@@ -132,21 +143,27 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				// Cooked for playback, as #16 established: the indicator and any
 				// warning are written for a human to read.
 				word := s.Current().Word()
-				if raw != nil {
-					raw.restore()
+				if raw.sess != nil {
+					raw.sess.restore()
 				}
 				playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
-				if raw != nil {
-					again, err := enterRaw(os.Stdin)
+				if raw.sess != nil {
+					again, err := enterRaw(raw.f)
 					if err != nil {
 						// REPORTED, not dropped. Without raw mode readKeys is
 						// line-buffered, so every keystroke appears to do nothing
 						// until Enter — the session looks frozen and nothing says
 						// why. Ending is honest; pretending to continue is not.
+						// EXIT 1, like the failure to enter raw mode in the first
+						// place. Both are "this session cannot continue because
+						// the terminal is gone", and returning 0 from one of them
+						// tells a script the session ended normally when it did
+						// not (BR-24).
 						fmt.Fprintf(stderr, "define: lost the terminal after playback: %v\n", err)
-						return finish(stdout, s)
+						finish(stdout, s)
+						return 1
 					}
-					*raw = *again
+					*raw.sess = *again
 				}
 			}
 		}
@@ -215,13 +232,20 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		qs = append(qs, play.NewRecall(key, rendered))
 	}
 	if len(qs) == 0 {
-		fmt.Fprintln(stdout, "define: nothing due today")
+		// NOT "nothing due today": words WERE due, and every one of them failed
+		// to look up. Saying nothing is due would send the learner away believing
+		// their deck is clear when the dictionary is the problem.
+		fmt.Fprintf(stderr, "define: %d words are due but none could be looked up\n", len(keys))
+		return nil, 1
 	}
 	return qs, 0
 }
 
-// anyTime is the zero time: Events(since) returns everything at or after it.
-var anyTime = store.Word{}.FirstSeen
+// anyTime is the zero time, which Events(since) treats as "everything".
+//
+// Spelled directly rather than as store.Word{}.FirstSeen, which was a way of
+// saying time.Time{} that made a reader chase a struct field to learn nothing.
+var anyTime time.Time
 
 func draw(w io.Writer, s play.Session) {
 	q := s.Current()

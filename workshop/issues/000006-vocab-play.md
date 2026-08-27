@@ -306,3 +306,54 @@ are now addressed:
   `puretest`, `Input` and `Outcome`. Task 2/3 still instructed the skip contract
   `PQ-3` superseded at plan time — a stale instruction that survived into M2.
 - **BR-1** was the same superseded contract, disposed by BR-5's fix.
+
+### 2026-08-27 — close round 5: the enumeration behind the discarded-error rule
+
+`BR-21` asked for the sweep the rule implies rather than the one site it named.
+Every `err == nil` in non-test production code, and what each does with the error:
+
+| site | verdict |
+|---|---|
+| `play_loop.go` raw re-entry | **was** dropped — now reported and exits 1 |
+| `puretest.go` ×2, `ExitError.Stderr` | **was** discarded — now carried into the failure |
+| `store/yaml.go:158`, `f.Stat()` | **was** skipped past, silently bypassing the torn-record guard this block exists for — now returned |
+| `crlf.go:35`, `highlightwriter.go:161` | correct: `err == nil && n < len(...)` is the short-write check, and the error is returned on the other branch |
+| `parse.go:610`, `rss.go:62` | correct: "this format does not apply, try the next" — the error IS the answer, and acting on it is what the branch does |
+| `ask.go:220`, `store/yaml.go:437` | correct: `case err == nil:` in a switch that handles the others |
+
+Three real, four legitimate. The distinction worth keeping: an error used as a
+CONDITION ("did this parse?") is acted on; an error that vanishes at the point of
+failure is not.
+
+### 2026-08-27 — the reserved keys, recorded
+
+`BR-20`: `toInput` takes Enter, space, `d`/`D` and Ctrl-C before any form sees
+them, and nothing said so outside that function. A later form choosing `d` for
+"definitely" would find the key silently taken. Now in `Question`'s doc comment,
+the plan and the atlas — the three places a form author would look.
+
+### 2026-08-27 — round 6: fixes without tests are half-fixes
+
+BR-30: four of five code fixes in the sweep commit landed in branches measured at
+coverage 0, and two were pinnable that day. Both now are, and both bite:
+
+- **All lookups failing is not "nothing due today".** Reverting the fix reddens
+   on both halves — the exit code and the
+  message. The first attempt used , which FAILS the test when
+  consulted because it exists to prove a command never reaches the dictionary;
+  this needed a double that answers, and answers no.
+- **Losing the terminal after playback exits 1**, like failing to enter raw mode
+  at all. Driven by handing the session a  whose file is , so
+  the re-entry genuinely fails rather than being simulated.
+
+The other three are honestly unpinnable here: the duplicate  is
+idempotent by construction, the zero-time spelling has no behaviour, and the
+raw-mode descriptor is only observable through a real terminal.
+
+BR-29:  and the atlas both claimed THREE purity guards where 
+runs two — it names no store symbol, and that guard with an empty allowlist would
+fatal on finding nothing to check. Corrected in both, with the reason.
+
+BR-5, third round: the residue was one sentence in Task 3 still saying "the loop
+drops it" after the decision moved to  — the same two-places-for-one-rule
+the bullet above it was written to settle.

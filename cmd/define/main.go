@@ -414,7 +414,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// precisely because it needs no directory. --reflect needs both the deck and
 	// the clock, so it belongs after them, where --forget is (#17 D5).
 	if *playFlag {
-		d = d.withStore(opt, stderr)
+		// No second withStore: it is called unconditionally nine lines above.
+		// Calling it twice is harmless only because it fills nils — which is
+		// exactly the kind of "harmless" that stops being true when someone adds
+		// a field that is not nil-merged.
 		return runPlay(ctx, d, opt, stdin, stdout, stderr)
 	}
 	if *reflect {

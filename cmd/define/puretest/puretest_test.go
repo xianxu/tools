@@ -57,8 +57,10 @@ func failed(msgs []string, want string) bool {
 const (
 	impure = "github.com/xianxu/tools/cmd/define/puretest/testdata/impure"
 	clocky = "github.com/xianxu/tools/cmd/define/puretest/testdata/clocky"
-	// A package known to be pure: the one this all exists for.
-	pure = "github.com/xianxu/tools/cmd/define/play"
+	// A dedicated known-GOOD fixture. Pointing this at cmd/define/play would
+	// make a change to production code silently change what these tests assert;
+	// a guard's positive case has to be as fixed as its negative one.
+	pure = "github.com/xianxu/tools/cmd/define/puretest/testdata/pure"
 )
 
 func TestImportsOnlyRejectsAnIOImport(t *testing.T) {
@@ -73,7 +75,7 @@ func TestImportsOnlyRejectsAnIOImport(t *testing.T) {
 
 func TestImportsOnlyAcceptsAPurePackage(t *testing.T) {
 	if msgs := runGuard(func(tt puretest.T) {
-		puretest.ImportsOnly(tt, pure, []string{})
+		puretest.ImportsOnly(tt, pure, []string{"sort"})
 	}); len(msgs) != 0 {
 		t.Errorf("a pure package was rejected: %v", msgs)
 	}

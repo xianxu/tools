@@ -4,8 +4,14 @@
 // ENTIRELY PURE, the same discipline #5's schedule package earned and for the
 // same reason: every question here is about state and keystrokes, and a package
 // that could reach a terminal or a disk would be untestable at exactly the point
-// where correctness lives. Three guards enforce it — an import allowlist, a
-// wall-clock grep, and a store-SYMBOL allowlist — because a comment cannot.
+// where correctness lives. TWO guards enforce it — an import allowlist and a
+// wall-clock grep — because a comment cannot.
+//
+// Not three: `schedule` also takes puretest's store-SYMBOL guard, and `play`
+// does not, because it names no store symbol at all. A guard with an empty
+// allowlist would fatal on finding nothing to check, correctly — it would be
+// asserting nothing. If `play` ever imports `store`, that guard has to be added
+// deliberately, which is the point.
 //
 // The division of labour: #5's schedule decides WHICH words are worth asking
 // about today; this decides HOW to ask and what the answer means; and the loop
@@ -21,6 +27,17 @@ package play
 type Verdict int
 
 const (
+	// NO SHIPPED FORM PRODUCES Skipped today. Form 2.1 returns (Skipped, false)
+	// for a key it does not use, which the session ignores entirely — so the
+	// verdict is never acted on. It exists because the SESSION needs it:
+	// `InputDrop` advances through `advance(s, q, Skipped)`, and a later form
+	// (2.3's "I do not know" option) will produce it directly. Recorded because a
+	// verdict with no producer looks like dead code until you know why.
+	//
+	// Skipped is deliberately the ZERO value: Grade returns (Skipped, false) for
+	// a key it does not use, so a form that forgets to name a verdict on its
+	// ignore path cannot accidentally return Correct or Wrong. The safest
+	// outcome is the default one.
 	Skipped Verdict = iota
 	Correct
 	Wrong
@@ -44,6 +61,11 @@ type Question interface {
 	Reveal() string
 	// Grade interprets a graded keystroke. The bool is "this key meant something
 	// to me": false lets the session ignore a stray key rather than the form
-	// inventing a meaning for it.
+	// inventing a meaning for it, and the Verdict is then ignored — return the
+	// zero value.
+	//
+	// The session RESERVES some keys before a form ever sees them: Enter and
+	// space reveal, `d` drops the word, and Ctrl-C quits (see toInput in
+	// play_loop.go). A form must not build its answer set from those.
 	Grade(r rune) (Verdict, bool)
 }

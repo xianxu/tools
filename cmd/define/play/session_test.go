@@ -71,7 +71,7 @@ func TestGradingBeforeRevealIsIgnored(t *testing.T) {
 
 // A skip is not an assessment: schedule.Fold would read a recorded skip as a
 // miss and demote a word the learner was honest about.
-func TestSkipAdvancesButRecordsNothing(t *testing.T) {
+func TestAnUngradedKeyDoesNotAdvance(t *testing.T) {
 	s, outs := drive(twoQuestions(), reveal, rune_('s'))
 
 	// 's' is not a key Recall grades, so it is ignored entirely rather than
@@ -86,9 +86,11 @@ func TestSkipAdvancesButRecordsNothing(t *testing.T) {
 
 // The verdict-level rule, driven through a form that DOES produce Skipped.
 func TestSkippedVerdictRecordsNothing(t *testing.T) {
-	s := NewSession([]Question{&skipForm{}})
+	// fakeForm's '3' is Skipped — a second fixture existing only to produce that
+	// verdict was one double too many.
+	s := NewSession([]Question{&fakeForm{word: "alpha"}})
 
-	next, outs := drive(s, reveal, rune_('x'))
+	next, outs := drive(s, reveal, rune_('3'))
 
 	if rec := records(outs); len(rec) != 0 {
 		t.Errorf("a Skipped verdict was recorded: %+v", rec)
@@ -211,19 +213,6 @@ func (f *fakeForm) Grade(r rune) (Verdict, bool) {
 	case '2':
 		return Wrong, true
 	case '3':
-		return Skipped, true
-	}
-	return Skipped, false
-}
-
-// skipForm grades one key and always skips, so the Skipped path is reachable.
-type skipForm struct{}
-
-func (skipForm) Word() string   { return "skipped" }
-func (skipForm) Prompt() string { return "?" }
-func (skipForm) Reveal() string { return "!" }
-func (skipForm) Grade(r rune) (Verdict, bool) {
-	if r == 'x' {
 		return Skipped, true
 	}
 	return Skipped, false

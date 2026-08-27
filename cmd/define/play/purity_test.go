@@ -8,7 +8,7 @@ import (
 
 const playPkg = "github.com/xianxu/tools/cmd/define/play"
 
-// Same three guards as schedule, from the same shared body.
+// TWO of schedule's three guards, from the same shared body.
 //
 // play is stricter: it needs no store symbols at all today, because the session
 // works in deck KEYS the caller supplies rather than in store types. Declaring

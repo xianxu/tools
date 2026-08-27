@@ -27,6 +27,12 @@
 
 **Its own package, for the reason `schedule` was: the purity boundary becomes checkable.** `play` imports NOTHING at all — not `store`, not `schedule`. The first draft said it imports both; it does not, because the session works in deck keys and rendered strings the caller supplies, which is the strongest form of the claim being made. `#5` proved the shape works and left guards to copy; this reuses them rather than re-arguing the case.
 
+**The session RESERVES keys from every form.** `toInput` maps Enter and space to
+`InputReveal`, `d`/`D` to `InputDrop`, and Ctrl-C/EOF to `InputQuit` before a form
+sees anything, so a form must not build its answer set from those. Recorded here
+and in `Question`'s doc comment, because a future form choosing `d` for
+"definitely" would find the key silently taken.
+
 - **`Question`** — what a form must provide: `Prompt() string` (what the learner sees before answering), `Reveal() string` (what they see after), `Word() string` (the deck key the answer is recorded against), and `Grade(r rune) (Verdict, bool)` (interpret a keystroke; the bool is "this key meant something to me").
 
   **It takes a `rune`, not `Key`.** The first draft said `Key`, which cannot compile: `Key` is declared in `package main` (`cmd/define/key.go:29`) and a subpackage cannot name it. That is not a technicality to route around — it is the import direction telling the truth. `main` owns the terminal and its key decoding; `play` is pure and must not know that Ctrl-C is `0x03`. So the loop decodes, and hands `play` the two things a form can act on: a rune for graded keys, and the CONTROL intents as explicit method calls (`Reveal()`, `Quit()`) rather than as key constants.
@@ -90,28 +96,28 @@
 **Files:**
 - Create: `cmd/define/play/question.go`, `cmd/define/play/recall.go`, and their tests
 
-- [ ] **Step 1: Write the failing tests.** Strategy: a table over `Recall.Grade` — the keys that mean correct, wrong and skip, and that an unrelated key returns `false` so the loop can ignore it rather than the form inventing a meaning. Plus that `Prompt` shows the word and NOT the definition, which is the entire point of the form and the one thing a careless implementation gets wrong.
+- [x] **Step 1: Write the failing tests.** Strategy: a table over `Recall.Grade` — the keys that mean correct, wrong and skip, and that an unrelated key returns `false` so the loop can ignore it rather than the form inventing a meaning. Plus that `Prompt` shows the word and NOT the definition, which is the entire point of the form and the one thing a careless implementation gets wrong.
 
-- [ ] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green. Step 5: Commit.**
+- [x] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green. Step 5: Commit.**
 
 ### Task 2: `Session` and `Apply`
 
 **Files:**
 - Create: `cmd/define/play/session.go`, `cmd/define/play/session_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Strategy: table over key SEQUENCES, asserting `(state, outcome)` pairs — reveal then grade advances and emits a record outcome; grading before reveal is ignored (a learner cannot rate what they have not seen); the last answer emits quit; Ctrl-C emits quit at any point; a skip emits a record outcome with `Skipped` and does NOT demote.
+- [x] **Step 1: Write the failing tests.** Strategy: table over key SEQUENCES, asserting `(state, outcome)` pairs — reveal then grade advances and emits a record outcome; grading before reveal is ignored (a learner cannot rate what they have not seen); the last answer ends the session and its Outcome says so; Ctrl-C ends the session at any point; and a SKIP emits NO record outcome — the single place that rule lives, and the contract PQ-3 settled at plan time.
 
-- [ ] **Step 2: The Done-when's second-form property, tested HERE rather than asserted.** A `fakeForm` in the test package implements `Question` with different keys entirely, and the same table drives it. If the loop's behaviour is a function of the interface, that passes; if any key semantics leaked into `Apply`, it fails. This is the only honest way to test "adding a form requires no loop change" before a second form exists.
+- [x] **Step 2: The Done-when's second-form property, tested HERE rather than asserted.** A `fakeForm` in the test package implements `Question` with different keys entirely, and the same table drives it. If the loop's behaviour is a function of the interface, that passes; if any key semantics leaked into `Apply`, it fails. This is the only honest way to test "adding a form requires no loop change" before a second form exists.
 
-- [ ] **Step 3: Verify red. Step 4: Implement. Step 5: Verify green.**
+- [x] **Step 3: Verify red. Step 4: Implement. Step 5: Verify green.**
 
-- [ ] **Step 6: EXTRACT `#5`'s purity guards into a shared, parameterised helper** rather than copying ~150 lines. `#7`, `#12` and `#13` each add a form package, so "copy two" becomes "copy five" — and the `storetest.Suite` precedent is exactly this shape: one conformance body, many callers. The helper takes `(importPath, allowedImports, allowedStoreSymbols)`; `schedule`'s tests become a two-line call to it, and `play`'s another. Doing it now while there are two callers is cheaper than after there are five, and it is the same ARCH-DRY argument `#5` made about the day-boundary helper.
+- [x] **Step 6: EXTRACT `#5`'s purity guards into a shared, parameterised helper** rather than copying ~150 lines. `#7`, `#12` and `#13` each add a form package, so "copy two" becomes "copy five" — and the `storetest.Suite` precedent is exactly this shape: one conformance body, many callers. The helper takes `(importPath, allowedImports, allowedStoreSymbols)`; `schedule`'s tests become a two-line call to it, and `play`'s another. Doing it now while there are two callers is cheaper than after there are five, and it is the same ARCH-DRY argument `#5` made about the day-boundary helper.
 
-- [ ] **Step 7: Mutation-check** that grading-before-reveal, the skip verdict and the record-before-advance ordering each redden a named test.
+- [x] **Step 7: Mutation-check** that grading-before-reveal, the skip verdict and the record-before-advance ordering each redden a named test.
 
-- [ ] **Step 8: Atlas** — `atlas/define.md` gains the play model. **Per milestone, not deferred**: `#21` and `#5` both scheduled atlas work at the end and both were refused at their first milestone close.
+- [x] **Step 8: Atlas** — `atlas/define.md` gains the play model. **Per milestone, not deferred**: `#21` and `#5` both scheduled atlas work at the end and both were refused at their first milestone close.
 
-- [ ] **Step 9: `sdlc milestone-close --issue 6 --milestone M1`.**
+- [x] **Step 9: `sdlc milestone-close --issue 6 --milestone M1`.**
 
 ## Chunk 2: M2 — the loop, the flag, the recording
 
@@ -121,11 +127,11 @@
 - Modify: `cmd/define/capture.go`, `cmd/define/capture_test.go`
 - Modify: every `Capturer` implementation and test double the compiler names
 
-- [ ] **Step 1: Write the failing tests, at the RIGHT layer.** For `CaptureReview`: a correct answer appends one `EventReviewed` with `Correct: true`, a wrong one with `false`, `DEFINE_NO_CAPTURE` records nothing, and the word is `store.Key`-normalised.
+- [x] **Step 1: Write the failing tests, at the RIGHT layer.** For `CaptureReview`: a correct answer appends one `EventReviewed` with `Correct: true`, a wrong one with `false`, `DEFINE_NO_CAPTURE` records nothing, the word is `store.Key`-normalised, and a review never touches the DECK — reviewing a word must not count as looking it up, or it would inflate the lookup count `#5`'s queue orders fresh words by.
 
-      The skip rule is NOT tested here — the first draft put it in this list, which is testing the wrong thing. `CaptureReview`'s `bool` cannot express a skip *because a skip never reaches it*; the loop drops it. That rule belongs to the session, and its test (Task 2 Step 1) is that `Apply` emits no record outcome for a skip. Asserting it against the capturer would pass trivially while proving nothing about the behaviour.
+      The skip rule is NOT tested here — the first draft put it in this list, which is testing the wrong thing. `CaptureReview`'s `bool` cannot express a skip *because a skip never reaches it*: `Apply` emits no record outcome for one, so there is nothing downstream to drop. (This sentence said "the loop drops it" for two more rounds after the decision was made — the same two-places-for-one-rule the bullet above it was written to settle.) That rule belongs to the session, and its test (Task 2 Step 1) is that `Apply` emits no record outcome for a skip. Asserting it against the capturer would pass trivially while proving nothing about the behaviour.
 
-- [ ] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
+- [x] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
 
 ### Task 4: `runPlay` and `--play`
 
@@ -133,27 +139,27 @@
 - Create: `cmd/define/play_loop.go`, `cmd/define/play_loop_test.go`
 - Modify: `cmd/define/main.go`
 
-- [ ] **Step 1: Write the failing session test.** Drive a whole session through `runPlay` with a scripted key channel, a fake dictionary, `fakePlayer` (`player_fake_test.go` — `playAnnounced` shells out to `afplay(1)`, so a real player in a test is a real process), a `store.Mem` and a `FixedClock`, and assert one event per answer — the Done-when's first row.
+- [x] **Step 1: Write the failing session test.** Drive a whole session through `runPlay` with a scripted key channel, a fake dictionary, `fakePlayer` (`player_fake_test.go` — `playAnnounced` shells out to `afplay(1)`, so a real player in a test is a real process), a `store.Mem` and a `FixedClock`, and assert one event per answer — the Done-when's first row.
 
-- [ ] **Step 1b: Audio is on by default, and that needs a row.** The Spec makes playback default-on during review and the first draft discussed it only in Risks. Assert `fakePlayer` was asked to play the current word before reveal, and that `--no-audio` leaves it untouched.
+- [x] **Step 1b: Audio is on by default, and that needs a row.** The Spec makes playback default-on during review and the first draft discussed it only in Risks. Assert `fakePlayer` was asked to play the current word before reveal, and that `--no-audio` leaves it untouched.
 
-- [ ] **Step 2: The interrupt row.** Script two answers then Ctrl-C, and assert BOTH events are on disk. Written as a separate test because "preserves already-recorded events" is a different claim from "records events".
+- [x] **Step 2: The interrupt row.** Script two answers then Ctrl-C, and assert BOTH events are on disk. Written as a separate test because "preserves already-recorded events" is a different claim from "records events".
 
-- [ ] **Step 3: The LLM row.** Same session with `deps.newLLM` returning a client whose every call is `llm.ErrUnavailable`, asserting the session completes and records normally — the loop must never reach for it.
+- [x] **Step 3: The LLM row.** Same session with `deps.newLLM` returning a client whose every call is `llm.ErrUnavailable`, asserting the session completes and records normally — the loop must never reach for it.
 
-- [ ] **Step 4: An empty queue is not an error.** "Nothing due today" is the expected state most days; it prints a line and exits 0.
+- [x] **Step 4: An empty queue is not an error.** "Nothing due today" is the expected state most days; it prints a line and exits 0.
 
-- [ ] **Step 5: Verify red. Step 6: Implement `runPlay`. Step 7: Verify green.**
+- [x] **Step 5: Verify red. Step 6: Implement `runPlay`. Step 7: Verify green.**
 
-- [ ] **Step 8: Wire `--play`** in `main.go`, reusing the raw-terminal path. Assert the flag reaches the loop through the same entry-path enumeration `#21` needed — one row per process entry that can start a session.
+- [x] **Step 8: Wire `--play`** in `main.go`, reusing the raw-terminal path. Assert the flag reaches the loop through the same entry-path enumeration `#21` needed — one row per process entry that can start a session.
 
-- [ ] **Step 9: Mutation-check** the record-on-interrupt path and the no-capture gate.
+- [x] **Step 9: Mutation-check** the record-on-interrupt path and the no-capture gate.
 
-- [ ] **Step 9b: Atlas for M2's surface.** The M2 window adds a user-visible flag and a new loop, so the close gate's atlas guard fires — and this plan already records that `#21` and `#5` were both refused for exactly this deferral. `atlas/define.md` carries the Player seam and the render-cooked/play-raw narrative; extend it with the play loop, the `Input` translation at the boundary, and the record-as-you-go guarantee.
+- [x] **Step 9b: Atlas for M2's surface.** The M2 window adds a user-visible flag and a new loop, so the close gate's atlas guard fires — and this plan already records that `#21` and `#5` were both refused for exactly this deferral. `atlas/define.md` carries the Player seam and the render-cooked/play-raw narrative; extend it with the play loop, the `Input` translation at the boundary, and the record-as-you-go guarantee.
 
-- [ ] **Step 10: README** — `--play` in the flag list and one line of what a session looks like. This is the first user-visible surface since `#20`, so it is the first thing in a while a reader could look for and not find.
+- [x] **Step 10: README** — `--play` in the flag list and one line of what a session looks like. This is the first user-visible surface since `#20`, so it is the first thing in a while a reader could look for and not find.
 
-- [ ] **Step 11: `sdlc close --issue 6 --verified '<evidence>'`.**
+- [x] **Step 11: `sdlc close --issue 6 --verified '<evidence>'`.**
 
 ---
 

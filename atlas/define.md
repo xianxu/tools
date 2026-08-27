@@ -1181,8 +1181,33 @@ same three and `#7`/`#12`/`#13` each add a form package, so they were extracted
 into `cmd/define/puretest` — one body, many callers, the shape `storetest.Suite`
 already established here. Each guard sees a hazard the others structurally
 cannot: an import allowlist misses that allowlisting `store` grants the disk with
-it, and neither import list can see `time.Since`, because `time` is legitimately
+it, and no import list can see `time.Since`, because `time` is legitimately
 imported for its types.
+
+`schedule` takes all three; `play` takes two, because it names no store symbol —
+and a store-symbol guard with an empty allowlist would fatal on finding nothing
+to check, which is right, since it would be asserting nothing.
+
+**The guards have their own tests, against committed known-bad fixtures**, and
+that is not bookkeeping: a guard nothing has ever seen fail is indistinguishable
+from a guard that cannot fail. `puretest/testdata/impure` imports `os` and calls
+`store.NewYAML`; `testdata/clocky` imports only `time` and calls `time.Since`,
+the case an import allowlist structurally cannot catch; `testdata/pure` is the
+known-good case, a fixture rather than a real package so production changes
+cannot silently change what the positive assertions mean. The guards take a
+`puretest.T` interface rather than `*testing.T` precisely so a recorder can
+capture the failures instead of failing.
+
+**`Outcome.SessionDone` says the session ended, whatever the outcome's kind.**
+The last answer produces `OutcomeRecord` and finishes the queue, so a caller
+holding only an `Outcome` would otherwise have to consult the `Session` too —
+making "did we finish" two facts in two places.
+
+**A deck whose words all fail to look up is NOT "nothing due today".** Words were
+due; the dictionary is the problem. Saying nothing is due would send the learner
+away believing their deck is clear, so that path reports what happened and exits
+1 — and losing the terminal after playback exits 1 as well, the same code as
+failing to enter raw mode in the first place, because they are the same failure.
 
 **`Question` is the whole of what a session knows about a form.** `Word`,
 `Prompt`, `Reveal`, `Grade` — and `Grade` lives on the FORM, which is what makes
@@ -1213,7 +1238,9 @@ over the key channel, and performs the outcomes: `OutcomeRecord` calls
 `CaptureReview`, `OutcomeReveal` plays the pronunciation. `toInput` is where
 `main.Key` stops — Ctrl-C and EOF become `InputQuit`, Enter and space become
 `InputReveal`, `d` becomes `InputDrop`, and everything else is a rune for the
-form to grade.
+form to grade. Those keys are RESERVED from every form — a later form choosing
+`d` for "definitely" would find it silently taken — which is why the reservation
+is stated in `Question`'s doc comment rather than only living in `toInput`.
 
 **`d` drops the current word, and it is a SESSION action rather than a verdict.**
 "This word does not belong in my deck" is true whatever form is asking, so it is
