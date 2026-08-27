@@ -111,52 +111,64 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 		if !ok {
 			continue
 		}
-		var out play.Outcome
-		s, out = play.Apply(s, in)
+		var outs []play.Outcome
+		s, outs = play.Apply(s, in)
 
-		switch out.Kind {
-		case play.OutcomeRecord:
-			// RECORDED NOW, before the next question is drawn. That is what makes
-			// Ctrl-C lossless by construction rather than by a flush, and the
-			// loop never inspects the verdict — a skip produced no outcome at
-			// all, so there is nothing to filter here.
-			d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, opt)
-		case play.OutcomeDrop:
-			// Through the store's own Forget, which is --forget's path: the deck
-			// loses the word and the events keep it. Reported, because removing
-			// something on one keystroke should say so.
-			if removed, err := d.deck.Forget(out.Word); err != nil {
-				fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
-			} else if removed {
-				fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
-			}
-
-		case play.OutcomeReveal:
-			if !opt.noAudio && opt.times > 0 {
-				// Cooked for playback, as #16 established: the indicator and any
-				// warning are written for a human to read.
-				word := s.Current().Word()
-				if raw.sess != nil {
-					raw.sess.restore()
+		// EVERY outcome, in order. One input can owe more than one: a miss on a
+		// hidden word records the verdict and then reveals. The record comes
+		// first, so it is written before anything that can block on the terminal.
+		for _, out := range outs {
+			switch out.Kind {
+			case play.OutcomeRecord:
+				// RECORDED NOW, before the next question is drawn. That is what makes
+				// Ctrl-C lossless by construction rather than by a flush, and the
+				// loop never inspects the verdict — a skip produced no outcome at
+				// all, so there is nothing to filter here.
+				d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, opt)
+			case play.OutcomeDrop:
+				// Through the store's own Forget, which is --forget's path: the deck
+				// loses the word and the events keep it. Reported, because removing
+				// something on one keystroke should say so.
+				if removed, err := d.deck.Forget(out.Word); err != nil {
+					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
+				} else if removed {
+					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
 				}
-				playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
-				if raw.sess != nil {
-					again, err := enterRaw(raw.f)
-					if err != nil {
-						// REPORTED, not dropped. Without raw mode readKeys is
-						// line-buffered, so every keystroke appears to do nothing
-						// until Enter — the session looks frozen and nothing says
-						// why. Ending is honest; pretending to continue is not.
-						// EXIT 1, like the failure to enter raw mode in the first
-						// place. Both are "this session cannot continue because
-						// the terminal is gone", and returning 0 from one of them
-						// tells a script the session ended normally when it did
-						// not (BR-24).
-						fmt.Fprintf(stderr, "define: lost the terminal after playback: %v\n", err)
-						finish(stdout, s)
-						return 1
+
+			case play.OutcomeReveal:
+				if !opt.noAudio && opt.times > 0 {
+					// Cooked for playback, as #16 established: the indicator and any
+					// warning are written for a human to read.
+					//
+					// s.Current() is still the RIGHT word: every input that emits
+					// OutcomeReveal leaves the session on its question — a peek
+					// does not advance, and a miss deliberately does not either.
+					// If a future input ever advances AND reveals, the audio would
+					// play for the next word; carry the word on the outcome then,
+					// the way OutcomeRecord and OutcomeDrop already do.
+					word := s.Current().Word()
+					if raw.sess != nil {
+						raw.sess.restore()
 					}
-					*raw.sess = *again
+					playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
+					if raw.sess != nil {
+						again, err := enterRaw(raw.f)
+						if err != nil {
+							// REPORTED, not dropped. Without raw mode readKeys is
+							// line-buffered, so every keystroke appears to do nothing
+							// until Enter — the session looks frozen and nothing says
+							// why. Ending is honest; pretending to continue is not.
+							// EXIT 1, like the failure to enter raw mode in the first
+							// place. Both are "this session cannot continue because
+							// the terminal is gone", and returning 0 from one of them
+							// tells a script the session ended normally when it did
+							// not (BR-24).
+							fmt.Fprintf(stderr, "define: lost the terminal after playback: %v\n", err)
+							finish(stdout, s)
+							return 1
+						}
+						*raw.sess = *again
+					}
 				}
 			}
 		}
@@ -251,10 +263,22 @@ func draw(w io.Writer, s play.Session) {
 	fmt.Fprintf(w, "\n%s\n", q.Prompt())
 	if s.Revealed {
 		fmt.Fprintf(w, "\n%s\n", q.Reveal())
-		fmt.Fprint(w, "\ny = got it, n = missed it, d = remove from deck, Ctrl-C to stop\n")
+	}
+	if s.Graded {
+		// Answered, and the answer is on screen. The only thing left is to read
+		// it and move on — offering y/n here would invite a second verdict on a
+		// question that already has one.
+		fmt.Fprint(w, "\nany key = next word, d = remove from deck, Ctrl-C to stop\n")
 		return
 	}
-	fmt.Fprint(w, "\nEnter or space to reveal, d = remove from deck, Ctrl-C to stop\n")
+	// The GRADING keys, whether or not the definition is showing.
+	//
+	// This line used to appear only AFTER a reveal, and an unrevealed word said
+	// "Enter or space to reveal" instead — so every correct answer cost a
+	// keystroke that carried no information, and the slow one at that, since a
+	// reveal fetches and plays the pronunciation. A learner who wants to check
+	// before rating still can; they simply no longer have to (#24).
+	fmt.Fprint(w, "\ny = got it, n = missed it, d = remove from deck, Ctrl-C to stop\n")
 }
 
 func finish(w io.Writer, s play.Session) int {

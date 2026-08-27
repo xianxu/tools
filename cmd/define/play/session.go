@@ -80,9 +80,15 @@ type Session struct {
 	Questions []Question
 	Index     int
 	Revealed  bool
-	Right     int
-	Wrong     int
-	Done      bool
+	// Graded means this question's verdict is already recorded and its answer is
+	// on screen: the next keystroke moves on rather than grading again.
+	//
+	// Independent of Revealed — a learner can reveal without grading (space) and
+	// now grade without revealing (y).
+	Graded bool
+	Right  int
+	Wrong  int
+	Done   bool
 }
 
 // NewSession starts at the first question. An empty queue is immediately Done,
@@ -100,52 +106,113 @@ func (s Session) Current() Question {
 	return s.Questions[s.Index]
 }
 
-// Apply is the state machine: one input, the next state and what the loop owes.
-func Apply(s Session, in Input) (Session, Outcome) {
+// Apply is the state machine: one input, the next state, and EVERY effect the
+// loop owes.
+//
+// A SLICE because one input can owe more than one. `n` on a word the learner has
+// not seen records the miss AND reveals the definition, which is two things the
+// loop must do. Encoding the second as a flag on the first would make "reveal"
+// expressible two ways, and this machine has already paid once for a rule living
+// in two places (#6 BR-5).
+//
+// Order is significant: the record is emitted FIRST, so a caller performing them
+// in order writes the event before anything that can block on the terminal.
+func Apply(s Session, in Input) (Session, []Outcome) {
 	if s.Done {
-		return s, Outcome{Kind: OutcomeDone, SessionDone: true}
+		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 	}
 	q := s.Current()
 	if q == nil {
 		s.Done = true
-		return s, Outcome{Kind: OutcomeDone, SessionDone: true}
+		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 	}
 
 	switch in.Kind {
 	case InputDrop:
-		// Dropping is allowed before OR after reveal: you may recognise a word as
-		// not-yours without needing to see the definition again.
+		// Dropping is allowed in every state — before a reveal, after a peek, and
+		// after a miss. "This word is not mine" is true whatever is on screen,
+		// and someone who just missed a word is exactly who wants to drop it.
 		word := q.Word()
 		next, _ := advance(s, q, Skipped) // advances, records nothing
-		return next, Outcome{Kind: OutcomeDrop, Word: word, SessionDone: next.Done}
+		return next, []Outcome{{Kind: OutcomeDrop, Word: word, SessionDone: next.Done}}
 
 	case InputQuit:
 		// Everything already recorded stays recorded — that is a property of
 		// recording as it happens, not of anything done here.
 		s.Done = true
-		return s, Outcome{Kind: OutcomeDone, SessionDone: true}
+		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 
 	case InputReveal:
+		if s.Graded {
+			// Enter and space arrive HERE, not in the InputRune arm — toInput
+			// maps both to InputReveal. Once the answer is up and recorded they
+			// mean "next", and without this arm the two keys every learner
+			// reaches for would be dead exactly where the prompt says any key
+			// moves on.
+			next, out := advance(s, q, Skipped)
+			return next, []Outcome{out}
+		}
 		if s.Revealed {
-			return s, Outcome{Kind: OutcomeNone}
+			return s, []Outcome{{Kind: OutcomeNone}}
 		}
 		s.Revealed = true
-		return s, Outcome{Kind: OutcomeReveal}
+		return s, []Outcome{{Kind: OutcomeReveal}}
 
 	case InputRune:
-		if !s.Revealed {
-			// A learner cannot rate what they have not seen. Grading before
-			// reveal is a mis-keystroke, and treating it as an answer would
-			// record a verdict about a word still hidden.
-			return s, Outcome{Kind: OutcomeNone}
+		if s.Graded {
+			// Already answered. This keystroke is the learner moving on, not a
+			// second assessment — Fold would read a duplicate as another review.
+			next, out := advance(s, q, Skipped)
+			return next, []Outcome{out}
 		}
 		verdict, ok := q.Grade(in.Rune)
 		if !ok {
-			return s, Outcome{Kind: OutcomeNone} // a key this form does not use
+			return s, []Outcome{{Kind: OutcomeNone}} // a key this form does not use
 		}
-		return advance(s, q, verdict)
+		if s.Revealed || verdict != Wrong {
+			// Nothing left to show: the answer is already on screen, or the
+			// learner had it and does not need it.
+			//
+			// GRADING BEFORE A REVEAL IS THE NORMAL PATH, and it used to be
+			// refused here on the grounds that "a learner cannot rate what they
+			// have not seen". That is true of a recognition test and false of a
+			// RECALL test, which is what form 2.1 is: the learner rates their own
+			// recall, which they know before they check, and the definition is
+			// FEEDBACK rather than stimulus. Getting it backwards put a mandatory
+			// keystroke in front of every correct answer (#24).
+			next, out := advance(s, q, verdict)
+			return next, []Outcome{out}
+		}
+		// A MISS on a hidden word earns the definition, and earns it WITHOUT
+		// advancing — moving on would scroll the answer past unread, which is the
+		// entire reason for showing it.
+		//
+		// Scored here rather than by advance, because we are not advancing. The
+		// first draft of this branch recorded the event and left the tally alone,
+		// so a session of three misses ended "0 right, 0 wrong" (PQ-1).
+		s.Revealed, s.Graded = true, true
+		s = score(s, verdict)
+		return s, []Outcome{
+			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict},
+			{Kind: OutcomeReveal},
+		}
 	}
-	return s, Outcome{Kind: OutcomeNone}
+	return s, []Outcome{{Kind: OutcomeNone}}
+}
+
+// score is what a verdict does to the tally, and the only place that decides it.
+//
+// Split from advance because a miss on a hidden word must score without moving
+// on. Skipped scores nothing, so advancing off an already-scored miss with
+// Skipped cannot double-count.
+func score(s Session, v Verdict) Session {
+	switch v {
+	case Correct:
+		s.Right++
+	case Wrong:
+		s.Wrong++
+	}
+	return s
 }
 
 // advance moves to the next question and says what to record.
@@ -155,14 +222,9 @@ func Apply(s Session, in Input) (Session, Outcome) {
 // re-deciding what this already decided, which is how one rule ends up
 // implemented in two places or neither.
 func advance(s Session, q Question, v Verdict) (Session, Outcome) {
-	switch v {
-	case Correct:
-		s.Right++
-	case Wrong:
-		s.Wrong++
-	}
+	s = score(s, v)
 	s.Index++
-	s.Revealed = false
+	s.Revealed, s.Graded = false, false
 	if s.Index >= len(s.Questions) {
 		s.Done = true
 	}

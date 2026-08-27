@@ -632,3 +632,74 @@ func TestClaimsWithoutTestsUntilNow(t *testing.T) {
 		}
 	})
 }
+
+// A correct answer costs one keystroke and plays NOTHING.
+//
+// The pronunciation is what a miss earns; playing it on a hit is the step #24
+// removes. Audio is enabled here, so this is about the FLOW and not the flag.
+func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic")
+	opt.noAudio, opt.times = false, 1
+	fp := &fakePlayer{}
+	d.player = fp
+	// AND a source that HAS a recording. playRig installs noAudioSource, which
+	// always returns ErrNoAudio — without this the player is unreachable and
+	// "played nothing" would be true whatever the session did (PQ-6).
+	d.audio = okAudio{}
+
+	qs := questionsFor(t, d, opt)
+	var out, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("y"), rawTerm{}, &out, &errb)
+
+	if len(fp.Played) != 0 {
+		t.Errorf("played %v for a word the learner got right", fp.Played)
+	}
+	if len(reviewEvents(t, st)) != 1 {
+		t.Error("the answer was not recorded")
+	}
+}
+
+// A miss DOES play it — the other half of the same rule, so neither can be
+// satisfied by a session that simply never plays anything.
+func TestAMissPlaysThePronunciation(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	opt.noAudio, opt.times = false, 1
+	fp := &fakePlayer{}
+	d.player = fp
+	d.audio = okAudio{}
+
+	qs := questionsFor(t, d, opt)
+	var out, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("n^"), rawTerm{}, &out, &errb)
+
+	if len(fp.Played) == 0 {
+		t.Error("a miss played nothing; the definition it earns includes hearing it")
+	}
+}
+
+// Three states, three prompts.
+func TestThePromptSaysWhatTheKeysDo(t *testing.T) {
+	q := play.NewRecall("sycophantic", "a definition")
+	for _, tc := range []struct {
+		name, want, absent string
+		s                  play.Session
+	}{
+		{"unrevealed: the grading keys, straight away", "y = got it, n = missed it", "to reveal",
+			play.Session{Questions: []play.Question{q}}},
+		{"peeked: still grading", "y = got it, n = missed it", "any key",
+			play.Session{Questions: []play.Question{q}, Revealed: true}},
+		{"missed: the answer is up, move on", "any key = next word", "y = got it",
+			play.Session{Questions: []play.Question{q}, Revealed: true, Graded: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var b bytes.Buffer
+			draw(&b, tc.s)
+			if !strings.Contains(b.String(), tc.want) {
+				t.Errorf("prompt = %q, want it to contain %q", b.String(), tc.want)
+			}
+			if strings.Contains(b.String(), tc.absent) {
+				t.Errorf("prompt = %q, must NOT offer %q in this state", b.String(), tc.absent)
+			}
+		})
+	}
+}
