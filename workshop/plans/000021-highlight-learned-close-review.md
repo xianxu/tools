@@ -206,3 +206,181 @@ findings:
       atlas-claims-unbuilt-surface: that family names prose asserting surface that does not
       exist; this is the inverse, and the two need different slugs to match a recurrence.
 ```
+
+---
+
+## Re-review — 2026-08-26T18:07:12-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 21 — highlight the words you are learning wherever they appear |
+| repo | tools |
+| issue file | workshop/issues/000021-highlight-learned.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 0207e7ef24414534b308a2296fb148b1740814ee..e1080f44e74fa2cb8164339fdb11140c1cdac7a4 |
+| command | sdlc close --issue 21 |
+| reviewer | claude |
+| timestamp | 2026-08-26T18:07:12-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The headline fix of this round is real and I verified it by mutation rather than by reading the commit message: replacing `vocabularyFor(d, opt)` in `runAsk` with an inline gate that keeps the nil/colour check but drops `d.vocab.Load()` now reddens `TestEveryEntryPathHighlightsAnswers` on exactly the one-shot and piped-stdin rows, and correctly leaves the raw-editor row green — that is BR-30 closed at the class level, on the right axis. BR-31 and BR-32 are likewise genuinely closed, and I re-confirmed the in-file honest-scope claim (deleting `defer hw.Flush()` entirely reddens nothing) rather than taking the comment's word for it. Suite green, `-race` clean, `go vet`/`gofmt` clean, all four fuzz targets clean at ~600k execs each, tree clean, all eight Done-when rows delivered with a named pin, and the ARCH-PURPOSE shadow-sweep is exact — one `Vocabulary.Has` call site, three production `knownOn` sites, each deriving from the seam. What keeps this from SHIP is that **BR-33's fix ships unpinned**: reverting the reported-Flush-error to `defer hw.Flush()` leaves the *entire* suite green (full run, verified), so by the round's own rule the fix is not addressed — and I verified in both directions that a 12-line test using the package's existing `shortWriter` kills it. That, plus BR-16 at a fifth round and BR-20 at a fourth, and a sentence the close commit broke in the atlas.
+
+## 1. Strengths
+
+- **BR-30's fix is on the right axis and the mutant dies where production breaks.** `cmd/define/askhighlight_test.go:246` drives each entry path with `newStoreVocabulary(st, nil)` — deliberately unloaded — so the row begins *before* the hop that fills it. The Load-dropping mutant kills the one-shot and piped rows and spares the raw-editor row, which is exactly the production truth (`runEditor` loads at `replraw.go:79`).
+- **The `wantEmpty` rewrite is a real assertion, and the surviving conditional is not vacuous.** I instrumented `TestEveryStreamExitPathFlushes` and measured which rows enter the word-arrival guard: `clean completion` → `wordArrived=true`, `truncated mid-answer` → `false`. So the guard fires, which is precisely what BR-31's rule demands of an output-conditional check.
+- **The refuted comment was corrected in place rather than quietly dropped** (`askhighlight_test.go:180`). Deleting the defer leaves that test green and the comment now says so. Recording a coverage limit honestly is worth more than a test that implies coverage it lacks.
+- **`splitWordInCapture` (`askhighlight_test.go:14`) tokenises with production `wordRuns`**, so the test cannot disagree with production about where a word is, and it `t.Fatalf`s rather than skipping when the capture stops splitting a word.
+- **`Stall` → `JunkFrame` in the truncated row** is a good call — same `ErrTruncated` classification, without waiting out the client's 30s stall timeout.
+- Core-concepts cross-check: all 15 rows exist at their stated paths (`span`, `highlightSpans`, `wordRuns`/`wordRun`, `sgrState`, `RenderLine`, `admitsHighlight`, `tokenStillOpen`, `Vocabulary`, `storeVocabulary`, `memVocabulary`, `highlightWriter`, `storeCapturer.Capture`, `deps.vocab`, `vocabularyFor`, `Render`). No table/code contradiction beyond the line-number drift below.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None newly raised. **BR-16 remains open at its fifth round** and is disposed `not-addressed` below — three concrete residues at HEAD, each measured.
+
+## 4. Minor findings
+
+- **`atlas/define.md:513-515` — the close commit's own edit left a broken sentence.** It reads `One function now owns "loaded, and only with colour", and` / `The enumeration that` / `guards it is **entry path × render surface**…` — a dangling conjunction followed by an orphaned capitalised clause, with the line break mid-phrase. The replaced text was well-formed; the replacement was not read back. New family `doc-edit-not-read-back`, because the two existing atlas families name *what the prose claims* (unbuilt surface / omitted rule), not a mechanically malformed edit.
+- **`cmd/define/askhighlight_test.go:3-13` — a third-party import sits inside the stdlib group**, and `encoding/json`/`strings`/`testing` are split from the first stdlib block for no reason. Every other file in the package (e.g. `vocab_test.go:3`, `highlightwriter_test.go:3`) groups stdlib then third-party. **2nd in family `unformatted-source`** — so the fix is not this file. The rule: `gofmt -l` is clean here and always was, because nothing in the repo *runs* it. There is no formatting gate in `Makefile`, `Makefile.workflow`, `scripts/`, or CI (verified by grep); both instances were caught by a reviewer typing the command by hand. Put `gofmt -l` — and `goimports -l`, which is what catches this variant — in a gate.
+- **The interrupt-with-held-text exit path lost its row when BR-31's fix renamed it.** **This is the 10th finding in family `behaviour-claimed-without-a-failing-test`.** Do NOT fix this instance. The row was `interrupted mid-stream` and became `cancelled before any delta` — honest, and strictly weaker: an already-cancelled context returns before any delta, so held text and cancellation never interact. The path Task 8 Step 4 names by name (`askScoped` cancels mid-stream, `ctx.Err() != nil && answer.Len() > 0`, which writes `Fprintln(out)` through the held writer) is now exercised only at `options{}` — colour off, `vocabularyFor` nil, nothing held — by `TestAQuestionIsRecordedWhateverBecameOfTheAnswer/cut off mid-answer` (`askrun_test.go:590`). I drove it with `color: true` and `Stall: true`: correct (43 bytes, ends `\n`, highlight intact), so this is coverage, not a bug — and it is ~20 lines using `syncBuf` and `Stall`, both already in the package. **THE RULE the family had not yet named: a fix that makes a test *honest* can also make it *narrower*, and the narrowing is silent because every remaining assertion still passes.** When a row is renamed or a guard is tightened, state what it stopped covering. Measured prevalence in this window: 1 of 3 rewritten rows lost a case.
+- **`cmd/define/vocab.go:76` — `MaxPhraseWords` is inflated by deck keys that can never match, and M3 turned that from a curiosity into streaming latency.** `phraseGap` admits only spaces and tabs, so a key with internal punctuation is structurally unmatchable — which `TestAPunctuatedKeyIsNotMatchable` pins — yet `Add` still counts its tokens into the look-ahead budget the stream holds against. Measured on `"the quick brown fox jumps"`: deck of single words holds 5 bytes; adding the unmatchable `e.g.` holds 9; adding the unmatchable `rock 'n' roll` holds 15. The comment at `vocab.go:76` says such a key "is currently UNMATCHABLE whichever way it is counted" — true at M1, false since M3, because the count is now what the reader waits on. Fix: bump `maxWords` only for keys whose own tokens rejoin.
+
+## 5. Test coverage notes
+
+- Mutations this round (full suite each, in a scratch export; the four `repo_guard` failures are `.git`-absence noise present in the unmutated control): **3 killed** — Load dropped on the answer path (2 rows), plus the standing suite; **2 survived by design and are documented as such** — `defer hw.Flush()` deleted entirely (conceded in-file); **1 survived undocumented** — the BR-33 error-reporting branch (below).
+- The proposed BR-33 pin, verified both ways: with `runAsk(..., &shortWriter{limit: 2}, &errOut)` and an assertion on `"could not be fully written"`, the test passes on HEAD and fails with `errOut=""` when the fix is reverted. `shortWriter` already exists in `crlf_test.go`.
+- `TestHighlightingLosesNothing` measured: 6 of 32 corpus entries highlight; swapping its deck for `vocab("zzzznotinanycorpusentry")` leaves every assertion green. Fourth round for that guard.
+- Fuzz sanity at HEAD: `FuzzHighlightWriterIsChunkIndependent` 617k, `FuzzHighlightSpans` 684k, `FuzzWordRuns` 685k, `FuzzTrailingSegments` 464k — all clean, corpus additions in GOCACHE, tree unchanged. `go test -race ./cmd/define/` green (65.8s); `go test ./...` green.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag (BR-9, disposed below).** Two of three warning seams wrap `warnTo`; `capture.go:132` still writes `"define: "+format+"\n"` itself while `warnTo`'s own doc comment (`vocab.go:130`) claims to be "the one place" it is written. Otherwise the package is in good shape: one tokenizer, one matcher, one writer for both styled surfaces, `phraseGapOrEmpty` delegating to `phraseGap`, `stripANSI` deferring to `scanEscape`.
+- **ARCH-PURE — pass.** `wordRuns`, `highlightSpans`, `sgrState`, `scanEscape`, `decidedEnd`, `tokenStillOpen` are pure and tested with no IO. `runAsk` stays the thin shell: the writer is built at the boundary and injected as an `io.Writer`, and `answer` accumulates raw deltas, so no escape reaches `recordExchange` → `gatherAskContext` → the next prompt. I confirmed `onDelta` is invoked synchronously on the caller's goroutine (`internal/llm/anthropic.go:169-188`), so the unguarded `highlightWriter` state is not racy — and `-race` agrees.
+- **ARCH-PURPOSE — pass.** Shadow-sweep is exact: `Vocabulary.Has` has one call site (`highlight.go:132`); `knownOn` has three production sites (`editor.go:208`, `render.go:93`, `ask.go:171`), each reaching the seam. No hand-maintained restatement of the set anywhere. Done-when row 8 is satisfied, not asserted.
+- **ARCH-MOCK — pass.** No new external dependency in M3. The answer arrives through `llmtest.Fake` replaying a committed capture, `store.NewMem()` is the portable non-production backend, and `crlfWriter`/`shortWriter`/`failAfter` sit at the same `io.Writer` boundary production uses. Live conformance exists for the surfaces this depends on (`internal/llm/capture_conformance_test.go`, `conformance_test.go`, `cmd/define/pty_conformance_test.go`).
+- **Seam-ownership note for the next capture consumer** (not a finding): `splitWordInCapture` decodes `llmtest`'s SSE artifact with a parser living in `cmd/define`. It is currently the only full decoder — `anthropic_test.go:259` does a weaker `strings.Count` — so this is layering, not duplication, and its drift mode is a loud `t.Fatalf`. If a second consumer needs delta boundaries, the parser belongs behind the seam that owns the format (`llmtest.CaptureDeltas`) before it gets copied.
+- **For #22:** `memVocabulary` still has no removal path. Narrowing to actively-learned words means the set must *shrink* mid-session as a word graduates, and nothing above the seam is prepared for a `Has` that flips true→false while the writer is mid-hold. Decide that at #22's plan gate, not in its writer.
+
+## 7. Plan revision recommendations
+
+One `## Revisions` entry — "close boundary round 2: the plan-record residues, finished" — covering exactly what remains, all measured at HEAD:
+
+- `plan:70` — Core concepts still gives the answer-stream injection point as `ask.go:160`; actual `ask.go:171`.
+- `plan:286` — Task 6 Step 2 still requires "that the returned count is in the caller's units", which contract rule 4 (`plan:100-110`) and `TestHighlightWriterPropagatesDownstreamErrors` both contradict with `(0, err)`. Delete the clause and point the step at rule 4. (Task 5/6/7/8 `Files` blocks *were* corrected this round — that half is done.)
+- **Task 8 Step 6 is ticked and its stated mutation check fails.** "Mutation-check that dropping the flush on the interrupt path reddens a named test": measured, deleting `defer hw.Flush()` reddens nothing. The test file says so honestly; the plan tick says the opposite. Untick or record the deviation.
+- **Task 8 Step 4 is ticked at 3 of 5 paths** (up from 2). The in-file comment correctly argues the `default:` path is unreachable through `llmtest`; the *interrupt-with-held-text* path is reachable and was dropped. Add the row or record what the tick covers.
+- Record BR-33's decision as delivered *and unpinned*, with the `shortWriter` test as the outstanding step — a decision documented in Revisions but absent from the atlas's own `Flush` paragraph is the same shape as BR-34.
+
+```findings
+dispose:
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Unchanged since round 8 — capture.go:132 still writes "define: " itself while warnTo's comment (vocab.go:130) claims to be the one place it is written.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      5th round. Files blocks fixed; plan:70 still says ask.go:160 (actual 171), plan:286 still promises caller-unit counts, and Task 8 Step 6's mutation claim is false — deleting the defer reddens nothing.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      4th round for the vacuity guard — measured 6 of 32 corpus entries highlight, and swapping the deck for an unmatchable word leaves TestHighlightingLosesNothing green.
+  - id: BR-30
+    disposition: addressed
+    note: |
+      Verified by mutation — an inline gate keeping nil/colour but dropping Load reddens TestEveryEntryPathHighlightsAnswers on exactly the one-shot and piped-stdin rows.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      wantEmpty is asserted unconditionally with a t.Fatal on empty output; probed that the surviving output-conditional guard fires on the clean row; the refuted comment is corrected in place.
+  - id: BR-32
+    disposition: addressed
+    note: |
+      No func max/min remains in cmd/define; max(0, len(deltas)-1) resolves to the Go 1.26 builtin; vet, build and suite clean.
+  - id: BR-33
+    disposition: not-addressed
+    note: |
+      The code change is right but nothing pins it — reverting to `defer hw.Flush()` leaves the ENTIRE suite green (full run). A 12-line test with the package's existing shortWriter kills the mutant, verified both ways. The errOut-before-flush ordering half is also unchanged and unrecorded.
+  - id: BR-34
+    disposition: not-addressed
+    note: |
+      atlas/define.md:422-545 still never mentions highlightSetFor or the command-namespace withhold; the close commit added a second omission in the same family by recording the poisoned-writer decision only in the plan's Revisions, not in the atlas Flush paragraph where it belongs.
+findings:
+  - id: new
+    severity: Minor
+    family: doc-edit-not-read-back
+    title: |
+      The atlas sentence the close commit itself edited is malformed prose
+    detail: |
+      atlas/define.md:513-515 now reads `One function now owns "loaded, and only with
+      colour", and` / `The enumeration that` / `guards it is **entry path x render
+      surface**...` — a dangling conjunction followed by an orphaned capitalised clause,
+      broken mid-phrase across lines. The text it replaced was well-formed; the
+      replacement was written but not read back. New slug rather than
+      atlas-claims-unbuilt-surface or atlas-omits-a-shipped-rule: those two name what the
+      prose CLAIMS (surface that does not exist, a rule left out); this is a mechanically
+      malformed edit, and would recur in any doc file with any content.
+  - id: new
+    severity: Minor
+    family: unformatted-source
+    title: |
+      A third-party import sits inside the stdlib group, and nothing in the repo enforces import grouping
+    detail: |
+      This is the 2nd finding in family `unformatted-source`. Do NOT fix only this
+      instance. askhighlight_test.go:3-13 puts github.com/xianxu/tools/cmd/define/store
+      between encoding/json and strings, and splits the stdlib block for no reason; every
+      other file in the package groups stdlib then third-party (vocab_test.go:3,
+      highlightwriter_test.go:3). gofmt does not catch this and goimports would. THE RULE:
+      both instances of this family were caught by a reviewer typing the command by hand —
+      verified that no Makefile, Makefile.workflow, scripts/ or CI target runs gofmt or
+      goimports anywhere in the repo. Put `gofmt -l` and `goimports -l` in a gate; fixing
+      the file again leaves the next instance to the next reviewer.
+  - id: new
+    severity: Minor
+    family: behaviour-claimed-without-a-failing-test
+    title: |
+      The interrupt-with-held-text exit path lost its row when BR-31's fix renamed it, and nothing noticed
+    detail: |
+      This is the 10th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+      fix only this instance. The row `interrupted mid-stream` became `cancelled before any
+      delta` — honest, and strictly weaker: an already-cancelled context returns before any
+      delta, so held text and cancellation never interact. The path Task 8 Step 4 names by
+      name (askScoped cancels mid-stream; ctx.Err() != nil with answer.Len() > 0, writing
+      Fprintln through the held writer) is now exercised only at options{} — colour off,
+      vocabularyFor nil, nothing held — by askrun_test.go:590. Measured with color:true and
+      Stall:true it is CORRECT (43 bytes, ends in a newline, highlight intact), so this is
+      coverage rather than a bug, and it is ~20 lines using syncBuf and Stall, both already
+      in the package. THE RULE the family had not yet named: a fix that makes a test HONEST
+      can also make it NARROWER, and the narrowing is silent because every remaining
+      assertion still passes. When a row is renamed or a guard tightened, state what it
+      stopped covering. Measured prevalence this window: 1 of 3 rewritten rows lost a case.
+  - id: new
+    severity: Minor
+    family: bound-includes-unusable-input
+    title: |
+      MaxPhraseWords is inflated by deck keys that can never match, and M3 made that streaming latency
+    detail: |
+      vocab.go:76. phraseGap admits only spaces and tabs, so a key with internal
+      punctuation is structurally unmatchable — TestAPunctuatedKeyIsNotMatchable pins
+      exactly that — yet Add still counts its tokens into the look-ahead budget
+      decidedEnd holds against. Measured on "the quick brown fox jumps": single-word deck
+      holds 5 bytes, adding the unmatchable `e.g.` holds 9, adding the unmatchable
+      `rock 'n' roll` holds 15, so the reader waits on words for a match that cannot
+      occur. The comment at vocab.go:76 says such a key "is currently UNMATCHABLE
+      whichever way it is counted" — true at M1, false since M3 wired the stream, and
+      nothing revisited it. THE RULE: a bound derived from an input set must be derived
+      from the subset that can actually exercise it — bump maxWords only for keys whose
+      own tokens rejoin.
+```

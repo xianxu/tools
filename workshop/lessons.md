@@ -1133,6 +1133,29 @@ exact command it named.
   path". A table guards the axes it enumerates and nothing else, so when you add
   a dimension, the table is stale even though every row in it still passes.
 
+## Line numbers and mutation claims in a plan are code that nothing compiles (define #21 close)
+
+One finding stayed open for FIVE rounds — the longest-lived of the issue — because
+each round I fixed the divergences the note listed and the next round found more.
+The instances were never the point. A plan file accumulates three kinds of claim
+about code, and all three rot silently:
+
+- **Line numbers.** `ask.go:160` became `ask.go:171` the moment a wrapper landed
+  above it. Nothing checks them, and being *nearly* right is worse than being
+  absent — a reader follows one to the wrong function. Cite the file and the
+  symbol; drop the number.
+- **Contracts stated twice.** Rule 4 said "counts in the caller's units" in two
+  places. I corrected one and the other kept promising the opposite for three
+  more rounds.
+- **Mutation results.** A ticked "mutation-check that X reddens a named test" is
+  an assertion, and mine was FALSE — deleting the flush reddens nothing. When
+  measurement disagrees with the step, correct the step; do not tick it because
+  the work was done.
+
+The rule the recurrence taught: **sweep the class of claim, not the list in the
+finding.** A note that names three divergences is a sample, and treating it as
+the enumeration is how one finding survives five rounds.
+
 ## An assertion guarded on the run's own output is not an assertion (define #21 close)
 
 A row meant to pin "an interrupted stream leaves nothing dangling" read
@@ -1148,6 +1171,13 @@ comment said it pinned that no path leaves text dangling.
   is an assertion; `if got != ""` is an escape hatch.
 - **When the observable is empty, `t.Fatal`.** The package already had that idiom
   at five sites; the vacuous row was the one place it was missing.
+- **A comparison over a corpus needs a hit COUNT, not just a pass.**
+  `TestHighlightingLosesNothing` compared highlighted output against plain across
+  32 entries — but only 6 of them contain a deck word, and for the other 26 it
+  compared two identical strings. Swapping the deck for an unmatchable word left
+  it green. Count the entries that actually exercised the behaviour and fail at
+  zero; log the number so a corpus refresh that quietly stops matching is
+  visible.
 
 ## The vocabulary is withheld per region, decided at the boundary (define #21 M2)
 

@@ -329,21 +329,35 @@ func TestHighlightingLosesNothing(t *testing.T) {
 		t.Fatal("empty corpus — this test would be vacuous")
 	}
 	v := vocab("obsequious", "sycophantic", "a priori", "bank")
+	// Counted, because the assertion below is trivially true for any entry the
+	// deck does not match: two renders with no highlight in either compare equal.
+	// Measured, only a handful of the corpus matches, so a corpus refresh or a
+	// changed deck could leave this green and meaningless — the guard is what
+	// keeps "it passed" worth something.
+	highlighted := 0
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
-			plain := Render(ParseEntry(raw), RenderOpts{Color: false})
-			lit := stripANSI(Render(ParseEntry(raw), RenderOpts{Color: true, Vocab: v}))
-			if lit != stripANSI(Render(ParseEntry(raw), RenderOpts{Color: true})) {
-				t.Errorf("highlighting changed the visible text of %q", word)
-			}
+			e := ParseEntry(raw)
+			plain := Render(e, RenderOpts{Color: false})
 			if strings.Contains(plain, "\x1b") {
 				t.Fatal("the colour-off baseline carries escapes; this comparison would be vacuous")
 			}
-			if lit != plain {
+			// Color:true, not false — sgrState.resume is the whole reason
+			// definitions and answers share a mechanism, and it only runs when
+			// there is a style to resume. Production always passes opt.color.
+			out := Render(e, RenderOpts{Color: true, Vocab: v})
+			if strings.Contains(out, knownOn) {
+				highlighted++
+			}
+			if got := stripANSI(out); got != plain {
 				t.Errorf("highlighting changed the visible text of %q", word)
 			}
 		})
 	}
+	if highlighted == 0 {
+		t.Fatal("no entry in the corpus highlighted anything — this test asserted nothing")
+	}
+	t.Logf("%d of %d entries highlighted", highlighted, len(d.entries))
 }
 
 // The Spec's out-of-scope list: "Re-styling the headword line. The head is

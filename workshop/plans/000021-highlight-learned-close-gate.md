@@ -640,6 +640,109 @@ rounds:
           family: atlas-omits-a-shipped-rule
           round: 8
       blocked: true
+    - "n": 9
+      timestamp: "2026-08-26T18:07:12-07:00"
+      agent: claude
+      dispose:
+        - id: BR-9
+          disposition: not-addressed
+          note: 'Unchanged since round 8 — capture.go:132 still writes "define: " itself while warnTo''s comment (vocab.go:130) claims to be the one place it is written.'
+          round: 9
+        - id: BR-16
+          disposition: not-addressed
+          note: 5th round. Files blocks fixed; plan:70 still says ask.go:160 (actual 171), plan:286 still promises caller-unit counts, and Task 8 Step 6's mutation claim is false — deleting the defer reddens nothing.
+          round: 9
+        - id: BR-20
+          disposition: not-addressed
+          note: 4th round for the vacuity guard — measured 6 of 32 corpus entries highlight, and swapping the deck for an unmatchable word leaves TestHighlightingLosesNothing green.
+          round: 9
+        - id: BR-30
+          disposition: addressed
+          note: Verified by mutation — an inline gate keeping nil/colour but dropping Load reddens TestEveryEntryPathHighlightsAnswers on exactly the one-shot and piped-stdin rows.
+          round: 9
+        - id: BR-31
+          disposition: addressed
+          note: wantEmpty is asserted unconditionally with a t.Fatal on empty output; probed that the surviving output-conditional guard fires on the clean row; the refuted comment is corrected in place.
+          round: 9
+        - id: BR-32
+          disposition: addressed
+          note: No func max/min remains in cmd/define; max(0, len(deltas)-1) resolves to the Go 1.26 builtin; vet, build and suite clean.
+          round: 9
+        - id: BR-33
+          disposition: not-addressed
+          note: The code change is right but nothing pins it — reverting to `defer hw.Flush()` leaves the ENTIRE suite green (full run). A 12-line test with the package's existing shortWriter kills the mutant, verified both ways. The errOut-before-flush ordering half is also unchanged and unrecorded.
+          round: 9
+        - id: BR-34
+          disposition: not-addressed
+          note: atlas/define.md:422-545 still never mentions highlightSetFor or the command-namespace withhold; the close commit added a second omission in the same family by recording the poisoned-writer decision only in the plan's Revisions, not in the atlas Flush paragraph where it belongs.
+          round: 9
+      findings:
+        - id: BR-35
+          severity: Minor
+          title: The atlas sentence the close commit itself edited is malformed prose
+          detail: |-
+            atlas/define.md:513-515 now reads `One function now owns "loaded, and only with
+            colour", and` / `The enumeration that` / `guards it is **entry path x render
+            surface**...` — a dangling conjunction followed by an orphaned capitalised clause,
+            broken mid-phrase across lines. The text it replaced was well-formed; the
+            replacement was written but not read back. New slug rather than
+            atlas-claims-unbuilt-surface or atlas-omits-a-shipped-rule: those two name what the
+            prose CLAIMS (surface that does not exist, a rule left out); this is a mechanically
+            malformed edit, and would recur in any doc file with any content.
+          family: doc-edit-not-read-back
+          round: 9
+        - id: BR-36
+          severity: Minor
+          title: A third-party import sits inside the stdlib group, and nothing in the repo enforces import grouping
+          detail: |-
+            This is the 2nd finding in family `unformatted-source`. Do NOT fix only this
+            instance. askhighlight_test.go:3-13 puts github.com/xianxu/tools/cmd/define/store
+            between encoding/json and strings, and splits the stdlib block for no reason; every
+            other file in the package groups stdlib then third-party (vocab_test.go:3,
+            highlightwriter_test.go:3). gofmt does not catch this and goimports would. THE RULE:
+            both instances of this family were caught by a reviewer typing the command by hand —
+            verified that no Makefile, Makefile.workflow, scripts/ or CI target runs gofmt or
+            goimports anywhere in the repo. Put `gofmt -l` and `goimports -l` in a gate; fixing
+            the file again leaves the next instance to the next reviewer.
+          family: unformatted-source
+          round: 9
+        - id: BR-37
+          severity: Minor
+          title: The interrupt-with-held-text exit path lost its row when BR-31's fix renamed it, and nothing noticed
+          detail: |-
+            This is the 10th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+            fix only this instance. The row `interrupted mid-stream` became `cancelled before any
+            delta` — honest, and strictly weaker: an already-cancelled context returns before any
+            delta, so held text and cancellation never interact. The path Task 8 Step 4 names by
+            name (askScoped cancels mid-stream; ctx.Err() != nil with answer.Len() > 0, writing
+            Fprintln through the held writer) is now exercised only at options{} — colour off,
+            vocabularyFor nil, nothing held — by askrun_test.go:590. Measured with color:true and
+            Stall:true it is CORRECT (43 bytes, ends in a newline, highlight intact), so this is
+            coverage rather than a bug, and it is ~20 lines using syncBuf and Stall, both already
+            in the package. THE RULE the family had not yet named: a fix that makes a test HONEST
+            can also make it NARROWER, and the narrowing is silent because every remaining
+            assertion still passes. When a row is renamed or a guard tightened, state what it
+            stopped covering. Measured prevalence this window: 1 of 3 rewritten rows lost a case.
+          family: behaviour-claimed-without-a-failing-test
+          round: 9
+        - id: BR-38
+          severity: Minor
+          title: MaxPhraseWords is inflated by deck keys that can never match, and M3 made that streaming latency
+          detail: |-
+            vocab.go:76. phraseGap admits only spaces and tabs, so a key with internal
+            punctuation is structurally unmatchable — TestAPunctuatedKeyIsNotMatchable pins
+            exactly that — yet Add still counts its tokens into the look-ahead budget
+            decidedEnd holds against. Measured on "the quick brown fox jumps": single-word deck
+            holds 5 bytes, adding the unmatchable `e.g.` holds 9, adding the unmatchable
+            `rock 'n' roll` holds 15, so the reader waits on words for a match that cannot
+            occur. The comment at vocab.go:76 says such a key "is currently UNMATCHABLE
+            whichever way it is counted" — true at M1, false since M3 wired the stream, and
+            nothing revisited it. THE RULE: a bound derived from an input set must be derived
+            from the subset that can actually exercise it — bump maxWords only for keys whose
+            own tokens rejoin.
+          family: bound-includes-unusable-input
+          round: 9
+      blocked: true
 ---
 
 # Gate ledger — tools#21 (boundary-review)
@@ -1012,13 +1115,75 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   atlas-claims-unbuilt-surface: that family names prose asserting surface that does not
   exist; this is the inverse, and the two need different slugs to match a recurrence.
 
+## Round 9 — 2026-08-26T18:07:12-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-9 — not-addressed — Unchanged since round 8 — capture.go:132 still writes "define: " itself while warnTo's comment (vocab.go:130) claims to be the one place it is written.
+- BR-16 — not-addressed — 5th round. Files blocks fixed; plan:70 still says ask.go:160 (actual 171), plan:286 still promises caller-unit counts, and Task 8 Step 6's mutation claim is false — deleting the defer reddens nothing.
+- BR-20 — not-addressed — 4th round for the vacuity guard — measured 6 of 32 corpus entries highlight, and swapping the deck for an unmatchable word leaves TestHighlightingLosesNothing green.
+- BR-30 — addressed — Verified by mutation — an inline gate keeping nil/colour but dropping Load reddens TestEveryEntryPathHighlightsAnswers on exactly the one-shot and piped-stdin rows.
+- BR-31 — addressed — wantEmpty is asserted unconditionally with a t.Fatal on empty output; probed that the surviving output-conditional guard fires on the clean row; the refuted comment is corrected in place.
+- BR-32 — addressed — No func max/min remains in cmd/define; max(0, len(deltas)-1) resolves to the Go 1.26 builtin; vet, build and suite clean.
+- BR-33 — not-addressed — The code change is right but nothing pins it — reverting to `defer hw.Flush()` leaves the ENTIRE suite green (full run). A 12-line test with the package's existing shortWriter kills the mutant, verified both ways. The errOut-before-flush ordering half is also unchanged and unrecorded.
+- BR-34 — not-addressed — atlas/define.md:422-545 still never mentions highlightSetFor or the command-namespace withhold; the close commit added a second omission in the same family by recording the poisoned-writer decision only in the plan's Revisions, not in the atlas Flush paragraph where it belongs.
+
+### Raised
+
+- **BR-35** [Minor] `doc-edit-not-read-back` The atlas sentence the close commit itself edited is malformed prose
+  atlas/define.md:513-515 now reads `One function now owns "loaded, and only with
+  colour", and` / `The enumeration that` / `guards it is **entry path x render
+  surface**...` — a dangling conjunction followed by an orphaned capitalised clause,
+  broken mid-phrase across lines. The text it replaced was well-formed; the
+  replacement was written but not read back. New slug rather than
+  atlas-claims-unbuilt-surface or atlas-omits-a-shipped-rule: those two name what the
+  prose CLAIMS (surface that does not exist, a rule left out); this is a mechanically
+  malformed edit, and would recur in any doc file with any content.
+- **BR-36** [Minor] `unformatted-source` A third-party import sits inside the stdlib group, and nothing in the repo enforces import grouping
+  This is the 2nd finding in family `unformatted-source`. Do NOT fix only this
+  instance. askhighlight_test.go:3-13 puts github.com/xianxu/tools/cmd/define/store
+  between encoding/json and strings, and splits the stdlib block for no reason; every
+  other file in the package groups stdlib then third-party (vocab_test.go:3,
+  highlightwriter_test.go:3). gofmt does not catch this and goimports would. THE RULE:
+  both instances of this family were caught by a reviewer typing the command by hand —
+  verified that no Makefile, Makefile.workflow, scripts/ or CI target runs gofmt or
+  goimports anywhere in the repo. Put `gofmt -l` and `goimports -l` in a gate; fixing
+  the file again leaves the next instance to the next reviewer.
+- **BR-37** [Minor] `behaviour-claimed-without-a-failing-test` The interrupt-with-held-text exit path lost its row when BR-31's fix renamed it, and nothing noticed
+  This is the 10th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+  fix only this instance. The row `interrupted mid-stream` became `cancelled before any
+  delta` — honest, and strictly weaker: an already-cancelled context returns before any
+  delta, so held text and cancellation never interact. The path Task 8 Step 4 names by
+  name (askScoped cancels mid-stream; ctx.Err() != nil with answer.Len() > 0, writing
+  Fprintln through the held writer) is now exercised only at options{} — colour off,
+  vocabularyFor nil, nothing held — by askrun_test.go:590. Measured with color:true and
+  Stall:true it is CORRECT (43 bytes, ends in a newline, highlight intact), so this is
+  coverage rather than a bug, and it is ~20 lines using syncBuf and Stall, both already
+  in the package. THE RULE the family had not yet named: a fix that makes a test HONEST
+  can also make it NARROWER, and the narrowing is silent because every remaining
+  assertion still passes. When a row is renamed or a guard tightened, state what it
+  stopped covering. Measured prevalence this window: 1 of 3 rewritten rows lost a case.
+- **BR-38** [Minor] `bound-includes-unusable-input` MaxPhraseWords is inflated by deck keys that can never match, and M3 made that streaming latency
+  vocab.go:76. phraseGap admits only spaces and tabs, so a key with internal
+  punctuation is structurally unmatchable — TestAPunctuatedKeyIsNotMatchable pins
+  exactly that — yet Add still counts its tokens into the look-ahead budget
+  decidedEnd holds against. Measured on "the quick brown fox jumps": single-word deck
+  holds 5 bytes, adding the unmatchable `e.g.` holds 9, adding the unmatchable
+  `rock 'n' roll` holds 15, so the reader waits on words for a match that cannot
+  occur. The comment at vocab.go:76 says such a key "is currently UNMATCHABLE
+  whichever way it is counted" — true at M1, false since M3 wired the stream, and
+  nothing revisited it. THE RULE: a bound derived from an input set must be derived
+  from the subset that can actually exercise it — bump maxWords only for keys whose
+  own tokens rejoin.
+
 ## Open findings
 
 - **BR-9** [Minor] `copy-pasted-helper` A third near-identical warnf, with the "define: " prefix now written in three places (ARCH-DRY)
 - **BR-16** [Important] `plan-record-not-updated` Plan file layout, contract rule 4 and two test names no longer match the code
 - **BR-20** [Minor] `behaviour-claimed-without-a-failing-test` The no-data-loss invariant runs only over the colour-OFF render
-- **BR-30** [Important] `behaviour-claimed-without-a-failing-test` M3 added a render surface and the entry-path enumeration written to prevent exactly this was not widened
-- **BR-31** [Minor] `behaviour-claimed-without-a-failing-test` An assertion guarded on the run's own output never fires, and two comments claim what it does not pin
-- **BR-32** [Minor] `copy-pasted-helper` func max in askhighlight_test.go shadows the Go builtin across the whole package's test build
 - **BR-33** [Minor] `contract-error-unread-by-consumer` Every error highlightWriter is designed to report is discarded by its only production caller
 - **BR-34** [Minor] `atlas-omits-a-shipped-rule` The atlas highlight section never mentions highlightSetFor, the command-namespace withhold
+- **BR-35** [Minor] `doc-edit-not-read-back` The atlas sentence the close commit itself edited is malformed prose
+- **BR-36** [Minor] `unformatted-source` A third-party import sits inside the stdlib group, and nothing in the repo enforces import grouping
+- **BR-37** [Minor] `behaviour-claimed-without-a-failing-test` The interrupt-with-held-text exit path lost its row when BR-31's fix renamed it, and nothing noticed
+- **BR-38** [Minor] `bound-includes-unusable-input` MaxPhraseWords is inflated by deck keys that can never match, and M3 made that streaming latency

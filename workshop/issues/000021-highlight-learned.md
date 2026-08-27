@@ -385,3 +385,17 @@ this spec's central decision — the predicate seam.
   package test build, silently rebinding eight existing call sites. Decided the
   question M2 left open: a poisoned writer REPORTS to stderr rather than dropping
   the rest of an answer in silence.
+
+- 2026-08-26: close round 2 — two findings, both long-lived. BR-16 had been open
+  FIVE rounds because each time I fixed the divergences the note listed rather
+  than the class: a plan accumulates line numbers, twice-stated contracts and
+  mutation claims, and all three rot with nothing checking them. Swept all three
+  kinds — line numbers stripped from code references (a nearly-right number is
+  worse than none, since a reader follows it to the wrong function), contract
+  rule 4 corrected in its second home, and Task 8 Step 6 corrected rather than
+  ticked: it claimed dropping the flush reddens a named test and measurement says
+  it reddens nothing. BR-20 was open four rounds: TestHighlightingLosesNothing
+  compared highlighted against plain over 32 entries where only 6 contain a deck
+  word, so 26 compared identical strings and an unmatchable deck left it green.
+  Now counts hits, fails at zero, and logs 6 of 32 so a corpus refresh that stops
+  matching is visible.

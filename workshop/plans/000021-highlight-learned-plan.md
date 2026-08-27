@@ -67,7 +67,7 @@
 - **`memVocabulary`** — the in-memory double (ARCH-MOCK). Production and tests share the `Vocabulary` boundary; no test reaches around it.
 
 - **`highlightWriter`** — stateful `io.Writer` that rewrites known words in a byte stream that already carries ANSI codes.
-  - **Injected into:** `Render`'s admitted regions (`render.go`, via `RenderOpts.Vocab`) and the answer stream sink (`ask.go:160`). The plan said the definition print site; the decision moved into `Render` so it can be made per region.
+  - **Injected into:** `Render`'s admitted regions (`render.go`, via `RenderOpts.Vocab`) and the answer stream sink (`ask.go`). The plan said the definition print site; the decision moved into `Render` so it can be made per region.
   - **State model:** active SGR (`sgrState`); a held-back tail beginning at the first token that could still extend into a phrase; a partial escape sequence. `Write` always reports `len(p)` consumed even while holding bytes back — the `io.Writer` contract, and the same problem `crlfWriter.consumed` already solves in this tree.
   - **Future extensions:** any other styled stream (a `--stats` table) wraps the same writer.
 
@@ -105,7 +105,7 @@ later `Write` returns the same error and emits nothing.
 The zero is deliberate, and it is the opposite of `crlfWriter` in the same
 package, which returns caller-unit progress on a short write. The difference is
 retry: `crlfWriter` can be written to again, so a caller must know how far it
-got (`crlf_test.go:47` defends exactly that). This writer cannot be resumed, so
+got (`crlf_test.go` defends exactly that). This writer cannot be resumed, so
 there is no retry to inform and no byte can be double-emitted; reporting a
 partial count would invite a resume it will never honour. A short write with a
 NIL error still counts as a failure — `crlfWriter`, which M3 nests this inside,
@@ -283,7 +283,7 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 - [x] **Step 1: Write the failing tests.** Strategy: one BYTE-EXACT table over the contract rules above — a known word in one call; the same word split across two `Write` calls; an escape split across two calls; a known word inside a styled run (asserting the enclosing style resumes after it); and the rule-1 ordering case, deck `hot dog` against `\x1b[1;36mhot\x1b[0m dog`, whose whole point is that the reset must not move. Assert full output bytes, per contract rule 3 — escape-stripped comparison cannot see a reorder.
 
-- [x] **Step 2: Write the downstream-contract tests** (rule 4), against a writer that (a) short-writes and (b) returns an error mid-word: assert no byte is emitted twice across the retry, that the error reaches the caller, and that the returned count is in the caller's units. Reuse `crlf_test.go:50,:78`'s short-writer fixture rather than writing a second one.
+- [x] **Step 2: Write the downstream-contract tests** (rule 4), against a writer that (a) short-writes and (b) returns an error mid-word: assert no byte is emitted twice across the retry and that the error reaches the caller. NOT "the returned count is in the caller's units" — that was this step's first wording and contract rule 4 now says the opposite, because the writer poisons and cannot be resumed, so a partial count would invite a retry it will never honour. Reuse `crlf_test.go`'s short-writer fixture rather than writing a second one.
 
 - [x] **Step 3: Run to verify they fail. Step 4: Implement.** Hold back from the first token that could still begin a phrase; resolve when the window reaches `MaxPhraseWords()` tokens, or when contract rule 2's window-breaker arrives, or on flush.
 
@@ -335,7 +335,19 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 
 - [x] **Step 5: Interaction with `crlfWriter`.** The raw loop already wraps `out`. Determine and TEST the order: highlighting must see logical text, and CRLF translation must apply to the final bytes, so `highlightWriter` wraps *inside* `crlfWriter`. Assert a highlighted word emitted during raw mode carries correct line endings.
 
-- [x] **Step 6: Mutation-check** that dropping the flush on the interrupt path reddens a named test.
+- [x] **Step 6: Mutation-check the flush — and record the honest result, which is
+      that it does NOT redden anything.** This step was written expecting a
+      failing test and got one that passes: on four of `runAsk`'s five exit paths
+      the hold is already released before the return (the answer's own newline,
+      or the trailing `Fprintln`), and the fifth — `default:`, returning before
+      that newline with partial text held — is unreachable through `llmtest`,
+      because `Status` short-circuits before any body and both partial-then-fail
+      shapes classify as `ErrTruncated`. The defer stays on STRUCTURE: five
+      returns is four chances to forget one silently-dropped last word, and a
+      path added later gets it free. `askhighlight_test.go` records that scope in
+      full rather than implying coverage. A plan step that asserts a mutation
+      result is a claim like any other and gets corrected when measurement
+      disagrees, not quietly ticked.
 
 - [x] **Step 7: Atlas + README.** `atlas/define.md`'s highlight section (started at M1, extended at M2) gains the streaming half. The README paragraph ALREADY EXISTS as of M1 and covers the typed line only — WIDEN it to name definitions and answers; do not treat this step as spent because a paragraph is there. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
 
