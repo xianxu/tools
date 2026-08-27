@@ -85,6 +85,15 @@ func startDefineInDir(t *testing.T, dir string, env []string, args ...string) (*
 	cmd.Dir = dir
 	f, err := pty.Start(cmd)
 	if err != nil {
+		// A skip reads as green, so a run with no pty reports success for a
+		// suite that never executed — and this suite exists precisely because
+		// #6's CRLF defect was invisible to everything that was running. With
+		// DEFINE_CONFORMANCE_STRICT set (CI, or a close that must mean it), the
+		// absence of a terminal is a FAILURE rather than a shrug (ARCH-MOCK: a
+		// check that cannot fail is not a check).
+		if os.Getenv("DEFINE_CONFORMANCE_STRICT") != "" {
+			t.Fatalf("no pty available and DEFINE_CONFORMANCE_STRICT is set: %v", err)
+		}
 		t.Skipf("no pty available: %v", err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); f.Close() })

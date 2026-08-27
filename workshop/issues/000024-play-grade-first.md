@@ -58,7 +58,12 @@ to the session contract, not a re-ordering of prints.
 ## Done when
 
 - [x] `y` on an unrevealed word records Correct and advances, with no reveal and
-      no audio — asserted by a player double that fails the test if called.
+      no audio. Asserted with the EXISTING `fakePlayer` (its `Played` list empty)
+      plus `okAudio` installed so the playback branch is reachable at all — not a
+      new refusing double. #6 BR-43's rule: a double added next to one that nearly
+      fits must say why the near-fit was rejected, and here it could not.
+      Mutation-verified, and paired with `TestAMissPlaysThePronunciation` so
+      neither half can be satisfied by a session that simply never plays.
 - [x] `n` on an unrevealed word records Wrong AND reveals, in that order, and the
       recording happens before the next draw (Ctrl-C stays lossless by
       construction, not by a flush).

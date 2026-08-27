@@ -95,7 +95,7 @@ its tests use no fakes. `session_test.go` covers `Apply` directly.
 - Modify: `cmd/define/play/session.go`
 - Test: `cmd/define/play/session_test.go`
 
-- [ ] **Step 1: Change the signature, mechanically, with no behaviour change**
+- [x] **Step 1: Change the signature, mechanically, with no behaviour change**
 
 Every existing `return s, Outcome{...}` becomes `return s, []Outcome{{...}}`.
 `advance` keeps returning a single `Outcome`; its callers wrap it.
@@ -114,7 +114,7 @@ Every existing `return s, Outcome{...}` becomes `return s, []Outcome{{...}}`.
 func Apply(s Session, in Input) (Session, []Outcome) {
 ```
 
-- [ ] **Step 2: Update the NINE `Apply` call sites in `session_test.go`**
+- [x] **Step 2: Update the NINE `Apply` call sites in `session_test.go`**
 
 Most go through the `drive` helper (`session_test.go:11-19`), which collects one
 `Outcome` per input and must now append all of them:
@@ -136,7 +136,7 @@ func drive(s Session, ins ...Input) (Session, []Outcome) {
 Run: `go test ./cmd/define/play/`
 Expected: PASS — pure refactor, behaviour identical.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add cmd/define/play/session.go cmd/define/play/session_test.go
@@ -149,7 +149,7 @@ git commit -m "#24: Apply returns every effect it owes, not one"
 - Modify: `cmd/define/play/session.go:133-146` (the `InputRune` arm)
 - Test: `cmd/define/play/session_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // A RECALL test is rated by the learner, not by the screen. The definition is
@@ -181,13 +181,13 @@ func TestCorrectBeforeRevealAdvancesWithNoReveal(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define/play/ -run TestCorrectBeforeReveal`
 Expected: FAIL — `outcomes = [{OutcomeNone ...}]`, because the `!s.Revealed`
 guard returns `OutcomeNone`.
 
-- [ ] **Step 2b: DELETE the test that asserts the old premise**
+- [x] **Step 2b: DELETE the test that asserts the old premise**
 
 `TestGradingBeforeRevealIsIgnored` (`cmd/define/play/session_test.go:59-70`) is
 the one test this issue reverses — its comment states the position being dropped:
@@ -198,7 +198,7 @@ This is the test the plan first failed to name (PQ-3): the ones it did name
 (`TestUngradedKeyNeverReachesTheCapturer`, anything pressing Enter before `y`)
 all stay green, because the peek path is unchanged.
 
-- [ ] **Step 3: Replace the guard with the grade-then-branch**
+- [x] **Step 3: Replace the guard with the grade-then-branch**
 
 ```go
 	case InputReveal:
@@ -268,12 +268,12 @@ func advance(s Session, q Question, v Verdict) (Session, Outcome) {
 }
 ```
 
-- [ ] **Step 4: Run it**
+- [x] **Step 4: Run it**
 
 Run: `go test ./cmd/define/play/ -run TestCorrectBeforeReveal`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/play/
@@ -285,7 +285,7 @@ git commit -m "#24: y grades a hidden word and advances"
 **Files:**
 - Test: `cmd/define/play/session_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // A miss earns the definition, and earns it WITHOUT advancing.
@@ -354,18 +354,18 @@ func TestAKeyAfterAMissAdvancesWithoutRecordingAgain(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run both**
+- [x] **Step 2: Run both**
 
 Run: `go test ./cmd/define/play/ -run "BeforeReveal|AfterAMiss"`
 Expected: PASS (Task 2's implementation already covers these)
 
-- [ ] **Step 3: Verify the SKIP rule survived**
+- [x] **Step 3: Verify the SKIP rule survived**
 
 Run: `go test ./cmd/define/play/ -run Skip -v`
 Expected: PASS. `advance(s, q, Skipped)` still emits no record — the skip filter
 stays in `advance` and only in `advance`.
 
-- [ ] **Step 4: Confirm peeking still works**
+- [x] **Step 4: Confirm peeking still works**
 
 ```go
 // Space still reveals without grading, for a learner who wants to check before
@@ -392,7 +392,7 @@ func TestRevealWithoutGradingThenGrade(t *testing.T) {
 Run: `go test ./cmd/define/play/`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/play/
@@ -404,7 +404,7 @@ git commit -m "#24: a miss earns the definition without advancing"
 **Files:**
 - Test: `cmd/define/play/session_test.go`
 
-- [ ] **Step 1: Extend the drop test to the graded state**
+- [x] **Step 1: Extend the drop test to the graded state**
 
 ```go
 // d works before a reveal, after a peek, and after a miss — "this word is not
@@ -433,17 +433,17 @@ func TestDropWorksInEveryState(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `go test ./cmd/define/play/ -run TestDropWorksInEveryState -v`
 Expected: PASS all three subtests
 
-- [ ] **Step 3: Run the purity guards**
+- [x] **Step 3: Run the purity guards**
 
 Run: `go test ./cmd/define/play/ -run Purity`
 Expected: PASS — no new imports.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add cmd/define/play/
@@ -459,7 +459,7 @@ git commit -m "#24: d works before a reveal, after a peek, after a miss"
 **Files:**
 - Modify: `cmd/define/play_loop.go:114-116` (the `Apply` call and `switch`)
 
-- [ ] **Step 1: Iterate the slice**
+- [x] **Step 1: Iterate the slice**
 
 ```go
 		var outs []play.Outcome
@@ -476,14 +476,14 @@ The `OutcomeReveal` arm calls `s.Current().Word()`. After a miss the session is
 still on that word, so this stays correct — **verify it, do not assume**: the
 arm must not run after `advance` has moved on.
 
-- [ ] **Step 2: Build and run the existing loop tests**
+- [x] **Step 2: Build and run the existing loop tests**
 
 Run: `go build ./... && go test ./cmd/define/ -run "Play|Session|Drop|Reveal"`
 Expected: PASS, all of them. The loop tests drive the peek path (`"\ry"`), which
 is unchanged, so none of them encode the reversed premise — that one lives in
 `cmd/define/play/session_test.go` and is handled in Task 2 Step 2b (PQ-3).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add cmd/define/play_loop.go cmd/define/play_loop_test.go
@@ -495,7 +495,7 @@ git commit -m "#24: the loop performs every outcome an input owes"
 **Files:**
 - Test: `cmd/define/play_loop_test.go`
 
-- [ ] **Step 1: Write the failing test using the EXISTING player fake**
+- [x] **Step 1: Write the failing test using the EXISTING player fake**
 
 `fakePlayer` already records what it played in `Played []string`, so a new
 refusing double is not justified — #6 BR-43's own rule: *when adding a double
@@ -531,13 +531,13 @@ func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `go test ./cmd/define/ -run TestCorrectAnswerPlaysNoAudio`
 Expected: PASS with the new flow (would FAIL on the old one, which required a
 reveal — and a reveal plays audio).
 
-- [ ] **Step 3: Measure that EVERY negative assertion bites**
+- [x] **Step 3: Measure that EVERY negative assertion bites**
 
 A negative assertion is meaningful only if the rig can produce the thing being
 denied (PQ-6). Run each mutation, confirm the named test reddens, then
@@ -562,7 +562,7 @@ tree (#6, lessons.md).
 passes whatever the session does. One of nine failed this check; that ratio is
 why the check is a table and not a sentence.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add cmd/define/play_loop_test.go
@@ -574,7 +574,7 @@ git commit -m "#24: a correct answer plays nothing"
 **Files:**
 - Modify: `cmd/define/play_loop.go:243-258` (`draw`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 func TestThePromptSaysWhatTheKeysDo(t *testing.T) {
@@ -604,12 +604,12 @@ func TestThePromptSaysWhatTheKeysDo(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define/ -run TestThePromptSaysWhatTheKeysDo`
 Expected: FAIL on the first subtest — the unrevealed prompt says "to reveal".
 
-- [ ] **Step 3: Rewrite `draw`'s tail**
+- [x] **Step 3: Rewrite `draw`'s tail**
 
 ```go
 	fmt.Fprintf(w, "\n%s\n", q.Prompt())
@@ -628,12 +628,12 @@ Expected: FAIL on the first subtest — the unrevealed prompt says "to reveal".
 	fmt.Fprint(w, "\ny = got it, n = missed it, d = remove from deck, Ctrl-C to stop\n")
 ```
 
-- [ ] **Step 4: Run it**
+- [x] **Step 4: Run it**
 
 Run: `go test ./cmd/define/ -run TestThePromptSaysWhatTheKeysDo -v`
 Expected: PASS all three
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/play_loop.go cmd/define/play_loop_test.go
@@ -645,7 +645,7 @@ git commit -m "#24: the prompt offers grading first"
 **Files:**
 - Modify: `cmd/define/pty_conformance_test.go`
 
-- [ ] **Step 1: Write the pty test**
+- [x] **Step 1: Write the pty test**
 
 ```go
 // The new flow on a real terminal: one keystroke for a hit, and a miss puts the
@@ -693,19 +693,19 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `go test -tags conformance -run TestPTYPlayGradeFirst ./cmd/define/`
 Expected: PASS. Needs a real pty — if it reports `no pty available: operation
 not permitted`, the sandbox is blocking `pty.Start`; re-run outside it.
 
-- [ ] **Step 3: Run the WHOLE conformance suite**
+- [x] **Step 3: Run the WHOLE conformance suite**
 
 Run: `go test -tags conformance -run TestPTY ./cmd/define/`
 Expected: PASS. #6 found this suite had been red since #21 because two closes ran
 only `go test ./...`. Running it here is the point.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add cmd/define/pty_conformance_test.go
@@ -718,7 +718,7 @@ git commit -m "#24: the new flow, checked on a real terminal"
 - Modify: `README.md:41-58`
 - Modify: `atlas/define.md:1284-1287`
 
-- [ ] **Step 1: Grep for every site that describes the flow**
+- [x] **Step 1: Grep for every site that describes the flow**
 
 ```bash
 # Single WORDS, because prose wraps and multi-word patterns are line-based.
@@ -739,11 +739,21 @@ Expected: both hit. If either is missing, the PATTERN is wrong, not the file —
 this is the same failure as #6 BR-44, where a correction reached two artifacts of
 three because the third was never in the list.
 
+**And prove the FILE LIST, which is the half this plan got wrong.** The sweep as
+first written passed `cmd/define/*.go`, which does not include `cmd/define/play/`
+— so the form's own doc comments still described the old flow at close (BR-1).
+A proven pattern over an unproven file list is still a partial sweep. Recurse,
+and let the excludes be explicit:
+
+```bash
+grep -rniE "reveal|cannot rate" README.md atlas/ cmd/define/ | grep -v _test
+```
+
 Fix every hit this returns. **Build the list from what the grep returns, not from
 memory** — #6 BR-44 and BR-48 were both "the correction reached two artifacts of
 three", and BR-48 found four of fourteen names typed from memory were wrong.
 
-- [ ] **Step 2: Update the README sample and key table**
+- [x] **Step 2: Update the README sample and key table**
 
 ```
 $ define --play
@@ -760,17 +770,17 @@ y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 | `d` | remove this word from the deck — its history is kept |
 | Ctrl-C | stop; everything you answered is already saved |
 
-- [ ] **Step 3: Reverse the atlas paragraph at :1284**
+- [x] **Step 3: Reverse the atlas paragraph at :1284**
 
 It currently reads *"Grading before reveal is ignored, because a learner cannot
 rate what they have not seen."* Replace with the reasoning that is actually true
 of a recall test, and say what changed and why.
 
-- [ ] **Step 4: Re-run the grep from Step 1**
+- [x] **Step 4: Re-run the grep from Step 1**
 
 Expected: no stale hits.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md atlas/define.md
@@ -779,14 +789,14 @@ git commit -m "#24: the docs describe the flow that exists"
 
 ### Task 10: close
 
-- [ ] **Step 1: Full suite, both halves**
+- [x] **Step 1: Full suite, both halves**
 
 ```bash
 gofmt -l cmd/ && go vet ./... && go test ./...
 go test -tags conformance -run TestPTY ./cmd/define/
 ```
 
-- [ ] **Step 2: Smoke it on the real deck**
+- [x] **Step 2: Smoke it on the real deck**
 
 ```bash
 cd ~/workspace/brain/data/life/vocab && define --play
@@ -795,7 +805,7 @@ cd ~/workspace/brain/data/life/vocab && define --play
 Answer one `y` (no definition, straight to the next word), one `n` (definition
 appears, any key moves on), and one `d`. Confirm nothing drifts rightward.
 
-- [ ] **Step 3: `sdlc close --issue 24 --verified '<evidence>'`**
+- [x] **Step 3: `sdlc close --issue 24 --verified '<evidence>'`**
 
 Single boundary, no `Mx` — one `sdlc close`, and the mandatory fresh-eyes review
 runs there.

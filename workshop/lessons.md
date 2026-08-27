@@ -1854,3 +1854,30 @@ several times.
 **Rule:** when a comment justifies a restriction with a claim about the user,
 check the claim against what the feature actually tests. A plausible sentence
 next to the code that implements it is the easiest kind of wrong to preserve.
+
+## Prove the file list, not just the pattern (#24 BR-1)
+
+#6 produced the rule "build the doc-sweep list by running a grep, and prove the
+pattern reaches known-stale sites first". #24 did exactly that — and still
+shipped stale docs, because the proof covered the PATTERN and the bug was in the
+FILE LIST: the sweep passed `cmd/define/*.go`, and the form's own doc comments
+live in `cmd/define/play/`. A glob is not a tree.
+
+Same shape as #6 BR-44 (a correction reaching two artifacts of three) and #6
+BR-48 (four of fourteen names typed from memory). Three issues, three variants,
+one rule: **the enumeration is the deliverable, and every part of it — pattern,
+paths, names — has to be produced by something that ran.**
+
+**Rule:** sweep with `grep -r` over DIRECTORIES, never a `*.go` glob, and put the
+excludes in explicitly (`| grep -v _test`) so what is left out is visible rather
+than accidental.
+
+## A skip reads as green (#24)
+
+The pty conformance suite skips when no terminal is available, so a run without
+one reports success for a suite that never executed — for a suite that exists
+because #6's CRLF defect was invisible to everything that WAS running.
+`DEFINE_CONFORMANCE_STRICT=1` now turns that skip into a failure.
+
+**Rule:** any test that can skip itself needs a mode where the skip is an error,
+or "green" silently means "did not run".

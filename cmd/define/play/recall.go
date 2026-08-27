@@ -1,7 +1,12 @@
 package play
 
-// Recall is form 2.1: show the word, let the learner try to remember it, reveal
-// the definition, self-rate.
+// Recall is form 2.1: show the word, let the learner rate their own recall, and
+// show the definition when they missed it.
+//
+// The rating comes FIRST and the definition is feedback — `y` moves on without
+// ever showing it. This is a recall test, so the learner knows the answer before
+// they check; grading used to be refused until a reveal, which cost a keystroke
+// on every correct answer (#24).
 //
 // No question generation, no network — which is what makes it the form a session
 // can always fall back to, and the reason #6's Done-when asks for a full session
