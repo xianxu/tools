@@ -51,7 +51,7 @@ Leitner boxes with fixed intervals (1, 3, 7, 14, 30, 90 days).
 Durable plan: `workshop/plans/000005-vocab-schedule-plan.md` (two milestones;
 each `Mx` row is its own review boundary).
 
-- [ ] M1 — `Box`, `Progress`, `Fold`, `Due`, `Answer`, `Mastered`
+- [x] M1 — `Box`, `Progress`, `Fold`, `Due`, `Answer`, `Mastered`
 - [ ] M2 — `Queue`, the two tiers, and the atlas
 
 ## Estimate
@@ -169,3 +169,25 @@ Two decisions worth recording before implementation:
   here with no reason to touch IO. A subpackage makes the purity claim checkable
   from outside rather than asserted in a comment: `schedule` imports `store` and
   `time`, and a test needing a fake would not compile.
+
+- 2026-08-26: M1 — `store.StartOfDay`/`DaysBetween` (Task 0), then the box ladder,
+  `Progress`, `Fold`, `Due`, `Answer` and `Mastered`.
+  Task 0 was a genuine ARCH-DRY fix that this issue merely forced into the open:
+  `#15` needed "which local day is this" twice for `/history` and wrote it inline
+  twice in two DIFFERENT shapes — one building a local midnight, one projecting
+  onto a UTC day index. `#5` needing it a third time is what moved it into
+  `store` beside the `Clock` that owns the time model. `/history`'s own tests
+  were the regression net and passed unchanged.
+  The purity claim is now ENFORCED rather than asserted: the plan's first draft
+  said "a test needing a fake would not compile", which is false, and
+  `TestScheduleImportsOnlyStoreAndTime` reads the package's import set and fails
+  when anything but `store` and `time` appears — verified by adding `os`.
+  FuzzFold 11.1M execs on box-in-range, non-negative streak and idempotence.
+  Permutation-independence is deliberately NOT asserted: two reviews sharing a
+  timestamp with different outcomes fold differently by order and `ReviewEvent`
+  has no tiebreaker, so `Fold`'s contract is the order `store.Events` returns.
+  Five mutations run; four died first time. The survivor was "Fold counts every
+  event kind" — my fixture put the lookup and the question BEFORE any promotion,
+  where their spurious demotions clamp at box 0 and vanish, so both
+  implementations gave the same answer. Moved them after two correct reviews and
+  it dies.

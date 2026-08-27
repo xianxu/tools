@@ -102,18 +102,30 @@ func TestMastered(t *testing.T) {
 	}
 }
 
+// A lookup or a question is activity, not assessment: they say what the learner
+// is working ON, which is #17's signal, not what they KNOW.
+//
+// The non-review events must come AFTER a promotion for this to discriminate.
+// The first version put them first, where a spurious demotion clamps at box 0
+// and disappears — so counting every event kind produced the identical answer
+// and the mutant survived.
 func TestFoldOnlyCountsReviews(t *testing.T) {
 	events := []store.ReviewEvent{
-		{Word: "obsequious", Kind: store.EventLookedUp, Found: true, At: at(0)},
-		{Word: "obsequious", Kind: store.EventAsked, Question: "what?", At: at(0)},
-		reviewed("obsequious", true, at(1)),
+		reviewed("obsequious", true, at(0)),
+		reviewed("obsequious", true, at(1)), // box 2, streak 2
+		{Word: "obsequious", Kind: store.EventLookedUp, Found: true, At: at(2)},
+		{Word: "obsequious", Kind: store.EventAsked, Question: "what?", At: at(3)},
 	}
 
 	got := Fold(events)
 
 	p := got[store.Key("obsequious")]
-	if p.Box != 1 || p.Streak != 1 {
-		t.Errorf("got box %d streak %d, want 1/1 — only EventReviewed is assessment", p.Box, p.Streak)
+	if p.Box != 2 || p.Streak != 2 {
+		t.Errorf("got box %d streak %d, want 2/2 — a lookup is not a wrong answer", p.Box, p.Streak)
+	}
+	// LastReviewed must not move either: the learner did not review on day 3.
+	if !p.LastReviewed.Equal(at(1)) {
+		t.Errorf("LastReviewed = %v, want the last REVIEW at %v", p.LastReviewed, at(1))
 	}
 }
 
