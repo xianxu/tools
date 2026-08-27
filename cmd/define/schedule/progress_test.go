@@ -275,17 +275,24 @@ func TestDueDoesNotFireOnTheDayOfReview(t *testing.T) {
 	if err != nil {
 		t.Skipf("no tzdata: %v", err)
 	}
-	// Reviewed at 09:00 in a fixed-offset zone, as a stored stamp would be.
-	reviewedAt := time.Date(2026, 8, 3, 9, 0, 0, 0, time.FixedZone("PDT", -7*3600))
+	// The stamp's OWN date must differ from its date in the learner's zone, or
+	// the two readings agree and the test cannot tell them apart — my first
+	// version used a same-date pair and stayed green under the mutation.
+	//
+	// This is a review recorded while travelling: 22:00 on Aug 3 at UTC-10, which
+	// is 01:00 on Aug 4 where the learner now is. The store keeps the offset it
+	// was written with, so this is what a real stamp looks like.
+	reviewedAt := time.Date(2026, 8, 3, 22, 0, 0, 0, time.FixedZone("HST", -10*3600))
 	p := Progress{Box: 0, LastReviewed: reviewedAt} // box 0 waits 1 day
 
-	sameDayEvening := time.Date(2026, 8, 3, 20, 0, 0, 0, la)
-	if Due(p, sameDayEvening) {
-		t.Error("due the same evening it was reviewed — the schedule is counting a day that did not pass")
+	// Later the SAME local morning, in the learner's calendar.
+	sameLocalDay := time.Date(2026, 8, 4, 9, 0, 0, 0, la)
+	if Due(p, sameLocalDay) {
+		t.Error("due on the same local day it was reviewed — the schedule counted a day that did not pass")
 	}
 
-	nextMorning := time.Date(2026, 8, 4, 8, 0, 0, 0, la)
-	if !Due(p, nextMorning) {
-		t.Error("not due the next calendar morning")
+	nextDay := time.Date(2026, 8, 5, 9, 0, 0, 0, la)
+	if !Due(p, nextDay) {
+		t.Error("not due the next calendar day")
 	}
 }
