@@ -57,18 +57,18 @@ to the session contract, not a re-ordering of prints.
 
 ## Done when
 
-- [ ] `y` on an unrevealed word records Correct and advances, with no reveal and
+- [x] `y` on an unrevealed word records Correct and advances, with no reveal and
       no audio — asserted by a player double that fails the test if called.
-- [ ] `n` on an unrevealed word records Wrong AND reveals, in that order, and the
+- [x] `n` on an unrevealed word records Wrong AND reveals, in that order, and the
       recording happens before the next draw (Ctrl-C stays lossless by
       construction, not by a flush).
-- [ ] Space and Enter still reveal without grading; `y`/`n` after a reveal behave
+- [x] Space and Enter still reveal without grading; `y`/`n` after a reveal behave
       exactly as they do today.
-- [ ] `d` before or after a reveal still drops and records nothing.
-- [ ] The loop still never inspects a verdict.
-- [ ] The prompt line, README and atlas all show the new keys — verified by grep,
+- [x] `d` before or after a reveal still drops and records nothing.
+- [x] The loop still never inspects a verdict.
+- [x] The prompt line, README and atlas all show the new keys — verified by grep,
       not by memory (#6 BR-44/BR-48).
-- [ ] A pty conformance test drives the new flow on a real terminal (#6 BR-45:
+- [x] A pty conformance test drives the new flow on a real terminal (#6 BR-45:
       `--play` shipped its one defect because it had none).
 
 
@@ -79,25 +79,25 @@ Design: `workshop/plans/000024-play-grade-first-plan.md`.
 Single boundary — no `Mx` tags. Atomic change to one state machine, closing in
 one `sdlc close` (AGENTS.md §3).
 
-- [ ] `Apply` returns `[]Outcome` — mechanical signature change, no behaviour
+- [x] `Apply` returns `[]Outcome` — mechanical signature change, no behaviour
       change. `grep -c "Apply(" cmd/define/play/session_test.go` → **9** call
       sites, most via the `drive` helper, which must append all outcomes. (This
       row said "seven" from memory while the plan doc said nine — PQ-7, and the
       third time in two issues a count reached some artifacts and not others.)
-- [ ] `Session.Graded`, and `advance` clears it alongside `Revealed`.
-- [ ] The `InputRune` arm: grade first. `y` records and advances with no reveal;
+- [x] `Session.Graded`, and `advance` clears it alongside `Revealed`.
+- [x] The `InputRune` arm: grade first. `y` records and advances with no reveal;
       `n` on a hidden word records Wrong AND reveals, staying on the word; a key
       while `Graded` advances without recording twice.
-- [ ] `d` still drops before a reveal, after a peek, and after a miss —
+- [x] `d` still drops before a reveal, after a peek, and after a miss —
       table-driven over the three states.
-- [ ] The loop iterates the outcome slice. Verify (do not assume) that the
+- [x] The loop iterates the outcome slice. Verify (do not assume) that the
       `OutcomeReveal` arm's `s.Current().Word()` still names the right word.
-- [ ] A correct answer plays NO audio, asserted with the existing `fakePlayer`
+- [x] A correct answer plays NO audio, asserted with the existing `fakePlayer`
       and `opt.noAudio = false` so it is about the flow, not the flag.
-- [ ] `draw` renders three states: unrevealed, peeked, and graded-and-showing.
-- [ ] `TestPTYPlayGradeFirst` on a real pty, plus the WHOLE `-tags conformance`
+- [x] `draw` renders three states: unrevealed, peeked, and graded-and-showing.
+- [x] `TestPTYPlayGradeFirst` on a real pty, plus the WHOLE `-tags conformance`
       suite run at the close (#6 found it red since #21).
-- [ ] README + atlas, with the site list built by `grep`, not from memory.
+- [x] README + atlas, with the site list built by `grep`, not from memory.
 
 
 ## Estimate
