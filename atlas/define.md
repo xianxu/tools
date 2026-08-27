@@ -1207,6 +1207,30 @@ verdicts would be re-deciding what the state machine already decided. `Apply`
 emits `OutcomeRecord` only for `Correct` and `Wrong`, and the loop records
 whenever it sees one without ever looking at the verdict.
 
+**`runPlay` owns everything the pure packages cannot.** It folds the log, asks
+`schedule.Queue` for today's words, renders each definition, drives `play.Apply`
+over the key channel, and performs the outcomes: `OutcomeRecord` calls
+`CaptureReview`, `OutcomeReveal` plays the pronunciation. `toInput` is where
+`main.Key` stops — Ctrl-C and EOF become `InputQuit`, Enter and space become
+`InputReveal`, everything else is a rune for the form to grade.
+
+**Reviews record through `Capturer`, never `store.AppendEvent`.** `capture.go`
+already stated the rule — capture is the ONLY thing that records, and a second
+appender beside it is how that stops being true unnoticed. `CaptureReview` is the
+third verb after `Capture` and `CaptureAsk`, it consults `decideCapture` so
+`-raw` and `DEFINE_NO_CAPTURE` mean the same thing here as everywhere, and it
+never touches the deck — a review that upserted would make reviewing a word count
+as looking it up, inflating the count `#5`'s queue orders fresh words by.
+
+**Recorded as it happens**, before the next question is drawn, which is what
+makes Ctrl-C mid-session lossless by construction rather than by a flush. That
+property is free from the append-only log (`#3`) and any batching would lose it.
+
+**No deck means no session**, guarded on `d.deck == nil` rather than on
+`DEFINE_NO_CAPTURE`: that flag is one cause and `openStore`'s `Getwd` failure is
+another, so keying on the flag would hand a nil store to the queue builder and
+panic on the other path.
+
 **Grading before reveal is ignored**, because a learner cannot rate what they
 have not seen and a mis-keystroke would otherwise file a verdict about a word
 still hidden. **Revealing is idempotent**, so a second reveal does not play the

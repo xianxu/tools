@@ -32,25 +32,25 @@ The deck and the schedule are inert without a way to sit down and review.
 
 ## Done when
 
-- [ ] A full session runs against fake store + fake clock, recording one event
+- [x] A full session runs against fake store + fake clock, recording one event
       per answer.
-- [ ] A SKIP records nothing: it is not an assessment, and `Fold` would read a
+- [x] A SKIP records nothing: it is not an assessment, and `Fold` would read a
       recorded skip as a miss and demote the word. Asserted on the SESSION (no
       record outcome is emitted), not on `CaptureReview` — whose `bool` cannot
       represent a skip precisely because one is never passed to it.
-- [ ] Audio plays before reveal by default, and `--no-audio` silences it.
-- [ ] `-count` bounds the session; it defaults to 20.
-- [ ] An empty queue prints a line and exits 0 — "nothing due today" is the
+- [x] Audio plays before reveal by default, and `--no-audio` silences it.
+- [x] `-count` bounds the session; it defaults to 20.
+- [x] An empty queue prints a line and exits 0 — "nothing due today" is the
       expected state most days, not an error.
-- [ ] With NO DECK, `--play` prints one line and exits 0 rather than running —
+- [x] With NO DECK, `--play` prints one line and exits 0 rather than running —
       guarded on `deck == nil`, not on the env var, because `openStore`'s `Getwd`
       failure path also returns no deck and keying on the flag would hand a nil
       store to the queue builder and panic. (The first draft of this row said a
       session runs and records nothing under `DEFINE_NO_CAPTURE` — unsatisfiable,
       since that branch returns no deck at all.)
-- [ ] Interrupting mid-session preserves already-recorded events.
+- [x] Interrupting mid-session preserves already-recorded events.
 - [x] Adding a second form requires no change to the loop — asserted by driving the same table through a fake form with entirely different keys, and by checking that 2.1's own keys mean nothing to it.
-- [ ] **A full session runs with the LLM seam unavailable**, falling back to the
+- [x] **A full session runs with the LLM seam unavailable**, falling back to the
       forms that need neither key nor network (2.1 here, 2.3 in #7) rather than
       failing. Relocated from #11 on 2026-08-22: it names `--play`, so it belongs
       to the issue that owns `--play`. Asserted with a client returning
@@ -63,7 +63,7 @@ Durable plan: `workshop/plans/000006-vocab-play-plan.md` (two milestones; each
 `Mx` row is its own review boundary).
 
 - [x] M1 — `Question`, `Recall`, `Session`/`Apply`, the purity guards, the atlas
-- [ ] M2 — `CaptureReview`, `runPlay`, the `--play` flag, the README
+- [x] M2 — `CaptureReview`, `runPlay`, the `--play` flag, the README
 
 ## Estimate
 
@@ -181,3 +181,18 @@ Claimed and planned. Three decisions worth recording before implementation:
   imports, which fired on `play` — a package so pure it imports nothing at all,
   the strongest version of the claim being tested. A vacuity guard has to
   distinguish "the measurement failed" from "the answer is legitimately empty".
+
+- 2026-08-27: M2 — `CaptureReview`, `runPlay`, `--play`, `-count`, README.
+  SMOKE-TESTED FOR REAL through a pty, not only in tests: three words looked up,
+  a session run, Enter revealing, `y`/`n` rating, Ctrl-C stopping — and both
+  answered words landed in `events/2026-08-27.yaml` while the third, interrupted
+  before rating, did not. That is the interrupt Done-when observed rather than
+  asserted.
+  Three mutations run and two needed better tests first. Recording nothing at all
+  reddened two tests immediately. But "the loop records every outcome, skips
+  included" SURVIVED — because an `OutcomeNone` carries an empty word and
+  `CaptureReview` drops those anyway, so the event log could not tell the two
+  implementations apart. The discriminating observable is whether the capturer was
+  CALLED, so the test now spies on it. And the third mutation did not compile the
+  first time, which is not a passing mutation but no result at all — an untested
+  mutant is exactly as informative as an untested claim.

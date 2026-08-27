@@ -38,6 +38,22 @@ define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
 
+**`define --play` reviews what is due today.** The word appears alone; Enter or
+space reveals the definition; `y` and `n` say whether you had it. Ctrl-C stops
+whenever you like and keeps everything you answered — each answer is written as
+it happens, not at the end.
+
+```
+$ define --play
+ephemeral
+
+Enter or space to reveal, Ctrl-C to stop
+```
+
+Words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days — and a
+miss drops one step rather than all the way back. `-count` bounds a sitting
+(default 20). No key and no network: the deck and the dictionary are enough.
+
 On a terminal, `define` with no word opens a line editor:
 
 | key | does |
