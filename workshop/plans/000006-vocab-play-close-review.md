@@ -673,3 +673,180 @@ findings:
       line ("No key and no network") reads as if a session is silent. This is the Spec's default-on
       behaviour and the same row BR-12 measures as having zero test coverage.
 ```
+
+---
+
+## Re-review — 2026-08-27T13:04:44-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 6 — define --play: review loop + form 2.1 quick pass |
+| repo | tools |
+| issue file | workshop/issues/000006-vocab-play.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4cac0b95d83d54eab57b8747d40d09a2196bca1e..aae338eb0c4f4dbfb5ac0c4d2ea73de900dd5ea8 |
+| command | sdlc close --issue 6 |
+| reviewer | claude |
+| timestamp | 2026-08-27T13:04:44-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The shipped feature is sound: `go build ./...` and `go test ./cmd/define/...` are green, `play` is a genuinely pure package with enforced guards, the session state machine is clean, and I revert-verified three of this round's headline claims (mutating `playAnnounced` away reddens the audio test; hardcoding the budget reddens `TestCountBoundsTheSession`; removing the pre-select cancellation guard reddens `TestCancelledContextEndsTheSession` at round 0). Fifteen of twenty-four open findings are genuinely addressed, including every process defect this round targeted — the `[~]` milestone rows, the plan's `## Revisions` section, the `puretest` KIND reclassification, and the issue Log's stripped code spans. What blocks SHIP is that four of the nine survivors are repeats whose *exact* fix was written out verbatim in a prior round's disposition note and still is not in the tree: `atlas/define.md:1179` still says "`#6` needs the same three" seven lines above its own correction (BR-29, named verbatim at round 7); `puretest` still has no zero-import fixture, which I measured by revert — restoring a vacuity fatal leaves `go test ./cmd/define/puretest/` **green** and reddens only `cmd/define/play` (BR-41); `main.go:416.15,422.3` — the entire `--play` dispatch — is at coverage 0 in the profile (BR-13/BR-21); and `-raw --play` still runs a full twenty-word session, prints a tally, and writes nothing to disk with no guard and no test (BR-26). Every one of these is under thirty lines of work, but the pattern the gate exists to catch — instance fixed, named sibling left standing — is measurably still running.
+
+## 1. Strengths
+
+- **`cmd/define/play/session.go:151-176` — the skip filter lives in exactly one place, and the code says so.** `advance` owns the `Skipped → OutcomeNone` rule; the loop at `play_loop.go:125-131` never inspects a verdict. This is the PQ-3 decision the plan agonised over, and it landed correctly.
+- **`cmd/define/play_loop_test.go:355-368` is the right fix for `-count`, not the plausible one.** The comment records that the *first* version of this test used a word the fake dictionary lacked, so the bound came from the corpus rather than the flag — a test that read as passing while exercising nothing. Confirmed by mutation: hardcoding `20` in place of `opt.count` reddens it.
+- **`cmd/define/puretest/puretest.go:28-32` (the `T` interface) plus the owned `testdata/` fixtures.** Taking a minimal interface instead of `*testing.T` is what makes a guard assertable at all, and `testdata/clocky` (imports only `time`, calls `time.Since`) is precisely the hazard an import allowlist structurally cannot see. `TestGuardsRefuseToPassVacuously` is the part most suites skip.
+- **`cmd/define/play_loop.go:63-73` — one `crlfWriter` over every byte, including `Render`'s.** The fix is at the right altitude: the first version put `\r\n` in its own format strings and forgot that most of a session's newlines come from `Render`. `TestSessionOutputIsAllCRLF` counts them rather than sampling.
+- **`cmd/define/schedule/box.go:12-19` now states the guard count *per package* with the reason.** That is the durable form of BR-29's rule — the count is a fact about the package, not about the guards. The sweep just missed one artifact.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**BR-26 (repeat, `mode-silently-ignores-argument`) — `define -raw --play` runs a full session that records nothing.** `cmd/define/main.go:372-398`. The usage switch guards mode-plus-word three times and mode-plus-mode zero times. Measured chain: `openStore` (`main.go:184`) branches only on `opt.noCapture`, so under `-raw` the deck is non-nil and `runPlay`'s `deck == nil` guard at `play_loop.go:26` never fires; every `CaptureReview` then returns at `decideCapture(...) == captureNothing` (`capture.go:29`) with no message. `--play`+`--reflect` (`main.go:416` wins), `--play`+`-forget` (`main.go:410` wins), `--reflect`+`-forget` and `--llm-check`+anything are the rest of the enumeration. `capture_test.go:562` covers only `noCapture: true`, never `raw: true`. Fix the rule, not the site: add a mode-count check before the switch that refuses two modes on one line, and one table test over the pairs.
+
+**BR-13 / BR-21 (repeat, `claim-without-failing-test`) — the `--play` dispatch has zero test coverage, and the row-to-test map two rounds asked for does not exist.** Measured: `go test ./cmd/define/ -coverprofile` gives `main.go:416.15,422.3 1 0`. The only `run()` test on this path, `TestPlayWithAWordIsAUsageError`, returns at `main.go:393` before reaching the dispatch. Nothing catches `opt.count` not being threaded, or the dispatch moving back above the argument switch — the regression BR-14 already shipped once. `grep -n "row-to-test"` on the issue and plan returns nothing. Fix: `run(ctx, []string{"--play"}, ...)` and `run(ctx, []string{"--play","-count","3"}, ...)` through production wiring, plus the Done-when-row → named-test table written into the issue.
+
+**BR-41 (repeat, `production-code-used-as-test-fixture`) — `ImportsOnly`'s zero-import PASS is pinned by `cmd/define/play`, not by `puretest`'s own suite.** `cmd/define/puretest/puretest.go:41-47` documents zero imports as a deliberate pass. I reverted it in a scratch copy (added a `seen == 0 → Fatalf` vacuity guard): `go test ./cmd/define/puretest/` stayed **green**, and only `cmd/define/play`'s `TestPlayPurity/imports` went red — naming the wrong package. `testdata/pure` imports `sort`, so it cannot cover this. The trigger is already named in `puretest_test.go`'s own comment: the moment `#7` gives `play` a legitimate import, this coverage disappears silently. Fix: `testdata/nothing` with no imports + `TestImportsOnlyAcceptsAPackageWithNoImports`.
+
+**BR-42 (repeat, `claim-without-failing-test`) — `store/yaml.go`'s Stat error branch is still at coverage 0, and rounds 7-9 produced no coverage enumeration at all.** Profile entry unchanged: `yaml.go:163.16,165.3 1 0`. The operable rule BR-42 recorded was "before closing a round, run coverage over the CHANGED lines and classify EVERY fix landing in a zero-coverage branch as pinned-this-round or unpinnable-and-why, produced FROM the profile." The issue's `## Log` stops at the round-6 entry; there is no round-7/8/9 entry and no such list. The branch itself is pinnable — a closed `*os.File` makes `f.Stat()` fail — or declare it unpinnable in the artifact, but the classification has to exist.
+
+**BR-29 (repeat, `plan-table-contradicts-code`) — one artifact in the greppable enumeration still asserts the wrong guard count.** `atlas/define.md:1179-1180`: "`#5` wrote three purity guards inline; `#6` needs the same three…", contradicted at `atlas/define.md:1187` ("`schedule` takes all three; `play` takes two"). This is the exact line round 7's disposition note named. `box.go`, `question.go`, `play/purity_test.go`, `puretest.go` and `atlas:1142` were all corrected; this one was not. `grep -n "same three" atlas/define.md` returns exactly this line.
+
+## 4. Minor findings
+
+- **BR-25** (`budget-counted-before-filter`) — `play_loop.go:215-234` still asks `schedule.Queue` for `opt.count` keys and then drops unresolvable ones; three stale entries with `-count 20` silently yields a 17-word sitting. The comment at :225-227 still does not say a stale entry costs a slot. The all-fail branch got a test; the partial case did not.
+- **BR-28** (`docs-not-updated-for-new-surface`) — `README.md:62` still closes the `--play` section with "No key and no network", never mentioning that the pronunciation plays on every reveal or that `-no-audio` applies to a session. `README.md:35` documents `-no-audio` as a lookup flag only.
+- **BR-43** (`duplicated-guard-logic`) — `play_loop_test.go:523-529`'s `missingDict` duplicates what `dict_fake_test.go:51-56` already does for any word outside the corpus; `playRig(t, "zzznotaword")` writes the same test with no new double and exercises the corpus-backed fake instead (ARCH-MOCK).
+
+## 5. Test coverage notes
+
+- Measured this round: `cmd/define` 91.3%, `cmd/define/store` 84.7%. Both suites green, `go build ./...` clean.
+- Zero-coverage blocks in the window's new code: `play_loop.go:38-73` (all of `runPlay`'s terminal setup — expected, needs a pty), `play_loop.go:167` (`*raw.sess = *again`, the successful re-entry — same reason), `play_loop.go:204-213` (deck/log read errors — injectable, not injected), `main.go:416-422` (the `--play` dispatch — BR-13), `yaml.go:163-165` (BR-42).
+- Revert-verified as genuinely load-bearing: the audio-on-reveal test, the `-count` bound, the pre-select cancellation guard. Revert-verified as **not** load-bearing: `ImportsOnly`'s zero-import pass (BR-41).
+- `capture_test.go:531-614` is the strongest new block in the window — four tests pinning event shape, key normalisation, the no-capture gate and the deck-must-not-move invariant, each against `store.Mem` with an injected clock.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass, one flag.** `puretest` is the exemplar of this window: one guard body, `schedule/purity_test.go` down from 193 lines to 38, `play/purity_test.go` at 8, and no surviving copy in the tree. Flagged only at BR-43's test double.
+- **ARCH-PURE — pass.** `play` imports nothing at all and the claim is enforced rather than asserted. `playSession` takes its writers, key channel and terminal as parameters; `runPlay` is the only thing that touches a descriptor. The one residual seam is `enterRaw`, still called directly rather than injected — the issue Log declares that honestly as verified-by-reading, which is the right disposition for it.
+- **ARCH-PURPOSE — flag.** Same axis as the findings above: the guard-count sweep, the entry-path enumeration and the coverage classification each fixed the instance named and left an enumerable sibling the previous round had spelled out. When `#7` adds form 2.3, the reserved-key set (`play_loop.go:182-198`) and the `testdata/` known-bad-fixture convention are the two things it inherits — both are now recorded in `Question`'s doc comment and the atlas, which is the right place for them.
+- **ARCH-MOCK — pass, with one deliberate exception worth stating.** `afplay` sits behind `fakePlayer`, the dictionary behind the captured-corpus `fakeDictionary`, the store behind `store.Mem`, the terminal behind `rawTerm`+`os.DevNull`. `puretest` shells out to the real `go list` with no fake — and that is correct here, not a gap: a faked `go list` would make the purity guards assert nothing, since the real package graph *is* the measurement. Worth a sentence in `puretest.go`'s doc so `#7`/`#12`/`#13` don't "fix" it.
+
+## 7. Plan revision recommendations
+
+The plan's Core-concepts tables now match the code — I checked every row against `grep -n "^type \|^func " cmd/define/play/*.go`, and `puretest` is correctly filed under Integration points with "Wraps: `go list` + the filesystem". No table revision is needed. Two additions:
+
+- Append to `## Revisions`: the round 8-9 entry currently narrates the milestone collapse but not the *rule* it produced. Add the Done-when-row → named-test map BR-12/BR-21 asked for, as a table, so `#7`'s plan inherits the obligation rather than re-deriving it.
+- `plan:56` (the Test-surface paragraph) should state the `testdata/` known-bad-**and**-known-good fixture obligation explicitly, including the zero-import case — that convention is the durable output of BR-2 and BR-33, and BR-41 is what happens when it is left implicit.
+
+```findings
+dispose:
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Both rows now pinned and measured — mutating playAnnounced away reddens TestRevealPlaysThePronunciationByDefault; hardcoding the budget reddens TestCountBoundsTheSession.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Coverage profile still shows main.go:416.15,422.3 at count 0 — no test drives run() down the --play dispatch.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      rawTerm carries the descriptor; play_loop.go:153 re-enters on raw.f.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      40 pre-revealed rounds; revert-verified red at round 0, and the comment states the measured 119/400 rather than claiming determinism.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      play_loop.go:245-249 spells it as a plain time.Time with the reason recorded.
+  - id: BR-20
+    disposition: addressed
+    note: |
+      Reserved-key set recorded at question.go:67-70, plan:30-34 and atlas:1241.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      Sites 1-3 and 5 are pinned or honestly declared; site 4 (--play through run()) is at coverage 0, and the row-to-test map is absent from both issue and plan.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      issue:69-83 is now [~] with the unclosed-boundary history written down.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      main.go:417 is a comment; the single withStore call is at :408.
+  - id: BR-24
+    disposition: addressed
+    note: |
+      play_loop.go:163-165 returns 1, pinned by TestLosingTheTerminalAfterPlaybackExitsOne.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      play_loop.go:215-234 unchanged — no re-fill, and the comment still does not say a stale entry costs a -count slot.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      No mode-vs-mode guard added; -raw --play still runs a full session recording nothing, and no test covers any mode pairing.
+  - id: BR-27
+    disposition: addressed
+    note: |
+      plan:178-203 carries a Revisions section.
+  - id: BR-28
+    disposition: not-addressed
+    note: |
+      README:62 still closes the --play block with "No key and no network"; session audio and -no-audio-in-a-session are undocumented.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      Five artifacts corrected, but atlas/define.md:1179-1180 still reads "#6 needs the same three" — the exact site round 7's note named.
+  - id: BR-35
+    disposition: addressed
+    note: |
+      puretest moved to the Integration points table at plan:67, wrapping "go list + the filesystem".
+  - id: BR-36
+    disposition: addressed
+    note: |
+      issue:348-376 reads cleanly; all seven identifiers restored.
+  - id: BR-37
+    disposition: addressed
+    note: |
+      Same fix as BR-27 — the plan now has a Revisions section covering the nine rounds.
+  - id: BR-38
+    disposition: addressed
+    note: |
+      plan:121 and plan:165 are [ ]; issue:69-70 are [~] with the reason stated.
+  - id: BR-39
+    disposition: addressed
+    note: |
+      playSession's doc block moved below rawTerm at play_loop.go:87-91.
+  - id: BR-40
+    disposition: addressed
+    note: |
+      session_test.go:72-76 now describes the ungraded-key claim its body asserts.
+  - id: BR-41
+    disposition: not-addressed
+    note: |
+      Revert-measured: restoring the vacuity fatal leaves puretest's own suite GREEN and reddens only cmd/define/play. No testdata/nothing fixture exists.
+  - id: BR-42
+    disposition: not-addressed
+    note: |
+      yaml.go:163.16,165.3 still at count 0, and the issue Log has no round-7/8/9 entry and no coverage-derived pinned/unpinnable classification.
+  - id: BR-43
+    disposition: not-addressed
+    note: |
+      play_loop_test.go:523-529 unchanged; fakeDictionary already returns ErrNoEntry for any word outside the corpus.
+```

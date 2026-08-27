@@ -915,6 +915,107 @@ rounds:
           round: 8
       boundary: M1
       blocked: false
+    - "n": 9
+      timestamp: "2026-08-27T13:04:44-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: addressed
+          note: Both rows now pinned and measured — mutating playAnnounced away reddens TestRevealPlaysThePronunciationByDefault; hardcoding the budget reddens TestCountBoundsTheSession.
+          round: 9
+        - id: BR-13
+          disposition: not-addressed
+          note: Coverage profile still shows main.go:416.15,422.3 at count 0 — no test drives run() down the --play dispatch.
+          round: 9
+        - id: BR-17
+          disposition: addressed
+          note: rawTerm carries the descriptor; play_loop.go:153 re-enters on raw.f.
+          round: 9
+        - id: BR-18
+          disposition: addressed
+          note: 40 pre-revealed rounds; revert-verified red at round 0, and the comment states the measured 119/400 rather than claiming determinism.
+          round: 9
+        - id: BR-19
+          disposition: addressed
+          note: play_loop.go:245-249 spells it as a plain time.Time with the reason recorded.
+          round: 9
+        - id: BR-20
+          disposition: addressed
+          note: Reserved-key set recorded at question.go:67-70, plan:30-34 and atlas:1241.
+          round: 9
+        - id: BR-21
+          disposition: not-addressed
+          note: Sites 1-3 and 5 are pinned or honestly declared; site 4 (--play through run()) is at coverage 0, and the row-to-test map is absent from both issue and plan.
+          round: 9
+        - id: BR-22
+          disposition: addressed
+          note: issue:69-83 is now [~] with the unclosed-boundary history written down.
+          round: 9
+        - id: BR-23
+          disposition: addressed
+          note: main.go:417 is a comment; the single withStore call is at :408.
+          round: 9
+        - id: BR-24
+          disposition: addressed
+          note: play_loop.go:163-165 returns 1, pinned by TestLosingTheTerminalAfterPlaybackExitsOne.
+          round: 9
+        - id: BR-25
+          disposition: not-addressed
+          note: play_loop.go:215-234 unchanged — no re-fill, and the comment still does not say a stale entry costs a -count slot.
+          round: 9
+        - id: BR-26
+          disposition: not-addressed
+          note: No mode-vs-mode guard added; -raw --play still runs a full session recording nothing, and no test covers any mode pairing.
+          round: 9
+        - id: BR-27
+          disposition: addressed
+          note: plan:178-203 carries a Revisions section.
+          round: 9
+        - id: BR-28
+          disposition: not-addressed
+          note: README:62 still closes the --play block with "No key and no network"; session audio and -no-audio-in-a-session are undocumented.
+          round: 9
+        - id: BR-29
+          disposition: not-addressed
+          note: Five artifacts corrected, but atlas/define.md:1179-1180 still reads "#6 needs the same three" — the exact site round 7's note named.
+          round: 9
+        - id: BR-35
+          disposition: addressed
+          note: puretest moved to the Integration points table at plan:67, wrapping "go list + the filesystem".
+          round: 9
+        - id: BR-36
+          disposition: addressed
+          note: issue:348-376 reads cleanly; all seven identifiers restored.
+          round: 9
+        - id: BR-37
+          disposition: addressed
+          note: Same fix as BR-27 — the plan now has a Revisions section covering the nine rounds.
+          round: 9
+        - id: BR-38
+          disposition: addressed
+          note: plan:121 and plan:165 are [ ]; issue:69-70 are [~] with the reason stated.
+          round: 9
+        - id: BR-39
+          disposition: addressed
+          note: playSession's doc block moved below rawTerm at play_loop.go:87-91.
+          round: 9
+        - id: BR-40
+          disposition: addressed
+          note: session_test.go:72-76 now describes the ungraded-key claim its body asserts.
+          round: 9
+        - id: BR-41
+          disposition: not-addressed
+          note: 'Revert-measured: restoring the vacuity fatal leaves puretest''s own suite GREEN and reddens only cmd/define/play. No testdata/nothing fixture exists.'
+          round: 9
+        - id: BR-42
+          disposition: not-addressed
+          note: yaml.go:163.16,165.3 still at count 0, and the issue Log has no round-7/8/9 entry and no coverage-derived pinned/unpinnable classification.
+          round: 9
+        - id: BR-43
+          disposition: not-addressed
+          note: play_loop_test.go:523-529 unchanged; fakeDictionary already returns ErrNoEntry for any word outside the corpus.
+          round: 9
+      blocked: false
 ---
 
 # Gate ledger — tools#6 (boundary-review)
@@ -1385,29 +1486,43 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   rebasedSource/fakeCDN already models a serving CDN — though reusing it here would
   cost a fake server, so it is defensible where missingDict is not.
 
+## Round 9 — 2026-08-27T13:04:44-07:00 (claude) — passed
+
+### Disposed
+
+- BR-12 — addressed — Both rows now pinned and measured — mutating playAnnounced away reddens TestRevealPlaysThePronunciationByDefault; hardcoding the budget reddens TestCountBoundsTheSession.
+- BR-13 — not-addressed — Coverage profile still shows main.go:416.15,422.3 at count 0 — no test drives run() down the --play dispatch.
+- BR-17 — addressed — rawTerm carries the descriptor; play_loop.go:153 re-enters on raw.f.
+- BR-18 — addressed — 40 pre-revealed rounds; revert-verified red at round 0, and the comment states the measured 119/400 rather than claiming determinism.
+- BR-19 — addressed — play_loop.go:245-249 spells it as a plain time.Time with the reason recorded.
+- BR-20 — addressed — Reserved-key set recorded at question.go:67-70, plan:30-34 and atlas:1241.
+- BR-21 — not-addressed — Sites 1-3 and 5 are pinned or honestly declared; site 4 (--play through run()) is at coverage 0, and the row-to-test map is absent from both issue and plan.
+- BR-22 — addressed — issue:69-83 is now [~] with the unclosed-boundary history written down.
+- BR-23 — addressed — main.go:417 is a comment; the single withStore call is at :408.
+- BR-24 — addressed — play_loop.go:163-165 returns 1, pinned by TestLosingTheTerminalAfterPlaybackExitsOne.
+- BR-25 — not-addressed — play_loop.go:215-234 unchanged — no re-fill, and the comment still does not say a stale entry costs a -count slot.
+- BR-26 — not-addressed — No mode-vs-mode guard added; -raw --play still runs a full session recording nothing, and no test covers any mode pairing.
+- BR-27 — addressed — plan:178-203 carries a Revisions section.
+- BR-28 — not-addressed — README:62 still closes the --play block with "No key and no network"; session audio and -no-audio-in-a-session are undocumented.
+- BR-29 — not-addressed — Five artifacts corrected, but atlas/define.md:1179-1180 still reads "#6 needs the same three" — the exact site round 7's note named.
+- BR-35 — addressed — puretest moved to the Integration points table at plan:67, wrapping "go list + the filesystem".
+- BR-36 — addressed — issue:348-376 reads cleanly; all seven identifiers restored.
+- BR-37 — addressed — Same fix as BR-27 — the plan now has a Revisions section covering the nine rounds.
+- BR-38 — addressed — plan:121 and plan:165 are [ ]; issue:69-70 are [~] with the reason stated.
+- BR-39 — addressed — playSession's doc block moved below rawTerm at play_loop.go:87-91.
+- BR-40 — addressed — session_test.go:72-76 now describes the ungraded-key claim its body asserts.
+- BR-41 — not-addressed — Revert-measured: restoring the vacuity fatal leaves puretest's own suite GREEN and reddens only cmd/define/play. No testdata/nothing fixture exists.
+- BR-42 — not-addressed — yaml.go:163.16,165.3 still at count 0, and the issue Log has no round-7/8/9 entry and no coverage-derived pinned/unpinnable classification.
+- BR-43 — not-addressed — play_loop_test.go:523-529 unchanged; fakeDictionary already returns ErrNoEntry for any word outside the corpus.
+
 ## Open findings
 
-- **BR-12** [Important] `claim-without-failing-test` Two Done-when rows are ticked with no test: the audio block has measured zero coverage and -count is never exercised
 - **BR-13** [Important] `dead-entry-path` The --play and -count flag wiring at main.go:369 has zero test coverage, the class #21 already shipped twice
-- **BR-17** [Minor] `io-not-injected` playSession re-enters raw mode on os.Stdin rather than the file runPlay was handed
-- **BR-18** [Minor] `probabilistic-regression-test` The cancel-before-select fix is pinned only probabilistically - roughly 1 run in 4 reddens
-- **BR-19** [Minor] `duplicate-sentinel-spelling` anyTime spells time.Time{} as store.Word{}.FirstSeen, while reflect.go:250 writes the plain form
-- **BR-20** [Minor] `unrecorded-scope-decision` toInput reserves Enter, space, d and D from every form, qualifying the second-form Done-when, and no artifact records it
 - **BR-21** [Important] `claim-without-failing-test` The rule from round 3 was written down and then broken by the commit that closed round 3 — four unpinned claims remain and I measured that three are pinnable today
-- **BR-22** [Important] `plan-checkboxes-not-ticked` The M1 row is ticked although the M1 boundary review blocked with four Importants that are still open, and no verdict trailer or close line exists for it
-- **BR-23** [Minor] `duplicate-initialisation` main.go:417 opens the store a second time on the --play path — measured at 2 calls, against 1 on every other path
-- **BR-24** [Minor] `inconsistent-exit-status` Losing the terminal mid-session reports to stderr and exits 0, while failing to enter raw mode at the start exits 1
 - **BR-25** [Minor] `budget-counted-before-filter` A deck word the dictionary no longer knows has already spent a -count slot before it is skipped, and that branch has no test
 - **BR-26** [Important] `mode-silently-ignores-argument` Mode flags are guarded against a word but not against each other, and "define -raw --play" runs a full session that records nothing
-- **BR-27** [Minor] `artifact-revised-without-revision-entry` The durable plan was rewritten in place at 6442c6a with no "## Revisions" section
 - **BR-28** [Minor] `docs-not-updated-for-new-surface` README's new --play section never mentions that the pronunciation plays on every reveal, or that -no-audio applies to a session
 - **BR-29** [Important] `plan-table-contradicts-code` play runs TWO purity guards, but question.go, purity_test.go and the atlas all still claim three
-- **BR-35** [Important] `plan-table-contradicts-code` The plan files puretest under "Pure entities" but it execs `go list` and reads the filesystem
-- **BR-36** [Important] `unreadable-artifact-edit` The issue Log's round-6 entry silently lost seven inline code spans, making BR-30's own accounting unreadable
-- **BR-37** [Important] `artifact-revised-without-revision-entry` The durable plan was substantively revised this window with no `## Revisions` entry
-- **BR-38** [Important] `plan-checkboxes-not-ticked` The plan ticks its two gate-invocation steps and the issue ticks M2, though neither gate has produced a verdict trailer or close line
-- **BR-39** [Minor] `comment-detached-from-its-declaration` playSession's doc comment is now attached to `type rawTerm`, leaving playSession undocumented
-- **BR-40** [Minor] `test-name-contradicts-assertion` TestAnUngradedKeyDoesNotAdvance kept the skip-rule doc comment from the name it replaced
 - **BR-41** [Important] `production-code-used-as-test-fixture` ImportsOnly's zero-import PASS is pinned only by cmd/define/play importing nothing, not by puretest's own suite
 - **BR-42** [Important] `claim-without-failing-test` store/yaml.go's new Stat error branch is at coverage 0 and appears in neither half of the round-6 pinned/unpinnable enumeration
 - **BR-43** [Minor] `duplicated-guard-logic` missingDict duplicates a capability fakeDictionary already has, in the same commit that deleted skipForm for that reason

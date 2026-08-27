@@ -61,6 +61,9 @@ const (
 	// make a change to production code silently change what these tests assert;
 	// a guard's positive case has to be as fixed as its negative one.
 	pure = "github.com/xianxu/tools/cmd/define/puretest/testdata/pure"
+	// The same argument, applied to the OTHER known-good case: zero imports.
+	// It was pinned only by cmd/define/play importing nothing today (BR-41).
+	nothing = "github.com/xianxu/tools/cmd/define/puretest/testdata/nothing"
 )
 
 func TestImportsOnlyRejectsAnIOImport(t *testing.T) {
@@ -155,5 +158,23 @@ func TestGuardFailureNamesTheUnderlyingError(t *testing.T) {
 
 	if !failed(msgs, "no required module") && !failed(msgs, "is not in std") && !failed(msgs, "cannot find") {
 		t.Errorf("the failure did not carry go list's own words: %v", msgs)
+	}
+}
+
+// ZERO imports is a PASS, and it is pinned HERE rather than incidentally by
+// whichever production package happens to import nothing this week.
+//
+// ImportsOnly's doc comment argues the case at length — a package needing
+// nothing at all is the STRONGEST form of the claim, not a failed measurement —
+// and until now the only thing standing behind that argument was cmd/define/play
+// importing nothing today. #7 adds a form package that will likely give play its
+// first import, and the zero-import path would then have gone quiet with nothing
+// to say so (BR-41).
+func TestImportsOnlyAcceptsAPackageWithNoImports(t *testing.T) {
+	msgs := runGuard(func(t puretest.T) {
+		puretest.ImportsOnly(t, nothing, []string{"sort"})
+	})
+	if len(msgs) != 0 {
+		t.Errorf("zero imports must PASS, got %v", msgs)
 	}
 }

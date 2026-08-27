@@ -1694,3 +1694,39 @@ wrong, and it moved the estimate in the wrong direction.
   it.** The ledger had six of seven `tools` rows under 1.0 — systematic
   under-estimation — and the nearest analogue (#15, the same functions) at 0.27×.
   I was correcting downward.
+
+## An enumeration written from memory is not a sweep (#6, three times)
+
+BR-3, BR-29 and BR-42 are one rule found three times: I wrote "these four
+artifacts claim X", "three pinnable, three unpinnable", and each time built the
+list from memory of what I had just done instead of from the diff. Each time the
+list was missing an item that was in the commit.
+
+**Rule:** when a note enumerates sites ("N files say X", "these are the ones
+covered"), build the list by RUNNING something — `grep`, `go tool cover`,
+`git show --stat` — and paste what it returned. If a count appears in prose,
+the command that produced it belongs next to it. A number typed from memory is
+a claim, and it has been wrong every time it has been checked here.
+
+Corollary: a count that varies by context ("three purity guards") should be
+stated per-context, not once. `schedule` takes three guards and `play` takes
+two; a single sentence about "the guards" was wrong in whichever place it was
+copied to second.
+
+## A test double must defend itself against the obvious alternative (#6, BR-43)
+
+`missingDict` duplicates something `fakeDictionary` can already do, and the
+review flagged it. It was justified — using a corpus-absent word would make the
+test depend on a fixture's contents rather than on the behaviour it names, which
+is the fault the `-count`/`obsequious` test already had — but NONE of that was
+written down, so the duplication looked unexamined.
+
+**Rule:** when adding a double next to one that nearly fits, the comment says
+why the near-fit was rejected. If it cannot, use the existing one.
+
+## Back up with git, not with cp to /tmp (#6)
+
+`cp x /tmp/x.bak` before a revert-measurement failed silently under the sandbox
+(`/tmp` is not writable; the scratchpad is), leaving the mutation in the tree
+with no backup. `git checkout -- <path>` needs no backup step, cannot land
+outside the repo, and is already the restore mechanism.

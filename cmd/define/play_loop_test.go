@@ -522,6 +522,14 @@ func TestLosingTheTerminalAfterPlaybackExitsOne(t *testing.T) {
 
 // missingDict answers every lookup with "no entry" — a deck whose words the
 // dictionary no longer knows.
+//
+// Not fakeDictionary with an out-of-corpus word, which returns ErrNoEntry too
+// (BR-43). That would make "every lookup fails" depend on a chosen word being
+// ABSENT from testdata/entries, so adding that word to the corpus later would
+// silently turn this into a test of something else. #6's -count test had exactly
+// that fault — it used obsequious, and was bounded by the corpus rather than by
+// the flag it named. A double that states the property outright cannot drift
+// with a fixture.
 type missingDict struct{}
 
 func (missingDict) Lookup(word string) (string, error) {

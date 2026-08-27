@@ -360,6 +360,18 @@ coverage 0, and two were pinnable that day. Both now are, and both bite:
   at all. Driven by handing the session a `rawTerm` whose file is `os.DevNull`,
   so the re-entry genuinely fails rather than being simulated.
 
+**The enumeration itself was incomplete (BR-42).** It said "four of five code
+fixes" and then classified six things, and `store/yaml.go`'s new `f.Stat()` error
+branch — a fix from the same sweep commit — appeared in NEITHER half. It is at
+coverage 0 and stays there: `f` is opened by `AppendEvent` three lines above, and
+`Stat` on a handle `OpenFile` just returned does not fail for any reason a test
+can arrange. Pinning it would mean injecting a file-handle seam into the store to
+observe one `return err`, which costs more than the branch is worth — but that is
+a judgment to WRITE DOWN, not to omit. This is the third finding in this issue
+(BR-3, BR-29, now BR-42) where I wrote an enumeration and did not sweep it; the
+pattern is that the enumeration gets written from memory of what I just did
+rather than from the diff.
+
 The other three are honestly unpinnable here: the duplicate `withStore` was
 idempotent by construction, the zero time spelled `store.Word{}.FirstSeen` has
 no behaviour to observe, and the raw-mode descriptor (`os.Stdin` where the
