@@ -31,8 +31,17 @@ type YAML struct {
 // policy — who chooses it stays a one-line question at the boundary.
 func NewYAML(dir string, warn io.Writer) *YAML { return &YAML{dir: dir, warn: warn} }
 
-func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, "words") }
-func (y *YAML) eventsDir() string { return filepath.Join(y.dir, "events") }
+// RuntimeDirs names every directory define writes into the working directory.
+//
+// ONE source, because a new one has to reach three places that cannot see each
+// other: .gitignore, the index guard, and the history guard. #9 added usage/ and
+// reached none of them — the deck-in-git class that has now cost four review
+// rounds across three issues. TestGitignoreCoversRuntimeDirs closes the loop the
+// compiler cannot: adding a name here and forgetting .gitignore fails a test.
+var RuntimeDirs = []string{"words", "events", "usage"}
+
+func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0]) }
+func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) }
 
 // userModelFile is the third artifact in the directory, beside words/ and
 // events/. Markdown rather than YAML because a person edits it: #17 regenerates
@@ -40,7 +49,7 @@ func (y *YAML) eventsDir() string { return filepath.Join(y.dir, "events") }
 func (y *YAML) userModelFile() string { return filepath.Join(y.dir, "user-model.md") }
 
 // usageDir holds the news cache, one file per word, beside words/ and events/.
-func (y *YAML) usageDir() string { return filepath.Join(y.dir, "usage") }
+func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }
 
 // SetUserModel writes the learner model.
 //

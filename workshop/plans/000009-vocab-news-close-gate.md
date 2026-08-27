@@ -432,6 +432,139 @@ rounds:
           family: delete-scope-unstated-for-new-record
           round: 4
       blocked: true
+    - "n": 5
+      timestamp: "2026-08-26T22:00:09-07:00"
+      agent: claude
+      dispose:
+        - id: BR-14
+          disposition: addressed
+          note: 'Verified by reverting: dropping the query quotes reddens news_test.go:366, and removing the empty-publisher guard reddens TestNoPublisherLeavesTheTitleAlone.'
+          round: 5
+        - id: BR-15
+          disposition: addressed
+          note: Verified by reverting at BOTH production sites — unwiring main.go:215 or main.go:180 reddens news_test.go:439; the vestigial error return is gone from the interface.
+          round: 5
+        - id: BR-5
+          disposition: not-addressed
+          note: 'Re-verified by mutation against the full 94s suite: e.Blocks[:1] leaves all of cmd/define green.'
+          round: 5
+        - id: BR-6
+          disposition: not-addressed
+          note: renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+          round: 5
+        - id: BR-7
+          disposition: not-addressed
+          note: store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+          round: 5
+        - id: BR-9
+          disposition: not-addressed
+          note: Measured at the close - 0 of 27 plan checkboxes ticked, newsUsageSource still at plan:88, plan:97 still says Usages returns an error, the issue's ticked M2/M3 rows still name Store.Usages/NewsSource//usage, and the Log still says M1 round 1 had "three findings" when it raised nine.
+          round: 5
+        - id: BR-8
+          disposition: not-addressed
+          note: Re-probed at HEAD - containsWord is false for "e.g.", "9/11" and "rock 'n' roll" against text containing them verbatim; still undocumented in usage.go and the atlas.
+          round: 5
+        - id: BR-16
+          disposition: not-addressed
+          note: news.go:133-138 unchanged - both branches still return items, nil, so the guard cannot be mutated.
+          round: 5
+        - id: BR-17
+          disposition: not-addressed
+          note: rss.go:16-38 unchanged; the anonymous struct has no XMLName, so any well-formed non-RSS XML still returns (empty, nil).
+          round: 5
+        - id: BR-18
+          disposition: not-addressed
+          note: rss_test.go property still unreachable, and neither the plan nor the Log records what actually pins the Done-when clause (grepped both for TestParseRSSOverACapturedFeed - no hits).
+          round: 5
+        - id: BR-19
+          disposition: not-addressed
+          note: atlas/define.md:215-219 layout block still lists only words/, events/ and user-model.md.
+          round: 5
+        - id: BR-20
+          disposition: not-addressed
+          note: store/yaml.go:366 unchanged; a mechanical AST sweep found a SECOND instance in this window at main.go:179, raised below.
+          round: 5
+        - id: BR-21
+          disposition: not-addressed
+          note: yaml.go:417 still removes only words/; Store.Forget's doc enumeration still omits the new per-word record and storetest has no row for it.
+          round: 5
+      findings:
+        - id: BR-22
+          severity: Important
+          title: usage/ is a new runtime directory in the working directory and is in neither .gitignore nor either repo guard
+          detail: |-
+            Measured - `git check-ignore -v cmd/define/usage/ephemeral.yaml` exits 1 (NOT ignored) while
+            `cmd/define/words/x.yaml` matches .gitignore:29. YAML.SetNewsItems (store/yaml.go:407)
+            MkdirAll's usage/ under y.dir, which in production is os.Getwd() - the same directory
+            words/ and events/ land in. Both guards hardcode the pair: repo_guard_test.go:207 and :250
+            test `p == "words" || p == "events"`, so a committed usage/ file trips neither the index
+            guard nor the history guard. Unreachable only until #10 wires the consumer this issue
+            exists to serve; the .gitignore comment already records what happens then, verbatim -
+            "go test runs with cwd set to the PACKAGE directory ... a deck appeared at
+            cmd/define/words/ ... git add -A committed the developer's own vocabulary. Third time
+            this class has cost a review round." This is the fourth. THE CLASS, and BR-19 and BR-21
+            are instances of it: adding a new on-disk record type obliges sweeping every site that
+            enumerates them. The enumeration, complete - .gitignore:29-30, repo_guard_test.go:207,
+            repo_guard_test.go:250, README.md:142-145, atlas/define.md:215-219, and Store.Forget's
+            doc plus a storetest row. Zero of the six were edited by this window. ARCH-DRY applies
+            too: the two guards should read one shared list rather than repeating the literal pair.
+          family: record-type-enumeration-unswept
+          round: 5
+        - id: BR-23
+          severity: Minor
+          title: sessionUsage was spliced under openStore's doc comment, so openStore lost its documentation
+          detail: |-
+            cmd/define/main.go:165-183. `go doc -u ./cmd/define sessionUsage` prints "openStore builds
+            the store-backed dependencies over the WORKING DIRECTORY." as its FIRST line, and
+            `func openStore` at :183 prints with no doc at all; `git show 361136b:cmd/define/main.go`
+            has that comment attached at :154. Introduced by 06312f4. THIS IS THE 2ND FINDING IN
+            FAMILY doc-comment-detached-from-declaration - do NOT fix this instance alone. The rule:
+            a declaration inserted into an existing file must never be placed inside another
+            declaration's doc comment, and the detector is mechanical - a doc comment whose first
+            word is not the declaration's own name. I ran that detector (go/ast walk over all four
+            packages, first doc word vs. declaration name, ~30 seconds) and the enumeration is
+            COMPLETE: exactly two production instances exist in this window - store/yaml.go:366
+            (BR-20) and main.go:179 - every other hit being a legitimate prose doc on a const block.
+            Sweep both, and consider keeping the detector.
+          family: doc-comment-detached-from-declaration
+          round: 5
+        - id: BR-24
+          severity: Minor
+          title: warnOnce's once-per-session guard is at zero coverage, so deleting it is invisible
+          detail: |-
+            cmd/define/usage.go:183-185 is the only uncovered block in the new files besides the
+            near-unreachable NewRequestWithContext error - proof from the profile that no test calls
+            Usages twice on a failing feed, so removing the `warned` guard changes nothing any test
+            observes. THIS IS THE 2ND FINDING IN FAMILY documented-degradation-unpinned. The rule is
+            the one BR-14 already stated - a comment describing a degradation policy needs one test
+            that reddens when the policy is removed - and what is new is the measured prevalence,
+            which makes the enumeration trivially checkable: there are exactly two warn-once sites
+            in cmd/define (capture.go:127 and usage.go:183), one is pinned and one is not, and the
+            unpinned one's own comment at usage.go:171 names the pinned one as its model
+            ("Once per session, like storeCapturer's write warning"). TestStoreCapturerDegradesOnWriteFailure
+            (capture_test.go:60) loops five times and asserts exactly one "define:" line; copying
+            that shape onto bothSources is six lines.
+          family: documented-degradation-unpinned
+          round: 5
+        - id: BR-25
+          severity: Minor
+          title: The atlas records the seam as it was two rounds ago — no warn signal, no dropped error return
+          detail: |-
+            atlas/define.md:1080-1082 says "a feed outage degrades to the dictionary rather than
+            propagating" and stops there. Two behaviours this window's last two rounds added are
+            absent: the once-per-session warning on the warn writer (BR-15's whole remedy, and
+            lessons.md now records "degrading SILENTLY is a different design from degrading"), and
+            the fact that UsageSource.Usages returns NO error - the single most consumer-relevant
+            fact for #10, currently recorded only in a code comment and the issue Log. THIS IS THE
+            2ND FINDING IN FAMILY docs-describe-unshipped-milestone, in the inverse direction: the
+            rule is that doc prose at a boundary describes what that boundary shipped, no more AND
+            no less, and BR-3 was the over-description arm. Do not patch one sentence - the
+            enumeration is the atlas's "Usage sources" section read against the three things rounds
+            4-5 changed: the warn signal, the dropped error return, and usage/ missing from the
+            layout block (BR-19). One pass closes all three.
+          family: docs-describe-unshipped-milestone
+          round: 5
+      blocked: true
 ---
 
 # Gate ledger — tools#9 (boundary-review)
@@ -677,6 +810,82 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   declare whether it is removed, and a storetest row to pin the answer. Decide either way, but say
   it in the interface doc and pin it in the suite.
 
+## Round 5 — 2026-08-26T22:00:09-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-14 — addressed — Verified by reverting: dropping the query quotes reddens news_test.go:366, and removing the empty-publisher guard reddens TestNoPublisherLeavesTheTitleAlone.
+- BR-15 — addressed — Verified by reverting at BOTH production sites — unwiring main.go:215 or main.go:180 reddens news_test.go:439; the vestigial error return is gone from the interface.
+- BR-5 — not-addressed — Re-verified by mutation against the full 94s suite: e.Blocks[:1] leaves all of cmd/define green.
+- BR-6 — not-addressed — renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+- BR-7 — not-addressed — store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+- BR-9 — not-addressed — Measured at the close - 0 of 27 plan checkboxes ticked, newsUsageSource still at plan:88, plan:97 still says Usages returns an error, the issue's ticked M2/M3 rows still name Store.Usages/NewsSource//usage, and the Log still says M1 round 1 had "three findings" when it raised nine.
+- BR-8 — not-addressed — Re-probed at HEAD - containsWord is false for "e.g.", "9/11" and "rock 'n' roll" against text containing them verbatim; still undocumented in usage.go and the atlas.
+- BR-16 — not-addressed — news.go:133-138 unchanged - both branches still return items, nil, so the guard cannot be mutated.
+- BR-17 — not-addressed — rss.go:16-38 unchanged; the anonymous struct has no XMLName, so any well-formed non-RSS XML still returns (empty, nil).
+- BR-18 — not-addressed — rss_test.go property still unreachable, and neither the plan nor the Log records what actually pins the Done-when clause (grepped both for TestParseRSSOverACapturedFeed - no hits).
+- BR-19 — not-addressed — atlas/define.md:215-219 layout block still lists only words/, events/ and user-model.md.
+- BR-20 — not-addressed — store/yaml.go:366 unchanged; a mechanical AST sweep found a SECOND instance in this window at main.go:179, raised below.
+- BR-21 — not-addressed — yaml.go:417 still removes only words/; Store.Forget's doc enumeration still omits the new per-word record and storetest has no row for it.
+
+### Raised
+
+- **BR-22** [Important] `record-type-enumeration-unswept` usage/ is a new runtime directory in the working directory and is in neither .gitignore nor either repo guard
+  Measured - `git check-ignore -v cmd/define/usage/ephemeral.yaml` exits 1 (NOT ignored) while
+  `cmd/define/words/x.yaml` matches .gitignore:29. YAML.SetNewsItems (store/yaml.go:407)
+  MkdirAll's usage/ under y.dir, which in production is os.Getwd() - the same directory
+  words/ and events/ land in. Both guards hardcode the pair: repo_guard_test.go:207 and :250
+  test `p == "words" || p == "events"`, so a committed usage/ file trips neither the index
+  guard nor the history guard. Unreachable only until #10 wires the consumer this issue
+  exists to serve; the .gitignore comment already records what happens then, verbatim -
+  "go test runs with cwd set to the PACKAGE directory ... a deck appeared at
+  cmd/define/words/ ... git add -A committed the developer's own vocabulary. Third time
+  this class has cost a review round." This is the fourth. THE CLASS, and BR-19 and BR-21
+  are instances of it: adding a new on-disk record type obliges sweeping every site that
+  enumerates them. The enumeration, complete - .gitignore:29-30, repo_guard_test.go:207,
+  repo_guard_test.go:250, README.md:142-145, atlas/define.md:215-219, and Store.Forget's
+  doc plus a storetest row. Zero of the six were edited by this window. ARCH-DRY applies
+  too: the two guards should read one shared list rather than repeating the literal pair.
+- **BR-23** [Minor] `doc-comment-detached-from-declaration` sessionUsage was spliced under openStore's doc comment, so openStore lost its documentation
+  cmd/define/main.go:165-183. `go doc -u ./cmd/define sessionUsage` prints "openStore builds
+  the store-backed dependencies over the WORKING DIRECTORY." as its FIRST line, and
+  `func openStore` at :183 prints with no doc at all; `git show 361136b:cmd/define/main.go`
+  has that comment attached at :154. Introduced by 06312f4. THIS IS THE 2ND FINDING IN
+  FAMILY doc-comment-detached-from-declaration - do NOT fix this instance alone. The rule:
+  a declaration inserted into an existing file must never be placed inside another
+  declaration's doc comment, and the detector is mechanical - a doc comment whose first
+  word is not the declaration's own name. I ran that detector (go/ast walk over all four
+  packages, first doc word vs. declaration name, ~30 seconds) and the enumeration is
+  COMPLETE: exactly two production instances exist in this window - store/yaml.go:366
+  (BR-20) and main.go:179 - every other hit being a legitimate prose doc on a const block.
+  Sweep both, and consider keeping the detector.
+- **BR-24** [Minor] `documented-degradation-unpinned` warnOnce's once-per-session guard is at zero coverage, so deleting it is invisible
+  cmd/define/usage.go:183-185 is the only uncovered block in the new files besides the
+  near-unreachable NewRequestWithContext error - proof from the profile that no test calls
+  Usages twice on a failing feed, so removing the `warned` guard changes nothing any test
+  observes. THIS IS THE 2ND FINDING IN FAMILY documented-degradation-unpinned. The rule is
+  the one BR-14 already stated - a comment describing a degradation policy needs one test
+  that reddens when the policy is removed - and what is new is the measured prevalence,
+  which makes the enumeration trivially checkable: there are exactly two warn-once sites
+  in cmd/define (capture.go:127 and usage.go:183), one is pinned and one is not, and the
+  unpinned one's own comment at usage.go:171 names the pinned one as its model
+  ("Once per session, like storeCapturer's write warning"). TestStoreCapturerDegradesOnWriteFailure
+  (capture_test.go:60) loops five times and asserts exactly one "define:" line; copying
+  that shape onto bothSources is six lines.
+- **BR-25** [Minor] `docs-describe-unshipped-milestone` The atlas records the seam as it was two rounds ago — no warn signal, no dropped error return
+  atlas/define.md:1080-1082 says "a feed outage degrades to the dictionary rather than
+  propagating" and stops there. Two behaviours this window's last two rounds added are
+  absent: the once-per-session warning on the warn writer (BR-15's whole remedy, and
+  lessons.md now records "degrading SILENTLY is a different design from degrading"), and
+  the fact that UsageSource.Usages returns NO error - the single most consumer-relevant
+  fact for #10, currently recorded only in a code comment and the issue Log. THIS IS THE
+  2ND FINDING IN FAMILY docs-describe-unshipped-milestone, in the inverse direction: the
+  rule is that doc prose at a boundary describes what that boundary shipped, no more AND
+  no less, and BR-3 was the over-description arm. Do not patch one sentence - the
+  enumeration is the atlas's "Usage sources" section read against the three things rounds
+  4-5 changed: the warn signal, the dropped error return, and usage/ missing from the
+  layout block (BR-19). One pass closes all three.
+
 ## Open findings
 
 - **BR-5** [Minor] `at-least-one-hides-undercollection` entryUsages' multi-block traversal is unpinned by an at-least-one assertion
@@ -684,11 +893,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-7** [Minor] `name-means-two-things` store.NewsItem.Source is the publisher while Usage.Source is provenance
 - **BR-8** [Minor] `matcher-limit-silently-drops-input` A punctuated deck key can never yield a usage, and nothing says so
 - **BR-9** [Minor] `plan-record-drift` Every plan checkbox is unticked at the boundary, and five prose claims contradict the code
-- **BR-14** [Important] `documented-degradation-unpinned` Every error branch in news.go is uncovered, and the store-read degradation survives inversion
-- **BR-15** [Important] `degradation-without-signal` bothSources discards the feed error with no warning, and UsageSource.Usages can never return one
 - **BR-16** [Minor] `dead-branch` cachingFeed's SetNewsItems error handler and its fallthrough return the same value
 - **BR-17** [Minor] `parser-accepts-wrong-document` parseRSS never checks the root element, so non-RSS XML becomes a cached "no news"
 - **BR-18** [Minor] `assertion-cannot-fire` FuzzParseRSS's remaining property can never fire, so the target is now a no-panic smoke test
 - **BR-19** [Minor] `fact-documented-in-two-places` The atlas's canonical on-disk layout block does not list usage/
 - **BR-20** [Minor] `doc-comment-detached-from-declaration` newsFile was spliced under Forget's doc comment, so YAML.Forget lost its documentation
 - **BR-21** [Minor] `delete-scope-unstated-for-new-record` Forget does not remove usage/<slug>.yaml, and neither the doc nor storetest says so
+- **BR-22** [Important] `record-type-enumeration-unswept` usage/ is a new runtime directory in the working directory and is in neither .gitignore nor either repo guard
+- **BR-23** [Minor] `doc-comment-detached-from-declaration` sessionUsage was spliced under openStore's doc comment, so openStore lost its documentation
+- **BR-24** [Minor] `documented-degradation-unpinned` warnOnce's once-per-session guard is at zero coverage, so deleting it is invisible
+- **BR-25** [Minor] `docs-describe-unshipped-milestone` The atlas records the seam as it was two rounds ago — no warn signal, no dropped error return
