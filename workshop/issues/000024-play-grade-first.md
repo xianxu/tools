@@ -80,7 +80,10 @@ Single boundary — no `Mx` tags. Atomic change to one state machine, closing in
 one `sdlc close` (AGENTS.md §3).
 
 - [ ] `Apply` returns `[]Outcome` — mechanical signature change, no behaviour
-      change, seven call sites in `session_test.go`.
+      change. `grep -c "Apply(" cmd/define/play/session_test.go` → **9** call
+      sites, most via the `drive` helper, which must append all outcomes. (This
+      row said "seven" from memory while the plan doc said nine — PQ-7, and the
+      third time in two issues a count reached some artifacts and not others.)
 - [ ] `Session.Graded`, and `advance` clears it alongside `Revealed`.
 - [ ] The `InputRune` arm: grade first. `y` records and advances with no reveal;
       `n` on a hidden word records Wrong AND reveals, staying on the word; a key

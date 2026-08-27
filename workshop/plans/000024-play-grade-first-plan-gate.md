@@ -90,6 +90,43 @@ rounds:
           family: unbacked-claim-about-existing-code
           round: 2
       blocked: false
+    - "n": 3
+      timestamp: "2026-08-27T15:52:55-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-5
+          disposition: addressed
+          note: Grep is now single-word plus a proof sub-grep; I ran it and README.md:42 and atlas/define.md:1284 both hit.
+          round: 3
+      findings:
+        - id: PQ-6
+          severity: Important
+          title: Task 6's no-audio assertion cannot fail — playRig installs noAudioSource, so d.player is never reached
+          detail: |-
+            playRig sets d.audio = noAudioSource{} (play_loop_test.go:33) and Fetch always
+            returns ErrNoAudio (main_test.go:19), while speak fetches before playing
+            (main.go:636). fp.Played is empty under old and new flow alike, so Step 3's
+            mutant survives and Done-when bullet 1 proves nothing. Set d.audio = okAudio{}
+            (play_loop_test.go:474, which exists for exactly this — ARCH-DRY/ARCH-MOCK).
+            2nd in family. RULE, not the site: a negative assertion is meaningful only if
+            the rig can produce the thing being denied; name the double that produces it
+            and confirm the rig installs it. Enumeration run over the plan's 8 new tests —
+            1 of 8 fails. Put that enumeration in the plan and extend Step 3's bite-check
+            from one test to every negative assertion.
+          family: test-precondition-never-fires
+          round: 3
+        - id: PQ-7
+          severity: Minor
+          title: The issue's Plan row says seven Apply call sites in session_test.go; grep counts nine
+          detail: |-
+            grep -c "Apply(" cmd/define/play/session_test.go returns 9, matching the plan
+            doc and the Estimate; only the issue checklist row says seven. 3rd in family.
+            RULE, not the site: a count or line-range in a plan must be produced by a
+            command the plan shows, not typed from memory — the same discipline Task 9's
+            grep-proof already applies to the doc sweep, extended to counts.
+          family: unbacked-claim-about-existing-code
+          round: 3
+      blocked: true
 content_hash: 5c05864bf55827ee8c2ef3913dd0ecbe5bd997b78de9b268ca725c253ed8d1de
 ---
 
@@ -150,6 +187,33 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   "Enter or / space reveals the definition" at README.md:41-42 matches none of
   the four patterns; Task 9's Files list naming README.md:41-58 covers it anyway.
 
+## Round 3 — 2026-08-27T15:52:55-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-5 — addressed — Grep is now single-word plus a proof sub-grep; I ran it and README.md:42 and atlas/define.md:1284 both hit.
+
+### Raised
+
+- **PQ-6** [Important] `test-precondition-never-fires` Task 6's no-audio assertion cannot fail — playRig installs noAudioSource, so d.player is never reached
+  playRig sets d.audio = noAudioSource{} (play_loop_test.go:33) and Fetch always
+  returns ErrNoAudio (main_test.go:19), while speak fetches before playing
+  (main.go:636). fp.Played is empty under old and new flow alike, so Step 3's
+  mutant survives and Done-when bullet 1 proves nothing. Set d.audio = okAudio{}
+  (play_loop_test.go:474, which exists for exactly this — ARCH-DRY/ARCH-MOCK).
+  2nd in family. RULE, not the site: a negative assertion is meaningful only if
+  the rig can produce the thing being denied; name the double that produces it
+  and confirm the rig installs it. Enumeration run over the plan's 8 new tests —
+  1 of 8 fails. Put that enumeration in the plan and extend Step 3's bite-check
+  from one test to every negative assertion.
+- **PQ-7** [Minor] `unbacked-claim-about-existing-code` The issue's Plan row says seven Apply call sites in session_test.go; grep counts nine
+  grep -c "Apply(" cmd/define/play/session_test.go returns 9, matching the plan
+  doc and the Estimate; only the issue checklist row says seven. 3rd in family.
+  RULE, not the site: a count or line-range in a plan must be produced by a
+  command the plan shows, not typed from memory — the same discipline Task 9's
+  grep-proof already applies to the doc sweep, extended to counts.
+
 ## Open findings
 
-- **PQ-5** [Minor] `unbacked-claim-about-existing-code` Task 9's grep cannot reach README:41-42, where the stale phrase is split across a line break
+- **PQ-6** [Important] `test-precondition-never-fires` Task 6's no-audio assertion cannot fail — playRig installs noAudioSource, so d.player is never reached
+- **PQ-7** [Minor] `unbacked-claim-about-existing-code` The issue's Plan row says seven Apply call sites in session_test.go; grep counts nine

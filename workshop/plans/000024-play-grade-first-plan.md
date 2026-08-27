@@ -507,11 +507,16 @@ it cannot, use the existing one.* It cannot here. `playRig` already installs one
 // what a MISS earns; playing it on a hit is the step this issue removes.
 func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic")
-	// Audio ENABLED, so this is about the FLOW and not about the flag —
-	// playRig's own options set noAudio.
+	// Audio ENABLED, so this is about the FLOW and not the flag.
 	opt.noAudio, opt.times = false, 1
 	fp := &fakePlayer{}
 	d.player = fp
+	// AND a source that actually HAS a recording. playRig installs
+	// noAudioSource, which always returns ErrNoAudio — so without this the
+	// player is unreachable and "played nothing" is true no matter what the
+	// session does (PQ-6). okAudio (play_loop_test.go:474) exists for exactly
+	// this, and TestRevealPlaysThePronunciationByDefault already pairs the two.
+	d.audio = okAudio{}
 
 	qs := questionsFor(t, d, opt)
 	var out, errb bytes.Buffer
@@ -532,16 +537,30 @@ Run: `go test ./cmd/define/ -run TestCorrectAnswerPlaysNoAudio`
 Expected: PASS with the new flow (would FAIL on the old one, which required a
 reveal — and a reveal plays audio).
 
-- [ ] **Step 3: Measure that it bites**
+- [ ] **Step 3: Measure that EVERY negative assertion bites**
 
-```bash
-# MUTANT: make y reveal before advancing, i.e. the old flow.
-# In session.go's InputRune arm, change `verdict != Wrong` to `false` — i.e.
-# every answer reveals first, which is the old flow.
-go test ./cmd/define/ -run TestCorrectAnswerPlaysNoAudio
-# Expected: FAIL "played audio for a word the learner got right"
-git checkout -- cmd/define/play/session.go
-```
+A negative assertion is meaningful only if the rig can produce the thing being
+denied (PQ-6). Run each mutation, confirm the named test reddens, then
+`git checkout --` the file. Restore with git, never a `cp` backup — `/tmp` is not
+writable under the sandbox and a silent backup failure leaves the mutation in the
+tree (#6, lessons.md).
+
+| test | denies | mutation that must redden it |
+|---|---|---|
+| `TestCorrectBeforeRevealAdvancesWithNoReveal` | a reveal on a hit | in the `InputRune` arm, drop `verdict != Wrong` so every answer reveals |
+| `TestWrongBeforeRevealRecordsAndReveals` | advancing on a miss | make the miss branch call `advance` |
+| `TestAKeyAfterAMissAdvancesWithoutRecordingAgain` | a second record | in the `Graded` arm, pass `verdict` instead of `Skipped` |
+| `TestEnterAndSpaceMoveOnAfterAMiss` | Enter/space being dead | delete the `Graded` arm from `InputReveal` |
+| `TestRevealWithoutGradingThenGrade` | a peek grading | set `s.Graded = true` in the `InputReveal` arm |
+| `TestDropWorksInEveryState` | drop breaking per state | return `OutcomeNone` from `InputDrop` when `s.Graded` |
+| `TestCorrectAnswerPlaysNoAudio` | audio on a hit | as row 1 — a reveal on a hit plays |
+| `TestThePromptSaysWhatTheKeysDo` | the wrong prompt per state | swap the `Graded` and default prompt lines |
+| `TestPTYPlayGradeFirst` | the definition showing early | make `draw` always print `q.Reveal()` |
+
+**Row 7 is the one that was broken when this plan was first written** — with
+`playRig`'s `noAudioSource` in place, `d.player` is unreachable and the assertion
+passes whatever the session does. One of nine failed this check; that ratio is
+why the check is a table and not a sentence.
 
 - [ ] **Step 4: Commit**
 
