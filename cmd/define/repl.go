@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -189,16 +188,8 @@ func repl(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, std
 	// piped, redirected or raw-mode-fallback run with a ctx.Done() nothing can
 	// reach: SIGINT diverted from default termination by NotifyContext, and then
 	// delivered to no one (PQ-6).
-	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	ctx, interrupts, cancel := detachedInterrupts(ctx, d)
 	defer cancel()
-	interrupts := &interrupter{fn: cancel}
-	if d.notifySignals != nil {
-		go func() {
-			for range d.notifySignals(os.Interrupt) {
-				interrupts.Fire()
-			}
-		}()
-	}
 
 	interactive := d.stdinIsTerminal != nil && d.stdinIsTerminal()
 	// ONE predicate for "there is a human looking at a terminal", used for every

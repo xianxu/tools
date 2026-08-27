@@ -235,6 +235,12 @@ type options struct {
 	noAudio bool
 	times   int
 	locale  string
+	// count bounds a review session (#6). A flag rather than a constant because
+	// twenty is a guess about one learner's attention span — exactly the kind of
+	// guess that should be changeable without a rebuild. 0 means "no budget" and
+	// returns nothing, matching schedule.Queue's contract rather than inventing a
+	// second meaning for it.
+	count int
 	// noCapture means "write nothing in this directory". Read ONCE here, at flag
 	// parse, so the environment is an input to decideCapture rather than a second
 	// mechanism beside it. Note it also drops history to session-only, because
@@ -267,6 +273,8 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	reflect := fs.Bool("reflect", false, "read the deck and write user-model.md")
+	playFlag := fs.Bool("play", false, "review the words due today")
+	count := fs.Int("count", 20, "how many words a review session offers")
 	fs.Usage = func() {
 		fmt.Fprint(stderr, "usage: define [flags] [word]\n\n"+
 			"Looks the word up in macOS's active dictionaries — normally the New\n"+
@@ -317,6 +325,15 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		fmt.Fprintf(stderr, "define: %s must not be negative\n", flagName)
 		return 2
 	}
+	// -count is validated HERE, beside its siblings, because it is the same
+	// class: a negative budget is a typo, not an instruction. It used to be
+	// accepted silently, and schedule.Queue then returned nil for it, which
+	// --play reported as "nothing due today" — blaming the schedule for what the
+	// flag did (BR-46).
+	if *count < 0 {
+		fmt.Fprintln(stderr, "define: -count must not be negative")
+		return 2
+	}
 	if *times > maxSoundTimes {
 		fmt.Fprintf(stderr, "define: %s %d would take a while to sit through; the limit is %d\n",
 			flagName, *times, maxSoundTimes)
@@ -339,6 +356,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		noCapture: os.Getenv("DEFINE_NO_CAPTURE") != "",
 		times:     *times,
 		locale:    *locale,
+		count:     *count,
 	}
 
 	// Usage errors are settled BEFORE a store is opened. A mistyped command must
@@ -375,6 +393,14 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// one of them is how -raw came to mean two things in #2.
 		fmt.Fprintln(stderr, "define: --reflect reads the deck; do not also pass a word")
 		return 2
+	case *playFlag && fs.NArg() != 0:
+		// Same rule, and --play needed it MORE than --reflect does: it writes
+		// events, so `define --play sycophantic` would change state under a
+		// misread intent. The first version dispatched above this switch and so
+		// could never reach the guard — the comment three lines up states the
+		// rule it was breaking.
+		fmt.Fprintln(stderr, "define: --play reviews the deck; do not also pass a word")
+		return 2
 	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 		fs.Usage()
 		return 2
@@ -396,6 +422,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// Dispatched HERE and not beside --llm-check, which runs before withStore
 	// precisely because it needs no directory. --reflect needs both the deck and
 	// the clock, so it belongs after them, where --forget is (#17 D5).
+	if *playFlag {
+		// No second withStore: it is called unconditionally nine lines above.
+		// Calling it twice is harmless only because it fills nils — which is
+		// exactly the kind of "harmless" that stops being true when someone adds
+		// a field that is not nil-merged.
+		return runPlay(ctx, d, opt, stdin, stdout, stderr)
+	}
 	if *reflect {
 		return runReflect(ctx, d, opt, stdout, stderr)
 	}

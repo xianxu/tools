@@ -932,6 +932,66 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## Use `git stash` for mutation safety, not a `wip` commit (define #6 close)
+
+After a scratch-copy restore silently deleted a function, I adopted the rule
+"commit, then mutate, then `git checkout HEAD -- <file>`". The rule is right — a
+restore has to target something versioned — but the mechanism I chose leaves
+unexplained commits in history. Seven of them here, one 507 lines across three
+files, and the close review flagged it: a reviewer reading the branch finds half
+a milestone's work under the message `wip`.
+
+- **`git stash` gives the same guarantee without writing anything permanent.**
+  Stash, mutate, `git checkout`, `git stash pop`.
+- **If a wip commit does happen, squash it before the boundary.** Non-interactive
+  rebase works: `GIT_SEQUENCE_EDITOR="sed -E 's/^pick (sha1|sha2)/fixup \1/'" git
+  rebase -i <base>`, with a backup branch first and a `git diff backup --stat`
+  after to prove the tree is unchanged.
+
+## Never report a boundary closed without READING the verdict (define #6)
+
+I ran `sdlc milestone-close` for M1 in the background, the completion
+notification arrived while I was mid-M2, and I never opened the output. I then
+told the operator "M1 built", ticked the `- [x] M1` row, and worked on top of it
+for the rest of the session. The close had FAILED with five open Importants — one
+of which was that I had claimed a package's guards were "verified in the tree"
+when the package had no tests at all.
+
+Two rounds later the close review caught the tick itself: *"the M1 row is ticked
+although the M1 boundary review blocked with four Importants that are still open,
+and no verdict trailer or close line exists for it."*
+
+- **A backgrounded gate is not a completed gate.** The notification says the
+  COMMAND finished, not that it succeeded. Read the output before saying anything
+  about the milestone, and before ticking anything.
+- **The tick is a claim, and it is checkable.** A ticked `Mx` with no
+  `Review-Verdict:` trailer and no close line in the Log is a claim with no
+  evidence behind it — which is exactly what a later review looks for.
+- **The cost is not the lost round; it is the work built on top.** Everything in
+  M2 sat on a milestone that had not passed, so its findings arrived after the
+  code that inherited them.
+
+## A guard nothing has SEEN fail is indistinguishable from one that cannot (define #6 M1)
+
+At `#5`'s close I recorded a gap: every "the mutant reddens it" claim was verified
+in a scratch copy and thrown away, so nothing in the tree proved the purity guards
+could fail. At `#6` M1 I extracted those guards into a package, verified them the
+same way — mutate, observe, delete — and wrote in the issue Log that the negative
+cases were "verified in the tree". **The package had no test file at all.**
+
+So the fix for a gap reproduced the gap, and described itself as the fix.
+
+- **"Verified" means a committed artifact re-runs the check.** A scratch mutation
+  I watched fail is evidence for me, once. It is not evidence for the next reader,
+  the next change, or CI.
+- **A guard needs its own known-bad fixture.** `puretest/testdata/impure` imports
+  `os` and calls `store.NewYAML`; `testdata/clocky` imports only `time` and calls
+  `time.Since` — the case the import allowlist structurally cannot catch. Each
+  guard is now run against them and asserted to FAIL.
+- **Take the minimal interface, not `*testing.T`.** That one change is what makes
+  a guard testable at all, because a recorder can stand in for the `T` and capture
+  the failures instead of failing.
+
 ## A guard that allows a PACKAGE allows everything in it (define #5 close)
 
 `schedule`'s purity had two guards — an import allowlist and a wall-clock grep —
@@ -1634,3 +1694,125 @@ wrong, and it moved the estimate in the wrong direction.
   it.** The ledger had six of seven `tools` rows under 1.0 — systematic
   under-estimation — and the nearest analogue (#15, the same functions) at 0.27×.
   I was correcting downward.
+
+## An enumeration written from memory is not a sweep (#6, three times)
+
+BR-3, BR-29 and BR-42 are one rule found three times: I wrote "these four
+artifacts claim X", "three pinnable, three unpinnable", and each time built the
+list from memory of what I had just done instead of from the diff. Each time the
+list was missing an item that was in the commit.
+
+**Rule:** when a note enumerates sites ("N files say X", "these are the ones
+covered"), build the list by RUNNING something — `grep`, `go tool cover`,
+`git show --stat` — and paste what it returned. If a count appears in prose,
+the command that produced it belongs next to it. A number typed from memory is
+a claim, and it has been wrong every time it has been checked here.
+
+Corollary: a count that varies by context ("three purity guards") should be
+stated per-context, not once. `schedule` takes three guards and `play` takes
+two; a single sentence about "the guards" was wrong in whichever place it was
+copied to second.
+
+**BR-44 is the fourth instance, and it happened in the round that wrote this
+rule down.** Un-ticking #6's milestone rows meant correcting three artifacts —
+issue, plan, project — and I did two. The project file still carried a close
+date and a hand-typed 0.8h for the boundary the other two now said had never
+closed, which would have double-counted against the measured actual. The
+enumeration was one grep long: `grep -rn "tools#6" workshop/projects/`.
+
+So the rule needs its trigger sharpened. It is not only "when a note enumerates
+sites"; it is **whenever a fact changes, grep for the fact before editing, and
+edit from what the grep returned.** The failure mode is not forgetting that
+other copies exist — it is remembering two of them and never asking.
+
+## A test double must defend itself against the obvious alternative (#6, BR-43)
+
+`missingDict` duplicates something `fakeDictionary` can already do, and the
+review flagged it. It was justified — using a corpus-absent word would make the
+test depend on a fixture's contents rather than on the behaviour it names, which
+is the fault the `-count`/`obsequious` test already had — but NONE of that was
+written down, so the duplication looked unexamined.
+
+**Rule:** when adding a double next to one that nearly fits, the comment says
+why the near-fit was rejected. If it cannot, use the existing one.
+
+## Back up with git, not with cp to /tmp (#6)
+
+`cp x /tmp/x.bak` before a revert-measurement failed silently under the sandbox
+(`/tmp` is not writable; the scratchpad is), leaving the mutation in the tree
+with no backup. `git checkout -- <path>` needs no backup step, cannot land
+outside the repo, and is already the restore mechanism.
+
+## A live conformance check that is never run is not a check (#6, BR-45)
+
+`--play` shipped as the newest raw-terminal surface with no pty conformance
+test, though `startDefine` and five sibling conformance files already existed.
+The one defect it shipped was the CRLF cascade — and it was found by the
+operator on a real terminal, not by the suite.
+
+Worse, when the `--play` test was finally written, running the whole pty suite
+showed `TestPTYSuggestionAndAcceptance` had been RED since #21. It asserts on
+raw frame bytes, and #21's deck-word highlighting inserts an SGR sequence inside
+the typed line, so `"what is a sycophantic"` no longer matched as a substring
+even though Tab had accepted correctly. **Both #20 and #21 merged with it red**,
+because the suite is behind `-tags conformance` and neither close ran it.
+
+**Rules:**
+1. A new raw-terminal, network, or external-binary surface gets a conformance
+   test in the SAME milestone. The harness existing is not the same as it being
+   used, and "smoke-tested by hand" is the scratch-verify pattern.
+2. Run the on-demand suites at a close, not only the default `go test ./...`.
+   An opt-in suite decays silently — it reports nothing while it is failing.
+3. Assert on TEXT with styling stripped, unless styling is the subject. A raw
+   byte assertion is a test of the renderer's current escape sequences, and any
+   feature that adds a colour will break it without a behaviour changing.
+
+## "Nothing due today" named the wrong cause three times (#6, BR-46)
+
+One message served an empty deck, a zero budget, and a genuinely clear schedule,
+so `--play -count 0` told the learner their deck was clear while every word in
+it was outstanding — the learner's own input handed back wearing the schedule's
+clothes. The existing test asserted "nothing due" for a deck with NO WORDS, so
+it encoded the conflation rather than catching it.
+
+**Rule:** when a result is empty, the message names WHICH cause produced it, and
+the reassuring sentence is reserved for the reassuring case. A message shared by
+an error path and a success path will be read as the success.
+
+## The claim → test map, and the check that makes it real (#6, BR-48)
+
+BR-48 was the SIXTH finding in `claim-without-failing-test` and the rule behind
+it had never actually been executed: *a claim in an artifact is complete only
+when a NAMED test fails without it, and the map from claim to test is written
+where the claim lives.*
+
+Two things made this the sharpest finding of the issue.
+
+**The commit that closed one unpinned fix shipped another.** `-count must not be
+negative`, added to fix BR-46, went in at coverage 0 — so the round that closed
+the family's previous instance created a new member of it. A fix is not done
+because the defect is gone; it is done when something fails without it.
+
+**A test can configure a seam the code under test cannot reach.**
+`TestSessionRunsWithTheModelUnavailable` set `d.newLLM` to a failing client and
+asserted the session finished — but the play path never reads `d.newLLM` at all,
+so a WORKING client produced the same result. The test was byte-identical in
+meaning to the one above it, and the Done-when row it stood for could not fail.
+"Degrades when the model is unavailable" and "never reaches for a model" are
+different claims; only a double that fails WHEN USED asserts the second.
+
+**And then, writing the map: four of the fourteen test names I typed did not
+exist.** In the artifact whose whole purpose was to close the
+write-it-from-memory family. A loop over `grep -qE "func <name>\("` caught them.
+
+**Rules:**
+1. Build the enumeration by RUNNING `go tool cover` over the close window and
+   reading the zero-count blocks. Never from memory of what was written.
+2. Every name you write into an artifact — test, function, file, flag — gets
+   grepped before the artifact is committed. The error rate on names typed from
+   memory in this session was 4 in 14.
+3. A seam a test configures must be READ by the code under test. Check with
+   grep; an unreachable seam makes the assertion vacuous while looking rigorous.
+4. State the SCOPE a mutation proved. Mutating `runPlay` left the session test
+   green — correctly, since it drives `playSession`. Knowing which is which is
+   the difference between a pin and a belief.

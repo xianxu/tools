@@ -62,16 +62,27 @@ func startDefine(t *testing.T, args ...string) (*exec.Cmd, *os.File) {
 // binary's model seam at a fake served from this process.
 func startDefineWithEnv(t *testing.T, env []string, args ...string) (*exec.Cmd, *os.File) {
 	t.Helper()
+	// define writes its deck to the CURRENT directory, and a test's cwd is the
+	// PACKAGE directory — so this suite used to write a deck into the source
+	// tree and then rewrite it on every run, which is how three deck files
+	// reached commits. The binary path is absolute for exactly this reason.
+	return startDefineInDir(t, t.TempDir(), env, args...)
+}
+
+// startDefineInDir is startDefineWithEnv with the deck directory named, so two
+// runs can share one deck.
+//
+// --play needs a deck that already has a due word in it, and the only honest way
+// to get one is to let define capture it: a hand-written words/ file would pin
+// this test to a storage format rather than to the behaviour.
+func startDefineInDir(t *testing.T, dir string, env []string, args ...string) (*exec.Cmd, *os.File) {
+	t.Helper()
 	bin := builtBinary(t)
 	cmd := exec.Command(bin, args...)
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
-	// define writes its deck to the CURRENT directory, and a test's cwd is the
-	// PACKAGE directory — so this suite used to write a deck into the source
-	// tree and then rewrite it on every run, which is how three deck files
-	// reached commits. The binary path is absolute for exactly this reason.
-	cmd.Dir = t.TempDir()
+	cmd.Dir = dir
 	f, err := pty.Start(cmd)
 	if err != nil {
 		t.Skipf("no pty available: %v", err)
@@ -186,8 +197,14 @@ func TestPTYSuggestionAndAcceptance(t *testing.T) {
 		t.Errorf("no mid-sentence grey suggestion: %q", frame)
 	}
 
+	// Asserted on the TEXT, with styling stripped. The literal-bytes version of
+	// this check went red the moment #21 began highlighting deck words inside the
+	// typed line: the frame reads "what is a \x1b[1;32msycophantic", so Tab had
+	// accepted and the assertion could not see it. Both #20 and #21 merged with
+	// this test red, because the conformance suite is on-demand and neither close
+	// ran it — a live check that is never run is not a check.
 	f.Write([]byte("\t")) // Tab accepts
-	if got := out.take(time.Second); !strings.Contains(got, "what is a sycophantic") {
+	if got := out.take(time.Second); !strings.Contains(unstyled(got), "what is a sycophantic") {
 		t.Errorf("Tab did not accept mid-sentence: %q", got)
 	}
 	f.Write([]byte("\x15")) // leave the prompt clean for the next assertion
@@ -330,3 +347,75 @@ func TestPTYCtrlCMidAnswerKeepsTheSession(t *testing.T) {
 		t.Errorf("the session did not survive the interrupt — no definition after Ctrl-C:\n%q", after)
 	}
 }
+
+// --play renders every line at COLUMN 0 on a real terminal.
+//
+// This is the check that was missing when --play shipped, and its absence is the
+// reason the operator found the defect instead of the suite (BR-45). In raw mode
+// ONLCR is off, so the tty performs no newline translation: a bare \n written by
+// the program arrives at the master as a bare \n and the cursor stays where the
+// previous line ended. That is the CRLF cascade — each line starting further
+// right than the last, which is what the screenshot showed.
+//
+// No in-process test can see it. The format strings were correct; it was
+// Render's output flowing through a writer that did not translate, and a test
+// capturing bytes and printing them through anything OTHER than a raw terminal
+// renders \n at column 0 and reports success. The smoke run that "verified" this
+// did exactly that. The terminal is an external dependency, and this is the
+// observable only it produces (ARCH-MOCK).
+func TestPTYPlayRendersEveryLineAtColumnZero(t *testing.T) {
+	deck := t.TempDir()
+
+	// Capture a word so the deck has one, the way a learner gets one. A word
+	// never reviewed is due immediately (schedule.Queue's fresh tier).
+	// Flags BEFORE the word: Go's flag package stops parsing at the first
+	// non-flag argument, so "sycophantic --no-audio" prints usage and looks up
+	// nothing.
+	_, seed := startDefineInDir(t, deck, nil, "--no-audio", "sycophantic")
+	seeded := watch(seed).take(3 * time.Second)
+	if !strings.Contains(seeded, "sikəˈfan(t)ik") {
+		t.Fatalf("the seeding lookup did not resolve, so no deck was written:\n%q", seeded)
+	}
+	seed.WriteString("\x04") // EOF: leave the editor, flushing the capture
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	shown := out.take(3 * time.Second)
+	if !strings.Contains(shown, "sycophantic") {
+		t.Fatalf("--play never offered the seeded word; the deck or the queue is the problem:\n%q", shown)
+	}
+
+	f.WriteString(" ") // reveal, so the definition renders too
+	shown += out.take(2 * time.Second)
+	f.WriteString("y")
+	shown += out.take(2 * time.Second)
+
+	if bad := bareNewlines(shown); bad != 0 {
+		t.Errorf("%d bare newline(s) in --play's output — in raw mode each one leaves the "+
+			"cursor where the previous line ended, so every following line starts further "+
+			"right. Output:\n%q", bad, shown)
+	}
+}
+
+// bareNewlines counts \n not preceded by \r.
+//
+// Written as a count rather than a bool so the failure says how far the cascade
+// went, which is the difference between one missed format string and a writer
+// that translates nothing.
+func bareNewlines(s string) int {
+	n := 0
+	for i := range s {
+		if s[i] == '\n' && (i == 0 || s[i-1] != '\r') {
+			n++
+		}
+	}
+	return n
+}
+
+// unstyled drops SGR sequences so a text assertion survives a styling change.
+//
+// Only the colour sequences: cursor movement and erasure are what several tests
+// here are ABOUT, and stripping those would make those assertions vacuous.
+var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }

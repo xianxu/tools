@@ -54,6 +54,16 @@ type Capturer interface {
 	// recorded and the answer is not — #17 wants what the learner asked about,
 	// and every consumer of this log is a fold.
 	CaptureAsk(word, question string, opt options)
+	// CaptureReview records the outcome of one review (#6). The third verb, here
+	// for the same reason CaptureAsk is: capture is the ONLY thing that records,
+	// and a second appender beside it is how that stops being true without
+	// anyone noticing.
+	//
+	// A bool rather than a verdict, because a SKIP never reaches this: play's
+	// Apply emits no record outcome for one, so the type refusing to express it
+	// is the design rather than a gap. A recorded skip would read as a miss in
+	// schedule.Fold and demote a word the learner was honest about.
+	CaptureReview(word string, correct bool, opt options)
 }
 
 // storeCapturer is the only thing that RECORDS a lookup. It is not the only
@@ -103,6 +113,31 @@ func (c *storeCapturer) Capture(word string, found bool, opt options) {
 	}
 }
 
+// CaptureReview appends one EventReviewed, immediately.
+//
+// Called the instant a verdict is graded, before the next question is drawn —
+// which is what makes Ctrl-C mid-session lossless by construction rather than by
+// a flush at the end. That property is free from the append-only log (#3) and
+// would be lost by any batching.
+func (c *storeCapturer) CaptureReview(word string, correct bool, opt options) {
+	// decideCapture, not a second policy: -raw and DEFINE_NO_CAPTURE mean "write
+	// nothing into this directory", and a review is a write. captureEventOnly is
+	// the right floor — a review is an EVENT, and it must never touch the deck,
+	// which is #4's job.
+	if decideCapture(true, opt) == captureNothing {
+		return
+	}
+	key := store.Key(word)
+	if key == "" {
+		return
+	}
+	if err := c.st.AppendEvent(store.ReviewEvent{
+		Word: key, Kind: store.EventReviewed, Found: true, Correct: correct, At: c.clock.Now(),
+	}); err != nil {
+		c.warnf("could not record the review of %q: %v", word, err)
+	}
+}
+
 func (c *storeCapturer) CaptureAsk(word, question string, opt options) {
 	// The same opt-out governs both: DEFINE_NO_CAPTURE and -raw mean "write
 	// nothing in this directory", and a question is a write. decideCapture is
@@ -135,5 +170,6 @@ func (c *storeCapturer) warnf(format string, args ...any) {
 // decideCapture. This is only "there is nowhere to write".
 type noopCapturer struct{}
 
-func (noopCapturer) Capture(string, bool, options)      {}
-func (noopCapturer) CaptureAsk(string, string, options) {}
+func (noopCapturer) Capture(string, bool, options)       {}
+func (noopCapturer) CaptureAsk(string, string, options)  {}
+func (noopCapturer) CaptureReview(string, bool, options) {}

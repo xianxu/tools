@@ -155,7 +155,15 @@ func (y *YAML) AppendEvent(e ReviewEvent) error {
 	// and this write would land ON that fragment's line — so the parser would see
 	// one malformed record and swallow THIS event along with the broken one. One
 	// interrupted write must cost one event, not two.
-	if st, err := f.Stat(); err == nil && st.Size() > 0 {
+	// The Stat error is ACTED ON rather than skipped past: a failure here would
+	// silently bypass the torn-record guard below, which is the one thing this
+	// block exists for. We are about to write to this handle, so a Stat we cannot
+	// take means the write is not safe either.
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if st.Size() > 0 {
 		if !endsWithNewline(path) {
 			if _, err := f.WriteString("\n"); err != nil {
 				return err

@@ -1139,11 +1139,14 @@ stats screen disagreeing with the review queue. `masteryStreak` is 7 with a
 stated reason: reaching the last box takes 5 consecutive correct answers, so any
 N at or below that would make "mastered" mean "arrived".
 
-**The package is pure, and that is ENFORCED by two guards.** `schedule` imports
+**The package is pure, and that is ENFORCED by three guards.** `schedule` imports
 `store` and pure standard-library packages only; one guard reads the import set
-against an allowlist, and a second greps for every wall-clock reader
-(`time.Now`, `time.Since`, `time.Until`, `time.After`, the timer constructors) —
-the hazard an import list structurally cannot see, since `time` is legitimately
+against an allowlist, a second greps for every wall-clock reader
+(`time.Now`, `time.Since`, `time.Until`, `time.After`, the timer constructors),
+and a third holds `store` to its pure types and helpers — allowlisting the
+package would otherwise grant the disk along with it. The second exists because
+it is the hazard an import list structurally cannot see, since `time` is
+legitimately
 imported for its types. The allowlist itself was wrong first and fired on `sort`:
 it said "exactly two imports" when the claim is "no IO and no hidden clock", and
 a guard that reddens on correct code invites deleting the guard. The plan's first draft claimed a test needing a
@@ -1172,3 +1175,114 @@ deck entry is not queued, because `--forget` deliberately keeps a word's events
 after removing it and resurrecting it here would make forgetting not work.
 `budget <= 0` returns nothing: "no budget" is not "unlimited", and the opposite
 reading is a way to sit down to four hundred words by accident.
+
+## Review sessions: how a word is asked
+
+**`play` is the second pure package, and `puretest` is why there will not be a
+third copy of the guards.** `#5` wrote three purity guards inline; `#6` needs two
+of them and `#7`/`#12`/`#13` each add a form package, so they were extracted
+into `cmd/define/puretest` — one body, many callers, the shape `storetest.Suite`
+already established here. Each guard sees a hazard the others structurally
+cannot: an import allowlist misses that allowlisting `store` grants the disk with
+it, and no import list can see `time.Since`, because `time` is legitimately
+imported for its types.
+
+`schedule` takes all three; `play` takes two, because it names no store symbol —
+and a store-symbol guard with an empty allowlist would fatal on finding nothing
+to check, which is right, since it would be asserting nothing.
+
+**The guards have their own tests, against committed known-bad fixtures**, and
+that is not bookkeeping: a guard nothing has ever seen fail is indistinguishable
+from a guard that cannot fail. `puretest/testdata/impure` imports `os` and calls
+`store.NewYAML`; `testdata/clocky` imports only `time` and calls `time.Since`,
+the case an import allowlist structurally cannot catch; `testdata/pure` is the
+known-good case, a fixture rather than a real package so production changes
+cannot silently change what the positive assertions mean. The guards take a
+`puretest.T` interface rather than `*testing.T` precisely so a recorder can
+capture the failures instead of failing.
+
+**`Outcome.SessionDone` says the session ended, whatever the outcome's kind.**
+The last answer produces `OutcomeRecord` and finishes the queue, so a caller
+holding only an `Outcome` would otherwise have to consult the `Session` too —
+making "did we finish" two facts in two places.
+
+**A deck whose words all fail to look up is NOT "nothing due today".** Words were
+due; the dictionary is the problem. Saying nothing is due would send the learner
+away believing their deck is clear, so that path reports what happened and exits
+1 — and losing the terminal after playback exits 1 as well, the same code as
+failing to enter raw mode in the first place, because they are the same failure.
+
+**`Question` is the whole of what a session knows about a form.** `Word`,
+`Prompt`, `Reveal`, `Grade` — and `Grade` lives on the FORM, which is what makes
+"adding a second form requires no change to the loop" a property rather than a
+promise. Form 2.1 grades `y`/`n`; `#7`'s 2.3 will grade digits; the session never
+learns either. `TestSessionIsFormAgnostic` drives the same table through a fake
+form using entirely different keys, and asserts that 2.1's own keys mean nothing
+to it — the only honest way to test that claim before a second form exists.
+
+**`main.Key` stops at the package boundary, and the compile error was the design
+telling the truth.** The plan's first draft had `Grade(k Key)`, which cannot
+compile: `Key` lives in `package main`. `main` owns the terminal and knows Ctrl-C
+is `0x03`; `play` must not, or it could not be tested without one. The loop
+decodes once and hands over `play.Input` — a rune for graded keys, and CONTROL
+intents (`InputReveal`, `InputQuit`) as their own kinds.
+
+**Three verdicts, not two.** A learner who skips has not got it wrong, and
+recording a skip as a miss would demote the word through `schedule.Answer` —
+punishing honesty about a word you half-know. **The skip filter lives in exactly
+one place**, `advance`: only the session knows a verdict, so a loop that inspected
+verdicts would be re-deciding what the state machine already decided. `Apply`
+emits `OutcomeRecord` only for `Correct` and `Wrong`, and the loop records
+whenever it sees one without ever looking at the verdict.
+
+**`runPlay` owns everything the pure packages cannot.** It folds the log, asks
+`schedule.Queue` for today's words, renders each definition, drives `play.Apply`
+over the key channel, and performs the outcomes: `OutcomeRecord` calls
+`CaptureReview`, `OutcomeReveal` plays the pronunciation. `toInput` is where
+`main.Key` stops — Ctrl-C and EOF become `InputQuit`, Enter and space become
+`InputReveal`, `d` becomes `InputDrop`, and everything else is a rune for the
+form to grade. Those keys are RESERVED from every form — a later form choosing
+`d` for "definitely" would find it silently taken — which is why the reservation
+is stated in `Question`'s doc comment rather than only living in `toInput`.
+
+**`d` drops the current word, and it is a SESSION action rather than a verdict.**
+"This word does not belong in my deck" is true whatever form is asking, so it is
+an `Input` kind and every future form gets it free — the same reasoning that puts
+`Grade` on the form. It records no review, because dropping is not an assessment,
+and the EVENTS stay: `--forget`'s contract, since history is what happened and
+cannot be untrue while the deck is the working set the learner curates.
+
+**All session output goes through `crlfWriter`.** In raw mode a bare `\n` moves
+down WITHOUT returning to column 0, so a multi-line definition cascades
+diagonally across the screen. `#16` built that writer for exactly this; `--play`
+shipped without it and the operator's first real session found it immediately.
+`draw` writes plain `\n` and the translation happens in one place over every
+byte, including `Render`'s — which is where the newlines actually are.
+
+**Cancellation is checked BEFORE the select, not only inside it.** `select` picks
+uniformly at random among ready cases, so a cancelled context with a key already
+buffered would sometimes grade one more answer after Ctrl-C. It surfaced as an
+intermittent test failure, which is the only way a random-choice bug ever shows.
+
+**Reviews record through `Capturer`, never `store.AppendEvent`.** `capture.go`
+already stated the rule — capture is the ONLY thing that records, and a second
+appender beside it is how that stops being true unnoticed. `CaptureReview` is the
+third verb after `Capture` and `CaptureAsk`, it consults `decideCapture` so
+`-raw` and `DEFINE_NO_CAPTURE` mean the same thing here as everywhere, and it
+never touches the deck — a review that upserted would make reviewing a word count
+as looking it up, inflating the count `#5`'s queue orders fresh words by.
+
+**Recorded as it happens**, before the next question is drawn, which is what
+makes Ctrl-C mid-session lossless by construction rather than by a flush. That
+property is free from the append-only log (`#3`) and any batching would lose it.
+
+**No deck means no session**, guarded on `d.deck == nil` rather than on
+`DEFINE_NO_CAPTURE`: that flag is one cause and `openStore`'s `Getwd` failure is
+another, so keying on the flag would hand a nil store to the queue builder and
+panic on the other path.
+
+**Grading before reveal is ignored**, because a learner cannot rate what they
+have not seen and a mis-keystroke would otherwise file a verdict about a word
+still hidden. **Revealing is idempotent**, so a second reveal does not play the
+pronunciation twice. **An empty queue is immediately done** — "nothing due today"
+is the expected state most days, not an error.

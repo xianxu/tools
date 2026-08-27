@@ -185,13 +185,14 @@ once `#6` is producing misses.
 - [x] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [x] news seam — Google News RSS (not the SERP) [tools#9]
 - [x] scheduling engine — Leitner, pure [tools#5]
-- [ ] `--play` loop + form 2.1 [tools#6]
+- [x] `--play` loop + form 2.1 [tools#6]
 - [ ] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
 - [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
 - [ ] learner model — weakness taxonomy from review events, steers authoring [tools#17 M2]
+- [ ] deck grouped by language; one language per `--play` [tools#23]
 - [ ] Spanish — pronunciation locale (independently shippable) [tools#18 M1]
 - [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
@@ -501,12 +502,49 @@ was self-enforcing because "a test needing a fake would not compile" — false, 
 test may import anything — so the claim now has a guard that reads the import set.
 This repo keeps being bitten by facts that live only in comments.
 
+<a id="tools-6-m1"></a>
+### tools#6 M1 — a session that does not know what its forms ask
+
+**est:** 6.15 (whole issue)
+**actual:** — folded into `tools#6`, see below
+**closed:** — this boundary never closed on its own
+
+`Question`, form 2.1 (`Recall`), and the `Session`/`Apply` state machine, in a
+second pure package beside `schedule`.
+
+> **This entry recorded a close date and a hand-typed 0.8h for a boundary that
+> never closed (BR-44).** M1's `milestone-close` failed with five findings I did
+> not read; M2 was built on top, every later review window spanned both, and the
+> two milestones fold into a single issue close. No `Review-Verdict:` trailer or
+> `closed M1` Log line was ever written, so 0.8h was typed from memory — and it
+> would have double-counted against the whole-issue actual the close measures,
+> which is the velocity pollution the actual guard exists to stop. Kept for the
+> design note below, which is real; the numbers were not.
+
+**The decision worth not re-deriving: `Grade` lives on the FORM.** The Done-when
+asks that a second form need no loop change, and putting key interpretation in
+the form is what makes that a property rather than a promise — 2.1 grades `y`/`n`,
+`#7`'s 2.3 will grade digits, and the session never learns either. It is tested
+before a second form exists by driving the same table through a fake form using
+entirely different keys, and asserting 2.1's own keys mean nothing there.
+
+Two things surfaced that were not about review at all. The plan's interface named
+`main.Key`, which a subpackage cannot reach — and that compile error was the
+import direction telling the truth: `main` owns the terminal and knows Ctrl-C is
+`0x03`, `play` must not. And the purity guards `#5` wrote inline were EXTRACTED
+into `puretest`, because `#7`, `#12` and `#13` each add a form package and
+copying would have meant five sets to keep in agreement. That extraction also
+closed a gap recorded at `#5`'s close: its "the mutant reddens it" claims were all
+verified in scratch copies and thrown away, so nothing in the tree proved the
+guards could fail.
+
 [tools#2]: #tools-2
 [tools#3]: #tools-3
 [tools#4]: #tools-4
 [tools#5]: #tools-5
 [tools#5 M1]: #tools-5-m1
 [tools#6]: #tools-6
+[tools#6 M1]: #tools-6-m1
 [tools#7]: #tools-7
 [tools#8]: #tools-8
 [tools#9]: #tools-9
@@ -526,6 +564,7 @@ This repo keeps being bitten by facts that live only in comments.
 [tools#18 M1]: #tools-18-m1
 [tools#18 M2]: #tools-18-m2
 [tools#19]: ../issues/000019-llm-overloaded.md
+[tools#23]: ../issues/000023-deck-language.md
 
 ### 2026-08-26 — scope event: two console features shipped alongside, outside MVP
 
