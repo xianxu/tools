@@ -26,8 +26,12 @@ bin/
 # That is the same fact — go test runs in the package directory — that made the
 # first version of TestNoCommittedBinaries unable to fail. Third time this class
 # has cost a review round; TestNoTrackedRuntimeState now covers it.
+# The list is single-sourced in store.RuntimeDirs and TestGitignoreCoversRuntimeDirs
+# asserts these stay in step — #9 added usage/ and reached none of the three
+# places that needed it.
 words/
 events/
+usage/
 
 # `go build ./` inside a cmd/<name>/ directory writes an extensionless binary
 # named after that directory — a 9.6 MB one was committed this way. bin/ is the

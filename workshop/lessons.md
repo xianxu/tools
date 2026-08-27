@@ -932,6 +932,25 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## Restore from git, not from a scratch copy (define #9 M1)
+
+Recurrence of the entry below, one issue later and with a new cause. Mutation
+testing means copy-file, mutate, test, copy-back — and I took the backup at the
+START of a milestone, then kept writing code. Several functions later, a
+copy-back silently DELETED `bothSources`, because the backup predated it. The
+build broke immediately, which is lucky: a deletion inside a rarely-run branch
+would have shipped.
+
+- **`git checkout HEAD -- <file>` is the correct restore, and only if the target
+  is COMMITTED.** It cannot go stale the way a scratch copy can. But the same
+  session then hit the other half of the trap: restoring uncommitted wiring
+  reverted the work itself, because HEAD did not have it yet. So the rule is two
+  steps — **commit, then mutate, then `git checkout`** — and neither half works
+  alone.
+- **Re-verify the mutation AFTER restoring.** The restore can undo the fix the
+  mutation was checking, and then both the fix and its pin are gone with the
+  suite green.
+
 ## A backup is only as good as the tree it was taken from (define #16 M2)
 
 M1's lesson was *make the backup first, and restore from the backup, not from
@@ -1267,6 +1286,154 @@ feature outright in production and leaves the entire suite green.
 - **A stated rule that does not name its enumeration will be declared swept while
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
+
+## A new runtime directory has three homes that cannot see each other (define #9 close)
+
+`usage/` joined `words/` and `events/` as a directory `define` writes into the
+working directory — and reached none of the three places that needed it:
+`.gitignore`, the index guard, and the history guard. Both guards hardcoded
+`p == "words" || p == "events"`, and `.gitignore` listed the same names again.
+Three copies, nothing keeping them in step.
+
+This is the deck-in-git class, and the `.gitignore` comment already records that
+it cost three review rounds before this one — including the subtlety that the
+patterns must be UN-ANCHORED, because `go test` runs with cwd set to the package
+directory, so an anchored pattern misses `cmd/define/words/`.
+
+- **Single-source the list where the writer lives.** `store.RuntimeDirs` is the
+  one place; both guards ask it instead of repeating it.
+- **Close the loop the compiler cannot.** `.gitignore` is not Go, so nothing
+  makes it follow that list — except a test that reads the file and asserts an
+  un-anchored entry for every name. Adding a fourth directory and forgetting the
+  ignore now fails, and so does re-making the anchoring mistake.
+- **When a fact lives in a comment because no test could hold it, ask again.**
+  The anchoring rule was a well-written comment that had already failed three
+  times. A comment explains; only a test enforces.
+
+## Adding a field is not wiring it — the third recurrence (define #9 close)
+
+I added `warn io.Writer` to the usage source, wrote the warn-once logic, and
+tested it by passing a buffer into a hand-built struct. **Both production sites
+left it nil**, so a broken feed degraded exactly as silently as before, and the
+test was green throughout.
+
+Third time in two issues, same shape every time:
+
+| issue | field added | production sites that got it |
+|---|---|---|
+| #21 | `deps.vocab` needs `Load()` | 1 of 3 entry paths |
+| #9 M3 | `deps.usage` | 0 of 1 on the no-capture path |
+| #9 close | `bothSources.warn` | 0 of 2 |
+
+- **A test that CONSTRUCTS the struct begins after the hop that fills it.** That
+  sentence is the whole family. `&bothSources{warn: &buf}` proves the field is
+  read; it says nothing about whether anything writes it.
+- **When you add a field, the test is `deps{newStore: openStore}.withStore(...)`
+  and an assertion the field arrived.** Not the struct literal. The first form
+  fails when a production site is missed; the second cannot.
+- **Enumerate the construction sites, not just the type.** There were two here
+  and I would have found both by grepping for the literal — which is a ten-second
+  check I did not run because the feature "worked".
+
+## A degrading fallback hides a test that reaches the network (define #9 close)
+
+`TestWithStoreCarriesTheUsageSourceThrough` drove production wiring and then
+called the seam — so every plain `go test ./cmd/define/` fetched
+news.google.com and wrote ~48 KB of live headlines into a temp dir. Its own
+comment said "reaches the dictionary half without a network" and its failure
+message said "no usages offline". Both false.
+
+What hid it is the feature working correctly: `bothSources` degrades to the
+dictionary when the feed fails, so the assertion `len(got) != 0` was satisfied
+either way. **The test was green with and without a network, and therefore
+verified neither.**
+
+- **A test whose assertion survives the dependency being absent is not testing
+  the dependency.** Ask what would change if the network were unplugged. If the
+  answer is nothing, the test is about something else.
+- **Split the claims.** The WIRING hop belongs on production deps and asserts
+  only that the seam is built and carried. The OFFLINE claim belongs on a source
+  constructed with no feed at all, where "offline" is a property of the code
+  rather than of the machine.
+- **Coverage is the cheap detector.** `Fetch` reporting 72.7% under an untagged
+  run is impossible unless the default suite calls it. It reads 0.0% now.
+
+## A comment saying "on failure X we do Y" needs a test that reddens without Y (define #9 close)
+
+Sibling to the output-field rule. Every fallback in `news.go` was described in a
+comment and none was pinned: inverting "an unreadable cache is a miss, not a
+failure" into `return nil, err` — the opposite policy — left the whole suite
+green. The `failingStore` fixture that drives it was already in the tree, unused.
+
+- **The enumeration is the coverage profile.** Every uncovered block in a new
+  file is a claim nothing checks, and reading them off took one command.
+- **A fallback is a behaviour, not an implementation detail.** "Degrades on
+  failure" is a promise to the caller and deserves the same pinning as a
+  returned value.
+- **Degrading SILENTLY is a different design from degrading.** A permanently
+  broken feed was indistinguishable from "this word is not in the news" — for
+  the reader and for the downstream consumer. The package already had the shape
+  (`warnTo`, warn-once); the new code just did not use it.
+
+## A fuzz property may assert only YOUR contract, never the input's textual form (define #9 M1)
+
+Three properties on one target, each wrong the same way, before the rule was
+clear. All three were claims about the BYTES rather than about my code, and a
+decoder is entitled to transform bytes:
+
+1. **"a title is a SUBSTRING of the input"** — mixed content concatenates:
+   `0<![CDATA[0]]>` is legitimately `00`.
+2. **"...a SUBSEQUENCE of the input"** — entities decode: `&#65;` is `A`, `&#39;`
+   is `'` (what Google News actually emits), a lone CR becomes LF.
+3. **"no more items than `<item` tags"** — `encoding/xml` matches by LOCAL name,
+   so `<x:item>` is an item no textual count can see. The fixture already
+   declares a namespace prefix, so a two-byte edit reaches it.
+
+Each fix produced the next failure, and only at the third did the shape become
+obvious: **ask whose contract the property tests.** Character provenance inside
+an XML element is the standard library's contract, not mine. What is mine is that
+a failed parse returns no items, and that a date I cannot read becomes the zero
+time rather than a guess — and the second of those deserved its own target on the
+STRING, where no decoder stands between the property and the code it describes.
+
+- **A property that reddens on correct input is a liability.** The danger is the
+  response to it: weakening what it defended, or skipping the inputs that trip
+  it. Both leave something that looks like coverage.
+- **When a property needs a decoder to hold, test the decoder's side separately.**
+  Splitting `parsePubDate` out gave a target that kills the guessing mutant on the
+  SEED corpus — no `-fuzz` run required.
+- **Seed the corpus with whatever refuted the last property**, so reinstating it
+  fails locally instead of in the wild.
+
+## (superseded) An earlier statement of the rule above (define #9 M1)
+
+Kept because the count-bound it recommends was ITSELF wrong — the third failure,
+not the fix. Read the entry above instead.
+
+`FuzzParseRSS` carried three properties before one was sound, and the first two
+failed the same way: too strong, red against entirely correct parsing.
+
+1. **"a parsed title is a substring of the input"** — died in two seconds to
+   `<title>0<![CDATA[0]]></title>`, which XML legitimately concatenates to `00`.
+2. **"...is a SUBSEQUENCE of the input"** — survived that and dies to entity
+   decoding: `&#65;` yields `A`, `&#39;` yields `'`, and a lone `\r` yields `\n`
+   under XML line-ending normalisation. None are subsequences of their input, and
+   `&#39;` is exactly what Google News emits for apostrophes — so re-capturing the
+   fixture would have turned it red against working code.
+3. **"there cannot be more items than item tags"** — claimed sound under any
+   decoding. It is NOT: `<x:item>` defeats it. This is where the entry above
+   picks up.
+
+- **The danger is not the false failure; it is the response to it.** A property
+  that reddens on good input invites weakening the thing it was defending, or
+  skipping the inputs that trip it. Both leave you with a test that looks like
+  coverage.
+- **Ask whose contract you are testing.** Character provenance inside an XML
+  element is `encoding/xml`'s contract, not mine. What is mine is how many items
+  I report and what I do with a date I cannot read — and those are exactly what
+  the sound property pins.
+- **Seed the corpus with what refuted the old property.** Those three shapes are
+  now seeds, so a future weakening fails here rather than in the wild.
 
 ## Doc prose at a boundary describes what THAT milestone shipped (define #21 M1)
 

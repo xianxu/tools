@@ -183,11 +183,11 @@ once `#6` is producing misses.
 - [x] free-form Q&A — the console knows a question from a word [tools#16 M1]
 - [x] free-form Q&A — the answer: context pack, streaming, scoped Ctrl-C [tools#16 M2]
 - [x] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
-- [ ] news seam — Google News RSS (not the SERP) [tools#9]
-- [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
+- [x] news seam — Google News RSS (not the SERP) [tools#9]
 - [ ] scheduling engine — Leitner, pure [tools#5]
 - [ ] `--play` loop + form 2.1 [tools#6]
 - [ ] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
+- [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
@@ -439,6 +439,41 @@ original framing, now removed).
 Task list also brought current: [tools#4] and [tools#15] were `done` and archived but
 still showed open here.
 
+<a id="tools-9-m1"></a>
+### tools#9 M1 — real sentences, filtered by the matcher that highlights them
+
+**est:** 8.22 (whole issue)
+**actual:** 0.9h (M1)
+**closed:** 2026-08-26
+
+`parseRSS` turns a Google News feed into `store.NewsItem`s; `usagesFrom` and
+`entryUsages` turn those — and NOAD's own examples — into one `Usage` shape
+tagged by provenance. The feed is the current half and the dictionary is the
+durable half, which matters because the feed's thematic collapse is measured:
+ten of fourteen `sycophantic` headlines were about AI chatbots, so a word sourced
+only from this week would be taught narrowly.
+
+**The decision worth not re-deriving: raw is cached, usable is derived.** Only
+the feed's own words go to disk. Everything the learner sees is computed at read
+time, so improving the filter improves every word already cached with no
+re-fetch — caching the filtered result would freeze today's judgment. The plan's
+first draft put `Usage` in `package main` while the store returned it, which
+cannot compile; the Critical that forced the split was the design telling the
+truth.
+
+**And `containsWord` delegates to `highlightSpans` rather than matching itself.**
+The filter and #21's highlighter must never disagree about the same text, or the
+learner sees a headline whose word renders green while the filter rejected that
+headline — the same word in two states on one screen. That agreement has its own
+test.
+
+Two things capturing a REAL feed taught that reasoning about one did not: every
+title carries a `" - Publisher"` suffix (stripped only when it is the publisher
+the feed named, so a headline with an internal dash keeps it), and a naive first
+fixture was ten copies of one article. The committed fixture is deliberately
+adversarial to its own test — 10 matches across 10 publishers plus 3
+non-matches, so the filter has work to do.
+
 [tools#2]: #tools-2
 [tools#3]: #tools-3
 [tools#4]: #tools-4
@@ -447,6 +482,7 @@ still showed open here.
 [tools#7]: #tools-7
 [tools#8]: #tools-8
 [tools#9]: #tools-9
+[tools#9 M1]: #tools-9-m1
 [tools#10]: #tools-10
 [tools#11 M1]: #tools-11-m1
 [tools#11 M2]: #tools-11-m2
@@ -485,3 +521,29 @@ built by ordinary lookup (`#4`), and these two put the deck back on screen durin
 ordinary lookup. #21 also lands a `Vocabulary` predicate seam that
 **tools#22** (words graduating out of highlighting) will narrow; #22 is filed,
 out of MVP, and blocked on the review signal from `#5`/`#6`.
+
+### 2026-08-26 — scope event: retention loop before the authoring loop
+
+**Reason.** Operator, after #9 closed: *"I think we can rearrange, to have some
+scheduling engine first, so that I can use this to remember words, and practice
+them, before making it better through google news and other integrations?"*
+
+**Delta.** `#5` → `#6` → `#7` move ahead of `#10`. Nothing else changes: same
+issues, same MVP scope, same done-when.
+
+**Why it works, checked rather than assumed.** The dependency graph already
+allowed it — `#5` needs only `#3` (done), `#6` needs `#5`, `#7` needs `#6` — and
+the two forms in that path were specified from the start to need neither. Form
+2.1: *"No question generation, no network."* `#7`'s Problem: *"the whole review
+loop should work with no API key and no network."* So this ordering reaches a
+learner who can actually practise, using the deck ordinary lookup has already
+built, with no key and offline.
+
+**Why it is the better order, not merely a possible one.** The PRD's loop is
+`lookups → user-model → authored items → review → events → user-model`. Building
+the authoring half first would have produced items with **no review events to
+learn from** — the arrow back into the model would have had nothing on it, and
+`#17 M2`'s weakness taxonomy is blocked on exactly those events. Doing retention
+first closes the small loop (lookup → schedule → review → events) and gives the
+authoring half a learner to adapt to when it arrives. `#9` was not wasted: it is
+the input `#10` needs, and it is done and cached.

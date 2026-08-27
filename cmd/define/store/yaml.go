@@ -31,13 +31,25 @@ type YAML struct {
 // policy — who chooses it stays a one-line question at the boundary.
 func NewYAML(dir string, warn io.Writer) *YAML { return &YAML{dir: dir, warn: warn} }
 
-func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, "words") }
-func (y *YAML) eventsDir() string { return filepath.Join(y.dir, "events") }
+// RuntimeDirs names every directory define writes into the working directory.
+//
+// ONE source, because a new one has to reach three places that cannot see each
+// other: .gitignore, the index guard, and the history guard. #9 added usage/ and
+// reached none of them — the deck-in-git class that has now cost four review
+// rounds across three issues. TestGitignoreCoversRuntimeDirs closes the loop the
+// compiler cannot: adding a name here and forgetting .gitignore fails a test.
+var RuntimeDirs = []string{"words", "events", "usage"}
+
+func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0]) }
+func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) }
 
 // userModelFile is the third artifact in the directory, beside words/ and
 // events/. Markdown rather than YAML because a person edits it: #17 regenerates
 // the inferred sections and never touches the human-owned ## Corrections.
 func (y *YAML) userModelFile() string { return filepath.Join(y.dir, "user-model.md") }
+
+// usageDir holds the news cache, one file per word, beside words/ and events/.
+func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }
 
 // SetUserModel writes the learner model.
 //
@@ -355,6 +367,62 @@ func endsWithNewline(path string) bool {
 //
 // Filename derivation goes through wordFileName, the same function Upsert uses —
 // see its doc comment for what that guard is and is not worth.
+// newsFile is a WHOLE-FILE record, like words/ and unlike the append-only day
+// log in events/. It is written through writeBytesAtomic and therefore cannot
+// tear; the failure to handle is a file corrupted from outside, and the
+// discipline for that shape here is warn and skip the whole file — never return
+// half a record.
+type newsFile struct {
+	FetchedAt time.Time  `yaml:"fetched_at"`
+	Items     []NewsItem `yaml:"items"`
+}
+
+func (y *YAML) NewsItems(key string) ([]NewsItem, time.Time, error) {
+	k := Key(key)
+	if k == "" {
+		return nil, time.Time{}, nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	b, err := os.ReadFile(filepath.Join(y.usageDir(), name))
+	if os.IsNotExist(err) {
+		return nil, time.Time{}, nil // never fetched
+	}
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	var f newsFile
+	if err := yaml.Unmarshal(b, &f); err != nil {
+		// One corrupt cache file must not make the word unusable: reading as
+		// never-fetched costs a re-fetch, which is exactly what a cache miss
+		// costs anyway.
+		y.warnf("skipping unreadable %s: %v", name, err)
+		return nil, time.Time{}, nil
+	}
+	return f.Items, f.FetchedAt, nil
+}
+
+func (y *YAML) SetNewsItems(key string, items []NewsItem, at time.Time) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(y.usageDir(), 0o755); err != nil {
+		return err
+	}
+	b, err := yaml.Marshal(newsFile{FetchedAt: at, Items: items})
+	if err != nil {
+		return err
+	}
+	return writeBytesAtomic(filepath.Join(y.usageDir(), name), b)
+}
+
 func (y *YAML) Forget(key string) (bool, error) {
 	k := Key(key)
 	if k == "" {

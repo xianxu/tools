@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -324,5 +325,40 @@ func TestYAMLTornFragmentDoesNotSwallowTheNextAppend(t *testing.T) {
 	}
 	if ev[1].Word != "afterwards" {
 		t.Errorf("events = %+v, want the later append preserved", ev)
+	}
+}
+
+// A corrupt cache file reads as never-fetched and warns, rather than failing the
+// session or returning half a record.
+//
+// This is a WHOLE-FILE record — writeBytesAtomic cannot tear it — so the failure
+// to model is corruption from outside, and the discipline for that shape is the
+// one Deck() already uses: warn and skip. The terminator-plus-completeness rule
+// belongs to the append-only day log, not here; the plan's first draft named the
+// wrong one.
+func TestCorruptNewsCacheReadsAsNeverFetched(t *testing.T) {
+	dir := t.TempDir()
+	var warn bytes.Buffer
+	y := store.NewYAML(dir, &warn)
+
+	if err := y.SetNewsItems("ephemeral", []store.NewsItem{{Title: "real"}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt it the way a truncated copy or a bad editor would.
+	path := filepath.Join(dir, "usage", "ephemeral.yaml")
+	if err := os.WriteFile(path, []byte("items:\n  - title: \"unterminated\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	items, at, err := y.NewsItems("ephemeral")
+
+	if err != nil {
+		t.Fatalf("a corrupt cache file failed the read: %v", err)
+	}
+	if len(items) != 0 || !at.IsZero() {
+		t.Errorf("got %d items at %v, want never-fetched", len(items), at)
+	}
+	if !strings.Contains(warn.String(), "ephemeral.yaml") {
+		t.Errorf("no warning naming the file: %q", warn.String())
 	}
 }

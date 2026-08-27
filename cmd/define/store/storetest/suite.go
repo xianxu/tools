@@ -285,4 +285,98 @@ func Suite(t *testing.T, newStore func(t *testing.T) store.Store) {
 			t.Errorf("At = %v, want %v", got[0].At, want.At)
 		}
 	})
+
+	t.Run("news items round-trip, and never-fetched is distinct from fetched-empty", func(t *testing.T) {
+		// The distinction is the whole reason NewsItems returns a timestamp
+		// alongside the slice. A fetch that succeeds with ZERO items is a real
+		// answer — some words are simply not in the news — and a []NewsItem alone
+		// cannot tell it from "we have never looked", so the cache would either
+		// re-fetch those words forever or freeze them empty.
+		s := newStore(t)
+
+		items, at, err := s.NewsItems("ephemeral")
+		if err != nil {
+			t.Fatalf("NewsItems: %v", err)
+		}
+		if len(items) != 0 || !at.IsZero() {
+			t.Errorf("never fetched: got %d items at %v, want none at the zero time", len(items), at)
+		}
+
+		want := []store.NewsItem{
+			{Title: "Springtime is ephemeral", URL: "u1", Source: "UChicago", At: day(1)},
+			{Title: "Ephemeral Architecture", URL: "u2", Source: "ArchDaily", At: day(2)},
+		}
+		if err := s.SetNewsItems("ephemeral", want, day(3)); err != nil {
+			t.Fatalf("SetNewsItems: %v", err)
+		}
+		got, gotAt, err := s.NewsItems("ephemeral")
+		if err != nil {
+			t.Fatalf("NewsItems after set: %v", err)
+		}
+		if len(got) != len(want) {
+			t.Fatalf("got %d items, want %d", len(got), len(want))
+		}
+		for i := range want {
+			if got[i].Title != want[i].Title || got[i].URL != want[i].URL || got[i].Source != want[i].Source {
+				t.Errorf("item %d = %+v, want %+v", i, got[i], want[i])
+			}
+			if !got[i].At.Equal(want[i].At) {
+				t.Errorf("item %d At = %v, want %v", i, got[i].At, want[i].At)
+			}
+		}
+		if !gotAt.Equal(day(3)) {
+			t.Errorf("fetched-at = %v, want %v", gotAt, day(3))
+		}
+
+		// Fetched-empty: a real answer, and distinguishable from never-fetched
+		// only by the timestamp.
+		if err := s.SetNewsItems("quokka", nil, day(4)); err != nil {
+			t.Fatalf("SetNewsItems empty: %v", err)
+		}
+		empty, emptyAt, err := s.NewsItems("quokka")
+		if err != nil {
+			t.Fatalf("NewsItems empty: %v", err)
+		}
+		if len(empty) != 0 {
+			t.Errorf("got %d items, want none", len(empty))
+		}
+		if emptyAt.IsZero() {
+			t.Error("fetched-empty reads as never-fetched — the cache cannot tell them apart")
+		}
+	})
+
+	t.Run("a second SetNewsItems replaces rather than appends", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.SetNewsItems("ephemeral", []store.NewsItem{{Title: "old"}}, day(1)); err != nil {
+			t.Fatalf("SetNewsItems: %v", err)
+		}
+		if err := s.SetNewsItems("ephemeral", []store.NewsItem{{Title: "new"}}, day(2)); err != nil {
+			t.Fatalf("SetNewsItems: %v", err)
+		}
+		got, at, err := s.NewsItems("ephemeral")
+		if err != nil {
+			t.Fatalf("NewsItems: %v", err)
+		}
+		if len(got) != 1 || got[0].Title != "new" {
+			t.Errorf("got %v, want only the newer item", got)
+		}
+		if !at.Equal(day(2)) {
+			t.Errorf("fetched-at = %v, want the newer %v", at, day(2))
+		}
+	})
+
+	t.Run("news item keys are normalised the way word keys are", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.SetNewsItems("Hot  Dog", []store.NewsItem{{Title: "x"}}, day(1)); err != nil {
+			t.Fatalf("SetNewsItems: %v", err)
+		}
+		got, _, err := s.NewsItems("hot dog")
+		if err != nil {
+			t.Fatalf("NewsItems: %v", err)
+		}
+		if len(got) != 1 {
+			t.Errorf("got %d items — the cache key must be store.Key, as the deck's is", len(got))
+		}
+	})
+
 }

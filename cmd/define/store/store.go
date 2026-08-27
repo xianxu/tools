@@ -32,6 +32,16 @@ type Store interface {
 	// fake that cannot model the real one's state is the gap storetest exists to
 	// close (#16 M2, BR-45). #17 is the consumer that writes it for real.
 	SetUserModel(text string) error
+	// NewsItems returns the cached feed items for a word and WHEN they were
+	// fetched. A zero time means never fetched, which is deliberately distinct
+	// from "fetched and found nothing" — some words are simply not in the news,
+	// that is a real answer, and a caller that cannot tell the two apart either
+	// re-fetches those words forever or freezes them empty.
+	NewsItems(key string) ([]NewsItem, time.Time, error)
+	// SetNewsItems replaces the cache for a word, recording the fetch time.
+	// Only successful fetches are written here — see cachingFeed for why a
+	// FAILED fetch must not be cached.
+	SetNewsItems(key string, items []NewsItem, at time.Time) error
 	// Forget removes a word from the deck. It does NOT remove events: the deck is
 	// a working set, the log is history, and rewriting the past would corrupt
 	// every statistic derived from it. Reports whether anything was removed;

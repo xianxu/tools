@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // Mach-O (both endians, 32- and 64-bit, and universal) and ELF.
@@ -204,7 +207,7 @@ func TestNoTrackedRuntimeState(t *testing.T) {
 		}
 		seen++
 		for _, p := range strings.Split(filepath.ToSlash(f), "/") {
-			if p == "words" || p == "events" {
+			if isRuntimeDir(p) {
 				t.Errorf("runtime deck state is tracked: %s", f)
 				break
 			}
@@ -247,11 +250,52 @@ func TestNoRuntimeStateInHistory(t *testing.T) {
 	}
 	for _, path := range paths {
 		for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
-			if seg == "words" || seg == "events" {
+			if isRuntimeDir(seg) {
 				t.Errorf("runtime deck state is reachable from HEAD: %s — rewrite the commit "+
 					"that adds it; removing the file in a later commit does not remove the cost", path)
 				break
 			}
+		}
+	}
+}
+
+// isRuntimeDir asks the store, rather than repeating its directory names.
+//
+// The names were hardcoded in both guards and listed again in .gitignore —
+// three places with nothing keeping them in agreement, which is how #9's usage/
+// reached none of them.
+func isRuntimeDir(seg string) bool {
+	for _, d := range store.RuntimeDirs {
+		if seg == d {
+			return true
+		}
+	}
+	return false
+}
+
+// The loop the compiler cannot close: .gitignore is not Go, so nothing makes it
+// follow store.RuntimeDirs. This does.
+//
+// Un-anchored patterns, deliberately — `go test` runs with cwd set to the
+// PACKAGE directory, so a deck can appear at cmd/define/words/ where an anchored
+// pattern would not match it. That fact has cost this repo three review rounds
+// already; the comment in .gitignore records it and this test enforces it.
+func TestGitignoreCoversRuntimeDirs(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoRoot(t), ".gitignore"))
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	lines := map[string]bool{}
+	for _, l := range strings.Split(string(b), "\n") {
+		lines[strings.TrimSpace(l)] = true
+	}
+
+	for _, d := range store.RuntimeDirs {
+		if !lines[d+"/"] {
+			t.Errorf(".gitignore has no un-anchored %q entry — define writes there and a git add -A would commit it", d+"/")
+		}
+		if lines["/"+d+"/"] {
+			t.Errorf(".gitignore anchors %q to the repo root; go test runs in the package directory, so that pattern misses cmd/define/%s/", d, d)
 		}
 	}
 }

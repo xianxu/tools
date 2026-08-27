@@ -1,11 +1,12 @@
 ---
 id: 000005
-status: open
+status: working
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-08-26
 estimate_hours:
+started: 2026-08-26T22:20:11-07:00
 ---
 
 # spaced-repetition scheduling engine (Leitner, pure)
