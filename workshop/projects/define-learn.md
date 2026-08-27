@@ -506,11 +506,20 @@ This repo keeps being bitten by facts that live only in comments.
 ### tools#6 M1 — a session that does not know what its forms ask
 
 **est:** 6.15 (whole issue)
-**actual:** 0.8h (M1)
-**closed:** 2026-08-27
+**actual:** — folded into `tools#6`, see below
+**closed:** — this boundary never closed on its own
 
 `Question`, form 2.1 (`Recall`), and the `Session`/`Apply` state machine, in a
 second pure package beside `schedule`.
+
+> **This entry recorded a close date and a hand-typed 0.8h for a boundary that
+> never closed (BR-44).** M1's `milestone-close` failed with five findings I did
+> not read; M2 was built on top, every later review window spanned both, and the
+> two milestones fold into a single issue close. No `Review-Verdict:` trailer or
+> `closed M1` Log line was ever written, so 0.8h was typed from memory — and it
+> would have double-counted against the whole-issue actual the close measures,
+> which is the velocity pollution the actual guard exists to stop. Kept for the
+> design note below, which is real; the numbers were not.
 
 **The decision worth not re-deriving: `Grade` lives on the FORM.** The Done-when
 asks that a second form need no loop change, and putting key interpretation in

@@ -1713,6 +1713,18 @@ stated per-context, not once. `schedule` takes three guards and `play` takes
 two; a single sentence about "the guards" was wrong in whichever place it was
 copied to second.
 
+**BR-44 is the fourth instance, and it happened in the round that wrote this
+rule down.** Un-ticking #6's milestone rows meant correcting three artifacts —
+issue, plan, project — and I did two. The project file still carried a close
+date and a hand-typed 0.8h for the boundary the other two now said had never
+closed, which would have double-counted against the measured actual. The
+enumeration was one grep long: `grep -rn "tools#6" workshop/projects/`.
+
+So the rule needs its trigger sharpened. It is not only "when a note enumerates
+sites"; it is **whenever a fact changes, grep for the fact before editing, and
+edit from what the grep returned.** The failure mode is not forgetting that
+other copies exist — it is remembering two of them and never asking.
+
 ## A test double must defend itself against the obvious alternative (#6, BR-43)
 
 `missingDict` duplicates something `fakeDictionary` can already do, and the

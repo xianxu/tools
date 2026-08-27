@@ -850,3 +850,147 @@ dispose:
     note: |
       play_loop_test.go:523-529 unchanged; fakeDictionary already returns ErrNoEntry for any word outside the corpus.
 ```
+
+---
+
+## Re-review — 2026-08-27T13:25:06-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 6 — define --play: review loop + form 2.1 quick pass |
+| repo | tools |
+| issue file | workshop/issues/000006-vocab-play.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4cac0b95d83d54eab57b8747d40d09a2196bca1e..1346a8ae95758b463d68f5a07385c10e4be3e337 |
+| command | sdlc close --issue 6 |
+| reviewer | claude |
+| timestamp | 2026-08-27T13:25:06-07:00 |
+| verdict | REWORK |
+
+## Review
+
+I've completed the review. Cleaning up the scratch copy is done; here are the results.
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The code in this window is genuinely strong — `play` is a real pure core with enforced guards, `puretest` is the right ARCH-DRY extraction, and the session state machine is tested to a standard most of this repo does not reach. Two of the three findings this round claimed to dispose actually hold up: I revert-measured BR-41 (restoring the vacuity fatal in a scratch copy reddens `TestImportsOnlyAcceptsAPackageWithNoImports` by name, and `go test ./cmd/define/puretest/` goes red rather than some other package), and BR-43's rebuttal is technically sound and now documented. What blocks SHIP is that six of the nine open findings are unchanged in the tree, and one of them is not a docs nit: I measured `-raw --play` and it runs a full session, prints `1 right, 0 wrong`, records **zero** review events, and the `d` key **permanently removes a word from the deck** — under the flag whose own contract at `capture.go:30-31` is "must not mutate the deck it happens to be standing in." Every remaining item is cheap; round 10 can be the last if all seven are taken together.
+
+## 1. Strengths
+
+- **`cmd/define/puretest` is the ARCH-DRY exemplar.** One guard body, two callers; `schedule/purity_test.go` collapsed 193 → 38 lines and `play/purity_test.go` is 8. The `T` interface at `puretest.go:34-38` is the minimal change that makes a guard assertable at all, and `TestGuardsRefuseToPassVacuously` covers the case most suites skip.
+- **BR-41's fix is real, not plausible.** `testdata/nothing` is an owned fixture, and I confirmed by revert that the new test is what stands behind `ImportsOnly`'s zero-imports-is-a-pass argument — not `cmd/define/play` happening to import nothing.
+- **`TestSessionIsFormAgnostic` (`play/session_test.go:170`) is the honest way to test the Done-when.** Driving the same table through `fakeForm`'s digits *and* asserting `y` means nothing to it is what makes "a second form needs no loop change" a property rather than a promise.
+- **`TestUngradedKeyNeverReachesTheCapturer` spies on the capturer, not the log.** The comment names exactly why the log cannot discriminate (an `OutcomeNone` carries an empty word and `CaptureReview` drops those anyway) — that is a mutation that survived being turned into a test that bites.
+- **`TestSessionOutputIsAllCRLF` states what bytes *can* prove.** "In raw mode there is no such thing as a bare newline" is the right assertion for a defect a byte-capture smoke test structurally could not see.
+
+## 2. Critical findings
+
+None new.
+
+## 3. Important findings
+
+All four are prior findings re-raised by disposition, not new ids — see the block below. The one new finding:
+
+- **`workshop/projects/define-learn.md:506-510`** — the `### tools#6 M1` entry carries `**closed:** 2026-08-27` and `**actual:** 0.8h (M1)` for a boundary the issue's own Plan says in bold never closed ("neither boundary closed on its own"). This is the 4th in `plan-checkboxes-not-ticked`; the rule, not the instance, is what needs fixing — see the finding detail. Fix sketch: either drop `closed:`/`actual:` from the entry and retitle it as a work note, or keep it and add a line saying the boundary folded into the issue close, so the whole-issue actual the gate is about to measure is not double-counted against a hand-typed 0.8h.
+
+## 4. Minor findings
+
+- `toInput`'s space-reveals branch (`play_loop.go:190-191`) is at coverage 0 while README's key table documents it — folded into BR-21's note rather than raised.
+- `--play` and `-count` appear only in the new prose section, not in README's ```sh flag block, though plan Task 4 Step 10 said "`--play` in the flag list" — folded into BR-28.
+- `workshop/projects/define-learn.md:487` still describes `schedule` as "enforced by two guards"; true when written, three now. Historical, so noted only.
+
+## 5. Test coverage notes
+
+I ran per-package coverage profiles and merged them against the window's changed production lines. Uncovered changed lines:
+
+| file | uncovered changed lines | read |
+|---|---|---|
+| `main.go` | **416-422** | the `--play` dispatch — BR-13, and a fix landing in a zero-coverage branch that neither half of the round-6 enumeration classifies |
+| `play_loop.go` | 38-45, 49-73, 109-114, 119-120, 136-138, 167, 190-191, 197, 204-213 | `runPlay`'s terminal setup (needs a pty — fine), the `Forget` error path, space-reveal, the deck/log read error paths |
+| `capture.go` | 131-133, 136-138, 174-175 | empty-key guard, `AppendEvent` warn path, `noopCapturer` — defensive |
+| `play/session.go` | 109-112, 148 | unreachable defensive returns |
+| `store/yaml.go` | 163-165 | BR-42's branch, now declared unpinnable in writing |
+
+The BR-13 row is the one that matters: `run(ctx, []string{"--play","-count","0"}, …)` → "nothing due today"/0 and `run(ctx, []string{"--play"}, …)` → "needs a terminal"/1 pin both the dispatch and the count threading with a `newStore`-injected Mem deck, no pty needed.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, with one flag.** `puretest` is the model case. The flag is in `main.go:373-393`: three hand-written copies of the same "a mode plus a word is two commands on one line" rule, each guarding one flag against a *word* and none against another *flag*. The enumeration of pairs is what BR-26 asks for.
+- **ARCH-PURE — pass.** `play` imports nothing and is guarded; `runPlay` is the thin shell. Minor note: `todaysQuestions` (`play_loop.go:202-243`) interleaves the budget decision with the dictionary IO, which is exactly why BR-25's spent-slot behaviour has nowhere pure to live.
+- **ARCH-PURPOSE — flag.** The shadow-sweep: `puretest`'s consumers both derive from the single body ✓. But the guard-*count* claim still has a hand-maintained restatement that contradicts the source — `atlas/define.md:1179-1180` says "`#6` needs the same three" five lines above its own correct "`play` takes two". Rounds 7 and 8 both named that exact site; round 9 did not touch `atlas/`. Same axis on BR-42: the class-level rule landed in `lessons.md`, but the enumeration the rule prescribes was not run over this window, and `main.go:416-422` is the item it would have found.
+- **ARCH-MOCK — pass.** `fakePlayer`, `okAudio`, `store.Mem`, `fakeDictionary` all sit behind the production seams; `TestLosingTheTerminalAfterPlaybackExitsOne` drives a genuinely-failing `enterRaw` through `os.DevNull` rather than simulating it. `puretest` execs `go list` without a fake, but the dependency is the toolchain `go test` already requires and the `testdata/` fixtures are the portable state — acceptable.
+
+## 7. Plan revision recommendations
+
+- **Task 4 Step 8 is ticked `[x]` and not delivered.** It commits to "Assert the flag reaches the loop through the same entry-path enumeration `#21` needed — one row per process entry that can start a session." Measured: `main.go:416.15,422.3` at count 0; the only `run()`-level `--play` test exits at the usage switch. Either untick it or land the two rows above; a ticked step whose content is a coverage claim is the same shape BR-38 caught on the gate steps.
+- No other contradiction between the Core-concepts tables and the code — I verified every row's path and status, including `puretest`'s relocation to Integration points.
+
+```findings
+dispose:
+  - id: BR-41
+    disposition: addressed
+    note: |
+      Revert-verified: restoring the vacuity fatal reddens TestImportsOnlyAcceptsAPackageWithNoImports in puretest's own suite, not play's.
+  - id: BR-43
+    disposition: addressed
+    note: |
+      Rebuttal is technically sound (fakeDictionary keys on testdata/entries), and the why is now in the comment plus a lessons.md rule.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Measured again: main.go:416.15,422.3 at coverage 0. Only TestPlayWithAWordIsAUsageError enters run() with --play, and it returns 2 at the usage switch.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      Sites 1-3 and 5 are pinned or honestly declared; site 4 (--play through run()) is still coverage 0, and no row-to-test map exists in issue or plan. README's "Enter or space" is a fifth unpinned claim - toInput's space branch (play_loop.go:190-191) is coverage 0.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      play_loop.go:215-234 unchanged - no re-fill from the queue, and the comment at 225-226 still does not say a stale deck entry costs a -count slot.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      No mode-vs-mode guard. MEASURED this round: with opt.raw set, a full session runs, prints "1 right, 0 wrong", records 0 review events, and `d` permanently removed sycophantic from the deck - under the flag whose contract at capture.go:30-31 is "must not mutate the deck it happens to be standing in". Severity is understated at Important.
+  - id: BR-28
+    disposition: not-addressed
+    note: |
+      README:62 still closes the --play block with "No key and no network", which is also false - speak() fetches the recording over the network, and audio is on by default. Session audio and -no-audio-in-a-session remain undocumented.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      atlas/define.md:1179-1180 still reads "#6 needs the same three", contradicted by its own line at 1184. Rounds 7 and 8 both named this exact site; round 9's commit does not touch atlas/.
+  - id: BR-42
+    disposition: not-addressed
+    note: |
+      Half landed - the yaml.go judgment is written down and the class rule is in lessons.md. The operable step was not executed: I ran the coverage-over-changed-lines sweep myself and main.go:416-422 (the BR-14 dispatch move) is a fix in a zero-coverage branch classified in neither half, again.
+findings:
+  - id: new
+    severity: Important
+    family: plan-checkboxes-not-ticked
+    title: |
+      The project's tools#6 M1 entry records a close date and a hand-typed actual for a boundary the issue says never closed
+    detail: |
+      This is the 4th finding in family `plan-checkboxes-not-ticked` (BR-22, BR-38, and
+      the M2 row). Do NOT fix only this instance. The rule, restated so it covers all
+      four: a field whose whole content is a gate outcome — a ticked `Mx`, a
+      `closed:` date, an `actual:` figure — may only be written by the gate that
+      produced it, and when a boundary is abandoned every artifact carrying that
+      boundary's outcome fields must be swept, not just the one a finding named.
+      BR-22's fix changed the issue's Plan rows to `[~]` and wrote a paragraph
+      explaining the collapse; the enumerable sibling in the OTHER artifact was not
+      touched. Measured: workshop/projects/define-learn.md:506-510 carries
+      `**actual:** 0.8h (M1)` and `**closed:** 2026-08-27` for tools#6 M1, while
+      workshop/issues/000006-vocab-play.md:70-73 states in bold that neither
+      milestone closed on its own and both are folded into the issue close. No
+      `Review-Verdict:` trailer or `closed M1` Log line exists. The 0.8h is
+      therefore hand-typed rather than measured by `sdlc actual`, and it will
+      double-count against the whole-issue actual this close is about to adopt —
+      which is precisely the velocity-ledger pollution the close gate's actual
+      guard exists to prevent. The enumeration to sweep is small and greppable:
+      `grep -rn "tools#6" workshop/projects/` returns the mvp_scope line, the task
+      row (correctly unticked), and this entry.
+```

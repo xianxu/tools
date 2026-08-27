@@ -1016,6 +1016,73 @@ rounds:
           note: play_loop_test.go:523-529 unchanged; fakeDictionary already returns ErrNoEntry for any word outside the corpus.
           round: 9
       blocked: false
+    - "n": 10
+      timestamp: "2026-08-27T13:25:06-07:00"
+      agent: claude
+      dispose:
+        - id: BR-41
+          disposition: addressed
+          note: 'Revert-verified: restoring the vacuity fatal reddens TestImportsOnlyAcceptsAPackageWithNoImports in puretest''s own suite, not play''s.'
+          round: 10
+        - id: BR-43
+          disposition: addressed
+          note: Rebuttal is technically sound (fakeDictionary keys on testdata/entries), and the why is now in the comment plus a lessons.md rule.
+          round: 10
+        - id: BR-13
+          disposition: not-addressed
+          note: 'Measured again: main.go:416.15,422.3 at coverage 0. Only TestPlayWithAWordIsAUsageError enters run() with --play, and it returns 2 at the usage switch.'
+          round: 10
+        - id: BR-21
+          disposition: not-addressed
+          note: Sites 1-3 and 5 are pinned or honestly declared; site 4 (--play through run()) is still coverage 0, and no row-to-test map exists in issue or plan. README's "Enter or space" is a fifth unpinned claim - toInput's space branch (play_loop.go:190-191) is coverage 0.
+          round: 10
+        - id: BR-25
+          disposition: not-addressed
+          note: play_loop.go:215-234 unchanged - no re-fill from the queue, and the comment at 225-226 still does not say a stale deck entry costs a -count slot.
+          round: 10
+        - id: BR-26
+          disposition: not-addressed
+          note: 'No mode-vs-mode guard. MEASURED this round: with opt.raw set, a full session runs, prints "1 right, 0 wrong", records 0 review events, and `d` permanently removed sycophantic from the deck - under the flag whose contract at capture.go:30-31 is "must not mutate the deck it happens to be standing in". Severity is understated at Important.'
+          round: 10
+        - id: BR-28
+          disposition: not-addressed
+          note: README:62 still closes the --play block with "No key and no network", which is also false - speak() fetches the recording over the network, and audio is on by default. Session audio and -no-audio-in-a-session remain undocumented.
+          round: 10
+        - id: BR-29
+          disposition: not-addressed
+          note: atlas/define.md:1179-1180 still reads "#6 needs the same three", contradicted by its own line at 1184. Rounds 7 and 8 both named this exact site; round 9's commit does not touch atlas/.
+          round: 10
+        - id: BR-42
+          disposition: not-addressed
+          note: 'Half landed - the yaml.go judgment is written down and the class rule is in lessons.md. The operable step was not executed: I ran the coverage-over-changed-lines sweep myself and main.go:416-422 (the BR-14 dispatch move) is a fix in a zero-coverage branch classified in neither half, again.'
+          round: 10
+      findings:
+        - id: BR-44
+          severity: Important
+          title: The project's tools#6 M1 entry records a close date and a hand-typed actual for a boundary the issue says never closed
+          detail: |-
+            This is the 4th finding in family `plan-checkboxes-not-ticked` (BR-22, BR-38, and
+            the M2 row). Do NOT fix only this instance. The rule, restated so it covers all
+            four: a field whose whole content is a gate outcome — a ticked `Mx`, a
+            `closed:` date, an `actual:` figure — may only be written by the gate that
+            produced it, and when a boundary is abandoned every artifact carrying that
+            boundary's outcome fields must be swept, not just the one a finding named.
+            BR-22's fix changed the issue's Plan rows to `[~]` and wrote a paragraph
+            explaining the collapse; the enumerable sibling in the OTHER artifact was not
+            touched. Measured: workshop/projects/define-learn.md:506-510 carries
+            `**actual:** 0.8h (M1)` and `**closed:** 2026-08-27` for tools#6 M1, while
+            workshop/issues/000006-vocab-play.md:70-73 states in bold that neither
+            milestone closed on its own and both are folded into the issue close. No
+            `Review-Verdict:` trailer or `closed M1` Log line exists. The 0.8h is
+            therefore hand-typed rather than measured by `sdlc actual`, and it will
+            double-count against the whole-issue actual this close is about to adopt —
+            which is precisely the velocity-ledger pollution the close gate's actual
+            guard exists to prevent. The enumeration to sweep is small and greppable:
+            `grep -rn "tools#6" workshop/projects/` returns the mvp_scope line, the task
+            row (correctly unticked), and this entry.
+          family: plan-checkboxes-not-ticked
+          round: 10
+      blocked: false
 ---
 
 # Gate ledger — tools#6 (boundary-review)
@@ -1515,6 +1582,43 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - BR-42 — not-addressed — yaml.go:163.16,165.3 still at count 0, and the issue Log has no round-7/8/9 entry and no coverage-derived pinned/unpinnable classification.
 - BR-43 — not-addressed — play_loop_test.go:523-529 unchanged; fakeDictionary already returns ErrNoEntry for any word outside the corpus.
 
+## Round 10 — 2026-08-27T13:25:06-07:00 (claude) — passed
+
+### Disposed
+
+- BR-41 — addressed — Revert-verified: restoring the vacuity fatal reddens TestImportsOnlyAcceptsAPackageWithNoImports in puretest's own suite, not play's.
+- BR-43 — addressed — Rebuttal is technically sound (fakeDictionary keys on testdata/entries), and the why is now in the comment plus a lessons.md rule.
+- BR-13 — not-addressed — Measured again: main.go:416.15,422.3 at coverage 0. Only TestPlayWithAWordIsAUsageError enters run() with --play, and it returns 2 at the usage switch.
+- BR-21 — not-addressed — Sites 1-3 and 5 are pinned or honestly declared; site 4 (--play through run()) is still coverage 0, and no row-to-test map exists in issue or plan. README's "Enter or space" is a fifth unpinned claim - toInput's space branch (play_loop.go:190-191) is coverage 0.
+- BR-25 — not-addressed — play_loop.go:215-234 unchanged - no re-fill from the queue, and the comment at 225-226 still does not say a stale deck entry costs a -count slot.
+- BR-26 — not-addressed — No mode-vs-mode guard. MEASURED this round: with opt.raw set, a full session runs, prints "1 right, 0 wrong", records 0 review events, and `d` permanently removed sycophantic from the deck - under the flag whose contract at capture.go:30-31 is "must not mutate the deck it happens to be standing in". Severity is understated at Important.
+- BR-28 — not-addressed — README:62 still closes the --play block with "No key and no network", which is also false - speak() fetches the recording over the network, and audio is on by default. Session audio and -no-audio-in-a-session remain undocumented.
+- BR-29 — not-addressed — atlas/define.md:1179-1180 still reads "#6 needs the same three", contradicted by its own line at 1184. Rounds 7 and 8 both named this exact site; round 9's commit does not touch atlas/.
+- BR-42 — not-addressed — Half landed - the yaml.go judgment is written down and the class rule is in lessons.md. The operable step was not executed: I ran the coverage-over-changed-lines sweep myself and main.go:416-422 (the BR-14 dispatch move) is a fix in a zero-coverage branch classified in neither half, again.
+
+### Raised
+
+- **BR-44** [Important] `plan-checkboxes-not-ticked` The project's tools#6 M1 entry records a close date and a hand-typed actual for a boundary the issue says never closed
+  This is the 4th finding in family `plan-checkboxes-not-ticked` (BR-22, BR-38, and
+  the M2 row). Do NOT fix only this instance. The rule, restated so it covers all
+  four: a field whose whole content is a gate outcome — a ticked `Mx`, a
+  `closed:` date, an `actual:` figure — may only be written by the gate that
+  produced it, and when a boundary is abandoned every artifact carrying that
+  boundary's outcome fields must be swept, not just the one a finding named.
+  BR-22's fix changed the issue's Plan rows to `[~]` and wrote a paragraph
+  explaining the collapse; the enumerable sibling in the OTHER artifact was not
+  touched. Measured: workshop/projects/define-learn.md:506-510 carries
+  `**actual:** 0.8h (M1)` and `**closed:** 2026-08-27` for tools#6 M1, while
+  workshop/issues/000006-vocab-play.md:70-73 states in bold that neither
+  milestone closed on its own and both are folded into the issue close. No
+  `Review-Verdict:` trailer or `closed M1` Log line exists. The 0.8h is
+  therefore hand-typed rather than measured by `sdlc actual`, and it will
+  double-count against the whole-issue actual this close is about to adopt —
+  which is precisely the velocity-ledger pollution the close gate's actual
+  guard exists to prevent. The enumeration to sweep is small and greppable:
+  `grep -rn "tools#6" workshop/projects/` returns the mvp_scope line, the task
+  row (correctly unticked), and this entry.
+
 ## Open findings
 
 - **BR-13** [Important] `dead-entry-path` The --play and -count flag wiring at main.go:369 has zero test coverage, the class #21 already shipped twice
@@ -1523,6 +1627,5 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-26** [Important] `mode-silently-ignores-argument` Mode flags are guarded against a word but not against each other, and "define -raw --play" runs a full session that records nothing
 - **BR-28** [Minor] `docs-not-updated-for-new-surface` README's new --play section never mentions that the pronunciation plays on every reveal, or that -no-audio applies to a session
 - **BR-29** [Important] `plan-table-contradicts-code` play runs TWO purity guards, but question.go, purity_test.go and the atlas all still claim three
-- **BR-41** [Important] `production-code-used-as-test-fixture` ImportsOnly's zero-import PASS is pinned only by cmd/define/play importing nothing, not by puretest's own suite
 - **BR-42** [Important] `claim-without-failing-test` store/yaml.go's new Stat error branch is at coverage 0 and appears in neither half of the round-6 pinned/unpinnable enumeration
-- **BR-43** [Minor] `duplicated-guard-logic` missingDict duplicates a capability fakeDictionary already has, in the same commit that deleted skipForm for that reason
+- **BR-44** [Important] `plan-checkboxes-not-ticked` The project's tools#6 M1 entry records a close date and a hand-typed actual for a boundary the issue says never closed
