@@ -164,7 +164,7 @@ func TestRenderLineMakesTheInputLineDistinct(t *testing.T) {
 	e.Line = []rune("fold")
 	e.Cursor = 4
 
-	got := RenderLine(e, "able", true)
+	got := RenderLine(e, "able", nil, true)
 	if !strings.Contains(got, promptOn+prompt) {
 		t.Error("the prompt is not accented")
 	}
@@ -175,7 +175,7 @@ func TestRenderLineMakesTheInputLineDistinct(t *testing.T) {
 		t.Error("the suggestion lost its grey")
 	}
 	// -no-color must still produce no ANSI beyond the frame control.
-	plain := RenderLine(e, "able", false)
+	plain := RenderLine(e, "able", nil, false)
 	for _, sgr := range []string{promptOn, inputOn, greyOn} {
 		if strings.Contains(plain, sgr) {
 			t.Errorf("colour leaked into a no-colour render: %q", plain)

@@ -51,6 +51,29 @@ On a terminal, `define` with no word opens a line editor:
 
 Definitions wrap to your terminal width at word boundaries.
 
+**Words you have looked up show in green** — in the line you type, in definitions,
+and in answers — so the vocabulary you are building is visible rather than
+something you have to remember having met. Looking up `sycophantic` when you
+already know `obsequious` shows you the connection in the gloss itself. A word
+looked up in this session turns green the moment you next see it.
+
+Definition headwords and labels stay their own colour; the highlight marks
+vocabulary in prose, which is where noticing a word you know actually tells you
+something.
+
+**The grey suggestion follows the word you are typing, anywhere in the line.** It
+completes from what you have looked up and asked before, so a long word you know
+you want but not how to spell finishes itself in the middle of a question:
+
+```
+you type:   what's the difference to obseq
+you see:    what's the difference to obseq|uious      (the tail in grey)
+```
+
+Whole lines still win over single words — if you start retyping a question you
+have asked, the rest of it appears — and a short word mid-sentence is left alone,
+so `to` does not offer to become `torpid`.
+
 **Type a question and it is answered instead of looked up.** There is no mode and
 no prefix to remember:
 

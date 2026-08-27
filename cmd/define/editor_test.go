@@ -6,13 +6,19 @@ import (
 	"testing"
 )
 
-// typeKeys drives the editor the way the loop does: resolve candidates from
-// history against whatever the walk is anchored on, then Apply.
+// typeKeys drives the editor the way the loop does: resolve candidates against
+// whatever the walk is anchored on, then Apply.
+//
+// It routes through candidatesFor rather than calling h.Prefix directly, and
+// that is load-bearing: the direct call skips the namespace resolution the
+// production loop does, so a test written against it cannot see command mode or
+// #20's segment expansion at all. Two tests here passed vacuously until this
+// helper was wired to what replraw.go actually calls.
 func typeKeys(h History, keys ...Key) (Editor, Action) {
 	e := NewEditor()
 	act := ActNone
 	for _, k := range keys {
-		e, act = Apply(e, k, h.Prefix(e.WalkBase()))
+		e, act = Apply(e, k, candidatesFor(e.WalkBase(), h, commands))
 	}
 	return e, act
 }
@@ -154,7 +160,7 @@ func TestHistoryDedupesKeepingNewest(t *testing.T) {
 func TestSuggestionOffersNewestMatch(t *testing.T) {
 	h := hist("sycophantic", "sympathy")
 	e, _ := typeKeys(h, runes("sy")...)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "mpathy" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "mpathy" {
 		t.Errorf("suggestion = %q, want %q", got, "mpathy")
 	}
 }
@@ -236,15 +242,41 @@ func TestEnterSubmitsOnlyWhatWasTyped(t *testing.T) {
 func TestSuggestionSuppressedMidLineAndWhenUnmatched(t *testing.T) {
 	h := hist("sycophantic")
 	e, _ := typeKeys(h, append(runes("syc"), Key{Kind: KeyLeft})...)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "" {
 		t.Errorf("suggested %q with the cursor mid-line", got)
 	}
 	e, _ = typeKeys(h, runes("zzz")...)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "" {
 		t.Errorf("suggested %q with no match", got)
 	}
 	e, _ = typeKeys(h)
-	if got := Suggestion(e, h.Prefix(e.WalkBase())); got != "" {
+	if got := Suggestion(e, completionsFor(e.WalkBase(), h, commands)); got != "" {
 		t.Errorf("suggested %q on an empty line", got)
+	}
+}
+
+// The two candidate lists are not the same list, and Up must draw from the one
+// that only ever holds really-submitted lines.
+//
+// Before #20 both jobs shared one slice, so command mode fed the command MENU to
+// walk: typing "/h" and pressing Up put "/help" on the line — a line the user
+// never submitted, which Enter would then run. Recall means recall.
+func TestUpRecallsSubmittedLinesNotTheCommandMenu(t *testing.T) {
+	h := hist("/history 7")
+
+	e, _ := typeKeys(h, append(runes("/h"), Key{Kind: KeyUp})...)
+
+	if got := e.String(); got != "/history 7" {
+		t.Errorf("Up after %q gave %q, want the submitted %q", "/h", got, "/history 7")
+	}
+}
+
+// With nothing submitted to recall, Up must leave the line alone rather than
+// reaching into the menu for something to offer.
+func TestUpOffersNothingWhenNoSubmittedLineMatches(t *testing.T) {
+	e, _ := typeKeys(hist("sycophantic"), append(runes("/h"), Key{Kind: KeyUp})...)
+
+	if got := e.String(); got != "/h" {
+		t.Errorf("Up gave %q, want the typed %q left untouched", got, "/h")
 	}
 }

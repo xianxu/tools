@@ -66,7 +66,7 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 	// way to reach its outcome — a bare question still asks and a bare word still
 	// looks up — which is what makes them escape hatches rather than syntax.
 	trimmed := strings.TrimSpace(line)
-	if rest, ok := strings.CutPrefix(trimmed, "?"); ok {
+	if rest, ok := strings.CutPrefix(trimmed, forceAsk); ok {
 		q := strings.Join(strings.Fields(rest), " ")
 		if q == "" {
 			return replCommand{kind: cmdNothing, note: noteEmptyQuestion}
@@ -74,7 +74,7 @@ func parseREPLLine(line string, hasCurrent bool) replCommand {
 		return replCommand{kind: cmdAsk, question: q}
 	}
 	var literal bool
-	if rest, ok := strings.CutPrefix(trimmed, `\`); ok {
+	if rest, ok := strings.CutPrefix(trimmed, forceLiteral); ok {
 		if strings.TrimSpace(rest) == "" {
 			// Symmetric with a bare "?": a hatch typed with no payload is a
 			// malformed line, whatever the session state. Without this it fell
@@ -120,6 +120,18 @@ func nothingSays(c replCommand, inSession bool) string {
 	return "type a word"
 }
 
+// The two submission markers. Each has the same three sites that must agree —
+// the parser, recallLine's canonical form, and the completion namespace, which
+// has to see PAST the marker to reach the text behind it — so each is one
+// constant rather than a literal repeated three times.
+//
+// forceAsk sends a line to the model without consulting the dictionary;
+// forceLiteral does the reverse, suppressing the question fallback.
+const (
+	forceAsk     = "?"
+	forceLiteral = `\`
+)
+
 // recallLine is the canonical, re-submittable form of this line: what Up-arrow
 // must put back so that pressing Enter means what it meant the first time.
 //
@@ -131,12 +143,12 @@ func nothingSays(c replCommand, inSession bool) string {
 func (c replCommand) recallLine() string {
 	switch c.kind {
 	case cmdAsk:
-		return "?" + c.question
+		return forceAsk + c.question
 	case cmdCommand:
 		return strings.Join(append([]string{"/" + c.name}, c.args...), " ")
 	case cmdDefine:
 		if c.literal {
-			return `\` + c.word
+			return forceLiteral + c.word
 		}
 		return c.word
 	}

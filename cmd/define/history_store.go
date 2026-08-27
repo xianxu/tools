@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -37,16 +36,31 @@ func newStoreHistory(st store.Store, warn io.Writer) *storeHistory {
 // It used to happen in the constructor, which meant opening the store read the
 // whole log — so `define /help` paid for a log it never looked at and /history
 // read it TWICE, printing every torn-record warning twice.
+// The `loaded` flag takes the SAME mutex Add and Prefix take. It was bare, and
+// so was the append below — the identical shape #21 found in storeVocabulary,
+// swept here because a finding names one instance and the deliverable is the
+// class (ARCH-PURPOSE). `go test -race` never saw either: every test that drives
+// these types drives one goroutine, so a clean race run was evidence about the
+// tests, not the types.
 func (h *storeHistory) Load() {
-	if h.loaded || h.st == nil {
+	if h.st == nil {
+		return
+	}
+	h.mu.Lock()
+	if h.loaded {
+		h.mu.Unlock()
 		return
 	}
 	h.loaded = true
+	h.mu.Unlock()
+
 	events, err := h.st.Events(time.Time{})
 	if err != nil {
 		h.warnf("could not read history: %v", err)
 		return
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	for _, e := range events {
 		if e.Kind == store.EventLookedUp {
 			h.lines = append(h.lines, e.Word)
@@ -80,8 +94,5 @@ func (h *storeHistory) Prefix(p string) []string {
 // with a different home, from storeCapturer's failed-write warning. Conflating
 // the two is what stranded the warn-once rule when the writes moved.
 func (h *storeHistory) warnf(format string, args ...any) {
-	if h.warn == nil {
-		return
-	}
-	fmt.Fprintf(h.warn, "define: "+format+" (history is session-only)\n", args...)
+	warnTo(h.warn, format+" (history is session-only)", args...)
 }

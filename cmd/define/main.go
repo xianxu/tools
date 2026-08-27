@@ -33,6 +33,11 @@ type deps struct {
 	// deck is the store --forget acts on. Separate from capture because capture
 	// deliberately cannot fail loudly and --forget deliberately must.
 	deck store.Store
+	// vocab is the set of words to highlight — the ONE predicate every highlight
+	// decision goes through (#21). Separate from deck because #22 narrows it to
+	// the words still being learned: a word that has become the learner's own
+	// stops being highlighted, and that swap must be this one seam.
+	vocab Vocabulary
 	// newStore builds the three store-backed dependencies AFTER flags are parsed —
 	// it cannot happen in realDeps, because DEFINE_NO_CAPTURE is read at flag
 	// parse and decides whether anything is opened at all. Tests leave it nil and
@@ -92,6 +97,7 @@ type storeDeps struct {
 	history History
 	capture Capturer
 	deck    store.Store
+	vocab   Vocabulary
 	// clock is the process's ONE answer to "what time is it". It used to be
 	// constructed inline where the capturer was built, so nothing else could
 	// reach it — and #15's /history needs the same clock to compute a local-day
@@ -123,6 +129,12 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	}
 	if d.deck == nil {
 		d.deck = sd.deck
+	}
+	// nil is the ONE representation of "nothing to highlight" — no second
+	// empty-set stand-in. highlightSpans is where that nil is interpreted; the
+	// only other guards are where a nil would panic (Load, Add).
+	if d.vocab == nil {
+		d.vocab = sd.vocab
 	}
 	// Same shape as the memHistory/noopCapturer fallbacks above: a test that
 	// supplies no newStore still gets a usable process. A test that wants to
@@ -163,10 +175,15 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
 	}
 	st := store.NewYAML(dir, warn)
+	// ONE highlight set, handed to both the capturer that grows it and the
+	// renderers that read it. Two instances would mean lookups landing in a set
+	// nothing draws from — TestOpenStoreSharesOneHighlightSet is the pin.
+	voc := newStoreVocabulary(st, warn)
 	return storeDeps{
 		history: newStoreHistory(st, warn),
-		capture: newStoreCapturer(st, clk, warn),
+		capture: newStoreCapturer(st, clk, warn, voc),
 		deck:    st,
+		vocab:   voc,
 		clock:   clk,
 	}
 }
@@ -485,7 +502,9 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		d.capture.Capture(word, true, opt)
 		return lookupOutcome{entry: text}
 	}
-	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{Color: opt.color, Width: opt.width}))
+	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{
+		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
+	}))
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
 }

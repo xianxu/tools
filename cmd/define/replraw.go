@@ -73,6 +73,10 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// The RAW editor is the only thing that recalls, so it is the only thing
 	// that pays for reading the log. replLines never touches history at all.
 	hist.Load()
+	// The highlight set, resolved the same way every other render path resolves
+	// it. Not a local policy: vocabularyFor owns "loaded, and only with colour",
+	// so a path that forgets to ask cannot silently render against an empty set.
+	voc := vocabularyFor(d, opt)
 	e := NewEditor()
 	var sess session
 	// Apply gets the candidate list computed BEFORE the keystroke, which is
@@ -120,10 +124,15 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// Computing here means there is one answer to "what does the current line
 	// match", and no way to hand this function a stale one.
 	draw := func() {
+		// completionsFor rather than candidatesFor: draw renders only the grey
+		// tail, so resolving the pair here would build a recall list per
+		// keystroke that nothing reads. Same function that fills .complete, so
+		// the two paths cannot disagree.
+		//
 		// The menu is painted FIRST and the prompt line last, so RenderLine
 		// leaves the cursor where the user is typing.
 		paintMenu(menuLines(e.String(), commands, opt.width))
-		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), opt.color))
+		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color))
 	}
 	draw()
 
@@ -177,9 +186,9 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				fmt.Fprintln(stdout)
 				return 0
 			}
-			matches := completionsFor(e.WalkBase(), hist, commands)
+			cands := candidatesFor(e.WalkBase(), hist, commands)
 			var act Action
-			e, act = Apply(e, k, matches)
+			e, act = Apply(e, k, cands)
 			switch act {
 			case ActInterrupt, ActEOF:
 				clearMenu()
@@ -201,7 +210,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				submitted := e
 				e = NewEditor()
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
-					fmt.Fprint(stdout, RenderLine(submitted, "", opt.color))
+					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color))
 				}
 				if cmd.kind == cmdCommand {
 					// Commands print multiple lines, so they run COOKED for the

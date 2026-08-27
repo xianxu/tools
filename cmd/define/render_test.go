@@ -86,14 +86,21 @@ func TestPrettyPronunciations(t *testing.T) {
 	}
 }
 
+// stripANSI removes every escape sequence, leaving what a reader sees.
+//
+// It defers to scanEscape rather than scanning for 'm': a CSI with any other
+// final byte (erase-line, cursor moves) used to run this loop past the sequence
+// and eat real text with it, which mattered once #21 put arbitrary styled
+// streams through the same assertions.
 func stripANSI(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); {
-		if s[i] == '\x1b' {
-			for i < len(s) && s[i] != 'm' {
-				i++
+		if s[i] == 0x1b {
+			n := scanEscape(s[i:])
+			if n <= 0 {
+				n = len(s) - i // an unterminated escape: the rest is the sequence
 			}
-			i++
+			i += n
 			continue
 		}
 		b.WriteByte(s[i])

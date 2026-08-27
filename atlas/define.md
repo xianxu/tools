@@ -174,12 +174,16 @@ When `define` owns the terminal (**stdin and stdout both a tty, and not
   columns** because every line here is coloured. Width 0 (a pipe) disables it:
   a consumer re-wraps for itself and baked-in breaks cannot be undone.
 
-The editor is a pure state machine — `Apply(Editor, Key, matches) → (Editor,
+The editor is a pure state machine — `Apply(Editor, Key, candidates) → (Editor,
 Action)` plus `RenderLine` — so every behaviour above is a table test over key
 sequences with no terminal. `Action` is what the *loop* must do; the editor never
-acts. Candidates arrive as a plain slice rather than a `History` handle, so
-**`Apply` never queries**; the loop resolves matches once per keystroke and hands
-the same slice to both the state machine and the suggestion.
+acts. Candidates arrive as plain slices rather than a `History` handle, so
+**`Apply` never queries**; the loop resolves them once per keystroke.
+
+`candidates` carries TWO lists, and which one each key reads is part of the
+model: Up/Down walk `recall`, Tab/Right/End accept from `complete`. They were one
+slice until #20 made completions stop being past lines — see "Type-ahead" below
+for why sharing one became unsafe.
 
 **Cancellation changes shape in raw mode, and this is the subtle part.** Raw mode
 clears ISIG, so Ctrl-C arrives as byte `0x03` and the key reader can act on it
@@ -363,14 +367,187 @@ command. The plan gate caught exactly that draft (PQ-2), and
 `TestLineLoopDispatchesCommands` is the pin — deleting the `cmdCommand` case from
 `replLines` reddens it.
 
-**Type-ahead needed no change to the pure editor.** `Apply(e, k, matches)` always
-took its candidate list from the caller, so command mode is a different match
-*source*, not a different editor. `completionsFor` is the one place that decides
-which namespace a line draws from, and it replaced four `hist.Prefix(...)` call
-sites. Candidates come back `/`-prefixed because `Suggestion` matches against the
-whole typed line: with `/his` typed, `/history` is what completes it. Once an
-argument is typed (`/history 7`) the completion is shorter than the line, so no
-suggestion is offered — that falls out rather than being special-cased.
+**Type-ahead needed no change to the pure editor.** `Apply` always took its
+candidate list from the caller, so command mode is a different match *source*,
+not a different editor. `completionsFor` is the one place that decides which
+namespace a line draws from, and it replaced four `hist.Prefix(...)` call sites.
+Candidates come back `/`-prefixed because `Suggestion` matches against the whole
+typed line: with `/his` typed, `/history` is what completes it. Once an argument
+is typed (`/history 7`) the completion is shorter than the line, so no suggestion
+is offered — that falls out rather than being special-cased.
+
+**#20 extended type-ahead past the first word without touching the editor
+either**, by the same move. `Suggestion` still byte-prefix-matches the WHOLE
+line; what changed is where candidates come from. `trailingSegments` cuts the
+line into its trailing word-boundary slices, longest first — `what is a syc`
+becomes `[what is a syc, is a syc, a syc, syc]`, each carrying the head it was
+cut from, with `head+text == line` as an invariant a fuzz target defends.
+`historyCompletions` returns the first segment that matches anything, glued back
+onto its head, so a deck word arrives as a whole line (`what is a sycophantic`)
+and the editor never learns what a word boundary is. Longest-first is also the
+precedence rule: segment 0 IS the whole line, so a real past line always beats a
+word glued onto a head.
+
+Three constraints keep it quiet rather than chatty. A segment starts only where a
+word starts, so a trailing space produces none — load-bearing, because
+`History.Prefix("")` returns every entry by contract and an empty segment would
+suggest an unrelated line after every space. Inner segments need
+`minInnerSegment` runes, so `to` does not suggest `torpid`; the floor skips
+segment 0 so two-rune single-word completion is unchanged. And the namespace is
+decided ONCE, on the whole line: `completionsFor` tests `parseCommandLine(base)`
+before `historyCompletions`, and the segment loop never re-tests it — otherwise
+the `7` in `/history 7` would draw from the deck, and a mid-line `/his` would
+complete a command. Both are pinned
+(`TestACommandArgumentDoesNotDrawFromHistory`,
+`TestASlashSegmentMidLineDoesNotCompleteACommand`); an earlier version of the
+first passed over the bug it was written for, because its history matched nothing
+either way.
+
+**Recall and completion are two lists.** They were one until #20, when
+completions stopped being past lines: `walk` assigns `e.Line = matches[next]` and
+Enter submits it, so a glued candidate in that list would let Up offer — and
+Enter run — a sentence nobody typed. `Apply` takes `candidates{recall, complete}`;
+`recall` is `hist.Prefix(base)`, only ever really-submitted lines. That also
+retired a pre-existing wart: command mode used to feed the MENU to `walk`, so Up
+inside `/his` put `/help` on the line rather than recalling.
+
+**The completion namespace sees past submission markers.** `recallLine` stores
+the canonical re-submittable form, so an asked question is `?…` and a forced
+literal is `\word`. `matchesFor` unwraps both — the `?` especially, because
+`readsAsQuestion` classifies a bare sentence and the system adds that marker, so
+requiring the user to type one to complete a question they asked without one
+would make past questions uncompletable. `/` is deliberately not unwrapped:
+commands are a real separate namespace, not a marker on a word.
+
+## Highlighting the words you are learning
+
+**One predicate, and it is the point.** Every highlight decision goes through
+`Vocabulary.Has` (`vocab.go`). Today the set is the deck; #22 narrows it to the
+words still being learned, so a word that has become the learner's own stops
+being highlighted. That swap is one constructor, and nothing above the seam
+moves — which is why the seam exists now rather than being introduced later.
+
+**Not `History`, though the shapes rhyme.** Different source (`words/` vs the
+event log), different query (set membership vs ordered prefix search), and
+decisively different contents: history carries typos on purpose so they stay
+recallable (#20), and highlighting a misspelling as a word you know is the
+opposite of reinforcement. `storeVocabulary` embeds `memVocabulary` rather than
+growing a second set, so "what is in the set" has one implementation.
+
+**`highlightSpans` is the pure core** (`highlight.go`): text plus a `Vocabulary`
+in, alternating known/unknown `span`s out. Concatenating the spans reproduces the
+input exactly — the invariant a fuzz target defends, because a renderer joins
+them back into what the user sees and a lossy split silently corrupts a
+definition. Longest match wins at each position, so with both `hot` and `hot dog`
+in the set the phrase highlights rather than its first word.
+
+`wordRuns` is the single tokenizer, used by the prompt line today and by the
+definition and answer paths from M2 — one tokenizer, so a word highlighted in a
+definition is the same word highlighted at the prompt.
+Apostrophes and hyphens are INSIDE a word, so `don't` and `hot-dog` are each one
+token — hyphens especially, since a hyphenated deck entry has `hot-dog` as its
+`store.Key` and splitting on the hyphen would make it unmatchable. Phrases are a
+level up: `phraseGap` lets a multi-word key span only spaces and tabs, so a
+`Render`-wrapped `hot\n  dog` cannot form the candidate `hot dog` and paint a
+green run through the wrap indent.
+
+**ANSI does not nest, and that shapes every renderer.** `RenderLine` writes
+`knownOn + word + sgrOff + inputOn` for each known span: without re-opening
+`inputOn`, everything after the first highlighted word goes plain. The same
+constraint is why definitions and streamed answers share a mechanism rather than
+each growing their own — see M2/M3.
+
+**`highlightWriter` is why definitions and answers are one mechanism** (M2).
+They share the hard part: the text already carries ANSI codes, and it may arrive
+in pieces. A definition is a complete string; an answer arrives as stream deltas
+where `obsequious` can land as `obseq` + `uious`. Giving them separate
+implementations would mean two sets of ANSI-resume rules to keep in agreement.
+`Render` calls it per admitted REGION; the answer stream wraps its writer.
+
+Its contract, in the order the rules matter:
+
+1. **Nothing overtakes held text.** The writer holds a tail while a phrase is
+   still possible. An escape arriving during a hold RESOLVES the hold first, then
+   passes through — otherwise a reset can land before the word it was closing.
+   Left-to-right draining is what makes this structural rather than a check.
+2. **A phrase spans only spaces and tabs.** An escape, newline or punctuation
+   closes the window. So `hot\x1b[0m dog` is not `hot dog`: a phrase whose halves
+   are styled differently is not a phrase, and that is what makes rule 1
+   implementable.
+3. **The hold point may not cut a completed phrase.** Holding the last
+   `MaxPhraseWords` tokens is right for text that may still grow, but with
+   `hot dog` in the deck it lands inside `one hot dog please` — emitting `hot`
+   alone and losing the match forever. A known span straddling the hold point
+   drags it back to that span's start. Plain text may be cut freely.
+4. **Downstream errors poison the writer.** The first failure is remembered and
+   nothing is emitted after it, so no byte is written twice. A short write with a
+   nil error is a failure — `crlfWriter`, which the raw loop nests this inside,
+   produces exactly that.
+5. **Flush is part of the contract.** Held text is invisible until it happens.
+
+`sgrState` is the pure half: it watches escapes go past and answers "what style
+would a terminal be in right now", so a highlight can hand that style back. It
+accumulates SGRs until a reset, because `Render` opens bold and colour
+separately and a terminal composes them.
+
+**The decision is per region, and the table has to be complete.**
+`RenderOpts.Vocab` reaches `Render` rather than wrapping its output, because a
+finished string has no structure left to consult — wrapping re-styled the
+headword, which the Spec puts out of scope and which is the COMMON case for a
+learning tool, since you revisit words. `admitsHighlight`'s doc comment is the
+table — prose admitted, labels withheld, with no count written beside it because
+a number in prose beside an enumeration is a second source of truth that drifts.
+It is a decision procedure only because `TestHighlightsAppearOnlyInAdmittedRegions` derives the
+admitted text from the parsed `Entry`, so a region that starts leaking fails
+without anyone remembering to add a row. `Render` stays pure — `Vocabulary` is
+injected data and `highlightSpans` is a pure function of it.
+
+`TestHighlightingLosesNothing` is `Render`'s own no-data-loss invariant
+re-asserted with highlighting on, stripping escapes first — the codes carry
+digits that `alnum()` would otherwise read as content.
+
+**`vocabularyFor` answers "what should be highlighted right now" for every
+render path.** Highlighting needs the set LOADED, and `Load` used to live in
+`runEditor` — so `define <word>` and piped stdin rendered against an empty set
+and highlighted nothing, two of three entry paths dead while the suite was
+green. One function now owns "loaded, and only with colour". The enumeration that
+guards it is **entry path × render surface**, not entry path alone:
+`TestEveryEntryPathHighlightsDefinitions` and
+`TestEveryEntryPathHighlightsAnswers`, each row driven with an UNLOADED set,
+because a pre-filled one begins after the hop that fills it. M3 added the answer
+surface without widening the first table, and a mutant dropping the `Load` passed
+the whole suite — the same Critical one surface over. A new surface needs its own
+rows.
+
+**The answer stream is the writer's other caller**, and the nesting order is
+fixed by what each writer needs. The raw loop has already wrapped stdout in
+`crlfWriter` before `ask` is called, so `runAsk` wraps THAT — highlighting sees
+logical text and CRLF translation applies to the final bytes, including the
+escapes highlighting inserted. Inverted, the highlighter would meet `\r\n` where
+it expects `\n`.
+
+The `Flush` is DEFERRED rather than written at each return, and that is
+structural: `runAsk` returns on five paths and held text is invisible until a
+flush, so a per-path flush is four chances to forget one silently-dropped last
+word. On four of those paths the hold is already released before the return (the
+answer's own newline, or the trailing `Fprintln`), and the fifth is unreachable
+through `llmtest` — `askhighlight_test.go` records that scope in full rather than
+implying coverage, and names what a fake would need to reach it. What DOES
+observe the defer is the error report below.
+
+**The command namespace is withheld, like every other boundary decision.**
+`highlightSetFor` hands `RenderLine` a nil vocabulary on a `/command` line, so a
+deck word sharing a command's name does not render green inside `/history 7`.
+`parseCommandLine`'s own comment calls `/` a separate namespace rather than a
+marker on a word, and #20 decides that namespace exactly once, on the whole
+line — highlighting inside it read as the vocabulary feature leaking across.
+
+**The set grows mid-session, from the one place that already knows.**
+`storeCapturer.Capture` adds a word after `Upsert` succeeds — the single site that
+knows a lookup both succeeded and earned a deck entry, so a failed lookup (which
+is history, not vocabulary) never enters. `openStore` hands the SAME instance to
+the capturer and the renderers; two instances would mean lookups landing in a set
+nothing draws from, which has its own test.
 
 **Typing `/` shows the menu.** The inline grey suggestion and the dropdown
 answer different questions, which is why both exist: completion answers "what
@@ -398,9 +575,11 @@ tail was rendered against the previous line. Both lists were history before
 command mode and a stale superset usually shared its first match, so nothing
 showed; the namespace switch made the stale list come from a *different set*, and
 typing `/` suggested `/history` out of recall while the menu under it listed
-commands and Tab accepted `/help`. `Apply` still receives the pre-keystroke list,
-which is correct — it is deciding what to do with that keystroke given the line
-as it stands — but nothing can hand `draw` a stale one.
+commands and Tab accepted `/help`. `Apply` still receives the pre-keystroke
+pair, which is correct — it is deciding what to do with that keystroke given the
+line as it stands — but nothing can hand `draw` a stale one. `draw` resolves only
+the completion half, because that is all it renders; resolving the pair there
+would compute a recall list per keystroke that nothing reads.
 
 **Tab accepts, Return submits what was typed.** `/his` + Return dispatches `his`
 and gets a suggestion, it does not run the unique match. That is `#14`'s contract

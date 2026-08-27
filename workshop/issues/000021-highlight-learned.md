@@ -1,0 +1,439 @@
+---
+id: 000021
+status: codecomplete
+deps: []
+github_issue:
+created: 2026-08-26
+updated: 2026-08-26
+estimate_hours: 9.28
+started: 2026-08-26T12:40:00-07:00
+actual_hours: 6.0
+---
+
+# highlight the words you are learning wherever they appear
+
+## Problem
+
+Nothing on screen distinguishes a word the learner has studied from a word they
+have never met. A definition of `obsequious` may use `sycophantic` in its own
+gloss — the exact connection worth noticing — and it reads the same as every
+other word on the line. An LLM answer comparing two words the learner looked up
+last week gives no sign that those two are already theirs.
+
+Operator's framing:
+
+> use different color ... for the words user checked ... this makes them easier
+> to spot ... such highlighting should appear in definition and LLM responses as
+> well, this help reinforce words user are learning.
+
+The reinforcement only works if it is everywhere text appears. Highlighting only
+the prompt would mark words at the moment the learner already knows they are
+typing them — the least informative moment.
+
+## Spec
+
+**One predicate, three surfaces.** Every highlight decision goes through
+`Vocabulary.Has(word)`. Today that set is the deck; #22 will narrow it to the
+words still being learned, and nothing downstream should change when it does.
+The seam exists now precisely so that swap is one place later (ARCH-PURPOSE:
+build the seam the stated future needs, not the future itself).
+
+**The source is the deck, not history.** `words/<slug>.yaml` holds found
+lookups, canonical and correct. The event log holds every attempt including
+typos, which is right for recall (#20 completes from it deliberately) and wrong
+here — highlighting a misspelling as a word you know is the opposite of
+reinforcement. Operator was explicit: *"not history, but correct form of the
+words"*.
+
+**Matching is exact, on `store.Key` normalisation** — case-insensitive,
+whitespace-collapsed, so `Obsequious` matches `obsequious`. Multi-word headwords
+(`hot dog`, `a priori`) match as phrases via longest-match at each token
+boundary. Inflections do NOT match: `obsequiousness` stays plain until it is
+itself looked up. Operator chose this over a suffix list, which buys
+`obsequiously` at the cost of wrongly lighting `rationing` for a deck holding
+`ration`, and still misses stem changes like `run`/`running`.
+
+**Bold green**, chosen over underline and amber. It reads as "known", is
+instantly separable from the grey suggestion and the plain bold of ordinary
+input, and on the prompt line it collides with nothing (amber is the
+part-of-speech label inside definition bodies).
+
+### The three surfaces, and why two of them are one mechanism
+
+| surface | how text reaches the screen | mechanism |
+|---|---|---|
+| typed line | `RenderLine` builds one frame string | pure matcher, directly |
+| definitions | `Render(e, opt) string`, fully built then printed | `highlightWriter` |
+| LLM answers | `Stream(ctx, req, func(delta string){...})`, in chunks | `highlightWriter` |
+
+Definitions and answers share a mechanism because they share the hard part:
+**the text is already carrying ANSI codes, and a word can straddle a boundary.**
+`Render` emits `\x1b[3;32m` around examples, `\x1b[1;33m` around parts of speech;
+ANSI has no nesting, so injecting green inside a styled run must restore the
+enclosing style afterwards. And a stream delivers `obseq` in one chunk and
+`uious` in the next.
+
+`highlightWriter` is a stateful `io.Writer` that (1) passes escape sequences
+through untouched while tracking the active SGR, (2) holds back a trailing
+partial token across writes, (3) rewrites matched tokens as
+`green + word + off + enclosingSGR`. Feeding it a complete string and flushing
+is the definition case; wrapping the stream's `out` is the answer case. This is
+the `crlfWriter` shape already in the tree (`crlf.go`), which carries `lastWasCR`
+across writes for exactly the same class of reason.
+
+The typed line does not use it: `RenderLine` builds a whole frame with one
+enclosing style and no streaming, so the pure matcher serves it directly. The
+matcher is the shared core — one implementation of "which spans of this text are
+words you know", two renderers over it (ARCH-DRY, ARCH-PURE).
+
+### Deliberately out of scope
+
+- **Narrowing to actively-learned words** — that is #22, and it is why the seam
+  is a predicate rather than a deck read.
+- **Inflection/stemming** — decided against above.
+- **Re-styling the headword line.** The head is already bold cyan; highlighting
+  is for body text, answers, and input. The headword's own occurrences *inside*
+  body text do highlight, uniformly with every other deck word — one rule, and
+  #22 is the operator's own answer to any resulting noise.
+- **`-raw` output**, which is by contract the unparsed entry.
+- **Highlighting the grey suggestion**, which is grey by definition.
+
+## Done when
+
+- [x] A deck word in the line you are typing renders bold green; the rest is unchanged.
+- [x] A deck word appearing in a definition body renders bold green, and the
+      enclosing style resumes after it.
+- [x] A deck word in a streamed LLM answer renders bold green even when it
+      arrives split across chunks.
+- [x] Matching is case-insensitive and covers multi-word headwords.
+- [x] `-no-color` and piped output emit no highlight codes at all.
+- [x] A word looked up during the session highlights immediately, without restart.
+- [x] `Render`'s no-data-loss invariant still holds with highlighting on.
+- [x] Every highlight decision routes through `Vocabulary.Has`, so #22 changes
+      one place.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187), one item per task in
+`workshop/plans/000021-highlight-learned-plan.md` plus the process work inside
+the measured window. Design carries v2's ×0.2 spec-quality discount on every code
+item — the plan pre-resolves the matcher, the phrase rule, the writer's four
+contract rules and the wiring points, so what is left at design time is reading.
+No discount on spec/plan authoring or review rounds; those *are* the design work.
+Implementation is v3.1's 40% of the v2 table. Familiarity 1.0 — same package,
+and `crlfWriter` is a working precedent for the hardest piece.
+
+`issue-spec` is priced at the **top** of its 0.5–1.5 band, once rather than
+twice. It covers the spec *and* a 368-line durable plan with a normative contract
+section, and the scope changed mid-specification (prompt line → all three
+surfaces), which meant re-deriving the architecture rather than extending it.
+
+**Review rounds are priced from #20's measurement — the first round cost this
+repo has actually observed end to end.** #20's single boundary review took ~7
+minutes of gate time plus ~25 minutes of fixes, ≈0.5h, so a round is written
+`design=0.20 impl=0.30`. Four are budgeted: this plan has three `Mx` boundaries,
+each of which owes a `milestone-close`, plus one fix-then-re-review cycle — #20
+needed exactly one and its verdict was FIX-THEN-SHIP.
+
+**Two UX iteration rounds are line items, not hope.** The entire deliverable is a
+colour choice: the operator has already changed scope once mid-spec (prompt line
+→ all three surfaces, recorded in the Log), the palette decision is contested in
+the Spec, and the plan's own Risks section says the green-inside-italic-green
+case must be looked at on a real terminal rather than reasoned about. v2.1's
+known-limitations names this directly — 3–5 iteration rounds are typical for TUI
+features, not 1. Two is the conservative read given the colour is already chosen.
+
+**M3 is two `cross-cutting` items, not one.** Task 8 carries three flush exit
+paths to enumerate and test, the `highlightWriter`/`crlfWriter` nesting order to
+determine *and* pin, and a capture-derived test helper. Pricing that as one item
+made M3 cost a third of M1 while containing the riskiest integration in the plan.
+
+**Disclosure: the two populations of evidence disagree, and averaging them would
+be a fudge.** The trusted ledger rows say this repo under-estimates: tools#1 0.59,
+#3 0.96, #4 0.20, #11 0.64, #14 2.83, #15 0.27, #16 0.37 — six of seven below
+1.0. But both hand-measured closes say the opposite: #17 M1 est 8.39 against ~3.8h
+recorded, and #20 est 5.24 against 1.35h. Those two are `window_trusted: no`
+precisely because `sdlc actual` failed on them in opposite directions, so they are
+not comparable to the trusted rows and must not be pooled with them. I am
+deriving from the primitive table and reporting the tension rather than applying a
+correction factor to land somewhere between — a back-fitted total is what the
+estimate gate exists to catch, and #20 is already in the ledger as evidence for
+whichever way this resolves.
+
+The estimate-quality judge offered a sharper hypothesis than "the populations
+disagree", and it is worth naming because this issue can test it: the
+over-pricing may be in **design/process** while the under-pricing is in
+**implementation**. That reconciles both populations — #16 (est 6.49 → 17.63) and
+#11 (est 7.98 → 12.38) ran long on implementation-heavy work, while #17 and #20,
+whose estimates were dominated by process and review rounds, ran short. This
+block is 54% design after buffering; if it closes short again, that is the
+hypothesis confirming, and the fix is to the design side of the primitive table
+rather than to a global factor.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec             design=1.50 impl=0.08
+item: milestone-review       design=0.10 impl=0.14
+item: milestone-review       design=0.10 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: smaller-go-module      design=0.03 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: milestone-review       design=0.20 impl=0.30
+item: smaller-go-module      design=0.03 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: smaller-go-module      design=0.03 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: milestone-review       design=0.20 impl=0.30
+item: smaller-go-module      design=0.03 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: ux-rename-iteration    design=0.55 impl=0.08
+item: ux-rename-iteration    design=0.55 impl=0.08
+item: atlas-docs             design=0.03 impl=0.05
+item: milestone-review       design=0.20 impl=0.30
+item: milestone-review       design=0.20 impl=0.30
+design-buffer: 0.15
+total: 9.28
+```
+
+Item-to-task map. Process: spec+plan, then plan rounds 1 and 2 (both spent).
+**M1** — `greenfield` = Task 1 the `Vocabulary` seam; `smaller` = Task 2 the
+tokenizer + its fuzz; `greenfield` = Task 3 `highlightSpans` + its fuzz;
+`cross-cutting` = Task 4, which touches `editor.go`, `replraw.go`, `main.go` and
+`capture.go`; then the M1 boundary. **M2** — `smaller` = Task 5 `sgrState`;
+`greenfield` = Task 6 `highlightWriter`; `smaller` = Task 6's downstream-contract
+tests and fuzz, itemised separately because contract rule 4 is a second piece of
+work rather than a case of the first; `cross-cutting` = Task 7 definitions plus
+the no-data-loss invariant; then the M2 boundary. **M3** — `smaller` = Task 8's
+capture-reading helper; `cross-cutting` = the stream wiring, the flush paths and
+the `crlfWriter` ordering; `atlas-docs` = Task 8 Step 7; then the close boundary
+and one fix-then-re-review.
+
+## Plan
+
+Durable plan: `workshop/plans/000021-highlight-learned-plan.md` (three
+milestones; each `Mx` row below is its own review boundary).
+
+- [x] M1 — `Vocabulary` seam + pure matcher + typed line
+- [x] M2 — `highlightWriter` + definitions
+- [x] M3 — LLM answers, streamed
+
+## Log
+
+### 2026-08-26
+- 2026-08-26: closed — go test ./... + go vet + gofmt + go test -race all green. Three milestones each closed with a boundary review. Fuzz: FuzzWordRuns 2.24M, FuzzHighlightSpans 792k, FuzzHighlightWriterIsChunkIndependent 1.17M against a deck derived by class x position x phrase length. Round-3 close findings all addressed, including two real defects the earlier rounds had not reached: storeVocabulary.loaded was UNGUARDED while vocabularyFor calls Load on every render — a genuine data race that go test -race could never surface, because every existing test drives a single goroutine; TestVocabularyIsSafeUnderConcurrency drives eight and the unguarded mutant reports WARNING: DATA RACE immediately. And MaxPhraseWords, the only input to the streaming hold arithmetic, counted keys that can never match (e.g., and rock-apostrophe-n-roll whose gaps carry an apostrophe), widening the held tail every stream pays for in exchange for nothing — measured 5 bytes held becoming 9. Both pinned by mutation. BR-16 closed at its sixth round by sweeping MECHANICALLY rather than by the note list: grep every code line number, every test-file placement, every instructed assertion shape — which found the plan still telling a future implementer to write knownOn + "text", the exact vacuous shape lessons.md forbids and the one that let M1 mutation survive. Also: the poison report is now tested rather than asserted in a comment (discarding the Flush error reddens TestAPoisonedWriterIsReported), the exit-path table gained its fifth cell, and the atlas gained highlightSetFor and the stderr report. All Done-when ticked, including the one that matters for #22: every highlight decision routes through Vocabulary.Has, so narrowing to actively-learned words is one constructor with nothing downstream moving. ACTUAL 6.0h wall clock 12:40-18:30; sdlc actual under-reports for the claim-anchoring defect recorded in #20.; review verdict: FIX-THEN-SHIP
+- 2026-08-26: closed M2 — go test ./... + go vet + gofmt clean; 1.08M fuzz execs on the position-widened deck. Round-2 findings addressed as classes. BR-23: both of decidedEnd release paths now consult tokenStillOpen — the round-1 fix guarded only one, so a region of pure punctuation ending in half a rune took the no-token path and released, losing a word-initial multi-byte match while every byte survived. Hoisting the check above both paths was the wrong shape and the suite caught it (it held every text ending mid-word, defeating streaming). The corpus fault was deeper: the deck derived character CLASSES but not POSITIONS, and cafe multi-byte rune is word-final, so the word-initial shape was unreachable at any exec count. Deck is now class x position; reverting the fix reddens both the byte-at-a-time table and TestHighlightWriterHoldsAWordInitialMultiByteRune. BR-24, seventh in its family: the survivors were a wiring ARGUMENT and a guard whose only effect is ABSENCE of work, neither reachable by enumerations over output changes. Pinned the p.ex base resume by asserting production bytes, maxOpenSGR, and the colour gate with countingDeck — that gate was M1 round 3 own finding and went unpinned again when this refactor moved it. BR-26: the region table listed ten regions where Render emits thirteen; now complete AND TestHighlightsAppearOnlyInAdmittedRegions derives admitted text from the parsed Entry, so leaking the section name reddens 59 cases, the POS label 29, and HeadOther — the region the hand-written table omitted — 11. BR-16/BR-18 record sweeps run in full this time: Task 5/6/7 Files blocks, the main.go:488 injection point, the fuzz target name, Task 7 Step 2 invariant location, and every atlas sentence still describing the pre-refactor whole-string wrap. BR-25: highlightText had zero call sites after the per-region refactor and go vet does not flag unused functions; deleted with its docs. ACTUAL 2.1h wall clock from the M1 close through this close, spanning three review rounds including one killed by a revoked OAuth token.; review verdict: FIX-THEN-SHIP
+- 2026-08-26: closed M1 — go test ./... + go vet + gofmt clean. FuzzWordRuns re-fuzzed 2.24M execs clean after its property was corrected to the trimmed contract (it was RED at HEAD; go test runs seeds only). FuzzHighlightSpans 792k execs on the span-join invariant. Round 2 findings addressed as rules, not instances: (a) the test-completeness enumeration is now over the production dependency chain rather than over comments — hop 2, withStore merging sd.vocab into deps.vocab, carries no comment and was invisible to the round-1 sweep while its deletion kills the feature with the suite green; now pinned by TestWithStoreCarriesTheHighlightSetThrough using the deps{newStore: openStore}.withStore pattern, and MUT-G dies. (b) doc prose at a boundary describes only what that milestone shipped — the round-1 fix commit had written a fresh over-claim into README while fixing the atlas one; README now covers the typed line only and Task 8 Step 7 records that its job is to widen it. Twelve mutations die across M1. ACTUAL 2.9h is wall clock 12:40-15:35; sdlc actual reports 0.84h while its own warning says it discarded 117.6m as unattributed — the sdlc claim anchoring defect from #20.; review verdict: SHIP
+
+Opened from the operator's request. Scope grew mid-specification: the first ask
+was the prompt line only, then "such highlighting should appear in definition and
+LLM responses as well". The follow-on concept (words graduating out of the
+highlight set) is filed as #22 rather than deferred inside this issue, and shaped
+this spec's central decision — the predicate seam.
+
+- 2026-08-26: M1 — `Vocabulary` seam (`vocab.go`), tokenizer + `highlightSpans`
+  (`highlight.go`), typed-line rendering, and in-session growth through the one
+  capturer that already knows a lookup earned a deck entry. Six mutations run;
+  five died first time. The sixth — aliasing `knownOn` to `inputOn`, which
+  removes every visible highlight — SURVIVED, because the assertion was
+  `Contains(got, knownOn+"obsequious")`, the constant compared against itself.
+  That is the #16 lesson in a second shape, on the one feature whose entire
+  deliverable is a colour. Now asserted as literal escape bytes plus
+  `knownOn != inputOn`, and the mutant dies. lessons.md extended rather than
+  given a new entry: same family, and a reader hitting the first shape should
+  find the second beside it.
+
+- 2026-08-26: M1 boundary round 1 — FIX-THEN-SHIP, 8 findings, 2 blocking, all
+  addressed. Both blocking findings were one rule the reviewer stated as a
+  sweepable enumeration: for each behaviour the diff asserts in a comment, does a
+  mutation that falsifies it redden a named test? The set→screen link — the M1
+  Done-when itself — was pinned by nothing, because every test called RenderLine
+  directly and none drove the loop; passing nil at both call sites and deleting
+  voc.Load() each survived the whole suite. That is #20's typeKeys class again,
+  and it was also a plan step (Task 4 Step 7) the milestone had quietly skipped.
+  The BR-2 fix was then vacuous on the first attempt for a third reason —
+  failingStore fails AppendEvent, so Capture returned before the deck write and
+  the mutant lived regardless. Five mutations now die; lessons.md gains the
+  isolating-double rule.
+
+- 2026-08-26: M1 boundary round 2 — REWORK. One Critical of my own making: the
+  round-1 joiner-trim changed the wordRuns contract and FuzzWordRuns still
+  asserted the old one, so the target was RED at HEAD and I did not know — `go
+  test` runs a fuzz target against its seed corpus only. Property rewritten,
+  seeds gained the shape I had just changed, re-fuzzed 2.24M execs clean. Two
+  Importants, both explicitly "fix the rule, not the instance": (a) round 1's
+  enumeration was over COMMENTS, and the missing hop — withStore's vocab merge —
+  carries no comment, so the sweep was structurally blind to it; deleting that
+  line kills the feature in production with the whole suite green. Replaced with
+  the production-chain enumeration (one test per hop, crossing through production
+  code) and hop 2 is now pinned. (b) The commit that fixed round 1's
+  atlas-claims-unbuilt-surface finding wrote a FRESH instance of it into README
+  in the same commit. Both rules recorded in lessons.md.
+
+- 2026-08-26: M1 boundary round 3 — SHIP. 8 findings disposed, 4 advisory
+  recorded. Took all four now rather than at the close review, since M2 builds
+  directly on this code: the "define: " warning prefix was written out in three
+  seams (one `warnTo`, each seam keeping its own policy — capture's warn-once,
+  history's session-only suffix); the Vocabulary seam had TWO absence
+  representations (nil and an empty stand-in) with four guards, now nil only,
+  interpreted in `highlightSpans` and guarded elsewhere only where nil would
+  panic; `voc.Load()` read the whole deck under `-no-color`, where the render
+  cannot show a highlight, now skipped; and a deck word sharing a command name
+  rendered green inside `/history 7`, which leaked the vocabulary feature across
+  the namespace boundary #20 decides exactly once — `highlightSetFor` withholds
+  the set on a command line.
+
+- 2026-08-26: M2 — `sgrState` + `scanEscape` (`sgr.go`), `highlightWriter`
+  (`highlightwriter.go`), and definitions wired at the one `Render` print site.
+  The design fault worth recording is rule 3 of the writer's contract, which the
+  plan did not anticipate: holding the last `MaxPhraseWords` tokens is correct
+  for text that may still grow, but that hold point lands INSIDE a completed
+  phrase — with `hot dog` in the deck, "one hot dog please" emitted `hot` alone
+  and lost the match permanently, because the held remainder is re-analysed
+  without it. A known span straddling the hold point now drags it back to that
+  span's start. Found by the phrase tests, not by reasoning.
+  Chain enumerated per M1's rule: lookupAndRender reads d.vocab → highlightText →
+  writer → stdout, pinned end-to-end by TestDefinitionBodyHighlightsADeckWord
+  (driven through lookupAndRender, not through the helper); the colour gate by
+  TestDefinitionHighlightingIsOffWithoutColour. Seven mutations, all die.
+  FuzzHighlightWriterIsChunkIndependent 803k execs on byte-identity across split
+  points plus visible-text preservation.
+
+- 2026-08-26: M2 boundary round 1 — REWORK, 10 findings, 9 repeat families, gate
+  verdict "not converging: fix rules, not instances". Two Criticals, both real.
+  (1) The writer released bytes that could still change: wordRuns trims joiners
+  off token edges, so a region ending in one looked like "punctuation closed the
+  token" when the token was actually mid-word — don'+t lost don't, a chunk cut
+  mid-rune lost café. Data loss on the exact streaming path M3 builds. The deeper
+  fault was the fuzz corpus: the deck was pinned as a constant with no
+  joiner-bearing or multi-byte entry, so that failure class was unreachable at
+  any exec count and 803k execs proved nothing. Deck now derived from
+  TestWordRuns' table, plus a byte-at-a-time table. (2) Definitions never
+  highlighted outside the raw editor — Load() had one call site there while M2
+  wired highlighting into lookupAndRender, which defineOnce and replLines also
+  reach. Two of three entry paths dead, suite green, and the README sentence I
+  wrote at M2 was false for `define sycophantic`, the command it described. My
+  M1 rule was too narrow: the chain must start at PROCESS ENTRY POINTS, not at
+  the dependency a test injects. Also: the headword was being re-styled against
+  the Spec's own out-of-scope list, fixed by moving the decision into Render as
+  an explicit ten-region admit/withhold table. Three rules recorded in
+  lessons.md; a prior boundary review left an untracked probe file in the tree,
+  deleted.
+
+- 2026-08-26: M2 boundary round 2 — FIX-THEN-SHIP, 3 blocking. My round-1 fixes
+  were themselves instances twice over. (1) The growth check went on ONE of
+  decidedEnd's two release paths, so a region of punctuation ending in half a
+  rune still released and "!über" split lost its match; both paths now ask it.
+  Hoisting the check above both was wrong and the suite caught it — it made every
+  text ending mid-word hold entirely, defeating streaming. (2) The fuzz deck was
+  derived from character CLASSES but not POSITIONS, and café's multi-byte rune is
+  word-final, so the word-initial shape the broken path needed was unreachable at
+  any exec count. Now class × position. (3) Seventh finding in the
+  behaviour-claimed-without-a-failing-test family, and the survivors were a
+  wiring argument and a guard whose only effect is absence of work — neither
+  reachable by enumerations that quantify over output changes. The colour gate
+  among them had been found and fixed at M1 round 3 and went unpinned again when
+  the refactor moved it. (4) The region table listed ten regions where Render
+  emits thirteen; now complete AND derived from the parsed Entry, so an omission
+  fails rather than passing quietly. Two rules recorded in lessons.md.
+
+- 2026-08-26: M2 boundary round 3 — FIX-THEN-SHIP, no blocking findings; three
+  Minors taken in the close commit rather than carried, since M3 builds on this
+  code. The substantive one: a reset arriving inside a region cleared the
+  accumulated styles but not the enclosing base, so a highlight after it resumed
+  that base and painted text that is plain without highlighting —
+  prettyPronunciations emits that shape inside any example mentioning a
+  pronunciation, and M3 model output carries resets routinely. Escape-stripped
+  comparison cannot see it, being a styling rather than a text difference. Also:
+  three places wrote a COUNT beside the region table and all three were wrong,
+  because round 2 split two rows without redoing the arithmetic — deleted rather
+  than corrected, since a number in prose beside an enumeration is a second
+  source of truth nothing checks. And the fuzz deck gained a three-token phrase:
+  third instance of "the deck is input too", one notch wider each time (class,
+  then position, now phrase length).
+
+- 2026-08-26: M3 — the answer stream. The test derives its seeded word FROM the
+  committed capture rather than scripting one, because llmtest refuses an
+  invented literal on a streaming request; it found "rather", which the capture
+  delivers as "...authority r" + "ather than". Nesting pinned: highlighting sits
+  INSIDE crlfWriter, so it sees logical text while CRLF translation applies to
+  the final bytes including the escapes highlighting inserted. The deferred Flush
+  is documented HONESTLY rather than given the appearance of coverage — four of
+  runAsk five exit paths release the hold before returning (the answer own
+  newline, or the trailing Fprintln), so deleting the defer leaves the suite
+  green; the fifth (ErrRequest/ErrMalformed with partial text) is unreachable
+  through llmtest because Status short-circuits before any body and both
+  partial-then-fail shapes classify as ErrTruncated. The defer stays on
+  structure: five returns is four chances to forget.
+
+- 2026-08-26: close boundary round 1 — FIX-THEN-SHIP, all addressed. The sharpest
+  finding of the issue: M2 ended by writing the entry-path enumeration precisely
+  so a render path could not be added without a row, and M3 then added a render
+  SURFACE — the answer stream — without widening it. The rule failed on its own
+  author one milestone later. A mutant keeping the colour gate but dropping
+  d.vocab.Load() passed the entire suite, which in production is M2 shipped
+  Critical one surface over. The axis is entry path x render surface, not entry
+  path alone; three of six cells were covered while the atlas called it the guard
+  for every render path. Also named a shape the untested-behaviour family had not
+  named: an assertion guarded on the RUN own output is not an assertion — my
+  interrupted row checked `got != ""` and an already-cancelled context returns
+  before any delta, so it asserted nothing while its comment claimed otherwise.
+  And `func max` in a test file shadowed the Go 1.26 builtin across the whole
+  package test build, silently rebinding eight existing call sites. Decided the
+  question M2 left open: a poisoned writer REPORTS to stderr rather than dropping
+  the rest of an answer in silence.
+
+- 2026-08-26: close round 2 — two findings, both long-lived. BR-16 had been open
+  FIVE rounds because each time I fixed the divergences the note listed rather
+  than the class: a plan accumulates line numbers, twice-stated contracts and
+  mutation claims, and all three rot with nothing checking them. Swept all three
+  kinds — line numbers stripped from code references (a nearly-right number is
+  worse than none, since a reader follows it to the wrong function), contract
+  rule 4 corrected in its second home, and Task 8 Step 6 corrected rather than
+  ticked: it claimed dropping the flush reddens a named test and measurement says
+  it reddens nothing. BR-20 was open four rounds: TestHighlightingLosesNothing
+  compared highlighted against plain over 32 entries where only 6 contain a deck
+  word, so 26 compared identical strings and an unmatchable deck left it green.
+  Now counts hits, fails at zero, and logs 6 of 32 so a corpus refresh that stops
+  matching is visible.
+
+- 2026-08-26: close round 3 — the remaining ledger swept. BR-16 (6th round) is
+  the lesson of the issue: I wrote "sweep the class, not the list" and then swept
+  by the list again. Done mechanically this time — grep every `.go:NNN`, every
+  test-file placement, every instructed assertion shape — which found that the
+  plan still told a future implementer to write `knownOn + "text"`, the exact
+  vacuous shape my own lessons.md entry forbids and the one that let M1's
+  mutation survive. Real defects found this round too: `storeVocabulary.loaded`
+  was UNGUARDED while vocabularyFor calls Load on every render — a genuine data
+  race that the suite's -race run could never see, because every existing test
+  drives one goroutine; and MaxPhraseWords counted keys that can never match
+  (`e.g.`, `rock 'n' roll`, whose gaps carry an apostrophe), widening the tail
+  every stream holds for nothing. Both pinned by mutation. Also: the poison
+  report is now tested rather than asserted in a comment, the exit-path table
+  gained its fifth cell, and the atlas gained highlightSetFor and the stderr
+  report.
+
+- 2026-08-26: close round 4 — gate passed, and the advisory ledger named two
+  things worth the extra pass. BR-39's enumeration was not swept: storeHistory
+  has the IDENTICAL shape — a bare `loaded` beside a mutex Add and Prefix both
+  take, plus an append outside it — and races under the same driver. Fixed and
+  pinned; unguarding it reports three DATA RACEs. The vocabulary comment also
+  over-licensed, so it now states what the lock does NOT buy: Load releases the
+  mutex before reading the deck, so a concurrent Load can return before the set
+  is visible (measured 97 of 200 trials). Safe, and the right trade against
+  serialising every render behind IO, but not a barrier. BR-16 reached its
+  seventh round because MY OWN FIX created a fresh instance: I corrected a plan
+  step to say "this mutation reddens nothing" — true when written — and the next
+  commit added the test that makes it redden. A statement about what a mutation
+  does is invalidated by any change to the code it describes, including one that
+  improves it. Also: BR-9 (4th round) — capture.go was still writing the
+  "define: " prefix itself while warnTo claimed to be the one place; BR-37 — my
+  added exit-path row did not reach a distinct branch (instrumenting showed
+  `stalled upstream` returns through the same `err == nil` case as clean
+  completion), so the genuinely distinct interrupt-with-partial-text branch now
+  has its own test at color=true.

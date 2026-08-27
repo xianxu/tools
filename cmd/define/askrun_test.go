@@ -32,7 +32,7 @@ func askRig(t *testing.T) (deps, *llmtest.Fake, *store.YAML, string) {
 	// The REAL capturer over the same store: since #16 the event log has one
 	// write path and questions go through it, so a rig with a no-op capturer
 	// would be testing a wiring production does not have.
-	d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil)
+	d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 	d.clock = store.FixedClock(aDay)
 	d.newLLM = llm.New
 	d.getenv = envFor(fake.URL)
@@ -142,7 +142,7 @@ func TestOneShotQuestionHasNoCurrentWord(t *testing.T) {
 	dir := t.TempDir()
 	st := store.NewYAML(dir, nil)
 	d := testDeps(t)
-	cap := newStoreCapturer(st, store.FixedClock(aDay), nil)
+	cap := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 	d.newStore = func(options, io.Writer) storeDeps {
 		return storeDeps{history: &memHistory{}, capture: cap, deck: st, clock: store.FixedClock(aDay)}
 	}
@@ -660,7 +660,7 @@ func TestAQuestionIsRecordedWhateverBecameOfTheAnswer(t *testing.T) {
 		// The third producer: nothing listening at all.
 		_, _, st, _ := askRig(t)
 		d := testDeps(t)
-		d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil)
+		d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 		d.deck = st
 		d.newLLM = llm.New
 		d.getenv = envFor("http://127.0.0.1:1")
@@ -679,7 +679,7 @@ func TestAQuestionIsRecordedWhateverBecameOfTheAnswer(t *testing.T) {
 	t.Run("but not when no model was ever reached", func(t *testing.T) {
 		_, _, st, _ := askRig(t)
 		d := testDeps(t)
-		d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil)
+		d.capture = newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 		d.getenv = func(string) string { return "" } // no seam at all
 
 		var out, errb bytes.Buffer

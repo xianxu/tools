@@ -32,11 +32,24 @@ const (
 	ActEOF
 )
 
-// Apply is the state machine: one key in, the next editor state out.
+// candidates is what the caller resolved for this keystroke.
 //
-// matches is a newest-first, deduped snapshot of history entries that begin with
-// whatever the walk is anchored on — resolved by the caller.
-func Apply(e Editor, k Key, matches []string) (Editor, Action) {
+// Two lists, because at #20 they stopped being one. `recall` is lines that were
+// really submitted, so Up/Down can only ever surface something the user typed.
+// `complete` is what the line could BECOME — and since #20 that includes a deck
+// word glued onto a head, a whole line nobody ever submitted. Feeding the second
+// into walk would make Up offer, and Enter run, sentences that were never typed.
+//
+// `recall` is newest-first, deduped, and anchored on whatever the walk began
+// with. `complete` is deduped and matched against the whole line by Suggestion,
+// but only grouped-by-marker rather than globally newest-first — see matchesFor.
+type candidates struct {
+	recall   []string
+	complete []string
+}
+
+// Apply is the state machine: one key in, the next editor state out.
+func Apply(e Editor, k Key, c candidates) (Editor, Action) {
 	switch k.Kind {
 	case KeyRune:
 		e = e.stopWalk()
@@ -60,14 +73,14 @@ func Apply(e Editor, k Key, matches []string) (Editor, Action) {
 	case KeyRight:
 		// At end of line, Right ACCEPTS the suggestion; elsewhere it moves.
 		if e.Cursor == len(e.Line) {
-			return acceptSuggestion(e, matches)
+			return acceptSuggestion(e, c.complete)
 		}
 		e.Cursor++
 	case KeyHome:
 		e.Cursor = 0
 	case KeyEnd:
 		if e.Cursor == len(e.Line) {
-			return acceptSuggestion(e, matches)
+			return acceptSuggestion(e, c.complete)
 		}
 		e.Cursor = len(e.Line)
 	case KeyTab:
@@ -75,11 +88,11 @@ func Apply(e Editor, k Key, matches []string) (Editor, Action) {
 		// bindings, but Tab is what a hand reaches for after typing a prefix —
 		// and #15's command mode gives Tab a complementary job (completing a
 		// /command), not a conflicting one.
-		return acceptSuggestion(e, matches)
+		return acceptSuggestion(e, c.complete)
 	case KeyUp:
-		return walk(e, matches, +1), ActNone
+		return walk(e, c.recall, +1), ActNone
 	case KeyDown:
-		return walk(e, matches, -1), ActNone
+		return walk(e, c.recall, -1), ActNone
 	case KeyEnter:
 		return e, ActSubmit
 	case KeyInterrupt:
@@ -167,12 +180,17 @@ func acceptSuggestion(e Editor, matches []string) (Editor, Action) {
 // then prompt + typed text + grey suggestion, then park the cursor after the
 // typed text.
 //
+// It computes its own spans from e.Line rather than taking a precomputed list,
+// for the same reason draw() computes its own match list (#15, #20): a list
+// resolved before the keystroke renders against the previous line. A nil v means
+// no highlighting.
+//
 // A whole frame rather than a partial update is the point. #2 placed its
 // indicator with cursor arithmetic against a terminal that had already echoed
 // Enter, and documented that it breaks if the user types during playback. In raw
 // mode nothing is echoed and the frame is simply redrawn, so that arithmetic —
 // eraseLineAndStepBack, skipPrompt — is deleted rather than ported.
-func RenderLine(e Editor, sug string, color bool) string {
+func RenderLine(e Editor, sug string, v Vocabulary, color bool) string {
 	var b strings.Builder
 	b.WriteString(eraseLine)
 	if color {
@@ -180,7 +198,19 @@ func RenderLine(e Editor, sug string, color bool) string {
 		// The prompt gets an accent colour and the typed word is bold, so the one
 		// line you can act on reads differently from everything you cannot.
 		b.WriteString(promptOn + prompt + sgrOff)
-		b.WriteString(inputOn + string(e.Line) + sgrOff)
+		// Words the learner has looked up get their own colour, so they are
+		// findable in a sentence. ANSI does not nest: each highlight closes and
+		// then RE-OPENS inputOn, or everything after the first known word would
+		// go plain.
+		b.WriteString(inputOn)
+		for _, sp := range highlightSpans(string(e.Line), highlightSetFor(e, v)) {
+			if sp.known {
+				b.WriteString(knownOn + sp.text + sgrOff + inputOn)
+				continue
+			}
+			b.WriteString(sp.text)
+		}
+		b.WriteString(sgrOff)
 	} else {
 		b.WriteString(prompt)
 		b.WriteString(string(e.Line))

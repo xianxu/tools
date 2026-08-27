@@ -873,6 +873,28 @@ A doubled backslash shipped behind exactly that assertion — `define '\'` print
 because every round pinned *where* a message was written and none pinned *what
 it said*.
 
+**The same trap has a second shape: `Contains(output, someConstant + "text")`.**
+Re-made in #21, two issues later, on a feature whose *entire deliverable* is a
+colour. `Contains(got, knownOn+"obsequious")` looks like it pins bold-green, but
+aliasing `knownOn = inputOn` — which removes every visible highlight — leaves it
+green, because both sides move together. The mutation survived the whole suite.
+Two rules, and the second is the one that generalises:
+- **Write the escape bytes as a literal** (`"\x1b[1;32mobsequious"`). A test is
+  the place where the expected value stops being a variable.
+- **When the constant IS the deliverable, assert the property that makes it one.**
+  Here that is `knownOn != inputOn`: the feature's claim is "easier to spot", and
+  a highlight identical to ordinary text satisfies every byte-level assertion
+  while delivering nothing.
+
+**A double must fail ONLY the thing under test, or it proves the wrong claim.**
+#21 M1: pinning "a word the deck rejected must not enter the highlight set", I
+reached for the existing `failingStore` — which fails `AppendEvent` too. `Capture`
+returns on that first failure and never reaches the deck write, so the test
+passed while the mutation it existed to kill survived. The assertion was true of
+"the store is broken", not of "the deck said no". When a function has several
+exits, a blanket-failing double stops at the first one; build the double that
+isolates the exit you are naming.
+
 **A test that injects a double must inject where production reads, or prove the
 injection is live.** `withStore` only fills nils, so a `newStore` supplied
 alongside an already-set field is silently discarded and every assertion over the
@@ -1031,3 +1053,320 @@ changes: it adds LINES, so count them.
 **When testing an injection, ask what the injection changes that the assertion
 measures** — and pick payload text that is unmistakable and inert (`FORGED-LEVEL`),
 never text shaped like the thing you are checking for.
+
+## A guard whose effect is ABSENCE needs a counting double (define #21 M2)
+
+Seventh finding in one family across three rounds, and the survivors had a shape
+my earlier enumerations could not reach. Every rule I had written quantified over
+things that change OUTPUT. These do not:
+
+- a **wiring argument** — passing `p.ex` as the style to resume. Replace it with
+  `""` and production bytes change (the rest of the example goes unstyled) but no
+  test looked at those bytes, only at whether a highlight appeared.
+- a **guard whose only effect is work not happening** — `!opt.color` in
+  `vocabularyFor`. Delete it and the whole deck is read under `-no-color`. No
+  output assertion can ever see that, because the output is identical.
+
+The rule that reaches both: **for each behaviour a comment claims, name the
+observation that would falsify it.** Production output bytes for wiring; a
+counting or spying double for a guard. The package already had `countingDeck`
+doing exactly this for "read the deck once", and the colour gate reused it
+verbatim — the tool existed, the enumeration just never asked for it.
+
+Sharper still: that colour gate had been found and fixed one milestone earlier.
+A refactor moved it, and nothing was watching, because nothing ever had been.
+**A fix without a test is a fix with a half-life.**
+
+## A property is only as wide as its fixtures — the deck is input too (define #21 M2)
+
+`FuzzHighlightWriterIsChunkIndependent` asserted that splitting a stream anywhere
+produces identical bytes. 803k execs, clean. It proved almost nothing: the
+vocabulary was pinned as a constant — `vocab("obsequious", "hot dog", "hot")` —
+and with no joiner-bearing or multi-byte entry in it, the entire class of "a
+chunk splits inside a joiner or mid-rune" was **unreachable at any exec count**.
+Two real data-loss bugs sat underneath: `don'`+`t` lost `don't`, and a chunk cut
+mid-rune lost `café`.
+
+- **Everything the function reads is input, not just the fuzzed argument.** A
+  fixture held constant silently removes a dimension from the property. If the
+  behaviour depends on it, fuzz it or derive it.
+- **Derive fixtures from the package's own enumeration.** `TestWordRuns`' table
+  already listed every word-character class this code distinguishes — apostrophe,
+  hyphen, digits, multi-byte. Hand-picking a deck instead of reusing that table
+  is how the gap got in.
+- **Exec count is not coverage.** "803k execs clean" reads like assurance and
+  measures only how long an unreachable class stayed unreachable.
+- **Enumerate class × POSITION, not class alone.** The round-1 fix derived the
+  deck from the tokenizer's character classes and still missed the bug: `café`
+  was the only multi-byte entry and its multi-byte rune is word-FINAL, so a
+  word-INITIAL one was unreachable — and that was precisely the shape the broken
+  code path needed. Where a character sits in a token is part of the class.
+
+## Enumerate the production chain from the ENTRY POINTS (define #21 M2)
+
+I wrote this rule at M1 — *enumerate the production dependency chain, not the
+comments* — and the same family came back one milestone later, because my chain
+started in the wrong place. M1's table began at `openStore`. But `openStore` is
+itself a hop *in*: the thing being enumerated has to start where the PROCESS
+starts.
+
+M2 wired highlighting into `lookupAndRender` while `Load()` sat in `runEditor`.
+Three entry paths reach that render — one-shot `define <word>`, piped stdin, and
+the raw editor — and only the third loaded the set. Two of three were dead, the
+suite was green, and the README sentence I had just written was false for the
+exact command it named.
+
+- **A test that injects a filled dependency begins after the thing that fills
+  it.** Every test set `rig.deps.vocab` to a pre-populated set, so the load hop
+  was invisible in exactly the way `withStore`'s merge had been invisible one
+  round earlier. Drive at least one case with the dependency in its REAL initial
+  state (here: an unloaded store vocabulary).
+- **The enumeration is "every entry path that reaches this surface", and it
+  belongs in a table test.** A new entry path then either appears as a row or is
+  conspicuously missing.
+- **When a rule recurs, the rule was too narrow — do not just re-apply it
+  harder.** Twice now the fix was to widen where the enumeration STARTS.
+- **The axis is entry path × RENDER SURFACE.** I wrote the entry-path table
+  specifically so a render path could not be added without a row — and then added
+  a whole new surface (the answer stream) one milestone later and did not widen
+  it. Three of six cells, while the atlas called it the guard for "every render
+  path". A table guards the axes it enumerates and nothing else, so when you add
+  a dimension, the table is stale even though every row in it still passes.
+
+## A bound derived from an input set must come from the subset that can use it (define #21 close)
+
+`MaxPhraseWords` is the only input to the streaming writer's hold arithmetic, and
+it counted the tokens of EVERY deck key. But a key whose tokens cannot rejoin —
+`e.g.`, or `rock 'n' roll`, whose gaps carry an apostrophe — can never match
+anything, so it widened the tail every stream holds in exchange for nothing.
+Measured: a single-word deck held 5 bytes; adding the unmatchable `e.g.` held 9,
+the same cost as a real three-token phrase.
+
+- **A maximum taken over a set is a claim about that set's useful members.** Ask
+  which members can actually exercise the bound, and take the max over those.
+- **The subtle member is the one that LOOKS usable.** `rock 'n' roll` tokenizes
+  to three words, so a punctuation check would have admitted it; only asking "do
+  these tokens rejoin under the real matching rule" rejects it.
+
+## A concurrency comment is a claim, and the suite cannot falsify it by accident (define #21 close)
+
+`memVocabulary`'s doc comment gave a premise ("the two accesses are genuinely
+concurrent") and a conclusion ("so it is mutex-guarded"). Measurement contradicted
+both: the loop's goroutines carry values over channels and none touch a
+vocabulary, so every access ran on one goroutine — and `storeVocabulary` had added
+an UNGUARDED `loaded bool` that `vocabularyFor` writes on every render. Driving it
+from eight goroutines under `-race` reported a race immediately.
+
+- **`go test -race` proves nothing about code no test runs concurrently.** A
+  clean race run over single-goroutine tests is evidence about the tests, not the
+  type. A type that claims safety needs one driver that would fail without it.
+- **Embedding inherits the lock but not the discipline.** The mutex was on the
+  embedded struct; the new field beside it was bare, and nothing connected them.
+
+## Line numbers and mutation claims in a plan are code that nothing compiles (define #21 close)
+
+One finding stayed open for FIVE rounds — the longest-lived of the issue — because
+each round I fixed the divergences the note listed and the next round found more.
+The instances were never the point. A plan file accumulates three kinds of claim
+about code, and all three rot silently:
+
+- **Line numbers.** `ask.go:160` became `ask.go:171` the moment a wrapper landed
+  above it. Nothing checks them, and being *nearly* right is worse than being
+  absent — a reader follows one to the wrong function. Cite the file and the
+  symbol; drop the number.
+- **Contracts stated twice.** Rule 4 said "counts in the caller's units" in two
+  places. I corrected one and the other kept promising the opposite for three
+  more rounds.
+- **Mutation results.** A ticked "mutation-check that X reddens a named test" is
+  an assertion, and mine was FALSE — deleting the flush reddens nothing. When
+  measurement disagrees with the step, correct the step; do not tick it because
+  the work was done.
+
+The rule the recurrence taught: **sweep the class of claim, not the list in the
+finding.** A note that names three divergences is a sample, and treating it as
+the enumeration is how one finding survives five rounds.
+
+And it survived two more, for a reason worth its own line: **a fix can create a
+fresh instance of the finding it is fixing.** I corrected a plan step to say "this
+mutation reddens nothing" — true and honest when written. The next commit added
+the test that makes it redden, so my correction became false in the same change
+that made it obsolete. A statement about what a mutation does is invalidated by
+any change to the code it describes, *including one that improves it*. That is
+why the stale-claim sweep belongs on every commit touching the code, not only on
+the commits where a reviewer lists instances.
+
+## An assertion guarded on the run's own output is not an assertion (define #21 close)
+
+A row meant to pin "an interrupted stream leaves nothing dangling" read
+`if tc.cancel && got != "" && !strings.HasSuffix(got, "\n")`. With an
+already-cancelled context `runAsk` returns before any delta, so `got` is empty,
+the guard never fires, and the row asserted nothing — while the test's own
+comment said it pinned that no path leaves text dangling.
+
+- **Guarding on the fixture is fine; guarding on the RUN's output is not.** The
+  first is a precondition you control, the second silently converts "the
+  behaviour held" into "the behaviour never happened".
+- **Write the expectation per row, including the empty one.** `wantEmpty: true`
+  is an assertion; `if got != ""` is an escape hatch.
+- **When the observable is empty, `t.Fatal`.** The package already had that idiom
+  at five sites; the vacuous row was the one place it was missing.
+- **A comparison over a corpus needs a hit COUNT, not just a pass.**
+  `TestHighlightingLosesNothing` compared highlighted output against plain across
+  32 entries — but only 6 of them contain a deck word, and for the other 26 it
+  compared two identical strings. Swapping the deck for an unmatchable word left
+  it green. Count the entries that actually exercised the behaviour and fail at
+  zero; log the number so a corpus refresh that quietly stops matching is
+  visible.
+
+## The vocabulary is withheld per region, decided at the boundary (define #21 M2)
+
+Highlighting wrapped the whole rendered definition, so a word the learner
+revisits — the common case for a learning tool — rendered green inside its own
+bold-cyan headword, which the Spec explicitly puts out of scope.
+
+- **A finished string has no structure left to consult.** Per-region decisions
+  have to be made where the regions still exist. `RenderOpts.Vocab` reaches
+  `Render`; `admitsHighlight`'s doc comment is the admit/withhold table.
+- **Do not write a COUNT beside an enumeration.** "the ten-region table" was
+  wrong within one round — the correction that completed the table also split two
+  rows, and the arithmetic was not redone. A number in prose next to a list is a
+  second source of truth that nothing checks; delete it and let the derived test
+  be the record.
+- **State the decision for every region, including the obvious ones.** "Prose is
+  admitted, labels are withheld" is a rule; "I wrapped the string I had" is not,
+  and cannot be reviewed.
+
+## Enumerate the production chain, not the comments (define #21 M1)
+
+Four findings across two boundary rounds, one family: a behaviour with no test
+that fails when you break it. Round 1 fixed two instances and stated the
+enumeration as *"for each behaviour the diff states in a comment, is there a
+mutation that falsifies it and a named test that reddens?"* Round 2 found the
+family at full strength again — because the missing hop, `withStore`'s one-line
+merge of `sd.vocab` into `deps.vocab`, **carries no comment and makes no claim**.
+A comment-driven sweep is structurally blind to it. Deleting that line kills the
+feature outright in production and leaves the entire suite green.
+
+- **The enumeration is over hops, not sentences.** For every seam a feature
+  introduces, write out each hop from construction to use, and require one test
+  per hop that crosses it *through production code*. Writing the chain down is
+  what makes a hole visible; a prose rule about comments is what hides one.
+
+  | # | hop | pinned by |
+  |---|---|---|
+  | 1 | `openStore` builds one set, hands it to capturer + `storeDeps` | ✓ |
+  | 2 | `withStore` merges `sd.vocab` → `deps.vocab` | **was nothing** |
+  | 3 | `runEditor` reads `d.vocab`, calls `Load()` | ✓ |
+  | 4 | `RenderLine` consumes it → stdout | ✓ |
+  | 5 | `Capture` → `Add` → next frame | ✓ |
+
+- **A test that sets `rig.deps.X` directly begins AFTER the wiring hops.** Both
+  loop tests did, which is exactly why hop 2 stayed invisible while looking well
+  covered. At least one test per seam must build deps the way a production entry
+  point builds them (`deps{newStore: openStore}.withStore(...)`).
+- **A stated rule that does not name its enumeration will be declared swept while
+  the family is still live.** "I applied the rule" is a claim about the set you
+  enumerated, not about the class.
+
+## Doc prose at a boundary describes what THAT milestone shipped (define #21 M1)
+
+Round 1 flagged an atlas sentence claiming a path a later milestone builds. The
+fix commit corrected that sentence **and wrote a fresh instance of the same
+defect into README.md in the same commit** — "highlighting appears in the line
+you type, definition bodies, and answers", when only the typed line existed. A
+reader following it would look up a word, read a definition, and see no green.
+
+- **The site was fixed; the class was never enumerated.** The enumeration is
+  every doc file the boundary window touches × every sentence describing the
+  feature, each checked against what is reachable in code at HEAD.
+- **Write the milestone's scope into the sentence, or mark the rest as future.**
+  The atlas sentence that survived says "used by the prompt line today and by the
+  definition and answer paths from M2". That form cannot rot into a lie.
+
+## A stale property stays green until you actually re-fuzz (define #21 M1)
+
+I changed `wordRuns` to trim quotes and hyphens off token edges — a real fix,
+since `'obsequious'` otherwise never matches a deck key. That deliberately makes
+runs non-maximal, and `FuzzWordRuns` asserted maximality. **The target was red at
+HEAD and I did not know**, because `go test ./...` runs a fuzz target against its
+SEED CORPUS only, and no seed happened to place a joiner beside a kept run.
+
+- **Changing a contract means re-running the property that asserts it, with
+  `-fuzz`, not with `go test`.** Seeds passing is not the property holding.
+- **When you fix a tokenizer, seed the corpus with the shape you just changed.**
+  `'0`, `-a`, `a-` are three characters each and would have caught it instantly.
+
+## A test helper that skips the production resolution makes every test under it vacuous (define #20)
+
+`typeKeys`, the helper every editor test drives through, resolved candidates with
+`h.Prefix(e.WalkBase())`. Production resolves them with `completionsFor`, which
+picks a *namespace* first. So the helper had been quietly testing a path that
+does not exist since #15: no editor test could see command mode at all.
+
+Two tests written specifically to pin #20's recall/complete split passed the
+moment they were written, before the split existed. They were asserting against a
+history-only resolution that never had the bug.
+
+- **A helper is part of the production path or it is a second implementation of
+  it.** Wire helpers to the same function the loop calls. If the helper needs
+  arguments the loop has (here, `commands`), give it them — the seam that is
+  awkward to reach in a test is usually the one carrying the behaviour.
+- **A new test that passes before the code exists is a finding, not luck.** That
+  is the cheapest possible signal that the test is not connected to the change.
+  Stop and find out what it is really asserting.
+- **Fixing the helper is not fixing the class.** The close review found four more
+  `Suggestion(e, h.Prefix(...))` sites in the same file — sites the Plan had
+  ENUMERATED by line number in the row I ticked. I fixed the helper, wrote this
+  lesson about it, and walked past the four siblings the lesson describes. When
+  you can write the enumeration, sweep the enumeration in the same round; a
+  lesson recorded is not a sweep performed.
+
+## A regression test needs data that tells the two implementations apart (define #20)
+
+`TestCommandCompletionIsUnchanged` typed `/his` and `/history 7` against a
+history holding `historic`, and asserted the tail. It was written to defend the
+exact hazard the plan gate had named: the segment loop must not re-enter the
+command namespace. Mutating the namespace order — history tried before commands —
+left it green, because with that history both orders returned the same answer.
+
+The fix was history that only ONE order can produce: `sevenfold` in the deck and
+`/history seven` typed. Correct code offers nothing; the mutant offers `fold`.
+
+- **"I wrote a test for that finding" is a claim about the test's data, not about
+  the assertion.** The assertion can be perfect and still never run over a state
+  where the implementations differ.
+- **Mutate along the axis the finding named, not just any axis.** Four mutations
+  of the floor and the markers all died here while the ordering mutant lived.
+  Killing mutants elsewhere in the file says nothing about this one.
+- **The same defect recurred on a second axis of the same commit, after this
+  lesson was written.** `TestWholeLineBeatsAnInnerSegment` used
+  `hist("island", "hot dog and fries")` against the line `hot dog`: `island` is
+  inert, so segment-precedence — the rule the Spec, the doc comment and the atlas
+  all state — had zero coverage, and my mutation "check" of it passed because I
+  mutated `trailingSegments`' output order (which the table test catches) rather
+  than the ITERATION order in `historyCompletions` (which nothing caught). Two
+  rules fall out: **write the mutant at the site that implements the rule, not at
+  a site the rule flows through**, and **when a fixture has two entries, check
+  that BOTH can match** — a decorative entry is how a discriminating test quietly
+  becomes a tautology.
+
+## Re-read the log you are citing; do not cite it from memory (define #20)
+
+Deriving #20's estimate, I priced review rounds below the only measured figure
+and justified it: "#17 came in under, three boundary rounds included, measured
+~3.8h." #17's log — written by me the day before — says the review cost "is still
+unmeasured for this issue", that M1 had not been through even one round at the
+time of writing, and that 3.8h was hand-recorded as a wall-clock upper bound
+after `sdlc actual` returned an impossible value. Every clause of my citation was
+wrong, and it moved the estimate in the wrong direction.
+
+- **A remembered number loses its qualifiers first.** "3.8h" survived; "not a
+  measurement", "feature work only", "reviews not yet run" did not. Those
+  qualifiers were the entire reason the number existed.
+- **When a past issue is your evidence, open it.** The cost is one `sed -n`. The
+  cost of not doing it is an estimate that pollutes calibration while carrying a
+  citation that makes it look grounded.
+- **Check which direction the repo's drift actually runs before correcting for
+  it.** The ledger had six of seven `tools` rows under 1.0 — systematic
+  under-estimation — and the nearest analogue (#15, the same functions) at 0.27×.
+  I was correcting downward.
