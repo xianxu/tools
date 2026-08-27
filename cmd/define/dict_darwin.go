@@ -43,10 +43,22 @@ var ErrLookupFailed = errors.New("dictionary lookup failed")
 
 // noadDictionary reads the host's dictionary set through CoreServices.
 //
-// IMPORTANT: DCSCopyTextDefinition is passed a NULL DCSDictionaryRef, which
-// means "search every ACTIVE dictionary" — not NOAD specifically. The SDK
-// exports no public constructor for a DCSDictionaryRef, so there is no way to
-// select one; the NULL is forced, not a shortcut.
+// DCSCopyTextDefinition is passed a NULL DCSDictionaryRef, which means "search
+// every ACTIVE dictionary" — not NOAD specifically.
+//
+// CORRECTED 2026-08-27, and the correction matters for #23: this comment used to
+// say selecting a dictionary was impossible because "the SDK exports no public
+// constructor for a DCSDictionaryRef". That is true of the PUBLIC HEADER, which
+// declares exactly two functions and documents the dictionary parameter as "not
+// supported... You should always pass NULL". It is FALSE of the framework, which
+// exports DCSCopyAvailableDictionaries, DCSDictionaryGetName,
+// DCSDictionaryGetIdentifier and more — all resolvable with dlsym, all returning
+// refs that DCSCopyTextDefinition accepts. Measured: 87 dictionaries available,
+// and looking `mesa` up in the Spanish one returns "nombre femenino ... Mueble
+// formado por un tablero horizontal" rather than the flat-topped hill.
+//
+// The NULL here is therefore a CHOICE, not a constraint — the right one today,
+// because nothing yet knows what language a word is (#23 is what changes that).
 //
 // In practice NOAD answers for ordinary English words, which is why the notation
 // matches Google's character-for-character (Google licenses the same

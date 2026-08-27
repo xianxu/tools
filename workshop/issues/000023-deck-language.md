@@ -50,44 +50,61 @@ see Revisions. A mode, not a per-lookup flag.
 - **`-lang es` as a flag** for one-shot use without switching the mode, and
   because scripts should not have to mutate state to ask a question.
 
-### Detection is NOT needed, and that is what makes this design better
+### The dictionary CAN be selected — measured, and it changes what is possible
 
-This issue was first specified as "infer the language from the dictionary, with a
-flag to override". Measured on this machine before planning, and the measurement
-killed the inference half:
+This issue was first specified around a limit that does not exist. The claim —
+carried in `dict_darwin.go`'s own comment and repeated into this issue — was that
+`DCSCopyTextDefinition` must be passed NULL because the SDK exports no way to
+build a `DCSDictionaryRef`. The operator pushed back; measurement says the claim
+was wrong.
 
-**Inference works for Spanish-only words** — no IPA, gendered part-of-speech
-labels NOAD never uses (`sobremesa feminine noun`, `madrugar A intransitive
-verb`) against an English entry's `syc·o·phan·tic | ˌsikəˈfan(t)ik |`.
+**True of the public header.** `DictionaryServices.h` declares exactly two
+functions and documents the dictionary parameter as *"not supported for Leopard.
+You should always pass NULL."*
 
-**Inference CANNOT work for a word that also exists in English**, and it is an
-API limit rather than a heuristic one. `dict_darwin.go` already records why:
-`DCSCopyTextDefinition` takes a NULL dictionary ref — "search every ACTIVE
-dictionary" — and *"the SDK exports no public constructor for a
-DCSDictionaryRef, so there is no way to select one"*. It returns ONE entry, and
-for a shared spelling that entry is English. The Spanish entry is never returned,
-so no text analysis can recover it:
+**False of the framework.** `dlsym` resolves all of these:
 
-| word | Spanish meaning | what the dictionary returns |
+```
+DCSCopyAvailableDictionaries   DCSDictionaryGetName      DCSCopyDefinitionMarkup
+DCSGetActiveDictionaries       DCSDictionaryGetIdentifier DCSDictionaryCreate
+DCSDictionaryGetLanguages      DCSDictionaryGetShortName  DCSCopyRecordsForSearchString
+```
+
+87 dictionaries are available on this machine, including *Larousse Editorial
+Diccionario General de la Lengua Española* and *Oxford Spanish Dictionary*. The
+refs they return are accepted by `DCSCopyTextDefinition`. Measured, against the
+six words this issue previously listed as unreachable:
+
+| word | NULL (what the tool does today) | Spanish dictionary, selected |
 |---|---|---|
-| `mesa` | table | `me·sa \| ˈmāsə \| noun an isolated flat-topped hill` |
-| `bonito` | pretty | `bo·ni·to \| bəˈnēdō \| noun a smaller relative of the tunas` |
-| `pie` | foot | `pie \| pī \| noun a baked dish containing fruit` |
-| `once` | eleven | `once \| wən(t)s \| adverb on one occasion` |
-| `real` | royal | `re·al \| rē(ə)l \| adjective actually existing` |
-| `red` | net | `red \| red \| adjective of a colour at the end of the spectrum` |
+| `mesa` | *an isolated flat-topped hill* | *nombre femenino — Mueble formado por un tablero horizontal* |
+| `bonito` | *a smaller relative of the tunas* | *adjetivo (femenino bonita) — Que tiene belleza o atractivo* |
+| `once` | *on one occasion* | *numeral cardinal — está 11 veces* |
+| `real` | *actually existing as a thing* | *adjetivo — Que tiene existencia verdadera* |
+| `madrugar` | *to get up early* (bilingual gloss) | *verbo intransitivo — Levantarse muy temprano, especialmente al amanecer* |
+| `sycophantic` | the English entry | *(no entry)* — correctly not a Spanish word |
 
-**A declared mode makes every row of that table a non-problem.** In Spanish mode
-`mesa` is a Spanish word because the learner said so, and there is nothing to
-infer, override or get wrong. The measurement is kept here because it is the
-reason inference was dropped rather than deferred — and because if anyone later
-proposes "we could detect it automatically", this is the answer.
+**Three things follow, and they make this issue bigger and better.**
 
-**What the mode cannot fix, and should say so:** the DEFINITION returned for
-`mesa` in Spanish mode is still the English one, because the API cannot be asked
-for the Spanish entry. Filing it correctly is not the same as defining it
-correctly. That is a real limit of `DCSCopyTextDefinition` and it belongs in the
-docs where a user meets it, not only here.
+1. **A language mode can be fully correct, not merely correct-at-filing.** In
+   Spanish mode `mesa` is filed as Spanish AND defined as Spanish. The caveat
+   this issue previously accepted — "filing it correctly is not the same as
+   defining it correctly" — is gone.
+2. **Monolingual beats bilingual for learning.** `madrugar` through NULL gives
+   "to get up early"; through Larousse it gives a Spanish definition with a usage
+   example. Reading the target language is the point of the exercise, and the
+   better entry was there the whole time.
+3. **"Not a word in this language" becomes answerable.** `sycophantic` in Spanish
+   mode returns no entry, which is correct and which the tool cannot currently
+   say about anything.
+
+**The cost, recorded rather than discovered.** These symbols are private and
+undocumented: they can change or disappear on an OS update, and nothing in the
+SDK promises otherwise. So the seam must `dlsym` them at run time and FALL BACK
+to today's NULL behaviour when any is missing — which degrades to exactly what
+ships now, rather than to a crash. That fallback is a Done-when row, not a nicety,
+and it wants a conformance check like `#9`'s: an on-demand test that says loudly
+when the private surface has moved.
 
 ## Done when
 
@@ -97,11 +114,15 @@ docs where a user meets it, not only here.
       survives the session ending.
 - [ ] A one-shot `define madrugar` uses the persisted language, with no session
       to inherit from.
-- [ ] A word shared with English is filed under the CURRENT language, with no
-      inference involved — `mesa` in Spanish mode is Spanish.
-- [ ] The docs say plainly that a shared spelling still returns the ENGLISH
-      definition, because the dictionary API cannot be asked for another
-      language's entry.
+- [ ] A word shared with English is filed AND DEFINED in the current language —
+      `mesa` in Spanish mode returns the Spanish entry, not the flat-topped hill.
+- [ ] A word absent from the current language reports no entry rather than
+      silently answering from another language's dictionary.
+- [ ] The private DictionaryServices symbols are resolved at run time and the
+      seam FALLS BACK to today's NULL behaviour if any is missing — degrading to
+      what ships now rather than crashing.
+- [ ] A live conformance check says loudly when the private surface moves, on
+      demand like `#9`'s feed check rather than in merge-check.
 - [ ] `--forget` and `d`-in-`--play` remove from the right language's deck.
 - [ ] The schedule and the event log are unchanged: language is a deck dimension,
       not an event one. A review event names a word; which deck it came from is
