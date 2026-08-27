@@ -313,3 +313,15 @@ Two decisions worth recording before implementation:
   attempt: without a publisher the strip becomes `CutSuffix(title, " - ")`, which
   leaves an ordinary title alone either way, so the title has to END in " - " for
   the guard to be observable.
+
+- 2026-08-26: close round 3 — one blocking finding, and a good one. `usage/` is a
+  third directory `define` writes into the working directory, and it reached none
+  of the three places that needed it: `.gitignore`, the index guard, the history
+  guard. Both guards hardcoded the two older names and `.gitignore` listed them
+  again — three copies with nothing keeping them in step. This is the deck-in-git
+  class, which `.gitignore`'s own comment records as having cost three review
+  rounds before this one. Fixed as the class: `store.RuntimeDirs` is the single
+  source where the writer lives, both guards ask it, and
+  `TestGitignoreCoversRuntimeDirs` closes the loop the compiler cannot — adding a
+  fourth directory and forgetting the ignore now fails, and so does re-making the
+  un-anchored/anchored mistake that caused the earlier rounds.

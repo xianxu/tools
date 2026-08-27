@@ -1287,6 +1287,29 @@ feature outright in production and leaves the entire suite green.
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
 
+## A new runtime directory has three homes that cannot see each other (define #9 close)
+
+`usage/` joined `words/` and `events/` as a directory `define` writes into the
+working directory — and reached none of the three places that needed it:
+`.gitignore`, the index guard, and the history guard. Both guards hardcoded
+`p == "words" || p == "events"`, and `.gitignore` listed the same names again.
+Three copies, nothing keeping them in step.
+
+This is the deck-in-git class, and the `.gitignore` comment already records that
+it cost three review rounds before this one — including the subtlety that the
+patterns must be UN-ANCHORED, because `go test` runs with cwd set to the package
+directory, so an anchored pattern misses `cmd/define/words/`.
+
+- **Single-source the list where the writer lives.** `store.RuntimeDirs` is the
+  one place; both guards ask it instead of repeating it.
+- **Close the loop the compiler cannot.** `.gitignore` is not Go, so nothing
+  makes it follow that list — except a test that reads the file and asserts an
+  un-anchored entry for every name. Adding a fourth directory and forgetting the
+  ignore now fails, and so does re-making the anchoring mistake.
+- **When a fact lives in a comment because no test could hold it, ask again.**
+  The anchoring rule was a well-written comment that had already failed three
+  times. A comment explains; only a test enforces.
+
 ## Adding a field is not wiring it — the third recurrence (define #9 close)
 
 I added `warn io.Writer` to the usage source, wrote the warn-once logic, and
