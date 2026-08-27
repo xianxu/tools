@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -228,6 +229,63 @@ func TestEveryUsageContainsItsWord(t *testing.T) {
 	for _, u := range got {
 		if !containsWord(u.Text, "ephemeral") {
 			t.Errorf("usage %q does not contain the word it was collected for", u.Text)
+		}
+	}
+}
+
+// BR-11's enumeration, swept: every field that crosses from a NewsItem into a
+// Usage needs one assertion that goes red when it is blanked or invented.
+//
+// Three were unpinned — Usage.URL, Usage.At, and NewsItem.At on an unreadable
+// date — and "the struct is obviously copied" is exactly the reasoning that lets
+// a field quietly stop being copied. A table over the fields makes a NEW field
+// conspicuous by its absence.
+func TestEveryUsageFieldCarriesThrough(t *testing.T) {
+	at := aDay.Add(3 * time.Hour)
+	item := store.NewsItem{
+		Title:  "Springtime is ephemeral - UChicago",
+		URL:    "https://news.google.com/rss/articles/abc",
+		Source: "UChicago",
+		At:     at,
+	}
+
+	got := usagesFrom([]store.NewsItem{item}, "ephemeral")
+	if len(got) != 1 {
+		t.Fatalf("got %d usages", len(got))
+	}
+	u := got[0]
+
+	for _, f := range []struct {
+		field string
+		got   any
+		want  any
+	}{
+		{"Text", u.Text, "Springtime is ephemeral"},
+		{"Source", u.Source, usageNews},
+		{"Publisher", u.Publisher, "UChicago"},
+		{"URL", u.URL, "https://news.google.com/rss/articles/abc"},
+		{"At", u.At, at},
+	} {
+		if f.got != f.want {
+			t.Errorf("Usage.%s = %v, want %v", f.field, f.got, f.want)
+		}
+	}
+}
+
+// A NOAD usage has no publisher, URL or date, and that is a CONTRACT rather than
+// an accident: inventing any of them would attribute a dictionary example to a
+// news outlet.
+func TestNOADUsageCarriesNoNewsMetadata(t *testing.T) {
+	e := ParseEntry(fixture(t, "bank"))
+
+	got := entryUsages(e, "bank")
+	if len(got) == 0 {
+		t.Fatal("no usages — this test would assert nothing")
+	}
+
+	for _, u := range got {
+		if u.Publisher != "" || u.URL != "" || !u.At.IsZero() {
+			t.Errorf("a dictionary usage carries news metadata: %+v", u)
 		}
 	}
 }

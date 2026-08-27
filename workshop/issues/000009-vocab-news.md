@@ -239,3 +239,24 @@ Two decisions worth recording before implementation:
   rather than more care — restore with `git checkout HEAD -- <file>`, which cannot
   be stale, and re-verify the mutation afterwards in case the restore undid the
   fix it was checking.
+
+- 2026-08-26: M1 boundary round 2 — three more, all real, and two are mine
+  recurring. BR-10: the count-bound I wrote in round 1 was the THIRD wrong
+  property on one target, not the fix — `encoding/xml` matches by local name, so
+  `<x:item>` is an item no textual count sees, and the fixture already declares a
+  namespace prefix. Also `1026` as a year is a date the input genuinely supplied,
+  which my plausibility check called invented. The rule now stated rather than a
+  fourth property: a fuzz property may assert only what THIS CODE guarantees over
+  arbitrary input, never a property of the input's textual form. `FuzzParseRSS`
+  keeps one own-contract claim; `parsePubDate` got its own target on the STRING,
+  where it kills the guessing mutant on the seed corpus with no `-fuzz` run.
+  BR-11: that guessing mutant survived the entire M1 suite, because my date
+  assertion was guarded on `!At.IsZero()` — skipping exactly the case it claimed
+  to pin. Second in the `output-field-unasserted` family, so the enumeration was
+  swept: `Usage{Text,Source,Publisher,URL,At}` and `NewsItem.At`-on-unreadable now
+  each have an assertion that reddens when the field is blanked or invented.
+  BR-12: I put the `Review-Verdict:` trailer on a FIX commit — the exact failure
+  recorded in lessons.md from #16 M2. Consequence: round 2's window resolved to
+  empty, and `b0e907e` (M2's code) plus `61c9774` sat in NO review window. Fixed
+  forward by reviewing M2 over a WIDENED window from M1's real boundary rather
+  than by rewriting history — see the M2 close.

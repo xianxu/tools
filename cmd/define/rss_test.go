@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -72,6 +73,22 @@ func TestParseRSSDecisions(t *testing.T) {
 			},
 		},
 		{
+			"an unreadable pubDate is the ZERO time, never a guess",
+			wrap(`<item><title>A</title><pubDate>not a date</pubDate></item>`),
+			func(t *testing.T, items []store.NewsItem, err error) {
+				if err != nil || len(items) != 1 {
+					t.Fatalf("got %d items, err %v", len(items), err)
+				}
+				// The guard the first version of this suite had — skipping when
+				// At is zero — skipped exactly the case it claimed to pin, and a
+				// parsePubDate that returned a fixed date survived the whole
+				// suite because of it.
+				if !items[0].At.IsZero() {
+					t.Errorf("At = %v, want the zero time — a guessed date on a real sentence is worse than none", items[0].At)
+				}
+			},
+		},
+		{
 			"an unparseable pubDate does not fail the whole feed",
 			wrap(`<item><title>A</title><pubDate>not a date</pubDate></item><item><title>B</title></item>`),
 			func(t *testing.T, items []store.NewsItem, err error) {
@@ -120,26 +137,27 @@ func TestParseRSSDecisions(t *testing.T) {
 
 // The malformed class, which a table is blind to by construction.
 //
-// The property is the Done-when's own words — "never returns an item it did not
-// find in the input" — expressed as a COUNT. There cannot be more items than
-// there are item tags, and that bound holds no matter what the decoder does to
-// the characters inside them.
+// THE RULE, arrived at after three wrong properties on this one target: a fuzz
+// property may assert only what THIS CODE's contract guarantees over arbitrary
+// input. It may not assert a property of the input's textual form, because the
+// decoder is entitled to transform it.
 //
-// It is the third property this target has carried, and the first two were both
-// wrong in the same direction: too strong, failing on correct parsing.
-// "Substring" died to mixed content (`0<![CDATA[0]]>` legitimately concatenates
-// to `00`). "Subsequence" survived that but dies to entity decoding — `&#65;`
-// yields "A", `&#39;` yields "'", and a lone `\r` yields "\n" under XML
-// line-ending normalisation, none of which are subsequences of their input. That
-// last one matters practically: `&#39;` is exactly what Google News emits for
-// apostrophes, so re-capturing the fixture would have turned this red against
-// entirely correct code.
+// The three that broke, each against entirely correct parsing:
 //
-// The lesson recorded, because the hazard is what happens NEXT: a property that
-// fails on correct input invites weakening the thing it was defending. Character
-// provenance inside an item is `encoding/xml`'s contract, not ours; what is ours
-// is how many items we report and what we do with a date we cannot read, and
-// both are pinned here.
+//  1. "a title is a SUBSTRING of the input" — mixed content concatenates:
+//     `0<![CDATA[0]]>` is legitimately `00`.
+//  2. "a title is a SUBSEQUENCE of the input" — entities decode: `&#65;` is `A`,
+//     `&#39;` is `'` (which is what Google News emits for apostrophes), and a
+//     lone CR becomes LF under XML line-ending normalisation.
+//  3. "there are no more items than `<item` tags" — encoding/xml matches by
+//     LOCAL name, so `<x:item>` is an item that the textual count cannot see.
+//     The committed fixture already declares a namespace prefix, so a two-byte
+//     insertion reaches it.
+//
+// Every one of those was a claim about the bytes rather than about us. What IS
+// ours: that an error comes with no items, and that parsePubDate never guesses —
+// the latter now has its own target below, on the string alone, where no XML
+// decoding stands between the property and the code it describes.
 func FuzzParseRSS(f *testing.F) {
 	if b, err := os.ReadFile(filepath.Join("testdata", "news", "ephemeral.rss")); err == nil {
 		f.Add(string(b))
@@ -147,33 +165,55 @@ func FuzzParseRSS(f *testing.F) {
 	for _, s := range []string{
 		"", "<rss>", "<?xml version=\"1.0\"?><rss><channel><item><title>x</title></item></channel></rss>",
 		"<rss><channel><item><title><![CDATA[y]]></title></item></channel></rss>",
-		// The three shapes that refuted the previous property. Seeded so a future
-		// weakening of it fails here rather than in the wild.
+		// The shapes that refuted the three earlier properties, seeded so a
+		// future attempt to reinstate any of them fails here rather than in the
+		// wild.
 		"<rss><channel><item><title>&#65;</title></item></channel></rss>",
 		"<rss><channel><item><title>&#39;q&#39;</title></item></channel></rss>",
 		"<rss><channel><item><title>a\rb</title></item></channel></rss>",
+		"<rss><channel><x:item><title>t</title></x:item></channel></rss>",
+		"<rss><channel><item><pubDate>Mon, 24 Aug 1026 08:00:00 GMT</pubDate></item></channel></rss>",
 	} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, data string) {
 		items, err := parseRSS([]byte(data))
-		if err != nil {
-			if items != nil {
-				t.Fatalf("returned %d items alongside an error", len(items))
-			}
+		if err != nil && items != nil {
+			// Our contract: a failed parse yields nothing, so a caller cannot
+			// half-use a broken feed.
+			t.Fatalf("returned %d items alongside an error %v", len(items), err)
+		}
+	})
+}
+
+// parsePubDate is OUR logic, so it gets a property with no decoder in between.
+//
+// The contract in rss.go is exact: an unreadable date is the zero time, never a
+// guess. A guess is worse than nothing here — it would put a made-up date on a
+// real sentence, and #10 sorts by recency.
+func FuzzParsePubDate(f *testing.F) {
+	for _, s := range []string{
+		"", "not a date", "Mon, 24 Aug 2026 08:00:00 GMT", "Mon, 24 Aug 1026 08:00:00 GMT",
+		"2026-08-24T08:00:00Z", "24 Aug 26 08:00 GMT", "Mon 24 Aug",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		got := parsePubDate(s)
+		if got.IsZero() {
 			return
 		}
-		// The Done-when, as a bound: an item requires an item tag.
-		if tags := strings.Count(data, "<item"); len(items) > tags {
-			t.Fatalf("returned %d items from input holding %d item tags — the parser invented items",
-				len(items), tags)
-		}
-		for i, it := range items {
-			// A date we could not read is the zero time, never a guess. This is
-			// OUR logic rather than the decoder's, which is why it is pinned.
-			if !it.At.IsZero() && it.At.Year() < 1900 {
-				t.Fatalf("item %d has an implausible parsed date %v", i, it.At)
+		// A non-zero result must be one this string genuinely spells: re-parsing
+		// its own canonical form must land on the same instant. That catches a
+		// guess without asserting anything about the string's shape.
+		for _, layout := range pubDateFormats {
+			if again, err := time.Parse(layout, s); err == nil {
+				if !again.Equal(got) {
+					t.Fatalf("parsePubDate(%q) = %v, but %s parses it as %v", s, got, layout, again)
+				}
+				return
 			}
 		}
+		t.Fatalf("parsePubDate(%q) returned %v, but no known layout parses that string — the date was invented", s, got)
 	})
 }

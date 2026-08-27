@@ -1284,7 +1284,40 @@ feature outright in production and leaves the entire suite green.
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
 
-## A property that fails on CORRECT input is a liability, not a strong test (define #9 M1)
+## A fuzz property may assert only YOUR contract, never the input's textual form (define #9 M1)
+
+Three properties on one target, each wrong the same way, before the rule was
+clear. All three were claims about the BYTES rather than about my code, and a
+decoder is entitled to transform bytes:
+
+1. **"a title is a SUBSTRING of the input"** — mixed content concatenates:
+   `0<![CDATA[0]]>` is legitimately `00`.
+2. **"...a SUBSEQUENCE of the input"** — entities decode: `&#65;` is `A`, `&#39;`
+   is `'` (what Google News actually emits), a lone CR becomes LF.
+3. **"no more items than `<item` tags"** — `encoding/xml` matches by LOCAL name,
+   so `<x:item>` is an item no textual count can see. The fixture already
+   declares a namespace prefix, so a two-byte edit reaches it.
+
+Each fix produced the next failure, and only at the third did the shape become
+obvious: **ask whose contract the property tests.** Character provenance inside
+an XML element is the standard library's contract, not mine. What is mine is that
+a failed parse returns no items, and that a date I cannot read becomes the zero
+time rather than a guess — and the second of those deserved its own target on the
+STRING, where no decoder stands between the property and the code it describes.
+
+- **A property that reddens on correct input is a liability.** The danger is the
+  response to it: weakening what it defended, or skipping the inputs that trip
+  it. Both leave something that looks like coverage.
+- **When a property needs a decoder to hold, test the decoder's side separately.**
+  Splitting `parsePubDate` out gave a target that kills the guessing mutant on the
+  SEED corpus — no `-fuzz` run required.
+- **Seed the corpus with whatever refuted the last property**, so reinstating it
+  fails locally instead of in the wild.
+
+## (superseded) An earlier statement of the rule above (define #9 M1)
+
+Kept because the count-bound it recommends was ITSELF wrong — the third failure,
+not the fix. Read the entry above instead.
 
 `FuzzParseRSS` carried three properties before one was sound, and the first two
 failed the same way: too strong, red against entirely correct parsing.
@@ -1296,8 +1329,9 @@ failed the same way: too strong, red against entirely correct parsing.
    under XML line-ending normalisation. None are subsequences of their input, and
    `&#39;` is exactly what Google News emits for apostrophes — so re-capturing the
    fixture would have turned it red against working code.
-3. **"there cannot be more items than item tags"** — sound under any decoding,
-   and it is the Done-when's own sentence.
+3. **"there cannot be more items than item tags"** — claimed sound under any
+   decoding. It is NOT: `<x:item>` defeats it. This is where the entry above
+   picks up.
 
 - **The danger is not the false failure; it is the response to it.** A property
   that reddens on good input invites weakening the thing it was defending, or
