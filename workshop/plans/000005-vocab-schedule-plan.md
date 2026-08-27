@@ -16,6 +16,8 @@
 
 | Name | Lives in | Status |
 |------|----------|--------|
+| `store.StartOfDay` | `cmd/define/store/clock.go` | new |
+| `store.DaysBetween` | `cmd/define/store/clock.go` | new |
 | `Box` | `cmd/define/schedule/box.go` | new |
 | `Progress` | `cmd/define/schedule/progress.go` | new |
 | `Fold` | `cmd/define/schedule/progress.go` | new |
@@ -75,45 +77,45 @@
 - Modify: `cmd/define/store/clock.go`, `cmd/define/store/clock_test.go`
 - Modify: `cmd/define/history_cmd.go` — both sites (`:41-42`, and `relativeDay`'s `dayIndex` closure at `:195-198`)
 
-- [ ] **Step 1: Write the failing table test** for `StartOfDay`: it returns local midnight of its argument's date in its argument's location; it is idempotent; it is stable across a DST boundary in a zone that has one (the reason `relativeDay`'s closure normalises to UTC before dividing — that comment names the hazard, and a shared helper has to keep the property, not just the shape).
+- [x] **Step 1: Write the failing table test** for `StartOfDay`: it returns local midnight of its argument's date in its argument's location; it is idempotent; it is stable across a DST boundary in a zone that has one (the reason `relativeDay`'s closure normalises to UTC before dividing — that comment names the hazard, and a shared helper has to keep the property, not just the shape).
 
-- [ ] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
+- [x] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
 
-- [ ] **Step 5: Rewrite both `history_cmd.go` sites to call it,** and confirm `/history`'s existing tests still pass unchanged — they are the regression net for a refactor whose whole risk is changing behaviour while tidying.
+- [x] **Step 5: Rewrite both `history_cmd.go` sites to call it,** and confirm `/history`'s existing tests still pass unchanged — they are the regression net for a refactor whose whole risk is changing behaviour while tidying.
 
-- [ ] **Step 6: Commit.** This is a genuine ARCH-DRY fix that `#5` merely forced into the open: two encodings of "which local day is this" already existed before this issue.
+- [x] **Step 6: Commit.** This is a genuine ARCH-DRY fix that `#5` merely forced into the open: two encodings of "which local day is this" already existed before this issue.
 
 ### Task 1: `Box` and the interval table
 
 **Files:**
 - Create: `cmd/define/schedule/box.go`, `cmd/define/schedule/box_test.go`
 
-- [ ] **Step 1: Write the failing table test.** Strategy: rows are the DECISIONS — box 0's interval, the last box's interval, that promotion past the last box stays there, that demotion below zero stays there, and that the table is strictly increasing (a non-increasing table would make a "promotion" shorten the interval).
+- [x] **Step 1: Write the failing table test.** Strategy: rows are the DECISIONS — box 0's interval, the last box's interval, that promotion past the last box stays there, that demotion below zero stays there, and that the table is strictly increasing (a non-increasing table would make a "promotion" shorten the interval).
 
-- [ ] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
+- [x] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ### Task 2: `Progress`, `Fold`, `Due`, `Answer`, `Mastered`
 
 **Files:**
 - Create: `cmd/define/schedule/progress.go`, `cmd/define/schedule/progress_test.go`
 
-- [ ] **Step 1: Write the failing tests.** Strategy: one table for `Answer`'s transitions (promote, demote, streak reset on wrong, clamping at both ends); one for `Due` across an explicit multi-week timeline; one for `Fold` (only `EventReviewed` counts; events apply in order; a word with no events folds to the zero value; `store.Key` normalisation so `Define` and `define` are one word).
+- [x] **Step 1: Write the failing tests.** Strategy: one table for `Answer`'s transitions (promote, demote, streak reset on wrong, clamping at both ends); one for `Due` across an explicit multi-week timeline; one for `Fold` (only `EventReviewed` counts; events apply in order; a word with no events folds to the zero value; `store.Key` normalisation so `Define` and `define` are one word).
 
-- [ ] **Step 2: The Done-when's own test —** a simulated multi-week schedule with a fixed clock, walking a word from box 0 to mastery and back down after a miss, asserting the due date at each step. This is the row that says "verified across a simulated multi-week schedule".
+- [x] **Step 2: The Done-when's own test —** a simulated multi-week schedule with a fixed clock, walking a word from box 0 to mastery and back down after a miss, asserting the due date at each step. This is the row that says "verified across a simulated multi-week schedule".
 
-- [ ] **Step 3: Verify red. Step 4: Implement. Step 5: Verify green.**
+- [x] **Step 3: Verify red. Step 4: Implement. Step 5: Verify green.**
 
-- [ ] **Step 6: `FuzzFold`** — with the property stated correctly, because the first draft's was FALSE.
+- [x] **Step 6: `FuzzFold`** — with the property stated correctly, because the first draft's was FALSE.
 
       Permutation-independence does not hold and cannot: two `EventReviewed` sharing an `At` with different `Correct` fold differently depending on order, and `ReviewEvent` has no tiebreaker. The rationale was wrong too — `store.Store.Events` documents chronological order and both implementations sort on `At`, so events do not arrive "in file order".
 
       **`Fold`'s ordering contract, stated:** it consumes events in the order `Events` returns them and is not order-independent. What the fuzz target asserts instead: the box is always inside the table whatever the input, `Streak` is never negative, and `Fold` is IDEMPOTENT over a re-fold of the same slice. Those hold over the whole domain.
 
-- [ ] **Step 7: Mutation-check** that streak-reset-on-wrong, the box clamps, and the `EventReviewed`-only filter each redden a named test.
+- [x] **Step 7: Mutation-check** that streak-reset-on-wrong, the box clamps, and the `EventReviewed`-only filter each redden a named test.
 
-- [ ] **Step 7b: Update `atlas/define.md` with M1's surface.** The first draft of
+- [x] **Step 7b: Update `atlas/define.md` with M1's surface.** The first draft of
       this plan scheduled ALL atlas work at M2 Task 3 Step 6, and the close gate
       refused M1 for it — correctly. AGENTS.md §8 requires the atlas at EACH
       milestone close, and M1 introduces a whole new package with real
@@ -124,7 +126,7 @@
       M3 and was refused identically.** M2 extends the section rather than writing
       it.
 
-- [ ] **Step 8: `sdlc milestone-close --issue 5 --milestone M1`.**
+- [x] **Step 8: `sdlc milestone-close --issue 5 --milestone M1`.**
 
 ## Chunk 2: M2 — the queue
 
@@ -133,15 +135,15 @@
 **Files:**
 - Create: `cmd/define/schedule/queue.go`, `cmd/define/schedule/queue_test.go`
 
-- [ ] **Step 1: Write the failing tests, one per Done-when clause.** Strategy: the budget is never exceeded; an overdue reviewed word outranks a fresh one (the starvation row — the fixture must contain BOTH, or it cannot tell the two orderings apart); ordering within each tier; determinism given equal keys; `budget <= 0` returns nothing; a word in the deck with no events appears; a word with events but not in the deck does NOT (the deck is the roster, the log is the history, and `--forget` deliberately keeps events for a word it removed).
+- [x] **Step 1: Write the failing tests, one per Done-when clause.** Strategy: the budget is never exceeded; an overdue reviewed word outranks a fresh one (the starvation row — the fixture must contain BOTH, or it cannot tell the two orderings apart); ordering within each tier; determinism given equal keys; `budget <= 0` returns nothing; a word in the deck with no events appears; a word with events but not in the deck does NOT (the deck is the roster, the log is the history, and `--forget` deliberately keeps events for a word it removed).
 
-- [ ] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
+- [x] **Step 2: Verify red. Step 3: Implement. Step 4: Verify green.**
 
-- [ ] **Step 5: Mutation-check** the tier order, the budget cap and the tie-break; each must redden a named test. The tier-order mutant is the one that matters: the fixture has to make the two orderings differ.
+- [x] **Step 5: Mutation-check** the tier order, the budget cap and the tie-break; each must redden a named test. The tier-order mutant is the one that matters: the fixture has to make the two orderings differ.
 
-- [ ] **Step 6: Atlas.** EXTEND the scheduling section M1 wrote — the two tiers and the starvation rule they prevent. Link a new `atlas/` file from `atlas/index.md` only if this outgrows a section.
+- [x] **Step 6: Atlas.** EXTEND the scheduling section M1 wrote — the two tiers and the starvation rule they prevent. Link a new `atlas/` file from `atlas/index.md` only if this outgrows a section.
 
-- [ ] **Step 7: `sdlc close --issue 5 --verified '<evidence>'`.**
+- [x] **Step 7: `sdlc close --issue 5 --verified '<evidence>'`.**
 
 ---
 
@@ -197,3 +199,32 @@ Round 2, one blocking finding, and it is the sharper one:
   The enumeration for a claim-about-code sweep in this repo is: the issue file,
   the plan file, `atlas/`, and code comments — four places, checked by grepping
   the claim rather than by remembering where it was written.
+
+### 2026-08-27 — carried findings, taken rather than deferred
+
+The close hit the round cap with eight findings recorded but not blocking. I took
+the correctness ones rather than letting `#6` build on them, because `#6` is the
+first consumer of `Queue` and would have inherited every one:
+
+- **BR-13 was a real bug**, verified before fixing: a deck holding both `Define`
+  and `define` returned `[define define]` — the same word twice, spending two
+  budget slots on one review. The deck can legitimately hold both (hand-edited,
+  or written before `store.Key` existed). Deduped by key, first occurrence
+  winning since the deck is ordered by `LastSeen`.
+- **BR-8**: `make([]string, 0, budget)` panics for a large budget, and budget is
+  caller input. Capacity is now bounded by what can actually be returned.
+- **BR-10**: `Queue` returns normalised `store.Key`s, not the deck's spelling,
+  and nothing said so. Now in the doc comment.
+- **BR-7**: the two sort tails were identical copies; extracted, because a queue
+  whose two halves broke ties differently would be a puzzle to diagnose.
+- **BR-14**: these plan steps were never ticked, and the Core-concepts table
+  omitted `store.StartOfDay`/`DaysBetween` — the two entities Task 0 actually
+  added, and the ones the Critical lived in. Both fixed.
+
+Left for a follow-up, deliberately: **BR-12's class half** — the four purity
+guards each have a committed positive case and no committed negative one. Every
+"the mutant reddens it" claim in this issue was verified in a scratch copy and
+then thrown away, so nothing in the tree proves the guards can fail. That is a
+real gap and it is bigger than a tidy-up: it wants a way to run a guard against
+known-bad source. Recording it here rather than pretending the round cap made it
+disappear.

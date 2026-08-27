@@ -1,12 +1,13 @@
 ---
 id: 000005
-status: working
+status: codecomplete
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-26
 estimate_hours: 5.56
 started: 2026-08-26T22:20:11-07:00
+actual_hours: 3.0
 ---
 
 # spaced-repetition scheduling engine (Leitner, pure)
@@ -151,6 +152,7 @@ mysteriously small — the same defect recorded on `#20` and `#21`.
 Created as part of the `define-learn` project.
 
 ### 2026-08-26
+- 2026-08-26: closed — go test ./... + go vet + gofmt clean. Round-3 findings all addressed. BR-12 was a real hole the earlier guards left wide: the import allowlist admits store WHOLESALE and store is where the disk lives, so store.NewYAML(dir, w) inside schedule would open, read and write files while passing both existing guards — the purity claim false with everything green. Two guards agreeing is not two independent checks when they share a blind spot: both reasoned about NAMES, neither about what the named thing does. A third guard now lists the eight pure store symbols schedule may use and the constructor mutant reddens it, verified. BR-3 and BR-11 were open a further round because my own fixes minted fresh instances of the classes they named — the atlas still documented "a mastered word leaves the rotation", the behaviour BR-6 removed, and I added the tzdata import to one of two files while writing the comment claiming it into BOTH. Both fixed and verified by grep rather than assumption. All prior evidence stands: the C1 mixed-location bug reproduced empirically then fixed and pinned at two levels with a fixture that discriminates; mastery no longer absorbing; every interval asserted with a due-date check at each step; the clock guard covering all wall-clock readers; LastBox a const verified by a compile failure. NOTE: the previous close attempt returned verdict "unknown" because the OAuth token was revoked mid-review — the sidecar contains only a 401 — so the review never ran; not a gate defect. ACTUAL 3.0h wall clock 22:20-01:20.; review verdict: FIX-THEN-SHIP
 
 Claimed and planned, ahead of `#10` — see the project's scope event: the operator
 asked for a loop they can actually practise with before the authoring
@@ -254,3 +256,17 @@ Two decisions worth recording before implementation:
   tzdata import to one of two files while writing the comment claiming it into
   BOTH, so the second file asserted an import it did not have. A fix is not done
   until it is verified in every artifact it touched.
+
+- 2026-08-27: close round 4 — SHIP after the round cap, with eight findings
+  recorded but not blocking. Took the correctness ones rather than deferring:
+  BR-13 was a REAL bug (a deck holding `Define` and `define` returned the same
+  word twice and spent two budget slots), BR-8 was a panic on a large budget,
+  BR-10 the unstated key-vs-spelling return contract, BR-7 a duplicated sort
+  tail, BR-14 the unticked plan steps and a Core-concepts table missing the two
+  helpers Task 0 added. `#6` is the first consumer of `Queue` and would have
+  inherited every one.
+  One is left open on purpose and is worth its own follow-up: the four purity
+  guards each have a committed positive case and NO committed negative one. Every
+  "the mutant reddens it" claim in this issue was verified in a scratch copy and
+  discarded, so nothing in the tree proves the guards can fail — the same shape as
+  a test that cannot fail, one level up.

@@ -506,3 +506,147 @@ findings:
       truth per AGENTS.md section 1. The issue file's Plan section ticks M1/M2, which is
       what the close gate reads, so the plan silently stopped being a record.
 ```
+
+---
+
+## Re-review — 2026-08-26T23:50:02-07:00 (unknown)
+
+| field | value |
+|-------|-------|
+| issue | 5 — spaced-repetition scheduling engine (Leitner, pure) |
+| repo | tools |
+| issue file | workshop/issues/000005-vocab-schedule.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a30bb786560befe4960d28eaf5098a3bc678efa6..c8490011a8f75d65f9d76eb4a99e58ddac9e452a |
+| command | sdlc close --issue 5 |
+| reviewer | claude |
+| timestamp | 2026-08-26T23:50:02-07:00 |
+| verdict | unknown |
+
+## Review
+
+Failed to authenticate. API Error: 401 OAuth access token has been revoked.
+
+---
+
+## Re-review — 2026-08-27T00:07:21-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 5 — spaced-repetition scheduling engine (Leitner, pure) |
+| repo | tools |
+| issue file | workshop/issues/000005-vocab-schedule.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a30bb786560befe4960d28eaf5098a3bc678efa6..c8490011a8f75d65f9d76eb4a99e58ddac9e452a |
+| command | sdlc close --issue 5 |
+| reviewer | claude |
+| timestamp | 2026-08-27T00:07:21-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The scheduling engine itself is correct and genuinely well-pinned: I re-verified the load-bearing Done-when row by mutation (collapsing the two queue tiers reddens `TestOverdueReviewedWordBeatsAFreshOne` and `TestBudgetGoesToOverdueBeforeFresh`), confirmed the new third purity guard is real and reachable (inserting `store.NewYAML(...)` into `Mastered` in a scratch copy reddens `purity_test.go:164`), and confirmed the tzdata skips are gone — `grep -rn "t.Skip" cmd/define` now returns 13 sites, none of them zone-related. `go build ./...`, `go vet ./cmd/define/...` and `go test ./...` are all clean. No Critical remains and no product-behaviour defect survives. What still blocks SHIP-as-is is the same two Importants, both unfixed at the class level: **BR-3** — the round-3 commit that added the third guard minted a *new* false claim ("two guards") in the same five artifacts BR-3's own enumeration names, and `history_cmd.go:192` ("`store.DaysBetween` steps the calendar") is still standing from round 2; and **BR-12** — the guard hole was patched but the mechanical cure the finding asked for (extract the decision from the IO so each guard carries a *committed* negative case) was not done, so I again had to verify the guard by hand-mutating a scratch tree, which is exactly what the finding said is insufficient. Five Minors are unchanged from round 1/round 3.
+
+## 1. Strengths
+
+- **`store.DaysBetween` is now right and its comment explains why it has the shape it has.** `cmd/define/store/clock.go:68-71` — `a.In(b.Location())` then two `dayIndex` subtractions. The doc at `:46-67` records both the bug and the reason the discarded implementation was the correct one. This is the kind of comment that stops the next consolidation from re-introducing it.
+- **The starvation row is pinned by a discriminating fixture, not a restatement.** `queue_test.go:23` and `:181` both redden under a tier-collapse mutant (verified this round). The fixture deliberately contains an old-but-fresh word *and* an overdue reviewed one, so the two orderings actually differ.
+- **The third purity guard is symbol-level and real.** `purity_test.go:123-172` — verified by scratch-copy mutation. Its vacuity backstops (`found == 0`, `checked == 0`, `len(got) == 0`) are the right instinct and are the reason a `go list` regression can't silently empty the check.
+- **`Fold` applies `Answer`,** so the transition has one encoding (`progress.go:96`), and `TestFoldOfOneEventEqualsOneAnswer` pins the relationship rather than the outcome.
+- **The derived-not-stored decision held.** `store.Word` gained no fields in this window — verified against the diff.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**BR-3 (not-addressed, 4th consecutive round) — the class recurred through the fix for BR-12.** The original wording ("imports store and time and nothing else") *is* swept. But the round-3 commit added a third guard and left "two guards" standing in five artifacts, and two round-2 residues never landed. Full enumeration, run this round:
+
+| site | false claim |
+|---|---|
+| `cmd/define/schedule/box.go:12` | "TWO guards enforce it — an import allowlist, and a check that no wall-clock reader…" (three now) |
+| `cmd/define/schedule/progress.go:44` | "LOCAL CALENDAR days, via `store.StartOfDay`" — `Due` calls `store.DaysBetween`; `StartOfDay` is not on that path (`grep -rn StartOfDay --include=*.go` shows one non-test caller, `history_cmd.go:41`) |
+| `cmd/define/schedule/purity_test.go:22` | test *named* `TestScheduleImportsOnlyStoreAndTime`, the rule its own `:29` retracts |
+| `cmd/define/history_cmd.go:192` | "`store.DaysBetween` steps the calendar" — it subtracts two UTC day indices; open since round 2 |
+| `atlas/define.md:1129` | "`Due` compares through `store.StartOfDay`" |
+| `atlas/define.md:1142-1144` | "ENFORCED by two guards … one … and a second" |
+| `workshop/projects/define-learn.md:486` | "enforced by two guards rather than asserted" |
+| `workshop/plans/…-plan.md:27` | "two guards enforce that" |
+| `workshop/plans/…-plan.md:62` | "it needs a second guard for wall-clock readers" |
+
+Four rounds of instance-fixing have not converged, so **do not sweep these nine sites and call it done** — that is the same move that failed four times. The rule that covers all of them: **prose in artifacts must not restate a COUNT or a MECHANISM of code; it names the property and points at the file that holds it.** "Two guards", "a second guard", "via `store.StartOfDay`", "steps the calendar" are all counts-and-mechanisms — precisely the facts that go stale on the next edit. "The purity claim is enforced by the guards in `schedule/purity_test.go`" and "`Due` counts local calendar days" cannot. Rewrite the nine sites to the property form *and* record the rule in the plan's `## Revisions` and `workshop/lessons.md`, so the next behaviour change has nothing left to invalidate.
+
+**BR-12 (not-addressed at the class level) — the instance is fixed, the mechanism is not.** `purity_test.go` still mixes the decision with the IO: three tests each shell out to `go list`, `os.ReadDir` the package directory and re-implement the "skip `_test.go`" filter (`:69-90` and `:123-153` are ~20 near-identical lines — ARCH-DRY, ARCH-PURE). Consequence, observed twice this round: the guards read files off disk, so `go test -overlay` cannot reach them (I confirmed a `store.NewYAML` mutant passes under overlay and only fails in a full scratch copy). There are still **zero committed negative cases** for any of the four guards the finding enumerated. Extract `violations(imports []string) []string`, `clockReaders(src []byte) []string`, `impureStoreRefs(src []byte) []string` as pure functions; the existing tests keep the IO and call them, and each negative case becomes a table row a reader can see. That is the ARCH-PURE fix and it is what makes the guards verifiable without hand-mutating a tree.
+
+## 4. Minor findings
+
+- **BR-7** unchanged — `queue.go:74-77` and `:80-83` still share the identical lookups-then-key tail; extract `byLookupsThenKey`.
+- **BR-8** unchanged — re-verified `Queue(deck, nil, now, 1<<62)` panics `makeslice: cap out of range` at `queue.go:86`. Cap at `len(deck)`.
+- **BR-10** unchanged — `queue.go:10` still says "today's words"; nothing in the doc, the atlas or a test names the returned strings as normalised `store.Key` values. `#6` has to map back to `Word.Text` to render.
+- **BR-13** unchanged — re-verified `Queue([]store.Word{{Text:"Define"},{Text:"define"}}, nil, now, 10)` returns `[define define]`, spending two of the budget on one word. (Mitigating: the YAML store keys word files by `Slug(Key(text))`, so a real deck cannot produce this — it is a seam-hardening item, not a live bug.) `now`'s zero value is still untested (returns empty, which is sane).
+- **BR-14** unchanged — 19 unchecked steps, 0 checked. The plan's Core-concepts table also omits `store.StartOfDay` / `store.DaysBetween`, the pure entities Task 0 actually added.
+
+## 5. Test coverage notes
+
+- Product-level coverage is good: the interval ladder is pinned at every rung (`box_test.go:11`), the multi-week walk asserts `Due`/`!Due` at each step, `TestDueDoesNotFireOnTheDayOfReview` pins the round-1 Critical with a cross-zone fixture that genuinely discriminates, and both starvation tests redden under a tier mutant.
+- The gap is entirely in the **guards' own coverage**. Four guards, zero negative cases, and the only verification method available is a full scratch-copy mutation (overlay does not reach them). See BR-12.
+- `FuzzFold`'s three properties are the ones that actually hold over the domain; the ordering contract is stated rather than falsely fuzzed. Good.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** Two instances, both open: the duplicated comparator tail (BR-7) and the triplicated `go list` + `ReadDir` + filter scaffold in `purity_test.go`. Note also that `store` now holds two encodings of "which local calendar date is this" — `StartOfDay` (one caller) and the private `dayIndex` — after a task literally titled "collapse the two existing encodings". They are genuinely different return types and consolidating them would be over-engineering, so this is an observation, not a finding.
+- **ARCH-PURE — flag (BR-12).** The production package is exemplary: every instant arrives as a parameter and no non-test file names a clock. The violation is in the guard tests, where the decision is welded to the IO and therefore untestable.
+- **ARCH-PURPOSE — flag (BR-3).** The shadow-sweep over the artifacts that restate this package's model finds nine hand-maintained restatements that the source no longer supports. Three prior rounds each fixed the sites the finding named rather than the class it belongs to; the round-3 fix then minted the next instance. The deliverable here is the rule and the enumeration, not the nine edits.
+- **ARCH-MOCK — pass, with a note.** The package has no external dependency: no seam, no fake, and that is the correct answer for a pure core. The guard tests shell out to `go` directly, which matches `repo_guard_test.go`'s in-tree precedent for repo guards. Extracting the pure decision functions (BR-12) is what would give even these a seam.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` entry to `workshop/plans/000005-vocab-schedule-plan.md`:
+
+- **`unbacked-claim-about-existing-code`, fourth occurrence — the rule replaces the sweep.** Record that the round-3 fix for BR-12 added a third guard and thereby falsified "two guards" in the same five artifacts the round-2 enumeration had just been written for, and that `history_cmd.go:192` and the `store.StartOfDay` mechanism claims survived two further rounds. State the rule that supersedes the enumeration: *artifacts name the property and point at the file; they do not restate counts or mechanisms.* Fix `:27` and `:62` to that form.
+- **Task 0's surface belongs in the Core concepts table.** Add rows for `store.StartOfDay` and `store.DaysBetween` (`cmd/define/store/clock.go`, PURE, new) — they are pure entities this issue introduced and the table currently claims the issue added seven, not nine.
+- **Tick the plan, or say why it stopped being the record** (BR-14). 19 unchecked steps after both milestones closed contradicts the plan's own header and AGENTS.md §1.
+
+```findings
+dispose:
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      Original wording swept, but the round-3 guard fix minted "two guards" false in 5 artifacts (9 sites incl. box.go:12, atlas:1142, plan:27,62, project:486) and history_cmd.go:192 + progress.go:44/atlas:1129 mechanism claims still stand.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      queue.go:74-77 and :80-83 unchanged; identical lookups-then-key tail.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      queue.go:86 unchanged; re-verified makeslice panic on budget 1<<62.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      queue.go:10 still says "today's words"; no doc, atlas line or test names the store.Key return contract.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      tzdata embedded in both clock_test.go:12 and progress_test.go:10, all five skips replaced by t.Fatalf; grep -rn "t.Skip" cmd/define now returns 13 sites, none zone-related.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Instance fixed and verified reachable (store.NewYAML reddens purity_test.go:164 in a scratch copy), but the class fix was not done — decision still welded to IO, zero committed negative cases for any of the four guards, and overlay still cannot reach them.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Re-verified Queue with Define/define returns [define define], spending two budget slots; now's zero value still untested.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      19 unchecked steps, 0 checked; the Core concepts table also omits store.StartOfDay and store.DaysBetween.
+```

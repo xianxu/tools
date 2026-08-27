@@ -255,6 +255,48 @@ rounds:
           family: plan-record-staleness
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-26T23:50:02-07:00"
+      agent: claude
+      blocked: false
+      protocol_error: no valid findings block
+    - "n": 5
+      timestamp: "2026-08-27T00:07:21-07:00"
+      agent: claude
+      dispose:
+        - id: BR-3
+          disposition: not-addressed
+          note: Original wording swept, but the round-3 guard fix minted "two guards" false in 5 artifacts (9 sites incl. box.go:12, atlas:1142, plan:27,62, project:486) and history_cmd.go:192 + progress.go:44/atlas:1129 mechanism claims still stand.
+          round: 5
+        - id: BR-7
+          disposition: not-addressed
+          note: queue.go:74-77 and :80-83 unchanged; identical lookups-then-key tail.
+          round: 5
+        - id: BR-8
+          disposition: not-addressed
+          note: queue.go:86 unchanged; re-verified makeslice panic on budget 1<<62.
+          round: 5
+        - id: BR-10
+          disposition: not-addressed
+          note: queue.go:10 still says "today's words"; no doc, atlas line or test names the store.Key return contract.
+          round: 5
+        - id: BR-11
+          disposition: addressed
+          note: tzdata embedded in both clock_test.go:12 and progress_test.go:10, all five skips replaced by t.Fatalf; grep -rn "t.Skip" cmd/define now returns 13 sites, none zone-related.
+          round: 5
+        - id: BR-12
+          disposition: not-addressed
+          note: Instance fixed and verified reachable (store.NewYAML reddens purity_test.go:164 in a scratch copy), but the class fix was not done — decision still welded to IO, zero committed negative cases for any of the four guards, and overlay still cannot reach them.
+          round: 5
+        - id: BR-13
+          disposition: not-addressed
+          note: Re-verified Queue with Define/define returns [define define], spending two budget slots; now's zero value still untested.
+          round: 5
+        - id: BR-14
+          disposition: not-addressed
+          note: 19 unchecked steps, 0 checked; the Core concepts table also omits store.StartOfDay and store.DaysBetween.
+          round: 5
+      blocked: false
 ---
 
 # Gate ledger — tools#5 (boundary-review)
@@ -403,13 +445,29 @@ four — the plan's own list omits the project file, which is why :485 survived 
   truth per AGENTS.md section 1. The issue file's Plan section ticks M1/M2, which is
   what the close gate reads, so the plan silently stopped being a record.
 
+## Round 4 — 2026-08-26T23:50:02-07:00 (claude) — passed
+
+**Protocol error:** no valid findings block — this round contributed no findings.
+
+## Round 5 — 2026-08-27T00:07:21-07:00 (claude) — passed
+
+### Disposed
+
+- BR-3 — not-addressed — Original wording swept, but the round-3 guard fix minted "two guards" false in 5 artifacts (9 sites incl. box.go:12, atlas:1142, plan:27,62, project:486) and history_cmd.go:192 + progress.go:44/atlas:1129 mechanism claims still stand.
+- BR-7 — not-addressed — queue.go:74-77 and :80-83 unchanged; identical lookups-then-key tail.
+- BR-8 — not-addressed — queue.go:86 unchanged; re-verified makeslice panic on budget 1<<62.
+- BR-10 — not-addressed — queue.go:10 still says "today's words"; no doc, atlas line or test names the store.Key return contract.
+- BR-11 — addressed — tzdata embedded in both clock_test.go:12 and progress_test.go:10, all five skips replaced by t.Fatalf; grep -rn "t.Skip" cmd/define now returns 13 sites, none zone-related.
+- BR-12 — not-addressed — Instance fixed and verified reachable (store.NewYAML reddens purity_test.go:164 in a scratch copy), but the class fix was not done — decision still welded to IO, zero committed negative cases for any of the four guards, and overlay still cannot reach them.
+- BR-13 — not-addressed — Re-verified Queue with Define/define returns [define define], spending two budget slots; now's zero value still untested.
+- BR-14 — not-addressed — 19 unchecked steps, 0 checked; the Core concepts table also omits store.StartOfDay and store.DaysBetween.
+
 ## Open findings
 
 - **BR-3** [Important] `unbacked-claim-about-existing-code` "imports store and time and nothing else" is now false in four artifacts; the enumeration the plan wrote was not run when the guard rule changed
 - **BR-7** [Minor] `duplicated-comparator` The two sort.Slice comparators in Queue share an identical lookups-then-key tail
 - **BR-8** [Minor] `hostile-input-at-the-seam` Queue panics on an absurd budget where it deliberately handles budget <= 0
 - **BR-10** [Minor] `undeclared-behavior` Queue returns normalised keys rather than deck Text, and the doc comment says "today's words"
-- **BR-11** [Important] `invariant-needs-mechanical-guard` The only test pinning this round's Critical fix skips itself when tzdata is absent, and the repo's own fix for that was not reused
 - **BR-12** [Important] `invariant-needs-mechanical-guard` The purity allowlist admits store wholesale, so a real disk-IO constructor inside schedule passes both guards
 - **BR-13** [Minor] `hostile-input-at-the-seam` Queue's degenerate-input domain is stated for two parameters and untested for the rest; duplicate deck keys return the same word twice
 - **BR-14** [Minor] `plan-record-staleness` The durable plan has 20 unchecked steps and 0 checked after both milestones closed

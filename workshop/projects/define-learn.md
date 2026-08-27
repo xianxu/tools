@@ -184,7 +184,7 @@ once `#6` is producing misses.
 - [x] free-form Q&A — the answer: context pack, streaming, scoped Ctrl-C [tools#16 M2]
 - [x] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
 - [x] news seam — Google News RSS (not the SERP) [tools#9]
-- [ ] scheduling engine — Leitner, pure [tools#5]
+- [x] scheduling engine — Leitner, pure [tools#5]
 - [ ] `--play` loop + form 2.1 [tools#6]
 - [ ] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
 - [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]

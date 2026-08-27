@@ -7,7 +7,10 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-// Queue is today's words, in the order they should be offered.
+// Queue is today's words, in the order they should be offered, as normalised
+// store.Keys — not the deck's original spelling. A caller rendering them to the
+// learner should look the word up in the deck for display text; a caller
+// recording an event should use the key, which is what Fold reads back.
 //
 // TWO TIERS, and the Done-when forces it: "never starves an overdue word in
 // favour of a fresh one". Words with review history that are due come FIRST,
@@ -36,12 +39,21 @@ func Queue(deck []store.Word, prog map[string]Progress, now time.Time, budget in
 		lookups int
 	}
 	var reviewed, fresh []candidate
+	// Deduped by KEY, because store.Key collapses "Define" and "define" into one
+	// word while the deck can legitimately hold both — a hand-edited file, or one
+	// written before Key existed. Without this the queue offered the same word
+	// twice and spent two budget slots on it.
+	//
+	// First occurrence wins: Lookups may differ between the two rows and the
+	// deck is ordered by LastSeen, so the more recent row is the better record.
+	seen := make(map[string]bool, len(deck))
 
 	for _, w := range deck {
 		key := store.Key(w.Text)
-		if key == "" {
+		if key == "" || seen[key] {
 			continue
 		}
+		seen[key] = true
 		p, seen := prog[key]
 		// Mastered words are NOT excluded, and the first version of this excluded
 		// them. Two things were wrong with that. It contradicted progress.go's own
@@ -67,23 +79,33 @@ func Queue(deck []store.Word, prog map[string]Progress, now time.Time, budget in
 
 	// Deterministic on every axis: a queue that reorders between runs is
 	// untestable and looks broken to the learner.
+	// The tie-break tail — most looked-up, then alphabetical — is shared rather
+	// than written twice. Two copies would be two places to keep in agreement,
+	// and a queue whose two halves broke ties differently would be a puzzle to
+	// diagnose from the outside.
+	byLookupsThenKey := func(a, b candidate) bool {
+		if a.lookups != b.lookups {
+			return a.lookups > b.lookups
+		}
+		return a.key < b.key
+	}
 	sort.Slice(reviewed, func(i, j int) bool {
 		if reviewed[i].overdue != reviewed[j].overdue {
 			return reviewed[i].overdue > reviewed[j].overdue
 		}
-		if reviewed[i].lookups != reviewed[j].lookups {
-			return reviewed[i].lookups > reviewed[j].lookups
-		}
-		return reviewed[i].key < reviewed[j].key
+		return byLookupsThenKey(reviewed[i], reviewed[j])
 	})
 	sort.Slice(fresh, func(i, j int) bool {
-		if fresh[i].lookups != fresh[j].lookups {
-			return fresh[i].lookups > fresh[j].lookups
-		}
-		return fresh[i].key < fresh[j].key
+		return byLookupsThenKey(fresh[i], fresh[j])
 	})
 
-	out := make([]string, 0, budget)
+	// Capacity is bounded by what can actually be returned, not by the budget:
+	// make([]string, 0, 1<<62) panics, and a budget is caller input.
+	capacity := budget
+	if n := len(reviewed) + len(fresh); n < capacity {
+		capacity = n
+	}
+	out := make([]string, 0, capacity)
 	for _, c := range append(reviewed, fresh...) {
 		if len(out) == budget {
 			break

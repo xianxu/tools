@@ -3,6 +3,7 @@ package schedule
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -193,4 +194,37 @@ func TestBudgetGoesToOverdueBeforeFresh(t *testing.T) {
 	if keys(got) != "overdue1,overdue2" {
 		t.Errorf("queue = %v, want both overdue words — the budget went to fresh ones", got)
 	}
+}
+
+// A deck can legitimately hold both spellings — hand-edited, or written before
+// store.Key existed — and they are ONE word. Offering it twice also spends two
+// budget slots on one review.
+func TestQueueDedupesByKey(t *testing.T) {
+	deck := []store.Word{word("Define", 5, 0), word("define", 2, 0)}
+
+	got := Queue(deck, nil, at(1), 5)
+
+	if len(got) != 1 {
+		t.Errorf("queue = %v, want one entry — Define and define are one word", got)
+	}
+}
+
+// budget is caller input, and make([]string, 0, 1<<62) panics.
+func TestHugeBudgetDoesNotPanic(t *testing.T) {
+	deck := []store.Word{word("a", 1, 0)}
+
+	got := Queue(deck, nil, at(1), 1<<62)
+
+	if len(got) != 1 {
+		t.Errorf("queue = %v, want the one deck word", got)
+	}
+}
+
+// The zero time is what an uninitialised clock hands over. It must not panic or
+// silently offer everything.
+func TestZeroNowIsHandled(t *testing.T) {
+	deck := []store.Word{word("a", 1, 0)}
+	prog := Fold([]store.ReviewEvent{reviewed("a", true, at(0))})
+
+	_ = Queue(deck, prog, time.Time{}, 5) // must not panic
 }
