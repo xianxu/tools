@@ -474,10 +474,37 @@ fixture was ten copies of one article. The committed fixture is deliberately
 adversarial to its own test — 10 matches across 10 publishers plus 3
 non-matches, so the filter has work to do.
 
+<a id="tools-5-m1"></a>
+### tools#5 M1 — the schedule, derived from the log rather than stored beside it
+
+**est:** 5.56 (whole issue)
+**actual:** 1.2h (M1)
+**closed:** 2026-08-26
+
+Leitner boxes (1/3/7/14/30/90 days) with `Fold`, `Due`, `Answer` and `Mastered`,
+in a new `schedule` package that imports `store` and `time` and nothing else.
+
+**The decision worth not re-deriving: schedule state is DERIVED from the event
+log, never stored on the word.** `store/event.go` had already written the rule for
+the whole store — the log is the only record of activity, and counters kept
+alongside become a second source of truth that drifts — so a `Box` field on
+`store.Word` would have been exactly that, going wrong invisibly whenever a
+hand-edited deck file disagreed with the events that produced it. `store` gained
+no fields.
+
+Two things surfaced that were not about scheduling at all. `#15` had needed
+"which local day is this" twice for `/history` and written it inline twice in two
+DIFFERENT shapes; `#5` needing it a third time is what moved it into
+`store.StartOfDay` beside the `Clock`. And the plan claimed the package's purity
+was self-enforcing because "a test needing a fake would not compile" — false, a Go
+test may import anything — so the claim now has a guard that reads the import set.
+This repo keeps being bitten by facts that live only in comments.
+
 [tools#2]: #tools-2
 [tools#3]: #tools-3
 [tools#4]: #tools-4
 [tools#5]: #tools-5
+[tools#5 M1]: #tools-5-m1
 [tools#6]: #tools-6
 [tools#7]: #tools-7
 [tools#8]: #tools-8

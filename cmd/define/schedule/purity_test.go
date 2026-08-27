@@ -1,7 +1,9 @@
 package schedule_test
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -23,8 +25,19 @@ func TestScheduleImportsOnlyStoreAndTime(t *testing.T) {
 		t.Fatalf("go list: %v", err)
 	}
 
+	// The claim is "no IO and no hidden clock", not "exactly two imports" — and
+	// the first version of this allowlist said the latter, then fired on `sort`,
+	// which is as pure as arithmetic. A guard that reddens on correct code is a
+	// liability: the tempting response is to delete it.
+	//
+	// Additions must be genuinely pure. `fmt` is NOT (it writes to streams),
+	// `os`, `net`, `bufio`, `io` are not, and anything that can name a file is
+	// not.
 	allowed := map[string]bool{
-		"time": true,
+		"time":   true, // the TYPE; time.Now is banned separately below
+		"sort":   true,
+		"slices": true,
+		"cmp":    true,
 		"github.com/xianxu/tools/cmd/define/store": true,
 	}
 	var got []string
@@ -43,5 +56,44 @@ func TestScheduleImportsOnlyStoreAndTime(t *testing.T) {
 	// nothing, an empty import set would satisfy every assertion above.
 	if len(got) == 0 {
 		t.Fatal("go list reported no imports at all — this test would assert nothing")
+	}
+}
+
+// The hazard an import list cannot see.
+//
+// `time` is legitimately imported for the TYPE, so its presence proves nothing —
+// but `time.Now()` inside this package would be a clock the caller cannot
+// control, which is the one thing that would make every scheduling question
+// untestable. Every `now` here arrives as a parameter.
+func TestScheduleNeverReadsTheClock(t *testing.T) {
+	out, err := exec.Command("go", "list", "-f", `{{.Dir}}`,
+		"github.com/xianxu/tools/cmd/define/schedule").Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	dir := strings.TrimSpace(string(out))
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	checked := 0
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("reading %s: %v", name, err)
+		}
+		checked++
+		if strings.Contains(string(b), "time.Now(") {
+			t.Errorf("%s calls time.Now — every `now` in this package must arrive as a parameter, "+
+				"or the caller cannot control the date and nothing here is testable", name)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no non-test source files found — this test would assert nothing")
 	}
 }
