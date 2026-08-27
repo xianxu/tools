@@ -21,6 +21,7 @@ tagging one-shot work forces a redundant double-log).
 | Name | Lives in | Status |
 |------|----------|--------|
 | `Session.Graded` | `cmd/define/play/session.go` | new |
+| `score` | `cmd/define/play/session.go` | new |
 | `Apply` | `cmd/define/play/session.go` | modified |
 | `draw` | `cmd/define/play_loop.go` | modified |
 
@@ -47,6 +48,16 @@ tagging one-shot work forces a redundant double-log).
     the advance would drop the answer.
   - **Future extensions:** any form needing "record and also do X" is now
     expressible without touching the contract again.
+
+- **`score`** — what a verdict does to the running tally, in ONE place.
+  - **Why it must exist (PQ-1):** `advance` currently both scores and moves, and
+    the miss-before-reveal branch moves nowhere — so it would have recorded the
+    event and left `s.Wrong` at zero, and the end-of-session line would have read
+    "3 right, 0 wrong" after three misses. Splitting the tally from the move is
+    what lets a verdict be scored without advancing.
+  - **Relationships:** called by `advance` and by the miss branch. `Skipped`
+    scores nothing, so `advance(s, q, Skipped)` after a miss double-counts
+    nothing.
 
 - **`draw`** — renders the question in one of three states.
   - **Relationships:** reads `Revealed` and `Graded`; owns no state.
@@ -103,10 +114,27 @@ Every existing `return s, Outcome{...}` becomes `return s, []Outcome{{...}}`.
 func Apply(s Session, in Input) (Session, []Outcome) {
 ```
 
-- [ ] **Step 2: Update the seven `Apply` call sites in `session_test.go`**
+- [ ] **Step 2: Update the NINE `Apply` call sites in `session_test.go`**
+
+Most go through the `drive` helper (`session_test.go:11-19`), which collects one
+`Outcome` per input and must now append all of them:
+
+```go
+func drive(s Session, ins ...Input) (Session, []Outcome) {
+	var out []Outcome
+	for _, in := range ins {
+		var os []Outcome
+		s, os = Apply(s, in)
+		out = append(out, os...)
+	}
+	return s, out
+}
+```
+
+`records(outs)` needs no change — it already filters a slice.
 
 Run: `go test ./cmd/define/play/`
-Expected: PASS — this step is pure refactor, behaviour identical.
+Expected: PASS — pure refactor, behaviour identical.
 
 - [ ] **Step 3: Commit**
 
@@ -127,24 +155,28 @@ git commit -m "#24: Apply returns every effect it owes, not one"
 // A RECALL test is rated by the learner, not by the screen. The definition is
 // FEEDBACK, not stimulus — which is why grading before a reveal is now the
 // normal path and not a mis-keystroke.
-// fakeForm grades DIGITS (1=Correct, 2=Wrong, 3=Skipped) and shares no key with
-// Recall — so these assert the SESSION's rule, not form 2.1's y/n.
+//
+// twoQuestions() is Recall, which grades y/n — the file's own idiom, and the
+// right one here because this is about form 2.1's actual keys. fakeForm's digits
+// belong to the form-AGNOSTIC tests, where sharing no key with Recall is the
+// point.
 func TestCorrectBeforeRevealAdvancesWithNoReveal(t *testing.T) {
-	s := NewSession([]Question{&fakeForm{word: "one"}, &fakeForm{word: "two"}})
-
-	next, outs := Apply(s, Input{Kind: InputRune, Rune: '1'})
+	next, outs := Apply(twoQuestions(), rune_('y'))
 
 	if len(outs) != 1 || outs[0].Kind != OutcomeRecord {
 		t.Fatalf("outcomes = %+v, want exactly one OutcomeRecord — a correct answer earns no reveal", outs)
 	}
-	if outs[0].Verdict != Correct || outs[0].Word != "one" {
-		t.Errorf("recorded %v for %q, want Correct for \"one\"", outs[0].Verdict, outs[0].Word)
+	if outs[0].Verdict != Correct || outs[0].Word != "obsequious" {
+		t.Errorf("recorded %v for %q, want Correct for \"obsequious\"", outs[0].Verdict, outs[0].Word)
 	}
 	if next.Index != 1 {
 		t.Errorf("Index = %d, want 1 — y advances", next.Index)
 	}
 	if next.Revealed || next.Graded {
 		t.Errorf("Revealed=%v Graded=%v, want both false on the NEXT question", next.Revealed, next.Graded)
+	}
+	if next.Right != 1 || next.Wrong != 0 {
+		t.Errorf("tally = %d right %d wrong, want 1/0", next.Right, next.Wrong)
 	}
 }
 ```
@@ -155,9 +187,35 @@ Run: `go test ./cmd/define/play/ -run TestCorrectBeforeReveal`
 Expected: FAIL — `outcomes = [{OutcomeNone ...}]`, because the `!s.Revealed`
 guard returns `OutcomeNone`.
 
+- [ ] **Step 2b: DELETE the test that asserts the old premise**
+
+`TestGradingBeforeRevealIsIgnored` (`cmd/define/play/session_test.go:59-70`) is
+the one test this issue reverses — its comment states the position being dropped:
+*"A learner cannot rate what they have not seen."* It is replaced by the two
+tests above, not merely edited, because its NAME is the claim.
+
+This is the test the plan first failed to name (PQ-3): the ones it did name
+(`TestUngradedKeyNeverReachesTheCapturer`, anything pressing Enter before `y`)
+all stay green, because the peek path is unchanged.
+
 - [ ] **Step 3: Replace the guard with the grade-then-branch**
 
 ```go
+	case InputReveal:
+		if s.Graded {
+			// PQ-2: Enter and space reach here, not the InputRune arm — toInput
+			// maps them to InputReveal (play_loop.go:174-190). Without this they
+			// would be DEAD in the graded state, which is precisely the two keys
+			// every existing user reaches for, while the prompt says "any key".
+			next, out := advance(s, q, Skipped)
+			return next, []Outcome{out}
+		}
+		if s.Revealed {
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
+		s.Revealed = true
+		return s, []Outcome{{Kind: OutcomeReveal}}
+
 	case InputRune:
 		if s.Graded {
 			// Already answered; this keystroke is the learner moving on.
@@ -179,6 +237,7 @@ guard returns `OutcomeNone`.
 		// showing it. Recorded NOW, in the same breath, so Ctrl-C before the
 		// next keystroke still keeps this answer.
 		s.Revealed, s.Graded = true, true
+		s = score(s, verdict) // PQ-1: the tally, since we are not advancing
 		return s, []Outcome{
 			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict},
 			{Kind: OutcomeReveal},
@@ -186,11 +245,27 @@ guard returns `OutcomeNone`.
 	}
 ```
 
-`advance` must clear both flags:
+`advance` delegates the tally and clears both flags:
 
 ```go
+// score is what a verdict does to the tally, and the only place that decides it.
+// Split from advance because a miss on a hidden word scores WITHOUT advancing.
+func score(s Session, v Verdict) Session {
+	switch v {
+	case Correct:
+		s.Right++
+	case Wrong:
+		s.Wrong++
+	}
+	return s
+}
+
+func advance(s Session, q Question, v Verdict) (Session, Outcome) {
+	s = score(s, v)
 	s.Index++
 	s.Revealed, s.Graded = false, false
+	// ... unchanged ...
+}
 ```
 
 - [ ] **Step 4: Run it**
@@ -215,9 +290,7 @@ git commit -m "#24: y grades a hidden word and advances"
 ```go
 // A miss earns the definition, and earns it WITHOUT advancing.
 func TestWrongBeforeRevealRecordsAndReveals(t *testing.T) {
-	s := NewSession([]Question{&fakeForm{word: "one"}, &fakeForm{word: "two"}})
-
-	next, outs := Apply(s, Input{Kind: InputRune, Rune: '2'})
+	next, outs := Apply(twoQuestions(), rune_('n'))
 
 	if len(outs) != 2 {
 		t.Fatalf("outcomes = %+v, want two: the record and the reveal", outs)
@@ -235,15 +308,40 @@ func TestWrongBeforeRevealRecordsAndReveals(t *testing.T) {
 	if !next.Revealed || !next.Graded {
 		t.Errorf("Revealed=%v Graded=%v, want both true", next.Revealed, next.Graded)
 	}
+	// PQ-1: scored WITHOUT advancing. The first draft recorded the event and left
+	// the tally at zero, so a session of three misses ended "0 right, 0 wrong".
+	if next.Wrong != 1 {
+		t.Errorf("Wrong = %d, want 1 — a miss counts even though it does not advance", next.Wrong)
+	}
+}
+
+// PQ-2: Enter and space are the keys a user already reaches for, and toInput
+// maps BOTH to InputReveal — so without an arm for the graded state they would
+// be dead exactly where the prompt says "any key = next word".
+func TestEnterAndSpaceMoveOnAfterAMiss(t *testing.T) {
+	s, _ := Apply(twoQuestions(), rune_('n'))
+
+	next, outs := Apply(s, reveal)
+
+	if next.Index != 1 {
+		t.Errorf("Index = %d, want 1 — Enter/space must move on once the answer is up", next.Index)
+	}
+	for _, o := range outs {
+		if o.Kind == OutcomeRecord {
+			t.Errorf("moving on recorded %+v a second time", o)
+		}
+	}
+	if next.Wrong != 1 {
+		t.Errorf("Wrong = %d, want 1 — advancing must not re-score", next.Wrong)
+	}
 }
 
 // The verdict is recorded ONCE. Answering again is the learner moving on, not a
 // second assessment — Fold would read a duplicate as a second review.
 func TestAKeyAfterAMissAdvancesWithoutRecordingAgain(t *testing.T) {
-	s := NewSession([]Question{&fakeForm{word: "one"}, &fakeForm{word: "two"}})
-	s, _ = Apply(s, Input{Kind: InputRune, Rune: '2'})
+	s, _ := Apply(twoQuestions(), rune_('n'))
 
-	next, outs := Apply(s, Input{Kind: InputRune, Rune: '2'})
+	next, outs := Apply(s, rune_('n'))
 
 	for _, o := range outs {
 		if o.Kind == OutcomeRecord {
@@ -273,9 +371,7 @@ stays in `advance` and only in `advance`.
 // Space still reveals without grading, for a learner who wants to check before
 // rating. This is the OLD flow, still available, just no longer mandatory.
 func TestRevealWithoutGradingThenGrade(t *testing.T) {
-	s := NewSession([]Question{&fakeForm{word: "one"}, &fakeForm{word: "two"}})
-
-	s, outs := Apply(s, Input{Kind: InputReveal})
+	s, outs := Apply(twoQuestions(), reveal)
 	if len(outs) != 1 || outs[0].Kind != OutcomeReveal {
 		t.Fatalf("outcomes = %+v, want one OutcomeReveal", outs)
 	}
@@ -283,7 +379,7 @@ func TestRevealWithoutGradingThenGrade(t *testing.T) {
 		t.Error("a reveal graded the question; revealing is not answering")
 	}
 
-	next, outs := Apply(s, Input{Kind: InputRune, Rune: '1'})
+	next, outs := Apply(s, rune_('y'))
 	if len(outs) != 1 || outs[0].Kind != OutcomeRecord || outs[0].Verdict != Correct {
 		t.Errorf("outcomes = %+v, want one Correct record", outs)
 	}
@@ -324,13 +420,10 @@ func TestDropWorksInEveryState(t *testing.T) {
 		{"after a miss", []Input{{Kind: InputRune, Rune: 'n'}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := NewSession([]Question{&fakeForm{word: "one"}, &fakeForm{word: "two"}})
-			for _, in := range tc.pre {
-				s, _ = Apply(s, in)
-			}
+			s, _ := drive(twoQuestions(), tc.pre...)
 			next, outs := Apply(s, Input{Kind: InputDrop})
-			if len(outs) != 1 || outs[0].Kind != OutcomeDrop || outs[0].Word != "one" {
-				t.Fatalf("outcomes = %+v, want one OutcomeDrop for \"one\"", outs)
+			if len(outs) != 1 || outs[0].Kind != OutcomeDrop || outs[0].Word != "obsequious" {
+				t.Fatalf("outcomes = %+v, want one OutcomeDrop for \"obsequious\"", outs)
 			}
 			if next.Index != 1 {
 				t.Errorf("Index = %d, want 1", next.Index)
@@ -386,9 +479,9 @@ arm must not run after `advance` has moved on.
 - [ ] **Step 2: Build and run the existing loop tests**
 
 Run: `go build ./... && go test ./cmd/define/ -run "Play|Session|Drop|Reveal"`
-Expected: PASS. Two existing tests assert the OLD flow and must be updated, not
-deleted — `TestUngradedKeyNeverReachesTheCapturer` (a key the form does not
-grade still records nothing) and any test pressing Enter before `y`.
+Expected: PASS, all of them. The loop tests drive the peek path (`"\ry"`), which
+is unchanged, so none of them encode the reversed premise — that one lives in
+`cmd/define/play/session_test.go` and is handled in Task 2 Step 2b (PQ-3).
 
 - [ ] **Step 3: Commit**
 
@@ -564,7 +657,18 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 	if !strings.Contains(unstyled(missed), "sikəˈfan(t)ik") {
 		t.Errorf("n did not put the definition on screen:\n%q", missed)
 	}
-	if bad := bareNewlines(first + missed); bad != 0 {
+	if !strings.Contains(unstyled(missed), "any key = next word") {
+		t.Errorf("the graded prompt did not appear:\n%q", missed)
+	}
+
+	// PQ-2, on a real terminal: space is what a user presses, and it travels as
+	// InputReveal. This is the assertion that would have caught it dead.
+	f.WriteString(" ")
+	moved := out.take(2 * time.Second)
+	if !strings.Contains(unstyled(moved), "0 right, 1 wrong") {
+		t.Errorf("space did not move on from the missed word:\n%q", moved)
+	}
+	if bad := bareNewlines(first + missed + moved); bad != 0 {
 		t.Errorf("%d bare newline(s) — the CRLF cascade is back", bad)
 	}
 }
@@ -598,8 +702,12 @@ git commit -m "#24: the new flow, checked on a real terminal"
 - [ ] **Step 1: Grep for every site that describes the flow**
 
 ```bash
-grep -rn "to reveal\|Enter or space" README.md atlas/ cmd/define/ workshop/issues/
+grep -rn "to reveal\|Enter or space\|cannot rate what they have not seen\|before reveal" \
+  README.md atlas/ cmd/define/ workshop/issues/ workshop/plans/
 ```
+
+The second and third patterns are what reach `atlas/define.md:1284` and the
+session's own comments; the first alone misses them (PQ-3).
 
 Fix every hit this returns. **Build the list from what the grep returns, not from
 memory** — #6 BR-44 and BR-48 were both "the correction reached two artifacts of
