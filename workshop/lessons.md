@@ -1133,6 +1133,36 @@ exact command it named.
   path". A table guards the axes it enumerates and nothing else, so when you add
   a dimension, the table is stale even though every row in it still passes.
 
+## A bound derived from an input set must come from the subset that can use it (define #21 close)
+
+`MaxPhraseWords` is the only input to the streaming writer's hold arithmetic, and
+it counted the tokens of EVERY deck key. But a key whose tokens cannot rejoin —
+`e.g.`, or `rock 'n' roll`, whose gaps carry an apostrophe — can never match
+anything, so it widened the tail every stream holds in exchange for nothing.
+Measured: a single-word deck held 5 bytes; adding the unmatchable `e.g.` held 9,
+the same cost as a real three-token phrase.
+
+- **A maximum taken over a set is a claim about that set's useful members.** Ask
+  which members can actually exercise the bound, and take the max over those.
+- **The subtle member is the one that LOOKS usable.** `rock 'n' roll` tokenizes
+  to three words, so a punctuation check would have admitted it; only asking "do
+  these tokens rejoin under the real matching rule" rejects it.
+
+## A concurrency comment is a claim, and the suite cannot falsify it by accident (define #21 close)
+
+`memVocabulary`'s doc comment gave a premise ("the two accesses are genuinely
+concurrent") and a conclusion ("so it is mutex-guarded"). Measurement contradicted
+both: the loop's goroutines carry values over channels and none touch a
+vocabulary, so every access ran on one goroutine — and `storeVocabulary` had added
+an UNGUARDED `loaded bool` that `vocabularyFor` writes on every render. Driving it
+from eight goroutines under `-race` reported a race immediately.
+
+- **`go test -race` proves nothing about code no test runs concurrently.** A
+  clean race run over single-goroutine tests is evidence about the tests, not the
+  type. A type that claims safety needs one driver that would fail without it.
+- **Embedding inherits the lock but not the discipline.** The mutex was on the
+  embedded struct; the new field beside it was bare, and nothing connected them.
+
 ## Line numbers and mutation claims in a plan are code that nothing compiles (define #21 close)
 
 One finding stayed open for FIVE rounds — the longest-lived of the issue — because

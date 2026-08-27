@@ -43,8 +43,17 @@ type Vocabulary interface {
 // memVocabulary is the in-memory set, and the only implementation of the set
 // itself — storeVocabulary embeds it rather than growing a second one.
 //
-// Mutex-guarded because the two accesses are genuinely concurrent: the capture
-// path Adds a word as a lookup completes while the editor's render reads.
+// Mutex-guarded, and the honest reason is narrower than the one this comment
+// used to give. It claimed the capture path and the render run concurrently;
+// measurement says otherwise — the loop's goroutines carry values over channels
+// and none of them touch a vocabulary, so every Add/Has runs on the loop
+// goroutine today. The lock is here so the type stays safe if that changes,
+// which is a defensible reason to keep it but not a description of what happens.
+//
+// storeVocabulary's `loaded` is guarded by the SAME mutex, not left bare beside
+// it: vocabularyFor calls Load on every render, so an unguarded flag was a real
+// data race the moment any second goroutine rendered — TestVocabularyIsSafeUnder
+// Concurrency drives it.
 type memVocabulary struct {
 	mu       sync.RWMutex
 	words    map[string]bool
@@ -67,13 +76,19 @@ func (v *memVocabulary) Add(word string) {
 		v.words = map[string]bool{}
 	}
 	v.words[key] = true
-	// Counted with wordRuns, not strings.Fields, so the set agrees with the
-	// tokenizer that will look it up. They diverge for any key holding other
-	// punctuation — `e.g.`, `9/11` — and such a key is currently UNMATCHABLE
-	// whichever way it is counted, because phraseGap allows only spaces and tabs
-	// between a phrase's tokens. TestAPunctuatedKeyIsNotMatchable pins that as
-	// known behaviour rather than leaving M2 to rediscover it.
-	if n := len(wordRuns(key)); n > v.maxWords {
+	// Counted with wordRuns, so the set agrees with the tokenizer that will look
+	// it up — and counted ONLY for keys whose tokens can actually rejoin.
+	//
+	// A key holding other punctuation (`e.g.`, `9/11`) is permanently
+	// unmatchable, because phraseGap allows only spaces and tabs between a
+	// phrase's tokens. Letting it raise maxWords anyway made every stream hold a
+	// wider window for a match that can never happen: measured on "the quick
+	// brown fox jumps", a single-word deck holds 5 bytes and adding the
+	// unmatchable `e.g.` holds 9 — the same cost as a real three-token phrase.
+	// A bound derived from an input set must come from the subset that can
+	// exercise it. TestAPunctuatedKeyIsNotMatchable pins the matching half.
+	runs := wordRuns(key)
+	if n := len(runs); n > v.maxWords && phraseRunsJoin(key, runs) {
 		v.maxWords = n
 	}
 }
@@ -109,10 +124,16 @@ func newStoreVocabulary(st store.Store, warn io.Writer) *storeVocabulary {
 // A deck that cannot be read leaves the set EMPTY and warns. Highlighting is
 // decoration; it must never be the reason a lookup fails or the program stops.
 func (v *storeVocabulary) Load() {
-	if v.loaded || v.st == nil {
+	if v.st == nil {
+		return
+	}
+	v.mu.Lock()
+	if v.loaded {
+		v.mu.Unlock()
 		return
 	}
 	v.loaded = true
+	v.mu.Unlock()
 	deck, err := v.st.Deck()
 	if err != nil {
 		v.warnf("could not read the deck for highlighting: %v", err)

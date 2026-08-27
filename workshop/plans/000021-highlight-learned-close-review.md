@@ -384,3 +384,149 @@ findings:
       from the subset that can actually exercise it — bump maxWords only for keys whose
       own tokens rejoin.
 ```
+
+---
+
+## Re-review — 2026-08-26T18:34:03-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 21 — highlight the words you are learning wherever they appear |
+| repo | tools |
+| issue file | workshop/issues/000021-highlight-learned.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 0207e7ef24414534b308a2296fb148b1740814ee..6300136c98a7c976996ea5ab2ed170aae4cfcc0c |
+| command | sdlc close --issue 21 |
+| reviewer | claude |
+| timestamp | 2026-08-26T18:34:03-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The feature is done and I have strong independent evidence it is correct — not from the commit messages, but from an adversarial differential I wrote from scratch: every one of the 32 real corpus entries rendered with colour ON, deck derived from that entry's own 1–3-token windows, fed through the writer **byte-at-a-time** and compared against one call — 0 mismatches, no visible text changed. On top of that: four fuzz targets clean at ~0.9–1.6M execs each, `go test -race ./cmd/define/` green, full suite green, `go vet`/`gofmt`/build clean, tree clean, all 8 Done-when rows and all plan steps ticked. Two of the nine open findings are genuinely closed this round and I verified both by mutation (BR-20's vacuity guard now fires; BR-16's three *named* residues are gone). What keeps this from SHIP is that **the other seven open findings were not touched at all** — the round's single commit changed one test file and four docs — and one of them, BR-33, is a correct fix shipping unpinned for the third consecutive round: I reverted it to `defer hw.Flush()` and the *entire* suite stayed green, then confirmed in both directions that a 12-line test using the package's existing `shortWriter` kills that mutant. Nothing here is a correctness bug; all of it is pinning and record-keeping.
+
+## 1. Strengths
+
+- **BR-20's guard is real and it bites.** `cmd/define/highlightwriter_test.go:350,357` — swapping the deck for `vocab("zzzznotinanycorpusentry")` now fails with *"no entry in the corpus highlighted anything"*. Measured at HEAD: 6 of 32 entries highlight, logged. That closes a finding that was open four rounds, and the `t.Logf` makes a future corpus refresh visible rather than silent.
+- **The writer holds up under a corpus differential it was never tuned for.** `fuzzDeck` is hand-curated (class × position × phrase length); my probe replaced it with decks derived from each entry's own text — every phrase the corpus actually contains — and split at every byte. Clean across all 32. That is independent confirmation that BR-13/BR-23's release rules are right, not just that the shipped fixtures agree with them.
+- **`Task 8 Step 6` was corrected instead of ticked.** The plan step claimed dropping the flush reddens a named test; measurement says it reddens nothing, and the step now says so at length. A ticked mutation claim *is* an assertion, and correcting one against measurement is exactly the discipline this issue's ledger has been asking for.
+- **The ARCH-PURPOSE shadow-sweep is exact.** One `Vocabulary.Has` call site in the whole tree (`highlight.go:132`); three production `knownOn` consumers (`editor.go:208`, `render.go:93`, `ask.go:171`); one `Load()` site, inside `vocabularyFor` (`vocab.go:160`). No hand-maintained restatement of the set anywhere — #22's swap really is one constructor.
+- **`Render`'s `prose(s, base)` wiring is correct at every emit site**, which I checked rather than assumed: the gloss follows `marker`'s `p.off` (plain → `base: ""`), the example sits inside `p.ex` (→ `base: p.ex`), section text follows the section name's `p.off` (plain → `""`). The BR-24-class "wrong base" bug has no second instance.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None newly raised. **BR-16 remains open at its sixth round** and is disposed `not-addressed` below, with three live residues measured at HEAD.
+
+## 4. Minor findings
+
+**The `Vocabulary` seam advertises concurrency safety it does not have, and a concurrency claim is the one kind of behaviour claim nothing in this package can falsify** — `cmd/define/vocab.go:46-47`, `:100`, `:112-115`.
+
+> **This is the 11th finding in family `behaviour-claimed-without-a-failing-test`.** Do NOT fix only this instance.
+
+`memVocabulary`'s doc comment states a premise and a conclusion, and measurement contradicts both:
+
+- *Premise* — "the two accesses are **genuinely concurrent**: the capture path Adds a word as a lookup completes while the editor's render reads." Not true today. All three production goroutines (`rawterm.go:55` key reader, `repl.go:196` signal fan-out, `repl.go:362` `scanLines`) carry values over channels and touch no vocabulary; every `Add`/`Has` runs on the loop goroutine.
+- *Conclusion* — that the type is therefore safe. Also not true. `storeVocabulary` embeds `memVocabulary` and adds an **unguarded** `loaded bool`, and `vocabularyFor` calls `Load()` on *every* render. Driving `Load`/`Add`/`Has` from 8 goroutines under `-race` reports a data race immediately: read at `vocab.go:112`, write at `vocab.go:115`. The suite's `-race` run is clean only because the premise is false.
+
+So the comment is a safety licence that would be acted on and then fail. **THE RULE, one notch wider than the family has yet stated it:** round 6 established that the falsifying observation is *production output bytes* for a wiring claim and *a counting/spying double* for a guard whose effect is absence. This adds the third kind — **a concurrency claim's falsifier is a `-race` driver**, and this package owns none, so every such claim in it is unpinned by construction. The enumeration to sweep is the synchronisation claims in `cmd/define`: `memVocabulary.mu`, `storeVocabulary.loaded`, `storeHistory.mu`, `storeCapturer.mu`/`warned`. Either guard `loaded` (`sync.Once`, or the existing mutex) and add one `-race` driver that would fail without it, or state the real invariant — "single-goroutine today; the mutex is defensive" — so the comment stops licensing something the type cannot support.
+
+## 5. Test coverage notes
+
+- **Mutations run this round** (full suite each, in a scratch export of HEAD; the four `repo_guard` failures are `.git`-absence noise present in the unmutated control): **3 killed** — unmatchable deck → `TestHighlightingLosesNothing`; `highlightRegion` drops a byte → same test (so plan Task 7 Step 6's ticked mutation claim is *true*, unlike Step 6 of Task 8); `-no-color` prints no answer → 7 tests. **1 survived** — BR-33's `defer hw.Flush()` revert, full suite green.
+- **One absence assertion in the window has no liveness guard, and its own sibling does.** `TestStreamedAnswerCarriesNoEscapesWithoutColour` (`askhighlight_test.go:199`) asserts only the *absence* of `\x1b`, so an empty `out` passes it. `TestDefinitionHighlightingIsOffWithoutColour` (`highlightwriter_test.go:314-319`), written in the previous milestone, pairs the same absence check with `if !strings.Contains(out.String(), "obsequious")`. Measured prevalence: 1 of 5 absence-of-escape assertions in `cmd/define` lacks a liveness guard. I am **not** raising this as a finding — I mutated production so `-no-color` prints nothing at all, and 7 other tests caught it, so the behaviour is covered and this is hygiene, not a hole. Worth one line when the file is next touched.
+- Fuzz at HEAD: `FuzzHighlightWriterIsChunkIndependent` 950k, `FuzzHighlightSpans` 1.12M, `FuzzWordRuns` 942k, `FuzzTrailingSegments` 1.57M — all clean; corpus additions land in GOCACHE, tree unchanged.
+- `TestEveryStreamExitPathFlushes` still names five paths in prose and tables three (BR-37).
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — flag (BR-9 only).** `capture.go:132` writes `"define: "+format+"\n"` itself while `warnTo`'s doc comment (`vocab.go:130`) says it is "the one place the prefix and the trailing newline are written". Two of three seams wrap it; the comment is the finding as much as the literal is. Everything else consolidates cleanly: one tokenizer, one matcher, one writer for both styled surfaces, `phraseGapOrEmpty` delegating to `phraseGap`, `stripANSI` deferring to `scanEscape`, `storeVocabulary` embedding `memVocabulary`, `wordsOf` in the leak test calling production `wordRuns`.
+- **ARCH-PURE — pass.** `wordRuns`, `highlightSpans`, `sgrState`, `scanEscape`, `decidedEnd`, `tokenStillOpen`, `trailingSegments`, `matchesFor`, `historyCompletions` are pure and unit-tested with no IO. `Render` takes `Vocabulary` as injected data; the single IO decision (load + colour) is isolated in `vocabularyFor` and pinned by a counting double. `runAsk` stays the thin shell — the writer is built at the boundary and injected as an `io.Writer`, and `answer` accumulates raw deltas, so no escape reaches `recordExchange` → `gatherAskContext` → the next prompt.
+- **ARCH-PURPOSE — pass on the feature, flag on the record.** Shadow-sweep exact (§1). All three Spec surfaces highlight through one predicate on all three entry paths, verified end-to-end with an *unloaded* set. The flag is the disposition pattern: seven of nine open findings were not worked at all this round, and BR-33 answers the finding's *site* (the code is right) without its *class* (nothing pins it) — three rounds running.
+- **ARCH-MOCK — pass.** No new external dependency. The answer arrives through `llmtest.Fake` replaying a committed capture (and `splitWordInCapture` refuses to invent streamed text, which the fake genuinely cannot serve); `store.NewMem()` is the portable non-production backend; `crlfWriter`/`shortWriter`/`failAfter` sit at the same `io.Writer` boundary production uses. Live conformance suites for the dependencies (`internal/llm/capture_conformance_test.go`, `cmd/define/pty_conformance_test.go`) are untouched and still apply.
+- **For #22:** `memVocabulary` still has no removal path — `Add` only. Narrowing to actively-learned words means the set must *shrink* mid-session as a word graduates, and nothing above the seam is prepared for a `Has` that flips true→false while the writer is mid-hold. Decide that at #22's plan gate, not in its writer. BR-38 is the other thing to settle first: `MaxPhraseWords` is the streaming hold budget now, and #22 changing what is in the set changes that budget.
+
+## 7. Plan revision recommendations
+
+One `## Revisions` entry — "close boundary round 3: the plan-claim sweep, finished by its own rule":
+
+- **`plan:43` and `plan:241`** both place `RenderLine`'s tests in `cmd/define/editor_test.go`; they are in `cmd/define/highlight_test.go`. This is the same Files-block class BR-16 named and round 7 fixed for Tasks 5/6/7/8 — Task 4 was skipped, and it is the *only* Task whose `Test:` line is still wrong.
+- **`plan:243` (Task 4 Step 1, ticked)** instructs "assert the output contains `knownOn + "obsequious"`". `workshop/lessons.md` — extended in this very commit — names that exact shape as the trap ("aliasing `knownOn = inputOn` … leaves it green"), and the shipped test correctly writes the literal `"\x1b[1;32mobsequious"`. A ticked step whose stated method the issue's own lesson forbids is the third kind of rotting claim, alongside line numbers and twice-stated contracts.
+- **`plan:91` and `plan:330`** still carry code line numbers (`store/word.go:29-31`, `internal/llm/llmtest/fake.go:188-215`, `:461-472`) against the rule this commit wrote down — "cite the file and the symbol; drop the number". I verified all three are accurate *today*; they are cross-package references this issue does not own, so they are the ones most likely to rot first.
+- Record BR-33's decision as **delivered and unpinned**, with the `shortWriter` test as the outstanding step, and put the decision in the atlas's own `Flush` paragraph rather than only in the plan — a decision recorded where the reader of the mechanism will not find it is the same shape as BR-34.
+
+```findings
+dispose:
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Unchanged for a third round — capture.go:132 still writes "define: " itself while warnTo's comment (vocab.go:130) claims to be the one place it is written.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      6th round. The three named residues ARE fixed; three live ones remain by the commit's own stated rule — plan:43/:241 place RenderLine's tests in editor_test.go (they are in highlight_test.go), plan:243 instructs the knownOn+"text" assertion shape that this commit's own lessons.md entry forbids, and plan:91/:330 still carry code line numbers.
+  - id: BR-20
+    disposition: addressed
+    note: |
+      Verified by mutation — an unmatchable deck now reddens TestHighlightingLosesNothing at the hits==0 guard; measured 6 of 32 entries highlight and the count is logged.
+  - id: BR-33
+    disposition: not-addressed
+    note: |
+      3rd round. Reverting to `defer hw.Flush()` leaves the ENTIRE suite green (full run at HEAD). Verified both ways that a 12-line test driving runAsk into the package's existing shortWriter and asserting "could not be fully written" passes on HEAD and fails on the revert. The errOut-before-flush ordering half is also still unchanged and unrecorded.
+  - id: BR-34
+    disposition: not-addressed
+    note: |
+      Unchanged — atlas/define.md's highlight section never mentions highlightSetFor or the command-namespace withhold, and the Flush paragraph still describes the defer without the stderr report the code now emits.
+  - id: BR-35
+    disposition: not-addressed
+    note: |
+      Unchanged — atlas/define.md:513-515 still reads `...and` / `The enumeration that` / `guards it is ...`, a dangling conjunction followed by an orphaned capitalised clause broken mid-phrase.
+  - id: BR-36
+    disposition: not-addressed
+    note: |
+      Unchanged — askhighlight_test.go:3-13 still puts the store import between encoding/json and strings, and re-verified that no Makefile, Makefile.workflow, scripts/ or .github/workflows target runs gofmt or goimports anywhere in the repo.
+  - id: BR-37
+    disposition: not-addressed
+    note: |
+      Unchanged — the exit-path table is still {clean, cancelled-before-any-delta, truncated}. Re-measured the missing path with color:true and Stall:true through the real wiring: 43 bytes, ends in a newline, highlight intact, so it is coverage rather than a bug.
+  - id: BR-38
+    disposition: not-addressed
+    note: |
+      Unchanged — reproduced the measurement at HEAD on "the quick brown fox jumps": single-word deck holds 5 bytes, adding the unmatchable `e.g.` holds 9, adding the unmatchable `rock 'n' roll` holds 15, identical to a REAL three-token phrase.
+findings:
+  - id: new
+    severity: Minor
+    family: behaviour-claimed-without-a-failing-test
+    title: |
+      The Vocabulary seam advertises concurrency safety it does not have, and nothing in the package can falsify a concurrency claim
+    detail: |
+      This is the 11th finding in family `behaviour-claimed-without-a-failing-test`. Do NOT
+      fix only this instance. memVocabulary's doc comment (vocab.go:46-47) states a premise
+      and a conclusion and measurement contradicts both. Premise: "the two accesses are
+      genuinely concurrent" — false today; the three production goroutines (rawterm.go:55,
+      repl.go:196, repl.go:362) carry values over channels and touch no vocabulary, so every
+      Add/Has runs on the loop goroutine. Conclusion, that the type is therefore safe —
+      also false: storeVocabulary embeds it and adds an UNGUARDED `loaded bool`
+      (vocab.go:100), while vocabularyFor calls Load() on every render. Driving
+      Load/Add/Has from 8 goroutines under -race reports a data race immediately: read at
+      vocab.go:112, write at vocab.go:115. The suite's -race run is clean only because the
+      premise is false, so the comment is a safety licence that fails the moment anyone
+      acts on it. THE RULE, one notch wider than the family has stated it: round 6
+      established the falsifier is production output bytes for a wiring claim and a
+      counting/spying double for a guard whose effect is absence. A CONCURRENCY claim's
+      falsifier is a -race driver, and this package owns none, so every such claim in it is
+      unpinned by construction. The enumeration to sweep is the synchronisation claims in
+      cmd/define: memVocabulary.mu, storeVocabulary.loaded, storeHistory.mu,
+      storeCapturer.mu/warned. Either guard `loaded` and add one -race driver that fails
+      without it, or state the real invariant so the comment stops licensing what the type
+      cannot support.
+```

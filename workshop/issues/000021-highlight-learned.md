@@ -399,3 +399,19 @@ this spec's central decision — the predicate seam.
   word, so 26 compared identical strings and an unmatchable deck left it green.
   Now counts hits, fails at zero, and logs 6 of 32 so a corpus refresh that stops
   matching is visible.
+
+- 2026-08-26: close round 3 — the remaining ledger swept. BR-16 (6th round) is
+  the lesson of the issue: I wrote "sweep the class, not the list" and then swept
+  by the list again. Done mechanically this time — grep every `.go:NNN`, every
+  test-file placement, every instructed assertion shape — which found that the
+  plan still told a future implementer to write `knownOn + "text"`, the exact
+  vacuous shape my own lessons.md entry forbids and the one that let M1's
+  mutation survive. Real defects found this round too: `storeVocabulary.loaded`
+  was UNGUARDED while vocabularyFor calls Load on every render — a genuine data
+  race that the suite's -race run could never see, because every existing test
+  drives one goroutine; and MaxPhraseWords counted keys that can never match
+  (`e.g.`, `rock 'n' roll`, whose gaps carry an apostrophe), widening the tail
+  every stream holds for nothing. Both pinned by mutation. Also: the poison
+  report is now tested rather than asserted in a comment, the exit-path table
+  gained its fifth cell, and the atlas gained highlightSetFor and the stderr
+  report.

@@ -88,7 +88,7 @@ because they are behaviour, not accidents:
 - `hot\x1b[0m dog` does not match `hot dog` — a phrase whose halves are styled
   differently is not a phrase. This is what makes rule 1 implementable.
 - A phrase does not match across a line break. `store.Key` collapses all
-  whitespace (`store/word.go:29-31`), so a `Render`-wrapped `hot\n  dog` would
+  whitespace (`store.Key`), so a `Render`-wrapped `hot\n  dog` would
   otherwise form the candidate `hot dog` and paint a green run straight through
   the wrap indent.
 
@@ -238,9 +238,11 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 **Files:**
 - Modify: `cmd/define/editor.go` (`RenderLine`, palette)
 - Modify: `cmd/define/replraw.go` (pass the vocabulary)
-- Test: `cmd/define/editor_test.go`
+- Test: `cmd/define/highlight_test.go` (planned as `editor_test.go`; they sit with
+  the matcher's tests because they assert highlight bytes, and `editor_test.go`
+  keeps only the two call-shape updates)
 
-- [x] **Step 1: Write the failing test.** Drive `RenderLine` with a vocabulary containing `obsequious`, a line `what is obsequious`, `color=true`; assert the output contains `knownOn + "obsequious"` and that the run AFTER it returns to `inputOn` — the resume is the part a naive implementation gets wrong, and it is what keeps the rest of the line bold.
+- [x] **Step 1: Write the failing test.** Drive `RenderLine` with a vocabulary containing `obsequious`, a line `what is obsequious`, `color=true`; assert the output contains the LITERAL bytes `"\x1b[1;32mobsequious"` and that the run AFTER it returns to literal `"\x1b[0m\x1b[1m"` — the resume is the part a naive implementation gets wrong, and it is what keeps the rest of the line bold. **Not** `knownOn + "obsequious"`: that compares the constant against itself, so aliasing `knownOn` to `inputOn` — which removes every visible highlight — leaves it green. This step originally instructed exactly that shape, the mutation survived M1's sweep because of it, and lessons.md now forbids it. Add `knownOn != inputOn` as its own assertion: when the constant IS the deliverable, its distinctness is the claim.
 
 - [x] **Step 2: Write the no-colour test.** `color=false` must contain no escape codes at all. Assert on the absence of `"\x1b"`, not on the absence of the green code specifically — a test that only checks for green passes while emitting bold.
 
@@ -327,7 +329,7 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 - Test: `cmd/define/askhighlight_test.go` (new; kept out of `askrun_test.go` so
   the capture-derivation helper sits beside the tests that need it)
 
-- [x] **Step 1: Write the failing test — but NOT by scripting the answer.** `llmtest.Fake` cannot serve invented streamed text: `misapplied()` (`internal/llm/llmtest/fake.go:188-215`) rejects a scripted `Reply{Text}` on a streaming request with a 400, and `serveStream` (`:461-472`) always replays the committed capture. So the test must take its word FROM the capture. Add a helper that reads `stream-sample.sse`, reconstructs the full text and the delta boundaries, and returns a word that a boundary splits — the capture currently splits `rather` (`...authority r` / `ather than`) and `painstakingly` (`(painstak` / `ingly`), but derive it, do not hardcode it. Seed the vocabulary with what the helper returns. If the helper finds no split word, `t.Fatalf` with "re-record the capture or pick another" — a `t.Skip` there would let the test go quietly inert, which is the failure mode this plan's own lessons keep naming.
+- [x] **Step 1: Write the failing test — but NOT by scripting the answer.** `llmtest.Fake` cannot serve invented streamed text: `misapplied()` (`internal/llm/llmtest/fake.go`) rejects a scripted `Reply{Text}` on a streaming request with a 400, and `serveStream` always replays the committed capture. So the test must take its word FROM the capture. Add a helper that reads `stream-sample.sse`, reconstructs the full text and the delta boundaries, and returns a word that a boundary splits — the capture currently splits `rather` (`...authority r` / `ather than`) and `painstakingly` (`(painstak` / `ingly`), but derive it, do not hardcode it. Seed the vocabulary with what the helper returns. If the helper finds no split word, `t.Fatalf` with "re-record the capture or pick another" — a `t.Skip` there would let the test go quietly inert, which is the failure mode this plan's own lessons keep naming.
 
 - [x] **Step 2: Run to verify it fails. Step 3: Implement** by wrapping `out` in a `highlightWriter` for the duration of the stream.
 
@@ -461,7 +463,7 @@ constant instead, which is the property that was meant.
   through production code. The five-hop `Vocabulary` table is in lessons.md.
   Hop 2 is now pinned by `TestWithStoreCarriesTheHighlightSetThrough`, built on
   the `deps{newStore: openStore}.withStore(...)` pattern BR-31 already left in
-  `command_test.go:137`.
+  `command_test.go`'s `deps{newStore: openStore}.withStore(...)`.
 
 - **Task 8 Step 7's README job is now partly spent, and was spent wrongly.** A
   README paragraph was written at M1 that described definition bodies and
@@ -564,7 +566,7 @@ I had written one notch too narrow to cover the next instance.
   the hand-written table omitted — 11.
 - **BR-16 `plan-record-not-updated`, and BR-18's atlas sweep.** Round 1 fixed the
   rows the finding named and left the rest. Swept properly this time: Task 5/6/7
-  `Files` blocks, the `main.go:488` injection point, the fuzz target name, Task 7
+  `Files` blocks, the definition injection point in `main.go`, the fuzz target name, Task 7
   Step 2's invariant location, and every atlas sentence describing the definition
   path — which still said highlighting wraps the rendered string, the opposite of
   what round 1 built.

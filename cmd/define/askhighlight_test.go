@@ -125,6 +125,13 @@ func TestEveryStreamExitPathFlushes(t *testing.T) {
 		{"truncated mid-answer", func(f *llmtest.Fake) {
 			f.Script("", llmtest.Reply{Capture: streamCapture, JunkFrame: true})
 		}, false, false},
+		// The fifth cell: an upstream that goes silent without closing. Slow
+		// (it waits out the client timeout) but it is the one remaining exit
+		// path, and a table missing a row is the shape this issue kept being
+		// bitten by.
+		{"stalled upstream", func(f *llmtest.Fake) {
+			f.Script("", llmtest.Reply{Capture: streamCapture, Stall: true})
+		}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, fake, _, _ := askRig(t)
@@ -285,5 +292,23 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 				t.Errorf("no highlight in the answer on this entry path: %q", out.String())
 			}
 		})
+	}
+}
+
+// BR-33: the poison report itself. runAsk now checks Flush's error and says so
+// on stderr, because the writer poisons on first failure and one failed write
+// otherwise drops the REST of an answer in silence. Untested, that decision was
+// just a comment.
+func TestAPoisonedWriterIsReported(t *testing.T) {
+	d, fake, _, _ := askRig(t)
+	fake.Script("", llmtest.Reply{Capture: streamCapture})
+	d.vocab = vocab("obsequious")
+
+	var errOut bytes.Buffer
+	runAsk(t.Context(), d, options{color: true}, &session{},
+		question{text: "q?"}, &shortWriter{limit: 2}, &errOut)
+
+	if !strings.Contains(errOut.String(), "could not be fully written") {
+		t.Errorf("a failed write was swallowed: stderr = %q", errOut.String())
 	}
 }

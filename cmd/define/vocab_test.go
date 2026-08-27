@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -302,5 +304,65 @@ func TestNoColourReadsNoDeck(t *testing.T) {
 	}
 	if st.reads != 1 {
 		t.Errorf("read the deck %d times with colour on, want exactly 1", st.reads)
+	}
+}
+
+// BR-39: `loaded` was unguarded while vocabularyFor calls Load on every render,
+// so a second rendering goroutine raced it. Nothing in the package could have
+// caught that — every existing -race run drives one goroutine.
+func TestVocabularyIsSafeUnderConcurrency(t *testing.T) {
+	st := store.NewMem()
+	if err := st.Upsert(store.Word{Text: "obsequious"}); err != nil {
+		t.Fatal(err)
+	}
+	v := newStoreVocabulary(st, nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			v.Load()
+			v.Add(fmt.Sprintf("word%d", i))
+			_ = v.Has(store.Key("obsequious"))
+			_ = v.MaxPhraseWords()
+		}(i)
+	}
+	wg.Wait()
+
+	if !v.Has(store.Key("obsequious")) {
+		t.Error("the deck word did not survive concurrent access")
+	}
+}
+
+// BR-38: an unmatchable key must not widen the window every stream pays for.
+//
+// maxWords is the only input to the writer's hold arithmetic, so a key that can
+// never match still costs every stream a wider held tail. Measured on "the quick
+// brown fox jumps": a single-word deck holds 5 bytes, and adding the unmatchable
+// `e.g.` held 9 — the same as a real three-token phrase.
+func TestAnUnmatchableKeyDoesNotWidenTheHoldWindow(t *testing.T) {
+	v := &memVocabulary{}
+	v.Add("obsequious")
+
+	// Two tokens by wordRuns, but the gap is a period, so they can never rejoin.
+	v.Add("e.g.")
+	if got := v.MaxPhraseWords(); got != 1 {
+		t.Errorf("after an unmatchable key, MaxPhraseWords = %d, want 1", got)
+	}
+
+	// Subtler, and the reason the check is phraseRunsJoin rather than a
+	// punctuation test: apostrophes are word characters, so wordRuns sees THREE
+	// tokens here — but they are trimmed off the token edges, leaving gaps that
+	// carry an apostrophe, which phraseGap refuses. Unmatchable too.
+	v.Add("rock 'n' roll")
+	if got := v.MaxPhraseWords(); got != 1 {
+		t.Errorf("after an apostrophe-gapped key, MaxPhraseWords = %d, want 1", got)
+	}
+
+	// A real three-token phrase: plain spaces, so it can match and must count.
+	v.Add("in spite of")
+	if got := v.MaxPhraseWords(); got != 3 {
+		t.Errorf("MaxPhraseWords = %d, want 3 from the phrase that CAN match", got)
 	}
 }

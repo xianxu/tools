@@ -510,8 +510,7 @@ digits that `alnum()` would otherwise read as content.
 render path.** Highlighting needs the set LOADED, and `Load` used to live in
 `runEditor` — so `define <word>` and piped stdin rendered against an empty set
 and highlighted nothing, two of three entry paths dead while the suite was
-green. One function now owns "loaded, and only with colour", and
-The enumeration that
+green. One function now owns "loaded, and only with colour". The enumeration that
 guards it is **entry path × render surface**, not entry path alone:
 `TestEveryEntryPathHighlightsDefinitions` and
 `TestEveryEntryPathHighlightsAnswers`, each row driven with an UNLOADED set,
@@ -535,6 +534,13 @@ answer's own newline, or the trailing `Fprintln`), so deleting the defer leaves
 the suite green — `askhighlight_test.go` records that honestly rather than
 implying coverage, and names what a fake would need to make the fifth path
 reachable.
+
+**The command namespace is withheld, like every other boundary decision.**
+`highlightSetFor` hands `RenderLine` a nil vocabulary on a `/command` line, so a
+deck word sharing a command's name does not render green inside `/history 7`.
+`parseCommandLine`'s own comment calls `/` a separate namespace rather than a
+marker on a word, and #20 decides that namespace exactly once, on the whole
+line — highlighting inside it read as the vocabulary feature leaking across.
 
 **The set grows mid-session, from the one place that already knows.**
 `storeCapturer.Capture` adds a word after `Upsert` succeeds — the single site that
