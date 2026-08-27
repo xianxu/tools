@@ -1139,9 +1139,14 @@ stats screen disagreeing with the review queue. `masteryStreak` is 7 with a
 stated reason: reaching the last box takes 5 consecutive correct answers, so any
 N at or below that would make "mastered" mean "arrived".
 
-**The package is pure, and that is ENFORCED.** `schedule` imports `store` and
-`time` and nothing else; `TestScheduleImportsOnlyStoreAndTime` reads the import
-set and fails on anything more. The plan's first draft claimed a test needing a
+**The package is pure, and that is ENFORCED by two guards.** `schedule` imports
+`store` and pure standard-library packages only; one guard reads the import set
+against an allowlist, and a second greps for every wall-clock reader
+(`time.Now`, `time.Since`, `time.Until`, `time.After`, the timer constructors) —
+the hazard an import list structurally cannot see, since `time` is legitimately
+imported for its types. The allowlist itself was wrong first and fired on `sort`:
+it said "exactly two imports" when the claim is "no IO and no hidden clock", and
+a guard that reddens on correct code invites deleting the guard. The plan's first draft claimed a test needing a
 fake "would not compile", which is false — a Go test may import anything — and
 this repo has been bitten repeatedly by facts that lived only in comments. The
 caller does the IO: `#6` reads the deck and the log through the store seams, gets

@@ -43,11 +43,16 @@ func Queue(deck []store.Word, prog map[string]Progress, now time.Time, budget in
 			continue
 		}
 		p, seen := prog[key]
-		if Mastered(p) {
-			// Earned its way out of the rotation. Offering it is how a session
-			// fills with words the learner already knows.
-			continue
-		}
+		// Mastered words are NOT excluded, and the first version of this excluded
+		// them. Two things were wrong with that. It contradicted progress.go's own
+		// comment — "#6's --play decides what to stop offering" — by deciding here
+		// instead. And it made mastery ABSORBING: a word never offered can never be
+		// answered wrong, so it could never be demoted, and the learner's mastered
+		// count could only ever grow while their actual recall decayed.
+		//
+		// Nothing is needed to make mastered words rare: they sit at the 90-day
+		// interval, which is the ladder doing its job. Mastery is a status for
+		// reporting (#8) and for presentation (#6), not a removal.
 		if !Due(p, now) {
 			continue
 		}

@@ -4,11 +4,14 @@
 // personal tool "why is this due?" must be answerable in one sentence, and an
 // ease factor cannot be.
 //
-// ENTIRELY PURE. It imports store and time and nothing else — no IO, no clock of
-// its own, no state. That is not a stylistic preference: every question here is
-// date-driven, and a package that could reach a wall clock would be untestable
-// at exactly the point where correctness lives. TestScheduleImportsOnlyStoreAndTime
-// enforces it, because a comment cannot.
+// ENTIRELY PURE: no IO, no clock of its own, no state. It imports `store` and
+// pure standard-library packages only, and every instant arrives as a parameter.
+//
+// That is not a stylistic preference: every question here is date-driven, and a
+// package that could reach a wall clock would be untestable at exactly the point
+// where correctness lives. TWO guards enforce it, because a comment cannot — an
+// import allowlist, and a check that no wall-clock reader (`time.Now`,
+// `time.Since`, and the rest) appears in any non-test file.
 //
 // Schedule state is DERIVED from the event log, never stored beside it. store's
 // own event.go states the rule: the log is "deliberately the ONLY record of

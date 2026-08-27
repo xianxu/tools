@@ -88,9 +88,18 @@ func TestScheduleNeverReadsTheClock(t *testing.T) {
 			t.Fatalf("reading %s: %v", name, err)
 		}
 		checked++
-		if strings.Contains(string(b), "time.Now(") {
-			t.Errorf("%s calls time.Now — every `now` in this package must arrive as a parameter, "+
-				"or the caller cannot control the date and nothing here is testable", name)
+		// EVERY wall-clock reader, not one spelling. The first version grepped
+		// only "time.Now(" — and time.Since, time.Until, time.After and the timer
+		// constructors all read the same clock, so the guard covered one door in
+		// a room with six.
+		for _, banned := range []string{
+			"time.Now(", "time.Since(", "time.Until(",
+			"time.After(", "time.Tick(", "time.NewTimer(", "time.NewTicker(",
+		} {
+			if strings.Contains(string(b), banned) {
+				t.Errorf("%s calls %s — every instant in this package must arrive as a parameter, "+
+					"or the caller cannot control the date and nothing here is testable", name, banned)
+			}
 		}
 	}
 	if checked == 0 {

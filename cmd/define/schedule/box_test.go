@@ -2,13 +2,22 @@ package schedule
 
 import "testing"
 
-// Rows are the DECISIONS the box model makes, not one row per interval.
+// EVERY interval, not just the ends.
+//
+// The first version asserted box 0 and LastBox only, on the reasoning that rows
+// should be decisions rather than data. That was wrong here: the ladder IS the
+// model — it is what the Spec names and what a learner experiences — so a typo
+// in the middle of it would change the product and redden nothing.
 func TestBoxIntervals(t *testing.T) {
-	if got := IntervalDays(0); got != 1 {
-		t.Errorf("box 0 interval = %d days, want 1 — a word just answered should come back tomorrow", got)
+	want := []int{1, 3, 7, 14, 30, 90}
+
+	if got := LastBox; got != len(want)-1 {
+		t.Fatalf("LastBox = %d, want %d — the ladder changed and this test's expectation did not", got, len(want)-1)
 	}
-	if got := IntervalDays(LastBox); got != 90 {
-		t.Errorf("last box interval = %d days, want 90", got)
+	for box, wantDays := range want {
+		if got := IntervalDays(box); got != wantDays {
+			t.Errorf("box %d interval = %d days, want %d", box, got, wantDays)
+		}
 	}
 	// Out of range clamps rather than panicking: Fold reads boxes off an
 	// append-only log that a future version may have written differently.

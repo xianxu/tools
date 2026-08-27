@@ -88,9 +88,53 @@ func TestStartOfDayIsIdempotent(t *testing.T) {
 	}
 }
 
-// Counting days must survive a DST boundary, which is the property that makes
-// AddDate the right tool and a Duration the wrong one: a 23-hour day would make
-// "one day later" land at 23:00 the same evening.
+// MIXED LOCATIONS are the normal case, not an edge one: store timestamps keep
+// their own offsets (yaml.v3 parses them into FIXED zones) while `now` comes from
+// SystemClock in time.Local. The first version of DaysBetween compared instants
+// after taking each midnight in its OWN zone, so two instants on the same local
+// day counted as 1 apart — and Due reported a word due on the day it was
+// reviewed, for half the year.
+func TestDaysBetweenAcrossLocations(t *testing.T) {
+	la, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Skipf("no tzdata: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		a, b time.Time
+		want int
+	}{
+		{
+			"same local day, different zones",
+			time.Date(2026, 8, 3, 9, 0, 0, 0, time.UTC),
+			time.Date(2026, 8, 3, 20, 0, 0, 0, la),
+			0,
+		},
+		{
+			// A fixed zone is exactly what yaml.v3 produces for a stored stamp.
+			"across a DST transition, fixed zone against a named one",
+			time.Date(2026, 10, 30, 10, 0, 0, 0, time.FixedZone("PDT", -7*3600)),
+			time.Date(2026, 11, 5, 10, 0, 0, 0, la),
+			6,
+		},
+		{
+			"b's location defines the calendar",
+			time.Date(2026, 8, 4, 3, 0, 0, 0, time.UTC), // 2026-08-03 20:00 in LA
+			time.Date(2026, 8, 4, 12, 0, 0, 0, la),
+			1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := store.DaysBetween(tc.a, tc.b); got != tc.want {
+				t.Errorf("DaysBetween = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// Counting days must survive a DST boundary: a 23-hour day must not make "one
+// day later" land on the same evening.
 func TestDaysBetweenAcrossDST(t *testing.T) {
 	la, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {

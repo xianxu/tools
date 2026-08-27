@@ -125,9 +125,18 @@ func TestForgottenWordDoesNotReturn(t *testing.T) {
 	}
 }
 
-// A mastered word has earned its way out of the rotation; offering it is how a
-// review session fills with words the learner already knows.
-func TestMasteredWordsAreNotQueued(t *testing.T) {
+// Mastery is a STATUS, not an exit from the rotation.
+//
+// The first version of Queue excluded mastered words and this test asserted that.
+// Two things were wrong with it. It contradicted progress.go's own comment —
+// "#6's --play decides what to stop offering" — by deciding in the queue instead.
+// And it made mastery ABSORBING: a word never offered can never be answered
+// wrong, so it could never be demoted, and the learner's mastered count could
+// only grow while their actual recall decayed.
+//
+// Nothing is needed to make mastered words rare: they sit at the 90-day interval,
+// which is the ladder doing its job.
+func TestMasteredWordsStillComeRoundAtTheLongInterval(t *testing.T) {
 	var events []store.ReviewEvent
 	for i := 0; i < masteryStreak; i++ {
 		events = append(events, reviewed("known", true, at(i)))
@@ -136,11 +145,34 @@ func TestMasteredWordsAreNotQueued(t *testing.T) {
 	if !Mastered(prog[store.Key("known")]) {
 		t.Fatal("fixture is wrong: the word is not mastered, so this test asserts nothing")
 	}
+	last := prog[store.Key("known")].LastReviewed
 
-	got := Queue([]store.Word{word("known", 3, 0)}, prog, at(400), 10)
+	// Not due the day after mastery — the 90-day interval is what keeps it rare.
+	if got := Queue([]store.Word{word("known", 3, 0)}, prog, last.AddDate(0, 0, 1), 10); len(got) != 0 {
+		t.Errorf("queue = %v one day after mastery, want nothing", got)
+	}
+	// But it DOES come back, or mastery would be permanent and unverifiable.
+	if got := Queue([]store.Word{word("known", 3, 0)}, prog, last.AddDate(0, 0, 90), 10); keys(got) != "known" {
+		t.Errorf("queue = %v 90 days later, want the mastered word back — mastery must not be absorbing", got)
+	}
+}
 
-	if len(got) != 0 {
-		t.Errorf("queue = %v, want nothing — a mastered word is out of rotation", got)
+// The consequence that makes it matter: a mastered word CAN be demoted, so the
+// status reflects current recall rather than a high-water mark.
+func TestMasteryCanBeLost(t *testing.T) {
+	var events []store.ReviewEvent
+	for i := 0; i < masteryStreak; i++ {
+		events = append(events, reviewed("known", true, at(i)))
+	}
+	events = append(events, reviewed("known", false, at(200)))
+
+	p := Fold(events)[store.Key("known")]
+
+	if Mastered(p) {
+		t.Error("still mastered after forgetting it — the status is a high-water mark, not recall")
+	}
+	if p.Box != LastBox-1 {
+		t.Errorf("box = %d, want %d", p.Box, LastBox-1)
 	}
 }
 

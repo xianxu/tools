@@ -170,6 +170,28 @@ func TestMultiWeekSchedule(t *testing.T) {
 		events = append(events, reviewed(word, true, at(d)))
 	}
 
+	// A due-date assertion at EACH step, which the plan promised and the first
+	// version of this test did not do — it checked only the end state, so a wrong
+	// interval anywhere in the middle would have passed.
+	for i := range reviewDays {
+		p := Fold(events[:i+1])[store.Key(word)]
+		wantBox := i + 1
+		if wantBox > LastBox {
+			wantBox = LastBox
+		}
+		if p.Box != wantBox {
+			t.Fatalf("after %d correct answers box = %d, want %d", i+1, p.Box, wantBox)
+		}
+		iv := IntervalDays(p.Box)
+		reviewedOn := reviewDays[i]
+		if Due(p, at(reviewedOn+iv-1)) {
+			t.Errorf("box %d: due %d days after review, want not due until %d", p.Box, iv-1, iv)
+		}
+		if !Due(p, at(reviewedOn+iv)) {
+			t.Errorf("box %d: not due %d days after review", p.Box, iv)
+		}
+	}
+
 	p := Fold(events)[store.Key(word)]
 
 	if p.Box != LastBox {
@@ -239,4 +261,31 @@ func FuzzFold(f *testing.F) {
 			t.Fatalf("Fold is not idempotent: %+v then %+v", p, again)
 		}
 	})
+}
+
+// The consequence of the mixed-zone bug, pinned where a learner would feel it.
+//
+// A stored event stamp carries a FIXED offset (yaml.v3 parses it that way) while
+// `now` comes from the system clock in time.Local. Before store.DaysBetween
+// normalised, those two on the same local day counted as one day apart — so a
+// box-0 word reviewed this morning was offered again this afternoon, for half the
+// year. No existing test crossed zones, which is why it was green.
+func TestDueDoesNotFireOnTheDayOfReview(t *testing.T) {
+	la, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		t.Skipf("no tzdata: %v", err)
+	}
+	// Reviewed at 09:00 in a fixed-offset zone, as a stored stamp would be.
+	reviewedAt := time.Date(2026, 8, 3, 9, 0, 0, 0, time.FixedZone("PDT", -7*3600))
+	p := Progress{Box: 0, LastReviewed: reviewedAt} // box 0 waits 1 day
+
+	sameDayEvening := time.Date(2026, 8, 3, 20, 0, 0, 0, la)
+	if Due(p, sameDayEvening) {
+		t.Error("due the same evening it was reviewed — the schedule is counting a day that did not pass")
+	}
+
+	nextMorning := time.Date(2026, 8, 4, 8, 0, 0, 0, la)
+	if !Due(p, nextMorning) {
+		t.Error("not due the next calendar morning")
+	}
 }
