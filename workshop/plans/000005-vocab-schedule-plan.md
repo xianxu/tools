@@ -113,6 +113,17 @@
 
 - [ ] **Step 7: Mutation-check** that streak-reset-on-wrong, the box clamps, and the `EventReviewed`-only filter each redden a named test.
 
+- [ ] **Step 7b: Update `atlas/define.md` with M1's surface.** The first draft of
+      this plan scheduled ALL atlas work at M2 Task 3 Step 6, and the close gate
+      refused M1 for it — correctly. AGENTS.md §8 requires the atlas at EACH
+      milestone close, and M1 introduces a whole new package with real
+      architectural surface: the derived-not-stored decision, the ordering
+      contract, the calendar-day model, `Mastered`'s single definition. Deferring
+      is the end-of-project sweep §8 exists to prevent. **This is the second time
+      the same deferral has been made and refused — #21 M1 scheduled its atlas at
+      M3 and was refused identically.** M2 extends the section rather than writing
+      it.
+
 - [ ] **Step 8: `sdlc milestone-close --issue 5 --milestone M1`.**
 
 ## Chunk 2: M2 — the queue
@@ -128,7 +139,7 @@
 
 - [ ] **Step 5: Mutation-check** the tier order, the budget cap and the tie-break; each must redden a named test. The tier-order mutant is the one that matters: the fixture has to make the two orderings differ.
 
-- [ ] **Step 6: Atlas.** `atlas/define.md` gains the scheduling model: Leitner and why, derived-not-stored and why, the two tiers and the starvation rule they prevent. Link a new `atlas/` file from `atlas/index.md` only if this outgrows a section.
+- [ ] **Step 6: Atlas.** EXTEND the scheduling section M1 wrote — the two tiers and the starvation rule they prevent. Link a new `atlas/` file from `atlas/index.md` only if this outgrows a section.
 
 - [ ] **Step 7: `sdlc close --issue 5 --verified '<evidence>'`.**
 

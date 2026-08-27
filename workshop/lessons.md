@@ -1435,6 +1435,21 @@ failed the same way: too strong, red against entirely correct parsing.
 - **Seed the corpus with what refuted the old property.** Those three shapes are
   now seeds, so a future weakening fails here rather than in the wild.
 
+## The atlas is due at EACH milestone — twice refused now (define #5 M1)
+
+Second identical occurrence. `#21`'s plan scheduled all atlas work at M3 and the
+close gate refused M1 for it; I recorded the correction in that plan. `#5`'s plan
+then scheduled all atlas work at M2 and the gate refused M1 again.
+
+- **A plan that lists "atlas" once, at the end, is already wrong** whenever the
+  work has more than one milestone. AGENTS.md §8 says each close, and the gate
+  enforces it — so the plan should carry an atlas step per milestone from the
+  first draft, not acquire one after a refusal.
+- **Correcting the instance in one plan does not carry to the next plan.** The
+  fix lived in `#21`'s revision history where writing `#5`'s plan never looked.
+  A lesson entry is where a rule has to go to survive into the next issue, and
+  this is that entry.
+
 ## Doc prose at a boundary describes what THAT milestone shipped (define #21 M1)
 
 Round 1 flagged an atlas sentence claiming a path a later milestone builds. The
