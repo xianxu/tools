@@ -5,7 +5,7 @@ deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-26
-estimate_hours:
+estimate_hours: 8.22
 started: 2026-08-26T19:29:35-07:00
 ---
 
@@ -36,13 +36,122 @@ Google News **RSS**, behind a seam.
 ## Done when
 
 - [ ] Fetches, parses and caches; a second request for the same word is served
-      from cache.
-- [ ] The parser survives a malformed feed without taking down the session.
-- [ ] Live conformance asserts the feed shape and non-trivial coverage.
+      from cache — asserted on the fake's fetch COUNTER, not inferred from output.
+- [ ] A failed fetch is NOT cached, so a network blip does not become a permanent
+      empty answer for that word.
+- [ ] The parser survives a malformed feed without taking down the session, and
+      never returns an item it did not find in the input.
+- [ ] Only headlines that genuinely contain the word become usages — the feed
+      returns many that do not (measured 12-99 matching out of 41-100).
+- [ ] NOAD's own example sentences are available through the same seam and the
+      same `Usage` shape, tagged by source, with no network.
+- [ ] Live conformance asserts the feed shape and a coverage FLOOR.
+- [ ] `Mem` and `YAML` both satisfy the new store contract via `storetest.Suite`.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Durable plan: `workshop/plans/000009-vocab-news-plan.md` (three milestones; each
+`Mx` row is its own review boundary).
+
+- [ ] M1 — `parseRSS`, `Usage`, `containsWord`, and NOAD's examples as the second source
+- [ ] M2 — `Store.Usages`, the `NewsSource` seam, the caching wrapper, the stateful fake
+- [ ] M3 — wiring, `/usage` to see it, live conformance, docs
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187), one item per task in
+`workshop/plans/000009-vocab-news-plan.md` plus the process work inside the
+measured window. Design carries v2's ×0.2 spec-quality discount on every code
+item — the plan pre-resolves the raw/derived split, the three cache outcomes, the
+matcher delegation and the record shape, so what is left at design time is
+reading. Implementation is v3.1's 40% of the v2 table. Familiarity 1.0: same
+package, and `fetch.go`'s `httpAudioSource`/`cachingAudioSource` pair is the
+literal shape `httpFeed`/`cachingFeed` copies.
+
+`issue-spec` is `design=0.75`, which is the band's MIDPOINT × 1.5 — not "half the
+band", which an earlier draft claimed and which would be 0.5. The derivation is
+proportional: #21's block priced 1.50 for a 646-line plan; this one is 351 lines
+against a Spec that was already written and already revised once (2026-08-22,
+settling RSS-not-SERP and the second source), so roughly half of #21's authoring
+work. `impl=0.08` is the unhalved 40%-of-mid, because ticking and committing a
+plan costs the same whatever its length.
+
+**`real-api-discovery` is included at its FLOOR (0.12), consciously rather than
+by omission.** The v2 table carries a per-external-API discovery budget and this
+issue integrates a live feed — capturing a real fixture, building the URL, handling
+non-200, and a live conformance check against real Google output. Most of that
+discovery is already SPENT: the Spec measured the feed before planning (41–100
+items per word, 12–99 containing it) and measured the SERP alternative well enough
+to rule it out. What remains is mechanical, so the floor rather than the mid.
+
+**Review rounds are priced at #20's measured 0.5h — the only DIRECT measurement
+this repo has** — as `design=0.20 impl=0.30`. An earlier draft of this block cut
+that to 0.30h and claimed the basis was "#21's measurement". That overstated the
+evidence, and the correction is worth recording because it is the same optimistic
+drift I have been criticising elsewhere: #21 gives an upper BOUND (eleven rounds
+inside a 6.0h total ⇒ rounds under ~0.55h), which refutes #16's 0.9h but does not
+select 0.30 over 0.5. Halving the only measured value on the strength of a bound
+that merely permits it is not a derivation. Eight rounds are budgeted: two per
+boundary across M1, M2 and the close, plus the two plan rounds already spent.
+
+Sensitivity, stated because this line dominates the estimate: at 0.5h/round the
+eight rounds are 4.0h of an 8.22h total. Eleven rounds — #21's actual count —
+would add ~1.5h.
+
+**The two most recent rows disagree about direction, and my first attempt to
+reconcile them did not survive the ledger.** tools#21 est 9.28 / actual 6.00
+(1.55×, trusted) says I over-price; tools#16 est 6.49 / actual 17.63 (0.37×,
+trusted) says I under-price. The reconciliation worth testing is the
+estimate-quality judge's from #21: over-pricing in **design/process**,
+under-pricing in **implementation**. But the placement argument I built for it was
+wrong — I wrote that this block "sits between" a 54%-design #21 and an
+implementation-heavy #16, and the ledger's own columns say #16 was `3.12/6.49` =
+**48% design**, essentially this block's 49%. The spread is 48%→54% and this
+block sits on top of the 0.37× row, not between the two. The hypothesis may still
+hold; the argument that this estimate is safely positioned inside it does not, and
+the honest statement is that the design/impl split does not separate these two
+rows at all. Something else does, and this issue is another data point toward
+finding out what.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec             design=0.75 impl=0.08
+item: milestone-review       design=0.20 impl=0.30
+item: milestone-review       design=0.20 impl=0.30
+item: greenfield-go-module   design=0.25 impl=0.22
+item: greenfield-go-module   design=0.25 impl=0.22
+item: milestone-review       design=0.20 impl=0.30
+item: milestone-review       design=0.20 impl=0.30
+item: greenfield-go-module   design=0.25 impl=0.22
+item: smaller-go-module      design=0.03 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: smaller-go-module      design=0.03 impl=0.14
+item: milestone-review       design=0.20 impl=0.30
+item: milestone-review       design=0.20 impl=0.30
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: real-api-discovery     design=0.00 impl=0.12
+item: atlas-docs             design=0.03 impl=0.05
+item: milestone-review       design=0.20 impl=0.30
+item: milestone-review       design=0.20 impl=0.30
+design-buffer: 0.15
+total: 8.22
+```
+
+Item-to-task map. Process: plan authoring, then plan rounds 1 and 2 (both spent).
+**M1** — `greenfield` ×2 = Task 1 (`parseRSS` + its fuzz) and Task 2
+(`containsWord`/`usagesFrom`/`entryUsages`); then the M1 boundary and one
+fix-then-re-review. **M2** — `smaller` ×2 = Task 3's store methods and its
+conformance rows plus the corrupt-file test, itemised apart because the suite is
+work the methods do not do; `greenfield` = Task 4's `httpFeed` + `cachingFeed`
+with the three-outcome model; `smaller` = the fake; then the M2 boundary and one
+fix round. **M3** — `cross-cutting` = Task 5's wiring across `deps`, `storeDeps`,
+`openStore` and `withStore`; `smaller` = live conformance; `atlas-docs` = Task 6
+Step 2; then the close boundary and one fix round.
 
 ## Log
 
@@ -73,3 +182,21 @@ the operator raised general web search as an alternative usage source.
 
 **Unchanged.** Feed shape, the personal-use terms note, the stateful fake, the
 malformed-feed requirement, and live conformance on shape and coverage.
+
+### 2026-08-26
+
+Claimed and planned. The Spec needed no revision — the 2026-08-22 entry already
+settled the two questions that mattered (RSS not the SERP, measured; and NOAD's
+examples as a second source). What the plan adds is where the judgment lives:
+`containsWord` is the one place that decides whether a headline really contains
+the word, and it reuses `wordRuns` from #21 rather than growing the package's
+third tokenizer.
+
+Two decisions worth recording before implementation:
+
+- **The fake serves BYTES, not parsed usages.** A fake returning `[]Usage` would
+  skip `parseRSS` entirely, and the parser is where the risk is — malformed feeds
+  are a Done-when row.
+- **A failed fetch is not cached.** Caching it would turn one network blip into a
+  permanently empty answer for that word. That asymmetry is why the cache is its
+  own type rather than a flag on the HTTP source.
