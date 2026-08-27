@@ -462,7 +462,7 @@ They share the hard part: the text already carries ANSI codes, and it may arrive
 in pieces. A definition is a complete string; an answer arrives as stream deltas
 where `obsequious` can land as `obseq` + `uious`. Giving them separate
 implementations would mean two sets of ANSI-resume rules to keep in agreement.
-`Render` calls it per admitted REGION; the stream wraps its writer (M3).
+`Render` calls it per admitted REGION; the answer stream wraps its writer.
 
 Its contract, in the order the rules matter:
 
@@ -481,8 +481,8 @@ Its contract, in the order the rules matter:
    drags it back to that span's start. Plain text may be cut freely.
 4. **Downstream errors poison the writer.** The first failure is remembered and
    nothing is emitted after it, so no byte is written twice. A short write with a
-   nil error is a failure — `crlfWriter`, which M3 will nest this inside, produces
-   exactly that.
+   nil error is a failure — `crlfWriter`, which the raw loop nests this inside,
+   produces exactly that.
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
 `sgrState` is the pure half: it watches escapes go past and answers "what style
@@ -513,6 +513,22 @@ and highlighted nothing, two of three entry paths dead while the suite was
 green. One function now owns "loaded, and only with colour", and
 `TestEveryEntryPathHighlightsDefinitions` is the enumeration: one row per
 process entry path, each driven with an unloaded set.
+
+**The answer stream is the writer's other caller**, and the nesting order is
+fixed by what each writer needs. The raw loop has already wrapped stdout in
+`crlfWriter` before `ask` is called, so `runAsk` wraps THAT — highlighting sees
+logical text and CRLF translation applies to the final bytes, including the
+escapes highlighting inserted. Inverted, the highlighter would meet `\r\n` where
+it expects `\n`.
+
+The `Flush` is DEFERRED rather than written at each return, and that is
+structural: `runAsk` returns on five paths and held text is invisible until a
+flush, so a per-path flush is four chances to forget one silently-dropped last
+word. On four of those paths the hold is already released before the return (the
+answer's own newline, or the trailing `Fprintln`), so deleting the defer leaves
+the suite green — `askhighlight_test.go` records that honestly rather than
+implying coverage, and names what a fake would need to make the fifth path
+reachable.
 
 **The set grows mid-session, from the one place that already knows.**
 `storeCapturer.Capture` adds a word after `Upsert` succeeds — the single site that

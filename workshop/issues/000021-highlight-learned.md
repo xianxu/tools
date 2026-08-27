@@ -99,16 +99,16 @@ words you know", two renderers over it (ARCH-DRY, ARCH-PURE).
 
 ## Done when
 
-- [ ] A deck word in the line you are typing renders bold green; the rest is unchanged.
-- [ ] A deck word appearing in a definition body renders bold green, and the
+- [x] A deck word in the line you are typing renders bold green; the rest is unchanged.
+- [x] A deck word appearing in a definition body renders bold green, and the
       enclosing style resumes after it.
-- [ ] A deck word in a streamed LLM answer renders bold green even when it
+- [x] A deck word in a streamed LLM answer renders bold green even when it
       arrives split across chunks.
-- [ ] Matching is case-insensitive and covers multi-word headwords.
-- [ ] `-no-color` and piped output emit no highlight codes at all.
-- [ ] A word looked up during the session highlights immediately, without restart.
-- [ ] `Render`'s no-data-loss invariant still holds with highlighting on.
-- [ ] Every highlight decision routes through `Vocabulary.Has`, so #22 changes
+- [x] Matching is case-insensitive and covers multi-word headwords.
+- [x] `-no-color` and piped output emit no highlight codes at all.
+- [x] A word looked up during the session highlights immediately, without restart.
+- [x] `Render`'s no-data-loss invariant still holds with highlighting on.
+- [x] Every highlight decision routes through `Vocabulary.Has`, so #22 changes
       one place.
 
 ## Estimate
@@ -220,7 +220,7 @@ milestones; each `Mx` row below is its own review boundary).
 
 - [x] M1 — `Vocabulary` seam + pure matcher + typed line
 - [x] M2 — `highlightWriter` + definitions
-- [ ] M3 — LLM answers, streamed
+- [x] M3 — LLM answers, streamed
 
 ## Log
 
@@ -354,3 +354,17 @@ this spec's central decision — the predicate seam.
   source of truth nothing checks. And the fuzz deck gained a three-token phrase:
   third instance of "the deck is input too", one notch wider each time (class,
   then position, now phrase length).
+
+- 2026-08-26: M3 — the answer stream. The test derives its seeded word FROM the
+  committed capture rather than scripting one, because llmtest refuses an
+  invented literal on a streaming request; it found "rather", which the capture
+  delivers as "...authority r" + "ather than". Nesting pinned: highlighting sits
+  INSIDE crlfWriter, so it sees logical text while CRLF translation applies to
+  the final bytes including the escapes highlighting inserted. The deferred Flush
+  is documented HONESTLY rather than given the appearance of coverage — four of
+  runAsk five exit paths release the hold before returning (the answer own
+  newline, or the trailing Fprintln), so deleting the defer leaves the suite
+  green; the fifth (ErrRequest/ErrMalformed with partial text) is unreachable
+  through llmtest because Status short-circuits before any body and both
+  partial-then-fail shapes classify as ErrTruncated. The defer stays on
+  structure: five returns is four chances to forget.

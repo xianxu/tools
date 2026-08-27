@@ -155,6 +155,23 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 		return unavailable(errOut, q)
 	}
 
+	// Highlighting wraps `out` for the whole rest of this function, and the
+	// Flush is DEFERRED rather than placed at each return.
+	//
+	// That is structural, not stylistic: held text is invisible until it is
+	// flushed, and this function returns on five paths — clean, interrupted,
+	// unavailable-after-sending, truncated, and our-fault. A flush at each is
+	// four chances to forget and one silently dropped last word per miss. The
+	// defer covers a path added later too.
+	//
+	// Nesting order matters and is fixed by what each writer needs: the raw loop
+	// has already wrapped stdout in crlfWriter (replraw.go), so this sits INSIDE
+	// it — highlighting sees logical text and CRLF translation applies to the
+	// final bytes, including the ones highlighting inserted.
+	hw := newHighlightWriter(out, vocabularyFor(d, opt), knownOn)
+	defer hw.Flush()
+	out = hw
+
 	req := renderAskPrompt(gatherAskContext(d, sess, q, errOut))
 	answer := &strings.Builder{}
 	_, err = d.newLLM(cfg).Stream(ctx, req, func(delta string) {

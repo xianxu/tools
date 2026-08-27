@@ -324,19 +324,19 @@ func TestHighlightSpansIgnoresPunctuationAroundAWord(t *testing.T) {
 - Modify: `cmd/define/ask.go` (the `Stream` sink, ~:160)
 - Test: `cmd/define/askrun_test.go`
 
-- [ ] **Step 1: Write the failing test — but NOT by scripting the answer.** `llmtest.Fake` cannot serve invented streamed text: `misapplied()` (`internal/llm/llmtest/fake.go:188-215`) rejects a scripted `Reply{Text}` on a streaming request with a 400, and `serveStream` (`:461-472`) always replays the committed capture. So the test must take its word FROM the capture. Add a helper that reads `stream-sample.sse`, reconstructs the full text and the delta boundaries, and returns a word that a boundary splits — the capture currently splits `rather` (`...authority r` / `ather than`) and `painstakingly` (`(painstak` / `ingly`), but derive it, do not hardcode it. Seed the vocabulary with what the helper returns. If the helper finds no split word, `t.Fatalf` with "re-record the capture or pick another" — a `t.Skip` there would let the test go quietly inert, which is the failure mode this plan's own lessons keep naming.
+- [x] **Step 1: Write the failing test — but NOT by scripting the answer.** `llmtest.Fake` cannot serve invented streamed text: `misapplied()` (`internal/llm/llmtest/fake.go:188-215`) rejects a scripted `Reply{Text}` on a streaming request with a 400, and `serveStream` (`:461-472`) always replays the committed capture. So the test must take its word FROM the capture. Add a helper that reads `stream-sample.sse`, reconstructs the full text and the delta boundaries, and returns a word that a boundary splits — the capture currently splits `rather` (`...authority r` / `ather than`) and `painstakingly` (`(painstak` / `ingly`), but derive it, do not hardcode it. Seed the vocabulary with what the helper returns. If the helper finds no split word, `t.Fatalf` with "re-record the capture or pick another" — a `t.Skip` there would let the test go quietly inert, which is the failure mode this plan's own lessons keep naming.
 
-- [ ] **Step 2: Run to verify it fails. Step 3: Implement** by wrapping `out` in a `highlightWriter` for the duration of the stream.
+- [x] **Step 2: Run to verify it fails. Step 3: Implement** by wrapping `out` in a `highlightWriter` for the duration of the stream.
 
-- [ ] **Step 4: Flush on every exit path.** The stream ends normally, on `ErrTruncated`, and on interrupt (`askScoped` cancels mid-stream). Each must flush, or the last partial token is silently dropped — text loss, the worst failure this feature can have. Enumerate the paths from `runAsk` and test each; do not assume the happy path covers them.
+- [x] **Step 4: Flush on every exit path.** The stream ends normally, on `ErrTruncated`, and on interrupt (`askScoped` cancels mid-stream). Each must flush, or the last partial token is silently dropped — text loss, the worst failure this feature can have. Enumerate the paths from `runAsk` and test each; do not assume the happy path covers them.
 
-- [ ] **Step 5: Interaction with `crlfWriter`.** The raw loop already wraps `out`. Determine and TEST the order: highlighting must see logical text, and CRLF translation must apply to the final bytes, so `highlightWriter` wraps *inside* `crlfWriter`. Assert a highlighted word emitted during raw mode carries correct line endings.
+- [x] **Step 5: Interaction with `crlfWriter`.** The raw loop already wraps `out`. Determine and TEST the order: highlighting must see logical text, and CRLF translation must apply to the final bytes, so `highlightWriter` wraps *inside* `crlfWriter`. Assert a highlighted word emitted during raw mode carries correct line endings.
 
-- [ ] **Step 6: Mutation-check** that dropping the flush on the interrupt path reddens a named test.
+- [x] **Step 6: Mutation-check** that dropping the flush on the interrupt path reddens a named test.
 
-- [ ] **Step 7: Atlas + README.** `atlas/define.md`'s highlight section (started at M1, extended at M2) gains the streaming half. The README paragraph ALREADY EXISTS as of M1 and covers the typed line only — WIDEN it to name definitions and answers; do not treat this step as spent because a paragraph is there. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
+- [x] **Step 7: Atlas + README.** `atlas/define.md`'s highlight section (started at M1, extended at M2) gains the streaming half. The README paragraph ALREADY EXISTS as of M1 and covers the typed line only — WIDEN it to name definitions and answers; do not treat this step as spent because a paragraph is there. README gains a line under "On a terminal". Note explicitly that the set is the whole deck *today* and #22 narrows it.
 
-- [ ] **Step 8: `sdlc close --issue 21 --verified '<evidence>'`.**
+- [x] **Step 8: `sdlc close --issue 21 --verified '<evidence>'`.**
 
 ---
 
