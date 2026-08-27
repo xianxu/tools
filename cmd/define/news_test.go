@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"testing"
 	"time"
 
@@ -199,5 +200,48 @@ func TestBothSourcesWorksWithNoFeedAtAll(t *testing.T) {
 	}
 	if len(got) == 0 {
 		t.Error("the dictionary half must still run")
+	}
+}
+
+// #21's lesson applied BEFORE the fact rather than after: the enumeration is
+// every process entry path that can reach the seam, driven through production
+// wiring with the dependency in its REAL initial state.
+//
+// #21 shipped two dead entry paths because its tests injected a pre-filled
+// dependency and so began after the hop that fills it. There is no user-facing
+// consumer here yet, so what this pins is the wiring itself — that openStore
+// builds a source and withStore carries it through, which is the hop that was
+// missing in #21 and would be missing here for exactly the same reason.
+func TestWithStoreCarriesTheUsageSourceThrough(t *testing.T) {
+	// Parsed BEFORE the chdir: fixture() reads relative to the working
+	// directory, and this test moves it.
+	e := ParseEntry(fixture(t, "bank"))
+	t.Chdir(t.TempDir())
+
+	d := deps{newStore: openStore}.withStore(options{}, io.Discard)
+
+	if d.usage == nil {
+		t.Fatal("withStore left deps.usage nil — #10 would have no sentences")
+	}
+	// And it reaches the dictionary half without a network, which is the
+	// degradation the seam promises.
+	got, err := d.usage.Usages(t.Context(), "bank", e)
+	if err != nil {
+		t.Fatalf("Usages: %v", err)
+	}
+	if len(got) == 0 {
+		t.Error("no usages offline — the dictionary half is not wired")
+	}
+}
+
+// The opt-out path still yields a usable process: DEFINE_NO_CAPTURE means
+// "write nothing here", not "the seam does not exist".
+func TestNoCaptureStillLeavesAUsageSource(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	d := deps{newStore: openStore}.withStore(options{noCapture: true}, io.Discard)
+
+	if d.usage == nil {
+		t.Error("no-capture left deps.usage nil")
 	}
 }

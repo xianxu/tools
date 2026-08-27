@@ -33,6 +33,11 @@ type deps struct {
 	// deck is the store --forget acts on. Separate from capture because capture
 	// deliberately cannot fail loudly and --forget deliberately must.
 	deck store.Store
+	// usage is where real sentences for a word come from — the news feed plus
+	// NOAD's own examples (#9). #10's authoring step is the consumer; nothing
+	// user-facing reads it yet, which is why the seam exists before a command
+	// does. nil means "no usage source".
+	usage UsageSource
 	// vocab is the set of words to highlight — the ONE predicate every highlight
 	// decision goes through (#21). Separate from deck because #22 narrows it to
 	// the words still being learned: a word that has become the learner's own
@@ -98,6 +103,7 @@ type storeDeps struct {
 	capture Capturer
 	deck    store.Store
 	vocab   Vocabulary
+	usage   UsageSource
 	// clock is the process's ONE answer to "what time is it". It used to be
 	// constructed inline where the capturer was built, so nothing else could
 	// reach it — and #15's /history needs the same clock to compute a local-day
@@ -136,6 +142,9 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	if d.vocab == nil {
 		d.vocab = sd.vocab
 	}
+	if d.usage == nil {
+		d.usage = sd.usage
+	}
 	// Same shape as the memHistory/noopCapturer fallbacks above: a test that
 	// supplies no newStore still gets a usable process. A test that wants to
 	// control time sets d.clock and it survives.
@@ -161,18 +170,34 @@ func orElse[T comparable](v, fallback T) T {
 // A store that cannot be opened must not break define: warn and fall back,
 // exactly as a missing recording degrades rather than fails. Someone in a
 // read-only directory still gets a dictionary.
+// sessionUsage is the no-durable-store form: the same seam, cached in memory.
+//
+// DEFINE_NO_CAPTURE means "write nothing into this directory", not "the feed does
+// not exist" — the same reading that gives this path a memHistory rather than no
+// history at all. Nothing reaches disk, and a session still does not hit the
+// network per question.
+func sessionUsage(clk store.Clock) UsageSource {
+	return &bothSources{news: newCachingFeed(newHTTPFeed(), store.NewMem(), clk)}
+}
+
 func openStore(opt options, warn io.Writer) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides
 	// whether a given lookup counts.
 	clk := store.SystemClock()
 	if opt.noCapture {
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
+		return storeDeps{
+			history: &memHistory{}, capture: noopCapturer{},
+			usage: sessionUsage(clk), clock: clk,
+		}
 	}
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
-		return storeDeps{history: &memHistory{}, capture: noopCapturer{}, clock: clk}
+		return storeDeps{
+			history: &memHistory{}, capture: noopCapturer{},
+			usage: sessionUsage(clk), clock: clk,
+		}
 	}
 	st := store.NewYAML(dir, warn)
 	// ONE highlight set, handed to both the capturer that grows it and the
@@ -184,7 +209,11 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		capture: newStoreCapturer(st, clk, warn, voc),
 		deck:    st,
 		vocab:   voc,
-		clock:   clk,
+		// One feed, wrapped in the cache that owns the three outcomes, wrapped in
+		// the source that merges it with the dictionary. Same layering as
+		// fetch.go's cachingAudioSource over httpAudioSource.
+		usage: &bothSources{news: newCachingFeed(newHTTPFeed(), st, clk)},
+		clock: clk,
 	}
 }
 
