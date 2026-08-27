@@ -192,6 +192,7 @@ once `#6` is producing misses.
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
 - [ ] learner model — weakness taxonomy from review events, steers authoring [tools#17 M2]
+- [ ] deck grouped by language; one language per `--play` [tools#23]
 - [ ] Spanish — pronunciation locale (independently shippable) [tools#18 M1]
 - [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
@@ -554,6 +555,7 @@ guards could fail.
 [tools#18 M1]: #tools-18-m1
 [tools#18 M2]: #tools-18-m2
 [tools#19]: ../issues/000019-llm-overloaded.md
+[tools#23]: ../issues/000023-deck-language.md
 
 ### 2026-08-26 — scope event: two console features shipped alongside, outside MVP
 

@@ -40,6 +40,10 @@ The deck and the schedule are inert without a way to sit down and review.
       represent a skip precisely because one is never passed to it.
 - [x] Audio plays before reveal by default, and `--no-audio` silences it.
 - [x] `-count` bounds the session; it defaults to 20.
+- [x] Every newline a session writes is a full CRLF — in raw mode a bare `\n`
+      moves down without returning to column 0, which cascades a definition
+      diagonally across the screen.
+- [x] `d` removes the current word from the deck, keeping its events.
 - [x] An empty queue prints a line and exits 0 — "nothing due today" is the
       expected state most days, not an error.
 - [x] With NO DECK, `--play` prints one line and exits 0 rather than running —
@@ -196,3 +200,42 @@ Claimed and planned. Three decisions worth recording before implementation:
   CALLED, so the test now spies on it. And the third mutation did not compile the
   first time, which is not a passing mutation but no result at all — an untested
   mutant is exactly as informative as an untested claim.
+
+## Revisions
+
+### 2026-08-27 — operator ran a real session; three fixes
+
+**Reason.** The operator ran `--play` against their own deck and sent a
+screenshot. Scope grew by two small things and one defect.
+
+**Delta.**
+
+- **The layout defect, and it was mine.** Definitions cascaded diagonally across
+  the screen: my format strings carried `\r\n` but `Render`'s output has bare
+  newlines throughout, and in raw mode a bare `\n` moves down without returning
+  to column 0. `#16` built `crlfWriter` for exactly this and the atlas documents
+  it. Session output now goes through it.
+
+  **Why my pty smoke test missed it, which is the part worth keeping:** that test
+  captured the bytes and printed them through Python, where a bare `\n` renders
+  at column 0 — so the output looked perfect. A byte capture is not a screenshot.
+  What CAN be asserted about bytes is that in raw mode there is no such thing as a
+  bare newline, and `TestSessionOutputIsAllCRLF` counts 49 of them against the
+  shipped version.
+
+- **`d` drops the current word from the deck** (operator: "hot dog, merely for
+  testing, or the spanish word"). An `Input` KIND rather than something a form
+  grades, because "this word does not belong in my deck" is true whatever form is
+  asking — so `#7`, `#12` and `#13` get it for free. It records no review, and the
+  events stay: `--forget`'s contract, since history is what happened and cannot be
+  untrue while the deck is the working set the learner curates.
+
+- **A real race, caught intermittently by the suite.** `select` picks uniformly at
+  random among ready cases, so a cancelled context with a key already buffered
+  would sometimes grade one more answer AFTER Ctrl-C — recording a verdict for a
+  word the learner had stopped on. Cancellation is checked before the select now.
+  An intermittent failure is the only way a random-choice bug ever shows up.
+
+**Deferred to its own issue:** the operator also asked that words be grouped by
+language and that each `--play` cover one language. That is `#18 M2`'s first
+bullet and it needs measurement rather than a quick patch — see `tools#23`.
