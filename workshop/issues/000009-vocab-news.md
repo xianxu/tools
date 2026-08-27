@@ -1,11 +1,12 @@
 ---
 id: 000009
-status: open
+status: working
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-08-26
 estimate_hours:
+started: 2026-08-26T19:29:35-07:00
 ---
 
 # news seam: Google News RSS client with a stateful fake
