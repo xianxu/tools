@@ -1032,10 +1032,9 @@ the feed's thematic collapse is measured and real (10 of 14 `sycophantic`
 headlines were about AI chatbots), and a word taught only through this week's
 news cycle is taught narrowly.
 
-**Raw is what will be cached; usable is derived.** `store.NewsItem` is the shape
-the feed's own words take — knowing nothing about filtering or provenance —
-and `Usage` is computed from it at read time. The cache itself lands at M2; what
-exists at M1 is the split that makes it possible. The split is the point: it lets
+**Raw is cached; usable is derived.** `store.NewsItem` is what goes to disk — the
+feed's own words, knowing nothing about filtering or provenance — and `Usage` is
+computed from it at read time. The split is the point: it lets
 `containsWord` improve and every word already cached improve with it, with no
 re-fetch, where caching the filtered result would freeze today's judgment onto
 disk. The plan's first draft had `Usage` in `package main` while `store.Store`
@@ -1060,3 +1059,34 @@ real feed rather than reasoning about one.
 **The feed is licensed for personal, non-commercial feed-reader use** — the
 copyright notice is in the feed body itself. A personal vocabulary tool fits;
 nothing here redistributes content.
+
+**The cache has three outcomes, and modelling two is the easy mistake.**
+`cachingFeed` writes `usage/<slug>.yaml` beside `words/` and `events/`:
+
+1. a fetch that succeeds **with items** is cached and served;
+2. a fetch that succeeds with **zero** items is *also* cached, with its
+   timestamp — some words are simply not in the news, and that is a real answer.
+   Not caching it re-fetches forever for exactly the words the feed is worst at;
+3. a fetch that **fails** is never cached, so a network blip cannot become a
+   permanent empty answer for a word.
+
+Because (2) is cached, entries carry a fetch time and go stale after `cacheTTL` —
+and **a stale entry whose refresh fails is served anyway**. That is what keeps
+"works offline" true while letting a word that had no news last week pick some up
+this week. The file is a WHOLE-FILE record like `words/`, written through
+`writeBytesAtomic` and therefore untearable; a file corrupted from outside is
+warned about and read as never-fetched, which costs a re-fetch and nothing more.
+
+**`bothSources` is the seam, and a feed outage degrades to the dictionary**
+rather than propagating. A nil news source is the same case — "no feed
+configured" is not an error, the shape every seam here uses for absent. Under
+`DEFINE_NO_CAPTURE` the seam still exists, cached in memory: that flag means
+"write nothing into this directory", not "the feed does not exist", the same
+reading that gives that path a `memHistory`.
+
+**Nothing user-facing consumes it yet, deliberately.** #10's authoring step is
+the consumer. A debug command was planned and dropped: `commandCtx` carries no
+`context.Context` and no dependency, so a fetching command means widening the
+contract every command shares — for a debug affordance, ahead of the real
+consumer. The live conformance check prints what it fetched, which is how a
+person looks at real output in the meantime.

@@ -941,9 +941,12 @@ copy-back silently DELETED `bothSources`, because the backup predated it. The
 build broke immediately, which is lucky: a deletion inside a rarely-run branch
 would have shipped.
 
-- **`git checkout HEAD -- <file>` is the correct restore.** It cannot be stale in
-  the way a scratch copy can, because it is versioned. A `cp` from `$TMPDIR`
-  restores whatever the tree looked like whenever you happened to snapshot it.
+- **`git checkout HEAD -- <file>` is the correct restore, and only if the target
+  is COMMITTED.** It cannot go stale the way a scratch copy can. But the same
+  session then hit the other half of the trap: restoring uncommitted wiring
+  reverted the work itself, because HEAD did not have it yet. So the rule is two
+  steps — **commit, then mutate, then `git checkout`** — and neither half works
+  alone.
 - **Re-verify the mutation AFTER restoring.** The restore can undo the fix the
   mutation was checking, and then both the fix and its pin are gone with the
   suite green.

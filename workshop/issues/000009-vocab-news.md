@@ -35,18 +35,18 @@ Google News **RSS**, behind a seam.
 
 ## Done when
 
-- [ ] Fetches, parses and caches; a second request for the same word is served
+- [x] Fetches, parses and caches; a second request for the same word is served
       from cache — asserted on the fake's fetch COUNTER, not inferred from output.
-- [ ] A failed fetch is NOT cached, so a network blip does not become a permanent
+- [x] A failed fetch is NOT cached, so a network blip does not become a permanent
       empty answer for that word.
-- [ ] The parser survives a malformed feed without taking down the session, and
+- [x] The parser survives a malformed feed without taking down the session, and
       never returns an item it did not find in the input.
-- [ ] Only headlines that genuinely contain the word become usages — the feed
+- [x] Only headlines that genuinely contain the word become usages — the feed
       returns many that do not (measured 12-99 matching out of 41-100).
-- [ ] NOAD's own example sentences are available through the same seam and the
+- [x] NOAD's own example sentences are available through the same seam and the
       same `Usage` shape, tagged by source, with no network.
-- [ ] Live conformance asserts the feed shape and a coverage FLOOR.
-- [ ] `Mem` and `YAML` both satisfy the new store contract via `storetest.Suite`.
+- [x] Live conformance asserts the feed shape and a coverage FLOOR.
+- [x] `Mem` and `YAML` both satisfy the new store contract via `storetest.Suite`.
 
 ## Plan
 
@@ -54,8 +54,8 @@ Durable plan: `workshop/plans/000009-vocab-news-plan.md` (three milestones; each
 `Mx` row is its own review boundary).
 
 - [x] M1 — `parseRSS`, `Usage`, `containsWord`, and NOAD's examples as the second source
-- [ ] M2 — `Store.Usages`, the `NewsSource` seam, the caching wrapper, the stateful fake
-- [ ] M3 — wiring, `/usage` to see it, live conformance, docs
+- [x] M2 — `Store.Usages`, the `NewsSource` seam, the caching wrapper, the stateful fake
+- [x] M3 — wiring, `/usage` to see it, live conformance, docs
 
 ## Estimate
 
@@ -260,3 +260,18 @@ Two decisions worth recording before implementation:
   empty, and `b0e907e` (M2's code) plus `61c9774` sat in NO review window. Fixed
   forward by reviewing M2 over a WIDENED window from M1's real boundary rather
   than by rewriting history — see the M2 close.
+
+- 2026-08-26: M2 + M3 — the cache with its three outcomes, the stateful fake, the
+  seam, the wiring, and live conformance. The wiring test was written FIRST this
+  time (#21's lesson applied before the fact rather than after) and immediately
+  earned it: the no-capture path had no usage source at all. `DEFINE_NO_CAPTURE`
+  means "write nothing into this directory", not "the feed does not exist" — the
+  same reading that gives that path a `memHistory` — so it now gets the seam
+  cached in memory.
+  Live conformance run against the real feed: 100 items, 96 usages for
+  `ephemeral`, attribution stripped, and the personal-use terms still present in
+  the body. It PRINTS what it fetched, which is how a person looks at real output
+  until #10 exists.
+  A second restore hazard, different from this morning's: `git checkout HEAD --`
+  reverted UNCOMMITTED wiring. "Restore from git" only holds if the thing you are
+  restoring TO is committed — so commit before mutating, which is now the rule.
