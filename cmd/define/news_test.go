@@ -362,6 +362,26 @@ func TestHTTPFeedErrors(t *testing.T) {
 			t.Error("want an error for a cancelled context")
 		}
 	})
+	// The word is QUOTED in the query so the feed prefers items containing it.
+	// Dropping the quotes changed no test before this one — the fixture is
+	// served regardless of what was asked for, which is exactly what a fake
+	// cannot tell you and a captured request can.
+	t.Run("the word is quoted in the query", func(t *testing.T) {
+		var gotQuery string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotQuery = r.URL.Query().Get("q")
+		}))
+		defer srv.Close()
+		h := &httpFeed{client: srv.Client(), base: srv.URL}
+
+		if _, err := h.Fetch(t.Context(), "hot dog"); err != nil {
+			t.Fatalf("Fetch: %v", err)
+		}
+
+		if gotQuery != `"hot dog"` {
+			t.Errorf("q = %q, want the word quoted — unquoted, the feed returns items about either word", gotQuery)
+		}
+	})
 	t.Run("a body is capped", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			for i := 0; i < maxFeedBytes/1024+16; i++ {
@@ -387,4 +407,42 @@ type writeFailsStore struct{ store.Store }
 
 func (writeFailsStore) SetNewsItems(string, []store.NewsItem, time.Time) error {
 	return errFeedDown
+}
+
+// BR-15's real lesson: I added `warn`, tested it by passing a buffer into a
+// hand-built bothSources, and never wired it at either production site — so
+// production degraded exactly as silently as before while the test was green.
+//
+// That is the wiring-hop class for the third time in two issues (#21's vocab
+// Load, #9's no-capture seam, now this). A test that constructs the struct
+// begins AFTER the hop that fills its fields. This one builds deps the way a
+// process does and asserts the field arrived.
+func TestProductionWiringGivesTheUsageSourceItsWarnWriter(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opt  options
+	}{
+		{"with a durable store", options{}},
+		{"no-capture", options{noCapture: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			var warn bytes.Buffer
+
+			d := deps{newStore: openStore}.withStore(tc.opt, &warn)
+
+			src, ok := d.usage.(*bothSources)
+			if !ok {
+				t.Fatalf("deps.usage is %T", d.usage)
+			}
+			if src.warn == nil {
+				t.Fatal("the usage source has no warn writer — a broken feed would degrade silently")
+			}
+			// And it is the writer the caller handed in, not some other sink.
+			src.warnOnce("probe %d", 1)
+			if !strings.Contains(warn.String(), "probe 1") {
+				t.Errorf("the warning went somewhere else: warn = %q", warn.String())
+			}
+		})
+	}
 }

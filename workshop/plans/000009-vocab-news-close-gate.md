@@ -351,6 +351,87 @@ rounds:
           family: fact-documented-in-two-places
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-26T21:40:19-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: addressed
+          note: 'Verified by probe: panicking in Fetch when base=="" never fires over the full suite — zero live requests.'
+          round: 4
+        - id: BR-14
+          disposition: not-addressed
+          note: news.go's branches are pinned (verified by reverting), but the quoted-word query still drops green under mutation and usage.go:107-109 is at zero coverage — both named in the finding's own text.
+          round: 4
+        - id: BR-15
+          disposition: not-addressed
+          note: bothSources.warn is nil at BOTH production sites (main.go:180, main.go:215, probed); warnTo no-ops on nil, so production degrades exactly as silently as before.
+          round: 4
+        - id: BR-5
+          disposition: not-addressed
+          note: 'Re-verified by mutation: e.Blocks[:1] leaves the entire cmd/define suite green.'
+          round: 4
+        - id: BR-6
+          disposition: not-addressed
+          note: renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+          round: 4
+        - id: BR-7
+          disposition: not-addressed
+          note: store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+          round: 4
+        - id: BR-8
+          disposition: not-addressed
+          note: Re-verified false for "e.g.", "9/11", "rock 'n' roll" against text containing them verbatim; still undocumented in usage.go and the atlas.
+          round: 4
+        - id: BR-9
+          disposition: not-addressed
+          note: 'Measured at the close: 0 of 26 plan checkboxes ticked, newsUsageSource still at plan line 88, and the issue''s ticked M2/M3 rows still name Store.Usages, NewsSource and /usage.'
+          round: 4
+        - id: BR-16
+          disposition: not-addressed
+          note: news.go:133-138 unchanged — both branches still return items, nil.
+          round: 4
+        - id: BR-17
+          disposition: not-addressed
+          note: rss.go:16-38 unchanged; well-formed non-RSS XML still returns (empty, nil) and is cacheable as "no news".
+          round: 4
+        - id: BR-18
+          disposition: not-addressed
+          note: rss_test.go property unchanged and still unreachable; neither the plan nor the Log records what actually pins the Done-when clause.
+          round: 4
+        - id: BR-19
+          disposition: not-addressed
+          note: atlas/define.md:210-220 layout block still lists only words/, events/ and user-model.md.
+          round: 4
+      findings:
+        - id: BR-20
+          severity: Minor
+          title: newsFile was spliced under Forget's doc comment, so YAML.Forget lost its documentation
+          detail: |-
+            cmd/define/store/yaml.go:356-361. The four-line comment documenting Forget ("Forget removes
+            one word file... Filename derivation goes through wordFileName...") is immediately followed,
+            with no blank line, by the newsFile type declaration — so godoc attaches it to newsFile, which
+            it does not describe, and func (y *YAML) Forget at :417 has no doc at all. Verified:
+            `go doc store.YAML.Forget` prints only the signature, and `git show 361136b:cmd/define/store/yaml.go`
+            has the comment attached at :353-358. A regression introduced by this window. Fix: move the
+            Forget doc back above :417 and give newsFile its own.
+          family: doc-comment-detached-from-declaration
+          round: 4
+        - id: BR-21
+          severity: Minor
+          title: Forget does not remove usage/<slug>.yaml, and neither the doc nor storetest says so
+          detail: |-
+            cmd/define/store/yaml.go:417 removes only words/<slug>.yaml; cmd/define/store/mem.go:138 only
+            deletes from m.words. Store.Forget's doc deliberately enumerates what it leaves behind ("does
+            NOT remove events: the deck is a working set, the log is history"), and this window added a
+            per-word on-disk record that the enumeration does not mention. Unlike events, the news cache is
+            derived and refetchable, so the argument for keeping it is weaker — a user who forgets a word
+            still has its headlines on disk. The rule: adding a per-word record obliges the delete verb to
+            declare whether it is removed, and a storetest row to pin the answer. Decide either way, but say
+            it in the interface doc and pin it in the suite.
+          family: delete-scope-unstated-for-new-record
+          round: 4
+      blocked: true
 ---
 
 # Gate ledger — tools#9 (boundary-review)
@@ -559,6 +640,43 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   two places, one stale - a reader who consults the layout map will not see the new
   directory.
 
+## Round 4 — 2026-08-26T21:40:19-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-13 — addressed — Verified by probe: panicking in Fetch when base=="" never fires over the full suite — zero live requests.
+- BR-14 — not-addressed — news.go's branches are pinned (verified by reverting), but the quoted-word query still drops green under mutation and usage.go:107-109 is at zero coverage — both named in the finding's own text.
+- BR-15 — not-addressed — bothSources.warn is nil at BOTH production sites (main.go:180, main.go:215, probed); warnTo no-ops on nil, so production degrades exactly as silently as before.
+- BR-5 — not-addressed — Re-verified by mutation: e.Blocks[:1] leaves the entire cmd/define suite green.
+- BR-6 — not-addressed — renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+- BR-7 — not-addressed — store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+- BR-8 — not-addressed — Re-verified false for "e.g.", "9/11", "rock 'n' roll" against text containing them verbatim; still undocumented in usage.go and the atlas.
+- BR-9 — not-addressed — Measured at the close: 0 of 26 plan checkboxes ticked, newsUsageSource still at plan line 88, and the issue's ticked M2/M3 rows still name Store.Usages, NewsSource and /usage.
+- BR-16 — not-addressed — news.go:133-138 unchanged — both branches still return items, nil.
+- BR-17 — not-addressed — rss.go:16-38 unchanged; well-formed non-RSS XML still returns (empty, nil) and is cacheable as "no news".
+- BR-18 — not-addressed — rss_test.go property unchanged and still unreachable; neither the plan nor the Log records what actually pins the Done-when clause.
+- BR-19 — not-addressed — atlas/define.md:210-220 layout block still lists only words/, events/ and user-model.md.
+
+### Raised
+
+- **BR-20** [Minor] `doc-comment-detached-from-declaration` newsFile was spliced under Forget's doc comment, so YAML.Forget lost its documentation
+  cmd/define/store/yaml.go:356-361. The four-line comment documenting Forget ("Forget removes
+  one word file... Filename derivation goes through wordFileName...") is immediately followed,
+  with no blank line, by the newsFile type declaration — so godoc attaches it to newsFile, which
+  it does not describe, and func (y *YAML) Forget at :417 has no doc at all. Verified:
+  `go doc store.YAML.Forget` prints only the signature, and `git show 361136b:cmd/define/store/yaml.go`
+  has the comment attached at :353-358. A regression introduced by this window. Fix: move the
+  Forget doc back above :417 and give newsFile its own.
+- **BR-21** [Minor] `delete-scope-unstated-for-new-record` Forget does not remove usage/<slug>.yaml, and neither the doc nor storetest says so
+  cmd/define/store/yaml.go:417 removes only words/<slug>.yaml; cmd/define/store/mem.go:138 only
+  deletes from m.words. Store.Forget's doc deliberately enumerates what it leaves behind ("does
+  NOT remove events: the deck is a working set, the log is history"), and this window added a
+  per-word on-disk record that the enumeration does not mention. Unlike events, the news cache is
+  derived and refetchable, so the argument for keeping it is weaker — a user who forgets a word
+  still has its headlines on disk. The rule: adding a per-word record obliges the delete verb to
+  declare whether it is removed, and a storetest row to pin the answer. Decide either way, but say
+  it in the interface doc and pin it in the suite.
+
 ## Open findings
 
 - **BR-5** [Minor] `at-least-one-hides-undercollection` entryUsages' multi-block traversal is unpinned by an at-least-one assertion
@@ -566,10 +684,11 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-7** [Minor] `name-means-two-things` store.NewsItem.Source is the publisher while Usage.Source is provenance
 - **BR-8** [Minor] `matcher-limit-silently-drops-input` A punctuated deck key can never yield a usage, and nothing says so
 - **BR-9** [Minor] `plan-record-drift` Every plan checkbox is unticked at the boundary, and five prose claims contradict the code
-- **BR-13** [Critical] `unit-test-reaches-real-dependency` TestWithStoreCarriesTheUsageSourceThrough makes a live request to news.google.com on every untagged test run
 - **BR-14** [Important] `documented-degradation-unpinned` Every error branch in news.go is uncovered, and the store-read degradation survives inversion
 - **BR-15** [Important] `degradation-without-signal` bothSources discards the feed error with no warning, and UsageSource.Usages can never return one
 - **BR-16** [Minor] `dead-branch` cachingFeed's SetNewsItems error handler and its fallthrough return the same value
 - **BR-17** [Minor] `parser-accepts-wrong-document` parseRSS never checks the root element, so non-RSS XML becomes a cached "no news"
 - **BR-18** [Minor] `assertion-cannot-fire` FuzzParseRSS's remaining property can never fire, so the target is now a no-panic smoke test
 - **BR-19** [Minor] `fact-documented-in-two-places` The atlas's canonical on-disk layout block does not list usage/
+- **BR-20** [Minor] `doc-comment-detached-from-declaration` newsFile was spliced under Forget's doc comment, so YAML.Forget lost its documentation
+- **BR-21** [Minor] `delete-scope-unstated-for-new-record` Forget does not remove usage/<slug>.yaml, and neither the doc nor storetest says so

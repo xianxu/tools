@@ -176,8 +176,8 @@ func orElse[T comparable](v, fallback T) T {
 // not exist" — the same reading that gives this path a memHistory rather than no
 // history at all. Nothing reaches disk, and a session still does not hit the
 // network per question.
-func sessionUsage(clk store.Clock) UsageSource {
-	return &bothSources{news: newCachingFeed(newHTTPFeed(), store.NewMem(), clk)}
+func sessionUsage(clk store.Clock, warn io.Writer) UsageSource {
+	return &bothSources{news: newCachingFeed(newHTTPFeed(), store.NewMem(), clk), warn: warn}
 }
 
 func openStore(opt options, warn io.Writer) storeDeps {
@@ -188,7 +188,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	if opt.noCapture {
 		return storeDeps{
 			history: &memHistory{}, capture: noopCapturer{},
-			usage: sessionUsage(clk), clock: clk,
+			usage: sessionUsage(clk, warn), clock: clk,
 		}
 	}
 	dir, err := os.Getwd()
@@ -196,7 +196,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
 		return storeDeps{
 			history: &memHistory{}, capture: noopCapturer{},
-			usage: sessionUsage(clk), clock: clk,
+			usage: sessionUsage(clk, warn), clock: clk,
 		}
 	}
 	st := store.NewYAML(dir, warn)
@@ -212,7 +212,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		// One feed, wrapped in the cache that owns the three outcomes, wrapped in
 		// the source that merges it with the dictionary. Same layering as
 		// fetch.go's cachingAudioSource over httpAudioSource.
-		usage: &bothSources{news: newCachingFeed(newHTTPFeed(), st, clk)},
+		usage: &bothSources{news: newCachingFeed(newHTTPFeed(), st, clk), warn: warn},
 		clock: clk,
 	}
 }

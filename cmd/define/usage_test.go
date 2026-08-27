@@ -132,6 +132,22 @@ func TestUsageTextDropsThePublisherSuffix(t *testing.T) {
 	}
 }
 
+// A feed item with no publisher keeps its whole title. Zero coverage before
+// this: every fixture named a publisher, so the guard that handles an absent one
+// was never entered.
+func TestNoPublisherLeavesTheTitleAlone(t *testing.T) {
+	items := []store.NewsItem{{Title: "Springtime is ephemeral - Somewhere", Source: ""}}
+
+	got := usagesFrom(items, "ephemeral")
+
+	if len(got) != 1 {
+		t.Fatalf("got %d usages", len(got))
+	}
+	if got[0].Text != "Springtime is ephemeral - Somewhere" {
+		t.Errorf("Text = %q, want the title intact — nothing names an attribution to strip", got[0].Text)
+	}
+}
+
 // A dash that is NOT attribution stays put: the rule is "strip the publisher the
 // feed named", not "strip anything after the last dash".
 //

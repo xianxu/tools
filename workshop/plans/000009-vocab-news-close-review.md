@@ -254,3 +254,188 @@ findings:
       two places, one stale - a reader who consults the layout map will not see the new
       directory.
 ```
+
+---
+
+## Re-review — 2026-08-26T21:40:19-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 9 — news seam: Google News RSS client with a stateful fake |
+| repo | tools |
+| issue file | workshop/issues/000009-vocab-news.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 361136b3e46f21e67dd307a6c5ed31c62b70148f..efb806cdc983aeb61f3e441934eed28225f70ce1 |
+| command | sdlc close --issue 9 |
+| reviewer | claude |
+| timestamp | 2026-08-26T21:40:19-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+I've finished the review. Tree restored clean (`git status` verified after every mutation).
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The Critical from round 3 is genuinely dead: I patched `httpFeed.Fetch` to panic whenever `base == ""` — i.e. on any real-network call — and the full `go test ./cmd/define/` stayed green, so the default suite makes **zero** live requests to news.google.com. The wiring hop and the offline claim are now two tests, neither lying, and `httpFeed`'s error branches are driven against `httptest` instead of Google. `go build`, `go vet` (both untagged and `-tags conformance`) and `go test ./...` all pass; coverage is 92.1% in `cmd/define` with `cachingFeed.items` at 100%. Two Importants survive, both because the fix stopped one step short of the thing the finding named. **BR-15's warn writer is threaded to nothing**: `bothSources.warn` is nil at both production construction sites (`main.go:180`, `main.go:215` — probed, both `nil`), and `warnTo` returns early on nil, so a permanently broken feed is still perfectly silent in production. The field, the `warnOnce` method and its mutex all exist and are exercised only by a test that injects the writer itself — protection that reads as real and does nothing. **BR-14's own text named the quoted-word query as a load-bearing detail a mutation could drop while staying green**; I dropped the quotes and the whole suite is still green, because all three new `httptest` handlers take `_ *http.Request` and never look at what was requested. Behind those, nine Minors from rounds 1 and 3 are unchanged at the final gate, and the durable record is the worst of them: **zero of the plan's 26 checkboxes are ticked**, the Integration table still lists `newsUsageSource` (exists nowhere), and the issue's ticked M2/M3 rows still name `Store.Usages`, the `NewsSource` seam and `/usage` — none of which were built, `/usage` deliberately.
+
+## 1. Strengths
+
+- **BR-13's fix is real, and it is the right shape.** Splitting the one test into a wiring assertion on production deps (`news_test.go:216`) and an offline assertion on a feedless source (`news_test.go:240`) makes "offline" a property of the code rather than of the test machine. Verified by probe, not by reading: `Fetch` is never entered without a `base`.
+- **BR-14's central claim is genuinely closed and I confirmed it by reverting.** Replacing `news.go:108-112` with `return nil, err` reddens `TestUnreadableCacheIsAMissNotAFailure` at `news_test.go:285`. `cachingFeed.items` went from a comment-documented policy to 100% covered, and `failingStore` — which had sat unused — is now the fixture that drives it.
+- **The cache asserts on the fake's counter** (`news_test.go:31,50,68,88`). "Served from cache" and "re-fetched and got the same answer" are indistinguishable from returned items; `f.fetches(word)` is the only oracle that tells them apart, and `fakeFeed` serving *bytes* keeps `parseRSS` in both the production and test paths.
+- **`containsWord` delegating to `highlightSpans`** (`usage.go:63`) with `TestContainsWordAgreesWithTheHighlighter` as the pin remains the best decision in the issue — ARCH-DRY where a divergence would be visible to the learner as one word in two states on one screen.
+- **The live conformance check asserts the licence terms** (`news_conformance_test.go:71`). Making "personal, non-commercial use" falsifiable rather than a comment is the right instinct, and the check is correctly behind a build tag.
+
+## 2. Critical findings
+
+None. BR-13 is disposed `addressed`.
+
+## 3. Important findings
+
+Both are dispositions of prior findings, not new ones — see the block below.
+
+**BR-15 — not addressed; the fix is unreachable.** `usage.go:153-159` adds `warn io.Writer` to `bothSources`, and `usage.go:180-188` adds `warnOnce`. Production never sets the field:
+
+```
+openStore path:    bothSources.warn == nil ? true      # main.go:215
+sessionUsage path: bothSources.warn == nil ? true      # main.go:180
+```
+
+`warnTo` (`vocab.go:165`) returns immediately on a nil writer, so the production behaviour is byte-identical to the silent version the finding was raised against. The only non-nil writer is the test's own at `news_test.go:147`. `openStore` already has `warn io.Writer` in its signature and passes it to `store.NewYAML` one line above — threading it is two identifiers; `sessionUsage(clk)` needs the parameter added. Separately, the "once per session" claim is at zero coverage (`usage.go:183-185`): no test calls `Usages` twice on a failing feed, so removing the `warned` guard is invisible.
+
+**BR-14 — not addressed; two rows of the finding's own enumeration are open.** (a) The quoted-word query. `news.go:59` builds `q="<word>"`; I replaced `url.QueryEscape(`"`+word+`"`)` with `url.QueryEscape(word)` and the entire suite stayed green. All three subtests of `TestHTTPFeedErrors` (`news_test.go:342,353,366`) declare the handler as `func(w http.ResponseWriter, _ *http.Request)` — the `base` seam was added expressly so the URL could be driven locally, and nothing inspects it. One handler capturing `r.URL.RawQuery` closes it. (b) `usage.go:107-109` (`withoutAttribution`'s empty-publisher guard) is still at zero coverage — the 7th row the finding tabulated.
+
+## 4. Minor findings
+
+- **New:** `cmd/define/store/yaml.go:356-361` — `newsFile` was spliced in directly under `Forget`'s doc comment with no blank line, so `YAML.Forget` (`:417`) now has **no** documentation and `newsFile` carries a doc describing a different function. `go doc store.YAML.Forget` prints only the signature; at the base SHA the comment was attached at `:353-358`.
+- **New:** neither `YAML.Forget` (`yaml.go:417`) nor `Mem.Forget` (`mem.go:138`) removes `usage/<slug>.yaml`. `Store.Forget`'s doc deliberately enumerates what it leaves behind ("does NOT remove events: … the log is history") and that enumeration is now incomplete for a record that is a *cache*, not history — so the decision is neither stated nor pinned by a `storetest` row.
+- BR-5 through BR-9 and BR-16 through BR-19 are all unchanged in the tree; see dispositions. BR-5 re-verified by mutation against the full suite; BR-8 re-verified (`containsWord` is `false` for `e.g.`, `9/11`, `rock 'n' roll` against text containing them verbatim).
+- `cmd/define/store/storetest/suite.go:381` — stray blank line before the closing brace, unchanged since round 3.
+- `Mem.NewsItems` (`mem.go:112`) does not guard `k == ""` while `Mem.SetNewsItems` and both `YAML` methods do. Harmless (a map miss), but the four methods should agree.
+
+## 5. Test coverage notes
+
+92.1% of statements in `cmd/define`; only three blocks in the new files are uncovered, and two of them are findings above (`usage.go:107-109`, `usage.go:183-185`). The third, `news.go:62-64` (`NewRequestWithContext` error), is near-unreachable and fine to leave. Mutation results this round, every one restored with `git checkout HEAD --` on a committed tree and the tree verified clean afterwards: **dead** — inverting the unreadable-cache policy. **Survived** — dropping the quotes from the feed query; `entryUsages` restricted to `e.Blocks[:1]`. **Never fired** — the live-network probe panic, which is the measurement that closes BR-13. The `storetest` rows for `NewsItems`/`SetNewsItems` are the strongest new tests in the diff: never-fetched vs fetched-empty is pinned as a contract both `Mem` and `YAML` must answer, which is the reason the method returns a `time.Time` at all.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-MOCK — pass.** This is the round it earned it. Production flow and test flow now share the `feed` boundary, `httpFeed` has hermetic tests via `httptest`, the fake is stateful and byte-shaped, and the live conformance check is tagged out of the default suite. The one residual is that the *request* the fake and the server receive is never asserted, which is the BR-14 residual above.
+- **ARCH-PURE — pass.** `parseRSS`, `parsePubDate`, `containsWord`, `usagesFrom`, `withoutAttribution`, `entryUsages` are all pure and all tested with no doubles; IO is confined to `httpFeed`. `bothSources` → `cachingFeed` → `feed` mirrors `fetch.go` as the plan promised.
+- **ARCH-DRY — flag (BR-6).** `renderSpans` (`usage_test.go:74`) is still byte-for-byte `marked` (`highlight_test.go:110`), and the single call site at `:64` wraps the result back in `string(...)`. Four rounds old, in the milestone whose thesis is that the matcher must not be reimplemented.
+- **ARCH-PURPOSE — flag, and this is the round's theme.** BR-15 is the pattern inverted: the *shape* of the fix landed (field, method, mutex, test) while the purpose — production stops being silent — did not. A field set at zero production call sites passes every suite while doing nothing, which is exactly the failure mode the gate protocol names. BR-14 is the same axis on the enumeration it wrote itself: 6 of 7 rows swept, and the one it called out in prose as load-bearing left open. And nine Minors named in rounds 1 and 3, four of them one-line fixes, are crossing the final gate untouched.
+- For #10: `Usage.At` can legitimately be the zero time (unreadable pubDate — the parser hands you "we do not know when" rather than a guess). Decide at design time whether zero-time usages sort last or are dropped. And note that the seam currently degrades silently, so #10 cannot distinguish "no news" from "feed broken" unless BR-15 is actually threaded.
+
+## 7. Plan revision recommendations
+
+`workshop/plans/000009-vocab-news-plan.md` has **0 ticked / 26 unticked** checkboxes at a whole-issue close, and a `## Revisions` section containing only the plan-quality round-1 entry. The Integration table at `:88` still lists `newsUsageSource | cmd/define/news.go | new` — an entity that exists nowhere in the tree; that is a core-concepts-table-vs-code contradiction at the final gate. Add:
+
+```
+### 2026-08-26 — as built (M1–M3)
+
+- `Usage` ships `{Text, Source, Publisher, URL, At}`, not `{…Title…}`.
+- `store.NewsItem` ships `{Title, URL, Source, At}`; the prose omits `Source`,
+  which `withoutAttribution` depends on.
+- `entryUsages(e Entry, word string)`, not `entryUsages(e Entry)`.
+- Delete the Integration table's `newsUsageSource` row — it was never built;
+  `bothSources` wraps `cachingFeed` directly.
+- `UsageSource.Usages` returns `[]Usage` with NO error (BR-15): the dictionary
+  half always answers, so there is nothing to fail. The prose still says
+  `([]Usage, error)`.
+- The fuzz property is not "title is a substring of the input". Substring,
+  subsequence and the count-bound were all retired for failing on correct
+  parsing; record the RULE, and record that the Done-when's "never returns an
+  item it did not find in the input" is pinned by the exact-count and
+  exact-title assertions in TestParseRSSOverACapturedFeed and
+  TestParseRSSDecisions, not by FuzzParseRSS (BR-18).
+- Task 2 Step 5's "12–99 RANGE" is impossible against a committed 13-item
+  fixture; the exact-10 assertion the code ships is correct.
+- Tick Task 1 Steps 1–7, Task 2 Steps 1–7, Task 3 Steps 1–6, Task 4 Steps 1–9,
+  Task 5 Steps 1–3, Task 6 Steps 1–2.
+```
+
+`workshop/issues/000009-vocab-news.md:57-58` needs the same: the M2 row is `[x]` while naming `Store.Usages` (shipped as `NewsItems`/`SetNewsItems`) and the `NewsSource` seam (shipped as `feed` + `UsageSource`), and the M3 row is `[x]` while naming `/usage`, which plan-quality PQ-4 deliberately dropped and whose disposition already said the row "should be tidied to match". A ticked box claiming a subcommand that does not exist is the worst of the three.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: addressed
+    note: |
+      Verified by probe: panicking in Fetch when base=="" never fires over the full suite — zero live requests.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      news.go's branches are pinned (verified by reverting), but the quoted-word query still drops green under mutation and usage.go:107-109 is at zero coverage — both named in the finding's own text.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      bothSources.warn is nil at BOTH production sites (main.go:180, main.go:215, probed); warnTo no-ops on nil, so production degrades exactly as silently as before.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      Re-verified by mutation: e.Blocks[:1] leaves the entire cmd/define suite green.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      Re-verified false for "e.g.", "9/11", "rock 'n' roll" against text containing them verbatim; still undocumented in usage.go and the atlas.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Measured at the close: 0 of 26 plan checkboxes ticked, newsUsageSource still at plan line 88, and the issue's ticked M2/M3 rows still name Store.Usages, NewsSource and /usage.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      news.go:133-138 unchanged — both branches still return items, nil.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      rss.go:16-38 unchanged; well-formed non-RSS XML still returns (empty, nil) and is cacheable as "no news".
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      rss_test.go property unchanged and still unreachable; neither the plan nor the Log records what actually pins the Done-when clause.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      atlas/define.md:210-220 layout block still lists only words/, events/ and user-model.md.
+findings:
+  - id: new
+    severity: Minor
+    family: doc-comment-detached-from-declaration
+    title: |
+      newsFile was spliced under Forget's doc comment, so YAML.Forget lost its documentation
+    detail: |
+      cmd/define/store/yaml.go:356-361. The four-line comment documenting Forget ("Forget removes
+      one word file... Filename derivation goes through wordFileName...") is immediately followed,
+      with no blank line, by the newsFile type declaration — so godoc attaches it to newsFile, which
+      it does not describe, and func (y *YAML) Forget at :417 has no doc at all. Verified:
+      `go doc store.YAML.Forget` prints only the signature, and `git show 361136b:cmd/define/store/yaml.go`
+      has the comment attached at :353-358. A regression introduced by this window. Fix: move the
+      Forget doc back above :417 and give newsFile its own.
+  - id: new
+    severity: Minor
+    family: delete-scope-unstated-for-new-record
+    title: |
+      Forget does not remove usage/<slug>.yaml, and neither the doc nor storetest says so
+    detail: |
+      cmd/define/store/yaml.go:417 removes only words/<slug>.yaml; cmd/define/store/mem.go:138 only
+      deletes from m.words. Store.Forget's doc deliberately enumerates what it leaves behind ("does
+      NOT remove events: the deck is a working set, the log is history"), and this window added a
+      per-word on-disk record that the enumeration does not mention. Unlike events, the news cache is
+      derived and refetchable, so the argument for keeping it is weaker — a user who forgets a word
+      still has its headlines on disk. The rule: adding a per-word record obliges the delete verb to
+      declare whether it is removed, and a storetest row to pin the answer. Decide either way, but say
+      it in the interface doc and pin it in the suite.
+```
