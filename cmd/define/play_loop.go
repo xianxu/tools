@@ -60,8 +60,17 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	}
 	defer sess.restore()
 
+	// EVERY byte of session output goes through crlfWriter.
+	//
+	// In raw mode a bare \n moves down WITHOUT returning to column 0, so a
+	// multi-line definition cascades diagonally across the screen — each line
+	// starting where the last one ended. #16 built this writer for exactly that
+	// and the atlas documents it; the first version of this loop put \r\n in its
+	// own format strings and forgot that Render's output has bare newlines
+	// throughout, which is most of what a session prints.
 	return playSession(ctx, d, opt, play.NewSession(questions),
-		readKeys(ctx, f, interrupts), sess, stdout, stderr)
+		readKeys(ctx, f, interrupts), sess,
+		&crlfWriter{w: stdout}, &crlfWriter{w: stderr})
 }
 
 // playSession drives the state machine and performs its outcomes.
@@ -73,6 +82,16 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 
 	draw(stdout, s)
 	for !s.Done {
+		// Cancellation is checked BEFORE the select, not only inside it.
+		//
+		// select picks uniformly at random among ready cases, so with a
+		// cancelled context and a key already buffered it would sometimes grade
+		// one more answer after Ctrl-C — recording a verdict for a word the
+		// learner had stopped on. Caught as an intermittent test failure, which
+		// is the only way a random-choice bug ever shows up.
+		if ctx.Err() != nil {
+			return finish(stdout, s)
+		}
 		var k Key
 		select {
 		case <-ctx.Done():
@@ -98,6 +117,16 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 			// loop never inspects the verdict — a skip produced no outcome at
 			// all, so there is nothing to filter here.
 			d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, opt)
+		case play.OutcomeDrop:
+			// Through the store's own Forget, which is --forget's path: the deck
+			// loses the word and the events keep it. Reported, because removing
+			// something on one keystroke should say so.
+			if removed, err := d.deck.Forget(out.Word); err != nil {
+				fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
+			} else if removed {
+				fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
+			}
+
 		case play.OutcomeReveal:
 			if !opt.noAudio && opt.times > 0 {
 				// Cooked for playback, as #16 established: the indicator and any
@@ -132,8 +161,11 @@ func toInput(k Key) (play.Input, bool) {
 	case KeyEnter:
 		return play.Input{Kind: play.InputReveal}, true
 	case KeyRune:
-		if k.Rune == ' ' {
+		switch k.Rune {
+		case ' ':
 			return play.Input{Kind: play.InputReveal}, true
+		case 'd', 'D':
+			return play.Input{Kind: play.InputDrop}, true
 		}
 		return play.Input{Kind: play.InputRune, Rune: k.Rune}, true
 	}
@@ -189,16 +221,19 @@ func draw(w io.Writer, s play.Session) {
 	if q == nil {
 		return
 	}
-	fmt.Fprintf(w, "\r\n%s\r\n", q.Prompt())
+	// Plain \n throughout: the caller wraps stdout in crlfWriter, so translation
+	// happens in ONE place over every byte — including Render's, which is where
+	// the newlines actually are.
+	fmt.Fprintf(w, "\n%s\n", q.Prompt())
 	if s.Revealed {
-		fmt.Fprintf(w, "\r\n%s\r\n", q.Reveal())
-		fmt.Fprint(w, "\r\ny = got it, n = missed it, Ctrl-C to stop\r\n")
+		fmt.Fprintf(w, "\n%s\n", q.Reveal())
+		fmt.Fprint(w, "\ny = got it, n = missed it, d = remove from deck, Ctrl-C to stop\n")
 		return
 	}
-	fmt.Fprint(w, "\r\nEnter or space to reveal, Ctrl-C to stop\r\n")
+	fmt.Fprint(w, "\nEnter or space to reveal, d = remove from deck, Ctrl-C to stop\n")
 }
 
 func finish(w io.Writer, s play.Session) int {
-	fmt.Fprintf(w, "\r\n%d right, %d wrong\r\n", s.Right, s.Wrong)
+	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)
 	return 0
 }

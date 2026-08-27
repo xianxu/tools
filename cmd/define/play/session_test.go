@@ -228,3 +228,46 @@ func (skipForm) Grade(r rune) (Verdict, bool) {
 	}
 	return Skipped, false
 }
+
+// Dropping is a SESSION action, not a verdict — so every form gets it, and it
+// records no review.
+func TestDropAdvancesRecordsNothingAndNamesTheWord(t *testing.T) {
+	for _, when := range []string{"before reveal", "after reveal"} {
+		t.Run(when, func(t *testing.T) {
+			s := twoQuestions()
+			if when == "after reveal" {
+				s, _ = drive(s, reveal)
+			}
+
+			next, o := Apply(s, Input{Kind: InputDrop})
+
+			if o.Kind != OutcomeDrop {
+				t.Fatalf("outcome = %v, want OutcomeDrop", o.Kind)
+			}
+			if o.Word != "obsequious" {
+				t.Errorf("dropped %q, want the CURRENT word", o.Word)
+			}
+			if next.Index != 1 {
+				t.Errorf("index = %d, want 1 — dropping must move on", next.Index)
+			}
+			if next.Right != 0 || next.Wrong != 0 {
+				t.Errorf("dropping counted in the tally: %d/%d", next.Right, next.Wrong)
+			}
+		})
+	}
+}
+
+// It works for a form that shares no keys with Recall, because it is the
+// session's action rather than the form's.
+func TestDropWorksForAnyForm(t *testing.T) {
+	s := NewSession([]Question{&fakeForm{word: "alpha"}})
+
+	next, o := Apply(s, Input{Kind: InputDrop})
+
+	if o.Kind != OutcomeDrop || o.Word != "alpha" {
+		t.Errorf("outcome %+v, want a drop of alpha", o)
+	}
+	if !next.Done {
+		t.Error("dropping the last question did not end the session")
+	}
+}

@@ -16,6 +16,13 @@ const (
 	InputReveal
 	// InputQuit ends the session now, keeping everything already recorded.
 	InputQuit
+	// InputDrop removes the current word from the deck and moves on.
+	//
+	// A SESSION-level action rather than a verdict, which is why it is an Input
+	// kind and not something a form grades: "this word does not belong in my
+	// deck" is true whatever form is asking about it, so every future form gets
+	// it for free. It is also not an assessment — dropping records no review.
+	InputDrop
 )
 
 // Input is one decoded keystroke.
@@ -41,6 +48,10 @@ const (
 	OutcomeReveal
 	// OutcomeDone: the session is over.
 	OutcomeDone
+	// OutcomeDrop: remove this word from the deck. The EVENTS stay, matching
+	// --forget's contract: history is what happened and cannot be untrue, while
+	// the deck is the working set and is the learner's to curate.
+	OutcomeDrop
 )
 
 // Outcome is what the loop must do, and about which word.
@@ -92,6 +103,13 @@ func Apply(s Session, in Input) (Session, Outcome) {
 	}
 
 	switch in.Kind {
+	case InputDrop:
+		// Dropping is allowed before OR after reveal: you may recognise a word as
+		// not-yours without needing to see the definition again.
+		word := q.Word()
+		next, _ := advance(s, q, Skipped) // advances, records nothing
+		return next, Outcome{Kind: OutcomeDrop, Word: word}
+
 	case InputQuit:
 		// Everything already recorded stays recorded — that is a property of
 		// recording as it happens, not of anything done here.

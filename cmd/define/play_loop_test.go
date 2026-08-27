@@ -252,3 +252,100 @@ func TestOnlyDueWordsAreOffered(t *testing.T) {
 		t.Errorf("queue = %v, want only sycophantic — ephemeral was just reviewed", got)
 	}
 }
+
+// EVERY newline a session writes must be a full CRLF.
+//
+// This is the defect the first version of --play shipped, and it is worth
+// recording WHY the pty smoke test missed it: that test captured the bytes and
+// printed them through Python, where a bare \n renders at column 0 and the
+// output looked perfect. A real terminal in raw mode does not — it moves down
+// and stays put — so the definition cascaded diagonally across the screen, each
+// line starting where the last one ended.
+//
+// A byte capture is not a screenshot. What can be asserted about bytes is this:
+// in raw mode there is no such thing as a bare newline.
+func TestSessionOutputIsAllCRLF(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral")
+	qs := questionsFor(t, d, opt)
+
+	var raw, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs),
+		keysFor("\ry\rn"), nil, &crlfWriter{w: &raw}, &errb)
+
+	got := raw.String()
+	if strings.Count(got, "\n") == 0 {
+		t.Fatal("no newlines at all — this test would assert nothing")
+	}
+	if bare := strings.Count(got, "\n") - strings.Count(got, "\r\n"); bare != 0 {
+		t.Errorf("%d bare newlines in session output — in raw mode each one starts the next line "+
+			"where the last ended, which is the diagonal cascade", bare)
+	}
+	// And the definition itself must be in there, or the assertion above is
+	// ranging over prompts alone.
+	if !strings.Contains(got, "adjective") {
+		t.Error("the rendered definition never reached the writer")
+	}
+}
+
+// The drop key, end to end: the deck loses the word and the EVENTS keep it —
+// --forget's contract, because history is what happened and cannot be untrue
+// while the deck is the working set the learner curates.
+func TestDropRemovesFromDeckButKeepsEvents(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral")
+	// The lookup that CREATED the deck entry, which is the history the drop must
+	// not erase. playRig upserts words without events, so asserting preservation
+	// without this would range over an empty log and pass vacuously — which is
+	// how the first version of this test failed for the wrong reason.
+	if err := st.AppendEvent(store.ReviewEvent{
+		Word: "ephemeral", Kind: store.EventLookedUp, Found: true, At: aDay,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	qs := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	// Drop the first word, then quit.
+	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("d^"), nil, &out, &errb)
+
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range deck {
+		if store.Key(w.Text) == "ephemeral" {
+			t.Error("the dropped word is still in the deck")
+		}
+	}
+	if len(deck) != 1 {
+		t.Errorf("deck has %d words, want 1 remaining", len(deck))
+	}
+	// The lookup that created it is still history.
+	all, _ := st.Events(time.Time{})
+	found := false
+	for _, e := range all {
+		if e.Word == "ephemeral" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("dropping erased the word's history — that is --forget's contract broken")
+	}
+	if !strings.Contains(out.String(), "removed") {
+		t.Errorf("stdout = %q, want it to say what was removed", out.String())
+	}
+}
+
+// Dropping is not an assessment.
+func TestDropRecordsNoReview(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	spy := &countingCapturer{}
+	d.capture = spy
+	qs := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("d"), nil, &out, &errb)
+
+	if spy.reviews != 0 {
+		t.Errorf("dropping recorded %d reviews", spy.reviews)
+	}
+}
