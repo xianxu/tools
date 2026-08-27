@@ -128,3 +128,30 @@ func entryUsages(e Entry, word string) []Usage {
 	}
 	return out
 }
+
+// bothSources is the seam's real implementation: the feed and the dictionary,
+// merged.
+//
+// News first, because it is the current half and the reason this issue exists;
+// NOAD always, because it is free, offline, and not current — which is exactly
+// the complement. The feed's thematic collapse is measured (ten of fourteen
+// `sycophantic` headlines were about AI chatbots), so a word sourced only from
+// this week is taught narrowly.
+//
+// A news failure DEGRADES rather than propagating: the dictionary half still
+// runs, and half the sentences beat none. A nil news source is the same case —
+// "no feed configured" is not an error here, the same shape every other seam in
+// this package uses for absent.
+type bothSources struct {
+	news *cachingFeed
+}
+
+func (b *bothSources) Usages(ctx context.Context, word string, e Entry) ([]Usage, error) {
+	var out []Usage
+	if b.news != nil {
+		if items, err := b.news.items(ctx, word); err == nil {
+			out = append(out, usagesFrom(items, word)...)
+		}
+	}
+	return append(out, entryUsages(e, word)...), nil
+}

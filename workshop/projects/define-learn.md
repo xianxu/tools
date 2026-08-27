@@ -439,6 +439,41 @@ original framing, now removed).
 Task list also brought current: [tools#4] and [tools#15] were `done` and archived but
 still showed open here.
 
+<a id="tools-9-m1"></a>
+### tools#9 M1 — real sentences, filtered by the matcher that highlights them
+
+**est:** 8.22 (whole issue)
+**actual:** 0.9h (M1)
+**closed:** 2026-08-26
+
+`parseRSS` turns a Google News feed into `store.NewsItem`s; `usagesFrom` and
+`entryUsages` turn those — and NOAD's own examples — into one `Usage` shape
+tagged by provenance. The feed is the current half and the dictionary is the
+durable half, which matters because the feed's thematic collapse is measured:
+ten of fourteen `sycophantic` headlines were about AI chatbots, so a word sourced
+only from this week would be taught narrowly.
+
+**The decision worth not re-deriving: raw is cached, usable is derived.** Only
+the feed's own words go to disk. Everything the learner sees is computed at read
+time, so improving the filter improves every word already cached with no
+re-fetch — caching the filtered result would freeze today's judgment. The plan's
+first draft put `Usage` in `package main` while the store returned it, which
+cannot compile; the Critical that forced the split was the design telling the
+truth.
+
+**And `containsWord` delegates to `highlightSpans` rather than matching itself.**
+The filter and #21's highlighter must never disagree about the same text, or the
+learner sees a headline whose word renders green while the filter rejected that
+headline — the same word in two states on one screen. That agreement has its own
+test.
+
+Two things capturing a REAL feed taught that reasoning about one did not: every
+title carries a `" - Publisher"` suffix (stripped only when it is the publisher
+the feed named, so a headline with an internal dash keeps it), and a naive first
+fixture was ten copies of one article. The committed fixture is deliberately
+adversarial to its own test — 10 matches across 10 publishers plus 3
+non-matches, so the filter has work to do.
+
 [tools#2]: #tools-2
 [tools#3]: #tools-3
 [tools#4]: #tools-4
@@ -447,6 +482,7 @@ still showed open here.
 [tools#7]: #tools-7
 [tools#8]: #tools-8
 [tools#9]: #tools-9
+[tools#9 M1]: #tools-9-m1
 [tools#10]: #tools-10
 [tools#11 M1]: #tools-11-m1
 [tools#11 M2]: #tools-11-m2

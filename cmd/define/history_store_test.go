@@ -75,6 +75,10 @@ func (failingStore) Events(time.Time) ([]store.ReviewEvent, error) {
 func (failingStore) UserModel() (string, error)  { return "", errFail }
 func (failingStore) SetUserModel(string) error   { return errFail }
 func (failingStore) Forget(string) (bool, error) { return false, errFail }
+func (failingStore) NewsItems(string) ([]store.NewsItem, time.Time, error) {
+	return nil, time.Time{}, errFail
+}
+func (failingStore) SetNewsItems(string, []store.NewsItem, time.Time) error { return errFail }
 
 var errFail = &failErr{}
 

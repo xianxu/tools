@@ -18,9 +18,17 @@ type Mem struct {
 	// implementation can hold the state the real one holds: a getter the fake
 	// cannot back makes the conformance row asserting it unfalsifiable.
 	userModel string
+	news      map[string]newsCache
 }
 
-func NewMem() *Mem { return &Mem{words: map[string]Word{}} }
+func NewMem() *Mem { return &Mem{words: map[string]Word{}, news: map[string]newsCache{}} }
+
+// newsCache is items plus WHEN, because the timestamp is what distinguishes
+// "fetched and found nothing" from "never fetched".
+type newsCache struct {
+	items []NewsItem
+	at    time.Time
+}
 
 func (m *Mem) Upsert(w Word) error {
 	m.mu.Lock()
@@ -99,6 +107,32 @@ func (m *Mem) UserModel() (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.userModel, nil
+}
+
+func (m *Mem) NewsItems(key string) ([]NewsItem, time.Time, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.news[Key(key)]
+	if !ok {
+		return nil, time.Time{}, nil
+	}
+	return append([]NewsItem(nil), c.items...), c.at, nil
+}
+
+func (m *Mem) SetNewsItems(key string, items []NewsItem, at time.Time) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.news == nil {
+		m.news = map[string]newsCache{}
+	}
+	// Copied, not aliased: the caller keeps its slice and a later append on
+	// their side must not mutate what this store believes it holds.
+	m.news[k] = newsCache{items: append([]NewsItem(nil), items...), at: at}
+	return nil
 }
 
 func (m *Mem) Forget(key string) (bool, error) {

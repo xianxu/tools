@@ -39,6 +39,9 @@ func (y *YAML) eventsDir() string { return filepath.Join(y.dir, "events") }
 // the inferred sections and never touches the human-owned ## Corrections.
 func (y *YAML) userModelFile() string { return filepath.Join(y.dir, "user-model.md") }
 
+// usageDir holds the news cache, one file per word, beside words/ and events/.
+func (y *YAML) usageDir() string { return filepath.Join(y.dir, "usage") }
+
 // SetUserModel writes the learner model.
 //
 // Atomically, like a word file and unlike the append-only day log: this file is
@@ -355,6 +358,62 @@ func endsWithNewline(path string) bool {
 //
 // Filename derivation goes through wordFileName, the same function Upsert uses —
 // see its doc comment for what that guard is and is not worth.
+// newsFile is a WHOLE-FILE record, like words/ and unlike the append-only day
+// log in events/. It is written through writeBytesAtomic and therefore cannot
+// tear; the failure to handle is a file corrupted from outside, and the
+// discipline for that shape here is warn and skip the whole file — never return
+// half a record.
+type newsFile struct {
+	FetchedAt time.Time  `yaml:"fetched_at"`
+	Items     []NewsItem `yaml:"items"`
+}
+
+func (y *YAML) NewsItems(key string) ([]NewsItem, time.Time, error) {
+	k := Key(key)
+	if k == "" {
+		return nil, time.Time{}, nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	b, err := os.ReadFile(filepath.Join(y.usageDir(), name))
+	if os.IsNotExist(err) {
+		return nil, time.Time{}, nil // never fetched
+	}
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	var f newsFile
+	if err := yaml.Unmarshal(b, &f); err != nil {
+		// One corrupt cache file must not make the word unusable: reading as
+		// never-fetched costs a re-fetch, which is exactly what a cache miss
+		// costs anyway.
+		y.warnf("skipping unreadable %s: %v", name, err)
+		return nil, time.Time{}, nil
+	}
+	return f.Items, f.FetchedAt, nil
+}
+
+func (y *YAML) SetNewsItems(key string, items []NewsItem, at time.Time) error {
+	k := Key(key)
+	if k == "" {
+		return nil
+	}
+	name, err := wordFileName(Slug(k))
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(y.usageDir(), 0o755); err != nil {
+		return err
+	}
+	b, err := yaml.Marshal(newsFile{FetchedAt: at, Items: items})
+	if err != nil {
+		return err
+	}
+	return writeBytesAtomic(filepath.Join(y.usageDir(), name), b)
+}
+
 func (y *YAML) Forget(key string) (bool, error) {
 	k := Key(key)
 	if k == "" {
