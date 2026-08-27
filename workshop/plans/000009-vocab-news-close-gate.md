@@ -212,6 +212,145 @@ rounds:
           round: 2
       boundary: M1
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-26T21:07:45-07:00"
+      agent: claude
+      dispose:
+        - id: BR-4
+          disposition: addressed
+          note: 'Verified by reverting: blanking URL and At reddens usage_test.go:270 on both fields.'
+          round: 3
+        - id: BR-5
+          disposition: not-addressed
+          note: 'Re-verified against the FULL suite: e.Blocks[:1] leaves all of cmd/define green.'
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+          round: 3
+        - id: BR-8
+          disposition: not-addressed
+          note: Re-verified false for "e.g.", "9/11", "rock 'n' roll"; still undocumented in usage.go and atlas.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: Worse than reported - the Integration table names newsUsageSource, which exists nowhere, and the issue's own M2/M3 rows are ticked while naming Store.Usages, NewsSource and /usage, none of which exist.
+          round: 3
+        - id: BR-10
+          disposition: addressed
+          note: Count-bound gone; rule stated in lessons.md and the target's doc. I read all 12 fuzz targets in the tree - no other instance of the class.
+          round: 3
+        - id: BR-11
+          disposition: addressed
+          note: 'Verified by reverting: the guessing mutant reddens rss_test.go:87 and FuzzParsePubDate seeds 1 and 6.'
+          round: 3
+        - id: BR-12
+          disposition: addressed
+          note: 'This window''s base equals git merge-base main HEAD, so all eight #9 commits including b0e907e are covered; no M2/M3 commit carries a verdict trailer.'
+          round: 3
+      findings:
+        - id: BR-13
+          severity: Critical
+          title: TestWithStoreCarriesTheUsageSourceThrough makes a live request to news.google.com on every untagged test run
+          detail: |-
+            cmd/define/news_test.go:228 drives production wiring (openStore builds newHTTPFeed at
+            main.go:215) and then calls Usages, so the default `go test ./cmd/define/` fetches the
+            real feed. Measured with a scratch probe on the same wiring: 101 usages, 95 of them
+            usageNews, 48334 bytes of live Google News written into the temp dir; and untagged
+            coverage reports news.go:44 Fetch at 72.7%, which is impossible unless the default suite
+            calls it. The test's own comment at :226-227 says it "reaches the dictionary half without
+            a network" and its failure message at :233 says "no usages offline" - both false. Because
+            the assertion is only len(got) != 0, NOAD alone satisfies it, so the test is green with or
+            without the network and verifies neither the offline claim nor the degradation. This is
+            ARCH-MOCK's central case with fakeFeed sitting one file away, and it silently opts out of
+            the rule news_conformance_test.go:7-9 states in as many words. Fix: keep the d.usage != nil
+            wiring assertion, and inject the fake at the feed seam so the offline claim is actually
+            exercised - script it to fail and assert every returned usage is usageNOAD.
+          family: unit-test-reaches-real-dependency
+          round: 3
+        - id: BR-14
+          severity: Important
+          title: Every error branch in news.go is uncovered, and the store-read degradation survives inversion
+          detail: |-
+            Measured: replacing news.go:97-101 ("an unreadable cache is a miss, not a failure") with
+            `return nil, err` - the opposite policy - leaves the entire cmd/define suite green over a
+            full run. failingStore (history_store_test.go:78-81) already returns errFail for both new
+            methods, so the fixture is in the tree and unused. The rule, sibling to BR-11's: a comment
+            stating "on failure X we do Y instead" needs one test that reddens when Y is removed.
+            BR-11 swept that rule over output FIELDS; the degradation PATHS were never enumerated.
+            Enumeration, from the coverage profile - every uncovered block in the two new files:
+            news.go:51-53 (NewRequestWithContext error), 55-57 (transport failure), 59-61 (non-200 is
+            an error), 97-101 (unreadable cache = miss, verified unpinned), 114-118 (parse failure
+            falls back to stale else errors), 122-126 (write failure still returns the answer), and
+            usage.go:99-101 (empty publisher = no stripping). Rows 1-3 close with one httptest.Server
+            test on httpFeed, which today has NO hermetic test at all - its URL construction is also
+            unpinned, and the quoted-word query at news.go:48 is a Spec-measured, load-bearing detail
+            a mutation could drop while staying green. Rows 4-6 close with failingStore plus a fakeFeed
+            body of non-XML bytes.
+          family: documented-degradation-unpinned
+          round: 3
+        - id: BR-15
+          severity: Important
+          title: bothSources discards the feed error with no warning, and UsageSource.Usages can never return one
+          detail: |-
+            cmd/define/usage.go:152 - `if items, err := b.news.items(ctx, word); err == nil` drops the
+            error, warns nothing, and the method returns nil error on every path, so the interface's
+            error result is vestigial. Degrading is the right design; degrading SILENTLY is not this
+            package's shape: openStore warns when it falls back (main.go:184), YAML.NewsItems warns on
+            a corrupt cache (yaml.go:388), and cachingAudioSource propagates and lets the caller decide
+            (fetch.go:122-131). As shipped, a permanently broken feed - wrong URL, TLS failure, Google
+            blocking us - is indistinguishable from "this word is not in the news" for both the user
+            and for #10, the stated consumer. Fix: thread the warn io.Writer the package already
+            carries and warn once per failed fetch; if the error return is genuinely always nil, say so
+            in the UsageSource doc so #10 does not write a dead branch against it.
+          family: degradation-without-signal
+          round: 3
+        - id: BR-16
+          severity: Minor
+          title: cachingFeed's SetNewsItems error handler and its fallthrough return the same value
+          detail: |-
+            news.go:122-126 is `if err := c.st.SetNewsItems(...); err != nil { return items, nil }`
+            followed by `return items, nil`. Both branches are identical, so the guard is dead and
+            cannot be mutated. `_ = c.st.SetNewsItems(...)` with the same comment says it honestly.
+          family: dead-branch
+          round: 3
+        - id: BR-17
+          severity: Minor
+          title: parseRSS never checks the root element, so non-RSS XML becomes a cached "no news"
+          detail: |-
+            rss.go:16-38 unmarshals into a struct keyed only on channel>item, so any well-formed XML
+            that is not an RSS feed returns (empty, nil). Round 2 noted this as M2 scope; M2 is in this
+            window, and at M2 it becomes cache outcome 2 - a wrong-content 200 frozen as "no news for
+            this word" for a full cacheTTL.
+          family: parser-accepts-wrong-document
+          round: 3
+        - id: BR-18
+          severity: Minor
+          title: FuzzParseRSS's remaining property can never fire, so the target is now a no-panic smoke test
+          detail: |-
+            rss_test.go:181 asserts `err != nil && items != nil`, but parseRSS's only error return is
+            `return nil, err`, so the guard is unreachable by construction. This is NOT a request for a
+            fourth property - BR-10 was right about that. The recommendation is to record, in the plan
+            and the Log, that the Done-when's second clause ("never returns an item it did not find in
+            the input") is pinned by the exact-count and exact-title assertions in
+            TestParseRSSOverACapturedFeed and TestParseRSSDecisions, not by the fuzz target.
+          family: assertion-cannot-fire
+          round: 3
+        - id: BR-19
+          severity: Minor
+          title: The atlas's canonical on-disk layout block does not list usage/
+          detail: |-
+            atlas/define.md:216-219 shows words/, events/ and user-model.md as the layout, while the
+            new section at :1064 says usage/<slug>.yaml sits "beside words/ and events/". One fact,
+            two places, one stale - a reader who consults the layout map will not see the new
+            directory.
+          family: fact-documented-in-two-places
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#9 (boundary-review)
@@ -341,14 +480,96 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   in NO review window. Fix: close M2 with an explicit widened window,
   `sdlc judge milestone-review --base 98d8ccc7 --head <M2 close>`, and record it in the Log.
 
+## Round 3 — 2026-08-26T21:07:45-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-4 — addressed — Verified by reverting: blanking URL and At reddens usage_test.go:270 on both fields.
+- BR-5 — not-addressed — Re-verified against the FULL suite: e.Blocks[:1] leaves all of cmd/define green.
+- BR-6 — not-addressed — renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+- BR-7 — not-addressed — store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+- BR-8 — not-addressed — Re-verified false for "e.g.", "9/11", "rock 'n' roll"; still undocumented in usage.go and atlas.
+- BR-9 — not-addressed — Worse than reported - the Integration table names newsUsageSource, which exists nowhere, and the issue's own M2/M3 rows are ticked while naming Store.Usages, NewsSource and /usage, none of which exist.
+- BR-10 — addressed — Count-bound gone; rule stated in lessons.md and the target's doc. I read all 12 fuzz targets in the tree - no other instance of the class.
+- BR-11 — addressed — Verified by reverting: the guessing mutant reddens rss_test.go:87 and FuzzParsePubDate seeds 1 and 6.
+- BR-12 — addressed — This window's base equals git merge-base main HEAD, so all eight #9 commits including b0e907e are covered; no M2/M3 commit carries a verdict trailer.
+
+### Raised
+
+- **BR-13** [Critical] `unit-test-reaches-real-dependency` TestWithStoreCarriesTheUsageSourceThrough makes a live request to news.google.com on every untagged test run
+  cmd/define/news_test.go:228 drives production wiring (openStore builds newHTTPFeed at
+  main.go:215) and then calls Usages, so the default `go test ./cmd/define/` fetches the
+  real feed. Measured with a scratch probe on the same wiring: 101 usages, 95 of them
+  usageNews, 48334 bytes of live Google News written into the temp dir; and untagged
+  coverage reports news.go:44 Fetch at 72.7%, which is impossible unless the default suite
+  calls it. The test's own comment at :226-227 says it "reaches the dictionary half without
+  a network" and its failure message at :233 says "no usages offline" - both false. Because
+  the assertion is only len(got) != 0, NOAD alone satisfies it, so the test is green with or
+  without the network and verifies neither the offline claim nor the degradation. This is
+  ARCH-MOCK's central case with fakeFeed sitting one file away, and it silently opts out of
+  the rule news_conformance_test.go:7-9 states in as many words. Fix: keep the d.usage != nil
+  wiring assertion, and inject the fake at the feed seam so the offline claim is actually
+  exercised - script it to fail and assert every returned usage is usageNOAD.
+- **BR-14** [Important] `documented-degradation-unpinned` Every error branch in news.go is uncovered, and the store-read degradation survives inversion
+  Measured: replacing news.go:97-101 ("an unreadable cache is a miss, not a failure") with
+  `return nil, err` - the opposite policy - leaves the entire cmd/define suite green over a
+  full run. failingStore (history_store_test.go:78-81) already returns errFail for both new
+  methods, so the fixture is in the tree and unused. The rule, sibling to BR-11's: a comment
+  stating "on failure X we do Y instead" needs one test that reddens when Y is removed.
+  BR-11 swept that rule over output FIELDS; the degradation PATHS were never enumerated.
+  Enumeration, from the coverage profile - every uncovered block in the two new files:
+  news.go:51-53 (NewRequestWithContext error), 55-57 (transport failure), 59-61 (non-200 is
+  an error), 97-101 (unreadable cache = miss, verified unpinned), 114-118 (parse failure
+  falls back to stale else errors), 122-126 (write failure still returns the answer), and
+  usage.go:99-101 (empty publisher = no stripping). Rows 1-3 close with one httptest.Server
+  test on httpFeed, which today has NO hermetic test at all - its URL construction is also
+  unpinned, and the quoted-word query at news.go:48 is a Spec-measured, load-bearing detail
+  a mutation could drop while staying green. Rows 4-6 close with failingStore plus a fakeFeed
+  body of non-XML bytes.
+- **BR-15** [Important] `degradation-without-signal` bothSources discards the feed error with no warning, and UsageSource.Usages can never return one
+  cmd/define/usage.go:152 - `if items, err := b.news.items(ctx, word); err == nil` drops the
+  error, warns nothing, and the method returns nil error on every path, so the interface's
+  error result is vestigial. Degrading is the right design; degrading SILENTLY is not this
+  package's shape: openStore warns when it falls back (main.go:184), YAML.NewsItems warns on
+  a corrupt cache (yaml.go:388), and cachingAudioSource propagates and lets the caller decide
+  (fetch.go:122-131). As shipped, a permanently broken feed - wrong URL, TLS failure, Google
+  blocking us - is indistinguishable from "this word is not in the news" for both the user
+  and for #10, the stated consumer. Fix: thread the warn io.Writer the package already
+  carries and warn once per failed fetch; if the error return is genuinely always nil, say so
+  in the UsageSource doc so #10 does not write a dead branch against it.
+- **BR-16** [Minor] `dead-branch` cachingFeed's SetNewsItems error handler and its fallthrough return the same value
+  news.go:122-126 is `if err := c.st.SetNewsItems(...); err != nil { return items, nil }`
+  followed by `return items, nil`. Both branches are identical, so the guard is dead and
+  cannot be mutated. `_ = c.st.SetNewsItems(...)` with the same comment says it honestly.
+- **BR-17** [Minor] `parser-accepts-wrong-document` parseRSS never checks the root element, so non-RSS XML becomes a cached "no news"
+  rss.go:16-38 unmarshals into a struct keyed only on channel>item, so any well-formed XML
+  that is not an RSS feed returns (empty, nil). Round 2 noted this as M2 scope; M2 is in this
+  window, and at M2 it becomes cache outcome 2 - a wrong-content 200 frozen as "no news for
+  this word" for a full cacheTTL.
+- **BR-18** [Minor] `assertion-cannot-fire` FuzzParseRSS's remaining property can never fire, so the target is now a no-panic smoke test
+  rss_test.go:181 asserts `err != nil && items != nil`, but parseRSS's only error return is
+  `return nil, err`, so the guard is unreachable by construction. This is NOT a request for a
+  fourth property - BR-10 was right about that. The recommendation is to record, in the plan
+  and the Log, that the Done-when's second clause ("never returns an item it did not find in
+  the input") is pinned by the exact-count and exact-title assertions in
+  TestParseRSSOverACapturedFeed and TestParseRSSDecisions, not by the fuzz target.
+- **BR-19** [Minor] `fact-documented-in-two-places` The atlas's canonical on-disk layout block does not list usage/
+  atlas/define.md:216-219 shows words/, events/ and user-model.md as the layout, while the
+  new section at :1064 says usage/<slug>.yaml sits "beside words/ and events/". One fact,
+  two places, one stale - a reader who consults the layout map will not see the new
+  directory.
+
 ## Open findings
 
-- **BR-4** [Minor] `output-field-unasserted` Usage.URL and Usage.At are never asserted, so blanking them is invisible
 - **BR-5** [Minor] `at-least-one-hides-undercollection` entryUsages' multi-block traversal is unpinned by an at-least-one assertion
 - **BR-6** [Minor] `helper-duplicated-in-package` renderSpans duplicates marked from highlight_test.go in the same package
 - **BR-7** [Minor] `name-means-two-things` store.NewsItem.Source is the publisher while Usage.Source is provenance
 - **BR-8** [Minor] `matcher-limit-silently-drops-input` A punctuated deck key can never yield a usage, and nothing says so
 - **BR-9** [Minor] `plan-record-drift` Every plan checkbox is unticked at the boundary, and five prose claims contradict the code
-- **BR-10** [Important] `property-rejects-correct-behaviour` The count-bound that replaced the subsequence property also fails on correct parsing — 3rd in family
-- **BR-11** [Important] `output-field-unasserted` A parsePubDate that GUESSES a date survives the whole M1 suite — 2nd in family
-- **BR-12** [Important] `boundary-marker-strands-commits` The Review-Verdict trailer is on a fix commit, so this window is empty and b0e907e is in none
+- **BR-13** [Critical] `unit-test-reaches-real-dependency` TestWithStoreCarriesTheUsageSourceThrough makes a live request to news.google.com on every untagged test run
+- **BR-14** [Important] `documented-degradation-unpinned` Every error branch in news.go is uncovered, and the store-read degradation survives inversion
+- **BR-15** [Important] `degradation-without-signal` bothSources discards the feed error with no warning, and UsageSource.Usages can never return one
+- **BR-16** [Minor] `dead-branch` cachingFeed's SetNewsItems error handler and its fallthrough return the same value
+- **BR-17** [Minor] `parser-accepts-wrong-document` parseRSS never checks the root element, so non-RSS XML becomes a cached "no news"
+- **BR-18** [Minor] `assertion-cannot-fire` FuzzParseRSS's remaining property can never fire, so the target is now a no-panic smoke test
+- **BR-19** [Minor] `fact-documented-in-two-places` The atlas's canonical on-disk layout block does not list usage/

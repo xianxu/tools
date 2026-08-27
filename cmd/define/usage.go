@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -35,8 +37,14 @@ type Usage struct {
 // The Entry is a parameter because NOAD's own examples are one of the two
 // sources and the caller already has the parsed entry in hand — refetching or
 // reparsing it here would be the seam doing work its caller already did.
+//
+// NO ERROR RETURN, and that is a contract rather than an oversight: the
+// dictionary half is computed from an Entry the caller already holds, so there
+// is always an answer. A feed failure DEGRADES to it and is reported on the warn
+// writer. The first version returned an error that was nil on every path — a
+// dead branch for #10 to write code against.
 type UsageSource interface {
-	Usages(ctx context.Context, word string, e Entry) ([]Usage, error)
+	Usages(ctx context.Context, word string, e Entry) []Usage
 }
 
 // containsWord reports whether text genuinely contains the word.
@@ -144,14 +152,37 @@ func entryUsages(e Entry, word string) []Usage {
 // this package uses for absent.
 type bothSources struct {
 	news *cachingFeed
+	warn io.Writer
+
+	mu     sync.Mutex
+	warned bool
 }
 
-func (b *bothSources) Usages(ctx context.Context, word string, e Entry) ([]Usage, error) {
+func (b *bothSources) Usages(ctx context.Context, word string, e Entry) []Usage {
 	var out []Usage
 	if b.news != nil {
-		if items, err := b.news.items(ctx, word); err == nil {
-			out = append(out, usagesFrom(items, word)...)
+		items, err := b.news.items(ctx, word)
+		if err != nil {
+			// Degrading is right; degrading SILENTLY is not this package's
+			// shape. A permanently broken feed — wrong URL, TLS failure, Google
+			// blocking us — would otherwise be indistinguishable from "this word
+			// is not in the news", both for the reader and for #10.
+			//
+			// Once per session, like storeCapturer's write warning: a failing
+			// feed fails for every word, and one line per lookup is noise.
+			b.warnOnce("could not read the news feed (%v); using dictionary examples only", err)
 		}
+		out = append(out, usagesFrom(items, word)...)
 	}
-	return append(out, entryUsages(e, word)...), nil
+	return append(out, entryUsages(e, word)...)
+}
+
+func (b *bothSources) warnOnce(format string, args ...any) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.warned {
+		return
+	}
+	b.warned = true
+	warnTo(b.warn, format, args...)
 }

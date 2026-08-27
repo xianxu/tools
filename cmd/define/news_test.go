@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,16 +143,19 @@ func (c *movingClock) Now() time.Time { return c.now }
 func TestBothSourcesDegradesToNOADWhenNewsFails(t *testing.T) {
 	c, f, _ := newsRig(t, rssFixture(t, "ephemeral.rss"), aDay)
 	f.failWith(errFeedDown)
-	src := &bothSources{news: c}
+	var warn bytes.Buffer
+	src := &bothSources{news: c, warn: &warn}
 	e := ParseEntry(fixture(t, "bank"))
 
-	got, err := src.Usages(t.Context(), "bank", e)
+	got := src.Usages(t.Context(), "bank", e)
 
-	if err != nil {
-		t.Fatalf("a failing feed must degrade, not fail: %v", err)
-	}
 	if len(got) == 0 {
 		t.Fatal("no usages at all — the dictionary half did not run")
+	}
+	// Degrading is right; degrading SILENTLY would make a permanently broken
+	// feed indistinguishable from "this word is not in the news".
+	if !strings.Contains(warn.String(), "news feed") {
+		t.Errorf("the feed failure was swallowed: warn = %q", warn.String())
 	}
 	for _, u := range got {
 		if u.Source != usageNOAD {
@@ -162,10 +170,7 @@ func TestBothSourcesMergesNewsAndNOAD(t *testing.T) {
 	src := &bothSources{news: c}
 	e := ParseEntry(fixture(t, "ephemeral"))
 
-	got, err := src.Usages(t.Context(), "ephemeral", e)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := src.Usages(t.Context(), "ephemeral", e)
 
 	var news, noad int
 	for _, u := range got {
@@ -193,11 +198,8 @@ func TestBothSourcesWorksWithNoFeedAtAll(t *testing.T) {
 	src := &bothSources{}
 	e := ParseEntry(fixture(t, "bank"))
 
-	got, err := src.Usages(t.Context(), "bank", e)
+	got := src.Usages(t.Context(), "bank", e)
 
-	if err != nil {
-		t.Fatalf("no feed must not be an error: %v", err)
-	}
 	if len(got) == 0 {
 		t.Error("the dictionary half must still run")
 	}
@@ -213,24 +215,42 @@ func TestBothSourcesWorksWithNoFeedAtAll(t *testing.T) {
 // builds a source and withStore carries it through, which is the hop that was
 // missing in #21 and would be missing here for exactly the same reason.
 func TestWithStoreCarriesTheUsageSourceThrough(t *testing.T) {
-	// Parsed BEFORE the chdir: fixture() reads relative to the working
-	// directory, and this test moves it.
-	e := ParseEntry(fixture(t, "bank"))
 	t.Chdir(t.TempDir())
 
 	d := deps{newStore: openStore}.withStore(options{}, io.Discard)
 
+	// The WIRING HOP, and only that. The first version of this test also called
+	// Usages on production deps — which builds a real httpFeed, so every plain
+	// `go test` fetched news.google.com and wrote ~48 KB of live headlines into
+	// a temp dir. It passed either way, because bothSources degrades to the
+	// dictionary, so the assertion could not tell network from no-network while
+	// its own comment claimed "without a network".
+	//
+	// The offline claim now lives in TestUsagesOfflineWithNoFeed, on a source
+	// built with no feed at all. Two claims, two tests, neither lying.
 	if d.usage == nil {
 		t.Fatal("withStore left deps.usage nil — #10 would have no sentences")
 	}
-	// And it reaches the dictionary half without a network, which is the
-	// degradation the seam promises.
-	got, err := d.usage.Usages(t.Context(), "bank", e)
-	if err != nil {
-		t.Fatalf("Usages: %v", err)
+	if _, ok := d.usage.(*bothSources); !ok {
+		t.Errorf("deps.usage is %T, want the merged source", d.usage)
 	}
+}
+
+// The offline half, with no feed in the picture at all — so "offline" is a
+// property of the code rather than of whether the test machine has a network.
+func TestUsagesOfflineWithNoFeed(t *testing.T) {
+	e := ParseEntry(fixture(t, "bank"))
+	src := &bothSources{} // no feed, no network, no cache
+
+	got := src.Usages(t.Context(), "bank", e)
+
 	if len(got) == 0 {
-		t.Error("no usages offline — the dictionary half is not wired")
+		t.Fatal("no usages with no feed — the dictionary half is not reachable")
+	}
+	for _, u := range got {
+		if u.Source != usageNOAD {
+			t.Errorf("usage %q tagged %q with no feed configured", u.Text, u.Source)
+		}
 	}
 }
 
@@ -244,4 +264,127 @@ func TestNoCaptureStillLeavesAUsageSource(t *testing.T) {
 	if d.usage == nil {
 		t.Error("no-capture left deps.usage nil")
 	}
+}
+
+// BR-14's enumeration, swept: every branch in news.go whose comment states "on
+// failure X we do Y instead" gets one test that reddens when Y is removed.
+//
+// BR-11 swept that rule over output FIELDS; the degradation PATHS were never
+// enumerated, and the coverage profile named them all at once. The sibling rule:
+// a comment describing a fallback is a claim, and an uncovered branch is a claim
+// nothing checks.
+func TestUnreadableCacheIsAMissNotAFailure(t *testing.T) {
+	// failingStore returns errFail for NewsItems — a fixture that was already in
+	// the tree and unused for this.
+	f := newFakeFeed(rssFixture(t, "ephemeral.rss"))
+	c := newCachingFeed(f, failingStore{}, store.FixedClock(aDay))
+
+	got, err := c.items(t.Context(), "ephemeral")
+
+	if err != nil {
+		t.Fatalf("an unreadable cache must be a miss, not a failure: %v", err)
+	}
+	if len(got) != 13 {
+		t.Errorf("got %d items, want the 13 fetched despite the cache being unreadable", len(got))
+	}
+}
+
+// A cache WRITE that fails must not lose the answer we already have: failing
+// there would trade a usable result for a bookkeeping problem.
+func TestCacheWriteFailureStillReturnsTheAnswer(t *testing.T) {
+	f := newFakeFeed(rssFixture(t, "ephemeral.rss"))
+	c := newCachingFeed(f, writeFailsStore{Store: store.NewMem()}, store.FixedClock(aDay))
+
+	got, err := c.items(t.Context(), "ephemeral")
+
+	if err != nil {
+		t.Fatalf("a failed cache write must not fail the fetch: %v", err)
+	}
+	if len(got) != 13 {
+		t.Errorf("got %d items, want 13", len(got))
+	}
+}
+
+// A body that does not parse behaves like a failed fetch: stale beats nothing,
+// and with nothing stale it is an error rather than a silent empty answer.
+func TestUnparseableBodyFallsBackOrErrors(t *testing.T) {
+	t.Run("with nothing cached it is an error", func(t *testing.T) {
+		c := newCachingFeed(newFakeFeed([]byte("not xml")), store.NewMem(), store.FixedClock(aDay))
+		if _, err := c.items(t.Context(), "ephemeral"); err == nil {
+			t.Error("want an error — a silent empty answer would read as 'not in the news'")
+		}
+	})
+	t.Run("with something stale it falls back", func(t *testing.T) {
+		f := newFakeFeed(rssFixture(t, "ephemeral.rss"))
+		clk := &movingClock{now: aDay}
+		c := newCachingFeed(f, store.NewMem(), clk)
+		if _, err := c.items(t.Context(), "ephemeral"); err != nil {
+			t.Fatal(err)
+		}
+		clk.now = aDay.Add(cacheTTL + time.Hour)
+		f.body = []byte("not xml")
+
+		got, err := c.items(t.Context(), "ephemeral")
+
+		if err != nil {
+			t.Fatalf("a stale entry must survive an unparseable refresh: %v", err)
+		}
+		if len(got) != 13 {
+			t.Errorf("got %d items, want the 13 stale ones", len(got))
+		}
+	})
+}
+
+// httpFeed's own error branches, against a local server rather than the live
+// feed — the whole point of BR-13's fix.
+func TestHTTPFeedErrors(t *testing.T) {
+	t.Run("a non-200 is an error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusTooManyRequests)
+		}))
+		defer srv.Close()
+		h := &httpFeed{client: srv.Client(), base: srv.URL}
+
+		if _, err := h.Fetch(t.Context(), "ephemeral"); err == nil {
+			t.Error("want an error for a non-200")
+		}
+	})
+	t.Run("a cancelled context does not reach the network", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			t.Error("the server was reached despite a cancelled context")
+		}))
+		defer srv.Close()
+		h := &httpFeed{client: srv.Client(), base: srv.URL}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		if _, err := h.Fetch(ctx, "ephemeral"); err == nil {
+			t.Error("want an error for a cancelled context")
+		}
+	})
+	t.Run("a body is capped", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			for i := 0; i < maxFeedBytes/1024+16; i++ {
+				w.Write(make([]byte, 1024))
+			}
+		}))
+		defer srv.Close()
+		h := &httpFeed{client: srv.Client(), base: srv.URL}
+
+		body, err := h.Fetch(t.Context(), "ephemeral")
+
+		if err != nil {
+			t.Fatalf("Fetch: %v", err)
+		}
+		if len(body) > maxFeedBytes {
+			t.Errorf("read %d bytes, want at most %d", len(body), maxFeedBytes)
+		}
+	})
+}
+
+// writeFailsStore accepts reads and refuses cache writes.
+type writeFailsStore struct{ store.Store }
+
+func (writeFailsStore) SetNewsItems(string, []store.NewsItem, time.Time) error {
+	return errFeedDown
 }

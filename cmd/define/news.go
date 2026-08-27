@@ -35,7 +35,14 @@ type feed interface {
 // The SERP is not an option and that was measured, not assumed: an earlier probe
 // of google.com/search returned a 91 KB JS shell with zero usable content.
 // That measurement is why this is RSS-shaped.
-type httpFeed struct{ client *http.Client }
+type httpFeed struct {
+	client *http.Client
+	// base overrides the feed host. Non-empty only in tests: it is what lets the
+	// error branches be driven against a local server instead of the live feed,
+	// which is how the wiring test came to fetch real news on every plain
+	// go test run.
+	base string
+}
 
 func newHTTPFeed() *httpFeed {
 	return &httpFeed{client: &http.Client{Timeout: 20 * time.Second}}
@@ -45,7 +52,11 @@ func (h *httpFeed) Fetch(ctx context.Context, word string) ([]byte, error) {
 	// The word is quoted in the query so the feed prefers items containing it.
 	// It still returns items that do not — measured, 12 to 99 matching out of 41
 	// to 100 — which is why containsWord exists downstream.
-	u := "https://news.google.com/rss/search?q=" + url.QueryEscape(`"`+word+`"`) +
+	host := "https://news.google.com"
+	if h.base != "" {
+		host = h.base
+	}
+	u := host + "/rss/search?q=" + url.QueryEscape(`"`+word+`"`) +
 		"&hl=en-US&gl=US&ceid=US:en"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
