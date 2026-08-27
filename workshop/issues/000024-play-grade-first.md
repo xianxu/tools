@@ -74,7 +74,28 @@ to the session contract, not a re-ordering of prints.
 
 ## Plan
 
-- [ ]
+Design: `workshop/plans/000024-play-grade-first-plan.md`.
+
+Single boundary — no `Mx` tags. Atomic change to one state machine, closing in
+one `sdlc close` (AGENTS.md §3).
+
+- [ ] `Apply` returns `[]Outcome` — mechanical signature change, no behaviour
+      change, seven call sites in `session_test.go`.
+- [ ] `Session.Graded`, and `advance` clears it alongside `Revealed`.
+- [ ] The `InputRune` arm: grade first. `y` records and advances with no reveal;
+      `n` on a hidden word records Wrong AND reveals, staying on the word; a key
+      while `Graded` advances without recording twice.
+- [ ] `d` still drops before a reveal, after a peek, and after a miss —
+      table-driven over the three states.
+- [ ] The loop iterates the outcome slice. Verify (do not assume) that the
+      `OutcomeReveal` arm's `s.Current().Word()` still names the right word.
+- [ ] A correct answer plays NO audio, asserted with the existing `fakePlayer`
+      and `opt.noAudio = false` so it is about the flow, not the flag.
+- [ ] `draw` renders three states: unrevealed, peeked, and graded-and-showing.
+- [ ] `TestPTYPlayGradeFirst` on a real pty, plus the WHOLE `-tags conformance`
+      suite run at the close (#6 found it red since #21).
+- [ ] README + atlas, with the site list built by `grep`, not from memory.
+
 
 ## Log
 
