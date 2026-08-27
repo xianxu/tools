@@ -271,3 +271,43 @@ func TestDropWorksForAnyForm(t *testing.T) {
 		t.Error("dropping the last question did not end the session")
 	}
 }
+
+// A caller holding only an Outcome must be able to tell the session ended.
+//
+// The last answer produces OutcomeRecord and finishes the queue, so Kind alone
+// says "record this" and nothing about the end — a consumer would have to
+// consult the Session too, making "did we finish" two facts in two places.
+func TestTheOutcomeThatEndsTheSessionSaysSo(t *testing.T) {
+	// One question: revealing then grading it is both a record AND the end.
+	s := NewSession([]Question{NewRecall("obsequious", "fawning")})
+	s, _ = drive(s, reveal)
+
+	_, o := Apply(s, rune_('y'))
+
+	if o.Kind != OutcomeRecord {
+		t.Fatalf("kind = %v, want OutcomeRecord", o.Kind)
+	}
+	if !o.SessionDone {
+		t.Error("the outcome that ended the session does not say so")
+	}
+}
+
+func TestAnOutcomeMidSessionDoesNotClaimTheEnd(t *testing.T) {
+	s, _ := drive(twoQuestions(), reveal)
+
+	_, o := Apply(s, rune_('y'))
+
+	if o.SessionDone {
+		t.Error("an outcome mid-session claims the session ended")
+	}
+}
+
+func TestQuitAndDropAlsoReportTheEnd(t *testing.T) {
+	if _, o := Apply(twoQuestions(), quit); !o.SessionDone {
+		t.Error("quit did not report the end")
+	}
+	one := NewSession([]Question{NewRecall("w", "d")})
+	if _, o := Apply(one, Input{Kind: InputDrop}); !o.SessionDone {
+		t.Error("dropping the last question did not report the end")
+	}
+}

@@ -181,6 +181,11 @@ Claimed and planned. Three decisions worth recording before implementation:
   "the mutant reddens it" claim there was verified in a scratch copy and thrown
   away, and now both callers' guards are exercised from one body with the
   negative cases verified in the tree.
+
+  **That last sentence was FALSE when written** and the M1 boundary caught it —
+  see the round-4 entry below. `puretest` had no test file; the guards were
+  verified by mutating a scratch copy and deleting it, which is the very gap
+  recorded at `#5`'s close that this extraction claimed to close.
   One correction to the extracted helper: its vacuity check fatalled on ZERO
   imports, which fired on `play` — a package so pure it imports nothing at all,
   the strongest version of the claim being tested. A vacuity guard has to
@@ -271,3 +276,33 @@ bullet and it needs measurement rather than a quick patch — see `tools#23`.
   decisions — `InputDrop`, session-output-through-`crlfWriter`, and
   check-cancellation-before-select. All three are now recorded, and the README has
   a key table rather than a stale sample.
+
+### 2026-08-27 — M1's close never finalized, and I did not notice
+
+The worst process failure of this issue, found by the close review two rounds
+later: *"the M1 row is ticked although the M1 boundary review blocked with four
+Importants that are still open."*
+
+I ran M1's `milestone-close` in the background, the notification arrived while I
+was mid-M2, and **I never read the output**. I reported "M1 built", ticked the
+row, and built M2 on top. The close had failed with five open findings. All five
+are now addressed:
+
+- **BR-2 is the one that matters.** I wrote that `puretest`'s "negative cases
+  [are] verified in the tree" when the package had NO TESTS — the guards were
+  verified by mutating a scratch copy and deleting it. That is precisely the gap
+  I recorded at `#5`'s close and claimed this extraction closed. `puretest` now
+  takes a minimal `T` interface so a recorder can stand in for `*testing.T`, and
+  runs each guard against committed known-bad fixtures (`testdata/impure` imports
+  `os` and calls `store.NewYAML`; `testdata/clocky` imports only `time` and calls
+  `time.Since`, the case an import list cannot catch). Seven tests, including that
+  every guard FATALS rather than passing when it finds nothing to check.
+- **BR-3.** The last answer produced `OutcomeRecord` and finished the queue, so a
+  caller holding only an `Outcome` could not tell the session had ended — it had
+  to consult the `Session` too, making "did we finish" two facts in two places.
+  `Outcome.SessionDone` now says so on whatever outcome ended it.
+- **BR-4/BR-5.** The plan's Core-concepts table filed `Verdict` in the wrong file,
+  claimed `play` imports `store` and `schedule` (it imports NOTHING), and omitted
+  `puretest`, `Input` and `Outcome`. Task 2/3 still instructed the skip contract
+  `PQ-3` superseded at plan time — a stale instruction that survived into M2.
+- **BR-1** was the same superseded contract, disposed by BR-5's fix.

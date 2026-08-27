@@ -17,8 +17,20 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"testing"
 )
+
+// T is the slice of *testing.T these guards use.
+//
+// An interface rather than the concrete type so the guards can be run against
+// KNOWN-BAD packages and asserted to fail — which is the only way to show a
+// guard can fail at all. #5 verified its guards by mutating the tree in a
+// scratch copy and throwing it away; #6 M1 did the same and then wrote "negative
+// cases verified in the tree", which was not true. This is what makes it true.
+type T interface {
+	Helper()
+	Errorf(format string, args ...any)
+	Fatalf(format string, args ...any)
+}
 
 // ImportsOnly asserts the package imports nothing outside allowed.
 //
@@ -34,7 +46,7 @@ import (
 // answer is legitimately empty", and here `go list` succeeding IS the
 // measurement working. What would be vacuous is a caller passing an allowlist so
 // wide it cannot fail, and no guard in this file can see that.
-func ImportsOnly(t *testing.T, importPath string, allowed []string) {
+func ImportsOnly(t T, importPath string, allowed []string) {
 	t.Helper()
 	ok := map[string]bool{}
 	for _, a := range allowed {
@@ -69,7 +81,7 @@ var wallClock = []string{
 //
 // Every instant must arrive as a parameter, or the caller cannot control the
 // date and nothing in the package is testable.
-func NoWallClock(t *testing.T, importPath string) {
+func NoWallClock(t T, importPath string) {
 	t.Helper()
 	eachSourceFile(t, importPath, func(name, src string) {
 		for _, banned := range wallClock {
@@ -89,7 +101,7 @@ var storeRef = regexp.MustCompile(`\bstore\.([A-Za-z_][A-Za-z0-9_]*)`)
 // and write files while passing both other guards, leaving the purity claim
 // false with everything green. Allowlisting a package grants everything in it,
 // so a mixed dependency has to be guarded by symbol.
-func StoreSymbolsOnly(t *testing.T, importPath string, allowed []string) {
+func StoreSymbolsOnly(t T, importPath string, allowed []string) {
 	t.Helper()
 	ok := map[string]bool{}
 	for _, a := range allowed {
@@ -133,7 +145,7 @@ func stderrOf(err error) string {
 }
 
 // eachSourceFile visits the package's non-test .go files.
-func eachSourceFile(t *testing.T, importPath string, fn func(name, src string)) {
+func eachSourceFile(t T, importPath string, fn func(name, src string)) {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-f", `{{.Dir}}`, importPath).Output()
 	if err != nil {

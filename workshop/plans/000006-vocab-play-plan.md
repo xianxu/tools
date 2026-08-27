@@ -17,13 +17,15 @@
 | Name | Lives in | Status |
 |------|----------|--------|
 | `Question` | `cmd/define/play/question.go` | new |
+| `Verdict` | `cmd/define/play/question.go` | new |
 | `Recall` | `cmd/define/play/recall.go` | new |
-| `Verdict` | `cmd/define/play/session.go` | new |
+| `Input` / `InputKind` | `cmd/define/play/session.go` | new |
+| `Outcome` / `OutcomeKind` | `cmd/define/play/session.go` | new |
 | `Session` | `cmd/define/play/session.go` | new |
 | `Apply` | `cmd/define/play/session.go` | new |
-| `Outcome` | `cmd/define/play/session.go` | new |
+| `puretest` guards | `cmd/define/puretest/puretest.go` | new |
 
-**Its own package, for the reason `schedule` was: the purity boundary becomes checkable.** `play` imports `store`, `schedule` and pure stdlib — no terminal, no IO. `#5` proved the shape works and left guards to copy; this reuses them rather than re-arguing the case.
+**Its own package, for the reason `schedule` was: the purity boundary becomes checkable.** `play` imports NOTHING at all — not `store`, not `schedule`. The first draft said it imports both; it does not, because the session works in deck keys and rendered strings the caller supplies, which is the strongest form of the claim being made. `#5` proved the shape works and left guards to copy; this reuses them rather than re-arguing the case.
 
 - **`Question`** — what a form must provide: `Prompt() string` (what the learner sees before answering), `Reveal() string` (what they see after), `Word() string` (the deck key the answer is recorded against), and `Grade(r rune) (Verdict, bool)` (interpret a keystroke; the bool is "this key meant something to me").
 
@@ -45,7 +47,9 @@
   `Input` is `play`'s own type — `struct{ Rune rune; Kind InputKind }` with `InputRune`, `InputReveal`, `InputQuit` — decoded by the loop from `main`'s `Key`. **Not `main.Key`**, which a subpackage cannot name (`cmd/define/key.go:29`), and the compile error is the import direction telling the truth: `main` owns the terminal and knows Ctrl-C is `0x03`; `play` is pure and must not. The loop translates once, at the boundary where it already decodes escape sequences. The `Outcome` says what the caller must do — record an event, play audio, redraw, quit — so the pure core never touches the store or the terminal.
   - **DRY rationale:** `#14`'s editor already proved this split. Copying it means the two interactive surfaces in this binary work the same way, and a reader who has understood one has understood both.
 
-**Test surface.** Table tests over key sequences, no fakes. The purity guards from `#5` are copied and re-pointed — including the SYMBOL guard, since `play` will import `store` for `ReviewEvent` and must not reach `store.NewYAML`.
+**Test surface.** Table tests over key sequences, no fakes. `#5`'s purity guards are EXTRACTED into `cmd/define/puretest` rather than copied (see M1 Task 2 Step 6), and `play` takes the import and wall-clock guards. It does NOT take the store-symbol guard: it names no store symbol at all, and a guard with an empty allowlist would fatal on finding nothing to check — correctly, since it would be asserting nothing.
+
+`puretest` needs its OWN tests, and that is not bookkeeping: a guard nothing has ever seen fail is indistinguishable from a guard that cannot fail. `#5` verified its guards by mutating the tree in a scratch copy and deleting it, and this plan's first draft repeated that. The tests run each guard against committed known-bad packages under `puretest/testdata/`.
 
 ### Integration points (where pure meets the world)
 

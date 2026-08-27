@@ -60,10 +60,19 @@ const (
 // whenever it sees one and NEVER inspects the verdict — because a skip never
 // produces this outcome, so there is nothing to filter downstream. One rule, one
 // place.
+//
+// SessionDone is set on the outcome that ENDED the session, whatever its kind.
+// The last answer produces OutcomeRecord and finishes the queue, so a caller
+// reading Kind alone cannot tell that was the end — it would have to consult the
+// returned Session, which makes "did we finish" two facts in two places. The
+// loop here does look at the Session, and that is fine; the flag is for callers
+// that receive only an Outcome, which is every consumer this interface is meant
+// to allow.
 type Outcome struct {
-	Kind    OutcomeKind
-	Word    string
-	Verdict Verdict
+	Kind        OutcomeKind
+	Word        string
+	Verdict     Verdict
+	SessionDone bool
 }
 
 // Session is where the learner is in today's queue.
@@ -94,12 +103,12 @@ func (s Session) Current() Question {
 // Apply is the state machine: one input, the next state and what the loop owes.
 func Apply(s Session, in Input) (Session, Outcome) {
 	if s.Done {
-		return s, Outcome{Kind: OutcomeDone}
+		return s, Outcome{Kind: OutcomeDone, SessionDone: true}
 	}
 	q := s.Current()
 	if q == nil {
 		s.Done = true
-		return s, Outcome{Kind: OutcomeDone}
+		return s, Outcome{Kind: OutcomeDone, SessionDone: true}
 	}
 
 	switch in.Kind {
@@ -108,13 +117,13 @@ func Apply(s Session, in Input) (Session, Outcome) {
 		// not-yours without needing to see the definition again.
 		word := q.Word()
 		next, _ := advance(s, q, Skipped) // advances, records nothing
-		return next, Outcome{Kind: OutcomeDrop, Word: word}
+		return next, Outcome{Kind: OutcomeDrop, Word: word, SessionDone: next.Done}
 
 	case InputQuit:
 		// Everything already recorded stays recorded — that is a property of
 		// recording as it happens, not of anything done here.
 		s.Done = true
-		return s, Outcome{Kind: OutcomeDone}
+		return s, Outcome{Kind: OutcomeDone, SessionDone: true}
 
 	case InputReveal:
 		if s.Revealed {
@@ -161,7 +170,7 @@ func advance(s Session, q Question, v Verdict) (Session, Outcome) {
 	if v == Skipped {
 		// Not an assessment. schedule.Fold would read a recorded skip as a miss
 		// and demote the word.
-		return s, Outcome{Kind: OutcomeNone}
+		return s, Outcome{Kind: OutcomeNone, SessionDone: s.Done}
 	}
-	return s, Outcome{Kind: OutcomeRecord, Word: q.Word(), Verdict: v}
+	return s, Outcome{Kind: OutcomeRecord, Word: q.Word(), Verdict: v, SessionDone: s.Done}
 }

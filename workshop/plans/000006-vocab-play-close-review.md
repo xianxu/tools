@@ -231,3 +231,235 @@ findings:
       exactly two - form 2.1 having no skip key (BR-7), and the loop's reserved key set at
       play_loop.go:157-172. #7 hits the second when it picks its keys.
 ```
+
+---
+
+## Re-review — 2026-08-27T10:56:44-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 6 — define --play: review loop + form 2.1 quick pass |
+| repo | tools |
+| issue file | workshop/issues/000006-vocab-play.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4cac0b95d83d54eab57b8747d40d09a2196bca1e..787824810e8a371c3f2c7c7e7899943d91dfbb39 |
+| command | sdlc close --issue 6 |
+| reviewer | claude |
+| timestamp | 2026-08-27T10:56:44-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The window ships a genuinely well-designed feature — `play` is a real pure core (it imports *nothing*), the skip filter lives in exactly one place, and `puretest` is a textbook single-source extraction with both consumers derived and no third copy anywhere in the tree. The head commit's three claimed fixes all hold up: I reverted both halves of the `--play` usage guard independently in a scratch copy and `TestPlayWithAWordIsAUsageError` reddened each time, the error sweep is complete at both production sites, and the README/atlas now describe what `draw()` actually prints. What blocks SHIP is that the round-3 commit fixed **three** findings and left **thirteen** untouched — including all four Importants raised at the **M1** boundary in round 2, which have now been open for three rounds while M2 was built on top of them. Worse, round 3 explicitly wrote the rule (`no Done-when row is ticked without a named test in the tree that fails without it`) and the very next commit shipped a fourth unpinned claim. I measured the two untested Done-when rows: both are pinnable **today** with fakes this package already owns — I wrote them in a scratch copy and the audio row passed with `player calls = 1`, no terminal involved. That is a ~20-line fix that has been deferred twice.
+
+## 1. Strengths
+
+- **`cmd/define/puretest` is the ARCH-DRY exemplar of this window.** One guard body, two callers, and I grepped the whole tree to confirm there is no surviving copy: `schedule/purity_test.go` collapsed from 193 lines to a 38-line call, and `play/purity_test.go:19` is 8. The reasoning for *why three guards* (an import allowlist can't see `time.Since`; allowlisting `store` grants the disk with it) is recorded at `puretest.go:85-91`.
+- **The skip rule is enforced in exactly one place and the type system backs it up.** `session.go:161-165` filters in `advance`, and `capture.go:57-64` explains that `CaptureReview`'s `bool` *cannot* express a skip because one never reaches it. A signature that refuses the wrong call is better than a comment asking for it.
+- **`TestSessionOutputIsAllCRLF` (play_loop_test.go:267)** asserts the one thing bytes *can* prove about raw mode, and the comment records why the pty smoke test missed the cascade (Python renders a bare `\n` at column 0). That reasoning is worth more than the test.
+- **`TestUngradedKeyNeverReachesTheCapturer` (play_loop_test.go:185)** spies on the capturer rather than the event log — the discriminating observable, correctly identified after a mutation survived the log-based version.
+- **The BR-14 fix is real, not plausible.** Removing the `case` → test red; keeping the case but moving the dispatch back above the switch → test red. Both halves are load-bearing.
+
+## 2. Critical findings
+
+None. Nothing in this window crashes, corrupts the log, or drifts from a stated contract.
+
+## 3. Important findings
+
+- **`claim-without-failing-test`, 3rd in family** — the rule was stated in round 3 and violated by the commit that closed round 3. Enumeration and measurement in the findings block below; I verified 4 of the 5 sites are pinnable with existing seams.
+- **`plan-checkboxes-not-ticked`, 2nd in family** — `workshop/issues/000006-vocab-play.md:69` ticks M1, but M1's boundary review blocked with four Importants, no commit carries a `Review-Verdict:` trailer for it, and no `closed M1` line exists in `## Log`.
+- Six prior Importants (**BR-2, BR-3, BR-4, BR-5, BR-12, BR-13**) remain open and untouched — see dispositions.
+
+## 4. Minor findings
+
+- `main.go:417` — `--play` opens the store **twice**; measured, every other path opens it once.
+- `play_loop.go:147` — a lost terminal reports to stderr and exits **0**, while the sibling failure at `play_loop.go:58` exits 1.
+- `play_loop.go:206-211` — a deck word the dictionary no longer knows has already consumed a `-count` slot before it is skipped; branch untested.
+- Prior Minors BR-6…BR-9, BR-11, BR-17…BR-20 all still open, unchanged since round 3.
+
+## 5. Test coverage notes
+
+`go test ./...` is green (94.7s for `cmd/define`); `go vet` clean. The Done-when row-to-test map, walked in full:
+
+| row | pinning test | |
+|---|---|---|
+| full session, one event per answer | `TestFullSessionRecordsOneEventPerAnswer` | ✓ |
+| skip records nothing | `TestSkippedVerdictRecordsNothing` + `TestUngradedKeyNeverReachesTheCapturer` | ✓ |
+| audio on by default, `--no-audio` silences | — | ✗ |
+| `-count` bounds, defaults to 20 | — | ✗ |
+| every newline is CRLF | `TestSessionOutputIsAllCRLF` | ✓ |
+| `d` drops, keeps events | `TestDropRemovesFromDeckButKeepsEvents` | ✓ |
+| empty queue exits 0 | `TestEmptyQueueExitsZero` | ✓ |
+| no deck exits 0 | `TestNoDeckExitsZeroWithAMessage` | ✓ |
+| interrupt preserves events | `TestInterruptPreservesRecordedEvents` | ✓ |
+| second form needs no loop change | `TestSessionIsFormAgnostic` | ✓ |
+| runs with the LLM seam unavailable | `TestSessionRunsWithTheModelUnavailable` | ~ weak |
+
+The LLM row is a weak pin: the loop never calls the model, so the test degenerates to "a one-word session records one event" unless a future loop starts reaching for it. Defensible as a regression guard; worth one sentence in the test saying so.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, with two flags.** `puretest` is the model. Flagged: the duplicate `withStore` (measured), `anyTime` spelled as `store.Word{}.FirstSeen` (BR-19), `skipForm` duplicating `fakeForm` (BR-8).
+- **ARCH-PURE — pass for `play`, one flag at the seam.** The package imports nothing at all and the guard enforces it. `playSession` re-enters raw mode on `os.Stdin` rather than the file it was handed (`play_loop.go:140`) — the single hard-wired IO reference in an otherwise fully injected loop, and the *only* reason the re-entry error report cannot be pinned (BR-17).
+- **ARCH-PURPOSE — flag.** Round 3 named the class and handed over the enumeration; the commit fixed three named instances and swept none of the class. The `puretest` extraction is complete on the consumer axis but its own claim is still false in two artifacts (BR-2).
+- **ARCH-MOCK — pass at the seam, flag at the wiring.** `fakePlayer`, `fakeCDN`, `store.Mem` and `fakeDictionary` all sit on the boundary production uses — I drove the audio path end-to-end through `playSession` with `raw == nil` and got `player calls = 1`. The fake is correct; `playRig` (play_loop_test.go:33) just hard-codes `noAudio: true` and never asks it anything.
+
+## 7. Plan revision recommendations
+
+The plan still has **no `## Revisions` section** and zero ticked steps across both chunks. It needs one entry covering: `Verdict` lives in `question.go`, not `session.go`; `play` imports **nothing** (not "store, schedule and pure stdlib") and deliberately omits `StoreSymbolsOnly`; `puretest` needs a row in the pure-entities table and `Input`/`Outcome`/`InputDrop` need rows; Task 2 Step 1's "a skip emits a record outcome with `Skipped`" and "the last answer emits quit" are both superseded; Task 3 Step 1's "the loop drops it" contradicts "ONE filter, in `Apply`". Then tick Chunk 1 Steps 1–9 and Chunk 2 Steps 1–10.
+
+```findings
+dispose:
+  - id: BR-2
+    disposition: not-addressed
+    note: |
+      go test still reports "cmd/define/puretest [no test files]"; issue:183 and define-learn.md:527 both still claim the negative cases are verified in the tree.
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      session.go untouched since round 3 — no Outcome.SessionDone, no doc on Apply/Session.Done, OutcomeDone still says only "the session is over".
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      plan:21/26/48 byte-identical; still no puretest, Input or Outcome rows, and Verdict is still filed under session.go.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      plan:98 and plan:122 unchanged; the plan still instructs the superseded skip contract that M2 was executed from.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      session_test.go:74 still named TestSkipAdvancesButRecordsNothing while asserting Index == 0.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      recall.go:33 unchanged; no Log or plan entry records that form 2.1 has no skip key.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      skipForm still at session_test.go:220 beside fakeForm.Grade('3') at :213.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      question.go:45 and the Verdict doc at :15-21 unchanged; the zero value is still silently Skipped.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      stderrOf added (puretest.go:126) and used at both go list sites; unpinned only because puretest still has no test file (BR-2).
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      grep -c '^- \[x\]' on the plan returns 0; both chunks are entirely unticked and there is still no "## Revisions" section.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      playRig still hard-codes noAudio true and count 20; I verified both rows are pinnable today with the existing fakeCDN/fakePlayer seams.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      run() is now driven with "--play sycophantic", but that returns 2 at the usage switch and never reaches the dispatch, withStore or count threading.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Mutation-verified twice in a scratch copy — removing the case reddens the test, and so does moving the dispatch back above the switch.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      README gains a key table naming d and -count and its transcript now matches draw()'s actual line; atlas records InputDrop, crlfWriter and cancel-before-select.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      Swept as the class — play_loop.go:141-148 reports and ends, puretest uses stderrOf at both sites; NOT pinned by a test, which the new claim-without-failing-test finding names.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      play_loop.go:140 still calls enterRaw(os.Stdin); this is now also the sole blocker on pinning BR-16's fix.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      play_loop_test.go:218 unchanged; two coin flips still have to land wrong for the missing guard to redden it.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      play_loop.go:224 still spells the sentinel store.Word{}.FirstSeen.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      The atlas now describes the key mapping, but no artifact records it as a CONSTRAINT on the forms in #7/#12/#13, and BR-7's sibling is still unrecorded.
+findings:
+  - id: new
+    severity: Important
+    family: claim-without-failing-test
+    title: |
+      The rule from round 3 was written down and then broken by the commit that closed round 3 — four unpinned claims remain and I measured that three are pinnable today
+    detail: |
+      This is the 3rd finding in family claim-without-failing-test (BR-2, BR-12). Do NOT fix this
+      instance — the rule is: a claim in an artifact (a Done-when tick, a Log sentence, a fix
+      note) is complete only when a named test in the tree fails without it. The enumeration,
+      walked in full and measured, is five sites. (1) puretest's three guards, zero tests, both
+      the issue Log and the project entry still assert otherwise. (2) the audio Done-when row.
+      (3) the -count Done-when row. (4) the --play dispatch through run(). (5) the raw-mode
+      re-entry report added by BR-16's own fix. I built a scratch copy and proved 1-4 need no
+      structural change: swapping playRig's noAudioSource for the existing newAudioRig fake made
+      "audio plays before reveal" pass with player calls = 1 and raw == nil, and a 3-word deck
+      with count 2 offered exactly 2 questions. Only site 5 needs a change, and it is exactly
+      BR-17 — enterRaw is not injected, so the failure cannot be simulated. Fix the rule: write
+      the row-to-test map into the issue, close 1-4 in this round, and either inject enterRaw or
+      state in the artifact that site 5 is verified by reading.
+  - id: new
+    severity: Important
+    family: plan-checkboxes-not-ticked
+    title: |
+      The M1 row is ticked although the M1 boundary review blocked with four Importants that are still open, and no verdict trailer or close line exists for it
+    detail: |
+      This is the 2nd finding in family plan-checkboxes-not-ticked (BR-11). Do NOT fix this
+      instance — state the rule: a checkbox in a tracker artifact asserts an EVENT, and it is
+      ticked only when the evidence for that event exists. BR-11 is the same rule with the sign
+      flipped (work done, box unticked). Measured: issue:69 reads "- [x] M1", but the gate ledger
+      records round 2 (boundary M1) as blocked:true with BR-2/3/4/5 raised; git log over the whole
+      window carries exactly one Review-Verdict trailer (REWORK, on HEAD); and grep for "closed
+      M1" in the issue returns nothing. AGENTS.md 3 says an Mx row commits to its own
+      milestone-close producing both. So M2 was built on top of a boundary that never cleared,
+      which is how four M1 findings reached round 4 alive.
+  - id: new
+    severity: Minor
+    family: duplicate-initialisation
+    title: |
+      main.go:417 opens the store a second time on the --play path — measured at 2 calls, against 1 on every other path
+    detail: |
+      Moving the dispatch below the switch to fix BR-14 left the branch's own
+      d = d.withStore(opt, stderr) in place, three lines below the unconditional one at main.go:408.
+      I probed it with a counting newStore: --play calls it twice, a plain lookup once. withStore's
+      nil guards discard the second storeDeps, so nothing is corrupted, but openStore re-runs Getwd
+      and builds a second store.NewYAML plus a second vocabulary set — and on the Getwd-failure path
+      it prints "define: no working directory" twice. Delete line 417. Note the entry-path test
+      BR-13 asks for is exactly what caught this.
+  - id: new
+    severity: Minor
+    family: inconsistent-exit-status
+    title: |
+      Losing the terminal mid-session reports to stderr and exits 0, while failing to enter raw mode at the start exits 1
+    detail: |
+      play_loop.go:146-147 prints "define: lost the terminal after playback" and then returns
+      finish(), which is always 0; play_loop.go:57-59 returns 1 for the same class of failure one
+      screen earlier. Defensible (the session ran and its events are recorded) but the two should
+      agree or the difference should be stated in the comment that already explains why ending is
+      honest.
+  - id: new
+    severity: Minor
+    family: budget-counted-before-filter
+    title: |
+      A deck word the dictionary no longer knows has already spent a -count slot before it is skipped, and that branch has no test
+    detail: |
+      play_loop.go:204-211 asks schedule.Queue for opt.count keys and then drops any the dictionary
+      cannot resolve, so a learner with three stale entries and -count 20 gets a 17-word sitting
+      with no explanation beyond a stderr line. I hit this accidentally while probing -count: three
+      deck words, budget 2, one question. Either re-fill from the queue or say in the comment that
+      a stale entry costs a slot. No test enters the branch today.
+```

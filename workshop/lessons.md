@@ -932,6 +932,50 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## Never report a boundary closed without READING the verdict (define #6)
+
+I ran `sdlc milestone-close` for M1 in the background, the completion
+notification arrived while I was mid-M2, and I never opened the output. I then
+told the operator "M1 built", ticked the `- [x] M1` row, and worked on top of it
+for the rest of the session. The close had FAILED with five open Importants — one
+of which was that I had claimed a package's guards were "verified in the tree"
+when the package had no tests at all.
+
+Two rounds later the close review caught the tick itself: *"the M1 row is ticked
+although the M1 boundary review blocked with four Importants that are still open,
+and no verdict trailer or close line exists for it."*
+
+- **A backgrounded gate is not a completed gate.** The notification says the
+  COMMAND finished, not that it succeeded. Read the output before saying anything
+  about the milestone, and before ticking anything.
+- **The tick is a claim, and it is checkable.** A ticked `Mx` with no
+  `Review-Verdict:` trailer and no close line in the Log is a claim with no
+  evidence behind it — which is exactly what a later review looks for.
+- **The cost is not the lost round; it is the work built on top.** Everything in
+  M2 sat on a milestone that had not passed, so its findings arrived after the
+  code that inherited them.
+
+## A guard nothing has SEEN fail is indistinguishable from one that cannot (define #6 M1)
+
+At `#5`'s close I recorded a gap: every "the mutant reddens it" claim was verified
+in a scratch copy and thrown away, so nothing in the tree proved the purity guards
+could fail. At `#6` M1 I extracted those guards into a package, verified them the
+same way — mutate, observe, delete — and wrote in the issue Log that the negative
+cases were "verified in the tree". **The package had no test file at all.**
+
+So the fix for a gap reproduced the gap, and described itself as the fix.
+
+- **"Verified" means a committed artifact re-runs the check.** A scratch mutation
+  I watched fail is evidence for me, once. It is not evidence for the next reader,
+  the next change, or CI.
+- **A guard needs its own known-bad fixture.** `puretest/testdata/impure` imports
+  `os` and calls `store.NewYAML`; `testdata/clocky` imports only `time` and calls
+  `time.Since` — the case the import allowlist structurally cannot catch. Each
+  guard is now run against them and asserted to FAIL.
+- **Take the minimal interface, not `*testing.T`.** That one change is what makes
+  a guard testable at all, because a recorder can stand in for the `T` and capture
+  the failures instead of failing.
+
 ## A guard that allows a PACKAGE allows everything in it (define #5 close)
 
 `schedule`'s purity had two guards — an import allowlist and a wall-clock grep —
