@@ -1287,6 +1287,46 @@ feature outright in production and leaves the entire suite green.
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
 
+## A degrading fallback hides a test that reaches the network (define #9 close)
+
+`TestWithStoreCarriesTheUsageSourceThrough` drove production wiring and then
+called the seam — so every plain `go test ./cmd/define/` fetched
+news.google.com and wrote ~48 KB of live headlines into a temp dir. Its own
+comment said "reaches the dictionary half without a network" and its failure
+message said "no usages offline". Both false.
+
+What hid it is the feature working correctly: `bothSources` degrades to the
+dictionary when the feed fails, so the assertion `len(got) != 0` was satisfied
+either way. **The test was green with and without a network, and therefore
+verified neither.**
+
+- **A test whose assertion survives the dependency being absent is not testing
+  the dependency.** Ask what would change if the network were unplugged. If the
+  answer is nothing, the test is about something else.
+- **Split the claims.** The WIRING hop belongs on production deps and asserts
+  only that the seam is built and carried. The OFFLINE claim belongs on a source
+  constructed with no feed at all, where "offline" is a property of the code
+  rather than of the machine.
+- **Coverage is the cheap detector.** `Fetch` reporting 72.7% under an untagged
+  run is impossible unless the default suite calls it. It reads 0.0% now.
+
+## A comment saying "on failure X we do Y" needs a test that reddens without Y (define #9 close)
+
+Sibling to the output-field rule. Every fallback in `news.go` was described in a
+comment and none was pinned: inverting "an unreadable cache is a miss, not a
+failure" into `return nil, err` — the opposite policy — left the whole suite
+green. The `failingStore` fixture that drives it was already in the tree, unused.
+
+- **The enumeration is the coverage profile.** Every uncovered block in a new
+  file is a claim nothing checks, and reading them off took one command.
+- **A fallback is a behaviour, not an implementation detail.** "Degrades on
+  failure" is a promise to the caller and deserves the same pinning as a
+  returned value.
+- **Degrading SILENTLY is a different design from degrading.** A permanently
+  broken feed was indistinguishable from "this word is not in the news" — for
+  the reader and for the downstream consumer. The package already had the shape
+  (`warnTo`, warn-once); the new code just did not use it.
+
 ## A fuzz property may assert only YOUR contract, never the input's textual form (define #9 M1)
 
 Three properties on one target, each wrong the same way, before the rule was

@@ -275,3 +275,23 @@ Two decisions worth recording before implementation:
   A second restore hazard, different from this morning's: `git checkout HEAD --`
   reverted UNCOMMITTED wiring. "Restore from git" only holds if the thing you are
   restoring TO is committed — so commit before mutating, which is now the rule.
+
+- 2026-08-26: close boundary round 1 — FIX-THEN-SHIP, one Critical, all
+  addressed. BR-13 (Critical): my wiring test drove production wiring and then
+  CALLED the seam, so every plain `go test` fetched news.google.com and wrote
+  ~48 KB of live headlines into a temp dir — while its own comment claimed
+  "without a network". What hid it is the feature working: `bothSources` degrades
+  to the dictionary, so `len(got) != 0` held either way and the test was green
+  with and without a network. Split into two: the wiring hop on production deps,
+  the offline claim on a source built with no feed. `Fetch` coverage went 72.7% →
+  0.0% under an untagged run, which is the measurement that proves it.
+  BR-14: every fallback in `news.go` was a comment nothing checked — inverting
+  "an unreadable cache is a miss, not a failure" left the suite green, with the
+  `failingStore` fixture sitting unused in the tree. The enumeration was the
+  coverage profile; `items` is now 100% and `Fetch` 92.9%, driven against an
+  `httptest` server rather than Google.
+  BR-15: `Usages` returned an error that was nil on every path — a dead branch
+  for #10 — and dropped the feed error silently. The error is gone from the
+  interface (the dictionary half always answers, so there is nothing to fail) and
+  a failed fetch now warns once per session, the shape `storeCapturer` already
+  uses.
