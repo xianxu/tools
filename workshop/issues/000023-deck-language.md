@@ -120,14 +120,36 @@ Gran Diccionario Oxford               id com.apple.dictionary.OxfordSpanish
 `DCSDictionaryIndexLanguage` (what the headwords are) and
 `DCSDictionaryDescriptionLanguage` (what the definitions are).
 
-**So the selection rule writes itself, and is testable:** for language L, prefer a
-dictionary whose index language is L *and* whose description language is also L —
-monolingual, which is what a learner should be reading — and fall back to one
-that merely indexes L. Not "the dictionary whose name contains Español".
+**The metadata NARROWS the candidates; it does not choose among them.** An earlier
+draft of this issue said "the selection rule writes itself" — measured, and that
+was an overclaim. Requiring every language entry to be L→L (strictly monolingual)
+gives:
 
-This also means the rule degrades sensibly on a machine with different
-dictionaries installed: no match for L means no entry, which is the honest
-answer, rather than silently answering from English.
+| language | strictly-monolingual candidates |
+|---|---|
+| `es` | **exactly one** — `com.apple.dictionary.es.DGLEV`, the Larousse |
+| `en` | **six** — `NOAD`, `ODE`, `AppleDictionary`, `OAWT` and `OTE` (both THESAURUSES), and `com.apple.accessibility.dictionary.TTY` |
+
+Nothing in the metadata says "general-purpose dictionary", so no rule over it can
+prefer NOAD to a thesaurus. Proof it matters: a deterministic
+smallest-identifier tiebreak — 10 runs, 10 identical results — picks
+`com.apple.accessibility.dictionary.TTY` for English and the BILINGUAL
+`OxfordSpanish` for Spanish. Deterministic and wrong is still wrong.
+
+**So the design is: metadata narrows, a curated default decides, the learner can
+override.**
+
+- Narrow to dictionaries indexing L, preferring strictly monolingual.
+- Among those, prefer a known-good identifier — `com.apple.dictionary.NOAD` for
+  `en`, `com.apple.dictionary.es.DGLEV` for `es` — a short list, honestly a
+  curated one, and easy to extend.
+- Neither matches: fall back to today's NULL behaviour rather than guessing, and
+  say which dictionary is in use so a wrong pick is visible rather than puzzling.
+- The learner can name a dictionary explicitly, because on a machine with a
+  different set installed no curated list will be right.
+
+**Degradation stays honest:** no dictionary indexes L at all → no entry, rather
+than silently answering from English.
 
 **The cost, recorded rather than discovered.** These symbols are private and
 undocumented: they can change or disappear on an OS update, and nothing in the
