@@ -223,7 +223,19 @@ Two decisions worth recording before implementation:
   decayed; it also contradicted `progress.go`'s own comment that `--play` decides
   what to stop offering. Mastery is now a reporting status and the 90-day interval
   does the rarity. BR-2, three of six intervals were asserted by nothing. BR-3,
-  the "store and time and nothing else" claim went stale in four artifacts when I
+  the "store and time and nothing else" claim went stale in FIVE artifacts when I
   widened the guard. BR-4, the clock guard grepped one spelling and missed
   `time.Since` and four others. BR-5, `LastBox` was an exported mutable var; it is
   a const over an array literal now.
+
+- 2026-08-26: close round 2 — two findings, both mine. BR-11: the only two tests
+  pinning this round's Critical both began with `t.Skipf("no tzdata")`, so on a
+  machine without the system timezone database a real correctness fix would have
+  had no check at all and reported green. The repo had already solved that one
+  file away — `history_cmd_test.go` imports `_ "time/tzdata"` — and I wrote the
+  skip instead. Both tests now embed it and `t.Fatal` on failure, and the
+  zone-regression mutant reddens both. BR-3, second round open: I "swept" the
+  stale import claim, ran a residue check that came back empty, and reported it
+  done — while three of five sites stood, because I grepped one exact wording and
+  the others said the same thing differently. The residue check inherited the
+  sweep's blind spot. Swept by the concept this time.

@@ -932,6 +932,24 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## A t.Skip on the only pin for a fix is not a pin (define #5 close)
+
+The Critical this round found — `Due` firing on the day of review — was pinned by
+two tests, and BOTH began `if err != nil { t.Skipf("no tzdata") }`. On a machine
+without the system timezone database, the only checks on a real correctness fix
+would report green while verifying nothing.
+
+The repo had already solved this: `history_cmd_test.go` imports `_ "time/tzdata"`,
+embedding the database so its zone tests RUN. I wrote the skip instead, one file
+away from the fix.
+
+- **A skip is an admission the test might not run. For a test that pins a
+  correctness fix, that is the same as not having it.** Make the dependency
+  available instead — here, one blank import — and turn the guard into `t.Fatal`,
+  so absence becomes a failure rather than a shrug.
+- **Before writing a skip, grep for how the repo handles that dependency
+  already.** The answer existed and cost one line.
+
 ## Consolidating two implementations? Keep the one whose comment explains itself (define #5 close)
 
 `#15` computed "which local day is this" twice for `/history`: once building a
@@ -1322,6 +1340,12 @@ feature outright in production and leaves the entire suite green.
 - **A stated rule that does not name its enumeration will be declared swept while
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
+- **Sweep by GREPPING THE CONCEPT, not a remembered phrase.** #5's close: I
+  "swept" a stale claim across artifacts, ran a residue check that came back
+  empty, and reported it done — while three of five sites stood, because my grep
+  matched one exact wording and the others said the same thing differently. The
+  residue check inherited the same blind spot as the sweep. Search for the
+  distinctive TOKEN (`store` near `time`), not the sentence.
 
 ## A new runtime directory has three homes that cannot see each other (define #9 close)
 
