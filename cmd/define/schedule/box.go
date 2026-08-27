@@ -26,11 +26,15 @@ package schedule
 // One slice, so a per-learner variant later replaces the table rather than the
 // logic around it. Nothing here measures whether these suit this learner; #8's
 // stats are what would eventually say.
-var intervalDays = []int{1, 3, 7, 14, 30, 90}
+// An ARRAY, not a slice, so len() is a constant expression and LastBox can be a
+// const. As a `var` it was exported, mutable, and depended on by every clamp and
+// by Mastered — any package could have assigned to it and silently rewritten the
+// schedule for the whole process.
+var intervalDays = [...]int{1, 3, 7, 14, 30, 90}
 
-// LastBox is the final rung. Reaching it takes len(intervalDays)-1 consecutive
-// correct answers from box 0.
-var LastBox = len(intervalDays) - 1
+// LastBox is the final rung. Reaching it takes LastBox consecutive correct
+// answers from box 0.
+const LastBox = len(intervalDays) - 1
 
 // IntervalDays is how many local calendar days a word in this box waits.
 //

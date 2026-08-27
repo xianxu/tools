@@ -932,6 +932,36 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## Consolidating two implementations? Keep the one whose comment explains itself (define #5 close)
+
+`#15` computed "which local day is this" twice for `/history`: once building a
+local midnight and subtracting, once projecting the LOCAL date onto a UTC day
+index. I consolidated them into `store.DaysBetween` and kept the shape that read
+more cleanly — a loop stepping the calendar with `AddDate`.
+
+It was WRONG, and the discarded one was right. Stepping in `a`'s zone while
+comparing instants against `b`'s makes two instants on the same local day count
+as one day apart. Consequence at the product level: a word reviewed this morning
+was offered again this afternoon. Store stamps carry FIXED offsets (yaml.v3
+parses them that way) and `now` comes from `time.Local`, so **mixed locations are
+the normal state, not an edge case** — and no existing test crossed zones, so it
+was green.
+
+The discarded implementation's comment said exactly why it had its shape:
+*"Projecting the LOCAL date onto a UTC day index takes DST out of the arithmetic
+instead of compensating for it."*
+
+- **A comment explaining a non-obvious SHAPE is evidence the shape was chosen,
+  not stumbled into.** When two implementations disagree in form, the one that
+  documents its own weirdness is the one that met the hard case.
+- **Consolidation is a behaviour change until proven otherwise.** The regression
+  net was `/history`'s tests, and they passed — because `relativeDay` normalises
+  its arguments first (`at.In(now.Location())`) and so never exercised the bug.
+  A refactor's regression net only covers what the OLD callers did.
+- **Ask what the new caller does differently.** `Due` compares a stored stamp
+  against the system clock. That pairing did not exist before, and it is exactly
+  where the bug lived.
+
 ## Restore from git, not from a scratch copy (define #9 M1)
 
 Recurrence of the entry below, one issue later and with a new cause. Mutation
@@ -941,6 +971,12 @@ copy-back silently DELETED `bothSources`, because the backup predated it. The
 build broke immediately, which is lucky: a deletion inside a rarely-run branch
 would have shipped.
 
+- **Third occurrence, #5's close: a `git checkout HEAD` run to revert one
+  mutation also reverted an unrelated, uncommitted fix in the same file** — the
+  `LastBox` const change vanished and was only noticed because the follow-up
+  verification came back empty rather than red. **An empty result from a check
+  that should have failed is itself a finding.** The two-step rule below is not
+  optional discipline; skipping the commit is how work disappears silently.
 - **`git checkout HEAD -- <file>` is the correct restore, and only if the target
   is COMMITTED.** It cannot go stale the way a scratch copy can. But the same
   session then hit the other half of the trap: restoring uncommitted wiring

@@ -204,3 +204,26 @@ Two decisions worth recording before implementation:
   rewritten rather than the code — and it gained the check an import list cannot
   make, that `time.Now` appears nowhere, since `time` is legitimately imported
   for its type.
+
+- 2026-08-26: close boundary round 1 — REWORK, one Critical and five Importants,
+  all real. The Critical is the one worth keeping: `store.DaysBetween` was WRONG
+  for arguments in different locations, so `Due` reported a word due on the day it
+  was reviewed. Store stamps carry fixed offsets (yaml.v3) while `now` comes from
+  `time.Local`, so mixed zones are the NORMAL state for half the year — and no
+  test crossed zones, so it was green. Reproduced empirically before fixing:
+  same-local-day gave 1, and a DST-crossing pair gave 7 where the answer is 6.
+  The deeper lesson is about the consolidation that introduced it: `#15` had
+  written the idea twice, and I kept the shape that read more cleanly and dropped
+  the one whose comment explained why it was shaped that way. `/history`'s tests
+  passed as a regression net because `relativeDay` normalises its arguments
+  first — a refactor's net only covers what the OLD callers did, and `Due`'s
+  pairing of a stored stamp against the system clock did not exist before.
+  Also: BR-6, mastery was ABSORBING — `Queue` excluded mastered words, so they
+  could never be answered wrong, so the count could only grow while recall
+  decayed; it also contradicted `progress.go`'s own comment that `--play` decides
+  what to stop offering. Mastery is now a reporting status and the 90-day interval
+  does the rarity. BR-2, three of six intervals were asserted by nothing. BR-3,
+  the "store and time and nothing else" claim went stale in four artifacts when I
+  widened the guard. BR-4, the clock guard grepped one spelling and missed
+  `time.Since` and four others. BR-5, `LastBox` was an exported mutable var; it is
+  a const over an array literal now.
