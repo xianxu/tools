@@ -66,8 +66,21 @@ The deck and the schedule are inert without a way to sit down and review.
 Durable plan: `workshop/plans/000006-vocab-play-plan.md` (two milestones; each
 `Mx` row is its own review boundary).
 
-- [x] M1 — `Question`, `Recall`, `Session`/`Apply`, the purity guards, the atlas
-- [x] M2 — `CaptureReview`, `runPlay`, the `--play` flag, the README
+- [~] M1 — `Question`, `Recall`, `Session`/`Apply`, the purity guards, the atlas
+- [~] M2 — `CaptureReview`, `runPlay`, the `--play` flag, the README
+
+**Both milestones' work is DONE; neither boundary closed on its own, and they are
+closing together at the issue close.** `[~]` rather than `[x]` because a ticked
+`Mx` claims a `Review-Verdict:` trailer and a `closed Mx` Log line, and neither
+exists — which is exactly what BR-22 and BR-38 caught.
+
+Why they collapsed: M1's close failed with five findings I never read (see the
+Revisions), so M2 was built on an unclosed boundary. By the time that surfaced,
+every later review window spanned both milestones, and re-running M1's close in
+isolation kept finding issues in M2's code because the window no longer separated
+them. Forcing two boundaries onto one continuous body of work was producing
+rounds rather than review. The issue close covers the whole window, which is what
+the reviews have effectively been doing for six rounds.
 
 ## Estimate
 
@@ -338,22 +351,26 @@ BR-30: four of five code fixes in the sweep commit landed in branches measured a
 coverage 0, and two were pinnable that day. Both now are, and both bite:
 
 - **All lookups failing is not "nothing due today".** Reverting the fix reddens
-   on both halves — the exit code and the
-  message. The first attempt used , which FAILS the test when
-  consulted because it exists to prove a command never reaches the dictionary;
-  this needed a double that answers, and answers no.
+  the test on both halves — the exit code and the message. The first attempt
+  used `refusingDict`, which FAILS the test when consulted, because it exists to
+  prove a command never reaches the dictionary; this needed a double that
+  *answers*, and answers no. A double that fails on use and a double that
+  returns an error are not interchangeable, and the names should say which.
 - **Losing the terminal after playback exits 1**, like failing to enter raw mode
-  at all. Driven by handing the session a  whose file is , so
-  the re-entry genuinely fails rather than being simulated.
+  at all. Driven by handing the session a `rawTerm` whose file is `os.DevNull`,
+  so the re-entry genuinely fails rather than being simulated.
 
-The other three are honestly unpinnable here: the duplicate  is
-idempotent by construction, the zero-time spelling has no behaviour, and the
-raw-mode descriptor is only observable through a real terminal.
+The other three are honestly unpinnable here: the duplicate `withStore` was
+idempotent by construction, the zero time spelled `store.Word{}.FirstSeen` has
+no behaviour to observe, and the raw-mode descriptor (`os.Stdin` where the
+handed `f` belonged) is only visible through a real terminal — `rawTerm` now
+carries the descriptor so the bug is unspellable rather than merely fixed.
 
-BR-29:  and the atlas both claimed THREE purity guards where 
-runs two — it names no store symbol, and that guard with an empty allowlist would
-fatal on finding nothing to check. Corrected in both, with the reason.
+BR-29: `puretest.go` and the atlas both claimed THREE purity guards where `play`
+runs two — it names no store symbol, so `StoreSymbolsOnly` with an empty
+allowlist would fatal on finding nothing to check. The count is per PACKAGE, not
+a fact about the guards, and every artifact now says so where it states one.
 
 BR-5, third round: the residue was one sentence in Task 3 still saying "the loop
-drops it" after the decision moved to  — the same two-places-for-one-rule
+drops it" after the decision moved to `advance` — the same two-places-for-one-rule
 the bullet above it was written to settle.

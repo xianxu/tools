@@ -73,10 +73,6 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		&crlfWriter{w: stdout}, &crlfWriter{w: stderr})
 }
 
-// playSession drives the state machine and performs its outcomes.
-//
-// Split from runPlay so a test can drive a whole session with a scripted key
-// channel and no terminal at all — the setup above is the part that needs one.
 // rawTerm is the terminal a session borrows during playback and takes back
 // after.
 //
@@ -88,6 +84,11 @@ type rawTerm struct {
 	f    *os.File
 }
 
+// playSession drives the state machine and performs its outcomes.
+//
+// Split from runPlay so a test can drive a whole session with a scripted key
+// channel and no terminal at all — the setup in runPlay is the part that needs
+// one. Its own doc block, because it had been swallowed into rawTerm's.
 func playSession(ctx context.Context, d deps, opt options, s play.Session,
 	keys <-chan Key, raw rawTerm, stdout, stderr io.Writer) int {
 

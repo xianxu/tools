@@ -1,6 +1,7 @@
 // Package puretest holds the guards a PURE package must pass.
 //
-// It exists because #5's schedule and #6's play make the same three claims, and
+// It exists because #5's schedule and #6's play make overlapping purity claims —
+// schedule takes all three guards, play takes two — and
 // #7, #12 and #13 each add another form package — so "copy the guards" becomes
 // "copy them five times, and let them drift". storetest.Suite is the precedent:
 // one conformance body, many callers.

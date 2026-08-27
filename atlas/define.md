@@ -1139,7 +1139,7 @@ stats screen disagreeing with the review queue. `masteryStreak` is 7 with a
 stated reason: reaching the last box takes 5 consecutive correct answers, so any
 N at or below that would make "mastered" mean "arrived".
 
-**The package is pure, and that is ENFORCED by two guards.** `schedule` imports
+**The package is pure, and that is ENFORCED by three guards.** `schedule` imports
 `store` and pure standard-library packages only; one guard reads the import set
 against an allowlist, and a second greps for every wall-clock reader
 (`time.Now`, `time.Since`, `time.Until`, `time.After`, the timer constructors) —

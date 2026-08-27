@@ -9,9 +9,14 @@
 //
 // That is not a stylistic preference: every question here is date-driven, and a
 // package that could reach a wall clock would be untestable at exactly the point
-// where correctness lives. TWO guards enforce it, because a comment cannot — an
-// import allowlist, and a check that no wall-clock reader (`time.Now`,
-// `time.Since`, and the rest) appears in any non-test file.
+// where correctness lives. THREE guards enforce it, because a comment cannot —
+// an import allowlist, a check that no wall-clock reader (`time.Now`,
+// `time.Since`, and the rest) appears in any non-test file, and a store-SYMBOL
+// allowlist, since allowlisting `store` would otherwise grant the disk with it.
+//
+// `play` takes the first two; it names no store symbol, so the third would have
+// nothing to check. The count differs per package, which is why it is stated
+// per package rather than as a fact about the guards.
 //
 // Schedule state is DERIVED from the event log, never stored beside it. store's
 // own event.go states the rule: the log is "deliberately the ONLY record of

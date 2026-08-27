@@ -23,7 +23,7 @@
 | `Outcome` / `OutcomeKind` | `cmd/define/play/session.go` | new |
 | `Session` | `cmd/define/play/session.go` | new |
 | `Apply` | `cmd/define/play/session.go` | new |
-| `puretest` guards | `cmd/define/puretest/puretest.go` | new |
+
 
 **Its own package, for the reason `schedule` was: the purity boundary becomes checkable.** `play` imports NOTHING at all — not `store`, not `schedule`. The first draft said it imports both; it does not, because the session works in deck keys and rendered strings the caller supplies, which is the strongest form of the claim being made. `#5` proved the shape works and left guards to copy; this reuses them rather than re-arguing the case.
 
@@ -64,6 +64,7 @@ and in `Question`'s doc comment, because a future form choosing `d` for
 | `runPlay` | `cmd/define/play_loop.go` | new | terminal + store |
 | `Capturer.CaptureReview` | `cmd/define/capture.go` | modified | the event log |
 | `--play` flag | `cmd/define/main.go` | modified | flag surface |
+| `puretest` guards | `cmd/define/puretest/puretest.go` | new | `go list` + the filesystem |
 
 - **`runPlay`** — reads the deck and the log, folds progress, builds the queue, drives `Apply` over the key channel, and performs each `Outcome`.
   - **The daily budget is a flag, `-count`, defaulting to 20.** The first draft never said, and `schedule.Queue` requires one. Twenty because it is a sitting rather than a chore — long enough to be worth opening, short enough to finish — and a flag because that number is a guess about one learner's attention, exactly the kind of guess that should be changeable without a rebuild. `0` means "no budget" and returns nothing, matching `Queue`'s contract rather than inventing a second meaning for it.
@@ -117,7 +118,9 @@ and in `Question`'s doc comment, because a future form choosing `d` for
 
 - [x] **Step 8: Atlas** — `atlas/define.md` gains the play model. **Per milestone, not deferred**: `#21` and `#5` both scheduled atlas work at the end and both were refused at their first milestone close.
 
-- [x] **Step 9: `sdlc milestone-close --issue 6 --milestone M1`.**
+- [ ] **Step 9: `sdlc milestone-close --issue 6 --milestone M1`.** — NOT RUN to completion.
+  Its first invocation failed with five findings I did not read, and M2 was built
+  on the unclosed boundary. Folded into Step 11; see the plan's Revisions.
 
 ## Chunk 2: M2 — the loop, the flag, the recording
 
@@ -159,7 +162,10 @@ and in `Question`'s doc comment, because a future form choosing `d` for
 
 - [x] **Step 10: README** — `--play` in the flag list and one line of what a session looks like. This is the first user-visible surface since `#20`, so it is the first thing in a while a reader could look for and not find.
 
-- [x] **Step 11: `sdlc close --issue 6 --verified '<evidence>'`.**
+- [ ] **Step 11: `sdlc close --issue 6 --verified '<evidence>'`.** — ticked while
+  it had never finalized, across eight REWORK rounds. It stays unticked until the
+  gate says otherwise; a tick on a step whose whole content is "the gate passed"
+  is a claim only the gate can make.
 
 ---
 
@@ -168,3 +174,30 @@ and in `Question`'s doc comment, because a future form choosing `d` for
 - **The interface is a guess until `#7` lands.** Four methods is my best reading of what 2.3 will need, and the `fakeForm` test proves the LOOP is form-agnostic, not that the interface is sufficient. If `#7` has to change it, that is the plan working — better a signature change with one implementation than three.
 - **A skip that records nothing is a deliberate hole in the data.** `#8` will not be able to distinguish "skipped" from "never reviewed". The alternative is a fourth event kind, which `#5`'s `Fold` would have to learn to ignore; recording nothing keeps the log meaning one thing. Worth revisiting if `#8` wants the distinction.
 - **Audio during review is on by default** and every word plays before reveal. That is the Spec, but it is also the kind of thing that is delightful twice and irritating on the twentieth word — a real session is the only way to find out, and `--no-audio` is the escape hatch until then.
+
+## Revisions
+
+### 2026-08-27 — five plan-gate rounds, then the milestones collapsed
+
+**Plan gate (5 rounds).** Two Criticals: the `Question` interface named
+`main.Key`, which a subpackage cannot reach — the compile error was the import
+direction telling the truth — and `DEFINE_NO_CAPTURE` leaves `deck` nil, making
+the "a session still runs" Done-when unsatisfiable. Round 3 caught the skip
+filter being described in two places without choosing, which is how a rule ends
+up in both or neither.
+
+**Milestone structure abandoned mid-flight.** M1's `milestone-close` failed with
+five findings and I never read its output, so M2 was built on an unclosed
+boundary. Every later review window then spanned both, and re-running M1's close
+in isolation kept surfacing M2's code. Both rows are `[~]`, and the issue close
+covers the single window — which is what the reviews had been doing anyway.
+
+**`Question` gained `Grade(r rune)` over `Grade(k Key)`**, `Input`/`InputKind`
+appeared to carry control intents across the package boundary, and
+`Outcome.SessionDone` was added so a caller holding only an `Outcome` can tell the
+session ended without consulting the `Session` as a second source of one fact.
+
+**The purity guards were EXTRACTED into `cmd/define/puretest`** rather than copied
+per the gate's ARCH-DRY finding, and then needed their own tests: the first
+version had none while the issue Log claimed its negative cases were "verified in
+the tree".

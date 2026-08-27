@@ -69,8 +69,11 @@ func TestGradingBeforeRevealIsIgnored(t *testing.T) {
 	}
 }
 
-// A skip is not an assessment: schedule.Fold would read a recorded skip as a
-// miss and demote a word the learner was honest about.
+// A key the form does not grade is ignored ENTIRELY — it does not advance, and
+// it is not a skip. Form 2.1 grades only y and n.
+//
+// (The comment here described the skip rule for two rounds after the test was
+// renamed away from it: renaming a test does not move the comment above it.)
 func TestAnUngradedKeyDoesNotAdvance(t *testing.T) {
 	s, outs := drive(twoQuestions(), reveal, rune_('s'))
 

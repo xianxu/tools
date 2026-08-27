@@ -605,3 +605,183 @@ findings:
       describes is now tested two functions down in TestSkippedVerdictRecordsNothing.
       BR-6's fix renamed the function and left the comment.
 ```
+
+---
+
+## Re-review — 2026-08-27T12:46:44-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 6 — define --play: review loop + form 2.1 quick pass |
+| repo | tools |
+| issue file | workshop/issues/000006-vocab-play.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 74d0121e5d4f89780a3430cf699dde8b51f6daf3..8ac448b6c5fcbea0e1a86bab9e4c01aab1771a2f |
+| command | sdlc milestone-close --issue 6 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-27T12:46:44-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The code in this window is genuinely good and I verified the two headline fixes by revert — `TestAllLookupsFailingIsNotNothingDue` and `TestLosingTheTerminalAfterPlaybackExitsOne` both go red without their fixes, `go vet`/`gofmt` are clean, all packages pass (`play` 93.3%, `puretest` 89.3%). Six of the twelve open findings are genuinely disposed. What blocks the boundary is that the six raised at round 7 are untouched: the sweep commit `0810337` landed five minutes after round 7 wrote them into the ledger and fixed only the round 5–6 residue. Four of those are Important, and one of them (BR-38) is about this very gate — the plan ticks `Step 9: sdlc milestone-close --issue 6 --milestone M1` and the issue ticks `- [x] M1` while `git log main..HEAD` carries zero `Review-Verdict:` trailers and the Log has no `closed M1` line. On top of that I found two new Importants, both by measurement: the zero-import behaviour `puretest` changed this window is pinned only by `cmd/define/play` happening to import nothing, and `store/yaml.go`'s new `Stat` error branch is at coverage 0 and appears in neither half of the round-6 pinned/unpinnable enumeration that BR-30's own rule prescribed.
+
+### 1. Strengths
+
+- **`puretest`'s own suite is the right shape and it works.** Owned known-bad fixtures (`testdata/impure` for the `os`+`store.NewYAML` case, `testdata/clocky` for the `time.Since` case an import list structurally cannot see), and the `T` interface at `cmd/define/puretest/puretest.go:28-32` is the minimal change that makes a guard assertable at all. `TestGuardsRefuseToPassVacuously` covering all three guards is the part most suites skip.
+- **BR-33's fix reasons correctly about *why*.** `testdata/pure/pure.go:4-7` states the rule ("a guard's positive case has to be as fixed as its negative one") rather than just moving the path — which is what let me find the one case it missed.
+- **The cancel-before-select rewrite is honest and materially better.** `cmd/define/play_loop_test.go:219-227` replaces a false "DETERMINISTIC by construction" with the measured 119/400, then raises per-round catch probability to ~0.5 by pre-revealing so one select win is immediately observable, ×40 rounds. It runs in 0.03s.
+- **Both BR-30 fixes are pinned, verified by revert.** Reverting `todaysQuestions`' exit-1 reddens on all three assertions (exit code, stdout, stderr); reverting `finish(...); return 1` → `return finish(...)` reddens the exit-code assertion.
+- **`Outcome.SessionDone` is threaded through every terminating path** (`session.go:106,111,120,125,170,173`) and the `OutcomeNone`/`OutcomeReveal` mid-session returns correctly leave it false — three tests cover end, mid-session and quit/drop.
+- **`rawSession.restore()` is idempotent** (`rawterm.go:29-35`), so the lost-terminal path's `restore()` → failed `enterRaw` → deferred `sess.restore()` sequence is safe. I checked this specifically.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-1 — `ImportsOnly`'s zero-import PASS is pinned only by `play` importing nothing (2nd in family `production-code-used-as-test-fixture`).**
+`cmd/define/puretest/puretest.go:41-47` documents at length that ZERO imports is a pass, not a vacuity failure — the bug fixed in `4afd499`. I reintroduced the vacuity fatal in a scratch copy: `go test ./cmd/define/puretest/` stayed **green**; only `cmd/define/play`'s `TestPlayPurity/imports` went red, with the message naming the wrong package. `testdata/pure` imports `sort`, so it is a one-import fixture, not a zero-import one. This is the exact coupling BR-33's own fix removed for the other two positive cases — and BR-33 named the trigger ("If #7 gives play a legitimate import"), at which point this regression becomes unpinned silently. Fix: a `testdata/nothing` package with no imports and `TestImportsOnlyAcceptsAPackageWithNoImports`.
+
+**I-2 — the round-6 pinned/unpinnable enumeration omits `store/yaml.go`'s new error branch (5th in family `claim-without-failing-test`).**
+`cmd/define/store/yaml.go:162-165` adds `st, err := f.Stat(); if err != nil { return err }`. Cover profile entry `yaml.go:163.16,165.3 … 0` — coverage 0. Reverting it to the original `if st, err := f.Stat(); err == nil && st.Size() > 0` leaves `./cmd/define/store/` green. It appears in neither list in the issue Log's round-6 entry: not among the two "now pinned, and both bite", not among the three "honestly unpinnable" (which name the duplicate `withStore`, the zero-time spelling and the raw-mode descriptor). Round 7 already observed this while disposing BR-30 `addressed` and it was not picked up. Do not fix this instance — the rule is the operable step the ledger already recorded: *before closing a round, run coverage over the CHANGED lines and classify **every** zero-coverage fix as pinned-this-round or unpinnable-and-why*, and the enumeration is produced from the coverage profile rather than from memory. (Separately confirmed: `rawTerm.f` is genuinely unpinnable as the Log says — reverting `enterRaw(raw.f)` to `enterRaw(os.Stdin)` keeps `TestLosingTheTerminalAfterPlaybackExitsOne` green, because `os.Stdin` under `go test` is also not a terminal.)
+
+Plus the four still-open Importants re-raised below: BR-29, BR-35, BR-36, BR-37, BR-38.
+
+### 4. Minor findings
+
+- **M-1 — `missingDict` duplicates a capability `fakeDictionary` already has (2nd in family `duplicated-guard-logic`).** `play_loop_test.go:523-529` adds a stateless double returning `ErrNoEntry` for everything; `dict_fake_test.go:51-56` already returns `ErrNoEntry` for any word outside the corpus, so `playRig(t, "zzznotaword")` gives the same test with no new double and exercises the seam's real fake. The same commit deleted `skipForm` for exactly this reason. `okAudio` (`:457`) is the weaker sibling — `rebasedSource`/`fakeCDN` already models a serving CDN, though using it here would cost a server.
+
+### 5. Test coverage notes
+
+- `cmd/define/play` 93.3%, `cmd/define/puretest` 89.3%, `go vet` and `gofmt` clean, full suite green (`cmd/define` 94s — dominated by pre-existing tests, not the new 40-round loop at 0.03s).
+- Verified-by-revert this round: all-lookups-fail (red), lost-terminal exit 1 (red), zero-import vacuity (**green in puretest's own suite** — I-1), `store/yaml.go` Stat (**green** — I-2), `rawTerm.f` injection (**green**, declared unpinnable and that is honest).
+- `TestCountBoundsTheSession` asserts `opt.count`, not the `-count` flag wiring in `main.go` — that gap is BR-13 on the close ledger, not re-raised here.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass, one flag.** `puretest` remains the exemplar: one body, `schedule/purity_test.go` down to 38 lines, and `play` takes two guards with the third's absence argued rather than assumed. Flagged at M-1.
+- **ARCH-PURE — pass on `play`, flag on the plan.** `play` imports nothing, is enforced by two guards, and the guards themselves now have negative cases. The flag is BR-35: `puretest` is filed under "Pure entities" while `puretest.go:56,150,156,166` exec `go list` and read the filesystem.
+- **ARCH-PURPOSE — flag.** BR-29 is the textbook instance-not-class failure: two of three named sites fixed, and `grep -rn "three guards\|same three"` still returns three wrong claims including the one round 7 named explicitly (`schedule/box.go:12`). Same axis on I-1: BR-33's fix swept two of the three positive-case dependencies on `play`.
+- **ARCH-MOCK — flag.** `puretest` consumes the `go` binary with no named seam and no fake (inside BR-35). `missingDict` is a stateless double placed beside the corpus-backed stateful fake for the same seam (M-1). Elsewhere the seams are right: `fakePlayer` for `afplay(1)`, `fakeDictionary` from committed captured fixtures, `store.Mem` for the store.
+
+### 7. Plan revision recommendations
+
+The plan needs a `## Revisions` section it does not have at all (BR-37), and its first entry should carry:
+- **KIND correction (BR-35):** move `puretest` guards out of "Pure entities" into "Integration points", with `Wraps: the go toolchain + filesystem`, and note that the row's KIND comes from reading the entity's imports.
+- **Table completeness:** `rawTerm` (`cmd/define/play_loop.go:86`) is a new integration-layer type absent from the Integration-points table.
+- **Untick the two gate rows (BR-38):** plan:120 (`Step 9: sdlc milestone-close`) and plan:162 (`Step 11: sdlc close`), plus issue:69-70, until a `Review-Verdict:` trailer and a `closed Mx` Log line exist.
+- **Record the sweep this window made** to the Core-concepts table, the "play imports NOTHING" reversal, the two-guards paragraph and the reserved-keys paragraph — 64 lines changed with no entry.
+
+```findings
+dispose:
+  - id: BR-7
+    disposition: addressed
+    note: |
+      question.go:30-35 now records that no shipped form produces Skipped with ok==true, at the declaration a reader would reach for.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      question.go and purity_test.go fixed; atlas:1179-1180, puretest.go:3 and schedule/box.go:12 still carry the wrong count — the enumeration was not swept.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      play_loop_test.go:219-227 states PROBABILISTIC with the measured 119/400 and raises per-round catch to ~0.5 over 40 rounds.
+  - id: BR-32
+    disposition: addressed
+    note: |
+      atlas/define.md:1187-1211 now carries Outcome.SessionDone, the puretest.T seam, the testdata fixture convention and the all-lookups-fail exit 1.
+  - id: BR-33
+    disposition: addressed
+    note: |
+      testdata/pure is the owned known-good fixture; but the ZERO-import case it does not cover is raised as a new finding.
+  - id: BR-34
+    disposition: addressed
+    note: |
+      No wip commit remains in main..HEAD — all 14 carry an issue ref and a Co-Authored-By trailer — and lessons.md records the git-stash rule.
+  - id: BR-35
+    disposition: not-addressed
+    note: |
+      plan:26 still files puretest guards under "Pure entities"; puretest.go:56,150,156,166 exec go list and read the filesystem.
+  - id: BR-36
+    disposition: not-addressed
+    note: |
+      issue:340-358 still has seven empty inline code spans and the dangling fragment at :341.
+  - id: BR-37
+    disposition: not-addressed
+    note: |
+      grep "^## " on the plan returns Core concepts / Chunk 1 / Chunk 2 / Risks — still no Revisions section.
+  - id: BR-38
+    disposition: not-addressed
+    note: |
+      plan:120 and plan:162 still ticked, issue:69-70 still tick M1+M2, zero Review-Verdict trailers in main..HEAD, no closed-Mx Log line, frontmatter still status working.
+  - id: BR-39
+    disposition: not-addressed
+    note: |
+      play_loop.go:76-89 — playSession's doc block is still merged into the comment on type rawTerm.
+  - id: BR-40
+    disposition: not-addressed
+    note: |
+      session_test.go:71-72 still carries the skip-rule comment above TestAnUngradedKeyDoesNotAdvance.
+findings:
+  - id: new
+    severity: Important
+    family: production-code-used-as-test-fixture
+    title: |
+      ImportsOnly's zero-import PASS is pinned only by cmd/define/play importing nothing, not by puretest's own suite
+    detail: |
+      This is the 2nd finding in family `production-code-used-as-test-fixture`. Do NOT fix
+      only this instance. The rule: a guard's own suite covers every behaviour the guard
+      CLAIMS, each against a fixture the suite owns — and "every behaviour" includes the
+      edge case a fix in the same window created, not just the general good case.
+      Measured by revert: puretest.go:41-47 documents that ZERO imports is a pass (the
+      4afd499 fix). Restoring the vacuity fatal in a scratch copy left
+      `go test ./cmd/define/puretest/` GREEN; only cmd/define/play's TestPlayPurity/imports
+      went red, naming the wrong package. testdata/pure imports `sort`, so it is a
+      one-import fixture. BR-33's fix moved two positive cases off `play` and named the
+      exact trigger that breaks this one — "If #7 gives play a legitimate import" — so the
+      coverage disappears silently at #7. Fix: a testdata/nothing package with no imports
+      plus TestImportsOnlyAcceptsAPackageWithNoImports.
+  - id: new
+    severity: Important
+    family: claim-without-failing-test
+    title: |
+      store/yaml.go's new Stat error branch is at coverage 0 and appears in neither half of the round-6 pinned/unpinnable enumeration
+    detail: |
+      This is the 5th finding in family `claim-without-failing-test`. Do NOT fix this
+      instance. The rule is the operable step the ledger already recorded at round 6 and
+      did not execute: before closing a round, run coverage over the CHANGED lines and
+      classify EVERY fix landing in a zero-coverage branch as pinned-this-round or
+      unpinnable-and-why — with the list produced FROM the coverage profile, not from
+      memory of which fixes felt significant.
+      Measured: store/yaml.go:162-165 adds `st, err := f.Stat(); if err != nil { return err }`.
+      Cover profile entry `yaml.go:163.16,165.3 1 0`. Reverting to the original
+      `if st, err := f.Stat(); err == nil && st.Size() > 0` leaves ./cmd/define/store/ green.
+      The Log's round-6 entry names two pinned fixes and three unpinnable ones (duplicate
+      withStore, zero-time spelling, raw-mode descriptor); this fourth code fix is in
+      neither list. Round 7 observed the omission while disposing BR-30 addressed and it
+      was not picked up. Separately confirmed honest: reverting enterRaw(raw.f) to
+      enterRaw(os.Stdin) keeps TestLosingTheTerminalAfterPlaybackExitsOne green, matching
+      the Log's own "only observable through a real terminal".
+  - id: new
+    severity: Minor
+    family: duplicated-guard-logic
+    title: |
+      missingDict duplicates a capability fakeDictionary already has, in the same commit that deleted skipForm for that reason
+    detail: |
+      play_loop_test.go:523-529 adds a stateless double returning ErrNoEntry for every word.
+      dict_fake_test.go:51-56 already returns ErrNoEntry for any word outside the captured
+      corpus, so `playRig(t, "zzznotaword")` writes TestAllLookupsFailingIsNotNothingDue
+      with no new double AND exercises the seam's real corpus-backed fake (ARCH-MOCK:
+      production flow and test flow sharing one boundary). The same commit removed skipForm
+      because fakeForm already produced Skipped. okAudio at :457 is the weaker sibling —
+      rebasedSource/fakeCDN already models a serving CDN — though reusing it here would
+      cost a fake server, so it is defensible where missingDict is not.
+```
