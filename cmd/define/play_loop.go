@@ -137,9 +137,16 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				}
 				playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
 				if raw != nil {
-					if again, err := enterRaw(os.Stdin); err == nil {
-						*raw = *again
+					again, err := enterRaw(os.Stdin)
+					if err != nil {
+						// REPORTED, not dropped. Without raw mode readKeys is
+						// line-buffered, so every keystroke appears to do nothing
+						// until Enter — the session looks frozen and nothing says
+						// why. Ending is honest; pretending to continue is not.
+						fmt.Fprintf(stderr, "define: lost the terminal after playback: %v\n", err)
+						return finish(stdout, s)
 					}
+					*raw = *again
 				}
 			}
 		}

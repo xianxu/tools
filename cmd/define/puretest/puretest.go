@@ -11,6 +11,7 @@
 package puretest
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,7 +43,7 @@ func ImportsOnly(t *testing.T, importPath string, allowed []string) {
 
 	out, err := exec.Command("go", "list", "-f", `{{join .Imports "\n"}}`, importPath).Output()
 	if err != nil {
-		t.Fatalf("go list %s: %v", importPath, err)
+		t.Fatalf("go list %s: %v%s", importPath, err, stderrOf(err))
 	}
 	for _, imp := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if imp = strings.TrimSpace(imp); imp == "" {
@@ -117,12 +118,26 @@ func StoreSymbolsOnly(t *testing.T, importPath string, allowed []string) {
 	}
 }
 
+// stderrOf recovers what the failed command actually SAID.
+//
+// exec.Cmd.Output puts it on ExitError.Stderr and discarding it turns "package
+// does not exist" or a compile error into a bare "exit status 1" — the same
+// class as dropping the raw-mode re-entry error: available detail, thrown away
+// at the one moment someone needs it.
+func stderrOf(err error) string {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && len(ee.Stderr) > 0 {
+		return "\n" + strings.TrimSpace(string(ee.Stderr))
+	}
+	return ""
+}
+
 // eachSourceFile visits the package's non-test .go files.
 func eachSourceFile(t *testing.T, importPath string, fn func(name, src string)) {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-f", `{{.Dir}}`, importPath).Output()
 	if err != nil {
-		t.Fatalf("go list %s: %v", importPath, err)
+		t.Fatalf("go list %s: %v%s", importPath, err, stderrOf(err))
 	}
 	dir := strings.TrimSpace(string(out))
 

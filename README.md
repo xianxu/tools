@@ -47,8 +47,15 @@ it happens, not at the end.
 $ define --play
 ephemeral
 
-Enter or space to reveal, Ctrl-C to stop
+Enter or space to reveal, d = remove from deck, Ctrl-C to stop
 ```
+
+| key | does |
+|---|---|
+| Enter or space | reveal the definition |
+| `y` / `n` | you had it / you did not |
+| `d` | remove this word from the deck — its history is kept |
+| Ctrl-C | stop; everything you answered is already saved |
 
 Words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days — and a
 miss drops one step rather than all the way back. `-count` bounds a sitting

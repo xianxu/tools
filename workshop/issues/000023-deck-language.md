@@ -98,6 +98,37 @@ six words this issue previously listed as unreachable:
    mode returns no entry, which is correct and which the tool cannot currently
    say about anything.
 
+### Selecting the RIGHT dictionary is principled, not a name match
+
+A second measurement, because the first probe matched dictionaries by name
+substring and that is unsound: `DCSCopyAvailableDictionaries` returns a **CFSet**,
+whose iteration order is unspecified, so `"Espa"` could match Larousse on one run
+and Oxford Spanish on the next. The API offers a real key and real metadata:
+
+```
+New Oxford American Dictionary        id com.apple.dictionary.NOAD
+  index=en_US  description=en_US                      -> monolingual English
+Larousse Diccionario General          id com.apple.dictionary.es.DGLEV
+  index=es     description=es                         -> monolingual SPANISH
+Gran Diccionario Oxford               id com.apple.dictionary.OxfordSpanish
+  index=es     description=es
+  index=en     description=es                         -> bilingual
+```
+
+`DCSDictionaryGetIdentifier` gives a stable reverse-DNS id, and
+`DCSDictionaryGetLanguages` gives an array of dictionaries keyed
+`DCSDictionaryIndexLanguage` (what the headwords are) and
+`DCSDictionaryDescriptionLanguage` (what the definitions are).
+
+**So the selection rule writes itself, and is testable:** for language L, prefer a
+dictionary whose index language is L *and* whose description language is also L —
+monolingual, which is what a learner should be reading — and fall back to one
+that merely indexes L. Not "the dictionary whose name contains Español".
+
+This also means the rule degrades sensibly on a machine with different
+dictionaries installed: no match for L means no entry, which is the honest
+answer, rather than silently answering from English.
+
 **The cost, recorded rather than discovered.** These symbols are private and
 undocumented: they can change or disappear on an OS update, and nothing in the
 SDK promises otherwise. So the seam must `dlsym` them at run time and FALL BACK

@@ -1212,7 +1212,27 @@ whenever it sees one without ever looking at the verdict.
 over the key channel, and performs the outcomes: `OutcomeRecord` calls
 `CaptureReview`, `OutcomeReveal` plays the pronunciation. `toInput` is where
 `main.Key` stops — Ctrl-C and EOF become `InputQuit`, Enter and space become
-`InputReveal`, everything else is a rune for the form to grade.
+`InputReveal`, `d` becomes `InputDrop`, and everything else is a rune for the
+form to grade.
+
+**`d` drops the current word, and it is a SESSION action rather than a verdict.**
+"This word does not belong in my deck" is true whatever form is asking, so it is
+an `Input` kind and every future form gets it free — the same reasoning that puts
+`Grade` on the form. It records no review, because dropping is not an assessment,
+and the EVENTS stay: `--forget`'s contract, since history is what happened and
+cannot be untrue while the deck is the working set the learner curates.
+
+**All session output goes through `crlfWriter`.** In raw mode a bare `\n` moves
+down WITHOUT returning to column 0, so a multi-line definition cascades
+diagonally across the screen. `#16` built that writer for exactly this; `--play`
+shipped without it and the operator's first real session found it immediately.
+`draw` writes plain `\n` and the translation happens in one place over every
+byte, including `Render`'s — which is where the newlines actually are.
+
+**Cancellation is checked BEFORE the select, not only inside it.** `select` picks
+uniformly at random among ready cases, so a cancelled context with a key already
+buffered would sometimes grade one more answer after Ctrl-C. It surfaced as an
+intermittent test failure, which is the only way a random-choice bug ever shows.
 
 **Reviews record through `Capturer`, never `store.AppendEvent`.** `capture.go`
 already stated the rule — capture is the ONLY thing that records, and a second

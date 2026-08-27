@@ -349,3 +349,24 @@ func TestDropRecordsNoReview(t *testing.T) {
 		t.Errorf("dropping recorded %d reviews", spy.reviews)
 	}
 }
+
+// A mode plus a word is two commands on one line. --play needed this guard MORE
+// than --reflect does: it writes events, so honouring one of the two would
+// change state under a misread intent.
+//
+// The first version dispatched --play ABOVE the switch carrying that rule, so it
+// could never reach it — with the comment stating the rule three lines above the
+// dispatch that broke it.
+func TestPlayWithAWordIsAUsageError(t *testing.T) {
+	var out, errb bytes.Buffer
+
+	code := run(t.Context(), []string{"--play", "sycophantic"}, testDeps(t),
+		strings.NewReader(""), &out, &errb)
+
+	if code != 2 {
+		t.Errorf("exit = %d, want 2 — a mode plus a word is a usage error", code)
+	}
+	if !strings.Contains(errb.String(), "do not also pass a word") {
+		t.Errorf("stderr = %q, want it to say why", errb.String())
+	}
+}

@@ -363,13 +363,6 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	if *llmCheck {
 		return runLLMCheck(ctx, os.Getenv, llm.New, stdout, stderr)
 	}
-	// --play is a mode like --forget and --llm-check: it runs a session rather
-	// than looking a word up, so it is dispatched before the argument count is
-	// judged. It needs a store, so it goes through withStore first.
-	if *playFlag {
-		d = d.withStore(opt, stderr)
-		return runPlay(ctx, d, opt, stdin, stdout, stderr)
-	}
 	forgetting := isSet(fs, "forget")
 	// A command may take arguments, so the WHOLE argument list is one line:
 	// `define /history 7` has to mean what `/history 7` means at the prompt.
@@ -390,6 +383,14 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// A mode plus a word is two commands on one line, and silently honouring
 		// one of them is how -raw came to mean two things in #2.
 		fmt.Fprintln(stderr, "define: --reflect reads the deck; do not also pass a word")
+		return 2
+	case *playFlag && fs.NArg() != 0:
+		// Same rule, and --play needed it MORE than --reflect does: it writes
+		// events, so `define --play sycophantic` would change state under a
+		// misread intent. The first version dispatched above this switch and so
+		// could never reach the guard — the comment three lines up states the
+		// rule it was breaking.
+		fmt.Fprintln(stderr, "define: --play reviews the deck; do not also pass a word")
 		return 2
 	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 		fs.Usage()
@@ -412,6 +413,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// Dispatched HERE and not beside --llm-check, which runs before withStore
 	// precisely because it needs no directory. --reflect needs both the deck and
 	// the clock, so it belongs after them, where --forget is (#17 D5).
+	if *playFlag {
+		d = d.withStore(opt, stderr)
+		return runPlay(ctx, d, opt, stdin, stdout, stderr)
+	}
 	if *reflect {
 		return runReflect(ctx, d, opt, stdout, stderr)
 	}
