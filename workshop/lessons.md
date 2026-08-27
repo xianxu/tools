@@ -1287,6 +1287,31 @@ feature outright in production and leaves the entire suite green.
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
 
+## Adding a field is not wiring it — the third recurrence (define #9 close)
+
+I added `warn io.Writer` to the usage source, wrote the warn-once logic, and
+tested it by passing a buffer into a hand-built struct. **Both production sites
+left it nil**, so a broken feed degraded exactly as silently as before, and the
+test was green throughout.
+
+Third time in two issues, same shape every time:
+
+| issue | field added | production sites that got it |
+|---|---|---|
+| #21 | `deps.vocab` needs `Load()` | 1 of 3 entry paths |
+| #9 M3 | `deps.usage` | 0 of 1 on the no-capture path |
+| #9 close | `bothSources.warn` | 0 of 2 |
+
+- **A test that CONSTRUCTS the struct begins after the hop that fills it.** That
+  sentence is the whole family. `&bothSources{warn: &buf}` proves the field is
+  read; it says nothing about whether anything writes it.
+- **When you add a field, the test is `deps{newStore: openStore}.withStore(...)`
+  and an assertion the field arrived.** Not the struct literal. The first form
+  fails when a production site is missed; the second cannot.
+- **Enumerate the construction sites, not just the type.** There were two here
+  and I would have found both by grepping for the literal — which is a ten-second
+  check I did not run because the feature "worked".
+
 ## A degrading fallback hides a test that reaches the network (define #9 close)
 
 `TestWithStoreCarriesTheUsageSourceThrough` drove production wiring and then

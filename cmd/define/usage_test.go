@@ -136,15 +136,26 @@ func TestUsageTextDropsThePublisherSuffix(t *testing.T) {
 // this: every fixture named a publisher, so the guard that handles an absent one
 // was never entered.
 func TestNoPublisherLeavesTheTitleAlone(t *testing.T) {
-	items := []store.NewsItem{{Title: "Springtime is ephemeral - Somewhere", Source: ""}}
+	// The title must END in " - " for this to discriminate. Without a publisher
+	// the strip becomes CutSuffix(title, " - "), which leaves any ordinary title
+	// untouched — so an ordinary fixture passes with the guard removed, as my
+	// first version of this test did.
+	items := []store.NewsItem{
+		{Title: "Springtime is ephemeral - Somewhere", Source: ""},
+		{Title: "Ephemeral - ", Source: ""},
+	}
 
 	got := usagesFrom(items, "ephemeral")
 
-	if len(got) != 1 {
-		t.Fatalf("got %d usages", len(got))
+	if len(got) != 2 {
+		t.Fatalf("got %d usages, want 2", len(got))
 	}
 	if got[0].Text != "Springtime is ephemeral - Somewhere" {
 		t.Errorf("Text = %q, want the title intact — nothing names an attribution to strip", got[0].Text)
+	}
+	if got[1].Text != "Ephemeral - " {
+		t.Errorf("Text = %q, want %q — with no publisher there is no attribution to remove",
+			got[1].Text, "Ephemeral - ")
 	}
 }
 

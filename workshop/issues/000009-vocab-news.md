@@ -295,3 +295,21 @@ Two decisions worth recording before implementation:
   interface (the dictionary half always answers, so there is nothing to fail) and
   a failed fetch now warns once per session, the shape `storeCapturer` already
   uses.
+
+- 2026-08-26: close round 2 — the two Importants were not addressed after all,
+  and the reviewer was right on both. BR-15: I added `bothSources.warn`, wrote the
+  warn-once logic, and tested it with a buffer passed into a HAND-BUILT struct —
+  while both production sites left it nil. A broken feed degraded exactly as
+  silently as before. Third recurrence of one shape in two issues (#21's vocab
+  Load reached 1 of 3 entry paths; #9 M3's no-capture path had no seam; this one
+  0 of 2 sites), and the sentence that covers all three is: a test that
+  CONSTRUCTS the struct begins after the hop that fills it. Now wired at both
+  sites and pinned by a test that builds deps the way a process does; unwiring
+  either site reddens it. BR-14: the branches WERE pinned, but two items named in
+  the finding's own text were not swept — the quoted-word query (dropping the
+  quotes changed no test, because a fake serves its fixture whatever was asked
+  for; now pinned against a captured request) and `withoutAttribution`'s
+  empty-publisher arm. That second fixture did not discriminate on the first
+  attempt: without a publisher the strip becomes `CutSuffix(title, " - ")`, which
+  leaves an ordinary title alone either way, so the title has to END in " - " for
+  the guard to be observable.
