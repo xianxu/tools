@@ -820,5 +820,8 @@ on the outcome, as `OutcomeRecord` and `OutcomeDrop` already do.
 definition without having answered — which still works, and still grades
 afterwards. The prompt change is what tells them.
 
-**The conformance suite is opt-in.** It decays silently; #21 left it red through
-two closes. Task 8 Step 3 and Task 10 Step 1 both run it deliberately.
+**The conformance suite is opt-in.** It decays silently — #21 left it red through
+two closes, and `#6`'s last round found and fixed that. It is GREEN as of
+`1ca9658`, so no triage is budgeted here; what Task 8 Step 3 and Task 10 Step 1
+buy is keeping it that way. If it is red on the first run, that is inherited
+breakage and unbudgeted work — say so rather than absorbing it silently.

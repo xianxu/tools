@@ -127,7 +127,20 @@ rounds:
           family: unbacked-claim-about-existing-code
           round: 3
       blocked: true
-content_hash: 5c05864bf55827ee8c2ef3913dd0ecbe5bd997b78de9b268ca725c253ed8d1de
+    - "n": 4
+      timestamp: "2026-08-27T15:55:53-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-6
+          disposition: addressed
+          note: Task 6 Step 1 installs okAudio{} (verified at play_loop_test.go:474), and Step 3 extends the bite-check to a nine-row mutation table covering every negative assertion.
+          round: 4
+        - id: PQ-7
+          disposition: addressed
+          note: The issue's Plan row now says nine and shows the grep that produces it; grep -c confirms 9.
+          round: 4
+      blocked: false
+content_hash: 56f42dcbc8d80e976a6348fb3c2ac8563a37fbae1b683fcc0d79b72d09f0c990
 ---
 
 # Gate ledger — tools#24 (plan-quality)
@@ -213,7 +226,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   command the plan shows, not typed from memory — the same discipline Task 9's
   grep-proof already applies to the doc sweep, extended to counts.
 
+## Round 4 — 2026-08-27T15:55:53-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-6 — addressed — Task 6 Step 1 installs okAudio{} (verified at play_loop_test.go:474), and Step 3 extends the bite-check to a nine-row mutation table covering every negative assertion.
+- PQ-7 — addressed — The issue's Plan row now says nine and shows the grep that produces it; grep -c confirms 9.
+
 ## Open findings
 
-- **PQ-6** [Important] `test-precondition-never-fires` Task 6's no-audio assertion cannot fail — playRig installs noAudioSource, so d.player is never reached
-- **PQ-7** [Minor] `unbacked-claim-about-existing-code` The issue's Plan row says seven Apply call sites in session_test.go; grep counts nine
+(none — every finding has been disposed)

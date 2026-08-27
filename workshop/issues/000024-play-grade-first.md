@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-27
-estimate_hours: 3.50
+estimate_hours: 4.67
 started: 2026-08-27T15:35:13-07:00
 ---
 
@@ -123,9 +123,24 @@ caller, and the docs. Every code item is `smaller-go-module` except the
 touches `session.go`, nine call sites in `session_test.go`, and `play_loop.go`
 together.
 
-**Two plan rounds are counted as SPENT, not budgeted.** Round 1 returned two
+**FOUR plan rounds are counted as SPENT, not budgeted.** Round 1 returned two
 Criticals — the miss branch never scored, and Enter/space were dead in the new
-state — plus two Importants. Round 2 cleared with one Minor.
+state — plus two Importants. Round 2 cleared with a Minor. Round 3 blocked on
+PQ-6 (a no-audio assertion that could not fail, because `playRig` installs
+`noAudioSource` and the player was unreachable) and PQ-7. Round 4 passed.
+
+**The first version of this block priced two, and the estimate-quality judge
+caught it:** the estimate commit landed between rounds 2 and 3, so it could not
+see the rounds it was about to cause. `#6`'s own block wrote the rule — *"a fifth
+plan round (this one) is counted"* — and this is the same omission one issue
+later. Counted now at `#5`'s measured `0.10/0.12`.
+
+**One item per task, which the first version also missed.** Three
+`smaller-go-module` rows carried nine tasks, pricing Tasks 2–4 — a new `score`,
+a new `Graded` field, the `InputRune` rewrite, deleting the test that asserts the
+old premise, and a table-driven drop test — at 0.14h of ship wall-clock between
+them. `#6` set one row per task and this now follows it: seven `smaller` rows for
+Tasks 2 through 8.
 
 **Four close rounds, and that is where the uncertainty sits.** `#6` budgeted
 three and needed eleven, closing at 8.09 against 6.15. The scope here is a
@@ -141,7 +156,13 @@ familiarity: 1.0
 item: issue-spec              design=0.50 impl=0.08
 item: milestone-review        design=0.10 impl=0.12
 item: milestone-review        design=0.10 impl=0.12
+item: milestone-review        design=0.10 impl=0.12
+item: milestone-review        design=0.10 impl=0.12
 item: cross-cutting-refactor  design=0.12 impl=0.14
+item: smaller-go-module       design=0.03 impl=0.14
+item: smaller-go-module       design=0.03 impl=0.14
+item: smaller-go-module       design=0.03 impl=0.14
+item: smaller-go-module       design=0.03 impl=0.14
 item: smaller-go-module       design=0.03 impl=0.14
 item: smaller-go-module       design=0.03 impl=0.14
 item: smaller-go-module       design=0.03 impl=0.14
@@ -151,18 +172,20 @@ item: milestone-review        design=0.15 impl=0.20
 item: milestone-review        design=0.15 impl=0.20
 item: milestone-review        design=0.15 impl=0.20
 design-buffer: 0.15
-total: 3.50
+total: 4.67
 ```
 
-Item-to-task map. `issue-spec` = the spec and the plan doc; the two
-`design=0.10` rows are the plan-quality rounds that happened.
+Item-to-task map, one row per task. `issue-spec` = the spec and the plan doc.
+The four `design=0.10` rows are the plan-quality rounds that were actually spent
+(`grep -c "^## Round" workshop/plans/000024-play-grade-first-plan-gate.md` → 4).
 `cross-cutting-refactor` = Task 1, `Apply` returning `[]Outcome` across the
-package and its caller. The three `smaller-go-module` rows = Tasks 2–4 (the
-`InputRune`/`InputReveal` arms, `score`, `Graded`), Tasks 5–7 (the loop's
-iteration, the no-audio assertion, `draw`'s three states), and Task 8 (the pty
-test — `smaller` and not `greenfield` because `startDefineInDir`, `unstyled` and
-`bareNewlines` all already exist, built in `#6`'s last round). `atlas-docs` =
-Task 9. The four `design=0.15` rows are the close rounds.
+package, nine call sites and the caller. The seven `smaller-go-module` rows are
+Tasks 2–8 in order: the grade-first arm, the miss branch, drop in every state,
+the loop's iteration, the no-audio assertion with its nine-row mutation table,
+`draw`'s three states, and the pty test. Task 8 is `smaller` and not `greenfield`
+because `startDefineInDir`, `unstyled` and `bareNewlines` all already exist —
+built in `#6`'s last round for exactly this. `atlas-docs` = Task 9. The four
+`design=0.15` rows are the close rounds.
 
 
 ## Log
