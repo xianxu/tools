@@ -1090,3 +1090,85 @@ the consumer. A debug command was planned and dropped: `commandCtx` carries no
 contract every command shares — for a debug affordance, ahead of the real
 consumer. The live conformance check prints what it fetched, which is how a
 person looks at real output in the meantime.
+
+## Scheduling: what is worth attention today
+
+**Leitner, not SM-2, and the reason is explainability.** Fixed intervals — 1, 3,
+7, 14, 30, 90 days — because for a personal tool *"why is this due?"* must be
+answerable in one sentence, and an ease factor cannot be. `IntervalDays` clamps
+an out-of-range box rather than panicking: boxes are derived from an append-only
+log, and a log written by a future version with a longer ladder must degrade to
+the longest interval we know rather than crash a review session.
+
+**Schedule state is DERIVED from the event log, never stored beside it.** This is
+the load-bearing decision of `#5`, and `store/event.go` had already written the
+rule for the whole store: the log is *"deliberately the ONLY record of activity
+... storing counters alongside would create a second source of truth that
+drifts."* A `Box` field on `store.Word` would be exactly that — and it would go
+wrong invisibly, a hand-edited or partially-written deck file disagreeing with
+the events that produced it. `Fold` is one pass over a log the session already
+reads. If it ever costs real time the answer is a cache keyed by the log's
+length, not a stored field.
+
+`Fold` **applies** `Answer` rather than reimplementing the transition, so
+"correct promotes, wrong demotes one box and resets the streak" has one encoding.
+Its ORDERING CONTRACT is stated rather than fuzzed: it consumes events in the
+order `store.Store.Events` returns them and is **not** order-independent — two
+reviews sharing a timestamp with different outcomes fold differently by order,
+and `ReviewEvent` carries no tiebreaker. What `FuzzFold` asserts instead holds
+over the whole domain: box in range, non-negative streak, idempotence.
+
+Only `EventReviewed` participates. A lookup or a question is *activity*, not
+*assessment* — they say what the learner is working ON, which is `#17`'s signal,
+not what they know.
+
+**Demotion is one box, not a fall to zero.** A word at the 90-day interval that
+slips once is not a word you have never seen; the interval is where Leitner keeps
+what you have learned.
+
+**A day is a LOCAL CALENDAR day.** `Due` compares through `store.StartOfDay`,
+never `N × 24h`: a learner who reviews at 9am Monday and sits down at 8am Tuesday
+must find a box-0 word due. `store` owns that helper because it owns `Clock` —
+and `#5` is what finally moved it there, after `#15` had written the same idea
+inline twice in two different shapes for `/history`.
+
+**`Mastered` is defined once, exported, and consumed by two.** `#6`'s `--play`
+decides what to stop offering; `#8`'s `--stats` reports how many words are known.
+Two conditions written separately would drift, and the drift would surface as a
+stats screen disagreeing with the review queue. `masteryStreak` is 7 with a
+stated reason: reaching the last box takes 5 consecutive correct answers, so any
+N at or below that would make "mastered" mean "arrived".
+
+**The package is pure, and that is ENFORCED by two guards.** `schedule` imports
+`store` and pure standard-library packages only; one guard reads the import set
+against an allowlist, and a second greps for every wall-clock reader
+(`time.Now`, `time.Since`, `time.Until`, `time.After`, the timer constructors) —
+the hazard an import list structurally cannot see, since `time` is legitimately
+imported for its types. The allowlist itself was wrong first and fired on `sort`:
+it said "exactly two imports" when the claim is "no IO and no hidden clock", and
+a guard that reddens on correct code invites deleting the guard. The plan's first draft claimed a test needing a
+fake "would not compile", which is false — a Go test may import anything — and
+this repo has been bitten repeatedly by facts that lived only in comments. The
+caller does the IO: `#6` reads the deck and the log through the store seams, gets
+`now` from the injected `Clock`, and writes `EventReviewed` back through the
+capture path.
+
+**The queue has TWO TIERS, and the Done-when forces it.** Due words with review
+history come first, most overdue first; words never reviewed follow, most
+looked-up first. Ranking everything on one "how long since we saw it" axis looks
+simpler and is wrong: a word first seen months ago and never reviewed has a
+larger age than a word reviewed last week and three days overdue, so the newcomer
+would go first and the word actually being learned would wait. That is the
+starvation `#5`'s Done-when forbids, and it is why the tiers are separate rather
+than one sort key with a clever weight.
+
+A mastered word does NOT leave the rotation — it sits at the 90-day interval and
+comes round, which is what keeps mastery from being absorbing: a word never
+offered can never be answered wrong, so the count would only grow while recall
+decayed. `Mastered` is a status for reporting and presentation, not a removal.
+A word not yet due is not offered; and the
+DECK is the roster while the log is the history — a word with progress but no
+deck entry is not queued, because `--forget` deliberately keeps a word's events
+after removing it and resurrecting it here would make forgetting not work.
+`budget <= 0` returns nothing: "no budget" is not "unlimited", and the opposite
+reading is a way to sit down to four hundred words by accident.

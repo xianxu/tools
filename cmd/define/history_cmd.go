@@ -38,8 +38,7 @@ func historyWindow(now time.Time, days int) time.Time {
 	if days < 1 {
 		days = 1
 	}
-	y, m, d := now.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -(days - 1))
+	return store.StartOfDay(now).AddDate(0, 0, -(days - 1))
 }
 
 // parseHistoryArgs reads /history's optional window: "7", "--days 7" or
@@ -190,13 +189,14 @@ func relativeDay(at, now time.Time) string {
 	// are 23 hours across a spring-forward and 25 across a fall-back, so elapsed
 	// hours cannot answer a calendar question — truncating reads a day too
 	// recent for the week after the change, and rounding merely hides that with
-	// a heuristic. Projecting the LOCAL date onto a UTC day index takes DST out
-	// of the arithmetic instead of compensating for it.
-	dayIndex := func(t time.Time) int64 {
-		y, m, d := t.Date()
-		return time.Date(y, m, d, 0, 0, 0, 0, time.UTC).Unix() / 86400
-	}
-	switch days := int(dayIndex(now) - dayIndex(at)); {
+	// a heuristic. store.DaysBetween steps the calendar instead, which takes DST
+	// out of the arithmetic rather than compensating for it.
+	//
+	// It used to be a local dayIndex closure here, and a second, differently
+	// shaped local-midnight computation in historyWindow above. #5 needed the
+	// same idea a third time, which is what finally moved it into store beside
+	// the Clock that owns this time model.
+	switch days := store.DaysBetween(at, now); {
 	case days == 0:
 		return "today"
 	case days == 1:

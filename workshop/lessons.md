@@ -932,6 +932,76 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## A guard that allows a PACKAGE allows everything in it (define #5 close)
+
+`schedule`'s purity had two guards — an import allowlist and a wall-clock grep —
+and both passed a package that called `store.NewYAML(dir, w)`. That constructor
+opens a directory and reads and writes files. The import guard allowed it because
+`store` is on the allowlist; the clock guard allowed it because it names no time
+function. **The purity claim would have been false with every guard green.**
+
+- **Allowlisting a package grants its whole surface, including the parts that
+  contradict what you were guarding.** `store` holds both the pure types this
+  package needs and the disk this package must not touch.
+- **When a dependency is mixed, guard SYMBOLS, not packages.** The new guard lists
+  the eight pure things `schedule` may name; anything else fails. Adding a ninth
+  becomes a visible decision rather than an implicit one.
+- **Two guards agreeing is not two independent checks** if they share the same
+  blind spot. Both of these reasoned about names — one about package names, one
+  about function names — and neither about what the named thing DOES.
+
+## A t.Skip on the only pin for a fix is not a pin (define #5 close)
+
+The Critical this round found — `Due` firing on the day of review — was pinned by
+two tests, and BOTH began `if err != nil { t.Skipf("no tzdata") }`. On a machine
+without the system timezone database, the only checks on a real correctness fix
+would report green while verifying nothing.
+
+The repo had already solved this: `history_cmd_test.go` imports `_ "time/tzdata"`,
+embedding the database so its zone tests RUN. I wrote the skip instead, one file
+away from the fix.
+
+- **A skip is an admission the test might not run. For a test that pins a
+  correctness fix, that is the same as not having it.** Make the dependency
+  available instead — here, one blank import — and turn the guard into `t.Fatal`,
+  so absence becomes a failure rather than a shrug.
+- **Before writing a skip, grep for how the repo handles that dependency
+  already.** The answer existed and cost one line.
+- **And the follow-up fix has to be verified, not assumed.** My first pass added
+  the import to one of the two files and wrote the explanatory comment into BOTH.
+  The second file then carried a comment stating the import was there when it was
+  not — a false claim minted by the fix for a false claim.
+
+## Consolidating two implementations? Keep the one whose comment explains itself (define #5 close)
+
+`#15` computed "which local day is this" twice for `/history`: once building a
+local midnight and subtracting, once projecting the LOCAL date onto a UTC day
+index. I consolidated them into `store.DaysBetween` and kept the shape that read
+more cleanly — a loop stepping the calendar with `AddDate`.
+
+It was WRONG, and the discarded one was right. Stepping in `a`'s zone while
+comparing instants against `b`'s makes two instants on the same local day count
+as one day apart. Consequence at the product level: a word reviewed this morning
+was offered again this afternoon. Store stamps carry FIXED offsets (yaml.v3
+parses them that way) and `now` comes from `time.Local`, so **mixed locations are
+the normal state, not an edge case** — and no existing test crossed zones, so it
+was green.
+
+The discarded implementation's comment said exactly why it had its shape:
+*"Projecting the LOCAL date onto a UTC day index takes DST out of the arithmetic
+instead of compensating for it."*
+
+- **A comment explaining a non-obvious SHAPE is evidence the shape was chosen,
+  not stumbled into.** When two implementations disagree in form, the one that
+  documents its own weirdness is the one that met the hard case.
+- **Consolidation is a behaviour change until proven otherwise.** The regression
+  net was `/history`'s tests, and they passed — because `relativeDay` normalises
+  its arguments first (`at.In(now.Location())`) and so never exercised the bug.
+  A refactor's regression net only covers what the OLD callers did.
+- **Ask what the new caller does differently.** `Due` compares a stored stamp
+  against the system clock. That pairing did not exist before, and it is exactly
+  where the bug lived.
+
 ## Restore from git, not from a scratch copy (define #9 M1)
 
 Recurrence of the entry below, one issue later and with a new cause. Mutation
@@ -941,6 +1011,12 @@ copy-back silently DELETED `bothSources`, because the backup predated it. The
 build broke immediately, which is lucky: a deletion inside a rarely-run branch
 would have shipped.
 
+- **Third occurrence, #5's close: a `git checkout HEAD` run to revert one
+  mutation also reverted an unrelated, uncommitted fix in the same file** — the
+  `LastBox` const change vanished and was only noticed because the follow-up
+  verification came back empty rather than red. **An empty result from a check
+  that should have failed is itself a finding.** The two-step rule below is not
+  optional discipline; skipping the commit is how work disappears silently.
 - **`git checkout HEAD -- <file>` is the correct restore, and only if the target
   is COMMITTED.** It cannot go stale the way a scratch copy can. But the same
   session then hit the other half of the trap: restoring uncommitted wiring
@@ -1286,6 +1362,12 @@ feature outright in production and leaves the entire suite green.
 - **A stated rule that does not name its enumeration will be declared swept while
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
+- **Sweep by GREPPING THE CONCEPT, not a remembered phrase.** #5's close: I
+  "swept" a stale claim across artifacts, ran a residue check that came back
+  empty, and reported it done — while three of five sites stood, because my grep
+  matched one exact wording and the others said the same thing differently. The
+  residue check inherited the same blind spot as the sweep. Search for the
+  distinctive TOKEN (`store` near `time`), not the sentence.
 
 ## A new runtime directory has three homes that cannot see each other (define #9 close)
 
@@ -1434,6 +1516,21 @@ failed the same way: too strong, red against entirely correct parsing.
   the sound property pins.
 - **Seed the corpus with what refuted the old property.** Those three shapes are
   now seeds, so a future weakening fails here rather than in the wild.
+
+## The atlas is due at EACH milestone — twice refused now (define #5 M1)
+
+Second identical occurrence. `#21`'s plan scheduled all atlas work at M3 and the
+close gate refused M1 for it; I recorded the correction in that plan. `#5`'s plan
+then scheduled all atlas work at M2 and the gate refused M1 again.
+
+- **A plan that lists "atlas" once, at the end, is already wrong** whenever the
+  work has more than one milestone. AGENTS.md §8 says each close, and the gate
+  enforces it — so the plan should carry an atlas step per milestone from the
+  first draft, not acquire one after a refusal.
+- **Correcting the instance in one plan does not carry to the next plan.** The
+  fix lived in `#21`'s revision history where writing `#5`'s plan never looked.
+  A lesson entry is where a rule has to go to survive into the next issue, and
+  this is that entry.
 
 ## Doc prose at a boundary describes what THAT milestone shipped (define #21 M1)
 
