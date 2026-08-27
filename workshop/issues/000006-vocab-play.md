@@ -239,3 +239,35 @@ screenshot. Scope grew by two small things and one defect.
 **Deferred to its own issue:** the operator also asked that words be grouped by
 language and that each `--play` cover one language. That is `#18 M2`'s first
 bullet and it needs measurement rather than a quick patch — see `tools#23`.
+
+### 2026-08-27 — close boundary round 3 (REWORK)
+
+- **BR-14 `mode-silently-ignores-argument`.** `define --play sycophantic` ran a
+  full session and ignored the word. `--reflect` has a guard for exactly this and
+  the comment beside it states the rule — *"a mode plus a word is two commands on
+  one line, and silently honouring one of them is how -raw came to mean two
+  things in #2"* — and I dispatched `--play` THREE LINES ABOVE that switch, so it
+  could never reach the guard. `--play` needed it more than `--reflect` does: it
+  writes events, so the misread intent changes state. Dispatch moved below the
+  switch, guard added, and the mutant reddens `TestPlayWithAWordIsAUsageError`.
+
+- **BR-16 `discarded-error-detail`, 2nd in family — fixed as the class.** The
+  raw-mode re-entry after playback did `if again, err := enterRaw(...); err == nil`,
+  dropping the error entirely. After a failed re-entry `readKeys` is
+  line-buffered, so every keystroke appears to do nothing until Enter: the session
+  looks frozen and nothing says why. The rule swept: an error is acted on or
+  reported, never dropped where it is available. Sites — `play_loop.go` (now
+  reports and ends the session, which is honest where pretending to continue is
+  not) and `puretest.go` ×2, which discarded `ExitError.Stderr` and so turned a
+  compile error into a bare "exit status 1".
+
+  **Not pinned by a test, and saying so rather than implying otherwise:** forcing
+  `enterRaw` to fail mid-session needs a terminal that revokes raw mode, which I
+  have no way to simulate. The fix is structural and verified by reading.
+
+- **BR-15 `docs-not-updated-for-new-surface`.** `d` shipped undocumented, and both
+  the README transcript and the atlas described a prompt line the code had stopped
+  printing. The atlas was also missing all three of this window's durable
+  decisions — `InputDrop`, session-output-through-`crlfWriter`, and
+  check-cancellation-before-select. All three are now recorded, and the README has
+  a key table rather than a stale sample.
