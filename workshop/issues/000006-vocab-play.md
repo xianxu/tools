@@ -49,7 +49,7 @@ The deck and the schedule are inert without a way to sit down and review.
       session runs and records nothing under `DEFINE_NO_CAPTURE` — unsatisfiable,
       since that branch returns no deck at all.)
 - [ ] Interrupting mid-session preserves already-recorded events.
-- [ ] Adding a second form requires no change to the loop.
+- [x] Adding a second form requires no change to the loop — asserted by driving the same table through a fake form with entirely different keys, and by checking that 2.1's own keys mean nothing to it.
 - [ ] **A full session runs with the LLM seam unavailable**, falling back to the
       forms that need neither key nor network (2.1 here, 2.3 in #7) rather than
       failing. Relocated from #11 on 2026-08-22: it names `--play`, so it belongs
@@ -62,7 +62,7 @@ The deck and the schedule are inert without a way to sit down and review.
 Durable plan: `workshop/plans/000006-vocab-play-plan.md` (two milestones; each
 `Mx` row is its own review boundary).
 
-- [ ] M1 — `Question`, `Recall`, `Session`/`Apply`, the purity guards, the atlas
+- [x] M1 — `Question`, `Recall`, `Session`/`Apply`, the purity guards, the atlas
 - [ ] M2 — `CaptureReview`, `runPlay`, the `--play` flag, the README
 
 ## Estimate
@@ -167,3 +167,17 @@ Claimed and planned. Three decisions worth recording before implementation:
   bad, and the feature would ship with no consumer and no way to exercise it. The
   Spec itself calls it "groundwork for the generated forms"; this records that the
   groundwork lands with the forms that need it rather than being silently dropped.
+
+- 2026-08-27: M1 — `Question`, `Recall` (form 2.1), and the `Session`/`Apply`
+  state machine, in a second pure package.
+  The purity guards were EXTRACTED rather than copied (`cmd/define/puretest`),
+  which the plan gate asked for and which pays for itself immediately: `#7`,
+  `#12` and `#13` each add a form package, so copying would have meant five sets
+  to keep in agreement. It also closes the gap I recorded at `#5`'s close — every
+  "the mutant reddens it" claim there was verified in a scratch copy and thrown
+  away, and now both callers' guards are exercised from one body with the
+  negative cases verified in the tree.
+  One correction to the extracted helper: its vacuity check fatalled on ZERO
+  imports, which fired on `play` — a package so pure it imports nothing at all,
+  the strongest version of the claim being tested. A vacuity guard has to
+  distinguish "the measurement failed" from "the answer is legitimately empty".

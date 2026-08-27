@@ -1172,3 +1172,43 @@ deck entry is not queued, because `--forget` deliberately keeps a word's events
 after removing it and resurrecting it here would make forgetting not work.
 `budget <= 0` returns nothing: "no budget" is not "unlimited", and the opposite
 reading is a way to sit down to four hundred words by accident.
+
+## Review sessions: how a word is asked
+
+**`play` is the second pure package, and `puretest` is why there will not be a
+third copy of the guards.** `#5` wrote three purity guards inline; `#6` needs the
+same three and `#7`/`#12`/`#13` each add a form package, so they were extracted
+into `cmd/define/puretest` — one body, many callers, the shape `storetest.Suite`
+already established here. Each guard sees a hazard the others structurally
+cannot: an import allowlist misses that allowlisting `store` grants the disk with
+it, and neither import list can see `time.Since`, because `time` is legitimately
+imported for its types.
+
+**`Question` is the whole of what a session knows about a form.** `Word`,
+`Prompt`, `Reveal`, `Grade` — and `Grade` lives on the FORM, which is what makes
+"adding a second form requires no change to the loop" a property rather than a
+promise. Form 2.1 grades `y`/`n`; `#7`'s 2.3 will grade digits; the session never
+learns either. `TestSessionIsFormAgnostic` drives the same table through a fake
+form using entirely different keys, and asserts that 2.1's own keys mean nothing
+to it — the only honest way to test that claim before a second form exists.
+
+**`main.Key` stops at the package boundary, and the compile error was the design
+telling the truth.** The plan's first draft had `Grade(k Key)`, which cannot
+compile: `Key` lives in `package main`. `main` owns the terminal and knows Ctrl-C
+is `0x03`; `play` must not, or it could not be tested without one. The loop
+decodes once and hands over `play.Input` — a rune for graded keys, and CONTROL
+intents (`InputReveal`, `InputQuit`) as their own kinds.
+
+**Three verdicts, not two.** A learner who skips has not got it wrong, and
+recording a skip as a miss would demote the word through `schedule.Answer` —
+punishing honesty about a word you half-know. **The skip filter lives in exactly
+one place**, `advance`: only the session knows a verdict, so a loop that inspected
+verdicts would be re-deciding what the state machine already decided. `Apply`
+emits `OutcomeRecord` only for `Correct` and `Wrong`, and the loop records
+whenever it sees one without ever looking at the verdict.
+
+**Grading before reveal is ignored**, because a learner cannot rate what they
+have not seen and a mis-keystroke would otherwise file a verdict about a word
+still hidden. **Revealing is idempotent**, so a second reveal does not play the
+pronunciation twice. **An empty queue is immediately done** — "nothing due today"
+is the expected state most days, not an error.
