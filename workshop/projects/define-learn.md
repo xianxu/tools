@@ -183,11 +183,11 @@ once `#6` is producing misses.
 - [x] free-form Q&A — the console knows a question from a word [tools#16 M1]
 - [x] free-form Q&A — the answer: context pack, streaming, scoped Ctrl-C [tools#16 M2]
 - [x] learner model — `user-model.md` from lookups; batch analysis [tools#17 M1]
-- [ ] news seam — Google News RSS (not the SERP) [tools#9]
-- [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
+- [x] news seam — Google News RSS (not the SERP) [tools#9]
 - [ ] scheduling engine — Leitner, pure [tools#5]
 - [ ] `--play` loop + form 2.1 [tools#6]
 - [ ] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
+- [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
@@ -521,3 +521,29 @@ built by ordinary lookup (`#4`), and these two put the deck back on screen durin
 ordinary lookup. #21 also lands a `Vocabulary` predicate seam that
 **tools#22** (words graduating out of highlighting) will narrow; #22 is filed,
 out of MVP, and blocked on the review signal from `#5`/`#6`.
+
+### 2026-08-26 — scope event: retention loop before the authoring loop
+
+**Reason.** Operator, after #9 closed: *"I think we can rearrange, to have some
+scheduling engine first, so that I can use this to remember words, and practice
+them, before making it better through google news and other integrations?"*
+
+**Delta.** `#5` → `#6` → `#7` move ahead of `#10`. Nothing else changes: same
+issues, same MVP scope, same done-when.
+
+**Why it works, checked rather than assumed.** The dependency graph already
+allowed it — `#5` needs only `#3` (done), `#6` needs `#5`, `#7` needs `#6` — and
+the two forms in that path were specified from the start to need neither. Form
+2.1: *"No question generation, no network."* `#7`'s Problem: *"the whole review
+loop should work with no API key and no network."* So this ordering reaches a
+learner who can actually practise, using the deck ordinary lookup has already
+built, with no key and offline.
+
+**Why it is the better order, not merely a possible one.** The PRD's loop is
+`lookups → user-model → authored items → review → events → user-model`. Building
+the authoring half first would have produced items with **no review events to
+learn from** — the arrow back into the model would have had nothing on it, and
+`#17 M2`'s weakness taxonomy is blocked on exactly those events. Doing retention
+first closes the small loop (lookup → schedule → review → events) and gives the
+authoring half a learner to adapt to when it arrives. `#9` was not wasted: it is
+the input `#10` needs, and it is done and cached.

@@ -1,12 +1,13 @@
 ---
 id: 000009
-status: working
+status: codecomplete
 deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-26
 estimate_hours: 8.22
 started: 2026-08-26T19:29:35-07:00
+actual_hours: 3.8
 ---
 
 # news seam: Google News RSS client with a stateful fake
@@ -184,6 +185,7 @@ the operator raised general web search as an alternative usage source.
 malformed-feed requirement, and live conformance on shape and coverage.
 
 ### 2026-08-26
+- 2026-08-26: closed — go test ./... + go vet + gofmt clean; live conformance passes against the real feed. Round-3 finding addressed as the CLASS. usage/ is a third directory define writes into the working directory and it reached none of the three places that needed it — .gitignore, the index guard, the history guard — because both guards hardcoded the two older names and .gitignore listed them again, three copies with nothing keeping them in step. This is the deck-in-git class that .gitignore own comment records as having cost three review rounds before this one, including the subtlety that patterns must be UN-ANCHORED since go test runs with cwd set to the package directory. Fixed by single-sourcing store.RuntimeDirs where the writer lives, having both guards ask it, and adding TestGitignoreCoversRuntimeDirs to close the loop the compiler cannot: adding a fourth directory to the store and forgetting the ignore now reddens it, and so does re-making the anchoring mistake — both verified by mutation. Earlier evidence stands: BR-13 network leak gone (Fetch coverage 72.7% to 0.0% untagged), every news.go fallback pinned with items at 100% and Fetch at 92.9% driven against httptest, the warn writer wired at both production sites and pinned through deps{newStore: openStore}.withStore, the quoted-word query pinned against a captured request, FuzzParseRSS asserting only our own contract after three properties that each failed on correct parsing, parsePubDate with its own target killing the guessing mutant on the seed corpus, the output-field enumeration swept, five cache mutations all dying, and storetest.Suite holding Mem and YAML to one contract including never-fetched vs fetched-empty. ACTUAL 3.8h wall clock 18:10-22:00.; review verdict: FIX-THEN-SHIP
 
 Claimed and planned. The Spec needed no revision — the 2026-08-22 entry already
 settled the two questions that mattered (RSS not the SERP, measured; and NOAD's

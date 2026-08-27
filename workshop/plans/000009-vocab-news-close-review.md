@@ -683,3 +683,210 @@ findings:
       4-5 changed: the warn signal, the dropped error return, and usage/ missing from the
       layout block (BR-19). One pass closes all three.
 ```
+
+---
+
+## Re-review — 2026-08-26T22:19:23-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 9 — news seam: Google News RSS client with a stateful fake |
+| repo | tools |
+| issue file | workshop/issues/000009-vocab-news.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 361136b3e46f21e67dd307a6c5ed31c62b70148f..2ce38c2e285499027141e41dddab535eb4555b53 |
+| command | sdlc close --issue 9 |
+| reviewer | claude |
+| timestamp | 2026-08-26T22:19:23-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+I've completed the review — build, vet, full suite, coverage profile, four mutations (each restored via `git checkout HEAD --`, tree verified clean after every one), a live-network probe, a mechanical AST detector re-run, and two planted-file probes against the repo guards.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The one Important from round 5 is genuinely fixed and I verified it three ways rather than by reading: removing `usage/` from `.gitignore` reddens `TestGitignoreCoversRuntimeDirs`, planting a tracked `cmd/define/usage/probe.yaml` reddens `TestNoTrackedRuntimeState` through the new `isRuntimeDir`, and `git check-ignore` now matches `.gitignore:34`. `store.RuntimeDirs` is the right shape for that class — one source where the writer lives, plus a test closing the loop the compiler cannot. `go build`, `go vet` (untagged and `-tags conformance`) and `go test ./...` all pass; coverage is 92.1% in `cmd/define` with exactly two uncovered blocks in the new files; and the ARCH-MOCK property still holds — patching `Fetch` to panic when `base == ""` never fires over a full 94s run, so the default suite makes zero live requests. What keeps this off SHIP is that the enumeration the fix created stops one artifact short, and the artifact it misses is **live rather than latent**: `define --reflect` writes `user-model.md` into the working directory today, and I measured that a staged `cmd/define/user-model.md` is not ignored and passes **both** repo guards, because they match path *segments* and the third artifact is a file. `RuntimeDirs`' own doc says "every **directory** define writes" — that word is where it fell out, eight lines above `userModelFile`, which the same file calls "the third artifact in the directory". Behind it, three of the six sites BR-22 itself enumerated are still unswept, and fourteen Minors from rounds 1, 3, 4 and 5 are crossing the final gate untouched — the worst being the durable record: **0 of 26 plan checkboxes ticked**, and a Core-concepts table row for `newsUsageSource`, which exists nowhere in the tree.
+
+## 1. Strengths
+
+- **The `RuntimeDirs` fix is pinned in all three directions, and I checked each.** `cmd/define/store/yaml.go:41` is the single source; `repo_guard_test.go:267` makes both guards ask it; `repo_guard_test.go:283` reads the actual `.gitignore` and asserts the un-anchored form *and* rejects the anchored one — which encodes the subtlety (`go test` runs in the package directory) that cost three earlier rounds and had, until now, only ever been a comment.
+- **The default suite is provably offline.** The panic probe on `httpFeed.Fetch` never fires. That is the strongest single property in this diff and it is the one that was false two rounds ago.
+- **`cachingFeed.items` is 100% covered and every branch is a behaviour test**, driven by `failingStore` (a fixture that had sat unused in the tree) and by an `httptest` server that captures the request — so the quoted-word query at `news.go:59` is pinned against what was actually asked for, which a fake structurally cannot tell you.
+- **`containsWord` delegating to `highlightSpans`** (`cmd/define/usage.go:63`) with `TestContainsWordAgreesWithTheHighlighter` as the pin is still the best decision in the issue: the divergence it prevents is visible to the learner as one word in two states on one screen.
+- **The storetest conformance rows** (`storetest/suite.go:288`) pin never-fetched vs fetched-empty as a contract both `Mem` and `YAML` must answer — which is the reason `NewsItems` returns a `time.Time` at all, and the reason cache outcome 2 is expressible.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**`user-model.md` is a runtime artifact `--reflect` writes into the working directory, and it is in neither `.gitignore` nor either guard.** Measured, with the file staged exactly where `go test` and the pty suite would leave it:
+
+```
+git ls-files                    → cmd/define/user-model.md          (in the index)
+git check-ignore -v …           → exit 1                            (NOT ignored)
+TestNoTrackedRuntimeState       → ok
+TestGitignoreCoversRuntimeDirs  → ok
+```
+
+Both guards split a path on `/` and compare **segments** against `RuntimeDirs`, so a file has no segment to match. `reflect.go:324` calls `SetUserModel` in production and `README.md:113` documents `--reflect` as a shipped feature, so unlike `usage/` — which BR-22 rated Important while it was still latent — this one is reachable today, and what would be committed is the learner's own inferred model.
+
+**This is the 2nd finding in family `record-type-enumeration-unswept`.** Do not fix this instance alone. The rule: *the single-sourced list must enumerate every runtime **artifact** define writes into the working directory — files as well as directories — and both the ignore loop and the guards must be driven from it.* `RuntimeDirs`' doc says "every **directory**", and `yaml.go:46` calls `user-model.md` "the third artifact in the directory" eight lines below it; the noun mismatch is the whole defect. The measured prevalence is 3 artifacts, 2 covered. Shape of the fix: a `RuntimeFiles` (or a `RuntimeArtifacts` list carrying a dir/file kind), a `.gitignore` line the same test asserts, and a guard arm matching the final path element. One caveat worth stating so the fix does not break a passing test: `cmd/define/testdata/golden/user-model.md` is a legitimate tracked fixture, so the guard needs a `testdata/` exception.
+
+## 4. Minor findings
+
+- **New:** `cmd/define/store/yaml.go:43,44,52` consume the shared list by **position** — `RuntimeDirs[0]`, `[1]`, `[2]` — so the slice's order carries meaning that only a comment records. Honest measurement: reordering to `{"events", "words", "usage"}` *does* redden the suite, but incidentally, via path literals in `store/yaml_test.go:220`, not via anything that knows about the coupling; `TestGitignoreCoversRuntimeDirs` and both guards only check membership. Named constants used both in the accessors and in the slice literal cost one line and remove the coupling.
+- BR-5 through BR-9 and BR-16 through BR-21 and BR-23 through BR-25 are all unchanged in the tree — see dispositions, each re-verified this round rather than carried forward.
+
+## 5. Test coverage notes
+
+92.1% of statements in `cmd/define`. Exactly two blocks in the three new files are uncovered: `news.go:62-64` (the `NewRequestWithContext` error — near-unreachable, fine to leave) and `usage.go:183-185` (the `warned` guard, which is BR-24: an uncovered block cannot be observed by any test, so deleting it is invisible by construction). Mutations this round, every one on a committed tree with `git checkout HEAD --` restores and `git status` verified clean afterwards — **dead:** removing `usage/` from `.gitignore`; reordering `RuntimeDirs`. **survived:** `entryUsages` restricted to `e.Blocks[:1]` (BR-5, re-confirmed against the full 94s suite). **never fired:** the live-network panic probe. Two planted-file probes: a tracked `usage/` file reddens the index guard (the BR-22 fix is reachable), a tracked `user-model.md` does not (the Important above). The `FuzzParsePubDate` target remains the right shape — it kills the guessing mutant on the seed corpus with no decoder standing between the property and the code.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-MOCK — pass.** Production and test share the `feed` boundary; the fake serves bytes so `parseRSS` stays in both paths; `httpFeed` has hermetic `httptest` tests including a captured request; live conformance is tagged out of the default suite and asserts the licence terms. Verified by probe, not by reading.
+- **ARCH-PURE — pass.** `parseRSS`, `parsePubDate`, `containsWord`, `usagesFrom`, `withoutAttribution`, `entryUsages` are all pure and all tested with no doubles at all; IO is confined to `httpFeed` and the store. `bothSources → cachingFeed → feed` mirrors `fetch.go` as the plan promised.
+- **ARCH-DRY — flag, twice.** `store.RuntimeDirs` is ARCH-DRY done right and it is the best thing in this window — but it is consumed positionally (Minor above), and the fact it single-sources is "runtime **directories**" rather than "runtime **artifacts**", which is why a third one stayed outside it. Separately BR-6 is five rounds old: `renderSpans` (`usage_test.go:74`) is still byte-for-byte `marked` (`highlight_test.go:110`), in the milestone whose thesis is that the matcher must not be reimplemented.
+- **ARCH-PURPOSE — flag, and it is the round's shape again.** BR-22's own text enumerated six sites and called the enumeration complete; three landed. The three that did not — `README.md:142-145`, `atlas/define.md:215-219` (BR-19), and `Store.Forget`'s doc plus a storetest row (BR-21) — are the same class, already have ids, and were named by the finding that was answered. And the class statement itself was one artifact short. Naming a class is not the same as writing the enumeration that closes it; the test for "did I fix the class" is whether a *new* instance of it can still be found, and this round found one in thirty seconds.
+- **On the doc-detachment family (BR-23):** I re-ran the mechanical detector (go/ast, first doc word vs. declaration name, all packages). BR-23's claim about *this window* holds — exactly two production instances, `main.go:179` and `store/yaml.go:375`. But the same detector finds a **third outside the window** at `cmd/define/sgr.go:5`, where `sgrState`'s doc is attached to `maxOpenSGR` and `sgrState` has none (`go doc -u ./cmd/define maxOpenSGR` prints the `sgrState` prose). That is the argument for BR-23's parenthetical — *keep the detector* — rather than making two edits: 3 instances tree-wide, none of which any test can see.
+- For #10: `Usages` returns `[]Usage` with **no error** and warns once per session on a feed failure, so the consumer cannot distinguish "no news for this word" from "the feed is broken" except by reading stderr. That is a deliberate contract recorded only in `usage.go`'s doc comment and the issue Log (BR-25). Also `Usage.At` can legitimately be the zero time; decide at design time whether zero-time usages sort last or are dropped.
+
+## 7. Plan revision recommendations
+
+`workshop/plans/000009-vocab-news-plan.md` is at **0 ticked / 26 unticked** at a whole-issue close, and its `## Revisions` section still contains only the plan-quality round-1 entry. Line 88 lists `newsUsageSource | cmd/define/news.go | new` — I grepped the whole tree for both `newsUsageSource` and `NewsSource`: neither exists in any `.go` file. That is a Core-concepts-table-vs-code contradiction at the final gate. Every other table row I checked *does* exist at its stated path. Add:
+
+```
+### 2026-08-26 — as built (M1–M3)
+
+- `Usage` ships `{Text, Source, Publisher, URL, At}`, not `{…Title…}` (plan:36).
+- `store.NewsItem` ships `{Title, URL, Source, At}`; plan:32 omits `Source`,
+  which `withoutAttribution` depends on.
+- `entryUsages(e Entry, word string)`, not `entryUsages(e Entry)` (plan:74).
+- Delete the Integration table's `newsUsageSource` row (plan:88) — never built;
+  `bothSources` wraps `cachingFeed` directly.
+- `UsageSource.Usages` returns `[]Usage` with NO error (plan:97 still says
+  `([]Usage, error)`); a feed failure warns once per session instead.
+- The fuzz property is not "a title is a substring of the input" (plan:80,
+  plan:171). Substring, subsequence and the count-bound were all retired for
+  failing on correct parsing. Record the RULE, and record that the Done-when's
+  "never returns an item it did not find in the input" is pinned by the
+  exact-count and exact-title assertions in TestParseRSSOverACapturedFeed and
+  TestParseRSSDecisions, not by FuzzParseRSS (BR-18).
+- Task 2 Step 5's "12–99 RANGE" (plan:195) is impossible against a committed
+  13-item fixture; the exact-10 assertion the code ships is correct.
+- Task 6 Step 2's "No README line" still holds — nothing calls Usages — but the
+  runtime-artifact enumeration (.gitignore + both guards) needed usage/ AND
+  still needs user-model.md.
+- Tick Task 1 Steps 1–7, Task 2 Steps 1–7, Task 3 Steps 1–6, Task 4 Steps 1–9,
+  Task 5 Steps 1–3, Task 6 Steps 1–2.
+```
+
+`workshop/issues/000009-vocab-news.md:57-58` needs the same: the M2 row is `[x]` while naming `Store.Usages` (shipped as `NewsItems`/`SetNewsItems`) and the `NewsSource` seam (shipped as `feed` + `UsageSource`), and the M3 row is `[x]` while naming `/usage`, which plan-quality PQ-4 deliberately dropped and whose own disposition said the row "should be tidied to match." The `## Log` entry for the M1 boundary still reads "three findings, all addressed" — round 1 raised nine, and eleven findings from all rounds remain open at this gate.
+
+```findings
+dispose:
+  - id: BR-22
+    disposition: not-addressed
+    note: |
+      Three of the six sites it enumerated landed and are pinned (verified by reverting and by planting a tracked usage/ file); README.md:142-145, atlas/define.md:215-219 and Forget's doc plus a storetest row remain, and the list it created omits user-model.md — raised below.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      Re-verified by mutation against the full 94s suite: e.Blocks[:1] leaves all of cmd/define green.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      renderSpans (usage_test.go:74) is still byte-identical to marked (highlight_test.go:110).
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      store/news.go:15 still names the publisher field Source, one line from Usage.Source.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      Re-probed at HEAD - containsWord is false for "e.g.", "9/11" and "rock 'n' roll" against text containing them verbatim; still undocumented in usage.go and the atlas.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Measured at the close - 0 of 26 plan checkboxes ticked; grepped the whole tree for newsUsageSource and NewsSource, neither exists in any .go file, yet plan:88 still lists the row and the issue's ticked M2/M3 rows still name Store.Usages, NewsSource and /usage.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      news.go:133-138 unchanged - both branches still return items, nil, so the guard cannot be mutated.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      rss.go:16-38 unchanged; the anonymous struct still has no XMLName, so any well-formed non-RSS XML returns (empty, nil).
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      rss_test.go:181 property unchanged and still unreachable, and neither the plan nor the Log records what actually pins the Done-when clause.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      atlas/define.md:216-219 layout block still lists only words/, events/ and user-model.md.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      Re-verified - `go doc store.YAML.Forget` still prints only the signature; the comment is still attached to newsFile at yaml.go:375.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      yaml.go:426 still removes only words/; Store.Forget's doc enumeration at store.go:45 still omits the new per-word record and storetest has no row for it.
+  - id: BR-23
+    disposition: not-addressed
+    note: |
+      Re-verified by go doc; I also re-ran the mechanical AST detector and it finds a THIRD instance outside this window at cmd/define/sgr.go:5 (sgrState's doc attached to maxOpenSGR) - which is the argument for keeping the detector rather than making two edits.
+  - id: BR-24
+    disposition: not-addressed
+    note: |
+      Coverage profile at HEAD - usage.go:183-185 is still one of only two uncovered blocks in the new files, so deleting the warned guard is unobservable by construction.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      atlas/define.md:1080-1085 still says only "degrades to the dictionary rather than propagating" - no warn signal, no mention that Usages returns no error.
+findings:
+  - id: new
+    severity: Important
+    family: record-type-enumeration-unswept
+    title: |
+      user-model.md is a runtime artifact --reflect writes today, and it is in neither .gitignore nor either guard
+    detail: |
+      Measured by planting the file where go test and the pty suite would leave it:
+      `cmd/define/user-model.md` staged appears in `git ls-files`, `git check-ignore -v`
+      exits 1 (NOT ignored), and BOTH TestNoTrackedRuntimeState and
+      TestGitignoreCoversRuntimeDirs PASS. The guards split a path on "/" and compare
+      SEGMENTS against store.RuntimeDirs, so a file has no segment to match.
+      YAML.SetUserModel (yaml.go:60) writes it into y.dir = os.Getwd(), reflect.go:324
+      calls it in production, and README.md:113 documents `define --reflect` as shipped -
+      so unlike usage/, which BR-22 rated Important while still latent, this one is
+      reachable today and what gets committed is the learner's own inferred model.
+      THIS IS THE 2ND FINDING IN FAMILY record-type-enumeration-unswept - do NOT fix this
+      instance alone. The rule: the single-sourced list must enumerate every runtime
+      ARTIFACT define writes into the working directory, files as well as directories, and
+      both the ignore loop and the guards must be driven from it. RuntimeDirs' doc
+      (yaml.go:34) says "every DIRECTORY define writes", and yaml.go:46 calls user-model.md
+      "the third artifact in the directory" eight lines below it - the noun mismatch is the
+      whole defect. Measured prevalence: 3 artifacts, 2 covered. Caveat for the fix -
+      cmd/define/testdata/golden/user-model.md is a legitimate tracked fixture, so the
+      guard arm needs a testdata/ exception or it reddens on a passing test.
+  - id: new
+    severity: Minor
+    family: shared-list-indexed-by-position
+    title: |
+      RuntimeDirs is consumed by index position, so the slice's order silently carries meaning
+    detail: |
+      cmd/define/store/yaml.go:43, :44 and :52 read RuntimeDirs[0], [1] and [2] for
+      wordsDir, eventsDir and usageDir, so reordering the literal at :41 changes which
+      on-disk directory each accessor names. Honest measurement: the reorder DOES redden
+      the suite - but incidentally, through path literals in store/yaml_test.go:220, not
+      through anything that knows about the coupling; TestGitignoreCoversRuntimeDirs and
+      both repo guards only check membership. Named constants used in both the accessors
+      and the slice literal cost one line and remove the coupling entirely.
+```
