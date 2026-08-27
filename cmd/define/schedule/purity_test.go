@@ -47,7 +47,7 @@ func TestScheduleImportsOnlyStoreAndTime(t *testing.T) {
 		}
 		got = append(got, imp)
 		if !allowed[imp] {
-			t.Errorf("schedule imports %q — this package must stay pure over store and time; "+
+			t.Errorf("schedule imports %q — this package must stay pure; "+
 				"anything that needs IO belongs in its caller", imp)
 		}
 	}

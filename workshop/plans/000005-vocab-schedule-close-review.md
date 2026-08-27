@@ -197,3 +197,157 @@ findings:
       cmd/define/schedule/queue.go:34 — name the key-vs-text contract explicitly, since
       #6 has to map back to render.
 ```
+
+---
+
+## Re-review — 2026-08-26T23:32:18-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 5 — spaced-repetition scheduling engine (Leitner, pure) |
+| repo | tools |
+| issue file | workshop/issues/000005-vocab-schedule.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a30bb786560befe4960d28eaf5098a3bc678efa6..850c9127b4e2638622f8ecb6c8fe43147ea60dd4 |
+| command | sdlc close --issue 5 |
+| reviewer | claude |
+| timestamp | 2026-08-26T23:32:18-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The Critical from round 1 is genuinely fixed and genuinely pinned — I reverted `a = a.In(b.Location())` in a scratch copy and watched two independent tests go red (`clock_test.go:130` and `progress_test.go:291`), and I re-verified every other claimed fix the same way rather than reading the commit messages. Five of ten prior findings are addressed with real failing tests behind them; four are untouched. What stops this from being a clean SHIP is that **BR-3 — the finding whose entire content was "you wrote an enumeration and did not run it" — was itself answered by running the enumeration on 2 of 5 sites**, and the same round's fixes minted two *new* instances of the identical class, one of which (`atlas/define.md:1165`) now tells a future `#6` implementor the exact opposite of what `Queue` does, and the behaviour it describes is the absorbing-state bug BR-6 just removed. Second: the only test pinning this round's Critical fix is behind a `t.Skipf` on missing tzdata, and the repo already has the one-line cure in-tree (`history_cmd_test.go:16`) that `store` and `schedule` did not copy. Both are text/one-line edits; neither needs re-verification beyond `go test`, which is why this isn't REWORK.
+
+## 1. Strengths
+
+- **`store.DaysBetween` is now right for the reason stated, not by coincidence.** `clock.go:71-74` normalises into `b`'s zone and then subtracts two UTC day indices — recovering exactly the property `#15`'s discarded closure had documented. The doc comment (`clock.go:56-70`) records *why* the other shape lost, which is the rarest kind of comment in a fix.
+- **The regression test discriminates.** `progress_test.go:283` uses a `FixedZone("HST", -10*3600)` stamp whose *own* calendar date differs from its date in the learner's zone. That's the detail an easier fixture gets wrong, and the test comment says so explicitly. Same-date pairs stay green under the mutation; this one doesn't.
+- **`LastBox` became a compile-time constant, not a tested variable** (`box.go:33-36`). `var intervalDays = [...]int{…}` + `const LastBox = len(intervalDays) - 1` makes the old defect *unrepresentable* rather than merely detected — stronger than the test BR-5 asked for.
+- **BR-6's fix is a design correction, not a patch.** Removing the mastery exclusion from `Queue` and letting the 90-day rung do the rarity (`queue.go:46-57`) restores `progress.go:61`'s own contract that `--play` decides what to stop offering. `TestMasteryCanBeLost` (`queue_test.go:161`) pins the consequence, and re-adding the exclusion in a scratch copy reddens `queue_test.go:156`.
+- **The purity guard now covers the room, not one door** (`purity_test.go:103-107`), and both guards `t.Fatal` on a vacuous run rather than passing silently. I confirmed `_ = time.Since(p.LastReviewed)` in `Due` reddens `TestScheduleNeverReadsTheClock` in a real (non-overlay) scratch copy — note that an overlay does *not* work here, since the guard reads the file off disk.
+
+## 2. Critical findings
+
+None. No shipped-code defect survives this round.
+
+## 3. Important findings
+
+**I-a — `store.DaysBetween`'s regression net is behind `t.Skipf`, and the discriminating rows don't need what they skip on.**
+`cmd/define/store/clock_test.go:20,79,100,141` and `cmd/define/schedule/progress_test.go:276` all `t.Skipf("no tzdata")` on `LoadLocation("America/Los_Angeles")` failure. I simulated the failure in a scratch copy: **both packages report `ok` with every cross-zone and DST assertion gone** — including `TestDueDoesNotFireOnTheDayOfReview`, the sole product-level guard for this round's Critical. GitHub's `ubuntu-latest` runner does ship tzdata, so CI is not currently blind; a distroless/alpine container would be.
+
+*This is the 2nd finding in family `invariant-needs-mechanical-guard`.* Do not just fix `progress_test.go:276`. The rule: **a guard only guards if it is unconditionally reachable in the environment the suite runs in — an assertion that can skip itself is documentation.** Two mechanical consequences, both cheap:
+1. Import `_ "time/tzdata"` in the `store` and `schedule` test packages. **The fix already exists in-tree at `cmd/define/history_cmd_test.go:16` and was not reused** (ARCH-DRY) — `#15` hit this and solved it; this issue re-derived the skip instead.
+2. Run the enumeration: `grep -rn "t.Skip" cmd/define --include='*.go'` returns 16 sites. Twelve are legitimate environment gates (network, pty, `afplay`, no model configured, no system word list). **Four of the five tzdata sites don't need tzdata at all** — `TestStartOfDayIsIdempotent` (`:79`) and the two mixed-offset rows in `TestDaysBetweenAcrossLocations` (`:100`) and `TestDueDoesNotFireOnTheDayOfReview` discriminate on *offset*, which `time.FixedZone` always provides. Only `TestDaysBetweenAcrossDST` (`:141`) genuinely needs a DST-carrying zone. Prevalence: 4/5.
+
+**I-b — see BR-3 below (disposed `not-addressed`, not re-raised).** The enumeration is now 5 sites, three of them stale from round 1 and two minted by this round's own fixes.
+
+## 4. Minor findings
+
+- BR-7, BR-8, BR-10 remain open exactly as filed — see dispositions. BR-8 still reproduces: `Queue(deck, nil, now, 1<<62)` panics `makeslice: cap out of range` (`queue.go:86`).
+- `atlas/define.md:1142-1150` folds three separate historical corrections into one paragraph about the guard's first draft. It reads as a changelog; the atlas is meant to describe the current map. The corrections belong in `workshop/lessons.md`, where two of them already are.
+- `progress_test.go` and `queue_test.go` each rebuild the mastery fixture with the same `for i := 0; i < masteryStreak; i++` loop. One shared `masteredProgress(t)` helper. Same rule as BR-7; not worth a separate round.
+
+## 5. Test coverage notes
+
+Coverage is strong and, unusually, *verified* strong — the round's own log records five mutations with one survivor found and killed. I re-ran the two the findings named and both die now: `{1,3,7,13,30,90}` reddens `box_test.go:19`, and the mastery exclusion reddens `queue_test.go:156`. `TestMultiWeekSchedule` now asserts `Due`/`!Due` at each rung (`progress_test.go:200-210`), which closes plan Task 2 Step 2 and pins the whole ladder as a side effect — that is the right shape, since it makes the plan item and the mutation the same assertion.
+
+Two gaps remain, both small: a budget cut *inside* the overdue tier (more overdue words than budget) is untested — `TestBudgetGoesToOverdueBeforeFresh` covers the mixed case, so this is the last uncovered slicing path; and no test fixes `time.Local` to a non-UTC zone, so `SystemClock` × stored-stamp — the pairing that produced the Critical — is exercised only through hand-built `FixedZone` values, never through the real seam.
+
+## 6. Architectural notes
+
+**ARCH-DRY — flag.** Two live instances: BR-7's comparator tail (`queue.go:74-77` and `:80-83`, extract `byLookupsThenKey`), and the `_ "time/tzdata"` pattern from `history_cmd_test.go:16` not reused (I-a). The day-boundary shadow-sweep otherwise **passes cleanly** — I enumerated every candidate encoding in `cmd/` and `internal/`: `time.Date(…,0,0,0,0,…)` and `/86400` appear only at `clock.go:43` and `clock.go:77`, both callers in `history_cmd.go` (`:41`, `:194`) derive from `store`, and `news.go:20`'s `7*24*time.Hour` is a cache TTL, correctly not a calendar question. `/history`'s behaviour is byte-faithful: `relativeDay` already did `at.In(now.Location())` then subtracted day indices, which is precisely what `DaysBetween` now does.
+
+**ARCH-PURE — pass.** `schedule` is pure over explicit parameters; every instant arrives as an argument; both guards are real rather than asserted, and I verified the clock guard empirically. IO stays in the future caller (`#6`). `StartOfDay`/`DaysBetween` living in the `store` package is correct — they're pure functions beside the `Clock` seam that owns the time model, and putting them in `schedule` would have inverted the dependency.
+
+**ARCH-PURPOSE — flag, on the documentation half only.** The code fulfills the purpose. The artifact sweep does not, and the principle's own text governs this exactly: *"a finding names one instance; the deliverable is the CLASS it belongs to."* BR-3 named the class and even quoted the four-artifact enumeration from the plan's own Revisions section; the answer fixed 2 of 5 sites. This is the second consecutive round in which the class was named and not swept, and the family is on its third appearance counting PQ-6/PQ-7. Separately, **pass** on the `Mastered`-consumed-by-two deferral: `#8` is filed and open, and the Done-when records the deferral honestly rather than ticking it — that is a separable extension, not the deferred point of the issue.
+
+**ARCH-MOCK — pass.** No external service or binary in the shipped path; `#5` adds no seam, which is the deliverable. The only `exec.Command` is `go list` inside `purity_test.go`, a meta-test with in-repo precedent (`repo_guard_test.go` shells out to `git`), and it `t.Fatalf`s rather than skipping when the toolchain is absent — which is the correct choice, and the one I-a asks the tzdata sites to make.
+
+## 7. Plan revision recommendations
+
+The plan needs a `## Revisions` entry for the close round; it currently stops at the two plan-quality rounds. It should carry:
+
+1. **`unbacked-claim-about-existing-code`, third occurrence — with the sweep actually run.** Correct `:27` (which still says both "imports only `store` and `time`" *and* the "would not compile" falsehood PQ-3 already retracted) and `:33` ("stays exactly `store` + `time`"), and record that the enumeration is **five** artifacts, not four: issue, plan, atlas, **project file**, code comments. The project file (`workshop/projects/define-learn.md:485`) was missed in both rounds and is not in the enumeration the plan wrote.
+2. **The mastery decision, recorded where the plan states behaviour.** The `Queue` bullet still lists only tiers/budget/ties/deck-vs-log. Add: *mastered words stay in rotation; the 90-day rung supplies the rarity; mastery is a reporting status for `#8` and a presentation cue for `#6`, never a removal — because exclusion makes mastery absorbing.* This is BR-6's "decide, then record it" half.
+3. **The Core concepts table doesn't name the package's exported surface.** It lists `Box` at `box.go`, but no `Box` identifier exists there — the concept is realised as `Progress.Box int` plus `IntervalDays` and `LastBox`, and those two exported symbols (the ones `#6` and `#8` will actually import) appear in no row. Replace the `Box` row with `IntervalDays` and `LastBox`. Everything else in the table verifies at its stated path.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Verified by revert: dropping `a = a.In(b.Location())` reddens clock_test.go:130 and progress_test.go:291.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Verified by mutation: {1,3,7,13,30,90} reddens box_test.go:19; TestMultiWeekSchedule now asserts Due/!Due at each rung.
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      Two of five sites fixed (box.go:7, atlas:1142); still stale at plan.md:27, plan.md:33,
+      projects/define-learn.md:485 — and this round's own fixes minted two NEW instances of the
+      same class: atlas/define.md:1165 says "A mastered word leaves the rotation" (the exact
+      behaviour BR-6 removed, and what #6's implementor will read), and history_cmd.go:192 says
+      "store.DaysBetween steps the calendar" when the BR-1 fix replaced the stepping with UTC
+      day-index subtraction. The rule this family needs is not "fix these files": it is that a
+      behaviour change must GREP the invalidated claim's distinctive phrase across a fixed
+      enumeration at the moment of the change, and that the enumeration has five members, not
+      four — the plan's own list omits the project file, which is why :485 survived both rounds.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Verified in a real scratch copy (overlays do not reach this guard — it reads files off disk): time.Since reddens purity_test.go:100.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      const over an array literal — compiler-enforced, stronger than the test that was asked for.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Verified by mutation: re-adding the exclusion reddens queue_test.go:156. The "record it" half landed in code/issue but not atlas/plan — carried under BR-3, not re-raised here.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      queue.go:74-77 and :80-83 still share the identical lookups-then-key tail.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      queue.go:86 unchanged; re-verified that Queue(deck, nil, now, 1<<62) panics "makeslice: cap out of range".
+  - id: BR-9
+    disposition: addressed
+    note: |
+      Incidentally fixed by BR-1 — DaysBetween is now two dayIndex subtractions, no AddDate loop.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      queue.go:26 still says "today's words"; nothing in the doc, the atlas or a test names the returned strings as normalised store.Key values rather than deck Text.
+findings:
+  - id: new
+    severity: Important
+    family: invariant-needs-mechanical-guard
+    title: |
+      The only test pinning this round's Critical fix skips itself when tzdata is absent, and the repo's own fix for that was not reused
+    detail: |
+      This is the 2nd finding in family `invariant-needs-mechanical-guard`; BR-4 was the 1st.
+      Do not fix only progress_test.go:276. THE RULE: a guard guards only if it is
+      unconditionally reachable in the environment the suite runs in — an assertion that can
+      skip itself is documentation. Verified by simulating LoadLocation failure in a scratch
+      copy: both store and schedule report `ok` with every cross-zone and DST assertion gone,
+      including TestDueDoesNotFireOnTheDayOfReview, the sole product-level guard for BR-1.
+      CI is ubuntu-latest, which does ship tzdata, so it is not blind today; a distroless or
+      alpine image would be. THE ENUMERATION, run: `grep -rn "t.Skip" cmd/define` gives 16
+      sites. Twelve are legitimate environment gates (network, pty, afplay, no model, no word
+      list). Five are tzdata: clock_test.go:20,79,100,141 and progress_test.go:276 — and FOUR
+      of those five do not need tzdata at all, because they discriminate on UTC OFFSET, which
+      time.FixedZone always supplies; only TestDaysBetweenAcrossDST (clock_test.go:141) needs
+      a real DST-carrying zone. Prevalence 4/5. The mechanical cure already exists in-tree and
+      was not reused (ARCH-DRY): cmd/define/history_cmd_test.go:16 imports `_ "time/tzdata"`.
+      Add that import to the store and schedule test packages, and rebuild the four
+      offset-only fixtures on FixedZone so they assert unconditionally.
+```

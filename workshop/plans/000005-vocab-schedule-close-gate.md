@@ -111,6 +111,83 @@ rounds:
           family: undeclared-behavior
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-26T23:32:18-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Verified by revert: dropping `a = a.In(b.Location())` reddens clock_test.go:130 and progress_test.go:291.'
+          round: 2
+        - id: BR-2
+          disposition: addressed
+          note: 'Verified by mutation: {1,3,7,13,30,90} reddens box_test.go:19; TestMultiWeekSchedule now asserts Due/!Due at each rung.'
+          round: 2
+        - id: BR-3
+          disposition: not-addressed
+          note: |-
+            Two of five sites fixed (box.go:7, atlas:1142); still stale at plan.md:27, plan.md:33,
+            projects/define-learn.md:485 — and this round's own fixes minted two NEW instances of the
+            same class: atlas/define.md:1165 says "A mastered word leaves the rotation" (the exact
+            behaviour BR-6 removed, and what #6's implementor will read), and history_cmd.go:192 says
+            "store.DaysBetween steps the calendar" when the BR-1 fix replaced the stepping with UTC
+            day-index subtraction. The rule this family needs is not "fix these files": it is that a
+            behaviour change must GREP the invalidated claim's distinctive phrase across a fixed
+            enumeration at the moment of the change, and that the enumeration has five members, not
+            four — the plan's own list omits the project file, which is why :485 survived both rounds.
+          round: 2
+        - id: BR-4
+          disposition: addressed
+          note: 'Verified in a real scratch copy (overlays do not reach this guard — it reads files off disk): time.Since reddens purity_test.go:100.'
+          round: 2
+        - id: BR-5
+          disposition: addressed
+          note: const over an array literal — compiler-enforced, stronger than the test that was asked for.
+          round: 2
+        - id: BR-6
+          disposition: addressed
+          note: 'Verified by mutation: re-adding the exclusion reddens queue_test.go:156. The "record it" half landed in code/issue but not atlas/plan — carried under BR-3, not re-raised here.'
+          round: 2
+        - id: BR-7
+          disposition: not-addressed
+          note: queue.go:74-77 and :80-83 still share the identical lookups-then-key tail.
+          round: 2
+        - id: BR-8
+          disposition: not-addressed
+          note: 'queue.go:86 unchanged; re-verified that Queue(deck, nil, now, 1<<62) panics "makeslice: cap out of range".'
+          round: 2
+        - id: BR-9
+          disposition: addressed
+          note: Incidentally fixed by BR-1 — DaysBetween is now two dayIndex subtractions, no AddDate loop.
+          round: 2
+        - id: BR-10
+          disposition: not-addressed
+          note: queue.go:26 still says "today's words"; nothing in the doc, the atlas or a test names the returned strings as normalised store.Key values rather than deck Text.
+          round: 2
+      findings:
+        - id: BR-11
+          severity: Important
+          title: The only test pinning this round's Critical fix skips itself when tzdata is absent, and the repo's own fix for that was not reused
+          detail: |-
+            This is the 2nd finding in family `invariant-needs-mechanical-guard`; BR-4 was the 1st.
+            Do not fix only progress_test.go:276. THE RULE: a guard guards only if it is
+            unconditionally reachable in the environment the suite runs in — an assertion that can
+            skip itself is documentation. Verified by simulating LoadLocation failure in a scratch
+            copy: both store and schedule report `ok` with every cross-zone and DST assertion gone,
+            including TestDueDoesNotFireOnTheDayOfReview, the sole product-level guard for BR-1.
+            CI is ubuntu-latest, which does ship tzdata, so it is not blind today; a distroless or
+            alpine image would be. THE ENUMERATION, run: `grep -rn "t.Skip" cmd/define` gives 16
+            sites. Twelve are legitimate environment gates (network, pty, afplay, no model, no word
+            list). Five are tzdata: clock_test.go:20,79,100,141 and progress_test.go:276 — and FOUR
+            of those five do not need tzdata at all, because they discriminate on UTC OFFSET, which
+            time.FixedZone always supplies; only TestDaysBetweenAcrossDST (clock_test.go:141) needs
+            a real DST-carrying zone. Prevalence 4/5. The mechanical cure already exists in-tree and
+            was not reused (ARCH-DRY): cmd/define/history_cmd_test.go:16 imports `_ "time/tzdata"`.
+            Add that import to the store and schedule test packages, and rebuild the four
+            offset-only fixtures on FixedZone so they assert unconditionally.
+          family: invariant-needs-mechanical-guard
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#5 (boundary-review)
@@ -177,15 +254,53 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   cmd/define/schedule/queue.go:34 — name the key-vs-text contract explicitly, since
   #6 has to map back to render.
 
+## Round 2 — 2026-08-26T23:32:18-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Verified by revert: dropping `a = a.In(b.Location())` reddens clock_test.go:130 and progress_test.go:291.
+- BR-2 — addressed — Verified by mutation: {1,3,7,13,30,90} reddens box_test.go:19; TestMultiWeekSchedule now asserts Due/!Due at each rung.
+- BR-3 — not-addressed — Two of five sites fixed (box.go:7, atlas:1142); still stale at plan.md:27, plan.md:33,
+projects/define-learn.md:485 — and this round's own fixes minted two NEW instances of the
+same class: atlas/define.md:1165 says "A mastered word leaves the rotation" (the exact
+behaviour BR-6 removed, and what #6's implementor will read), and history_cmd.go:192 says
+"store.DaysBetween steps the calendar" when the BR-1 fix replaced the stepping with UTC
+day-index subtraction. The rule this family needs is not "fix these files": it is that a
+behaviour change must GREP the invalidated claim's distinctive phrase across a fixed
+enumeration at the moment of the change, and that the enumeration has five members, not
+four — the plan's own list omits the project file, which is why :485 survived both rounds.
+- BR-4 — addressed — Verified in a real scratch copy (overlays do not reach this guard — it reads files off disk): time.Since reddens purity_test.go:100.
+- BR-5 — addressed — const over an array literal — compiler-enforced, stronger than the test that was asked for.
+- BR-6 — addressed — Verified by mutation: re-adding the exclusion reddens queue_test.go:156. The "record it" half landed in code/issue but not atlas/plan — carried under BR-3, not re-raised here.
+- BR-7 — not-addressed — queue.go:74-77 and :80-83 still share the identical lookups-then-key tail.
+- BR-8 — not-addressed — queue.go:86 unchanged; re-verified that Queue(deck, nil, now, 1<<62) panics "makeslice: cap out of range".
+- BR-9 — addressed — Incidentally fixed by BR-1 — DaysBetween is now two dayIndex subtractions, no AddDate loop.
+- BR-10 — not-addressed — queue.go:26 still says "today's words"; nothing in the doc, the atlas or a test names the returned strings as normalised store.Key values rather than deck Text.
+
+### Raised
+
+- **BR-11** [Important] `invariant-needs-mechanical-guard` The only test pinning this round's Critical fix skips itself when tzdata is absent, and the repo's own fix for that was not reused
+  This is the 2nd finding in family `invariant-needs-mechanical-guard`; BR-4 was the 1st.
+  Do not fix only progress_test.go:276. THE RULE: a guard guards only if it is
+  unconditionally reachable in the environment the suite runs in — an assertion that can
+  skip itself is documentation. Verified by simulating LoadLocation failure in a scratch
+  copy: both store and schedule report `ok` with every cross-zone and DST assertion gone,
+  including TestDueDoesNotFireOnTheDayOfReview, the sole product-level guard for BR-1.
+  CI is ubuntu-latest, which does ship tzdata, so it is not blind today; a distroless or
+  alpine image would be. THE ENUMERATION, run: `grep -rn "t.Skip" cmd/define` gives 16
+  sites. Twelve are legitimate environment gates (network, pty, afplay, no model, no word
+  list). Five are tzdata: clock_test.go:20,79,100,141 and progress_test.go:276 — and FOUR
+  of those five do not need tzdata at all, because they discriminate on UTC OFFSET, which
+  time.FixedZone always supplies; only TestDaysBetweenAcrossDST (clock_test.go:141) needs
+  a real DST-carrying zone. Prevalence 4/5. The mechanical cure already exists in-tree and
+  was not reused (ARCH-DRY): cmd/define/history_cmd_test.go:16 imports `_ "time/tzdata"`.
+  Add that import to the store and schedule test packages, and rebuild the four
+  offset-only fixtures on FixedZone so they assert unconditionally.
+
 ## Open findings
 
-- **BR-1** [Critical] `local-calendar-day-boundary` store.DaysBetween miscounts by a day when its arguments carry different UTC offsets, so Due fires on the review day itself
-- **BR-2** [Important] `spec-constant-unpinned` Three of the six Leitner intervals are asserted by no test, and the plan promised a due-date assertion at each step
 - **BR-3** [Important] `unbacked-claim-about-existing-code` "imports store and time and nothing else" is now false in four artifacts; the enumeration the plan wrote was not run when the guard rule changed
-- **BR-4** [Important] `invariant-needs-mechanical-guard` The clock guard greps only "time.Now(" and misses time.Since, time.Until, time.After and the timer constructors
-- **BR-5** [Important] `mutable-exported-surface` LastBox is an exported mutable package variable that every clamp and Mastered depends on
-- **BR-6** [Important] `undeclared-behavior` Queue silently drops mastered words — absent from Spec and plan, contradicting progress.go's own comment, and it is an absorbing state
 - **BR-7** [Minor] `duplicated-comparator` The two sort.Slice comparators in Queue share an identical lookups-then-key tail
 - **BR-8** [Minor] `hostile-input-at-the-seam` Queue panics on an absurd budget where it deliberately handles budget <= 0
-- **BR-9** [Minor] `linear-scan-where-arithmetic-suffices` DaysBetween steps one AddDate per day, so Due on a years-old stamp loops thousands of times per word
 - **BR-10** [Minor] `undeclared-behavior` Queue returns normalised keys rather than deck Text, and the doc comment says "today's words"
+- **BR-11** [Important] `invariant-needs-mechanical-guard` The only test pinning this round's Critical fix skips itself when tzdata is absent, and the repo's own fix for that was not reused

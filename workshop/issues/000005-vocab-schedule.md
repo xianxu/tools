@@ -181,7 +181,7 @@ Two decisions worth recording before implementation:
   The purity claim is now ENFORCED rather than asserted: the plan's first draft
   said "a test needing a fake would not compile", which is false, and
   `TestScheduleImportsOnlyStoreAndTime` reads the package's import set and fails
-  when anything but `store` and `time` appears — verified by adding `os`.
+  when anything outside the pure allowlist appears — verified by adding `os`.
   FuzzFold 11.1M execs on box-in-range, non-negative streak and idempotence.
   Permutation-independence is deliberately NOT asserted: two reviews sharing a
   timestamp with different outcomes fold differently by order and `ReviewEvent`

@@ -17,7 +17,9 @@ import (
 func TestStartOfDay(t *testing.T) {
 	la, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
-		t.Skipf("no tzdata: %v", err)
+		// NOT a skip: time/tzdata is embedded above, so a failure here means
+		// something is genuinely wrong rather than absent.
+		t.Fatalf("loading the zone: %v", err)
 	}
 
 	for _, tc := range []struct {
@@ -76,7 +78,9 @@ func TestStartOfDay(t *testing.T) {
 func TestStartOfDayIsIdempotent(t *testing.T) {
 	la, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
-		t.Skipf("no tzdata: %v", err)
+		// NOT a skip: time/tzdata is embedded above, so a failure here means
+		// something is genuinely wrong rather than absent.
+		t.Fatalf("loading the zone: %v", err)
 	}
 	in := time.Date(2026, 8, 26, 13, 45, 0, 0, la)
 
@@ -97,7 +101,9 @@ func TestStartOfDayIsIdempotent(t *testing.T) {
 func TestDaysBetweenAcrossLocations(t *testing.T) {
 	la, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
-		t.Skipf("no tzdata: %v", err)
+		// NOT a skip: time/tzdata is embedded above, so a failure here means
+		// something is genuinely wrong rather than absent.
+		t.Fatalf("loading the zone: %v", err)
 	}
 
 	for _, tc := range []struct {
@@ -138,7 +144,9 @@ func TestDaysBetweenAcrossLocations(t *testing.T) {
 func TestDaysBetweenAcrossDST(t *testing.T) {
 	la, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
-		t.Skipf("no tzdata: %v", err)
+		// NOT a skip: time/tzdata is embedded above, so a failure here means
+		// something is genuinely wrong rather than absent.
+		t.Fatalf("loading the zone: %v", err)
 	}
 
 	// 2026-03-08 is the 23-hour spring-forward day here.

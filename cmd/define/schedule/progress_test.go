@@ -3,6 +3,11 @@ package schedule
 import (
 	"testing"
 	"time"
+	// Embedded so the zone tests below RUN rather than skip. The repo already
+	// does this in history_cmd_test.go: a t.Skip on the only test pinning a
+	// correctness fix is not a pin at all — it is a green result on a machine
+	// that never checked.
+	_ "time/tzdata"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -273,7 +278,9 @@ func FuzzFold(f *testing.F) {
 func TestDueDoesNotFireOnTheDayOfReview(t *testing.T) {
 	la, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
-		t.Skipf("no tzdata: %v", err)
+		// NOT a skip: time/tzdata is embedded above, so a failure here means
+		// something is genuinely wrong rather than absent.
+		t.Fatalf("loading the zone: %v", err)
 	}
 	// The stamp's OWN date must differ from its date in the learner's zone, or
 	// the two readings agree and the test cannot tell them apart — my first
