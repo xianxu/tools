@@ -216,3 +216,26 @@ Two decisions worth recording before implementation:
   the last dash" — my fixture ended in the publisher, so both rules cut at the
   same place. Fixed with a title carrying NO attribution, where the correct rule
   keeps the headline and the mutant truncates it.
+
+- 2026-08-26: M1 boundary round 1 — FIX-THEN-SHIP, three findings, all addressed.
+  BR-1: `usagesFrom` strips attribution then filters, and the ORDER is
+  load-bearing — a headline whose only occurrence of the word is inside the
+  publisher name survives the inverted order with text that does not contain the
+  word. `TestUsagesFromTheCapturedFeed` already asserted every usage contains its
+  word, but the captured feed holds no such headline, so the assertion never ran
+  over the discriminating state. The assertion was right; the input never reached
+  it. BR-2: the fuzz property was STILL wrong — subsequence dies to entity
+  decoding (`&#39;`, which is what Google News emits for apostrophes) and to XML
+  line-ending normalisation. Replaced with the Done-when's own claim as a bound:
+  there cannot be more items than item tags. Sound under any decoding, and the
+  three refuting shapes are now seeds. 2.2M execs clean. BR-3: the atlas described
+  M2's cache in the present tense at the M1 boundary — the
+  `atlas-claims-unbuilt-surface` family I recorded a lesson about in #21, back
+  again. Corrected to name what M1 actually ships.
+
+  Also, during that round a mutation copy-back silently deleted `bothSources`:
+  the scratch backup predated it. That is the "a backup is only as good as the
+  tree it was taken from" lesson recurring with a new cause, and the fix is a rule
+  rather than more care — restore with `git checkout HEAD -- <file>`, which cannot
+  be stale, and re-verify the mutation afterwards in case the restore undid the
+  fix it was checking.

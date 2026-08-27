@@ -185,3 +185,49 @@ func TestEntryUsagesLiftsNOADExamples(t *testing.T) {
 		}
 	}
 }
+
+// BR-1: the ORDER of strip-then-filter is load-bearing and nothing pinned it.
+//
+// A headline whose only occurrence of the word is inside the PUBLISHER name is
+// the discriminating case. Strip first and it is correctly dropped; filter first
+// and it survives with text that does not contain the word — a sentence handed to
+// the learner as an example of a word it does not use.
+//
+// TestUsagesFromTheCapturedFeed already asserts every returned usage contains the
+// word, but the captured feed holds no such headline, so that assertion never ran
+// over the state where the two orders differ. The assertion was right; the input
+// never reached it.
+func TestAWordOnlyInThePublisherIsNotAUsage(t *testing.T) {
+	items := []store.NewsItem{{
+		Title:  "Weekly roundup of local business - Ephemeral Times",
+		Source: "Ephemeral Times",
+	}}
+
+	got := usagesFrom(items, "ephemeral")
+
+	if len(got) != 0 {
+		t.Errorf("got %d usages, want none — the word appears only in the publisher: %q",
+			len(got), got[0].Text)
+	}
+}
+
+// The invariant behind it, asserted directly rather than only as a side effect:
+// every usage's text contains the word it was collected for.
+func TestEveryUsageContainsItsWord(t *testing.T) {
+	items := []store.NewsItem{
+		{Title: "Springtime is ephemeral - UChicago", Source: "UChicago"},
+		{Title: "Weekly roundup - Ephemeral Times", Source: "Ephemeral Times"},
+		{Title: "Unrelated headline - ArchDaily", Source: "ArchDaily"},
+	}
+
+	got := usagesFrom(items, "ephemeral")
+
+	if len(got) == 0 {
+		t.Fatal("no usages at all — this test would assert nothing")
+	}
+	for _, u := range got {
+		if !containsWord(u.Text, "ephemeral") {
+			t.Errorf("usage %q does not contain the word it was collected for", u.Text)
+		}
+	}
+}

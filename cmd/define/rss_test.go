@@ -120,9 +120,26 @@ func TestParseRSSDecisions(t *testing.T) {
 
 // The malformed class, which a table is blind to by construction.
 //
-// The second property is the one that matters: a parser that INVENTS content is
-// worse than one that finds none, because the invented sentence reaches the
-// learner as if the feed had said it.
+// The property is the Done-when's own words — "never returns an item it did not
+// find in the input" — expressed as a COUNT. There cannot be more items than
+// there are item tags, and that bound holds no matter what the decoder does to
+// the characters inside them.
+//
+// It is the third property this target has carried, and the first two were both
+// wrong in the same direction: too strong, failing on correct parsing.
+// "Substring" died to mixed content (`0<![CDATA[0]]>` legitimately concatenates
+// to `00`). "Subsequence" survived that but dies to entity decoding — `&#65;`
+// yields "A", `&#39;` yields "'", and a lone `\r` yields "\n" under XML
+// line-ending normalisation, none of which are subsequences of their input. That
+// last one matters practically: `&#39;` is exactly what Google News emits for
+// apostrophes, so re-capturing the fixture would have turned this red against
+// entirely correct code.
+//
+// The lesson recorded, because the hazard is what happens NEXT: a property that
+// fails on correct input invites weakening the thing it was defending. Character
+// provenance inside an item is `encoding/xml`'s contract, not ours; what is ours
+// is how many items we report and what we do with a date we cannot read, and
+// both are pinned here.
 func FuzzParseRSS(f *testing.F) {
 	if b, err := os.ReadFile(filepath.Join("testdata", "news", "ephemeral.rss")); err == nil {
 		f.Add(string(b))
@@ -130,32 +147,32 @@ func FuzzParseRSS(f *testing.F) {
 	for _, s := range []string{
 		"", "<rss>", "<?xml version=\"1.0\"?><rss><channel><item><title>x</title></item></channel></rss>",
 		"<rss><channel><item><title><![CDATA[y]]></title></item></channel></rss>",
+		// The three shapes that refuted the previous property. Seeded so a future
+		// weakening of it fails here rather than in the wild.
+		"<rss><channel><item><title>&#65;</title></item></channel></rss>",
+		"<rss><channel><item><title>&#39;q&#39;</title></item></channel></rss>",
+		"<rss><channel><item><title>a\rb</title></item></channel></rss>",
 	} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, data string) {
 		items, err := parseRSS([]byte(data))
 		if err != nil {
+			if items != nil {
+				t.Fatalf("returned %d items alongside an error", len(items))
+			}
 			return
 		}
+		// The Done-when, as a bound: an item requires an item tag.
+		if tags := strings.Count(data, "<item"); len(items) > tags {
+			t.Fatalf("returned %d items from input holding %d item tags — the parser invented items",
+				len(items), tags)
+		}
 		for i, it := range items {
-			if it.Title == "" {
-				continue
-			}
-			// SUBSEQUENCE, not substring — and the fuzzer taught me that in two
-			// seconds. `<title>0<![CDATA[0]]></title>` is legitimate mixed
-			// content that XML concatenates to "00", which appears nowhere in the
-			// input contiguously. A substring property calls correct parsing an
-			// invention; entity decoding (`&amp;` -> `&`) breaks it too.
-			//
-			// Subsequence still catches what this is for: a parser that emits a
-			// character the input never contained, or emits them out of order.
-			// It is the same claim Render's no-data-loss invariant makes about
-			// rendered text, so it reuses that helper rather than growing a
-			// second one (invariant_test.go).
-			if gap := subsequenceGap([]rune(it.Title), []rune(data)); gap >= 0 {
-				t.Fatalf("item %d title %q is not an ordered subsequence of the input (first stray rune at %d) — the parser invented content",
-					i, it.Title, gap)
+			// A date we could not read is the zero time, never a guess. This is
+			// OUR logic rather than the decoder's, which is why it is pinned.
+			if !it.At.IsZero() && it.At.Year() < 1900 {
+				t.Fatalf("item %d has an implausible parsed date %v", i, it.At)
 			}
 		}
 	})

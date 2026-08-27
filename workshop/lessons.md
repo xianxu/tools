@@ -932,6 +932,22 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## Restore from git, not from a scratch copy (define #9 M1)
+
+Recurrence of the entry below, one issue later and with a new cause. Mutation
+testing means copy-file, mutate, test, copy-back — and I took the backup at the
+START of a milestone, then kept writing code. Several functions later, a
+copy-back silently DELETED `bothSources`, because the backup predated it. The
+build broke immediately, which is lucky: a deletion inside a rarely-run branch
+would have shipped.
+
+- **`git checkout HEAD -- <file>` is the correct restore.** It cannot be stale in
+  the way a scratch copy can, because it is versioned. A `cp` from `$TMPDIR`
+  restores whatever the tree looked like whenever you happened to snapshot it.
+- **Re-verify the mutation AFTER restoring.** The restore can undo the fix the
+  mutation was checking, and then both the fix and its pin are gone with the
+  suite green.
+
 ## A backup is only as good as the tree it was taken from (define #16 M2)
 
 M1's lesson was *make the backup first, and restore from the backup, not from
@@ -1267,6 +1283,32 @@ feature outright in production and leaves the entire suite green.
 - **A stated rule that does not name its enumeration will be declared swept while
   the family is still live.** "I applied the rule" is a claim about the set you
   enumerated, not about the class.
+
+## A property that fails on CORRECT input is a liability, not a strong test (define #9 M1)
+
+`FuzzParseRSS` carried three properties before one was sound, and the first two
+failed the same way: too strong, red against entirely correct parsing.
+
+1. **"a parsed title is a substring of the input"** — died in two seconds to
+   `<title>0<![CDATA[0]]></title>`, which XML legitimately concatenates to `00`.
+2. **"...is a SUBSEQUENCE of the input"** — survived that and dies to entity
+   decoding: `&#65;` yields `A`, `&#39;` yields `'`, and a lone `\r` yields `\n`
+   under XML line-ending normalisation. None are subsequences of their input, and
+   `&#39;` is exactly what Google News emits for apostrophes — so re-capturing the
+   fixture would have turned it red against working code.
+3. **"there cannot be more items than item tags"** — sound under any decoding,
+   and it is the Done-when's own sentence.
+
+- **The danger is not the false failure; it is the response to it.** A property
+  that reddens on good input invites weakening the thing it was defending, or
+  skipping the inputs that trip it. Both leave you with a test that looks like
+  coverage.
+- **Ask whose contract you are testing.** Character provenance inside an XML
+  element is `encoding/xml`'s contract, not mine. What is mine is how many items
+  I report and what I do with a date I cannot read — and those are exactly what
+  the sound property pins.
+- **Seed the corpus with what refuted the old property.** Those three shapes are
+  now seeds, so a future weakening fails here rather than in the wild.
 
 ## Doc prose at a boundary describes what THAT milestone shipped (define #21 M1)
 

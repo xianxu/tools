@@ -1032,13 +1032,15 @@ the feed's thematic collapse is measured and real (10 of 14 `sycophantic`
 headlines were about AI chatbots), and a word taught only through this week's
 news cycle is taught narrowly.
 
-**Raw is cached; usable is derived.** `store.NewsItem` is what goes to disk — the
-feed's own words, knowing nothing about filtering or provenance. `Usage` is
-computed at read time. That split is what lets `containsWord` improve and every
-word already cached improve with it, with no re-fetch; caching the filtered
-result would freeze today's judgment onto disk. The plan's first draft had `Usage`
-in `package main` while `store.Store` returned it, which cannot compile — the
-Critical that forced the split was really the design telling the truth.
+**Raw is what will be cached; usable is derived.** `store.NewsItem` is the shape
+the feed's own words take — knowing nothing about filtering or provenance —
+and `Usage` is computed from it at read time. The cache itself lands at M2; what
+exists at M1 is the split that makes it possible. The split is the point: it lets
+`containsWord` improve and every word already cached improve with it, with no
+re-fetch, where caching the filtered result would freeze today's judgment onto
+disk. The plan's first draft had `Usage` in `package main` while `store.Store`
+returned it, which cannot compile — the Critical that forced the split was really
+the design telling the truth.
 
 **`containsWord` is the one place judgment lives, and it delegates.** The feed is
 queried with the word quoted and still returns items that do not contain it
