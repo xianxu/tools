@@ -31,19 +31,19 @@ Leitner boxes with fixed intervals (1, 3, 7, 14, 30, 90 days).
 
 ## Done when
 
-- [ ] Promotion/demotion and due-dates verified across a simulated multi-week
+- [x] Promotion/demotion and due-dates verified across a simulated multi-week
       schedule with a fake clock.
-- [ ] A daily budget never returns more than the budget, and never starves an
+- [x] A daily budget never returns more than the budget, and never starves an
       overdue word in favour of a fresh one — asserted on a fixture holding BOTH
       an overdue reviewed word and a fresh one, so the two orderings differ.
-- [ ] `Mastered` has one definition, exported for `--play` and `--stats`. It
+- [x] `Mastered` has one definition, exported for `--play` and `--stats`. It
       cannot be fully closed here: `#8` is FILED and open
       (`workshop/issues/000008-vocab-stats.md`) but unbuilt, so this issue
       delivers the single definition and `#8` is where "used by both" becomes
       true.
-- [ ] Schedule state is DERIVED from the event log, never stored beside it —
+- [x] Schedule state is DERIVED from the event log, never stored beside it —
       `store.Word` gains no fields.
-- [ ] The package compiles against `store` and `time` only; no test in it needs
+- [x] The package compiles against `store` and pure stdlib only; no test in it needs
       a fake.
 
 ## Plan
@@ -52,7 +52,7 @@ Durable plan: `workshop/plans/000005-vocab-schedule-plan.md` (two milestones;
 each `Mx` row is its own review boundary).
 
 - [x] M1 — `Box`, `Progress`, `Fold`, `Due`, `Answer`, `Mastered`
-- [ ] M2 — `Queue`, the two tiers, and the atlas
+- [x] M2 — `Queue`, the two tiers, and the atlas
 
 ## Estimate
 
@@ -191,3 +191,16 @@ Two decisions worth recording before implementation:
   where their spurious demotions clamp at box 0 and vanish, so both
   implementations gave the same answer. Moved them after two correct reviews and
   it dies.
+
+- 2026-08-26: M2 — `Queue`, with the two tiers the Done-when's starvation clause
+  forces. Ranking everything on one "how long since we saw it" axis is the
+  tempting simplification and is exactly the bug: a word first seen months ago
+  and never reviewed outranks one reviewed last week and three days overdue. The
+  mutation that collapses the tiers reddens two named tests.
+  The purity guard earned its keep twice in one milestone, and the first time it
+  was WRONG in a useful way: it fired on `sort`, because my allowlist expressed
+  "exactly two imports" when the claim is "no IO and no hidden clock". A guard
+  that reddens on correct code invites deleting the guard, so the rule was
+  rewritten rather than the code — and it gained the check an import list cannot
+  make, that `time.Now` appears nowhere, since `time` is legitimately imported
+  for its type.

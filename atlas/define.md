@@ -1147,3 +1147,19 @@ this repo has been bitten repeatedly by facts that lived only in comments. The
 caller does the IO: `#6` reads the deck and the log through the store seams, gets
 `now` from the injected `Clock`, and writes `EventReviewed` back through the
 capture path.
+
+**The queue has TWO TIERS, and the Done-when forces it.** Due words with review
+history come first, most overdue first; words never reviewed follow, most
+looked-up first. Ranking everything on one "how long since we saw it" axis looks
+simpler and is wrong: a word first seen months ago and never reviewed has a
+larger age than a word reviewed last week and three days overdue, so the newcomer
+would go first and the word actually being learned would wait. That is the
+starvation `#5`'s Done-when forbids, and it is why the tiers are separate rather
+than one sort key with a clever weight.
+
+A mastered word leaves the rotation; a word not yet due is not offered; and the
+DECK is the roster while the log is the history — a word with progress but no
+deck entry is not queued, because `--forget` deliberately keeps a word's events
+after removing it and resurrecting it here would make forgetting not work.
+`budget <= 0` returns nothing: "no budget" is not "unlimited", and the opposite
+reading is a way to sit down to four hundred words by accident.
