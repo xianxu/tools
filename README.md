@@ -38,22 +38,24 @@ define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
 
-**`define --play` reviews what is due today.** The word appears alone; Enter or
-space reveals the definition; `y` and `n` say whether you had it. Ctrl-C stops
-whenever you like and keeps everything you answered — each answer is written as
-it happens, not at the end.
+**`define --play` reviews what is due today.** The word appears alone and you
+answer straight away: `y` if you had it, `n` if you did not. A `y` moves on
+immediately; an `n` shows you the definition, and any key then continues. Ctrl-C
+stops whenever you like and keeps everything you answered — each answer is
+written as it happens, not at the end.
 
 ```
 $ define --play
 ephemeral
 
-Enter or space to reveal, d = remove from deck, Ctrl-C to stop
+y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 ```
 
 | key | does |
 |---|---|
-| Enter or space | reveal the definition |
-| `y` / `n` | you had it / you did not |
+| `y` | you had it — straight to the next word, no definition |
+| `n` | you missed it — the definition appears; any key continues |
+| space or Enter | check the definition first, if you want to, before answering |
 | `d` | remove this word from the deck — its history is kept |
 | Ctrl-C | stop; everything you answered is already saved |
 

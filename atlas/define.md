@@ -1281,8 +1281,28 @@ property is free from the append-only log (`#3`) and any batching would lose it.
 another, so keying on the flag would hand a nil store to the queue builder and
 panic on the other path.
 
-**Grading before reveal is ignored**, because a learner cannot rate what they
-have not seen and a mis-keystroke would otherwise file a verdict about a word
-still hidden. **Revealing is idempotent**, so a second reveal does not play the
-pronunciation twice. **An empty queue is immediately done** — "nothing due today"
-is the expected state most days, not an error.
+**Grading before reveal is THE NORMAL PATH** (#24). It used to be ignored, on the
+grounds that a learner cannot rate what they have not seen — true of a
+recognition test, false of a RECALL test, which is what form 2.1 is. The learner
+rates their own recall, which they know before they check; the definition is
+FEEDBACK, not stimulus. Reversing it removed a mandatory keystroke, and the slow
+one, from in front of every correct answer.
+
+So `y` records and advances with no reveal and no audio, while `n` records the
+miss AND reveals, **staying on the word** — advancing would scroll the answer
+past unread, which is the entire reason for showing it. That is the one input
+owing the loop TWO effects, and it is why `Apply` returns `[]Outcome`: the
+alternative, a flag on `Outcome`, would make "reveal" expressible two ways.
+
+`Session.Graded` is what keeps the next keystroke from grading twice — `Fold`
+would read a duplicate as a second review. It is independent of `Revealed`: a
+learner can reveal without grading (space) and grade without revealing (`y`).
+Note that **Enter and space reach the `InputReveal` arm**, not the rune arm, so
+the graded state needs its own case there or the two keys everyone reaches for
+are dead exactly where the prompt says any key moves on.
+
+`score` splits from `advance` for the same reason: a miss must be tallied without
+moving on. **Revealing is idempotent**, so a second reveal does not play the
+pronunciation twice. **An empty queue is immediately done** — the message names
+its cause, and "nothing due today" is reserved for the schedule genuinely having
+nothing.

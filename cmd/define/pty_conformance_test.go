@@ -419,3 +419,48 @@ func bareNewlines(s string) int {
 var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
+
+// The grade-first flow on a real terminal.
+//
+// #6 BR-45 is why this exists in the same milestone as the change rather than
+// after it: --play's one shipped defect was invisible to every in-process test
+// AND to a byte-capture smoke run, and the operator found it.
+func TestPTYPlayGradeFirst(t *testing.T) {
+	deck := t.TempDir()
+	_, seed := startDefineInDir(t, deck, nil, "--no-audio", "sycophantic")
+	if !strings.Contains(watch(seed).take(3*time.Second), "sikəˈfan(t)ik") {
+		t.Fatal("the seeding lookup did not resolve, so no deck was written")
+	}
+	seed.WriteString("\x04")
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	first := out.take(3 * time.Second)
+	if !strings.Contains(unstyled(first), "y = got it") {
+		t.Fatalf("the grading keys were not offered up front:\n%q", first)
+	}
+	if strings.Contains(unstyled(first), "sikəˈfan(t)ik") {
+		t.Errorf("the definition was showing before the learner answered:\n%q", first)
+	}
+
+	f.WriteString("n")
+	missed := out.take(2 * time.Second)
+	if !strings.Contains(unstyled(missed), "sikəˈfan(t)ik") {
+		t.Errorf("n did not put the definition on screen:\n%q", missed)
+	}
+	if !strings.Contains(unstyled(missed), "any key = next word") {
+		t.Errorf("the graded prompt did not appear:\n%q", missed)
+	}
+
+	// PQ-2 on a real terminal: space is what a learner presses, and it travels
+	// as InputReveal rather than as a rune. This is the assertion that would
+	// have caught it dead.
+	f.WriteString(" ")
+	moved := out.take(3 * time.Second)
+	if !strings.Contains(unstyled(moved), "0 right, 1 wrong") {
+		t.Errorf("space did not move on from the missed word:\n%q", moved)
+	}
+	if bad := bareNewlines(first + missed + moved); bad != 0 {
+		t.Errorf("%d bare newline(s) — the CRLF cascade is back", bad)
+	}
+}
