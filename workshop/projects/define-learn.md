@@ -462,3 +462,26 @@ still showed open here.
 [tools#18 M1]: #tools-18-m1
 [tools#18 M2]: #tools-18-m2
 [tools#19]: ../issues/000019-llm-overloaded.md
+
+### 2026-08-26 — scope event: two console features shipped alongside, outside MVP
+
+Neither is in `mvp_scope` and neither changes the done-when. Recorded because the
+project is the portfolio view and both shipped inside its window, on operator
+request, touching the same console the project's own verbs live in.
+
+- **tools#20 — typeahead beyond the first word.** The grey suggestion matched
+  only whole past lines, so it died at the first space — exactly where a
+  free-form question gets asked, which is `#16`'s verb. Now completes a deck word
+  anywhere in the line. est 5.24 / actual 1.35.
+- **tools#21 — highlight the words you are learning.** Words from the deck render
+  bold green wherever they appear: the line you type, definition bodies, and
+  streamed answers. Reinforcement at the moment of reading rather than only at
+  review time, so it sits beside the retention loop rather than inside it.
+  est 9.28 / actual 6.0.
+
+**Why they matter to this project rather than merely coinciding with it.** Both
+make the *lookup* surface teach, which is the loop's entry point — the deck is
+built by ordinary lookup (`#4`), and these two put the deck back on screen during
+ordinary lookup. #21 also lands a `Vocabulary` predicate seam that
+**tools#22** (words graduating out of highlighting) will narrow; #22 is filed,
+out of MVP, and blocked on the review signal from `#5`/`#6`.
