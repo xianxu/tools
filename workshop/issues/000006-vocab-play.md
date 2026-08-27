@@ -1,11 +1,12 @@
 ---
 id: 000006
-status: open
+status: working
 deps: ["tools#3", "tools#5"]
 github_issue:
 created: 2026-08-20
-updated: 2026-08-20
+updated: 2026-08-27
 estimate_hours:
+started: 2026-08-27T08:15:55-07:00
 ---
 
 # define --play: review loop + form 2.1 quick pass
