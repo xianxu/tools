@@ -5,7 +5,7 @@ deps: ["tools#3"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-26
-estimate_hours:
+estimate_hours: 5.56
 started: 2026-08-26T22:20:11-07:00
 ---
 
@@ -34,15 +34,138 @@ Leitner boxes with fixed intervals (1, 3, 7, 14, 30, 90 days).
 - [ ] Promotion/demotion and due-dates verified across a simulated multi-week
       schedule with a fake clock.
 - [ ] A daily budget never returns more than the budget, and never starves an
-      overdue word in favour of a fresh one.
-- [ ] `Mastered` has one definition, used by both `--play` and `--stats`.
+      overdue word in favour of a fresh one — asserted on a fixture holding BOTH
+      an overdue reviewed word and a fresh one, so the two orderings differ.
+- [ ] `Mastered` has one definition, exported for `--play` and `--stats`. It
+      cannot be fully closed here: `#8` is FILED and open
+      (`workshop/issues/000008-vocab-stats.md`) but unbuilt, so this issue
+      delivers the single definition and `#8` is where "used by both" becomes
+      true.
+- [ ] Schedule state is DERIVED from the event log, never stored beside it —
+      `store.Word` gains no fields.
+- [ ] The package compiles against `store` and `time` only; no test in it needs
+      a fake.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Durable plan: `workshop/plans/000005-vocab-schedule-plan.md` (two milestones;
+each `Mx` row is its own review boundary).
+
+- [ ] M1 — `Box`, `Progress`, `Fold`, `Due`, `Answer`, `Mastered`
+- [ ] M2 — `Queue`, the two tiers, and the atlas
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187), one item per task in
+`workshop/plans/000005-vocab-schedule-plan.md` plus the process work inside the
+measured window. Design carries v2's ×0.2 spec-quality discount on every code
+item — the plan pre-resolves the time model, the derived-not-stored decision, the
+two queue tiers, `masteryStreak`'s value and the helper's ownership, so what is
+left at design time is reading. Implementation is v3.1's 40% of the v2 table.
+Familiarity 1.0: same repo, and the only unfamiliar thing is that this is the
+first subpackage under `cmd/define` besides `store`, which is itself the pattern
+being copied.
+
+`issue-spec` is 0.50 — the low end of its band. The Spec was written in August and
+needed no revision; this window authored a ~190-line plan, against #21's 1.50 for
+646 lines and #9's 0.75 for 351.
+
+**Review rounds drop to 0.35h, and this time the derivation is arithmetic rather
+than a feeling.** #9 measured 3.80h TOTAL across five review rounds *plus* all of
+its implementation — three new files, a store interface widening, two
+conformance suites and a live check. Even attributing only ~2h to the code, the
+rounds cannot have averaged more than ~0.35h. #9's own block priced them at 0.5h
+and came in at 2.16×; the round before that priced them at 0.3h and I corrected
+it UP to 0.5h on the grounds that halving a measured value was not a derivation.
+That correction was right in method and wrong in fact, and the ledger has now
+said so twice.
+
+**The recent rows agree on direction and I am following them rather than the
+older ones.** tools#21 est 9.28 / actual 6.00 (1.55×) and tools#9 est 8.22 /
+actual 3.80 (2.16×), both trusted, both over-estimated. The older rows that say
+the opposite — #16 at 0.37×, #11 at 0.64× — predate this working rhythm by a
+week and two issues, and #16's overrun was twelve review rounds on a milestone
+structure this project no longer uses. Weighting the two most recent trusted
+rows over four older ones is a judgement, and it is the one the evidence
+supports; if #5 closes near 5h the drift is corrected, and if it closes near 2.5h
+the round price is still too high and the next block should say so.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec             design=0.50 impl=0.08
+item: milestone-review       design=0.10 impl=0.12
+item: milestone-review       design=0.10 impl=0.12
+item: milestone-review       design=0.10 impl=0.12
+item: milestone-review       design=0.10 impl=0.12
+item: cross-cutting-refactor design=0.12 impl=0.14
+item: smaller-go-module      design=0.03 impl=0.14
+item: greenfield-go-module   design=0.25 impl=0.22
+item: smaller-go-module      design=0.03 impl=0.14
+item: milestone-review       design=0.15 impl=0.20
+item: milestone-review       design=0.15 impl=0.20
+item: milestone-review       design=0.15 impl=0.20
+item: greenfield-go-module   design=0.25 impl=0.22
+item: atlas-docs             design=0.03 impl=0.05
+item: milestone-review       design=0.15 impl=0.20
+item: milestone-review       design=0.15 impl=0.20
+item: milestone-review       design=0.15 impl=0.20
+design-buffer: 0.15
+total: 5.56
+```
+
+**PLAN rounds and BOUNDARY rounds are priced differently, and the first draft of
+this block used one number for both.** A plan round reads a document and edits a
+document; a boundary round reads a diff, and its fixes are code with tests and
+mutation checks. Counting from the gate file there were FOUR plan rounds, priced
+0.22h each — and boundary rounds stay 0.35h, now budgeted THREE per boundary
+rather than one-plus-a-fix, which is what #21 (3, 3) and #9 (2, 3) actually
+needed. The first draft's 4.99 was the right order of magnitude by cancellation:
+under-counting plan rounds and under-budgeting boundary rounds happened to
+offset. A number that is right by accident teaches the ledger nothing.
+
+Item-to-task map. Process: plan authoring, then the four plan rounds (all spent —
+round 2 caught three false claims about existing code, round 3 caught the residue
+of that sweep, round 4 was the estimate). **M1** — `cross-cutting-refactor` = Task 0, which adds
+`store.StartOfDay` and collapses the two existing day-boundary encodings in
+`history_cmd.go`; `smaller` = Task 1's `Box` and interval table; `greenfield` =
+Task 2's `Progress`/`Fold`/`Due`/`Answer`/`Mastered` with its fuzz target;
+`smaller` = the import guard; then three M1 boundary rounds. **M2** —
+`greenfield` = Task 3's `Queue` with the two tiers; `atlas-docs` = the atlas
+section; then three close-boundary rounds.
+
+**Measurement note for the close:** `sdlc actual` currently reads 0.00h with
+attribution shared across `#5` and `#9`, because the plan and its four gate
+rounds are still uncommitted at the time of writing. Whether the ~1.6h already
+spent on design converges depends on the plan commit landing inside the window.
+Worth a line in `## Log` at close so the ledger row is readable rather than
+mysteriously small — the same defect recorded on `#20` and `#21`.
 
 ## Log
 
 ### 2026-08-20
 
 Created as part of the `define-learn` project.
+
+### 2026-08-26
+
+Claimed and planned, ahead of `#10` — see the project's scope event: the operator
+asked for a loop they can actually practise with before the authoring
+integrations, and the dependency graph already allowed it.
+
+Two decisions worth recording before implementation:
+
+- **Schedule state is DERIVED from the event log, not stored on the word.**
+  `event.go` already states the rule for the whole store: the log is "deliberately
+  the ONLY record of activity ... storing counters alongside would create a second
+  source of truth that drifts." A `Box` field on `store.Word` would be exactly
+  that, and it would drift silently — a hand-edited or partially-written deck file
+  disagreeing with the events that produced it. So `Fold` is a pass over the log,
+  and `store` gains nothing.
+- **Its own package.** `cmd/define` is `package main` and this is the first thing
+  here with no reason to touch IO. A subpackage makes the purity claim checkable
+  from outside rather than asserted in a comment: `schedule` imports `store` and
+  `time`, and a test needing a fake would not compile.
