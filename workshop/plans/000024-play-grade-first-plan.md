@@ -702,12 +702,23 @@ git commit -m "#24: the new flow, checked on a real terminal"
 - [ ] **Step 1: Grep for every site that describes the flow**
 
 ```bash
-grep -rn "to reveal\|Enter or space\|cannot rate what they have not seen\|before reveal" \
-  README.md atlas/ cmd/define/ workshop/issues/ workshop/plans/
+# Single WORDS, because prose wraps and multi-word patterns are line-based.
+grep -rniE "reveal|cannot rate" README.md atlas/ cmd/define/ workshop/issues/
 ```
 
-The second and third patterns are what reach `atlas/define.md:1284` and the
-session's own comments; the first alone misses them (PQ-3).
+**Prove the pattern before trusting it.** Multi-word patterns miss line-wrapped
+prose: `README.md:41-42` reads "Enter or\nspace reveals the definition" and
+matches none of `to reveal`, `Enter or space`, or `before reveal` (PQ-5). Two
+known-stale sites must appear in the output before the list is used as the
+authority:
+
+```bash
+grep -rniE "reveal|cannot rate" README.md atlas/ | grep -E "README.md:4[12]|define.md:128[4-7]"
+```
+
+Expected: both hit. If either is missing, the PATTERN is wrong, not the file —
+this is the same failure as #6 BR-44, where a correction reached two artifacts of
+three because the third was never in the list.
 
 Fix every hit this returns. **Build the list from what the grep returns, not from
 memory** — #6 BR-44 and BR-48 were both "the correction reached two artifacts of

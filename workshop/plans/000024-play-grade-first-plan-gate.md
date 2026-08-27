@@ -57,6 +57,40 @@ rounds:
           family: test-precondition-never-fires
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-27T15:47:59-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: score split from advance; miss branch scores without advancing, pinned by next.Wrong == 1.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: InputReveal now has a Graded arm ahead of the Revealed short-circuit; pty test presses space.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: TestGradingBeforeRevealIsIgnored named and deleted at session_test.go:61; grep reaches atlas:1284; nine call sites confirmed.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: The "after a miss" subtest drives twoQuestions()/Recall, whose Grade('n') returns (Wrong, true).
+          round: 2
+      findings:
+        - id: PQ-5
+          severity: Minor
+          title: Task 9's grep cannot reach README:41-42, where the stale phrase is split across a line break
+          detail: |-
+            2nd in this family (2 of 2 rounds). The rule, not the site: prove a doc-sweep
+            grep hits every already-known stale site before trusting it as the authority
+            for the site list — line-based patterns miss line-wrapped prose. Here
+            "Enter or / space reveals the definition" at README.md:41-42 matches none of
+            the four patterns; Task 9's Files list naming README.md:41-58 covers it anyway.
+          family: unbacked-claim-about-existing-code
+          round: 2
+      blocked: false
+content_hash: 5c05864bf55827ee8c2ef3913dd0ecbe5bd997b78de9b268ca725c253ed8d1de
 ---
 
 # Gate ledger — tools#24 (plan-quality)
@@ -98,9 +132,24 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   never set, and the subtest silently re-runs the "before anything" case
   under a name claiming to cover the new state. Use '2'.
 
+## Round 2 — 2026-08-27T15:47:59-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — score split from advance; miss branch scores without advancing, pinned by next.Wrong == 1.
+- PQ-2 — addressed — InputReveal now has a Graded arm ahead of the Revealed short-circuit; pty test presses space.
+- PQ-3 — addressed — TestGradingBeforeRevealIsIgnored named and deleted at session_test.go:61; grep reaches atlas:1284; nine call sites confirmed.
+- PQ-4 — addressed — The "after a miss" subtest drives twoQuestions()/Recall, whose Grade('n') returns (Wrong, true).
+
+### Raised
+
+- **PQ-5** [Minor] `unbacked-claim-about-existing-code` Task 9's grep cannot reach README:41-42, where the stale phrase is split across a line break
+  2nd in this family (2 of 2 rounds). The rule, not the site: prove a doc-sweep
+  grep hits every already-known stale site before trusting it as the authority
+  for the site list — line-based patterns miss line-wrapped prose. Here
+  "Enter or / space reveals the definition" at README.md:41-42 matches none of
+  the four patterns; Task 9's Files list naming README.md:41-58 covers it anyway.
+
 ## Open findings
 
-- **PQ-1** [Critical] `branch-bypasses-shared-bookkeeping` the new miss-before-reveal branch never increments s.Wrong, so the session tally reports 0 wrong
-- **PQ-2** [Critical] `new-state-unhandled-input-kinds` Enter and space are dead in the new Graded state, while the prompt promises "any key = next word"
-- **PQ-3** [Important] `unbacked-claim-about-existing-code` the plan names tests that do not break and omits the one that does
-- **PQ-4** [Important] `test-precondition-never-fires` Task 4's "after a miss" subtest uses 'n' against fakeForm, which grades only digits
+- **PQ-5** [Minor] `unbacked-claim-about-existing-code` Task 9's grep cannot reach README:41-42, where the stale phrase is split across a line break

@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-27
-estimate_hours:
+estimate_hours: 3.50
 started: 2026-08-27T15:35:13-07:00
 ---
 
@@ -95,6 +95,71 @@ one `sdlc close` (AGENTS.md §3).
 - [ ] `TestPTYPlayGradeFirst` on a real pty, plus the WHOLE `-tags conformance`
       suite run at the close (#6 found it red since #21).
 - [ ] README + atlas, with the site list built by `grep`, not from memory.
+
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Derived after the plan cleared plan-quality (#187). Familiarity **1.0**: `#6`
+built this exact state machine in this session, so `Apply`, `advance`, the
+outcome vocabulary and the loop are all warm — there is no learning cost here,
+only editing cost.
+
+Design carries v2's ×0.2 spec-quality discount on every code item: the plan
+pre-resolves the `[]Outcome` shape, the `score`/`advance` split, the
+`InputReveal`-in-`Graded` arm, and the three `draw` states. Implementation is
+v3.1's 40% of the v2 table.
+
+**No greenfield item, and that is the honest difference from `#6`.** `#6` priced
+two `greenfield-go-module` rows because it created new files and a new raw-mode
+loop. This issue creates no file and no loop — it changes one state machine, its
+caller, and the docs. Every code item is `smaller-go-module` except the
+`[]Outcome` signature change, which is `cross-cutting-refactor` because it
+touches `session.go`, nine call sites in `session_test.go`, and `play_loop.go`
+together.
+
+**Two plan rounds are counted as SPENT, not budgeted.** Round 1 returned two
+Criticals — the miss branch never scored, and Enter/space were dead in the new
+state — plus two Importants. Round 2 cleared with one Minor.
+
+**Four close rounds, and that is where the uncertainty sits.** `#6` budgeted
+three and needed eleven, closing at 8.09 against 6.15. The scope here is a
+fraction of `#6`'s, but the boundary review's thoroughness is a property of the
+gate, not of the diff — and this issue changes a contract two other issues (`#7`,
+`#12`) are about to build on, which is exactly what that review is good at
+finding fault with. Budgeting `#6`'s three again would be pricing the outcome I
+want rather than the one the evidence shows.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec              design=0.50 impl=0.08
+item: milestone-review        design=0.10 impl=0.12
+item: milestone-review        design=0.10 impl=0.12
+item: cross-cutting-refactor  design=0.12 impl=0.14
+item: smaller-go-module       design=0.03 impl=0.14
+item: smaller-go-module       design=0.03 impl=0.14
+item: smaller-go-module       design=0.03 impl=0.14
+item: atlas-docs              design=0.03 impl=0.05
+item: milestone-review        design=0.15 impl=0.20
+item: milestone-review        design=0.15 impl=0.20
+item: milestone-review        design=0.15 impl=0.20
+item: milestone-review        design=0.15 impl=0.20
+design-buffer: 0.15
+total: 3.50
+```
+
+Item-to-task map. `issue-spec` = the spec and the plan doc; the two
+`design=0.10` rows are the plan-quality rounds that happened.
+`cross-cutting-refactor` = Task 1, `Apply` returning `[]Outcome` across the
+package and its caller. The three `smaller-go-module` rows = Tasks 2–4 (the
+`InputRune`/`InputReveal` arms, `score`, `Graded`), Tasks 5–7 (the loop's
+iteration, the no-audio assertion, `draw`'s three states), and Task 8 (the pty
+test — `smaller` and not `greenfield` because `startDefineInDir`, `unstyled` and
+`bareNewlines` all already exist, built in `#6`'s last round). `atlas-docs` =
+Task 9. The four `design=0.15` rows are the close rounds.
 
 
 ## Log
