@@ -33,18 +33,10 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		return code
 	}
 
-	// Same interrupt shape as repl (#16 D5): the loop owns what Ctrl-C means, so
-	// it must not also be cancelled behind the sink's back.
-	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	// Same interrupt shape as repl (#16 D5), and now literally the same body —
+	// see detachedInterrupts for why the detach happens before the loop starts.
+	ctx, interrupts, cancel := detachedInterrupts(ctx, d)
 	defer cancel()
-	interrupts := &interrupter{fn: cancel}
-	if d.notifySignals != nil {
-		go func() {
-			for range d.notifySignals(os.Interrupt) {
-				interrupts.Fire()
-			}
-		}()
-	}
 
 	f, isFile := stdin.(*os.File)
 	if !isFile || d.stdinIsTerminal == nil || !d.stdinIsTerminal() {
@@ -214,7 +206,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 	now := d.clock.Now()
 	keys := schedule.Queue(deck, schedule.Fold(events), now, opt.count)
 	if len(keys) == 0 {
-		fmt.Fprintln(stdout, "define: nothing due today")
+		fmt.Fprintln(stdout, emptyQueueReason(len(deck), opt.count))
 		return nil, 0
 	}
 
@@ -268,4 +260,26 @@ func draw(w io.Writer, s play.Session) {
 func finish(w io.Writer, s play.Session) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)
 	return 0
+}
+
+// emptyQueueReason names WHY the sitting is empty.
+//
+// "Nothing due today" is a statement about the SCHEDULE, and it was being
+// printed for three different situations: an empty deck, a budget of zero, and
+// the schedule genuinely having nothing. The first two are the learner's own
+// input coming back at them wearing the schedule's clothes — `--play -count 0`
+// reported a clear deck while every word in it was outstanding (BR-46).
+//
+// Same rule as the all-lookups-fail branch above: when the sitting offers fewer
+// words than the deck made due, the message names the actual cause, and this
+// sentence is reserved for the case where the cause really is the schedule.
+func emptyQueueReason(deckSize, budget int) string {
+	switch {
+	case deckSize == 0:
+		return "define: the deck is empty — look a word up first and it will be scheduled"
+	case budget == 0:
+		return "define: -count 0, so no words were offered"
+	default:
+		return "define: nothing due today"
+	}
 }

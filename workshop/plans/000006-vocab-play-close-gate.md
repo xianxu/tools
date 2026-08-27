@@ -1083,6 +1083,80 @@ rounds:
           family: plan-checkboxes-not-ticked
           round: 10
       blocked: false
+    - "n": 11
+      timestamp: "2026-08-27T13:40:58-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: not-addressed
+          note: Still no run()-level test reaching main.go:416; go tool cover puts play_loop.go:38.2,73.50 at 0.
+          round: 11
+        - id: BR-21
+          disposition: not-addressed
+          note: Sites 1/2/3/5 pinned, site 4 still open, and the row-to-test map was never written into the issue.
+          round: 11
+        - id: BR-25
+          disposition: not-addressed
+          note: play_loop.go:225-227 still does not say a stale entry costs a slot, and no test enters the partial-failure branch.
+          round: 11
+        - id: BR-26
+          disposition: not-addressed
+          note: No mode-pair guard exists; measured additionally that -raw --play still deletes via play_loop.go:136 while dropping every review.
+          round: 11
+        - id: BR-28
+          disposition: not-addressed
+          note: README.md:41-62 still never mentions playback during a session or that -no-audio applies to one.
+          round: 11
+        - id: BR-29
+          disposition: not-addressed
+          note: atlas/define.md:1180 still says "#6 needs the same three", contradicted at :1187; atlas:1142 says three and enumerates two.
+          round: 11
+        - id: BR-42
+          disposition: addressed
+          note: The yaml.go Stat branch is now classified unpinnable-and-why in the Log, and the rule is in lessons.md.
+          round: 11
+        - id: BR-44
+          disposition: addressed
+          note: Project entry now carries no close date and no hand-typed actual; grep over workshop/projects/ returns three consistent sites.
+          round: 11
+      findings:
+        - id: BR-45
+          severity: Important
+          title: --play is the newest raw-terminal surface and the only one with no pty conformance test, though the harness already exists
+          detail: |-
+            cmd/define/pty_conformance_test.go already provides startDefine(t, args...) over creack/pty and pins raw-mode entry
+            and terminal restoration for the editor; dict, fetch, news, player and reflect each have their own conformance file.
+            The single defect --play shipped was the CRLF cascade, invisible to every in-process test and to a byte-capture smoke
+            run, and found only by the operator on a real terminal. The issue Log's "SMOKE-TESTED FOR REAL through a pty" is a
+            hand run that was discarded, which is the scratch-verify pattern lessons.md names. ARCH-MOCK: the terminal is an
+            external dependency we depend on, and this consumer has no live check at that seam.
+          family: missing-live-conformance-check
+          round: 11
+        - id: BR-46
+          severity: Minor
+          title: define --play -count 0 reports "nothing due today", naming the schedule for an empty queue the budget produced
+          detail: |-
+            This is the 2nd finding in family budget-counted-before-filter. Do NOT fix only this instance. The rule that covers
+            it and BR-25 and the already-fixed all-lookups-fail branch: whenever the sitting offers fewer words than the deck
+            made due, the message names the actual cause — budget exhausted, entries unresolvable, or genuinely nothing due —
+            and "nothing due today" is reserved for the last of those. schedule.Queue returns nil for budget <= 0
+            (queue.go:30), so play_loop.go:217 fires with words outstanding. Separately, -count accepts negatives silently while
+            -times/-sound reject them at main.go:326.
+          family: budget-counted-before-filter
+          round: 11
+        - id: BR-47
+          severity: Minor
+          title: play_loop.go:38-47 is a verbatim copy of repl.go:192-201, the detach-plus-interrupter-sink block
+          detail: |-
+            This is the 3rd finding in family duplicated-guard-logic. Do NOT fix only this instance. The rule covering it,
+            BR-8 and BR-43: before writing a body that does what an existing body does, reuse it; if you write a near-copy
+            anyway, the comment states why the existing one was rejected, and if it cannot, use the existing one. Here the
+            comment names the original ("Same interrupt shape as repl (#16 D5)") without saying why it was copied. repl.go:184-190
+            records the PQ-6 reasoning a third copy would have to re-derive. Consolidation: detachedInterrupts(ctx, d)
+            returning (ctx, *interrupter, cancel). ARCH-DRY.
+          family: duplicated-guard-logic
+          round: 11
+      blocked: false
 ---
 
 # Gate ledger — tools#6 (boundary-review)
@@ -1619,6 +1693,43 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   `grep -rn "tools#6" workshop/projects/` returns the mvp_scope line, the task
   row (correctly unticked), and this entry.
 
+## Round 11 — 2026-08-27T13:40:58-07:00 (claude) — passed
+
+### Disposed
+
+- BR-13 — not-addressed — Still no run()-level test reaching main.go:416; go tool cover puts play_loop.go:38.2,73.50 at 0.
+- BR-21 — not-addressed — Sites 1/2/3/5 pinned, site 4 still open, and the row-to-test map was never written into the issue.
+- BR-25 — not-addressed — play_loop.go:225-227 still does not say a stale entry costs a slot, and no test enters the partial-failure branch.
+- BR-26 — not-addressed — No mode-pair guard exists; measured additionally that -raw --play still deletes via play_loop.go:136 while dropping every review.
+- BR-28 — not-addressed — README.md:41-62 still never mentions playback during a session or that -no-audio applies to one.
+- BR-29 — not-addressed — atlas/define.md:1180 still says "#6 needs the same three", contradicted at :1187; atlas:1142 says three and enumerates two.
+- BR-42 — addressed — The yaml.go Stat branch is now classified unpinnable-and-why in the Log, and the rule is in lessons.md.
+- BR-44 — addressed — Project entry now carries no close date and no hand-typed actual; grep over workshop/projects/ returns three consistent sites.
+
+### Raised
+
+- **BR-45** [Important] `missing-live-conformance-check` --play is the newest raw-terminal surface and the only one with no pty conformance test, though the harness already exists
+  cmd/define/pty_conformance_test.go already provides startDefine(t, args...) over creack/pty and pins raw-mode entry
+  and terminal restoration for the editor; dict, fetch, news, player and reflect each have their own conformance file.
+  The single defect --play shipped was the CRLF cascade, invisible to every in-process test and to a byte-capture smoke
+  run, and found only by the operator on a real terminal. The issue Log's "SMOKE-TESTED FOR REAL through a pty" is a
+  hand run that was discarded, which is the scratch-verify pattern lessons.md names. ARCH-MOCK: the terminal is an
+  external dependency we depend on, and this consumer has no live check at that seam.
+- **BR-46** [Minor] `budget-counted-before-filter` define --play -count 0 reports "nothing due today", naming the schedule for an empty queue the budget produced
+  This is the 2nd finding in family budget-counted-before-filter. Do NOT fix only this instance. The rule that covers
+  it and BR-25 and the already-fixed all-lookups-fail branch: whenever the sitting offers fewer words than the deck
+  made due, the message names the actual cause — budget exhausted, entries unresolvable, or genuinely nothing due —
+  and "nothing due today" is reserved for the last of those. schedule.Queue returns nil for budget <= 0
+  (queue.go:30), so play_loop.go:217 fires with words outstanding. Separately, -count accepts negatives silently while
+  -times/-sound reject them at main.go:326.
+- **BR-47** [Minor] `duplicated-guard-logic` play_loop.go:38-47 is a verbatim copy of repl.go:192-201, the detach-plus-interrupter-sink block
+  This is the 3rd finding in family duplicated-guard-logic. Do NOT fix only this instance. The rule covering it,
+  BR-8 and BR-43: before writing a body that does what an existing body does, reuse it; if you write a near-copy
+  anyway, the comment states why the existing one was rejected, and if it cannot, use the existing one. Here the
+  comment names the original ("Same interrupt shape as repl (#16 D5)") without saying why it was copied. repl.go:184-190
+  records the PQ-6 reasoning a third copy would have to re-derive. Consolidation: detachedInterrupts(ctx, d)
+  returning (ctx, *interrupter, cancel). ARCH-DRY.
+
 ## Open findings
 
 - **BR-13** [Important] `dead-entry-path` The --play and -count flag wiring at main.go:369 has zero test coverage, the class #21 already shipped twice
@@ -1627,5 +1738,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-26** [Important] `mode-silently-ignores-argument` Mode flags are guarded against a word but not against each other, and "define -raw --play" runs a full session that records nothing
 - **BR-28** [Minor] `docs-not-updated-for-new-surface` README's new --play section never mentions that the pronunciation plays on every reveal, or that -no-audio applies to a session
 - **BR-29** [Important] `plan-table-contradicts-code` play runs TWO purity guards, but question.go, purity_test.go and the atlas all still claim three
-- **BR-42** [Important] `claim-without-failing-test` store/yaml.go's new Stat error branch is at coverage 0 and appears in neither half of the round-6 pinned/unpinnable enumeration
-- **BR-44** [Important] `plan-checkboxes-not-ticked` The project's tools#6 M1 entry records a close date and a hand-typed actual for a boundary the issue says never closed
+- **BR-45** [Important] `missing-live-conformance-check` --play is the newest raw-terminal surface and the only one with no pty conformance test, though the harness already exists
+- **BR-46** [Minor] `budget-counted-before-filter` define --play -count 0 reports "nothing due today", naming the schedule for an empty queue the budget produced
+- **BR-47** [Minor] `duplicated-guard-logic` play_loop.go:38-47 is a verbatim copy of repl.go:192-201, the detach-plus-interrupter-sink block

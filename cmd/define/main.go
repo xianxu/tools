@@ -325,6 +325,15 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		fmt.Fprintf(stderr, "define: %s must not be negative\n", flagName)
 		return 2
 	}
+	// -count is validated HERE, beside its siblings, because it is the same
+	// class: a negative budget is a typo, not an instruction. It used to be
+	// accepted silently, and schedule.Queue then returned nil for it, which
+	// --play reported as "nothing due today" — blaming the schedule for what the
+	// flag did (BR-46).
+	if *count < 0 {
+		fmt.Fprintln(stderr, "define: -count must not be negative")
+		return 2
+	}
 	if *times > maxSoundTimes {
 		fmt.Fprintf(stderr, "define: %s %d would take a while to sit through; the limit is %d\n",
 			flagName, *times, maxSoundTimes)

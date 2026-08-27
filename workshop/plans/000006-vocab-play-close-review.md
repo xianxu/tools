@@ -994,3 +994,151 @@ findings:
       `grep -rn "tools#6" workshop/projects/` returns the mvp_scope line, the task
       row (correctly unticked), and this entry.
 ```
+
+---
+
+## Re-review — 2026-08-27T13:40:58-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 6 — define --play: review loop + form 2.1 quick pass |
+| repo | tools |
+| issue file | workshop/issues/000006-vocab-play.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 4cac0b95d83d54eab57b8747d40d09a2196bca1e..1859f7aa59d4b21860649449844ac95fa002d0e3 |
+| command | sdlc close --issue 6 |
+| reviewer | claude |
+| timestamp | 2026-08-27T13:40:58-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The code this window ships is genuinely good — `play` imports *nothing* (measured: `go list` returns empty), the state machine is exhaustively table-tested, the skip filter lives in exactly one place, and `puretest` is a real ARCH-DRY win with its own known-bad fixtures that I revert-verified. Two of the eight open findings are properly addressed (BR-41 and BR-44 both check out under measurement). What blocks SHIP is that **six of the eight remain open, four of them Important, and none of the six was touched this round** — the last two commits are documentation and ledger work. In particular BR-26 is a live behavioural defect (`define -raw --play` runs a full twenty-word session and records nothing, silently) that has been open since round 3; BR-29's last artifact still contradicts itself three lines above its own correction; and BR-13's entry-path gap is measurable at `go tool cover` = 0 across the whole of `runPlay`'s body. All six fixes are cheap. One round should clear them.
+
+## 1. Strengths
+
+- **`cmd/define/play` imports nothing at all**, verified independently (`go list -f '{{join .Imports "\n"}}' .../play` → empty). That is the strongest available form of the purity claim, and `play/purity_test.go:19-26` enforces it from a shared body rather than a copy.
+- **BR-41's fix is honest and I revert-measured it.** Reinstating a zero-import vacuity fatal in `ImportsOnly` reddens `TestImportsOnlyAcceptsAPackageWithNoImports` by name (`zero imports must PASS, got [no imports found in .../testdata/nothing]`). `testdata/nothing` is a real fixture, not a field set at zero call sites.
+- **BR-44's fix swept the artifact rather than the sentence.** `workshop/projects/define-learn.md:506-510` now carries `**actual:** — folded into tools#6` and `**closed:** — this boundary never closed on its own`, and `grep -rn "tools#6" workshop/projects/` returns exactly three sites, all consistent (mvp_scope, an unticked task row at :188, this entry).
+- **`play_loop_test.go:186-216` is the right pair of tests.** Spying on the capturer rather than the event log is the discriminating observable — the log genuinely cannot separate "records everything" from "records only graded answers", and the paired positive test stops the negative one passing vacuously.
+- **`cmd/define/puretest/testdata/pure/pure.go:4-7`** states the reason a known-good case must be a fixture and not a production package, and that reasoning was then correctly carried to the second case in BR-41's fix.
+
+## 2. Critical findings
+
+None. Nothing in the window crashes, corrupts state, or drifts from a byte-faithful contract.
+
+## 3. Important findings
+
+**BR-26 (still open, `mode-silently-ignores-argument`) — `-raw --play` runs a whole session that records nothing, and now also mutates the deck while doing it.** `cmd/define/main.go:387` guards `--play` against a *word* but against no other mode. `capture.go:29` returns `captureNothing` on `opt.raw`, and `openStore` branches only on `noCapture`, so with `-raw` the deck is non-nil, `play_loop.go:26`'s guard does not fire, and every `CaptureReview` returns silently. New measurement this round: the session is not uniformly inert — `play_loop.go:136` calls `d.deck.Forget` *directly*, outside `decideCapture`, so under `-raw` the `d` key still deletes words from disk while the reviews are dropped. That is one flag honoured and one ignored inside a single session, which is exactly the `-raw`-means-two-things failure `main.go:381` documents. Unguarded pairings remain: `--play`+`-raw`, `--play`+`--reflect` (`:416` wins), `--play`+`-forget` (`:410` wins), `--reflect`+`-forget`.
+
+**BR-13 (still open, `dead-entry-path`) — the `--play` dispatch and `-count` threading are at measured coverage 0.** `go tool cover` puts `runPlay` at 26.1%, with block `play_loop.go:38.2,73.50` — the interrupter, the terminal check, `enterRaw`, and the `playSession` call — entirely uncovered. The only `run()`-level test, `play_loop_test.go:440`, returns at the usage guard (`main.go:387`) and never reaches the dispatch at `main.go:416`. This is cheap now: `todaysQuestions` runs *before* the terminal check, so `run(ctx, []string{"--play"}, …)` with a non-`*os.File` stdin exits 1 with `--play needs a terminal`, and `run(ctx, []string{"--play","-count","0"}, …)` exits 0 with the empty-queue line — two observables that pin dispatch position and flag threading.
+
+**BR-21 (still open, `claim-without-failing-test`) — the enumeration is 4/5 done and the row-to-test map was never written.** Sites 1 (`puretest` tests), 2 (audio, `play_loop_test.go:321,338`), 3 (`-count`, `:355`) and 5 (raw re-entry report, `:498`) are all pinned. Site 4 is BR-13 and is open. The third ask — write the Done-when-row→test map into the issue — has not happened: `grep -n "Test[A-Z]" workshop/issues/000006-vocab-play.md` returns two incidental mentions, no map. Measured cost of its absence this round: `toInput`'s space→`InputReveal` branch (`play_loop.go:190-191`) is at coverage 0 while README:55 documents space as a key, and the Log's "SMOKE-TESTED FOR REAL through a pty" paragraph has no committed artifact behind it. A map built from the coverage profile would have surfaced both.
+
+**BR-29 (still open, `plan-table-contradicts-code`) — one artifact in the greppable enumeration still asserts the wrong guard count.** `atlas/define.md:1179-1180`: "`#5` wrote three purity guards inline; `#6` needs the **same three**", contradicted at `atlas/define.md:1187` ("`schedule` takes all three; `play` takes two"). `box.go`, `question.go`, `play/purity_test.go`, `puretest.go` and `atlas:1142` were all corrected; this is the same line round 9's disposition note named by number. Secondary residue from that same edit: `atlas:1142` now says "ENFORCED by three guards" and then enumerates only two in the following clause, with the store-symbol guard appearing 40 lines later.
+
+**NEW — `--play` has no live pty conformance check, though the repo owns the harness and the defect that shipped was terminal-only (ARCH-MOCK).** `cmd/define/pty_conformance_test.go` already provides `startDefine(t, args...)` over `creack/pty` and pins "raw mode was really entered" and "the terminal is left cooked" for the editor; `dict`, `fetch`, `news`, `player` and `reflect` each have their own. `--play` is the newest raw-mode surface in the binary and the *only* defect it shipped — the diagonal CRLF cascade — was invisible to every in-process test and to a byte-capture smoke run, and was found by the operator looking at a real terminal (`play_loop_test.go:283-293` says so in its own comment). The in-process CRLF counter is a good proxy but cannot see raw-mode entry, key decoding through a real tty, or restoration on exit. This also overlaps `claim-without-failing-test`: the issue Log's "SMOKE-TESTED FOR REAL through a pty" is the scratch-run-then-discard pattern `workshop/lessons.md` names, applied to the one behaviour only a pty can observe.
+
+## 4. Minor findings
+
+- **BR-25 (still open, `budget-counted-before-filter`)** — `play_loop.go:215` asks `schedule.Queue` for `opt.count` keys and `:222-229` then drops unresolvable ones; three stale entries with `-count 20` silently yields a 17-word sitting. The comment at `:225-227` still does not say a stale entry costs a slot, and no test enters the partial-failure branch (the all-fail branch has one).
+- **BR-28 (still open, `docs-not-updated-for-new-surface`)** — `README.md:41-62` never mentions that the pronunciation plays on every reveal or that `-no-audio` applies to a session; `README.md:35` documents `-no-audio` as a lookup flag, and `:62`'s closing "No key and no network" reads as though a session is silent. The atlas has it; the README does not.
+- **NEW (`budget-counted-before-filter`, 2nd in family)** — `define --play -count 0` prints `define: nothing due today` and exits 0, naming the schedule as the cause when the budget produced the empty queue. `-count` also accepts negatives silently, while `-times`/`-sound` reject them at `main.go:326` with a usage error. This is the sibling of the branch BR-30's fix already corrected for dictionary failures.
+- **NEW (`duplicated-guard-logic`, 3rd in family)** — `play_loop.go:38-47` is a verbatim copy of `repl.go:192-201` (detach-from-parent + install the interrupter sink + the signal goroutine). The comment names the original ("Same interrupt shape as repl (#16 D5)") without saying why it was copied rather than shared, and `repl.go:184-190` records at length the PQ-6 reasoning that a third copy would have to re-derive (ARCH-DRY).
+
+## 5. Test coverage notes
+
+- Measured with `go test ./cmd/define/ -coverprofile`: `runPlay` 26.1%, `playSession` 85.7%, `todaysQuestions` 87.5%, `toInput` 75.0%, `CaptureReview` 71.4%. Zero-coverage blocks in the diff: `play_loop.go:38-73` (all of runPlay's terminal setup), `:119-120` (unmapped key kind), `:136-138` (`Forget` error), `:167` (successful raw re-entry), `:190-191` (space→reveal), `:197`, `:204-207` (deck read error), `:209-213` (events read error).
+- Full suite is green (`go test ./cmd/define/...` — 95s, dominated by pre-existing 30s stream-flush tests, not this window).
+- `TestCancelledContextEndsTheSession` now states its probabilistic nature honestly with the measured numbers, which is the right resolution of BR-31 — the comment no longer claims something measurement contradicts.
+- The `play` package's tests run with no IO at all, matching the plan's PURE classification; `puretest` is correctly filed under Integration points and its tests exec the real `go` toolchain against committed fixtures, which is the right shape for a guard.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** `puretest` is the exemplar (one body, two callers, 193→38 lines in `schedule/purity_test.go`). Against that, the interrupt-setup block is copied verbatim into the second interactive surface; extract `detachedInterrupts(ctx, d) (context.Context, *interrupter, context.CancelFunc)` before a third caller exists.
+- **ARCH-PURE — pass.** Zero imports in `play`, enforced not asserted; `Render` stays in the caller so `Recall` receives a finished string; `Apply` is input-in/state-out with every effect performed by the loop. No test needs a mock to run a pure entity.
+- **ARCH-PURPOSE — flag.** Three enumerations named in earlier rounds are still one site short each: BR-29 (atlas:1180), BR-21 (site 4 + the row-to-test map), BR-26 (the mode-pair enumeration was written in round 3 and never swept). The pattern the Log itself diagnoses — "the enumeration gets written from memory rather than from the diff" — recurred once more this window in the round that sharpened the rule.
+- **ARCH-MOCK — flag.** The dictionary, player, CDN, store and LLM all sit behind seams with stateful doubles and live conformance checks. The *terminal* has a conformance harness that `--play` does not use, and it is the dependency whose real behaviour this feature is most exposed to. Everything else here passes: `fakePlayer` keeps `afplay(1)` out of the suite, `store.Mem` boots from nothing, `fakeDictionary` is corpus-backed, and `missingDict` now documents why the near-fit was rejected.
+
+## 7. Plan revision recommendations
+
+None. The plan's Core-concepts table now matches the tree on every row I checked (`Question`/`Verdict` in `question.go`, `Recall`, `Input`/`Outcome`/`Session`/`Apply` in `session.go`, `runPlay` in `play_loop.go`, `CaptureReview` in `capture.go`, `--play` in `main.go`, `puretest` under Integration points), Steps 9 and 11 are correctly unticked, and the `## Revisions` section records the milestone collapse. The residual contradiction is in `atlas/define.md`, not the plan.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Still no run()-level test reaching main.go:416; go tool cover puts play_loop.go:38.2,73.50 at 0.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      Sites 1/2/3/5 pinned, site 4 still open, and the row-to-test map was never written into the issue.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      play_loop.go:225-227 still does not say a stale entry costs a slot, and no test enters the partial-failure branch.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      No mode-pair guard exists; measured additionally that -raw --play still deletes via play_loop.go:136 while dropping every review.
+  - id: BR-28
+    disposition: not-addressed
+    note: |
+      README.md:41-62 still never mentions playback during a session or that -no-audio applies to one.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      atlas/define.md:1180 still says "#6 needs the same three", contradicted at :1187; atlas:1142 says three and enumerates two.
+  - id: BR-42
+    disposition: addressed
+    note: |
+      The yaml.go Stat branch is now classified unpinnable-and-why in the Log, and the rule is in lessons.md.
+  - id: BR-44
+    disposition: addressed
+    note: |
+      Project entry now carries no close date and no hand-typed actual; grep over workshop/projects/ returns three consistent sites.
+findings:
+  - id: new
+    severity: Important
+    family: missing-live-conformance-check
+    title: |
+      --play is the newest raw-terminal surface and the only one with no pty conformance test, though the harness already exists
+    detail: |
+      cmd/define/pty_conformance_test.go already provides startDefine(t, args...) over creack/pty and pins raw-mode entry
+      and terminal restoration for the editor; dict, fetch, news, player and reflect each have their own conformance file.
+      The single defect --play shipped was the CRLF cascade, invisible to every in-process test and to a byte-capture smoke
+      run, and found only by the operator on a real terminal. The issue Log's "SMOKE-TESTED FOR REAL through a pty" is a
+      hand run that was discarded, which is the scratch-verify pattern lessons.md names. ARCH-MOCK: the terminal is an
+      external dependency we depend on, and this consumer has no live check at that seam.
+  - id: new
+    severity: Minor
+    family: budget-counted-before-filter
+    title: |
+      define --play -count 0 reports "nothing due today", naming the schedule for an empty queue the budget produced
+    detail: |
+      This is the 2nd finding in family budget-counted-before-filter. Do NOT fix only this instance. The rule that covers
+      it and BR-25 and the already-fixed all-lookups-fail branch: whenever the sitting offers fewer words than the deck
+      made due, the message names the actual cause — budget exhausted, entries unresolvable, or genuinely nothing due —
+      and "nothing due today" is reserved for the last of those. schedule.Queue returns nil for budget <= 0
+      (queue.go:30), so play_loop.go:217 fires with words outstanding. Separately, -count accepts negatives silently while
+      -times/-sound reject them at main.go:326.
+  - id: new
+    severity: Minor
+    family: duplicated-guard-logic
+    title: |
+      play_loop.go:38-47 is a verbatim copy of repl.go:192-201, the detach-plus-interrupter-sink block
+    detail: |
+      This is the 3rd finding in family duplicated-guard-logic. Do NOT fix only this instance. The rule covering it,
+      BR-8 and BR-43: before writing a body that does what an existing body does, reuse it; if you write a near-copy
+      anyway, the comment states why the existing one was rejected, and if it cannot, use the existing one. Here the
+      comment names the original ("Same interrupt shape as repl (#16 D5)") without saying why it was copied. repl.go:184-190
+      records the PQ-6 reasoning a third copy would have to re-derive. Consolidation: detachedInterrupts(ctx, d)
+      returning (ctx, *interrupter, cancel). ARCH-DRY.
+```

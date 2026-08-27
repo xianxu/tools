@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"sync"
 )
 
@@ -54,4 +55,36 @@ func (i *interrupter) Fire() (consumed bool) {
 		fn()
 	}
 	return consumed
+}
+
+// detachedInterrupts detaches ctx from signal cancellation and routes SIGINT to
+// a sink the caller owns.
+//
+// ONE body, because both interactive loops need exactly this and the second copy
+// was verbatim (BR-47). A third is coming with #7's form, and the reasoning below
+// is what each copy would have to re-derive.
+//
+// The loop owns what Ctrl-C MEANS — stop the answer, not the session — so it must
+// not also be cancelled behind the sink's back by main's NotifyContext, or a
+// SIGINT would end the session while an answer streams, whatever the sink points
+// at.
+//
+// The detach happens BEFORE the choice of loop, not inside one, because every
+// transport needs it: detaching in run() and watching only in the raw loop leaves
+// every piped, redirected or raw-mode-fallback run with a ctx.Done() nothing can
+// reach — SIGINT diverted from default termination by NotifyContext, and then
+// delivered to no one (PQ-6).
+//
+// The caller defers the returned cancel.
+func detachedInterrupts(ctx context.Context, d deps) (context.Context, *interrupter, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	interrupts := &interrupter{fn: cancel}
+	if d.notifySignals != nil {
+		go func() {
+			for range d.notifySignals(os.Interrupt) {
+				interrupts.Fire()
+			}
+		}()
+	}
+	return ctx, interrupts, cancel
 }

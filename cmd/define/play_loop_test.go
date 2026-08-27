@@ -144,7 +144,12 @@ func TestSessionRunsWithTheModelUnavailable(t *testing.T) {
 	}
 }
 
-// "Nothing due today" is the expected state most days, not an error.
+// An empty sitting is the expected state most days, not an error.
+//
+// This test asserted "nothing due" for a deck with NO WORDS IN IT — it was
+// written against the single conflated message and so encoded the conflation
+// BR-46 names. The exit code is what its name is about and that has not changed;
+// what it says now is the cause, which for an empty deck is not the schedule.
 func TestEmptyQueueExitsZero(t *testing.T) {
 	d, opt, _ := playRig(t) // no words at all
 	var out, errb bytes.Buffer
@@ -152,10 +157,10 @@ func TestEmptyQueueExitsZero(t *testing.T) {
 	code := runPlay(t.Context(), d, opt, strings.NewReader(""), &out, &errb)
 
 	if code != 0 {
-		t.Errorf("exit = %d, want 0 — nothing due is not a failure", code)
+		t.Errorf("exit = %d, want 0 — an empty sitting is not a failure", code)
 	}
-	if !strings.Contains(out.String(), "nothing due") {
-		t.Errorf("stdout = %q, want a line saying nothing is due", out.String())
+	if !strings.Contains(out.String(), "the deck is empty") {
+		t.Errorf("stdout = %q, want it to name the empty deck rather than the schedule", out.String())
 	}
 }
 
@@ -534,4 +539,35 @@ type missingDict struct{}
 
 func (missingDict) Lookup(word string) (string, error) {
 	return "", ErrNoEntry
+}
+
+// Each empty sitting names its OWN cause (BR-46).
+//
+// Table-driven because the defect was one message serving three situations; the
+// table is what makes "three situations, three messages" checkable rather than
+// asserted.
+func TestEmptyQueueNamesItsCause(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		deckSize int
+		budget   int
+		want     string
+	}{
+		{"an empty deck is not a clear schedule", 0, 20, "the deck is empty"},
+		{"a zero budget is not a clear schedule", 5, 0, "-count 0"},
+		{"and the schedule speaks for itself", 5, 20, "nothing due today"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := emptyQueueReason(tc.deckSize, tc.budget)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("emptyQueueReason(%d, %d) = %q, want it to mention %q",
+					tc.deckSize, tc.budget, got, tc.want)
+			}
+			// The reserved sentence belongs to exactly one row.
+			if said := strings.Contains(got, "nothing due today"); said != (tc.want == "nothing due today") {
+				t.Errorf("emptyQueueReason(%d, %d) = %q — \"nothing due today\" is reserved "+
+					"for the schedule genuinely having nothing", tc.deckSize, tc.budget, got)
+			}
+		})
+	}
 }

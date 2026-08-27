@@ -1742,3 +1742,39 @@ why the near-fit was rejected. If it cannot, use the existing one.
 (`/tmp` is not writable; the scratchpad is), leaving the mutation in the tree
 with no backup. `git checkout -- <path>` needs no backup step, cannot land
 outside the repo, and is already the restore mechanism.
+
+## A live conformance check that is never run is not a check (#6, BR-45)
+
+`--play` shipped as the newest raw-terminal surface with no pty conformance
+test, though `startDefine` and five sibling conformance files already existed.
+The one defect it shipped was the CRLF cascade — and it was found by the
+operator on a real terminal, not by the suite.
+
+Worse, when the `--play` test was finally written, running the whole pty suite
+showed `TestPTYSuggestionAndAcceptance` had been RED since #21. It asserts on
+raw frame bytes, and #21's deck-word highlighting inserts an SGR sequence inside
+the typed line, so `"what is a sycophantic"` no longer matched as a substring
+even though Tab had accepted correctly. **Both #20 and #21 merged with it red**,
+because the suite is behind `-tags conformance` and neither close ran it.
+
+**Rules:**
+1. A new raw-terminal, network, or external-binary surface gets a conformance
+   test in the SAME milestone. The harness existing is not the same as it being
+   used, and "smoke-tested by hand" is the scratch-verify pattern.
+2. Run the on-demand suites at a close, not only the default `go test ./...`.
+   An opt-in suite decays silently — it reports nothing while it is failing.
+3. Assert on TEXT with styling stripped, unless styling is the subject. A raw
+   byte assertion is a test of the renderer's current escape sequences, and any
+   feature that adds a colour will break it without a behaviour changing.
+
+## "Nothing due today" named the wrong cause three times (#6, BR-46)
+
+One message served an empty deck, a zero budget, and a genuinely clear schedule,
+so `--play -count 0` told the learner their deck was clear while every word in
+it was outstanding — the learner's own input handed back wearing the schedule's
+clothes. The existing test asserted "nothing due" for a deck with NO WORDS, so
+it encoded the conflation rather than catching it.
+
+**Rule:** when a result is empty, the message names WHICH cause produced it, and
+the reassuring sentence is reserved for the reassuring case. A message shared by
+an error path and a success path will be read as the success.
