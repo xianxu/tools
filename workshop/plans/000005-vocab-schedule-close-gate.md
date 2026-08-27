@@ -188,6 +188,73 @@ rounds:
           family: invariant-needs-mechanical-guard
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-26T23:44:42-07:00"
+      agent: claude
+      dispose:
+        - id: BR-3
+          disposition: not-addressed
+          note: Seven false-claim sites remain, two minted by this round's own fixes; atlas/define.md:1165 still documents the behaviour BR-6 removed.
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: queue.go:70-78 and :79-84 unchanged; identical lookups-then-key tail.
+          round: 3
+        - id: BR-8
+          disposition: not-addressed
+          note: queue.go:86 unchanged; re-verified the makeslice panic on budget 1<<62.
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: queue.go:10 still says "today's words"; no doc, atlas line or test names the store.Key contract.
+          round: 3
+        - id: BR-11
+          disposition: not-addressed
+          note: Schedule pin fully fixed and mutation-verified; store test package still lacks the tzdata import its four comments claim it has.
+          round: 3
+      findings:
+        - id: BR-12
+          severity: Important
+          title: The purity allowlist admits store wholesale, so a real disk-IO constructor inside schedule passes both guards
+          detail: |-
+            3rd in this family (BR-4 1st, BR-11 2nd). Verified in a scratch copy: inserting
+            `_ = store.NewYAML("/tmp/whatever", nil)` into Due leaves both purity tests PASS,
+            though purity_test.go:33-35 states the criterion as "anything that can name a file"
+            is not pure and store is exactly that. Do not just patch the allowlist. THE RULE the
+            three instances share - a guard is worth its line count only once a deliberate
+            violation is a COMMITTED artifact rather than a hand-run tree mutation. THE
+            ENUMERATION, four guards - the import allowlist, the clock-reader token list,
+            repo_guard_test.go's git checks, and the tzdata-reachability property - each needing
+            one negative case. Mechanical shape - extract the decision from the IO
+            (violations(imports []string), clockReaders(src []byte)) so each negative case is a
+            table row. That is also the ARCH-PURE fix for purity_test.go, and it is why this
+            hole was invisible to inspection.
+          family: invariant-needs-mechanical-guard
+          round: 3
+        - id: BR-13
+          severity: Minor
+          title: Queue's degenerate-input domain is stated for two parameters and untested for the rest; duplicate deck keys return the same word twice
+          detail: |-
+            2nd in this family, BR-8 being the 1st. THE RULE - Queue is this package's public
+            seam for #6, so every parameter needs a stated and tested behaviour on degenerate
+            input. THE ENUMERATION, run - budget: <=0 ok, > len(deck) ok, absurd PANICS (BR-8);
+            deck: empty ok, empty Text ok, DUPLICATE KEYS unhandled - verified that
+            Queue([]store.Word{{Text:"Define"},{Text:"define"}}, nil, now, 10) returns
+            [define define], the same word twice, spending two of the budget; prog: nil ok,
+            keys absent from deck ok; now: zero untested. Prevalence 2/9.
+          family: hostile-input-at-the-seam
+          round: 3
+        - id: BR-14
+          severity: Minor
+          title: The durable plan has 20 unchecked steps and 0 checked after both milestones closed
+          detail: |-
+            workshop/plans/000005-vocab-schedule-plan.md - its own header says the checkbox
+            syntax is the tracking mechanism, and the plan is the version-controlled record of
+            truth per AGENTS.md section 1. The issue file's Plan section ticks M1/M2, which is
+            what the close gate reads, so the plan silently stopped being a record.
+          family: plan-record-staleness
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#5 (boundary-review)
@@ -297,6 +364,45 @@ four — the plan's own list omits the project file, which is why :485 survived 
   Add that import to the store and schedule test packages, and rebuild the four
   offset-only fixtures on FixedZone so they assert unconditionally.
 
+## Round 3 — 2026-08-26T23:44:42-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-3 — not-addressed — Seven false-claim sites remain, two minted by this round's own fixes; atlas/define.md:1165 still documents the behaviour BR-6 removed.
+- BR-7 — not-addressed — queue.go:70-78 and :79-84 unchanged; identical lookups-then-key tail.
+- BR-8 — not-addressed — queue.go:86 unchanged; re-verified the makeslice panic on budget 1<<62.
+- BR-10 — not-addressed — queue.go:10 still says "today's words"; no doc, atlas line or test names the store.Key contract.
+- BR-11 — not-addressed — Schedule pin fully fixed and mutation-verified; store test package still lacks the tzdata import its four comments claim it has.
+
+### Raised
+
+- **BR-12** [Important] `invariant-needs-mechanical-guard` The purity allowlist admits store wholesale, so a real disk-IO constructor inside schedule passes both guards
+  3rd in this family (BR-4 1st, BR-11 2nd). Verified in a scratch copy: inserting
+  `_ = store.NewYAML("/tmp/whatever", nil)` into Due leaves both purity tests PASS,
+  though purity_test.go:33-35 states the criterion as "anything that can name a file"
+  is not pure and store is exactly that. Do not just patch the allowlist. THE RULE the
+  three instances share - a guard is worth its line count only once a deliberate
+  violation is a COMMITTED artifact rather than a hand-run tree mutation. THE
+  ENUMERATION, four guards - the import allowlist, the clock-reader token list,
+  repo_guard_test.go's git checks, and the tzdata-reachability property - each needing
+  one negative case. Mechanical shape - extract the decision from the IO
+  (violations(imports []string), clockReaders(src []byte)) so each negative case is a
+  table row. That is also the ARCH-PURE fix for purity_test.go, and it is why this
+  hole was invisible to inspection.
+- **BR-13** [Minor] `hostile-input-at-the-seam` Queue's degenerate-input domain is stated for two parameters and untested for the rest; duplicate deck keys return the same word twice
+  2nd in this family, BR-8 being the 1st. THE RULE - Queue is this package's public
+  seam for #6, so every parameter needs a stated and tested behaviour on degenerate
+  input. THE ENUMERATION, run - budget: <=0 ok, > len(deck) ok, absurd PANICS (BR-8);
+  deck: empty ok, empty Text ok, DUPLICATE KEYS unhandled - verified that
+  Queue([]store.Word{{Text:"Define"},{Text:"define"}}, nil, now, 10) returns
+  [define define], the same word twice, spending two of the budget; prog: nil ok,
+  keys absent from deck ok; now: zero untested. Prevalence 2/9.
+- **BR-14** [Minor] `plan-record-staleness` The durable plan has 20 unchecked steps and 0 checked after both milestones closed
+  workshop/plans/000005-vocab-schedule-plan.md - its own header says the checkbox
+  syntax is the tracking mechanism, and the plan is the version-controlled record of
+  truth per AGENTS.md section 1. The issue file's Plan section ticks M1/M2, which is
+  what the close gate reads, so the plan silently stopped being a record.
+
 ## Open findings
 
 - **BR-3** [Important] `unbacked-claim-about-existing-code` "imports store and time and nothing else" is now false in four artifacts; the enumeration the plan wrote was not run when the guard rule changed
@@ -304,3 +410,6 @@ four — the plan's own list omits the project file, which is why :485 survived 
 - **BR-8** [Minor] `hostile-input-at-the-seam` Queue panics on an absurd budget where it deliberately handles budget <= 0
 - **BR-10** [Minor] `undeclared-behavior` Queue returns normalised keys rather than deck Text, and the doc comment says "today's words"
 - **BR-11** [Important] `invariant-needs-mechanical-guard` The only test pinning this round's Critical fix skips itself when tzdata is absent, and the repo's own fix for that was not reused
+- **BR-12** [Important] `invariant-needs-mechanical-guard` The purity allowlist admits store wholesale, so a real disk-IO constructor inside schedule passes both guards
+- **BR-13** [Minor] `hostile-input-at-the-seam` Queue's degenerate-input domain is stated for two parameters and untested for the rest; duplicate deck keys return the same word twice
+- **BR-14** [Minor] `plan-record-staleness` The durable plan has 20 unchecked steps and 0 checked after both milestones closed

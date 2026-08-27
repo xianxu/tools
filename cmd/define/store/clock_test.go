@@ -4,6 +4,13 @@ import (
 	"testing"
 	"time"
 
+	// Embedded so the zone tests RUN rather than skip. The repo already does
+	// this in history_cmd_test.go: a t.Skip on the only test pinning a
+	// correctness fix is not a pin at all — it is a green result on a machine
+	// that never checked. The comments below said this was here before the
+	// import was.
+	_ "time/tzdata"
+
 	"github.com/xianxu/tools/cmd/define/store"
 )
 

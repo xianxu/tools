@@ -351,3 +351,158 @@ findings:
       Add that import to the store and schedule test packages, and rebuild the four
       offset-only fixtures on FixedZone so they assert unconditionally.
 ```
+
+---
+
+## Re-review — 2026-08-26T23:44:42-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 5 — spaced-repetition scheduling engine (Leitner, pure) |
+| repo | tools |
+| issue file | workshop/issues/000005-vocab-schedule.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a30bb786560befe4960d28eaf5098a3bc678efa6..26bad6e1e6481752f1ed81143c14ba3904b74b91 |
+| command | sdlc close --issue 5 |
+| reviewer | claude |
+| timestamp | 2026-08-26T23:44:42-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The scheduling engine itself is correct and genuinely well-pinned — I verified four independent mutations die (zone normalisation removed → `clock_test.go:136` + `progress_test.go:298`; box 3 interval 14→13 → `box_test.go:19`; tier order swapped → two named queue tests; mastered-exclusion re-added → `queue_test.go:156`), the full suite is green, and the `store.Word`-gains-no-fields decision holds. Nothing in the code blocks SHIP. What holds it back from a clean SHIP is entirely artifact truth: `atlas/define.md:1165` still tells the next implementor "A mastered word leaves the rotation" — the exact absorbing-state behaviour BR-6 removed — and the same round's own fixes minted two *further* false claims about the code (`Due compares through store.StartOfDay`, which it does not; `DaysBetween steps the calendar`, which it no longer does). BR-11 was half-executed: the schedule pin is properly fixed and verified, but the store test package's four comments assert `time/tzdata is embedded above` when `go list -deps -test` shows it is not imported there at all. Plus one new verified hole: the purity allowlist admits `store` wholesale, so `store.NewYAML(dir, warn)` inside `schedule` passes both guards.
+
+## 1. Strengths
+
+- **The BR-1 fix is pinned at both levels, and the fixture actually discriminates.** Reverting `a = a.In(b.Location())` (`store/clock.go:69`) reddens `TestDaysBetweenAcrossLocations/b's_location_defines_the_calendar` *and* the product-level `TestDueDoesNotFireOnTheDayOfReview`. The travelling-learner fixture (`progress_test.go:292`, HST stamp vs LA now) is the version that survives the mutation — the comment records that the first, same-date attempt did not.
+- **`store.DaysBetween` is now arithmetic, not a walk** (`clock.go:68-78`), and its doc comment is the best in the diff: it states *why* the discarded `dayIndex` shape was the right one, so the next consolidation has the evidence the last one threw away.
+- **BR-2 closed properly, not cosmetically.** `TestMultiWeekSchedule` now asserts `!Due` at `interval-1` and `Due` at `interval` for **every** rung (`progress_test.go:181-198`); mutating any middle interval reddens `box_test.go:19`.
+- **`TestMasteredWordsStillComeRoundAtTheLongInterval` and `TestMasteryCanBeLost`** (`queue_test.go:139`, `:162`) pin the BR-6 reversal from both sides — the word returns at 90 days, and the status can be lost. The fixture even self-checks (`t.Fatal("fixture is wrong: … so this test asserts nothing")`).
+- **`historyWindow`/`relativeDay` refactor is behaviour-identical.** `relativeDay` keeps `at = at.In(now.Location())` (still load-bearing for `at.Format("Monday")`), and `DaysBetween` re-does the same normalisation idempotently — no drift, and `/history`'s tests remain a real net for the shapes they cover.
+- **Both purity guards refuse to pass vacuously** (`purity_test.go:57`, `:105`) — the failure mode most guard tests ship with.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — BR-3, third round: the artifact enumeration was written down again and again not run, and this round's own fixes minted two more instances.** Verified sites, all currently false:
+
+| site | claim | truth |
+|---|---|---|
+| `atlas/define.md:1165` | "A mastered word leaves the rotation" | BR-6 removed exactly this; `queue.go:56` queues mastered words |
+| `atlas/define.md:1129` | "`Due` compares through `store.StartOfDay`" | `Due` calls `store.DaysBetween`; `StartOfDay` has **one** production caller, `history_cmd.go:41` |
+| `cmd/define/schedule/progress.go:44` | "via `store.StartOfDay`" | same |
+| `cmd/define/history_cmd.go:192` | "`store.DaysBetween` steps the calendar" | BR-9's fix replaced stepping with UTC day-index subtraction |
+| `workshop/projects/define-learn.md:485` | "imports `store` and `time` and nothing else" | survived rounds 1 and 2 |
+| `workshop/plans/000005-…-plan.md:31` | "`Due` therefore compares `startOfDay(LastReviewed)` plus N days against `startOfDay(now)`" | it compares via `DaysBetween` |
+| `workshop/plans/000005-…-plan.md:33` | "Both callers then depend on `store`" | `schedule` is not a caller of `StartOfDay` |
+
+`atlas/define.md:1165` is the one that costs real money: `#6` is the next issue, it was prioritised *because* the operator wants a practisable loop, and its implementor reads the atlas.
+
+**I2 — BR-11 residue: `cmd/define/store/clock_test.go` asserts an import it does not have, in four places.** `go list -deps -test github.com/xianxu/tools/cmd/define/store | grep -c tzdata` → `0`; the same command for `schedule` → `1`. The four comments at `:20`, `:81`, `:104`, `:147` each say "NOT a skip: time/tzdata is embedded above". The safety property BR-11 named *is* achieved (`t.Fatalf`, so no silent green), but on a distroless/alpine image these four go red for the wrong reason while claiming they cannot. One-line fix: `_ "time/tzdata"` in `clock_test.go`'s import block.
+
+**I3 [new] — the purity allowlist admits `store` wholesale, so real disk IO passes both guards.** *This is the 3rd finding in family `invariant-needs-mechanical-guard`* (BR-4 1st, BR-11 2nd). Do not just patch the allowlist. Verified in a scratch copy: inserting `_ = store.NewYAML("/tmp/whatever", nil)` into `Due` leaves `TestScheduleImportsOnlyStoreAndTime` and `TestScheduleNeverReadsTheClock` both `PASS`. `purity_test.go:37` allowlists `store` by name while `:33-35` states the criterion as "`os`, `net`, `bufio`, `io` are not [pure], and anything that can name a file is not" — `store` is all of those.
+
+The rule the three instances share: **a guard is only worth its line count once a deliberate violation is a committed artifact, not a hand-run tree mutation.** BR-4 (one banned spelling of six), BR-11 (an assertion that can skip itself) and this (an allowlist entry that admits the IO package) all passed inspection and all failed the violation. The enumeration is small and writable: the import allowlist, the clock-reader token list, `repo_guard_test.go`'s git checks, and the tzdata-reachability property — four guards, each needing one negative case. The mechanical shape: extract the decision from the IO (`func violations(imports []string) []string`, `func clockReaders(src []byte) []string`) so each negative case is a table row over a synthetic input rather than a mutation someone has to remember to run. That is also the ARCH-PURE fix for `purity_test.go`, and it is why this hole was invisible.
+
+## 4. Minor findings
+
+- `queue.go:70-78` and `:79-84` still share the identical lookups-then-key tail (BR-7, unchanged).
+- `queue.go:86` still panics on an absurd budget (BR-8, re-verified: `makeslice: cap out of range`).
+- `queue.go:10` still says "today's words"; nothing names the returned strings as normalised `store.Key` values (BR-10, unchanged).
+- **[new]** `Queue`'s degenerate-input domain is stated for two parameters and untested for the rest — *2nd in family `hostile-input-at-the-seam`*, BR-8 being the 1st. The rule: `Queue` is this package's public seam for `#6`, so every parameter needs a stated and tested behaviour on degenerate input. The enumeration, run: budget ≤0 ✓, budget > len(deck) ✓, absurd budget ✗ (panics); deck empty ✓, empty `Text` ✓, **duplicate keys ✗** — verified `Queue([]store.Word{{Text:"Define"},{Text:"define"}}, …)` returns `[define define]`, the same word twice, spending two of the budget; prog nil ✓, keys absent from deck ✓; `now` zero ✗ (untested).
+- **[new]** `workshop/plans/000005-vocab-schedule-plan.md` has 20 `- [ ]` steps and 0 `- [x]` after both milestones closed; the plan's own header says the checkboxes are the tracking mechanism.
+- `store.StartOfDay` and `store.dayIndex` (`clock.go:41`, `:75`) are two encodings of "the local calendar date of `t`" in one file — Task 0 existed to collapse exactly that, and after the BR-1 fix the count is back at two with `StartOfDay` down to a single production caller. Defensible (different return types), worth one sentence rather than silence.
+
+## 5. Test coverage notes
+
+Coverage is strong where it matters and I confirmed it by mutation rather than by reading. Gaps worth naming: no test asserts `Queue`'s return values are `store.Key` output rather than deck `Text` (so BR-10 is undetectable by the suite); no test covers a deck with colliding keys; `FuzzFold` exercises one word only, so nothing fuzzes the multi-word map path; and `TestScheduleImportsOnlyStoreAndTime`/`TestScheduleNeverReadsTheClock` have no negative case, which is I3. `TestQueueIsDeterministicOnTies` running the same input 20 times does not actually exercise Go's map/sort nondeterminism, since `Queue` iterates the *deck slice*, not the map — it passes for a reason unrelated to what it claims to test; the real determinism guarantee is the total order in the comparators, and `first != "alpha,beta,gamma"` is the assertion doing the work.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** BR-7 (duplicated comparator tail) and the `StartOfDay`/`dayIndex` pair above. `Fold` applying `Answer` and the single interval table are the wins.
+- **ARCH-PURE — flag.** The product code is a clean pure core with no IO seam, which is the deliverable. The flag is on the *guard*: `purity_test.go` fuses its decision with `exec.Command`/`os.ReadDir`, so it can only be validated by mutating the real tree — see I3.
+- **ARCH-PURPOSE — flag.** The engine fulfils the issue. The shadow-sweep over the model's consumers is what fails: `atlas/define.md` is the derived artifact `#6` and `#8` read, and it restates the model with a reversed decision (I1). BR-6 was fixed in code and issue but not in the artifact that carries the decision forward — the instance, not the class.
+- **ARCH-MOCK — pass.** No external binary or service in production code; `#6` supplies deck, log and clock through the existing `store` seams. The guard tests shell out to `go`, consistent with `repo_guard_test.go`'s `git` — the toolchain rather than a modelled dependency, so no fake is owed.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` entry — "2026-08-26 — close round 3":
+
+- **`Due` does not use `store.StartOfDay`.** Lines 31 and 33 still describe `Due` comparing `startOfDay(LastReviewed) + N` against `startOfDay(now)` and call `schedule` one of `StartOfDay`'s "both callers". The implementation compares `store.DaysBetween(p.LastReviewed, now) >= IntervalDays(p.Box)`; `StartOfDay` has one production caller, `history_cmd.go:41`. Record the actual shape and that Task 0's collapse left two helpers in `clock.go`, not one.
+- **The BR-3 enumeration has five members and a trigger, and neither has held for three rounds.** Record that the sweep must be keyed to *the behaviour change*, not to the finding's wording, and that the two artifacts it keeps missing are the project file and the atlas — the two nobody edits while writing code.
+- **Tick the 20 completed steps**, or state explicitly that the issue file's `## Plan` is the record of truth and the durable plan's checkboxes are not maintained.
+
+```findings
+dispose:
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      Seven false-claim sites remain, two minted by this round's own fixes; atlas/define.md:1165 still documents the behaviour BR-6 removed.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      queue.go:70-78 and :79-84 unchanged; identical lookups-then-key tail.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      queue.go:86 unchanged; re-verified the makeslice panic on budget 1<<62.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      queue.go:10 still says "today's words"; no doc, atlas line or test names the store.Key contract.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      Schedule pin fully fixed and mutation-verified; store test package still lacks the tzdata import its four comments claim it has.
+findings:
+  - id: new
+    severity: Important
+    family: invariant-needs-mechanical-guard
+    title: |
+      The purity allowlist admits store wholesale, so a real disk-IO constructor inside schedule passes both guards
+    detail: |
+      3rd in this family (BR-4 1st, BR-11 2nd). Verified in a scratch copy: inserting
+      `_ = store.NewYAML("/tmp/whatever", nil)` into Due leaves both purity tests PASS,
+      though purity_test.go:33-35 states the criterion as "anything that can name a file"
+      is not pure and store is exactly that. Do not just patch the allowlist. THE RULE the
+      three instances share - a guard is worth its line count only once a deliberate
+      violation is a COMMITTED artifact rather than a hand-run tree mutation. THE
+      ENUMERATION, four guards - the import allowlist, the clock-reader token list,
+      repo_guard_test.go's git checks, and the tzdata-reachability property - each needing
+      one negative case. Mechanical shape - extract the decision from the IO
+      (violations(imports []string), clockReaders(src []byte)) so each negative case is a
+      table row. That is also the ARCH-PURE fix for purity_test.go, and it is why this
+      hole was invisible to inspection.
+  - id: new
+    severity: Minor
+    family: hostile-input-at-the-seam
+    title: |
+      Queue's degenerate-input domain is stated for two parameters and untested for the rest; duplicate deck keys return the same word twice
+    detail: |
+      2nd in this family, BR-8 being the 1st. THE RULE - Queue is this package's public
+      seam for #6, so every parameter needs a stated and tested behaviour on degenerate
+      input. THE ENUMERATION, run - budget: <=0 ok, > len(deck) ok, absurd PANICS (BR-8);
+      deck: empty ok, empty Text ok, DUPLICATE KEYS unhandled - verified that
+      Queue([]store.Word{{Text:"Define"},{Text:"define"}}, nil, now, 10) returns
+      [define define], the same word twice, spending two of the budget; prog: nil ok,
+      keys absent from deck ok; now: zero untested. Prevalence 2/9.
+  - id: new
+    severity: Minor
+    family: plan-record-staleness
+    title: |
+      The durable plan has 20 unchecked steps and 0 checked after both milestones closed
+    detail: |
+      workshop/plans/000005-vocab-schedule-plan.md - its own header says the checkbox
+      syntax is the tracking mechanism, and the plan is the version-controlled record of
+      truth per AGENTS.md section 1. The issue file's Plan section ticks M1/M2, which is
+      what the close gate reads, so the plan silently stopped being a record.
+```

@@ -482,7 +482,8 @@ non-matches, so the filter has work to do.
 **closed:** 2026-08-26
 
 Leitner boxes (1/3/7/14/30/90 days) with `Fold`, `Due`, `Answer` and `Mastered`,
-in a new `schedule` package that imports `store` and `time` and nothing else.
+in a new `schedule` package that imports `store` and pure standard-library
+packages only, enforced by two guards rather than asserted.
 
 **The decision worth not re-deriving: schedule state is DERIVED from the event
 log, never stored on the word.** `store/event.go` had already written the rule for

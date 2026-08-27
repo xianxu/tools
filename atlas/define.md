@@ -1162,7 +1162,11 @@ would go first and the word actually being learned would wait. That is the
 starvation `#5`'s Done-when forbids, and it is why the tiers are separate rather
 than one sort key with a clever weight.
 
-A mastered word leaves the rotation; a word not yet due is not offered; and the
+A mastered word does NOT leave the rotation — it sits at the 90-day interval and
+comes round, which is what keeps mastery from being absorbing: a word never
+offered can never be answered wrong, so the count would only grow while recall
+decayed. `Mastered` is a status for reporting and presentation, not a removal.
+A word not yet due is not offered; and the
 DECK is the roster while the log is the history — a word with progress but no
 deck entry is not queued, because `--forget` deliberately keeps a word's events
 after removing it and resurrecting it here would make forgetting not work.
