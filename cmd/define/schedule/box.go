@@ -1,0 +1,50 @@
+// Package schedule decides what is worth the learner's attention today.
+//
+// Leitner boxes with fixed intervals, chosen over SM-2 deliberately: for a
+// personal tool "why is this due?" must be answerable in one sentence, and an
+// ease factor cannot be.
+//
+// ENTIRELY PURE. It imports store and time and nothing else — no IO, no clock of
+// its own, no state. That is not a stylistic preference: every question here is
+// date-driven, and a package that could reach a wall clock would be untestable
+// at exactly the point where correctness lives. TestScheduleImportsOnlyStoreAndTime
+// enforces it, because a comment cannot.
+//
+// Schedule state is DERIVED from the event log, never stored beside it. store's
+// own event.go states the rule: the log is "deliberately the ONLY record of
+// activity ... storing counters alongside would create a second source of truth
+// that drifts". A Box field on store.Word would be exactly that, and it would go
+// wrong invisibly — a hand-edited deck file disagreeing with the events that
+// produced it.
+package schedule
+
+// intervalDays is the Leitner ladder. Fixed, and short enough to read.
+//
+// One slice, so a per-learner variant later replaces the table rather than the
+// logic around it. Nothing here measures whether these suit this learner; #8's
+// stats are what would eventually say.
+var intervalDays = []int{1, 3, 7, 14, 30, 90}
+
+// LastBox is the final rung. Reaching it takes len(intervalDays)-1 consecutive
+// correct answers from box 0.
+var LastBox = len(intervalDays) - 1
+
+// IntervalDays is how many local calendar days a word in this box waits.
+//
+// Clamps rather than panicking on an out-of-range box: Fold derives boxes from
+// an append-only log, and a log written by a future version with a longer ladder
+// must degrade to "the longest interval we know" rather than crash a review
+// session.
+func IntervalDays(box int) int {
+	return intervalDays[clampBox(box)]
+}
+
+func clampBox(box int) int {
+	if box < 0 {
+		return 0
+	}
+	if box > LastBox {
+		return LastBox
+	}
+	return box
+}
