@@ -1816,3 +1816,41 @@ write-it-from-memory family. A loop over `grep -qE "func <name>\("` caught them.
 4. State the SCOPE a mutation proved. Mutating `runPlay` left the session test
    green — correctly, since it drives `playSession`. Knowing which is which is
    the difference between a pin and a belief.
+
+## Mutation testing needs a COMMITTED baseline (#24)
+
+`git checkout -- <path>` is the right restore for a mutation — no backup step,
+cannot land outside the repo. But it restores to the last COMMIT, and the file
+being mutated had never been committed, so the first `git checkout` silently
+erased the whole implementation: a new field, a new function, two rewritten
+switch arms. The tests were still there, passing against nothing.
+
+The previous lesson said "restore with git, not a cp backup" and stopped one
+clause short. The plan for that issue said commit per task; batching the tasks is
+what put uncommitted work in the blast radius.
+
+**Rule:** commit the implementation BEFORE the first mutation. If a mutation
+table is coming, the baseline is a commit, not a working tree.
+
+**Corollary — a mutation that reddens nothing has two explanations, and the
+likelier one is that it did not apply.** Two of the nine here reported "0 tests
+reddened" and both were failed string replacements, not weak tests. Assert the
+target text is present before rewriting it; a `replace()` that matches nothing
+returns the original string and says so only if asked.
+
+## A prompt that names its keys is a state machine's public surface (#24)
+
+`--play` asked "Enter or space to reveal" and only offered `y`/`n` afterwards, so
+every correct answer cost a keystroke that carried no information — and the slow
+one, since a reveal fetches and plays audio. The session refused to grade an
+unrevealed word and argued it in a comment: *"a learner cannot rate what they
+have not seen."*
+
+That is true of a RECOGNITION test and false of a RECALL test. The learner rates
+their own recall, which they know before checking; the definition is FEEDBACK,
+not stimulus. The comment was confident, load-bearing, and had been read past
+several times.
+
+**Rule:** when a comment justifies a restriction with a claim about the user,
+check the claim against what the feature actually tests. A plausible sentence
+next to the code that implements it is the easiest kind of wrong to preserve.
