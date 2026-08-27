@@ -932,6 +932,22 @@ window in the output — start SHA equal to end SHA — showed the review had be
 handed nothing to look at. **When a review reports zero findings on a diff you
 know is large, read the window before believing it.**
 
+## Use `git stash` for mutation safety, not a `wip` commit (define #6 close)
+
+After a scratch-copy restore silently deleted a function, I adopted the rule
+"commit, then mutate, then `git checkout HEAD -- <file>`". The rule is right — a
+restore has to target something versioned — but the mechanism I chose leaves
+unexplained commits in history. Seven of them here, one 507 lines across three
+files, and the close review flagged it: a reviewer reading the branch finds half
+a milestone's work under the message `wip`.
+
+- **`git stash` gives the same guarantee without writing anything permanent.**
+  Stash, mutate, `git checkout`, `git stash pop`.
+- **If a wip commit does happen, squash it before the boundary.** Non-interactive
+  rebase works: `GIT_SEQUENCE_EDITOR="sed -E 's/^pick (sha1|sha2)/fixup \1/'" git
+  rebase -i <base>`, with a backup branch first and a `git diff backup --stat`
+  after to prove the tree is unchanged.
+
 ## Never report a boundary closed without READING the verdict (define #6)
 
 I ran `sdlc milestone-close` for M1 in the background, the completion
