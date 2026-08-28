@@ -403,7 +403,7 @@ just correctness") rather than an issue whose first design question would be
 ### tools#23 M1 — the mode exists, and the deck follows it
 
 **est:** 5.23 (whole issue)
-**actual:** 1.03h (M1)
+**actual:** 2.15h (M1, including three rounds of boundary-review fixes)
 **closed:** 2026-08-28
 
 `define` now works in ONE language at a time. `words/<lang>/` per deck, `lang.txt`
@@ -440,6 +440,16 @@ hide any directory of that name, which a basename guard cannot see.
 
 **Not delivered, and it is the visible half:** `mesa` in a Spanish session is
 filed as Spanish but still DEFINED as the flat-topped hill. That is M2.
+
+**What the boundary review cost, and why it was worth it.** Three rounds, and the
+first two each found a shipped defect the whole unit suite was green through: the
+pronunciation kept following the OLD language after `/lang`, and a `--reflect` in
+one language replaced the other language's learner model. Both are the same
+class — state derived from the language — and both existed because the derived
+set was swept by hand at the call site instead of written down. Round 3 then
+refused the instance fixes and demanded the rules, which is where the two
+mechanical guards came from. Roughly half of M1's measured hours are that loop;
+the alternative was shipping a tool whose Spanish mode quietly spoke English.
 
 <a id="tools-27"></a>
 ### tools#27 — pronunciation locale and language as parameters
