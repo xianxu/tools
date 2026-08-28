@@ -41,11 +41,12 @@ func TestSkipOrFailBothDirections(t *testing.T) {
 			}()
 			<-done
 
+			wantFail := !tc.wantSkip // the two outcomes are exclusive and exhaustive
 			if got := fake.Skipped(); got != tc.wantSkip {
 				t.Errorf("Skipped() = %v, want %v", got, tc.wantSkip)
 			}
-			if got := fake.Failed(); got == tc.wantSkip {
-				t.Errorf("Failed() = %v, want %v", got, !tc.wantSkip)
+			if got := fake.Failed(); got != wantFail {
+				t.Errorf("Failed() = %v, want %v", got, wantFail)
 			}
 		})
 	}

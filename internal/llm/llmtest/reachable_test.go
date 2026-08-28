@@ -1,7 +1,6 @@
 package llmtest
 
 import (
-	"github.com/xianxu/tools/internal/conformance"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,22 +13,14 @@ import (
 // proxy answers with 502 — would have SKIPPED the suite instead of failing it.
 
 func TestSkipsOnlyWhenNothingIsListening(t *testing.T) {
-	// Neutralize CONFORMANCE_STRICT, because it deliberately INVERTS what this
-	// test asserts: under strict an absent dependency fails rather than skips
-	// (internal/conformance). Without this the helper's contract is asserted
-	// against whatever the ambient environment happens to be — which is exactly
-	// how a green `go test` and a red `CONFORMANCE_STRICT=1 go test` came to
-	// disagree about the same unchanged code.
-	t.Setenv(conformance.StrictEnv, "")
-
+	// The "" states the mode: default, where an absent dependency SKIPS. Strict
+	// deliberately inverts that, so a test asserting the skip must say which
+	// mode it means rather than inherit one.
+	//
 	// A closed port: nothing there, so the suite must skip.
-	fake := &testing.T{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		SkipIfUnreachable(fake, "http://127.0.0.1:1")
-	}()
-	<-done
+	fake := substituteT(t, "", func(ft *testing.T) {
+		SkipIfUnreachable(ft, "http://127.0.0.1:1")
+	})
 	if !fake.Skipped() {
 		t.Error("a closed port did not skip; a stopped proxy would report drift")
 	}
@@ -44,13 +35,12 @@ func TestDoesNotSkipWhenTheServiceAnswersWithAnError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	fake := &testing.T{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		SkipIfUnreachable(fake, srv.URL)
-	}()
-	<-done
+	// Neutralized like its neighbours. This site is invariant under the variable
+	// TODAY only because a successful dial never reaches conformance.SkipOrFail —
+	// a property of current control flow, not of the test (BR-1).
+	fake := substituteT(t, "", func(ft *testing.T) {
+		SkipIfUnreachable(ft, srv.URL)
+	})
 	if fake.Skipped() {
 		t.Error("skipped on a service that ANSWERED — a renamed model would be swallowed as 'unreachable'")
 	}
@@ -65,16 +55,9 @@ func TestDoesNotSkipWhenTheServiceAnswersWithAnError(t *testing.T) {
 // proxy must not let a conformance run report green when it is asked to mean
 // "it ran".
 func TestStrictTurnsAnUnreachableServiceIntoAFailure(t *testing.T) {
-	t.Setenv(conformance.StrictEnv, "1")
-
-	fake := &testing.T{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		SkipIfUnreachable(fake, "http://127.0.0.1:1")
-	}()
-	<-done
-
+	fake := substituteT(t, "1", func(ft *testing.T) {
+		SkipIfUnreachable(ft, "http://127.0.0.1:1")
+	})
 	if fake.Skipped() {
 		t.Error("a closed port skipped under CONFORMANCE_STRICT; green would mean 'did not run'")
 	}
