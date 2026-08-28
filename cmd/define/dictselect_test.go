@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -23,6 +24,7 @@ func installedOnThisMachine() []dictMeta {
 		{ID: "com.apple.dictionary.OAWT", Langs: []langPair{{Index: "en", Description: "en"}}}, // thesaurus
 		{ID: "com.apple.accessibility.dictionary.TTY", Langs: []langPair{{Index: "en", Description: "en"}}},
 		{ID: "com.apple.dictionary.NOAD", Langs: []langPair{{Index: "en", Description: "en"}}},
+		{ID: "com.apple.dictionary.AppleDictionary", Langs: []langPair{{Index: "en", Description: "en"}}},
 		{ID: "com.apple.dictionary.es.DGLEV", Langs: []langPair{{Index: "es", Description: "es"}}},
 		{ID: "com.apple.dictionary.OxfordSpanish", Langs: []langPair{
 			{Index: "es", Description: "es"},
@@ -31,33 +33,49 @@ func installedOnThisMachine() []dictMeta {
 	}
 }
 
+// ids is what the caller actually consumes: the chosen identifiers, in order.
+func ids(ms []dictMeta) []string {
+	out := make([]string, len(ms))
+	for i, m := range ms {
+		out[i] = m.ID
+	}
+	return out
+}
+
 func TestChooseDictionary(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		lang store.Lang
-		want string
+		want []string
 		ok   bool
 	}{
 		{
-			name: "English prefers the curated general dictionary over two thesauruses",
-			lang: "en", want: "com.apple.dictionary.NOAD", ok: true,
+			// In CURATED order, and both of them: NOAD answers ordinary words,
+			// Apple Dictionary answers iPhone. Neither can leak another language
+			// because both index en->en, which is what separates this from the
+			// NULL search over every ACTIVE dictionary.
+			name: "English takes both curated books, NOAD first, thesauruses never",
+			lang: "en",
+			want: []string{"com.apple.dictionary.NOAD", "com.apple.dictionary.AppleDictionary"},
+			ok:   true,
 		},
 		{
 			name: "Spanish is the monolingual Larousse, not the bilingual Oxford",
-			lang: "es", want: "com.apple.dictionary.es.DGLEV", ok: true,
+			lang: "es", want: []string{"com.apple.dictionary.es.DGLEV"}, ok: true,
 		},
 		{
 			// Honest degradation, and the Done-when row it serves: a word absent
 			// from the current language reports NO ENTRY rather than silently
 			// answering from English.
 			name: "a language nothing indexes is not found, never substituted",
-			lang: "de", want: "", ok: false,
+			lang: "de", want: nil, ok: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, ok := chooseDictionary(installedOnThisMachine(), tc.lang)
-			if ok != tc.ok || got.ID != tc.want {
-				t.Errorf("chooseDictionary(%q) = (%q, %v), want (%q, %v)", tc.lang, got.ID, ok, tc.want, tc.ok)
+			if ok != tc.ok || !slices.Equal(ids(got), tc.want) {
+				t.Errorf("chooseDictionary(%q) = (%v, %v), want (%v, %v)",
+					tc.lang, ids(got), ok, tc.want, tc.ok)
 			}
 		})
 	}
@@ -96,8 +114,8 @@ func TestChooseDictionaryWithNoCuratedMatch(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got, ok := chooseDictionary(tc.installed, tc.lang); ok {
-				t.Errorf("chooseDictionary(%q) picked %q; an uncurated choice must defer to NULL",
-					tc.lang, got.ID)
+				t.Errorf("chooseDictionary(%q) picked %v; an uncurated choice must defer to NULL",
+					tc.lang, ids(got))
 			}
 		})
 	}
@@ -114,13 +132,13 @@ func TestChooseDictionaryWithNoCuratedMatch(t *testing.T) {
 // glosses back into a Spanish session.
 func TestChooseDictionaryRequiresEVERYPairToBeMonolingual(t *testing.T) {
 	curatedButBilingual := []dictMeta{
-		{ID: curated["es"], Langs: []langPair{
+		{ID: curated["es"][0], Langs: []langPair{
 			{Index: "es", Description: "es"},
 			{Index: "es", Description: "en"}, // headwords Spanish, definitions English
 		}},
 	}
 	if got, ok := chooseDictionary(curatedButBilingual, "es"); ok {
-		t.Errorf("accepted %q as monolingual Spanish though it defines in English", got.ID)
+		t.Errorf("accepted %v as monolingual Spanish though it defines in English", ids(got))
 	}
 }
 
@@ -141,9 +159,10 @@ func TestChooseDictionaryDoesNotDependOnOrder(t *testing.T) {
 			// Every rotation, so no single ordering is privileged.
 			shuffled = append(shuffled[i:], shuffled[:i]...)
 			got, ok := chooseDictionary(shuffled, lang)
-			if !ok || got.ID != want.ID {
-				t.Errorf("%s: rotation %d = (%q, %v), want %q — the API returns a SET",
-					lang, i, got.ID, ok, want.ID)
+			if !ok || !slices.Equal(ids(got), ids(want)) {
+				t.Errorf("%s: rotation %d = (%v, %v), want %v — the API returns a SET, and "+
+					"preference must come from the curated list rather than from position",
+					lang, i, ids(got), ok, ids(want))
 			}
 		}
 	}
@@ -153,6 +172,6 @@ func TestChooseDictionaryDoesNotDependOnOrder(t *testing.T) {
 // however curated it is — NOAD must not answer for Spanish.
 func TestChooseDictionaryIgnoresDictionariesThatDoNotIndexTheLanguage(t *testing.T) {
 	if got, ok := chooseDictionary(installedOnThisMachine(), "fr"); ok {
-		t.Errorf("chooseDictionary(fr) = %q; nothing installed indexes French", got.ID)
+		t.Errorf("chooseDictionary(fr) = %v; nothing installed indexes French", ids(got))
 	}
 }

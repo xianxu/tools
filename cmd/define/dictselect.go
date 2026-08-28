@@ -56,12 +56,23 @@ func (m dictMeta) monolingualIn(l store.Lang) bool {
 // A short list, easy to extend, and deliberately not a fallback ordering: on a
 // machine whose installed set nobody has curated, chooseDictionary reports "not
 // found" and the caller degrades to today's behaviour rather than guessing.
-var curated = map[store.Lang]string{
-	"en": "com.apple.dictionary.NOAD",
-	"es": "com.apple.dictionary.es.DGLEV",
+// A LIST per language, in preference order, because "the English dictionary" is
+// not one book. NOAD answers ordinary words and is the one whose notation matches
+// Google's; Apple Dictionary answers iPhone, iPad and MacBook, which NOAD simply
+// does not have. Both index en->en, so neither can leak another language in.
+//
+// Selecting only NOAD was the first shape and it was a real regression: `define
+// iPhone` went from an entry to "no dictionary entry". Selecting nothing — the
+// pre-#23 NULL search over every ACTIVE dictionary — is the other failure, and a
+// worse one: with Spanish dictionaries enabled, `madrugar` answers in ENGLISH
+// mode, which is precisely the Done-when row this milestone exists to satisfy.
+// An ordered list of same-language dictionaries is what satisfies both.
+var curated = map[store.Lang][]string{
+	"en": {"com.apple.dictionary.NOAD", "com.apple.dictionary.AppleDictionary"},
+	"es": {"com.apple.dictionary.es.DGLEV"},
 }
 
-// chooseDictionary answers "which installed dictionary serves language L".
+// chooseDictionary answers "which installed dictionaries serve language L".
 //
 // Metadata NARROWS, a curated default DECIDES. The two steps are separate
 // because only the first is derivable: "indexes L, monolingually" is a fact the
@@ -72,15 +83,18 @@ var curated = map[store.Lang]string{
 // known-good for this language", and the caller's answer to that is today's NULL
 // behaviour — never a different language's dictionary, which would put the
 // flat-topped hill back in a Spanish session.
-func chooseDictionary(installed []dictMeta, l store.Lang) (dictMeta, bool) {
-	want, ok := curated[l]
-	if !ok {
-		return dictMeta{}, false
-	}
+// Returns them in CURATED order, not installed order — the installed set is a
+// CFSet with no order at all, so preference has to come from the list.
+func chooseDictionary(installed []dictMeta, l store.Lang) ([]dictMeta, bool) {
+	byID := make(map[string]dictMeta, len(installed))
 	for _, m := range installed {
-		if m.ID == want && m.monolingualIn(l) {
-			return m, true
+		byID[m.ID] = m
+	}
+	var out []dictMeta
+	for _, want := range curated[l] {
+		if m, ok := byID[want]; ok && m.monolingualIn(l) {
+			out = append(out, m)
 		}
 	}
-	return dictMeta{}, false
+	return out, len(out) > 0
 }

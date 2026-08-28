@@ -247,29 +247,47 @@ func baseLang(s string) string {
 	return s
 }
 
-// selectedDictionary looks a word up in ONE chosen dictionary.
-type selectedDictionary struct{ id string }
+// selectedDictionary looks a word up in the chosen dictionaries FOR ONE
+// LANGUAGE, in curated order, and reports the first entry.
+//
+// A list rather than one, because "the English dictionary" is not one book: NOAD
+// answers ordinary words, Apple Dictionary answers iPhone. Both index en->en, so
+// walking them cannot leak another language — which is the property that
+// distinguishes this from the NULL search over every ACTIVE dictionary.
+type selectedDictionary struct{ ids []string }
 
 func (d selectedDictionary) Lookup(word string) (string, error) {
-	cid, cw := C.CString(d.id), C.CString(word)
-	defer C.free(unsafe.Pointer(cid))
+	cw := C.CString(word)
 	defer C.free(unsafe.Pointer(cw))
-	var status C.int
-	res := C.dcs_lookup_in(cid, cw, &status)
-	if res == nil {
+
+	var lastErr error = ErrNoEntry
+	for _, id := range d.ids {
+		cid := C.CString(id)
+		var status C.int
+		res := C.dcs_lookup_in(cid, cw, &status)
+		C.free(unsafe.Pointer(cid))
+		if res != nil {
+			out := C.GoString(res)
+			C.free(unsafe.Pointer(res))
+			return out, nil
+		}
 		switch status {
 		case 1:
-			// The word is not in THIS language. A real answer, and the one the
-			// mode makes possible: sycophantic has no Spanish entry, and saying
-			// so beats answering from English.
-			return "", ErrNoEntry
+			// Not in THIS dictionary. Keep going — the next one may have it —
+			// and if none do, that absence is the answer the mode makes
+			// possible: sycophantic has no Spanish entry, and saying so beats
+			// answering from English.
+			lastErr = ErrNoEntry
 		case 3:
-			return "", fmt.Errorf("%w: dictionary %s is unavailable", ErrLookupFailed, d.id)
+			// The dictionary itself is gone, which is NOT the same as the word
+			// being absent. Recorded so a vanished dictionary cannot masquerade
+			// as a missing word, but still tried against the rest of the list.
+			lastErr = fmt.Errorf("%w: dictionary %s is unavailable", ErrLookupFailed, id)
+		default:
+			lastErr = ErrLookupFailed
 		}
-		return "", ErrLookupFailed
 	}
-	defer C.free(unsafe.Pointer(res))
-	return C.GoString(res), nil
+	return "", lastErr
 }
 
 // noadDictionary is the pre-#23 path: DCSCopyTextDefinition with a NULL
@@ -317,16 +335,20 @@ func systemDictionary(lang store.Lang, warn io.Writer) (Dictionary, string) {
 		warnf(warn, "the dictionary-selection API is unavailable; searching every active dictionary")
 		return noadDictionary{}, everyActiveDictionary
 	}
-	m, ok := chooseDictionary(installed, lang)
+	chosen, ok := chooseDictionary(installed, lang)
 	if !ok {
 		warnf(warn, "no known %s dictionary is installed; searching every active dictionary", lang)
 		return noadDictionary{}, everyActiveDictionary
+	}
+	ids := make([]string, len(chosen))
+	for i, m := range chosen {
+		ids[i] = m.ID
 	}
 	// SILENT on the happy path, and the name is reported by /lang instead. A line
 	// per lookup saying the expected thing happened is noise; a learner on a
 	// machine with a different set installed asks the question once, and /lang is
 	// where the answer belongs.
-	return selectedDictionary{id: m.ID}, m.ID
+	return selectedDictionary{ids: ids}, strings.Join(ids, ", ")
 }
 
 // everyActiveDictionary is what the NULL search is called when /lang reports it.
