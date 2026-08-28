@@ -34,6 +34,7 @@ define /history             # a command works as an argument too
 define --sound 1 record     # play once instead of three times
 define -no-audio bank       # no fetch, no sound
 define -locale gb colour    # British pronunciation
+define -lang es madrugar    # one lookup in Spanish, without switching
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
@@ -173,13 +174,32 @@ was actually sent: with no model configured nothing is, so nothing is recorded.
 A model that is configured but does not answer says so, and the question is kept.)
 
 ```
-words/sycophantic.yaml     one file per word
+words/en/sycophantic.yaml  one file per word, under its language
+words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            kinds: looked-up, asked  (answers are NOT stored)
+lang.txt                   which language this directory is in
 user-model.md              written by --reflect, read to pitch answers;
                            its ## Corrections section is yours and is never
                            rewritten
 ```
+
+**One language at a time.** `/lang` says which one, `/lang es` switches, and the
+setting stays with the directory — unlike `/sound`, which lasts one session.
+It has to persist: a one-shot `define madrugar` has no session to inherit from,
+and re-declaring the language at every lookup is the friction the mode removes.
+Everything follows it — the deck a word files into, the words `--play` offers,
+and the recording that is fetched. `-lang es` is the one-run form, for scripts
+that should not have to change state to ask a question.
+
+The event log is deliberately *not* split by language: a review event names a
+word, and which deck it came from is the deck's business. "How much did I study
+today" stays one question rather than a join.
+
+A deck from before this existed is moved under `words/en/` the next time
+`define` runs, and it says so. That move cannot tell languages apart — a Spanish
+word filed earlier lands in `words/en/` too — so it prints what it moved and
+leaves a `mv` to you. It never overwrites and never deletes.
 
 A failed lookup is recorded as history but never enters the deck, so typos are
 recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
@@ -278,8 +298,17 @@ in-session form of `--sound`, which sets it for one run. (`-times` is the older
 name for `--sound` and still works; passing both is a usage error rather than a
 guess at which you meant.)
 
-Lookup goes through macOS's CoreServices, which searches **every active
-dictionary** rather than NOAD specifically — the SDK offers no way to pick one.
+`/lang` reports the language this directory is in; `/lang es` switches it and
+keeps it. That is the deliberate difference from `/sound`: a language has to
+survive the session, because a one-shot lookup has no session to inherit one
+from. `-lang es` is the same choice for a single run, without writing it down.
+
+Lookup goes through macOS's CoreServices, which today searches **every active
+dictionary** rather than one you pick. That is a choice, not a limit: the public
+header documents the dictionary argument as "always pass NULL", but the framework
+does export the calls needed to select one, and 87 dictionaries are installed on
+a stock machine. Selecting per language is `#23 M2` — until it lands, `mesa` in a
+Spanish session is filed as Spanish but still defined as the flat-topped hill.
 NOAD answers for ordinary English words (hence the Google-matching notation), but
 `iPhone` comes from Apple Dictionary, and enabling the Chinese dictionaries will
 return entries this tool does not format. Adjust the set in Dictionary.app.

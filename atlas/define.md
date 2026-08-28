@@ -208,16 +208,40 @@ stranded the indicator — the arithmetic has nothing left to correct for.
 ## The store
 
 Persistence is YAML files under the **working directory** — no config, no brain
-resolution, no home-directory search. `NewYAML(dir, warn)` takes the directory as
-a parameter, so *who chooses it* stays one line at the boundary if a config
-arrives later.
+resolution, no home-directory search. `NewYAML(dir, lang, warn)` takes both the
+directory and the language as parameters, so *who chooses them* stays one line at
+the boundary if a config arrives later.
 
 ```
-words/<slug>.yaml        one file per word
+words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
                          kinds: looked-up, asked
+lang.txt                 the directory's language (#23)
 user-model.md            the learner model — markdown, because a person edits it
 ```
+
+**Language is a DECK dimension, not an event one (`#23`).** Only `wordsDir()`
+carries the language; `eventsDir()`, `usageDir()` and `userModelFile()` do not.
+A review event names a word and a verdict, and which deck it came from is the
+deck's business — splitting the log would turn "how much did I study today" into
+a join, and would get there by migrating an append-only artifact. If a later
+issue wants per-language study totals, that is a join over the deck.
+
+**A pre-language deck is migrated, blindly and non-destructively.**
+`MigrateFlatDeck(dir, warn)` runs once in `openStore` and moves `words/*.yaml`
+into `words/en/` — without it, every existing word is orphaned rather than lost,
+since `Deck()` now reads `words/<lang>/`. It takes NO language: the destination
+is always the default, justified by a fact about the files rather than a
+preference — a flat deck was written by a tool that only ever consulted the
+English dictionary and asked for `_en_us_` recordings. Taking the *active*
+language instead would mean one `define -lang es` on a first run filed an entire
+English deck under `words/es/`.
+
+It therefore cannot tell a Spanish word from an English one, and says so instead
+of guessing. On a collision the subdirectory wins, the flat file **survives** and
+is named — inert, because nothing reads `words/*.yaml` any more, which is what
+makes "leave it" strictly non-destructive on the one artifact here that cannot be
+regenerated.
 
 **What that layout buys, stated precisely:** it does *not* make sync conflicts
 impossible — the same word, or the same day, touched on two machines still
@@ -418,6 +442,33 @@ literal is `\word`. `matchesFor` unwraps both — the `?` especially, because
 requiring the user to type one to complete a question they asked without one
 would make past questions uncompletable. `/` is deliberately not unwrapped:
 commands are a real separate namespace, not a marker on a word.
+
+### `/lang` and the one thing a `deps` swap cannot reach
+
+`/lang` is two halves with different preconditions, and separating them is what
+makes a one-shot `define /lang es` work: **persisting needs a DIRECTORY,
+re-deriving needs a SESSION.** `newCommandCtx` supplies the durable half
+(`deps.persistLang`), and both loops override it with `sessionSetLang`, which
+adds the rebuild. So the only case `/lang` refuses is having nowhere to write —
+where `/sound` refuses whenever there is no session, because `/sound` is
+explicitly for the rest of *this* session and a language outlives it.
+
+The rebuild goes through **one builder called twice**: `openStore` constructs the
+session with `newDeck(lang)`, and `/lang` calls the same closure. Only the
+language-scoped triple — `deck`, `capture`, `vocab` — is rebuilt. `history` reads
+`events/` and `usage` reads `usage/`, so re-deriving them would put a second,
+*unloaded* `History` beside the one `runEditor` already `Load()`ed — which is
+why `openStore` deliberately builds a second, flat store for those two.
+
+**`sessionSetLang` takes `&voc`, and that parameter is the whole point.**
+`runEditor` resolves the highlight set into a LOCAL before its loop starts
+(`voc := vocabularyFor(d, opt)`), reads it on every redraw, and a `deps`
+reassignment structurally cannot reach it. Without the pointer the editor keeps
+painting the previous language's words while every other path has moved on.
+`TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` is the pin: dropping
+the reassignment reddens three of its assertions. The general shape — *a loop
+local derived from `d` before the loop* — is why the switch lives in the loop
+that owns those locals rather than in `commandCtx`.
 
 ## Highlighting the words you are learning
 
@@ -976,7 +1027,8 @@ returns them in preference order:
 
 ```
 …/pronunciation/2022-03-02/audio/sy/sycophantic_en_us_1.mp3   (and _2)
-…/sounds/oxford/sycophantic--_us_1.mp3                        (and _2)
+…/sounds/oxford/sycophantic--_us_1.mp3                        (and _2)   English only
+…/pronunciation/2022-03-02/audio/ma/madrugar_es_es_1.mp3      (and _2)
 ```
 
 The order is measured, not assumed: across a 10-word survey the 2022 generation
@@ -984,6 +1036,31 @@ strictly dominates the legacy paths (`gaslighting` exists only on the newer one;
 `defenestrate` needs `_2` on the older one). That is why there is a candidate
 *list* rather than one URL, and `fetch_conformance_test.go` asserts both facts
 still hold.
+
+**One language, no fallback (`#23`).** `AudioCandidates` takes a `voice{Lang,
+Locale}` and builds for that language alone. There is no ordering policy across
+languages and no cross-language fallback, because the mode already answered the
+question a fallback would be guessing at. `#27`'s planned `voices()` was deleted
+rather than adapted for exactly that reason.
+
+`voice` is a struct rather than two strings because `"es"` is a legal value of
+**both** fields — two positional arguments are transposable at every call site
+and the compiler cannot tell.
+
+**The legacy generation is gated to English**, on measurement: `madrugar--_us_1`
+and `madrugar--_es_1` are both 404 while `sycophantic--_us_1` is 200. At
+~300–600 ms per miss against ~40 ms per hit, asking anyway costs most of a second
+per Spanish lookup for a guaranteed 404. `TestTheFetchLoopAsksOnlyForTheSessionsLanguage`
+asserts what is actually REQUESTED, not just what the pure function
+returns — its negative case is the one that catches a regression here.
+
+**The interim locale rule, which `#27` inherits.** `localeFor` gives one rule and
+one exception: the locale is the language code (`es` → `es_es`), except English,
+whose CDN recordings are `_en_us_` / `_en_gb_`. `-locale` is documented as "us or
+gb" — English variants — so it applies to English only and *says so* for any
+other language rather than being silently dropped, which would build
+`madrugar_es_gb_1.mp3`, a URL form nothing has measured. The complaint is printed
+once, where the language and the flags first meet, not once per replay.
 
 `playN` keeps the repeat loop in the shell rather than behind `Player.Play(n)`,
 so `fakePlayer` can count plays — which is how "play it three times" is an

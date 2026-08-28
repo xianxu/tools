@@ -58,6 +58,33 @@ five commits.
 | `TestNoTrackedRuntimeState` | the **index** | a deck file staged or committed |
 | `TestNoRuntimeStateInHistory` | **history** | deck blobs still reachable from `HEAD` |
 
+**Directories were only half of it (`#23`).** `store.RuntimeDirs` single-sources
+`words/`, `events/` and `usage/` into all three places; it structurally could not
+see a runtime *file*, so `user-model.md` — which `--reflect` writes into the
+current directory, carrying inferred claims about the learner — reached none of
+them. `git check-ignore -v user-model.md` matched nothing. Nothing leaked, but
+`#23`'s `lang.txt` would have been the second instance, so `store.RuntimeFiles`
+is the sibling list and `TestGitignoreCoversRuntimeFiles` plus an
+`isRuntimeFile(basename)` arm on both guards close the same three places.
+
+**A runtime basename is RESERVED**, and that falls out of the un-anchored
+patterns rather than being an extra rule: a tracked file sharing one of these
+names is silently un-addable after a `git rm`. The golden fixture at `cmd/define/testdata/golden/` was squatting on exactly
+that and is now `user-model.golden.md`; the index guard is what says so out loud
+if it happens again.
+
+That also decided the setting's *name*. `lang.txt` rather than `lang`, because a
+bare un-anchored `lang` would additionally hide any **directory** of that name
+anywhere in the tree — and a basename guard cannot see that. The extension costs
+nothing and closes the hole.
+
+**The history arm carries a ratchet, not an exemption.** Two 995-byte blobs of
+the renamed fixture stay reachable from `HEAD`, and rewriting history for
+synthetic sample output would be disproportionate. `legacyRuntimeFilePaths` pins
+them as an exact set — per this repo's rule that a known limitation is a ratchet
+rather than a comment — so a *second* such path fails immediately and the map can
+only ever shrink.
+
 Same two-place split as the binary guards, and for the same reason — the first
 version of the runtime-state guard checked only the index, which is precisely the
 half-fix that left a 9.6 MB binary reachable in `#4` after its file was removed.

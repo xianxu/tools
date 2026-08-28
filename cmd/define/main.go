@@ -374,7 +374,13 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"see the list, keep typing to narrow it, Tab to complete. /history\n"+
 			"shows what you looked up in the last two days (/history 7, or\n"+
 			"--days 7, for a wider window); /sound sets how many times a\n"+
-			"pronunciation plays for the rest of the session.\n\n"+
+			"pronunciation plays for the rest of the session; /lang says which\n"+
+			"language this deck is in, and /lang es switches it.\n\n"+
+			"define works in ONE language at a time. The setting lives in the\n"+
+			"directory, so a one-shot lookup inherits it with no session to ask;\n"+
+			"-lang es applies to one run without changing it. Each language has\n"+
+			"its own deck under words/<lang>/, so a review session never mixes\n"+
+			"them.\n\n"+
 			"A line that is not a word and reads as a question is answered by\n"+
 			"the model rather than looked up — there is no mode to switch. The\n"+
 			"dictionary is asked first, so multi-word headwords (hot dog) are\n"+
