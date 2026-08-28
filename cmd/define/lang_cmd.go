@@ -43,12 +43,6 @@ func runLang(c commandCtx, args []string) int {
 		fmt.Fprintf(c.stdout, "  defining in %s\n", c.lang)
 		return 0
 	}
-	if lang == c.lang {
-		// Not an error, and not silent either: the learner asked for a state and
-		// is in it. Saying nothing would read as the command having failed.
-		fmt.Fprintf(c.stdout, "  already defining in %s\n", lang)
-		return 0
-	}
 	if c.setLang == nil {
 		// No directory to write to — DEFINE_NO_CAPTURE, or an unopenable one.
 		// Accepting silently would be a lie about what it did, exactly as it
@@ -59,6 +53,14 @@ func runLang(c commandCtx, args []string) int {
 	if err := c.setLang(lang); err != nil {
 		fmt.Fprintf(c.stderr, "define: /lang: %v\n", err)
 		return 2
+	}
+	if lang == c.lang {
+		// Persisted anyway, and the message says which of the two things
+		// happened. A directory with no lang.txt is ALREADY "en" by default, so
+		// skipping the write here would leave "/lang en" with no way to make that
+		// explicit — the one state a learner cannot otherwise reach.
+		fmt.Fprintf(c.stdout, "  still defining in %s, now on the record\n", lang)
+		return 0
 	}
 	fmt.Fprintf(c.stdout, "  now defining in %s\n", lang)
 	return 0

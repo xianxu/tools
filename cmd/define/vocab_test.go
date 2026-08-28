@@ -426,7 +426,7 @@ func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
 		t.Fatal("the English session does not start from the English deck")
 	}
 
-	setLang := sessionSetLang(&d, opt, d.persistLang, &voc)
+	setLang := sessionSetLang(&d, &opt, d.persistLang, &voc, &warn)
 	if setLang == nil {
 		t.Fatal("no setLang in a directory that has a store")
 	}
@@ -463,7 +463,7 @@ func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
 // of accepting a switch it cannot keep.
 func TestSessionSetLangIsNilWithNowhereToPersist(t *testing.T) {
 	d := deps{}
-	if got := sessionSetLang(&d, options{}, nil, nil); got != nil {
+	if got := sessionSetLang(&d, &options{}, nil, nil, nil); got != nil {
 		t.Error("built a session switch with no directory to persist to")
 	}
 }

@@ -454,21 +454,40 @@ where `/sound` refuses whenever there is no session, because `/sound` is
 explicitly for the rest of *this* session and a language outlives it.
 
 The rebuild goes through **one builder called twice**: `openStore` constructs the
-session with `newDeck(lang)`, and `/lang` calls the same closure. Only the
-language-scoped triple — `deck`, `capture`, `vocab` — is rebuilt. `history` reads
+session with `newDeck(lang)`, and `/lang` calls the same closure. `history` reads
 `events/` and `usage` reads `usage/`, so re-deriving them would put a second,
 *unloaded* `History` beside the one `runEditor` already `Load()`ed — which is
 why `openStore` deliberately builds a second, flat store for those two.
 
-**`sessionSetLang` takes `&voc`, and that parameter is the whole point.**
-`runEditor` resolves the highlight set into a LOCAL before its loop starts
-(`voc := vocabularyFor(d, opt)`), reads it on every redraw, and a `deps`
-reassignment structurally cannot reach it. Without the pointer the editor keeps
-painting the previous language's words while every other path has moved on.
-`TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` is the pin: dropping
-the reassignment reddens three of its assertions. The general shape — *a loop
-local derived from `d` before the loop* — is why the switch lives in the loop
-that owns those locals rather than in `commandCtx`.
+**`applyLang` owns the enumeration, and the enumeration is the point.** The rule
+that generates it: *anything derived from the language BEFORE a switch must be
+re-derived BY the switch.* The members are `d.lang`, `opt.voice`, the deck triple
+(`deck`/`capture`/`vocab`) and the raw editor's cached `voc`; `#23 M2` adds
+`d.dict`, and `applyLang`'s comment is where that is written down.
+
+This list is not decoration. M1's boundary review found it one member short:
+`opt.voice` was resolved once at the boundary and never re-derived, so a
+mid-session `/lang es` left the fetch loop asking for the four **English** URLs —
+including the two legacy `/sounds/oxford/` ones this same range had just gated to
+English for costing ~450 ms per guaranteed miss. The deck went Spanish and the
+pronunciation did not. `applyVoice` now makes that derivation ONE function with
+two callers, because two expressions for one derived value is exactly how they
+drift apart.
+
+**The `&voc` parameter is the subtlest member.** `runEditor` resolves the
+highlight set into a LOCAL before its loop starts (`voc := vocabularyFor(d,
+opt)`), reads it on every redraw, and a `deps` reassignment structurally cannot
+reach it. Without the pointer the editor keeps painting the previous language's
+words while every other path has moved on. The general shape — *a loop local
+derived from `d` before the loop* — is why the switch lives in the loop that owns
+those locals rather than in `commandCtx`.
+
+Two pins, at two altitudes, and both were mutation-checked:
+`TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` for the editor local,
+and `TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage` — which drives
+`/lang es` through `run()` and asserts what the CDN was ASKED for — for the
+voice. The second is the one that matters most: a unit test on `voiceFor` could
+never have caught the bug, because `voiceFor` was always right.
 
 ## Highlighting the words you are learning
 

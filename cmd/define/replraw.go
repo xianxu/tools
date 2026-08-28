@@ -228,7 +228,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 						// d alone would leave the editor highlighting from the
 						// previous language's deck — the one thing a deps swap
 						// cannot reach.
-						cc.setLang = sessionSetLang(&d, opt, cc.setLang, &voc)
+						cc.setLang = sessionSetLang(&d, &opt, cc.setLang, &voc, stderr)
 						dispatchCommand(cmd, commands, cc)
 					}); err != nil {
 						return lostTerminal(err)

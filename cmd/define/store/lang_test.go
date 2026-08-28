@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -47,16 +48,21 @@ func TestParseLang(t *testing.T) {
 // Whatever ParseLang accepts must be safe to join onto a path — the property
 // behind the table above, asserted directly so a future relaxation of the tag
 // rule cannot quietly reintroduce traversal.
+//
+// The assertion is that filepath.Join cannot be made to LEAVE the base
+// directory, which is the actual danger; an earlier version compared the tag
+// against "/" and ".." and was subsumed by its own length check, so it tested
+// nothing the table above had not.
 func TestAcceptedLangIsASafePathSegment(t *testing.T) {
+	base := t.TempDir()
 	for _, in := range []string{"en", "es", "ZZ", "  de  "} {
 		l, err := ParseLang(in)
 		if err != nil {
 			t.Fatalf("ParseLang(%q): %v", in, err)
 		}
-		for _, bad := range []string{"/", `\`, ".", ".."} {
-			if string(l) == bad || len(string(l)) != 2 {
-				t.Errorf("ParseLang(%q) = %q, which is not a two-letter path segment", in, l)
-			}
+		joined := filepath.Join(base, "words", string(l))
+		if !strings.HasPrefix(filepath.Clean(joined), filepath.Clean(base)+string(filepath.Separator)) {
+			t.Errorf("ParseLang(%q) = %q, which escapes the deck directory: %s", in, l, joined)
 		}
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -59,4 +60,22 @@ func localeFor(l store.Lang, flag string, flagSet bool) (locale string, complain
 func voiceFor(l store.Lang, flag string, flagSet bool) (voice, string) {
 	locale, complaint := localeFor(l, flag, flagSet)
 	return voice{Lang: l, Locale: locale}, complaint
+}
+
+// applyVoice derives the session's voice from a language.
+//
+// One derivation with two callers — the boundary in run(), and applyLang for a
+// mid-session /lang. They existed as two expressions for exactly one commit, and
+// in that commit only the first ran: a /lang es session kept asking the CDN for
+// English URLs, including the legacy pair that had just been gated to English.
+// A derived value with one deriving function cannot drift like that.
+//
+// The complaint is printed HERE rather than returned, because both callers do
+// the same thing with it and the alternative is two chances to drop it.
+func applyVoice(opt *options, l store.Lang, warn io.Writer) {
+	v, complaint := voiceFor(l, opt.locale, opt.localeSet)
+	opt.voice = v
+	if complaint != "" && warn != nil {
+		fmt.Fprintf(warn, "define: %s\n", complaint)
+	}
 }

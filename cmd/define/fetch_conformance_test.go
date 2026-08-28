@@ -57,6 +57,35 @@ func TestCDNStillServesTheExpectedPaths(t *testing.T) {
 	}
 }
 
+// The SPANISH facts, which #23 added and which had no live row until this one.
+//
+// The English-only gate on the legacy path (audiourl.go) rests on measurement,
+// and measurement that lives only in a comment and in a fake written to agree
+// with it is not checked by anything. Without this, a CDN move would surface as
+// silence in Spanish sessions — a language whose recordings simply stopped
+// arriving, with every test still green.
+func TestCDNStillServesSpanishOnTheExpectedPaths(t *testing.T) {
+	cands := AudioCandidates("madrugar", voice{Lang: "es", Locale: "es"})
+	// Fact 1: the 2022 generation serves Spanish at _es_es_.
+	if got := head(t, cands[0]); got != http.StatusOK {
+		t.Errorf("madrugar on the Spanish 2022 path = %d, want 200 — Spanish recordings "+
+			"may have moved, and a Spanish session would go silent", got)
+	}
+	// Fact 2: the legacy generation does NOT, which is why AudioCandidates emits
+	// it for English only. If this starts returning 200 the gate is no longer
+	// justified by measurement and should be re-surveyed rather than kept.
+	legacy := audioBase + "/sounds/oxford/madrugar--_es_1.mp3"
+	if got := head(t, legacy); got == http.StatusOK {
+		t.Errorf("the legacy path now serves Spanish (%s) — re-run the survey; "+
+			"AudioCandidates gates it to English on the measurement that it does not", legacy)
+	}
+	for _, u := range cands {
+		if strings.Contains(u, "/sounds/oxford/") {
+			t.Errorf("a Spanish candidate reached the English-only legacy path: %s", u)
+		}
+	}
+}
+
 func TestCDNReturnsRealAudio(t *testing.T) {
 	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", voice{Lang: "en", Locale: "us"}))
 	if err != nil {

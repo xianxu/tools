@@ -84,7 +84,13 @@ func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) 
 // userModelFile is the third artifact in the directory, beside words/ and
 // events/. Markdown rather than YAML because a person edits it: #17 regenerates
 // the inferred sections and never touches the human-owned ## Corrections.
-func (y *YAML) userModelFile() string { return filepath.Join(y.dir, "user-model.md") }
+//
+// The name comes from RuntimeFiles, for the same reason langFile's does: that
+// list is what .gitignore and both repo guards derive from, so a hand-written
+// copy here would mean renaming the entry moved the guards while SetUserModel
+// kept writing the old name — silently reopening the very hole RuntimeFiles was
+// added to close.
+func (y *YAML) userModelFile() string { return filepath.Join(y.dir, RuntimeFiles[0]) }
 
 // usageDir holds the news cache, one file per word, beside words/ and events/.
 func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }

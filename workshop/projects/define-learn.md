@@ -431,8 +431,8 @@ while checking a Critical finding about something else; `sessionSetLang` takes
 **Scope grown deliberately, once.** `store.RuntimeDirs` single-sourced runtime
 DIRECTORIES into `.gitignore` and two repo guards and structurally could not see
 a runtime FILE — so `user-model.md`, which carries inferred claims about the
-learner, was ignored by nothing at all (`git check-ignore` matched it before this
-milestone and matches it now). `lang.txt` would have been the second instance, so
+learner, was ignored by nothing at all (`git check-ignore` matched NOTHING for it
+before this milestone and matches it now). `lang.txt` would have been the second instance, so
 the fix is the class: `RuntimeFiles`, reaching all three consumers. That forced a
 tracked golden fixture to be renamed off a now-reserved basename, and it decided
 the setting's name — `lang.txt`, because a bare un-anchored `lang` would also

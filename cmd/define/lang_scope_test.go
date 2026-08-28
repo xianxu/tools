@@ -158,3 +158,97 @@ func TestTheHighlightSetFollowsTheMode(t *testing.T) {
 		}
 	}
 }
+
+// C1, the boundary review's Critical: /lang must re-derive the VOICE, not only
+// the deck.
+//
+// This is asserted at the level the bug lived at — drive `/lang es` through
+// run() and look at what the CDN was actually asked for. A unit test on voiceFor
+// cannot see it, because voiceFor was always right; what was wrong is that
+// nothing called it again after the switch. The session's deck went Spanish
+// while its pronunciation stayed English, including the two legacy
+// /sounds/oxford/ URLs that had just been gated to English for costing ~450ms
+// per guaranteed miss.
+//
+// The general rule this pins: anything derived from the language BEFORE a switch
+// must be re-derived BY it. applyLang owns that enumeration.
+func TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage(t *testing.T) {
+	dir := t.TempDir()
+	cdn := newFakeCDN(t, nil) // every URL 404s: we are watching what is ASKED for
+	d := deps{
+		dict:     testDict(t),
+		audio:    &rebasedSource{cdn: cdn},
+		player:   &fakePlayer{},
+		newStore: openStore,
+	}
+	t.Chdir(dir)
+
+	var out, errb bytes.Buffer
+	if code := run(t.Context(), nil, d,
+		strings.NewReader("/lang es\nsycophantic\n"), &out, &errb); code != 0 {
+		t.Logf("exit %d (a missing recording is not a failed lookup): %s", code, errb.String())
+	}
+
+	for _, path := range cdn.Requested() {
+		if strings.Contains(path, "_en_") {
+			t.Errorf("after /lang es the session still asked for an ENGLISH recording: %s", path)
+		}
+		if strings.Contains(path, "/sounds/oxford/") {
+			t.Errorf("after /lang es the session paid for the English-only legacy path: %s", path)
+		}
+	}
+	// And it did ask for the Spanish one, so the assertions above are not
+	// vacuously true of a session that fetched nothing at all.
+	var sawSpanish bool
+	for _, path := range cdn.Requested() {
+		if strings.Contains(path, "_es_es_") {
+			sawSpanish = true
+		}
+	}
+	if !sawSpanish {
+		t.Errorf("the session requested no Spanish recording at all: %v", cdn.Requested())
+	}
+}
+
+// I1: the persisted setting is READ by a one-shot run — the Done-when row
+// "a one-shot `define madrugar` uses the persisted language, with no session to
+// inherit from" was ticked while every test either wrote the setting or passed
+// -lang, so replacing ReadLang with DefaultLang left the suite green.
+func TestAOneShotLookupReadsThePersistedLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		args     []string
+		wantLang store.Lang
+	}{
+		{name: "the persisted setting is used", args: []string{"sycophantic"}, wantLang: "es"},
+		// The precedence, not just the read: the flag still wins for one run.
+		{name: "-lang overrides it", args: []string{"-lang", "en", "sycophantic"}, wantLang: "en"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			// NOT testDeps: it pins a noopCapturer, and withStore only fills nil
+			// fields — so the real capturer never runs and the deck stays empty
+			// whatever the language is. That would make this test pass for the
+			// wrong reason in the opposite direction.
+			d := deps{
+				dict: testDict(t), audio: noAudioSource{}, player: &fakePlayer{},
+				newStore: openStore,
+			}
+			if err := store.WriteLang(dir, "es"); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(dir)
+
+			var out, errb bytes.Buffer
+			run(t.Context(), tc.args, d, strings.NewReader(""), &out, &errb)
+
+			deck, err := store.NewYAML(dir, tc.wantLang, nil).Deck()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(deck) != 1 || deck[0].Text != "sycophantic" {
+				t.Errorf("the word did not land in words/%s/: %+v", tc.wantLang, deck)
+			}
+		})
+	}
+}

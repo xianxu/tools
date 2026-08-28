@@ -282,7 +282,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		// One feed, wrapped in the cache that owns the three outcomes, wrapped in
 		// the source that merges it with the dictionary. Same layering as
 		// fetch.go's cachingAudioSource over httpAudioSource.
-		usage:   &bothSources{news: newCachingFeed(newHTTPFeed(), flat, clk), warn: warn},
+		usage:       &bothSources{news: newCachingFeed(newHTTPFeed(), flat, clk), warn: warn},
 		clock:       clk,
 		lang:        lang,
 		newDeck:     newDeck,
@@ -332,11 +332,17 @@ type options struct {
 	// setting, then English), and only openStore knows the directory.
 	lang store.Lang
 	// voice is the recording to ask for: the language in effect plus its regional
-	// variant. Resolved ONCE, just after withStore, because that is the first
-	// point where both halves are known — the flags here and the language from
-	// the directory. Building it per play would re-emit the -locale complaint on
-	// every replay.
+	// variant. DERIVED FROM THE LANGUAGE, so /lang has to re-derive it — see
+	// applyLang, which owns the whole enumeration. Built once at the boundary
+	// rather than per play so the -locale complaint is not re-emitted on every
+	// replay.
 	voice voice
+	// localeSet records whether -locale was GIVEN, not just what it holds: the
+	// flag's default is "us", so its value alone cannot distinguish "the user
+	// asked for American English" from "nobody said". localeFor needs that
+	// distinction, and it has to survive to a mid-session /lang, which is why it
+	// lives here rather than staying a fs.Visit inside run.
+	localeSet bool
 }
 
 // run is the thin IO shell: parse flags, look up, render, print, play. All of
@@ -464,6 +470,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		locale:    *locale,
 		count:     *count,
 		lang:      lang,
+		localeSet: isSet(fs, "locale"),
 	}
 
 	// Usage errors are settled BEFORE a store is opened. A mistyped command must
@@ -523,13 +530,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// reads the log (History.Load does, when a loop is about to recall).
 	d = d.withStore(opt, stderr)
 	// The language is known only after the store has resolved it, so the voice is
-	// built here rather than at flag parse — and the -locale complaint is printed
-	// exactly once, not once per pronunciation.
-	var localeComplaint string
-	opt.voice, localeComplaint = voiceFor(d.lang, *locale, isSet(fs, "locale"))
-	if localeComplaint != "" {
-		fmt.Fprintf(stderr, "define: %s\n", localeComplaint)
-	}
+	// derived here rather than at flag parse. Through applyVoice, the same
+	// function /lang re-derives it with — one derivation, two callers, which is
+	// what stops the two from disagreeing after a switch.
+	applyVoice(&opt, d.lang, stderr)
 
 	if forgetting {
 		return forgetWord(d, opt, *forget, stdout, stderr)

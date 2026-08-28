@@ -76,7 +76,10 @@ func TestRunLang(t *testing.T) {
 		}
 	})
 
-	t.Run("switching to the current language is not silent", func(t *testing.T) {
+	// A directory with no lang.txt is ALREADY "en" by default, so a no-op switch
+	// is the only way to put that on the record. Skipping the write would leave
+	// the learner no way to make the implicit default explicit.
+	t.Run("re-declaring the current language still persists it", func(t *testing.T) {
 		var out bytes.Buffer
 		called := false
 		c := commandCtx{lang: "en", stdout: &out, stderr: &bytes.Buffer{},
@@ -84,8 +87,8 @@ func TestRunLang(t *testing.T) {
 		if code := runLang(c, []string{"en"}); code != 0 {
 			t.Errorf("exit = %d", code)
 		}
-		if called {
-			t.Error("rewrote the setting for a no-op switch")
+		if !called {
+			t.Error("a no-op switch wrote nothing, so the default stays implicit")
 		}
 		if out.String() == "" {
 			t.Error("said nothing; the learner asked for a state and is in it")
