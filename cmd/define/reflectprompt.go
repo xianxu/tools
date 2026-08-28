@@ -20,8 +20,12 @@ const reflectTaskName = "learner-model"
 func renderReflectPrompt(ev deckEvidence) llm.Request {
 	var b strings.Builder
 
+	// DeckLookups, not Lookups: the "between X and Y" clause is only true of the
+	// deck-scoped count, because the span is computed from deck words alone
+	// (BR-25). Handing the model a premise it can check and find false is worse
+	// than handing it a smaller number.
 	fmt.Fprintf(&b, "## The deck\n\n%d words, looked up %d times between %s and %s. %d questions asked.\n\n",
-		len(ev.Words), ev.Lookups, dateOrNone(ev.From), dateOrNone(ev.To), ev.Questions)
+		len(ev.Words), ev.DeckLookups(), dateOrNone(ev.From), dateOrNone(ev.To), ev.Questions)
 	b.WriteString("| word | times | first | last |\n|---|---|---|---|\n")
 	for _, w := range ev.Words {
 		fmt.Fprintf(&b, "| %s | %d | %s | %s |\n",

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -258,4 +259,47 @@ func TestCheckEvidenceHoldsTheLevelToTheSameBar(t *testing.T) {
 			t.Error("nothing reported")
 		}
 	})
+}
+
+// The count printed beside a window is the count WITHIN that window.
+//
+// ev.Lookups is accumulated over the whole log, including words the deck no
+// longer holds; From..To extends only over deck words. Printing the two together
+// as "looked up N times between X and Y" asserted a containment neither
+// computes — a forgotten word looked up years earlier inflated N and left the
+// span untouched, and that false premise went into the PROMPT that writes the
+// durable artifact (BR-25).
+//
+// DeckLookups is the deck-scoped count the span actually bounds.
+func TestTheLookupCountMatchesTheWindowItIsPrintedBeside(t *testing.T) {
+	jan1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	jan10 := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+
+	ev := foldLookups(
+		[]store.Word{{Text: "kept"}},
+		[]store.ReviewEvent{
+			{Word: "kept", Kind: store.EventLookedUp, Found: true, At: jan10},
+			// Forgotten: real history, outside the deck-scoped span.
+			{Word: "forgotten", Kind: store.EventLookedUp, Found: true, At: jan1},
+			{Word: "forgotten", Kind: store.EventLookedUp, Found: true, At: jan1},
+		},
+		jan10,
+	)
+
+	if ev.DeckLookups() != 1 {
+		t.Errorf("DeckLookups() = %d, want 1 — the count beside the window must be inside it", ev.DeckLookups())
+	}
+	// The whole-log figure is still available and still means what it says.
+	if ev.Lookups != 3 {
+		t.Errorf("Lookups = %d, want 3 — the whole-log count is a different, still-true number", ev.Lookups)
+	}
+	if !ev.From.Equal(jan10) || !ev.To.Equal(jan10) {
+		t.Errorf("span = %s..%s, want the deck word's day only", ev.From, ev.To)
+	}
+
+	// The rendered sentence is the thing that was false, so assert the sentence.
+	got := renderReflectPrompt(ev).Prompt
+	if !strings.Contains(got, "1 words, looked up 1 times between 2026-01-10 and 2026-01-10") {
+		t.Errorf("the prompt states a count its own window does not contain:\n%s", got)
+	}
 }

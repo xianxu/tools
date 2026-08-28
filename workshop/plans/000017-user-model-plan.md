@@ -192,7 +192,7 @@ and are already covered against both implementations.
 **Files:**
 - Create: `cmd/define/reflect.go`, `cmd/define/reflect_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // The sketches below assert the PROPERTIES D6 and D7 state, not a field list.
@@ -222,12 +222,12 @@ stated property rather than a field-by-field snapshot — the same shape Task 4'
 fuzz property takes, and for the same reason: a snapshot of a struct I am about
 to change is a test of my memory.
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `go test ./cmd/define/ -run TestFoldLookups -v`
 Expected: FAIL — `undefined: foldLookups`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```go
 // deckEvidence is what the model is shown: one row per word plus the totals.
@@ -265,8 +265,8 @@ model is asked to reason about, and #16's asked events made that reachable.
 ⚠️ Filter the folded rows by deck membership (D7) — `summariseLookups` reads the
 whole log, which still holds words `--forget` removed.
 
-- [ ] **Step 4: Run the tests** — `go test ./cmd/define/ -run TestFoldLookups -v` → PASS
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Run the tests** — `go test ./cmd/define/ -run TestFoldLookups -v` → PASS
+- [x] **Step 5: Commit**
 
 ```bash
 git add cmd/define/reflect.go cmd/define/reflect_test.go
@@ -278,7 +278,7 @@ git commit -m "#17 M1: foldLookups — the deck as evidence, not as a log"
 **Files:**
 - Modify: `cmd/define/reflect.go`, `cmd/define/reflect_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // D1: the model may READ the deck and may not ADD to it. A claim citing a word
@@ -324,8 +324,8 @@ func TestCheckEvidenceMatchesOnTheDeckKEY(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and watch it fail.**
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run and watch it fail.**
+- [x] **Step 3: Implement.**
 
 ```go
 // learnerModel is the typed answer. SchemaFor reflects the JSON schema from this
@@ -356,8 +356,8 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 ⚠️ Match on `store.Key(word)`, not the raw string — the deck's identity is
 case- and space-normalised, and matching raw drops every capitalised citation.
 
-- [ ] **Step 4: Run the tests.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the tests.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#17 M1: checkEvidence — the model may read the deck, not add to it"
@@ -371,7 +371,7 @@ git commit -am "#17 M1: checkEvidence — the model may read the deck, not add t
 - Create: `cmd/define/usermodel.go`, `cmd/define/usermodel_test.go`,
   `cmd/define/testdata/golden/user-model.md`
 
-- [ ] **Step 1: Write the failing test** — a golden over a fully populated model,
+- [x] **Step 1: Write the failing test** — a golden over a fully populated model,
       plus rows for the shapes that must not render.
 
 ```go
@@ -397,14 +397,14 @@ func TestRenderUserModelEndsWithTheCorrectionsMarker(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run and watch it fail.**
-- [ ] **Step 3: Implement.** Frontmatter exactly as the issue's Spec shows
+- [x] **Step 2: Run and watch it fail.**
+- [x] **Step 3: Implement.** Frontmatter exactly as the issue's Spec shows
       (`type`, `learner`, `updated`, `window`, `generated_by`), then `## Level`,
       `## Domains they read in` (a table: domain, share, evidence, directive),
       then the `## Corrections` marker with a one-line invitation under it.
-- [ ] **Step 4: Record the golden** — `go test ./cmd/define/ -run TestRenderUserModel -update`
+- [x] **Step 4: Record the golden** — `go test ./cmd/define/ -run TestRenderUserModel -update`
       then READ the file and check it is what a person would want to be handed.
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#17 M1: the learner model, rendered"
@@ -415,7 +415,7 @@ git commit -am "#17 M1: the learner model, rendered"
 **Files:**
 - Modify: `cmd/define/usermodel.go`, `cmd/define/usermodel_test.go`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```go
 // The human-owned half. A learner who writes "I read these for pleasure, not for
@@ -437,7 +437,7 @@ func TestSpliceCorrections(t *testing.T) {
 }
 ```
 
-- [ ] **Step 1b: Write the PROPERTY, because the examples miss a class**
+- [x] **Step 1b: Write the PROPERTY, because the examples miss a class**
 
 Five hand-picked cases cannot cover malformed human-edited text, and the failure
 mode here is silently discarding the learner's own writing — with byte-for-byte
@@ -488,8 +488,8 @@ That is deliberate and it is the honest scope: the scanner's own rules are the
 table's job; the property's job is that nothing below the boundary is ever
 rewritten, whatever the boundary turns out to be.
 
-- [ ] **Step 2: Run and watch them fail.**
-- [ ] **Step 3: Implement.** Scan line by line tracking fence state — ```` ``` ````
+- [x] **Step 2: Run and watch them fail.**
+- [x] **Step 3: Implement.** Scan line by line tracking fence state — ```` ``` ````
       **and** `~~~`, since both are markdown fences, and an indented fence still
       opens one. The first `## Corrections` **outside a fence** is the boundary;
       everything from that line on is copied verbatim. Trailing whitespace on the
@@ -500,8 +500,8 @@ rewritten, whatever the boundary turns out to be.
 the issue using a fenced block that contains `## Corrections`, and a learner may
 well paste that block into their corrections while arguing with it.
 
-- [ ] **Step 4: Run the tests.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the tests.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git commit -am "#17 M1: corrections are copied, never regenerated"
@@ -515,16 +515,16 @@ git commit -am "#17 M1: corrections are copied, never regenerated"
 - Create: `cmd/define/reflectprompt.go`, `cmd/define/reflectprompt_test.go`,
   `cmd/define/testdata/golden/reflect-prompt.txt`
 
-- [ ] **Step 1: Write the failing test** — the golden renders the `llm.Request`
+- [x] **Step 1: Write the failing test** — the golden renders the `llm.Request`
       through `llmtest.AssertGolden`, and a table asserts the evidence reaches it.
-- [ ] **Step 2: Run and watch it fail.**
-- [ ] **Step 3: Implement.** The system prompt states the two rules the checker
+- [x] **Step 2: Run and watch it fail.**
+- [x] **Step 3: Implement.** The system prompt states the two rules the checker
       then enforces: **cite only words from the list**, and **say what authoring
       should do about each domain**. Say them because a model that follows them
       produces fewer dropped claims; enforce them anyway because saying is not
       guaranteeing (D1).
-- [ ] **Step 4: Record the golden and read it.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Record the golden and read it.**
+- [x] **Step 5: Commit.**
 
 ### Task 6: `runReflect` and the `--reflect` flag
 
@@ -533,7 +533,7 @@ git commit -am "#17 M1: corrections are copied, never regenerated"
   `cmd/define/main.go:300-312` (mode dispatch)
 - Test: `cmd/define/reflect_run_test.go`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```go
 func TestReflectWritesAModelFromTheDeck(t *testing.T)      // against the wire fake
@@ -545,25 +545,25 @@ func TestReflectDegradesWithNoModel(t *testing.T)          // no seam: says so, 
 func TestReflectIsAModeFromEveryEntryPoint(t *testing.T)   // `define --reflect extra-arg` is a usage error
 ```
 
-- [ ] **Step 2: Run and watch them fail.**
-- [ ] **Step 3: Implement.** `runReflect` composes the pure parts. The flag is
+- [x] **Step 2: Run and watch them fail.**
+- [x] **Step 3: Implement.** `runReflect` composes the pure parts. The flag is
       declared beside `--llm-check` but DISPATCHED beside `--forget`, after
       `d = d.withStore(opt, stderr)` — see D5 for why the two modes look alike
       and are not. A nil deck refuses through `noDeckMessage(opt.noCapture)`.
-- [ ] **Step 4: Run the tests + `go test -race ./cmd/define/`.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run the tests + `go test -race ./cmd/define/`.**
+- [x] **Step 5: Commit.**
 
 ### Task 7: the live conformance check
 
 **Files:**
 - Create: `cmd/define/reflect_conformance_test.go` (`//go:build conformance`)
 
-- [ ] **Step 1: Write it.** A curated deck with three known domains and a
+- [x] **Step 1: Write it.** A curated deck with three known domains and a
       **held-out** word per domain. Run against the live model; assert the
       inferred domains cover the known ones and that every cited word is in the
       deck. Shape, not wording — the same bar the `llmtest` suite sets.
-- [ ] **Step 2: Run it** — `go test -tags conformance -run Reflect ./cmd/define/`
-- [ ] **Step 3: Commit.**
+- [x] **Step 2: Run it** — `go test -tags conformance -run Reflect ./cmd/define/`
+- [x] **Step 3: Commit.**
 
 ⚠️ This is the Done-when row that says domain inference is *checked, not
 asserted*. It is on-demand like every other conformance suite here, and it must
@@ -571,16 +571,16 @@ SKIP (not fail) when the seam is unreachable — "not running" is not "wrong".
 
 ### Task 8: close M1
 
-- [ ] `go test ./... && go vet ./... && go test -race ./cmd/define/`
-- [ ] Hand-run against the live proxy in a real deck directory; read the file it
+- [x] `go test ./... && go vet ./... && go test -race ./cmd/define/`
+- [x] Hand-run against the live proxy in a real deck directory; read the file it
       writes and record in `## Log` whether it is worth being handed.
-- [ ] Confirm #16's ask path picks it up: ask a question and check the recorded
+- [x] Confirm #16's ask path picks it up: ask a question and check the recorded
       prompt carries the new file.
-- [ ] Update `atlas/define.md` (a `--reflect` section) and the project row.
-- [ ] Run the entity enumeration LAST, against the working tree, as a set
+- [x] Update `atlas/define.md` (a `--reflect` section) and the project row.
+- [x] Run the entity enumeration LAST, against the working tree, as a set
       difference — see `000016-console-qa-plan.md`'s final Revisions entry for the
       exact command and why the reconciliation must not be an eye pass.
-- [ ] `sdlc milestone-close --issue 17 --milestone M1`
+- [x] `sdlc milestone-close --issue 17 --milestone M1`
 
 ---
 
@@ -664,3 +664,13 @@ row** — `citedOrNothing`, `dateOrNone`, `firstMarkerOutsideAFence`,
 `unavailableToReflect` — every one of them created after the tables were written.
 That is the check working as #16 finally learned to run it: not the command, but
 the MOMENT. Reconciled to empty before this commit.
+
+### 2026-08-27 — close round 8 (BR-23)
+
+All 40 step checkboxes ticked to match delivery. The plan's own Revisions entry
+had said "Tasks 1–8 done" since M1 shipped, while every box below it stayed
+unticked — the plan read as unstarted next to a paragraph saying it was finished
+(2nd in the `plan-artifact-not-ticked` family across this repo). Every box in
+this document belongs to Tasks 1–8; M2 was deliberately unplanned here and is now
+descoped into `tools#7`, so nothing in this plan is outstanding.
+

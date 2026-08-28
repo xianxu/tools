@@ -652,6 +652,82 @@ rounds:
           family: comment-outruns-code
           round: 8
       blocked: true
+    - "n": 9
+      timestamp: "2026-08-27T23:25:03-07:00"
+      agent: claude
+      dispose:
+        - id: BR-24
+          disposition: addressed
+          note: 'Verified by mutation at c179efa — unsanitising the share arm leaves the suite green, so the new comment''s measurement holds; the wider class grep over #17 scope now returns no false claim.'
+          round: 9
+        - id: BR-1
+          disposition: not-addressed
+          note: plan:37 still reads "drops any claim citing a word the deck does not contain"; checkEvidence prunes and keeps.
+          round: 9
+        - id: BR-6
+          disposition: not-addressed
+          note: reflect.go:60-88 still never reads `now`, and :57-58 still justifies it.
+          round: 9
+        - id: BR-7
+          disposition: not-addressed
+          note: Half 1 stands at reflect.go:302; half 2 remains unreachable. The new Important is this finding's class, enumerated.
+          round: 9
+        - id: BR-8
+          disposition: not-addressed
+          note: usermodel.go:141-147 still returns `generated` whole when no out-of-fence marker exists, with nothing written anywhere.
+          round: 9
+        - id: BR-9
+          disposition: not-addressed
+          note: Table still names citedOrNothing; modelMeta, cite, citeAll, dropClaim, String, oneLine, oneLineAll, sanitiseModel, sanitiseMeta have no row; "Reconciled to empty" still claimed.
+          round: 9
+        - id: BR-10
+          disposition: not-addressed
+          note: No mode-count guard; main.go dispatches --llm-check, --forget, --play each before `if *reflect`, so any pair silently honours one.
+          round: 9
+        - id: BR-11
+          disposition: not-addressed
+          note: usermodel.go:49-55 still emits four keys, no `learner:`, and no Revisions entry records the departure.
+          round: 9
+        - id: BR-13
+          disposition: not-addressed
+          note: reflect_run_test.go:209 is still the only run()-level --reflect test and it is the usage-error path.
+          round: 9
+        - id: BR-20
+          disposition: not-addressed
+          note: 000017-user-model.md:212 is still `- [x]` on work its own text calls "not delivered".
+          round: 9
+        - id: BR-23
+          disposition: not-addressed
+          note: Re-measured at HEAD - 40 unticked step boxes, 0 ticked, against a Revisions entry saying "Tasks 1-8 done".
+          round: 9
+      findings:
+        - id: BR-25
+          severity: Important
+          title: The prompt and the frontmatter print a whole-log lookup count as if bounded by the deck-scoped window
+          detail: |-
+            This is the 2nd finding in family `message-states-what-it-measures` (BR-7 is the 1st).
+            Do NOT fix the two sites - state the rule and sweep the enumeration.
+            Measured at HEAD in a scratch worktree, deck {kept} looked up once on 2026-01-10 plus
+            two found lookups of a forgotten word on 2026-01-01: foldLookups returns Words=1
+            Lookups=3 From=To=2026-01-10, so reflectprompt.go:23 emits "1 words, looked up 3 times
+            between 2026-01-10 and 2026-01-10" and usermodel.go:52 emits
+            "window: 2026-01-10..2026-01-10          # 3 lookups". Two of the three lookups are
+            outside the stated span. ev.Lookups is accumulated over the whole log while From/To
+            extend only from deck-filtered rows, and the words "between" and ".." assert a
+            containment neither computes. The prompt site is the one with teeth - it is a false
+            premise handed to the model that writes the durable artifact - and the frontmatter site
+            breaks the rule the issue Spec itself quotes ("a claim must not outrun the width it was
+            measured at"). It also contradicts D7 as PQ-4 restated it ("the LOG decides how many
+            times AND WHEN").
+            The rule: every rendered number carries the set it was computed over, and a number and a
+            span printed in one sentence must share that set. The enumeration is four sites -
+            reflect.go:302 (len(ev.Words) as "words in the deck", BR-7), reflectprompt.go:23,
+            usermodel.go:52, reflect.go:378 ("from %d words"). No fixture anywhere puts a
+            log-only word in front of foldLookups and then reads From/To, which is why eight rounds
+            did not see it; one table test over the three renderers with such a fixture pins all four.
+          family: message-states-what-it-measures
+          round: 9
+      blocked: false
 ---
 
 # Gate ledger — tools#17 (boundary-review)
@@ -999,6 +1075,46 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   The deliverable is that sweep plus the rule stated as an enumeration, not a reworded
   sentence.
 
+## Round 9 — 2026-08-27T23:25:03-07:00 (claude) — passed
+
+### Disposed
+
+- BR-24 — addressed — Verified by mutation at c179efa — unsanitising the share arm leaves the suite green, so the new comment's measurement holds; the wider class grep over #17 scope now returns no false claim.
+- BR-1 — not-addressed — plan:37 still reads "drops any claim citing a word the deck does not contain"; checkEvidence prunes and keeps.
+- BR-6 — not-addressed — reflect.go:60-88 still never reads `now`, and :57-58 still justifies it.
+- BR-7 — not-addressed — Half 1 stands at reflect.go:302; half 2 remains unreachable. The new Important is this finding's class, enumerated.
+- BR-8 — not-addressed — usermodel.go:141-147 still returns `generated` whole when no out-of-fence marker exists, with nothing written anywhere.
+- BR-9 — not-addressed — Table still names citedOrNothing; modelMeta, cite, citeAll, dropClaim, String, oneLine, oneLineAll, sanitiseModel, sanitiseMeta have no row; "Reconciled to empty" still claimed.
+- BR-10 — not-addressed — No mode-count guard; main.go dispatches --llm-check, --forget, --play each before `if *reflect`, so any pair silently honours one.
+- BR-11 — not-addressed — usermodel.go:49-55 still emits four keys, no `learner:`, and no Revisions entry records the departure.
+- BR-13 — not-addressed — reflect_run_test.go:209 is still the only run()-level --reflect test and it is the usage-error path.
+- BR-20 — not-addressed — 000017-user-model.md:212 is still `- [x]` on work its own text calls "not delivered".
+- BR-23 — not-addressed — Re-measured at HEAD - 40 unticked step boxes, 0 ticked, against a Revisions entry saying "Tasks 1-8 done".
+
+### Raised
+
+- **BR-25** [Important] `message-states-what-it-measures` The prompt and the frontmatter print a whole-log lookup count as if bounded by the deck-scoped window
+  This is the 2nd finding in family `message-states-what-it-measures` (BR-7 is the 1st).
+  Do NOT fix the two sites - state the rule and sweep the enumeration.
+  Measured at HEAD in a scratch worktree, deck {kept} looked up once on 2026-01-10 plus
+  two found lookups of a forgotten word on 2026-01-01: foldLookups returns Words=1
+  Lookups=3 From=To=2026-01-10, so reflectprompt.go:23 emits "1 words, looked up 3 times
+  between 2026-01-10 and 2026-01-10" and usermodel.go:52 emits
+  "window: 2026-01-10..2026-01-10          # 3 lookups". Two of the three lookups are
+  outside the stated span. ev.Lookups is accumulated over the whole log while From/To
+  extend only from deck-filtered rows, and the words "between" and ".." assert a
+  containment neither computes. The prompt site is the one with teeth - it is a false
+  premise handed to the model that writes the durable artifact - and the frontmatter site
+  breaks the rule the issue Spec itself quotes ("a claim must not outrun the width it was
+  measured at"). It also contradicts D7 as PQ-4 restated it ("the LOG decides how many
+  times AND WHEN").
+  The rule: every rendered number carries the set it was computed over, and a number and a
+  span printed in one sentence must share that set. The enumeration is four sites -
+  reflect.go:302 (len(ev.Words) as "words in the deck", BR-7), reflectprompt.go:23,
+  usermodel.go:52, reflect.go:378 ("from %d words"). No fixture anywhere puts a
+  log-only word in front of foldLookups and then reads From/To, which is why eight rounds
+  did not see it; one table test over the three renderers with such a fixture pins all four.
+
 ## Open findings
 
 - **BR-1** [Minor] `single-source-of-truth` D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned
@@ -1011,4 +1127,4 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-13** [Minor] `decision-unpinned-by-test` D5's dispatch site survives being moved before withStore with the whole suite green
 - **BR-20** [Minor] `gate-satisfied-not-met` The M2 Plan row is ticked while its own text says "not delivered", and the M2 Done-when rows stay unticked
 - **BR-23** [Minor] `docs-enumeration-not-swept` The durable plan still shows 40 unticked step boxes while its own Revisions entry says Tasks 1-8 are done
-- **BR-24** [Important] `comment-outruns-code` reflect.go's dropClaim comment still asserts "deleting the sanitiser left the whole suite green" — measured false at the commit it names
+- **BR-25** [Important] `message-states-what-it-measures` The prompt and the frontmatter print a whole-log lookup count as if bounded by the deck-scoped window

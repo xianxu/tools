@@ -1,12 +1,13 @@
 ---
 id: 000017
-status: working
+status: codecomplete
 deps: [tools#3, tools#11]
 github_issue:
 created: 2026-08-22
-updated: 2026-08-25
+updated: 2026-08-27
 estimate_hours: 8.39
 started: 2026-08-25T16:45:07-07:00
+actual_hours: 33.46
 ---
 
 # learner model: batch analysis into a durable user-model.md
@@ -209,7 +210,10 @@ Design: [`workshop/plans/000017-user-model-plan.md`](../plans/000017-user-model-
 - [x] M1 — the model from lookups: `foldLookups`, a typed `learnerModel` whose
       evidence is CHECKED against the deck, `renderUserModel` +
       `spliceCorrections`, and `--reflect` as a mode beside `--llm-check`.
-- [x] M2 — weaknesses. **DESCOPED at close, not delivered.** #6's review events
+- [ ] M2 — weaknesses. **DESCOPED at close, NOT delivered** — deliberately left
+      unticked so `grep '\- \[ \]'` over the tracker keeps meaning what it did
+      (BR-20). Ticking it while its own text said "not delivered" made one file
+      answer "was M2 done" both ways. #6's review events
       now exist, so the original blocker is gone — but `store.ReviewEvent` carries
       `Correct bool`, a binary verdict that cannot carry an error KIND, so the
       taxonomy still has no source data. #7 (multiple choice) produces it for
@@ -410,6 +414,7 @@ defended. The gap moved from the code to the proof of the code, which is the
 direction it should move.
 
 ### 2026-08-27 — closed at M1
+- 2026-08-27: closed — Close round 8. BR-24 fixed. Round 6 corrected the false "left the whole suite green" claim in the three places BR-21 enumerated and missed a fourth in reflect.go dropClaim comment — the same substitution BR-21 was about, one level down: BR-21 was accepting a reviewer PREMISE without measuring, BR-24 was accepting a reviewer ENUMERATION without sweeping. Swept properly with grep -rniE "left the (whole )?suite green" over cmd/ and workshop/, which found THREE surviving instances in this issue scope, not the one named. All three now state the measurement actually run (unsanitising the share-out-of-range arm reddens ZERO at c179efa) and say explicitly that the sanitiseMeta half of BR-17 was false because TestEveryUntrustedFieldIsNeutralised already covered it a round earlier. Rule folded into lessons.md existing verification entry rather than appended as a sibling: a finding tells you a CLASS exists, it does not tell you where every member is — when a finding names N sites, grep for the class before believing N. Substantive state unchanged and verified: M1 live (define --reflect writes user-model.md with Level and Domains claims each naming deck evidence, Corrections section never rewritten, consumed by ask.go:268 which degrades on absence); M2 DESCOPED into #7 and reconciled across all six project-file sites; dropClaim String is the one neutralising path with positive controls on all five arms plus one row per formatter shape (nil/empty/populated/no-citation), and re-introducing the truncation reddens two named rows. gofmt clean, go build, go vet both tag sets, go test ./... 8/8 ok. --no-atlas: no new architectural surface; gate considered and waived.; review verdict: FIX-THEN-SHIP
 
 - M1 shipped earlier (`effe0f3a`) and the issue then sat in `working` with M2
   open, which is the drift `sdlc state` flagged.
@@ -517,4 +522,44 @@ Both findings are about round 5's own fix.
   appended as a sibling): a finding tells you a CLASS exists; it does not tell you
   where every member is. When a finding names N sites, grep for the class before
   believing N.
+
+### 2026-08-27 — close round 8: converged, and the carried findings
+
+The gate converged. Three findings were taken here under the FIX-THEN-SHIP
+protocol before committing.
+
+- **BR-25 (Important, `message-states-what-it-measures`).** `ev.Lookups` is
+  accumulated over the WHOLE log; `From..To` extends only over deck words. Printed
+  together as "looked up N times between X and Y" they asserted a containment
+  neither computes — a forgotten word looked up earlier inflated N and left the
+  span untouched. Measured: deck `{kept}` looked up once on 2026-01-10 plus two
+  lookups of a forgotten word on 2026-01-01 gives whole-log 3 against a
+  single-day span. The prompt site is the one with teeth: a false premise handed
+  to the model that writes the durable artifact.
+  Fixed with a DERIVED `DeckLookups()`, not a stored field — the first attempt
+  was a field, and the golden fixture (which builds `deckEvidence` by hand rather
+  than through `foldLookups`) silently carried 0, turning one false sentence into
+  a different one. Summing `Words` cannot disagree with `Words`; a field would
+  need keeping in step at every construction site, which is the list-that-drifts
+  shape this file has now been burned by twice.
+  The golden itself carried the bug: `84` was the whole-log count for a
+  three-word deck whose own rows sum to `6`.
+- **BR-20 (Minor).** The M2 Plan row is now UNTICKED. Ticking it while its own
+  text said "not delivered" made one file answer "was M2 done" both ways and broke
+  what `grep '\- \[ \]'` means over the tracker. Descoped is not done.
+- **BR-23 (Minor).** All 40 plan step boxes ticked; the plan's own Revisions had
+  said "Tasks 1–8 done" since M1 shipped while every box below stayed unticked.
+
+**Carried, not fixed — eight M1-era Minors** (BR-1, BR-6…BR-11, BR-13). They
+predate this session's rounds, none is a correctness defect in shipped behaviour,
+and the issue has converged. Rather than archive them into oblivion with the
+issue, they are recorded here as the standing list, and the ones with teeth
+(BR-8's silent discard, BR-13's unpinned dispatch site) are worth a follow-up if
+`--reflect` is touched again.
+
+**Actual 33.46h against an 8.39h estimate (0.3x).** The overrun is almost
+entirely gate rounds: eight of them, of which rounds 6–8 were correcting the
+RECORD of round 5's fix rather than the software. That is the datum for the
+calibration ledger — `milestone-review` prices conducting a round, not
+remediating it, and #25 already added remediation rows for exactly this reason.
 

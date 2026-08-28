@@ -49,6 +49,7 @@ func renderUserModel(m learnerModel, meta modelMeta) string {
 	b.WriteString("---\n")
 	b.WriteString("type: user-model\n")
 	fmt.Fprintf(&b, "updated: %s\n", meta.Updated.Format("2006-01-02"))
+	// The count beside a window must be the count WITHIN it (BR-25).
 	fmt.Fprintf(&b, "window: %s..%s          # %d lookups, %d questions\n",
 		dateOrNone(meta.From), dateOrNone(meta.To), meta.Lookups, meta.Questions)
 	fmt.Fprintf(&b, "generated_by: define --reflect (%s)\n", meta.Model)

@@ -479,3 +479,173 @@ findings:
       The deliverable is that sweep plus the rule stated as an enumeration, not a reworded
       sentence.
 ```
+
+---
+
+## Re-review — 2026-08-27T23:25:03-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 17 — learner model: batch analysis into a durable user-model.md |
+| repo | tools |
+| issue file | workshop/issues/000017-user-model.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 145a0e74438c3a94b0b2ae7995330ebc67f6e1de..98dabb5156a9186d6cb3ac21136e012d376630f9 |
+| command | sdlc close --issue 17 |
+| reviewer | claude |
+| timestamp | 2026-08-27T23:25:03-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 8's one Important (BR-24) is genuinely fixed, and I verified it the way the claimed-fixes protocol asks rather than by reading: in a scratch worktree at `c179efa` I unsanitised the share-out-of-range arm (`cite(d.Name)` → `d.Name` at `reflect.go:216`) and `go test ./cmd/define/` stayed green — so the comment's new sentence ("MEASURED at c179efa … reddened ZERO tests") is a measurement that holds, where the old one ("left the whole suite green") did not. I also re-ran the wider class grep BR-24 specified over every `#17`-scope file and found no surviving false coverage claim, including `reflect_run_test.go:379` ("no test anywhere supplied an empty `evidence_words` array"), which I confirmed by grepping the `1ecf05a` tree it describes. `go test ./...` and `go vet ./...` are green at HEAD. What keeps this off SHIP is one new defect, measured not read: **the `--reflect` prompt and the `user-model.md` frontmatter both print a lookup count next to a date span that does not contain those lookups** — `1 words, looked up 3 times between 2026-01-10 and 2026-01-10` — because `foldLookups` scopes the count to the whole log and the window to the deck-filtered rows. That is the second instance of `message-states-what-it-measures`, and it lands on the file whose Spec quotes the rule it breaks. The ten carried Minors (BR-1, 6, 7, 8, 9, 10, 11, 13, 20, 23) are all still open at HEAD; none blocks.
+
+## 1. Strengths
+
+- **BR-24's fix is measured, not asserted.** `cmd/define/reflect.go:161-169` now states the mutation and the commit it was run at, and explicitly records that the `sanitiseMeta` half of BR-17 was false. I reproduced the measurement independently and it is correct.
+- **`TestEveryDropDiagnosticNeutralisesItsSubject`** (`cmd/define/reflect_run_test.go:335`) gives one row per `checkEvidence` arm driven through `dropClaim.String`, so a sixth arm inherits the positive control by construction rather than by remembering. `ARCH-DRY` pass.
+- **The held-out assertion is real now** (`cmd/define/reflect_conformance_test.go:104-116`): `seen` counts over `c.words` only and the held-out word is a `t.Logf` observation, so a run citing nothing but the withheld word fails. Done-when row 5 is true as written.
+- **`runReflect` is a genuinely thin shell** (`cmd/define/reflect.go:283-379`) — read, fold, ask, check, render, splice, write — over four pure functions each table-tested without IO. `ARCH-PURE` pass on the main path.
+- **`ARCH-MOCK` pass:** `reflectRig` drives a real `store.YAML` in `t.TempDir()` behind the wire-level `llmtest.Fake`, and `reflect_conformance_test.go` is the live drift check that `SkipOrFail`s rather than reddening on a flat network.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**`cmd/define/reflectprompt.go:23-24` and `cmd/define/usermodel.go:52-53` — a count scoped to the whole log is printed as if it were bounded by a span scoped to the deck.**
+
+**This is the 2nd finding in family `message-states-what-it-measures`** (BR-7 is the 1st). Earlier rounds fixed instances — do NOT fix these two sites; state the rule and sweep the enumeration it implies.
+
+Measured, at HEAD, with a probe test in a scratch worktree — deck `{kept}` looked up once on 2026-01-10, plus two found lookups of a `--forget`-ten word on 2026-01-01:
+
+```
+Words=1 Lookups=3 From=2026-01-10 To=2026-01-10
+prompt header: "1 words, looked up 3 times between 2026-01-10 and 2026-01-10. 0 questions asked."
+frontmatter:   "window: 2026-01-10..2026-01-10          # 3 lookups, 0 questions"
+```
+
+Two of those three lookups fall outside the stated window. `foldLookups` (`reflect.go:60-88`) accumulates `ev.Lookups` over every found lookup in the log — deliberately, per D7 — but extends `From`/`To` only from rows that survive the `inDeck` filter. The two numbers are then joined by the word *between* in the prompt and by `..` + `#` in the frontmatter, which asserts a containment neither computes. The prompt case is the one with teeth: it is a false premise handed to the model that then writes the durable artifact, and the issue's own Spec cites the rule it breaks (*"a claim must not outrun the width it was measured at"*). This is why it outranks BR-7's stderr-only instance.
+
+It also contradicts the plan's own D7 as PQ-4 restated it — *"the DECK decides which words are evidence, the LOG decides how many times **and when**"*. The window's "when" is deck-filtered; the count's "how many times" is not.
+
+The rule, and the enumeration it implies: **every rendered number carries the set it was computed over, and a number and a span printed in one sentence must share that set.** Four sites, two of which no finding has named:
+
+| site | number | set it is computed over | label |
+|---|---|---|---|
+| `reflect.go:302` | `len(ev.Words)` | deck ∩ found-lookup log | "words in the deck" (BR-7) |
+| `reflectprompt.go:23` | `ev.Lookups` + `ev.From..ev.To` | log / deck-filtered log | "looked up N times between A and B" |
+| `usermodel.go:52` | same pair | same | `window: A..B  # N lookups` |
+| `reflect.go:378` | `len(ev.Words)` | deck ∩ found-lookup log | "from N words" |
+
+Fix sketch: either widen `From`/`To` to every found lookup (matching the count) and keep a separate deck-span if the prompt wants one, or relabel both sentences to the deck scope (`"N words, looked up M times in the deck between A and B"` with `M` computed over `ev.Words`). Whichever way, one table test over `foldLookups` + `renderReflectPrompt` + `renderUserModel` with a forgotten word in the log pins all four sites at once — no such fixture exists today, which is why this survived eight rounds.
+
+## 4. Minor findings
+
+*(No new Minor findings. The ten carried ones are dispositioned in the block below; all were re-verified at HEAD rather than carried on the previous round's word.)*
+
+## 5. Test coverage notes
+
+- Green at HEAD: `go test ./...` all `ok` (`cmd/define` 94.5s), `go vet ./...` silent.
+- BR-24 is a comment-accuracy finding, so there is no test that can pin it; I substituted the mutation the comment itself names. It holds.
+- `reflect_run_test.go:379`'s coverage claim is accurate — I grepped the `1ecf05a` tree it describes and no test there supplies an empty `EvidenceWords`/`Cited`.
+- The gap the new Important names is a missing fixture, not a missing assertion: no test in `cmd/define/` puts a word in the event log that is absent from the deck *and* then reads `ev.From`/`ev.To`, so the log-scoped/deck-scoped split is unobserved by anything.
+- BR-13's gap re-measured and unchanged: `reflect_run_test.go:209` is still the only test routing `--reflect` through `run()`, and it is the usage-error path.
+
+## 6. Architectural notes for upcoming work
+
+- **`ARCH-DRY` — pass.** `foldLookups` calls `summariseLookups`; `sanitiseModel` is one pass over the struct; `dropClaim.String` is the single text path with a row per branch. No duplicated logic in this window.
+- **`ARCH-PURE` — pass with one artifact.** BR-6's unused `now` parameter on `foldLookups` is still purity theatre — a parameter added to *look* injected, justified by a comment at `reflect.go:57-58` that describes a window the function never clamps. Either clamp `To` to it or drop it; and note that the new Important is exactly what a real clamp would have surfaced.
+- **`ARCH-PURPOSE` — flag, unchanged in shape.** M1's purpose is delivered and consumed (`ask.go:263`), and the M2 descope is reasoned rather than dropped. The shadow sweep over the model's consumers is clean *except* that the Spec's frontmatter shape is a hand-maintained restatement that no longer derives from `renderUserModel` — that is BR-11, still open. The recurring failure this gate keeps naming is answering a finding at the site it names; this round's new finding is deliberately stated as a four-row enumeration for that reason.
+- **`ARCH-MOCK` — pass.** Production flow and test flow share the `llm.Client` seam and the `store` seam; the live conformance check exists and skips rather than fails.
+
+## 7. Plan revision recommendations
+
+`workshop/plans/000017-user-model-plan.md` still needs the single `## Revisions` entry round 8 asked for, now with a fourth item:
+
+- **Core concepts** — drop the `citedOrNothing` row (deleted in `692ec09`); add rows for `modelMeta`, `cite`, `citeAll`, `dropClaim`, `dropClaim.String`, `oneLine`, `oneLineAll`, `sanitiseModel`, `sanitiseMeta`. Correct *"Reconciled to empty before this commit"* — the plan's own cited command still reports the gap.
+- **D1** — restate as the prune-then-drop-if-empty semantics `checkEvidence` implements (`reflect.go:224-231` keeps a partially-supported claim) so D1 is the sole statement of its fact.
+- **D7** — as PQ-4 restated it, the log decides "how many times **and when**". The implementation scopes "when" to deck-filtered rows and "how many times" to the whole log. Say which one D7 means, because the new Important is that gap surfacing in two rendered sentences.
+- **Task checkboxes** — 40 `- [ ]`, 0 `- [x]`, against a Revisions entry saying "Tasks 1–8 done". Tick them or state that the boxes are unmaintained and Revisions is the record.
+
+```findings
+dispose:
+  - id: BR-24
+    disposition: addressed
+    note: |
+      Verified by mutation at c179efa — unsanitising the share arm leaves the suite green, so the new comment's measurement holds; the wider class grep over #17 scope now returns no false claim.
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      plan:37 still reads "drops any claim citing a word the deck does not contain"; checkEvidence prunes and keeps.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      reflect.go:60-88 still never reads `now`, and :57-58 still justifies it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Half 1 stands at reflect.go:302; half 2 remains unreachable. The new Important is this finding's class, enumerated.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      usermodel.go:141-147 still returns `generated` whole when no out-of-fence marker exists, with nothing written anywhere.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Table still names citedOrNothing; modelMeta, cite, citeAll, dropClaim, String, oneLine, oneLineAll, sanitiseModel, sanitiseMeta have no row; "Reconciled to empty" still claimed.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      No mode-count guard; main.go dispatches --llm-check, --forget, --play each before `if *reflect`, so any pair silently honours one.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      usermodel.go:49-55 still emits four keys, no `learner:`, and no Revisions entry records the departure.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      reflect_run_test.go:209 is still the only run()-level --reflect test and it is the usage-error path.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      000017-user-model.md:212 is still `- [x]` on work its own text calls "not delivered".
+  - id: BR-23
+    disposition: not-addressed
+    note: |
+      Re-measured at HEAD - 40 unticked step boxes, 0 ticked, against a Revisions entry saying "Tasks 1-8 done".
+findings:
+  - id: new
+    severity: Important
+    family: message-states-what-it-measures
+    title: |
+      The prompt and the frontmatter print a whole-log lookup count as if bounded by the deck-scoped window
+    detail: |
+      This is the 2nd finding in family `message-states-what-it-measures` (BR-7 is the 1st).
+      Do NOT fix the two sites - state the rule and sweep the enumeration.
+      Measured at HEAD in a scratch worktree, deck {kept} looked up once on 2026-01-10 plus
+      two found lookups of a forgotten word on 2026-01-01: foldLookups returns Words=1
+      Lookups=3 From=To=2026-01-10, so reflectprompt.go:23 emits "1 words, looked up 3 times
+      between 2026-01-10 and 2026-01-10" and usermodel.go:52 emits
+      "window: 2026-01-10..2026-01-10          # 3 lookups". Two of the three lookups are
+      outside the stated span. ev.Lookups is accumulated over the whole log while From/To
+      extend only from deck-filtered rows, and the words "between" and ".." assert a
+      containment neither computes. The prompt site is the one with teeth - it is a false
+      premise handed to the model that writes the durable artifact - and the frontmatter site
+      breaks the rule the issue Spec itself quotes ("a claim must not outrun the width it was
+      measured at"). It also contradicts D7 as PQ-4 restated it ("the LOG decides how many
+      times AND WHEN").
+      The rule: every rendered number carries the set it was computed over, and a number and a
+      span printed in one sentence must share that set. The enumeration is four sites -
+      reflect.go:302 (len(ev.Words) as "words in the deck", BR-7), reflectprompt.go:23,
+      usermodel.go:52, reflect.go:378 ("from %d words"). No fixture anywhere puts a
+      log-only word in front of foldLookups and then reads From/To, which is why eight rounds
+      did not see it; one table test over the three renderers with such a fixture pins all four.
+```

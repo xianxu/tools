@@ -40,6 +40,30 @@ type deckEvidence struct {
 	From, To time.Time
 }
 
+// DeckLookups counts found lookups of words STILL IN THE DECK — the ones
+// From..To actually spans.
+//
+// Distinct from Lookups because the two have different scopes, and a message
+// mixing them asserts a containment neither computes: "looked up N times between
+// X and Y" was printed with the whole-log N against a deck-scoped span, so a
+// forgotten word looked up years earlier inflated N while leaving X..Y untouched
+// (BR-25). The prompt site is the one with teeth — a false premise handed to the
+// model that writes the durable artifact.
+//
+// DERIVED, not stored. The first version was a field, and the golden fixture —
+// which builds deckEvidence by hand rather than through foldLookups — silently
+// carried 0, turning a true sentence into a different false one. A field would
+// have to be kept in step with Words at every construction site, which is the
+// list-that-drifts shape this file has now been burned by twice; summing Words
+// cannot disagree with Words.
+func (e deckEvidence) DeckLookups() int {
+	var n int
+	for _, w := range e.Words {
+		n += w.Lookups
+	}
+	return n
+}
+
 // foldLookups summarises the store for one --reflect run.
 //
 // The per-word fold is summariseLookups', called with a zero `since` so it
@@ -366,7 +390,7 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 		Updated:   d.clock.Now(),
 		From:      ev.From,
 		To:        ev.To,
-		Lookups:   ev.Lookups,
+		Lookups:   ev.DeckLookups(), // BR-25: the count beside window: must be the count within it
 		Questions: ev.Questions,
 		Model:     cfg.Model,
 	})

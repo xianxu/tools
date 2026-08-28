@@ -31,7 +31,7 @@ dropped before the reader sees it. Fewer, real, filled-in claims — always.
 --- prompt ---
 ## The deck
 
-3 words, looked up 84 times between 2026-08-05 and 2026-08-24. 6 questions asked.
+3 words, looked up 6 times between 2026-08-05 and 2026-08-24. 6 questions asked.
 
 | word | times | first | last |
 |---|---|---|---|
