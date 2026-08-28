@@ -70,12 +70,31 @@ func Strict() bool { return os.Getenv(StrictEnv) != "" }
 // terminal on this platform").
 func SkipOrFail(t *testing.T, reason string, err error) {
 	t.Helper()
-	msg := reason
-	if err != nil {
-		msg = fmt.Sprintf("%s: %v", reason, err)
-	}
 	if Strict() {
-		t.Fatalf("%s (%s is set)", msg, StrictEnv)
+		t.Fatal(message(reason, err, true))
 	}
-	t.Skip(msg)
+	t.Skip(message(reason, err, false))
+}
+
+// message is the text a reader of a red CI log actually sees, split out so it
+// can be ASSERTED.
+//
+// It was inline, and the test that claimed to pin it could not: a substitute
+// *testing.T records that it failed but exposes no reader for the text, so the
+// assertion degenerated into comparing StrictEnv with its own literal — true by
+// construction, checking nothing (PQ-1). Same vacuous shape #24's PQ-6 caught
+// one issue earlier: a check whose subject is unreachable passes for the wrong
+// reason.
+//
+// Naming the variable in the strict message is the load-bearing part. Someone
+// reading a failure needs to know that the DEPENDENCY was missing, not the code
+// broken, and which mode turned that into a failure.
+func message(reason string, err error, strict bool) string {
+	if err != nil {
+		reason = fmt.Sprintf("%s: %v", reason, err)
+	}
+	if strict {
+		return fmt.Sprintf("%s (%s is set)", reason, StrictEnv)
+	}
+	return reason
 }
