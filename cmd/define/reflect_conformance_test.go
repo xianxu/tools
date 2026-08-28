@@ -49,7 +49,7 @@ func TestReflectAgainstTheLiveService(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
+	st := store.NewYAML(dir, store.DefaultLang, nil)
 	at := time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC)
 	var all []string
 	for _, c := range reflectClusters {

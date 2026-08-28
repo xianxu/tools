@@ -26,7 +26,7 @@ func askRig(t *testing.T) (deps, *llmtest.Fake, *store.YAML, string) {
 	t.Helper()
 	fake := llmtest.NewFake(t)
 	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
+	st := store.NewYAML(dir, store.DefaultLang, nil)
 	d := testDeps(t)
 	d.deck = st
 	// The REAL capturer over the same store: since #16 the event log has one
@@ -140,7 +140,7 @@ func TestOneShotQuestionHasNoCurrentWord(t *testing.T) {
 	fake := llmtest.NewFake(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
 	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
+	st := store.NewYAML(dir, store.DefaultLang, nil)
 	d := testDeps(t)
 	cap := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 	d.newStore = func(options, io.Writer) storeDeps {

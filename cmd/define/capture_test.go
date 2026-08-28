@@ -276,7 +276,7 @@ func TestNoCaptureSuppressesEverything(t *testing.T) {
 // restoring the old storeHistory.Add writes: this goes red, those stay green.
 func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
+	st := store.NewYAML(dir, store.DefaultLang, nil)
 
 	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
 	rig.deps.history = newStoreHistory(st, nil)
@@ -370,7 +370,10 @@ func TestOpenStoreWithoutOptOut(t *testing.T) {
 	if err := deck.Upsert(store.Word{Text: "sycophantic", LastSeen: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "words", "sycophantic.yaml")); err != nil {
+	// words/<lang>/ since #23. openStore has no language set here, so the deck it
+	// builds is the default one — which is the assertion worth keeping: a caller
+	// that never mentions a language still lands somewhere definite.
+	if _, err := os.Stat(filepath.Join(dir, "words", string(store.DefaultLang), "sycophantic.yaml")); err != nil {
 		t.Errorf("deck did not write to the working directory: %v", err)
 	}
 }

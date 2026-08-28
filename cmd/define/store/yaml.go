@@ -24,12 +24,24 @@ import (
 // human-readable file.
 type YAML struct {
 	dir  string
+	lang Lang
 	warn io.Writer // where a skipped file is reported; nil silences it
 }
 
-// NewYAML returns a store rooted at dir. The directory is a parameter, not a
-// policy — who chooses it stays a one-line question at the boundary.
-func NewYAML(dir string, warn io.Writer) *YAML { return &YAML{dir: dir, warn: warn} }
+// NewYAML returns a store rooted at dir, holding one language's deck.
+//
+// Both the directory and the language are parameters, not policies — who
+// chooses them stays a one-line question at the boundary. In particular this
+// store never reads the persisted setting itself: #23's whole design is that the
+// language is decided ONCE, above here, and passed down. An empty lang means
+// DefaultLang so a caller that predates languages cannot create a words//
+// directory by omission.
+func NewYAML(dir string, lang Lang, warn io.Writer) *YAML {
+	if lang == "" {
+		lang = DefaultLang
+	}
+	return &YAML{dir: dir, lang: lang, warn: warn}
+}
 
 // RuntimeDirs names every directory define writes into the working directory.
 //
@@ -60,7 +72,13 @@ var RuntimeDirs = []string{"words", "events", "usage"}
 // that. The extension costs nothing and closes the hole.
 var RuntimeFiles = []string{"user-model.md", "lang.txt"}
 
-func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0]) }
+// wordsDir is per-language; eventsDir, usageDir and userModelFile are NOT.
+//
+// Language is a DECK dimension, not an event one. A review event names a word
+// and a verdict; which deck it came from is the deck's business, and splitting
+// the log would make "how much did I study today" a join — reached by migrating
+// an append-only artifact, which is the worse half of the trade.
+func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0], string(y.lang)) }
 func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) }
 
 // userModelFile is the third artifact in the directory, beside words/ and

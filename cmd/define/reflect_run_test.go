@@ -22,7 +22,7 @@ func reflectRig(t *testing.T, words int) (deps, *llmtest.Fake, *store.YAML, stri
 	t.Helper()
 	fake := llmtest.NewFake(t)
 	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
+	st := store.NewYAML(dir, store.DefaultLang, nil)
 	for i := range words {
 		w := store.Word{
 			Text:      deckWord(i),

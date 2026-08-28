@@ -10,5 +10,5 @@ import (
 // Reaches the disk twice over: an os import, and store's YAML constructor —
 // which the import allowlist alone would miss, because store is allowed.
 func Bad() (string, store.Store) {
-	return os.Getenv("HOME"), store.NewYAML("/tmp", nil)
+	return os.Getenv("HOME"), store.NewYAML("/tmp", store.DefaultLang, nil)
 }

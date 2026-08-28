@@ -199,7 +199,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 			usage: sessionUsage(clk, warn), clock: clk,
 		}
 	}
-	st := store.NewYAML(dir, warn)
+	st := store.NewYAML(dir, store.DefaultLang, warn)
 	// ONE highlight set, handed to both the capturer that grows it and the
 	// renderers that read it. Two instances would mean lookups landing in a set
 	// nothing draws from — TestOpenStoreSharesOneHighlightSet is the pin.
