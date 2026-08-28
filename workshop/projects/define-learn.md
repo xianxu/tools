@@ -194,7 +194,8 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 - [ ] learner model — weakness taxonomy, steers authoring — **descoped from
       `#17 M2` into [tools#7]'s Done-when**, where the chosen distractor IS the
       error kind. Not delivered; not separately tracked.
-- [ ] deck grouped by language; one language per `--play` [tools#23]
+- [x] deck grouped by language; one language per `--play` [tools#23 M1]
+- [ ] the dictionary follows the mode — private DictionaryServices seam [tools#23 M2]
 - [ ] Spanish — pronunciation locale (independently shippable) [tools#27]
 - [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
@@ -398,6 +399,48 @@ classification. It is now a Done-when row on `#7` ("record the CHOSEN option, no
 just correctness") rather than an issue whose first design question would be
 "wait for `#7`".
 
+<a id="tools-23-m1"></a>
+### tools#23 M1 — the mode exists, and the deck follows it
+
+**est:** 5.23 (whole issue)
+**actual:** 1.03h (M1)
+**closed:** 2026-08-28
+
+`define` now works in ONE language at a time. `words/<lang>/` per deck, `lang.txt`
+per directory, `/lang` to report and switch, `-lang` for a single run — and the
+review session, `--forget` and the recording all follow it. English behaviour is
+unchanged; a pre-language deck migrates itself under `words/en/` on the next run.
+
+**The decision worth not re-deriving: language PERSISTS where `/sound` does not.**
+Not a style choice — a one-shot `define madrugar` has no session to inherit a mode
+from, so a session-scoped language would mean re-declaring it at every lookup,
+which is the friction the mode exists to remove. That one difference is what
+split `/lang` into two halves with different preconditions: persisting needs a
+DIRECTORY, re-deriving needs a SESSION. `/sound` refuses without a session;
+`/lang` only refuses without a directory.
+
+**The bug the design had to be shaped around, and would not have survived
+without.** `runEditor` resolves the highlight set into a LOCAL before its loop
+starts and reads it on every redraw, so reassigning the loop's `deps` — which is
+how every other switched dependency travels — structurally cannot reach it. A
+mid-session `/lang es` would have left the editor painting English words through
+a Spanish session, silently, with every unit test green. The plan gate found it
+while checking a Critical finding about something else; `sessionSetLang` takes
+`&voc` for exactly this, and the mutation check is the pin.
+
+**Scope grown deliberately, once.** `store.RuntimeDirs` single-sourced runtime
+DIRECTORIES into `.gitignore` and two repo guards and structurally could not see
+a runtime FILE — so `user-model.md`, which carries inferred claims about the
+learner, was ignored by nothing at all (`git check-ignore` matched it before this
+milestone and matches it now). `lang.txt` would have been the second instance, so
+the fix is the class: `RuntimeFiles`, reaching all three consumers. That forced a
+tracked golden fixture to be renamed off a now-reserved basename, and it decided
+the setting's name — `lang.txt`, because a bare un-anchored `lang` would also
+hide any directory of that name, which a basename guard cannot see.
+
+**Not delivered, and it is the visible half:** `mesa` in a Spanish session is
+filed as Spanish but still DEFINED as the flat-topped hill. That is M2.
+
 <a id="tools-27"></a>
 ### tools#27 — pronunciation locale and language as parameters
 
@@ -584,6 +627,8 @@ guards could fail.
 [tools#18 M2]: #tools-18-m2
 [tools#19]: ../issues/000019-llm-overloaded.md
 [tools#23]: ../issues/000023-deck-language.md
+[tools#23 M1]: #tools-23-m1
+[tools#23 M2]: ../issues/000023-deck-language.md
 
 ### 2026-08-26 — scope event: two console features shipped alongside, outside MVP
 
