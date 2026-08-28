@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-28
-estimate_hours:
+estimate_hours: 5.23
 started: 2026-08-28T10:47:27-07:00
 ---
 
@@ -182,12 +182,149 @@ when the private surface has moved.
       not an event one. A review event names a word; which deck it came from is
       the deck's business.
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=1.00 impl=0.06
+item: smaller-go-module        design=0.05 impl=0.16
+item: cross-cutting-refactor   design=0.10 impl=0.20
+item: smaller-go-module        design=0.05 impl=0.16
+item: tui-screen               design=0.20 impl=0.24
+item: smaller-go-module        design=0.05 impl=0.12
+item: smaller-go-module        design=0.05 impl=0.16
+item: smaller-go-module        design=0.00 impl=0.10
+item: atlas-docs               design=0.04 impl=0.06
+item: milestone-review         design=0.00 impl=0.20
+item: smaller-go-module        design=0.05 impl=0.16
+item: api-integration          design=0.40 impl=0.60
+item: real-api-discovery       design=0.00 impl=0.18
+item: cross-cutting-refactor   design=0.05 impl=0.12
+item: smaller-go-module        design=0.00 impl=0.10
+item: atlas-docs               design=0.04 impl=0.06
+item: milestone-review         design=0.00 impl=0.16
+design-buffer: 0.15
+total: 5.23
+```
+
+Derivation notes, in plan-task order. M1 is rows 2–10, M2 rows 11–17.
+
+- **`issue-spec` design is NOT discounted — it IS the design**, and it is priced
+  inside the table's undiscounted 0.5–1.5 band accordingly. 0.60 covers a full
+  re-spec after operator pushback, the dlsym/87-dictionary measurement campaign,
+  the plan doc, an independent re-measurement of nine claims on 2026-08-28, and
+  three plan-quality rounds settling five blocking findings. Two drafts of this
+  block put it lower — 0.20, then 0.60 — while claiming it was undiscounted; the
+  first was 40% of the band's FLOOR, a harder discount than the ×0.2 rows take,
+  and the second was still near it. This is the one row with real headroom rather
+  than a band ceiling, and it is the row v3.1 deliberately leaves unscaled because
+  design does not compress the way implementation does. Mid-band is the honest
+  reading of what it actually bought. Every other design figure below IS discounted ×0.2,
+  because that work is what this row bought.
+
+- **Row → task, since seventeen rows over ten tasks is not self-evident.** M1:
+  row 2 = T1, row 3 = T2, row 4 = T3, **rows 5 AND 6 = T4** (the `/lang` state
+  machine and the `ReadLang`/`WriteLang` + `-lang` half are separate primitives
+  in one task, and T4 is M1's heaviest), row 7 = T5, row 8 = T6, rows 9–10 = T7.
+  M2: row 11 = T8, **rows 12–14 = T9**, rows 15–17 = T10.
+- **Two `cross-cutting-refactor`s, and the plan enumerated both before pricing
+  them.** `NewYAML(dir, lang, warn)` is 31 call sites across 8 files (T2); the
+  per-language fixture corpus is 4 direct `loadFakeDictionary` sites plus ~12
+  `testDict` callers (T9). `#24`'s `Apply` signature change was the same shape at
+  nine sites and was priced this way — counting either as a one-liner is the
+  mistake the ledger has already recorded.
+- **`tui-screen` for `/lang`, not `smaller-go-module`.** The command row itself
+  mirrors `/sound` and would be trivial; what it costs is the `setLang` closure
+  across BOTH loops plus the highlight set the raw editor captures into a local
+  before the loop (`replraw.go:79`) — state-machine work, which is what the
+  primitive names. The plan's D1 is why this is 0.24 and not 0.12.
+- **`api-integration` carries M2's novelty, and carries it ALONE.** Design 0.40 is
+  the table's 2.0 discounted ×0.2: the nine symbols are measured, `CFSetGetValues`
+  is named, the fallback is specified. Impl is picked at the TOP of the range
+  (1.5 → 0.6 at v3.1's 40%) rather than mid, because cgo against undocumented
+  symbols where the wrong container call is an uncaught ObjC exception is
+  novel-but-bounded work. That is Step 5's ×1.5 applied where it belongs — to the
+  one primitive that is novel — instead of as a blended `familiarity` over
+  fifteen rows that are ordinary Go in a package this repo knows well. Hence
+  `familiarity: 1.0`, honestly.
+- **`real-api-discovery` (0.18) is `capture.py`, not the probe.** The private
+  surface was measured before planning. What remains unbought is resolving a
+  `DCSDictionaryRef` through a CFSet from ctypes and capturing through it.
+- **Two `milestone-review`s, one per boundary, and M1's is the larger** (0.20 vs
+  0.16): its diff spans ~15 files including a signature change, a migration of the
+  one irreplaceable artifact, and three repo guards. `#3` needed four rounds on a
+  single function in this same store.
+- **Library-availability check (v2.1 Step 2.5):** applied and NOT triggering.
+  DictionaryServices' private surface has no Go shim — `dlsym` from cgo is the
+  only route — and the CDN work is `net/http` plus the fake already in the tree.
+  No design halving applies.
+- **Design buffer 0.15, not 0.30**, per v2.1 Step 6: the plan doc resolves the
+  decisions, and D1–D5 are exactly that resolution written down.
+- **Where a miss is most likely, recorded now rather than rediscovered at close.**
+  Row 12's 0.60 is the band CEILING, and the band was fitted against documented
+  HTTP APIs; this is an undocumented private ObjC surface where the wrong
+  container call is an uncaught exception in a cgo frame. Row 3 is at its ceiling
+  too, with 31 call sites across 8 files against the `#24` precedent's nine — 3.4×
+  the precedent at the same maximum the primitive can express. Both
+  `milestone-review` rows are also at their ceiling (0.20 is the max v3.1 can express), while `#25`
+  ran BR-1..BR-12 over five fix commits and `#17` BR-17..BR-25 over four. A 2×
+  overrun on those three rows is a model-expressiveness limit, not an estimating
+  error — read it that way at close.
+- **`#18 M1` coordination is deliberately unpriced.** The model has no primitive
+  for cross-issue coordination. If `#18 M1` lands concurrently on `audiourl.go` or
+  `speak`, T5 absorbs a merge that no row budgeted.
+
+Σdesign 2.08 × 1.15 = 2.392; Σimpl 2.84 × 1.0 = 2.84; total **5.23**.
+
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing. Coordinate with `#18 M1`,
+Two review boundaries, so two `Mx` rows — `close.go`'s milestone-verdict guard
+reads THIS section, and with a single un-tagged row the "was M1 reviewed" check
+finds zero milestones and passes vacuously (PQ-8). Detail lives in
+`workshop/plans/000023-deck-language-plan.md`; these are the boundaries, not a
+second copy of the tasks.
+
+- [x] Design via `sdlc start-plan` before implementing. Coordinate with `#18 M1`,
       which owns the audio half of the same `-lang` flag.
+- [ ] M1 — the mode exists and the deck follows it: `Lang` + the runtime-FILE
+      guard, `words/<lang>/`, the flat-deck migration, `-lang` / `lang.txt` /
+      `/lang`, the recording following the mode, `--play` and `--forget`
+      inheriting it, docs. Ships a working single-language `define`.
+- [ ] M2 — the dictionary follows it too: `chooseDictionary` over metadata plus a
+      curated default, the `dlsym` seam with a fallback to today's NULL
+      behaviour, the per-language fixture corpus, live conformance.
 
 ## Log
+
+### 2026-08-28
+
+Plan cleared plan-quality on round 2 (verdict CLEAN); five blocking findings
+PQ-1..PQ-5 answered as D1–D5 in the plan, each verified against the tree before
+being answered rather than accepted on its face. One turned out to be worse than
+stated: `git check-ignore -v user-model.md` matches nothing today, so the
+unignored-runtime-file defect is live rather than latent. Ledger:
+`workshop/plans/000023-deck-language-plan-gate.md`.
+
+Estimate derived after the plan cleared, per `#187`: **5.23h** (v3.1, seventeen
+rows). The estimate-quality judge returned INFO twice and its substantive
+findings were applied both times — `issue-spec` design sat below the table's
+undiscounted floor while the note claimed it was undiscounted (0.20 → 0.60 →
+1.00, mid-band); the two `atlas-docs` rows used the undiscounted floor while
+claiming the ×0.2; the row→task key was added; and rows at their band ceiling
+(3, 12, 16, 17) are now named as model-expressiveness limits rather than
+estimates. PQ-8 — the issue's `## Plan` carrying no `Mx` rows, which would let the
+close-time milestone-verdict guard pass vacuously — is fixed above.
+
+**Carry to close: this issue's actual is NOT a clean calibration row.** `sdlc
+actual --issue 23` already reported 4.92h before any implementation, because the
+window base is a pre-claim `#23` commit from 2026-08-27 14:15 — roughly 20h of
+wall-clock before `started:` — and attribution spreads across eleven issues with
+mention-fallback on nearly every span (`#15` alone draws a 284.3m dominant
+segment inside the window). Mark the ledger row untrusted rather than feeding it
+to the v3.1 scale fit; this is `baseline-v3.1.md`'s open question #1.
 
 ### 2026-08-27
 
