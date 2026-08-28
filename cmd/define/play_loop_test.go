@@ -34,6 +34,25 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 	return d, options{color: false, width: 0, count: 20, times: 1, noAudio: true}, st
 }
 
+// audible makes the playback branch REACHABLE and returns the player recording it.
+//
+// playRig deliberately installs noAudioSource AND noAudio:true, so every test
+// that says anything about playback — that it happens, or that it does not —
+// has to undo both. Inline, that was five copies of the same three lines (BR-5).
+//
+// The copy that matters is the one that forgets `d.audio`: a negative assertion
+// ("a correct answer plays nothing") against a source that can never produce a
+// recording passes for the wrong reason, whatever the session does. That is the
+// vacuous check PQ-6 caught, and one helper is how it stops being possible to
+// write again by hand.
+func audible(d *deps, opt *options) *fakePlayer {
+	fp := &fakePlayer{}
+	d.player = fp
+	d.audio = okAudio{}
+	opt.noAudio = false
+	return fp
+}
+
 func reviewEvents(t *testing.T, st *store.Mem) []store.ReviewEvent {
 	t.Helper()
 	all, err := st.Events(time.Time{})
@@ -337,10 +356,7 @@ func TestSessionOutputIsAllCRLF(t *testing.T) {
 // real player in a test is a real process.
 func TestRevealPlaysThePronunciationByDefault(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	opt.noAudio = false // the default; playRig turns it off for every other test
-	player := &fakePlayer{}
-	d.player = player
-	d.audio = okAudio{}
+	player := audible(&d, &opt) // the default; playRig turns audio off for every other test
 	qs := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
@@ -354,10 +370,8 @@ func TestRevealPlaysThePronunciationByDefault(t *testing.T) {
 // ...and -no-audio silences it.
 func TestNoAudioSilencesTheSession(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	opt.noAudio = true
-	player := &fakePlayer{}
-	d.player = player
-	d.audio = okAudio{}
+	player := audible(&d, &opt)
+	opt.noAudio = true // ...and THEN silence it: the flag, not an unreachable source
 	qs := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
@@ -514,9 +528,7 @@ func TestAllLookupsFailingIsNotNothingDue(t *testing.T) {
 // re-entry after playback genuinely fails.
 func TestLosingTheTerminalAfterPlaybackExitsOne(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	opt.noAudio = false
-	d.player = &fakePlayer{}
-	d.audio = okAudio{}
+	audible(&d, &opt)
 	qs := questionsFor(t, d, opt)
 
 	notATerminal, err := os.Open(os.DevNull)
@@ -592,16 +604,24 @@ func TestEmptyQueueNamesItsCause(t *testing.T) {
 // been written — which is how it stayed at "five sites" for four rounds while
 // the true count grew.
 func TestClaimsWithoutTestsUntilNow(t *testing.T) {
-	// play_loop.go:182 — space reveals. README:54 and draw() both promise this to
-	// the learner, and nothing asserted it: Enter was covered, space was not.
+	// toInput — space reveals. The README's key table and draw() both promise
+	// this to the learner, and nothing asserted it: Enter was covered, space was
+	// not.
+	//
+	// Cited by NAME, not by line. The original comment said "play_loop.go:182"
+	// and "README:54"; the reversal that this issue shipped moved both, so the
+	// citations pointed at a `case` that had moved and at a table header (BR-1).
+	// A line number in a comment is a restatement of a fact the file owns, and
+	// it drifts exactly like the doc prose in the same family — with no build to
+	// catch it, since a comment cannot be wrong enough to fail.
 	t.Run("space reveals, like Enter", func(t *testing.T) {
 		got, ok := toInput(Key{Kind: KeyRune, Rune: ' '})
 		if !ok || got.Kind != play.InputReveal {
-			t.Errorf("space produced (%+v, %v), want an InputReveal — README:54 promises it", got, ok)
+			t.Errorf("space produced (%+v, %v), want an InputReveal — the README key table promises it", got, ok)
 		}
 	})
 
-	// main.go:333 — the guard added for BR-46, itself shipped unpinned, which is
+	// The -count guard in main.go, added for BR-46 and itself shipped unpinned, which is
 	// what made BR-48 the sixth in its family rather than the fifth.
 	t.Run("-count rejects a negative", func(t *testing.T) {
 		d, _, _ := playRig(t)
@@ -639,13 +659,11 @@ func TestClaimsWithoutTestsUntilNow(t *testing.T) {
 // removes. Audio is enabled here, so this is about the FLOW and not the flag.
 func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic")
-	opt.noAudio, opt.times = false, 1
-	fp := &fakePlayer{}
-	d.player = fp
-	// AND a source that HAS a recording. playRig installs noAudioSource, which
-	// always returns ErrNoAudio — without this the player is unreachable and
+	// audible() installs a source that HAS a recording as well as the player,
+	// so this negative assertion is about the FLOW: without a reachable source
 	// "played nothing" would be true whatever the session did (PQ-6).
-	d.audio = okAudio{}
+	fp := audible(&d, &opt)
+	opt.times = 1
 
 	qs := questionsFor(t, d, opt)
 	var out, errb bytes.Buffer
@@ -659,14 +677,20 @@ func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
 	}
 }
 
-// A miss DOES play it — the other half of the same rule, so neither can be
-// satisfied by a session that simply never plays anything.
-func TestAMissPlaysThePronunciation(t *testing.T) {
-	d, opt, _ := playRig(t, "sycophantic")
-	opt.noAudio, opt.times = false, 1
-	fp := &fakePlayer{}
-	d.player = fp
-	d.audio = okAudio{}
+// A miss plays the pronunciation AND records the miss — both halves of the
+// slice, pinned by one test.
+//
+// The record half was unpinned until BR-8: mutating the loop to
+// `outs[len(outs)-1:]` drops every OutcomeRecord, so no miss reaches events/ or
+// the schedule, and the WHOLE suite stayed green. The pty test cannot see it
+// either — its "0 right, 1 wrong" comes from the session tally that score() sets
+// inside Apply, which the loop never touches. My own mutation table ran the
+// mirror (`outs[:1]`, dropping the reveal) and not this one; a slice has two
+// ends and only one was tested.
+func TestAMissPlaysThePronunciationAndRecordsIt(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic")
+	fp := audible(&d, &opt)
+	opt.times = 1
 
 	qs := questionsFor(t, d, opt)
 	var out, errb bytes.Buffer
@@ -674,6 +698,14 @@ func TestAMissPlaysThePronunciation(t *testing.T) {
 
 	if len(fp.Played) == 0 {
 		t.Error("a miss played nothing; the definition it earns includes hearing it")
+	}
+	evs := reviewEvents(t, st)
+	if len(evs) != 1 {
+		t.Fatalf("got %d events, want the one miss — a verdict that never reaches the log "+
+			"never reaches the schedule either", len(evs))
+	}
+	if evs[0].Correct {
+		t.Error("the miss was recorded as correct")
 	}
 }
 

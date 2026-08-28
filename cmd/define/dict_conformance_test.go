@@ -22,6 +22,21 @@ func TestFixturesMatchLiveDictionary(t *testing.T) {
 		t.Fatalf("loadFakeDictionary: %v", err)
 	}
 	live := systemDictionary()
+	// PROBE FIRST, because a sandboxed run and a drifted fixture look identical
+	// from inside the loop: DCSCopyTextDefinition returns silence without real
+	// access to /System/Library/AssetsV2, so EVERY word fails the same way. One
+	// lookup up front separates the two — past this point a failed lookup means
+	// the fixture and the live dictionary genuinely disagree, which is the thing
+	// this test exists to report.
+	//
+	// It routes through skipOrFail for the same reason the Skipf sites do (BR-9),
+	// and it is the half of that rule a `grep 't\.Skipf('` cannot see: written as
+	// an unconditional t.Errorf, an absent dependency was a hard FAILURE, so the
+	// non-strict `go test -tags conformance ./...` could never be green offline.
+	// One helper now owns both directions.
+	if _, err := live.Lookup("sycophantic"); err != nil {
+		skipOrFail(t, "system dictionary unreachable", err)
+	}
 	// Read through Lookup, not fake.entries: a conformance check that bypasses
 	// the seam cannot see the fake diverging from the dependency at that seam.
 	for word := range fake.entries {

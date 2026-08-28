@@ -274,6 +274,38 @@ func TestRevealIsIdempotent(t *testing.T) {
 	}
 }
 
+// Every outcome that is ABOUT a word NAMES that word, from both paths that can
+// produce a reveal.
+//
+// The loop plays the pronunciation for whatever OutcomeReveal names. It used to
+// read the word back off the session instead — correct only for as long as no
+// input both advanced and revealed, and the cost of the first one that did was
+// not the wrong word but a nil-interface panic at the end of the queue, where
+// Current() returns nil (BR-4). #7's multiple-choice form adds inputs to this
+// machine, so the invariant is pinned before it is relied on rather than after.
+func TestEveryWordOutcomeNamesItsWord(t *testing.T) {
+	// A peek: reveal without grading.
+	_, outs := Apply(twoQuestions(), reveal)
+	if len(outs) != 1 || outs[0].Kind != OutcomeReveal {
+		t.Fatalf("outcomes = %+v, want one OutcomeReveal", outs)
+	}
+	if outs[0].Word != "obsequious" {
+		t.Errorf("a peek revealed %q, want %q — the loop plays what the outcome names",
+			outs[0].Word, "obsequious")
+	}
+
+	// A miss on a hidden word: records AND reveals, and both name the word.
+	_, outs = Apply(twoQuestions(), rune_('n'))
+	if len(outs) != 2 {
+		t.Fatalf("outcomes = %+v, want a record and a reveal", outs)
+	}
+	for _, o := range outs {
+		if o.Word != "obsequious" {
+			t.Errorf("%v names %q, want %q", o.Kind, o.Word, "obsequious")
+		}
+	}
+}
+
 // "Nothing due today" is the expected state most days, not an error.
 func TestEmptyQueueIsImmediatelyDone(t *testing.T) {
 	s := NewSession(nil)

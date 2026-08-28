@@ -1881,3 +1881,74 @@ because #6's CRLF defect was invisible to everything that WAS running.
 
 **Rule:** any test that can skip itself needs a mode where the skip is an error,
 or "green" silently means "did not run".
+
+## The same rule fails in two directions, and a grep sees one (#24 BR-9)
+
+"A skip reads as green" (above) was fixed at one pty site, then generalised: route
+every conformance skip through one `skipOrFail` helper, enumerated with
+`grep -rn 't\.Skipf\?(' cmd/define/*_test.go`. Seven sites, all routed, rule
+applied to the class rather than the instance — the lesson from the round before,
+correctly learned.
+
+It still missed three sites. `dict_conformance`, `news_conformance` and
+`live_property` wrote an absent dependency as an unconditional `t.Fatalf`, so the
+NON-strict suite could never be green offline — the mirror of the same bug, and
+invisible to a grep for the word "Skip". It surfaced only because a full offline
+run came back `FAIL` and the number was chased instead of shrugged at.
+
+The enumeration lesson keeps getting sharper: #6 said prove the pattern, BR-1 said
+prove the file list, this says **the pattern encodes an assumption about how the
+bug is spelled**. A grep finds instances of a SHAPE; a class of bug is a
+QUESTION. Ask each site the question — "what does this do when its dependency is
+missing?" — and read the answer.
+
+**Rule:** when a fix is applied to a class, enumerate by asking every member the
+question the rule is about, not by grepping the spelling the first instance used.
+If the rule has two failure directions, one grep sees one of them.
+
+## A restatement drifts; a consumer fails the build (#24 BR-10)
+
+Three findings in the `doc-sweep-incomplete` family landed on one screen of
+`--play`: the reversal reached README and atlas but not the form's doc comments,
+then the doc comments but not two test citations, then the README's audio
+sentence still described a fetch a `y` no longer performs. Each was found by a
+human re-reading prose, and each was fixed by another sweep — so the next edit
+restarts the cycle.
+
+The prompt lines are now `const gradePrompt` / `gradedPrompt` in `play_loop.go`,
+and `TestREADMEQuotesThePromptsTheLoopActuallyPrints` asserts README.md contains
+them verbatim. It failed on its first run, catching a paraphrase the three
+preceding sweeps had all read past. A grep cannot fail a build; a test can.
+
+**Rule:** when a doc restates a fact the code owns, and it has drifted twice,
+stop sweeping and make the doc a CONSUMER — a test that reads the doc and asserts
+the code's literal. Pin what the user reads off the screen and types against, not
+the surrounding prose, which should stay free to be rewritten.
+
+## A line number in a comment is a restatement too (#24 BR-1)
+
+`play_loop_test.go` cited "play_loop.go:182 — space reveals" and "README:54". The
+reversal moved both: :182 became a different case, and README:54 became a table
+header. Same drift as the prose in the family above, with nothing to catch it —
+a comment cannot be wrong enough to fail a build, and a citation that is *almost*
+right is worse than none, because it reads as verified.
+
+**Rule:** cite by NAME — the function, the const, the table — never by line
+number. Names move with the thing they name.
+
+## Restore mutations from a copy, not from git (#24, process)
+
+A mutation loop used `git checkout -- <file>` to restore between rows. The file
+under mutation held UNCOMMITTED work, so the first restore reverted the change
+being tested, and the next two rows reported `reddened: 0` — a clean pass for two
+mutations that never ran. The Python guard printed `AssertionError: target
+missing` into the same output and the zeros still looked like results.
+
+Related: the strict-mode count held at 11 across a real fix that added two sites,
+because network reachability differs between runs. A count over an
+environment-dependent suite is not a measurement.
+
+**Rule:** snapshot to a temp file and restore from that, so mutation testing never
+depends on the working tree being clean. And read the FAILURE, not the count — a
+zero from a mutation that failed to apply is indistinguishable from a test that
+did not bite, so enumerate what fired.

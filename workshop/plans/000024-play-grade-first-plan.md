@@ -835,3 +835,38 @@ two closes, and `#6`'s last round found and fixed that. It is GREEN as of
 `1ca9658`, so no triage is budgeted here; what Task 8 Step 3 and Task 10 Step 1
 buy is keeping it that way. If it is red on the first run, that is inherited
 breakage and unbudgeted work — say so rather than absorbing it silently.
+
+## Revisions
+
+- **2026-08-27, close round 1 (BR-1).** Task 9 Step 1's doc sweep changed from a
+  `cmd/define/*.go` glob to `grep -r` over directories with an explicit
+  `| grep -v _test`. *Reason:* the glob could not reach `cmd/define/play/`, where
+  the form's own doc comments live, so the sweep proved the pattern and not the
+  file list. *Delta:* the command was rewritten in place — which is itself what
+  BR-11 flagged, since an in-place rewrite leaves no record of what the step used
+  to say.
+
+- **2026-08-27, close round 2 (BR-11).** This section added. *Reason:* AGENTS.md
+  §1 requires a revision to be APPENDED with timestamp, reason and delta rather
+  than overwritten, and round 1 overwrote. Recording it a round late is the
+  honest version: the entry above is reconstructed from the diff of `4c24763`,
+  not from the moment.
+
+- **2026-08-27, close round 2 (BR-9 follow-through).** Task 9's conformance work
+  grew beyond the plan as written. The plan budgeted the strict-mode rule at the
+  pty site; delivery routed all seven suites through one `skipOrFail` helper, and
+  then found three MORE sites with the mirror defect (an absent dependency
+  written as an unconditional `Fatalf`, making the offline suite red rather than
+  skipped). *Delta:* `conformance_skip_test.go` is a new file the plan did not
+  name; `dict_conformance_test.go`, `news_conformance_test.go` and
+  `live_property_test.go` gained dependency probes. *Reason to record rather than
+  re-plan:* the scope is the same rule the plan already committed to, applied to
+  the class it always belonged to.
+
+- **2026-08-27, close round 2 (BR-4).** `OutcomeReveal` now carries `Word`, which
+  the plan explicitly deferred ("carry the word on the outcome then"). *Reason:*
+  the deferred cost was mis-stated as "the audio plays for the next word" when it
+  is a nil-interface panic at the end of the queue, and #7 is about to add inputs
+  to this machine. *Delta:* `Outcome`'s doc comment, both reveal construction
+  sites, `play_loop.go` reads `out.Word`, and `TestEveryWordOutcomeNamesItsWord`
+  pins it.

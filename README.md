@@ -54,16 +54,23 @@ y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 | key | does |
 |---|---|
 | `y` | you had it — straight to the next word, no definition |
-| `n` | you missed it — the definition appears; any key continues |
+| `n` | you missed it — the definition appears, then any key continues |
 | space or Enter | check the definition first, if you want to, before answering |
 | `d` | remove this word from the deck — its history is kept |
 | Ctrl-C | stop; everything you answered is already saved |
 
+After an `n` the definition is on screen and the prompt changes:
+
+```
+any key = next word, d = remove from deck, Ctrl-C to stop
+```
+
 Words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days — and a
 miss drops one step rather than all the way back. `-count` bounds a sitting
 (default 20). No API key: the deck and the dictionary are enough, and the review
-loop never reaches for the model. Pronunciation audio IS fetched over the
-network as each word is revealed — `--no-audio` makes a sitting fully offline.
+loop never reaches for the model. Pronunciation audio is fetched over the network
+only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
+network call at all; `--no-audio` makes one fully offline either way.
 
 On a terminal, `define` with no word opens a line editor:
 
@@ -291,8 +298,15 @@ make install   # symlink bin/* into ~/.local/bin (already on PATH)
 Live conformance checks sit behind a build tag and must run unsandboxed:
 
 ```sh
-go test -tags conformance ./...
+go test -tags conformance ./...                          # skips what it cannot reach
+DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance ./...   # a skip is a failure
 ```
+
+Without the variable a missing dependency — no network, no NOAD, no terminal, no
+`afplay` — SKIPS, so the suite is still useful offline. That makes a sandboxed run
+report success for checks that never executed, which is the wrong answer for CI or
+for a close that has to mean something: set `DEFINE_CONFORMANCE_STRICT` there and
+green means it ran.
 
 ## Platform
 

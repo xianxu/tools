@@ -140,13 +140,14 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 					// Cooked for playback, as #16 established: the indicator and any
 					// warning are written for a human to read.
 					//
-					// s.Current() is still the RIGHT word: every input that emits
-					// OutcomeReveal leaves the session on its question — a peek
-					// does not advance, and a miss deliberately does not either.
-					// If a future input ever advances AND reveals, the audio would
-					// play for the next word; carry the word on the outcome then,
-					// the way OutcomeRecord and OutcomeDrop already do.
-					word := s.Current().Word()
+					// The word comes from the OUTCOME, not from s.Current().
+					//
+					// Reading it back off the session was correct only while no
+					// input both advanced and revealed — and the failure mode if
+					// one ever did was not the wrong word this comment used to
+					// predict, it was a nil-interface panic at the end of the
+					// queue, where Current() returns nil (BR-4).
+					word := out.Word
 					if raw.sess != nil {
 						raw.sess.restore()
 					}
@@ -268,7 +269,7 @@ func draw(w io.Writer, s play.Session) {
 		// Answered, and the answer is on screen. The only thing left is to read
 		// it and move on — offering y/n here would invite a second verdict on a
 		// question that already has one.
-		fmt.Fprint(w, "\nany key = next word, d = remove from deck, Ctrl-C to stop\n")
+		fmt.Fprint(w, "\n"+gradedPrompt+"\n")
 		return
 	}
 	// The GRADING keys, whether or not the definition is showing.
@@ -278,8 +279,24 @@ func draw(w io.Writer, s play.Session) {
 	// keystroke that carried no information, and the slow one at that, since a
 	// reveal fetches and plays the pronunciation. A learner who wants to check
 	// before rating still can; they simply no longer have to (#24).
-	fmt.Fprint(w, "\ny = got it, n = missed it, d = remove from deck, Ctrl-C to stop\n")
+	fmt.Fprint(w, "\n"+gradePrompt+"\n")
 }
+
+// The two prompt lines draw() emits, named because README.md quotes them
+// VERBATIM and doc_sync_test.go pins that — a hand-maintained restatement of a
+// fact the code owns will drift, so the restatement is made to derive.
+//
+// Three findings in the `doc-sweep-incomplete` family said the same thing about
+// this exact line: the flow reversal reached the README table and not the form's
+// doc comments, then reached the doc comments and not the two test citations.
+// Sweeping is what kept failing; a consumer that fails the build does not.
+const (
+	// gradePrompt is shown while a verdict is still owed — with or without the
+	// definition on screen, because grading no longer requires a reveal (#24).
+	gradePrompt = "y = got it, n = missed it, d = remove from deck, Ctrl-C to stop"
+	// gradedPrompt is shown once the answer is in and the definition is up.
+	gradedPrompt = "any key = next word, d = remove from deck, Ctrl-C to stop"
+)
 
 func finish(w io.Writer, s play.Session) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)

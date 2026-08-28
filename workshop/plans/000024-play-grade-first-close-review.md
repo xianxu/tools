@@ -159,3 +159,187 @@ findings:
       so the branch is reachable) is equivalent and mutation-verified, and the plan
       chose it deliberately per #6 BR-43. The issue text should say so.
 ```
+
+---
+
+## Re-review — 2026-08-27T17:01:30-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 24 — grade before reveal: y advances, n shows the definition |
+| repo | tools |
+| issue file | workshop/issues/000024-play-grade-first.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 87e6307b9f7cf83fdc0a93b69bf4d9354eaf3b00..4c2476331c0db402c81fc2ec17142e2adb40a9d4 |
+| command | sdlc close --issue 24 |
+| reviewer | claude |
+| timestamp | 2026-08-27T17:01:30-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The grade-first reversal is correct and unusually well pinned at the pure layer — I ran six independent mutations against a scratch copy of HEAD and every one of them reddened a named test, including the PQ-1 tally split and the PQ-6 audio trap that a previous round found vacuous. Build, vet, gofmt and the full suite are green. What blocks a clean SHIP is one real coverage hole introduced by the very change under review: `Apply` now returns `[]Outcome`, and the loop's obligation to perform **both** of them is only half-pinned. Mutating `play_loop.go:120` to `for _, out := range outs[len(outs)-1:]` — which silently drops the `OutcomeRecord` on every `n`-before-reveal, so no miss ever reaches the event log or the schedule — leaves the entire `cmd/define` suite green, and the pty suite too (it asserts the session tally, which `score` computes inside `Apply`, and makes no store assertion at all). The mirror mutation `outs[:1]` *is* caught. Beyond that: BR-1's sweep reached 2 of the 4 sites it enumerated, and three round-1 Minors are untouched.
+
+## 1. Strengths
+
+- **The state machine is mutation-proof, and I verified it rather than taking the plan's table at face value.** `cmd/define/play/session.go:172` (drop `verdict != Wrong`) reddens both `TestCorrectBeforeRevealAdvancesWithNoReveal` and `TestCorrectAnswerPlaysNoAudio`; removing `s = score(s, verdict)` at `session.go:194` reddens four tests; `advance(s, q, Wrong)` in the graded arm reddens `TestAKeyAfterAMissAdvancesWithoutRecordingAgain`; deleting the `InputReveal` graded arm reddens `TestEnterAndSpaceMoveOnAfterAMiss`. PQ-1 and PQ-2 are genuinely closed.
+- **BR-7's claim checks out under the standard the prompt demands.** `TestCorrectAnswerPlaysNoAudio` (`play_loop_test.go:640`) is a negative assertion whose rig can actually produce the denied thing — `d.audio = okAudio{}` makes the player reachable, and the M1 mutation prints `played [/tmp/.../pronunciation.mp3]`. Paired with `TestAMissPlaysThePronunciation`, neither half can be satisfied by a session that never plays.
+- **`score` split from `advance` is the right decomposition**, and its doc comment says exactly why (`session.go:203-210`). The skip filter still lives in `advance` and only there.
+- **BR-6's fix is reachable and I confirmed it fails.** `DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance -run TestPTY ./cmd/define/` reddens all 7 pty tests in this sandbox; without it the same run reports `ok`. That is a check that can now fail.
+- **`TestDropAdvancesRecordsNothingAndNamesTheWord`'s new third row avoids the trap it names** — the comment at `session_test.go:349-352` explains that a digit against `fakeForm` would silently re-run the "before reveal" row under another name. That is the kind of self-aware fixture that stops a table growing vacuous rows.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**`cmd/define/play_loop.go:120` — the loop performs two outcomes; only the second one is pinned.**
+The whole point of Task 1 (`Apply` returning a slice) is that one input owes the loop two effects. `TestWrongBeforeRevealRecordsAndReveals` pins the *producer*. Nothing pins the *performer*: with `outs[len(outs)-1:]`, `go test ./cmd/define/ -run 'Play|Session|Miss|Correct|Drop|Reveal|Capturer|Prompt|Record|Interrupt'` is `ok`. The Done-when row "the recording happens before the next draw" is a loop-level claim with no loop-level test, and the shipped-bug shape is total loss of every miss from `events/`. Fix is one line: give `TestAMissPlaysThePronunciation` (`play_loop_test.go:664`) the `st` it currently discards and assert `reviewEvents(t, st)` is one event with `Correct == false` — then both halves of the outcome slice are pinned by the same test.
+
+**BR-1 remains open at 2 of its 4 enumerated sites.** `recall.go` and `question.go` were fixed; `play_loop_test.go:595,600` still cite `play_loop.go:182` (the space→`InputReveal` case is now `:195`) and `README:54` (now the table header; the space/Enter promise moved to `:58`). The fix commit's own sweep — `grep -rniE "reveal|cannot rate" README.md atlas/ cmd/define/ | grep -v _test` — excludes the directory the two remaining sites live in. The lesson written this round says to make excludes visible; the exclude is visible and it deletes the finding's own enumeration. Substantively this residue is Minor; the unmet part is the rule.
+
+## 4. Minor findings
+
+- **`check-that-cannot-fail-reads-as-green`, 2nd in family.** `DEFINE_CONFORMANCE_STRICT` is consulted at exactly one of the repo's conformance skip sites (`pty_conformance_test.go:94`). The other six — `fetch_conformance_test.go:27,62`, `player_conformance_test.go:23,33`, `reflect_conformance_test.go:47`, `live_property_test.go:38` — plus `pty_conformance_test.go:271` still skip unconditionally, so `DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance ./...` on a network-less host still reports green for four suites that did not run. `lessons.md:1880` states the rule generally ("any test that can skip itself needs a mode where the skip is an error"); the code applies it once. Per the family escalation: don't patch this site — write the enumeration (`grep -rn 't\.Skipf\?(' cmd/define/*_test.go`) and route every conformance skip through one `skipOrFail(t, reason, err)` helper that consults the env var, so the rule holds for the next suite too.
+- **`doc-sweep-incomplete`, 3rd in family.** `DEFINE_CONFORMANCE_STRICT` is a new thing an operator or CI types and it appears in no doc: `atlas/define.md:1002` still reads "All three seams have one" over a three-row table that omits both the pty suite and this issue's `TestPTYPlayGradeFirst`, and `README.md:291-294` still shows the bare `go test -tags conformance ./...`. Same family, and the rule that covers all three instances is the one the family keeps re-proving: **a hand-maintained restatement of a fact the code owns will drift, so make it derive.** The cheapest enforcement available here is a test asserting `README.md` contains the literal string `draw` emits (`play_loop.go:281` vs `README.md:51`) — that converts the prompt line from prose-to-be-swept into a pinned consumer, and it is the sweep failure that produced BR-1 in the first place.
+- **`plan-artifact-not-ticked`, 2nd in family.** The plan was revised mid-stream in `4c24763` (Task 9 Step 1 rewritten) with no `## Revisions` section, which AGENTS.md §1 requires; and the issue's `## Log` is a bare `### 2026-08-27` header with nothing under it, after four plan-quality rounds and one boundary round. Don't fix these two spots — state the rule: at every gate round, one artifact-completion pass over issue + plan, covering checkboxes, `## Revisions`, and `## Log`, so the round that flips a box is the round that records why.
+- **ARCH-DRY: `session.go:146` and `session.go:162` are the same rule in two places.** Both graded arms are `next, out := advance(s, q, Skipped); return next, []Outcome{out}` with different comments, and the prompt they implement says one thing ("any key = next word"). The plan's own architecture note cites #6 BR-5 against exactly this shape. Hoisting `if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal)` above the switch gives it one home, and keeps `InputDrop`/`InputQuit` correctly outside it.
+- **`TestPTYPlayGradeFirst` never checks the child's exit status**, unlike `TestPTYTerminalIsRestoredOnExit` which does `cmd.Wait()` for a stated reason. Cheap to add; it is the assertion that separates "printed the right bytes" from "exited cleanly".
+
+## 5. Test coverage notes
+
+- Six mutations run against a scratch tree; five died on the pure suite alone, and M1 additionally died on the loop suite. The `[]Outcome` refactor's blind spot is the asymmetry above: dropping the reveal is caught, dropping the record is not.
+- `TestAnUngradedKeyDoesNotAdvance` drives `reveal` then `'s'` — the *revealed* state. The hidden state is now the default one, and the stray-key path there is protected only by `Grade`'s `ok` flag rather than the deleted `!s.Revealed` guard. The mutation (drop `if !ok`) still dies via the revealed row, so this is a note, not a finding — but a `{"hidden"}` row in that test would pin the state the learner actually spends their time in.
+- `TestFullSessionRecordsOneEventPerAnswer` now drives only the peek path (`"\ry\rn"`), which is correct as a regression guard for the old flow but means the grade-first path has no full-session loop test.
+- The pty suite could not be executed here (`pty.Start` → `operation not permitted`); I verified the strict gate reddens it, and read `TestPTYPlayGradeFirst` for correctness, but its 7/7 green is an unverified claim from this seat.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-PURE — pass.** `cmd/define/play` stays import-free; both purity guards run; `draw` takes an injected `io.Writer` and is tested against a `bytes.Buffer`; every terminal/store/audio effect stays in `playSession`. The `score`/`advance` split moved logic *toward* the pure core, not away from it.
+- **ARCH-MOCK — pass, with the caveat above.** The audio seam has `okAudio`/`noAudioSource` behind one boundary that production and test share, plus a live check; the terminal seam now has a real-pty conformance test that can fail. The residual gap is coverage of the *other* seams' skips, not this diff's seam.
+- **ARCH-PURPOSE — flag.** Two instances this round where a rule was written and applied once (the skip gate; the doc sweep). Both are enumerable in a single `grep`; both were fixed at the site the finding named.
+- **For #7 and #12, which build on this contract:** `Session.Graded` is exactly the state #7's multiple-choice needs, and the `[]Outcome` shape means "record and also do X" no longer touches `Apply`'s signature. The one thing to carry forward is BR-4's risk (still open): `play_loop.go:143`'s `s.Current().Word()` is safe only because no advancing input emits `OutcomeReveal`. The first #7 input that reveals *and* advances turns that into a nil-interface panic, not the wrong word the comment predicts. Carrying `Word` on `OutcomeReveal` before #7 starts is cheaper than after.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` section to `workshop/plans/000024-play-grade-first-plan.md` with two entries:
+
+1. **2026-08-27, close round 1 (BR-1):** Task 9 Step 1's sweep changed from a `cmd/define/*.go` glob to `grep -r` over directories with an explicit `| grep -v _test`. Record that the exclude is itself part of the enumeration — BR-1 named two sites inside `_test`, and the revised command cannot reach them.
+2. **2026-08-27, close round 1 (BR-2):** all 42 step checkboxes ticked to match delivery, and the plan-artifact rule folded into the close checklist.
+
+The Core-concepts tables need no revision — `Session.Graded`, `score`, `Apply` and `draw` all exist at their stated paths with their stated status, the PURE rows run with no IO, and the two integration rows (`playSession`'s outcome loop, `TestPTYPlayGradeFirst`) are present as described.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      recall.go and question.go fixed; play_loop_test.go:595,600 still cite play_loop.go:182 (now :195) and README:54 (now :58) — the fix's own sweep excludes _test, where the two remaining enumerated sites live.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Verified: 42 of 42 step checkboxes ticked, 0 unticked (the one remaining "- [ ]" is the boilerplate that names the syntax).
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      README.md:65-66 unchanged; the audio sentence still does not say a `y` fetches and plays nothing.
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      play_loop.go:143 unchanged; the comment predicting "the next word" still describes a nil-interface panic, and OutcomeReveal still carries no Word.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      No audioRig helper; the rig is now at five sites, not four (play_loop_test.go:343, 360, 519, 648, 669).
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Verified reachable and failing: DEFINE_CONFORMANCE_STRICT=1 reddens all 7 pty tests here, where the unset run reports ok. See the new class finding.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      The Done-when now names fakePlayer.Played + okAudio and cites #6 BR-43; I confirmed the mechanism is mutation-verified.
+findings:
+  - id: new
+    severity: Important
+    family: widened-contract-unpinned-at-the-consumer
+    title: |
+      The loop must perform BOTH outcomes of a miss; only the second is pinned, so dropping every miss from the event log is invisible to the whole suite
+    detail: |
+      Apply returning []Outcome exists so `n` on a hidden word both records and reveals.
+      Mutating play_loop.go:120 to `for _, out := range outs[len(outs)-1:]` drops the
+      OutcomeRecord — no miss ever reaches events/ or the schedule — and
+      `go test ./cmd/define/ -run 'Play|Session|Miss|Correct|Drop|Reveal|Capturer|Prompt|Record|Interrupt'`
+      stays ok. The pty suite cannot catch it either: it asserts "0 right, 1 wrong",
+      which finish() reads from the session tally that score() sets inside Apply, and
+      it makes no store assertion at all. The mirror mutation `outs[:1]` IS caught by
+      TestAMissPlaysThePronunciation. Fix: that test already calls playRig and throws
+      away st — keep it and assert reviewEvents(t, st) is one event with Correct false,
+      so one test pins both halves of the slice.
+  - id: new
+    severity: Minor
+    family: check-that-cannot-fail-reads-as-green
+    title: |
+      DEFINE_CONFORMANCE_STRICT is honoured at one of seven conformance skip sites, so the strict run still reports green for four suites that did not execute
+    detail: |
+      This is the 2nd finding in family `check-that-cannot-fail-reads-as-green`. The
+      earlier round fixed the pty instance and lessons.md:1880 wrote the general rule
+      ("any test that can skip itself needs a mode where the skip is an error"), but
+      the env var is read only at pty_conformance_test.go:94. Measured prevalence:
+      fetch_conformance_test.go:27,62; player_conformance_test.go:23,33;
+      reflect_conformance_test.go:47; live_property_test.go:38; pty_conformance_test.go:271
+      all still skip unconditionally. Do not patch another site — route every
+      conformance skip through one skipOrFail(t, reason, err) helper that consults the
+      env var, and enumerate with `grep -rn 't\.Skipf\?(' cmd/define/*_test.go` so the
+      next suite inherits the rule.
+  - id: new
+    severity: Minor
+    family: doc-sweep-incomplete
+    title: |
+      The new DEFINE_CONFORMANCE_STRICT surface reached no doc, and the atlas conformance table still says three seams while listing neither pty suite
+    detail: |
+      This is the 3rd finding in family `doc-sweep-incomplete`. atlas/define.md:1002
+      reads "All three seams have one" over a table omitting the pty suite and this
+      issue's TestPTYPlayGradeFirst; README.md:291-294 still shows the bare
+      `go test -tags conformance ./...` with no mention of the strict mode. The rule
+      that covers all three findings in this family is the ARCH-PURPOSE one: a
+      hand-maintained restatement of a fact the code owns will drift, so make it
+      derive. The cheapest enforcement available is a test asserting README.md contains
+      the literal prompt string draw emits (play_loop.go:281 vs README.md:51) — that
+      converts the prompt line from prose-to-be-swept into a pinned consumer, which is
+      the exact site whose drift produced BR-1.
+  - id: new
+    severity: Minor
+    family: plan-artifact-not-ticked
+    title: |
+      The plan was revised mid-stream with no "## Revisions" entry, and the issue's Log section is an empty date header after five gate rounds
+    detail: |
+      This is the 2nd finding in family `plan-artifact-not-ticked`. 4c24763 rewrote
+      Task 9 Step 1 in place; AGENTS.md section 1 requires an appended "## Revisions"
+      entry (timestamp, reason, delta) rather than an overwrite, and workshop/history
+      shows the convention live (000015's plan carries entries for rounds 5 and 6).
+      Separately the issue's "## Log" holds only "### 2026-08-27" with no body, after
+      four plan-quality rounds and one boundary round. Do not fix the two spots — state
+      the rule: every gate round ends with one artifact-completion pass over issue and
+      plan covering checkboxes, "## Revisions", and "## Log", so the round that flips a
+      box is the round that records why.
+  - id: new
+    severity: Minor
+    family: one-rule-two-places
+    title: |
+      The graded state's "any key moves on" rule is implemented identically in both the InputReveal and InputRune arms (ARCH-DRY)
+    detail: |
+      session.go:146 and session.go:162 are the same four lines with different comments,
+      implementing the single rule the prompt states as "any key = next word". The
+      plan's own architecture note cites #6 BR-5 against exactly this shape while
+      arguing for []Outcome over a Reveal flag. Hoisting
+      `if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal)` above the switch
+      gives it one home and keeps InputDrop and InputQuit correctly outside it.
+```

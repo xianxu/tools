@@ -30,7 +30,10 @@ func TestNewsFeedStillParsesAndCovers(t *testing.T) {
 
 	body, err := newHTTPFeed().Fetch(t.Context(), word)
 	if err != nil {
-		t.Fatalf("fetching the live feed: %v", err)
+		// An unreachable feed is an ABSENT DEPENDENCY, not drift — the two are
+		// distinguished here and nowhere below, because everything past this
+		// point is a statement about the feed's SHAPE and stays a hard failure.
+		skipOrFail(t, "news feed unreachable", err)
 	}
 	if len(body) == 0 {
 		t.Fatal("empty body")

@@ -20,7 +20,7 @@ import (
 func TestAfplayBlocksUntilPlaybackCompletes(t *testing.T) {
 	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", "us"))
 	if err != nil {
-		t.Skipf("network unavailable: %v", err)
+		skipOrFail(t, "network unavailable", err)
 	}
 	dir := t.TempDir()
 	path := dir + "/pronunciation.mp3"
@@ -30,7 +30,7 @@ func TestAfplayBlocksUntilPlaybackCompletes(t *testing.T) {
 
 	start := time.Now()
 	if err := (afplayPlayer{}).Play(t.Context(), path); err != nil {
-		t.Skipf("afplay unavailable: %v", err)
+		skipOrFail(t, "afplay unavailable", err)
 	}
 	single := time.Since(start)
 

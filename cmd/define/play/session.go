@@ -56,10 +56,19 @@ const (
 
 // Outcome is what the loop must do, and about which word.
 //
-// Word and Verdict are set only for OutcomeRecord. The loop calls CaptureReview
-// whenever it sees one and NEVER inspects the verdict — because a skip never
-// produces this outcome, so there is nothing to filter downstream. One rule, one
-// place.
+// Word is set on every outcome that is ABOUT a word — Record, Reveal and Drop.
+// Verdict is set only on Record; the loop calls CaptureReview whenever it sees
+// one and NEVER inspects the verdict, because a skip never produces this outcome,
+// so there is nothing to filter downstream. One rule, one place.
+//
+// Reveal carries its word for the same reason the other two do: the loop needs a
+// word to play the pronunciation for, and reading it back off the session
+// (`s.Current().Word()`) is only correct while no input both advances AND
+// reveals. That held, but it held by accident — the first input that did both
+// would not have played the wrong word, it would have NIL-PANICKED at the end of
+// the queue, where Current() returns nil (BR-4). An outcome that names its own
+// subject cannot go stale that way, and #7's multiple-choice form is about to
+// add inputs to this machine.
 //
 // SessionDone is set on the outcome that ENDED the session, whatever its kind.
 // The last answer produces OutcomeRecord and finishes the queue, so a caller
@@ -127,6 +136,26 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 	}
 
+	// "Any key = next word" — ONE rule, one home.
+	//
+	// Both kinds arrive here meaning the same thing once the answer is up and
+	// recorded: InputRune for any letter, InputReveal for Enter and space, which
+	// toInput maps to the same kind. A second assessment is not on offer — Fold
+	// would read a duplicate as another review — so the input is spent moving on.
+	//
+	// Hoisted out of the two arms (BR-12): they were four identical lines with
+	// different comments, implementing the single rule the prompt states as
+	// "any key = next word". This machine's own doc comment cites #6 BR-5 against
+	// a rule living in two places, and then grew one.
+	//
+	// InputDrop and InputQuit stay OUTSIDE deliberately: "this word is not mine"
+	// and "stop" are still true after a verdict, and routing them here would
+	// silently turn a drop into a plain advance.
+	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal) {
+		next, out := advance(s, q, Skipped)
+		return next, []Outcome{out}
+	}
+
 	switch in.Kind {
 	case InputDrop:
 		// Dropping is allowed in every state — before a reveal, after a peek, and
@@ -143,28 +172,16 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 
 	case InputReveal:
-		if s.Graded {
-			// Enter and space arrive HERE, not in the InputRune arm — toInput
-			// maps both to InputReveal. Once the answer is up and recorded they
-			// mean "next", and without this arm the two keys every learner
-			// reaches for would be dead exactly where the prompt says any key
-			// moves on.
-			next, out := advance(s, q, Skipped)
-			return next, []Outcome{out}
-		}
+		// The graded case is handled above: Enter and space both land on this
+		// kind, and once graded they mean "next".
 		if s.Revealed {
 			return s, []Outcome{{Kind: OutcomeNone}}
 		}
 		s.Revealed = true
-		return s, []Outcome{{Kind: OutcomeReveal}}
+		return s, []Outcome{{Kind: OutcomeReveal, Word: q.Word()}}
 
 	case InputRune:
-		if s.Graded {
-			// Already answered. This keystroke is the learner moving on, not a
-			// second assessment — Fold would read a duplicate as another review.
-			next, out := advance(s, q, Skipped)
-			return next, []Outcome{out}
-		}
+		// The graded case is handled above.
 		verdict, ok := q.Grade(in.Rune)
 		if !ok {
 			return s, []Outcome{{Kind: OutcomeNone}} // a key this form does not use
@@ -194,7 +211,7 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		s = score(s, verdict)
 		return s, []Outcome{
 			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict},
-			{Kind: OutcomeReveal},
+			{Kind: OutcomeReveal, Word: q.Word()},
 		}
 	}
 	return s, []Outcome{{Kind: OutcomeNone}}

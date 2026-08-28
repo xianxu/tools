@@ -999,13 +999,29 @@ Live checks sit behind `//go:build conformance` and run **on demand, not in CI**
 they need a host with NOAD installed and reachable network, neither of which
 belongs in `merge-check.yml`.
 
-All three seams have one, and each pins the assumption that seam rests on:
+Every seam has one, and each pins the assumption that seam rests on:
 
 | check | asserts |
 |---|---|
 | `dict_conformance_test.go` | live lookups still byte-match every fixture |
 | `fetch_conformance_test.go` | the CDN path survey still holds (2022 generation dominates) |
 | `player_conformance_test.go` | `afplay` **blocks** until playback finishes |
+| `news_conformance_test.go` | the live RSS feed still parses, and its terms still say personal use |
+| `reflect_conformance_test.go` | the live model still answers in the shape the parser expects |
+| `live_property_test.go` | the no-data-loss predicate holds over the WHOLE dictionary, not a sample |
+| `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
+
+**A skip reads as green, so green has to be made to mean "it ran".** Every suite
+above routes its dependency check through the one `skipOrFail` helper
+(`conformance_skip_test.go`): absent dependency SKIPS by default, and FAILS under
+`DEFINE_CONFORMANCE_STRICT` — the mode for CI and for a close that has to mean
+something. Checks about the dependency's *shape* — a drifted fixture, a feed that
+stopped parsing — are not routed there and stay hard failures in both modes.
+
+The rule is worth stating because it went wrong in both directions: it was first
+applied at a single pty site while six suites skipped silently, and three other
+suites had the mirror bug — an absent dependency written as an unconditional
+`Fatalf`, which made the offline suite red rather than skipped.
 
 The third is the least obvious and the most load-bearing: if `afplay` ever
 returned immediately, three *overlapping* sounds would satisfy `fakePlayer`'s
@@ -1013,7 +1029,9 @@ count and every other test here — "plays three times" would be true on paper a
 wrong in the room.
 
 ```sh
-go test -tags conformance ./cmd/define/   # must run UNSANDBOXED
+go test -tags conformance ./cmd/define/   # must run UNSANDBOXED; skips what it cannot reach
+DEFINE_CONFORMANCE_STRICT=1 \
+  go test -tags conformance ./cmd/define/ # CI / close: a skip is a failure
 cmd/define/testdata/capture.sh            # re-capture the corpus
 ```
 

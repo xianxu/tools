@@ -44,7 +44,7 @@ var reflectClusters = []struct {
 func TestReflectAgainstTheLiveService(t *testing.T) {
 	cfg, err := llm.Resolve(realGetenv)
 	if err != nil {
-		t.Skipf("no model configured: %v", err)
+		skipOrFail(t, "no model configured", err)
 	}
 
 	dir := t.TempDir()

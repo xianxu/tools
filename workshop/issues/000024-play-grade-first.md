@@ -1,12 +1,13 @@
 ---
 id: 000024
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-27
 estimate_hours: 4.67
 started: 2026-08-27T15:35:13-07:00
+actual_hours: 2.16
 ---
 
 # grade before reveal: y advances, n shows the definition
@@ -196,3 +197,42 @@ built in `#6`'s last round for exactly this. `atlas-docs` = Task 9. The four
 ## Log
 
 ### 2026-08-27
+- 2026-08-27: closed — Operator tested the shipped flow and confirmed it works. Ran define --play through a pty against a copy of the real deck: grading keys offered up front, y advancing with no definition and no audio, n showing the definition with "any key = next word", space moving on, Ctrl-C reporting "1 right, 1 wrong", zero bare newlines. go build, go vet, gofmt, go test ./... green; full -tags conformance pty suite green. Nine mutations run, each reddening the test that names it. --no-ledger: BR-1 and BR-2 are both FIXED in this same commit per the FIX-THEN-SHIP protocol (#174) rather than disposed — the form doc comments in cmd/define/play now describe grade-first, the plan sweep recurses over directories, and all 42 plan steps are ticked. Both Minors were also taken: DEFINE_CONFORMANCE_STRICT turns a no-pty skip into a failure, verified by running it where pty allocation is denied, and the Done-when now records the delivered player mechanism.; review verdict: FIX-THEN-SHIP
+- 2026-08-27: close round 2 (FIX-THEN-SHIP, forced past with `--no-ledger`) raised
+  BR-8..BR-12 and left BR-1/3/4/5 open. All nine taken in this round; the session
+  fixing them died mid-BR-9 and was recovered from its transcript.
+  - **BR-8** (Important) — `TestAMissPlaysThePronunciationAndRecordsIt` now asserts
+    `reviewEvents`, so ONE test pins both ends of the outcome slice. Both mutations
+    (`outs[:1]`, `outs[len(outs)-1:]`) redden it; before, only the first did.
+  - **BR-9** — every conformance suite routes its dependency probe through one
+    `skipOrFail` helper. Chasing an unexplained `FAIL` from the offline run found
+    **three sites the prescribed grep could not see**: `dict_conformance`,
+    `news_conformance` and `live_property` wrote an absent dependency as an
+    unconditional `Fatalf`, the MIRROR of the skip bug, so the sandboxed suite
+    could never be green. Measured both directions: non-strict sandboxed is now
+    `ok` (was `FAIL`); strict fails naming each unrun suite.
+  - **BR-10** — the general fix, not the two sites: the prompt lines are consts and
+    `TestREADMEQuotesThePromptsTheLoopActuallyPrints` makes README a CONSUMER of
+    them. It failed on its first run, catching a paraphrase three sweeps had read
+    past. Atlas conformance table corrected (three seams → seven) and both docs
+    now carry `DEFINE_CONFORMANCE_STRICT`.
+  - **BR-11** — plan `## Revisions` added (four entries, incl. the round-1 overwrite
+    it flagged); this Log entry is the other half.
+  - **BR-12** — the graded "any key = next word" rule hoisted above the switch, one
+    home. Four mutations redden, including the one proving `InputDrop`/`InputQuit`
+    stay correctly outside.
+  - **BR-1** — the two stale citations now name the function and the README table
+    instead of `play_loop.go:182` / `README:54`. A line number is a restatement too.
+  - **BR-3** — README no longer says audio is fetched for every word; a sitting
+    answered entirely with `y` makes no network call.
+  - **BR-4** — `OutcomeReveal` carries `Word`; the loop reads `out.Word`. The
+    deferred cost was mis-stated as "plays the next word" when it is a nil-interface
+    panic at end-of-queue. Pinned by `TestEveryWordOutcomeNamesItsWord`, both
+    construction sites mutation-verified.
+  - **BR-5** — five copies of the audio rig collapsed to `audible(&d, &opt)`; the
+    forgettable line is `d.audio`, whose absence is what made PQ-6 vacuous.
+  - Verification: gofmt clean, `go build`, `go vet` (both tag sets), `go test ./...`
+    7/7 ok; conformance non-strict `ok`, strict red. Five lessons appended,
+    including one on mutation hygiene — a `git checkout --` restore silently
+    reverted uncommitted work under test and reported two false green mutations.
+
