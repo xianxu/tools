@@ -25,15 +25,17 @@ func TestGoldenDetectsAChangedPrompt(t *testing.T) {
 	}
 
 	// Unchanged: passes.
-	fake := &testing.T{}
-	AssertGolden(fake, dir, "veto", req("Is obsequious a near-synonym?"))
+	fake := substituteT(t, "", func(ft *testing.T) {
+		AssertGolden(ft, dir, "veto", req("Is obsequious a near-synonym?"))
+	})
 	if fake.Failed() {
 		t.Error("an unchanged prompt failed its golden")
 	}
 
 	// Changed: fails.
-	planted := &testing.T{}
-	AssertGolden(planted, dir, "veto", req("Is ephemeral a near-synonym?"))
+	planted := substituteT(t, "", func(ft *testing.T) {
+		AssertGolden(ft, dir, "veto", req("Is ephemeral a near-synonym?"))
+	})
 	if !planted.Failed() {
 		t.Error("a changed prompt passed its golden")
 	}
@@ -41,18 +43,19 @@ func TestGoldenDetectsAChangedPrompt(t *testing.T) {
 
 // A missing golden names the fix rather than just failing.
 //
-// Run on its own goroutine: AssertGolden uses t.Fatalf for a missing file, and
+// Run through substituteT: AssertGolden uses t.Fatalf for a missing file, and
 // Fatalf calls runtime.Goexit — which would terminate THIS test rather than the
-// substitute's. Goexit still runs defers, so the channel closes either way.
+// substitute's.
+//
+// Golden checks do not route through the conformance guard (a missing golden is
+// an absent IN-REPO artifact, which always fails), so the "" here buys
+// uniformity rather than correctness — no test in this package should depend on
+// ambient environment.
 func TestGoldenMissingFileExplainsItself(t *testing.T) {
 	dir := t.TempDir()
-	fake := &testing.T{}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		AssertGolden(fake, dir, "absent", req("x"))
-	}()
-	<-done
+	fake := substituteT(t, "", func(ft *testing.T) {
+		AssertGolden(ft, dir, "absent", req("x"))
+	})
 	if !fake.Failed() {
 		t.Error("a missing golden did not fail")
 	}

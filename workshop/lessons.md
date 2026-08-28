@@ -718,6 +718,35 @@ Two rules:
   *doesn't* when the dependency is merely broken. Mine had neither, and the
   reviewer found it by reading, not running.
 
+**Recurred on this same helper in #25, and the recurrence is the more useful
+lesson.** `SkipIfUnreachable` was routed through a new strict-mode guard, whose
+whole purpose is "a check that cannot fail is not a check". Five rounds then
+found the rule broken by its own implementation, each time one level in:
+
+| the fix | how it failed the rule it implemented |
+|---|---|
+| the guard | shipped with no test of its own inversion |
+| the test of the inversion | asserted `StrictEnv` against its own literal — a tautology |
+| the enumeration of sites | written into Done-when, then applied to 2 of 3 |
+| the mutation evidence | recorded as bare counts that did not reproduce |
+| the test pinning the wiring | its want string was a PREFIX of the other mode's, so one direction could not fail |
+
+Every one was found by a reviewer MUTATING the thing, and every one had been
+verified by its author reading it. The author's reading is what produced the
+defect; re-reading cannot find it.
+
+**Rule: a fix for a "cannot fail" defect is not exempt from the rule it
+implements.** Mutate the fix, not just the code the fix protects — break the
+assertion deliberately and confirm it reddens. If the fix is a test, the mutation
+is on the thing it claims to pin. Budget for this: the fix is where the next
+instance of the bug lives, because it is written by the person who just
+demonstrated they hold the wrong model.
+
+**Corollary — a negative assertion needs its positive twin, and vice versa.** "The
+message contains X" cannot fail when X is a prefix of what the other mode emits.
+Assert what must be ABSENT alongside what must be present, or the check passes in
+both modes and pins neither.
+
 ## Verifying only what you have tests for proves nothing new (define #11 M2)
 
 Told two findings were still open, I re-ran my own tests, saw green, and reported
