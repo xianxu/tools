@@ -56,18 +56,16 @@ type deps struct {
 	// ONCE at the boundary (openStore, which is the only thing that knows the
 	// directory) and passed down; nothing below here re-reads the setting.
 	lang store.Lang
-	// newDeck rebuilds the LANGUAGE-SCOPED dependencies for another language.
+	// newLangDeps rebuilds every language-derived dependency for another language.
 	//
-	// The one builder, called twice: openStore calls it to construct the session,
-	// and /lang calls it to switch mid-session. Only these three are rebuilt —
-	// history reads events/ and usage reads usage/, neither of which is
-	// language-scoped, and re-deriving history would put a second, UNLOADED
-	// History beside the one runEditor has already Load()ed.
+	// The one builder, called twice: openStore constructs the session with it,
+	// and /lang switches with it. That is what makes the set structural rather
+	// than a list in a comment — a comment did not survive one milestone.
 	//
 	// nil means there is no store here (a --llm-check run, an unopenable
 	// directory, a test that supplied its own deps): /lang can still write the
 	// setting, it just has no session to re-derive.
-	newDeck func(store.Lang) (store.Store, Capturer, Vocabulary)
+	newLangDeps func(store.Lang) langDeps
 	// persistLang writes the directory's language setting. Separate from newDeck
 	// because the two halves of /lang have different preconditions: persisting
 	// needs a DIRECTORY, re-deriving needs a SESSION, and a one-shot
@@ -129,6 +127,18 @@ func notifySignals(sigs ...os.Signal) <-chan os.Signal {
 // storeDeps is the trio openStore produces. One value rather than three returns
 // and three nil-merges at the call site: they are always built together, always
 // consumed together, and the merge was three chances to forget one.
+// langDeps is every dependency that is a FUNCTION OF THE LANGUAGE.
+//
+// A named type rather than four return values, so adding a member is a field —
+// visible at both the construction site and the switch — instead of a positional
+// change someone can absorb at one of the two.
+type langDeps struct {
+	deck    store.Store
+	capture Capturer
+	vocab   Vocabulary
+	usage   UsageSource
+}
+
 type storeDeps struct {
 	history History
 	capture Capturer
@@ -139,7 +149,7 @@ type storeDeps struct {
 	// the directory's setting, else English. The flag half lives in options; this
 	// is the answer, and it is what everything downstream reads.
 	lang        store.Lang
-	newDeck     func(store.Lang) (store.Store, Capturer, Vocabulary)
+	newLangDeps func(store.Lang) langDeps
 	persistLang func(store.Lang) error
 	// clock is the process's ONE answer to "what time is it". It used to be
 	// constructed inline where the capturer was built, so nothing else could
@@ -182,8 +192,8 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	if d.usage == nil {
 		d.usage = sd.usage
 	}
-	if d.newDeck == nil {
-		d.newDeck = sd.newDeck
+	if d.newLangDeps == nil {
+		d.newLangDeps = sd.newLangDeps
 	}
 	if d.persistLang == nil {
 		d.persistLang = sd.persistLang
@@ -288,35 +298,52 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		lang = store.ReadLang(dir)
 	}
 
-	newDeck := func(l store.Lang) (store.Store, Capturer, Vocabulary) {
+	// EVERY dependency that is a function of the language, built in ONE place.
+	//
+	// The set used to be enumerated in a doc comment on applyLang, and that did
+	// not survive a single milestone: M2 made the news feed's presence
+	// language-dependent (D6) and the comment still said usage was "not
+	// language-scoped". A member added at the boundary and forgotten at the
+	// switch is silent — the session simply keeps the old language's copy.
+	//
+	// Now it is structural: /lang calls THIS function, so anything constructed
+	// here is necessarily re-derived there. Adding a member cannot be half done.
+	// A store whose language is irrelevant to it: history reads events/ and the
+	// usage cache reads usage/, neither of which is language-scoped.
+	flat := store.NewYAML(dir, store.DefaultLang, warn)
+
+	newLangDeps := func(l store.Lang) langDeps {
 		st := store.NewYAML(dir, l, warn)
 		// ONE highlight set, handed to both the capturer that grows it and the
 		// renderers that read it. Two instances would mean lookups landing in a
-		// set nothing draws from — TestOpenStoreSharesOneHighlightSet is the pin,
-		// and TestLangSwitchKeepsOneHighlightSet is the same pin after a switch.
+		// set nothing draws from — TestOpenStoreSharesOneHighlightSet is the
+		// pin, and TestLangSwitchKeepsOneHighlightSet is the same pin after a
+		// switch.
 		voc := newStoreVocabulary(st, warn)
-		return st, newStoreCapturer(st, clk, warn, voc), voc
+		return langDeps{
+			deck:    st,
+			capture: newStoreCapturer(st, clk, warn, voc),
+			vocab:   voc,
+			// The news feed is English by construction, so it is gated rather
+			// than scoped — see newsFeedFor. It is a member of THIS set because
+			// its presence depends on the language, even though usage/ does not.
+			usage: &bothSources{news: newsFeedFor(l, newCachingFeed(newHTTPFeed(), flat, clk)), warn: warn},
+		}
 	}
-	deck, capturer, voc := newDeck(lang)
+	ld := newLangDeps(lang)
 
-	// A SECOND store, deliberately, and the language it carries is irrelevant to
-	// it: history reads events/ and the usage cache reads usage/, neither of
-	// which is language-scoped. Building them from the deck's store would tie
-	// two lifetimes together for no reason — /lang replaces the deck and must
-	// leave these two alone, or the editor's already-Load()ed History is orphaned.
-	flat := store.NewYAML(dir, store.DefaultLang, warn)
 	return storeDeps{
-		history: newStoreHistory(flat, warn),
-		capture: capturer,
-		deck:    deck,
-		vocab:   voc,
-		// One feed, wrapped in the cache that owns the three outcomes, wrapped in
-		// the source that merges it with the dictionary. Same layering as
-		// fetch.go's cachingAudioSource over httpAudioSource.
-		usage:       &bothSources{news: newsFeedFor(lang, newCachingFeed(newHTTPFeed(), flat, clk)), warn: warn},
+		// history is NOT in langDeps: events/ is not language-scoped, and
+		// rebuilding it on a switch would orphan the one runEditor has already
+		// Load()ed while everything else read a fresh empty one.
+		history:     newStoreHistory(flat, warn),
+		capture:     ld.capture,
+		deck:        ld.deck,
+		vocab:       ld.vocab,
+		usage:       ld.usage,
 		clock:       clk,
 		lang:        lang,
-		newDeck:     newDeck,
+		newLangDeps: newLangDeps,
 		persistLang: func(l store.Lang) error { return store.WriteLang(dir, l) },
 	}
 }

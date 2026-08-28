@@ -327,10 +327,9 @@ a thesaurus; on a machine with a different set installed, nothing curated matche
 and `define` falls back to searching every active dictionary and says so. And the
 calls that select a dictionary are **private** — undocumented, and free to
 disappear on an OS update — so they are resolved at run time and the tool
-degrades to that same whole-set search rather than breaking.
-NOAD answers for ordinary English words (hence the Google-matching notation), but
-`iPhone` comes from Apple Dictionary, and enabling the Chinese dictionaries will
-return entries this tool does not format. Adjust the set in Dictionary.app.
+degrades to that same whole-set search rather than breaking. Only on that
+fallback path does the host's Dictionary.app configuration decide what you get —
+on the curated path it does not, which is the point.
 
 ## Build
 

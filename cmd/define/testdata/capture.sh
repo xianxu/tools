@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Capture real dictionary output for the parser fixture corpus.
 #
-# Per-language since #23: entries/<lang>/. English comes through the host's
-# ACTIVE dictionaries (NULL, which is what the tool did before #23 and still
-# does when no curated dictionary is installed); Spanish comes through a CHOSEN
-# dictionary identifier, which is what #23 M2 added.
+# Per-language since #23: entries/<lang>/, and every capture goes through the
+# SAME curated identifiers production selects. Capturing English through the NULL
+# search instead would make the capture path and the production path agree only
+# by coincidence -- they did, on this host, until the active set differed and
+# TestFixturesMatchLiveDictionary went red (ARCH-MOCK: the fake must model what
+# the seam actually does, not what a neighbouring seam does).
 #
 # MUST run OUTSIDE a sandbox -- DCSCopyTextDefinition needs real access to
 # /System/Library/AssetsV2 and silently returns nothing without it. That silence
@@ -78,13 +80,24 @@ words=(
 #   madrugar  a verb with a usage example, which is what monolingual buys
 es_words=(mesa bonito once real madrugar)
 ES_DICT=com.apple.dictionary.es.DGLEV
+# English is two books, in the same preference order chooseDictionary uses: NOAD
+# answers ordinary words, Apple Dictionary answers iPhone/iPad/MacBook.
+EN_DICTS=(com.apple.dictionary.NOAD com.apple.dictionary.AppleDictionary)
 
 MIN_BYTES=40
 
-capture() { # <word> <outdir> [dictionary-id]
-    local w="$1" dir="$2" id="${3:-}" out
-    out="$dir/$w.txt"
-    if ! python3 capture.py "$w" ${id:+"$id"} > "$out.tmp"; then
+capture() { # <word> <outdir> <dictionary-id>...
+    local w="$1" dir="$2"; shift 2
+    local out="$dir/$w.txt" id
+    # The curated list in order, first hit wins -- the same walk
+    # selectedDictionary.Lookup performs.
+    : > "$out.tmp"
+    for id in "$@"; do
+        if python3 capture.py "$w" "$id" > "$out.tmp" 2>/dev/null; then
+            break
+        fi
+    done
+    if [ ! -s "$out.tmp" ]; then
         rm -f "$out.tmp"
         echo "capture failed: $w" >&2
         exit 1
@@ -100,7 +113,7 @@ capture() { # <word> <outdir> [dictionary-id]
 }
 
 for w in "${words[@]}"; do
-    capture "$w" entries/en
+    capture "$w" entries/en "${EN_DICTS[@]}"
 done
 for w in "${es_words[@]}"; do
     capture "$w" entries/es "$ES_DICT"

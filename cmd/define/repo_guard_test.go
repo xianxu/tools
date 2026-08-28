@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -525,4 +526,85 @@ func currentTruthOnly(text string) string {
 		kept = append(kept, sec)
 	}
 	return strings.Join(kept, "\n### ")
+}
+
+// A plan's Core-concepts table may not name an entity the tree does not have.
+//
+// Fourth recurrence of the symbol half of the artifact-name rule: round 1 named
+// `deckDeps`, BR-6 named `MigrateFlatDeck`, and the close review found
+// `dictChoice` and `dcsDictionaries` still listed. Every previous fix was a
+// hand-sweep of the instances, so the family kept coming back — the ratchets
+// this range added count filenames only, and a symbol is the other half of the
+// rule they were written for.
+//
+// The table is a gift for this: it already states, in machine-readable form,
+// "this identifier lives at this path". Making the plan a CONSUMER of the tree
+// is the same move the README/prompt guard makes — a grep cannot fail a build,
+// this can.
+//
+// Deliberately narrow. It checks the Name and "Lives in" cells of Core-concepts
+// tables in ACTIVE plans, not prose, not history, and not rows whose file does
+// not exist yet — a plan is written before the code, so an unbuilt row is a
+// plan, while a WRONG row is a lie.
+func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
+	root := repoRoot(t)
+	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) == 0 {
+		// conformance:inapplicable — every plan is archived to workshop/history/,
+		// which is a legitimate state between issues rather than a missing file.
+		t.Skip("no active plans")
+	}
+
+	// `| `Name` | `path` | ...` — the shape the plan template produces.
+	row := regexp.MustCompile("^\\|\\s*`([A-Za-z_][A-Za-z0-9_.]*)`[^|]*\\|\\s*`([^`]+\\.go)`")
+	checked := 0
+	for _, plan := range plans {
+		b, err := os.ReadFile(plan)
+		if err != nil {
+			t.Fatalf("reading %s: %v", plan, err)
+		}
+		body := currentTruthOnly(string(b))
+		for _, line := range strings.Split(body, "\n") {
+			m := row.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			name, path := m[1], m[2]
+			// A plan names entities as a READER sees them — store.RuntimeFiles —
+			// while the file that declares them is inside that package and says
+			// RuntimeFiles. Strip a package qualifier that matches the file's own
+			// directory; anything else stays qualified and will not match, which
+			// is correct.
+			if pkg, bare, ok := strings.Cut(name, "."); ok && filepath.Base(filepath.Dir(path)) == pkg {
+				name = bare
+			}
+			src, err := os.ReadFile(filepath.Join(root, path))
+			if err != nil {
+				// The file does not exist yet: a plan legitimately precedes its
+				// code. Only a row pointing at a REAL file makes a checkable claim.
+				continue
+			}
+			checked++
+			// Declared, in any of the forms Go declares things.
+			declared := regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
+				regexp.QuoteMeta(name) + `\b`)
+			assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
+			if !declared.Match(src) && !assigned.Match(src) &&
+				!strings.Contains(string(src), name+" ") {
+				t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
+					"artifact a reader trusts to describe the design, so a stale entity name "+
+					"there is worse than none. Update the row when the code renames.",
+					filepath.Base(plan), name, path)
+			}
+		}
+	}
+	if checked == 0 {
+		// conformance:inapplicable — a plan legitimately precedes its code, so a
+		// set of plans whose files do not exist yet is a design in progress, not
+		// drift. Rows become checkable as their files land.
+		t.Skip("no Core-concepts rows pointed at existing files")
+	}
 }

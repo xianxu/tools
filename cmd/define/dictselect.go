@@ -1,6 +1,11 @@
 package main
 
-import "github.com/xianxu/tools/cmd/define/store"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
+)
 
 // langPair is one entry from DCSDictionaryGetLanguages: what the HEADWORDS are
 // (index) and what the DEFINITIONS are (description).
@@ -97,4 +102,46 @@ func chooseDictionary(installed []dictMeta, l store.Lang) ([]dictMeta, bool) {
 		}
 	}
 	return out, len(out) > 0
+}
+
+// everyActiveDictionary is what the NULL search is called when /lang reports it.
+// Not an identifier, because it is not one dictionary — it is the host's whole
+// active set, which is why results depend on Dictionary.app's configuration.
+const everyActiveDictionary = "every active dictionary"
+
+// dictionaryFor is the whole SELECTION POLICY, pure over metadata.
+//
+// Extracted from the cgo shell deliberately (ARCH-PURE). While it lived beside
+// installedDictionaries() the two fallback branches — the private surface gone,
+// and nothing curated for this language — could not be tested on any platform,
+// and the Done-when row about degrading was ticked on a manual experiment
+// instead. They are the branches that MATTER: a shell context that reports only
+// one dictionary takes the second one on every single run.
+//
+// installed == nil means the private surface did not resolve. That is a
+// different thing from an empty set, and both degrade the same way but for
+// reasons worth telling apart in the warning.
+//
+// Returns the identifiers to search, a name for /lang to report, and whether a
+// curated choice was made at all. No ids means "use the NULL search".
+func dictionaryFor(installed []dictMeta, lang store.Lang) (ids []string, name string, complaint string) {
+	if installed == nil {
+		// LOUD, because it is the surprising one: the private surface moved
+		// under us and the tool has silently become its pre-#23 self.
+		return nil, everyActiveDictionary,
+			"the dictionary-selection API is unavailable; searching every active dictionary"
+	}
+	chosen, ok := chooseDictionary(installed, lang)
+	if !ok {
+		return nil, everyActiveDictionary,
+			fmt.Sprintf("no known %s dictionary is installed; searching every active dictionary", lang)
+	}
+	ids = make([]string, len(chosen))
+	for i, m := range chosen {
+		ids[i] = m.ID
+	}
+	// SILENT on the happy path, and the name is reported by /lang instead. A
+	// line per lookup saying the expected thing happened is noise; a learner on
+	// a machine with a different set installed asks the question once.
+	return ids, strings.Join(ids, ", "), ""
 }

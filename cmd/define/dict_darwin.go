@@ -32,6 +32,12 @@ static int resolved; // 0 = not tried, 1 = all present, -1 = something missing
 // RTLD_DEFAULT rather than dlopen: CoreServices is already linked in by the
 // #cgo LDFLAGS above, so the symbols are in the process image if they exist at
 // all. dlopening the framework again would be a second handle to the same code.
+// dcs_has_symbol lets a test check ONE name without going through the resolver,
+// so the list below can be verified member by member rather than as a boolean.
+static int dcs_has_symbol(const char *name) {
+    return dlsym(RTLD_DEFAULT, name) != NULL;
+}
+
 static int dcs_resolve(void) {
     if (resolved) return resolved == 1;
     f_copy_available = (copy_available_fn)dlsym(RTLD_DEFAULT, "DCSCopyAvailableDictionaries");
@@ -49,69 +55,63 @@ static char *cfstring_dup(CFStringRef s) {
     return buf;
 }
 
-// dcs_count returns how many dictionaries are installed, or -1 when the private
-// surface is unavailable.
-static CFIndex dcs_count(void) {
-    if (!dcs_resolve()) return -1;
-    CFSetRef set = f_copy_available();
-    if (!set) return -1;
-    CFIndex n = CFSetGetCount(set);
-    CFRelease(set);
-    return n;
-}
-
-// dcs_describe fills identifier + language pairs for the i'th dictionary.
+// dcs_describe_all returns every installed dictionary as one flat record set:
+//   <identifier>\t<index>>lang,<index>>lang,\n
+//
+// ONE copy of the set, described in a single pass. An earlier version called a
+// per-index describe N times, each re-copying the set -- unsound by this file's
+// own comment: CFSet enumeration order is UNSPECIFIED, so two copies may
+// enumerate differently and the result gains duplicates and drops entries. A
+// dropped Larousse degrades Spanish to the NULL search silently.
 //
 // A CFSet, NOT a CFArray. Measured 2026-08-28: CFArrayGetValueAtIndex on this
 // result does not return garbage, it raises "-[__NSCFSet objectAtIndex:]:
 // unrecognized selector" -- an uncaught ObjC exception in a cgo frame, where the
 // cause is not remotely obvious. CFSetGetValues is the only correct read.
 //
-// Iteration order is therefore UNSPECIFIED, which is why selection is by
-// identifier and never by position or name (chooseDictionary is pinned
-// order-independent for the same reason).
-static char *dcs_describe(CFIndex want, char **langs_out) {
-    *langs_out = NULL;
+// A flat string rather than a nested structure because the Go side parses it
+// once into typed values -- keeping the cgo boundary to plain C strings is what
+// stops this file from growing a data model.
+static char *dcs_describe_all(void) {
     if (!dcs_resolve()) return NULL;
     CFSetRef set = f_copy_available();
     if (!set) return NULL;
 
     CFIndex n = CFSetGetCount(set);
-    char *id_out = NULL;
-    if (want >= 0 && want < n) {
-        const void **values = malloc(sizeof(void *) * n);
-        if (values) {
-            CFSetGetValues(set, values);
-            DCSRef d = (DCSRef)values[want];
-            id_out = cfstring_dup(f_get_identifier(d));
+    const void **values = malloc(sizeof(void *) * n);
+    if (!values) { CFRelease(set); return NULL; }
+    CFSetGetValues(set, values);
 
-            // Language pairs, flattened to "index>description," repeated. A flat
-            // string rather than a nested structure because the Go side parses
-            // it once into typed values -- keeping the cgo boundary to plain
-            // C strings is what stops this file from growing a data model.
-            CFArrayRef langs = f_get_languages(d);
-            if (langs) {
-                CFMutableStringRef acc = CFStringCreateMutable(NULL, 0);
-                CFIndex ln = CFArrayGetCount(langs);
-                for (CFIndex j = 0; j < ln; j++) {
-                    CFDictionaryRef pair = (CFDictionaryRef)CFArrayGetValueAtIndex(langs, j);
-                    if (!pair) continue;
-                    CFStringRef idx = (CFStringRef)CFDictionaryGetValue(pair, CFSTR("DCSDictionaryIndexLanguage"));
-                    CFStringRef des = (CFStringRef)CFDictionaryGetValue(pair, CFSTR("DCSDictionaryDescriptionLanguage"));
-                    if (!idx || !des) continue;
-                    CFStringAppend(acc, idx);
-                    CFStringAppend(acc, CFSTR(">"));
-                    CFStringAppend(acc, des);
-                    CFStringAppend(acc, CFSTR(","));
-                }
-                *langs_out = cfstring_dup(acc);
-                CFRelease(acc);
+    CFMutableStringRef acc = CFStringCreateMutable(NULL, 0);
+    for (CFIndex i = 0; i < n; i++) {
+        DCSRef d = (DCSRef)values[i];
+        CFStringRef id = f_get_identifier(d);
+        if (!id) continue;
+        CFStringAppend(acc, id);
+        CFStringAppend(acc, CFSTR("\t"));
+
+        CFArrayRef langs = f_get_languages(d);
+        if (langs) {
+            CFIndex ln = CFArrayGetCount(langs);
+            for (CFIndex j = 0; j < ln; j++) {
+                CFDictionaryRef pair = (CFDictionaryRef)CFArrayGetValueAtIndex(langs, j);
+                if (!pair) continue;
+                CFStringRef idx = (CFStringRef)CFDictionaryGetValue(pair, CFSTR("DCSDictionaryIndexLanguage"));
+                CFStringRef des = (CFStringRef)CFDictionaryGetValue(pair, CFSTR("DCSDictionaryDescriptionLanguage"));
+                if (!idx || !des) continue;
+                CFStringAppend(acc, idx);
+                CFStringAppend(acc, CFSTR(">"));
+                CFStringAppend(acc, des);
+                CFStringAppend(acc, CFSTR(","));
             }
-            free(values);
         }
+        CFStringAppend(acc, CFSTR("\n"));
     }
+    free(values);
     CFRelease(set);
-    return id_out;
+    char *out = cfstring_dup(acc);
+    CFRelease(acc);
+    return out;
 }
 
 // dcs_lookup_in searches ONE dictionary, found by identifier.
@@ -187,29 +187,55 @@ import (
 // dictionary simply does not have.
 var ErrLookupFailed = errors.New("dictionary lookup failed")
 
+// dcsPrivateSymbols names every symbol dcs_resolve looks up.
+//
+// ONE producer for the list, because a COUNT written into prose is a
+// restatement with nothing keeping it true — "the nine symbols" was repeated in
+// four documents and was wrong in all four (nine is how many the issue's survey
+// FOUND; this file resolves three). The docs now say "the private symbols" and
+// the conformance test walks this slice, so there is no number to drift.
+//
+// DCSCopyTextDefinition is deliberately absent: it is the one PUBLIC call, comes
+// from the SDK header, and is not at risk in the way these are.
+var dcsPrivateSymbols = []string{
+	"DCSCopyAvailableDictionaries",
+	"DCSDictionaryGetIdentifier",
+	"DCSDictionaryGetLanguages",
+}
+
+// hasPrivateSymbol reports whether one private symbol resolves.
+func hasPrivateSymbol(name string) bool {
+	cs := C.CString(name)
+	defer C.free(unsafe.Pointer(cs))
+	return C.dcs_has_symbol(cs) != 0
+}
+
 // installedDictionaries reads the private surface and returns what it says.
 //
 // nil means the surface is unavailable — every caller treats that as "fall back
 // to the NULL search", never as "no dictionaries exist".
 func installedDictionaries() []dictMeta {
-	n := C.dcs_count()
-	if n < 0 {
+	raw := C.dcs_describe_all()
+	if raw == nil {
 		return nil
 	}
-	out := make([]dictMeta, 0, int(n))
-	for i := C.CFIndex(0); i < n; i++ {
-		var langs *C.char
-		id := C.dcs_describe(i, &langs)
-		if id == nil {
+	defer C.free(unsafe.Pointer(raw))
+	return parseDictRecords(C.GoString(raw))
+}
+
+// parseDictRecords reads the flat encoding the C side emits.
+//
+// Pure, so the whole cgo boundary's format is testable without CoreServices —
+// which matters because this is where a malformed record could silently drop the
+// one dictionary a language depends on.
+func parseDictRecords(s string) []dictMeta {
+	out := []dictMeta{}
+	for _, line := range strings.Split(s, "\n") {
+		id, langs, ok := strings.Cut(line, "\t")
+		if !ok || id == "" {
 			continue
 		}
-		m := dictMeta{ID: C.GoString(id)}
-		C.free(unsafe.Pointer(id))
-		if langs != nil {
-			m.Langs = parseLangPairs(C.GoString(langs))
-			C.free(unsafe.Pointer(langs))
-		}
-		out = append(out, m)
+		out = append(out, dictMeta{ID: id, Langs: parseLangPairs(langs)})
 	}
 	return out
 }
@@ -260,6 +286,11 @@ func (d selectedDictionary) Lookup(word string) (string, error) {
 	cw := C.CString(word)
 	defer C.free(unsafe.Pointer(cw))
 
+	// The FIRST non-absence error wins, not the last error seen. Status 3 on the
+	// primary followed by status 1 on the next would otherwise report ErrNoEntry
+	// — "this word does not exist in English" when the truth is "the primary
+	// dictionary vanished". dcs_lookup_in keeps those two statuses distinct
+	// precisely so this layer does not collapse them.
 	var lastErr error = ErrNoEntry
 	for _, id := range d.ids {
 		cid := C.CString(id)
@@ -280,11 +311,14 @@ func (d selectedDictionary) Lookup(word string) (string, error) {
 			lastErr = ErrNoEntry
 		case 3:
 			// The dictionary itself is gone, which is NOT the same as the word
-			// being absent. Recorded so a vanished dictionary cannot masquerade
-			// as a missing word, but still tried against the rest of the list.
-			lastErr = fmt.Errorf("%w: dictionary %s is unavailable", ErrLookupFailed, id)
+			// being absent. Kept, and NOT overwritten by a later absence.
+			if errors.Is(lastErr, ErrNoEntry) {
+				lastErr = fmt.Errorf("%w: dictionary %s is unavailable", ErrLookupFailed, id)
+			}
 		default:
-			lastErr = ErrLookupFailed
+			if errors.Is(lastErr, ErrNoEntry) {
+				lastErr = ErrLookupFailed
+			}
 		}
 	}
 	return "", lastErr
@@ -293,7 +327,7 @@ func (d selectedDictionary) Lookup(word string) (string, error) {
 // noadDictionary is the pre-#23 path: DCSCopyTextDefinition with a NULL
 // dictionary, meaning "search every ACTIVE dictionary" — not NOAD specifically.
 //
-// It stays because it is the FALLBACK. The nine symbols this file resolves are
+// It stays because it is the FALLBACK. The symbols this file resolves are
 // private and undocumented; when one disappears on an OS update the tool
 // degrades to exactly what it shipped before #23 — a working English dictionary
 // — rather than to a crash or a link failure.
@@ -316,48 +350,16 @@ func (noadDictionary) Lookup(word string) (string, error) {
 
 // systemDictionary picks the dictionary for a language.
 //
-// The three outcomes, and each is a deliberate answer rather than a default:
-//
-//   - a curated, installed, monolingual dictionary — use it, and SAY SO, because
-//     on a machine with a different set installed a wrong pick should be visible
-//     rather than puzzling.
-//   - the private surface is gone (an OS update) — fall back to the NULL search,
-//     which is what the tool did before #23. Degrading to the previous version's
-//     behaviour is the point of resolving these symbols at run time at all.
-//   - the surface works but nothing curated matches the language — ALSO the NULL
-//     search, and say why. Guessing among a thesaurus, an accessibility
-//     dictionary and a general one is how a deterministic tiebreak picks wrong.
+// A thin IO shell over dictionaryFor: read the metadata, apply the policy, build
+// the seam. The policy is pure and lives in dictselect.go, which is what lets
+// its three outcomes be tested on a machine with no dictionaries at all.
 func systemDictionary(lang store.Lang, warn io.Writer) (Dictionary, string) {
-	installed := installedDictionaries()
-	if installed == nil {
-		// LOUD, because it is the surprising one: the private surface moved under
-		// us, and the tool has silently become its pre-#23 self.
-		warnf(warn, "the dictionary-selection API is unavailable; searching every active dictionary")
-		return noadDictionary{}, everyActiveDictionary
+	ids, name, complaint := dictionaryFor(installedDictionaries(), lang)
+	if complaint != "" {
+		warnTo(warn, "%s", complaint)
 	}
-	chosen, ok := chooseDictionary(installed, lang)
-	if !ok {
-		warnf(warn, "no known %s dictionary is installed; searching every active dictionary", lang)
-		return noadDictionary{}, everyActiveDictionary
+	if len(ids) == 0 {
+		return noadDictionary{}, name
 	}
-	ids := make([]string, len(chosen))
-	for i, m := range chosen {
-		ids[i] = m.ID
-	}
-	// SILENT on the happy path, and the name is reported by /lang instead. A line
-	// per lookup saying the expected thing happened is noise; a learner on a
-	// machine with a different set installed asks the question once, and /lang is
-	// where the answer belongs.
-	return selectedDictionary{ids: ids}, strings.Join(ids, ", ")
-}
-
-// everyActiveDictionary is what the NULL search is called when /lang reports it.
-// Not an identifier, because it is not one dictionary — it is the host's whole
-// active set, which is why results depend on Dictionary.app's configuration.
-const everyActiveDictionary = "every active dictionary"
-
-func warnf(w io.Writer, format string, args ...any) {
-	if w != nil {
-		fmt.Fprintf(w, "define: "+format+"\n", args...)
-	}
+	return selectedDictionary{ids: ids}, name
 }

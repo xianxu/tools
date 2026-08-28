@@ -16,6 +16,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -66,8 +67,9 @@ func TestFixturesMatchLiveDictionary(t *testing.T) {
 
 // The PRIVATE surface, which is the whole risk M2 took on.
 //
-// Nine undocumented symbols, absent from the SDK header, free to disappear on any
-// OS update. The seam degrades to the pre-#23 NULL search when they do, which is
+// Undocumented symbols, absent from the SDK header, free to disappear on any OS
+// update. The list is dcsPrivateSymbols and each member is checked by name, so
+// there is no count in prose to go stale. The seam degrades to the pre-#23 NULL search when they do, which is
 // the right failure — but a SILENT degradation means the tool quietly stops
 // speaking Spanish and nothing says why. This is what says why.
 //
@@ -77,10 +79,24 @@ func TestFixturesMatchLiveDictionary(t *testing.T) {
 // silence rather than an error without real access to /System/Library/AssetsV2,
 // which would make a sandbox indistinguishable from genuine drift.
 func TestPrivateDictionarySurfaceStillResolves(t *testing.T) {
+	// Member by member, so a report names WHICH symbol moved rather than
+	// "something did".
+	var missing []string
+	for _, name := range dcsPrivateSymbols {
+		if !hasPrivateSymbol(name) {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		conformance.SkipOrFail(t, "the private DictionaryServices surface moved",
+			fmt.Errorf("dlsym found no %s", strings.Join(missing, ", ")))
+		return
+	}
+
 	installed := installedDictionaries()
 	if installed == nil {
-		conformance.SkipOrFail(t, "the private DictionaryServices surface did not resolve",
-			errors.New("dlsym found no DCSCopyAvailableDictionaries/GetIdentifier/GetLanguages"))
+		conformance.SkipOrFail(t, "the private surface resolved but returned nothing",
+			errors.New("DCSCopyAvailableDictionaries gave no set"))
 		return
 	}
 	if len(installed) == 0 {

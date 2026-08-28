@@ -2152,3 +2152,50 @@ testing when the layout moves. Put it in the package and obtain the path from th
 function that produces it. And make the fixture VALID except for the one property
 under test — an invalid fixture passes for whichever reason comes first, which
 may not be the one the test names.
+
+## An enumeration in a comment is not structural (#23 C1, BR-2, BR-13)
+
+Three findings, one shape. `/lang` must re-derive everything downstream of the
+language, and the set was written as a list in `applyLang`'s doc comment. It was
+wrong three times: `opt.voice` at M1's boundary, the learner model one round
+later, and `d.usage` at the close — the last one added by *the same milestone*
+whose comment still called it "not language-scoped".
+
+Each fix added the missing member to the list. The list kept going stale because
+nothing made adding a member at the boundary imply switching it.
+
+**Rule:** when N things derive from one value, make the set a TYPE built by ONE
+function that both the construction site and the switch call. A struct returned
+from one builder cannot be half-adopted; a comment listing the same members can,
+and will, within a milestone.
+
+**Corollary:** "deliberately NOT in this set" is a claim with a shelf life. Every
+exclusion needs its reason re-checked when the thing it excludes changes — the
+`usage` exclusion was true when written and false three commits later.
+
+## Give a count one producer, or delete the count (#23 BR-14)
+
+"The nine symbols" appeared in four documents and was wrong in all four: nine is
+how many the *survey* found, while the resolver needs three. Nothing checked it,
+because a number in prose has no consumer.
+
+**Rule:** a count restated in prose is drift waiting to happen. Either give it one
+producer the docs derive from, or — usually better — remove the number and name
+the list, so there is nothing to go stale. `dcsPrivateSymbols` is the list; no
+document counts it.
+
+## Make the plan a consumer of the tree (#23 BR-14)
+
+Plans named `deckDeps`, `MigrateFlatDeck`, `dictChoice` and `dcsDictionaries` —
+four entities the tree did not have, across four review rounds, each fixed by
+hand-sweeping the instance.
+
+A plan's Core-concepts table already states "this identifier lives at this path"
+in machine-readable form. `TestPlanTablesNameEntitiesThatExist` reads it and
+checks the file declares the name.
+
+**Rule:** when a document restates a fact the code owns in a STRUCTURED form,
+make the document a consumer. The unstructured half stays a review problem; the
+structured half becomes a build failure. A row whose file does not exist yet is
+skipped — a plan precedes its code, and only a row pointing at a real file makes
+a checkable claim.

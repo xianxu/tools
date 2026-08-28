@@ -96,6 +96,36 @@ instead, and it is the stronger check: it asserts the real output of the
 functions that write, so a name drifting away from its pattern fails there rather
 than silently escaping `.gitignore` and both guards.
 
+## No document spells a name the code owns
+
+The second rule this range added, and the one that took three review rounds to
+state mechanically rather than in prose. A doc that spells a stale runtime
+filename is not a style problem: the README tells the learner to hand-edit the
+learner model's `## Corrections`, so a doc naming the wrong file sends their
+corrections somewhere nothing reads.
+
+| test | reads | catches |
+|---|---|---|
+| `TestRuntimeArtifactNamesAreSpelledOnceInSource` | non-test **Go** | a filename spelled outside the two consts that build every such name |
+| `TestProseDoesNotSpellStaleRuntimeArtifactNames` | README, `atlas/`, `workshop/projects/` | a stale filename in a doc read as current truth |
+| `TestPlanTablesNameEntitiesThatExist` | active plans' Core-concepts tables | a plan naming a SYMBOL the tree does not declare |
+
+**Records are exempt, and identifying them is the interesting part.** Docs that
+describe the tool as it IS must be swept; docs that RECORD what was true when
+written must not, or the "fix" is falsifying history. `currentTruthOnly` finds
+records by SHAPE — a `## Revisions` or `## Log` heading, or a `###` block
+carrying `**closed:**` — rather than by a list of filenames, so a new record
+section is covered without anyone remembering it. Issues, plans, lessons and
+`workshop/history/` are records wholesale and are not swept at all.
+
+**The third row is the SYMBOL half**, which recurred four times while the first
+two ratchets counted filenames only: plans named `deckDeps`, `MigrateFlatDeck`,
+`dictChoice` and `dcsDictionaries`, none of which the tree had. A plan's
+Core-concepts table already states "this identifier lives at this path" in
+machine-readable form, so making the plan a CONSUMER of the tree is cheap. A row
+whose file does not exist yet is skipped — a plan legitimately precedes its code;
+a row pointing at a real file that does not declare the name is a lie.
+
 **The history arm carries a ratchet, not an exemption.** Two 995-byte blobs of
 the renamed fixture stay reachable from `HEAD`, and rewriting history for
 synthetic sample output would be disproportionate. `legacyRuntimeFilePaths` pins

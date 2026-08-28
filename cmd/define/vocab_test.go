@@ -454,6 +454,16 @@ func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
 	if !voc.Has(store.Key("bonito")) {
 		t.Error("after /lang, the EDITOR holds a third set that captures do not reach")
 	}
+	// D6's news gate must follow the switch too. It did not: newsFeedFor was
+	// applied only at the boundary, so a session that started in English kept the
+	// English feed after /lang es, and one that started in Spanish kept news==nil
+	// forever after /lang en. That is why langDeps is a STRUCT taken whole from
+	// one builder rather than a list of members in a comment.
+	if bs, ok := d.usage.(*bothSources); !ok || bs.news != nil {
+		t.Errorf("after /lang es the session still holds the English news feed (%T); the feed "+
+			"is English by construction and must not be consulted", d.usage)
+	}
+
 	// history keeps its IDENTITY across the switch, which applyLang argues for in
 	// a comment and this makes structural: events/ is not language-scoped, and
 	// rebuilding it would leave the raw editor holding an orphaned, already-
@@ -465,6 +475,15 @@ func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
 	// The switch is durable, not just live.
 	if got := store.ReadLang(dir); got != "es" {
 		t.Errorf("the directory says %q; /lang must persist", got)
+	}
+
+	// And back, because the reverse loses the feed silently rather than gaining
+	// a wrong one — the harder direction to notice.
+	if err := setLang(store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	if bs, ok := d.usage.(*bothSources); !ok || bs.news == nil {
+		t.Errorf("switching back to English did not restore the news feed (%T)", d.usage)
 	}
 }
 

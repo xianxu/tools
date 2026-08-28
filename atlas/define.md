@@ -1142,13 +1142,16 @@ order-independent.
 is not installed" means fall back rather than report an absence you cannot vouch
 for. Collapsing them makes a missing dictionary look like a missing word.
 
-**The nine symbols are private** — absent from the SDK header, which declares two
-functions and says of the dictionary argument *"not supported for Leopard. You
-should always pass NULL."* True of the header, false of the framework. They are
-`dlsym`'d at run time so a disappearance degrades to the pre-`#23` NULL search;
-proved by misspelling one and running the binary. `TestPrivateDictionarySurface
-StillResolves` is what makes that degradation loud for a maintainer, since it is
-deliberately silent for a user.
+**The selection symbols are private** — absent from the SDK header, which
+declares two functions and says of the dictionary argument *"not supported for
+Leopard. You should always pass NULL."* True of the header, false of the
+framework. They are `dlsym`'d at run time so a disappearance degrades to the
+pre-`#23` NULL search. The list is `dcsPrivateSymbols`, and it is deliberately
+not restated as a count anywhere: "the nine symbols" was repeated into four
+documents and was wrong in all four — nine is how many the issue's survey FOUND,
+while the resolver needs three. `TestPrivateDictionarySurfaceStillResolves` walks
+the list member by member, which makes the degradation loud for a maintainer
+since it is deliberately silent for a user.
 
 **The news feed is gated the same way (D6).** `httpFeed` hardcodes
 `hl=en-US&gl=US&ceid=US:en` — English by construction — so it is consulted only

@@ -192,6 +192,62 @@ rounds:
           round: 5
       boundary: M1
       blocked: false
+    - "n": 6
+      timestamp: "2026-08-28T14:14:26-07:00"
+      agent: claude
+      dispose:
+        - id: BR-11
+          disposition: addressed
+          note: TestProseDoesNotSpellStaleRuntimeArtifactNames binds README/atlas/workshop/projects with a currentTruthOnly shape-based record filter; I planted the exact false sentence at define-learn.md:150 and it went red, and appending it after "## Log" correctly did not. Forget's doc comment is reattached at store/yaml.go:534. Residual symbol-half scope raised as a new finding.
+          round: 6
+        - id: BR-12
+          disposition: addressed
+          note: TestDeckIgnoresInterruptedWrites moved to package store (atomic_internal_test.go) deriving paths from y.wordsDir() and newTempFile(); reverting Deck()'s .yaml suffix check turns it red with the half-written word in the deck. store.LangFileName() exported and used at lang_cmd_test.go:159 and :182.
+          round: 6
+      findings:
+        - id: BR-13
+          severity: Important
+          title: applyLang does not re-derive d.usage, so D6's news gate holds at the boundary but not across a mid-session /lang
+          detail: '2nd finding in this family — do NOT fix the instance by adding one line to applyLang. newsFeedFor is applied only in openStore (main.go:316) and sessionUsage (main.go:250), while applyLang (command.go:388) excludes d.usage as "not language-scoped" — true before this range, false after M2 made the feed''s presence a function of the language. Verified with a scratch test: after applyLang(&d,&opt,"es",...) the session still holds the English cachingFeed (bs2.news != nil); symmetrically a session started in es keeps news==nil after /lang en and silently loses the feed. Latent rather than live only because UsageSource.Usages has no production caller at HEAD (grep: d.usage is referenced only at main.go:182-183); it becomes silent wrong-language data the moment #10 wires it. The class: applyLang''s own doc states the generating rule ("anything derived from the language BEFORE a switch must be re-derived BY it") and the very next member added violated it, so an enumeration in a comment is not enforcement. Structural fix: extend the single newDeck builder to construct everything that is a function of the language (including the gated usage source) and have applyLang call exactly that builder, so a boundary-only derivation is unspellable. Pin at vocab_test.go:405, which already asserts d.history identity across the switch.'
+          family: language-derived-state-unscoped
+          round: 6
+        - id: BR-14
+          severity: Important
+          title: The artifact-name rule's SYMBOL/MODEL half is still unenforced; 11 live restatements measured at HEAD
+          detail: '7th finding in this family — do NOT fix these instances. Both ratchets count exactly one string, "user-model.", while the rule they enforce binds "a runtime artifact''s filename OR A SYMBOL THE CODE OWNS". The unmechanised half has now recurred four times (I4 deckDeps, BR-6 MigrateFlatDeck, and two fresh ones). Measured at HEAD - (1) dict_darwin.go:296 "the nine symbols this file resolves"; (2) dict_conformance_test.go:69 "Nine undocumented symbols"; (3) atlas/define.md:1145; (4) workshop/projects/define-learn.md:464 - dcs_resolve resolves THREE. (5) vocab.go:160 claims warnTo is "the one place" the "define: " prefix is written while dict_darwin.go:359 is a byte-identical second (ARCH-DRY; also a package-level func inside a darwin-only build tag). (6) README.md:331-333 is a stranded pre-M2 paragraph duplicating the one four lines above and falsely saying enabling Chinese dictionaries affects formatting, which the curated L to L selection now prevents. (7) atlas/index.md:9 still says "NOAD word lookup". (8) plan :116/:132 name dictChoice, absent. (9) plan :147/:153 name dcsDictionaries, absent. (10) plan :279 ticked, "assert all nine symbols resolve". (11) plan D6''s Bonus claims a live Google News request per Spanish lookup, which no code path makes. Class fix, cheap because the enumeration already exists - one test asserting every Name cell of a plan''s Core-concepts table resolves to a declared identifier at the stated path would have caught 8, 9 and both prior recurrences; and give the symbol COUNT one producer (a dcsSymbols slice the resolver and the docs both read) instead of four hand-typed copies.'
+          family: comment-contract-drift
+          round: 6
+        - id: BR-15
+          severity: Important
+          title: systemDictionary's two fallback branches have no automated test on any platform, and the Done-when row is ticked on a manual experiment
+          detail: 'dict_darwin.go:327 fuses the three-outcome policy and its user-facing warning text to installedDictionaries()'' cgo IO, so neither "the private surface is gone" nor "nothing curated matches" is reachable from a test. noadDictionary and everyActiveDictionary appear in no non-conformance test. The Done-when row "the seam FALLS BACK to today''s NULL behaviour if any is missing" and plan Task 9 Step 4 are both ticked on a manual symbol-misspelling run. ARCH-PURE (extract dictionaryFor(installed []dictMeta, lang) (ids []string, name string) as pure and leave the cgo shell thin) and ARCH-MOCK (with the metadata source injected, production and test finally share the selection boundary — the standard the M1 review sidecar set at 000023-deck-language-m1-review.md:289 and this milestone did not meet). Not hypothetical: I measured this machine''s shell context returning a single dictionary (com.apple.dictionary.Wikipedia), so ./define -lang es mesa takes the untested branch on every run here.'
+          family: policy-inside-io-shell
+          round: 6
+        - id: BR-16
+          severity: Important
+          title: atlas/repo-guards.md does not name the two artifact-name ratchets this range added
+          detail: 'repo-guards.md is the atlas catalogue of repo guards and was updated for RuntimeFiles, TestRuntimeFilePatternsCoverWhatWeWrite and legacyRuntimeFilePaths, but never names TestRuntimeArtifactNamesAreSpelledOnceInSource or TestProseDoesNotSpellStaleRuntimeArtifactNames — the two guards workshop/lessons.md calls this range''s class fix, and the ones a contributor most needs to find before adding a doc line. One table row each plus the records-versus-current-truth scope rule (## Revisions / ## Log / a block carrying **closed:**), so the deliberate scope decision is discoverable outside the test''s own comment.'
+          family: atlas-lags-new-surface
+          round: 6
+        - id: BR-17
+          severity: Minor
+          title: selectedDictionary.Lookup lets a later ErrNoEntry overwrite an earlier "dictionary unavailable", the collapse its own C comment forbids
+          detail: dict_darwin.go:270 assigns lastErr on every iteration, so status 3 on NOAD followed by status 1 on AppleDictionary reports ErrNoEntry — "this word does not exist in English" when the truth is "the primary dictionary vanished". dcs_lookup_in's comment at :118 states these two must not collapse. Keep the first non-ErrNoEntry error instead of the last error seen.
+          family: comment-contract-drift
+          round: 6
+        - id: BR-18
+          severity: Minor
+          title: installedDictionaries indexes position i across N separately-copied CFSets, whose enumeration order the file itself calls unspecified
+          detail: dict_darwin.go:189 calls dcs_describe(i) once per dictionary and each call re-invokes f_copy_available() and CFSetGetValues on a fresh copy. dcs_describe's own comment states iteration order is UNSPECIFIED; if two copies ever enumerate differently the returned slice gains duplicates and drops entries, and a dropped com.apple.dictionary.es.DGLEV silently degrades Spanish to the NULL search. Copy the set once and describe all N from that copy. Performance is not the concern (measured 46us warm).
+          family: policy-inside-io-shell
+          round: 6
+        - id: BR-19
+          severity: Minor
+          title: The English fixture corpus is captured through the NULL search while production selects the curated identifiers
+          detail: testdata/capture.sh:60 captures entries/en through DCSCopyTextDefinition(NULL) — "the host's ACTIVE dictionaries" — while systemDictionary(en) now selects com.apple.dictionary.NOAD and com.apple.dictionary.AppleDictionary. Capture path and production path therefore differ for English; they agree today only because this host's active set happens to match. Detectable (TestFixturesMatchLiveDictionary compares them, and did go red once), so this is a note rather than a defect — but passing the curated ids to capture.py would make the two agree by construction (ARCH-MOCK).
+          family: policy-inside-io-shell
+          round: 6
+      blocked: true
 ---
 
 # Gate ledger — tools#23 (boundary-review)
@@ -306,7 +362,36 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   it plants via y.wordsDir() and newTempFile(), and export a producer for the
   language filename so package main's tests derive it too.
 
+## Round 6 — 2026-08-28T14:14:26-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-11 — addressed — TestProseDoesNotSpellStaleRuntimeArtifactNames binds README/atlas/workshop/projects with a currentTruthOnly shape-based record filter; I planted the exact false sentence at define-learn.md:150 and it went red, and appending it after "## Log" correctly did not. Forget's doc comment is reattached at store/yaml.go:534. Residual symbol-half scope raised as a new finding.
+- BR-12 — addressed — TestDeckIgnoresInterruptedWrites moved to package store (atomic_internal_test.go) deriving paths from y.wordsDir() and newTempFile(); reverting Deck()'s .yaml suffix check turns it red with the half-written word in the deck. store.LangFileName() exported and used at lang_cmd_test.go:159 and :182.
+
+### Raised
+
+- **BR-13** [Important] `language-derived-state-unscoped` applyLang does not re-derive d.usage, so D6's news gate holds at the boundary but not across a mid-session /lang
+  2nd finding in this family — do NOT fix the instance by adding one line to applyLang. newsFeedFor is applied only in openStore (main.go:316) and sessionUsage (main.go:250), while applyLang (command.go:388) excludes d.usage as "not language-scoped" — true before this range, false after M2 made the feed's presence a function of the language. Verified with a scratch test: after applyLang(&d,&opt,"es",...) the session still holds the English cachingFeed (bs2.news != nil); symmetrically a session started in es keeps news==nil after /lang en and silently loses the feed. Latent rather than live only because UsageSource.Usages has no production caller at HEAD (grep: d.usage is referenced only at main.go:182-183); it becomes silent wrong-language data the moment #10 wires it. The class: applyLang's own doc states the generating rule ("anything derived from the language BEFORE a switch must be re-derived BY it") and the very next member added violated it, so an enumeration in a comment is not enforcement. Structural fix: extend the single newDeck builder to construct everything that is a function of the language (including the gated usage source) and have applyLang call exactly that builder, so a boundary-only derivation is unspellable. Pin at vocab_test.go:405, which already asserts d.history identity across the switch.
+- **BR-14** [Important] `comment-contract-drift` The artifact-name rule's SYMBOL/MODEL half is still unenforced; 11 live restatements measured at HEAD
+  7th finding in this family — do NOT fix these instances. Both ratchets count exactly one string, "user-model.", while the rule they enforce binds "a runtime artifact's filename OR A SYMBOL THE CODE OWNS". The unmechanised half has now recurred four times (I4 deckDeps, BR-6 MigrateFlatDeck, and two fresh ones). Measured at HEAD - (1) dict_darwin.go:296 "the nine symbols this file resolves"; (2) dict_conformance_test.go:69 "Nine undocumented symbols"; (3) atlas/define.md:1145; (4) workshop/projects/define-learn.md:464 - dcs_resolve resolves THREE. (5) vocab.go:160 claims warnTo is "the one place" the "define: " prefix is written while dict_darwin.go:359 is a byte-identical second (ARCH-DRY; also a package-level func inside a darwin-only build tag). (6) README.md:331-333 is a stranded pre-M2 paragraph duplicating the one four lines above and falsely saying enabling Chinese dictionaries affects formatting, which the curated L to L selection now prevents. (7) atlas/index.md:9 still says "NOAD word lookup". (8) plan :116/:132 name dictChoice, absent. (9) plan :147/:153 name dcsDictionaries, absent. (10) plan :279 ticked, "assert all nine symbols resolve". (11) plan D6's Bonus claims a live Google News request per Spanish lookup, which no code path makes. Class fix, cheap because the enumeration already exists - one test asserting every Name cell of a plan's Core-concepts table resolves to a declared identifier at the stated path would have caught 8, 9 and both prior recurrences; and give the symbol COUNT one producer (a dcsSymbols slice the resolver and the docs both read) instead of four hand-typed copies.
+- **BR-15** [Important] `policy-inside-io-shell` systemDictionary's two fallback branches have no automated test on any platform, and the Done-when row is ticked on a manual experiment
+  dict_darwin.go:327 fuses the three-outcome policy and its user-facing warning text to installedDictionaries()' cgo IO, so neither "the private surface is gone" nor "nothing curated matches" is reachable from a test. noadDictionary and everyActiveDictionary appear in no non-conformance test. The Done-when row "the seam FALLS BACK to today's NULL behaviour if any is missing" and plan Task 9 Step 4 are both ticked on a manual symbol-misspelling run. ARCH-PURE (extract dictionaryFor(installed []dictMeta, lang) (ids []string, name string) as pure and leave the cgo shell thin) and ARCH-MOCK (with the metadata source injected, production and test finally share the selection boundary — the standard the M1 review sidecar set at 000023-deck-language-m1-review.md:289 and this milestone did not meet). Not hypothetical: I measured this machine's shell context returning a single dictionary (com.apple.dictionary.Wikipedia), so ./define -lang es mesa takes the untested branch on every run here.
+- **BR-16** [Important] `atlas-lags-new-surface` atlas/repo-guards.md does not name the two artifact-name ratchets this range added
+  repo-guards.md is the atlas catalogue of repo guards and was updated for RuntimeFiles, TestRuntimeFilePatternsCoverWhatWeWrite and legacyRuntimeFilePaths, but never names TestRuntimeArtifactNamesAreSpelledOnceInSource or TestProseDoesNotSpellStaleRuntimeArtifactNames — the two guards workshop/lessons.md calls this range's class fix, and the ones a contributor most needs to find before adding a doc line. One table row each plus the records-versus-current-truth scope rule (## Revisions / ## Log / a block carrying **closed:**), so the deliberate scope decision is discoverable outside the test's own comment.
+- **BR-17** [Minor] `comment-contract-drift` selectedDictionary.Lookup lets a later ErrNoEntry overwrite an earlier "dictionary unavailable", the collapse its own C comment forbids
+  dict_darwin.go:270 assigns lastErr on every iteration, so status 3 on NOAD followed by status 1 on AppleDictionary reports ErrNoEntry — "this word does not exist in English" when the truth is "the primary dictionary vanished". dcs_lookup_in's comment at :118 states these two must not collapse. Keep the first non-ErrNoEntry error instead of the last error seen.
+- **BR-18** [Minor] `policy-inside-io-shell` installedDictionaries indexes position i across N separately-copied CFSets, whose enumeration order the file itself calls unspecified
+  dict_darwin.go:189 calls dcs_describe(i) once per dictionary and each call re-invokes f_copy_available() and CFSetGetValues on a fresh copy. dcs_describe's own comment states iteration order is UNSPECIFIED; if two copies ever enumerate differently the returned slice gains duplicates and drops entries, and a dropped com.apple.dictionary.es.DGLEV silently degrades Spanish to the NULL search. Copy the set once and describe all N from that copy. Performance is not the concern (measured 46us warm).
+- **BR-19** [Minor] `policy-inside-io-shell` The English fixture corpus is captured through the NULL search while production selects the curated identifiers
+  testdata/capture.sh:60 captures entries/en through DCSCopyTextDefinition(NULL) — "the host's ACTIVE dictionaries" — while systemDictionary(en) now selects com.apple.dictionary.NOAD and com.apple.dictionary.AppleDictionary. Capture path and production path therefore differ for English; they agree today only because this host's active set happens to match. Detectable (TestFixturesMatchLiveDictionary compares them, and did go red once), so this is a note rather than a defect — but passing the curated ids to capture.py would make the two agree by construction (ARCH-MOCK).
+
 ## Open findings
 
-- **BR-11** [Important] `comment-contract-drift` BR-6's rule binds prose but is enforced over *.go only, and the hand-swept half left a live false claim in the project file
-- **BR-12** [Minor] `runtime-artifact-guard-coverage` Two test fixtures/paths are hand-restated outside the store package; one is now stranded at the pre-#23 flat layout
+- **BR-13** [Important] `language-derived-state-unscoped` applyLang does not re-derive d.usage, so D6's news gate holds at the boundary but not across a mid-session /lang
+- **BR-14** [Important] `comment-contract-drift` The artifact-name rule's SYMBOL/MODEL half is still unenforced; 11 live restatements measured at HEAD
+- **BR-15** [Important] `policy-inside-io-shell` systemDictionary's two fallback branches have no automated test on any platform, and the Done-when row is ticked on a manual experiment
+- **BR-16** [Important] `atlas-lags-new-surface` atlas/repo-guards.md does not name the two artifact-name ratchets this range added
+- **BR-17** [Minor] `comment-contract-drift` selectedDictionary.Lookup lets a later ErrNoEntry overwrite an earlier "dictionary unavailable", the collapse its own C comment forbids
+- **BR-18** [Minor] `policy-inside-io-shell` installedDictionaries indexes position i across N separately-copied CFSets, whose enumeration order the file itself calls unspecified
+- **BR-19** [Minor] `policy-inside-io-shell` The English fixture corpus is captured through the NULL search while production selects the curated identifiers

@@ -113,7 +113,7 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
 | `store.RuntimeFiles` | `cmd/define/store/yaml.go` | new |
 | `voice` / `localeFor` | `cmd/define/voice.go` | new |
 | `AudioCandidates` | `cmd/define/audiourl.go` | modified |
-| `dictChoice` / `chooseDictionary` | `cmd/define/dictselect.go` | new (M2) |
+| `dictMeta` / `chooseDictionary` / `dictionaryFor` | `cmd/define/dictselect.go` | new (M2) |
 
 - **`Lang`** — a validated language tag: `"en"`, `"es"`. A named type over `string` so a bare directory name cannot be passed where a language is meant, and because it becomes a PATH SEGMENT — an unvalidated string there is a directory traversal, which is why `ParseLang` is the only constructor from input.
   - **Relationships:** 1:1 with a vocab directory's persisted setting; 1:N with the words filed under it.
@@ -129,7 +129,7 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
   - **NOTE the change from `#27`'s plan:** there is no `voices()` ordering policy and no fallback. The mode supplies exactly one language; `AudioCandidates` builds candidates for it alone.
   - **Future extensions:** `#27` replaces `localeFor`'s exception table with the θ/seseo policy without touching callers.
 
-- **`dictChoice` / `chooseDictionary`** *(M2)* — the decision "which installed dictionary serves language L", and the pure function that makes it from dictionary metadata plus a curated list.
+- **`dictMeta` / `chooseDictionary` / `dictionaryFor`** *(M2)* — the decision "which installed dictionary serves language L", and the pure function that makes it from dictionary metadata plus a curated list.
   - **Relationships:** 1:1 with a `Lang`. Pure over a slice of metadata records, so it is unit-testable with no CoreServices at all.
   - **DRY rationale:** first occurrence, and the reason it is pure and separate is that the *policy* is the contested part (measurement proves metadata alone picks a thesaurus for English) while the *lookup* is mechanical.
   - **Future extensions:** a learner-supplied identifier is one more branch here, not a new mechanism.
@@ -144,13 +144,13 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
 | `newDeck` (closure) | `cmd/define/main.go` | new | the language-scoped triple |
 | `/lang` command | `cmd/define/lang_cmd.go` | new | the TUI namespace |
 | `-lang` flag | `cmd/define/main.go` | new | operator input |
-| `dcsDictionaries` | `cmd/define/dict_darwin.go` | new (M2) | private DictionaryServices symbols |
+| `installedDictionaries` | `cmd/define/dict_darwin.go` | new (M2) | private DictionaryServices symbols |
 | `fakeDictionary` | `cmd/define/dict_fake_test.go` | modified | the system dictionary |
 
 - **`store.YAML`** — gains a language: `words/<lang>/<slug>.yaml`. A constructor parameter (D1); the store never reads the persisted setting itself.
 - **`ReadLang` / `WriteLang`** — read and write `lang.txt`. `ReadLang` degrades an absent, unreadable or garbage file to `DefaultLang`: the learner asked for a word, not for a configuration audit.
 - **`newDeck`** — the one builder of the language-scoped triple, called by `openStore` and by `/lang` (D1). A closure over `dir`/`clk`/`warn` carried on `storeDeps`/`deps`, not a package-level function; the invariant D1 protects is the single builder, not its shape.
-- **`dcsDictionaries`** *(M2)* — resolves the private symbols with `dlsym` and returns metadata records. Its fake widens from a set of entries to a set of *dictionaries*, which is what lets `chooseDictionary` and the "no entry in this language" path be tested with no CoreServices. Conformance is on-demand with `-tags conformance`, routed through `conformance.SkipOrFail` (`#25`).
+- **`installedDictionaries`** *(M2)* — resolves the private symbols with `dlsym` and returns metadata records. Its fake widens from a set of entries to a set of *dictionaries*, which is what lets `chooseDictionary` and the "no entry in this language" path be tested with no CoreServices. Conformance is on-demand with `-tags conformance`, routed through `conformance.SkipOrFail` (`#25`).
 
 ---
 
@@ -540,3 +540,68 @@ milestone-close commit rather than triggering a fifth review.
   in a Spanish session are not the English ones, and the cache is keyed by word
   alone. Decide it in M2's plan; discovering it at M2's boundary is exactly how
   the learner model arrived at M1's.
+
+### 2026-08-28 — close review: FIX-THEN-SHIP, four blocking findings as rules
+
+**Reason.** `sdlc close` returned FIX-THEN-SHIP with BR-13..BR-16 open and the
+gate reporting *3 repeat families — not converging: fix rules, not instances.*
+Sidecar: `workshop/plans/000023-deck-language-close-review.md`. Per `#174` the
+fixes are bundled into the close commit rather than triggering a sixth review.
+
+**Delta.**
+
+- **BR-13 — the language-derived enumeration failed a THIRD time, and this is
+  what finally made it structural.** M2 made the news feed's presence a function
+  of the language (D6), and `applyLang`'s doc comment still called `d.usage` "not
+  language-scoped" — so the gate held at the boundary and not across a
+  mid-session `/lang`. Both directions were wrong: a session started in English
+  kept the English feed after `/lang es`, and one started in Spanish kept
+  `news == nil` forever after `/lang en`.
+  - The class fix is not another line in `applyLang`. The set is now a TYPE —
+    `langDeps` — built by one function that `openStore` and `/lang` both call,
+    so a member constructed at the boundary is necessarily re-derived at the
+    switch. An enumeration in a doc comment did not survive one milestone; a
+    struct returned from one builder cannot be half-adopted.
+  - Pinned in both directions, since losing the feed is the quieter failure.
+- **BR-14 — the artifact-name rule's SYMBOL half was still unenforced after four
+  recurrences** (`deckDeps`, `MigrateFlatDeck`, `dictChoice`,
+  `dcsDictionaries`). Both existing ratchets count filenames only.
+  - `TestPlanTablesNameEntitiesThatExist` makes a plan a CONSUMER of the tree:
+    every Core-concepts row naming an identifier at an EXISTING path must find it
+    declared there. A row whose file does not exist yet is skipped, because a
+    plan legitimately precedes its code — a row pointing at a real file that does
+    not declare the name is a lie.
+  - It immediately caught both entities the review named plus two in `#27`'s
+    plan that M1 had invalidated (`voices`, deleted rather than adapted; and the
+    Spanish CDN conformance test, which shipped here under a different name).
+  - **"The nine symbols" was wrong in four documents.** Nine is what the issue's
+    survey FOUND; the resolver needs three. Rather than sync a count, the count is
+    gone: `dcsPrivateSymbols` is the one producer, the conformance test walks it
+    member by member, and the prose says "the private symbols". A count in prose
+    is a restatement with nothing keeping it true.
+  - Also swept: a duplicate `warnf` byte-identical to `warnTo` (ARCH-DRY, and the
+    comment claiming `warnTo` was "the one place" was false), a stranded pre-M2
+    README paragraph about Dictionary.app configuration, and `atlas/index.md`
+    still calling this "NOAD word lookup".
+- **BR-15 — both fallback branches had no automated test on any platform.** The
+  Done-when row about degrading was ticked on a manual misspell-and-run
+  experiment, which proved it once on one machine and pinned nothing. The policy
+  is now `dictionaryFor`, pure over metadata and extracted from the cgo shell
+  (ARCH-PURE), so all three outcomes unit-test anywhere. This matters more than
+  it sounds: the reviewer measured a shell context returning ONE dictionary, in
+  which every run takes the second fallback.
+- **BR-16 — `atlas/repo-guards.md` did not name the two ratchets this range
+  added.** It is the catalogue a contributor reads before adding a doc line, so a
+  guard missing from it is a guard they will trip blindly. Added, with the
+  records-vs-current-truth scope rule.
+- **Minors, both real bugs in the cgo:** `selectedDictionary.Lookup` overwrote a
+  status-3 "dictionary vanished" with a later status-1 "word absent", collapsing
+  exactly the two the C side keeps distinct — the first non-absence error now
+  wins. And `installedDictionaries` indexed position `i` across N separately
+  copied CFSets, whose order this file's own comment calls unspecified; it is one
+  copy described in one pass now.
+- **Capture path now matches production.** English fixtures were captured through
+  the NULL search while production selects curated identifiers; they agreed only
+  because this host's active set happened to match. `capture.sh` walks the same
+  curated list, and the re-captured corpus is byte-identical to the committed one
+  — including `iPhone`, which comes from the second book.

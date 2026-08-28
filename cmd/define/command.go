@@ -351,10 +351,11 @@ func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPt
 // The members, and why each is one:
 //
 //   - d.lang        — the answer everything else reads.
-//   - d.deck /
-//     d.capture /
-//     d.vocab       — words/<lang>/. Rebuilt through the ONE builder openStore
-//     used, so a switch cannot construct a differently-wired graph.
+//   - langDeps      — the deck, capturer, vocabulary and usage source, taken
+//     WHOLE from the one builder openStore used. It is a struct
+//     rather than a list precisely because a list in this comment
+//     already failed once: M2 made the news feed language-dependent
+//     and this enumeration still called usage "not language-scoped".
 //   - opt.voice     — the CDN asks per language; derived via applyVoice, the
 //     same function the boundary uses.
 //   - d.dict /
@@ -368,9 +369,9 @@ func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPt
 //     this the editor paints the old language's words. nil for
 //     the piped loop, which has no such local.
 //
-// Deliberately NOT here: d.history (events/) and d.usage (usage/) are not
-// language-scoped, and rebuilding history would orphan the one runEditor has
-// already Load()ed.
+// Deliberately NOT here: d.history. events/ is not language-scoped, and
+// rebuilding it would orphan the one runEditor has already Load()ed while
+// everything else read a fresh empty one.
 func applyLang(d *deps, opt *options, l store.Lang, vocPtr *Vocabulary, warn io.Writer) {
 	d.lang = l
 	if d.newDict != nil {
@@ -380,10 +381,14 @@ func applyLang(d *deps, opt *options, l store.Lang, vocPtr *Vocabulary, warn io.
 	// was not given", and a switch does not retroactively make the flag present.
 	// d.lang is the language in effect and the only thing that should answer it.
 	applyVoice(opt, l, warn)
-	if d.newDeck == nil {
+	if d.newLangDeps == nil {
 		return // no store here; the language still applies to everything else
 	}
-	d.deck, d.capture, d.vocab = d.newDeck(l)
+	// The whole set, from the one builder openStore used. Assigning members
+	// individually here is what let d.usage be forgotten: the builder is the
+	// enumeration now, and this is a copy rather than a list.
+	ld := d.newLangDeps(l)
+	d.deck, d.capture, d.vocab, d.usage = ld.deck, ld.capture, ld.vocab, ld.usage
 	if vocPtr != nil {
 		// The REAL options, not a fabricated one: vocabularyFor owns "loaded,
 		// and only with colour", and forcing colour on here would resurrect

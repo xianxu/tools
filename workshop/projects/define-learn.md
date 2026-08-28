@@ -461,7 +461,7 @@ the alternative was shipping a tool whose Spanish mode quietly spoke English.
 `mesa` in a Spanish session is now *"Mueble formado por un tablero horizontal"*
 and in English is still *"an isolated flat-topped hill"*. `sycophantic` in
 Spanish reports **no entry** — an answer this tool could not give about anything
-before. The nine private DictionaryServices symbols are `dlsym`'d at run time,
+before. The private DictionaryServices symbols are `dlsym`'d at run time,
 so a disappearance degrades to the pre-`#23` whole-set search rather than a
 crash.
 

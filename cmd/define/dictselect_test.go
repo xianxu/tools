@@ -175,3 +175,80 @@ func TestChooseDictionaryIgnoresDictionariesThatDoNotIndexTheLanguage(t *testing
 		t.Errorf("chooseDictionary(fr) = %v; nothing installed indexes French", ids(got))
 	}
 }
+
+// The three outcomes of dictionary selection, including BOTH fallbacks — which
+// had no automated test on any platform until the policy was extracted from the
+// cgo shell.
+//
+// The Done-when row "the seam FALLS BACK to today's NULL behaviour if any symbol
+// is missing" was ticked on a manual experiment: misspell a symbol, rebuild, run
+// the binary. That proved it once, on one machine, and pinned nothing. These
+// branches are not exotic — a shell context that reports only one installed
+// dictionary takes the second one on EVERY run.
+func TestDictionaryFor(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		installed     []dictMeta
+		lang          store.Lang
+		wantIDs       []string
+		wantName      string
+		wantComplaint bool
+	}{
+		{
+			name: "the private surface did not resolve at all",
+			// nil, NOT empty: a surface that is gone is a different thing from a
+			// machine with no dictionaries, and the warnings differ.
+			installed: nil, lang: "en",
+			wantIDs: nil, wantName: everyActiveDictionary, wantComplaint: true,
+		},
+		{
+			name:      "the surface works but nothing curated is installed",
+			installed: []dictMeta{{ID: "org.example.Whatever", Langs: []langPair{{Index: "en", Description: "en"}}}},
+			lang:      "en",
+			wantIDs:   nil, wantName: everyActiveDictionary, wantComplaint: true,
+		},
+		{
+			name:      "an empty set is the same degradation, not a panic",
+			installed: []dictMeta{}, lang: "en",
+			wantIDs: nil, wantName: everyActiveDictionary, wantComplaint: true,
+		},
+		{
+			name:      "the happy path is SILENT, and /lang reports the name",
+			installed: installedOnThisMachine(), lang: "es",
+			wantIDs:  []string{"com.apple.dictionary.es.DGLEV"},
+			wantName: "com.apple.dictionary.es.DGLEV",
+		},
+		{
+			name:      "English names both books in curated order",
+			installed: installedOnThisMachine(), lang: "en",
+			wantIDs:  []string{"com.apple.dictionary.NOAD", "com.apple.dictionary.AppleDictionary"},
+			wantName: "com.apple.dictionary.NOAD, com.apple.dictionary.AppleDictionary",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ids, name, complaint := dictionaryFor(tc.installed, tc.lang)
+			if !slices.Equal(ids, tc.wantIDs) {
+				t.Errorf("ids = %v, want %v", ids, tc.wantIDs)
+			}
+			if name != tc.wantName {
+				t.Errorf("name = %q, want %q", name, tc.wantName)
+			}
+			if (complaint != "") != tc.wantComplaint {
+				t.Errorf("complaint = %q, want said=%v — a fallback must be LOUD and the "+
+					"happy path silent", complaint, tc.wantComplaint)
+			}
+		})
+	}
+}
+
+// The two fallbacks must be distinguishable in what they SAY, because they mean
+// different things to whoever reads the warning: one is "your OS changed", the
+// other is "install a dictionary".
+func TestTheTwoFallbacksSayDifferentThings(t *testing.T) {
+	_, _, gone := dictionaryFor(nil, "en")
+	_, _, uncurated := dictionaryFor([]dictMeta{}, "en")
+	if gone == uncurated {
+		t.Errorf("both fallbacks say %q; a vanished API and an uninstalled dictionary are "+
+			"different problems with different remedies", gone)
+	}
+}
