@@ -36,12 +36,26 @@ import (
 //	strict   — a dependency that is not there is a FAILURE. Green means it ran.
 //	default  — it is a SKIP. A developer offline still gets a useful `go test`.
 //
-// What must NOT route here is a check about the dependency's SHAPE: a fixture
-// that no longer byte-matches, a feed that stopped parsing, a renderer losing
-// content. Those are the drift these suites exist to report, and they stay hard
-// failures in both modes. The untagged skips in askrun_test.go and
-// render_test.go stay out for the mirror reason — table rows that do not apply
-// are not absent dependencies, and failing them would assert something untrue.
+// FOUR CLASSES, and a site is placed by asking it the question — never by which
+// file it lives in. Excluding `render_test.go` by NAME is what hid BR-16:
+//
+//	absent EXTERNAL dependency  — skip; FAIL under strict. Routes here.
+//	                              (no network, no NOAD, no pty, no afplay)
+//	absent IN-REPO artifact     — ALWAYS fail. A committed fixture or doc that
+//	                              is not there is a deleted file, not a machine
+//	                              that lacks something. render_test.go's fixture
+//	                              lookup and doc_sync_test.go's README read are
+//	                              both this class.
+//	SHAPE drift                 — ALWAYS fail. A fixture that no longer
+//	                              byte-matches, a feed that stopped parsing, a
+//	                              renderer losing content: the very thing these
+//	                              suites exist to report.
+//	INAPPLICABLE table row      — skip, permanently and correctly. askrun_test.go
+//	                              skips "the session carries across lines" for a
+//	                              one-shot mode; there is no dependency involved
+//	                              and failing it would assert something untrue.
+//
+// Only the first class belongs here.
 func skipOrFail(t *testing.T, reason string, err error) {
 	t.Helper()
 	if os.Getenv("DEFINE_CONFORMANCE_STRICT") != "" {

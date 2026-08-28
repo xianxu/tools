@@ -235,4 +235,39 @@ built in `#6`'s last round for exactly this. `atlas-docs` = Task 9. The four
     7/7 ok; conformance non-strict `ok`, strict red. Five lessons appended,
     including one on mutation hygiene — a `git checkout --` restore silently
     reverted uncommitted work under test and reported two false green mutations.
+- 2026-08-27: close round 3 — verdict FIX-THEN-SHIP, all nine round-2 findings
+  disposed **addressed**; six new (BR-13/14/15 Important, BR-16/17/18 Minor). All
+  six taken.
+  - **BR-13** — BR-8 pinned the outcome slice's MEMBERSHIP and left ORDER in the
+    tree: reversing the loop's iteration kept the whole suite green while losing
+    the miss AND exiting 1 (the reveal arm restores the terminal, shells out, and
+    an re-entry failure takes the early `return 1` before the record). Fixed by
+    driving a miss into an unrecoverable terminal in
+    `TestLosingTheTerminalAfterPlaybackExitsOne`; reversal now reddens. The
+    enumeration a widened contract owes its consumer — membership, order, once —
+    is now written in the loop with the test pinning each row named inline; all
+    three mutation-verified.
+  - **BR-14** — atlas enumeration re-run from `git diff` rather than memory:
+    `gradePrompt`/`gradedPrompt`/`doc_sync_test` had zero atlas coverage while the
+    sibling convention born the same round (skipOrFail) had a full paragraph.
+    Documented, and the paragraph describing the per-arm `InputReveal` case BR-12
+    removed was corrected. `audible` waived — a test rig, not a convention.
+  - **BR-15** — the sharpest one, and self-inflicted: my round-2 lessons entry
+    contradicted three existing rules. Enumerating the headings found **six**
+    occurrences, not the four the review counted, giving four different answers
+    (#2 "copy the file aside"; #6 "never copy, use git"; #24 "copy again").
+    Consolidated into ONE canonical entry that resolves the contradiction and
+    absorbs #6's squash mechanism; the other five are now evidence pointing at it.
+  - **BR-16** — `skipOrFail`'s carve-out excluded files by NAME. Re-sorted into
+    four classes by asking each site what a missing thing means; `render_test.go`
+    skipped on an absent COMMITTED fixture, which silently retired coverage while
+    the package reported ok. Measured: deleting `testdata/entries/subject.txt` now
+    fails where it used to skip.
+  - **BR-17** — Revisions rebuilt from `git diff --name-status`; the four written
+    from memory had missed BR-10 and BR-12 entirely. Eight entries now, every path
+    in the round's diff accounted for. Task 7 Step 3's sketch updated to the consts.
+  - **BR-18** — atlas said "The third is the least obvious" over a table grown from
+    three rows to seven; names the check now, per this round's own lesson.
+  - Verification: gofmt clean, `go build`, `go vet` (both tag sets), `go test ./...`
+    7/7 ok; conformance non-strict `ok`, strict red naming each unrun suite.
 

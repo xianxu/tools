@@ -53,8 +53,12 @@ one on. It suppresses cursor control too, or the name is a lie.
 `git checkout <file>` to undo a deliberate test-mutation **also discards every
 other uncommitted edit in that file** — it silently reverted a fix made minutes
 earlier, and the follow-up "verification" read as passing because a `|| true`
-masked grep's exit status. Copy the file aside and copy it back. And when a check
-disagrees with a test, the test is the ground truth.
+masked grep's exit status. And when a check disagrees with a test, the test is
+the ground truth.
+
+This entry originally concluded "copy the file aside and copy it back". That is
+the advice five later occurrences disproved; the rule now lives in one place,
+*Mutation testing needs a COMMITTED baseline*.
 
 ## Verify the deletion, don't assert it (define #2, close round 5)
 
@@ -941,12 +945,8 @@ unexplained commits in history. Seven of them here, one 507 lines across three
 files, and the close review flagged it: a reviewer reading the branch finds half
 a milestone's work under the message `wip`.
 
-- **`git stash` gives the same guarantee without writing anything permanent.**
-  Stash, mutate, `git checkout`, `git stash pop`.
-- **If a wip commit does happen, squash it before the boundary.** Non-interactive
-  rebase works: `GIT_SEQUENCE_EDITOR="sed -E 's/^pick (sha1|sha2)/fixup \1/'" git
-  rebase -i <base>`, with a backup branch first and a `git diff backup --stat`
-  after to prove the tree is unchanged.
+Mechanism folded into *Mutation testing needs a COMMITTED baseline*, which is the
+one home for this rule. The squash recipe lives there too.
 
 ## Never report a boundary closed without READING the verdict (define #6)
 
@@ -1078,14 +1078,8 @@ would have shipped.
   that should have failed is itself a finding.** The two-step rule below is not
   optional discipline; skipping the commit is how work disappears silently.
 - **`git checkout HEAD -- <file>` is the correct restore, and only if the target
-  is COMMITTED.** It cannot go stale the way a scratch copy can. But the same
-  session then hit the other half of the trap: restoring uncommitted wiring
-  reverted the work itself, because HEAD did not have it yet. So the rule is two
-  steps — **commit, then mutate, then `git checkout`** — and neither half works
-  alone.
-- **Re-verify the mutation AFTER restoring.** The restore can undo the fix the
-  mutation was checking, and then both the fix and its pin are gone with the
-  suite green.
+  is COMMITTED.** Evidence for the rule stated in *Mutation testing needs a
+  COMMITTED baseline*; see that entry, and do not restate the rule here.
 
 ## A backup is only as good as the tree it was taken from (define #16 M2)
 
@@ -1103,9 +1097,10 @@ git*. That is necessary and not sufficient. Here is the shape it missed:
 Nothing errored. The command printed `tree restored, builds`, and it was true —
 it built fine, with the mechanism disabled.
 
-**Before snapshotting a file as a backup, confirm nothing else is mid-mutation on
-it**, and after any killed job, restore from GIT (plus re-apply intended edits by
-hand) rather than from a snapshot whose provenance you cannot vouch for. The
+Evidence for *Mutation testing needs a COMMITTED baseline* — the provenance of a
+scratch copy is exactly what cannot be vouched for, which is why the committed
+baseline is the rule. After any killed job, restore from GIT and re-apply
+intended edits by hand. The
 mutation experiments in this repo take longer than the tool timeout, so they run
 in the background, which makes "is anything else editing this file right now" a
 real question rather than a rhetorical one.
@@ -1740,8 +1735,11 @@ why the near-fit was rejected. If it cannot, use the existing one.
 
 `cp x /tmp/x.bak` before a revert-measurement failed silently under the sandbox
 (`/tmp` is not writable; the scratchpad is), leaving the mutation in the tree
-with no backup. `git checkout -- <path>` needs no backup step, cannot land
-outside the repo, and is already the restore mechanism.
+with no backup.
+
+Evidence only — the RULE for this lives in one place, *Mutation testing needs a
+COMMITTED baseline*. Do not restate it here; this entry is the third of five
+occurrences and the restatements are what made them contradict.
 
 ## A live conformance check that is never run is not a check (#6, BR-45)
 
@@ -1819,24 +1817,69 @@ write-it-from-memory family. A loop over `grep -qE "func <name>\("` caught them.
 
 ## Mutation testing needs a COMMITTED baseline (#24)
 
-`git checkout -- <path>` is the right restore for a mutation — no backup step,
-cannot land outside the repo. But it restores to the last COMMIT, and the file
-being mutated had never been committed, so the first `git checkout` silently
-erased the whole implementation: a new field, a new function, two rewritten
-switch arms. The tests were still there, passing against nothing.
+**The single home for the mutate/restore rule.** SIX occurrences — #2 round 4,
+#9 M1, #16 M2, #5's close, #6 close, #24 — and it recurs because each was written
+as a separate entry, together giving four different answers, so the next round
+read a contradiction and picked one. #2 said copy the file aside; #6 said never
+copy, use git; #24 said copy again. Add evidence here; do not append a sibling.
 
-The previous lesson said "restore with git, not a cp backup" and stopped one
-clause short. The plan for that issue said commit per task; batching the tasks is
-what put uncommitted work in the blast radius.
+(The review that caught this enumerated four of the six. Grepping the headings
+for `restore|backup|baseline|mutation` found the other two — the same "the
+enumeration is the deliverable" rule this file states twice elsewhere.)
 
-**Rule:** commit the implementation BEFORE the first mutation. If a mutation
-table is coming, the baseline is a commit, not a working tree.
+The rule, whole:
+
+**Commit the implementation BEFORE the first mutation, then restore with
+`git checkout HEAD -- <path>`.** Both halves, or neither works:
+
+- `git checkout` restores to the last COMMIT. Restoring a file whose work is
+  uncommitted erases that work — #5's close lost an unrelated `LastBox` fix this
+  way, and #24 lost a whole implementation (a new field, a new function, two
+  rewritten switch arms) with the tests still passing against nothing.
+- A `cp` snapshot is not the escape. It goes stale (#9 M1: a backup taken at the
+  start of a milestone deleted `bothSources` on copy-back) and it can snapshot a
+  tree that is already corrupt (#16 M2: a killed background job left the file
+  mutated, and the next command snapshotted THAT as "known good", disabling a
+  mechanism while printing `tree restored, builds`). It also fails silently under
+  the sandbox, where `/tmp` is not writable.
+
+**The mechanism, so "commit first" does not mean polluting the branch** (#6
+close, where seven `wip` commits reached a review — one of them 507 lines):
+
+- The file you mutate must be versioned AT THE MOMENT you mutate it, so
+  `git checkout HEAD -- <path>` is an exact restore.
+- Getting there is a real commit, and a noisy one is squashed before the
+  boundary, not avoided: `GIT_SEQUENCE_EDITOR="sed -E 's/^pick (sha1|sha2)/fixup \1/'" git rebase -i <base>`,
+  with a backup branch first and `git diff backup --stat` after to prove the tree
+  is unchanged.
+- `git stash` protects UNRELATED uncommitted work in the same file from a stray
+  checkout — stash, mutate a committed file, restore, pop. It is not a way to
+  mutate uncommitted work, since stashing removes the very thing under test.
+
+So the fix for "I cannot `git checkout`, my work is uncommitted" is **commit**,
+not a scratch copy. #24's close round reached for the copy instead, appended a
+lesson saying so, and thereby contradicted three existing entries — which is the
+finding that produced this consolidation. *The rule already existed; a sibling
+got written instead of read.*
+
+**Before appending a lesson, grep this file for the rule you are about to state.
+If it is here, REVISE that entry with the new evidence and resolve any
+contradiction inside it.** A rules file read at session start hands the next
+agent every version it contains.
 
 **Corollary — a mutation that reddens nothing has two explanations, and the
-likelier one is that it did not apply.** Two of the nine here reported "0 tests
-reddened" and both were failed string replacements, not weak tests. Assert the
-target text is present before rewriting it; a `replace()` that matches nothing
-returns the original string and says so only if asked.
+likelier one is that it did not apply.** Two of #24's nine reported "0 tests
+reddened" and both were failed string replacements, not weak tests; two more in
+the close round reported a clean pass after a restore had reverted the code under
+test, with the guard's `AssertionError: target missing` printing into the same
+output. Assert the target text is present before rewriting it, re-verify after
+restoring, and **read the FAILURE, not the count** — enumerate which tests fired.
+An empty result from a check that should have failed is itself a finding.
+
+**Corollary — a count is not a measurement when the suite is
+environment-dependent.** #24's strict-mode grep count held at 11 across a fix
+that genuinely added two sites, because network reachability differs between
+runs. Enumerate what fired, by name.
 
 ## A prompt that names its keys is a state machine's public surface (#24)
 
@@ -1935,20 +1978,3 @@ right is worse than none, because it reads as verified.
 
 **Rule:** cite by NAME — the function, the const, the table — never by line
 number. Names move with the thing they name.
-
-## Restore mutations from a copy, not from git (#24, process)
-
-A mutation loop used `git checkout -- <file>` to restore between rows. The file
-under mutation held UNCOMMITTED work, so the first restore reverted the change
-being tested, and the next two rows reported `reddened: 0` — a clean pass for two
-mutations that never ran. The Python guard printed `AssertionError: target
-missing` into the same output and the zeros still looked like results.
-
-Related: the strict-mode count held at 11 across a real fix that added two sites,
-because network reachability differs between runs. A count over an
-environment-dependent suite is not a measurement.
-
-**Rule:** snapshot to a temp file and restore from that, so mutation testing never
-depends on the working tree being clean. And read the FAILURE, not the count — a
-zero from a mutation that failed to apply is indistinguishable from a test that
-did not bite, so enumerate what fired.

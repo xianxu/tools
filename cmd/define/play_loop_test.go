@@ -527,7 +527,7 @@ func TestAllLookupsFailingIsNotNothingDue(t *testing.T) {
 // Driven by handing the session a rawTerm whose file is NOT a terminal, so the
 // re-entry after playback genuinely fails.
 func TestLosingTheTerminalAfterPlaybackExitsOne(t *testing.T) {
-	d, opt, _ := playRig(t, "sycophantic")
+	d, opt, st := playRig(t, "sycophantic")
 	audible(&d, &opt)
 	qs := questionsFor(t, d, opt)
 
@@ -538,7 +538,9 @@ func TestLosingTheTerminalAfterPlaybackExitsOne(t *testing.T) {
 	defer notATerminal.Close()
 
 	var out, errb bytes.Buffer
-	code := playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\r"),
+	// A MISS, not a peek — because this test is now also where the outcome ORDER
+	// is pinned, and only a miss owes two outcomes.
+	code := playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("n"),
 		rawTerm{sess: &rawSession{}, f: notATerminal}, &out, &errb)
 
 	if code != 1 {
@@ -546,6 +548,22 @@ func TestLosingTheTerminalAfterPlaybackExitsOne(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "lost the terminal") {
 		t.Errorf("stderr = %q, want it to say the terminal was lost", errb.String())
+	}
+	// The record was performed BEFORE the reveal, which is why it survives.
+	//
+	// Apply emits {Record, Reveal} and session.go calls that order load-bearing:
+	// the record is written before anything that can block on the terminal. This
+	// is the exact input where "load-bearing" is testable — the reveal arm
+	// restores the terminal, shells out to afplay, fails to re-enter raw mode and
+	// takes the early `return 1`. Perform the two in the other order and the miss
+	// is lost AND the process exits 1, which is the worst pair available.
+	//
+	// BR-8 pinned the slice's MEMBERSHIP at the consumer; order is the enumerable
+	// sibling and was left in the tree (BR-13). Reversing the loop's iteration
+	// left the whole suite green.
+	if n := len(reviewEvents(t, st)); n != 1 {
+		t.Errorf("got %d events, want the one miss — a verdict recorded after the "+
+			"reveal is a verdict lost when the reveal cannot come back", n)
 	}
 }
 

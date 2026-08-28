@@ -114,9 +114,31 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 		var outs []play.Outcome
 		s, outs = play.Apply(s, in)
 
-		// EVERY outcome, in order. One input can owe more than one: a miss on a
-		// hidden word records the verdict and then reveals. The record comes
-		// first, so it is written before anything that can block on the terminal.
+		// EVERY outcome, ONCE, IN ORDER.
+		//
+		// Widening Apply to []Outcome moved three obligations from the type system
+		// into this loop, and each one is a row that has to be pinned HERE, at the
+		// consumer — the pure tests cannot see any of them, because they assert
+		// what Apply RETURNS, not what the caller does with it:
+		//
+		//	membership — every outcome is performed. Dropping either end of the
+		//	             slice left the whole suite green (BR-8); now
+		//	             TestAMissPlaysThePronunciationAndRecordsIt asserts the
+		//	             play AND the event, so both `outs[:1]` and
+		//	             `outs[len(outs)-1:]` redden it.
+		//	order      — the record is written BEFORE anything that can block on
+		//	             the terminal. Reversing this iteration also left the suite
+		//	             green (BR-13); TestLosingTheTerminalAfterPlaybackExitsOne
+		//	             now drives a miss into a terminal that cannot be re-entered,
+		//	             where reversing the order loses the verdict AND exits 1.
+		//	once       — no outcome is performed twice. A duplicated record is a
+		//	             second review event for one answer, which Fold would read
+		//	             as another review; the event-count assertions redden it.
+		//
+		// The enumeration is written down because BR-8 fixed membership and left
+		// order in the tree — a widened contract has more than one way to be
+		// betrayed by its caller, and finding them one review at a time is what
+		// this comment is here to stop.
 		for _, out := range outs {
 			switch out.Kind {
 			case play.OutcomeRecord:

@@ -619,14 +619,20 @@ Expected: FAIL on the first subtest — the unrevealed prompt says "to reveal".
 	if s.Graded {
 		// Already answered and the answer is on screen: the only thing left is
 		// to read it and move on.
-		fmt.Fprint(w, "\nany key = next word, d = remove from deck, Ctrl-C to stop\n")
+		fmt.Fprint(w, "\n"+gradedPrompt+"\n")
 		return
 	}
 	// The GRADING keys, whether or not the definition is showing. A learner who
 	// wants to check first still can (space or Enter); they simply no longer
 	// have to, which is the point of this issue.
-	fmt.Fprint(w, "\ny = got it, n = missed it, d = remove from deck, Ctrl-C to stop\n")
+	fmt.Fprint(w, "\n"+gradePrompt+"\n")
 ```
+
+> **Revised in close round 2 (BR-10).** The sketch above showed both lines as
+> inline literals. They are `gradePrompt` / `gradedPrompt` consts in delivery, and
+> `cmd/define/doc_sync_test.go` asserts `README.md` quotes them verbatim — so
+> changing what the learner is told is a two-file edit that fails the build if
+> half-done. See the Revisions entry.
 
 - [x] **Step 4: Run it**
 
@@ -862,6 +868,50 @@ breakage and unbudgeted work — say so rather than absorbing it silently.
   `live_property_test.go` gained dependency probes. *Reason to record rather than
   re-plan:* the scope is the same rule the plan already committed to, applied to
   the class it always belonged to.
+
+- **2026-08-27, close round 2 (BR-10).** The plan had Task 9 sweeping docs by
+  grep. Delivery replaced the sweep with a DERIVATION: `gradePrompt` and
+  `gradedPrompt` are consts in `play_loop.go`, and a new file the plan never
+  named — `cmd/define/doc_sync_test.go` — asserts `README.md` contains both
+  verbatim. *Reason:* the `doc-sweep-incomplete` family had reached three
+  findings on this one screen, every one found by re-reading prose and fixed by
+  another sweep; a grep cannot fail a build. The test failed on its first run,
+  catching a paraphrase the three preceding sweeps had all read past. *Delta:*
+  new file, two new package consts, Task 7 Step 3's sketch updated above,
+  atlas paragraph on the convention.
+  *This entry was itself missing until close round 3 flagged it (BR-17) — the
+  first four entries were written from memory. The enumeration is now built by
+  running `git diff --name-status <round-base>..HEAD` and accounting for each
+  path.*
+
+- **2026-08-27, close round 2 (BR-12).** Task 2's `InputRune` arm and Task 3's
+  `InputReveal` arm each carried the graded "any key = next word" rule as the
+  plan wrote them. Delivery hoists it into ONE guard above the switch. *Reason:*
+  the plan's own architecture note cites #6 BR-5 against a rule living in two
+  places, and then specified it in two places. *Delta:* `session.go`'s switch,
+  and the atlas paragraph describing the per-arm case was corrected.
+
+- **2026-08-27, close round 3 (BR-13).** `play_loop.go`'s outcome loop gained the
+  written enumeration of what a widened contract owes its CONSUMER — membership,
+  order, once — with the test pinning each row named inline. *Reason:* round 2
+  fixed membership (BR-8) and left order in the tree, where reversing the
+  iteration kept the whole suite green while losing a miss and exiting 1.
+  *Delta:* `TestLosingTheTerminalAfterPlaybackExitsOne` now drives a miss and
+  asserts the event survived.
+
+- **2026-08-27, close round 3 (BR-16).** `skipOrFail`'s doc now sorts sites into
+  four classes by ASKING each one what a missing thing means, replacing a
+  carve-out that excluded files by name. *Delta:* `render_test.go`'s absent
+  committed fixture became a `Fatalf` — it had been skipping while the package
+  reported ok, silently retiring the phantom-block coverage that fixture exists
+  for.
+
+- **2026-08-27, close round 3 (BR-15, out-of-tree).** `workshop/lessons.md`'s six
+  mutation-restore entries were consolidated into one. *Reason:* they gave four
+  different answers, and the round-2 entry this issue added contradicted three
+  existing ones — a rules file read at session start hands the next agent every
+  version it contains. Recorded here because it is scope this issue grew, though
+  it touches no file this plan names.
 
 - **2026-08-27, close round 2 (BR-4).** `OutcomeReveal` now carries `Word`, which
   the plan explicitly deferred ("carry the word on the outcome then"). *Reason:*

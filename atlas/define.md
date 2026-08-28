@@ -1023,10 +1023,11 @@ applied at a single pty site while six suites skipped silently, and three other
 suites had the mirror bug — an absent dependency written as an unconditional
 `Fatalf`, which made the offline suite red rather than skipped.
 
-The third is the least obvious and the most load-bearing: if `afplay` ever
-returned immediately, three *overlapping* sounds would satisfy `fakePlayer`'s
-count and every other test here — "plays three times" would be true on paper and
-wrong in the room.
+`player_conformance_test.go` is the least obvious and the most load-bearing: if
+`afplay` ever returned immediately, three *overlapping* sounds would satisfy
+`fakePlayer`'s count and every other test here — "plays three times" would be
+true on paper and wrong in the room. (Named, not numbered: this sentence said
+"the third" while the table above it grew from three rows to seven.)
 
 ```sh
 go test -tags conformance ./cmd/define/   # must run UNSANDBOXED; skips what it cannot reach
@@ -1315,9 +1316,26 @@ alternative, a flag on `Outcome`, would make "reveal" expressible two ways.
 `Session.Graded` is what keeps the next keystroke from grading twice — `Fold`
 would read a duplicate as a second review. It is independent of `Revealed`: a
 learner can reveal without grading (space) and grade without revealing (`y`).
-Note that **Enter and space reach the `InputReveal` arm**, not the rune arm, so
-the graded state needs its own case there or the two keys everyone reaches for
-are dead exactly where the prompt says any key moves on.
+Note that **Enter and space reach the `InputReveal` arm**, not the rune arm. Both
+arms therefore meant the same thing in the graded state — "move on" — and were
+first written as two identical bodies; the rule now sits in ONE guard hoisted
+above the switch (`if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal)`).
+`InputDrop` and `InputQuit` stay outside it: "this word is not mine" and "stop"
+are still true after a verdict.
+
+**The prompt lines are consts, and the README is a test-enforced consumer of
+them.** `gradePrompt` and `gradedPrompt` (`cmd/define/play_loop.go`) are what
+`draw` prints, and `TestREADMEQuotesThePromptsTheLoopActuallyPrints`
+(`cmd/define/doc_sync_test.go`) asserts `README.md` contains both verbatim. So
+**changing what the learner is told is a two-file edit** — the const and the
+README — and forgetting the second fails the build rather than surviving until
+someone re-reads the prose.
+
+That convention exists because the `doc-sweep-incomplete` family reached four
+findings on this one screen, each found by a human re-reading docs and each fixed
+by another sweep. A grep cannot fail a build. It is deliberately narrow: it pins
+the two lines the learner reads off the screen and types against, not the prose
+around them, which stays free to be rewritten.
 
 `score` splits from `advance` for the same reason: a miss must be tallied without
 moving on. **Revealing is idempotent**, so a second reveal does not play the

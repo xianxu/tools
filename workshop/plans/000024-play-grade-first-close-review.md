@@ -343,3 +343,221 @@ findings:
       `if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal)` above the switch
       gives it one home and keeps InputDrop and InputQuit correctly outside it.
 ```
+
+---
+
+## Re-review — 2026-08-27T18:55:55-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 24 — grade before reveal: y advances, n shows the definition |
+| repo | tools |
+| issue file | workshop/issues/000024-play-grade-first.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 87e6307b9f7cf83fdc0a93b69bf4d9354eaf3b00..9d78d181655001fdd7324faa707821d9a4d91779 |
+| command | sdlc close --issue 24 |
+| reviewer | claude |
+| timestamp | 2026-08-27T18:55:55-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All nine open prior findings are genuinely fixed, and I verified the load-bearing ones by mutation rather than by reading the commit message: BR-8's slice-membership pin reddens under **both** `outs[:1]` and `outs[len(outs)-1:]`; BR-12's hoisted graded rule reddens under all three narrowing mutations (including the one proving `InputDrop` stays outside it); BR-4's `Word` on `OutcomeReveal` reddens at both construction sites; BR-9's `skipOrFail` measured in both directions on this machine (non-strict `ok` with 7 pty skips, `DEFINE_CONFORMANCE_STRICT=1` fails naming each unrun suite); BR-1's recursive sweep returns zero stale hits. The state machine itself is correct — `y` advances without reveal or audio, `n` scores without advancing, `d`/Ctrl-C stay outside the graded rule, and the skip filter still lives only in `advance`. What keeps this from SHIP is one real coverage gap and two artifact gaps: the loop's **outcome ordering** — the half of the widened `Apply` contract BR-8 did not sweep — is unpinned, and I confirmed a reversed iteration leaves the entire suite green while making a miss droppable; plus the round's own new doc-derivation convention reached no atlas entry, and `workshop/lessons.md` now carries four mutation-restore rules giving three different answers, two of them added in this window and contradicting each other.
+
+### 1. Strengths
+
+- **`play_loop.go:293-299` — the prompt lines as consts with README as a pinned consumer.** This is the right general fix for a family that had produced three sweep-failures, and `doc_sync_test.go` earning a real failure on its first run is the evidence that it bites. `ARCH-PURPOSE`'s shadow-sweep over the prompt strings shows exactly one derivable consumer (README) and it derives; the remaining literals (`play_loop_test.go:719-723`, `pty_conformance_test.go:439,451`) are deliberate oracles, correctly not derived.
+- **`session.go:154` — the hoisted "any key = next word" rule.** One home, and the exclusion of `InputDrop`/`InputQuit` is reasoned in the comment *and* pinned: mutating the guard to a bare `if s.Graded` reddens `TestDropAdvancesRecordsNothingAndNamesTheWord/after_a_miss`.
+- **`session.go:220-232` — `score` split from `advance`.** The PQ-1 defect (tally left at zero for a miss that does not advance) is structurally impossible now, and `Skipped` scoring nothing is what makes drop-after-miss safe without a second flag.
+- **`conformance_skip_test.go` — one helper for both directions of the rule.** Finding the three *mirror* sites (`dict`/`news`/`live_property` writing an absent dependency as an unconditional `Fatalf`) is the class-not-instance work `ARCH-PURPOSE` asks for, and the doc comment correctly carves out shape-drift checks so they stay hard failures.
+- **`play_loop_test.go:48-54` — `audible()`.** The helper makes the PQ-6 trap (a negative audio assertion against an unreachable source) unwriteable by hand rather than merely fixed at four sites. `ARCH-DRY` pass.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**(a) `cmd/define/play_loop.go:120` — the loop may perform outcomes in any order and nothing notices.**
+This is the **2nd finding in family `widened-contract-unpinned-at-the-consumer`**. BR-8 fixed *membership* of the slice at the consumer; *order* is its enumerable sibling and was left in the tree, which is the instance-not-class pattern (`ARCH-PURPOSE`). `session.go:127` states the ordering as load-bearing ("the record is emitted FIRST, so a caller performing them in order writes the event before anything that can block"), and the issue's Done-when restates it ("Ctrl-C stays lossless by construction, not by a flush"). Measured: rewriting `play_loop.go:120` to `for i := len(outs) - 1; i >= 0; i--` leaves `go test ./cmd/define/ ./cmd/define/play/` fully green. The failure that buys: on a miss, `OutcomeReveal` restores the terminal, shells out to `afplay`, and on re-entry failure takes the early `return 1` at `play_loop.go:167-170` — with the record not yet performed, the miss is gone and the process exits 1.
+Do not just add an order assertion; write the enumeration the widened contract implies (every element performed / performed in emitted order / the empty and single-element cases) and pin each at the consumer. The order row is three lines on a test that already exists — change `TestLosingTheTerminalAfterPlaybackExitsOne` (`play_loop_test.go:529`) to drive `keysFor("n")` instead of `keysFor("\r")`, keep `st`, and assert `len(reviewEvents(t, st)) == 1`. I ran this: green today, red under the reversal mutation.
+
+**(b) `atlas/define.md` — the atlas pass for this round is incomplete in two ways.**
+This is the **4th finding in family `doc-sweep-incomplete`**. Earlier rounds fixed instances; BR-10's general fix (make the restatement derive) covers only the derivable half, so state the rule for the other half rather than patching these two spots. (i) The round introduced a new convention — `doc_sync_test.go` plus `gradePrompt`/`gradedPrompt`, i.e. "a doc that restates a fact the code owns is made a build-failing consumer" — and it appears nowhere in `atlas/` or `README.md`, while its sibling convention born in the same round (`skipOrFail` + `DEFINE_CONFORMANCE_STRICT`) got a full atlas paragraph at `atlas/define.md:1009-1024`. (ii) `atlas/define.md:1319` says the graded state "needs its own case there" in the `InputReveal` arm — the shape BR-12 removed later in the same range, where the rule now sits hoisted above the switch. The covering rule: the atlas enumeration must be *produced by something that ran*, not recalled — the round's new package-level identifiers, env vars and test conventions from `git diff` over the window, each checked against `grep` in `atlas/` and either documented or explicitly waived.
+
+**(c) `workshop/lessons.md:1820` and `:1939` — the file now gives three different answers to "how do I restore a mutation".**
+This is the **2nd finding in family `one-rule-two-places`**, so the ask is the rule, not the edit. Measured prevalence, four entries: `:1080` (pre-existing) "commit, then mutate, then `git checkout` — neither half works alone"; `:1739` (pre-existing) "back up with git, not with cp to /tmp"; `:1820` (new) "commit the implementation BEFORE the first mutation … the baseline is a commit"; `:1939` (new) "snapshot to a temp file and restore from that". `:1820` re-derives `:1080` verbatim and then mis-describes it ("the previous lesson … stopped one clause short" — it did not, it stated both clauses), and `:1939` contradicts `:1739`, `:1107` and its own sibling 119 lines above. AGENTS.md §4 has agents read this file at session start, so the next mutation round gets contradictory instructions for the exact procedure that burned this one (`ARCH-DRY`: one source of truth per rule). Rule: before appending a lesson, grep `lessons.md` for the rule you are about to state; if it is there, **revise that entry** with the new evidence rather than appending a sibling, and if the new evidence contradicts it, resolve the contradiction inside the one entry.
+
+### 4. Minor findings
+
+- **`cmd/define/render_test.go:205`** — **3rd finding in family `check-that-cannot-fail-reads-as-green`.** `skipOrFail`'s doc excludes `render_test.go` by name on the grounds that "table rows that do not apply are not absent dependencies", but this skip fires on an absent *committed* fixture. Measured: deleting `cmd/define/testdata/entries/subject.txt` makes `TestCorpusBlockStructure/subject` skip and the package still report `ok`, silently retiring phantom-block coverage. The rule is three classes, not two — absent **external** dependency (skip; fail under strict), absent **in-repo** artifact (always fail, which `doc_sync_test.go:29` already gets right), shape drift (always fail) — and the exclusion list should be justified per-site by asking that question, not by filename.
+- **`workshop/plans/000024-play-grade-first-plan.md` `## Revisions`** — **3rd finding in family `plan-artifact-not-ticked`.** Four entries record the BR-1, BR-11, BR-9 and BR-4 scope growth; the BR-10 work is absent, though it added a file the plan never named (`doc_sync_test.go`) and two new package consts — the same omission shape the BR-9 entry exists to record. Same rule as (b): the Revisions enumeration is built from `git diff --name-status` over the round, not from memory.
+- `atlas/define.md:1002` now reads "Every seam has one" over a seven-row table — good — but the paragraph two lines below still opens "The third is the least obvious", which was an ordinal into the old three-row table.
+
+### 5. Test coverage notes
+
+- **I could not execute `TestPTYPlayGradeFirst`.** `pty.Start` returns `operation not permitted` in this environment (confirmed directly, outside the test harness), so all seven pty tests SKIP here. I reviewed the test statically — the assertions are sound and non-vacuous (it asserts the definition is *absent* before answering, present after `n`, and that space advances to "0 right, 1 wrong") — and I confirmed strict mode converts the skip to a failure. The Done-when's live-terminal claim rests on the operator's run, not on anything I ran.
+- Nine mutations verified by me this round, each reddening a named test: two slice-end mutations (BR-8), three graded-guard narrowings (BR-12), two `Word`-stripping mutations (BR-4), the loop reversal (finding (a), **not** caught), and the fixture deletion (`render_test.go`, **not** caught).
+- No in-process test drives `playSession` into the graded *draw* state; `TestThePromptSaysWhatTheKeysDo` pins `draw` against a hand-built `Session{Revealed, Graded}` and the session tests pin the flag, but the composition is only covered by the pty test. Low risk (the wiring is `draw(stdout, s)`), noted rather than raised.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — flag (one instance).** Code side is a clear pass: `audible`, `skipOrFail`, the hoisted graded rule and the prompt consts each collapse a real duplication. The flag is finding (c), in the process artifact.
+- **ARCH-PURE — pass.** `cmd/define/play` stays import-clean under both `puretest` guards; `Apply`/`score`/`advance` are total functions over `Session`; `draw` takes an `io.Writer` and is tested with a `bytes.Buffer`; every effect stays in `playSession`. No mock is needed to run anything in the pure package.
+- **ARCH-PURPOSE — flag.** The purpose (grade before reveal) is fully delivered, not the cheap subset. Two class-vs-instance flags: finding (a) (BR-8 swept membership, not order) and finding (b) (the derivation rule was applied to README and not to the atlas record of the rule itself).
+- **ARCH-MOCK — pass.** No new external dependency. Existing seams keep their doubles (`afplay`→`fakePlayer`, CDN→`okAudio`/`noAudioSource`, NOAD→`fakeDictionary`, terminal→real pty behind `startDefineInDir`), production and test flow share the boundary, and this round strengthened the live-conformance side: seven suites now route their dependency probe through one seam and `DEFINE_CONFORMANCE_STRICT` makes green mean "it ran".
+- **For #7 (multiple choice):** it will add inputs to this machine and is the first plausible producer of an input that both advances *and* reveals. `Outcome.Word` (BR-4) already removes the nil-panic; finding (a)'s ordering pin is the other half, and it is cheapest to land now, before a second producer exists.
+
+### 7. Plan revision recommendations
+
+Append to `workshop/plans/000024-play-grade-first-plan.md` `## Revisions`:
+
+- **2026-08-27, close round 3 (BR-10 follow-through).** Record the doc-derivation work the round-2 pass omitted. *Delta:* `cmd/define/doc_sync_test.go` is a new file the plan did not name; `gradePrompt` and `gradedPrompt` are new package consts in `play_loop.go`, and Task 7 Step 3's `draw` sketch shows the literals inline rather than the consts. *Reason:* the plan's Revisions enumeration was built from memory and reached three of four scope-growth items.
+- **2026-08-27, close round 3 (Task 5 Step 1).** The step says "Verify (do not assume) that the `OutcomeReveal` arm's `s.Current().Word()` still names the right word"; the arm now reads `out.Word` and the risk it names was retired by BR-4. Restate the step as the surviving obligation — pin the loop's *ordering* of the returned slice, not just its membership — so the plan stops describing a check the code no longer needs and starts describing the one it still lacks.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      recall.go:3, question.go:60/74 and the play_loop_test citation all rewritten; the plan's recursive sweep returns zero stale hits.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      README.md:71-73 now states audio is fetched only on a reveal.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Word carried on both OutcomeReveal sites, loop reads out.Word; stripping Word reddens TestEveryWordOutcomeNamesItsWord.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      audible(&d, &opt) at five sites; the forgettable d.audio line now lives in one place.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Verified by mutation: both outs[:1] and outs[len(outs)-1:] redden TestAMissPlaysThePronunciationAndRecordsIt.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      Ten sites route through skipOrFail; measured here, non-strict ok with 7 pty skips, strict fails naming each.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      doc_sync_test.go makes README a consumer of the prompt consts; atlas table now lists seven seams.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Four Revisions entries and a full Log entry; see the new Minor for the one scope item the pass missed.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Rule hoisted above the switch; three narrowing mutations each redden a different named test.
+findings:
+  - id: new
+    severity: Important
+    family: widened-contract-unpinned-at-the-consumer
+    title: |
+      The loop may perform an input's outcomes in any order and the whole suite stays green
+    detail: |
+      This is the 2nd finding in family widened-contract-unpinned-at-the-consumer.
+      BR-8 swept the slice's MEMBERSHIP at the consumer; ORDER is the enumerable
+      sibling and was left in the tree. Measured: rewriting play_loop.go:120 to
+      `for i := len(outs) - 1; i >= 0; i--` leaves go test ./cmd/define/
+      ./cmd/define/play/ fully green, though session.go:127 and the issue's
+      Done-when both call the ordering load-bearing. Failure: on a miss the
+      reveal arm restores the terminal and shells out to afplay, and re-entry
+      failure takes the early `return 1` at play_loop.go:167 with the record not
+      yet performed, so the miss is lost and the process exits 1. Write the
+      enumeration the widened contract implies and pin each row at the consumer;
+      the order row is three lines on TestLosingTheTerminalAfterPlaybackExitsOne
+      (play_loop_test.go:529) — drive keysFor("n"), keep st, assert one
+      reviewEvent. Verified: green today, red under the reversal.
+  - id: new
+    severity: Important
+    family: doc-sweep-incomplete
+    title: |
+      The atlas pass missed the round's own new doc-derivation convention, and describes an InputReveal case BR-12 removed
+    detail: |
+      This is the 4th finding in family doc-sweep-incomplete. Earlier rounds
+      fixed instances and BR-10 shipped the general fix for the DERIVABLE half
+      (make the restatement a consumer); this is the other half, so state the
+      rule rather than patching these two spots. (i) doc_sync_test.go plus the
+      gradePrompt/gradedPrompt consts introduce a convention that constrains
+      every future prompt edit, and it appears nowhere in atlas/ or README.md —
+      while the sibling convention born in the same round (skipOrFail +
+      DEFINE_CONFORMANCE_STRICT) got a full atlas paragraph at
+      atlas/define.md:1009-1024. (ii) atlas/define.md:1319 says the graded state
+      "needs its own case there" in the InputReveal arm, the shape BR-12 removed
+      later in the same range. Rule: the atlas enumeration must be produced by
+      something that ran — new package-level identifiers, env vars and test
+      conventions taken from git diff over the window, each grepped against
+      atlas/ and either documented or explicitly waived.
+  - id: new
+    severity: Important
+    family: one-rule-two-places
+    title: |
+      lessons.md now holds four mutation-restore rules giving three different answers, two added this round
+    detail: |
+      This is the 2nd finding in family one-rule-two-places, so the ask is the
+      rule, not the edit. Measured prevalence, four entries: :1080 "commit, then
+      mutate, then git checkout — neither half works alone"; :1739 "back up with
+      git, not with cp to /tmp"; :1820 (new) "the baseline is a commit, not a
+      working tree"; :1939 (new) "snapshot to a temp file and restore from that".
+      :1820 re-derives :1080 and then mis-describes it ("the previous lesson
+      stopped one clause short" — it did not), and :1939 contradicts :1739,
+      :1107 and its own sibling 119 lines above. AGENTS.md section 4 has agents
+      read this file at session start, so the next mutation round is handed
+      contradictory instructions for the exact procedure that burned this one
+      (ARCH-DRY). Rule: before appending a lesson, grep lessons.md for the rule
+      you are about to state; if it exists, REVISE that entry with the new
+      evidence instead of appending a sibling, and resolve any contradiction
+      inside the one entry.
+  - id: new
+    severity: Minor
+    family: check-that-cannot-fail-reads-as-green
+    title: |
+      render_test.go skips on an absent COMMITTED fixture, and the skipOrFail carve-out excludes it by filename rather than by the question
+    detail: |
+      This is the 3rd finding in family check-that-cannot-fail-reads-as-green.
+      skipOrFail's doc excludes render_test.go on the grounds that "table rows
+      that do not apply are not absent dependencies", but render_test.go:205
+      skips when a committed fixture is missing. Measured: deleting
+      cmd/define/testdata/entries/subject.txt makes TestCorpusBlockStructure
+      /subject skip and the package still report ok, silently retiring the
+      phantom-block coverage that fixture exists for. The rule is three classes,
+      not two — absent EXTERNAL dependency (skip; fail under strict), absent
+      IN-REPO artifact (always fail, which doc_sync_test.go:29 already gets
+      right), shape drift (always fail) — and each exclusion should be justified
+      by asking the site that question rather than by naming the file.
+  - id: new
+    severity: Minor
+    family: plan-artifact-not-ticked
+    title: |
+      The plan's Revisions section records three of the four scope-growth items from this round
+    detail: |
+      This is the 3rd finding in family plan-artifact-not-ticked. The four
+      entries cover BR-1, BR-11, BR-9 and BR-4; the BR-10 work is absent though
+      it added a file the plan never named (cmd/define/doc_sync_test.go) and two
+      new package consts, and left Task 7 Step 3's draw sketch showing the
+      literals inline. Same rule as the atlas finding: the Revisions enumeration
+      is built from git diff --name-status over the round's commits, not from
+      memory — the round that grows the scope is the round that records what
+      grew.
+  - id: new
+    severity: Minor
+    family: doc-sweep-incomplete
+    title: |
+      atlas/define.md still says "The third is the least obvious" after the table grew from three rows to seven
+    detail: |
+      atlas/define.md:1002 correctly changed to "Every seam has one", but the
+      paragraph below it opens with an ordinal into the old three-row table.
+      Name the check (player_conformance_test.go) instead of its position, per
+      the round's own "cite by NAME, never by line number" lesson.
+```
