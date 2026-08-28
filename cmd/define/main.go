@@ -246,7 +246,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// Before anything reads the deck: a deck written before #23 lives flat in
 	// words/ and Deck() now reads words/<lang>/, so without this it is orphaned.
 	// Idempotent and language-blind by design — see MigrateFlatDeck.
-	if err := store.MigrateFlatDeck(dir, warn); err != nil {
+	if err := store.MigrateToLanguages(dir, warn); err != nil {
 		fmt.Fprintf(warn, "define: could not migrate the existing deck (%v); it stays where it is\n", err)
 	}
 	// #23's precedence, applied ONCE and only here, because this is the only
@@ -366,7 +366,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	langFlag := fs.String("lang", "", "language for this invocation: en, es (default: the directory's setting)")
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
-	reflect := fs.Bool("reflect", false, "read the deck and write user-model.md")
+	reflect := fs.Bool("reflect", false, "read the deck and write user-model.<lang>.md")
 	playFlag := fs.Bool("play", false, "review the words due today")
 	count := fs.Int("count", 20, "how many words a review session offers")
 	fs.Usage = func() {

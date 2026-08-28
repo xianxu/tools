@@ -299,9 +299,14 @@ func isRuntimeDir(seg string) bool {
 // the persisted language is lang.txt rather than lang — an un-anchored
 // `lang` in .gitignore would hide any DIRECTORY of that name too, which this
 // guard structurally cannot see.
+//
+// filepath.Match because RuntimeFiles holds gitignore-style PATTERNS: two of its
+// entries are families (per-language models, atomic-write shadows) rather than
+// single names. Match's `?` and `*` agree with gitignore's for a single path
+// element, which is all a basename is.
 func isRuntimeFile(base string) bool {
-	for _, f := range store.RuntimeFiles {
-		if base == f {
+	for _, pat := range store.RuntimeFiles {
+		if ok, err := filepath.Match(pat, base); err == nil && ok {
 			return true
 		}
 	}

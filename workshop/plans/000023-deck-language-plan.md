@@ -354,3 +354,45 @@ Sidecar: `workshop/plans/000023-deck-language-m1-review.md`.
   own length check subsumed; `/lang <current>` now persists, because a directory
   with no `lang.txt` is already `en` by default and skipping the write left the
   learner no way to make that explicit.
+
+### 2026-08-28 — M1 boundary review round 2: FIX-THEN-SHIP, BR-2 blocking
+
+**Reason.** Round 2 disposed C1 and I1–I4 and raised BR-2 (Important) plus three
+Minors. Sidecar: `workshop/plans/000023-deck-language-m1-review.md`.
+
+**Delta.**
+
+- **BR-2 — `user-model.md` was a REGRESSION M1 introduced, and it is C1's class
+  one member further out.** `--reflect` reads the language-scoped deck and wrote
+  one shared file, so reflecting in Spanish replaced the English learner model
+  and every English answer was then pitched at "A2 — Spanish beginner". The
+  atlas text shipped in this range justified leaving it flat with the `events/`
+  argument, which does not transfer: an event is a fact about a moment, while
+  the model is a SUMMARY OF A DECK. The dividing line is derivation, not storage,
+  and the atlas now says so.
+  - `userModelFile()` is per-language (`user-model.<lang>.md`);
+    `MigrateToLanguages` moves a pre-language `user-model.md` alongside the deck,
+    under the same never-overwrite / never-delete / say-what-happened rules.
+- **`RuntimeFiles` entries became PATTERNS**, which the per-language model forced
+  and which also closes a Minor: `writeBytesAtomic` leaves `.tmp-*` shadows in
+  the working-directory ROOT for these two files, where no runtime directory
+  covers them. `user-model.??.md` rather than `user-model*.md` so the golden
+  fixture is not shadowed again — `??` is exactly a two-letter `Lang`.
+  - A pattern cannot name a file, so the writers stopped deriving from the list
+    and `TestRuntimeFilePatternsCoverWhatWeWrite` keeps them in step instead. It
+    is the stronger check: it asserts the real output of the writing functions,
+    and it also asserts the patterns are not loose enough to shadow the fixture.
+  - Verified against git itself, not only the test: `git check-ignore -v` matches
+    `user-model.md`, `user-model.en.md`, `user-model.es.md`, `lang.txt` and
+    `.tmp-abc`, and still does NOT match the golden fixture.
+- **Minors.** `applyLang` no longer writes `opt.lang`, whose documented meaning
+  is "the `-lang` FLAG, empty when it was not given" — a switch does not
+  retroactively make the flag present. `ParseLang`'s comment now says why the tag
+  is two letters (the CDN's `_<lang>_<locale>_` shape and the path segment),
+  rather than only why there is no whitelist. The user-facing strings that named
+  `user-model.md` now name the artifact instead of a filename that varies.
+- **One test comment corrected rather than left overclaiming.** A first draft
+  asserted the unreadable-model diagnostic still carried the file PATH; the
+  store double in that test fails abstractly, so the path is a production-only
+  property. The assertion is now on what is actually guaranteed — that the
+  message says which artifact failed — with the distinction stated.

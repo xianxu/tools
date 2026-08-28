@@ -35,6 +35,11 @@ func ParseLang(s string) (Lang, error) {
 	if s == "" {
 		return "", fmt.Errorf("empty language")
 	}
+	// Exactly two ASCII letters. The LENGTH is decided by what consumes it: the
+	// CDN's paths are _<lang>_<locale>_ with two-letter fields, and the value is
+	// also a path segment. So pt-br and ISO 639-3 tags are refused deliberately
+	// rather than by oversight — supporting them means deciding what URL they
+	// map to first.
 	if len(s) != 2 || !isASCIILower(s[0]) || !isASCIILower(s[1]) {
 		return "", fmt.Errorf("not a language tag: %q (want two letters, like en or es)", s)
 	}
@@ -43,11 +48,15 @@ func ParseLang(s string) (Lang, error) {
 
 func isASCIILower(b byte) bool { return b >= 'a' && b <= 'z' }
 
-// langFile is where a directory's language lives.
+// langFileName is where a directory's language lives.
 //
-// Named through RuntimeFiles rather than spelled here, so the guards that keep
-// it out of git and the code that writes it cannot disagree about the name.
-func langFile(dir string) string { return filepath.Join(dir, RuntimeFiles[1]) }
+// A literal rather than a RuntimeFiles index: that list holds gitignore PATTERNS
+// now, and an index into it would silently point at the wrong family the moment
+// one is added. TestRuntimeFilePatternsCoverWhatWeWrite asserts this name is
+// covered, which is what keeps the guards and the writer in step.
+const langFileName = "lang.txt"
+
+func langFile(dir string) string { return filepath.Join(dir, langFileName) }
 
 // ReadLang returns the directory's language, or DefaultLang when there is none.
 //

@@ -81,8 +81,8 @@ func TestLangRoundTrips(t *testing.T) {
 		t.Errorf("after WriteLang, ReadLang = %q, want es", got)
 	}
 	// And it is the file the guards know about, not some other name.
-	if _, err := os.Stat(filepath.Join(dir, RuntimeFiles[1])); err != nil {
-		t.Errorf("the setting is not at %s: %v", RuntimeFiles[1], err)
+	if _, err := os.Stat(filepath.Join(dir, langFileName)); err != nil {
+		t.Errorf("the setting is not at %s: %v", langFileName, err)
 	}
 }
 
@@ -91,7 +91,7 @@ func TestLangRoundTrips(t *testing.T) {
 func TestABrokenLangFileFallsBackToTheDefault(t *testing.T) {
 	for _, body := range []string{"not-a-language", "", "   ", "../etc", "en es"} {
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, RuntimeFiles[1]), []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, langFileName), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if got := ReadLang(dir); got != DefaultLang {
@@ -107,7 +107,7 @@ func TestWriteLangRejectsAnInvalidTag(t *testing.T) {
 	if err := WriteLang(dir, Lang("../etc")); err == nil {
 		t.Error("WriteLang accepted a traversal as a language")
 	}
-	if _, err := os.Stat(filepath.Join(dir, RuntimeFiles[1])); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, langFileName)); !os.IsNotExist(err) {
 		t.Error("a rejected language still wrote a file")
 	}
 }
@@ -117,11 +117,50 @@ func TestWriteLangRejectsAnInvalidTag(t *testing.T) {
 func TestReadLangToleratesHowAPersonWouldWriteIt(t *testing.T) {
 	for _, body := range []string{"es", "es\n", " ES \n", "es\r\n"} {
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, RuntimeFiles[1]), []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, langFileName), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if got := ReadLang(dir); got != "es" {
 			t.Errorf("ReadLang with %q on disk = %q, want es", body, got)
+		}
+	}
+}
+
+// Every runtime file we actually WRITE is covered by a RuntimeFiles pattern.
+//
+// This replaces deriving the names from the list, which stopped being possible
+// when the entries became patterns — and it is the stronger check: it asserts
+// the real output of the functions that write, so a name that drifts away from
+// its pattern fails here rather than silently escaping .gitignore and both repo
+// guards. That escape is the exact defect #23 was opened around.
+func TestRuntimeFilePatternsCoverWhatWeWrite(t *testing.T) {
+	dir := t.TempDir()
+	var names []string
+	for _, l := range []Lang{DefaultLang, "es", "zz"} {
+		names = append(names, filepath.Base(NewYAML(dir, l, nil).userModelFile()))
+	}
+	names = append(names, filepath.Base(langFile(dir)), ".tmp-123456")
+
+	for _, name := range names {
+		covered := false
+		for _, pat := range RuntimeFiles {
+			if ok, err := filepath.Match(pat, name); err == nil && ok {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			t.Errorf("define writes %q into the working directory and no RuntimeFiles pattern "+
+				"covers it — it would reach neither .gitignore nor the repo guards", name)
+		}
+	}
+
+	// And the patterns must NOT be so loose that they shadow a tracked fixture:
+	// user-model*.md would match this, which is how the reserved-basename rule
+	// gets quietly re-broken.
+	for _, pat := range RuntimeFiles {
+		if ok, _ := filepath.Match(pat, "user-model.golden.md"); ok {
+			t.Errorf("pattern %q shadows the tracked golden fixture; it is too loose", pat)
 		}
 	}
 }

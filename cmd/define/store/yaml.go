@@ -70,7 +70,21 @@ var RuntimeDirs = []string{"words", "events", "usage"}
 // lang.txt, not lang: an un-anchored `lang` would also hide any DIRECTORY of
 // that name anywhere in the tree, and a basename guard structurally cannot see
 // that. The extension costs nothing and closes the hole.
-var RuntimeFiles = []string{"user-model.md", "lang.txt"}
+var RuntimeFiles = []string{"user-model.md", "user-model.??.md", "lang.txt", ".tmp-*"}
+
+// Entries are gitignore-style PATTERNS, not literal names, because two of the
+// four are families rather than files: the learner model is per-language
+// (user-model.es.md), and writeBytesAtomic leaves a .tmp-* shadow beside
+// whatever it writes — in the working-directory ROOT for these two, where no
+// runtime directory covers it.
+//
+// `??` is exactly a two-letter Lang, which ParseLang guarantees. Deliberately
+// tighter than `*`: user-model*.md would also shadow
+// testdata/golden/user-model.golden.md, which is precisely the squatting problem
+// the reserved-basename rule exists to prevent.
+//
+// user-model.md itself stays listed because a directory written before #23 has
+// one, and MigrateToLanguages moves it rather than orphaning it.
 
 // wordsDir is per-language; eventsDir, usageDir and userModelFile are NOT.
 //
@@ -81,16 +95,25 @@ var RuntimeFiles = []string{"user-model.md", "lang.txt"}
 func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0], string(y.lang)) }
 func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) }
 
-// userModelFile is the third artifact in the directory, beside words/ and
-// events/. Markdown rather than YAML because a person edits it: #17 regenerates
-// the inferred sections and never touches the human-owned ## Corrections.
+// userModelFile is the learner model, beside words/ and events/. Markdown rather
+// than YAML because a person edits it: #17 regenerates the inferred sections and
+// never touches the human-owned ## Corrections.
 //
-// The name comes from RuntimeFiles, for the same reason langFile's does: that
-// list is what .gitignore and both repo guards derive from, so a hand-written
-// copy here would mean renaming the entry moved the guards while SetUserModel
-// kept writing the old name — silently reopening the very hole RuntimeFiles was
-// added to close.
-func (y *YAML) userModelFile() string { return filepath.Join(y.dir, RuntimeFiles[0]) }
+// PER-LANGUAGE, because it is DERIVED from the language-scoped deck. With one
+// shared file, `--reflect` in Spanish overwrote the English learner model and
+// every English answer was then pitched at "A2 — Spanish beginner". That is the
+// same class as #23's other language-derived state, one member further out: it
+// is derived from the language AND persisted, so it must be scoped like the deck
+// rather than left flat like events/. The events/ argument does not transfer —
+// an event is a fact about a moment, while this is a summary of one deck.
+//
+// Not derived from a RuntimeFiles entry, because those are patterns and a
+// pattern cannot name a file. TestRuntimeFilePatternsCoverWhatWeWrite is what
+// keeps the two in step instead — a stronger check than derivation, since it
+// asserts the actual output rather than a shared string.
+func (y *YAML) userModelFile() string {
+	return filepath.Join(y.dir, "user-model."+string(y.lang)+".md")
+}
 
 // usageDir holds the news cache, one file per word, beside words/ and events/.
 func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }

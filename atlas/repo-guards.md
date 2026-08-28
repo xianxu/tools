@@ -78,6 +78,24 @@ bare un-anchored `lang` would additionally hide any **directory** of that name
 anywhere in the tree — and a basename guard cannot see that. The extension costs
 nothing and closes the hole.
 
+**The entries are gitignore-style PATTERNS**, because two of the four are
+families rather than files: the learner model is per-language
+(`user-model.es.md`), and `writeBytesAtomic` leaves a `.tmp-*` shadow beside
+whatever it writes — in the working-directory ROOT for these two, where no
+runtime directory covers it. `isRuntimeFile` uses `filepath.Match`, whose `?`
+and `*` agree with gitignore's for a single path element.
+
+`user-model.??.md` rather than `user-model*.md`, deliberately: the looser pattern
+would shadow `testdata/golden/user-model.golden.md` and quietly re-break the
+reserved-basename rule the rename above established. `??` is exactly a two-letter
+`Lang`, which `ParseLang` guarantees.
+
+Because a pattern cannot name a file, the writers no longer derive their names
+from the list. `TestRuntimeFilePatternsCoverWhatWeWrite` keeps the two in step
+instead, and it is the stronger check: it asserts the real output of the
+functions that write, so a name drifting away from its pattern fails there rather
+than silently escaping `.gitignore` and both guards.
+
 **The history arm carries a ratchet, not an exemption.** Two 995-byte blobs of
 the renamed fixture stay reachable from `HEAD`, and rewriting history for
 synthetic sample output would be disproportionate. `legacyRuntimeFilePaths` pins

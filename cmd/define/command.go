@@ -364,7 +364,9 @@ func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPt
 // joins this list — and this comment is the place that says so.
 func applyLang(d *deps, opt *options, l store.Lang, vocPtr *Vocabulary, warn io.Writer) {
 	d.lang = l
-	opt.lang = l
+	// NOT opt.lang: that field is the -lang FLAG, documented as "empty when it
+	// was not given", and a switch does not retroactively make the flag present.
+	// d.lang is the language in effect and the only thing that should answer it.
 	applyVoice(opt, l, warn)
 	if d.newDeck == nil {
 		return // no store here; the language still applies to everything else

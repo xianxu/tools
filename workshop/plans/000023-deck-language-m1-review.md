@@ -87,3 +87,125 @@ Add a `## Revisions` entry to `workshop/plans/000023-deck-language-plan.md`:
 
 - **`deckDeps` was delivered as the `newDeck` closure.** D1 and the Core-concepts integration table name a package-level `deckDeps(dir, lang, clk, warn)` in `cmd/define/main.go`. The implementation instead builds the language-scoped triple as a closure over `dir`/`clk`/`warn` inside `openStore` and carries it on `storeDeps.newDeck` / `deps.newDeck`. The invariant D1 was protecting (one builder, called by `openStore` and by `/lang`) holds; only the name and shape differ. Update the table row to `newDeck` and adjust D1's bullet so the plan stops naming a function the tree does not have.
 - **The `/lang` re-derive set was under-enumerated.** D1 says "only the language-scoped triple is re-derived: `deck`, `capture`, `vocab`" (plus `runEditor`'s `voc`). `opt.voice` belongs to that enumeration and was not listed, which is how C1 shipped. State the full set, and state the rule that generates it: *anything derived from the language before the switch must be re-derived by it.*
+
+---
+
+## Re-review — 2026-08-28T12:31:12-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 23 — deck grouped by language, one language per --play session |
+| repo | tools |
+| issue file | workshop/issues/000023-deck-language.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 2e929fc56d1edc6b04af61100116a02abb7d9146..e4a86405ceac665a04e840b343fc587b99e60006 |
+| command | sdlc milestone-close --issue 23 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-28T12:31:12-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+M1 delivers what it claims: the deck really is per-language (`words/<lang>/`), the migration is language-blind and provably non-destructive, `/lang` persists and re-derives, `-lang` is one-shot, `--play`/`--forget`/the highlight set all follow the mode, and the `RuntimeFiles` guard closes the class rather than the instance. I verified every prior-round claim by reverting it in a scratch copy: removing `applyVoice` from `applyLang` reddens `TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage` with the exact four English URLs C1 described, and swapping `store.ReadLang(dir)` for `store.DefaultLang` reddens `TestAOneShotLookupReadsThePersistedLanguage` — so C1 and I1 are pinned by tests that genuinely fail without the fix, not by tests written to agree with it. I also ran the new live row (`go test -tags conformance -run TestCDNStillServesSpanish`) and it really passes against the CDN, so I3 is not a paper conformance check. Full suite green, gofmt/vet clean. What keeps this off SHIP is one further member of the very enumeration C1 named: `user-model.md` is derived from the now-language-scoped deck but stored unscoped, so `define -lang es --reflect` overwrites the English-derived learner model with a Spanish one, and the English session then reads it back at `ask.go:263`. I reproduced it end-to-end.
+
+## 1. Strengths
+
+- **`cmd/define/command.go:330-380`** — `applyLang` answers C1 as the class, not the site: one function, every member named with the reason it is one, the generating rule written down (*anything derived from the language before a switch must be re-derived by it*), and `d.dict` pre-registered for M2. I swept the tree for loop-locals derived from `d` before a loop (`replraw.go:69` `hist`, `:79` `voc`) and the enumeration covers both correctly — `hist` is deliberately excluded, and the exclusion is justified in the same comment.
+- **`cmd/define/voice.go:66-81`** — `applyVoice` collapses two expressions for one derived value into one function with two callers. That is the actual root-cause fix; the missing line was only the symptom.
+- **`cmd/define/lang_scope_test.go:174-211`** — asserts at the altitude the bug lived at (what the CDN was *asked* for, through `run()`), and carries its own non-vacuity check. Confirmed to redden under mutation.
+- **`cmd/define/store/migrate.go`** + `migrate_test.go` — language-blind by construction with the justification stated as a fact about the files, never overwrites, never deletes, prints the `mv` remedy, and five tests covering move / collision / idempotence / silence / other-languages-untouched.
+- **`cmd/define/repo_guard_test.go:295-360`** — `isRuntimeFile` mirrors `isRuntimeDir` (ARCH-DRY), `legacyRuntimeFilePaths` is an exact-set ratchet rather than a comment, the vacuity guards survive, and `git check-ignore -v user-model.md lang.txt` now matches both (it matched neither before this range) — I ran it.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — `cmd/define/reflect.go:318,397` + `cmd/define/store/yaml.go:88`: `user-model.md` is derived from the language-scoped deck but stored unscoped, so a `--reflect` in one language destroys and replaces the other language's learner model.**
+
+`reflect.go:318` reads `d.deck.Deck()`, which is now `words/<lang>/`; `reflect.go:397` writes through `SetUserModel` → `userModelFile()` = `<dir>/user-model.md`, which carries no language. `ask.go:263` reads that same single file in *every* language to pitch answers.
+
+Reproduced in a scratch copy with the existing `reflectRig` harness: `--reflect` over a 14-word English deck, then `--reflect` over a 14-word Spanish deck in the same directory. The English session's model afterwards is:
+
+```
+## Level
+**A2** — Spanish beginner.
+Read off: `madrugar`.
+## Domains they read in
+| daily life | 90% | `madrugar` | Use everyday Spanish. |
+```
+
+So an English session is now pitched from a Spanish-derived model that names a Spanish word — the leak direction the Spec's isolation claim rules out — and the English inference is gone (`## Corrections` survives; the generated sections do not). `atlas/define.md` shipped in this same range asserts `userModelFile()` is "deliberately" unscoped, but the reason it gives ("a review event names a word and a verdict") is the *events* argument, and it does not transfer: the user model's content is a function of the deck, and the deck is now scoped.
+
+This belongs to the same class C1 did — it is one member further out in the enumeration `applyLang` now owns. Family: `language-derived-state-unscoped`. Fix sketch: either scope it (`userModelFile()` → `words/<lang>/…` or `user-model.<lang>.md`, with a migration of the existing file to `en` and a `RuntimeFiles` pattern that the basename guard can still see), or clamp it (refuse `--reflect` outside the default language) — and either way state the rule alongside `applyLang`'s: *a persisted artifact derived from the deck must be scoped by the language the deck is.* Pin it with a test that runs `--reflect` in `es` and asserts the `en` model is unchanged.
+
+## 4. Minor findings
+
+- `cmd/define/command.go:367` — `applyLang` assigns `opt.lang = l`, but `options.lang`'s own comment (`main.go:329-333`) says the field is "the `-lang` FLAG, empty when it was not given — not the language in effect". Nothing reads it after `withStore`, so this is harmless today; the comment is now false after a switch.
+- `cmd/define/store/yaml.go:310` — `writeBytesAtomic` creates `.tmp-*` beside its target, so an interrupted `/lang` or `--reflect` leaves a temp file at the *working directory root*. `.gitignore` has no `.tmp-*` pattern and the new basename guards cannot see a random name. Pre-existing (`user-model.md` had the same shadow), but it is the one part of the `RuntimeFiles` class that the class fix does not reach.
+- `cmd/define/store/lang.go:41` — `ParseLang` requires exactly two ASCII letters, so `pt-br`, `zh-hans` and ISO 639-3 tags (`haw`) are refused. Deliberate, but the comment's rationale ("deliberately NOT checked against a list of known languages… the CDN and the installed dictionaries own what exists") argues against a whitelist, not for a length limit — worth one sentence saying the CDN's `_xx_yy_` path shape is what fixes it at two.
+
+## 5. Test coverage notes
+
+- Both prior-round fixes were mutation-verified by me, not taken on the commit message: `applyVoice` removal → 5 assertions red; `ReadLang` → `DefaultLang` → the persisted-setting subtest red. The I3 live row was executed against the real CDN and passed (0.73s, not a skip).
+- Coverage is otherwise strong and mostly negative-assertion shaped, which is the right shape here: `TestForgetActsOnTheCurrentLanguageOnly` leads with "did not reach the other deck", `TestTheFetchLoopAsksOnlyForTheSessionsLanguage` asserts the *absence* of the legacy pair, `TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` asserts the editor's cached set stopped seeing the old language.
+- Gap, N1: no test exercises `--reflect` under two languages in one directory.
+- `d`-in-`--play` deletion is still only tested through `--forget`. It rides the identical seam (`play_loop.go:154` → `d.deck.Forget`, scoped at `NewYAML`), so I agree with the prior round that this does not block; noting it so it does not quietly become "never tested".
+- `TestAcceptedLangIsASafePathSegment` was genuinely rewritten to assert the `filepath.Join`-cannot-escape property rather than a comparison its own length check subsumed — the Minor the prior round raised is real-fixed, not comment-fixed.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `newDeck` is one builder called by `openStore` and `/lang`; `applyVoice` is one derivation with two callers (this round's fix); `MigrateFlatDeck` derives `"words"` from `RuntimeDirs[0]`; `langFile`/`userModelFile` both derive from `RuntimeFiles`; `isRuntimeFile` mirrors `isRuntimeDir` and the `.gitignore` guard reuses the anchoring rule rather than restating it. No duplicated logic found in the diff.
+- **ARCH-PURE — pass.** `ParseLang`, `defaultLocale`, `localeFor`, `voiceFor`, `parseLangArgs` and `AudioCandidates` are pure and unit-tested with no IO; `localeFor` returning its complaint instead of printing it, with `applyVoice` doing the writing at the one place both callers meet, is the principle done properly. `ReadLang`'s error flattening is documented IO-shell behaviour with `/lang` as the reporting escape hatch.
+- **ARCH-PURPOSE — flag (N1).** The shadow-sweep over "what derives from the language" gives: `d.lang`, the deck triple, `opt.voice`, the editor's `voc`, `d.dict` (M2 — pre-registered), `d.history`/`d.usage` (correctly excluded, both word-keyed and language-blind) — and `user-model.md`, which derives from the scoped deck and is the one member neither scoped nor re-derived. Everything else the issue committed to for M1 is delivered and pinned.
+- **ARCH-MOCK — pass.** `fakeCDN` and production share one boundary (`rebasedSource` walks the real `AudioCandidates` output), and the Spanish facts the English-only legacy gate rests on now have an on-demand `-tags conformance` row that I ran live. For M2, hold `dcsDictionaries` to the same bar: the fake must model dictionary *identity* across calls, not just entry presence, or `chooseDictionary`'s curated-list branch cannot be checked against reality.
+
+## 7. Plan revision recommendations
+
+The plan already carries the M1-review Revisions entry (C1, I1–I4) and its Core-concepts table now names `newDeck` rather than the non-existent `deckDeps`; I verified every M1 row of that table against the tree and each entity exists at the stated path with the stated status. One addition:
+
+- **Add to `## Revisions`: the language-derived enumeration has a persisted member the plan never listed.** D1 enumerates the *session* state a switch re-derives. It says nothing about persisted artifacts derived from the scoped deck, and `user-model.md` is one — `atlas/define.md`'s "deliberately not scoped" list groups it with `events/` and `usage/` on an argument that only holds for those two. State the decision explicitly (scope it, or clamp `--reflect` to the default language), give it a task, and correct the atlas sentence in the same edit.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      The issue's Plan now carries `- [ ] M1 —` and `- [ ] M2 —` rows; I checked them against the binary's own regexes (close.go:554 tick pattern and milestonePlanRE at close.go:1667) and both match, so the milestone-verdict guard will no longer pass vacuously.
+findings:
+  - id: new
+    severity: Important
+    family: language-derived-state-unscoped
+    title: |
+      user-model.md is derived from the language-scoped deck but stored unscoped, so a --reflect in one language replaces the other language's model
+    detail: |
+      reflect.go:318 reads the language-scoped d.deck.Deck() while reflect.go:397 writes the unscoped userModelFile() (store/yaml.go:88), and ask.go:263 reads that one file in every language. Reproduced with the existing reflectRig: --reflect over an English deck, then over a Spanish deck in the same directory, leaves the English session reading "A2 — Spanish beginner / Read off: madrugar". This is the same enumeration class C1 named, one member further out — a persisted artifact derived from the language. atlas/define.md, shipped in this range, justifies leaving it unscoped with the events/ argument, which does not transfer.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      applyLang assigns opt.lang, contradicting that field's own documented meaning
+    detail: |
+      command.go:367 writes opt.lang = l, while main.go:329-333 documents options.lang as "the -lang FLAG, empty when it was not given — not the language in effect". Nothing reads it after withStore, so the behaviour is fine; the comment is false after a switch.
+  - id: new
+    severity: Minor
+    family: runtime-artifact-guard-coverage
+    title: |
+      the .tmp-* shadows writeBytesAtomic leaves beside a runtime FILE are covered by neither .gitignore nor the basename guards
+    detail: |
+      store/yaml.go:310 creates .tmp-* in the target's directory. For words/ and usage/ that directory is itself ignored; for lang.txt and user-model.md it is the working-directory root, where .gitignore has no .tmp-* pattern and isRuntimeFile cannot match a random name. Pre-existing for user-model.md, but it is the part of the RuntimeFiles class the class fix does not reach.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      ParseLang's stated rationale argues against a whitelist, not for the two-letter limit it actually imposes
+    detail: |
+      store/lang.go:41 requires exactly two ASCII letters, refusing pt-br, zh-hans and ISO 639-3 tags. The comment explains only why there is no list of known languages. One sentence naming the CDN's _xx_yy_ path shape as what fixes the length would make the constraint a decision rather than an artifact.
+```

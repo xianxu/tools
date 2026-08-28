@@ -179,9 +179,10 @@ words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            kinds: looked-up, asked  (answers are NOT stored)
 lang.txt                   which language this directory is in
-user-model.md              written by --reflect, read to pitch answers;
-                           its ## Corrections section is yours and is never
-                           rewritten
+user-model.en.md           written by --reflect, read to pitch answers; one per
+                           language, because it is read off that language's
+                           deck. Its ## Corrections section is yours and is
+                           never rewritten
 ```
 
 **One language at a time.** `/lang` says which one, `/lang es` switches, and the
@@ -197,7 +198,8 @@ word, and which deck it came from is the deck's business. "How much did I study
 today" stays one question rather than a join.
 
 A deck from before this existed is moved under `words/en/` the next time
-`define` runs, and it says so. That move cannot tell languages apart — a Spanish
+`define` runs — along with any `user-model.md`, which becomes
+`user-model.en.md` — and it says so. That move cannot tell languages apart — a Spanish
 word filed earlier lands in `words/en/` too — so it prints what it moved and
 leaves a `mv` to you. It never overwrites and never deletes.
 

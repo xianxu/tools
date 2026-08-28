@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// MigrateFlatDeck moves a pre-language deck from words/ into words/en/.
+// MigrateToLanguages moves a pre-language DIRECTORY into its default language.
 //
 // Without it a deck written before #23 is ORPHANED rather than lost: Deck() reads
 // words/<lang>/, so every existing word would simply stop being there.
@@ -29,7 +29,15 @@ import (
 // rather than rewrites, never overwrites a destination, and leaves a colliding
 // flat file exactly where it is — inert, since nothing reads words/*.yaml any
 // more — rather than choosing which copy of the learner's word to destroy.
-func MigrateFlatDeck(dir string, warn io.Writer) error {
+func MigrateToLanguages(dir string, warn io.Writer) error {
+	if err := migrateFlatDeck(dir, warn); err != nil {
+		return err
+	}
+	return migrateUserModel(dir, warn)
+}
+
+// migrateFlatDeck moves words/*.yaml into words/<default>/.
+func migrateFlatDeck(dir string, warn io.Writer) error {
 	src := filepath.Join(dir, RuntimeDirs[0])
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -84,6 +92,44 @@ func MigrateFlatDeck(dir string, warn io.Writer) error {
 	if len(skipped) > 0 {
 		fmt.Fprintf(warn, "define: left %d flat word file(s) in place because %s/%s/ already has "+
 			"them: %s\n", len(skipped), RuntimeDirs[0], DefaultLang, strings.Join(skipped, ", "))
+	}
+	return nil
+}
+
+// migrateUserModel moves a pre-language user-model.md to user-model.en.md.
+//
+// The same event as the deck's move and for the same reason: the model is
+// DERIVED from the deck, so when the deck became per-language the model had to
+// follow, and a directory written before that has one flat file. Same rules —
+// never overwrite, never delete, say what happened.
+//
+// Language-blind in the same way and with the same justification: a model
+// written before #23 describes whatever the single deck held, and the tool
+// cannot know which language that was.
+func migrateUserModel(dir string, warn io.Writer) error {
+	from := filepath.Join(dir, "user-model.md")
+	if _, err := os.Stat(from); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	to := filepath.Join(dir, "user-model."+string(DefaultLang)+".md")
+	if _, err := os.Stat(to); err == nil {
+		if warn != nil {
+			fmt.Fprintf(warn, "define: left user-model.md in place because %s already exists\n",
+				filepath.Base(to))
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(from, to); err != nil {
+		return err
+	}
+	if warn != nil {
+		fmt.Fprintf(warn, "define: moved user-model.md to %s — the learner model is per-language "+
+			"now, because it is derived from one language's deck\n", filepath.Base(to))
 	}
 	return nil
 }

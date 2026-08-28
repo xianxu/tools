@@ -217,11 +217,18 @@ words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
                          kinds: looked-up, asked
 lang.txt                 the directory's language (#23)
-user-model.md            the learner model — markdown, because a person edits it
+user-model.<lang>.md     the learner model — markdown, because a person edits it
 ```
 
-**Language is a DECK dimension, not an event one (`#23`).** Only `wordsDir()`
-carries the language; `eventsDir()`, `usageDir()` and `userModelFile()` do not.
+**Language is a DECK dimension, not an event one (`#23`).** `wordsDir()` and
+`userModelFile()` carry the language; `eventsDir()` and `usageDir()` do not.
+
+The dividing line is *derivation*, not storage. The learner model is READ OFF a
+language's deck — level, domains, the words each claim cites — so one shared file
+meant a Spanish `--reflect` replaced the English model and every English answer
+was then pitched at "A2 — Spanish beginner". M1's boundary review caught exactly
+that. An event is different in kind: it is a fact about a moment, not a summary
+of a deck, so the argument for leaving `events/` flat does not transfer to it.
 A review event names a word and a verdict, and which deck it came from is the
 deck's business — splitting the log would turn "how much did I study today" into
 a join, and would get there by migrating an append-only artifact. If a later
@@ -237,8 +244,9 @@ English dictionary and asked for `_en_us_` recordings. Taking the *active*
 language instead would mean one `define -lang es` on a first run filed an entire
 English deck under `words/es/`.
 
-It therefore cannot tell a Spanish word from an English one, and says so instead
-of guessing. On a collision the subdirectory wins, the flat file **survives** and
+`MigrateToLanguages` moves the learner model the same way, for the same reason
+and under the same rules. It therefore cannot tell a Spanish word from an English
+one, and says so instead of guessing. On a collision the subdirectory wins, the flat file **survives** and
 is named — inert, because nothing reads `words/*.yaml` any more, which is what
 makes "leave it" strictly non-destructive on the one artifact here that cannot be
 regenerated.

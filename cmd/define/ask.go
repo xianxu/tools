@@ -265,7 +265,7 @@ func gatherAskContext(d deps, sess *session, q question, warnOut io.Writer) askC
 		// NOT silently empty. store/yaml.go says why it returns an error at all:
 		// answering "" for a model that exists pitches every answer at the wrong
 		// level with no way to tell. Warned like a store that cannot be opened.
-		fmt.Fprintf(warnOut, "define: could not read user-model.md (%v); answering without it\n", err)
+		fmt.Fprintf(warnOut, "define: could not read the learner model (%v); answering without it\n", err)
 	}
 	c.UserModel = model
 

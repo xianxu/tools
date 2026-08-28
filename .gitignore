@@ -42,8 +42,15 @@ usage/
 # basenames RESERVED: a tracked file sharing one becomes un-addable after a git
 # rm. TestNoTrackedRuntimeState enforces that; testdata/golden/user-model.md was
 # renamed to user-model.golden.md when it did.
+#
+# Patterns, not names: the learner model is per-language (user-model.es.md) and
+# writeBytesAtomic leaves a .tmp-* shadow beside whatever it writes, which for
+# these two is the working-directory ROOT rather than an already-ignored runtime
+# directory. `??` rather than `*` so the golden fixture is not shadowed again.
 user-model.md
+user-model.??.md
 lang.txt
+.tmp-*
 
 # `go build ./` inside a cmd/<name>/ directory writes an extensionless binary
 # named after that directory — a 9.6 MB one was committed this way. bin/ is the

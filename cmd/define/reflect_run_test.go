@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +109,7 @@ func TestReflectIsIdempotent(t *testing.T) {
 
 // The Done-when row: a hand-written corrections section survives byte-for-byte.
 func TestReflectPreservesCorrections(t *testing.T) {
-	d, fake, st, dir := reflectRig(t, 14)
+	d, fake, st, _ := reflectRig(t, 14)
 	fake.Script("", llmtest.Reply{Text: reflectReply}, llmtest.Reply{Text: reflectReply})
 
 	var out, errb bytes.Buffer
@@ -128,7 +126,7 @@ func TestReflectPreservesCorrections(t *testing.T) {
 		t.Fatalf("no marker in the generated file:\n%s", before)
 	}
 	edited := before[:i] + correctionsMarker + mine
-	if err := os.WriteFile(filepath.Join(dir, "user-model.md"), []byte(edited), 0o644); err != nil {
+	if err := st.SetUserModel(edited); err != nil {
 		t.Fatal(err)
 	}
 

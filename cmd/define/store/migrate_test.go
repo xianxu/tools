@@ -37,7 +37,7 @@ func TestMigrateFlatDeckMovesWordsUnderTheDefaultLanguage(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "words", "sycophantic.yaml"), "text: sycophantic\n")
 
 	var warn bytes.Buffer
-	if err := store.MigrateFlatDeck(dir, &warn); err != nil {
+	if err := store.MigrateToLanguages(dir, &warn); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +78,7 @@ func TestMigrateFlatDeckNeverOverwritesOrDeletesOnCollision(t *testing.T) {
 	writeFile(t, dest, "text: mesa\nlookups: 99\n")
 
 	var warn bytes.Buffer
-	if err := store.MigrateFlatDeck(dir, &warn); err != nil {
+	if err := store.MigrateToLanguages(dir, &warn); err != nil {
 		t.Fatal(err)
 	}
 
@@ -100,7 +100,7 @@ func TestMigrateFlatDeckIsIdempotent(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "words", "sycophantic.yaml"), "text: sycophantic\n")
 
 	for i := 0; i < 2; i++ {
-		if err := store.MigrateFlatDeck(dir, nil); err != nil {
+		if err := store.MigrateToLanguages(dir, nil); err != nil {
 			t.Fatalf("run %d: %v", i, err)
 		}
 	}
@@ -121,7 +121,7 @@ func TestMigrateFlatDeckIsIdempotent(t *testing.T) {
 func TestMigrateFlatDeckIsSilentWhenThereIsNothingToDo(t *testing.T) {
 	dir := t.TempDir()
 	var warn bytes.Buffer
-	if err := store.MigrateFlatDeck(dir, &warn); err != nil {
+	if err := store.MigrateToLanguages(dir, &warn); err != nil {
 		t.Fatal(err)
 	}
 	if warn.String() != "" {
@@ -131,7 +131,7 @@ func TestMigrateFlatDeckIsSilentWhenThereIsNothingToDo(t *testing.T) {
 	// And with a deck that is already migrated.
 	writeFile(t, filepath.Join(dir, "words", "en", "sycophantic.yaml"), "text: sycophantic\n")
 	warn.Reset()
-	if err := store.MigrateFlatDeck(dir, &warn); err != nil {
+	if err := store.MigrateToLanguages(dir, &warn); err != nil {
 		t.Fatal(err)
 	}
 	if warn.String() != "" {
@@ -145,7 +145,7 @@ func TestMigrateFlatDeckLeavesOtherLanguagesAlone(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "words", "es", "madrugar.yaml"), "text: madrugar\n")
 
-	if err := store.MigrateFlatDeck(dir, nil); err != nil {
+	if err := store.MigrateToLanguages(dir, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := read(t, filepath.Join(dir, "words", "es", "madrugar.yaml")); got != "text: madrugar\n" {
@@ -153,5 +153,74 @@ func TestMigrateFlatDeckLeavesOtherLanguagesAlone(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "words", "en", "madrugar.yaml")); !os.IsNotExist(err) {
 		t.Error("a Spanish word was moved into the English deck")
+	}
+}
+
+// The learner model moves with the deck, because it is DERIVED from the deck.
+//
+// M1 made the deck per-language and left this file flat, so `--reflect` in
+// Spanish overwrote the English model and every English answer was then pitched
+// at a Spanish beginner. Same rules as the deck's move: never overwrite, never
+// delete, say what happened.
+func TestMigrateMovesTheUserModelUnderItsLanguage(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "user-model.md"), "## Level\nB2\n")
+
+	var warn bytes.Buffer
+	if err := store.MigrateToLanguages(dir, &warn); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(dir, "user-model.en.md")); got != "## Level\nB2\n" {
+		t.Errorf("migrated model = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "user-model.md")); !os.IsNotExist(err) {
+		t.Error("the flat model survived; the learner model now exists twice")
+	}
+	if !strings.Contains(warn.String(), "user-model.en.md") {
+		t.Errorf("migration was silent about the model: %q", warn.String())
+	}
+}
+
+// A collision leaves both, like the deck's. The model carries a human-owned
+// ## Corrections section that #17 promises never to rewrite, so destroying
+// either copy is worse than leaving one unreachable.
+func TestMigrateNeverOverwritesAnExistingUserModel(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "user-model.md"), "old\n")
+	writeFile(t, filepath.Join(dir, "user-model.en.md"), "current\n")
+
+	var warn bytes.Buffer
+	if err := store.MigrateToLanguages(dir, &warn); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(dir, "user-model.en.md")); got != "current\n" {
+		t.Errorf("the destination was overwritten: %q", got)
+	}
+	if got := read(t, filepath.Join(dir, "user-model.md")); got != "old\n" {
+		t.Errorf("the flat model was destroyed: %q", got)
+	}
+}
+
+// The bug itself, at the store level: two languages, two models, no clobbering.
+func TestTheUserModelIsPerLanguage(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.NewYAML(dir, store.DefaultLang, nil).SetUserModel("english model\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.NewYAML(dir, "es", nil).SetUserModel("modelo espanol\n"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		lang store.Lang
+		want string
+	}{{store.DefaultLang, "english model\n"}, {"es", "modelo espanol\n"}} {
+		got, err := store.NewYAML(dir, tc.lang, nil).UserModel()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != tc.want {
+			t.Errorf("%s model = %q, want %q — a reflect in one language replaced the other's",
+				tc.lang, got, tc.want)
+		}
 	}
 }
