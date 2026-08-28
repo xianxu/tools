@@ -162,61 +162,61 @@ Tests are named by what they pin, not transcribed — the strategy line is the p
 
 **Files:** create `store/lang.go`, `store/lang_test.go`; modify `store/yaml.go`, `.gitignore`, `cmd/define/repo_guard_test.go`, `cmd/define/usermodel_test.go`; rename `testdata/golden/user-model.md` → `user-model.golden.md`.
 
-- [ ] **Step 1 — rename the squatting fixture first.** `git mv` the golden and update its one reference. Doing this first is what lets the guards below be written at full strength rather than with an exception.
-- [ ] **Step 2 — write the three failing guard tests.** `TestGitignoreCoversRuntimeFiles` mirrors the `RuntimeDirs` one (entry present, and NOT anchored — `go test` runs in the package directory); `TestNoTrackedRuntimeState` and `TestNoRuntimeStateInHistory` each gain an `isRuntimeFile(basename)` arm. Run them: the first fails on `undefined: store.RuntimeFiles`, and the other two must be *seen* to fail before the rename would have been proved unnecessary.
-- [ ] **Step 3 — add `RuntimeFiles = []string{"user-model.md", "lang.txt"}`** beside `RuntimeDirs`, with the comment stating why a directory list could not see either file, and the two un-anchored `.gitignore` lines.
-- [ ] **Step 4 — run, and confirm git agrees**, because a passing test about `.gitignore` is not the same as `.gitignore` working: `git check-ignore -v user-model.md lang.txt` must now match both (it currently matches neither).
-- [ ] **Step 5 — `ParseLang`, test first.** The strategy is the input space, not the body: `"en"`, `"es"`, case-folded `"ES"`, a trailing newline (`ReadLang` hands it a file's bytes), and the rejections — empty, `"english"`, `"e/s"`, and `"../etc"`, which is the one that matters because the value becomes a path segment. Deliberately NOT a list of known languages: the CDN and the installed dictionaries own what exists, and an unknown-but-well-formed tag degrades to "no recording, no dictionary", which is honest.
-- [ ] **Step 6 — implement, run, commit.** `git commit -m "#23 M1: Lang, and the runtime-FILE guard user-model.md needed"`
+- [x] **Step 1 — rename the squatting fixture first.** `git mv` the golden and update its one reference. Doing this first is what lets the guards below be written at full strength rather than with an exception.
+- [x] **Step 2 — write the three failing guard tests.** `TestGitignoreCoversRuntimeFiles` mirrors the `RuntimeDirs` one (entry present, and NOT anchored — `go test` runs in the package directory); `TestNoTrackedRuntimeState` and `TestNoRuntimeStateInHistory` each gain an `isRuntimeFile(basename)` arm. Run them: the first fails on `undefined: store.RuntimeFiles`, and the other two must be *seen* to fail before the rename would have been proved unnecessary.
+- [x] **Step 3 — add `RuntimeFiles = []string{"user-model.md", "lang.txt"}`** beside `RuntimeDirs`, with the comment stating why a directory list could not see either file, and the two un-anchored `.gitignore` lines.
+- [x] **Step 4 — run, and confirm git agrees**, because a passing test about `.gitignore` is not the same as `.gitignore` working: `git check-ignore -v user-model.md lang.txt` must now match both (it currently matches neither).
+- [x] **Step 5 — `ParseLang`, test first.** The strategy is the input space, not the body: `"en"`, `"es"`, case-folded `"ES"`, a trailing newline (`ReadLang` hands it a file's bytes), and the rejections — empty, `"english"`, `"e/s"`, and `"../etc"`, which is the one that matters because the value becomes a path segment. Deliberately NOT a list of known languages: the CDN and the installed dictionaries own what exists, and an unknown-but-well-formed tag degrades to "no recording, no dictionary", which is honest.
+- [x] **Step 6 — implement, run, commit.** `git commit -m "#23 M1: Lang, and the runtime-FILE guard user-model.md needed"`
 
 ### Task 2: the deck is scoped by language
 
 **Files:** modify `store/yaml.go` (`NewYAML`, `wordsDir`), `store/yaml_test.go`.
 
-- [ ] **Step 1 — failing test:** `TestWordsAreScopedByLanguage`. An English store and a Spanish store over the SAME directory file into `words/en/` and `words/es/`, and — the assertion that is the point — the Spanish deck cannot see the English word. `#5`'s schedule interleaves by due-date, so mixing would not even be incidental.
-- [ ] **Step 2 — implement.** `NewYAML(dir, lang, warn)` with an empty lang meaning `DefaultLang`; `wordsDir()` returns `words/<lang>/`. `eventsDir()`, `usageDir()` and `userModelFile()` are deliberately untouched: language is a deck dimension, not an event one. A review event names a word; which deck it came from is the deck's business, and splitting the log would make "how much did I study today" a join.
-- [ ] **Step 3 — fix the call sites.** Enumerated 2026-08-28: **31 across 8 files** — `main.go`, `store/yaml.go`, `store/yaml_test.go`, `reflect_run_test.go`, `reflect_conformance_test.go`, `askrun_test.go`, `capture_test.go`, `history_store_test.go`, plus a fixture under `puretest/testdata/impure/`. Mechanical, but priced as a `cross-cutting-refactor` and not a one-liner — `#24`'s `Apply` signature change was the same shape with nine sites.
-- [ ] **Step 4 — run the package, commit.**
+- [x] **Step 1 — failing test:** `TestWordsAreScopedByLanguage`. An English store and a Spanish store over the SAME directory file into `words/en/` and `words/es/`, and — the assertion that is the point — the Spanish deck cannot see the English word. `#5`'s schedule interleaves by due-date, so mixing would not even be incidental.
+- [x] **Step 2 — implement.** `NewYAML(dir, lang, warn)` with an empty lang meaning `DefaultLang`; `wordsDir()` returns `words/<lang>/`. `eventsDir()`, `usageDir()` and `userModelFile()` are deliberately untouched: language is a deck dimension, not an event one. A review event names a word; which deck it came from is the deck's business, and splitting the log would make "how much did I study today" a join.
+- [x] **Step 3 — fix the call sites.** Enumerated 2026-08-28: **31 across 8 files** — `main.go`, `store/yaml.go`, `store/yaml_test.go`, `reflect_run_test.go`, `reflect_conformance_test.go`, `askrun_test.go`, `capture_test.go`, `history_store_test.go`, plus a fixture under `puretest/testdata/impure/`. Mechanical, but priced as a `cross-cutting-refactor` and not a one-liner — `#24`'s `Apply` signature change was the same shape with nine sites.
+- [x] **Step 4 — run the package, commit.**
 
 ### Task 3: migrate an existing flat deck
 
 **Files:** create `store/migrate.go`, `store/migrate_test.go`.
 
-- [ ] **Step 1 — failing tests, three of them**, one per rule in D3: moved-and-gone for the ordinary case; destination byte-identical and flat file surviving for a collision; and a twice-run migration reaching the same state. The third is the one that stops a future rewrite-in-place, on the one artifact here that cannot be regenerated.
-- [ ] **Step 2 — implement `MigrateFlatDeck(dir string, warn io.Writer) error`.** No language parameter (D3). It moves `words/*.yaml` into `words/en/`, skips subdirectories the way `Deck()` already does (`yaml.go:103-115`), never overwrites, and reports what it moved plus the `mv` remedy — printing nothing when it moves nothing.
-- [ ] **Step 3 — call it once in `openStore`, run, commit.**
+- [x] **Step 1 — failing tests, three of them**, one per rule in D3: moved-and-gone for the ordinary case; destination byte-identical and flat file surviving for a collision; and a twice-run migration reaching the same state. The third is the one that stops a future rewrite-in-place, on the one artifact here that cannot be regenerated.
+- [x] **Step 2 — implement `MigrateFlatDeck(dir string, warn io.Writer) error`.** No language parameter (D3). It moves `words/*.yaml` into `words/en/`, skips subdirectories the way `Deck()` already does (`yaml.go:103-115`), never overwrites, and reports what it moved plus the `mv` remedy — printing nothing when it moves nothing.
+- [x] **Step 3 — call it once in `openStore`, run, commit.**
 
 ### Task 4: `-lang`, the persisted setting, and `/lang`
 
 **Files:** create `cmd/define/lang_cmd.go`, `lang_cmd_test.go`; extend `store/lang.go`; modify `main.go` (flag, `options`, `openStore`, `deckDeps`), `command.go` (`commandCtx`, table), `repl.go`, `replraw.go`.
 
-- [ ] **Step 1 — failing store tests:** `ReadLang` on an unset directory is `DefaultLang`; a written language round-trips; a garbage file degrades to the default rather than failing the lookup.
-- [ ] **Step 2 — failing command tests:** `/lang` reports; `/lang es` switches, persists, and re-derives; `/lang xx` is refused with the tag echoed; `/lang es` with no session still writes and says which half it did (D1).
-- [ ] **Step 3 — the boundary.** `options` gains `lang store.Lang`; the flag is `-lang` (`"language for this invocation: en, es (default: the directory's setting)"`). Precedence, stated once in `main.go`: the flag wins for THIS invocation and does not persist; otherwise the directory's setting; otherwise English. `-lang` exists so a script can ask a question without mutating state.
-- [ ] **Step 4 — `deckDeps` and `setLang`.** Factor the language-scoped triple out of `openStore`; add `lang` and `setLang` to `commandCtx`; wire the closure in BOTH loops, and in `runEditor` assign the captured `voc` as well as `d` — the local at `replraw.go:79` is the thing a `d` reassignment cannot reach.
-- [ ] **Step 5 — extend the wiring pin.** `TestOpenStoreSharesOneHighlightSet` has a sibling: after `/lang es`, `capture` and `vocab` are still ONE set, and it is the Spanish one. Mutation check: reassigning `d` without reassigning `voc` must redden it.
-- [ ] **Step 6 — run, commit.**
+- [x] **Step 1 — failing store tests:** `ReadLang` on an unset directory is `DefaultLang`; a written language round-trips; a garbage file degrades to the default rather than failing the lookup.
+- [x] **Step 2 — failing command tests:** `/lang` reports; `/lang es` switches, persists, and re-derives; `/lang xx` is refused with the tag echoed; `/lang es` with no session still writes and says which half it did (D1).
+- [x] **Step 3 — the boundary.** `options` gains `lang store.Lang`; the flag is `-lang` (`"language for this invocation: en, es (default: the directory's setting)"`). Precedence, stated once in `main.go`: the flag wins for THIS invocation and does not persist; otherwise the directory's setting; otherwise English. `-lang` exists so a script can ask a question without mutating state.
+- [x] **Step 4 — `deckDeps` and `setLang`.** Factor the language-scoped triple out of `openStore`; add `lang` and `setLang` to `commandCtx`; wire the closure in BOTH loops, and in `runEditor` assign the captured `voc` as well as `d` — the local at `replraw.go:79` is the thing a `d` reassignment cannot reach.
+- [x] **Step 5 — extend the wiring pin.** `TestOpenStoreSharesOneHighlightSet` has a sibling: after `/lang es`, `capture` and `vocab` are still ONE set, and it is the Spanish one. Mutation check: reassigning `d` without reassigning `voc` must redden it.
+- [x] **Step 6 — run, commit.**
 
 ### Task 5: the recording follows the mode (folds `#27`'s plumbing)
 
 **Files:** create `voice.go`; modify `audiourl.go`, `audiourl_test.go`, `main.go` (`speak`), `fetch_fake_test.go`.
 
-- [ ] **Step 1 — failing tests.** Spanish: `AudioCandidates("madrugar", voice{Lang: "es", Locale: "es"})` yields the two 2022-path URLs and **no legacy pair** — measured 2026-08-28, `madrugar--_us_1` and `madrugar--_es_1` are both 404 while `sycophantic--_us_1` is 200, so the legacy `/sounds/oxford/` path is English-only and a Spanish candidate on it is a guaranteed miss at ~450ms. English: the existing four URLs, unchanged — this is the regression that must not happen. `localeFor`: `en`→`us`, `en`+`-locale gb`→`gb`, `es`→`es`, `es`+`-locale gb`→`es` plus the diagnostic (D2). Plus the `fakeCDN` walk from `#27`'s plan, using `stripHost`, `cdn.urls`, `cdn.source`, `cdn.Requested` — all verified present at `fetch_fake_test.go:44-64`.
-- [ ] **Step 2 — implement.** `speak`'s `locale string` becomes `v voice`; `AudioCandidates` takes a `voice` and builds `_<lang>_<locale>_`; no `voices()` and no fallback, because the mode supplies the language.
-- [ ] **Step 3 — run, commit.**
+- [x] **Step 1 — failing tests.** Spanish: `AudioCandidates("madrugar", voice{Lang: "es", Locale: "es"})` yields the two 2022-path URLs and **no legacy pair** — measured 2026-08-28, `madrugar--_us_1` and `madrugar--_es_1` are both 404 while `sycophantic--_us_1` is 200, so the legacy `/sounds/oxford/` path is English-only and a Spanish candidate on it is a guaranteed miss at ~450ms. English: the existing four URLs, unchanged — this is the regression that must not happen. `localeFor`: `en`→`us`, `en`+`-locale gb`→`gb`, `es`→`es`, `es`+`-locale gb`→`es` plus the diagnostic (D2). Plus the `fakeCDN` walk from `#27`'s plan, using `stripHost`, `cdn.urls`, `cdn.source`, `cdn.Requested` — all verified present at `fetch_fake_test.go:44-64`.
+- [x] **Step 2 — implement.** `speak`'s `locale string` becomes `v voice`; `AudioCandidates` takes a `voice` and builds `_<lang>_<locale>_`; no `voices()` and no fallback, because the mode supplies the language.
+- [x] **Step 3 — run, commit.**
 
 ### Task 6: `--play` and `--forget` inherit the mode
 
 **Files:** modify `main.go` (`--play`, `--forget`), `play_loop.go`.
 
-- [ ] **Step 1 — failing test:** a `--play` session in Spanish mode offers only Spanish words, and `--forget` plus `d`-in-`--play` remove from the current language's deck and leave the other language's untouched. The negative half is the assertion — a delete that reaches the wrong deck is the failure mode worth pinning.
-- [ ] **Step 2 — wire the `Lang` through, run, commit.** Both already act through `d.deck`, so this is mostly proof rather than change; if it turns out to be free, the test is still the deliverable.
+- [x] **Step 1 — failing test:** a `--play` session in Spanish mode offers only Spanish words, and `--forget` plus `d`-in-`--play` remove from the current language's deck and leave the other language's untouched. The negative half is the assertion — a delete that reaches the wrong deck is the failure mode worth pinning.
+- [x] **Step 2 — wire the `Lang` through, run, commit.** Both already act through `d.deck`, so this is mostly proof rather than change; if it turns out to be free, the test is still the deliverable.
 
 ### Task 7: M1 docs and close
 
-- [ ] **Step 1 — sweep, do not remember:** `grep -rniE "words/|deck|locale|language" README.md atlas/ --include='*.md'`.
-- [ ] **Step 2 —** README gets `-lang` and `/lang`; `atlas/define.md` gets the deck layout, the *language is a deck dimension, not an event one* rule, and D2's interim locale rule so `#27` inherits it in writing.
-- [ ] **Step 3 —** `sdlc milestone-close --issue 23 --milestone M1`
+- [x] **Step 1 — sweep, do not remember:** `grep -rniE "words/|deck|locale|language" README.md atlas/ --include='*.md'`.
+- [x] **Step 2 —** README gets `-lang` and `/lang`; `atlas/define.md` gets the deck layout, the *language is a deck dimension, not an event one* rule, and D2's interim locale rule so `#27` inherits it in writing.
+- [x] **Step 3 —** `sdlc milestone-close --issue 23 --milestone M1`
 
 ## Chunk 2 (M2): the dictionary follows the mode
 

@@ -162,11 +162,11 @@ when the private surface has moved.
 
 ## Done when
 
-- [ ] `words/<lang>/`, with existing decks migrated rather than orphaned.
-- [ ] `--play -lang es` reviews Spanish only; the default reviews English only.
-- [ ] `/lang` reports the current language; `/lang es` switches it; the setting
+- [x] `words/<lang>/`, with existing decks migrated rather than orphaned.
+- [x] `--play -lang es` reviews Spanish only; the default reviews English only.
+- [x] `/lang` reports the current language; `/lang es` switches it; the setting
       survives the session ending.
-- [ ] A one-shot `define madrugar` uses the persisted language, with no session
+- [x] A one-shot `define madrugar` uses the persisted language, with no session
       to inherit from.
 - [ ] A word shared with English is filed AND DEFINED in the current language —
       `mesa` in Spanish mode returns the Spanish entry, not the flat-topped hill.
@@ -177,8 +177,8 @@ when the private surface has moved.
       what ships now rather than crashing.
 - [ ] A live conformance check says loudly when the private surface moves, on
       demand like `#9`'s feed check rather than in merge-check.
-- [ ] `--forget` and `d`-in-`--play` remove from the right language's deck.
-- [ ] The schedule and the event log are unchanged: language is a deck dimension,
+- [x] `--forget` and `d`-in-`--play` remove from the right language's deck.
+- [x] The schedule and the event log are unchanged: language is a deck dimension,
       not an event one. A review event names a word; which deck it came from is
       the deck's business.
 
