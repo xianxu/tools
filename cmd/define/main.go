@@ -331,6 +331,12 @@ type options struct {
 	// one-third of a precedence openStore applies (flag, then the directory's
 	// setting, then English), and only openStore knows the directory.
 	lang store.Lang
+	// voice is the recording to ask for: the language in effect plus its regional
+	// variant. Resolved ONCE, just after withStore, because that is the first
+	// point where both halves are known — the flags here and the language from
+	// the directory. Building it per play would re-emit the -locale complaint on
+	// every replay.
+	voice voice
 }
 
 // run is the thin IO shell: parse flags, look up, render, print, play. All of
@@ -510,6 +516,14 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// it was avoiding is gone at the source instead: opening a store no longer
 	// reads the log (History.Load does, when a loop is about to recall).
 	d = d.withStore(opt, stderr)
+	// The language is known only after the store has resolved it, so the voice is
+	// built here rather than at flag parse — and the -locale complaint is printed
+	// exactly once, not once per pronunciation.
+	var localeComplaint string
+	opt.voice, localeComplaint = voiceFor(d.lang, *locale, isSet(fs, "locale"))
+	if localeComplaint != "" {
+		fmt.Fprintf(stderr, "define: %s\n", localeComplaint)
+	}
 
 	if forgetting {
 		return forgetWord(d, opt, *forget, stdout, stderr)
@@ -703,7 +717,7 @@ func playAnnounced(ctx context.Context, d deps, opt options, word string, ind in
 		fmt.Fprint(stdout, ind.before)
 		fmt.Fprintf(stdout, "  ♫ playing %d×", opt.times)
 	}
-	err := speak(ctx, d, word, opt.locale, opt.times)
+	err := speak(ctx, d, word, opt.voice, opt.times)
 	if erasable {
 		fmt.Fprint(stdout, ind.erase)
 	}
@@ -727,8 +741,8 @@ func playAnnounced(ctx context.Context, d deps, opt options, word string, ind in
 // speak fetches the recording and plays it n times. It prints NOTHING — the
 // announcement belongs to the caller, because a replay in the loop must leave
 // the screen exactly as it was.
-func speak(ctx context.Context, d deps, word, locale string, n int) error {
-	data, _, err := d.audio.Fetch(ctx, AudioCandidates(word, locale))
+func speak(ctx context.Context, d deps, word string, v voice, n int) error {
+	data, _, err := d.audio.Fetch(ctx, AudioCandidates(word, v))
 	if err != nil {
 		return fmt.Errorf("%s: %w", word, err)
 	}

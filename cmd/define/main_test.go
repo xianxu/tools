@@ -32,7 +32,7 @@ func newAudioRig(t *testing.T, word string, present bool) *audioRig {
 	t.Helper()
 	files := map[string][]byte{}
 	if present {
-		first := AudioCandidates(word, "us")[0]
+		first := AudioCandidates(word, voice{Lang: "en", Locale: "us"})[0]
 		files[stripHost(t, first, audioBase)] = []byte("ID3fakeaudio")
 	}
 	cdn := newFakeCDN(t, files)
@@ -240,7 +240,7 @@ func TestRunUsesDerivedCandidateOrder(t *testing.T) {
 	rig := newAudioRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	run(t.Context(), []string{"sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb)
-	want := stripHost(t, AudioCandidates("sycophantic", "us")[0], audioBase)
+	want := stripHost(t, AudioCandidates("sycophantic", voice{Lang: "en", Locale: "us"})[0], audioBase)
 	got := rig.cdn.Requested()
 	if len(got) != 1 || got[0] != want {
 		t.Errorf("requested %v, want exactly [%s]", got, want)

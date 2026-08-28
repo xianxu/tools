@@ -19,7 +19,7 @@ import (
 )
 
 func TestAfplayBlocksUntilPlaybackCompletes(t *testing.T) {
-	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", "us"))
+	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", voice{Lang: "en", Locale: "us"}))
 	if err != nil {
 		conformance.SkipOrFail(t, "network unavailable", err)
 	}

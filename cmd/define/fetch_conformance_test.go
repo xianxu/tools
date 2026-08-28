@@ -33,13 +33,13 @@ func head(t *testing.T, url string) int {
 
 func TestCDNStillServesTheExpectedPaths(t *testing.T) {
 	// Fact 1: the primary path serves a known word.
-	if got := head(t, AudioCandidates("sycophantic", "us")[0]); got != http.StatusOK {
+	if got := head(t, AudioCandidates("sycophantic", voice{Lang: "en", Locale: "us"})[0]); got != http.StatusOK {
 		t.Errorf("primary path for sycophantic = %d, want 200 — the CDN generation may have moved", got)
 	}
 	// Fact 2: the 2022 generation strictly dominates the legacy one. gaslighting
 	// exists ONLY on the newer path; if that stops being true the ordering in
 	// AudioCandidates is no longer justified by measurement.
-	cands := AudioCandidates("gaslighting", "us")
+	cands := AudioCandidates("gaslighting", voice{Lang: "en", Locale: "us"})
 	var modern, legacy string
 	for _, u := range cands {
 		if strings.Contains(u, "/pronunciation/") && modern == "" {
@@ -58,7 +58,7 @@ func TestCDNStillServesTheExpectedPaths(t *testing.T) {
 }
 
 func TestCDNReturnsRealAudio(t *testing.T) {
-	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", "us"))
+	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", voice{Lang: "en", Locale: "us"}))
 	if err != nil {
 		conformance.SkipOrFail(t, "network unavailable", err)
 	}
