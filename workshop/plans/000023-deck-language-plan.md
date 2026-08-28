@@ -248,9 +248,13 @@ makes the feed language-aware, scoping becomes *required*, and that is the momen
 to add it. Written down here so it is a decision with a trigger rather than a
 thing someone rediscovers.
 
-**Bonus, and the reason this is not merely tidy:** today a Spanish lookup pays a
-live Google News request per word — up to the 20s client timeout — for items
-`containsWord` will almost always discard.
+**Not a live saving today, and worth saying so rather than overclaiming:**
+`UsageSource.Usages` has no production caller yet — `d.usage` is plumbing for
+`#10`. So this costs nothing now and prevents something later: the moment `#10`
+wires it up, a Spanish lookup would otherwise pay a live Google News request per
+word, up to the 20s client timeout, for items `containsWord` will almost always
+discard. A first draft of this section claimed the saving was already being
+made.
 
 
 ### Task 8: `chooseDictionary`, pure over metadata
@@ -276,7 +280,7 @@ live Google News request per word — up to the 20s client timeout — for items
 
 **Files:** modify `dict_conformance_test.go`.
 
-- [x] **Step 1 —** assert all nine symbols resolve and that `mesa` through the Spanish choice is a Spanish entry, routed through `conformance.SkipOrFail` (`#25`) so an unreachable dictionary SKIPS by default and FAILS under `CONFORMANCE_STRICT`.
+- [x] **Step 1 —** assert every symbol in `dcsPrivateSymbols` resolves (the resolver needs three; "nine" was how many the survey probed) and that `mesa` through the Spanish choice is a Spanish entry, routed through `conformance.SkipOrFail` (`#25`) so an unreachable dictionary SKIPS by default and FAILS under `CONFORMANCE_STRICT`.
 - [x] **Step 2 —** run unsandboxed in BOTH env states; sandboxed it must skip, not fail.
 - [x] **Step 3 —** atlas + README for the dictionary selection, then `sdlc close --issue 23`.
 
