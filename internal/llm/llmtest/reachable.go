@@ -2,6 +2,8 @@ package llmtest
 
 import (
 	"context"
+	"fmt"
+	"github.com/xianxu/tools/internal/conformance"
 	"net"
 	"net/url"
 	"testing"
@@ -44,7 +46,8 @@ func SkipIfUnreachable(t *testing.T, baseURL string) {
 	defer cancel()
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", host)
 	if err != nil {
-		t.Skipf("service not running at %s, so nothing has drifted: %v", baseURL, err)
+		conformance.SkipOrFail(t,
+			fmt.Sprintf("service not running at %s, so nothing has drifted", baseURL), err)
 	}
 	conn.Close()
 }

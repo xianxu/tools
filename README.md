@@ -38,30 +38,39 @@ define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
 
-**`define --play` reviews what is due today.** The word appears alone; Enter or
-space reveals the definition; `y` and `n` say whether you had it. Ctrl-C stops
-whenever you like and keeps everything you answered — each answer is written as
-it happens, not at the end.
+**`define --play` reviews what is due today.** The word appears alone and you
+answer straight away: `y` if you had it, `n` if you did not. A `y` moves on
+immediately; an `n` shows you the definition, and any key then continues. Ctrl-C
+stops whenever you like and keeps everything you answered — each answer is
+written as it happens, not at the end.
 
 ```
 $ define --play
 ephemeral
 
-Enter or space to reveal, d = remove from deck, Ctrl-C to stop
+y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 ```
 
 | key | does |
 |---|---|
-| Enter or space | reveal the definition |
-| `y` / `n` | you had it / you did not |
+| `y` | you had it — straight to the next word, no definition |
+| `n` | you missed it — the definition appears, then any key continues |
+| space or Enter | check the definition first, if you want to, before answering |
 | `d` | remove this word from the deck — its history is kept |
 | Ctrl-C | stop; everything you answered is already saved |
+
+After an `n` the definition is on screen and the prompt changes:
+
+```
+any key = next word, d = remove from deck, Ctrl-C to stop
+```
 
 Words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days — and a
 miss drops one step rather than all the way back. `-count` bounds a sitting
 (default 20). No API key: the deck and the dictionary are enough, and the review
-loop never reaches for the model. Pronunciation audio IS fetched over the
-network as each word is revealed — `--no-audio` makes a sitting fully offline.
+loop never reaches for the model. Pronunciation audio is fetched over the network
+only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
+network call at all; `--no-audio` makes one fully offline either way.
 
 On a terminal, `define` with no word opens a line editor:
 
@@ -289,8 +298,21 @@ make install   # symlink bin/* into ~/.local/bin (already on PATH)
 Live conformance checks sit behind a build tag and must run unsandboxed:
 
 ```sh
-go test -tags conformance ./...
+go test -tags conformance ./...                     # skips what it cannot reach
+CONFORMANCE_STRICT=1 go test -tags conformance ./...   # a skip is a failure
 ```
+
+Without the variable a missing dependency — no network, no NOAD, no terminal, no
+`afplay`, no model — SKIPS, so the suite is still useful offline. That makes a
+sandboxed run report success for checks that never executed, which is the wrong
+answer for CI or for a close that has to mean something: set `CONFORMANCE_STRICT`
+there and green means it ran.
+
+The guarantee covers `./...` because it is enforced rather than swept.
+`internal/conformance` owns the decision, and its `TestEverySkipIsRoutedOrWaived`
+walks the tree and FAILS on any `t.Skip` that is neither routed through it nor
+marked `conformance:inapplicable` with a reason — so a new suite in a package
+nobody thought to sweep cannot quietly opt out.
 
 ## Platform
 

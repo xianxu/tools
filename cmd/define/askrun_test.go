@@ -775,6 +775,7 @@ func TestTheAskWiringTable(t *testing.T) {
 
 		t.Run(mode.name+"/the session carries across lines", func(t *testing.T) {
 			if !mode.carriesSession {
+				// conformance:inapplicable — a one-shot mode has no session, so there is nothing absent — the row does not apply
 				t.Skip("one line, one process: nothing to carry")
 			}
 			d, fake, _, _ := askRig(t)
@@ -799,6 +800,7 @@ func TestTheAskWiringTable(t *testing.T) {
 
 		t.Run(mode.name+"/the interrupt is scoped to the answer", func(t *testing.T) {
 			if !mode.carriesSession {
+				// conformance:inapplicable — same: no dependency is missing, and failing this row would assert something untrue
 				t.Skip("a one-shot has no session to return to: ending it IS correct")
 			}
 			d, fake, _, _ := askRig(t)

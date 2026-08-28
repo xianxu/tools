@@ -111,52 +111,87 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 		if !ok {
 			continue
 		}
-		var out play.Outcome
-		s, out = play.Apply(s, in)
+		var outs []play.Outcome
+		s, outs = play.Apply(s, in)
 
-		switch out.Kind {
-		case play.OutcomeRecord:
-			// RECORDED NOW, before the next question is drawn. That is what makes
-			// Ctrl-C lossless by construction rather than by a flush, and the
-			// loop never inspects the verdict — a skip produced no outcome at
-			// all, so there is nothing to filter here.
-			d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, opt)
-		case play.OutcomeDrop:
-			// Through the store's own Forget, which is --forget's path: the deck
-			// loses the word and the events keep it. Reported, because removing
-			// something on one keystroke should say so.
-			if removed, err := d.deck.Forget(out.Word); err != nil {
-				fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
-			} else if removed {
-				fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
-			}
-
-		case play.OutcomeReveal:
-			if !opt.noAudio && opt.times > 0 {
-				// Cooked for playback, as #16 established: the indicator and any
-				// warning are written for a human to read.
-				word := s.Current().Word()
-				if raw.sess != nil {
-					raw.sess.restore()
+		// EVERY outcome, ONCE, IN ORDER.
+		//
+		// Widening Apply to []Outcome moved three obligations from the type system
+		// into this loop, and each one is a row that has to be pinned HERE, at the
+		// consumer — the pure tests cannot see any of them, because they assert
+		// what Apply RETURNS, not what the caller does with it:
+		//
+		//	membership — every outcome is performed. Dropping either end of the
+		//	             slice left the whole suite green (BR-8); now
+		//	             TestAMissPlaysThePronunciationAndRecordsIt asserts the
+		//	             play AND the event, so both `outs[:1]` and
+		//	             `outs[len(outs)-1:]` redden it.
+		//	order      — the record is written BEFORE anything that can block on
+		//	             the terminal. Reversing this iteration also left the suite
+		//	             green (BR-13); TestLosingTheTerminalAfterPlaybackExitsOne
+		//	             now drives a miss into a terminal that cannot be re-entered,
+		//	             where reversing the order loses the verdict AND exits 1.
+		//	once       — no outcome is performed twice. A duplicated record is a
+		//	             second review event for one answer, which Fold would read
+		//	             as another review; the event-count assertions redden it.
+		//
+		// The enumeration is written down because BR-8 fixed membership and left
+		// order in the tree — a widened contract has more than one way to be
+		// betrayed by its caller, and finding them one review at a time is what
+		// this comment is here to stop.
+		for _, out := range outs {
+			switch out.Kind {
+			case play.OutcomeRecord:
+				// RECORDED NOW, before the next question is drawn. That is what makes
+				// Ctrl-C lossless by construction rather than by a flush, and the
+				// loop never inspects the verdict — a skip produced no outcome at
+				// all, so there is nothing to filter here.
+				d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, opt)
+			case play.OutcomeDrop:
+				// Through the store's own Forget, which is --forget's path: the deck
+				// loses the word and the events keep it. Reported, because removing
+				// something on one keystroke should say so.
+				if removed, err := d.deck.Forget(out.Word); err != nil {
+					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
+				} else if removed {
+					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
 				}
-				playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
-				if raw.sess != nil {
-					again, err := enterRaw(raw.f)
-					if err != nil {
-						// REPORTED, not dropped. Without raw mode readKeys is
-						// line-buffered, so every keystroke appears to do nothing
-						// until Enter — the session looks frozen and nothing says
-						// why. Ending is honest; pretending to continue is not.
-						// EXIT 1, like the failure to enter raw mode in the first
-						// place. Both are "this session cannot continue because
-						// the terminal is gone", and returning 0 from one of them
-						// tells a script the session ended normally when it did
-						// not (BR-24).
-						fmt.Fprintf(stderr, "define: lost the terminal after playback: %v\n", err)
-						finish(stdout, s)
-						return 1
+
+			case play.OutcomeReveal:
+				if !opt.noAudio && opt.times > 0 {
+					// Cooked for playback, as #16 established: the indicator and any
+					// warning are written for a human to read.
+					//
+					// The word comes from the OUTCOME, not from s.Current().
+					//
+					// Reading it back off the session was correct only while no
+					// input both advanced and revealed — and the failure mode if
+					// one ever did was not the wrong word this comment used to
+					// predict, it was a nil-interface panic at the end of the
+					// queue, where Current() returns nil (BR-4).
+					word := out.Word
+					if raw.sess != nil {
+						raw.sess.restore()
 					}
-					*raw.sess = *again
+					playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
+					if raw.sess != nil {
+						again, err := enterRaw(raw.f)
+						if err != nil {
+							// REPORTED, not dropped. Without raw mode readKeys is
+							// line-buffered, so every keystroke appears to do nothing
+							// until Enter — the session looks frozen and nothing says
+							// why. Ending is honest; pretending to continue is not.
+							// EXIT 1, like the failure to enter raw mode in the first
+							// place. Both are "this session cannot continue because
+							// the terminal is gone", and returning 0 from one of them
+							// tells a script the session ended normally when it did
+							// not (BR-24).
+							fmt.Fprintf(stderr, "define: lost the terminal after playback: %v\n", err)
+							finish(stdout, s)
+							return 1
+						}
+						*raw.sess = *again
+					}
 				}
 			}
 		}
@@ -251,11 +286,39 @@ func draw(w io.Writer, s play.Session) {
 	fmt.Fprintf(w, "\n%s\n", q.Prompt())
 	if s.Revealed {
 		fmt.Fprintf(w, "\n%s\n", q.Reveal())
-		fmt.Fprint(w, "\ny = got it, n = missed it, d = remove from deck, Ctrl-C to stop\n")
+	}
+	if s.Graded {
+		// Answered, and the answer is on screen. The only thing left is to read
+		// it and move on — offering y/n here would invite a second verdict on a
+		// question that already has one.
+		fmt.Fprint(w, "\n"+gradedPrompt+"\n")
 		return
 	}
-	fmt.Fprint(w, "\nEnter or space to reveal, d = remove from deck, Ctrl-C to stop\n")
+	// The GRADING keys, whether or not the definition is showing.
+	//
+	// This line used to appear only AFTER a reveal, and an unrevealed word said
+	// "Enter or space to reveal" instead — so every correct answer cost a
+	// keystroke that carried no information, and the slow one at that, since a
+	// reveal fetches and plays the pronunciation. A learner who wants to check
+	// before rating still can; they simply no longer have to (#24).
+	fmt.Fprint(w, "\n"+gradePrompt+"\n")
 }
+
+// The two prompt lines draw() emits, named because README.md quotes them
+// VERBATIM and doc_sync_test.go pins that — a hand-maintained restatement of a
+// fact the code owns will drift, so the restatement is made to derive.
+//
+// Three findings in the `doc-sweep-incomplete` family said the same thing about
+// this exact line: the flow reversal reached the README table and not the form's
+// doc comments, then reached the doc comments and not the two test citations.
+// Sweeping is what kept failing; a consumer that fails the build does not.
+const (
+	// gradePrompt is shown while a verdict is still owed — with or without the
+	// definition on screen, because grading no longer requires a reveal (#24).
+	gradePrompt = "y = got it, n = missed it, d = remove from deck, Ctrl-C to stop"
+	// gradedPrompt is shown once the answer is in and the definition is up.
+	gradedPrompt = "any key = next word, d = remove from deck, Ctrl-C to stop"
+)
 
 func finish(w io.Writer, s play.Session) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)

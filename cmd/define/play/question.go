@@ -57,15 +57,22 @@ type Question interface {
 	// Prompt is what the learner sees BEFORE answering. For a recall form that
 	// is the word alone — showing the definition here would defeat the form.
 	Prompt() string
-	// Reveal is what they see after asking to see it.
+	// Reveal is the answer: shown when they ask (space or Enter), and shown
+	// unasked when they say they MISSED it, which is the case it mainly serves.
 	Reveal() string
 	// Grade interprets a graded keystroke. The bool is "this key meant something
 	// to me": false lets the session ignore a stray key rather than the form
 	// inventing a meaning for it, and the Verdict is then ignored — return the
 	// zero value.
 	//
+	// Grade is asked BEFORE the answer is on screen, not only after — a recall
+	// form is rated by the learner, not by the screen. A form whose question is
+	// unanswerable unseen (2.3's options, 2.2's cloze) puts that content in
+	// Prompt, which is what Prompt is for.
+	//
 	// The session RESERVES some keys before a form ever sees them: Enter and
-	// space reveal, `d` drops the word, and Ctrl-C quits (see toInput in
-	// play_loop.go). A form must not build its answer set from those.
+	// space reveal (and, once a verdict is in, move on), `d` drops the word, and
+	// Ctrl-C quits (see toInput in play_loop.go). A form must not build its
+	// answer set from those.
 	Grade(r rune) (Verdict, bool)
 }

@@ -13,6 +13,7 @@ package main
 //	go test -tags conformance -run CDN ./cmd/define/
 
 import (
+	"github.com/xianxu/tools/internal/conformance"
 	"net/http"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ func head(t *testing.T, url string) int {
 	c := &http.Client{Timeout: 15 * time.Second}
 	resp, err := c.Get(url)
 	if err != nil {
-		t.Skipf("network unavailable: %v", err)
+		conformance.SkipOrFail(t, "network unavailable", err)
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
@@ -59,7 +60,7 @@ func TestCDNStillServesTheExpectedPaths(t *testing.T) {
 func TestCDNReturnsRealAudio(t *testing.T) {
 	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", "us"))
 	if err != nil {
-		t.Skipf("network unavailable: %v", err)
+		conformance.SkipOrFail(t, "network unavailable", err)
 	}
 	if len(data) < 1000 {
 		t.Errorf("%s returned %d bytes — too small to be a recording", from, len(data))

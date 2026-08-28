@@ -53,8 +53,12 @@ one on. It suppresses cursor control too, or the name is a lie.
 `git checkout <file>` to undo a deliberate test-mutation **also discards every
 other uncommitted edit in that file** — it silently reverted a fix made minutes
 earlier, and the follow-up "verification" read as passing because a `|| true`
-masked grep's exit status. Copy the file aside and copy it back. And when a check
-disagrees with a test, the test is the ground truth.
+masked grep's exit status. And when a check disagrees with a test, the test is
+the ground truth.
+
+This entry originally concluded "copy the file aside and copy it back". That is
+the advice five later occurrences disproved; the rule now lives in one place,
+*Mutation testing needs a COMMITTED baseline*.
 
 ## Verify the deletion, don't assert it (define #2, close round 5)
 
@@ -941,12 +945,8 @@ unexplained commits in history. Seven of them here, one 507 lines across three
 files, and the close review flagged it: a reviewer reading the branch finds half
 a milestone's work under the message `wip`.
 
-- **`git stash` gives the same guarantee without writing anything permanent.**
-  Stash, mutate, `git checkout`, `git stash pop`.
-- **If a wip commit does happen, squash it before the boundary.** Non-interactive
-  rebase works: `GIT_SEQUENCE_EDITOR="sed -E 's/^pick (sha1|sha2)/fixup \1/'" git
-  rebase -i <base>`, with a backup branch first and a `git diff backup --stat`
-  after to prove the tree is unchanged.
+Mechanism folded into *Mutation testing needs a COMMITTED baseline*, which is the
+one home for this rule. The squash recipe lives there too.
 
 ## Never report a boundary closed without READING the verdict (define #6)
 
@@ -1078,14 +1078,8 @@ would have shipped.
   that should have failed is itself a finding.** The two-step rule below is not
   optional discipline; skipping the commit is how work disappears silently.
 - **`git checkout HEAD -- <file>` is the correct restore, and only if the target
-  is COMMITTED.** It cannot go stale the way a scratch copy can. But the same
-  session then hit the other half of the trap: restoring uncommitted wiring
-  reverted the work itself, because HEAD did not have it yet. So the rule is two
-  steps — **commit, then mutate, then `git checkout`** — and neither half works
-  alone.
-- **Re-verify the mutation AFTER restoring.** The restore can undo the fix the
-  mutation was checking, and then both the fix and its pin are gone with the
-  suite green.
+  is COMMITTED.** Evidence for the rule stated in *Mutation testing needs a
+  COMMITTED baseline*; see that entry, and do not restate the rule here.
 
 ## A backup is only as good as the tree it was taken from (define #16 M2)
 
@@ -1103,9 +1097,10 @@ git*. That is necessary and not sufficient. Here is the shape it missed:
 Nothing errored. The command printed `tree restored, builds`, and it was true —
 it built fine, with the mechanism disabled.
 
-**Before snapshotting a file as a backup, confirm nothing else is mid-mutation on
-it**, and after any killed job, restore from GIT (plus re-apply intended edits by
-hand) rather than from a snapshot whose provenance you cannot vouch for. The
+Evidence for *Mutation testing needs a COMMITTED baseline* — the provenance of a
+scratch copy is exactly what cannot be vouched for, which is why the committed
+baseline is the rule. After any killed job, restore from GIT and re-apply
+intended edits by hand. The
 mutation experiments in this repo take longer than the tool timeout, so they run
 in the background, which makes "is anything else editing this file right now" a
 real question rather than a rhetorical one.
@@ -1740,8 +1735,11 @@ why the near-fit was rejected. If it cannot, use the existing one.
 
 `cp x /tmp/x.bak` before a revert-measurement failed silently under the sandbox
 (`/tmp` is not writable; the scratchpad is), leaving the mutation in the tree
-with no backup. `git checkout -- <path>` needs no backup step, cannot land
-outside the repo, and is already the restore mechanism.
+with no backup.
+
+Evidence only — the RULE for this lives in one place, *Mutation testing needs a
+COMMITTED baseline*. Do not restate it here; this entry is the third of five
+occurrences and the restatements are what made them contradict.
 
 ## A live conformance check that is never run is not a check (#6, BR-45)
 
@@ -1816,3 +1814,197 @@ write-it-from-memory family. A loop over `grep -qE "func <name>\("` caught them.
 4. State the SCOPE a mutation proved. Mutating `runPlay` left the session test
    green — correctly, since it drives `playSession`. Knowing which is which is
    the difference between a pin and a belief.
+
+## Mutation testing needs a COMMITTED baseline (#24)
+
+**The single home for the mutate/restore rule.** SIX occurrences — #2 round 4,
+#9 M1, #16 M2, #5's close, #6 close, #24 — and it recurs because each was written
+as a separate entry, together giving four different answers, so the next round
+read a contradiction and picked one. #2 said copy the file aside; #6 said never
+copy, use git; #24 said copy again. Add evidence here; do not append a sibling.
+
+(The review that caught this enumerated four of the six. Grepping the headings
+for `restore|backup|baseline|mutation` found the other two — the same "the
+enumeration is the deliverable" rule this file states twice elsewhere.)
+
+The rule, whole:
+
+**Commit the implementation BEFORE the first mutation, then restore with
+`git checkout HEAD -- <path>`.** Both halves, or neither works:
+
+- `git checkout` restores to the last COMMIT. Restoring a file whose work is
+  uncommitted erases that work — #5's close lost an unrelated `LastBox` fix this
+  way, and #24 lost a whole implementation (a new field, a new function, two
+  rewritten switch arms) with the tests still passing against nothing.
+- A `cp` snapshot is not the escape. It goes stale (#9 M1: a backup taken at the
+  start of a milestone deleted `bothSources` on copy-back) and it can snapshot a
+  tree that is already corrupt (#16 M2: a killed background job left the file
+  mutated, and the next command snapshotted THAT as "known good", disabling a
+  mechanism while printing `tree restored, builds`). It also fails silently under
+  the sandbox, where `/tmp` is not writable.
+
+**The mechanism, so "commit first" does not mean polluting the branch** (#6
+close, where seven `wip` commits reached a review — one of them 507 lines):
+
+- The file you mutate must be versioned AT THE MOMENT you mutate it, so
+  `git checkout HEAD -- <path>` is an exact restore.
+- Getting there is a real commit, and a noisy one is squashed before the
+  boundary, not avoided: `GIT_SEQUENCE_EDITOR="sed -E 's/^pick (sha1|sha2)/fixup \1/'" git rebase -i <base>`,
+  with a backup branch first and `git diff backup --stat` after to prove the tree
+  is unchanged.
+- `git stash` protects UNRELATED uncommitted work in the same file from a stray
+  checkout — stash, mutate a committed file, restore, pop. It is not a way to
+  mutate uncommitted work, since stashing removes the very thing under test.
+
+So the fix for "I cannot `git checkout`, my work is uncommitted" is **commit**,
+not a scratch copy. #24's close round reached for the copy instead, appended a
+lesson saying so, and thereby contradicted three existing entries — which is the
+finding that produced this consolidation. *The rule already existed; a sibling
+got written instead of read.*
+
+**Before appending a lesson, grep this file for the rule you are about to state.
+If it is here, REVISE that entry with the new evidence and resolve any
+contradiction inside it.** A rules file read at session start hands the next
+agent every version it contains.
+
+**Corollary — a mutation that reddens nothing has two explanations, and the
+likelier one is that it did not apply.** Two of #24's nine reported "0 tests
+reddened" and both were failed string replacements, not weak tests; two more in
+the close round reported a clean pass after a restore had reverted the code under
+test, with the guard's `AssertionError: target missing` printing into the same
+output. Assert the target text is present before rewriting it, re-verify after
+restoring, and **read the FAILURE, not the count** — enumerate which tests fired.
+An empty result from a check that should have failed is itself a finding.
+
+**Corollary — a count is not a measurement when the suite is
+environment-dependent.** #24's strict-mode grep count held at 11 across a fix
+that genuinely added two sites, because network reachability differs between
+runs. Enumerate what fired, by name.
+
+## A prompt that names its keys is a state machine's public surface (#24)
+
+`--play` asked "Enter or space to reveal" and only offered `y`/`n` afterwards, so
+every correct answer cost a keystroke that carried no information — and the slow
+one, since a reveal fetches and plays audio. The session refused to grade an
+unrevealed word and argued it in a comment: *"a learner cannot rate what they
+have not seen."*
+
+That is true of a RECOGNITION test and false of a RECALL test. The learner rates
+their own recall, which they know before checking; the definition is FEEDBACK,
+not stimulus. The comment was confident, load-bearing, and had been read past
+several times.
+
+**Rule:** when a comment justifies a restriction with a claim about the user,
+check the claim against what the feature actually tests. A plausible sentence
+next to the code that implements it is the easiest kind of wrong to preserve.
+
+## Prove the file list, not just the pattern (#24 BR-1)
+
+#6 produced the rule "build the doc-sweep list by running a grep, and prove the
+pattern reaches known-stale sites first". #24 did exactly that — and still
+shipped stale docs, because the proof covered the PATTERN and the bug was in the
+FILE LIST: the sweep passed `cmd/define/*.go`, and the form's own doc comments
+live in `cmd/define/play/`. A glob is not a tree.
+
+Same shape as #6 BR-44 (a correction reaching two artifacts of three) and #6
+BR-48 (four of fourteen names typed from memory). Three issues, three variants,
+one rule: **the enumeration is the deliverable, and every part of it — pattern,
+paths, names — has to be produced by something that ran.**
+
+**Rule:** sweep with `grep -r` over DIRECTORIES, never a `*.go` glob, and put the
+excludes in explicitly (`| grep -v _test`) so what is left out is visible rather
+than accidental.
+
+## A skip reads as green (#24, four rounds)
+
+The pty conformance suite skipped when no terminal was available, so a run
+without one reported success for a suite that never executed — a suite that
+exists because #6's CRLF defect was invisible to everything that WAS running.
+`CONFORMANCE_STRICT=1` turns that skip into a failure.
+
+**Rule:** any test that can skip itself needs a mode where the skip is an error,
+or "green" silently means "did not run".
+
+**This rule then took four review rounds to actually land, and the interest is in
+HOW each round failed** — every one of them applied the rule correctly to the
+sites its enumeration reached, and the enumeration was wrong in a new way each
+time:
+
+1. Fixed the one pty site. Six suites kept skipping silently.
+2. Routed all seven, enumerated by `grep 't\.Skipf\?('` — which cannot see the
+   MIRROR defect. Three suites wrote an absent dependency as an unconditional
+   `Fatalf`, so the offline suite was red rather than skipped.
+3. The carve-out excluded a file by NAME. `render_test.go` skipped on an absent
+   COMMITTED fixture, silently retiring coverage while the package reported ok.
+4. The sweep covered `cmd/define` while the README it added claimed `./...`.
+   Measured: the documented strict command reported `ok` with `internal/llm`'s
+   four suites skipped — a green that meant nothing, which is the precise false
+   assurance the rule exists to remove.
+
+**Rule:** a "green means it ran" guarantee is a claim about an ENUMERATION, and
+its claimed scope may not exceed its swept scope. Four rounds of re-running a
+sweep by hand is the signal to stop sweeping: the fix is a meta-test that walks
+the tree and FAILS on any unrouted skip
+(`internal/conformance.TestEverySkipIsRoutedOrWaived`). Same move as
+*A restatement drifts; a consumer fails the build* — a grep cannot fail a build.
+
+**Corollary — ask the site the question; do not grep the spelling.** "What does
+this do when its dependency is missing?" sorts every site into four classes, and
+only the first is a skip: absent EXTERNAL dependency (skip; fail under strict),
+absent IN-REPO artifact (always fail — a committed file that is gone is a deleted
+file), SHAPE drift (always fail — it is what the check is FOR), inapplicable
+table row (skip, permanently, marked with a reason at the site).
+
+## The same rule fails in two directions, and a grep sees one (#24 BR-9)
+
+"A skip reads as green" (above) was fixed at one pty site, then generalised: route
+every conformance skip through one `skipOrFail` helper, enumerated with
+`grep -rn 't\.Skipf\?(' cmd/define/*_test.go`. Seven sites, all routed, rule
+applied to the class rather than the instance — the lesson from the round before,
+correctly learned.
+
+It still missed three sites. `dict_conformance`, `news_conformance` and
+`live_property` wrote an absent dependency as an unconditional `t.Fatalf`, so the
+NON-strict suite could never be green offline — the mirror of the same bug, and
+invisible to a grep for the word "Skip". It surfaced only because a full offline
+run came back `FAIL` and the number was chased instead of shrugged at.
+
+The enumeration lesson keeps getting sharper: #6 said prove the pattern, BR-1 said
+prove the file list, this says **the pattern encodes an assumption about how the
+bug is spelled**. A grep finds instances of a SHAPE; a class of bug is a
+QUESTION. Ask each site the question — "what does this do when its dependency is
+missing?" — and read the answer.
+
+**Rule:** when a fix is applied to a class, enumerate by asking every member the
+question the rule is about, not by grepping the spelling the first instance used.
+If the rule has two failure directions, one grep sees one of them.
+
+## A restatement drifts; a consumer fails the build (#24 BR-10)
+
+Three findings in the `doc-sweep-incomplete` family landed on one screen of
+`--play`: the reversal reached README and atlas but not the form's doc comments,
+then the doc comments but not two test citations, then the README's audio
+sentence still described a fetch a `y` no longer performs. Each was found by a
+human re-reading prose, and each was fixed by another sweep — so the next edit
+restarts the cycle.
+
+The prompt lines are now `const gradePrompt` / `gradedPrompt` in `play_loop.go`,
+and `TestREADMEQuotesThePromptsTheLoopActuallyPrints` asserts README.md contains
+them verbatim. It failed on its first run, catching a paraphrase the three
+preceding sweeps had all read past. A grep cannot fail a build; a test can.
+
+**Rule:** when a doc restates a fact the code owns, and it has drifted twice,
+stop sweeping and make the doc a CONSUMER — a test that reads the doc and asserts
+the code's literal. Pin what the user reads off the screen and types against, not
+the surrounding prose, which should stay free to be rewritten.
+
+## A line number in a comment is a restatement too (#24 BR-1)
+
+`play_loop_test.go` cited "play_loop.go:182 — space reveals" and "README:54". The
+reversal moved both: :182 became a different case, and README:54 became a table
+header. Same drift as the prose in the family above, with nothing to catch it —
+a comment cannot be wrong enough to fail a build, and a citation that is *almost*
+right is worse than none, because it reads as verified.
+
+**Rule:** cite by NAME — the function, the const, the table — never by line
+number. Names move with the thing they name.

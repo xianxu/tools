@@ -17,6 +17,8 @@ package main
 
 import (
 	"bufio"
+	"fmt"
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"strings"
 	"testing"
@@ -35,7 +37,7 @@ const knownRawNotationEntries = 27
 func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 	f, err := os.Open("/usr/share/dict/words")
 	if err != nil {
-		t.Skipf("no system word list: %v", err)
+		conformance.SkipOrFail(t, "no system word list", err)
 	}
 	defer f.Close()
 
@@ -104,7 +106,13 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 		}
 	}
 	if checked < 500 {
-		t.Fatalf("only %d live entries checked (%d missing) — sandboxed?", checked, missing)
+		// The same missing dependency as dict_conformance_test.go's probe, caught
+		// after the fact because this test discovers reachability by sweeping.
+		// It is a SKIP, not a failure, unless strict mode says a run that did not
+		// execute may not report green (BR-9) — an unconditional Fatalf here is
+		// why the sandboxed conformance suite was red before the helper owned
+		// both directions.
+		conformance.SkipOrFail(t, fmt.Sprintf("only %d live entries reachable (%d missing)", checked, missing), nil)
 	}
 	t.Logf("checked %d live entries: %d lost content, %d kept raw notation; %d non-Latin (other active dictionaries), %d absent",
 		checked, failed, rawPipes, nonLatin, missing)

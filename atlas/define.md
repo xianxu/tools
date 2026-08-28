@@ -999,21 +999,46 @@ Live checks sit behind `//go:build conformance` and run **on demand, not in CI**
 they need a host with NOAD installed and reachable network, neither of which
 belongs in `merge-check.yml`.
 
-All three seams have one, and each pins the assumption that seam rests on:
+Every seam has one, and each pins the assumption that seam rests on:
 
 | check | asserts |
 |---|---|
 | `dict_conformance_test.go` | live lookups still byte-match every fixture |
 | `fetch_conformance_test.go` | the CDN path survey still holds (2022 generation dominates) |
 | `player_conformance_test.go` | `afplay` **blocks** until playback finishes |
+| `news_conformance_test.go` | the live RSS feed still parses, and its terms still say personal use |
+| `reflect_conformance_test.go` | the live model still answers in the shape the parser expects |
+| `live_property_test.go` | the no-data-loss predicate holds over the WHOLE dictionary, not a sample |
+| `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 
-The third is the least obvious and the most load-bearing: if `afplay` ever
-returned immediately, three *overlapping* sounds would satisfy `fakePlayer`'s
-count and every other test here — "plays three times" would be true on paper and
-wrong in the room.
+**A skip reads as green, so green has to be made to mean "it ran".** Every suite
+above routes its dependency check through `conformance.SkipOrFail`
+(`internal/conformance`): absent dependency SKIPS by default, and FAILS under
+`CONFORMANCE_STRICT` — the mode for CI and for a close that has to mean
+something. Checks about the dependency's *shape* — a drifted fixture, a feed that
+stopped parsing — are not routed there and stay hard failures in both modes; the
+package doc names all four classes.
+
+**It is a repo-wide package, and enforced rather than swept**, because four
+review rounds went to this one rule and each fixed only the sites its grep
+reached: one pty site while six suites skipped; then all seven, enumerated by a
+pattern that could not see the mirror defect; then a carve-out that excluded a
+file by name; then a sweep over `cmd/define` under a README claiming `./...`,
+where the documented strict command measurably reported `ok` with `internal/llm`
+skipped. `TestEverySkipIsRoutedOrWaived` now walks the tree and fails on any
+unrouted, unwaived skip — the same move that ended the doc-sweep family, applied
+to a guarantee instead of a sentence.
+
+`player_conformance_test.go` is the least obvious and the most load-bearing: if
+`afplay` ever returned immediately, three *overlapping* sounds would satisfy
+`fakePlayer`'s count and every other test here — "plays three times" would be
+true on paper and wrong in the room. (Named, not numbered: this sentence said
+"the third" while the table above it grew from three rows to seven.)
 
 ```sh
-go test -tags conformance ./cmd/define/   # must run UNSANDBOXED
+go test -tags conformance ./cmd/define/   # must run UNSANDBOXED; skips what it cannot reach
+CONFORMANCE_STRICT=1 \
+  go test -tags conformance ./cmd/define/ # CI / close: a skip is a failure
 cmd/define/testdata/capture.sh            # re-capture the corpus
 ```
 
@@ -1281,8 +1306,45 @@ property is free from the append-only log (`#3`) and any batching would lose it.
 another, so keying on the flag would hand a nil store to the queue builder and
 panic on the other path.
 
-**Grading before reveal is ignored**, because a learner cannot rate what they
-have not seen and a mis-keystroke would otherwise file a verdict about a word
-still hidden. **Revealing is idempotent**, so a second reveal does not play the
-pronunciation twice. **An empty queue is immediately done** — "nothing due today"
-is the expected state most days, not an error.
+**Grading before reveal is THE NORMAL PATH** (#24). It used to be ignored, on the
+grounds that a learner cannot rate what they have not seen — true of a
+recognition test, false of a RECALL test, which is what form 2.1 is. The learner
+rates their own recall, which they know before they check; the definition is
+FEEDBACK, not stimulus. Reversing it removed a mandatory keystroke, and the slow
+one, from in front of every correct answer.
+
+So `y` records and advances with no reveal and no audio, while `n` records the
+miss AND reveals, **staying on the word** — advancing would scroll the answer
+past unread, which is the entire reason for showing it. That is the one input
+owing the loop TWO effects, and it is why `Apply` returns `[]Outcome`: the
+alternative, a flag on `Outcome`, would make "reveal" expressible two ways.
+
+`Session.Graded` is what keeps the next keystroke from grading twice — `Fold`
+would read a duplicate as a second review. It is independent of `Revealed`: a
+learner can reveal without grading (space) and grade without revealing (`y`).
+Note that **Enter and space reach the `InputReveal` arm**, not the rune arm. Both
+arms therefore meant the same thing in the graded state — "move on" — and were
+first written as two identical bodies; the rule now sits in ONE guard hoisted
+above the switch (`if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal)`).
+`InputDrop` and `InputQuit` stay outside it: "this word is not mine" and "stop"
+are still true after a verdict.
+
+**The prompt lines are consts, and the README is a test-enforced consumer of
+them.** `gradePrompt` and `gradedPrompt` (`cmd/define/play_loop.go`) are what
+`draw` prints, and `TestREADMEQuotesThePromptsTheLoopActuallyPrints`
+(`cmd/define/doc_sync_test.go`) asserts `README.md` contains both verbatim. So
+**changing what the learner is told is a two-file edit** — the const and the
+README — and forgetting the second fails the build rather than surviving until
+someone re-reads the prose.
+
+That convention exists because the `doc-sweep-incomplete` family reached four
+findings on this one screen, each found by a human re-reading docs and each fixed
+by another sweep. A grep cannot fail a build. It is deliberately narrow: it pins
+the two lines the learner reads off the screen and types against, not the prose
+around them, which stays free to be rewritten.
+
+`score` splits from `advance` for the same reason: a miss must be tallied without
+moving on. **Revealing is idempotent**, so a second reveal does not play the
+pronunciation twice. **An empty queue is immediately done** — the message names
+its cause, and "nothing due today" is reserved for the schedule genuinely having
+nothing.

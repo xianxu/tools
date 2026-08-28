@@ -11,11 +11,24 @@ var quit = Input{Kind: InputQuit}
 func drive(s Session, ins ...Input) (Session, []Outcome) {
 	var out []Outcome
 	for _, in := range ins {
-		var o Outcome
-		s, o = Apply(s, in)
-		out = append(out, o)
+		var os []Outcome
+		s, os = Apply(s, in)
+		out = append(out, os...)
 	}
 	return s, out
+}
+
+// only asserts Apply owed the loop exactly ONE thing and returns it.
+//
+// Most inputs do owe exactly one; the miss-before-reveal branch is the exception
+// and its tests read the slice directly. Asserting the count here means a site
+// that silently grew a second outcome fails rather than ignoring it.
+func only(t *testing.T, outs []Outcome) Outcome {
+	t.Helper()
+	if len(outs) != 1 {
+		t.Fatalf("outcomes = %+v, want exactly one", outs)
+	}
+	return outs[0]
 }
 
 func records(outs []Outcome) []Outcome {
@@ -56,16 +69,117 @@ func TestRevealThenGradeAdvancesAndRecords(t *testing.T) {
 	}
 }
 
-// A learner cannot rate what they have not seen. Recording here would file a
-// verdict about a word still hidden.
-func TestGradingBeforeRevealIsIgnored(t *testing.T) {
-	s, outs := drive(twoQuestions(), rune_('y'), rune_('n'))
+// A RECALL test is rated by the learner, not by the screen.
+//
+// This replaces TestGradingBeforeRevealIsIgnored, whose name WAS the claim #24
+// reverses: "a learner cannot rate what they have not seen". True of a
+// recognition test, false of this one — the learner knows their own recall
+// before they check, and the definition is feedback rather than stimulus.
+func TestCorrectBeforeRevealAdvancesWithNoReveal(t *testing.T) {
+	next, outs := Apply(twoQuestions(), rune_('y'))
 
-	if rec := records(outs); len(rec) != 0 {
-		t.Errorf("recorded %+v before reveal", rec)
+	if len(outs) != 1 || outs[0].Kind != OutcomeRecord {
+		t.Fatalf("outcomes = %+v, want exactly one OutcomeRecord — a correct answer earns no reveal", outs)
 	}
-	if s.Index != 0 {
-		t.Errorf("index = %d, want 0 — a mis-keystroke advanced the session", s.Index)
+	if outs[0].Verdict != Correct || outs[0].Word != "obsequious" {
+		t.Errorf("recorded %v for %q, want Correct for \"obsequious\"", outs[0].Verdict, outs[0].Word)
+	}
+	if next.Index != 1 {
+		t.Errorf("Index = %d, want 1 — y advances", next.Index)
+	}
+	if next.Revealed || next.Graded {
+		t.Errorf("Revealed=%v Graded=%v, want both false on the NEXT question", next.Revealed, next.Graded)
+	}
+	if next.Right != 1 || next.Wrong != 0 {
+		t.Errorf("tally = %d right %d wrong, want 1/0", next.Right, next.Wrong)
+	}
+}
+
+// A miss earns the definition, and earns it WITHOUT advancing.
+func TestWrongBeforeRevealRecordsAndReveals(t *testing.T) {
+	next, outs := Apply(twoQuestions(), rune_('n'))
+
+	if len(outs) != 2 {
+		t.Fatalf("outcomes = %+v, want two: the record and the reveal", outs)
+	}
+	// ORDER matters: recorded before anything that can block on the terminal.
+	if outs[0].Kind != OutcomeRecord || outs[0].Verdict != Wrong {
+		t.Errorf("outs[0] = %+v, want the Wrong record first", outs[0])
+	}
+	if outs[1].Kind != OutcomeReveal {
+		t.Errorf("outs[1] = %+v, want the reveal second", outs[1])
+	}
+	if next.Index != 0 {
+		t.Errorf("Index = %d, want 0 — a miss stays on the word so the answer can be read", next.Index)
+	}
+	if !next.Revealed || !next.Graded {
+		t.Errorf("Revealed=%v Graded=%v, want both true", next.Revealed, next.Graded)
+	}
+	// PQ-1: scored WITHOUT advancing. The first draft recorded the event and left
+	// the tally alone, so three misses ended "0 right, 0 wrong".
+	if next.Wrong != 1 {
+		t.Errorf("Wrong = %d, want 1 — a miss counts even though it does not advance", next.Wrong)
+	}
+}
+
+// The verdict is recorded ONCE. Answering again is the learner moving on, not a
+// second assessment — Fold would read a duplicate as another review.
+func TestAKeyAfterAMissAdvancesWithoutRecordingAgain(t *testing.T) {
+	s, _ := Apply(twoQuestions(), rune_('n'))
+
+	next, outs := Apply(s, rune_('n'))
+
+	for _, o := range outs {
+		if o.Kind == OutcomeRecord {
+			t.Errorf("recorded %+v a second time for the same question", o)
+		}
+	}
+	if next.Index != 1 {
+		t.Errorf("Index = %d, want 1", next.Index)
+	}
+	if next.Wrong != 1 {
+		t.Errorf("Wrong = %d, want 1 — moving on must not re-score", next.Wrong)
+	}
+}
+
+// PQ-2: Enter and space are the keys a learner already reaches for, and toInput
+// maps BOTH to InputReveal — so without an arm for the graded state they would
+// be dead exactly where the prompt says "any key = next word".
+func TestEnterAndSpaceMoveOnAfterAMiss(t *testing.T) {
+	s, _ := Apply(twoQuestions(), rune_('n'))
+
+	next, outs := Apply(s, reveal)
+
+	if next.Index != 1 {
+		t.Errorf("Index = %d, want 1 — Enter/space must move on once the answer is up", next.Index)
+	}
+	for _, o := range outs {
+		if o.Kind == OutcomeRecord {
+			t.Errorf("moving on recorded %+v a second time", o)
+		}
+	}
+	if next.Wrong != 1 {
+		t.Errorf("Wrong = %d, want 1 — advancing must not re-score", next.Wrong)
+	}
+}
+
+// Space still reveals without grading, for a learner who wants to check before
+// rating. The OLD flow, still available — just no longer mandatory.
+func TestRevealWithoutGradingThenGrade(t *testing.T) {
+	s, outs := Apply(twoQuestions(), reveal)
+	if len(outs) != 1 || outs[0].Kind != OutcomeReveal {
+		t.Fatalf("outcomes = %+v, want one OutcomeReveal", outs)
+	}
+	if s.Graded {
+		t.Error("a reveal graded the question; revealing is not answering")
+	}
+
+	next, outs := Apply(s, rune_('y'))
+	if len(outs) != 1 || outs[0].Kind != OutcomeRecord || outs[0].Verdict != Correct {
+		t.Errorf("outcomes = %+v, want one Correct record", outs)
+	}
+	if next.Index != 1 {
+		t.Errorf("Index = %d, want 1 — grading after a peek advances", next.Index)
 	}
 }
 
@@ -119,7 +233,8 @@ func TestAnsweringTheLastQuestionEndsTheSession(t *testing.T) {
 		t.Errorf("tally right %d wrong %d, want 1/1", s.Right, s.Wrong)
 	}
 	// And nothing after Done does anything.
-	after, o := Apply(s, rune_('y'))
+	after, outs := Apply(s, rune_('y'))
+	o := only(t, outs)
 	if o.Kind != OutcomeDone || after.Index != s.Index {
 		t.Errorf("input after Done changed things: %+v", o)
 	}
@@ -133,7 +248,8 @@ func TestQuitEndsTheSessionAtAnyPoint(t *testing.T) {
 				s, _ = drive(s, reveal)
 			}
 
-			next, o := Apply(s, quit)
+			next, outs := Apply(s, quit)
+			o := only(t, outs)
 
 			if !next.Done {
 				t.Error("quit did not end the session")
@@ -155,6 +271,38 @@ func TestRevealIsIdempotent(t *testing.T) {
 	}
 	if outs[1].Kind != OutcomeNone {
 		t.Errorf("second reveal = %v, want OutcomeNone — the word would play twice", outs[1].Kind)
+	}
+}
+
+// Every outcome that is ABOUT a word NAMES that word, from both paths that can
+// produce a reveal.
+//
+// The loop plays the pronunciation for whatever OutcomeReveal names. It used to
+// read the word back off the session instead — correct only for as long as no
+// input both advanced and revealed, and the cost of the first one that did was
+// not the wrong word but a nil-interface panic at the end of the queue, where
+// Current() returns nil (BR-4). #7's multiple-choice form adds inputs to this
+// machine, so the invariant is pinned before it is relied on rather than after.
+func TestEveryWordOutcomeNamesItsWord(t *testing.T) {
+	// A peek: reveal without grading.
+	_, outs := Apply(twoQuestions(), reveal)
+	if len(outs) != 1 || outs[0].Kind != OutcomeReveal {
+		t.Fatalf("outcomes = %+v, want one OutcomeReveal", outs)
+	}
+	if outs[0].Word != "obsequious" {
+		t.Errorf("a peek revealed %q, want %q — the loop plays what the outcome names",
+			outs[0].Word, "obsequious")
+	}
+
+	// A miss on a hidden word: records AND reveals, and both name the word.
+	_, outs = Apply(twoQuestions(), rune_('n'))
+	if len(outs) != 2 {
+		t.Fatalf("outcomes = %+v, want a record and a reveal", outs)
+	}
+	for _, o := range outs {
+		if o.Word != "obsequious" {
+			t.Errorf("%v names %q, want %q", o.Kind, o.Word, "obsequious")
+		}
 	}
 }
 
@@ -223,15 +371,24 @@ func (f *fakeForm) Grade(r rune) (Verdict, bool) {
 
 // Dropping is a SESSION action, not a verdict — so every form gets it, and it
 // records no review.
+// The third state is new in #24: a learner who just MISSED a word is exactly who
+// wants to drop it, and the graded state must not swallow the key.
 func TestDropAdvancesRecordsNothingAndNamesTheWord(t *testing.T) {
-	for _, when := range []string{"before reveal", "after reveal"} {
+	for _, when := range []string{"before reveal", "after reveal", "after a miss"} {
 		t.Run(when, func(t *testing.T) {
 			s := twoQuestions()
 			if when == "after reveal" {
 				s, _ = drive(s, reveal)
 			}
+			if when == "after a miss" {
+				// 'n', not a digit: twoQuestions() is Recall. Against fakeForm
+				// 'n' grades nothing, Graded would never be set, and this row
+				// would silently re-run "before reveal" under another name.
+				s, _ = drive(s, rune_('n'))
+			}
 
-			next, o := Apply(s, Input{Kind: InputDrop})
+			next, outs := Apply(s, Input{Kind: InputDrop})
+			o := only(t, outs)
 
 			if o.Kind != OutcomeDrop {
 				t.Fatalf("outcome = %v, want OutcomeDrop", o.Kind)
@@ -242,8 +399,17 @@ func TestDropAdvancesRecordsNothingAndNamesTheWord(t *testing.T) {
 			if next.Index != 1 {
 				t.Errorf("index = %d, want 1 — dropping must move on", next.Index)
 			}
-			if next.Right != 0 || next.Wrong != 0 {
-				t.Errorf("dropping counted in the tally: %d/%d", next.Right, next.Wrong)
+			// Dropping ITSELF scores nothing. After a miss the tally already
+			// holds that miss, and dropping must neither erase it nor add to it:
+			// the word leaves the deck, its events stay, which is --forget's
+			// contract and the reason OutcomeDrop is not a verdict.
+			wantWrong := 0
+			if when == "after a miss" {
+				wantWrong = 1
+			}
+			if next.Right != 0 || next.Wrong != wantWrong {
+				t.Errorf("tally = %d/%d, want 0/%d — dropping scores nothing of its own",
+					next.Right, next.Wrong, wantWrong)
 			}
 		})
 	}
@@ -254,7 +420,8 @@ func TestDropAdvancesRecordsNothingAndNamesTheWord(t *testing.T) {
 func TestDropWorksForAnyForm(t *testing.T) {
 	s := NewSession([]Question{&fakeForm{word: "alpha"}})
 
-	next, o := Apply(s, Input{Kind: InputDrop})
+	next, outs := Apply(s, Input{Kind: InputDrop})
+	o := only(t, outs)
 
 	if o.Kind != OutcomeDrop || o.Word != "alpha" {
 		t.Errorf("outcome %+v, want a drop of alpha", o)
@@ -274,7 +441,8 @@ func TestTheOutcomeThatEndsTheSessionSaysSo(t *testing.T) {
 	s := NewSession([]Question{NewRecall("obsequious", "fawning")})
 	s, _ = drive(s, reveal)
 
-	_, o := Apply(s, rune_('y'))
+	_, outs := Apply(s, rune_('y'))
+	o := only(t, outs)
 
 	if o.Kind != OutcomeRecord {
 		t.Fatalf("kind = %v, want OutcomeRecord", o.Kind)
@@ -287,7 +455,8 @@ func TestTheOutcomeThatEndsTheSessionSaysSo(t *testing.T) {
 func TestAnOutcomeMidSessionDoesNotClaimTheEnd(t *testing.T) {
 	s, _ := drive(twoQuestions(), reveal)
 
-	_, o := Apply(s, rune_('y'))
+	_, outs := Apply(s, rune_('y'))
+	o := only(t, outs)
 
 	if o.SessionDone {
 		t.Error("an outcome mid-session claims the session ended")
@@ -295,11 +464,11 @@ func TestAnOutcomeMidSessionDoesNotClaimTheEnd(t *testing.T) {
 }
 
 func TestQuitAndDropAlsoReportTheEnd(t *testing.T) {
-	if _, o := Apply(twoQuestions(), quit); !o.SessionDone {
+	if _, outs := Apply(twoQuestions(), quit); !only(t, outs).SessionDone {
 		t.Error("quit did not report the end")
 	}
-	one := NewSession([]Question{NewRecall("w", "d")})
-	if _, o := Apply(one, Input{Kind: InputDrop}); !o.SessionDone {
+	last := NewSession([]Question{NewRecall("w", "d")})
+	if _, outs := Apply(last, Input{Kind: InputDrop}); !only(t, outs).SessionDone {
 		t.Error("dropping the last question did not report the end")
 	}
 }

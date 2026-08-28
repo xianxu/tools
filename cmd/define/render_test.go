@@ -202,7 +202,14 @@ func TestCorpusBlockStructure(t *testing.T) {
 		t.Run(word, func(t *testing.T) {
 			raw, err := d.Lookup(word)
 			if err != nil {
-				t.Skipf("fixture absent: %v", err)
+				// FAIL, not skip. The fixtures are COMMITTED, so an absent one is
+				// a deleted or renamed file, never a dependency this machine
+				// happens to lack — and each exists to pin a specific parse shape
+				// (here: a part of speech opening straight after an editorial
+				// note's "]"). Skipping retired that coverage silently while the
+				// package still reported ok (BR-16).
+				t.Fatalf("fixture absent for %q: %v — testdata/entries is committed, "+
+					"so this is a missing file, not a missing dependency", word, err)
 			}
 			var got []string
 			for _, b := range ParseEntry(raw).Blocks {
