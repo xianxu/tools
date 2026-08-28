@@ -612,3 +612,81 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 		t.Skip("no Core-concepts rows pointed at existing files")
 	}
 }
+
+// retiredSymbolNames maps a name the tree no longer declares to what replaced
+// it. A rename adds a row here; the guard below then fails if the old name
+// survives anywhere a reader would take as current.
+//
+// This is the SYMBOL half of the artifact-name rule, which recurred nine times
+// while only the filename half was mechanical. The plan-table guard closed the
+// tables; comments and prose stayed hand-swept, and the very commit that added
+// that guard left three `newDeck` comments behind.
+//
+// A rename cannot be detected automatically — only the person doing it knows the
+// old name — so this is the one place the rule needs a human to write something
+// down. Everything after that is mechanical, and the list can only shrink as
+// history archives.
+var retiredSymbolNames = map[string]string{
+	"deckDeps":        "newLangDeps",
+	"newDeck":         "newLangDeps",
+	"MigrateFlatDeck": "MigrateToLanguages",
+	"dictChoice":      "dictMeta",
+	"dcsDictionaries": "installedDictionaries",
+}
+
+// No current-truth artifact names a symbol the tree has retired.
+//
+// Scope matches TestProseDoesNotSpellStaleRuntimeArtifactNames plus non-test Go:
+// docs that describe the tool as it IS, and the code itself. Records — issues,
+// history, ## Revisions, ## Log — legitimately name what was true when written.
+// Test files are exempt because a test-local variable may reuse a plain name for
+// unrelated reasons.
+func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
+	root := repoRoot(t)
+	// This file must name them to list them.
+	self := "cmd/define/repo_guard_test.go"
+
+	binds := func(p string) bool {
+		switch {
+		case strings.HasSuffix(p, "_test.go"):
+			return false
+		case strings.HasSuffix(p, ".go"):
+			return true
+		case p == "README.md", strings.HasPrefix(p, "atlas/"):
+			return true
+		case strings.HasPrefix(p, "workshop/plans/") && strings.HasSuffix(p, "-plan.md"):
+			return true
+		}
+		return false
+	}
+
+	seen := 0
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z")), "\x00") {
+		p := filepath.ToSlash(f)
+		if p == "" || p == self || !binds(p) {
+			continue
+		}
+		// git ls-files lists submodule gitlinks too, which are directories here.
+		if info, err := os.Stat(filepath.Join(root, f)); err != nil || info.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		seen++
+		text := currentTruthOnly(string(b))
+		for old, now := range retiredSymbolNames {
+			// Word-boundaried: migrateFlatDeck must not match MigrateFlatDeck,
+			// and a longer identifier containing the old name is not the old name.
+			if regexp.MustCompile(`\b` + regexp.QuoteMeta(old) + `\b`).MatchString(text) {
+				t.Errorf("%s names the retired symbol %q; the tree declares %q. A rename "+
+					"sweeps every restatement in the SAME commit — nine findings in this "+
+					"family say the hand-sweep does not hold.", p, old, now)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no current-truth artifacts were examined; this test would pass vacuously")
+	}
+}

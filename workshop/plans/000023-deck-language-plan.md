@@ -58,7 +58,7 @@ That last one is the hazard: reassigning the loop's `d` alone would leave the ed
 
 - **The store stays immutable.** `lang` is a `NewYAML` constructor parameter, matching the existing comment on `dir` — *"a parameter, not a policy"*. Nothing re-reads `lang.txt` below the boundary.
 - **The re-derived set is `d.lang`, `opt.voice`, the deck triple (`deck`, `capture`, `vocab`) and the editor's `voc`** — see the Revisions entry below; naming only the triple here is what let `opt.voice` ship un-re-derived. `history` reads `events/` and `usage` reads `usage/`, neither of which is language-scoped — and re-deriving `history` would put a second, *unloaded* `History` beside the one `runEditor` already `Load()`ed at `replraw.go:73`. The usage cache keeps its original lang-carrying `*YAML`, which is harmless because `usageDir()` ignores the language; that is stated so a reviewer does not have to re-derive it.
-- **One builder, called twice (ARCH-DRY).** Factor the set out of `openStore` — delivered as the `newLangDeps` closure returning a `langDeps`, rather than the package-level `deckDeps(dir, lang, clk, warn)` this plan first named; see Revisions. `openStore` calls it, and so does the `/lang` closure.
+- **One builder, called twice (ARCH-DRY).** Factor the set out of `openStore` into the `newLangDeps` closure, which returns a `langDeps`; `openStore` calls it and so does the `/lang` closure. (This plan named a different shape first — see Revisions, which is where that belongs.)
 - **`commandCtx` gains `lang store.Lang` and `setLang func(store.Lang) error`,** on the `setTimes` precedent (`command.go:162-163`) and for the same reason: a command has no business reaching the rest of the deps.
 - **`setLang` is the loop's closure**, and it assigns BOTH the loop's `d` and — in `runEditor` — the captured `voc`, because that local is the one thing a `d` reassignment cannot reach.
 - **Unlike `/sound`, a nil `setLang` does not make `/lang` refuse.** `/sound` with no session has nothing to do; `/lang` still has its durable half. The split is: `store.WriteLang` always runs when there is a directory; the session re-derive runs only when there is a session. A one-shot `define /lang es` therefore sets the language for subsequent invocations and says so. With no directory at all, `/lang` reports that, the way `/history` reports a nil deck.
@@ -655,3 +655,34 @@ the gate reporting *8 repeat families — not converging*. Sidecar:
   the exact claim BR-13 disproved ("usage… would put a second, unloaded
   History"). Rewritten, and it now records WHY the set is a type and embedded
   rather than only that it is.
+
+### 2026-08-28 — close review round 7: the symbol rule gets its human-written half
+
+**Reason.** Round 7 disposed ten findings and left three: BR-20 re-opened as
+*not-addressed* (the `newDeck` sweep was three sites short), plus BR-28 and
+BR-29. Sidecar: `workshop/plans/000023-deck-language-close-review.md`.
+
+**Delta.**
+
+- **BR-20/BR-29 — the sweep missed three `newDeck` comments in the very commit
+  that added the guard against exactly this.** That is the ninth finding in the
+  family and the argument for `retiredSymbolNames`: a rename cannot be detected
+  automatically, because only the person doing it knows the old name — so
+  renaming writes ONE row, and `TestNoArtifactNamesARetiredSymbol` makes the rest
+  mechanical across non-test Go, README, `atlas/` and active plans.
+  - It immediately found a live D1 bullet still naming `deckDeps` to explain what
+    the plan first called it. That backreference belongs in `## Revisions`, where
+    it already was — a live design section states the design as it IS.
+- **BR-28 — `capture.sh` hand-restated the curated identifiers**, which is the
+  same divergence that already bit once (English captured through the NULL search
+  while production selected curated ids, agreeing only by coincidence). A shell
+  script cannot import a Go map, so `TestCaptureScriptUsesTheCuratedDictionaries`
+  COMPARES them — the same move as the cgo-preamble symbol guard, applied to the
+  other boundary Go cannot see into.
+- **Minor, and a real defect:** `capture.py` returned a `DCSDictionaryRef`
+  borrowed from the copied CFSet from inside a `try` whose `finally` released
+  that set, then passed the ref to `DCSCopyTextDefinition` — a use-after-release
+  that worked only because CoreServices happens to keep dictionaries alive. It
+  `CFRetain`s now and releases after the lookup. `dict_darwin.go` gets the same
+  sequence right by ordering; two implementations of one boundary should not
+  disagree about handle lifetime.

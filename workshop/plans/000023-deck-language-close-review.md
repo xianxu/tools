@@ -380,3 +380,169 @@ findings:
       class, and the issue's Done-when row asks it to say so LOUDLY. Under a plain
       `go test -tags conformance` it prints a skip, which the package doc itself says reads as green.
 ```
+
+---
+
+## Re-review — 2026-08-28T15:08:22-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 23 — deck grouped by language, one language per --play session |
+| repo | tools |
+| issue file | workshop/issues/000023-deck-language.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 2e929fc56d1edc6b04af61100116a02abb7d9146..2a9112bd2cb1077183336423bec4152dc9ecfd93 |
+| command | sdlc close --issue 23 |
+| reviewer | claude |
+| timestamp | 2026-08-28T15:08:22-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+Now I have everything I need.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The substantive half of round 7 landed and holds up under mutation: `foldLookupError` and the three parsers are out of the cgo shell (`GOOS=linux go vet ./...` exits 0, verified in a worktree at both ends of the range), `langDeps` is embedded so a language switch adopts the whole set in one assignment, `d.newDict` is now pinned at both the boundary and the switch (deleting both derivations makes `TestTheDictionaryIsBuiltForTheLanguageAtBothMoments` panic — measured), the plan-table guard no longer passes on a comment (a stale `newDeck` row reddens it by name — measured), and the C-preamble/Go symbol-list ratchet catches an added `dlsym` (measured). `go build ./... && go vet ./... && go test ./...` is green; `gofmt -l` is empty; `go vet -tags conformance ./...` is clean. What remains is prose and one hand-typed list: three of the eight sweep sites BR-20 enumerated are untouched in the file it named, BR-25/BR-26/BR-27 are unchanged from the round that raised them, and `capture.sh` restates the curated dictionary list with nothing keeping the two copies in step — which is the same shape as the finding this range closed one commit earlier. None of it is a production correctness defect, so it does not block the gate.
+
+**1. Strengths**
+
+- `cmd/define/dictselect.go` is the right shape now: every decision M2 makes — narrowing, curation, the two fallbacks, the status fold, the three parsers — is pure, untagged and unit-tested, and `dict_darwin.go:210-219` is genuinely just the IO. `dictselect_test.go:250` even pins that the two fallbacks say *different* things, which is the distinction the cgo layer exists to preserve.
+- `TestTheCResolverAndTheGoSymbolListAgree` (`dict_symbols_darwin_test.go:25`) is the honest answer to a copy cgo cannot unify: it compares by reading the source and fails vacuously-loudly at both ends. Mutation-verified.
+- `TestTheDictionaryIsBuiltForTheLanguageAtBothMoments` (`lang_scope_test.go:328`) drives `run()` rather than replicating the derivation, and asserts on what the dictionary *returns*, not only which seam was called — the specific weakness its own comment records from the first draft.
+- Embedding `langDeps` in `deps` (`main.go:125`, adopted at `command.go:391`) is the correct structural end-state for a set that went stale three times as a comment and once as a hand-copied struct.
+- `atlas/define.md:454-500` now explains *why* the set is a type and embedded, and marks the `history` exclusion as a claim with a shelf life checked by an identity assertion. That is the atlas doing its job.
+
+**2. Critical findings**
+
+None.
+
+**3. Important findings**
+
+- **`cmd/define/testdata/capture.sh:82,85` — the curated dictionary list has two producers again.** `dictselect.go:76-79` declares `curated`, and `capture.sh` spells `com.apple.dictionary.NOAD`, `com.apple.dictionary.AppleDictionary` and `com.apple.dictionary.es.DGLEV` a second time, in order, with nothing comparing them. Add or reorder a book in `curated` and the fixture corpus is captured through a set production no longer selects — which is BR-19's defect returning through a different door. `TestFixturesMatchLiveDictionary` cannot cover it: it is conformance-tagged (on demand only) and compares text, so an appended book is invisible. Fix in the shape already in the tree: a test that regexes the identifiers out of `capture.sh` and compares the set to `curated`, exactly like `TestTheCResolverAndTheGoSymbolListAgree` does for the C preamble.
+- **The symbol half of the artifact-name rule is enforced for plan *tables* only, and two surfaces stay open.** `TestRuntimeArtifactNamesAreSpelledOnceInSource` reads filenames in non-test Go; `TestPlanTablesNameEntitiesThatExist` reads Core-concepts rows. Neither reads Go *comments* or active-plan *prose*, and both residues are live: `workshop/plans/000023-deck-language-plan.md:288` still says M2 "rests on nine undocumented symbols" (three), and `cmd/define/main.go:42,59,259` still name `newDeck`. `atlas/repo-guards.md:118` says plans are "records wholesale and are not swept at all" while the plan-table guard treats a wrong row as "a lie" — the two rules disagree, and `:288` is in the gap. `currentTruthOnly` already splits a document by shape, so extending the prose ratchet to active plans minus their `## Revisions` is the cheap half.
+
+**4. Minor findings**
+
+- `cmd/define/testdata/capture.py:82-83` — `dictionary_by_id` returns a `DCSDictionaryRef` borrowed from the copied set, then `finally: _cf.CFRelease(dicts)` releases the set before the caller passes that ref to `DCSCopyTextDefinition`. Use-after-release; it works only because CoreServices happens to keep the dictionaries alive. The Go side gets this right (`dict_darwin.go:146-148` releases the set *after* the lookup) — move the release to after `lookup()`, or retain the ref.
+- `cmd/define/main.go:117` and `:210` — two doc comments still run into the declaration inserted beneath them, so godoc attaches "storeDeps is the trio openStore produces" to `type langDeps` and the `openStore` doc to `func newsFeedFor`; `storeDeps` (`:135`) and `openStore` (`:253`) are undocumented.
+- `cmd/define/main.go:423` — `--help` still says define "Looks the word up in macOS's active dictionaries", which after M2 is the degradation path, not the normal one. README:314 was updated; the usage text was not.
+- `cmd/define/dict_conformance_test.go:91` — a vanished private symbol is routed through `conformance.SkipOrFail`, so the check the Done-when row asks to say so "loudly" prints a skip under a plain `go test -tags conformance`. The package's own four-class rule puts "the dependency's surface moved" under SHAPE drift, which always fails.
+
+**5. Test coverage notes**
+
+Coverage is strong and the pins are load-bearing rather than decorative — I confirmed three of them redden under mutation and did not find a test that reasserts its implementation. The one uncovered path is `selectedDictionary.Lookup`'s walk itself (cgo, darwin-only), which is acceptable now that the fold it delegates to is pure and table-tested including the exact regression case. The gap worth naming is the one in Important #1: the fixture-capture path has no automated agreement check with production selection, so `ARCH-MOCK`'s "the fake models what the seam does" rests on a comment.
+
+**6. Architectural notes**
+
+- **ARCH-DRY — flag (Important #1).** `newLangDeps` is one builder with two callers, `applyVoice` one derivation with two, `UserModelName`/`langFileName`/`newTempFile` are single producers that `RuntimeFiles` builds from, and `dcsPrivateSymbols` is now ratcheted against the C preamble. The one remaining second producer is `capture.sh`'s copy of `curated`.
+- **ARCH-PURE — pass.** The extraction is complete and verifiable: `GOOS=linux go vet ./cmd/define/` exits 0 at HEAD, `dict_stub.go:16-18`'s claim is true again, and `dictionaryFor`'s two fallback branches — the ones a shell context hits on every run — are now testable on a machine with no dictionaries.
+- **ARCH-PURPOSE — pass on the issue, flag on the finding axis.** Every Done-when row is delivered and reachable: `mesa` differs by language through a real seam, `sycophantic` in Spanish is `ErrNoEntry`, the deck/audio/dictionary all follow the mode, and degradation is pure-tested rather than manually demonstrated. The flag is BR-20's answer: its enumerated sweep names eight sites and five were done, which is the instance rather than the class, and Important #2 is where that shows.
+- **ARCH-MOCK — pass with a note.** Production and test share one boundary (`deps.newDict`), the fake models per-language dictionary *identity* rather than a flat entry pile, and live conformance exists for both the fixtures and the private surface. The note is the Minor above: that private-surface check skips by default, so the OS-version mitigation is quieter than the issue promises.
+
+**7. Plan revision recommendations**
+
+- `## Risks`, `:288` — replace "rests on nine undocumented symbols" with "the private symbols"; `dcsPrivateSymbols` is the producer and prose should carry no count. This exact line was named in the round-6 sidecar alongside `:279`, and only `:279` was swept.
+- Add a `## Revisions` entry for this round recording: BR-20's sweep residue (`main.go:42,59,259`), the `capture.sh`/`curated` second producer, and the decision on whether active-plan prose is current truth or a record — `atlas/repo-guards.md:118` and `TestPlanTablesNameEntitiesThatExist` currently answer that question differently, and the residue lived in the disagreement.
+
+```findings
+dispose:
+  - id: BR-14
+    disposition: addressed
+    note: |
+      All 11 enumerated instances swept and verified at HEAD; the plan-table ratchet landed and reddens on a stale row under mutation.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      foldLookupError keeps the first non-absence error and is table-tested at dictselect_test.go:267 including the status-3-then-1 case.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      Guard fallback removed and mutation-verified, plan row and atlas swept — but the enumerated sweep of `newDeck` is 3 sites short at cmd/define/main.go:42, :59, :259.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      atlas/define.md:454-500 now describes the embedded langDeps design and the usage re-derivation correctly.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      langDeps embedded, adopted whole at command.go:391; deleting both newDict derivations reddens TestTheDictionaryIsBuiltForTheLanguageAtBothMoments (measured).
+  - id: BR-23
+    disposition: addressed
+    note: |
+      Status fold, parsers and ErrLookupFailed are all off the darwin tag; GOOS=linux go vet ./... exits 0 at HEAD.
+  - id: BR-24
+    disposition: addressed
+    note: |
+      TestTheCResolverAndTheGoSymbolListAgree compares the C preamble's dlsym literals to dcsPrivateSymbols; adding a dlsym reddens it (measured).
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      Both stranded doc comments are unchanged — main.go:117 attaches to langDeps, main.go:210 attaches to newsFeedFor.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      cmd/define/main.go:423 still describes the fallback path as the normal one.
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      dict_conformance_test.go:91 still routes a vanished private symbol through SkipOrFail.
+findings:
+  - id: new
+    severity: Important
+    family: runtime-artifact-guard-coverage
+    title: |
+      capture.sh hand-restates the curated dictionary list, so the capture path and production can diverge silently again
+    detail: |
+      5th finding in this family — do NOT fix by editing capture.sh. The rule, already
+      stated twice in this range and mechanised twice: a list the code owns has ONE
+      producer, and where a second language forces a restatement, a ratchet asserts the
+      two agree. dictselect.go:76-79 declares `curated`; testdata/capture.sh:82 and :85
+      spell com.apple.dictionary.es.DGLEV and (NOAD, AppleDictionary) again, in order,
+      with nothing comparing them. Adding or reordering a curated book leaves the fixture
+      corpus captured through a set production no longer selects — the same failure BR-19
+      fixed one commit earlier, reached by a different route. TestFixturesMatchLiveDictionary
+      cannot see it: it is conformance-tagged (on demand only) and compares entry TEXT, so
+      an appended book is invisible and a reordered one only shows for words whose entries
+      differ. Cheap, and the shape already exists: a test regexing the identifiers out of
+      capture.sh's own source and comparing the set to `curated`, mirroring
+      TestTheCResolverAndTheGoSymbolListAgree.
+  - id: new
+    severity: Important
+    family: comment-contract-drift
+    title: |
+      The artifact-name rule's symbol half is enforced for plan TABLES only; Go comments and active-plan prose remain unswept
+    detail: |
+      13th finding in this family — do NOT fix the two instances. The mechanism that
+      landed (TestPlanTablesNameEntitiesThatExist) reads Core-concepts rows; the other
+      ratchet reads FILENAMES in non-test Go. Neither reads a Go comment or a plan's
+      prose, and both residues are live at HEAD: plan :288 says M2 "rests on nine
+      undocumented symbols" (dcs_resolve resolves three, and the round-6 sidecar named
+      this very line beside :279, of which only :279 was swept), and main.go:42, :59,
+      :259 name `newDeck`, renamed to newLangDeps in this range. The rule that covers
+      both: a document or comment read as CURRENT TRUTH may not name a symbol the tree
+      does not declare, or restate a count of a set the code owns. Two surfaces make it
+      mechanical — (a) add active plans, minus the sections currentTruthOnly already
+      strips, to TestProseDoesNotSpellStaleRuntimeArtifactNames's scan set; (b) a symbol
+      arm over non-test Go comments. Note atlas/repo-guards.md:118 states plans are
+      "records wholesale and are not swept at all" while the plan-table guard calls a
+      wrong row "a lie" — the two rules disagree, and :288 lived in exactly that gap, so
+      the scope decision has to be settled before the guard can be extended.
+  - id: new
+    severity: Minor
+    family: external-handle-lifetime
+    title: |
+      capture.py releases the dictionary set before the borrowed ref is used, and the Go side does not
+    detail: |
+      testdata/capture.py:81-83 returns a DCSDictionaryRef borrowed from the copied
+      CFSet from inside a try block whose finally does CFRelease(dicts), so the ref is
+      passed to DCSCopyTextDefinition after its owning container is released. It works
+      only because CoreServices happens to keep the dictionaries alive. dict_darwin.go
+      :146-148 gets the same sequence right — the lookup runs before CFRelease(set) —
+      so the two implementations of one boundary disagree on handle lifetime. Move the
+      release to after lookup(), or CFRetain the ref before returning it.
+```

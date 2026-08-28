@@ -109,6 +109,9 @@ corrections somewhere nothing reads.
 | `TestRuntimeArtifactNamesAreSpelledOnceInSource` | non-test **Go** | a filename spelled outside the two consts that build every such name |
 | `TestProseDoesNotSpellStaleRuntimeArtifactNames` | README, `atlas/`, `workshop/projects/` | a stale filename in a doc read as current truth |
 | `TestPlanTablesNameEntitiesThatExist` | active plans' Core-concepts tables | a plan naming a SYMBOL the tree does not declare |
+| `TestNoArtifactNamesARetiredSymbol` | non-test Go, README, `atlas/`, active plans | a RENAMED symbol surviving anywhere read as current |
+| `TestTheCResolverAndTheGoSymbolListAgree` | the cgo preamble vs `dcsPrivateSymbols` | a `dlsym` the conformance check does not cover |
+| `TestCaptureScriptUsesTheCuratedDictionaries` | `capture.sh` vs `curated` | fixtures captured from a dictionary production never asks |
 
 **Records are exempt, and identifying them is the interesting part.** Docs that
 describe the tool as it IS must be swept; docs that RECORD what was true when
@@ -118,13 +121,25 @@ carrying `**closed:**` — rather than by a list of filenames, so a new record
 section is covered without anyone remembering it. Issues, plans, lessons and
 `workshop/history/` are records wholesale and are not swept at all.
 
-**The third row is the SYMBOL half**, which recurred four times while the first
-two ratchets counted filenames only: plans named `deckDeps`, `MigrateFlatDeck`,
+**Rows three to six are the SYMBOL half**, which recurred NINE times while the
+first two ratchets counted filenames only. Table rows were the tractable part; plans named `deckDeps`, `MigrateFlatDeck`,
 `dictChoice` and `dcsDictionaries`, none of which the tree had. A plan's
 Core-concepts table already states "this identifier lives at this path" in
 machine-readable form, so making the plan a CONSUMER of the tree is cheap. A row
 whose file does not exist yet is skipped — a plan legitimately precedes its code;
 a row pointing at a real file that does not declare the name is a lie.
+
+**`retiredSymbolNames` is where the rule needs a human.** A rename cannot be
+detected automatically — only the person doing it knows the old name — so
+renaming adds one row there, and everything after that is mechanical. It is what
+caught three `newDeck` comments left behind by the very commit that added the
+table guard.
+
+**The last two rows are the same move applied to boundaries Go cannot see
+into.** A cgo preamble and a shell script cannot import a Go declaration, so the
+two copies are COMPARED by reading the source rather than unified. Both close a
+gap that had already bitten: a `dlsym` the conformance check did not cover, and
+a corpus captured through a dictionary production does not consult.
 
 **The history arm carries a ratchet, not an exemption.** Two 995-byte blobs of
 the renamed fixture stay reachable from `HEAD`, and rewriting history for

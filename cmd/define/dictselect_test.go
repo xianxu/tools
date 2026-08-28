@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -328,5 +330,53 @@ func TestParseDictRecords(t *testing.T) {
 	// would accept it as monolingual Spanish.
 	if _, ok := chooseDictionary(got, "es"); ok {
 		t.Error("a bilingual dictionary parsed as an acceptable Spanish choice")
+	}
+}
+
+// capture.sh must capture through the SAME dictionaries production selects.
+//
+// This already diverged once: English fixtures were captured through the NULL
+// search while production selected curated identifiers, and they agreed only
+// because this host's active set happened to match — until it did not, and
+// TestFixturesMatchLiveDictionary went red. The fix pointed capture.sh at the
+// curated ids, but by HAND-RESTATING them, which is the same divergence waiting
+// to happen again (ARCH-MOCK: the corpus must model what the seam actually does).
+//
+// A shell script cannot import a Go map, so the two copies are COMPARED rather
+// than unified — the same move as the C-preamble symbol guard.
+func TestCaptureScriptUsesTheCuratedDictionaries(t *testing.T) {
+	b, err := os.ReadFile("testdata/capture.sh")
+	if err != nil {
+		t.Fatalf("reading capture.sh: %v", err)
+	}
+	script := string(b)
+
+	inScript := map[string]bool{}
+	for _, m := range regexp.MustCompile(`com\.apple\.[A-Za-z0-9._]+`).FindAllString(script, -1) {
+		inScript[m] = true
+	}
+	if len(inScript) == 0 {
+		t.Fatal("capture.sh names no dictionary identifiers; this test would pass vacuously")
+	}
+
+	for lang, want := range curated {
+		for _, id := range want {
+			if !inScript[id] {
+				t.Errorf("production selects %q for %s, but capture.sh does not capture through "+
+					"it — the corpus would model a dictionary the tool never asks", id, lang)
+			}
+		}
+	}
+	for id := range inScript {
+		var known bool
+		for _, ids := range curated {
+			if slices.Contains(ids, id) {
+				known = true
+			}
+		}
+		if !known {
+			t.Errorf("capture.sh captures through %q, which no curated list names — fixtures "+
+				"from a dictionary production never consults cannot be conformance-checked", id)
+		}
 	}
 }

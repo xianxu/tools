@@ -39,7 +39,7 @@ type deps struct {
 	dictName string
 	// newDict builds the dictionary for a language, and is the M2 member of
 	// applyLang's enumeration — registered in that comment before it existed.
-	// nil when a test supplied its own dict, exactly like newDeck.
+	// nil when a test supplied its own dict, exactly like newLangDeps.
 	newDict func(store.Lang, io.Writer) (Dictionary, string)
 	// lang is the language this process is operating in — the deck it reads and
 	// writes, the recording it asks for, and the dictionary it consults. Resolved
@@ -56,7 +56,7 @@ type deps struct {
 	// directory, a test that supplied its own deps): /lang can still write the
 	// setting, it just has no session to re-derive.
 	newLangDeps func(store.Lang) langDeps
-	// persistLang writes the directory's language setting. Separate from newDeck
+	// persistLang writes the directory's language setting. Separate from newLangDeps
 	// because the two halves of /lang have different preconditions: persisting
 	// needs a DIRECTORY, re-deriving needs a SESSION, and a one-shot
 	// `define /lang es` has the first without the second. nil means there is no
@@ -256,7 +256,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// whether a given lookup counts.
 	clk := store.SystemClock()
 	// With no directory there is no persisted setting to consult, so the flag is
-	// the whole of the precedence. newDeck stays nil on both of these paths: /lang
+	// the whole of the precedence. newLangDeps stays nil on both of these paths: /lang
 	// can still validate and report, it just has nothing to re-derive.
 	if opt.noCapture {
 		lang := orElse(opt.lang, store.DefaultLang)

@@ -31,6 +31,8 @@ _cf.CFStringGetLength.restype = ctypes.c_long
 _cf.CFStringGetLength.argtypes = [ctypes.c_void_p]
 _cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long, ctypes.c_uint32]
 _cf.CFRelease.argtypes = [ctypes.c_void_p]
+_cf.CFRetain.restype = ctypes.c_void_p
+_cf.CFRetain.argtypes = [ctypes.c_void_p]
 _cs.DCSCopyTextDefinition.restype = ctypes.c_void_p
 _cs.DCSCopyTextDefinition.argtypes = [ctypes.c_void_p, ctypes.c_void_p, _CFRange]
 
@@ -68,6 +70,14 @@ def dictionary_by_id(identifier):
     Matched on the IDENTIFIER, never on the display name: the name is localised
     and ambiguous ("Espa" matches both Larousse and the bilingual Oxford), while
     DCSDictionaryGetIdentifier is stable.
+
+    RETAINS before returning. The ref is borrowed from the copied set, and an
+    earlier version released that set in a `finally` and then handed the ref to
+    DCSCopyTextDefinition -- a use-after-release that only worked because
+    CoreServices happens to keep the dictionaries alive. dict_darwin.go gets the
+    same sequence right by doing the lookup before CFRelease; this is the other
+    correct way, and the two implementations of one boundary should not disagree
+    about handle lifetime.
     """
     dicts = _cs.DCSCopyAvailableDictionaries()
     if not dicts:
@@ -78,7 +88,7 @@ def dictionary_by_id(identifier):
         _cf.CFSetGetValues(dicts, values)
         for ref in values:
             if _cfstr(_cs.DCSDictionaryGetIdentifier(ref)) == identifier:
-                return ref
+                return _cf.CFRetain(ref)
     finally:
         _cf.CFRelease(dicts)
     return None
@@ -114,7 +124,11 @@ if __name__ == "__main__":
         if ref is None:
             print(f"no dictionary with identifier {sys.argv[2]}", file=sys.stderr)
             sys.exit(3)
-    text = lookup(sys.argv[1], ref)
+    try:
+        text = lookup(sys.argv[1], ref)
+    finally:
+        if ref is not None:
+            _cf.CFRelease(ref)
     if text is None:
         print(f"no entry: {sys.argv[1]}", file=sys.stderr)
         sys.exit(1)
