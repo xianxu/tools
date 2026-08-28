@@ -220,9 +220,36 @@ satisfied.
     fix, against unchanged code) and the only failures are the three genuinely
     absent-dependency llm suites — no API key. No test changes verdict on the
     variable alone.
-- Four mutations, each reddening a named test: strict message drops the variable
-  name (4 red), the cause is dropped (4), strict never fails (7), `Strict()`
-  inverted (9).
+- **Mutation table, recorded by NAME.** The first version recorded bare red-counts
+  (`4 / 4 / 7 / 9`) which did not reproduce — counting `--- FAIL` lines gives
+  `4 / 3 / 3 / 8` depending on whether parent tests and `-v` subtests are counted,
+  and no convention was stated (BR-3). The repo's own consolidated lesson says
+  *read the FAILURE, not the count*, and this Log had recorded counts. Command:
+  `go test ./internal/conformance/ ./internal/llm/llmtest/ -v`, restoring with
+  `git checkout HEAD --` against the committed baseline `05dee92`:
+
+  | mutation | tests reddened |
+  |---|---|
+  | strict message drops the variable name | `TestMessage/strict_names_the_variable…`, `TestMessage/no_cause_to_report,_strict` |
+  | the cause is dropped from the message | `TestMessage/default,_with_a_cause`, `TestMessage/strict_names_the_variable…` |
+  | strict never fails | `TestSkipOrFailBothDirections/strict_fails…`, `…/a_nil_err_still_fails_under_strict`, `TestStrictTurnsAnUnreachableServiceIntoAFailure` |
+  | `Strict()` inverted | all four `TestSkipOrFailBothDirections` rows, `TestStrictTreatsAnEmptyValueAsOff`, `TestSkipsOnlyWhenNothingIsListening`, `TestStrictTurnsAnUnreachableServiceIntoAFailure` |
+
+- Close round 1 (FIX-THEN-SHIP) raised BR-1..BR-5; all taken.
+  - **BR-1** was this issue's own defect one level in: the Done-when states that
+    every test exercising a conformance-routed helper controls the variable, and
+    `reachable_test.go` had three such sites — the fix gave `t.Setenv` to two. The
+    third is invariant TODAY only because a successful dial never reaches
+    `SkipOrFail`, which is a property of control flow, not of the test. Fixed as
+    the class: `substituteT(t, strict, fn)` bundles the goroutine with the env, so
+    the mode is a parameter that cannot be forgotten rather than a convention that
+    can. All five goroutine sites in `package llmtest` route through it.
+  - **BR-2** caught the recorded reason for not extracting as simply WRONG — I
+    wrote that a helper would force `golden_test.go` to import
+    `internal/conformance`, but both files are `package llmtest`. Only
+    `internal/conformance`'s own test is genuinely cross-package.
+  - **BR-4** `wantFail` stated directly; **BR-5** resolved by the extraction, which
+    removed the mis-grouped import from `reachable_test.go` altogether.
 - Deferred, tracked in #24's plan Risks: the MIRROR half — an absent dependency
   written as an unconditional `Fatal` — is still enforced by reading sites.
   `guard_test.go` matches `t.Skipf?\(|t.SkipNow\(` and structurally cannot see a
