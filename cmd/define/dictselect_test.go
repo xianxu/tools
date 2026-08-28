@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -250,5 +252,81 @@ func TestTheTwoFallbacksSayDifferentThings(t *testing.T) {
 	if gone == uncurated {
 		t.Errorf("both fallbacks say %q; a vanished API and an uninstalled dictionary are "+
 			"different problems with different remedies", gone)
+	}
+}
+
+// The rule whose first fix shipped INOPERATIVE, which is the reason this logic
+// was extracted from the cgo shell: an ABSENCE never overwrites a real failure.
+//
+// "This word is not Spanish" is a correct answer. "The Spanish dictionary is
+// gone" means the caller cannot vouch for that absence. The C side keeps the two
+// statuses distinct precisely so this fold does not collapse them — and the
+// first attempt at this rule set ErrNoEntry unconditionally on status 1, so a
+// vanished primary followed by an ordinary miss still reported "no entry", with
+// no test to notice.
+func TestFoldLookupError(t *testing.T) {
+	gone := foldLookupError(nil, lookupNoSuchDict, "com.apple.dictionary.NOAD")
+
+	for _, tc := range []struct {
+		name        string
+		prev        error
+		status      int
+		wantNoEntry bool
+	}{
+		{name: "a plain miss is an absence", prev: nil, status: lookupNoEntry, wantNoEntry: true},
+		{name: "a miss after a miss is still an absence", prev: ErrNoEntry, status: lookupNoEntry, wantNoEntry: true},
+		{
+			// THE regression. Status 3 then status 1 must not read as "this word
+			// does not exist in English".
+			name: "a miss must NOT overwrite a vanished dictionary",
+			prev: gone, status: lookupNoEntry, wantNoEntry: false,
+		},
+		{
+			name: "nor may it overwrite an internal failure",
+			prev: ErrLookupFailed, status: lookupNoEntry, wantNoEntry: false,
+		},
+		{name: "a vanished dictionary after a miss IS reported", prev: ErrNoEntry, status: lookupNoSuchDict, wantNoEntry: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := foldLookupError(tc.prev, tc.status, "com.apple.dictionary.NOAD")
+			if errors.Is(got, ErrNoEntry) != tc.wantNoEntry {
+				t.Errorf("foldLookupError(%v, %d) = %v; ErrNoEntry=%v, want %v",
+					tc.prev, tc.status, got, !tc.wantNoEntry, tc.wantNoEntry)
+			}
+		})
+	}
+
+	// And a vanished dictionary names WHICH one, so the warning is actionable.
+	if !strings.Contains(gone.Error(), "com.apple.dictionary.NOAD") {
+		t.Errorf("a missing dictionary error does not name it: %v", gone)
+	}
+}
+
+// The flat cgo encoding, parsed on any platform — which is the point: these
+// parsers claimed to be "testable without CoreServices" while sitting behind
+// //go:build darwin, and GOOS=linux go vet failed on their own test.
+func TestParseDictRecords(t *testing.T) {
+	got := parseDictRecords("com.apple.dictionary.NOAD\ten_US>en_US,\n" +
+		"com.apple.dictionary.OxfordSpanish\tes>es,en>es,\n" +
+		"\n" + // a blank line is not a dictionary
+		"no-tab-here\n")
+	want := []dictMeta{
+		{ID: "com.apple.dictionary.NOAD", Langs: []langPair{{Index: "en", Description: "en"}}},
+		{ID: "com.apple.dictionary.OxfordSpanish", Langs: []langPair{
+			{Index: "es", Description: "es"}, {Index: "en", Description: "es"},
+		}},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("parseDictRecords gave %d records, want %d: %+v", len(got), len(want), got)
+	}
+	for i := range got {
+		if got[i].ID != want[i].ID || !slices.Equal(got[i].Langs, want[i].Langs) {
+			t.Errorf("record %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	// The bilingual one must survive parsing WITH both pairs, or chooseDictionary
+	// would accept it as monolingual Spanish.
+	if _, ok := chooseDictionary(got, "es"); ok {
+		t.Error("a bilingual dictionary parsed as an acceptable Spanish choice")
 	}
 }

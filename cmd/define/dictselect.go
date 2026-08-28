@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -144,4 +145,91 @@ func dictionaryFor(installed []dictMeta, lang store.Lang) (ids []string, name st
 	// line per lookup saying the expected thing happened is noise; a learner on
 	// a machine with a different set installed asks the question once.
 	return ids, strings.Join(ids, ", "), ""
+}
+
+// The statuses dcs_lookup_in reports. Mirrored in Go so the FOLD below is a
+// platform-neutral decision rather than a branch inside cgo.
+const (
+	lookupFound      = 0
+	lookupNoEntry    = 1
+	lookupFailed     = 2
+	lookupNoSuchDict = 3
+)
+
+// foldLookupError decides what a walk over several dictionaries reports.
+//
+// PURE, and extracted for a reason worth stating: while this lived inside the
+// darwin-only file it had no test, and a fix for exactly this bug shipped
+// INOPERATIVE — `case lookupNoEntry` overwrote the error unconditionally, so a
+// vanished primary dictionary followed by an ordinary miss still reported
+// "no entry". Untestable code is where a fix can look right and do nothing.
+//
+// The rule: an ABSENCE never overwrites a real failure. "This word is not
+// Spanish" is a correct answer; "the Spanish dictionary is gone" means the
+// caller cannot vouch for that absence, and the C side keeps the two statuses
+// distinct precisely so this layer does not collapse them.
+func foldLookupError(prev error, status int, id string) error {
+	// Already carrying a real failure: nothing weaker replaces it.
+	if prev != nil && !errors.Is(prev, ErrNoEntry) {
+		return prev
+	}
+	switch status {
+	case lookupNoEntry:
+		return ErrNoEntry
+	case lookupNoSuchDict:
+		return fmt.Errorf("%w: dictionary %s is unavailable", ErrLookupFailed, id)
+	default:
+		return ErrLookupFailed
+	}
+}
+
+// parseDictRecords reads the flat "id\tindex>desc,index>desc,\n" encoding the
+// cgo boundary emits.
+//
+// Platform-neutral on purpose: these three parsers claimed to be "testable
+// without CoreServices" while sitting behind //go:build darwin, which made
+// GOOS=linux go vet fail on their own test. A pure function that only compiles
+// on one platform is not pure enough to be worth the claim.
+func parseDictRecords(s string) []dictMeta {
+	out := []dictMeta{}
+	for _, line := range strings.Split(s, "\n") {
+		id, langs, ok := strings.Cut(line, "\t")
+		if !ok || id == "" {
+			continue
+		}
+		out = append(out, dictMeta{ID: id, Langs: parseLangPairs(langs)})
+	}
+	return out
+}
+
+// parseLangPairs reads the flat "index>description," encoding.
+//
+// This is the one place a malformed pair could silently make a bilingual
+// dictionary look monolingual, which is why it is separate and tested.
+func parseLangPairs(s string) []langPair {
+	var out []langPair
+	for _, field := range strings.Split(s, ",") {
+		idx, desc, ok := strings.Cut(field, ">")
+		if !ok {
+			continue
+		}
+		// Apple writes both "en" and "en_US"; the region is not a language.
+		i, err := store.ParseLang(baseLang(idx))
+		if err != nil {
+			continue
+		}
+		d, err := store.ParseLang(baseLang(desc))
+		if err != nil {
+			continue
+		}
+		out = append(out, langPair{Index: i, Description: d})
+	}
+	return out
+}
+
+func baseLang(s string) string {
+	if i := strings.IndexAny(s, "_-"); i >= 0 {
+		return s[:i]
+	}
+	return s
 }

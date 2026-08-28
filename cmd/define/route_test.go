@@ -46,7 +46,7 @@ func routeFor(t *testing.T, line string) string {
 	if err != nil {
 		t.Fatalf("fake dictionary: %v", err)
 	}
-	d := deps{dict: dict, capture: noopCapturer{}}
+	d := deps{dict: dict, langDeps: langDeps{capture: noopCapturer{}}}
 	cmd := parseREPLLine(line, false)
 	switch cmd.kind {
 	case cmdCommand:

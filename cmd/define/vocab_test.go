@@ -290,7 +290,7 @@ func TestEveryEntryPathHighlightsDefinitions(t *testing.T) {
 // A guard whose effect is absence needs a counting double, not an output check.
 func TestNoColourReadsNoDeck(t *testing.T) {
 	st := &countingDeck{Store: store.NewMem()}
-	d := deps{vocab: newStoreVocabulary(st, nil)}
+	d := deps{langDeps: langDeps{vocab: newStoreVocabulary(st, nil)}}
 
 	if got := vocabularyFor(d, options{color: false}); got != nil {
 		t.Error("colour off returned a vocabulary; nothing can render it")

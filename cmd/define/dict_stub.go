@@ -12,6 +12,10 @@ import (
 
 // unsupportedDictionary keeps `go build ./...` and `go vet ./...` green off
 // darwin. The tool still compiles everywhere; only the lookup is unavailable.
+//
+// That claim was FALSE for one range: the cgo file held pure parsers whose test
+// was untagged, so GOOS=linux go vet failed on them. They live in dictselect.go
+// now, which is what makes this comment true again.
 type unsupportedDictionary struct{}
 
 func (unsupportedDictionary) Lookup(string) (string, error) {

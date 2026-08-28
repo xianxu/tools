@@ -174,18 +174,11 @@ char *noad_lookup(const char *word, int *status) {
 import "C"
 
 import (
-	"errors"
-	"fmt"
 	"io"
-	"strings"
 	"unsafe"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
-
-// ErrLookupFailed separates a CoreFoundation malfunction from a word the
-// dictionary simply does not have.
-var ErrLookupFailed = errors.New("dictionary lookup failed")
 
 // dcsPrivateSymbols names every symbol dcs_resolve looks up.
 //
@@ -220,57 +213,9 @@ func installedDictionaries() []dictMeta {
 		return nil
 	}
 	defer C.free(unsafe.Pointer(raw))
+	// The parsing is platform-neutral and lives in dictselect.go; this function
+	// is the whole of the IO (ARCH-PURE).
 	return parseDictRecords(C.GoString(raw))
-}
-
-// parseDictRecords reads the flat encoding the C side emits.
-//
-// Pure, so the whole cgo boundary's format is testable without CoreServices —
-// which matters because this is where a malformed record could silently drop the
-// one dictionary a language depends on.
-func parseDictRecords(s string) []dictMeta {
-	out := []dictMeta{}
-	for _, line := range strings.Split(s, "\n") {
-		id, langs, ok := strings.Cut(line, "\t")
-		if !ok || id == "" {
-			continue
-		}
-		out = append(out, dictMeta{ID: id, Langs: parseLangPairs(langs)})
-	}
-	return out
-}
-
-// parseLangPairs reads the flat "index>description," encoding the C side emits.
-//
-// Pure, so the encoding is testable without CoreServices — which matters more
-// than it sounds: this is the one place a malformed pair could silently make a
-// bilingual dictionary look monolingual.
-func parseLangPairs(s string) []langPair {
-	var out []langPair
-	for _, field := range strings.Split(s, ",") {
-		idx, desc, ok := strings.Cut(field, ">")
-		if !ok {
-			continue
-		}
-		// Apple writes both "en" and "en_US"; the region is not a language.
-		i, err := store.ParseLang(baseLang(idx))
-		if err != nil {
-			continue
-		}
-		d, err := store.ParseLang(baseLang(desc))
-		if err != nil {
-			continue
-		}
-		out = append(out, langPair{Index: i, Description: d})
-	}
-	return out
-}
-
-func baseLang(s string) string {
-	if i := strings.IndexAny(s, "_-"); i >= 0 {
-		return s[:i]
-	}
-	return s
 }
 
 // selectedDictionary looks a word up in the chosen dictionaries FOR ONE
@@ -291,7 +236,10 @@ func (d selectedDictionary) Lookup(word string) (string, error) {
 	// — "this word does not exist in English" when the truth is "the primary
 	// dictionary vanished". dcs_lookup_in keeps those two statuses distinct
 	// precisely so this layer does not collapse them.
-	var lastErr error = ErrNoEntry
+	// The FOLD is a pure decision — see foldLookupError, which is where the
+	// "an absence never overwrites a real failure" rule is tested. It lived
+	// here once and the fix for that rule shipped inoperative.
+	var lastErr error
 	for _, id := range d.ids {
 		cid := C.CString(id)
 		var status C.int
@@ -302,24 +250,10 @@ func (d selectedDictionary) Lookup(word string) (string, error) {
 			C.free(unsafe.Pointer(res))
 			return out, nil
 		}
-		switch status {
-		case 1:
-			// Not in THIS dictionary. Keep going — the next one may have it —
-			// and if none do, that absence is the answer the mode makes
-			// possible: sycophantic has no Spanish entry, and saying so beats
-			// answering from English.
-			lastErr = ErrNoEntry
-		case 3:
-			// The dictionary itself is gone, which is NOT the same as the word
-			// being absent. Kept, and NOT overwritten by a later absence.
-			if errors.Is(lastErr, ErrNoEntry) {
-				lastErr = fmt.Errorf("%w: dictionary %s is unavailable", ErrLookupFailed, id)
-			}
-		default:
-			if errors.Is(lastErr, ErrNoEntry) {
-				lastErr = ErrLookupFailed
-			}
-		}
+		lastErr = foldLookupError(lastErr, int(status), id)
+	}
+	if lastErr == nil {
+		lastErr = ErrNoEntry // no dictionaries to ask
 	}
 	return "", lastErr
 }

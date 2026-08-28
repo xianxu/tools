@@ -58,7 +58,7 @@ That last one is the hazard: reassigning the loop's `d` alone would leave the ed
 
 - **The store stays immutable.** `lang` is a `NewYAML` constructor parameter, matching the existing comment on `dir` — *"a parameter, not a policy"*. Nothing re-reads `lang.txt` below the boundary.
 - **The re-derived set is `d.lang`, `opt.voice`, the deck triple (`deck`, `capture`, `vocab`) and the editor's `voc`** — see the Revisions entry below; naming only the triple here is what let `opt.voice` ship un-re-derived. `history` reads `events/` and `usage` reads `usage/`, neither of which is language-scoped — and re-deriving `history` would put a second, *unloaded* `History` beside the one `runEditor` already `Load()`ed at `replraw.go:73`. The usage cache keeps its original lang-carrying `*YAML`, which is harmless because `usageDir()` ignores the language; that is stated so a reviewer does not have to re-derive it.
-- **One builder, called twice (ARCH-DRY).** Factor the triple out of `openStore` — delivered as the `newDeck` closure carried on `storeDeps`/`deps` rather than the package-level `deckDeps(dir, lang, clk, warn)` this plan first named; see Revisions. `openStore` calls it, and so does the `/lang` closure.
+- **One builder, called twice (ARCH-DRY).** Factor the set out of `openStore` — delivered as the `newLangDeps` closure returning a `langDeps`, rather than the package-level `deckDeps(dir, lang, clk, warn)` this plan first named; see Revisions. `openStore` calls it, and so does the `/lang` closure.
 - **`commandCtx` gains `lang store.Lang` and `setLang func(store.Lang) error`,** on the `setTimes` precedent (`command.go:162-163`) and for the same reason: a command has no business reaching the rest of the deps.
 - **`setLang` is the loop's closure**, and it assigns BOTH the loop's `d` and — in `runEditor` — the captured `voc`, because that local is the one thing a `d` reassignment cannot reach.
 - **Unlike `/sound`, a nil `setLang` does not make `/lang` refuse.** `/sound` with no session has nothing to do; `/lang` still has its durable half. The split is: `store.WriteLang` always runs when there is a directory; the session re-derive runs only when there is a session. A one-shot `define /lang es` therefore sets the language for subsequent invocations and says so. With no directory at all, `/lang` reports that, the way `/history` reports a nil deck.
@@ -81,7 +81,7 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
 - **It is language-BLIND by design, and says so.** This tree's own deck is `words/ligament.yaml` and `words/madrugar.yaml` — the second is this issue's headline Spanish example, and it will land in `words/en/`. Nothing can tell; a heuristic here is the inference the whole design rejects. So the migration **prints what it moved** and names the remedy (`mv words/en/madrugar.yaml words/es/`). It prints nothing when it moves nothing.
 - **Collision rule: the subdirectory wins, the flat file survives, and it is reported.** With `words/mesa.yaml` and `words/en/mesa.yaml` both present, the destination is never overwritten and the source is never deleted. A surviving flat file is inert — after this change `wordsDir()` is `words/<lang>/`, so nothing reads `words/*.yaml` — which makes "leave it" strictly non-destructive on the one artifact here that cannot be regenerated.
 - **Two tests, because the earlier single assertion was true only of one case:** non-colliding → moved, flat gone; colliding → destination byte-identical, flat file still there, warning names it. Plus the idempotence run: twice, same result.
-- **It runs in `openStore`**, once at the boundary. `/lang`'s re-derive goes through `newDeck`, not `openStore`, so it does not re-run; if that ever changes, a second run is a no-op scan by construction.
+- **It runs in `openStore`**, once at the boundary. `/lang`'s re-derive goes through `newLangDeps`, not `openStore`, so it does not re-run; if that ever changes, a second run is a no-op scan by construction.
 
 ### D4 — the language reaches the dictionary through the constructor (PQ-4)
 
@@ -141,7 +141,7 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
 | `store.YAML` | `cmd/define/store/yaml.go` | modified | the vocab directory |
 | `ReadLang` / `WriteLang` | `cmd/define/store/lang.go` | new | the persisted setting |
 | `MigrateToLanguages` | `cmd/define/store/migrate.go` | new | an existing flat deck AND a flat learner model |
-| `newDeck` (closure) | `cmd/define/main.go` | new | the language-scoped triple |
+| `langDeps` / `newLangDeps` | `cmd/define/main.go` | new | every language-derived dependency |
 | `/lang` command | `cmd/define/lang_cmd.go` | new | the TUI namespace |
 | `-lang` flag | `cmd/define/main.go` | new | operator input |
 | `installedDictionaries` | `cmd/define/dict_darwin.go` | new (M2) | private DictionaryServices symbols |
@@ -149,7 +149,7 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
 
 - **`store.YAML`** — gains a language: `words/<lang>/<slug>.yaml`. A constructor parameter (D1); the store never reads the persisted setting itself.
 - **`ReadLang` / `WriteLang`** — read and write `lang.txt`. `ReadLang` degrades an absent, unreadable or garbage file to `DefaultLang`: the learner asked for a word, not for a configuration audit.
-- **`newDeck`** — the one builder of the language-scoped triple, called by `openStore` and by `/lang` (D1). A closure over `dir`/`clk`/`warn` carried on `storeDeps`/`deps`, not a package-level function; the invariant D1 protects is the single builder, not its shape.
+- **`langDeps` / `newLangDeps`** — the language-derived set as a TYPE, built by one closure that `openStore` and `/lang` both call (D1). `langDeps` is EMBEDDED in `deps`, so adopting a switch is one whole-struct assignment and a member added later is adopted automatically. The set was a list in a doc comment first and went stale three times; see the close-review Revisions entry.
 - **`installedDictionaries`** *(M2)* — resolves the private symbols with `dlsym` and returns metadata records. Its fake widens from a set of entries to a set of *dictionaries*, which is what lets `chooseDictionary` and the "no entry in this language" path be tested with no CoreServices. Conformance is on-demand with `-tags conformance`, routed through `conformance.SkipOrFail` (`#25`).
 
 ---
@@ -188,12 +188,12 @@ Tests are named by what they pin, not transcribed — the strategy line is the p
 
 ### Task 4: `-lang`, the persisted setting, and `/lang`
 
-**Files:** create `cmd/define/lang_cmd.go`, `lang_cmd_test.go`; extend `store/lang.go`; modify `main.go` (flag, `options`, `openStore`, `newDeck`), `command.go` (`commandCtx`, table), `repl.go`, `replraw.go`.
+**Files:** create `cmd/define/lang_cmd.go`, `lang_cmd_test.go`; extend `store/lang.go`; modify `main.go` (flag, `options`, `openStore`, `newLangDeps`), `command.go` (`commandCtx`, table), `repl.go`, `replraw.go`.
 
 - [x] **Step 1 — failing store tests:** `ReadLang` on an unset directory is `DefaultLang`; a written language round-trips; a garbage file degrades to the default rather than failing the lookup.
 - [x] **Step 2 — failing command tests:** `/lang` reports; `/lang es` switches, persists, and re-derives; `/lang xx` is refused with the tag echoed; `/lang es` with no session still writes and says which half it did (D1).
 - [x] **Step 3 — the boundary.** `options` gains `lang store.Lang`; the flag is `-lang` (`"language for this invocation: en, es (default: the directory's setting)"`). Precedence, stated once in `main.go`: the flag wins for THIS invocation and does not persist; otherwise the directory's setting; otherwise English. `-lang` exists so a script can ask a question without mutating state.
-- [x] **Step 4 — `newDeck` and `setLang`.** Factor the language-scoped triple out of `openStore`; add `lang` and `setLang` to `commandCtx`; wire the closure in BOTH loops, and in `runEditor` assign the captured `voc` as well as `d` — the local at `replraw.go:79` is the thing a `d` reassignment cannot reach.
+- [x] **Step 4 — `newLangDeps` and `setLang`.** Factor the language-scoped triple out of `openStore`; add `lang` and `setLang` to `commandCtx`; wire the closure in BOTH loops, and in `runEditor` assign the captured `voc` as well as `d` — the local at `replraw.go:79` is the thing a `d` reassignment cannot reach.
 - [x] **Step 5 — extend the wiring pin.** `TestOpenStoreSharesOneHighlightSet` has a sibling: after `/lang es`, `capture` and `vocab` are still ONE set, and it is the Spanish one. Mutation check: reassigning `d` without reassigning `voc` must redden it.
 - [x] **Step 6 — run, commit.**
 
@@ -605,3 +605,49 @@ fixes are bundled into the close commit rather than triggering a sixth review.
   because this host's active set happened to match. `capture.sh` walks the same
   curated list, and the re-captured corpus is byte-identical to the committed one
   — including `iPhone`, which comes from the second book.
+
+### 2026-08-28 — close review round 6: the set becomes a TYPE, embedded
+
+**Reason.** Round 6 returned FIX-THEN-SHIP with BR-14 and BR-20..BR-24 open and
+the gate reporting *8 repeat families — not converging*. Sidecar:
+`workshop/plans/000023-deck-language-close-review.md`.
+
+**Delta.**
+
+- **BR-22 — a struct was NOT enough, and this is the third correction to the same
+  rule.** `langDeps` existed, but `openStore` and `applyLang` each copied its
+  four fields BY HAND, so a fifth member stayed forgettable at two sites — the
+  exact failure the struct was introduced to prevent. `langDeps` is now
+  EMBEDDED in `deps`, so adoption is `d.langDeps = d.newLangDeps(l)`: one
+  assignment, and a member added later is adopted without anyone remembering to.
+  Cost: six composite literals in tests now nest it. Worth it.
+- **BR-22b — the milestone's HEADLINE wiring had no test at all.** `d.newDict`
+  was set at zero call sites; deleting BOTH the boundary derivation and the
+  `/lang` re-derivation left the whole suite green while production would
+  dereference a nil `Dictionary`. Pinned at both moments, and the first draft of
+  that pin REPLICATED the boundary derivation inline and stayed green when it was
+  deleted — a test reimplementing the code it pins. It drives `run()` now, and
+  both mutations redden.
+- **BR-23 — pure logic inside the platform shell, and it cost real things.** The
+  status fold was untestable where it lived, so BR-17's fix shipped INOPERATIVE:
+  `case lookupNoEntry` overwrote unconditionally, so a vanished dictionary
+  followed by an ordinary miss still reported "no entry". And `parseDictRecords`,
+  `parseLangPairs` and `baseLang` carried doc comments claiming to be "testable
+  without CoreServices" while sitting behind `//go:build darwin` — `GOOS=linux
+  go vet ./cmd/define/` FAILED, which this range broke and which `dict_stub.go`
+  simultaneously claimed to prevent. All four moved to `dictselect.go`;
+  `ErrLookupFailed` moved to `dict.go` beside `ErrNoEntry` to follow them.
+- **BR-24 — "one producer" was two.** `dcsPrivateSymbols` is walked by the
+  conformance check while `dcs_resolve` hand-writes the same names in C, so
+  adding a `dlsym` would leave the check green over a symbol nobody verifies —
+  BR-7's shape applied to the list M2's entire OS-version risk rests on. cgo
+  gives Go no view of the preamble, so the copies cannot be unified; they are
+  COMPARED instead, by reading the source.
+- **BR-20 — the new plan-table guard passed on a COMMENT.** Its fallback clause
+  accepted any occurrence in the file, and a stale `newDeck` row was green solely
+  because one comment still mentioned the old name. Clause removed; the row is
+  corrected to `langDeps`/`newLangDeps`.
+- **BR-21 — `atlas/define.md` still described the pre-BR-13 design**, including
+  the exact claim BR-13 disproved ("usage… would put a second, unloaded
+  History"). Rewritten, and it now records WHY the set is a type and embedded
+  rather than only that it is.

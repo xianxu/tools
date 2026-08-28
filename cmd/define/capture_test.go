@@ -519,13 +519,13 @@ func TestOpenStoreSuppliesOneClock(t *testing.T) {
 func TestWithStoreCarriesTheClock(t *testing.T) {
 	t.Run("a test-supplied clock wins", func(t *testing.T) {
 		want := fixedClock(1)
-		d := deps{clock: want, history: &memHistory{}, capture: noopCapturer{}}
+		d := deps{clock: want, history: &memHistory{}, langDeps: langDeps{capture: noopCapturer{}}}
 		if got := d.withStore(options{}, io.Discard).clock; got.Now() != want.Now() {
 			t.Errorf("clock = %v, want the supplied one (%v)", got.Now(), want.Now())
 		}
 	})
 	t.Run("nothing supplied still yields a usable clock", func(t *testing.T) {
-		d := deps{history: &memHistory{}, capture: noopCapturer{}}
+		d := deps{history: &memHistory{}, langDeps: langDeps{capture: noopCapturer{}}}
 		if got := d.withStore(options{}, io.Discard).clock; got == nil || got.Now().IsZero() {
 			t.Error("withStore left a nil or zero clock; a command would panic")
 		}

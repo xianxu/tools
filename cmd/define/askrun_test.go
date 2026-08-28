@@ -145,7 +145,11 @@ func TestOneShotQuestionHasNoCurrentWord(t *testing.T) {
 	d := testDeps(t)
 	cap := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 	d.newStore = func(options, io.Writer) storeDeps {
-		return storeDeps{history: &memHistory{}, capture: cap, deck: st, clock: store.FixedClock(aDay)}
+		return storeDeps{
+			history:  &memHistory{},
+			langDeps: langDeps{capture: cap, deck: st},
+			clock:    store.FixedClock(aDay),
+		}
 	}
 	d.capture, d.history = nil, nil // force the real wiring, as capture_test.go does
 	d.newLLM = llm.New

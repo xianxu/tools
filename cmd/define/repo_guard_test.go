@@ -592,8 +592,12 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 			declared := regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
 				regexp.QuoteMeta(name) + `\b`)
 			assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
-			if !declared.Match(src) && !assigned.Match(src) &&
-				!strings.Contains(string(src), name+" ") {
+			// DECLARED or ASSIGNED only. A first version also accepted any
+			// occurrence anywhere in the file, which admitted COMMENTS — and a
+			// stale `newDeck` row stayed green solely because one comment still
+			// mentioned the old name. A guard that a comment can satisfy is not
+			// checking the tree.
+			if !declared.Match(src) && !assigned.Match(src) {
 				t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
 					"artifact a reader trusts to describe the design, so a stale entity name "+
 					"there is worse than none. Update the row when the code renames.",

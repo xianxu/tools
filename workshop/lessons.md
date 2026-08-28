@@ -2199,3 +2199,45 @@ make the document a consumer. The unstructured half stays a review problem; the
 structured half becomes a build failure. A row whose file does not exist yet is
 skipped — a plan precedes its code, and only a row pointing at a real file makes
 a checkable claim.
+
+## Pure code behind a build tag is not pure enough (#23 BR-23)
+
+Three parsers carried doc comments saying "pure, so the cgo boundary's format is
+testable without CoreServices" — while sitting behind `//go:build darwin`. Their
+test was untagged, so `GOOS=linux go vet` failed on them, and `dict_stub.go`
+claimed in its own comment to keep exactly that green.
+
+Worse, a fix shipped INOPERATIVE in the same file: the status-folding rule
+("an absence never overwrites a real failure") was corrected in a commit, and the
+correction did nothing, because the branch it needed to guard was still
+unconditional and nothing could test it where it lived.
+
+**Rule:** if a function's doc says it is pure and testable off-platform, it must
+COMPILE off-platform — move it out of the tagged file. Untestable code is where a
+fix can look right in review and do nothing at runtime; "I extracted the policy"
+is only true once the policy has a test that fails without it.
+
+## A struct is not enough if both sides spell out its fields (#23 BR-22)
+
+The language-derived set went from a doc comment to a `langDeps` struct, and the
+next review found the same class again: `openStore` and `applyLang` each copied
+its four fields by hand, so a fifth field was still forgettable in two places.
+
+Embedding the struct is what finally fixed it — adoption became one assignment,
+and a member added later is adopted with no edit at either site.
+
+**Rule:** "make it a type" is half the fix. Ask where the type is CONSUMED: if
+every consumer enumerates its fields, the type is documentation and the
+enumeration is still the real interface. Embed it, or give it one adoption
+method, so adding a member cannot be half done.
+
+## Never let a test reimplement the code it pins (#23 BR-22b)
+
+A new test for "the dictionary is built for the session's language" replicated
+the boundary derivation inline instead of calling `run()`. Deleting that
+derivation from production left the test green — it was asserting against its own
+copy.
+
+**Rule:** a test that reproduces the production wiring tests the reproduction.
+Drive the real entry point, and verify by DELETING the production line and
+watching the test fail. If it does not fail, the test is pinning a copy.

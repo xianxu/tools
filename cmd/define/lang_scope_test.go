@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -294,5 +295,76 @@ func TestUsagesSurviveWithoutANewsFeed(t *testing.T) {
 	got := b.Usages(t.Context(), "madrugar", Entry{})
 	if got == nil && len(got) != 0 {
 		t.Error("a nil feed broke the usage seam")
+	}
+}
+
+// fakeDictSeam records which language each build asked for, so the wiring itself
+// is observable — not just its effect.
+type fakeDictSeam struct {
+	asked  []store.Lang
+	byLang map[store.Lang]Dictionary
+}
+
+func (f *fakeDictSeam) build(l store.Lang, _ io.Writer) (Dictionary, string) {
+	f.asked = append(f.asked, l)
+	d, ok := f.byLang[l]
+	if !ok {
+		d = &fakeDictionary{entries: map[string]string{}}
+	}
+	return d, "fake:" + string(l)
+}
+
+// The MILESTONE'S HEADLINE WIRING, which had no test at all: d.newDict was set
+// at zero call sites in any test, so deleting BOTH the boundary derivation and
+// the /lang re-derivation left the whole suite green in 94s — while production
+// would dereference a nil Dictionary.
+//
+// That is the same class as C1 and BR-13: a member of the language-derived set
+// with nothing pinning that it is actually derived. Asserted here at both
+// moments, and in what the dictionary RETURNS rather than only in which seam was
+// called, so a build that asks for the right language and wires the wrong result
+// is caught too.
+func TestTheDictionaryIsBuiltForTheLanguageAtBothMoments(t *testing.T) {
+	dir := t.TempDir()
+	seam := &fakeDictSeam{byLang: map[store.Lang]Dictionary{
+		"en": &fakeDictionary{entries: map[string]string{"mesa": "an isolated flat-topped hill"}},
+		"es": &fakeDictionary{entries: map[string]string{"mesa": "nombre femenino"}},
+	}}
+	d := deps{newStore: openStore, newDict: seam.build, audio: noAudioSource{}, player: &fakePlayer{}}
+	t.Chdir(dir)
+
+	// 1. The BOUNDARY, through run() — the production path, not a copy of it.
+	//    A first draft replicated the derivation inline here and stayed green
+	//    when that derivation was deleted from main.go, which is a test
+	//    reimplementing the code it is meant to pin.
+	var out, errb bytes.Buffer
+	run(t.Context(), []string{"-lang", "es", "-no-audio", "mesa"}, d,
+		strings.NewReader(""), &out, &errb)
+	if len(seam.asked) != 1 || seam.asked[0] != "es" {
+		t.Fatalf("the boundary asked for %v, want [es] — run() must build the dictionary "+
+			"for the session's language", seam.asked)
+	}
+	// A single token, because the renderer reflows: asserting on a PHRASE made
+	// this fail while the wiring was correct.
+	if !strings.Contains(out.String(), "femenino") {
+		t.Errorf("the boundary wired the wrong dictionary; output was:\n%s", out.String())
+	}
+
+	// 2. And /lang REBUILDS it. Set up a session the way withStore does, then
+	//    switch: this half reads as working because the boundary got it right.
+	opt := options{lang: "es"}
+	d = d.withStore(opt, &errb)
+	d.dict, d.dictName = seam.build("es", &errb)
+	seam.asked = seam.asked[:1]
+
+	applyLang(&d, &opt, store.DefaultLang, nil, &errb)
+	if len(seam.asked) != 2 || seam.asked[1] != "en" {
+		t.Fatalf("after /lang en the seam saw %v, want the second ask to be en", seam.asked)
+	}
+	if got, _ := d.dict.Lookup("mesa"); !strings.Contains(got, "flat-topped") {
+		t.Errorf("after /lang en the session still holds the Spanish dictionary: %q", got)
+	}
+	if d.dictName != "fake:en" {
+		t.Errorf("dictName = %q; /lang reports it, so it must follow too", d.dictName)
 	}
 }

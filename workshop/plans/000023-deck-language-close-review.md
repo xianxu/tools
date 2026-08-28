@@ -154,3 +154,229 @@ findings:
     detail: |
       testdata/capture.sh:60 captures entries/en through DCSCopyTextDefinition(NULL) — "the host's ACTIVE dictionaries" — while systemDictionary(en) now selects com.apple.dictionary.NOAD and com.apple.dictionary.AppleDictionary. Capture path and production path therefore differ for English; they agree today only because this host's active set happens to match. Detectable (TestFixturesMatchLiveDictionary compares them, and did go red once), so this is a note rather than a defect — but passing the curated ids to capture.py would make the two agree by construction (ARCH-MOCK).
 ```
+
+---
+
+## Re-review — 2026-08-28T14:44:27-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 23 — deck grouped by language, one language per --play session |
+| repo | tools |
+| issue file | workshop/issues/000023-deck-language.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 2e929fc56d1edc6b04af61100116a02abb7d9146..83ecf712cca62e74f9e1c8062d0437cdcafced4b |
+| command | sdlc close --issue 23 |
+| reviewer | claude |
+| timestamp | 2026-08-28T14:44:27-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+I've completed the review. Verifying with build, full test suite, four mutation experiments, a cross-platform vet, and a base-vs-HEAD worktree comparison.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The structural work in this range is genuinely good: `langDeps` turns the language-derived set into a type built by one builder, `dictionaryFor` pulls the selection policy out of the cgo shell so all three degradation outcomes unit-test anywhere, the curated-list design is honest about being curated, and the per-language fixture corpus is real captured output. I verified BR-13's fix by mutation (dropping `d.usage` from `applyLang`'s adoption reddens `vocab_test.go:463`), and BR-15, BR-16, BR-18, BR-19 all check out. What blocks SHIP is that two of the seven open findings are not actually fixed — BR-17's cgo fix is **inoperative** (its `case 1` still unconditionally overwrites, which is the exact collapse it claims to prevent), and BR-14's remaining instances are still live — and that BR-14's new class guard has a hole I proved by mutation: `TestPlanTablesNameEntitiesThatExist` is green only because a *stale comment* in `main.go` contains the string `newDeck `. The plan's Core-concepts table names an entity the tree renamed away in this same commit, and the guard built to catch exactly that passes it.
+
+## 1. Strengths
+
+- **`dictselect.go:126` `dictionaryFor`** — the right extraction. `installed == nil` vs `[]dictMeta{}` are kept as distinct states with distinct warnings, and `TestTheTwoFallbacksSayDifferentThings` (`dictselect_test.go:247`) pins that they don't converge. This is the ARCH-PURE move the M1 sidecar asked for, done properly.
+- **`dictselect_test.go:150` `TestChooseDictionaryDoesNotDependOnOrder`** rotates the fixture through every position. Given the API returns a CFSet with genuinely unspecified order, this is the assertion that matters, and it is a real property test rather than a restatement.
+- **`dictselect_test.go:133`** — the comment admitting the first version of that test used `OxfordSpanish` and therefore never reached the monolingual check is exactly the kind of self-correction that makes a suite trustworthy.
+- **`dict_darwin.go:75` `dcs_describe_all`** — one CFSet copy, one pass. BR-18 fixed at the level of the invariant rather than the symptom, with the reason in the comment.
+- **`testdata/capture.sh:88`** — the capture path now walks the same curated ids in the same order `selectedDictionary.Lookup` does, and `capture.py` exits 1 on no-entry so the shell's first-hit-wins loop genuinely mirrors production (I checked `capture.py:118-120`). ARCH-MOCK satisfied by construction rather than by coincidence.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-a. `cmd/define/repo_guard_test.go:595` — the new symbol guard passes on a comment, and a live stale row proves it.**
+The check is `!declared.Match(src) && !assigned.Match(src) && !strings.Contains(string(src), name+" ")`. That third clause admits any occurrence anywhere in the file, including a comment. The plan's row `| `newDeck` (closure) | `cmd/define/main.go` | new |` (`workshop/plans/000023-deck-language-plan.md:144`) is stale — the tree declares `newLangDeps` — and the guard is green solely because `main.go:269` still says "`newDeck` stays nil on both of these paths". Mutation: rewording that one comment turns the test red naming `newDeck`. Removing the fallback clause entirely flags exactly that one row and nothing else, so no current row needs it.
+
+**I-b. `atlas/define.md:463-476` — the atlas still describes the pre-BR-13 design.**
+It says the rebuild goes through `newDeck(lang)` (renamed), that "`usage` reads `usage/`, so re-deriving them would put a second, unloaded `History`…" (false — `usage` **is** re-derived now; only `history` is not), and enumerates the members as "`d.lang`, `opt.voice`, the deck triple and `voc`" with `usage` absent. `atlas/define.md` was edited in `83ecf712` but only in the dictionary section around line 1142. The one current-truth doc describing the invariant this round was about now contradicts the code on that invariant.
+
+**I-c. `cmd/define/command.go:388` / `cmd/define/main.go:597` — the set is a type, but adoption is still hand-enumerated, and the one member outside it has no test at all.**
+`d.deck, d.capture, d.vocab, d.usage = ld.deck, ld.capture, ld.vocab, ld.usage` enumerates four fields; `openStore` enumerates the same four again into `storeDeps`. A fifth `langDeps` field is forgettable at both sites, which is the failure the commit message says a struct makes "unspellable". Separately, `d.newDict` is set at **zero** call sites in any test (`grep newDict *_test.go` → nothing), so the entire language→dictionary wiring is unpinned: I deleted both the boundary derivation (`main.go:597-599`) and the `/lang` re-derivation (`command.go:388-390`) and the full `cmd/define` suite stayed green in 94s — while production would then dereference a nil `Dictionary`. That is the milestone's headline Done-when row and the exact class that produced C1 and BR-13.
+
+**I-d. `cmd/define/dict_darwin.go` — pure logic still inside the platform shell, in two places.**
+(1) The status-folding policy in `selectedDictionary.Lookup` is untestable where it lives, which is why BR-17's fix shipped inoperative with no test. (2) `parseDictRecords`, `parseLangPairs` and `baseLang` carry doc comments saying "Pure, so the whole cgo boundary's format is testable without CoreServices" — but they sit behind `//go:build darwin` while `TestParseLangPairs` lives in the untagged `dict_fake_test.go:203`. `GOOS=linux go vet ./cmd/define/` now fails with `undefined: parseLangPairs`; I confirmed against a worktree at base `2e929fc5` that it exited 0 there, so this range broke it. `dict_stub.go:13` still claims it "keeps `go build ./...` and `go vet ./...` green off darwin".
+
+**I-e. `cmd/define/dict_darwin.go:200` — `dcsPrivateSymbols` is documented as "ONE producer" but there are two.**
+The Go slice names three symbols; `dcs_resolve` at `dict_darwin.go:43-45` hand-writes the same three string literals in C. `TestPrivateDictionarySurfaceStillResolves` walks the Go copy, so adding or renaming a `dlsym` in the C preamble leaves the conformance check green while the resolver needs a symbol nobody verifies. This is BR-7's shape exactly — a guard asserting coverage from a hand-typed restatement — applied to the list the whole M2 OS-version risk rests on.
+
+## 4. Minor findings
+
+- `cmd/define/main.go:129` and `cmd/define/main.go:220` — two stranded doc comments introduced by this commit: `storeDeps`' doc now heads `type langDeps`, and `openStore`'s doc now heads `func newsFeedFor`. Both target declarations are left undocumented. Same shape as BR-10, twice, in the commit that closed it.
+- `cmd/define/main.go:435` — `--help`'s opening sentence still says "Looks the word up in macOS's active dictionaries — normally the New Oxford American Dictionary". After M2 that describes the *fallback* path; the normal path is the curated selection. README was updated, the binary's own help was not.
+- `cmd/define/dict_conformance_test.go:91` — a missing private symbol routes through `conformance.SkipOrFail`, so by default it skips. The package's own four-class rule (`internal/conformance` doc) puts "the dependency's surface moved" under SHAPE drift, which "ALWAYS fail[s]". The Done-when row says this must say so *loudly*; by default it says so with a skip.
+- `atlas/define.md:1171` — the conformance table's `dict_conformance_test.go` row still reads "live lookups still byte-match every fixture"; that file now also holds the private-surface and per-language checks.
+- `cmd/define/dict_darwin.go:127-139` duplicates the copy-set-and-scan block from `dcs_describe_all` (ARCH-DRY); a shared `dcs_copy_values` helper would be one source. Not hot-path.
+
+## 5. Test coverage notes
+
+Pure-entity coverage is strong: `chooseDictionary`/`dictionaryFor` have five test functions including order-independence, an every-pair-monolingual case, and both fallback branches, and `parseLangPairs` covers region-stripping and junk. `TestLangSwitchKeepsOneHighlightSetAndItsTheNewLanguages` pins the feed gate in **both** directions, which is the harder half. The gaps are I-c (the dictionary wiring, provably uncovered by mutation), `deps.dictName` (asserted nowhere, so `/lang`'s "from …" line is unverified), `selectedDictionary.Lookup`'s status folding (no test, and the code is wrong), and `noadDictionary` (referenced by no non-conformance test).
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag (I-a, I-e).** One builder for `langDeps`, `applyVoice` with two callers, and the `warnf` duplicate removed are all right. The exceptions are the symbol list with two producers and the duplicated CFSet scan.
+- **ARCH-PURE — flag (I-d).** The selection policy was correctly extracted; the status-folding policy and the record parsers were not, and the parsers' own comments claim a testability they don't have off-darwin.
+- **ARCH-PURPOSE — flag (BR-14 residue, I-b).** Shadow-sweep over the single sources: `RuntimeFiles` → all three guards derive ✓; `curated` → resolver and conformance both derive ✓; `dcsPrivateSymbols` → the C resolver does **not** derive ✗; `langDeps` → both consumers hand-enumerate ✗. Three named instances from BR-14's measured eleven are still live in the plan (`:251-253`, `:279`, `:285`).
+- **ARCH-MOCK — pass.** The fake widened from entries to a per-language corpus, the capture path now shares the production boundary, and the live checks compare fake against real. The one gap is that `installedDictionaries()` is called directly inside `systemDictionary` rather than injected, so the full seam (including its warning text) can't be driven from a fake installed set — worth doing when I-c's test lands.
+
+## 7. Plan revision recommendations
+
+- **`workshop/plans/000023-deck-language-plan.md:144`** — replace the `newDeck` row with `newLangDeps`, and update D1 (`:61`), D3 (`:84`), Task 4 (`:191`, `:196`) to match. This is the *third* time the plan has named an entity the tree does not have.
+- **`:279` and `:285`** — "all nine symbols" / "rests on nine undocumented symbols". Task 10 Step 1 is ticked describing an assertion the code does not make; the resolver needs three. Say "the private symbols" and let `dcsPrivateSymbols` carry the count.
+- **`:251-253`** — D6's "Bonus" claims a Spanish lookup pays a live Google News request per word. `UsageSource.Usages` has no production caller (only `*_test.go` sites), so no code path makes that request. State the real benefit (the gate is correctness-first; the saved request is prospective, once `#10` wires it).
+- **A `## Revisions` entry** recording that BR-14's ratchet shipped with a fallback clause that admits comment mentions, and that BR-17's fix was inoperative — both are the kind of thing the next round will otherwise re-derive from scratch.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: addressed
+    note: |
+      Verified by mutation — dropping d.usage from applyLang's adoption reddens vocab_test.go:463 in both directions. See new finding on the residual hand-enumeration.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      Class guard landed but has a comment-admitting loophole and three of the eleven measured instances are still live in the plan.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      dictionaryFor is pure and all three outcomes plus the empty-set case are unit-tested.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      Both ratchets are now table rows in atlas/repo-guards.md with the records-vs-current-truth scope rule.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      The fix does not fire — case 1 still assigns lastErr unconditionally, so status 3 then status 1 still returns ErrNoEntry.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      dcs_describe_all copies the set once and describes all N in a single pass.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      capture.sh walks EN_DICTS in curated order; capture.py exits 1 on no-entry so the first-hit-wins loop matches selectedDictionary.Lookup.
+findings:
+  - id: new
+    severity: Important
+    family: comment-contract-drift
+    title: |
+      TestPlanTablesNameEntitiesThatExist passes on a COMMENT mention, and a stale `newDeck` row proves the hole
+    detail: |
+      9th finding in this family — do NOT fix the newDeck row alone. repo_guard_test.go:595 accepts
+      `strings.Contains(string(src), name+" ")` as evidence a symbol is declared, so any mention anywhere
+      in the file satisfies it. The plan's Core-concepts row `newDeck` at cmd/define/main.go
+      (plan:144) is stale — the tree renamed it to newLangDeps in this very commit — and the guard is
+      green only because main.go:269 still says "newDeck stays nil on both of these paths". Mutation
+      proof: rewording that one comment turns the test RED naming newDeck; removing the fallback clause
+      flags exactly that one row across all active plans and nothing else, so no legitimate row needs it.
+      The rule the family keeps failing: a guard may not accept prose as evidence about code. Delete the
+      fallback (declared/assigned already cover every current row), then sweep newDeck from plan:144,
+      :61, :84, :191, :196, main.go:52, :69, :269 and atlas/define.md:465.
+  - id: new
+    severity: Important
+    family: atlas-lags-new-surface
+    title: |
+      atlas/define.md still describes the pre-BR-13 /lang design, including the exact claim BR-13 disproved
+    detail: |
+      2nd finding in this family — the rule is that the atlas is updated in the SAME commit as the
+      surface it maps, not the same range. atlas/define.md:463-476 says the rebuild goes through
+      `newDeck(lang)` (renamed to newLangDeps), that "usage reads usage/, so re-deriving them would put
+      a second, unloaded History beside the one runEditor already Load()ed" — false, usage IS re-derived
+      now and only history is not — and enumerates applyLang's members as d.lang, opt.voice, the deck
+      triple and voc, with usage absent. The commit edited atlas/define.md but only around line 1142.
+      The one current-truth document describing this invariant now contradicts the code on it.
+  - id: new
+    severity: Important
+    family: language-derived-state-unscoped
+    title: |
+      langDeps is adopted field-by-field at two sites, and d.dict — a member since M1 — has no test at all
+    detail: |
+      3rd finding in this family — do NOT fix by adding one assertion. The rule the fixes keep half-applying
+      is: every member of the language-derived set must be (a) adopted as a WHOLE from the one builder and
+      (b) pinned by a test that reddens when its re-derivation is removed. Neither half holds. Adoption is
+      `d.deck, d.capture, d.vocab, d.usage = ld.deck, ld.capture, ld.vocab, ld.usage` (command.go:388) and
+      the same four enumerated again into storeDeps (main.go:325-329), so a fifth langDeps field is
+      forgettable at both sites — embedding langDeps in deps/storeDeps makes it one assignment and closes
+      (a). For (b): d.newDict is set at ZERO call sites in any test, so deleting BOTH the boundary
+      derivation (main.go:597-599) and the /lang re-derivation (command.go:388-390) leaves the whole
+      cmd/define suite green (measured, 94s) while production would dereference a nil Dictionary. That is
+      the milestone's headline Done-when row, and it is the same class as C1 and BR-13.
+  - id: new
+    severity: Important
+    family: policy-inside-io-shell
+    title: |
+      Two pieces of pure logic still live inside the darwin cgo shell; one shipped an inoperative fix, the other broke GOOS=linux
+    detail: |
+      4th finding in this family — do NOT fix either instance alone. The rule: nothing that is a decision
+      or a parse over data may live inside dict_darwin.go's build-tagged shell; dictselect.go is where it
+      goes. The enumeration for this file is three items and only one is done. (1) selection policy →
+      dictionaryFor, extracted ✓. (2) status-folding policy in selectedDictionary.Lookup — still inline,
+      untestable, and consequently BR-17's fix shipped broken with no test to catch it. Extract
+      foldLookupStatuses([]int, []string) error as pure. (3) parseDictRecords / parseLangPairs / baseLang —
+      their own comments say "Pure, so the whole cgo boundary's format is testable without CoreServices",
+      but they sit behind //go:build darwin while TestParseLangPairs is in the untagged dict_fake_test.go:203.
+      Measured: `GOOS=linux go vet ./cmd/define/` now fails with `undefined: parseLangPairs`; it exited 0 at
+      base 2e929fc5 (checked in a worktree), so this range regressed it, and dict_stub.go:13 still claims
+      the stub keeps `go vet ./...` green off darwin.
+  - id: new
+    severity: Important
+    family: runtime-artifact-guard-coverage
+    title: |
+      dcsPrivateSymbols is documented as the ONE producer, but dcs_resolve hand-writes the same three names in C
+    detail: |
+      4th finding in this family — do NOT fix by syncing the two lists. Identical shape to BR-7: a guard
+      asserting coverage from a hand-typed restatement. dict_darwin.go:200 declares the slice and its doc
+      says "ONE producer for the list", while dcs_resolve at dict_darwin.go:43-45 spells
+      DCSCopyAvailableDictionaries / DCSDictionaryGetIdentifier / DCSDictionaryGetLanguages again as C
+      string literals. TestPrivateDictionarySurfaceStillResolves walks the Go copy, so adding or renaming a
+      dlsym in the C preamble leaves the conformance check reporting "all present" while the resolver needs
+      a symbol nobody verifies — and this check IS the whole mitigation for M2's stated OS-version risk.
+      The rule: a list the code owns has one producer, and where a second language forces a restatement, a
+      ratchet asserts the two agree. Cheap here — one test regexing dlsym("...") out of the file's own
+      source and comparing the set to dcsPrivateSymbols, in the same shape as the existing ratchets.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      Two doc comments stranded onto the wrong declaration by this commit's insertions
+    detail: |
+      main.go:127-135 — storeDeps' doc ("the trio openStore produces") now runs into `type langDeps` with
+      no blank line, so godoc attaches it to langDeps and storeDeps is undocumented. main.go:212-231 —
+      openStore's doc runs into `func newsFeedFor` the same way, leaving openStore undocumented. Both
+      declarations were inserted directly beneath an existing doc comment. Same shape as BR-10, twice, in
+      the commit that closed it; a ratchet asserting a doc comment's first word matches the declaration it
+      precedes is the mechanical form.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      --help still says define looks words up in "macOS's active dictionaries", which is now the fallback path
+    detail: |
+      main.go:435. After M2 the normal path is the curated per-language selection and the whole-active-set
+      search is the degradation. README.md:314 was updated for this; the binary's own usage text, which the
+      same commit edited to add the /lang paragraph, was not.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      The private-surface conformance check routes SHAPE drift through SkipOrFail, so "says loudly" is a skip by default
+    detail: |
+      dict_conformance_test.go:91. internal/conformance's own four-class rule puts an absent external
+      dependency in SkipOrFail and "the dependency's surface moved" under SHAPE drift, which "ALWAYS
+      fail[s] ... the very thing these suites exist to report". A vanished private symbol is the second
+      class, and the issue's Done-when row asks it to say so LOUDLY. Under a plain
+      `go test -tags conformance` it prints a skip, which the package doc itself says reads as green.
+```

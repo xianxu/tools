@@ -462,25 +462,28 @@ where `/sound` refuses whenever there is no session, because `/sound` is
 explicitly for the rest of *this* session and a language outlives it.
 
 The rebuild goes through **one builder called twice**: `openStore` constructs the
-session with `newDeck(lang)`, and `/lang` calls the same closure. `history` reads
-`events/` and `usage` reads `usage/`, so re-deriving them would put a second,
-*unloaded* `History` beside the one `runEditor` already `Load()`ed — which is
-why `openStore` deliberately builds a second, flat store for those two.
+session with `newLangDeps(lang)`, and `/lang` calls the same closure.
 
-**`applyLang` owns the enumeration, and the enumeration is the point.** The rule
-that generates it: *anything derived from the language BEFORE a switch must be
-re-derived BY the switch.* The members are `d.lang`, `opt.voice`, the deck triple
-(`deck`/`capture`/`vocab`) and the raw editor's cached `voc`; `#23 M2` adds
-`d.dict`, and `applyLang`'s comment is where that is written down.
+**`langDeps` is the set, as a TYPE, and it is EMBEDDED in `deps`.** Both facts
+were earned. The members are the deck, the capturer, the vocabulary, the usage
+source and — through its own seam — the dictionary; `#23 M2` adds nothing to that
+list, but it changed what belongs on it, which is the point.
 
-This list is not decoration. M1's boundary review found it one member short:
-`opt.voice` was resolved once at the boundary and never re-derived, so a
-mid-session `/lang es` left the fetch loop asking for the four **English** URLs —
-including the two legacy `/sounds/oxford/` ones this same range had just gated to
-English for costing ~450 ms per guaranteed miss. The deck went Spanish and the
-pronunciation did not. `applyVoice` now makes that derivation ONE function with
-two callers, because two expressions for one derived value is exactly how they
-drift apart.
+The set was a list in a doc comment first, and it went stale **three times**:
+`opt.voice` at M1's boundary, the learner model a round later, and `d.usage` at
+the close — the last added by the very milestone whose comment still called it
+"not language-scoped". Making it a struct was not enough either, because both
+`openStore` and `applyLang` still copied its fields by hand, so a fifth field
+stayed forgettable at two sites. Embedding is what finally made adoption one
+assignment (`d.langDeps = d.newLangDeps(l)`), so a member added later is adopted
+without anyone remembering to.
+
+**`history` is the one thing deliberately outside it.** `events/` is not
+language-scoped, and rebuilding it on a switch would orphan the `History` that
+`runEditor` has already `Load()`ed while every other path read a fresh empty one.
+That exclusion is checked by an identity assertion rather than argued in prose —
+because "deliberately not in this set" is a claim with a shelf life, and the
+`usage` exclusion was true when written and false three commits later.
 
 **The `&voc` parameter is the subtlest member.** `runEditor` resolves the
 highlight set into a LOCAL before its loop starts (`voc := vocabularyFor(d,
@@ -490,12 +493,19 @@ words while every other path has moved on. The general shape — *a loop local
 derived from `d` before the loop* — is why the switch lives in the loop that owns
 those locals rather than in `commandCtx`.
 
-Two pins, at two altitudes, and both were mutation-checked:
-`TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` for the editor local,
-and `TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage` — which drives
-`/lang es` through `run()` and asserts what the CDN was ASKED for — for the
-voice. The second is the one that matters most: a unit test on `voiceFor` could
-never have caught the bug, because `voiceFor` was always right.
+Three pins, at three altitudes, each mutation-checked:
+`TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` for the editor local
+and the usage feed (in both directions — losing the feed is the quieter
+failure); `TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage`, which
+drives `/lang es` through `run()` and asserts what the CDN was ASKED for; and
+`TestTheDictionaryIsBuiltForTheLanguageAtBothMoments`, which drives the boundary
+through `run()` too. That last one matters: `d.newDict` was set at zero call
+sites in any test, so deleting both derivations left the whole suite green while
+production would dereference a nil `Dictionary`.
+
+The pattern across all three: a unit test on the pure function could never have
+caught any of these, because the pure functions were always right. What was wrong
+was that nothing called them again.
 
 ## Highlighting the words you are learning
 

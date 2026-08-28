@@ -384,11 +384,11 @@ func applyLang(d *deps, opt *options, l store.Lang, vocPtr *Vocabulary, warn io.
 	if d.newLangDeps == nil {
 		return // no store here; the language still applies to everything else
 	}
-	// The whole set, from the one builder openStore used. Assigning members
-	// individually here is what let d.usage be forgotten: the builder is the
-	// enumeration now, and this is a copy rather than a list.
-	ld := d.newLangDeps(l)
-	d.deck, d.capture, d.vocab, d.usage = ld.deck, ld.capture, ld.vocab, ld.usage
+	// The WHOLE set, in one assignment. Copying members individually is what let
+	// d.usage be forgotten, and it stayed forgettable even after the set became a
+	// struct, because both sites still spelled the fields out. langDeps is
+	// embedded in deps, so this adopts every member including ones added later.
+	d.langDeps = d.newLangDeps(l)
 	if vocPtr != nil {
 		// The REAL options, not a fabricated one: vocabularyFor owns "loaded,
 		// and only with colour", and forcing colour on here would resurrect

@@ -24,25 +24,15 @@ type deps struct {
 	audio  AudioSource
 	player Player
 	// history is the durable word history. Constructed at the boundary so the
-	// loop takes a seam rather than deciding where state lives.
+	// loop takes a seam rather than deciding where state lives. NOT in langDeps:
+	// events/ is not language-scoped.
 	history History
-	// capture is the only thing that RECORDS — lookups (Capture) and questions
-	// (CaptureAsk). deck below is the other way the store is mutated: --forget
-	// deletes through it.
-	capture Capturer
-	// deck is the store --forget acts on. Separate from capture because capture
-	// deliberately cannot fail loudly and --forget deliberately must.
-	deck store.Store
-	// usage is where real sentences for a word come from — the news feed plus
-	// NOAD's own examples (#9). #10's authoring step is the consumer; nothing
-	// user-facing reads it yet, which is why the seam exists before a command
-	// does. nil means "no usage source".
-	usage UsageSource
-	// vocab is the set of words to highlight — the ONE predicate every highlight
-	// decision goes through (#21). Separate from deck because #22 narrows it to
-	// the words still being learned: a word that has become the learner's own
-	// stops being highlighted, and that swap must be this one seam.
-	vocab Vocabulary
+	// langDeps is EMBEDDED, so d.deck, d.vocab and the rest read exactly as they
+	// did — and so adopting a switch is one whole-struct assignment rather than a
+	// list of fields. The struct alone was not enough: while both openStore and
+	// applyLang copied its members by hand, a new member stayed forgettable at
+	// two sites, which is the failure the struct was introduced to prevent.
+	langDeps
 	// dictName is which dictionary answered, for /lang to report. A learner on a
 	// machine with a different installed set asks that question once, so the
 	// answer belongs in a command rather than in a line per lookup.
@@ -137,14 +127,14 @@ type langDeps struct {
 	capture Capturer
 	vocab   Vocabulary
 	usage   UsageSource
+	// dict is a member too, and has been since M1 registered it — but it is
+	// built by a different seam (newDict, which tests replace independently of
+	// the store), so applyTo takes it as an argument rather than a field.
 }
 
 type storeDeps struct {
 	history History
-	capture Capturer
-	deck    store.Store
-	vocab   Vocabulary
-	usage   UsageSource
+	langDeps
 	// lang is the language openStore RESOLVED — the flag if one was given, else
 	// the directory's setting, else English. The flag half lives in options; this
 	// is the answer, and it is what everything downstream reads.
@@ -269,19 +259,23 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// the whole of the precedence. newDeck stays nil on both of these paths: /lang
 	// can still validate and report, it just has nothing to re-derive.
 	if opt.noCapture {
+		lang := orElse(opt.lang, store.DefaultLang)
 		return storeDeps{
-			history: &memHistory{}, capture: noopCapturer{},
-			usage: sessionUsage(orElse(opt.lang, store.DefaultLang), clk, warn), clock: clk,
-			lang: orElse(opt.lang, store.DefaultLang),
+			history:  &memHistory{},
+			langDeps: langDeps{capture: noopCapturer{}, usage: sessionUsage(lang, clk, warn)},
+			clock:    clk,
+			lang:     lang,
 		}
 	}
 	dir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
+		lang := orElse(opt.lang, store.DefaultLang)
 		return storeDeps{
-			history: &memHistory{}, capture: noopCapturer{},
-			usage: sessionUsage(orElse(opt.lang, store.DefaultLang), clk, warn), clock: clk,
-			lang: orElse(opt.lang, store.DefaultLang),
+			history:  &memHistory{},
+			langDeps: langDeps{capture: noopCapturer{}, usage: sessionUsage(lang, clk, warn)},
+			clock:    clk,
+			lang:     lang,
 		}
 	}
 	// Before anything reads the deck: a deck written before #23 lives flat in
@@ -332,20 +326,15 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	}
 	ld := newLangDeps(lang)
 
-	return storeDeps{
-		// history is NOT in langDeps: events/ is not language-scoped, and
-		// rebuilding it on a switch would orphan the one runEditor has already
-		// Load()ed while everything else read a fresh empty one.
+	sd := storeDeps{
 		history:     newStoreHistory(flat, warn),
-		capture:     ld.capture,
-		deck:        ld.deck,
-		vocab:       ld.vocab,
-		usage:       ld.usage,
 		clock:       clk,
 		lang:        lang,
 		newLangDeps: newLangDeps,
 		persistLang: func(l store.Lang) error { return store.WriteLang(dir, l) },
 	}
+	sd.langDeps = ld
+	return sd
 }
 
 func main() {
