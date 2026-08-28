@@ -14,7 +14,7 @@ type Mem struct {
 	mu     sync.Mutex
 	words  map[string]Word
 	events []ReviewEvent
-	// userModel is what YAML reads from user-model.md. A field so the reference
+	// userModel is what YAML reads from the learner model file. A field so the reference
 	// implementation can hold the state the real one holds: a getter the fake
 	// cannot back makes the conformance row asserting it unfalsifiable.
 	userModel string

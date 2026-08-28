@@ -43,7 +43,12 @@ func sampleMeta() modelMeta {
 }
 
 func TestRenderUserModel(t *testing.T) {
-	assertGoldenFile(t, "testdata/golden/user-model.md", renderUserModel(sampleLearnerModel(), sampleMeta()))
+	// user-model.GOLDEN.md, not user-model.md: that basename is a RUNTIME
+	// artifact (--reflect writes one into the working directory), and #23 makes
+	// runtime basenames reserved — .gitignore now hides them un-anchored and the
+	// index guard forbids tracking one. A fixture squatting on the name would be
+	// silently un-addable after any git rm.
+	assertGoldenFile(t, "testdata/golden/user-model.golden.md", renderUserModel(sampleLearnerModel(), sampleMeta()))
 }
 
 // The issue's rule, asserted over the OUTPUT because that is where a reader

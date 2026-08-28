@@ -321,6 +321,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 				// only in the raw editor's submit path (PQ-2).
 				cc := newCommandCtx(d, opt, stdout, stderr)
 				cc.setTimes = func(n int) { opt.times = n }
+				cc.setLang = sessionSetLang(&d, &opt, cc.setLang, nil, stderr)
 				fail(dispatchCommand(cmd, commands, cc))
 			case cmdAsk:
 				askHere(question{text: cmd.question, forced: true})

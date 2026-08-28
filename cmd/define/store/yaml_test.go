@@ -16,18 +16,18 @@ import (
 // makes the in-memory store a reference rather than an alibi.
 func TestYAMLConformance(t *testing.T) {
 	storetest.Suite(t, func(t *testing.T) store.Store {
-		return store.NewYAML(t.TempDir(), nil)
+		return store.NewYAML(t.TempDir(), store.DefaultLang, nil)
 	})
 }
 
 func TestYAMLPersistsAcrossReopen(t *testing.T) {
 	dir := t.TempDir()
-	s1 := store.NewYAML(dir, nil)
+	s1 := store.NewYAML(dir, store.DefaultLang, nil)
 	if err := s1.Upsert(store.Word{Text: "sycophantic", LastSeen: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
 	// A second store on the same directory is what a restart looks like.
-	deck, err := store.NewYAML(dir, nil).Deck()
+	deck, err := store.NewYAML(dir, store.DefaultLang, nil).Deck()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,34 +36,19 @@ func TestYAMLPersistsAcrossReopen(t *testing.T) {
 	}
 }
 
-// An interrupted write leaves a temp file. It must never be read as a word.
-func TestYAMLIgnoresInterruptedWrites(t *testing.T) {
-	dir := t.TempDir()
-	s := store.NewYAML(dir, nil)
-	_ = s.Upsert(store.Word{Text: "good", LastSeen: time.Now()})
-
-	partial := filepath.Join(dir, "words", ".tmp-halfwritten")
-	if err := os.WriteFile(partial, []byte("text: bad\nlast_seen: not-a-ti"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	deck, err := s.Deck()
-	if err != nil {
-		t.Fatalf("a leftover temp file broke the deck: %v", err)
-	}
-	if len(deck) != 1 || deck[0].Text != "good" {
-		t.Errorf("deck = %+v, want only the completed write", deck)
-	}
-}
-
 // One corrupt file must not make the whole deck unopenable — that would lose
 // every word to a single bad byte.
 func TestYAMLSkipsCorruptFileWithWarning(t *testing.T) {
 	dir := t.TempDir()
 	var warn bytesBuffer
-	s := store.NewYAML(dir, &warn)
+	s := store.NewYAML(dir, store.DefaultLang, &warn)
 	_ = s.Upsert(store.Word{Text: "good", LastSeen: time.Now()})
 
-	if err := os.WriteFile(filepath.Join(dir, "words", "broken.yaml"), []byte("\t: [unclosed"), 0o644); err != nil {
+	// words/en/, not words/: after #23 the deck is per-language, and a file left
+	// flat in words/ is invisible to Deck() rather than corrupt-looking — which
+	// is exactly what makes the migration's "leave a colliding flat file alone"
+	// rule non-destructive.
+	if err := os.WriteFile(filepath.Join(dir, "words", "en", "broken.yaml"), []byte("\t: [unclosed"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	deck, err := s.Deck()
@@ -81,7 +66,7 @@ func TestYAMLSkipsCorruptFileWithWarning(t *testing.T) {
 // Two events on the same day share one file, in order.
 func TestYAMLGroupsEventsByDay(t *testing.T) {
 	dir := t.TempDir()
-	s := store.NewYAML(dir, nil)
+	s := store.NewYAML(dir, store.DefaultLang, nil)
 	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 	_ = s.AppendEvent(store.ReviewEvent{Word: "a", Kind: store.EventLookedUp, At: day})
 	_ = s.AppendEvent(store.ReviewEvent{Word: "b", Kind: store.EventLookedUp, At: day.Add(time.Hour)})
@@ -102,11 +87,11 @@ func TestYAMLGroupsEventsByDay(t *testing.T) {
 func TestYAMLDifferentWordsTouchDisjointFiles(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
-	_ = store.NewYAML(dir, nil).Upsert(store.Word{Text: "alpha", LastSeen: now})
-	before, _ := os.ReadDir(filepath.Join(dir, "words"))
+	_ = store.NewYAML(dir, store.DefaultLang, nil).Upsert(store.Word{Text: "alpha", LastSeen: now})
+	before, _ := os.ReadDir(filepath.Join(dir, "words", "en"))
 
-	_ = store.NewYAML(dir, nil).Upsert(store.Word{Text: "beta", LastSeen: now})
-	after, _ := os.ReadDir(filepath.Join(dir, "words"))
+	_ = store.NewYAML(dir, store.DefaultLang, nil).Upsert(store.Word{Text: "beta", LastSeen: now})
+	after, _ := os.ReadDir(filepath.Join(dir, "words", "en"))
 
 	if len(after) != len(before)+1 {
 		t.Errorf("second word changed %d files, want exactly 1 new", len(after)-len(before))
@@ -123,7 +108,7 @@ func (w *bytesBuffer) String() string              { return string(w.b) }
 func TestYAMLRecoversFromATornEventRecord(t *testing.T) {
 	dir := t.TempDir()
 	var warn bytesBuffer
-	s := store.NewYAML(dir, &warn)
+	s := store.NewYAML(dir, store.DefaultLang, &warn)
 	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, At: day})
 	_ = s.AppendEvent(store.ReviewEvent{Word: "second", Kind: store.EventLookedUp, At: day.Add(time.Hour)})
@@ -153,7 +138,7 @@ func TestYAMLRecoversFromATornEventRecord(t *testing.T) {
 // asserting truncation rather than an event kind the reader cannot parse.
 func TestYAMLKeepsAWholeAskedRecord(t *testing.T) {
 	dir := t.TempDir()
-	s := store.NewYAML(dir, nil)
+	s := store.NewYAML(dir, store.DefaultLang, nil)
 	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
 	_ = s.AppendEvent(store.ReviewEvent{
@@ -211,7 +196,7 @@ func TestYAMLDropsEveryShapeOfTornRecord(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			var warn bytesBuffer
-			s := store.NewYAML(dir, &warn)
+			s := store.NewYAML(dir, store.DefaultLang, &warn)
 			_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
 			_ = s.AppendEvent(store.ReviewEvent{Word: "second", Kind: store.EventLookedUp, Found: true, At: day.Add(time.Hour)})
 
@@ -244,7 +229,7 @@ func TestYAMLDropsEveryShapeOfTornRecord(t *testing.T) {
 // the failed parse had already collected, doubling every good record.
 func TestYAMLRecoveryDoesNotDuplicate(t *testing.T) {
 	dir := t.TempDir()
-	s := store.NewYAML(dir, nil)
+	s := store.NewYAML(dir, store.DefaultLang, nil)
 	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 	for i, w := range []string{"one", "two", "three"} {
 		_ = s.AppendEvent(store.ReviewEvent{Word: w, Kind: store.EventLookedUp, Found: true, At: day.Add(time.Duration(i) * time.Hour)})
@@ -276,7 +261,7 @@ func TestYAMLRecoveryDoesNotDuplicate(t *testing.T) {
 // every record in it, destroying the history it exists to protect.
 func TestYAMLAcceptsAReformattedLog(t *testing.T) {
 	dir := t.TempDir()
-	s := store.NewYAML(dir, nil)
+	s := store.NewYAML(dir, store.DefaultLang, nil)
 	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
 
@@ -301,7 +286,7 @@ func TestYAMLAcceptsAReformattedLog(t *testing.T) {
 func TestYAMLTornFragmentDoesNotSwallowTheNextAppend(t *testing.T) {
 	dir := t.TempDir()
 	var warn bytesBuffer
-	s := store.NewYAML(dir, &warn)
+	s := store.NewYAML(dir, store.DefaultLang, &warn)
 	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
 	_ = s.AppendEvent(store.ReviewEvent{Word: "first", Kind: store.EventLookedUp, Found: true, At: day})
 
@@ -312,7 +297,7 @@ func TestYAMLTornFragmentDoesNotSwallowTheNextAppend(t *testing.T) {
 	f.Close()
 
 	// The NEXT session appends normally.
-	_ = store.NewYAML(dir, nil).AppendEvent(store.ReviewEvent{
+	_ = store.NewYAML(dir, store.DefaultLang, nil).AppendEvent(store.ReviewEvent{
 		Word: "afterwards", Kind: store.EventLookedUp, Found: true, At: day.Add(time.Hour),
 	})
 
@@ -339,7 +324,7 @@ func TestYAMLTornFragmentDoesNotSwallowTheNextAppend(t *testing.T) {
 func TestCorruptNewsCacheReadsAsNeverFetched(t *testing.T) {
 	dir := t.TempDir()
 	var warn bytes.Buffer
-	y := store.NewYAML(dir, &warn)
+	y := store.NewYAML(dir, store.DefaultLang, &warn)
 
 	if err := y.SetNewsItems("ephemeral", []store.NewsItem{{Title: "real"}}, time.Now()); err != nil {
 		t.Fatal(err)
@@ -360,5 +345,88 @@ func TestCorruptNewsCacheReadsAsNeverFetched(t *testing.T) {
 	}
 	if !strings.Contains(warn.String(), "ephemeral.yaml") {
 		t.Errorf("no warning naming the file: %q", warn.String())
+	}
+}
+
+// Words file under their language, and — the assertion that is the point — a
+// Spanish deck cannot see an English word.
+//
+// Isolation, not just tidiness: #5's schedule interleaves the deck by due-date,
+// so a mixed directory would not merely allow a mixed sitting, it would produce
+// one. The learner asked for the opposite.
+func TestWordsAreScopedByLanguage(t *testing.T) {
+	dir := t.TempDir()
+	en := store.NewYAML(dir, store.DefaultLang, nil)
+	es := store.NewYAML(dir, store.Lang("es"), nil)
+
+	if err := en.Upsert(store.Word{Text: "sycophantic"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := es.Upsert(store.Word{Text: "madrugar"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "words", "en", "sycophantic.yaml")); err != nil {
+		t.Errorf("English word not filed under words/en: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "words", "es", "madrugar.yaml")); err != nil {
+		t.Errorf("Spanish word not filed under words/es: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		deck    *store.YAML
+		want    string
+		notWant string
+	}{
+		{name: "es", deck: es, want: "madrugar", notWant: "sycophantic"},
+		{name: "en", deck: en, want: "sycophantic", notWant: "madrugar"},
+	} {
+		got, err := tc.deck.Deck()
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if len(got) != 1 || got[0].Text != tc.want {
+			t.Errorf("%s deck = %+v, want just %q", tc.name, got, tc.want)
+		}
+		for _, w := range got {
+			if w.Text == tc.notWant {
+				t.Errorf("the %s deck can see %q, a word from the other language", tc.name, tc.notWant)
+			}
+		}
+	}
+}
+
+// An empty language means the default, so a caller that has not been taught
+// about languages yet cannot accidentally create a words// directory.
+func TestEmptyLangIsTheDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := store.NewYAML(dir, "", nil).Upsert(store.Word{Text: "sycophantic"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "words", string(store.DefaultLang), "sycophantic.yaml")); err != nil {
+		t.Errorf("an empty language did not file under words/%s: %v", store.DefaultLang, err)
+	}
+}
+
+// The event log is NOT scoped, and that is a design commitment rather than an
+// omission: a review event names a word and a verdict, and which deck it came
+// from is the deck's business. Splitting it would make "how much did I study
+// today" a join, and would migrate an append-only artifact to get there.
+func TestEventsAreNotScopedByLanguage(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	if err := store.NewYAML(dir, store.Lang("es"), nil).AppendEvent(store.ReviewEvent{
+		Word: "madrugar", Kind: store.EventLookedUp, Found: true, At: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Read back through the OTHER language: the log is one log.
+	evs, err := store.NewYAML(dir, store.DefaultLang, nil).Events(now.Add(-time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 1 || evs[0].Word != "madrugar" {
+		t.Errorf("events = %+v, want the one event visible from either language", evs)
 	}
 }

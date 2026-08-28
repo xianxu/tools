@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Capture real NOAD output for the parser fixture corpus.
+# Capture real dictionary output for the parser fixture corpus.
+#
+# Per-language since #23: entries/<lang>/, and every capture goes through the
+# SAME curated identifiers production selects. Capturing English through the NULL
+# search instead would make the capture path and the production path agree only
+# by coincidence -- they did, on this host, until the active set differed and
+# TestFixturesMatchLiveDictionary went red (ARCH-MOCK: the fake must model what
+# the seam actually does, not what a neighbouring seam does).
 #
 # MUST run OUTSIDE a sandbox -- DCSCopyTextDefinition needs real access to
 # /System/Library/AssetsV2 and silently returns nothing without it. That silence
@@ -9,7 +16,7 @@
 # Re-run after a macOS upgrade; dict_conformance_test.go detects the drift.
 set -euo pipefail
 cd "$(dirname "$0")"
-mkdir -p entries
+mkdir -p entries/en entries/es
 
 # The corpus is chosen for structural variety, not vocabulary:
 #   bank     homograph number, no syllabification, only sense 1 reachable;
@@ -52,24 +59,65 @@ words=(
     "hot dog" "a priori"
     # concrete has NO pronunciation of its own but DERIVATIVES has one.
     concrete
+    # mesa is here for #23 rather than for the parser: it is the homograph that
+    # makes the language mode visible. Through the English dictionary it is "an
+    # isolated flat-topped hill"; through the Larousse below it is furniture.
+    # Captured in BOTH languages, and the pair is the assertion.
+    mesa
 )
+# Spanish, captured through the Larousse Diccionario General specifically.
+#
+# The identifier, never a name match: DCSCopyAvailableDictionaries returns a SET
+# whose iteration order is unspecified, so a substring like "Espa" matches
+# Larousse on one run and the BILINGUAL Gran Diccionario Oxford on the next.
+#
+# Chosen for what they prove rather than for vocabulary:
+#   mesa      the headline case -- an English homograph. Through NULL this is
+#             "an isolated flat-topped hill"; through Larousse it is furniture.
+#   bonito    same shape, and carries a feminine-form gloss
+#   once      "11", not "on one occasion"
+#   real      an adjective, not the English adverb sense
+#   madrugar  a verb with a usage example, which is what monolingual buys
+es_words=(mesa bonito once real madrugar)
+ES_DICT=com.apple.dictionary.es.DGLEV
+# English is two books, in the same preference order chooseDictionary uses: NOAD
+# answers ordinary words, Apple Dictionary answers iPhone/iPad/MacBook.
+EN_DICTS=(com.apple.dictionary.NOAD com.apple.dictionary.AppleDictionary)
+
 MIN_BYTES=40
 
-for w in "${words[@]}"; do
-    out="entries/$w.txt"
-    if ! python3 capture.py "$w" > "$out.tmp"; then
+capture() { # <word> <outdir> <dictionary-id>...
+    local w="$1" dir="$2"; shift 2
+    local out="$dir/$w.txt" id
+    # The curated list in order, first hit wins -- the same walk
+    # selectedDictionary.Lookup performs.
+    : > "$out.tmp"
+    for id in "$@"; do
+        if python3 capture.py "$w" "$id" > "$out.tmp" 2>/dev/null; then
+            break
+        fi
+    done
+    if [ ! -s "$out.tmp" ]; then
         rm -f "$out.tmp"
         echo "capture failed: $w" >&2
         exit 1
     fi
+    local n
     n=$(wc -c < "$out.tmp" | tr -d ' ')
     if [ "$n" -lt "$MIN_BYTES" ]; then
         rm -f "$out.tmp"
-        echo "capture too short for '$w' ($n bytes) -- sandboxed, or NOAD is absent." >&2
+        echo "capture too short for '$w' ($n bytes) -- sandboxed, or the dictionary is absent." >&2
         exit 1
     fi
     mv "$out.tmp" "$out"
+}
+
+for w in "${words[@]}"; do
+    capture "$w" entries/en "${EN_DICTS[@]}"
+done
+for w in "${es_words[@]}"; do
+    capture "$w" entries/es "$ES_DICT"
 done
 
-echo "captured ${#words[@]} entries:"
-wc -c entries/*.txt
+echo "captured ${#words[@]} English and ${#es_words[@]} Spanish entries:"
+wc -c entries/en/*.txt entries/es/*.txt

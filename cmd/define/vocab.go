@@ -157,11 +157,16 @@ func (v *storeVocabulary) warnf(format string, args ...any) {
 	warnTo(v.warn, format, args...)
 }
 
-// warnTo is the one place the "define: " prefix and the trailing newline are
-// written. Three seams warn — history, capture and this one — and each keeps its
-// OWN policy (capture warns once behind a mutex, history appends "history is
-// session-only"); what they share is the shape of the line, and that was written
-// out three times.
+// warnTo is the one place package main writes the "define: " prefix and the
+// trailing newline. Three seams warn — history, capture and this one — and each
+// keeps its OWN policy (capture warns once behind a mutex, history appends
+// "history is session-only"); what they share is the shape of the line, and that
+// was written out three times.
+//
+// Package store keeps its own copy (YAML.warnf), deliberately: it cannot import
+// package main, and a shared formatter would be a dependency in the wrong
+// direction for one format string. "The one place" is scoped to this package,
+// which is what the claim can honestly cover.
 func warnTo(w io.Writer, format string, args ...any) {
 	if w == nil {
 		return

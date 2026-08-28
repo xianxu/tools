@@ -290,7 +290,7 @@ func TestEveryEntryPathHighlightsDefinitions(t *testing.T) {
 // A guard whose effect is absence needs a counting double, not an output check.
 func TestNoColourReadsNoDeck(t *testing.T) {
 	st := &countingDeck{Store: store.NewMem()}
-	d := deps{vocab: newStoreVocabulary(st, nil)}
+	d := deps{langDeps: langDeps{vocab: newStoreVocabulary(st, nil)}}
 
 	if got := vocabularyFor(d, options{color: false}); got != nil {
 		t.Error("colour off returned a vocabulary; nothing can render it")
@@ -391,5 +391,107 @@ func TestHistoryIsSafeUnderConcurrency(t *testing.T) {
 
 	if got := h.Prefix("obsequious"); len(got) == 0 {
 		t.Error("the loaded entry did not survive concurrent access")
+	}
+}
+
+// The same wiring assertion as above, AFTER a mid-session /lang — plus the half
+// that a deps swap cannot reach.
+//
+// runEditor resolves the highlight set into a LOCAL before its loop starts, so
+// reassigning d alone would leave the editor highlighting the previous
+// language's words while every other path had moved on. sessionSetLang takes
+// &voc for exactly that reason, and the `notWant` assertions below are what
+// redden if it stops.
+func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
+	dir := t.TempDir()
+	for _, seed := range []struct {
+		lang store.Lang
+		word string
+	}{{"en", "sycophantic"}, {"es", "madrugar"}} {
+		if err := store.NewYAML(dir, seed.lang, nil).Upsert(store.Word{Text: seed.word}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(dir)
+
+	var warn bytes.Buffer
+	opt := options{color: true}
+	d := deps{newStore: openStore}.withStore(opt, &warn)
+	voc := vocabularyFor(d, opt)
+
+	if d.lang != "en" {
+		t.Fatalf("started in %q, want the default", d.lang)
+	}
+	if !voc.Has(store.Key("sycophantic")) || voc.Has(store.Key("madrugar")) {
+		t.Fatal("the English session does not start from the English deck")
+	}
+
+	beforeHistory := d.history
+	setLang := sessionSetLang(&d, &opt, d.persistLang, &voc, &warn)
+	if setLang == nil {
+		t.Fatal("no setLang in a directory that has a store")
+	}
+	if err := setLang("es"); err != nil {
+		t.Fatal(err)
+	}
+
+	if d.lang != "es" {
+		t.Errorf("d.lang = %q after the switch", d.lang)
+	}
+	// The editor's cached set followed the switch.
+	if !voc.Has(store.Key("madrugar")) {
+		t.Error("the editor's highlight set did not follow /lang: it cannot see the Spanish deck")
+	}
+	if voc.Has(store.Key("sycophantic")) {
+		t.Error("the editor's highlight set is still the English one after /lang es")
+	}
+	// And the capturer and the renderer are still ONE set — the original
+	// invariant, which a rebuild is exactly the thing that could break.
+	d.capture.Capture("bonito", true, opt)
+	if !d.vocab.Has(store.Key("bonito")) {
+		t.Error("after /lang, the capturer and the renderer hold different sets")
+	}
+	if !voc.Has(store.Key("bonito")) {
+		t.Error("after /lang, the EDITOR holds a third set that captures do not reach")
+	}
+	// D6's news gate must follow the switch too. It did not: newsFeedFor was
+	// applied only at the boundary, so a session that started in English kept the
+	// English feed after /lang es, and one that started in Spanish kept news==nil
+	// forever after /lang en. That is why langDeps is a STRUCT taken whole from
+	// one builder rather than a list of members in a comment.
+	if bs, ok := d.usage.(*bothSources); !ok || bs.news != nil {
+		t.Errorf("after /lang es the session still holds the English news feed (%T); the feed "+
+			"is English by construction and must not be consulted", d.usage)
+	}
+
+	// history keeps its IDENTITY across the switch, which applyLang argues for in
+	// a comment and this makes structural: events/ is not language-scoped, and
+	// rebuilding it would leave the raw editor holding an orphaned, already-
+	// Load()ed History while everything else read a fresh empty one.
+	if d.history != beforeHistory {
+		t.Error("the switch rebuilt history; events/ is not language-scoped and the editor " +
+			"already holds the loaded one")
+	}
+	// The switch is durable, not just live.
+	if got := store.ReadLang(dir); got != "es" {
+		t.Errorf("the directory says %q; /lang must persist", got)
+	}
+
+	// And back, because the reverse loses the feed silently rather than gaining
+	// a wrong one — the harder direction to notice.
+	if err := setLang(store.DefaultLang); err != nil {
+		t.Fatal(err)
+	}
+	if bs, ok := d.usage.(*bothSources); !ok || bs.news == nil {
+		t.Errorf("switching back to English did not restore the news feed (%T)", d.usage)
+	}
+}
+
+// No directory, no setLang — which is what makes /lang report honestly instead
+// of accepting a switch it cannot keep.
+func TestSessionSetLangIsNilWithNowhereToPersist(t *testing.T) {
+	d := deps{}
+	if got := sessionSetLang(&d, &options{}, nil, nil, nil); got != nil {
+		t.Error("built a session switch with no directory to persist to")
 	}
 }

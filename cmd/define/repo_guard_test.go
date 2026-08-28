@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -206,11 +207,25 @@ func TestNoTrackedRuntimeState(t *testing.T) {
 			continue
 		}
 		seen++
-		for _, p := range strings.Split(filepath.ToSlash(f), "/") {
+		segs := strings.Split(filepath.ToSlash(f), "/")
+		for _, p := range segs {
 			if isRuntimeDir(p) {
 				t.Errorf("runtime deck state is tracked: %s", f)
 				break
 			}
+		}
+		// A runtime FILE, by basename. RuntimeDirs could only ever see a
+		// directory, which is how user-model.md — inferred claims about the
+		// learner, written into the working directory — reached none of the three
+		// places RuntimeDirs was built to reach.
+		//
+		// This also makes the basename RESERVED, which is the point: .gitignore
+		// hides these names un-anchored, so a tracked file that shares one is
+		// silently un-addable after any git rm. testdata/golden/user-model.md was
+		// exactly that, and is now user-model.golden.md.
+		if isRuntimeFile(segs[len(segs)-1]) {
+			t.Errorf("a runtime artifact's basename is tracked: %s — .gitignore hides that name "+
+				"un-anchored, so this file is un-addable after a git rm. Rename it.", f)
 		}
 	}
 	if seen == 0 {
@@ -249,12 +264,17 @@ func TestNoRuntimeStateInHistory(t *testing.T) {
 		t.Fatal("rev-list returned no path-bearing objects; this test would pass vacuously")
 	}
 	for _, path := range paths {
-		for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
+		segs := strings.Split(filepath.ToSlash(path), "/")
+		for _, seg := range segs {
 			if isRuntimeDir(seg) {
 				t.Errorf("runtime deck state is reachable from HEAD: %s — rewrite the commit "+
 					"that adds it; removing the file in a later commit does not remove the cost", path)
 				break
 			}
+		}
+		if isRuntimeFile(segs[len(segs)-1]) && !legacyRuntimeFilePaths[filepath.ToSlash(path)] {
+			t.Errorf("a runtime artifact's basename is reachable from HEAD: %s — rewrite the "+
+				"commit that adds it; removing the file in a later commit does not remove the cost", path)
 		}
 	}
 }
@@ -271,6 +291,78 @@ func isRuntimeDir(seg string) bool {
 		}
 	}
 	return false
+}
+
+// isRuntimeFile is the same question for a FILE, asked of the same store.
+//
+// By BASENAME, not by path segment: these are files, and a directory that
+// happens to share the name is a different thing. That asymmetry is also why
+// the persisted language is lang.txt rather than lang — an un-anchored
+// `lang` in .gitignore would hide any DIRECTORY of that name too, which this
+// guard structurally cannot see.
+//
+// filepath.Match because RuntimeFiles holds gitignore-style PATTERNS: two of its
+// entries are families (per-language models, atomic-write shadows) rather than
+// single names. Match's `?` and `*` agree with gitignore's for a single path
+// element, which is all a basename is.
+func isRuntimeFile(base string) bool {
+	for _, pat := range store.RuntimeFiles {
+		if ok, err := filepath.Match(pat, base); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+// legacyRuntimeFilePaths is a RATCHET, not an exemption.
+//
+// The reserved-basename rule arrived with #23; this path predates it. The rename
+// to user-model.golden.md clears the INDEX, but nothing clears history short of
+// rewriting it, and these two blobs do not justify that: 995 bytes each of
+// renderUserModel(sampleLearnerModel(), sampleMeta()) output — synthetic sample
+// data, no learner content, which is the cost this guard exists to prevent.
+//
+// Pinned as an exact set rather than described in a comment, per the repo's own
+// rule: a comment drifts, while an exact set fails the moment a SECOND path
+// appears and can only ever be shortened. If history is ever rewritten for
+// another reason, this map goes with it.
+var legacyRuntimeFilePaths = map[string]bool{
+	"cmd/define/testdata/golden/user-model.md": true,
+}
+
+// The .gitignore half, mirroring TestGitignoreCoversRuntimeDirs — including its
+// anchoring rule, which is the part that has cost this repo review rounds.
+//
+// RuntimeDirs exists so a new runtime artifact reaches .gitignore, the index
+// guard and the history guard together, and it covers directories only. So
+// user-model.md slipped through all three: `git check-ignore -v user-model.md`
+// matched nothing, while --reflect writes it into the CURRENT directory with
+// inferred claims about the learner in it. Nothing leaked, but #23's language
+// setting would have been the second instance — which is why this is a list and
+// not two more lines in .gitignore.
+func TestGitignoreCoversRuntimeFiles(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoRoot(t), ".gitignore"))
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	lines := map[string]bool{}
+	for _, l := range strings.Split(string(b), "\n") {
+		lines[strings.TrimSpace(l)] = true
+	}
+
+	if len(store.RuntimeFiles) == 0 {
+		t.Fatal("store.RuntimeFiles is empty; this test would pass vacuously")
+	}
+	for _, f := range store.RuntimeFiles {
+		if !lines[f] {
+			t.Errorf(".gitignore has no un-anchored %q entry — define writes it into the "+
+				"working directory and a git add -A would commit it", f)
+		}
+		if lines["/"+f] {
+			t.Errorf(".gitignore anchors %q to the repo root; go test runs in the package "+
+				"directory, where an anchored pattern does not match", f)
+		}
+	}
 }
 
 // The loop the compiler cannot close: .gitignore is not Go, so nothing makes it
@@ -297,5 +389,317 @@ func TestGitignoreCoversRuntimeDirs(t *testing.T) {
 		if lines["/"+d+"/"] {
 			t.Errorf(".gitignore anchors %q to the repo root; go test runs in the package directory, so that pattern misses cmd/define/%s/", d, d)
 		}
+	}
+}
+
+// A runtime artifact's filename is spelled in exactly ONE place in Go source.
+//
+// This is the mechanical form of a rule three boundary-review findings kept
+// re-stating as prose: no output line, comment, or doc may spell a name the code
+// owns — name the artifact ("the learner model") or derive it from its producer.
+// The cost of the loose version was not cosmetic. `--reflect` printed "wrote
+// user-model.md" while writing user-model.<lang>.md, and the README tells the
+// learner to hand-edit that file's ## Corrections — so following the tool's own
+// output put their corrections in a file UserModel() never reads.
+//
+// A ratchet, in this repo's established shape: it fails the moment a SECOND
+// spelling appears, and it can only ever be tightened. Test files are exempt —
+// a fixture or an assertion naming the concrete artifact is the point of the
+// test, and store/lang_test.go derives the ones that matter anyway.
+func TestRuntimeArtifactNamesAreSpelledOnceInSource(t *testing.T) {
+	// Where the literal is DELIBERATE, with the reason. Everything else must
+	// reach the name through store.UserModelName or store.RuntimeFiles.
+	allowed := map[string]int{
+		// The two consts that BUILD every learner-model name. Nothing else in
+		// non-test Go may spell one — not even the doc comments here, which were
+		// rewritten to describe the names rather than repeat them.
+		"cmd/define/store/yaml.go": 2,
+	}
+
+	root := repoRoot(t)
+	seen := 0
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z", "*.go")), "\x00") {
+		if f == "" || strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		seen++
+		// "user-model." with the dot: a FILENAME. usermodel.go writes
+		// `type: user-model` as a frontmatter field value, which is the
+		// artifact's type rather than its name and is not what drifts.
+		n := strings.Count(string(b), "user-model.")
+		if n > allowed[f] {
+			t.Errorf("%s spells a runtime artifact's name %d time(s), allowed %d — name the "+
+				"artifact (\"the learner model\") or derive it from store.UserModelName. "+
+				"A second spelling is a second source, and the two drift.", f, n, allowed[f])
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no Go source was examined; this test would pass vacuously")
+	}
+}
+
+// The same rule, over the PROSE that is read as current truth.
+//
+// The Go ratchet above stops at `git ls-files '*.go'`, and the artifact-name
+// rule was written for "no output line, comment, README line, atlas line or plan
+// line". The half it did not reach was swept by hand and, predictably, left a
+// live FALSE claim: the project file still said "a single user-model.md" after
+// the model became one per language. Sixth finding in that family, and the
+// reason it is mechanical now.
+//
+// SCOPE, which is the interesting decision. This binds the three artifact kinds
+// a reader takes as describing the tool AS IT IS — README, atlas/ and the
+// project portfolio view. It deliberately does NOT bind issues, plans, lessons
+// or workshop/history/: those are dated RECORDS, and a Spec or a Log or a
+// ## Revisions entry naming what was true when it was written is correct.
+// Rewriting them to match today is the actual lie, which is why the rule's
+// enforcement stops here rather than everywhere the string appears.
+//
+// A doc that spells a stale name is not a style problem: a learner who
+// hand-edits the file the docs name loses their ## Corrections.
+func TestProseDoesNotSpellStaleRuntimeArtifactNames(t *testing.T) {
+	root := repoRoot(t)
+
+	// Where naming the concrete file is deliberate, with the count. Layout
+	// blocks, the migration's before/after, and repo-guards.md — whose SUBJECT
+	// is this very naming rule, so it cannot state it without naming names.
+	allowed := map[string]int{
+		"README.md":            3,
+		"atlas/define.md":      2,
+		"atlas/repo-guards.md": 6,
+	}
+	binds := func(p string) bool {
+		return p == "README.md" ||
+			strings.HasPrefix(p, "atlas/") ||
+			strings.HasPrefix(p, "workshop/projects/")
+	}
+
+	seen := 0
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z", "*.md")), "\x00") {
+		p := filepath.ToSlash(f)
+		if p == "" || !binds(p) || strings.HasPrefix(p, "workshop/projects/roadmap/") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		seen++
+		text := currentTruthOnly(string(b))
+		if n := strings.Count(text, "user-model."); n > allowed[p] {
+			t.Errorf("%s spells a runtime artifact's name %d time(s), allowed %d — name the "+
+				"artifact (\"the learner model\") unless the line is a current layout, the "+
+				"migration's own subject, or this rule's own documentation. A stale name here "+
+				"sends a learner's ## Corrections to a file nothing reads.", p, n, allowed[p])
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no current-truth markdown was examined; this test would pass vacuously")
+	}
+}
+
+// currentTruthOnly strips the parts of a markdown artifact that are RECORDS.
+//
+// A record is allowed — required, even — to name what was true when it was
+// written; revising it to match today is the lie. Two shapes qualify, and both
+// are self-identifying rather than listed by name, so a new one is covered
+// without anyone remembering to add it:
+//
+//   - everything from a "## Revisions" or "## Log" heading onward;
+//   - any "### " section carrying a "**closed:**" line, which is how a project
+//     file marks a milestone detail block as finished.
+func currentTruthOnly(text string) string {
+	for _, marker := range []string{"\n## Revisions", "\n## Log"} {
+		if i := strings.Index(text, marker); i >= 0 {
+			text = text[:i]
+		}
+	}
+	var kept []string
+	for _, sec := range strings.Split(text, "\n### ") {
+		if strings.Contains(sec, "**closed:**") {
+			continue
+		}
+		kept = append(kept, sec)
+	}
+	return strings.Join(kept, "\n### ")
+}
+
+// A plan's Core-concepts table may not name an entity the tree does not have.
+//
+// Fourth recurrence of the symbol half of the artifact-name rule: round 1 named
+// `deckDeps`, BR-6 named `MigrateFlatDeck`, and the close review found
+// `dictChoice` and `dcsDictionaries` still listed. Every previous fix was a
+// hand-sweep of the instances, so the family kept coming back — the ratchets
+// this range added count filenames only, and a symbol is the other half of the
+// rule they were written for.
+//
+// The table is a gift for this: it already states, in machine-readable form,
+// "this identifier lives at this path". Making the plan a CONSUMER of the tree
+// is the same move the README/prompt guard makes — a grep cannot fail a build,
+// this can.
+//
+// Deliberately narrow. It checks the Name and "Lives in" cells of Core-concepts
+// tables in ACTIVE plans, not prose, not history, and not rows whose file does
+// not exist yet — a plan is written before the code, so an unbuilt row is a
+// plan, while a WRONG row is a lie.
+func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
+	root := repoRoot(t)
+	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) == 0 {
+		// conformance:inapplicable — every plan is archived to workshop/history/,
+		// which is a legitimate state between issues rather than a missing file.
+		t.Skip("no active plans")
+	}
+
+	// `| `A` / `B` | `path` | ...` — the shape the plan template produces. A row
+	// often names SEVERAL entities in its first cell; a first version captured
+	// only the first, leaving 7 of 16 symbols unchecked in this repo's own plans.
+	row := regexp.MustCompile("^\\|([^|]*)\\|\\s*`([^`]+\\.go)`")
+	nameCell := regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_.]*)`")
+	checked := 0
+	for _, plan := range plans {
+		b, err := os.ReadFile(plan)
+		if err != nil {
+			t.Fatalf("reading %s: %v", plan, err)
+		}
+		body := currentTruthOnly(string(b))
+		for _, line := range strings.Split(body, "\n") {
+			m := row.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			path := m[2]
+			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
+				checkPlanName(t, root, filepath.Base(plan), nm[1], path, &checked)
+			}
+		}
+	}
+	if checked == 0 {
+		// conformance:inapplicable — a plan legitimately precedes its code, so a
+		// set of plans whose files do not exist yet is a design in progress, not
+		// drift. Rows become checkable as their files land.
+		t.Skip("no Core-concepts rows pointed at existing files")
+	}
+}
+
+// checkPlanName asserts one Name cell resolves to a declaration at the stated path.
+func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
+	t.Helper()
+	{
+		// A plan names entities as a READER sees them — store.RuntimeFiles —
+		// while the file that declares them is inside that package and says
+		// RuntimeFiles. Strip a package qualifier that matches the file's own
+		// directory; anything else stays qualified and will not match, which
+		// is correct.
+		if pkg, bare, ok := strings.Cut(name, "."); ok && filepath.Base(filepath.Dir(path)) == pkg {
+			name = bare
+		}
+		src, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			// The file does not exist yet: a plan legitimately precedes its
+			// code. Only a row pointing at a REAL file makes a checkable claim.
+			return
+		}
+		*checked++
+		// Declared, in any of the forms Go declares things.
+		declared := regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
+			regexp.QuoteMeta(name) + `\b`)
+		assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
+		// DECLARED or ASSIGNED only. A first version also accepted any
+		// occurrence anywhere in the file, which admitted COMMENTS — and a
+		// stale `newDeck` row stayed green solely because one comment still
+		// mentioned the old name. A guard that a comment can satisfy is not
+		// checking the tree.
+		if !declared.Match(src) && !assigned.Match(src) {
+			t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
+				"artifact a reader trusts to describe the design, so a stale entity name "+
+				"there is worse than none. Update the row when the code renames.",
+				plan, name, path)
+		}
+	}
+}
+
+// retiredSymbolNames maps a name the tree no longer declares to what replaced
+// it. A rename adds a row here; the guard below then fails if the old name
+// survives anywhere a reader would take as current.
+//
+// This is the SYMBOL half of the artifact-name rule, which recurred nine times
+// while only the filename half was mechanical. The plan-table guard closed the
+// tables; comments and prose stayed hand-swept, and the very commit that added
+// that guard left three `newDeck` comments behind.
+//
+// A rename cannot be detected automatically — only the person doing it knows the
+// old name — so this is the one place the rule needs a human to write something
+// down. Everything after that is mechanical, and the list can only shrink as
+// history archives.
+var retiredSymbolNames = map[string]string{
+	"deckDeps":        "newLangDeps",
+	"newDeck":         "newLangDeps",
+	"MigrateFlatDeck": "MigrateToLanguages",
+	"dictChoice":      "dictMeta",
+	"dcsDictionaries": "installedDictionaries",
+}
+
+// No current-truth artifact names a symbol the tree has retired.
+//
+// Scope matches TestProseDoesNotSpellStaleRuntimeArtifactNames plus non-test Go:
+// docs that describe the tool as it IS, and the code itself. Records — issues,
+// history, ## Revisions, ## Log — legitimately name what was true when written.
+// Test files are exempt because a test-local variable may reuse a plain name for
+// unrelated reasons.
+func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
+	root := repoRoot(t)
+	// This file must name them to list them.
+	self := "cmd/define/repo_guard_test.go"
+
+	binds := func(p string) bool {
+		switch {
+		case strings.HasSuffix(p, "_test.go"):
+			return false
+		case strings.HasSuffix(p, ".go"):
+			return true
+		case p == "README.md", strings.HasPrefix(p, "atlas/"):
+			return true
+		case strings.HasPrefix(p, "workshop/plans/") && strings.HasSuffix(p, "-plan.md"):
+			return true
+		}
+		return false
+	}
+
+	seen := 0
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z")), "\x00") {
+		p := filepath.ToSlash(f)
+		if p == "" || p == self || !binds(p) {
+			continue
+		}
+		// git ls-files lists submodule gitlinks too, which are directories here.
+		if info, err := os.Stat(filepath.Join(root, f)); err != nil || info.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		seen++
+		text := currentTruthOnly(string(b))
+		for old, now := range retiredSymbolNames {
+			// Word-boundaried: migrateFlatDeck must not match MigrateFlatDeck,
+			// and a longer identifier containing the old name is not the old name.
+			if regexp.MustCompile(`\b` + regexp.QuoteMeta(old) + `\b`).MatchString(text) {
+				t.Errorf("%s names the retired symbol %q; the tree declares %q. A rename "+
+					"sweeps every restatement in the SAME commit — nine findings in this "+
+					"family say the hand-sweep does not hold.", p, old, now)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no current-truth artifacts were examined; this test would pass vacuously")
 	}
 }

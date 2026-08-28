@@ -301,7 +301,10 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropCl
 	return m, dropped
 }
 
-// runReflect folds the directory into user-model.md.
+// runReflect folds the directory into the learner model.
+//
+// Per-language since #23: it reads the language-scoped deck, so writing one
+// shared file made a Spanish --reflect replace the English learner model.
 //
 // Thin on purpose: read, fold, ask, check, render, splice, write. Every decision
 // it looks like it makes belongs to one of the pure functions above, which is
@@ -377,13 +380,13 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 	// different door — an empty file reads as an answer, and #16's ask path
 	// degrades cleanly on absence but not on emptiness.
 	if model.Level.Band == "" && len(model.Domains) == 0 {
-		fmt.Fprintln(errOut, "define: nothing in the answer survived checking against the deck; user-model.md not written")
+		fmt.Fprintln(errOut, "define: nothing in the answer survived checking against the deck; the learner model was not written")
 		return 1
 	}
 
 	existing, err := d.deck.UserModel()
 	if err != nil {
-		fmt.Fprintf(errOut, "define: could not read the existing user-model.md: %v\n", err)
+		fmt.Fprintf(errOut, "define: could not read the existing learner model: %v\n", err)
 		return 1
 	}
 	generated := renderUserModel(model, modelMeta{
@@ -395,11 +398,14 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 		Model:     cfg.Model,
 	})
 	if err := d.deck.SetUserModel(spliceCorrections(existing, generated)); err != nil {
-		fmt.Fprintf(errOut, "define: could not write user-model.md: %v\n", err)
+		fmt.Fprintf(errOut, "define: could not write the learner model: %v\n", err)
 		return 1
 	}
 
-	fmt.Fprintf(out, "define: wrote user-model.md from %d words\n", len(ev.Words))
+	// The NAME, from the store, not a literal: the learner is told in the
+	// README to hand-edit this file's ## Corrections, so naming the wrong one
+	// sends their corrections to a file UserModel() does not read.
+	fmt.Fprintf(out, "define: wrote %s from %d words\n", store.UserModelName(d.lang), len(ev.Words))
 	return 0
 }
 

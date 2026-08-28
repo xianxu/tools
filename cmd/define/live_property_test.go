@@ -23,6 +23,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // Sweep every word. The full pass runs in well under a minute, and sampling is
@@ -41,7 +43,8 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 	}
 	defer f.Close()
 
-	dict := systemDictionary()
+	// English: this walks /usr/share/dict/words, which is an English word list.
+	dict, _ := systemDictionary(store.DefaultLang, nil)
 	var checked, missing, failed, rawPipes, nonLatin int
 	// Deterministic stride sample across the whole list, so the words are spread
 	// over the alphabet rather than clustered in the a's.

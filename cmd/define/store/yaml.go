@@ -24,12 +24,24 @@ import (
 // human-readable file.
 type YAML struct {
 	dir  string
+	lang Lang
 	warn io.Writer // where a skipped file is reported; nil silences it
 }
 
-// NewYAML returns a store rooted at dir. The directory is a parameter, not a
-// policy — who chooses it stays a one-line question at the boundary.
-func NewYAML(dir string, warn io.Writer) *YAML { return &YAML{dir: dir, warn: warn} }
+// NewYAML returns a store rooted at dir, holding one language's deck.
+//
+// Both the directory and the language are parameters, not policies — who
+// chooses them stays a one-line question at the boundary. In particular this
+// store never reads the persisted setting itself: #23's whole design is that the
+// language is decided ONCE, above here, and passed down. An empty lang means
+// DefaultLang so a caller that predates languages cannot create a words//
+// directory by omission.
+func NewYAML(dir string, lang Lang, warn io.Writer) *YAML {
+	if lang == "" {
+		lang = DefaultLang
+	}
+	return &YAML{dir: dir, lang: lang, warn: warn}
+}
 
 // RuntimeDirs names every directory define writes into the working directory.
 //
@@ -40,13 +52,106 @@ func NewYAML(dir string, warn io.Writer) *YAML { return &YAML{dir: dir, warn: wa
 // compiler cannot: adding a name here and forgetting .gitignore fails a test.
 var RuntimeDirs = []string{"words", "events", "usage"}
 
-func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0]) }
+// The names define writes into the working directory, each with exactly ONE
+// producing function. Guards, migrations and tests DERIVE from these; nothing
+// restates them.
+//
+// That rule is not stylistic. A hand-typed copy of a name is a second source for
+// it, and the second source is where the guard stops guarding: with the atomic
+// shadow's prefix written out in both the writer and its test, changing the
+// writer left every test green while a partial learner model became `git add
+// -A`-able in the working-directory root.
+const (
+	// userModelLegacy is the PRE-#23 flat name. It survives only so
+	// MigrateToLanguages can find a directory written before the model became
+	// per-language; nothing writes it.
+	userModelLegacy = "user-model.md"
+	userModelPrefix = "user-model."
+	userModelExt    = ".md"
+	// tmpPattern is the atomic-write shadow. It reaches .gitignore because for
+	// the two root-level runtime files there is no runtime DIRECTORY covering it.
+	tmpPattern = ".tmp-*"
+)
+
+// UserModelName is the one producer of a learner model's filename.
+//
+// Exported because a CONSUMER needs to name the file: --reflect tells the
+// learner what it wrote, and the README tells them to hand-edit that file's
+// ## Corrections section. It printed a literal for exactly one commit, and in
+// that commit it printed the legacy flat name while writing the per-language
+// one, so corrections would have landed in a file UserModel() does not read.
+func UserModelName(l Lang) string { return userModelPrefix + string(l) + userModelExt }
+
+// newTempFile is the one producer of an atomic-write shadow, so a test can
+// observe the real name rather than restate the pattern.
+func newTempFile(dir string) (*os.File, error) { return os.CreateTemp(dir, tmpPattern) }
+
+// RuntimeFiles names every FILE define writes into the working directory, as
+// gitignore-style PATTERNS.
+//
+// The sibling of RuntimeDirs, and it exists because that list covers directories
+// only. The learner model is a runtime file — --reflect writes it into the
+// current directory, carrying inferred claims about the learner — and it reached
+// none of the three places RuntimeDirs was built to reach: `git check-ignore`
+// matched nothing. Nothing leaked, but #23's language setting would have been
+// the second instance, which is why this is a list and not two more lines in
+// .gitignore.
+//
+// Patterns rather than names, because two entries are FAMILIES: the learner
+// model is per-language, and the atomic-write shadow is one file per write. Both
+// pattern entries are BUILT BY their producers, so a change to either scheme
+// moves the pattern too and TestGitignoreCoversRuntimeFiles fails loudly instead
+// of the guard silently ceasing to cover anything.
+//
+// `??` — exactly a two-letter Lang, which ParseLang guarantees — rather than
+// `*`, which would also shadow the tracked golden fixture under testdata/ and
+// quietly re-break the reserved-basename rule below. TestRuntimeFilePatterns
+// CoverWhatWeWrite asserts that it does not.
+//
+// A name here is RESERVED. .gitignore hides these un-anchored (go test runs in
+// the package directory), so a tracked file matching one is silently un-addable
+// after any git rm — repo_guard_test.go's index guard is what says so out loud.
+//
+// lang.txt, not lang: an un-anchored `lang` would also hide any DIRECTORY of
+// that name anywhere in the tree, and a basename guard structurally cannot see
+// that. The extension costs nothing and closes the hole.
+var RuntimeFiles = []string{
+	userModelLegacy,
+	UserModelName("??"), // the per-language family, built by its own producer
+	langFileName,
+	tmpPattern,
+}
+
+// wordsDir and userModelFile are per-language; eventsDir and usageDir are NOT.
+//
+// The dividing line is DERIVATION, not storage. The learner model is read off a
+// language's deck, so one shared file meant a Spanish --reflect replaced the
+// English model. An event is a different kind of thing — a fact about a moment,
+// not a summary of a deck — so splitting the log would make "how much did I
+// study today" a join, reached by migrating an append-only artifact. The
+// argument for leaving events/ flat does not transfer to anything derived.
+func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0], string(y.lang)) }
 func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) }
 
-// userModelFile is the third artifact in the directory, beside words/ and
-// events/. Markdown rather than YAML because a person edits it: #17 regenerates
-// the inferred sections and never touches the human-owned ## Corrections.
-func (y *YAML) userModelFile() string { return filepath.Join(y.dir, "user-model.md") }
+// userModelFile is the learner model, beside words/ and events/. Markdown rather
+// than YAML because a person edits it: #17 regenerates the inferred sections and
+// never touches the human-owned ## Corrections.
+//
+// PER-LANGUAGE, because it is DERIVED from the language-scoped deck. With one
+// shared file, `--reflect` in Spanish overwrote the English learner model and
+// every English answer was then pitched at "A2 — Spanish beginner". That is the
+// same class as #23's other language-derived state, one member further out: it
+// is derived from the language AND persisted, so it must be scoped like the deck
+// rather than left flat like events/. The events/ argument does not transfer —
+// an event is a fact about a moment, while this is a summary of one deck.
+//
+// Not derived from a RuntimeFiles entry, because those are patterns and a
+// pattern cannot name a file. TestRuntimeFilePatternsCoverWhatWeWrite is what
+// keeps the two in step instead — a stronger check than derivation, since it
+// asserts the actual output rather than a shared string.
+func (y *YAML) userModelFile() string {
+	return filepath.Join(y.dir, UserModelName(y.lang))
+}
 
 // usageDir holds the news cache, one file per word, beside words/ and events/.
 func (y *YAML) usageDir() string { return filepath.Join(y.dir, RuntimeDirs[2]) }
@@ -260,14 +365,14 @@ func writeAtomic(path string, w Word) error {
 }
 
 // writeBytesAtomic is the atomic write itself, without the marshalling. Split
-// out when user-model.md arrived: it is markdown a person edits rather than a
+// out when the learner model arrived: it is markdown a person edits rather than a
 // serialised Word, and the alternative was a second temp-file-then-rename dance
 // that could drift from this one (ARCH-DRY).
 func writeBytesAtomic(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	tmp, err := newTempFile(filepath.Dir(path))
 	if err != nil {
 		return err
 	}
@@ -370,11 +475,6 @@ func endsWithNewline(path string) bool {
 	return b[0] == '\n'
 }
 
-// Forget removes one word file. Events are untouched: the deck is a working set,
-// the log is history.
-//
-// Filename derivation goes through wordFileName, the same function Upsert uses —
-// see its doc comment for what that guard is and is not worth.
 // newsFile is a WHOLE-FILE record, like words/ and unlike the append-only day
 // log in events/. It is written through writeBytesAtomic and therefore cannot
 // tear; the failure to handle is a file corrupted from outside, and the
@@ -431,6 +531,11 @@ func (y *YAML) SetNewsItems(key string, items []NewsItem, at time.Time) error {
 	return writeBytesAtomic(filepath.Join(y.usageDir(), name), b)
 }
 
+// Forget removes one word file. Events are untouched: the deck is a working set,
+// the log is history.
+//
+// Filename derivation goes through wordFileName, the same function Upsert uses —
+// see its doc comment for what that guard is and is not worth.
 func (y *YAML) Forget(key string) (bool, error) {
 	k := Key(key)
 	if k == "" {

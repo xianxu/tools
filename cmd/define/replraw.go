@@ -223,6 +223,12 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 						// opt is this loop's own copy, so a command can change
 						// the session by writing through here.
 						cc.setTimes = func(n int) { opt.times = n }
+						// And &voc, because THIS loop caches the highlight set in
+						// a local before the loop starts (see above). Reassigning
+						// d alone would leave the editor highlighting from the
+						// previous language's deck — the one thing a deps swap
+						// cannot reach.
+						cc.setLang = sessionSetLang(&d, &opt, cc.setLang, &voc, stderr)
 						dispatchCommand(cmd, commands, cc)
 					}); err != nil {
 						return lostTerminal(err)

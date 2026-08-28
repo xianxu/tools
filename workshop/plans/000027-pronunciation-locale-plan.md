@@ -46,7 +46,7 @@ One subsystem: the audio URL builder and the flag that feeds it. `#18 M2` (deck 
 | Name | Lives in | Status |
 |------|----------|--------|
 | `voice` | `cmd/define/voice.go` | new |
-| `voices` | `cmd/define/voice.go` | new |
+| ~~voices~~ (never built) | `cmd/define/voice.go` | **superseded by `#23`** — see Revisions |
 | `AudioCandidates` | `cmd/define/audiourl.go` | modified |
 
 - **`voice`** — the language plus regional variant a recording is asked for: `voice{Lang: "es", Locale: "es"}`.
@@ -54,7 +54,7 @@ One subsystem: the audio URL builder and the flag that feeds it. `#18 M2` (deck 
   - **DRY rationale:** First occurrence, and it exists to kill a *mix-up hazard rather than a duplication*. `"es"` is a valid value of BOTH fields — `AudioCandidates(w, "es", "es")` (Castilian) and a transposed `AudioCandidates(w, "es", "en")` are indistinguishable at the call site, and there are 20+ call sites in tests. A two-field struct makes the transposition unspellable.
   - **Future extensions:** `#18 M2` gives the deck a language, so a word will carry its own `voice`; this is the type that lands on it. A third field (dialect, speaker sex) widens here without touching callers.
 
-- **`voices`** — the ORDERING POLICY: given what the caller asked for, the languages to try and in what order.
+- **~~voices~~ — DELETED, not adapted.** `#23` made the language a declared MODE, so there is nothing to order: the mode supplies exactly one language and `AudioCandidates` builds for it alone. What shipped instead is `localeFor`, the interim locale rule `#27` inherits.
   - **Relationships:** pure `voice → []voice`. Called only by `AudioCandidates`.
   - **DRY rationale:** Splitting the policy from the URL construction is what makes the policy testable as a table without asserting on URL strings. `AudioCandidates` then has one job (spell a URL) and `voices` has one job (decide what to ask for).
   - **Why it is its own function, not an `if` inside `AudioCandidates`:** the ordering is the part with measured facts behind it and the part most likely to change (a third language, a cheaper probe, a per-deck default). Burying it in string concatenation is how the `_en_` literal happened in the first place.
@@ -68,7 +68,7 @@ One subsystem: the audio URL builder and the flag that feeds it. `#18 M2` (deck 
 |------|----------|--------|-------|
 | `-lang` flag | `cmd/define/main.go` | new | operator input |
 | `fakeCDN` | `cmd/define/fetch_fake_test.go` | reused | Google's pronunciation CDN |
-| `TestCDNServesSpanish` | `cmd/define/fetch_conformance_test.go` | new | the live CDN |
+| `TestCDNStillServesSpanishOnTheExpectedPaths` | `cmd/define/fetch_conformance_test.go` | **landed in `#23 M1`** | the live CDN |
 
 - **`-lang` flag** — selects the language; empty means unspecified.
   - **Injected into:** `options.voice`, then `speak`, then `AudioCandidates`. The pure builder never reads a flag.
@@ -77,7 +77,7 @@ One subsystem: the audio URL builder and the flag that feeds it. `#18 M2` (deck 
 - **`fakeCDN`** — the existing stateful fake. **Reused, not extended**: it already records every requested path in order, which is exactly what proves a Spanish word's walk skips the English-only legacy path. No new fake is needed and adding one would be the near-fit double `#6 BR-43` warns about.
   - **State model:** a set of present paths plus an ordered request log.
 
-- **`TestCDNServesSpanish`** — live conformance beside `TestCDNStillServesTheExpectedPaths`, pinning the facts the ordering rests on.
+- **`TestCDNStillServesSpanishOnTheExpectedPaths`** — live conformance beside `TestCDNStillServesTheExpectedPaths`, pinning the facts the gate rests on. Landed in `#23 M1` rather than here, since `#23` needed the same measurement.
   - **Cadence:** on-demand with the rest of `-tags conformance`; routes its dependency probe through `conformance.SkipOrFail` (`#25`) so an unreachable CDN SKIPS by default and FAILS under `CONFORMANCE_STRICT`.
 
 ---
@@ -805,3 +805,17 @@ session and the overlap still went unnoticed, because I read `#27` and the code
 and never re-read the neighbours it names. **Before planning an issue, read the
 issues it touches** — `#27`'s own Log named `#18` and `#26`, and `#23` was one
 `grep -l lang workshop/issues/` away.
+
+## Revisions
+
+### 2026-08-28 — two rows this plan named were superseded by `#23`
+
+**Reason.** `#23`'s close review found the symbol half of the artifact-name rule
+unenforced for the fourth time, and the fix — a guard asserting every
+Core-concepts row names an entity the tree actually has — flagged two rows here.
+
+**Delta.** `voices` was DELETED rather than adapted: `#23` made the language a
+declared mode, so the ordering policy this plan designed has nothing left to
+order. `TestCDNServesSpanish` shipped as
+`TestCDNStillServesSpanishOnTheExpectedPaths` in `#23 M1`, because `#23` needed
+the same measurement. Both rows now say so instead of naming absent entities.

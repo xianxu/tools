@@ -25,6 +25,7 @@ var commands = []command{
 	{name: "help", summary: "list the commands", run: runHelp},
 	{name: "history", summary: "words looked up recently", run: runHistory},
 	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
+	{name: "lang", summary: "the language this deck is in", run: runLang},
 }
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
@@ -164,6 +165,18 @@ type commandCtx struct {
 	// noCapture only so a nil deck can say WHY. DEFINE_NO_CAPTURE means the
 	// deck was never opened; without it, nil means this directory has none.
 	noCapture bool
+	// lang is the language in effect, and setLang changes it — the /sound pairing
+	// above, with one deliberate difference. /sound is explicitly "for the rest of
+	// this session", so a nil setTimes means /sound must REFUSE. Language
+	// persists, so setLang's durable half works without a session: a one-shot
+	// `define /lang es` has no loop to change but a directory to write. nil here
+	// means there is no directory either, which is the only case /lang refuses.
+	lang    store.Lang
+	setLang func(store.Lang) error
+	// dictName is which dictionary is answering, so /lang can say. Empty when
+	// nothing resolved one — a test's fake, or a run that never opened a
+	// dictionary at all.
+	dictName string
 }
 
 // newCommandCtx is the single construction point. Built at two call sites (both
@@ -177,7 +190,13 @@ func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 		deck: d.deck, clock: d.clock,
 		stdout: stdout, stderr: stderr,
 		width: opt.width, noCapture: opt.noCapture,
-		times: opt.times,
+		times:    opt.times,
+		lang:     d.lang,
+		dictName: d.dictName,
+		// The DURABLE half only. Both loops override this with a version that
+		// also re-derives the session; a one-shot keeps this one, which is why
+		// `define /lang es` still sets the directory's language.
+		setLang: d.persistLang,
 	}
 }
 
@@ -288,5 +307,92 @@ func candidatesFor(base string, hist History, cmds []command) candidates {
 	return candidates{
 		recall:   hist.Prefix(base),
 		complete: completionsFor(base, hist, cmds),
+	}
+}
+
+// sessionSetLang lifts /lang's durable half into a full session switch.
+//
+// The durable half (persist) is what newCommandCtx supplies and what a one-shot
+// run keeps. A LOOP can do more: it re-derives everything downstream of the
+// language. Both halves, in that order — persisting first means a failure to
+// write is reported before anything visible changes, rather than leaving the
+// session and the directory disagreeing.
+//
+// d and opt are taken by POINTER on purpose. Both loops hold theirs by value,
+// and the switch has to outlive one dispatch: commandCtx is rebuilt per command,
+// so writing through a copy would be forgotten by the next line typed.
+//
+// vocPtr is the raw editor's cached highlight set, or nil for the loop that has
+// none. See applyLang for why that parameter exists.
+func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPtr *Vocabulary, warn io.Writer) func(store.Lang) error {
+	if persist == nil {
+		// No directory: /lang has nothing durable to do, so there is no session
+		// switch worth making either. nil is what makes the command say so.
+		return nil
+	}
+	return func(l store.Lang) error {
+		if err := persist(l); err != nil {
+			return err
+		}
+		applyLang(d, opt, l, vocPtr, warn)
+		return nil
+	}
+}
+
+// applyLang re-derives everything that is a function of the language.
+//
+// THE ENUMERATION IS THE POINT, and the rule that generates it is: anything
+// derived from the language BEFORE a switch must be re-derived BY the switch.
+// Listing the members here, in one function, is what stops the next one from
+// being missed — an earlier version enumerated four of the five by hand at the
+// call site and shipped a session whose deck was Spanish while its pronunciation
+// stayed English.
+//
+// The members, and why each is one:
+//
+//   - d.lang        — the answer everything else reads.
+//   - langDeps      — the deck, capturer, vocabulary and usage source, taken
+//     WHOLE from the one builder openStore used. It is a struct
+//     rather than a list precisely because a list in this comment
+//     already failed once: M2 made the news feed language-dependent
+//     and this enumeration still called usage "not language-scoped".
+//   - opt.voice     — the CDN asks per language; derived via applyVoice, the
+//     same function the boundary uses.
+//   - d.dict /
+//     d.dictName    — #23 M2: the dictionary follows the mode. Registered in
+//     this list while it was still M2's to build, which is the
+//     point of writing an enumeration down rather than sweeping
+//     by hand.
+//   - *vocPtr       — the raw editor resolves the highlight set into a LOCAL
+//     before its loop and reads it on every redraw. A deps
+//     reassignment structurally cannot reach that local; without
+//     this the editor paints the old language's words. nil for
+//     the piped loop, which has no such local.
+//
+// Deliberately NOT here: d.history. events/ is not language-scoped, and
+// rebuilding it would orphan the one runEditor has already Load()ed while
+// everything else read a fresh empty one.
+func applyLang(d *deps, opt *options, l store.Lang, vocPtr *Vocabulary, warn io.Writer) {
+	d.lang = l
+	if d.newDict != nil {
+		d.dict, d.dictName = d.newDict(l, warn)
+	}
+	// NOT opt.lang: that field is the -lang FLAG, documented as "empty when it
+	// was not given", and a switch does not retroactively make the flag present.
+	// d.lang is the language in effect and the only thing that should answer it.
+	applyVoice(opt, l, warn)
+	if d.newLangDeps == nil {
+		return // no store here; the language still applies to everything else
+	}
+	// The WHOLE set, in one assignment. Copying members individually is what let
+	// d.usage be forgotten, and it stayed forgettable even after the set became a
+	// struct, because both sites still spelled the fields out. langDeps is
+	// embedded in deps, so this adopts every member including ones added later.
+	d.langDeps = d.newLangDeps(l)
+	if vocPtr != nil {
+		// The REAL options, not a fabricated one: vocabularyFor owns "loaded,
+		// and only with colour", and forcing colour on here would resurrect
+		// highlighting under -no-color.
+		*vocPtr = vocabularyFor(*d, *opt)
 	}
 }

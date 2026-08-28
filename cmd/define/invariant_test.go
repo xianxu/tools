@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"unicode"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // The no-data-loss invariant.
@@ -118,7 +120,7 @@ func TestSubsequenceGapDetectsALoss(t *testing.T) {
 // M1 boundary review found the head-reordering, first-token, and head-overwrite
 // bugs; minimized crashers land in testdata/fuzz/ as permanent regressions.
 func FuzzRenderLosesNothing(f *testing.F) {
-	d, err := loadFakeDictionary("testdata/entries")
+	d, err := loadFakeDictionary("testdata/entries", store.DefaultLang)
 	if err != nil {
 		f.Fatal(err)
 	}

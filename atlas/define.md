@@ -208,16 +208,48 @@ stranded the indicator — the arithmetic has nothing left to correct for.
 ## The store
 
 Persistence is YAML files under the **working directory** — no config, no brain
-resolution, no home-directory search. `NewYAML(dir, warn)` takes the directory as
-a parameter, so *who chooses it* stays one line at the boundary if a config
-arrives later.
+resolution, no home-directory search. `NewYAML(dir, lang, warn)` takes both the
+directory and the language as parameters, so *who chooses them* stays one line at
+the boundary if a config arrives later.
 
 ```
-words/<slug>.yaml        one file per word
+words/<lang>/<slug>.yaml one file per word, under its language
 events/YYYY-MM-DD.yaml   append-only, one file per day, named in UTC
                          kinds: looked-up, asked
-user-model.md            the learner model — markdown, because a person edits it
+lang.txt                 the directory's language (#23)
+user-model.<lang>.md     the learner model — markdown, because a person edits it
 ```
+
+**Language is a DECK dimension, not an event one (`#23`).** `wordsDir()` and
+`userModelFile()` carry the language; `eventsDir()` and `usageDir()` do not.
+
+The dividing line is *derivation*, not storage. The learner model is READ OFF a
+language's deck — level, domains, the words each claim cites — so one shared file
+meant a Spanish `--reflect` replaced the English model and every English answer
+was then pitched at "A2 — Spanish beginner". M1's boundary review caught exactly
+that. An event is different in kind: it is a fact about a moment, not a summary
+of a deck, so the argument for leaving `events/` flat does not transfer to it.
+A review event names a word and a verdict, and which deck it came from is the
+deck's business — splitting the log would turn "how much did I study today" into
+a join, and would get there by migrating an append-only artifact. If a later
+issue wants per-language study totals, that is a join over the deck.
+
+**A pre-language deck is migrated, blindly and non-destructively.**
+`MigrateToLanguages(dir, warn)` runs once in `openStore` and moves `words/*.yaml`
+into `words/en/` — without it, every existing word is orphaned rather than lost,
+since `Deck()` now reads `words/<lang>/`. It takes NO language: the destination
+is always the default, justified by a fact about the files rather than a
+preference — a flat deck was written by a tool that only ever consulted the
+English dictionary and asked for `_en_us_` recordings. Taking the *active*
+language instead would mean one `define -lang es` on a first run filed an entire
+English deck under `words/es/`.
+
+`MigrateToLanguages` moves the learner model the same way, for the same reason
+and under the same rules. It therefore cannot tell a Spanish word from an English
+one, and says so instead of guessing. On a collision the subdirectory wins, the flat file **survives** and
+is named — inert, because nothing reads `words/*.yaml` any more, which is what
+makes "leave it" strictly non-destructive on the one artifact here that cannot be
+regenerated.
 
 **What that layout buys, stated precisely:** it does *not* make sync conflicts
 impossible — the same word, or the same day, touched on two machines still
@@ -418,6 +450,62 @@ literal is `\word`. `matchesFor` unwraps both — the `?` especially, because
 requiring the user to type one to complete a question they asked without one
 would make past questions uncompletable. `/` is deliberately not unwrapped:
 commands are a real separate namespace, not a marker on a word.
+
+### `/lang` and the one thing a `deps` swap cannot reach
+
+`/lang` is two halves with different preconditions, and separating them is what
+makes a one-shot `define /lang es` work: **persisting needs a DIRECTORY,
+re-deriving needs a SESSION.** `newCommandCtx` supplies the durable half
+(`deps.persistLang`), and both loops override it with `sessionSetLang`, which
+adds the rebuild. So the only case `/lang` refuses is having nowhere to write —
+where `/sound` refuses whenever there is no session, because `/sound` is
+explicitly for the rest of *this* session and a language outlives it.
+
+The rebuild goes through **one builder called twice**: `openStore` constructs the
+session with `newLangDeps(lang)`, and `/lang` calls the same closure.
+
+**`langDeps` is the set, as a TYPE, and it is EMBEDDED in `deps`.** Both facts
+were earned. The members are the deck, the capturer, the vocabulary, the usage
+source and — through its own seam — the dictionary; `#23 M2` adds nothing to that
+list, but it changed what belongs on it, which is the point.
+
+The set was a list in a doc comment first, and it went stale **three times**:
+`opt.voice` at M1's boundary, the learner model a round later, and `d.usage` at
+the close — the last added by the very milestone whose comment still called it
+"not language-scoped". Making it a struct was not enough either, because both
+`openStore` and `applyLang` still copied its fields by hand, so a fifth field
+stayed forgettable at two sites. Embedding is what finally made adoption one
+assignment (`d.langDeps = d.newLangDeps(l)`), so a member added later is adopted
+without anyone remembering to.
+
+**`history` is the one thing deliberately outside it.** `events/` is not
+language-scoped, and rebuilding it on a switch would orphan the `History` that
+`runEditor` has already `Load()`ed while every other path read a fresh empty one.
+That exclusion is checked by an identity assertion rather than argued in prose —
+because "deliberately not in this set" is a claim with a shelf life, and the
+`usage` exclusion was true when written and false three commits later.
+
+**The `&voc` parameter is the subtlest member.** `runEditor` resolves the
+highlight set into a LOCAL before its loop starts (`voc := vocabularyFor(d,
+opt)`), reads it on every redraw, and a `deps` reassignment structurally cannot
+reach it. Without the pointer the editor keeps painting the previous language's
+words while every other path has moved on. The general shape — *a loop local
+derived from `d` before the loop* — is why the switch lives in the loop that owns
+those locals rather than in `commandCtx`.
+
+Three pins, at three altitudes, each mutation-checked:
+`TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` for the editor local
+and the usage feed (in both directions — losing the feed is the quieter
+failure); `TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage`, which
+drives `/lang es` through `run()` and asserts what the CDN was ASKED for; and
+`TestTheDictionaryIsBuiltForTheLanguageAtBothMoments`, which drives the boundary
+through `run()` too. That last one matters: `d.newDict` was set at zero call
+sites in any test, so deleting both derivations left the whole suite green while
+production would dereference a nil `Dictionary`.
+
+The pattern across all three: a unit test on the pure function could never have
+caught any of these, because the pure functions were always right. What was wrong
+was that nothing called them again.
 
 ## Highlighting the words you are learning
 
@@ -727,7 +815,7 @@ declarations of "what is this session holding" (`replLines`, `runEditor`,
 
 **The answer.** A question goes to `internal/llm` with the DIRECTORY as its
 context: the word on screen and its dictionary entry, this session's lookups, the
-recent deck, `user-model.md`, and the session's own earlier exchanges. Three
+recent deck, the learner model, and the session's own earlier exchanges. Three
 consequences fall out, and they are the reason for this shape — a fresh process
 answers as well as a long-running one, the context is inspectable as files rather
 than trapped in memory, and the answer is adaptive for the same reason the
@@ -740,7 +828,7 @@ the prompt without thought shows up in its diff. An absent section is **omitted*
 never rendered empty — an empty `## The learner` says there IS a model and it is
 blank, a different claim, and the one that produces a confident generic answer.
 
-Measured end to end against the live proxy with a two-line `user-model.md` ("B2,
+Measured end to end against the live proxy with a two-line learner model ("B2,
 reads business news, weak on near-synonym distinctions"): the answer came back
 with a *"Business-news nuance"* paragraph and *"Related near-synonyms in your
 range"*, and quoted the NOAD entry back — *"the dictionary definition you looked
@@ -827,7 +915,7 @@ still collapsed, because that changes no meaning.
 
 ## The learner model
 
-`define --reflect` folds the deck and the lookup log into `user-model.md`, the
+`define --reflect` folds the deck and the lookup log into the learner model, the
 third artifact in the working directory. Batch and on demand: no model call ever
 sits on the lookup or review path, which is what keeps a lookup instant and
 offline.
@@ -880,7 +968,7 @@ The atlas called it "the one thing that must hold" until a forged marker proved
 otherwise.
 
 **Model text is neutralised before it is rendered**, and that is the other half
-of the file's integrity. `user-model.md` is marker-delimited, so a directive — or
+of the file's integrity. The learner model is marker-delimited, so a directive — or
 an evidence word — containing a line-start `## Corrections` forges a second
 marker above the real one; the next run splices there and everything below,
 including the learner's actual corrections, is frozen forever. `oneLine`
@@ -976,7 +1064,8 @@ returns them in preference order:
 
 ```
 …/pronunciation/2022-03-02/audio/sy/sycophantic_en_us_1.mp3   (and _2)
-…/sounds/oxford/sycophantic--_us_1.mp3                        (and _2)
+…/sounds/oxford/sycophantic--_us_1.mp3                        (and _2)   English only
+…/pronunciation/2022-03-02/audio/ma/madrugar_es_es_1.mp3      (and _2)
 ```
 
 The order is measured, not assumed: across a 10-word survey the 2022 generation
@@ -985,6 +1074,31 @@ strictly dominates the legacy paths (`gaslighting` exists only on the newer one;
 *list* rather than one URL, and `fetch_conformance_test.go` asserts both facts
 still hold.
 
+**One language, no fallback (`#23`).** `AudioCandidates` takes a `voice{Lang,
+Locale}` and builds for that language alone. There is no ordering policy across
+languages and no cross-language fallback, because the mode already answered the
+question a fallback would be guessing at. `#27`'s planned `voices()` was deleted
+rather than adapted for exactly that reason.
+
+`voice` is a struct rather than two strings because `"es"` is a legal value of
+**both** fields — two positional arguments are transposable at every call site
+and the compiler cannot tell.
+
+**The legacy generation is gated to English**, on measurement: `madrugar--_us_1`
+and `madrugar--_es_1` are both 404 while `sycophantic--_us_1` is 200. At
+~300–600 ms per miss against ~40 ms per hit, asking anyway costs most of a second
+per Spanish lookup for a guaranteed 404. `TestTheFetchLoopAsksOnlyForTheSessionsLanguage`
+asserts what is actually REQUESTED, not just what the pure function
+returns — its negative case is the one that catches a regression here.
+
+**The interim locale rule, which `#27` inherits.** `localeFor` gives one rule and
+one exception: the locale is the language code (`es` → `es_es`), except English,
+whose CDN recordings are `_en_us_` / `_en_gb_`. `-locale` is documented as "us or
+gb" — English variants — so it applies to English only and *says so* for any
+other language rather than being silently dropped, which would build
+`madrugar_es_gb_1.mp3`, a URL form nothing has measured. The complaint is printed
+once, where the language and the flags first meet, not once per replay.
+
 `playN` keeps the repeat loop in the shell rather than behind `Player.Play(n)`,
 so `fakePlayer` can count plays — which is how "play it three times" is an
 assertion rather than something checked by ear. Repeats are separated by 250 ms
@@ -992,6 +1106,69 @@ so they are distinguishable; the gap is not paid after the last one.
 
 A missing recording is **not** a failed lookup: the definition has already been
 printed, so audio failures warn on stderr and leave the exit code at 0.
+
+### The dictionary follows the language (`#23 M2`)
+
+`systemDictionary(lang, warn)` returns the dictionary for a language, and the
+three outcomes are each a deliberate answer:
+
+| situation | result | why |
+|---|---|---|
+| curated books installed | search them, in curated order | the mode is correct end to end |
+| the private surface is gone | the NULL search, loudly | degrade to the pre-`#23` tool, not to a crash |
+| nothing curated for this language | the NULL search, loudly | guessing is how a tiebreak picks a thesaurus |
+
+**Metadata NARROWS, a curated list DECIDES.** Only the first step is derivable:
+"indexes L, monolingually" is a fact `DCSDictionaryGetLanguages` reports, while
+"is a general dictionary rather than a thesaurus" is a judgement nothing in the
+metadata supports. Measured: requiring every language pair to be L→L leaves
+exactly one candidate for `es` and SIX for `en`, two of them thesauruses and one
+an accessibility dictionary — and a deterministic smallest-identifier tiebreak
+picks the accessibility one for English and the *bilingual* Oxford for Spanish.
+Deterministic and wrong is still wrong.
+
+**Curation is an ordered LIST, not one book,** and that is not a convenience.
+Selecting NOAD alone was the first shape and it lost `iPhone`, `iPad` and
+`MacBook`, which are Apple Dictionary entries — a real regression, caught by
+`TestFixturesMatchLiveDictionary` going red. Selecting *nothing* is the other
+failure and a worse one: with Spanish dictionaries enabled, the NULL search
+answers `madrugar` in ENGLISH mode (verified on this machine), which is exactly
+the Done-when row the milestone exists for. Same-language books in preference
+order satisfy both, because every one of them indexes L→L and so cannot leak.
+
+**Every pair must be L→L, not any.** Gran Diccionario Oxford has an `es→es` pair
+*and* an `en→es` one; "any" would accept it as monolingual Spanish and put
+English glosses back in a Spanish session.
+
+**A CFSet, not a CFArray.** `CFArrayGetValueAtIndex` on the result does not
+return garbage — it raises `-[__NSCFSet objectAtIndex:]: unrecognized selector`,
+an uncaught ObjC exception in a cgo frame where the cause is not obvious. The
+unspecified iteration order that follows is why selection is by identifier, never
+by position or display name, and why `chooseDictionary` is pinned
+order-independent.
+
+**"No entry" and "no dictionary" are different answers** (`dcs_lookup_in` status
+1 vs 3). "This word is not Spanish" is a correct result; "the Spanish dictionary
+is not installed" means fall back rather than report an absence you cannot vouch
+for. Collapsing them makes a missing dictionary look like a missing word.
+
+**The selection symbols are private** — absent from the SDK header, which
+declares two functions and says of the dictionary argument *"not supported for
+Leopard. You should always pass NULL."* True of the header, false of the
+framework. They are `dlsym`'d at run time so a disappearance degrades to the
+pre-`#23` NULL search. The list is `dcsPrivateSymbols`, and it is deliberately
+not restated as a count anywhere: "the nine symbols" was repeated into four
+documents and was wrong in all four — nine is how many the issue's survey FOUND,
+while the resolver needs three. `TestPrivateDictionarySurfaceStillResolves` walks
+the list member by member, which makes the degradation loud for a maintainer
+since it is deliberately silent for a user.
+
+**The news feed is gated the same way (D6).** `httpFeed` hardcodes
+`hl=en-US&gl=US&ceid=US:en` — English by construction — so it is consulted only
+for English, and other languages take their examples from their own dictionary
+entry. That is also why `usage/` has no language dimension: nothing writes it
+outside English. If `#10` or `#18` makes the feed language-aware, scoping the
+cache becomes required, and that is the moment to add it.
 
 ## Conformance
 

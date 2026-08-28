@@ -33,7 +33,8 @@ define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
 define /history             # a command works as an argument too
 define --sound 1 record     # play once instead of three times
 define -no-audio bank       # no fetch, no sound
-define -locale gb colour    # British pronunciation
+define -locale gb colour    # British pronunciation (English only)
+define -lang es madrugar    # one lookup in Spanish, without switching
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
@@ -138,13 +139,13 @@ one-shot, `define "…?"`, there is no session to return to, so it ends the run.
 
 What the model is told is the directory you are in: the word on screen and its
 dictionary entry, what you have looked up this session, your recent deck,
-`user-model.md` if you keep one, and the earlier questions in this session — so a
+the learner model if you keep one, and the earlier questions in this session — so a
 follow-up like `give me two more examples` resolves against the answer before it.
 Nothing is remembered between runs except the files, which means a fresh process
 answers as well as a long-running one and you can read the context with `cat`.
 
 **`define --reflect` writes down who it thinks you are.** It reads your deck and
-your lookup history and produces `user-model.md`: a working level, the domains
+your lookup history and produces the learner model: a working level, the domains
 you read in, and — the part that matters — what practice material should DO about
 each. Every claim names the words it was read off, and a claim citing a word your
 deck does not hold is dropped before you see it.
@@ -173,13 +174,39 @@ was actually sent: with no model configured nothing is, so nothing is recorded.
 A model that is configured but does not answer says so, and the question is kept.)
 
 ```
-words/sycophantic.yaml     one file per word
+words/en/sycophantic.yaml  one file per word, under its language
+words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
                            kinds: looked-up, asked  (answers are NOT stored)
-user-model.md              written by --reflect, read to pitch answers;
-                           its ## Corrections section is yours and is never
-                           rewritten
+lang.txt                   which language this directory is in
+user-model.en.md           written by --reflect, read to pitch answers; one per
+                           language, because it is read off that language's
+                           deck. Its ## Corrections section is yours and is
+                           never rewritten
 ```
+
+**One language at a time.** `/lang` says which one, `/lang es` switches, and the
+setting stays with the directory — unlike `/sound`, which lasts one session.
+It has to persist: a one-shot `define madrugar` has no session to inherit from,
+and re-declaring the language at every lookup is the friction the mode removes.
+Everything follows it — the deck a word files into, the words `--play` offers,
+and the recording that is fetched. `-lang es` is the one-run form, for scripts
+that should not have to change state to ask a question.
+
+`-locale` picks a regional variant and applies to **English only** — `us` or
+`gb`. Every other language uses its own single locale (`es` → `es_es`), and
+passing `-locale` alongside another language says so rather than quietly
+building a URL nobody has measured.
+
+The event log is deliberately *not* split by language: a review event names a
+word, and which deck it came from is the deck's business. "How much did I study
+today" stays one question rather than a join.
+
+A deck from before this existed is moved under `words/en/` the next time
+`define` runs — along with any `user-model.md`, which becomes
+`user-model.en.md` — and it says so. That move cannot tell languages apart — a Spanish
+word filed earlier lands in `words/en/` too — so it prints what it moved and
+leaves a `mv` to you. It never overwrites and never deletes.
 
 A failed lookup is recorded as history but never enters the deck, so typos are
 recallable with Up-arrow without becoming vocabulary. `-raw` records nothing —
@@ -193,7 +220,7 @@ DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
 `DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
 which is what persists your history, so with it set, history is session-only. It
 also means the directory is not **read**: answers come back un-adapted, with no
-deck and no `user-model.md` behind them.
+deck and no learner model behind them.
 
 The directory *is* the deck: run `define` somewhere else and you get a different
 one. If that directory happens to be synced, so is your vocabulary; `define`
@@ -278,11 +305,31 @@ in-session form of `--sound`, which sets it for one run. (`-times` is the older
 name for `--sound` and still works; passing both is a usage error rather than a
 guess at which you meant.)
 
-Lookup goes through macOS's CoreServices, which searches **every active
-dictionary** rather than NOAD specifically — the SDK offers no way to pick one.
-NOAD answers for ordinary English words (hence the Google-matching notation), but
-`iPhone` comes from Apple Dictionary, and enabling the Chinese dictionaries will
-return entries this tool does not format. Adjust the set in Dictionary.app.
+`/lang` reports the language this directory is in; `/lang es` switches it and
+keeps it. That is the deliberate difference from `/sound`: a language has to
+survive the session, because a one-shot lookup has no session to inherit one
+from. `-lang es` is the same choice for a single run, without writing it down.
+
+Lookup goes through macOS's CoreServices, and **the dictionary follows the
+language**. In English that is the New Oxford American Dictionary (hence the
+Google-matching notation) plus Apple Dictionary, which is where `iPhone` comes
+from; in Spanish it is the Larousse *Diccionario General*. `/lang` says which
+ones are answering.
+
+So `mesa` is an isolated flat-topped hill in English and *"un tablero
+horizontal, sostenido por uno o varios pies"* in Spanish, and `sycophantic` in a
+Spanish session reports **no entry** — which is correct, and which this tool
+could not say about anything before.
+
+Two honest limits. The dictionaries are chosen from a short **curated list**,
+because nothing in the system's metadata distinguishes a general dictionary from
+a thesaurus; on a machine with a different set installed, nothing curated matches
+and `define` falls back to searching every active dictionary and says so. And the
+calls that select a dictionary are **private** — undocumented, and free to
+disappear on an OS update — so they are resolved at run time and the tool
+degrades to that same whole-set search rather than breaking. Only on that
+fallback path does the host's Dictionary.app configuration decide what you get —
+on the curated path it does not, which is the point.
 
 ## Build
 

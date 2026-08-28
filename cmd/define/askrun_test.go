@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +25,7 @@ func askRig(t *testing.T) (deps, *llmtest.Fake, *store.YAML, string) {
 	t.Helper()
 	fake := llmtest.NewFake(t)
 	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
+	st := store.NewYAML(dir, store.DefaultLang, nil)
 	d := testDeps(t)
 	d.deck = st
 	// The REAL capturer over the same store: since #16 the event log has one
@@ -46,7 +45,7 @@ var aDay = time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
 const streamCapture = "stream-sample.sse"
 
 func TestAskStreamsAnAnswerWithTheDirectoryAsContext(t *testing.T) {
-	d, fake, st, dir := askRig(t)
+	d, fake, st, _ := askRig(t)
 	// A committed capture, not invented text: the fake refuses a literal on a
 	// streaming request, and the rule behind that refusal is the point — you
 	// cannot fake judgment, but you can freeze a real answer and pin our
@@ -57,8 +56,10 @@ func TestAskStreamsAnAnswerWithTheDirectoryAsContext(t *testing.T) {
 	if err := st.Upsert(store.Word{Text: "ephemeral", FirstSeen: aDay, LastSeen: aDay, Lookups: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "user-model.md"),
-		[]byte("## Level\nC1, reads judicial opinions.\n"), 0o644); err != nil {
+	// Through the store, not a literal filename: the model is per-language since
+	// #23 (user-model.<lang>.md), and a test that hardcodes the name silently
+	// stops seeding anything the moment that changes again.
+	if err := st.SetUserModel("## Level\nC1, reads judicial opinions.\n"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,11 +141,15 @@ func TestOneShotQuestionHasNoCurrentWord(t *testing.T) {
 	fake := llmtest.NewFake(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
 	dir := t.TempDir()
-	st := store.NewYAML(dir, nil)
+	st := store.NewYAML(dir, store.DefaultLang, nil)
 	d := testDeps(t)
 	cap := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 	d.newStore = func(options, io.Writer) storeDeps {
-		return storeDeps{history: &memHistory{}, capture: cap, deck: st, clock: store.FixedClock(aDay)}
+		return storeDeps{
+			history:  &memHistory{},
+			langDeps: langDeps{capture: cap, deck: st},
+			clock:    store.FixedClock(aDay),
+		}
 	}
 	d.capture, d.history = nil, nil // force the real wiring, as capture_test.go does
 	d.newLLM = llm.New
@@ -845,8 +850,13 @@ func TestAnUnreadableUserModelIsReported(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit = %d — an unreadable model must not fail the answer", code)
 	}
-	if !strings.Contains(errb.String(), "user-model.md") {
-		t.Errorf("stderr = %q, want it to name user-model.md", errb.String())
+	// It must say WHICH artifact could not be read, so an unreadable model is
+	// distinguishable from an unreadable deck — both degrade the same answer.
+	// It no longer spells a filename, because the model is per-language since
+	// #23; in production the wrapped os error carries the path, but this store
+	// double fails abstractly, so that is not what is asserted here.
+	if !strings.Contains(errb.String(), "learner model") {
+		t.Errorf("stderr = %q, want it to name the artifact that could not be read", errb.String())
 	}
 	// And the answer still came: a missing model degrades the answer's aim, not
 	// the answer itself.

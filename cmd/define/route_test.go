@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // TestConsoleDecisionTable is the issue's decision table, asserted through the
@@ -40,11 +42,11 @@ func TestConsoleDecisionTable(t *testing.T) {
 // by asking parseREPLLine and lookupAndRender.
 func routeFor(t *testing.T, line string) string {
 	t.Helper()
-	dict, err := loadFakeDictionary("testdata/entries")
+	dict, err := loadFakeDictionary("testdata/entries", store.DefaultLang)
 	if err != nil {
 		t.Fatalf("fake dictionary: %v", err)
 	}
-	d := deps{dict: dict, capture: noopCapturer{}}
+	d := deps{dict: dict, langDeps: langDeps{capture: noopCapturer{}}}
 	cmd := parseREPLLine(line, false)
 	switch cmd.kind {
 	case cmdCommand:

@@ -2064,3 +2064,206 @@ right is worse than none, because it reads as verified.
 
 **Rule:** cite by NAME — the function, the const, the table — never by line
 number. Names move with the thing they name.
+
+## Enumerate the derived set, or you will sweep it by hand and miss one (#23 C1, BR-2)
+
+`/lang` had to re-derive everything downstream of the language. I found the
+members one at a time — the deck, the capturer, the vocabulary, and the highlight
+set the raw editor caches in a local — swept them at the call site, and never
+wrote the list down anywhere. Two of the members were missing.
+
+`opt.voice` shipped un-re-derived, so a mid-session `/lang es` left the fetch loop
+asking for the four **English** URLs, including the two legacy ones the same
+range had just gated to English for costing ~450 ms per guaranteed miss. The deck
+went Spanish and the pronunciation did not. Then `user-model.md` — derived from
+the language-scoped deck but stored flat — turned out to mean a Spanish
+`--reflect` replaced the English learner model.
+
+Every unit test was green throughout, because each member was individually
+correct. The defect lived in the *set*, and a set nobody wrote down has no place
+a reviewer can check it against.
+
+**Rule:** when a change makes N things depend on one value, write the enumeration
+into ONE function with the rule that generates it, and name the members that will
+join it later. A hand-sweep at the call site is unreviewable — "did you get them
+all" is unanswerable against a list that does not exist.
+
+**Corollary — a derived value needs one deriving function.** `opt.voice` was
+computed by one expression at the boundary and should have been computed by
+another at the switch; that is not a missing call, it is two sources for one
+fact. One function, two callers, and they cannot drift.
+
+**Corollary — "not scoped" needs its own justification per artifact.** `events/`
+is unscoped because an event is a fact about a moment. The learner model is a
+SUMMARY OF A DECK, so that argument does not transfer — but the atlas had already
+reused it, and the reused sentence read as settled. When a rule is extended to a
+second artifact, re-derive it there rather than citing the first.
+
+## Test what the pure function's CALLER does, not just the function (#23 C1)
+
+`voiceFor` was always right. `TestLocaleFor` and `TestAudioCandidatesSpanish`
+passed the whole time the bug existed, because nothing called `voiceFor` again
+after a language switch. The only test that could have caught it drives `/lang es`
+through `run()` and asserts what the fake CDN was **asked for**.
+
+**Rule:** for a pure function whose value is CACHED by its caller, a unit test
+pins the function and says nothing about the cache. Add one assertion at the
+altitude where the cached value is consumed — and give it a non-vacuity check, or
+a session that fetched nothing at all passes it.
+
+## A rule stated in prose is enforced where you can run it (#23 BR-6, BR-11)
+
+The artifact-name rule was written correctly the first time: *no output line,
+comment, README line, atlas line or plan line may spell a name the code owns.*
+It was then swept by hand, and the sweep was 3 of ~12 — including the
+user-facing line, which told the learner to edit a file the tool had not
+written.
+
+Mechanising it over Go source immediately found four more sites the manual
+enumeration had missed. One round later the same family returned, because the
+ratchet stopped at `*.go` while the rule bound prose: the project file still
+claimed a single shared learner model after it had become one per language.
+
+**Rule:** when a review finding names a rule rather than a site, ship the
+ENFORCEMENT in the same commit, and make its scope match the rule's own words.
+A rule enforced over a subset of what it claims to bind reads as settled while
+the unenforced half keeps drifting — and the half nobody checks is the half that
+goes stale.
+
+**Corollary — enforcement needs an explicit theory of records.** Docs that
+describe the tool as it IS must be swept; docs that RECORD what was true when
+written must not, or the fix is falsifying history. Identify records by shape
+(`## Revisions`, `## Log`, a block carrying `**closed:**`) rather than by a list
+of filenames, so a new one is covered without anyone remembering it.
+
+## Move the test to where the paths come from (#23, round 4)
+
+`TestYAMLIgnoresInterruptedWrites` planted its fixture at `words/.tmp-halfwritten`
+from outside the package. When the deck moved to `words/<lang>/`, the fixture
+stayed put, `Deck()` stopped listing it, and the test kept passing while
+exercising nothing.
+
+Worse, it had never been load-bearing: the fixture body was unparseable, so
+deleting the suffix check the test exists to pin left it warned-and-skipped and
+the suite green either way.
+
+**Rule:** an external test that hardcodes an internal path will silently stop
+testing when the layout moves. Put it in the package and obtain the path from the
+function that produces it. And make the fixture VALID except for the one property
+under test — an invalid fixture passes for whichever reason comes first, which
+may not be the one the test names.
+
+## An enumeration in a comment is not structural (#23 C1, BR-2, BR-13)
+
+Three findings, one shape. `/lang` must re-derive everything downstream of the
+language, and the set was written as a list in `applyLang`'s doc comment. It was
+wrong three times: `opt.voice` at M1's boundary, the learner model one round
+later, and `d.usage` at the close — the last one added by *the same milestone*
+whose comment still called it "not language-scoped".
+
+Each fix added the missing member to the list. The list kept going stale because
+nothing made adding a member at the boundary imply switching it.
+
+**Rule:** when N things derive from one value, make the set a TYPE built by ONE
+function that both the construction site and the switch call. A struct returned
+from one builder cannot be half-adopted; a comment listing the same members can,
+and will, within a milestone.
+
+**Corollary:** "deliberately NOT in this set" is a claim with a shelf life. Every
+exclusion needs its reason re-checked when the thing it excludes changes — the
+`usage` exclusion was true when written and false three commits later.
+
+## Give a count one producer, or delete the count (#23 BR-14)
+
+"The nine symbols" appeared in four documents and was wrong in all four: nine is
+how many the *survey* found, while the resolver needs three. Nothing checked it,
+because a number in prose has no consumer.
+
+**Rule:** a count restated in prose is drift waiting to happen. Either give it one
+producer the docs derive from, or — usually better — remove the number and name
+the list, so there is nothing to go stale. `dcsPrivateSymbols` is the list; no
+document counts it.
+
+## Make the plan a consumer of the tree (#23 BR-14)
+
+Plans named `deckDeps`, `MigrateFlatDeck`, `dictChoice` and `dcsDictionaries` —
+four entities the tree did not have, across four review rounds, each fixed by
+hand-sweeping the instance.
+
+A plan's Core-concepts table already states "this identifier lives at this path"
+in machine-readable form. `TestPlanTablesNameEntitiesThatExist` reads it and
+checks the file declares the name.
+
+**Rule:** when a document restates a fact the code owns in a STRUCTURED form,
+make the document a consumer. The unstructured half stays a review problem; the
+structured half becomes a build failure. A row whose file does not exist yet is
+skipped — a plan precedes its code, and only a row pointing at a real file makes
+a checkable claim.
+
+## Pure code behind a build tag is not pure enough (#23 BR-23)
+
+Three parsers carried doc comments saying "pure, so the cgo boundary's format is
+testable without CoreServices" — while sitting behind `//go:build darwin`. Their
+test was untagged, so `GOOS=linux go vet` failed on them, and `dict_stub.go`
+claimed in its own comment to keep exactly that green.
+
+Worse, a fix shipped INOPERATIVE in the same file: the status-folding rule
+("an absence never overwrites a real failure") was corrected in a commit, and the
+correction did nothing, because the branch it needed to guard was still
+unconditional and nothing could test it where it lived.
+
+**Rule:** if a function's doc says it is pure and testable off-platform, it must
+COMPILE off-platform — move it out of the tagged file. Untestable code is where a
+fix can look right in review and do nothing at runtime; "I extracted the policy"
+is only true once the policy has a test that fails without it.
+
+## A struct is not enough if both sides spell out its fields (#23 BR-22)
+
+The language-derived set went from a doc comment to a `langDeps` struct, and the
+next review found the same class again: `openStore` and `applyLang` each copied
+its four fields by hand, so a fifth field was still forgettable in two places.
+
+Embedding the struct is what finally fixed it — adoption became one assignment,
+and a member added later is adopted with no edit at either site.
+
+**Rule:** "make it a type" is half the fix. Ask where the type is CONSUMED: if
+every consumer enumerates its fields, the type is documentation and the
+enumeration is still the real interface. Embed it, or give it one adoption
+method, so adding a member cannot be half done.
+
+## Never let a test reimplement the code it pins (#23 BR-22b)
+
+A new test for "the dictionary is built for the session's language" replicated
+the boundary derivation inline instead of calling `run()`. Deleting that
+derivation from production left the test green — it was asserting against its own
+copy.
+
+**Rule:** a test that reproduces the production wiring tests the reproduction.
+Drive the real entry point, and verify by DELETING the production line and
+watching the test fail. If it does not fail, the test is pinning a copy.
+
+## When a corpus gains a dimension, every check over it gains one (#23 BR-31)
+
+M2 made the fixture corpus per-language and added five real Spanish captures.
+Every check over it kept naming English: `loadFakeDictionary(…, DefaultLang)` at
+two sites, and the no-data-loss invariant through `testDict`, which is English by
+definition. So the new half was byte-compared to nothing and never parsed — while
+the atlas and the plan both described the corpus as conformance-checked.
+
+**Rule:** a check that spells one value of a dimension is blind to the rest of it.
+Read the SET from the artifact — here, the language directories — so adding a
+member brings it under every check with no edit. And when adding the dimension,
+grep the checks for the old constant: each surviving mention is a check that
+silently narrowed.
+
+## A guard is code, and gets the same scrutiny (#23 BR-20, BR-32)
+
+Three guards written to close review families each shipped with a hole a review
+found: one passed on a COMMENT mention, one read only the first name in a row
+naming three, and two more had unrouted skips that would report green for checks
+that never ran.
+
+**Rule:** the test you add to stop a class of bug is not exempt from that class.
+Before trusting a new guard, mutate the thing it claims to catch and watch it
+fail — and check its own skips, its own scope, and whether a weaker match
+satisfies it.
