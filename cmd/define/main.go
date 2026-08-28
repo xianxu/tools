@@ -217,14 +217,37 @@ func orElse[T comparable](v, fallback T) T {
 // A store that cannot be opened must not break define: warn and fall back,
 // exactly as a missing recording degrades rather than fails. Someone in a
 // read-only directory still gets a dictionary.
+// newsFeedFor gates the news feed on the language it actually serves.
+//
+// httpFeed hardcodes hl=en-US&gl=US&ceid=US:en — it is English BY CONSTRUCTION.
+// Asking it about a Spanish word returns English news about a different sense
+// entirely (mesa is a landform, and a city in Arizona), and caches it under a key
+// an English session shares.
+//
+// So it is consulted only for the language it serves, and in any other language
+// the examples come from that language's own dictionary entry — which M2 makes
+// correct, and which is where "Levantarse muy temprano, especialmente al
+// amanecer" comes from. Same rule as the dictionary: no data beats the wrong
+// language's data.
+//
+// This is also why usage/ needs no language dimension — nothing writes it outside
+// English. When #10 or #18 makes the feed language-aware, scoping the cache
+// becomes REQUIRED, and that is the moment to add it (D6).
+func newsFeedFor(lang store.Lang, f *cachingFeed) *cachingFeed {
+	if lang != store.DefaultLang {
+		return nil
+	}
+	return f
+}
+
 // sessionUsage is the no-durable-store form: the same seam, cached in memory.
 //
 // DEFINE_NO_CAPTURE means "write nothing into this directory", not "the feed does
 // not exist" — the same reading that gives this path a memHistory rather than no
 // history at all. Nothing reaches disk, and a session still does not hit the
 // network per question.
-func sessionUsage(clk store.Clock, warn io.Writer) UsageSource {
-	return &bothSources{news: newCachingFeed(newHTTPFeed(), store.NewMem(), clk), warn: warn}
+func sessionUsage(lang store.Lang, clk store.Clock, warn io.Writer) UsageSource {
+	return &bothSources{news: newsFeedFor(lang, newCachingFeed(newHTTPFeed(), store.NewMem(), clk)), warn: warn}
 }
 
 func openStore(opt options, warn io.Writer) storeDeps {
@@ -238,7 +261,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	if opt.noCapture {
 		return storeDeps{
 			history: &memHistory{}, capture: noopCapturer{},
-			usage: sessionUsage(clk, warn), clock: clk,
+			usage: sessionUsage(orElse(opt.lang, store.DefaultLang), clk, warn), clock: clk,
 			lang: orElse(opt.lang, store.DefaultLang),
 		}
 	}
@@ -247,7 +270,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		fmt.Fprintf(warn, "define: no working directory (%v); history is session-only\n", err)
 		return storeDeps{
 			history: &memHistory{}, capture: noopCapturer{},
-			usage: sessionUsage(clk, warn), clock: clk,
+			usage: sessionUsage(orElse(opt.lang, store.DefaultLang), clk, warn), clock: clk,
 			lang: orElse(opt.lang, store.DefaultLang),
 		}
 	}
@@ -290,7 +313,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		// One feed, wrapped in the cache that owns the three outcomes, wrapped in
 		// the source that merges it with the dictionary. Same layering as
 		// fetch.go's cachingAudioSource over httpAudioSource.
-		usage:       &bothSources{news: newCachingFeed(newHTTPFeed(), flat, clk), warn: warn},
+		usage:       &bothSources{news: newsFeedFor(lang, newCachingFeed(newHTTPFeed(), flat, clk)), warn: warn},
 		clock:       clk,
 		lang:        lang,
 		newDeck:     newDeck,

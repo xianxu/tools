@@ -168,14 +168,14 @@ when the private surface has moved.
       survives the session ending.
 - [x] A one-shot `define madrugar` uses the persisted language, with no session
       to inherit from.
-- [ ] A word shared with English is filed AND DEFINED in the current language —
+- [x] A word shared with English is filed AND DEFINED in the current language —
       `mesa` in Spanish mode returns the Spanish entry, not the flat-topped hill.
-- [ ] A word absent from the current language reports no entry rather than
+- [x] A word absent from the current language reports no entry rather than
       silently answering from another language's dictionary.
-- [ ] The private DictionaryServices symbols are resolved at run time and the
+- [x] The private DictionaryServices symbols are resolved at run time and the
       seam FALLS BACK to today's NULL behaviour if any is missing — degrading to
       what ships now rather than crashing.
-- [ ] A live conformance check says loudly when the private surface moves, on
+- [x] A live conformance check says loudly when the private surface moves, on
       demand like `#9`'s feed check rather than in merge-check.
 - [x] `--forget` and `d`-in-`--play` remove from the right language's deck.
 - [x] The schedule and the event log are unchanged: language is a deck dimension,
@@ -293,7 +293,7 @@ second copy of the tasks.
       guard, `words/<lang>/`, the flat-deck migration, `-lang` / `lang.txt` /
       `/lang`, the recording following the mode, `--play` and `--forget`
       inheriting it, docs. Ships a working single-language `define`.
-- [ ] M2 — the dictionary follows it too: `chooseDictionary` over metadata plus a
+- [x] M2 — the dictionary follows it too: `chooseDictionary` over metadata plus a
       curated default, the `dlsym` seam with a fallback to today's NULL
       behaviour, the per-language fixture corpus, live conformance.
 

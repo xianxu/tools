@@ -310,12 +310,24 @@ keeps it. That is the deliberate difference from `/sound`: a language has to
 survive the session, because a one-shot lookup has no session to inherit one
 from. `-lang es` is the same choice for a single run, without writing it down.
 
-Lookup goes through macOS's CoreServices, which today searches **every active
-dictionary** rather than one you pick. That is a choice, not a limit: the public
-header documents the dictionary argument as "always pass NULL", but the framework
-does export the calls needed to select one, and 87 dictionaries are installed on
-a stock machine. Selecting per language is `#23 M2` — until it lands, `mesa` in a
-Spanish session is filed as Spanish but still defined as the flat-topped hill.
+Lookup goes through macOS's CoreServices, and **the dictionary follows the
+language**. In English that is the New Oxford American Dictionary (hence the
+Google-matching notation) plus Apple Dictionary, which is where `iPhone` comes
+from; in Spanish it is the Larousse *Diccionario General*. `/lang` says which
+ones are answering.
+
+So `mesa` is an isolated flat-topped hill in English and *"un tablero
+horizontal, sostenido por uno o varios pies"* in Spanish, and `sycophantic` in a
+Spanish session reports **no entry** — which is correct, and which this tool
+could not say about anything before.
+
+Two honest limits. The dictionaries are chosen from a short **curated list**,
+because nothing in the system's metadata distinguishes a general dictionary from
+a thesaurus; on a machine with a different set installed, nothing curated matches
+and `define` falls back to searching every active dictionary and says so. And the
+calls that select a dictionary are **private** — undocumented, and free to
+disappear on an OS update — so they are resolved at run time and the tool
+degrades to that same whole-set search rather than breaking.
 NOAD answers for ordinary English words (hence the Google-matching notation), but
 `iPhone` comes from Apple Dictionary, and enabling the Chinese dictionaries will
 return entries this tool does not format. Adjust the set in Dictionary.app.

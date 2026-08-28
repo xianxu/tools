@@ -257,28 +257,28 @@ live Google News request per word — up to the 20s client timeout — for items
 
 **Files:** create `dictselect.go`, `dictselect_test.go`.
 
-- [ ] **Step 1 — failing test, and the table IS the measurement.** The installed-metadata fixture is the real one from 2026-08-28: `NOAD`, `OTE` (a thesaurus) and `com.apple.accessibility.dictionary.TTY` all indexing `en`→`en`; `es.DGLEV` monolingual `es`; `OxfordSpanish` bilingual. Expectations: `en`→`NOAD`, `es`→`DGLEV`, `de`→not found (so the caller reports no entry rather than answering from English). A second test pins the honest-degradation case: no curated match → `ok=false`, and the caller falls back to today's NULL behaviour rather than guessing.
-- [ ] **Step 2 — implement:** narrow to dictionaries indexing L, prefer strictly monolingual, then prefer a curated identifier; the curated list is a short honest list, not a rule, because nothing in the metadata says "general-purpose dictionary".
-- [ ] **Step 3 — mutation check, three named mutations, each reddening a named row:** drop the curated preference (English picks a thesaurus); accept bilingual as monolingual (Spanish picks `OxfordSpanish`); return `ok` for an unindexed language.
-- [ ] **Step 4 — commit.**
+- [x] **Step 1 — failing test, and the table IS the measurement.** The installed-metadata fixture is the real one from 2026-08-28: `NOAD`, `OTE` (a thesaurus) and `com.apple.accessibility.dictionary.TTY` all indexing `en`→`en`; `es.DGLEV` monolingual `es`; `OxfordSpanish` bilingual. Expectations: `en`→`NOAD`, `es`→`DGLEV`, `de`→not found (so the caller reports no entry rather than answering from English). A second test pins the honest-degradation case: no curated match → `ok=false`, and the caller falls back to today's NULL behaviour rather than guessing.
+- [x] **Step 2 — implement:** narrow to dictionaries indexing L, prefer strictly monolingual, then prefer a curated identifier; the curated list is a short honest list, not a rule, because nothing in the metadata says "general-purpose dictionary".
+- [x] **Step 3 — mutation check, three named mutations, each reddening a named row:** drop the curated preference (English picks a thesaurus); accept bilingual as monolingual (Spanish picks `OxfordSpanish`); return `ok` for an unindexed language.
+- [x] **Step 4 — commit.**
 
 ### Task 9: the `dlsym` seam, its fake, and the per-language corpus
 
 **Files:** modify `dict_darwin.go`, `dict_stub.go`, `dict_fake_test.go`, `testdata/capture.py`, `testdata/capture.sh`; move `testdata/entries/*.txt` → `testdata/entries/en/`.
 
-- [ ] **Step 1 — the corpus move and the capture path (D4), first**, because the fixtures have to exist before the test that reads them: `capture.py` takes an optional dictionary identifier and resolves it through `DCSCopyAvailableDictionaries` + `DCSDictionaryGetIdentifier`; `capture.sh` captures `mesa`, `bonito`, `once`, `real`, `madrugar` through `com.apple.dictionary.es.DGLEV` into `entries/es/`. Unsandboxed, with the existing byte floor.
-- [ ] **Step 2 — failing test:** `loadFakeDictionary(dir, lang)` serves one language; `mesa` in Spanish is the Spanish entry, and `sycophantic` in Spanish is `ErrNoEntry` — an absence, which needs no fixture and is the assertion the issue calls newly answerable.
-- [ ] **Step 3 — implement the seam.** `systemDictionary(lang store.Lang)` at four call sites; **`CFSetGetValues`, not `CFArrayGetValueAtIndex`** — verified 2026-08-28 that treating the result as a CFArray crashes with `-[__NSCFSet objectAtIndex:]: unrecognized selector`, in a cgo frame where the cause is not obvious. Every private symbol is `dlsym`'d.
-- [ ] **Step 4 — prove the fallback**, which is a Done-when row and not a nicety: with one symbol name deliberately misspelled, the binary must still define an English word through today's NULL path.
-- [ ] **Step 5 — say which dictionary is in use**, so a wrong pick on a machine with a different set installed is visible rather than puzzling. Run, commit.
+- [x] **Step 1 — the corpus move and the capture path (D4), first**, because the fixtures have to exist before the test that reads them: `capture.py` takes an optional dictionary identifier and resolves it through `DCSCopyAvailableDictionaries` + `DCSDictionaryGetIdentifier`; `capture.sh` captures `mesa`, `bonito`, `once`, `real`, `madrugar` through `com.apple.dictionary.es.DGLEV` into `entries/es/`. Unsandboxed, with the existing byte floor.
+- [x] **Step 2 — failing test:** `loadFakeDictionary(dir, lang)` serves one language; `mesa` in Spanish is the Spanish entry, and `sycophantic` in Spanish is `ErrNoEntry` — an absence, which needs no fixture and is the assertion the issue calls newly answerable.
+- [x] **Step 3 — implement the seam.** `systemDictionary(lang store.Lang)` at four call sites; **`CFSetGetValues`, not `CFArrayGetValueAtIndex`** — verified 2026-08-28 that treating the result as a CFArray crashes with `-[__NSCFSet objectAtIndex:]: unrecognized selector`, in a cgo frame where the cause is not obvious. Every private symbol is `dlsym`'d.
+- [x] **Step 4 — prove the fallback**, which is a Done-when row and not a nicety: with one symbol name deliberately misspelled, the binary must still define an English word through today's NULL path.
+- [x] **Step 5 — say which dictionary is in use**, so a wrong pick on a machine with a different set installed is visible rather than puzzling. Run, commit.
 
 ### Task 10: live conformance for the private surface
 
 **Files:** modify `dict_conformance_test.go`.
 
-- [ ] **Step 1 —** assert all nine symbols resolve and that `mesa` through the Spanish choice is a Spanish entry, routed through `conformance.SkipOrFail` (`#25`) so an unreachable dictionary SKIPS by default and FAILS under `CONFORMANCE_STRICT`.
-- [ ] **Step 2 —** run unsandboxed in BOTH env states; sandboxed it must skip, not fail.
-- [ ] **Step 3 —** atlas + README for the dictionary selection, then `sdlc close --issue 23`.
+- [x] **Step 1 —** assert all nine symbols resolve and that `mesa` through the Spanish choice is a Spanish entry, routed through `conformance.SkipOrFail` (`#25`) so an unreachable dictionary SKIPS by default and FAILS under `CONFORMANCE_STRICT`.
+- [x] **Step 2 —** run unsandboxed in BOTH env states; sandboxed it must skip, not fail.
+- [x] **Step 3 —** atlas + README for the dictionary selection, then `sdlc close --issue 23`.
 
 ## Risks
 

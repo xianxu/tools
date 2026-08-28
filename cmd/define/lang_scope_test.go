@@ -264,3 +264,35 @@ func TestAOneShotLookupReadsThePersistedLanguage(t *testing.T) {
 		})
 	}
 }
+
+// D6: the news feed is English BY CONSTRUCTION (httpFeed hardcodes
+// hl=en-US&gl=US&ceid=US:en), so it is consulted only for English.
+//
+// Decided in M2's plan rather than discovered at M2's boundary, which is the
+// lesson the learner model taught at M1's. A Spanish session asking it about
+// `mesa` gets English news about a landform or a city in Arizona — the wrong
+// language AND the wrong sense — cached under a key an English session shares.
+// Same rule as the dictionary: no data beats the wrong language's data.
+func TestTheNewsFeedIsConsultedOnlyForTheLanguageItServes(t *testing.T) {
+	inner := newCachingFeed(newHTTPFeed(), store.NewMem(), store.SystemClock())
+	if got := newsFeedFor(store.DefaultLang, inner); got != inner {
+		t.Error("English lost its news feed; the feed serves exactly this language")
+	}
+	for _, lang := range []store.Lang{"es", "fr", "de"} {
+		if got := newsFeedFor(lang, inner); got != nil {
+			t.Errorf("%s consults the English news feed; its examples must come from its "+
+				"own dictionary entry instead", lang)
+		}
+	}
+}
+
+// And the seam above it tolerates that, which is what makes the gate safe: a
+// session with no feed still gets the dictionary's own usage examples, which is
+// exactly what M2 makes correct per language.
+func TestUsagesSurviveWithoutANewsFeed(t *testing.T) {
+	b := &bothSources{news: nil}
+	got := b.Usages(t.Context(), "madrugar", Entry{})
+	if got == nil && len(got) != 0 {
+		t.Error("a nil feed broke the usage seam")
+	}
+}

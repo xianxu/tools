@@ -1097,6 +1097,66 @@ so they are distinguishable; the gap is not paid after the last one.
 A missing recording is **not** a failed lookup: the definition has already been
 printed, so audio failures warn on stderr and leave the exit code at 0.
 
+### The dictionary follows the language (`#23 M2`)
+
+`systemDictionary(lang, warn)` returns the dictionary for a language, and the
+three outcomes are each a deliberate answer:
+
+| situation | result | why |
+|---|---|---|
+| curated books installed | search them, in curated order | the mode is correct end to end |
+| the private surface is gone | the NULL search, loudly | degrade to the pre-`#23` tool, not to a crash |
+| nothing curated for this language | the NULL search, loudly | guessing is how a tiebreak picks a thesaurus |
+
+**Metadata NARROWS, a curated list DECIDES.** Only the first step is derivable:
+"indexes L, monolingually" is a fact `DCSDictionaryGetLanguages` reports, while
+"is a general dictionary rather than a thesaurus" is a judgement nothing in the
+metadata supports. Measured: requiring every language pair to be L→L leaves
+exactly one candidate for `es` and SIX for `en`, two of them thesauruses and one
+an accessibility dictionary — and a deterministic smallest-identifier tiebreak
+picks the accessibility one for English and the *bilingual* Oxford for Spanish.
+Deterministic and wrong is still wrong.
+
+**Curation is an ordered LIST, not one book,** and that is not a convenience.
+Selecting NOAD alone was the first shape and it lost `iPhone`, `iPad` and
+`MacBook`, which are Apple Dictionary entries — a real regression, caught by
+`TestFixturesMatchLiveDictionary` going red. Selecting *nothing* is the other
+failure and a worse one: with Spanish dictionaries enabled, the NULL search
+answers `madrugar` in ENGLISH mode (verified on this machine), which is exactly
+the Done-when row the milestone exists for. Same-language books in preference
+order satisfy both, because every one of them indexes L→L and so cannot leak.
+
+**Every pair must be L→L, not any.** Gran Diccionario Oxford has an `es→es` pair
+*and* an `en→es` one; "any" would accept it as monolingual Spanish and put
+English glosses back in a Spanish session.
+
+**A CFSet, not a CFArray.** `CFArrayGetValueAtIndex` on the result does not
+return garbage — it raises `-[__NSCFSet objectAtIndex:]: unrecognized selector`,
+an uncaught ObjC exception in a cgo frame where the cause is not obvious. The
+unspecified iteration order that follows is why selection is by identifier, never
+by position or display name, and why `chooseDictionary` is pinned
+order-independent.
+
+**"No entry" and "no dictionary" are different answers** (`dcs_lookup_in` status
+1 vs 3). "This word is not Spanish" is a correct result; "the Spanish dictionary
+is not installed" means fall back rather than report an absence you cannot vouch
+for. Collapsing them makes a missing dictionary look like a missing word.
+
+**The nine symbols are private** — absent from the SDK header, which declares two
+functions and says of the dictionary argument *"not supported for Leopard. You
+should always pass NULL."* True of the header, false of the framework. They are
+`dlsym`'d at run time so a disappearance degrades to the pre-`#23` NULL search;
+proved by misspelling one and running the binary. `TestPrivateDictionarySurface
+StillResolves` is what makes that degradation loud for a maintainer, since it is
+deliberately silent for a user.
+
+**The news feed is gated the same way (D6).** `httpFeed` hardcodes
+`hl=en-US&gl=US&ceid=US:en` — English by construction — so it is consulted only
+for English, and other languages take their examples from their own dictionary
+entry. That is also why `usage/` has no language dimension: nothing writes it
+outside English. If `#10` or `#18` makes the feed language-aware, scoping the
+cache becomes required, and that is the moment to add it.
+
 ## Conformance
 
 Live checks sit behind `//go:build conformance` and run **on demand, not in CI** —
