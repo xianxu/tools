@@ -426,6 +426,7 @@ func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
 		t.Fatal("the English session does not start from the English deck")
 	}
 
+	beforeHistory := d.history
 	setLang := sessionSetLang(&d, &opt, d.persistLang, &voc, &warn)
 	if setLang == nil {
 		t.Fatal("no setLang in a directory that has a store")
@@ -452,6 +453,14 @@ func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
 	}
 	if !voc.Has(store.Key("bonito")) {
 		t.Error("after /lang, the EDITOR holds a third set that captures do not reach")
+	}
+	// history keeps its IDENTITY across the switch, which applyLang argues for in
+	// a comment and this makes structural: events/ is not language-scoped, and
+	// rebuilding it would leave the raw editor holding an orphaned, already-
+	// Load()ed History while everything else read a fresh empty one.
+	if d.history != beforeHistory {
+		t.Error("the switch rebuilt history; events/ is not language-scoped and the editor " +
+			"already holds the loaded one")
 	}
 	// The switch is durable, not just live.
 	if got := store.ReadLang(dir); got != "es" {

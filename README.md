@@ -33,7 +33,7 @@ define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
 define /history             # a command works as an argument too
 define --sound 1 record     # play once instead of three times
 define -no-audio bank       # no fetch, no sound
-define -locale gb colour    # British pronunciation
+define -locale gb colour    # British pronunciation (English only)
 define -lang es madrugar    # one lookup in Spanish, without switching
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
@@ -139,13 +139,13 @@ one-shot, `define "…?"`, there is no session to return to, so it ends the run.
 
 What the model is told is the directory you are in: the word on screen and its
 dictionary entry, what you have looked up this session, your recent deck,
-`user-model.md` if you keep one, and the earlier questions in this session — so a
+the learner model if you keep one, and the earlier questions in this session — so a
 follow-up like `give me two more examples` resolves against the answer before it.
 Nothing is remembered between runs except the files, which means a fresh process
 answers as well as a long-running one and you can read the context with `cat`.
 
 **`define --reflect` writes down who it thinks you are.** It reads your deck and
-your lookup history and produces `user-model.md`: a working level, the domains
+your lookup history and produces the learner model: a working level, the domains
 you read in, and — the part that matters — what practice material should DO about
 each. Every claim names the words it was read off, and a claim citing a word your
 deck does not hold is dropped before you see it.
@@ -193,6 +193,11 @@ Everything follows it — the deck a word files into, the words `--play` offers,
 and the recording that is fetched. `-lang es` is the one-run form, for scripts
 that should not have to change state to ask a question.
 
+`-locale` picks a regional variant and applies to **English only** — `us` or
+`gb`. Every other language uses its own single locale (`es` → `es_es`), and
+passing `-locale` alongside another language says so rather than quietly
+building a URL nobody has measured.
+
 The event log is deliberately *not* split by language: a review event names a
 word, and which deck it came from is the deck's business. "How much did I study
 today" stays one question rather than a join.
@@ -215,7 +220,7 @@ DEFINE_NO_CAPTURE=1 define …  # write nothing in this directory
 `DEFINE_NO_CAPTURE=1` means *nothing at all*, and that includes the event log —
 which is what persists your history, so with it set, history is session-only. It
 also means the directory is not **read**: answers come back un-adapted, with no
-deck and no `user-model.md` behind them.
+deck and no learner model behind them.
 
 The directory *is* the deck: run `define` somewhere else and you get a different
 one. If that directory happens to be synced, so is your vocabulary; `define`

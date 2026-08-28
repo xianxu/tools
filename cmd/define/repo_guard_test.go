@@ -390,3 +390,53 @@ func TestGitignoreCoversRuntimeDirs(t *testing.T) {
 		}
 	}
 }
+
+// A runtime artifact's filename is spelled in exactly ONE place in Go source.
+//
+// This is the mechanical form of a rule three boundary-review findings kept
+// re-stating as prose: no output line, comment, or doc may spell a name the code
+// owns — name the artifact ("the learner model") or derive it from its producer.
+// The cost of the loose version was not cosmetic. `--reflect` printed "wrote
+// user-model.md" while writing user-model.<lang>.md, and the README tells the
+// learner to hand-edit that file's ## Corrections — so following the tool's own
+// output put their corrections in a file UserModel() never reads.
+//
+// A ratchet, in this repo's established shape: it fails the moment a SECOND
+// spelling appears, and it can only ever be tightened. Test files are exempt —
+// a fixture or an assertion naming the concrete artifact is the point of the
+// test, and store/lang_test.go derives the ones that matter anyway.
+func TestRuntimeArtifactNamesAreSpelledOnceInSource(t *testing.T) {
+	// Where the literal is DELIBERATE, with the reason. Everything else must
+	// reach the name through store.UserModelName or store.RuntimeFiles.
+	allowed := map[string]int{
+		// The two consts that BUILD every learner-model name. Nothing else in
+		// non-test Go may spell one — not even the doc comments here, which were
+		// rewritten to describe the names rather than repeat them.
+		"cmd/define/store/yaml.go": 2,
+	}
+
+	root := repoRoot(t)
+	seen := 0
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z", "*.go")), "\x00") {
+		if f == "" || strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		seen++
+		// "user-model." with the dot: a FILENAME. usermodel.go writes
+		// `type: user-model` as a frontmatter field value, which is the
+		// artifact's type rather than its name and is not what drifts.
+		n := strings.Count(string(b), "user-model.")
+		if n > allowed[f] {
+			t.Errorf("%s spells a runtime artifact's name %d time(s), allowed %d — name the "+
+				"artifact (\"the learner model\") or derive it from store.UserModelName. "+
+				"A second spelling is a second source, and the two drift.", f, n, allowed[f])
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no Go source was examined; this test would pass vacuously")
+	}
+}

@@ -34,7 +34,7 @@ type askContext struct {
 	// store's, which survive the process.
 	SessionWords []string
 	DeckWords    []string
-	// UserModel is user-model.md verbatim (#17 writes it). Passed whole rather
+	// UserModel is the learner model verbatim (#17 writes it). Passed whole rather
 	// than parsed: it is prose for a model to read, and a parser here would be a
 	// second definition of a format #17 owns.
 	UserModel string

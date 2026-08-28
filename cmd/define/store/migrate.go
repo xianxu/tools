@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-// MigrateToLanguages moves a pre-language DIRECTORY into its default language.
+// MigrateToLanguages moves the two pre-language artifacts — a flat deck and a
+// flat learner model — under the default language.
 //
 // Without it a deck written before #23 is ORPHANED rather than lost: Deck() reads
 // words/<lang>/, so every existing word would simply stop being there.
@@ -96,7 +97,7 @@ func migrateFlatDeck(dir string, warn io.Writer) error {
 	return nil
 }
 
-// migrateUserModel moves a pre-language user-model.md to user-model.en.md.
+// migrateUserModel moves a pre-language learner model under the default language.
 //
 // The same event as the deck's move and for the same reason: the model is
 // DERIVED from the deck, so when the deck became per-language the model had to
@@ -107,18 +108,21 @@ func migrateFlatDeck(dir string, warn io.Writer) error {
 // written before #23 describes whatever the single deck held, and the tool
 // cannot know which language that was.
 func migrateUserModel(dir string, warn io.Writer) error {
-	from := filepath.Join(dir, "user-model.md")
+	from := filepath.Join(dir, userModelLegacy)
 	if _, err := os.Stat(from); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
 		return err
 	}
-	to := filepath.Join(dir, "user-model."+string(DefaultLang)+".md")
+	// Through the producer, not a hand-built name: this destination has to be
+	// exactly what userModelFile() will later READ, and two expressions for one
+	// scheme is how a migration ends up writing a file nothing opens.
+	to := filepath.Join(dir, UserModelName(DefaultLang))
 	if _, err := os.Stat(to); err == nil {
 		if warn != nil {
-			fmt.Fprintf(warn, "define: left user-model.md in place because %s already exists\n",
-				filepath.Base(to))
+			fmt.Fprintf(warn, "define: left %s in place because %s already exists\n",
+				userModelLegacy, filepath.Base(to))
 		}
 		return nil
 	} else if !os.IsNotExist(err) {
@@ -128,8 +132,8 @@ func migrateUserModel(dir string, warn io.Writer) error {
 		return err
 	}
 	if warn != nil {
-		fmt.Fprintf(warn, "define: moved user-model.md to %s — the learner model is per-language "+
-			"now, because it is derived from one language's deck\n", filepath.Base(to))
+		fmt.Fprintf(warn, "define: moved %s to %s — the learner model is per-language "+
+			"now, because it is derived from one language's deck\n", userModelLegacy, filepath.Base(to))
 	}
 	return nil
 }

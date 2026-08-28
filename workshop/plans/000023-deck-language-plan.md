@@ -77,7 +77,7 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
 
 ### D3 — the migration is language-blind, and a collision leaves the flat file alone (PQ-3)
 
-- **`MigrateFlatDeck(dir)` takes no language.** The destination is `DefaultLang`, hardcoded, and the ambiguity is removed structurally rather than by a convention a caller can get wrong. The justification is not "English is the default" but a fact about the files: a flat deck was written by a pre-language `define`, which only ever consulted the English dictionary and requested `_en_us_` audio. Whatever the headwords are, the *entries* are English.
+- **`MigrateToLanguages(dir, warn)` takes no language.** The destination is `DefaultLang`, hardcoded, and the ambiguity is removed structurally rather than by a convention a caller can get wrong. The justification is not "English is the default" but a fact about the files: a flat deck was written by a pre-language `define`, which only ever consulted the English dictionary and requested `_en_us_` audio. Whatever the headwords are, the *entries* are English.
 - **It is language-BLIND by design, and says so.** This tree's own deck is `words/ligament.yaml` and `words/madrugar.yaml` — the second is this issue's headline Spanish example, and it will land in `words/en/`. Nothing can tell; a heuristic here is the inference the whole design rejects. So the migration **prints what it moved** and names the remedy (`mv words/en/madrugar.yaml words/es/`). It prints nothing when it moves nothing.
 - **Collision rule: the subdirectory wins, the flat file survives, and it is reported.** With `words/mesa.yaml` and `words/en/mesa.yaml` both present, the destination is never overwritten and the source is never deleted. A surviving flat file is inert — after this change `wordsDir()` is `words/<lang>/`, so nothing reads `words/*.yaml` — which makes "leave it" strictly non-destructive on the one artifact here that cannot be regenerated.
 - **Two tests, because the earlier single assertion was true only of one case:** non-colliding → moved, flat gone; colliding → destination byte-identical, flat file still there, warning names it. Plus the idempotence run: twice, same result.
@@ -140,7 +140,7 @@ The M1 rule, stated now because `#27` — which owns locale policy — is blocke
 |------|----------|--------|-------|
 | `store.YAML` | `cmd/define/store/yaml.go` | modified | the vocab directory |
 | `ReadLang` / `WriteLang` | `cmd/define/store/lang.go` | new | the persisted setting |
-| `MigrateFlatDeck` | `cmd/define/store/migrate.go` | new | an existing flat deck |
+| `MigrateToLanguages` | `cmd/define/store/migrate.go` | new | an existing flat deck AND a flat learner model |
 | `newDeck` (closure) | `cmd/define/main.go` | new | the language-scoped triple |
 | `/lang` command | `cmd/define/lang_cmd.go` | new | the TUI namespace |
 | `-lang` flag | `cmd/define/main.go` | new | operator input |
@@ -183,7 +183,7 @@ Tests are named by what they pin, not transcribed — the strategy line is the p
 **Files:** create `store/migrate.go`, `store/migrate_test.go`.
 
 - [x] **Step 1 — failing tests, three of them**, one per rule in D3: moved-and-gone for the ordinary case; destination byte-identical and flat file surviving for a collision; and a twice-run migration reaching the same state. The third is the one that stops a future rewrite-in-place, on the one artifact here that cannot be regenerated.
-- [x] **Step 2 — implement `MigrateFlatDeck(dir string, warn io.Writer) error`.** No language parameter (D3). It moves `words/*.yaml` into `words/en/`, skips subdirectories the way `Deck()` already does (`yaml.go:103-115`), never overwrites, and reports what it moved plus the `mv` remedy — printing nothing when it moves nothing.
+- [x] **Step 2 — implement `MigrateToLanguages(dir string, warn io.Writer) error`.** No language parameter (D3). It moves `words/*.yaml` into `words/en/`, skips subdirectories the way `Deck()` already does (`yaml.go:103-115`), never overwrites, and reports what it moved plus the `mv` remedy — printing nothing when it moves nothing.
 - [x] **Step 3 — call it once in `openStore`, run, commit.**
 
 ### Task 4: `-lang`, the persisted setting, and `/lang`
@@ -255,7 +255,7 @@ Tests are named by what they pin, not transcribed — the strategy line is the p
 
 **The curated list is wrong on someone else's machine.** 87 dictionaries here; another Mac has a different set. Mitigated by the explicit override and by saying which dictionary is in use.
 
-**Deck migration touches the one irreplaceable artifact.** `MigrateFlatDeck` moves rather than rewrites, never overwrites, and leaves a colliding flat file in place — inert, because nothing reads `words/*.yaml` after Task 2. The twice-run test is what must stop any future version that rewrites.
+**Deck migration touches the one irreplaceable artifact.** `MigrateToLanguages` moves rather than rewrites, never overwrites, and leaves a colliding flat file in place — inert, because nothing reads `words/*.yaml` after Task 2. The twice-run test is what must stop any future version that rewrites.
 
 **A mid-session `/lang` leaves a stale captured local.** The concrete instance is `runEditor`'s `voc` (`replraw.go:79`); Task 4 Step 5's mutation check is what keeps it honest. The class — "a loop local derived from `d` before the loop" — is why `setLang` lives in the loop that owns those locals rather than in `commandCtx`.
 
@@ -396,3 +396,62 @@ Minors. Sidecar: `workshop/plans/000023-deck-language-m1-review.md`.
   store double in that test fails abstractly, so the path is a production-only
   property. The assertion is now on what is actually guaranteed — that the
   message says which artifact failed — with the distinction stated.
+
+### 2026-08-28 — M1 boundary review round 3: two rules, not two instances
+
+**Reason.** Round 3 disposed BR-2..BR-5 and raised BR-6 and BR-7 (both
+Important) plus four Minors, with the gate reporting *4 repeat families — not
+converging: fix rules, not instances.* Sidecar:
+`workshop/plans/000023-deck-language-m1-review.md`.
+
+**Delta.**
+
+- **BR-6 — the artifact-rename sweep was 3 of ~12, and one miss was user-facing
+  output on the happy path.** `--reflect` printed "wrote user-model.md" while
+  writing the per-language file, and the README tells the learner to hand-edit
+  that file's `## Corrections` — so following the tool's own output would have
+  put their corrections in a file `UserModel()` never reads.
+  - The reviewer's instruction was explicit: do NOT fix the instance. The rule —
+    *no output line, comment, README line, atlas line or plan line may spell a
+    runtime artifact's filename or a symbol the code owns; name the artifact or
+    derive the name* — is now MECHANICAL.
+    `TestRuntimeArtifactNamesAreSpelledOnceInSource` is a ratchet in this repo's
+    established shape: non-test Go may spell a learner-model filename only in
+    the two consts that BUILD every such name, and a second spelling fails.
+  - It immediately found four sites the manual enumeration had missed, which is
+    the argument for mechanising it rather than sweeping again.
+  - `store.UserModelName(lang)` is exported so a consumer can name the file
+    without restating the scheme.
+  - The symbol half is swept too: `atlas/define.md`, `main.go`'s comment and this
+    plan named `MigrateFlatDeck`, which the tree does not export. **This is the
+    second time this plan has named an absent entity** (round 1's I4,
+    `deckDeps`), so the rule is recorded here: a rename in code sweeps every
+    prose restatement of the symbol in the SAME commit.
+- **BR-7 — the runtime-file guard asserted coverage from hand-typed literals.**
+  The reviewer's mutation was decisive: changing the atomic-write prefix left the
+  suite green while the shadow beside the two root-level runtime files matched no
+  `.gitignore` pattern, so a `git add -A` would commit a partial learner model.
+  - Rule applied: *a runtime artifact's name has exactly one producing function;
+    guards, migrations and tests derive from it and never restate it.* There are
+    now four producers (`UserModelName`, `langFileName`, `newTempFile`,
+    `userModelLegacy`), and `RuntimeFiles` BUILDS its two pattern entries from
+    them — so a scheme change moves the pattern and the `.gitignore` guard fails
+    loudly instead of silently ceasing to cover anything.
+  - Both mutations re-run and confirmed to redden now: the prefix change and a
+    learner-model scheme change each fail `TestGitignoreCoversRuntimeFiles` by
+    name.
+  - `migrateUserModel` builds its destination through `UserModelName`, and the
+    migration tests assert through `UserModel()` rather than a literal path — so
+    a scheme change cannot leave the migration writing a file nothing reads.
+- **Minors.** The detached PATTERNS comment merged into `RuntimeFiles`' doc;
+  `MigrateToLanguages`' doc says it moves two named artifacts rather than "a
+  directory"; `wordsDir`'s comment corrected (it claimed `userModelFile` was
+  unscoped, false since BR-2); README now states `-locale` is English-only, three
+  lines from where it is demonstrated; and `d.history`'s identity across a switch
+  is asserted rather than only argued in a comment.
+- **Carried to the close review, not fixed here:** `usage/` is not
+  language-scoped and is correctly excluded today because the news feed takes no
+  language — but M2's plan must decide it deliberately, since `mesa`'s usage
+  examples in a Spanish session are not the English ones and the cache is keyed
+  by word alone. Discovering that at M2's boundary is exactly how the learner
+  model arrived at M1's.

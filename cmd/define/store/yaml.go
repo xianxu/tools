@@ -52,46 +52,84 @@ func NewYAML(dir string, lang Lang, warn io.Writer) *YAML {
 // compiler cannot: adding a name here and forgetting .gitignore fails a test.
 var RuntimeDirs = []string{"words", "events", "usage"}
 
-// RuntimeFiles names every FILE define writes into the working directory.
+// The names define writes into the working directory, each with exactly ONE
+// producing function. Guards, migrations and tests DERIVE from these; nothing
+// restates them.
+//
+// That rule is not stylistic. A hand-typed copy of a name is a second source for
+// it, and the second source is where the guard stops guarding: with the atomic
+// shadow's prefix written out in both the writer and its test, changing the
+// writer left every test green while a partial learner model became `git add
+// -A`-able in the working-directory root.
+const (
+	// userModelLegacy is the PRE-#23 flat name. It survives only so
+	// MigrateToLanguages can find a directory written before the model became
+	// per-language; nothing writes it.
+	userModelLegacy = "user-model.md"
+	userModelPrefix = "user-model."
+	userModelExt    = ".md"
+	// tmpPattern is the atomic-write shadow. It reaches .gitignore because for
+	// the two root-level runtime files there is no runtime DIRECTORY covering it.
+	tmpPattern = ".tmp-*"
+)
+
+// UserModelName is the one producer of a learner model's filename.
+//
+// Exported because a CONSUMER needs to name the file: --reflect tells the
+// learner what it wrote, and the README tells them to hand-edit that file's
+// ## Corrections section. It printed a literal for exactly one commit, and in
+// that commit it printed the legacy flat name while writing the per-language
+// one, so corrections would have landed in a file UserModel() does not read.
+func UserModelName(l Lang) string { return userModelPrefix + string(l) + userModelExt }
+
+// newTempFile is the one producer of an atomic-write shadow, so a test can
+// observe the real name rather than restate the pattern.
+func newTempFile(dir string) (*os.File, error) { return os.CreateTemp(dir, tmpPattern) }
+
+// RuntimeFiles names every FILE define writes into the working directory, as
+// gitignore-style PATTERNS.
 //
 // The sibling of RuntimeDirs, and it exists because that list covers directories
-// only. user-model.md is a runtime file — --reflect writes it into the current
-// directory, carrying inferred claims about the learner — and it reached none of
-// the three places RuntimeDirs was built to reach: `git check-ignore -v
-// user-model.md` matched nothing. Nothing leaked, but #23's language setting
-// would have been the second instance, which is why this is a list and not two
-// more lines in .gitignore.
+// only. The learner model is a runtime file — --reflect writes it into the
+// current directory, carrying inferred claims about the learner — and it reached
+// none of the three places RuntimeDirs was built to reach: `git check-ignore`
+// matched nothing. Nothing leaked, but #23's language setting would have been
+// the second instance, which is why this is a list and not two more lines in
+// .gitignore.
+//
+// Patterns rather than names, because two entries are FAMILIES: the learner
+// model is per-language, and the atomic-write shadow is one file per write. Both
+// pattern entries are BUILT BY their producers, so a change to either scheme
+// moves the pattern too and TestGitignoreCoversRuntimeFiles fails loudly instead
+// of the guard silently ceasing to cover anything.
+//
+// `??` — exactly a two-letter Lang, which ParseLang guarantees — rather than
+// `*`, which would also shadow the tracked golden fixture under testdata/ and
+// quietly re-break the reserved-basename rule below. TestRuntimeFilePatterns
+// CoverWhatWeWrite asserts that it does not.
 //
 // A name here is RESERVED. .gitignore hides these un-anchored (go test runs in
-// the package directory), so a tracked file sharing one is silently un-addable
-// after any git rm — repo_guard_test.go's index guard is what says so out loud,
-// and testdata/golden/user-model.md was renamed to clear the way for it.
+// the package directory), so a tracked file matching one is silently un-addable
+// after any git rm — repo_guard_test.go's index guard is what says so out loud.
 //
 // lang.txt, not lang: an un-anchored `lang` would also hide any DIRECTORY of
 // that name anywhere in the tree, and a basename guard structurally cannot see
 // that. The extension costs nothing and closes the hole.
-var RuntimeFiles = []string{"user-model.md", "user-model.??.md", "lang.txt", ".tmp-*"}
+var RuntimeFiles = []string{
+	userModelLegacy,
+	UserModelName("??"), // the per-language family, built by its own producer
+	langFileName,
+	tmpPattern,
+}
 
-// Entries are gitignore-style PATTERNS, not literal names, because two of the
-// four are families rather than files: the learner model is per-language
-// (user-model.es.md), and writeBytesAtomic leaves a .tmp-* shadow beside
-// whatever it writes — in the working-directory ROOT for these two, where no
-// runtime directory covers it.
+// wordsDir and userModelFile are per-language; eventsDir and usageDir are NOT.
 //
-// `??` is exactly a two-letter Lang, which ParseLang guarantees. Deliberately
-// tighter than `*`: user-model*.md would also shadow
-// testdata/golden/user-model.golden.md, which is precisely the squatting problem
-// the reserved-basename rule exists to prevent.
-//
-// user-model.md itself stays listed because a directory written before #23 has
-// one, and MigrateToLanguages moves it rather than orphaning it.
-
-// wordsDir is per-language; eventsDir, usageDir and userModelFile are NOT.
-//
-// Language is a DECK dimension, not an event one. A review event names a word
-// and a verdict; which deck it came from is the deck's business, and splitting
-// the log would make "how much did I study today" a join — reached by migrating
-// an append-only artifact, which is the worse half of the trade.
+// The dividing line is DERIVATION, not storage. The learner model is read off a
+// language's deck, so one shared file meant a Spanish --reflect replaced the
+// English model. An event is a different kind of thing — a fact about a moment,
+// not a summary of a deck — so splitting the log would make "how much did I
+// study today" a join, reached by migrating an append-only artifact. The
+// argument for leaving events/ flat does not transfer to anything derived.
 func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0], string(y.lang)) }
 func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) }
 
@@ -112,7 +150,7 @@ func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) 
 // keeps the two in step instead — a stronger check than derivation, since it
 // asserts the actual output rather than a shared string.
 func (y *YAML) userModelFile() string {
-	return filepath.Join(y.dir, "user-model."+string(y.lang)+".md")
+	return filepath.Join(y.dir, UserModelName(y.lang))
 }
 
 // usageDir holds the news cache, one file per word, beside words/ and events/.
@@ -327,14 +365,14 @@ func writeAtomic(path string, w Word) error {
 }
 
 // writeBytesAtomic is the atomic write itself, without the marshalling. Split
-// out when user-model.md arrived: it is markdown a person edits rather than a
+// out when the learner model arrived: it is markdown a person edits rather than a
 // serialised Word, and the alternative was a second temp-file-then-rename dance
 // that could drift from this one (ARCH-DRY).
 func writeBytesAtomic(path string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	tmp, err := newTempFile(filepath.Dir(path))
 	if err != nil {
 		return err
 	}

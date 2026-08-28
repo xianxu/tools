@@ -22,7 +22,7 @@ type Store interface {
 	// file is #17's to write.
 	//
 	// It lives on the Store because the store already owns which directory this
-	// session is — words/, events/ and user-model.md are the three artifacts in
+	// session is — words/, events/ and the learner model are the three artifacts in
 	// it, and reading this one anywhere else would be a second answer to that
 	// question.
 	UserModel() (string, error)

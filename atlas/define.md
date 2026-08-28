@@ -235,7 +235,7 @@ a join, and would get there by migrating an append-only artifact. If a later
 issue wants per-language study totals, that is a join over the deck.
 
 **A pre-language deck is migrated, blindly and non-destructively.**
-`MigrateFlatDeck(dir, warn)` runs once in `openStore` and moves `words/*.yaml`
+`MigrateToLanguages(dir, warn)` runs once in `openStore` and moves `words/*.yaml`
 into `words/en/` — without it, every existing word is orphaned rather than lost,
 since `Deck()` now reads `words/<lang>/`. It takes NO language: the destination
 is always the default, justified by a fact about the files rather than a
@@ -805,7 +805,7 @@ declarations of "what is this session holding" (`replLines`, `runEditor`,
 
 **The answer.** A question goes to `internal/llm` with the DIRECTORY as its
 context: the word on screen and its dictionary entry, this session's lookups, the
-recent deck, `user-model.md`, and the session's own earlier exchanges. Three
+recent deck, the learner model, and the session's own earlier exchanges. Three
 consequences fall out, and they are the reason for this shape — a fresh process
 answers as well as a long-running one, the context is inspectable as files rather
 than trapped in memory, and the answer is adaptive for the same reason the
@@ -818,7 +818,7 @@ the prompt without thought shows up in its diff. An absent section is **omitted*
 never rendered empty — an empty `## The learner` says there IS a model and it is
 blank, a different claim, and the one that produces a confident generic answer.
 
-Measured end to end against the live proxy with a two-line `user-model.md` ("B2,
+Measured end to end against the live proxy with a two-line learner model ("B2,
 reads business news, weak on near-synonym distinctions"): the answer came back
 with a *"Business-news nuance"* paragraph and *"Related near-synonyms in your
 range"*, and quoted the NOAD entry back — *"the dictionary definition you looked
@@ -905,7 +905,7 @@ still collapsed, because that changes no meaning.
 
 ## The learner model
 
-`define --reflect` folds the deck and the lookup log into `user-model.md`, the
+`define --reflect` folds the deck and the lookup log into the learner model, the
 third artifact in the working directory. Batch and on demand: no model call ever
 sits on the lookup or review path, which is what keeps a lookup instant and
 offline.
@@ -958,7 +958,7 @@ The atlas called it "the one thing that must hold" until a forged marker proved
 otherwise.
 
 **Model text is neutralised before it is rendered**, and that is the other half
-of the file's integrity. `user-model.md` is marker-delimited, so a directive — or
+of the file's integrity. The learner model is marker-delimited, so a directive — or
 an evidence word — containing a line-start `## Corrections` forges a second
 marker above the real one; the next run splices there and everything below,
 including the learner's actual corrections, is frozen forever. `oneLine`

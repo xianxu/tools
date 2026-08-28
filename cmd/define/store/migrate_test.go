@@ -170,13 +170,21 @@ func TestMigrateMovesTheUserModelUnderItsLanguage(t *testing.T) {
 	if err := store.MigrateToLanguages(dir, &warn); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(t, filepath.Join(dir, "user-model.en.md")); got != "## Level\nB2\n" {
-		t.Errorf("migrated model = %q", got)
+	// Read back THROUGH THE STORE, not from a hand-built path: what matters is
+	// that the migration's destination is exactly what UserModel() later opens.
+	// Asserting a literal name would stay green while the migration wrote a file
+	// nothing reads.
+	got, err := store.NewYAML(dir, store.DefaultLang, nil).UserModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "## Level\nB2\n" {
+		t.Errorf("the migrated model is not what the store reads: %q", got)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "user-model.md")); !os.IsNotExist(err) {
 		t.Error("the flat model survived; the learner model now exists twice")
 	}
-	if !strings.Contains(warn.String(), "user-model.en.md") {
+	if !strings.Contains(warn.String(), "learner model") {
 		t.Errorf("migration was silent about the model: %q", warn.String())
 	}
 }
@@ -187,13 +195,19 @@ func TestMigrateMovesTheUserModelUnderItsLanguage(t *testing.T) {
 func TestMigrateNeverOverwritesAnExistingUserModel(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "user-model.md"), "old\n")
-	writeFile(t, filepath.Join(dir, "user-model.en.md"), "current\n")
+	if err := store.NewYAML(dir, store.DefaultLang, nil).SetUserModel("current\n"); err != nil {
+		t.Fatal(err)
+	}
 
 	var warn bytes.Buffer
 	if err := store.MigrateToLanguages(dir, &warn); err != nil {
 		t.Fatal(err)
 	}
-	if got := read(t, filepath.Join(dir, "user-model.en.md")); got != "current\n" {
+	got, err := store.NewYAML(dir, store.DefaultLang, nil).UserModel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "current\n" {
 		t.Errorf("the destination was overwritten: %q", got)
 	}
 	if got := read(t, filepath.Join(dir, "user-model.md")); got != "old\n" {

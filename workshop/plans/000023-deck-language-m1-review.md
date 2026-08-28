@@ -209,3 +209,145 @@ findings:
     detail: |
       store/lang.go:41 requires exactly two ASCII letters, refusing pt-br, zh-hans and ISO 639-3 tags. The comment explains only why there is no list of known languages. One sentence naming the CDN's _xx_yy_ path shape as what fixes the length would make the constraint a decision rather than an artifact.
 ```
+
+---
+
+## Re-review — 2026-08-28T12:55:52-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 23 — deck grouped by language, one language per --play session |
+| repo | tools |
+| issue file | workshop/issues/000023-deck-language.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 2e929fc56d1edc6b04af61100116a02abb7d9146..e393f2d92106d4dae0240f49ed01d29d1867230c |
+| command | sdlc milestone-close --issue 23 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-28T12:55:52-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All four open findings are genuinely closed, and I checked each by reverting rather than by reading the commit message: reverting `userModelFile()` to the flat name reddens `TestTheUserModelIsPerLanguage` with the exact clobber BR-2 described, `git check-ignore -v` really matches `user-model.md`, `user-model.en.md`, `user-model.es.md`, `lang.txt` and `.tmp-abc123` while still missing the golden fixture, `applyLang` no longer writes `opt.lang` and says why, and `ParseLang`'s comment now argues the two-letter limit from the CDN's `_<lang>_<locale>_` shape. Full suite green, `gofmt`/`vet` clean. What keeps this off SHIP is two class-level gaps, both cheap. First, the commit states its own rule — "the strings that named `user-model.md` name the artifact instead of a filename that varies" — and then swept 3 of ~12 sites: `--reflect`'s *success* line still prints `define: wrote user-model.md` when it wrote `user-model.es.md`, `yaml.go:89` still says `userModelFile` is NOT per-language 26 lines above the code that makes it so, and README contradicts itself within 40 lines. Second, `RuntimeFiles`' coverage of `.tmp-*` is pinned by a hand-typed `".tmp-123456"` rather than by the writer — I changed `os.CreateTemp`'s prefix from `.tmp-` to `tmp-` and the whole store package stayed green, which is precisely the silent-escape class this milestone exists to close.
+
+## 1. Strengths
+
+- **`cmd/define/store/migrate.go:99-136`** — `migrateUserModel` folds the model into the same event as the deck's move under the same never-overwrite / never-delete / say-what-happened rules, and both halves are pinned by tests whose collision cases assert *both* files survive. The doc comment argues from a fact about the files rather than a preference.
+- **`cmd/define/store/yaml.go:98-117`** — the answer to BR-2 is stated as a *rule* (derivation, not storage) with the `events/` counter-argument explicitly refused, so the next language-derived artifact has a criterion to be judged against rather than a precedent to be copied.
+- **`cmd/define/store/lang_test.go:130-166`** — `TestRuntimeFilePatternsCoverWhatWeWrite` asserting patterns are not so *loose* as to shadow the golden fixture is the half that a "does it cover?" test normally forgets, and it is the half that would have caught `user-model*.md`.
+- **`cmd/define/command.go:330-380`** — `applyLang` remains the strongest thing in this range: one function, every member named with its reason, the generating rule written down, and `d.dict` pre-registered for M2. BR-2 landing as a new member of that enumeration rather than a patch is the enumeration working.
+- **`atlas/repo-guards.md:61-104`** — the `??`-vs-`*` decision, the `lang.txt`-vs-`lang` decision, and the `legacyRuntimeFilePaths` ratchet are all recorded with their reasoning, so none of them can be undone by accident.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**BR-6 — the artifact-rename sweep is 3 of ~12, and one of the misses is user-facing output on the happy path.**
+`cmd/define/reflect.go:405` prints `define: wrote user-model.md from %d words` after writing `user-model.<lang>.md`. README:151-158 tells the learner to hand-edit that file's `## Corrections`; a learner who edits the filename the tool just named gets their corrections ignored (they land in a file `UserModel()` does not read), and the next run answers with `left user-model.md in place because user-model.en.md already exists`.
+
+**This is the 3rd finding in family `comment-contract-drift`.** Earlier rounds fixed instances (BR-3's `opt.lang` comment, BR-5's `ParseLang` rationale). Do not fix this instance. The rule that covers all of them, and that this commit *already stated for itself*: **no string, comment, README line, atlas line or plan line may spell a runtime artifact's filename or a symbol name that the code owns — name the artifact ("the learner model"), or derive the name.** It is mechanically enforceable with the idiom this repo already uses for `legacyRuntimeFilePaths`: an exact-set ratchet asserting that `user-model.md` appears in non-test Go only at the two deliberately-historical sites (`RuntimeFiles[0]`, `migrate.go`'s `from`).
+
+Measured prevalence, HEAD:
+- output: `reflect.go:405`
+- comments: `store/yaml.go:89` (*"wordsDir is per-language; eventsDir, usageDir and userModelFile are NOT"* — false since `yaml.go:115`), `askctx.go:37`, `store/store.go:25`, `store/mem.go:17`
+- README: `142`, `148`, `218` name `user-model.md` while `182` names `user-model.en.md` — self-contradicting within one file, in this range
+- atlas: `define.md:808`, `821`, `908`, `961` name `user-model.md` while `220` names `user-model.<lang>.md`
+- symbol, not filename, same rule: `main.go:248` (*"see MigrateFlatDeck"*) and `atlas/define.md:238` (*"`MigrateFlatDeck(dir, warn)` runs once in `openStore`"*) name a symbol the tree does not export — it is `MigrateToLanguages`, with `migrateFlatDeck` unexported. This is round 1's I4 (`deckDeps`) recurring: I4 was closed by renaming the plan's entity, and the same commit family then renamed a function in code without sweeping the prose. Plan sites: `plan.md:80`, `:143` (Core-concepts table), `:186`, `:258`, `:296`.
+
+**BR-7 — the runtime-file guard's coverage is asserted from hand-typed literals, so writer drift escapes it silently (ARCH-DRY).**
+`cmd/define/store/lang_test.go:142` appends the literal `".tmp-123456"`, while `atlas/repo-guards.md:96-100` documents the test as *"it asserts the real output of the functions that write."* Verified by mutation in a scratch copy of `e393f2d9`: changing `store/yaml.go:337` to `os.CreateTemp(filepath.Dir(path), "tmp-*")` leaves `go test ./cmd/define/store/` **green**, and the atomic-write shadow beside `user-model.<lang>.md` and `lang.txt` in the working-directory root then matches no `.gitignore` pattern — a `git add -A` commits a partial learner model. The same shape sits at `store/migrate.go:117`, which hand-writes `"user-model."+string(DefaultLang)+".md"` instead of calling the producer that owns that scheme (`userModelFile()`, same package); `migrate_test.go:186` asserts the same literal, so a future scheme change leaves the migration writing a name nothing reads, green.
+
+**This is the 2nd finding in family `runtime-artifact-guard-coverage`.** Do not fix the `.tmp-` instance. The rule: **a runtime artifact's name has exactly one producing function; guards, migrations and tests derive from it and never restate it.** `langFile`/`langFileName` (`store/lang.go:51-56`) is already the model — one producer, and the test calls it. Fix: export/extract `const tmpPattern = ".tmp-*"` consumed by both `os.CreateTemp` and `RuntimeFiles[3]`; have `migrateUserModel` call `NewYAML(dir, DefaultLang, nil).userModelFile()` for its destination; drop every literal from `TestRuntimeFilePatternsCoverWhatWeWrite`. Prevalence: 3 writer names, 1 derived.
+
+## 4. Minor findings
+
+- `workshop/projects/define-learn.md:405-406` — `**actual:** 1.03h (M1)` / `**closed:** 2026-08-28` were written in `30ee9e2`, before three rounds of boundary-review fix commits; re-measure at the real close rather than leaving a number that understates by the whole review cost.
+- `README.md:37` — `define -locale gb colour` sits three lines above the new `-lang` example, and README never says `-locale` is English-only. D2's rule and its diagnostic are in `atlas/define.md:1084-1091` only.
+- `cmd/define/store/yaml.go:75-87` — the "Entries are gitignore-style PATTERNS…" block is separated from `var RuntimeFiles` by a blank line and followed by another, so godoc attaches it to nothing. Merge it into the `RuntimeFiles` doc comment.
+- `cmd/define/store/migrate.go:11` — `MigrateToLanguages`' doc opens *"moves a pre-language DIRECTORY into its default language"*; it moves two named artifacts, not a directory. Same family as BR-6.
+
+## 5. Test coverage notes
+
+- BR-2 is pinned at the store, not end-to-end: `TestTheUserModelIsPerLanguage` (`store/migrate_test.go:210`) reddens correctly under revert, and since `runReflect` and `gatherAskContext` both go through `d.deck`, that is the right altitude. Verified, not assumed.
+- The `.tmp-*` half of BR-4 is *covered* but not *pinned* — see BR-7. That is the only coverage gap I found that a mutation actually survives.
+- `d`-in-`--play` deletion is still only exercised through `--forget`; `play_loop.go:154` calls the same `d.deck.Forget`, so it is delivered by construction. Carried forward from round 1 as a note, not a finding.
+- Nothing asserts `d.history` keeps its identity across a `/lang` switch. `applyLang`'s comment and `main.go:255-260` both argue it; a one-line identity assertion inside `TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages` would make the argument structural. Cheap, not blocking.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag (BR-7).** `newDeck` as one builder called twice, `applyVoice` as one derivation with two callers, `isRuntimeFile` mirroring `isRuntimeDir`, and `MigrateToLanguages` reusing `RuntimeDirs[0]` are all right. The exceptions are the three restatements in BR-7.
+- **ARCH-PURE — pass.** `ParseLang`, `defaultLocale`, `localeFor`, `voiceFor`, `parseLangArgs`, `AudioCandidates` are pure and unit-tested with no IO; `localeFor` returning its complaint and `applyVoice` printing it once at the boundary is the principle exactly. `migrate.go` is IO-shell and is tested against real `t.TempDir()` directories rather than a mocked filesystem — correct for this layer.
+- **ARCH-PURPOSE — pass on the language sweep, flag on the finding sweep.** Shadow-sweep of state derived from the language: `deck`/`capture`/`vocab` ✓, editor `voc` ✓, `opt.voice` ✓, `user-model.<lang>.md` ✓ (this round), `d.dict` registered for M2, `events/` excluded with an argument, `usage/` excluded correctly *today* (the news feed takes no language). The enumeration is complete for M1. The flag is BR-6: the commit named a class of its own accord and then swept a third of it.
+- **ARCH-MOCK — pass.** The CDN fake and production share one boundary (`rebasedSource` walks real `AudioCandidates` output), and `TestCDNStillServesSpanishOnTheExpectedPaths` gives the new Spanish facts a live row — including the negative half, that the legacy path does *not* serve Spanish, which is what the English-only gate rests on. For M2, hold `dcsDictionaries` to the same standard: the fake must model dictionary *identity* across calls, not merely entry presence, or `chooseDictionary`'s curated-list branch is untestable against reality.
+- **For M2:** `usage/` is not language-scoped and correctly excluded now, but the moment the dictionary follows the mode it becomes a candidate — `mesa`'s usage examples in a Spanish session are not the English ones, and the cache is keyed by word alone (`main.go:265`). Decide it deliberately in M2's plan rather than discovering it at M2's boundary, which is how `user-model.md` arrived.
+
+## 7. Plan revision recommendations
+
+Add a `## Revisions` entry to `workshop/plans/000023-deck-language-plan.md`:
+
+- **`MigrateFlatDeck` was delivered as `MigrateToLanguages`.** D3 (`:80`), the Core-concepts integration table (`:143`), Task 3 Step 2 (`:186`), the reviewer note (`:258`) and the round-1 Revisions entry (`:296`) all name `MigrateFlatDeck(dir, warn)` as the exported entity in `cmd/define/store/migrate.go`. The tree exports `MigrateToLanguages(dir, warn)`, which calls the unexported `migrateFlatDeck` plus `migrateUserModel`. The substance D3 pinned — no language parameter, destination hardcoded to `DefaultLang`, subdirectory-wins/flat-file-survives-and-is-reported — holds unchanged; only the name and the scope (it now moves the learner model too) differ. Update the table row and D3 so the plan stops naming an entity the tree does not have, and note that the same correction is owed at `atlas/define.md:238` and `cmd/define/main.go:248`.
+- **This is the second time this plan has named an absent entity** (round 1's I4, `deckDeps`). Record the rule alongside the correction, per BR-6: a rename in code sweeps every prose restatement of the symbol in the same commit.
+
+```findings
+dispose:
+  - id: BR-2
+    disposition: addressed
+    note: |
+      userModelFile() is per-language and MigrateToLanguages moves the flat file; verified by reverting yaml.go:115 in a scratch copy of e393f2d9 — TestTheUserModelIsPerLanguage goes red with the exact cross-language clobber.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      applyLang no longer assigns opt.lang and command.go:371-374 states why a switch does not retroactively make the flag present.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      .tmp-* is in RuntimeFiles, .gitignore and both basename guards; git check-ignore -v matches .tmp-abc123 and still misses the golden fixture. See BR-7 for the remaining pin gap, which is a different rule.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      store/lang.go:39-43 now names the CDN's _<lang>_<locale>_ shape and the path segment as what fixes the length, with pt-br and ISO 639-3 refused deliberately.
+findings:
+  - id: new
+    severity: Important
+    family: comment-contract-drift
+    title: |
+      The user-model rename swept 3 of ~12 restatements, including --reflect's success line, which names a file it did not write
+    detail: |
+      3rd finding in this family — do NOT fix the instance. The rule, which this commit already stated for itself: no string, comment, README line, atlas line or plan line may spell a runtime artifact's filename or a code-owned symbol name; name the artifact, or derive the name. Enforceable with the legacyRuntimeFilePaths exact-set ratchet idiom. Measured prevalence at HEAD: reflect.go:405 prints "wrote user-model.md" after writing user-model.<lang>.md; store/yaml.go:89 says userModelFile is NOT per-language, 26 lines above yaml.go:115; comments at askctx.go:37, store/store.go:25, store/mem.go:17; README 142/148/218 contradict README 182; atlas/define.md 808/821/908/961 contradict 220. Same rule, symbol form: main.go:248 and atlas/define.md:238 name MigrateFlatDeck, which the tree does not export (MigrateToLanguages does; migrateFlatDeck is unexported), and the plan names it at :80, :143, :186, :258, :296 — round 1's I4 (deckDeps) recurring one function further out.
+  - id: new
+    severity: Important
+    family: runtime-artifact-guard-coverage
+    title: |
+      RuntimeFiles coverage is asserted from hand-typed literals, so changing the atomic-write temp prefix escapes every guard green
+    detail: |
+      2nd finding in this family — do NOT fix the .tmp- instance. The rule: a runtime artifact's name has exactly one producing function; guards, migrations and tests derive from it and never restate it. langFile/langFileName is already the model. Mutation-verified on a scratch copy of e393f2d9: os.CreateTemp(filepath.Dir(path), "tmp-*") at store/yaml.go:337 leaves go test ./cmd/define/store/ fully green, because store/lang_test.go:142 appends the literal ".tmp-123456" rather than observing the writer — while atlas/repo-guards.md:96-100 documents that test as asserting the real output of the writing functions. The shadow beside user-model.<lang>.md and lang.txt in the working-directory root then matches no .gitignore pattern. Same shape at store/migrate.go:117, which hand-writes "user-model."+DefaultLang+".md" instead of calling userModelFile() in its own package, with migrate_test.go:186 asserting the same literal. Prevalence: 3 writer names, 1 derived. Fix: a shared tmpPattern const consumed by os.CreateTemp and RuntimeFiles, migrateUserModel deriving its destination, and no literals left in TestRuntimeFilePatternsCoverWhatWeWrite.
+  - id: new
+    severity: Minor
+    family: project-ledger-lag
+    title: |
+      The project file records M1's actual and closed date from before three rounds of boundary-review fixes
+    detail: |
+      workshop/projects/define-learn.md:405-406 carry actual 1.03h and closed 2026-08-28, written in 30ee9e2 before the C1/I1-I4 and BR-2..BR-5 fix commits. Re-measure at the real close rather than leaving a number that understates by the whole review cost.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      README never states that -locale is English-only, three lines above the new -lang example
+    detail: |
+      README.md:37 shows `define -locale gb colour`; D2's rule (honoured for English only, with a diagnostic otherwise) is documented in atlas/define.md:1084-1091 and nowhere in README. Belongs to the same sweep as the other finding in this family.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      The PATTERNS explanation at store/yaml.go:75-87 is a detached comment godoc attaches to nothing
+    detail: |
+      Blank line before it and after it, so it documents neither RuntimeFiles nor wordsDir. Merge it into the RuntimeFiles doc comment. Same for store/migrate.go:11, whose opening line says MigrateToLanguages moves a DIRECTORY when it moves two named artifacts.
+```

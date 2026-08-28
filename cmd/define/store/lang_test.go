@@ -128,28 +128,31 @@ func TestReadLangToleratesHowAPersonWouldWriteIt(t *testing.T) {
 
 // Every runtime file we actually WRITE is covered by a RuntimeFiles pattern.
 //
-// This replaces deriving the names from the list, which stopped being possible
-// when the entries became patterns — and it is the stronger check: it asserts
-// the real output of the functions that write, so a name that drifts away from
-// its pattern fails here rather than silently escaping .gitignore and both repo
-// guards. That escape is the exact defect #23 was opened around.
+// Every name here is DERIVED from the function that produces it — no literals.
+// The first version typed ".tmp-123456", and a reviewer's mutation proved what
+// that costs: changing the writer's prefix left this test green while the atomic
+// shadow beside the two root-level runtime files matched no .gitignore pattern,
+// so a `git add -A` would commit a partial learner model. A hand-typed copy of a
+// name is a second source for it, and the second source is where the guard stops
+// guarding.
 func TestRuntimeFilePatternsCoverWhatWeWrite(t *testing.T) {
 	dir := t.TempDir()
-	var names []string
+
+	names := []string{filepath.Base(langFile(dir))}
 	for _, l := range []Lang{DefaultLang, "es", "zz"} {
 		names = append(names, filepath.Base(NewYAML(dir, l, nil).userModelFile()))
 	}
-	names = append(names, filepath.Base(langFile(dir)), ".tmp-123456")
+	// The atomic shadow, observed rather than restated: this is the same call
+	// writeBytesAtomic makes, so a change to the prefix reaches this test.
+	f, err := newTempFile(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	names = append(names, filepath.Base(f.Name()))
 
 	for _, name := range names {
-		covered := false
-		for _, pat := range RuntimeFiles {
-			if ok, err := filepath.Match(pat, name); err == nil && ok {
-				covered = true
-				break
-			}
-		}
-		if !covered {
+		if !matchesARuntimePattern(name) {
 			t.Errorf("define writes %q into the working directory and no RuntimeFiles pattern "+
 				"covers it — it would reach neither .gitignore nor the repo guards", name)
 		}
@@ -158,9 +161,22 @@ func TestRuntimeFilePatternsCoverWhatWeWrite(t *testing.T) {
 	// And the patterns must NOT be so loose that they shadow a tracked fixture:
 	// user-model*.md would match this, which is how the reserved-basename rule
 	// gets quietly re-broken.
+	if matchesARuntimePattern("user-model.golden.md") {
+		t.Error("a RuntimeFiles pattern shadows the tracked golden fixture; it is too loose")
+	}
+	// The legacy flat name must stay covered: a directory written before #23 has
+	// one until the migration runs, and it is ignored the whole time.
+	if !matchesARuntimePattern(userModelLegacy) {
+		t.Errorf("%s is no longer covered; a pre-#23 directory would expose its learner model",
+			userModelLegacy)
+	}
+}
+
+func matchesARuntimePattern(name string) bool {
 	for _, pat := range RuntimeFiles {
-		if ok, _ := filepath.Match(pat, "user-model.golden.md"); ok {
-			t.Errorf("pattern %q shadows the tracked golden fixture; it is too loose", pat)
+		if ok, err := filepath.Match(pat, name); err == nil && ok {
+			return true
 		}
 	}
+	return false
 }

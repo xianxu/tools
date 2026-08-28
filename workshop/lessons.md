@@ -2064,3 +2064,49 @@ right is worse than none, because it reads as verified.
 
 **Rule:** cite by NAME — the function, the const, the table — never by line
 number. Names move with the thing they name.
+
+## Enumerate the derived set, or you will sweep it by hand and miss one (#23 C1, BR-2)
+
+`/lang` had to re-derive everything downstream of the language. I found the
+members one at a time — the deck, the capturer, the vocabulary, and the highlight
+set the raw editor caches in a local — swept them at the call site, and never
+wrote the list down anywhere. Two of the members were missing.
+
+`opt.voice` shipped un-re-derived, so a mid-session `/lang es` left the fetch loop
+asking for the four **English** URLs, including the two legacy ones the same
+range had just gated to English for costing ~450 ms per guaranteed miss. The deck
+went Spanish and the pronunciation did not. Then `user-model.md` — derived from
+the language-scoped deck but stored flat — turned out to mean a Spanish
+`--reflect` replaced the English learner model.
+
+Every unit test was green throughout, because each member was individually
+correct. The defect lived in the *set*, and a set nobody wrote down has no place
+a reviewer can check it against.
+
+**Rule:** when a change makes N things depend on one value, write the enumeration
+into ONE function with the rule that generates it, and name the members that will
+join it later. A hand-sweep at the call site is unreviewable — "did you get them
+all" is unanswerable against a list that does not exist.
+
+**Corollary — a derived value needs one deriving function.** `opt.voice` was
+computed by one expression at the boundary and should have been computed by
+another at the switch; that is not a missing call, it is two sources for one
+fact. One function, two callers, and they cannot drift.
+
+**Corollary — "not scoped" needs its own justification per artifact.** `events/`
+is unscoped because an event is a fact about a moment. The learner model is a
+SUMMARY OF A DECK, so that argument does not transfer — but the atlas had already
+reused it, and the reused sentence read as settled. When a rule is extended to a
+second artifact, re-derive it there rather than citing the first.
+
+## Test what the pure function's CALLER does, not just the function (#23 C1)
+
+`voiceFor` was always right. `TestLocaleFor` and `TestAudioCandidatesSpanish`
+passed the whole time the bug existed, because nothing called `voiceFor` again
+after a language switch. The only test that could have caught it drives `/lang es`
+through `run()` and asserts what the fake CDN was **asked for**.
+
+**Rule:** for a pure function whose value is CACHED by its caller, a unit test
+pins the function and says nothing about the cache. Add one assertion at the
+altitude where the cached value is consumed — and give it a non-vacuity check, or
+a session that fetched nothing at all passes it.

@@ -301,7 +301,7 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropCl
 	return m, dropped
 }
 
-// runReflect folds the directory into user-model.<lang>.md.
+// runReflect folds the directory into the learner model.
 //
 // Per-language since #23: it reads the language-scoped deck, so writing one
 // shared file made a Spanish --reflect replace the English learner model.
@@ -402,7 +402,10 @@ func runReflect(ctx context.Context, d deps, opt options, out, errOut io.Writer)
 		return 1
 	}
 
-	fmt.Fprintf(out, "define: wrote user-model.md from %d words\n", len(ev.Words))
+	// The NAME, from the store, not a literal: the learner is told in the
+	// README to hand-edit this file's ## Corrections, so naming the wrong one
+	// sends their corrections to a file UserModel() does not read.
+	fmt.Fprintf(out, "define: wrote %s from %d words\n", store.UserModelName(d.lang), len(ev.Words))
 	return 0
 }
 
