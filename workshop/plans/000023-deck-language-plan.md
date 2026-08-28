@@ -220,6 +220,39 @@ Tests are named by what they pin, not transcribed — the strategy line is the p
 
 ## Chunk 2 (M2): the dictionary follows the mode
 
+### D6 — `usage/` is not scoped, because the FEED is English and will not be consulted
+
+Decided here rather than discovered at M2's boundary, which is the review's
+instruction and the lesson `user-model.md` taught at M1's.
+
+Measured in the tree: `httpFeed.Fetch` hardcodes
+`&hl=en-US&gl=US&ceid=US:en` (`news.go:60`). The feed is English **by
+construction**, and the cache is keyed by word alone (`usage/<slug>.yaml`).
+
+So a Spanish session asking it about `mesa` gets English news about a
+flat-topped hill or a city in Arizona — the wrong language AND the wrong sense —
+and caches it under a key an English session also uses.
+
+**The rule is the one M2 exists to apply, so apply it consistently: no data beats
+the wrong language's data.** The news feed is consulted only for the language it
+actually serves. In any other language `bothSources.news` is nil, which
+`Usages` already handles, and the examples come from that language's own
+dictionary entry — which M2 makes correct, and which the issue's measurement
+already showed carries usage examples (`madrugar` → *"Levantarse muy temprano,
+especialmente al amanecer"*).
+
+**And `usage/` therefore needs no language dimension:** nothing writes it outside
+English. Adding one now would create `usage/es/` holding English sentences, which
+is scoping without correctness — the worse half of the trade. When `#10` or `#18`
+makes the feed language-aware, scoping becomes *required*, and that is the moment
+to add it. Written down here so it is a decision with a trigger rather than a
+thing someone rediscovers.
+
+**Bonus, and the reason this is not merely tidy:** today a Spanish lookup pays a
+live Google News request per word — up to the 20s client timeout — for items
+`containsWord` will almost always discard.
+
+
 ### Task 8: `chooseDictionary`, pure over metadata
 
 **Files:** create `dictselect.go`, `dictselect_test.go`.

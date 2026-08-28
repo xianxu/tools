@@ -302,6 +302,21 @@ second copy of the tasks.
 ### 2026-08-28
 - 2026-08-28: closed M1 — M1 ships a working single-language define. Three boundary-review rounds, all addressed as rules rather than instances.; review verdict: FIX-THEN-SHIP
 
+**Three ledger rows read "open" and are NOT outstanding work.** They were fixed
+in the M1 close commit (`514c4e6`), which `#174` requires instead of a fifth
+review, so no gate re-ran to dispose them:
+
+- **PQ-8** (plan gate) — the `## Plan` above now carries real `Mx` rows.
+- **BR-11** — the artifact-name rule is enforced over prose, not just `*.go`
+  (`TestProseDoesNotSpellStaleRuntimeArtifactNames`), and the project file's
+  false "single learner model" claim is gone.
+- **BR-12** — the interrupted-write pin moved into package `store` and derives
+  its paths; `store.LangFileName()` is exported so `main`'s tests stop restating.
+
+The close review's window starts at the M1 boundary and will not see these fixes
+in its diff. Recorded so it disposes them rather than re-raising them.
+
+
 ROUND 3 BLOCKERS FIXED AS RULES (the gate said "4 repeat families — not converging: fix rules, not instances", and the reviewer said explicitly not to fix the instances):
 
 BR-7 rule — a runtime artifact name has exactly ONE producing function; guards, migrations and tests derive from it. Four producers now (UserModelName, langFileName, newTempFile, userModelLegacy), and RuntimeFiles BUILDS its two pattern entries from them. Mutation-checked BOTH ways: changing the atomic-write prefix, and changing the learner-model scheme, each now fail TestGitignoreCoversRuntimeFiles BY NAME. Before this, the reviewer proved the prefix change left the entire suite green while the shadow beside the two root-level runtime files matched no .gitignore pattern.
