@@ -1,7 +1,7 @@
 ---
 id: 000027
-status: working
-deps: []
+status: blocked
+deps: [tools#23]
 github_issue:
 created: 2026-08-28
 updated: 2026-08-28
@@ -100,3 +100,27 @@ way.
   2026-08-22, not reasoned about; see #18's Log for the measurement session,
   including a wrong claim it corrected (a sandboxed `DCSCopyTextDefinition`
   reports a clean miss, indistinguishable from an absent word).
+
+- 2026-08-28: **BLOCKED on #23, and the plan's central design was wrong.**
+  Operator, before implementation started:
+  > *we will split `define` into language specific thing, so every `define`
+  > invocation will operate in 1 language only. it can switch in a TUI app, but
+  > at any given time one language only. make this change first.*
+
+  That is `#23`, already filed the day before with the same design in the
+  operator's own words. Under a language MODE there is no unspecified language,
+  which deletes this plan's central mechanism — a `voices()` policy that tried
+  `en` then `es` and paid ~900ms of misses for a Spanish word. Designing a
+  fallback for a question the mode answers is solving a problem that is about to
+  stop existing.
+  **Sequencing (operator's call):** `#23` end-to-end first, with the audio
+  language plumbing as one task inside it. What plausibly remains here afterwards
+  is the *variant* half — `es_es` vs `es_us`, the θ/seseo help text, and the live
+  CDN conformance — which is reassessed at `#23`'s close rather than assumed now.
+  **The measurements survive and are the reusable part** — see
+  `workshop/plans/000027-pronunciation-locale-plan.md`, whose Revisions entry
+  records what changed and why. They were re-run on 2026-08-28 and three of them
+  are load-bearing for `#23`'s audio task regardless of sequencing: languages are
+  disjoint on the CDN, the legacy `/sounds/oxford/` path is English-only, and a
+  404 costs ~10x a hit.
+
