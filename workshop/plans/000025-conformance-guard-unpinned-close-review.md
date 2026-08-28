@@ -136,3 +136,104 @@ findings:
       gofmt -l is clean and it matches reachable.go's existing style, but the new
       skiporfail_test.go groups correctly and goimports would split this one.
 ```
+
+---
+
+## Re-review — 2026-08-27T21:26:18-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 25 — conformance guard: the strict inversion was unpinned, and it broke a test that had pinned it |
+| repo | tools |
+| issue file | workshop/issues/000025-conformance-guard-unpinned.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 27b6f1023770b6f76bc74426b6b90b94efeb97b8..de370f3790daafa737c64552b95cc41dc238660c |
+| command | sdlc close --issue 25 |
+| reviewer | claude |
+| timestamp | 2026-08-27T21:26:18-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The code half of this boundary is solid and I verified it rather than reading it: `go test ./...` and `CONFORMANCE_STRICT=1 go test ./...` are both fully green (not just the two packages — the whole tree), all four mutations in the Log reproduce the exact named tests recorded, and BR-1's fix is reachable — deleting `t.Setenv` from `substituteT` reds `TestStrictTurnsAnUnreachableServiceIntoAFailure` in default mode. What blocks SHIP is two things the same commit left behind. First, a real coverage gap: `message()` is fully pinned but its *wiring* is not — I mutated `SkipOrFail` to call `t.Fatal(reason)`/`t.Skip(reason)`, dropping the cause and the `CONFORMANCE_STRICT is set` annotation from every real failure, and the entire suite stayed green. Second, 05dee92 (the BR-1/BR-2 fix) touched no artifact at all, so the `## Done when` enumeration table and the `## Plan`'s ARCH-DRY paragraph both still describe a tree that the extraction deleted — including a greppable command the issue offers as its own proof, which now returns 2 where it says 7.
+
+### 1. Strengths
+
+- **`internal/conformance/conformance.go:71`** — the split is the right ARCH-PURE move, not a test convenience. `message()` is a genuinely pure function (no IO, no clock, no env), `Strict()` is the one-line env read, and `SkipOrFail` is four lines of `Fatal`/`Skip` glue. `TestMessage` runs with zero IO, which is what PURE is supposed to buy.
+- **`internal/llm/llmtest/substitute_test.go:33`** — BR-1 was answered as the *class*, not the instance. Making the mode a required parameter rather than a convention means the third site cannot be forgotten the way it was; all five goroutine sites in `package llmtest` route through it, verified by grep (`testing.T{}` now appears exactly twice repo-wide).
+- **`internal/conformance/skiporfail_test.go:14`** — both directions × err/nil is the honest 2×2, and the `nil`-err rows are the ones that would have been skipped by a less careful author.
+- **The Log's mutation table reproduces exactly.** I ran all four mutations against `05dee92` semantics with the recorded command; the reddened test names match row for row, including M4's seven-test blast radius. BR-3's fix is real.
+- **`internal/llm/llmtest/golden_test.go:46`** — the comment that says the `""` there "buys uniformity rather than correctness" is exactly the kind of honesty that stops the next reader from cargo-culting it.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-1 — `SkipOrFail` can stop calling `message()` and nothing reds.** `internal/conformance/conformance.go:73-76`.
+
+Verified by mutation:
+
+```go
+if Strict() { t.Fatal(reason) }   // was: t.Fatal(message(reason, err, true))
+t.Skip(reason)                    // was: t.Skip(message(reason, err, false))
+```
+
+→ `ok internal/conformance`, `ok internal/llm/llmtest`, and `go test ./...` green in both env states. Every real failure loses its cause *and* the `(CONFORMANCE_STRICT is set)` annotation — the thing the function's own doc comment calls "the load-bearing part" — and no test notices. `TestMessage` pins the string builder at 100%; `TestSkipOrFailBothDirections` pins only `Skipped()`/`Failed()`. The seam between them is unpinned.
+
+This is the general shape of "extract it so it can be asserted": the extraction moves the assertable part out and leaves the call site unobservable. Fix, cheapest first: (a) record the boundary explicitly in the Done-when — the row currently reads as if the reader-visible text is pinned, and it is only the *builder* that is; the issue already argues persuasively that shelling out to `go test` is past its stopping point, so this is a defensible answer if it is *stated*. Or (b) if you want it actually pinned, the `GO_WANT_HELPER_PROCESS` re-exec idiom (~25 lines) is the standard Go answer for helpers that end a test, and it would catch this mutation.
+
+**I-2 — the `## Done when` enumeration table and its greppable proof no longer reproduce.** `workshop/issues/000025-conformance-guard-unpinned.md:62-78`.
+
+> **This is the 2nd finding in family `unreproducible-evidence-claim`.** Earlier rounds fixed instances (BR-3, the mutation red-counts). Do NOT fix this instance alone.
+
+Measured now:
+
+| site | recorded | actual |
+|---|---|---|
+| `reachable_test.go` | 3 | 0 |
+| `skiporfail_test.go` | 1 | 1 |
+| `golden_test.go` | 3 | 0 |
+| `substitute_test.go` | — (absent from the table) | 1 |
+| **total / the `# 7` comment** | **7** | **2** |
+
+The rule that covers both this and BR-3, and the one to fix instead of the instance: **a fix that changes the code must sweep, in the same commit, every artifact claim the change invalidates.** `05dee92` extracted `substituteT` and touched zero artifact files; `de370f3` then updated only the `## Log`. Measured prevalence of that one commit's un-swept wake: **three** false claims across two sections — the per-file table (:67-71), the `# 7` grep (:74), and the Plan's ARCH-DRY paragraph (BR-2 below). AGENTS.md already states the rule ("Revising a plan artifact mid-stream: append a `## Revisions` section"), and this issue has no `## Revisions` section. So the rule-level fix is one `## Revisions` entry covering all three at once, not a patched number.
+
+**BR-2 — not addressed.** `workshop/issues/000025-conformance-guard-unpinned.md:106`. The `## Log` narrates the correction, but the artifact BR-2 was actually about is unchanged. The Plan still reads "**ARCH-DRY, acknowledged and NOT extracted**", still says a shared helper "would make `golden_test.go` … depend on the conformance package" (the premise BR-2 showed is false — both files are `package llmtest`), and still says "eight sites across three files". The code now *does* extract, into a helper in exactly the place the paragraph argues is impossible. A reader of the Plan meets the opposite of the decision that shipped. Same `## Revisions` entry as I-2.
+
+### 4. Minor findings
+
+- **`internal/llm/llmtest/substitute_test.go:35`** — `substituteT`'s `t.Setenv` is scoped to the *parent test*, not to `fn`, so the mode leaks into everything after the call. **This is the 2nd finding in family `test-inherits-ambient-env`**; measured prevalence is **0 affected sites today** (all five callers use one mode per test, and only `TestStrictTurns…` passes `"1"`, with nothing after it). Stating the rule rather than patching: *a helper that sets env on behalf of a callee should restore it when the callee returns, or the mode must be isolated in its own `t.Run`.* Cheapest expression of that rule is one line of doc on the helper saying the mode outlives `fn`; a caller mixing modes in one test body is the failure it prevents.
+- `internal/conformance/skiporfail_test.go:57` — `TestStrictTreatsAnEmptyValueAsOff` iterates four rows without `t.Run`, so all four share one test name in the mutation table. The `t.Errorf` does print the value, so it is diagnosable; sub-tests would make the table row precise.
+
+### 5. Test coverage notes
+
+- The inversion itself is now pinned at both the rule (`skiporfail_test.go`) and a real call site (`reachable_test.go:53`) — that was the point of the issue and it is delivered.
+- Mutation-verified by me, independently: M1–M4 reproduce the Log's named tests exactly; the `substituteT`-drops-`Setenv` mutation reds `TestStrictTurnsAnUnreachableServiceIntoAFailure`. The one mutation that survives is I-1.
+- `gofmt -l` and `go vet` clean over `./internal ./cmd`. BR-4 (`wantFail := !tc.wantSkip`, `skiporfail_test.go:44`) and BR-5 (the mis-grouped import, removed from `reachable_test.go` entirely by the extraction) are both genuinely fixed.
+- Docs gate: no finding. The diff adds no user-facing surface — `message` and `substituteT` are both unexported, and `CONFORMANCE_STRICT` was already documented in `atlas/define.md:1015-1041` by #24. The issue's plan to close with `--no-atlas` is the right call.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass (code), flagged (record).** Five sites collapsed to one helper; the single remaining inline copy in `internal/conformance/skiporfail_test.go:36` is genuinely cross-package and exporting a test helper from a production package would be the worse trade. The *record* of that reasoning is wrong — BR-2.
+- **ARCH-PURE — pass, and the best thing here.** `message()` is the pure core, `Strict()` the thin env read, `SkipOrFail` four lines of glue. No mocks needed to test the pure part. Note that I-1 is the characteristic *cost* of this shape: pushing logic into a pure function leaves the glue unobserved, so the glue has to be small enough that a reader can verify it by eye — which it now is.
+- **ARCH-PURPOSE — pass (code), flagged (artifacts).** BR-1 was answered as the class, which is exactly right. But the class sweep stopped at the `.go` files; the enumeration the issue itself calls "stated rather than swept" was the thing not swept (I-2).
+- **ARCH-MOCK — pass.** No new external dependency. `httptest.NewServer` and the closed port at `127.0.0.1:1` are the two states of the seam, exercised at the seam; the live conformance checks under `-tags conformance` remain the drift detector.
+- **Forward-looking:** the deferred MIRROR half (an absent dependency written as an unconditional `Fatal`) remains invisible to `TestEverySkipIsRoutedOrWaived`, whose regex is `\bt\.Skipf?\(|\bt\.SkipNow\(`. Correctly tracked to #24's Risks. Worth noting that the same enumerate-then-restate hazard applies there: whatever enforces it should be a consumer of the source, not a grep someone re-runs.
+
+### 7. Plan revision recommendations
+
+One `## Revisions` entry on `workshop/issues/000025-conformance-guard-unpinned.md`, timestamped, covering all three claims that `05dee92` invalidated at once (this is the rule-level fix for I-2 and BR-2, not three separate patches):
+
+> `## Revisions`
+> **2026-08-27 — BR-1's fix extracted the idiom, which invalidated three recorded claims.**
+> - `## Done when`, the enumeration table (:67-71) and its `# 7` grep (:74): the substitute-`T` sites are now **two** — `substitute_test.go` 1, `skiporfail_test.go` 1 — because `substituteT` collapsed the five `package llmtest` sites into one helper. The invariant the table was stating is unchanged and now *stronger* (the mode is a parameter, not a convention); restate it as "all five goroutine sites route through `substituteT`, which takes the mode", and re-derive the grep against the current tree.
+> - `## Plan`, the ARCH-DRY paragraph (:106): reverse it. The helper WAS extracted, the "would force `golden_test.go` to import `internal/conformance`" premise was false (same package), and the count was 5 sites and not 8. Keep the surviving half of the decision — `internal/conformance`'s own test stays inline because it is genuinely cross-package.
+> - `## Done when`, the failure-TEXT row: record the pinning boundary — `message()` is asserted directly, but nothing pins that `SkipOrFail` calls it (verified: bypassing `message()` leaves `go test ./...` green in both modes). Either state that as the deliberate stopping point, consistent with the existing non-goal paragraph, or pin it with a re-exec helper-process test.

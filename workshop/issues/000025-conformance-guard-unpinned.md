@@ -56,26 +56,38 @@ drive-by.
       `*testing.T`. (A substitute records *that* a test failed and exposes no
       reader for *why*, which is how the first version of this row degenerated
       into comparing `StrictEnv` with its own literal — PQ-1.)
+- [x] **And the WIRING is pinned, not just the text.** Extracting `message()` made
+      the string assertable and left a new seam uncovered: bypassing it inside
+      `SkipOrFail` and formatting inline left `go test ./...` green in BOTH modes.
+      `TestSkipOrFailPrintsTheMessage` re-execs the test binary and reads what
+      `go test -v` actually printed — the only place the text is observable —
+      and that bypass now reddens it. An extraction that makes a thing testable
+      is not the same as testing it.
 - [x] `Strict()` treats an empty value as off, pinned.
 - [x] **The enumeration, stated rather than swept.** Every test that exercises a
-      conformance-routed helper controls `CONFORMANCE_STRICT` itself, so no test
-      changes verdict on the ambient variable. The class is the **seven**
-      substitute-`*testing.T` sites — COUNTED, not carried over from the finding
-      that named the class (which said eight; the table-driven form collapses
-      `SkipOrFail`'s four rows into one substitute-`T`):
+      conformance-routed helper states which mode it asserts, so none inherits the
+      ambient variable.
 
-      | site | count | routed through the guard? |
-      |---|---|---|
-      | `reachable_test.go` | 3 | YES — `SkipIfUnreachable` |
-      | `skiporfail_test.go` | 1 | YES — is the guard |
-      | `golden_test.go` | 3 | NO — `golden.go` has no conformance reference |
+      **Stated as an invariant with its derivation, NOT as a count.** Three
+      versions of this row carried a number — eight, then seven — and the number
+      went stale twice: once because a table-driven test collapsed four rows into
+      one substitute-`T`, and once because BR-1's own fix collapsed five
+      `package llmtest` sites into `substituteT`. A count in a durable artifact is
+      a restatement of a fact the code owns, and it drifts exactly like the prose
+      and the line-number citations this repo has already learned about. Derive it:
 
       ```sh
-      grep -h "testing.T{}" internal/llm/llmtest/*_test.go internal/conformance/*_test.go | wc -l   # 7
+      grep -rn "testing.T{}" internal/          # every substitute-T construction
+      grep -rn "substituteT(t," internal/       # every site routed through the helper
       ```
 
-      Verified by `grep -c conformance internal/llm/llmtest/golden.go` → 0, so
-      the golden sites are outside the invariant rather than unchecked.
+      The invariant, which does not change when the counts do: **`package
+      llmtest`'s goroutine sites all route through `substituteT(t, strict, fn)`,
+      which takes the mode as a parameter** — so it cannot be forgotten, which a
+      hand-written `t.Setenv` convention demonstrably could (BR-1 missed one of
+      three). `internal/conformance`'s own test keeps the idiom inline because it
+      is genuinely cross-package, and exporting a test helper from a production
+      package to save five lines is the worse trade.
 
 **Explicit non-goal: mechanical cross-mode enforcement.** Nothing here makes it
 *impossible* to add a ninth site that flips verdict on the variable. "The two
@@ -103,13 +115,22 @@ Single boundary — no `Mx` tags.
 - [x] Mutation table, each row reddening a named test.
 - [x] Verify unsandboxed in both env states.
 
-**ARCH-DRY, acknowledged and NOT extracted.** The goroutine + substitute-`T` +
-done-channel idiom reaches eight sites across three files (PQ-3). A shared helper
-would need a test-support package that all three import, which would make
-`golden_test.go` — whose sites have nothing to do with conformance — depend on
-the conformance package for a five-line idiom. The coupling is worse than the
-duplication; recorded here so the next person meets a decision rather than an
-accident.
+**ARCH-DRY — EXTRACTED, reversing what this section first recorded.** The
+substitute-`T` idiom is now `substituteT` in `package llmtest`, covering all five
+goroutine sites there.
+
+The original note said a shared helper would force `golden_test.go` to import
+`internal/conformance`, and that premise was simply false: `golden_test.go` and
+`reachable_test.go` are the same package, so an unexported helper couples nothing
+(BR-2). It also repeated PQ-3's "eight sites" that this issue's own Done-when had
+already corrected to seven — and the full goroutine idiom was five. A decision
+record whose reason is wrong is worse than none, because the next person inherits
+the reasoning rather than re-deriving it.
+
+The surviving half of the decision stands: `internal/conformance`'s own test keeps
+the idiom inline, because it is genuinely cross-package and exporting a test
+helper from a production package to save five lines is the worse trade.
+
 
 ## Estimate
 
@@ -254,3 +275,29 @@ satisfied.
   written as an unconditional `Fatal` — is still enforced by reading sites.
   `guard_test.go` matches `t.Skipf?\(|t.SkipNow\(` and structurally cannot see a
   `Fatal`.
+
+## Revisions
+
+**2026-08-27 — BR-1's fix extracted the idiom, invalidating three recorded
+claims at once.** Recorded as one entry rather than three patches, because they
+share a cause: `substituteT` changed the shape the artifacts described, and every
+claim written as a COUNT or a premise about package structure went stale with it.
+
+- **The Done-when enumeration table and its `# 7` grep.** Rewritten as an
+  invariant plus its derivation commands. The substitute-`T` constructions are
+  now two (`substitute_test.go`, `skiporfail_test.go`) because the helper
+  collapsed five; the invariant the table was stating is unchanged and now
+  *stronger* — the mode is a parameter rather than a convention. Third stale
+  count in this issue, which is why the row no longer carries one.
+- **The ARCH-DRY paragraph.** Reversed. The helper WAS extracted, the
+  "would force `golden_test.go` to import `internal/conformance`" premise was
+  false (same package), and the count was five and not eight. The surviving half
+  — `internal/conformance`'s test stays inline as genuinely cross-package — is
+  kept and restated.
+- **The failure-TEXT row.** Extended: `message()` being asserted did not pin that
+  `SkipOrFail` CALLS it, and the review verified the bypass left `go test ./...`
+  green in both modes. `TestSkipOrFailPrintsTheMessage` closes it by re-execing
+  the test binary and reading the printed transcript. This was the deliberate
+  stopping point the non-goal paragraph would otherwise have had to claim; it is
+  cheaper to pin than to justify.
+

@@ -63,6 +63,11 @@ rounds:
           family: import-grouping
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-27T21:26:18-07:00"
+      agent: claude
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#25 (boundary-review)
@@ -104,6 +109,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   github.com/xianxu/tools/internal/conformance ahead of net/http in the same block.
   gofmt -l is clean and it matches reachable.go's existing style, but the new
   skiporfail_test.go groups correctly and goimports would split this one.
+
+## Round 2 — 2026-08-27T21:26:18-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 
