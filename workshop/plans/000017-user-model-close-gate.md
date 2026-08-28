@@ -468,6 +468,111 @@ rounds:
           family: gate-satisfied-not-met
           round: 6
       blocked: true
+    - "n": 7
+      timestamp: "2026-08-27T22:52:05-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: D1 still reads "drops any claim citing a word the deck does not contain"; the mixed case prunes and keeps.
+          round: 7
+        - id: BR-6
+          disposition: not-addressed
+          note: reflect.go:59-89 still never reads `now`; the purity comment at :57-58 still cites it.
+          round: 7
+        - id: BR-7
+          disposition: not-addressed
+          note: Both halves stand, and this round's refactor made the second worse — see new finding N2.
+          round: 7
+        - id: BR-8
+          disposition: not-addressed
+          note: usermodel.go:115-118 still returns `generated` whole with nothing written to errOut.
+          round: 7
+        - id: BR-9
+          disposition: not-addressed
+          note: Still no modelMeta row; the table also names `citedOrNothing`, which does not exist, and this round added dropClaim + String with no row.
+          round: 7
+        - id: BR-10
+          disposition: not-addressed
+          note: 'Re-verified by running the binary: --forget X --reflect, --llm-check --reflect and --play --reflect each honour one mode silently. Three pairs now, not two.'
+          round: 7
+        - id: BR-11
+          disposition: not-addressed
+          note: usermodel.go:49-55 still emits four keys; no `learner:`, and no Revisions entry saying so.
+          round: 7
+        - id: BR-13
+          disposition: not-addressed
+          note: 'Re-verified at HEAD: moving the dispatch above withStore leaves ./cmd/define/ green apart from the scratch-tree repo guards.'
+          round: 7
+        - id: BR-17
+          disposition: addressed
+          note: Diagnostics half verified — unsanitising dropClaim.String reddens all five arms. The frontmatter half's premise was false; see N1.
+          round: 7
+        - id: BR-18
+          disposition: addressed
+          note: 'Re-ran the grep: all six project sites reconcile and the auto-tick checkbox no longer matches [tools#17 M2].'
+          round: 7
+        - id: BR-19
+          disposition: addressed
+          note: seen is counted over c.words only, so the domain must be inferable from the words that were not withheld.
+          round: 7
+        - id: BR-20
+          disposition: not-addressed
+          note: 000017-user-model.md:212 is still `- [x]` on work its own text calls not delivered; the new Done-when header clarifies prose but not the grep.
+          round: 7
+      findings:
+        - id: BR-21
+          severity: Important
+          title: BR-17's frontmatter half was measured wrong, and the Log, commit body and new test comment all record the false measurement
+          detail: |-
+            This is the 2nd finding in family `comment-outruns-code`. Do not fix the instance — state the rule.
+            Measured at the parent commit c179efa in a scratch tree: deleting sanitiseMeta's body already
+            reddened TestEveryUntrustedFieldIsNeutralised/"the frontmatter's model name" (usermodel_test.go:367),
+            added in round 4. The suite was not green. The same mutation on the three diagnostic arms WAS green,
+            so the diagnostics half of BR-17 was real and the frontmatter half was not. The false half is now
+            asserted in three places: the issue Log ("deleting sanitiseMeta's body ... left the whole ./cmd/define/
+            suite green" and "each NOW redden 2"), the commit body, and reflect_run_test.go:369-374's own comment.
+            The rule the class needs: a claim about what the suite does or does not cover is a MEASUREMENT — run
+            the mutation against the tree the finding names before writing the fix, the comment, or the Log line
+            that asserts it. Accepting a finding's premise on trust is the same error as accepting a fix on trust,
+            and it costs a duplicate test plus a false entry in the ledger the process runs on.
+          family: comment-outruns-code
+          round: 7
+        - id: BR-22
+          severity: Important
+          title: The dropClaim refactor truncated the cited-nothing diagnostic and left citeAll's empty branch dead, with no test over the shape
+          detail: |-
+            This is the 2nd finding in family `decision-unpinned-by-test`. Do not fix only the site — state the rule.
+            reflect.go:174-180 appends the ", none of which is in the deck" clause only when len(d.Cited) > 0, so a
+            claim whose evidence_words array is empty renders as "define: dropped level C1: cites" — a sentence that
+            stops mid-clause. Verified by scratch test on both the level arm (checkEvidence default branch) and the
+            domain arm. Before the refactor the same input produced "... cites nothing, none of which is in the deck".
+            citeAll's len(words)==0 -> "nothing" branch (reflect.go:144-147) is now unreachable, so its comment —
+            "a claim that cited NOTHING is a different failure from one that cited words we do not have, and the
+            message must tell them apart" — documents dead code. No test in reflect_test.go or reflect_run_test.go
+            supplies an empty evidence_words array; every case carries at least one word, which is why a refactor
+            landed under a fix-the-rule banner and silently changed observable output. The rule: a formatter that
+            branches on input shape gets one table row per shape it can receive, empty included, asserting the whole
+            rendered line — otherwise consolidating call sites into one formatter trades five remembering-sites for
+            one unpinned one.
+          family: decision-unpinned-by-test
+          round: 7
+        - id: BR-23
+          severity: Minor
+          title: The durable plan still shows 40 unticked step boxes while its own Revisions entry says Tasks 1-8 are done
+          detail: |-
+            This is the 4th finding in family `docs-enumeration-not-swept`. Do not fix the instance — the rule is what
+            is missing. Measured: workshop/plans/000017-user-model-plan.md has 40 `- [ ]` and 0 `- [x]`, and AGENTS.md
+            section 1 makes that file the record of truth, not the ephemeral harness plan. Why the round-5 sweep could
+            not see it: BR-18's enumeration was `grep -rnE '#17|tools#17'`, which finds artifacts that MENTION the
+            issue id. A checkbox restates the issue's STATE without naming it, so no grep over the id can reach it.
+            The rule the class needs is therefore not "grep the id" but "enumerate the artifacts that restate this
+            boundary's state — issue Plan, issue Done-when, durable plan steps, project rows, atlas prose — and
+            reconcile each before the verdict is recorded." Same family fired on the project file this round; the
+            enumeration was written for one axis and the other axis is where the drift was.
+          family: docs-enumeration-not-swept
+          round: 7
+      blocked: true
 ---
 
 # Gate ledger — tools#17 (boundary-review)
@@ -719,6 +824,62 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   gate has `--no-plan-check` for precisely this case — leave the box unticked and put the
   descope reasoning in `--verified`.
 
+## Round 7 — 2026-08-27T22:52:05-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — D1 still reads "drops any claim citing a word the deck does not contain"; the mixed case prunes and keeps.
+- BR-6 — not-addressed — reflect.go:59-89 still never reads `now`; the purity comment at :57-58 still cites it.
+- BR-7 — not-addressed — Both halves stand, and this round's refactor made the second worse — see new finding N2.
+- BR-8 — not-addressed — usermodel.go:115-118 still returns `generated` whole with nothing written to errOut.
+- BR-9 — not-addressed — Still no modelMeta row; the table also names `citedOrNothing`, which does not exist, and this round added dropClaim + String with no row.
+- BR-10 — not-addressed — Re-verified by running the binary: --forget X --reflect, --llm-check --reflect and --play --reflect each honour one mode silently. Three pairs now, not two.
+- BR-11 — not-addressed — usermodel.go:49-55 still emits four keys; no `learner:`, and no Revisions entry saying so.
+- BR-13 — not-addressed — Re-verified at HEAD: moving the dispatch above withStore leaves ./cmd/define/ green apart from the scratch-tree repo guards.
+- BR-17 — addressed — Diagnostics half verified — unsanitising dropClaim.String reddens all five arms. The frontmatter half's premise was false; see N1.
+- BR-18 — addressed — Re-ran the grep: all six project sites reconcile and the auto-tick checkbox no longer matches [tools#17 M2].
+- BR-19 — addressed — seen is counted over c.words only, so the domain must be inferable from the words that were not withheld.
+- BR-20 — not-addressed — 000017-user-model.md:212 is still `- [x]` on work its own text calls not delivered; the new Done-when header clarifies prose but not the grep.
+
+### Raised
+
+- **BR-21** [Important] `comment-outruns-code` BR-17's frontmatter half was measured wrong, and the Log, commit body and new test comment all record the false measurement
+  This is the 2nd finding in family `comment-outruns-code`. Do not fix the instance — state the rule.
+  Measured at the parent commit c179efa in a scratch tree: deleting sanitiseMeta's body already
+  reddened TestEveryUntrustedFieldIsNeutralised/"the frontmatter's model name" (usermodel_test.go:367),
+  added in round 4. The suite was not green. The same mutation on the three diagnostic arms WAS green,
+  so the diagnostics half of BR-17 was real and the frontmatter half was not. The false half is now
+  asserted in three places: the issue Log ("deleting sanitiseMeta's body ... left the whole ./cmd/define/
+  suite green" and "each NOW redden 2"), the commit body, and reflect_run_test.go:369-374's own comment.
+  The rule the class needs: a claim about what the suite does or does not cover is a MEASUREMENT — run
+  the mutation against the tree the finding names before writing the fix, the comment, or the Log line
+  that asserts it. Accepting a finding's premise on trust is the same error as accepting a fix on trust,
+  and it costs a duplicate test plus a false entry in the ledger the process runs on.
+- **BR-22** [Important] `decision-unpinned-by-test` The dropClaim refactor truncated the cited-nothing diagnostic and left citeAll's empty branch dead, with no test over the shape
+  This is the 2nd finding in family `decision-unpinned-by-test`. Do not fix only the site — state the rule.
+  reflect.go:174-180 appends the ", none of which is in the deck" clause only when len(d.Cited) > 0, so a
+  claim whose evidence_words array is empty renders as "define: dropped level C1: cites" — a sentence that
+  stops mid-clause. Verified by scratch test on both the level arm (checkEvidence default branch) and the
+  domain arm. Before the refactor the same input produced "... cites nothing, none of which is in the deck".
+  citeAll's len(words)==0 -> "nothing" branch (reflect.go:144-147) is now unreachable, so its comment —
+  "a claim that cited NOTHING is a different failure from one that cited words we do not have, and the
+  message must tell them apart" — documents dead code. No test in reflect_test.go or reflect_run_test.go
+  supplies an empty evidence_words array; every case carries at least one word, which is why a refactor
+  landed under a fix-the-rule banner and silently changed observable output. The rule: a formatter that
+  branches on input shape gets one table row per shape it can receive, empty included, asserting the whole
+  rendered line — otherwise consolidating call sites into one formatter trades five remembering-sites for
+  one unpinned one.
+- **BR-23** [Minor] `docs-enumeration-not-swept` The durable plan still shows 40 unticked step boxes while its own Revisions entry says Tasks 1-8 are done
+  This is the 4th finding in family `docs-enumeration-not-swept`. Do not fix the instance — the rule is what
+  is missing. Measured: workshop/plans/000017-user-model-plan.md has 40 `- [ ]` and 0 `- [x]`, and AGENTS.md
+  section 1 makes that file the record of truth, not the ephemeral harness plan. Why the round-5 sweep could
+  not see it: BR-18's enumeration was `grep -rnE '#17|tools#17'`, which finds artifacts that MENTION the
+  issue id. A checkbox restates the issue's STATE without naming it, so no grep over the id can reach it.
+  The rule the class needs is therefore not "grep the id" but "enumerate the artifacts that restate this
+  boundary's state — issue Plan, issue Done-when, durable plan steps, project rows, atlas prose — and
+  reconcile each before the verdict is recorded." Same family fired on the project file this round; the
+  enumeration was written for one axis and the other axis is where the drift was.
+
 ## Open findings
 
 - **BR-1** [Minor] `single-source-of-truth` D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned
@@ -729,7 +890,7 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-10** [Minor] `fix-the-class-not-the-instance` --reflect combined with another mode silently honours one of them
 - **BR-11** [Minor] `spec-drift-undocumented` The rendered frontmatter omits the Spec's `learner:` field and the Revisions entry does not say so
 - **BR-13** [Minor] `decision-unpinned-by-test` D5's dispatch site survives being moved before withStore with the whole suite green
-- **BR-17** [Important] `model-text-unconstrained-by-format` Four neutralisation sites have no positive control — deleting sanitiseMeta's body leaves the whole suite green
-- **BR-18** [Important] `docs-enumeration-not-swept` The M2 descope is recorded in two issue files and in none of the four places the project still calls it planned work
-- **BR-19** [Important] `vacuous-verification` M1 Done-when row 5 is ticked and the held-out property is a t.Logf, not an assertion
 - **BR-20** [Minor] `gate-satisfied-not-met` The M2 Plan row is ticked while its own text says "not delivered", and the M2 Done-when rows stay unticked
+- **BR-21** [Important] `comment-outruns-code` BR-17's frontmatter half was measured wrong, and the Log, commit body and new test comment all record the false measurement
+- **BR-22** [Important] `decision-unpinned-by-test` The dropClaim refactor truncated the cited-nothing diagnostic and left citeAll's empty branch dead, with no test over the shape
+- **BR-23** [Minor] `docs-enumeration-not-swept` The durable plan still shows 40 unticked step boxes while its own Revisions entry says Tasks 1-8 are done

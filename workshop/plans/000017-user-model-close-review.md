@@ -146,3 +146,179 @@ findings:
       gate has `--no-plan-check` for precisely this case — leave the box unticked and put the
       descope reasoning in `--verified`.
 ```
+
+---
+
+## Re-review — 2026-08-27T22:52:05-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 17 — learner model: batch analysis into a durable user-model.md |
+| repo | tools |
+| issue file | workshop/issues/000017-user-model.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 145a0e74438c3a94b0b2ae7995330ebc67f6e1de..1ecf05ac2fc9672e80307047424de7414e8ab15e |
+| command | sdlc close --issue 17 |
+| reviewer | claude |
+| timestamp | 2026-08-27T22:52:05-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The three Important findings this round (BR-17, BR-18, BR-19) are genuinely disposed and I mutation-verified each: unsanitising `dropClaim.String` reddens all five new positive-control rows, the `#17` enumeration re-run reconciles every hit, and the conformance `seen` loop now excludes the held-out word so the row it ticks is load-bearing. `go test ./...` and `go vet ./...` are green in the real tree. Two things block a clean SHIP, both cheap: BR-17's frontmatter half was measured wrong — I confirmed at the parent commit (`c179efa`) that deleting `sanitiseMeta`'s body *already* reddened `TestEveryUntrustedFieldIsNeutralised/the frontmatter's model name`, so the round's Log, commit message and new test comment all assert a suite state that was false; and the `dropClaim` refactor silently changed a rendered diagnostic (`level C1: cites`, sentence trailing off) with no test covering the empty-citation shape. Eight prior Minor findings remain open and unfixed across five rounds — none blocking, but they are now the standing residue on this issue.
+
+## 1. Strengths
+
+- **`dropClaim` is the right shape, not a patch** (`cmd/define/reflect.go:166-180`). Five inline message constructions collapse into one formatter whose `String()` is the only path to text. I mutation-verified it: replacing `cite(d.Subject)` with `d.Subject` reddens all five subtests of `TestEveryDropDiagnosticNeutralisesItsSubject` plus `TestDroppedClaimDiagnosticsCannotForgeALine`. This is the list-that-drifts problem genuinely removed by construction (ARCH-DRY).
+- **The positive controls are real, not decorative** (`cmd/define/reflect_run_test.go:331-374`). Every arm gets its own row with injection text that does not satisfy the assertion, and the "neutralised, not discarded" half is asserted separately from the "no newline" half.
+- **BR-18's enumeration was actually run, not recalled.** I re-ran `grep -rnE '#17|tools#17' workshop/ atlas/ README.md`: all six project-file sites reconcile, and the mvp checkbox at `workshop/projects/define-learn.md:193` no longer contains the `[tools#17 M2]` link `sdlc close` auto-ticks — the specific auto-tick hazard the finding named is closed.
+- **BR-19's fix is the cheapest correct one** (`cmd/define/reflect_conformance_test.go:106-117`). Counting `seen` over `c.words` alone makes the held-out design load-bearing; the `t.Logf` at :134 is now an observation *beside* an assertion rather than instead of one.
+- **The descope was verified, not assumed.** `store/event.go`'s `Correct bool` is a real obstacle, and `workshop/issues/000007-vocab-form-meaning.md:32-49,54-55` carries the prerequisite as a Done-when row with the reasoning intact (ARCH-PURPOSE: the deferred part is separable, and it landed somewhere).
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — BR-17's frontmatter premise was false, and three artifacts now record the false measurement.** `cmd/define/reflect_run_test.go:369-374`. I extracted `c179efa` to a scratch tree and deleted `sanitiseMeta`'s body: `TestEveryUntrustedFieldIsNeutralised/the frontmatter's model name` (added in round 4, `cmd/define/usermodel_test.go:367-371`) fails there. The suite was *not* green. The same mutation on the three diagnostic arms *was* green at the parent, so BR-17's diagnostics half was real — only the frontmatter half was wrong, and it is the half asserted verbatim in `workshop/issues/000017-user-model.md` ("deleting `sanitiseMeta`'s body … left the whole `./cmd/define/` suite green", "Measured: … each **now** redden 2"), in the commit body, and in the new test's own doc comment. Fix: correct the Log/commit note to say the frontmatter site was already pinned, and decide whether `TestModelNameCannotBreakTheFrontmatter` stays (its line-count assertion is a different shape, so keeping it is defensible — the false justification is not).
+
+**N2 — the `dropClaim` refactor changed a rendered diagnostic and nothing noticed.** `cmd/define/reflect.go:174-180`. When a claim carries an empty `evidence_words` array, `Cited` is empty, so `String()` stops at `Reason` and stderr prints `define: dropped level C1: cites` — a sentence that trails off. Before the refactor it read `… cites nothing, none of which is in the deck`. `citeAll`'s `len(words) == 0 → "nothing"` branch (`:144-147`) is now unreachable: its only caller guards on `len(d.Cited) > 0`, so the comment above it ("a claim that cited NOTHING is a different failure … the message must tell them apart") describes dead code. Verified by scratch test on both the level and domain arms.
+
+## 4. Minor findings
+
+- **N3 — the durable plan still claims 40 outstanding steps.** `workshop/plans/000017-user-model-plan.md` has 40 `- [ ]` step boxes and zero `- [x]`, while its own Revisions entry says "Tasks 1–8 done." AGENTS.md §1 makes this file the record of truth.
+- (Eight prior Minor findings re-raised below as `not-addressed`; see the dispose block.)
+
+## 5. Test coverage notes
+
+Coverage on the pure entities is strong — 22 named tests plus a fuzz property over `spliceCorrections`, all running without IO. Two gaps this window:
+
+- No test constructs a claim with an **empty** `evidence_words` array. Every `checkEvidence` test supplies at least one word, which is why N2 shipped unseen. A table row per `dropClaim` shape (empty subject / empty citations / both) asserting the full rendered line would close it and make `citeAll`'s empty branch reachable again.
+- `--reflect`'s happy path is never driven through `run(ctx, []string{"--reflect"}, …)`. I re-confirmed BR-13 by moving the dispatch above `d = d.withStore(opt, stderr)` in a scratch copy: `go test ./cmd/define/` stays green apart from the repo-guard tests, which fail only because a `git archive` tree is not a repo. One happy-path `run` test in a `t.TempDir()` pins D5.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, with one residue.** The `dropClaim` consolidation is the principle applied correctly. The residue is `citeAll`'s now-dead branch (N2) and the partial overlap between `TestModelNameCannotBreakTheFrontmatter` and the existing per-field row (N1).
+- **ARCH-PURE — pass.** `foldLookups`, `checkEvidence`, `dropClaim.String`, `renderUserModel`, `spliceCorrections` are all deterministic and tested without fakes; `runReflect` is the thin shell. The one blemish is BR-6: `foldLookups`'s `now` parameter is read at zero sites while the doc comment at `reflect.go:57-58` cites it as what makes purity observable.
+- **ARCH-PURPOSE — pass on the descope, flag on the enumeration.** M2 is deferred for a verified data-shape reason and lands in `#7`'s Done-when plus an unticked project row, so it is tracked. But the round answered BR-18 by enumerating *textual mentions of `#17`* — which cannot see a state restatement that never names the issue, which is exactly why the plan's 40 unticked boxes (N3) survived the sweep. The class is "artifacts that restate this boundary's state," not "artifacts that mention this issue id."
+- **ARCH-MOCK — pass.** `llmtest.Fake` is wire-level, `store.YAML` runs in a `t.TempDir()`, and the live check skips through `conformance.SkipOrFail` rather than reddening on a flat network. Production and test flows share the `runReflect` boundary.
+
+## 7. Plan revision recommendations
+
+The plan has had no `## Revisions` entry since 2026-08-25, across three boundary rounds. It needs:
+
+- **`### 2026-08-27 — rounds 3–5, and the Core concepts reconciliation that was claimed and not run.`** The table's `checkEvidence / citedOrNothing` row names a symbol that does not exist (renamed to `cite`/`citeAll`), and eleven symbols have no row: `modelMeta`, `cite`, `citeAll`, `dropClaim`, `dropClaim.String`, `oneLine`, `sanitiseModel`, `sanitiseMeta`, `oneLineAll`, `reflectTaskName`, `reflectSystem`. `dropClaim` and `String` were added *by this round*. The existing entry's "Reconciled to empty before this commit" is false against the tree.
+- **D1's sentence** rewritten to the prune-then-drop-if-empty semantics the code and `TestCheckEvidenceDropsClaimsTheDeckCannotSupport` actually implement, so Task 2's body can cite D1 instead of paraphrasing it (BR-1).
+- **A note on the frontmatter departure:** the rendered frontmatter omits the Spec's `learner:` field, which the existing entry's "Two departures from the plan as written" does not cover (BR-11).
+- **Tick the 40 step boxes** or record why they stay open (N3).
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      D1 still reads "drops any claim citing a word the deck does not contain"; the mixed case prunes and keeps.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      reflect.go:59-89 still never reads `now`; the purity comment at :57-58 still cites it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Both halves stand, and this round's refactor made the second worse — see new finding N2.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      usermodel.go:115-118 still returns `generated` whole with nothing written to errOut.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Still no modelMeta row; the table also names `citedOrNothing`, which does not exist, and this round added dropClaim + String with no row.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      Re-verified by running the binary: --forget X --reflect, --llm-check --reflect and --play --reflect each honour one mode silently. Three pairs now, not two.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      usermodel.go:49-55 still emits four keys; no `learner:`, and no Revisions entry saying so.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Re-verified at HEAD: moving the dispatch above withStore leaves ./cmd/define/ green apart from the scratch-tree repo guards.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      Diagnostics half verified — unsanitising dropClaim.String reddens all five arms. The frontmatter half's premise was false; see N1.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      Re-ran the grep: all six project sites reconcile and the auto-tick checkbox no longer matches [tools#17 M2].
+  - id: BR-19
+    disposition: addressed
+    note: |
+      seen is counted over c.words only, so the domain must be inferable from the words that were not withheld.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      000017-user-model.md:212 is still `- [x]` on work its own text calls not delivered; the new Done-when header clarifies prose but not the grep.
+findings:
+  - id: new
+    severity: Important
+    family: comment-outruns-code
+    title: |
+      BR-17's frontmatter half was measured wrong, and the Log, commit body and new test comment all record the false measurement
+    detail: |
+      This is the 2nd finding in family `comment-outruns-code`. Do not fix the instance — state the rule.
+      Measured at the parent commit c179efa in a scratch tree: deleting sanitiseMeta's body already
+      reddened TestEveryUntrustedFieldIsNeutralised/"the frontmatter's model name" (usermodel_test.go:367),
+      added in round 4. The suite was not green. The same mutation on the three diagnostic arms WAS green,
+      so the diagnostics half of BR-17 was real and the frontmatter half was not. The false half is now
+      asserted in three places: the issue Log ("deleting sanitiseMeta's body ... left the whole ./cmd/define/
+      suite green" and "each NOW redden 2"), the commit body, and reflect_run_test.go:369-374's own comment.
+      The rule the class needs: a claim about what the suite does or does not cover is a MEASUREMENT — run
+      the mutation against the tree the finding names before writing the fix, the comment, or the Log line
+      that asserts it. Accepting a finding's premise on trust is the same error as accepting a fix on trust,
+      and it costs a duplicate test plus a false entry in the ledger the process runs on.
+  - id: new
+    severity: Important
+    family: decision-unpinned-by-test
+    title: |
+      The dropClaim refactor truncated the cited-nothing diagnostic and left citeAll's empty branch dead, with no test over the shape
+    detail: |
+      This is the 2nd finding in family `decision-unpinned-by-test`. Do not fix only the site — state the rule.
+      reflect.go:174-180 appends the ", none of which is in the deck" clause only when len(d.Cited) > 0, so a
+      claim whose evidence_words array is empty renders as "define: dropped level C1: cites" — a sentence that
+      stops mid-clause. Verified by scratch test on both the level arm (checkEvidence default branch) and the
+      domain arm. Before the refactor the same input produced "... cites nothing, none of which is in the deck".
+      citeAll's len(words)==0 -> "nothing" branch (reflect.go:144-147) is now unreachable, so its comment —
+      "a claim that cited NOTHING is a different failure from one that cited words we do not have, and the
+      message must tell them apart" — documents dead code. No test in reflect_test.go or reflect_run_test.go
+      supplies an empty evidence_words array; every case carries at least one word, which is why a refactor
+      landed under a fix-the-rule banner and silently changed observable output. The rule: a formatter that
+      branches on input shape gets one table row per shape it can receive, empty included, asserting the whole
+      rendered line — otherwise consolidating call sites into one formatter trades five remembering-sites for
+      one unpinned one.
+  - id: new
+    severity: Minor
+    family: docs-enumeration-not-swept
+    title: |
+      The durable plan still shows 40 unticked step boxes while its own Revisions entry says Tasks 1-8 are done
+    detail: |
+      This is the 4th finding in family `docs-enumeration-not-swept`. Do not fix the instance — the rule is what
+      is missing. Measured: workshop/plans/000017-user-model-plan.md has 40 `- [ ]` and 0 `- [x]`, and AGENTS.md
+      section 1 makes that file the record of truth, not the ephemeral harness plan. Why the round-5 sweep could
+      not see it: BR-18's enumeration was `grep -rnE '#17|tools#17'`, which finds artifacts that MENTION the
+      issue id. A checkbox restates the issue's STATE without naming it, so no grep over the id can reach it.
+      The rule the class needs is therefore not "grep the id" but "enumerate the artifacts that restate this
+      boundary's state — issue Plan, issue Done-when, durable plan steps, project rows, atlas prose — and
+      reconcile each before the verdict is recorded." Same family fired on the project file this round; the
+      enumeration was written for one axis and the other axis is where the drift was.
+```

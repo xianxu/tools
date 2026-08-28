@@ -164,19 +164,29 @@ func citeAll(words []string) string {
 // With the subject and citations held as fields, an arm CANNOT forget: String is
 // the only path to text, and it is where oneLine happens.
 type dropClaim struct {
-	Kind    string   // authored here: "level" or "domain"
-	Subject string   // UNTRUSTED — model-supplied, neutralised by String
-	Reason  string   // authored here
-	Cited   []string // UNTRUSTED — the words the claim named; empty when it named none
+	Kind    string // authored here: "level" or "domain"
+	Subject string // UNTRUSTED — model-supplied, neutralised by String
+	Reason  string // authored here; unused when Cites is set
+	// Cites marks a claim rejected FOR its citations, and Cited is what it named.
+	//
+	// The flag exists because an EMPTY Cited is not the absence of a citation
+	// complaint — it is a claim that cited nothing at all, which citeAll renders
+	// as "nothing" precisely so a reader can tell it apart from a claim that
+	// cited words the deck lacks. Branching on len(Cited) instead collapsed the
+	// two: the message stopped at "level C1: cites" mid-clause, and citeAll's
+	// empty branch became unreachable code with a comment explaining a
+	// distinction nothing made any more (BR-22).
+	Cites bool
+	Cited []string // UNTRUSTED
 }
 
 // String is the ONE place a dropped claim becomes text.
 func (d dropClaim) String() string {
-	msg := d.Kind + " " + cite(d.Subject) + ": " + d.Reason
-	if len(d.Cited) > 0 {
-		msg += " " + citeAll(d.Cited) + ", none of which is in the deck"
+	msg := d.Kind + " " + cite(d.Subject) + ": "
+	if d.Cites {
+		return msg + "cites " + citeAll(d.Cited) + ", none of which is in the deck"
 	}
-	return msg
+	return msg + d.Reason
 }
 
 // checkEvidence enforces D1: a claim may cite only words the deck holds.
@@ -223,7 +233,7 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropCl
 		// this message is the only place a person can see WHY the level went
 		// missing from their file.
 		dropped = append(dropped, dropClaim{Kind: "level", Subject: m.Level.Band,
-			Reason: "cites", Cited: m.Level.EvidenceWords})
+			Cites: true, Cited: m.Level.EvidenceWords})
 		m.Level = levelClaim{}
 	}
 
@@ -250,7 +260,7 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropCl
 		ev := supported(d.EvidenceWords)
 		if len(ev) == 0 {
 			dropped = append(dropped, dropClaim{Kind: "domain", Subject: d.Name,
-				Reason: "cites", Cited: d.EvidenceWords})
+				Cites: true, Cited: d.EvidenceWords})
 			continue
 		}
 		d.EvidenceWords = ev

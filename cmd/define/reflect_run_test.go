@@ -340,7 +340,7 @@ func TestEveryDropDiagnosticNeutralisesItsSubject(t *testing.T) {
 			Reason: "no band or no rationale — nothing a reader could check"}},
 		{"level, evidence not in deck", dropClaim{
 			Kind: "level", Subject: "C1" + forged,
-			Reason: "cites", Cited: []string{"luffing" + forged}}},
+			Cites: true, Cited: []string{"luffing" + forged}}},
 		{"domain, no name or directive", dropClaim{
 			Kind: "domain", Subject: "law" + forged,
 			Reason: "no name or no directive — nothing authoring could act on"}},
@@ -349,7 +349,7 @@ func TestEveryDropDiagnosticNeutralisesItsSubject(t *testing.T) {
 			Reason: "share out of range"}},
 		{"domain, evidence not in deck", dropClaim{
 			Kind: "domain", Subject: "law" + forged,
-			Reason: "cites", Cited: []string{"clew" + forged}}},
+			Cites: true, Cited: []string{"clew" + forged}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.drop.String()
@@ -366,38 +366,56 @@ func TestEveryDropDiagnosticNeutralisesItsSubject(t *testing.T) {
 	}
 }
 
-// The frontmatter's provenance line is the same class, and was the site the
-// original sweep found AFTER the table (lessons.md: "a class found in one place
-// is not fixed until you look for it in the others").
+// One row per SHAPE the formatter can receive, empty included, asserting the
+// whole rendered line.
 //
-// It had no positive control either: sampleMeta().Model carries no injection, so
-// deleting sanitiseMeta's body left the suite green (BR-17). A newline here
-// breaks the YAML frontmatter it sits inside.
-func TestModelNameCannotBreakTheFrontmatter(t *testing.T) {
-	out := renderUserModel(
-		learnerModel{Level: levelClaim{Band: "C1", Rationale: "r", EvidenceWords: []string{"w"}}},
-		modelMeta{Model: "claude\ntype: forged"},
-	)
-
-	head, _, ok := strings.Cut(strings.TrimPrefix(out, "---\n"), "\n---\n")
-	if !ok {
-		t.Fatalf("no frontmatter block:\n%s", out)
-	}
-	// A LINE of its own is the violation, not the substring. The first version
-	// asserted strings.Contains(head, "type: forged") and failed against a
-	// correctly neutralised file, because the collapsed text still contains that
-	// substring inline — "generated_by: define --reflect (claude type: forged)".
-	// That is this file's own lesson: choose injection text that does not satisfy
-	// your own assertion.
-	for _, line := range strings.Split(head, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "type: forged") {
-			t.Errorf("the model name forged a frontmatter key:\n%s", head)
-		}
-	}
-	if got := strings.Count(head, "\n") + 1; got != 4 {
-		t.Errorf("frontmatter has %d lines, want 4 — the model name started one of its own:\n%s", got, head)
-	}
-	if !strings.Contains(head, "forged") {
-		t.Errorf("the model name was discarded rather than neutralised:\n%s", head)
+// Consolidating five call sites into one formatter trades five
+// remembering-sites for one unpinned one unless the formatter's own branches are
+// covered. They were not: no test anywhere supplied an empty evidence_words
+// array, so the refactor silently changed observable output — "cites nothing,
+// none of which is in the deck" became "cites", a sentence stopping mid-clause,
+// and citeAll's empty branch became dead code whose comment explained a
+// distinction nothing made any more (BR-22).
+//
+// The distinction is the point: a claim that cited NOTHING is a different
+// failure from one that cited words the deck lacks, and the message is the only
+// place a person sees why their level went missing.
+func TestDropDiagnosticRendersEveryShape(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		drop dropClaim
+		want string
+	}{
+		{
+			name: "a reason, no citation complaint",
+			drop: dropClaim{Kind: "level", Subject: "C1", Reason: "no band or no rationale"},
+			want: "level C1: no band or no rationale",
+		},
+		{
+			name: "cited words the deck lacks",
+			drop: dropClaim{Kind: "level", Subject: "C1", Cites: true, Cited: []string{"luffing", "clew"}},
+			want: "level C1: cites luffing, clew, none of which is in the deck",
+		},
+		{
+			name: "cited NOTHING — a different failure, and it must say so",
+			drop: dropClaim{Kind: "level", Subject: "C1", Cites: true, Cited: nil},
+			want: "level C1: cites nothing, none of which is in the deck",
+		},
+		{
+			name: "cited an empty list — same shape as nil, same sentence",
+			drop: dropClaim{Kind: "domain", Subject: "law", Cites: true, Cited: []string{}},
+			want: "domain law: cites nothing, none of which is in the deck",
+		},
+		{
+			name: "an empty subject is named, not left blank",
+			drop: dropClaim{Kind: "domain", Subject: "", Reason: "share out of range"},
+			want: "domain nothing: share out of range",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.drop.String(); got != tc.want {
+				t.Errorf("String() = %q,\n          want %q", got, tc.want)
+			}
+		})
 	}
 }

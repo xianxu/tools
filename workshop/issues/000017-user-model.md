@@ -430,17 +430,23 @@ direction it should move.
 
 ### 2026-08-27 — close round 5 (BR-17 … BR-19)
 
-- **BR-17 (Important, 3rd in family).** Four neutralisation sites had no positive
-  control: deleting `sanitiseMeta`'s body, and unsanitising three of
-  `checkEvidence`'s five diagnostic arms, each left the whole `./cmd/define/`
-  suite green. `TestDroppedClaimDiagnosticsCannotForgeALine` reached only two
-  arms, and `sampleMeta().Model` carried no injection.
+- **BR-17 (Important, 3rd in family) — HALF OF IT WAS TRUE, and I recorded the
+  false half as a measurement (corrected in round 6, BR-21).** The finding said
+  four neutralisation sites had no positive control. Measured at `c179efa` in a
+  scratch worktree, which I should have done BEFORE writing the fix:
+  - **diagnostics half: REAL.** Unsanitising the share-out-of-range arm reddened
+    **0** tests. `TestDroppedClaimDiagnosticsCannotForgeALine` reached two of
+    five arms.
+  - **frontmatter half: FALSE.** Deleting `sanitiseMeta`'s body already reddened
+    `TestEveryUntrustedFieldIsNeutralised/the frontmatter's model name`
+    (round 4's own work). The suite was NOT green, and the test I added for it
+    was a duplicate — since removed.
   Fixed as the RULE, not the four sites: `dropped` now carries `dropClaim`
   (Kind/Subject/Reason/Cited) and `String()` is the ONE path to text, so an arm
   cannot forget to neutralise — the list-that-drifts shape `renderUserModel` was
   already refactored away from, reproduced in the diagnostics. Positive controls
-  added for every arm and for the frontmatter. Measured: deleting
-  `sanitiseMeta`'s body and unsanitising `dropClaim.String` each now redden 2.
+  added for every arm. Measured: unsanitising `dropClaim.String` reddens the
+  named rows.
 - **BR-18 (Important, 3rd in family).** The M2 descope was recorded in two issue
   files and in NONE of the six places `workshop/projects/define-learn.md` still
   called it planned or blocked work — including a checkbox `sdlc close`
@@ -460,4 +466,36 @@ direction it should move.
   this issue's own lesson (`lessons.md`: *choose injection text that does not
   satisfy your own assertion*) landing on the test written to satisfy a finding
   about vacuous checks.
+
+### 2026-08-27 — close round 6 (BR-21, BR-22)
+
+Both findings are about round 5's own fix.
+
+- **BR-21 (Important, 2nd in `comment-outruns-code`).** I accepted BR-17's
+  premise on trust and wrote a measurement I had not run. The frontmatter half
+  was already covered; the claim "left the whole suite green" was false and
+  reached three artifacts — this Log, the commit body of `1ecf05a`, and the new
+  test's own comment. Corrected above; the commit body is immutable and this
+  entry is the correction of record. The duplicate test is removed.
+  **The rule:** a claim about what the suite does or does not cover is a
+  MEASUREMENT. Run the mutation against the tree the finding names *before*
+  writing the fix, the comment, or the Log line that asserts it. Accepting a
+  finding's premise on trust is the same error as accepting a fix on trust —
+  and this session's whole theme is that reading is not measuring. A reviewer's
+  premise is not exempt.
+- **BR-22 (Important, 2nd in `decision-unpinned-by-test`).** The round-5
+  `dropClaim` refactor — landed under a fix-the-rule banner — silently changed
+  observable output: branching on `len(Cited)` made a claim with empty
+  `evidence_words` render as `level C1: cites`, stopping mid-clause, and left
+  `citeAll`'s `"nothing"` branch unreachable with a comment explaining a
+  distinction nothing made any more. No test anywhere supplied an empty
+  `evidence_words`, which is why a consolidation passed review. Fixed with an
+  explicit `Cites` flag, and `TestDropDiagnosticRendersEveryShape` gives one row
+  per shape the formatter can receive — nil, empty, populated, and no-citation —
+  asserting the WHOLE rendered line. Re-introducing the truncation now reddens
+  two named rows.
+  **The rule:** consolidating N call sites into one formatter trades N
+  remembering-sites for one unpinned one unless the formatter's own branches each
+  get a row. A refactor justified as "one place to get it right" has to pin that
+  place.
 

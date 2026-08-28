@@ -758,6 +758,21 @@ measurement was a restatement of what I already believed.
 finding's own case** — not your test suite. The suite is what missed it the first
 time.
 
+**And reproduce the finding's case when you ACCEPT it, too (#17 BR-21).** A
+review said four sanitiser sites had no positive control. Three did not; the
+fourth was already covered by a test added the round before. I fixed all four,
+wrote "deleting it left the whole suite green" into the issue Log, the commit
+body and a new test's comment — and the added test was a duplicate. The false
+claim reached three durable artifacts before anyone measured it, and one of them
+is the ledger the process runs on.
+
+**Rule: a claim about what the suite does or does not cover is a MEASUREMENT, and
+that includes a claim you are repeating from a reviewer.** Run the mutation
+against the tree the finding names before writing the fix, the comment, or the
+log line asserting it. Accepting a premise on trust is the same error as
+accepting a fix on trust — the reviewer's authority does not convert a claim into
+a measurement.
+
 ## Drive a traversal from the generator's vocabulary, not the reproduction (define #11 M2)
 
 Four fixes in a row for one bug — missing required fields decoding to a partial
