@@ -38,6 +38,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -85,7 +86,7 @@ func startDefineInDir(t *testing.T, dir string, env []string, args ...string) (*
 	cmd.Dir = dir
 	f, err := pty.Start(cmd)
 	if err != nil {
-		skipOrFail(t, "no pty available", err)
+		conformance.SkipOrFail(t, "no pty available", err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill(); f.Close() })
 	return cmd, f
@@ -259,7 +260,7 @@ func TestPTYTerminalIsRestoredOnExit(t *testing.T) {
 
 	fd := int(f.Fd())
 	if !term.IsTerminal(fd) {
-		skipOrFail(t, "master is not a terminal on this platform", nil)
+		conformance.SkipOrFail(t, "master is not a terminal on this platform", nil)
 	}
 	st, err := term.MakeRaw(fd)
 	if err != nil {
@@ -374,7 +375,13 @@ func TestPTYPlayRendersEveryLineAtColumnZero(t *testing.T) {
 	_, seed := startDefineInDir(t, deck, nil, "--no-audio", "sycophantic")
 	seeded := watch(seed).take(3 * time.Second)
 	if !strings.Contains(seeded, "sikəˈfan(t)ik") {
-		t.Fatalf("the seeding lookup did not resolve, so no deck was written:\n%q", seeded)
+		// The DICTIONARY is the absent dependency here, not a defect in the
+		// flow under test: DCSCopyTextDefinition returns silence, not an error,
+		// without real access to /System/Library/AssetsV2. Written as a hard
+		// Fatal this was BR-9's mirror on a darwin host with a pty and no
+		// dictionary assets — the non-strict suite red rather than skipped.
+		conformance.SkipOrFail(t, fmt.Sprintf(
+			"the seeding lookup did not resolve, so no deck was written:\n%q", seeded), nil)
 	}
 	seed.WriteString("\x04") // EOF: leave the editor, flushing the capture
 
@@ -425,13 +432,63 @@ func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
 // #6 BR-45 is why this exists in the same milestone as the change rather than
 // after it: --play's one shipped defect was invisible to every in-process test
 // AND to a byte-capture smoke run, and the operator found it.
-func TestPTYPlayGradeFirst(t *testing.T) {
+// seedDeck captures one word into a fresh deck the way a learner gets one, and
+// returns the deck directory.
+//
+// A word never reviewed is due immediately (schedule.Queue's fresh tier). Flags
+// go BEFORE the word: Go's flag package stops parsing at the first non-flag
+// argument, so "sycophantic --no-audio" prints usage and looks up nothing.
+func seedDeck(t *testing.T) string {
+	t.Helper()
 	deck := t.TempDir()
 	_, seed := startDefineInDir(t, deck, nil, "--no-audio", "sycophantic")
-	if !strings.Contains(watch(seed).take(3*time.Second), "sikəˈfan(t)ik") {
-		t.Fatal("the seeding lookup did not resolve, so no deck was written")
+	seeded := watch(seed).take(3 * time.Second)
+	if !strings.Contains(seeded, "sikəˈfan(t)ik") {
+		// The DICTIONARY is the absent dependency here, not a defect in the flow
+		// under test: DCSCopyTextDefinition returns silence, not an error,
+		// without real access to /System/Library/AssetsV2. Written as a hard
+		// Fatal this was BR-9's mirror on a darwin host with a pty and no
+		// dictionary assets — the non-strict suite red rather than skipped.
+		conformance.SkipOrFail(t, fmt.Sprintf(
+			"the seeding lookup did not resolve, so no deck was written:\n%q", seeded), nil)
 	}
-	seed.WriteString("\x04")
+	seed.WriteString("\x04") // EOF: leave the editor, flushing the capture
+	return deck
+}
+
+// A CORRECT answer costs one keystroke and never shows the definition — on a
+// REAL terminal.
+//
+// This is the keystroke the issue exists to make free, and it was asserted only
+// in-process: the pty check drove `n` and space, so the Done-when row "a pty
+// conformance test drives the new flow" was satisfied by the artifact existing
+// rather than by the behaviour running. Its own session and its own deck, so the
+// draw order cannot make it flaky.
+func TestPTYPlayCorrectAnswerNeverRevealsIt(t *testing.T) {
+	deck := seedDeck(t)
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	first := out.take(3 * time.Second)
+	if !strings.Contains(unstyled(first), "y = got it") {
+		t.Fatalf("the grading keys were not offered up front:\n%q", first)
+	}
+
+	f.WriteString("y")
+	after := out.take(3 * time.Second)
+	if strings.Contains(unstyled(first+after), "sikəˈfan(t)ik") {
+		t.Errorf("a correct answer showed the definition; that is the step #24 removes:\n%q", after)
+	}
+	if !strings.Contains(unstyled(after), "1 right, 0 wrong") {
+		t.Errorf("y did not record a hit and end the sitting:\n%q", after)
+	}
+	if bad := bareNewlines(first + after); bad != 0 {
+		t.Errorf("%d bare newline(s) — the CRLF cascade is back", bad)
+	}
+}
+
+func TestPTYPlayGradeFirst(t *testing.T) {
+	deck := seedDeck(t)
 
 	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
 	out := watch(f)

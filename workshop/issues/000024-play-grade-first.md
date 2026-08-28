@@ -7,7 +7,7 @@ created: 2026-08-27
 updated: 2026-08-27
 estimate_hours: 4.67
 started: 2026-08-27T15:35:13-07:00
-actual_hours: 2.16
+actual_hours: 7.01
 ---
 
 # grade before reveal: y advances, n shows the definition
@@ -63,7 +63,7 @@ to the session contract, not a re-ordering of prints.
       plus `okAudio` installed so the playback branch is reachable at all — not a
       new refusing double. #6 BR-43's rule: a double added next to one that nearly
       fits must say why the near-fit was rejected, and here it could not.
-      Mutation-verified, and paired with `TestAMissPlaysThePronunciation` so
+      Mutation-verified, and paired with `TestAMissPlaysThePronunciationAndRecordsIt` so
       neither half can be satisfied by a session that simply never plays.
 - [x] `n` on an unrevealed word records Wrong AND reveals, in that order, and the
       recording happens before the next draw (Ctrl-C stays lossless by
@@ -75,7 +75,18 @@ to the session contract, not a re-ordering of prints.
 - [x] The prompt line, README and atlas all show the new keys — verified by grep,
       not by memory (#6 BR-44/BR-48).
 - [x] A pty conformance test drives the new flow on a real terminal (#6 BR-45:
-      `--play` shipped its one defect because it had none).
+      `--play` shipped its one defect because it had none). The row ENUMERATES
+      what the artifact asserts, each string greppable inside
+      `cmd/define/pty_conformance_test.go` — because the first version named the
+      artifact and was satisfied by its existence, while the test drove `n` and
+      space and never pressed the key this issue exists to make free:
+      - `TestPTYPlayCorrectAnswerNeverRevealsIt` — `y` records a hit, shows no
+        definition (`sikəˈfan(t)ik` absent from the whole transcript), and ends
+        the sitting `1 right, 0 wrong`.
+      - `TestPTYPlayGradeFirst` — the grading keys appear before any answer, the
+        definition is NOT showing first, `n` reveals and swaps the prompt to
+        `any key = next word`, space moves on to `0 right, 1 wrong`.
+      - both — `bareNewlines(...) == 0`, the CRLF cascade #6 shipped.
 
 
 ## Plan
@@ -197,6 +208,7 @@ built in `#6`'s last round for exactly this. `atlas-docs` = Task 9. The four
 ## Log
 
 ### 2026-08-27
+- 2026-08-27: closed — Close round 4. All six round-3 findings fixed, each measured. BR-13: outcome ORDER was unpinned (BR-8 pinned membership only) — reversing the loop iteration was green across the whole suite while losing the miss AND exiting 1; TestLosingTheTerminalAfterPlaybackExitsOne now drives a miss into an unrecoverable terminal and asserts the event survived, and the loop carries the written enumeration of what a widened contract owes its consumer (membership/order/once) with all three rows mutation-verified. BR-14: atlas enumeration re-run from git diff, not memory — gradePrompt/gradedPrompt/doc_sync_test had zero coverage, now documented; the paragraph describing the per-arm InputReveal case BR-12 removed is corrected; audible explicitly waived as a test rig. BR-15: self-inflicted and consolidated — enumerating headings found SIX mutation-restore entries, not the four the review counted, giving four contradictory answers across #2/#6/#24; one canonical entry now owns the rule and the other five point at it. BR-16: skipOrFail carve-out re-sorted into four classes by asking each site what a missing thing means; render_test.go absent COMMITTED fixture moved skip -> fail, measured by deleting testdata/entries/subject.txt (was skipping while package reported ok). BR-17: Revisions rebuilt from git diff --name-status — two entries were missing (BR-10, BR-12), not the one named; eight entries now, every path accounted for; Task 7 Step 3 sketch updated to the consts. BR-18: atlas ordinal replaced with the check name. Verification: gofmt clean, go build ok, go vet ok both tag sets, go test ./... 7/7 ok, conformance non-strict ok, strict red naming each unrun suite.; review verdict: FIX-THEN-SHIP
 - 2026-08-27: closed — Operator tested the shipped flow and confirmed it works. Ran define --play through a pty against a copy of the real deck: grading keys offered up front, y advancing with no definition and no audio, n showing the definition with "any key = next word", space moving on, Ctrl-C reporting "1 right, 1 wrong", zero bare newlines. go build, go vet, gofmt, go test ./... green; full -tags conformance pty suite green. Nine mutations run, each reddening the test that names it. --no-ledger: BR-1 and BR-2 are both FIXED in this same commit per the FIX-THEN-SHIP protocol (#174) rather than disposed — the form doc comments in cmd/define/play now describe grade-first, the plan sweep recurses over directories, and all 42 plan steps are ticked. Both Minors were also taken: DEFINE_CONFORMANCE_STRICT turns a no-pty skip into a failure, verified by running it where pty allocation is denied, and the Done-when now records the delivered player mechanism.; review verdict: FIX-THEN-SHIP
 - 2026-08-27: close round 2 (FIX-THEN-SHIP, forced past with `--no-ledger`) raised
   BR-8..BR-12 and left BR-1/3/4/5 open. All nine taken in this round; the session
@@ -270,4 +282,44 @@ built in `#6`'s last round for exactly this. `atlas-docs` = Task 9. The four
     three rows to seven; names the check now, per this round's own lesson.
   - Verification: gofmt clean, `go build`, `go vet` (both tag sets), `go test ./...`
     7/7 ok; conformance non-strict `ok`, strict red naming each unrun suite.
+- 2026-08-27: close round 4 — verdict FIX-THEN-SHIP, gate CONVERGED (0 new
+  findings, all six round-3 findings addressed). The review's one advisory
+  Important was a real defect this branch introduced, fixed here per #174 without
+  re-running close.
+  - **The strict guarantee was swept over `cmd/define` and claimed over `./...`.**
+    Measured, not inferred: `DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance
+    ./internal/llm/...` reported `ok` with four suites skipped — the exact false
+    assurance the rule exists to remove, printed by the command my own README
+    documented. 4th round of `check-that-cannot-fail-reads-as-green`, and the
+    fourth different way an enumeration was wrong.
+  - **Fixed as the rule, not the sites.** `internal/conformance` is now a
+    repo-wide package owning the decision (env var renamed
+    `DEFINE_CONFORMANCE_STRICT` → `CONFORMANCE_STRICT`, since the scope is no
+    longer `define`), and `TestEverySkipIsRoutedOrWaived` walks the tree and FAILS
+    on any `t.Skip` neither routed through it nor marked
+    `conformance:inapplicable` with a reason. Verified it bites: re-introducing
+    one unrouted skip reddens it. Ten `cmd/define` sites, three `internal/llm`
+    sites and `llmtest/reachable.go` now route through one name; `askrun_test.go`'s
+    two table-row skips are waived with reasons at the site.
+  - Measured after: `CONFORMANCE_STRICT=1 go test -tags conformance ./...` is RED
+    including `internal/llm` (was `ok`); non-strict `./...` is green, 8/8.
+  - Also took the three Minors: the pty mirror sites (`t.Fatal` on an unresolved
+    seeding lookup) route through the guard; the stale
+    `TestAMissPlaysThePronunciation` citation now names the real test; the
+    Done-when row ENUMERATES what the pty artifact asserts, each string verified
+    greppable inside it — and that enumeration exposed that the live check never
+    pressed `y`, the keystroke this issue exists to make free, so
+    `TestPTYPlayCorrectAnswerNeverRevealsIt` was added with its own deck. Plan
+    core-concepts table rebuilt from `git diff --name-status` (five entities the
+    close rounds added), and the Risks section records what the guard does NOT
+    cover: it sees `t.Skip*`, so the mirror defect written as an unconditional
+    `Fatal` was fixed by reading five sites and nothing enforces it.
+  - **Honest limit:** the pty suite could not execute here — `pty.Start` returns
+    `operation not permitted` in this sandbox — so `TestPTYPlayCorrectAnswerNeverRevealsIt`
+    compiles and registers but has NOT been run on a real terminal by me. Under
+    `CONFORMANCE_STRICT=1` it correctly fails rather than skipping. The earlier pty
+    evidence in this Log is the operator's manual run.
+  - Lesson REVISED, not appended (per the rule this issue's own BR-15 produced):
+    *A skip reads as green* now carries all four rounds and how each enumeration
+    failed.
 

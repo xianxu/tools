@@ -298,15 +298,21 @@ make install   # symlink bin/* into ~/.local/bin (already on PATH)
 Live conformance checks sit behind a build tag and must run unsandboxed:
 
 ```sh
-go test -tags conformance ./...                          # skips what it cannot reach
-DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance ./...   # a skip is a failure
+go test -tags conformance ./...                     # skips what it cannot reach
+CONFORMANCE_STRICT=1 go test -tags conformance ./...   # a skip is a failure
 ```
 
 Without the variable a missing dependency — no network, no NOAD, no terminal, no
-`afplay` — SKIPS, so the suite is still useful offline. That makes a sandboxed run
-report success for checks that never executed, which is the wrong answer for CI or
-for a close that has to mean something: set `DEFINE_CONFORMANCE_STRICT` there and
-green means it ran.
+`afplay`, no model — SKIPS, so the suite is still useful offline. That makes a
+sandboxed run report success for checks that never executed, which is the wrong
+answer for CI or for a close that has to mean something: set `CONFORMANCE_STRICT`
+there and green means it ran.
+
+The guarantee covers `./...` because it is enforced rather than swept.
+`internal/conformance` owns the decision, and its `TestEverySkipIsRoutedOrWaived`
+walks the tree and FAILS on any `t.Skip` that is neither routed through it nor
+marked `conformance:inapplicable` with a reason — so a new suite in a package
+nobody thought to sweep cannot quietly opt out.
 
 ## Platform
 

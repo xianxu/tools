@@ -19,6 +19,7 @@ package main
 
 import (
 	"bytes"
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"strings"
 	"testing"
@@ -44,7 +45,7 @@ var reflectClusters = []struct {
 func TestReflectAgainstTheLiveService(t *testing.T) {
 	cfg, err := llm.Resolve(realGetenv)
 	if err != nil {
-		skipOrFail(t, "no model configured", err)
+		conformance.SkipOrFail(t, "no model configured", err)
 	}
 
 	dir := t.TempDir()

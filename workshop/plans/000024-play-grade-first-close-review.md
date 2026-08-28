@@ -561,3 +561,79 @@ findings:
       Name the check (player_conformance_test.go) instead of its position, per
       the round's own "cite by NAME, never by line number" lesson.
 ```
+
+---
+
+## Re-review — 2026-08-27T19:21:42-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 24 — grade before reveal: y advances, n shows the definition |
+| repo | tools |
+| issue file | workshop/issues/000024-play-grade-first.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 87e6307b9f7cf83fdc0a93b69bf4d9354eaf3b00..dfdc56632eb89ec1bc96a19b3071fd5b4d44bf7b |
+| command | sdlc close --issue 24 |
+| reviewer | claude |
+| timestamp | 2026-08-27T19:21:42-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All six open findings (BR-13…BR-18) are genuinely addressed, and every one that is testable I verified by reverting in a scratch worktree rather than by reading the commit message: reversing the outcome loop to `for i := len(outs)-1; i >= 0; i--` now reddens `TestLosingTheTerminalAfterPlaybackExitsOne` (`got 0 events, want the one miss`) where it was silently green before; deleting `testdata/entries/subject.txt` now fails `TestCorpusBlockStructure/subject` instead of skipping; drifting `gradePrompt` reddens `TestREADMEQuotesThePromptsTheLoopActuallyPrints`; and the loop comment's other two rows hold too (`outs[:1]`, `outs[len(outs)-1:]` and a duplicated-slice mutation each redden named tests). `go build`, `go vet`, `gofmt`, `go test ./...` are green at head; the pty conformance suite could not run here — `pty.Start` returns `operation not permitted` in this environment, and I confirmed `DEFINE_CONFORMANCE_STRICT=1` correctly turns that skip into a `FAIL`, so I am reporting the pty flow as unverified-by-me rather than as passing. What keeps this off SHIP is one Important: the strict-mode guarantee this round introduced is scoped to `cmd/define/` while the README it added claims it for `./...`, and `DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance ./internal/llm/...` reports `ok` with `TestConformanceAgainstTheLiveService` skipped — measured, not inferred.
+
+## 1. Strengths
+
+- **`play_loop.go:120-145` — the widened contract's obligations are written down as an enumeration (membership / order / once), each row naming the test that pins it, and all three rows survive mutation.** This is the correct answer to BR-8→BR-13: the class got enumerated instead of the next instance getting patched.
+- **`session.go:143-153` — the "any key = next word" rule hoisted above the switch, with `InputDrop`/`InputQuit` deliberately excluded and the exclusion pinned.** Mutating the guard to a bare `if s.Graded` reddens `TestDropAdvancesRecordsNothingAndNamesTheWord/after_a_miss`, so the reasoning in the comment is load-bearing rather than decorative.
+- **`doc_sync_test.go` + the `gradePrompt`/`gradedPrompt` consts.** Making the README a *consumer* of the code's literal is the right general fix for a family that had eaten four rounds of prose sweeps, and it is deliberately narrow (the two typed lines, not the surrounding explanation).
+- **`session.go:196-208` (`score` split from `advance`).** A miss must tally without moving on; splitting the tally from the move is the minimal correct factoring, and `TestWrongBeforeRevealRecordsAndReveals` pins the tally independently of the event.
+- **`lessons.md:1818+` — six scattered mutate/restore entries consolidated into one canonical rule, with the five siblings rewritten as evidence pointers.** I grepped for surviving contradictory advice (`copy .*aside|cp .*\.bak|scratch copy`) and found none. ARCH-DRY, applied to a rules file that AGENTS.md §4 hands the next agent at session start.
+- **`cmd/define/play` purity stays enforced, not asserted** (`purity_test.go` guards imports and wall-clock); the pure tests use no fakes at all, and the loop is the only thing that touches terminal/store/audio. Clean ARCH-PURE.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**The conformance dependency-guard rule was swept over `cmd/define/` and claimed over `./...` — `README.md:298-310`, `internal/llm/conformance_test.go:34`, `internal/llm/task_conformance_test.go:30`, `internal/llm/capture_conformance_test.go:31`, `internal/llm/llmtest/reachable.go:47`, `cmd/define/pty_conformance_test.go:432`**
+
+This is the 4th finding in family `check-that-cannot-fail-reads-as-green`. Earlier rounds fixed instances; do not fix these instances — state the rule and enforce it. Measured prevalence, both directions:
+
+- *Skip reads green under a claim that says it cannot.* The README added in this range prints `DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance ./...` and says "green means it ran". Measured: `DEFINE_CONFORMANCE_STRICT=1 go test -tags conformance ./internal/llm/...` → `ok`, with `--- SKIP: TestConformanceAgainstTheLiveService (llm seam not configured)`. Four sites in `internal/llm` skip on an absent external dependency and never consult the variable. A close that runs the documented command and reads `ok` has the exact false assurance BR-9 existed to remove.
+- *Absent dependency written as a hard failure — BR-9's mirror.* `pty_conformance_test.go:432` (added this round) `t.Fatal`s when the seeding lookup does not resolve. The dict probe added in the same commit documents why that happens (`DCSCopyTextDefinition returns silence without real access to /System/Library/AssetsV2`), so on a darwin host with a pty but no dictionary assets the non-strict suite goes red rather than skipping — the same shape the round fixed in `dict_conformance`, `news_conformance` and `live_property`. `:377` is a pre-existing twin.
+
+The rule: **the enumeration for a "green means it ran" guarantee is every test in the conformance build across the scope the doc claims, produced by asking each site "what does this do when its dependency is missing?" — and the doc's claimed scope must not exceed the swept scope.** The cheapest enforcement is the move BR-10 already proved on this issue: make it a consumer rather than a sweep — a meta-test that walks the `-tags conformance` files and fails on any `t.Skip*` or absent-dependency `Fatal` that is not routed through `skipOrFail`. Absent that, narrow the README to the package the helper actually covers, so the doc stops promising a guarantee four suites do not honour.
+
+## 4. Minor findings
+
+- **`pty_conformance_test.go:428-467` — the live check never presses `y`.** This is the 2nd finding in family `donewhen-describes-a-mechanism-not-delivered`; the ask is the rule, not the edit. The Done-when row reads "A pty conformance test drives the new flow on a real terminal", and the test drives `n` then space; the keystroke the issue exists to make free is asserted only in-process. Rule: a Done-when row that names an artifact must enumerate the behaviours that artifact asserts, each greppable inside it — otherwise the row is satisfied by the artifact existing rather than by the coverage running.
+- **`conformance_skip_test.go:63-71` — four branches assembling one message.** `msg := reason; if err != nil { msg = fmt.Sprintf("%s: %v", reason, err) }` then one `Fatalf`/`Skip` pair says the same thing in two lines (ARCH-DRY, low stakes).
+- **`workshop/issues/000024-play-grade-first.md:47` cites `TestAMissPlaysThePronunciation`; the test is `TestAMissPlaysThePronunciationAndRecordsIt`.** A truncated citation, in the round whose own lesson is "cite by NAME".
+
+## 5. Test coverage notes
+
+- The pure/consumer split is right: `session_test.go` pins what `Apply` *returns*, `play_loop_test.go` pins what the caller *does with it*, and the loop comment says explicitly that the pure tests cannot see membership/order/once. That division is what made BR-13 findable at all.
+- `only(t, outs)` is a good addition — it converts every single-outcome call site into an assertion that the site did not silently grow a second outcome.
+- `TestDropAdvancesRecordsNothingAndNamesTheWord` correctly distinguishes "drop scores nothing of its own" from "the tally already holds the miss" (`wantWrong = 1` on the third row); a lazier version would have asserted `0/0` and hidden a double-count.
+- Gap I could not close: the pty suite did not execute in this environment (`no pty available: operation not permitted`). Everything the pty test uniquely covers — CRLF behaviour of the new graded frame on a real terminal — rests on the operator's manual run recorded in the Log, not on anything I ran.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass**, with the Minor above. The two shapes that mattered (the graded arm, the five-copy audio rig) are each one home now, and the prompt text has exactly one source.
+- **ARCH-PURE — pass.** `cmd/define/play` imports nothing and is guarded; the miss branch's two effects are values returned to a thin performer, not IO reached from the state machine. `draw` stays a pure function over `io.Writer`.
+- **ARCH-PURPOSE — pass on the diff's own single-source change.** Shadow-swept the prompt literal repo-wide: `README.md` derives (test-enforced), `atlas/define.md` names the consts rather than restating them, and the only remaining literals are test expectations (legitimately the spec) and process artifacts. The flag is the *conformance-guard* single-source, covered in §3 — that one stopped at the directory the grep was pointed at.
+- **ARCH-MOCK — pass with a caveat.** Every external dependency has a double behind the seam (`fakePlayer`, `okAudio`, `store.Mem`, the fake dictionary) plus a live conformance check, and production and test flow share the boundary. The caveat is the cadence half: the strict mode that makes those checks *mean* something is honoured in one of the two directories that carry them.
+- For **#7** (multiple choice): `Outcome.Word` on `OutcomeReveal` and the `[]Outcome` contract are now the right surface to build on, and the enumeration comment in the loop is the thing to extend rather than rewrite. If #7 adds an input that both advances and reveals, the order row is the one that will bite — it is pinned, but only through one terminal-failure path.
+
+## 7. Plan revision recommendations
+
+- **Core concepts table.** Add a `## Revisions` entry, and rows for the entities the rounds added that the table still omits: `gradePrompt` / `gradedPrompt` (PURE, `cmd/define/play_loop.go`, new), `skipOrFail` (INTEGRATION seam guard, `cmd/define/conformance_skip_test.go`, new), `audible` and `only` (test rigs, new). The Revisions prose records them; the greppable table — the thing a reviewer cross-checks — does not. Same rule the round already accepted for the enumeration: the table is built from `git diff --name-status`, not from what the plan originally named.
+- **Task 8 / the Risks section.** Record that the conformance suite's strict guarantee is scoped to `cmd/define/` while the README claims `./...`, so the next issue does not inherit the claim as settled fact.

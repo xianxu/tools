@@ -335,6 +335,11 @@ rounds:
           family: doc-sweep-incomplete
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-27T19:21:42-07:00"
+      agent: claude
+      blocked: false
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#24 (boundary-review)
@@ -540,6 +545,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   paragraph below it opens with an ordinal into the old three-row table.
   Name the check (player_conformance_test.go) instead of its position, per
   the round's own "cite by NAME, never by line number" lesson.
+
+## Round 4 — 2026-08-27T19:21:42-07:00 (claude) — passed
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

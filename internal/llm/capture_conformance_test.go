@@ -5,6 +5,7 @@ package llm_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"strings"
 	"testing"
@@ -28,7 +29,7 @@ import (
 func TestCaptureDriftAgainstTheLiveService(t *testing.T) {
 	cfg, err := llm.Resolve(os.Getenv)
 	if err != nil {
-		t.Skipf("llm seam not configured: %v", err)
+		conformance.SkipOrFail(t, "llm seam not configured", err)
 	}
 	c := llm.New(cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

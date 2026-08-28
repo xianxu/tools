@@ -1012,16 +1012,22 @@ Every seam has one, and each pins the assumption that seam rests on:
 | `pty_conformance_test.go` | the raw-mode loop on a REAL terminal — `--play`'s CRLF defect (#6) was invisible to every non-pty test, and `TestPTYPlayGradeFirst` (#24) drives the grade-first flow the same way |
 
 **A skip reads as green, so green has to be made to mean "it ran".** Every suite
-above routes its dependency check through the one `skipOrFail` helper
-(`conformance_skip_test.go`): absent dependency SKIPS by default, and FAILS under
-`DEFINE_CONFORMANCE_STRICT` — the mode for CI and for a close that has to mean
+above routes its dependency check through `conformance.SkipOrFail`
+(`internal/conformance`): absent dependency SKIPS by default, and FAILS under
+`CONFORMANCE_STRICT` — the mode for CI and for a close that has to mean
 something. Checks about the dependency's *shape* — a drifted fixture, a feed that
-stopped parsing — are not routed there and stay hard failures in both modes.
+stopped parsing — are not routed there and stay hard failures in both modes; the
+package doc names all four classes.
 
-The rule is worth stating because it went wrong in both directions: it was first
-applied at a single pty site while six suites skipped silently, and three other
-suites had the mirror bug — an absent dependency written as an unconditional
-`Fatalf`, which made the offline suite red rather than skipped.
+**It is a repo-wide package, and enforced rather than swept**, because four
+review rounds went to this one rule and each fixed only the sites its grep
+reached: one pty site while six suites skipped; then all seven, enumerated by a
+pattern that could not see the mirror defect; then a carve-out that excluded a
+file by name; then a sweep over `cmd/define` under a README claiming `./...`,
+where the documented strict command measurably reported `ok` with `internal/llm`
+skipped. `TestEverySkipIsRoutedOrWaived` now walks the tree and fails on any
+unrouted, unwaived skip — the same move that ended the doc-sweep family, applied
+to a guarantee instead of a sentence.
 
 `player_conformance_test.go` is the least obvious and the most load-bearing: if
 `afplay` ever returned immediately, three *overlapping* sounds would satisfy
@@ -1031,7 +1037,7 @@ true on paper and wrong in the room. (Named, not numbered: this sentence said
 
 ```sh
 go test -tags conformance ./cmd/define/   # must run UNSANDBOXED; skips what it cannot reach
-DEFINE_CONFORMANCE_STRICT=1 \
+CONFORMANCE_STRICT=1 \
   go test -tags conformance ./cmd/define/ # CI / close: a skip is a failure
 cmd/define/testdata/capture.sh            # re-capture the corpus
 ```

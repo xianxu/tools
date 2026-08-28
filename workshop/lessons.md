@@ -1915,15 +1915,45 @@ paths, names — has to be produced by something that ran.**
 excludes in explicitly (`| grep -v _test`) so what is left out is visible rather
 than accidental.
 
-## A skip reads as green (#24)
+## A skip reads as green (#24, four rounds)
 
-The pty conformance suite skips when no terminal is available, so a run without
-one reports success for a suite that never executed — for a suite that exists
-because #6's CRLF defect was invisible to everything that WAS running.
-`DEFINE_CONFORMANCE_STRICT=1` now turns that skip into a failure.
+The pty conformance suite skipped when no terminal was available, so a run
+without one reported success for a suite that never executed — a suite that
+exists because #6's CRLF defect was invisible to everything that WAS running.
+`CONFORMANCE_STRICT=1` turns that skip into a failure.
 
 **Rule:** any test that can skip itself needs a mode where the skip is an error,
 or "green" silently means "did not run".
+
+**This rule then took four review rounds to actually land, and the interest is in
+HOW each round failed** — every one of them applied the rule correctly to the
+sites its enumeration reached, and the enumeration was wrong in a new way each
+time:
+
+1. Fixed the one pty site. Six suites kept skipping silently.
+2. Routed all seven, enumerated by `grep 't\.Skipf\?('` — which cannot see the
+   MIRROR defect. Three suites wrote an absent dependency as an unconditional
+   `Fatalf`, so the offline suite was red rather than skipped.
+3. The carve-out excluded a file by NAME. `render_test.go` skipped on an absent
+   COMMITTED fixture, silently retiring coverage while the package reported ok.
+4. The sweep covered `cmd/define` while the README it added claimed `./...`.
+   Measured: the documented strict command reported `ok` with `internal/llm`'s
+   four suites skipped — a green that meant nothing, which is the precise false
+   assurance the rule exists to remove.
+
+**Rule:** a "green means it ran" guarantee is a claim about an ENUMERATION, and
+its claimed scope may not exceed its swept scope. Four rounds of re-running a
+sweep by hand is the signal to stop sweeping: the fix is a meta-test that walks
+the tree and FAILS on any unrouted skip
+(`internal/conformance.TestEverySkipIsRoutedOrWaived`). Same move as
+*A restatement drifts; a consumer fails the build* — a grep cannot fail a build.
+
+**Corollary — ask the site the question; do not grep the spelling.** "What does
+this do when its dependency is missing?" sorts every site into four classes, and
+only the first is a skip: absent EXTERNAL dependency (skip; fail under strict),
+absent IN-REPO artifact (always fail — a committed file that is gone is a deleted
+file), SHAPE drift (always fail — it is what the check is FOR), inapplicable
+table row (skip, permanently, marked with a reason at the site).
 
 ## The same rule fails in two directions, and a grep sees one (#24 BR-9)
 

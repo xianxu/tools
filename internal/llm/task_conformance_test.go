@@ -4,6 +4,7 @@ package llm_test
 
 import (
 	"context"
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ import (
 func TestTypedTaskAgainstTheLiveService(t *testing.T) {
 	cfg, err := llm.Resolve(os.Getenv)
 	if err != nil {
-		t.Skipf("llm seam not configured: %v", err)
+		conformance.SkipOrFail(t, "llm seam not configured", err)
 	}
 	llmtest.SkipIfUnreachable(t, cfg.BaseURL)
 	c := llm.New(cfg)

@@ -3,6 +3,7 @@
 package llm_test
 
 import (
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"testing"
 
@@ -31,7 +32,7 @@ func TestConformanceAgainstTheLiveService(t *testing.T) {
 	if err != nil {
 		// Skip, not fail: an unconfigured machine is not a broken one. Same shape
 		// cmd/define/fetch_conformance_test.go uses for the CDN.
-		t.Skipf("llm seam not configured: %v", err)
+		conformance.SkipOrFail(t, "llm seam not configured", err)
 	}
 	t.Logf("conformance against %s (model %s, key %s)", cfg.BaseURL, cfg.Model, llm.Redact(cfg.APIKey))
 	// A stopped proxy would otherwise fail all six obligations, reporting "the

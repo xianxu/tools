@@ -24,6 +24,18 @@ tagging one-shot work forces a redundant double-log).
 | `score` | `cmd/define/play/session.go` | new |
 | `Apply` | `cmd/define/play/session.go` | modified |
 | `draw` | `cmd/define/play_loop.go` | modified |
+| `gradePrompt` / `gradedPrompt` | `cmd/define/play_loop.go` | new (close round 2) |
+| `conformance.SkipOrFail` | `internal/conformance/conformance.go` | new (close rounds 2–4) |
+| `audible` | `cmd/define/play_loop_test.go` | new test rig (close round 2) |
+| `only` | `cmd/define/play/session_test.go` | new test rig |
+| `seedDeck` | `cmd/define/pty_conformance_test.go` | new test rig (close round 4) |
+
+The last five arrived during the close rounds, not from the plan as written. The
+table is rebuilt from `git diff --name-status` over the window rather than from
+what the plan originally named — the same rule the Revisions section adopted
+after writing four entries from memory and missing two (BR-17). The prose
+recorded them before this table did, and the table is the greppable half a
+reviewer cross-checks.
 
 - **`Session.Graded`** — this question's verdict is already recorded; the next
   input advances rather than grading again.
@@ -831,6 +843,24 @@ because a miss does not advance. If a future change makes any advancing input
 also emit `OutcomeReveal`, the audio plays for the NEXT word. Task 5 Step 1 says
 verify rather than assume; the honest fix if it ever changes is to carry the word
 on the outcome, as `OutcomeRecord` and `OutcomeDrop` already do.
+
+**The conformance strict-mode guarantee, and what it actually covers.** Close
+rounds 2–4 built `CONFORMANCE_STRICT`, under which an absent dependency fails
+instead of skipping. Round 2 swept `cmd/define` and the README claimed `./...`;
+measured in round 4, the documented command reported `ok` with `internal/llm`'s
+suites skipped — a green that meant nothing. It is now a repo-wide package with
+`TestEverySkipIsRoutedOrWaived` failing the build on any unrouted skip, so the
+claim and the sweep are the same scope by construction.
+
+What is NOT covered, so the next issue does not inherit it as settled: the guard
+sees `t.Skip*` calls. The MIRROR defect — an absent dependency written as an
+unconditional `Fatal`, which makes the offline suite red rather than skipped —
+was fixed at five known sites by reading them, and nothing enforces it. That half
+is still a sweep.
+
+**`OutcomeReveal` reading the wrong word — RESOLVED in close round 2 (BR-4).**
+The risk below was also mis-stated: the failure mode is a nil-interface panic at
+the end of the queue, not the wrong word. `OutcomeReveal` now carries `Word`.
 
 **Muscle memory.** Anyone used to pressing space first will now see the
 definition without having answered — which still works, and still grades

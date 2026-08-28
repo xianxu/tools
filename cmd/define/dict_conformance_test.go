@@ -14,7 +14,10 @@ package main
 // error, without real access to /System/Library/AssetsV2, which would make this
 // test report drift that is really just a sandbox.
 
-import "testing"
+import (
+	"github.com/xianxu/tools/internal/conformance"
+	"testing"
+)
 
 func TestFixturesMatchLiveDictionary(t *testing.T) {
 	fake, err := loadFakeDictionary("testdata/entries")
@@ -35,7 +38,7 @@ func TestFixturesMatchLiveDictionary(t *testing.T) {
 	// non-strict `go test -tags conformance ./...` could never be green offline.
 	// One helper now owns both directions.
 	if _, err := live.Lookup("sycophantic"); err != nil {
-		skipOrFail(t, "system dictionary unreachable", err)
+		conformance.SkipOrFail(t, "system dictionary unreachable", err)
 	}
 	// Read through Lookup, not fake.entries: a conformance check that bypasses
 	// the seam cannot see the fake diverging from the dependency at that seam.

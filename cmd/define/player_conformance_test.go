@@ -12,6 +12,7 @@ package main
 //	go test -tags conformance -run AfplayBlocks ./cmd/define/
 
 import (
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 func TestAfplayBlocksUntilPlaybackCompletes(t *testing.T) {
 	data, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates("sycophantic", "us"))
 	if err != nil {
-		skipOrFail(t, "network unavailable", err)
+		conformance.SkipOrFail(t, "network unavailable", err)
 	}
 	dir := t.TempDir()
 	path := dir + "/pronunciation.mp3"
@@ -30,7 +31,7 @@ func TestAfplayBlocksUntilPlaybackCompletes(t *testing.T) {
 
 	start := time.Now()
 	if err := (afplayPlayer{}).Play(t.Context(), path); err != nil {
-		skipOrFail(t, "afplay unavailable", err)
+		conformance.SkipOrFail(t, "afplay unavailable", err)
 	}
 	single := time.Since(start)
 

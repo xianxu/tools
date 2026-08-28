@@ -14,6 +14,7 @@ package main
 // until #10, this is the way a person looks at real output.
 
 import (
+	"github.com/xianxu/tools/internal/conformance"
 	"strings"
 	"testing"
 )
@@ -33,7 +34,7 @@ func TestNewsFeedStillParsesAndCovers(t *testing.T) {
 		// An unreachable feed is an ABSENT DEPENDENCY, not drift — the two are
 		// distinguished here and nowhere below, because everything past this
 		// point is a statement about the feed's SHAPE and stays a hard failure.
-		skipOrFail(t, "news feed unreachable", err)
+		conformance.SkipOrFail(t, "news feed unreachable", err)
 	}
 	if len(body) == 0 {
 		t.Fatal("empty body")

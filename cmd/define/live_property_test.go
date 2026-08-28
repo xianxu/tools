@@ -18,6 +18,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"github.com/xianxu/tools/internal/conformance"
 	"os"
 	"strings"
 	"testing"
@@ -36,7 +37,7 @@ const knownRawNotationEntries = 27
 func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 	f, err := os.Open("/usr/share/dict/words")
 	if err != nil {
-		skipOrFail(t, "no system word list", err)
+		conformance.SkipOrFail(t, "no system word list", err)
 	}
 	defer f.Close()
 
@@ -111,7 +112,7 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 		// execute may not report green (BR-9) — an unconditional Fatalf here is
 		// why the sandboxed conformance suite was red before the helper owned
 		// both directions.
-		skipOrFail(t, fmt.Sprintf("only %d live entries reachable (%d missing)", checked, missing), nil)
+		conformance.SkipOrFail(t, fmt.Sprintf("only %d live entries reachable (%d missing)", checked, missing), nil)
 	}
 	t.Logf("checked %d live entries: %d lost content, %d kept raw notation; %d non-Latin (other active dictionaries), %d absent",
 		checked, failed, rawPipes, nonLatin, missing)
