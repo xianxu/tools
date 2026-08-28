@@ -7,7 +7,14 @@ import (
 )
 
 // substituteT runs fn against a throwaway *testing.T on its own goroutine and
-// returns it, with CONFORMANCE_STRICT set to strict for the duration.
+// returns it, with CONFORMANCE_STRICT set to strict.
+//
+// SCOPE: t.Setenv binds to the CALLING test and is restored at that test's
+// cleanup — not when fn returns. Two calls in one test therefore leave the last
+// mode in force for the remainder, which is fine for the callers here (each
+// asserts one mode, or passes "" twice) but is not "for the duration of fn", as
+// an earlier version of this comment claimed (BR-8). A test needing two modes
+// wants two subtests, so each gets its own cleanup.
 //
 // Two things are bundled here deliberately.
 //

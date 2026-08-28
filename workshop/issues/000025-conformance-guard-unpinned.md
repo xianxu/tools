@@ -71,7 +71,7 @@ drive-by.
       **Stated as an invariant with its derivation, NOT as a count.** Three
       versions of this row carried a number — eight, then seven — and the number
       went stale twice: once because a table-driven test collapsed four rows into
-      one substitute-`T`, and once because BR-1's own fix collapsed five
+      one substitute-`T`, and once because BR-1's own fix collapsed the
       `package llmtest` sites into `substituteT`. A count in a durable artifact is
       a restatement of a fact the code owns, and it drifts exactly like the prose
       and the line-number citations this repo has already learned about. Derive it:
@@ -116,14 +116,14 @@ Single boundary — no `Mx` tags.
 - [x] Verify unsandboxed in both env states.
 
 **ARCH-DRY — EXTRACTED, reversing what this section first recorded.** The
-substitute-`T` idiom is now `substituteT` in `package llmtest`, covering all five
-goroutine sites there.
+substitute-`T` idiom is now `substituteT` in `package llmtest`, covering every
+goroutine site there (derive with `grep -c 'substituteT(t,' internal/llm/llmtest/*_test.go`).
 
 The original note said a shared helper would force `golden_test.go` to import
 `internal/conformance`, and that premise was simply false: `golden_test.go` and
 `reachable_test.go` are the same package, so an unexported helper couples nothing
 (BR-2). It also repeated PQ-3's "eight sites" that this issue's own Done-when had
-already corrected to seven — and the full goroutine idiom was five. A decision
+already corrected to seven — and both numbers were wrong for the idiom itself. A decision
 record whose reason is wrong is worse than none, because the next person inherits
 the reasoning rather than re-deriving it.
 
@@ -264,7 +264,7 @@ satisfied.
     `SkipOrFail`, which is a property of control flow, not of the test. Fixed as
     the class: `substituteT(t, strict, fn)` bundles the goroutine with the env, so
     the mode is a parameter that cannot be forgotten rather than a convention that
-    can. All five goroutine sites in `package llmtest` route through it.
+    can. Every goroutine site in `package llmtest` routes through it.
   - **BR-2** caught the recorded reason for not extracting as simply WRONG — I
     wrote that a helper would force `golden_test.go` to import
     `internal/conformance`, but both files are `package llmtest`. Only
@@ -286,12 +286,12 @@ claim written as a COUNT or a premise about package structure went stale with it
 - **The Done-when enumeration table and its `# 7` grep.** Rewritten as an
   invariant plus its derivation commands. The substitute-`T` constructions are
   now two (`substitute_test.go`, `skiporfail_test.go`) because the helper
-  collapsed five; the invariant the table was stating is unchanged and now
+  collapsed them; the invariant the table was stating is unchanged and now
   *stronger* — the mode is a parameter rather than a convention. Third stale
   count in this issue, which is why the row no longer carries one.
 - **The ARCH-DRY paragraph.** Reversed. The helper WAS extracted, the
   "would force `golden_test.go` to import `internal/conformance`" premise was
-  false (same package), and the count was five and not eight. The surviving half
+  false (same package). The surviving half
   — `internal/conformance`'s test stays inline as genuinely cross-package — is
   kept and restated.
 - **The failure-TEXT row.** Extended: `message()` being asserted did not pin that
@@ -300,4 +300,31 @@ claim written as a COUNT or a premise about package structure went stale with it
   the test binary and reading the printed transcript. This was the deliberate
   stopping point the non-goal paragraph would otherwise have had to claim; it is
   cheaper to pin than to justify.
+
+**2026-08-27 — close round 3 (BR-6 … BR-9).** The wiring test written in round 2
+to fix a check that could not fail was itself a check that could not fail in one
+direction.
+
+- **BR-6 (Important).** `wiring_test.go`'s default row asserted
+  `Contains(out, "network unavailable: dial refused")`, which is a PREFIX of the
+  strict message — so the row passed whatever mode the child ran in. Measured on
+  clean head: mutating `SkipOrFail` so every offline skip announces
+  `(CONFORMANCE_STRICT is set)` left both packages and `go test ./...` green in
+  both env states. It also meant the row could not detect its own
+  `CONFORMANCE_STRICT=""` override failing to beat an inherited `=1` — the
+  ambient-environment bug this entire issue is about, inside the test written to
+  prove it fixed. Now asserted in both directions: the suffix must be PRESENT
+  under strict and ABSENT by default. The mutation reddens the named row.
+- **BR-7 (Minor).** "five" was wrong in four places — the idiom covers six sites —
+  including the sentence explaining why counts do not belong in this issue. That
+  is the FOURTH stale count here. The numbers are gone; the derivation commands
+  remain. The surviving "five"s refer to lines of code and estimate rows, not
+  sites.
+- **BR-8 (Minor).** `substituteT`'s doc claimed the mode is set "for the
+  duration"; `t.Setenv` binds to the CALLING test and restores at its cleanup,
+  not when `fn` returns. Doc corrected with the real scope and what a two-mode
+  test should do instead (two subtests).
+- **BR-9 (Minor).** `CombinedOutput`'s error was discarded, so a spawn failure
+  would surface as "SkipOrFail is not routing through message()" — a confident
+  wrong cause. Captured and reported alongside the transcript.
 

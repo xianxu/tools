@@ -237,3 +237,183 @@ One `## Revisions` entry on `workshop/issues/000025-conformance-guard-unpinned.m
 > - `## Done when`, the enumeration table (:67-71) and its `# 7` grep (:74): the substitute-`T` sites are now **two** — `substitute_test.go` 1, `skiporfail_test.go` 1 — because `substituteT` collapsed the five `package llmtest` sites into one helper. The invariant the table was stating is unchanged and now *stronger* (the mode is a parameter, not a convention); restate it as "all five goroutine sites route through `substituteT`, which takes the mode", and re-derive the grep against the current tree.
 > - `## Plan`, the ARCH-DRY paragraph (:106): reverse it. The helper WAS extracted, the "would force `golden_test.go` to import `internal/conformance`" premise was false (same package), and the count was 5 sites and not 8. Keep the surviving half of the decision — `internal/conformance`'s own test stays inline because it is genuinely cross-package.
 > - `## Done when`, the failure-TEXT row: record the pinning boundary — `message()` is asserted directly, but nothing pins that `SkipOrFail` calls it (verified: bypassing `message()` leaves `go test ./...` green in both modes). Either state that as the deliberate stopping point, consistent with the existing non-goal paragraph, or pin it with a re-exec helper-process test.
+
+---
+
+## Re-review — 2026-08-27T21:47:04-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 25 — conformance guard: the strict inversion was unpinned, and it broke a test that had pinned it |
+| repo | tools |
+| issue file | workshop/issues/000025-conformance-guard-unpinned.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 27b6f1023770b6f76bc74426b6b90b94efeb97b8..514014cadc6f20a0882461a60d944c88f5697337 |
+| command | sdlc close --issue 25 |
+| reviewer | claude |
+| timestamp | 2026-08-27T21:47:04-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All five prior findings are genuinely addressed and I verified each by mutation rather than by reading the commit messages: reverting `t.Setenv` out of `substituteT` reds `TestStrictTurnsAnUnreachableServiceIntoAFailure` in default mode and `TestSkipsOnlyWhenNothingIsListening` under strict (BR-1 is reachable, not decorative); all four rows of the Log's mutation table reproduce **exactly** at the baseline the Log names, `05dee92` (BR-3); the ARCH-DRY paragraph is reversed with the false premise removed (BR-2); `wantFail` is a local (BR-4); and the mis-grouped import is gone with the file it lived in (BR-5). The new `wiring_test.go` closes the real gap round 2 found — bypassing `message()` inside `SkipOrFail` now reds both its subtests, where before it left `go test ./...` green in both modes. What keeps this off SHIP is one residual half of that same gap: the default-mode row asserts a string that is a **prefix** of the strict message, so the mutation `t.Skip(message(reason, err, true))` — every offline skip falsely announcing `(CONFORMANCE_STRICT is set)` — leaves both packages and the whole tree green in both env states. I ran it. That is the issue's own defect class (`check-that-cannot-fail-reads-as-green`) surviving inside the commit that claims to have closed it, and the fix is one line.
+
+Verified independently: whole tree green under `go test ./...` and `CONFORMANCE_STRICT=1 go test ./...`; `-race` clean in both modes; `gofmt -l` and `go vet` clean; both Done-when derivation greps reproduce (2 substitute-`T` constructions, 6 `substituteT` call sites); the printed message is byte-identical to the pre-change `Fatalf` output (`wiring_test.go:33: network unavailable: dial refused (CONFORMANCE_STRICT is set)`), with `t.Helper()` still attributing the caller's line — no drift from the `Fatalf`→`Fatal` swap.
+
+### 1. Strengths
+
+- **`internal/conformance/wiring_test.go:27` — the re-exec is the right answer and it is genuinely load-bearing.** This is the standard Go helper-process idiom, and it is the only way to observe text a substitute `*testing.T` structurally cannot expose. Mutation-confirmed: bypassing `message()` reds both subtests; `t.Fatal(message(reason, err, false))` reds the strict subtest.
+- **`internal/llm/llmtest/substitute_test.go:33` — BR-1 answered as the class, and the class is the right one.** Making the mode a *parameter* rather than a convention is what makes "cannot be forgotten" true; the doc comment saying so is honest about the fact that the convention had already been forgotten once, inside the fix.
+- **`internal/conformance/conformance.go:71` — ARCH-PURE done properly.** `message` is pure (no IO, clock or env), `Strict()` is the single env read, `SkipOrFail` is four lines of glue. `TestMessage` runs with zero IO, and the internal-test choice avoids widening the API for a test's convenience.
+- **The Log's mutation table now records named tests plus the exact command and baseline commit.** I ran all four against `05dee92` and every reddened test matches row for row, including M4's seven-test blast radius. This is the shape evidence claims should take in this repo.
+- **`internal/llm/llmtest/golden_test.go:46`** — the comment stating that the `""` there "buys uniformity rather than correctness" stops the next reader from cargo-culting an env-set that isn't load-bearing.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**`internal/conformance/wiring_test.go:45` — the default-mode assertion cannot fail for the mode it names, because the expected string is a prefix of the wrong behavior's output.**
+
+`want` for the default row is `"network unavailable: dial refused"`, asserted with `strings.Contains`. The strict message is `"network unavailable: dial refused (CONFORMANCE_STRICT is set)"` — a superstring. So the row passes whenever the child prints *either* message. Verified by mutation on the clean head:
+
+```go
+t.Skip(message(reason, err, true))   // was: message(reason, err, false)
+```
+
+→ `ok internal/conformance`, `ok internal/llm/llmtest`, and `go test ./...` green in **both** env states. Every default-mode skip in the tree would then read `master is not a terminal on this platform (CONFORMANCE_STRICT is set)` — announcing a mode that is off — and nothing notices. The asymmetry is real, not theoretical: the mirror mutation (`t.Fatal(message(reason, err, false))`) *does* red the strict subtest, so exactly one of the two directions this issue exists to pin is actually pinned at the call site.
+
+The same weakness makes the subtest unable to detect that its own env override failed: if `CONFORMANCE_STRICT=` did not beat the inherited `=1`, the child would run strict and the row would still pass.
+
+Fix, one line — add a negative assertion for the default row so the check excludes the alternative rather than merely including the expected:
+
+```go
+{name: "default: …", strict: "", want: "network unavailable: dial refused",
+ unwanted: conformance.StrictEnv + " is set"},
+```
+and `if tc.unwanted != "" && strings.Contains(string(out), tc.unwanted) { t.Errorf(...) }`. (Asserting the whole decorated line, `wiring_test.go:NN: <msg>\n`, would also do it, at the cost of a line-number-coupled fixture — the negative assertion is cheaper and states the intent.)
+
+Done-when row 3 currently claims "**the WIRING is pinned, not just the text**" without qualification. Either the fix above, or narrow the row to "pinned in the strict direction; the default direction is pinned only against dropping `message()` entirely."
+
+### 4. Minor findings
+
+- **`workshop/issues/000025-conformance-guard-unpinned.md:74, :119, :267, :289` — "five" is wrong in four places (family `unreproducible-evidence-claim`, 3rd instance).** Measured at `ba321d1`: `package llmtest` had **six** substitute-`T` sites (`golden_test.go:28,35,49`, `reachable_test.go:26,47,70`), of which **four** used the goroutine idiom; the fifth goroutine site is `skiporfail_test.go`, a different package. So "collapsed five `package llmtest` sites" (:74, :289) is six, and "all five goroutine sites in `package llmtest`" (:119, :267) is four goroutine sites / six routed sites. `:126`'s cross-package "five" is correct. Do not patch the number — see §7 for the rule-level fix.
+- **`internal/llm/llmtest/substitute_test.go:10` — the doc says the mode is set "for the duration", but `t.Setenv` is scoped to the *parent test*, not to `fn` (family `test-inherits-ambient-env`, 2nd instance).** Measured prevalence: 0 affected sites (each caller uses one mode, and every call re-sets the variable). See §7 for the rule.
+- **`internal/conformance/wiring_test.go:59` — `out, _ := cmd.CombinedOutput()` discards a spawn failure, and the failure message then misdiagnoses it.** If the child cannot start, `out` is empty and the test reports "SkipOrFail is not routing through message()" — a confident, wrong cause. Capture the error and include it in the `t.Errorf`.
+- `internal/conformance/wiring_test.go:32` — an ambient `CONFORMANCE_WIRING_HELPER` in a developer's environment silently turns the parent test into a skip. Not worth guarding, but the marker name is close enough to `CONFORMANCE_STRICT` to be worth a word in the comment.
+
+### 5. Test coverage notes
+
+- **Mutation-verified by me, on the clean head and on `05dee92`, not read from the Log.** `SkipOrFail` bypasses `message()` → both wiring subtests red. Strict branch formats with `strict=false` → strict subtest red. `substituteT` drops `t.Setenv` → `TestStrictTurnsAnUnreachableServiceIntoAFailure` red in default mode, `TestSkipsOnlyWhenNothingIsListening` red under strict. Log rows M1–M4 reproduce their named tests exactly at the stated baseline. The one surviving mutation is the Important above.
+- Note that the Log's table is measured against `05dee92`, which predates `wiring_test.go`; re-run at head, M1 and M2 also red `TestSkipOrFailPrintsTheMessage`. The Log names its baseline, so it reproduces as written — worth a parenthetical, not a finding.
+- Whole tree green in both env states; `-race` clean in both; `gofmt -l` and `go vet` clean over `./internal ./cmd`. Both Done-when greps reproduce against the current tree.
+- **Docs gate: no finding.** Both new symbols are unexported (`message`, `substituteT`), the re-exec is internal, and `CONFORMANCE_STRICT` was already documented at `README.md:302-308` and `atlas/define.md:1017-1040` by #24. Closing with `--no-atlas` is the right call, and the Estimate section already says so with its reason.
+
+### 6. Architectural notes for upcoming work
+
+- **ARCH-PURE — pass, and the best thing in the diff.** Pure core (`message`), one-line env read (`Strict()`), thin glue (`SkipOrFail`), and the IO-shell test (`wiring_test.go`, which execs) is correctly isolated in its own file instead of being mixed into the pure `TestMessage`. Worth naming the general cost this diff paid for that shape: extraction moves the assertable part out and leaves the *call site* unobserved — I-1 last round, and the residual half of it in §3 this round. When you extract for assertability, budget the wiring test in the same step.
+- **ARCH-DRY — pass.** Six sites collapsed into one helper; the single remaining inline copy (`internal/conformance/skiporfail_test.go:36`) is genuinely cross-package and exporting a test helper from a production package is the worse trade. The re-exec idiom is a single site, so no premature helper. Only the *record's* count is wrong (§4).
+- **ARCH-PURPOSE — pass on the code, flagged on the claim.** BR-1 was fixed as the class, not the instance, which is exactly the principle. The gap is the Done-when's universal about the wiring, which the tree half-supports (§3).
+- **ARCH-MOCK — pass.** The substitute `*testing.T` is the real type used as a stateful recorder across the call; the re-exec child is this same binary, not an external dependency outside a seam; `httptest.NewServer` and the closed port at `127.0.0.1:1` are the two states of the reachability seam, exercised at the seam. Production and test flow share the `SkipOrFail` boundary, and `-tags conformance` remains the live drift detector.
+- **Forward-looking, not a finding.** `guard_test.go`'s own comment states this repo's hardest-won rule — "A grep cannot fail a build; this can … make the claim a CONSUMER of the thing it claims about" — and this issue's Done-when backs its invariant with two greps a human re-runs. The issue's non-goal paragraph disclaims *cross-mode agreement*, correctly, as a property of a RUN; but "every `package llmtest` goroutine site routes through `substituteT`" is a property of the SOURCE, enforceable by a walk shaped exactly like `TestEverySkipIsRoutedOrWaived`. That was gate-cleared as a deferral so I am not reopening it, but it is cheaper than the CI double-run the non-goal contemplates and it would have caught BR-1 mechanically. Worth an issue.
+
+### 7. Plan revision recommendations
+
+Both entries append to the existing `## Revisions` section.
+
+> **2026-08-27 — the count came back, in the sentence explaining why counts don't belong here.** `## Done when` already states the rule — *a count in a durable artifact is a restatement of a fact the code owns, and it drifts* — and then four sentences in this issue restate a site count anyway (:74, :119, :267, :289), all of them wrong: `package llmtest` had six substitute-`T` sites, four of them goroutine sites; "five" was the cross-package goroutine count borrowed from the round-1 review. Applied as the rule rather than the instance: **every remaining count of code sites in this issue is replaced by the invariant plus its derivation command, the way the Done-when row already does it** — "all `package llmtest` sites route through `substituteT`, derived by `grep -rn 'substituteT(t,' internal/`" — rather than by changing five to six. This is the third instance of `unreproducible-evidence-claim` on this issue; the rule was written down at one site and not applied at the other four, which is the `instance-not-class` shape one level up.
+
+> **2026-08-27 — the wiring row's scope, stated.** `## Done when` row 3 claims the wiring is pinned. Measured: the strict direction is pinned (`t.Fatal(message(reason, err, false))` reds `TestSkipOrFailPrintsTheMessage/strict`), the default direction is not — `t.Skip(message(reason, err, true))` leaves `go test ./...` green in both env states, because the default row's expected string is a prefix of the strict message. Either add the negative assertion and keep the row as written, or narrow the row to the direction actually pinned.
+
+Also worth one line on `substitute_test.go:10`, as the rule for the 2nd `test-inherits-ambient-env` instance: **a helper that sets an environment variable on a callee's behalf must say whose scope it restores at, because `t.Setenv` binds to the test, not to the callback** — cheapest expression is fixing "for the duration" to "for the remainder of the calling test", so a future caller that mixes modes in one test body knows it must use `t.Run`.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Fixed as the class via substituteT(t, strict, fn); verified by revert — removing t.Setenv reds TestStrictTurnsAnUnreachableServiceIntoAFailure (default) and TestSkipsOnlyWhenNothingIsListening (strict).
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Plan's ARCH-DRY paragraph reversed, false same-package premise removed; the residual wrong count in the correction is raised separately as an unreproducible-evidence-claim instance, not as BR-2.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Table now records named tests, command and baseline; I ran all four mutations at 05dee92 and every row reproduces exactly.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      wantFail := !tc.wantSkip at internal/conformance/skiporfail_test.go:44.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      The extraction removed the mis-grouped import from reachable_test.go entirely; substitute_test.go and wiring_test.go both group correctly.
+findings:
+  - id: new
+    severity: Important
+    family: check-that-cannot-fail-reads-as-green
+    title: |
+      wiring_test.go's default-mode row cannot fail for the mode it names — its want string is a prefix of the strict message
+    detail: |
+      internal/conformance/wiring_test.go:45 asserts strings.Contains(out, "network
+      unavailable: dial refused") for the default row, which is a substring of the strict
+      message. Verified on clean head: mutating SkipOrFail to t.Skip(message(reason, err,
+      true)) — so every offline skip falsely announces "(CONFORMANCE_STRICT is set)" —
+      leaves internal/conformance, internal/llm/llmtest and go test ./... green in BOTH env
+      states. The mirror mutation on the strict branch DOES red, so exactly one of the two
+      directions is pinned at the call site while Done-when row 3 claims the wiring is
+      pinned without qualification. The same weakness means the row cannot detect that its
+      own CONFORMANCE_STRICT= override failed to beat an inherited =1. Fix: assert the
+      default row does NOT contain conformance.StrictEnv+" is set", or narrow the Done-when
+      row to the direction actually pinned (ARCH-PURPOSE).
+  - id: new
+    severity: Minor
+    family: unreproducible-evidence-claim
+    title: |
+      "five" is wrong in four places, including the sentence that explains why counts do not belong in this issue
+    detail: |
+      This is the 3rd finding in family unreproducible-evidence-claim (BR-3 was the mutation
+      red-counts). Do NOT patch five to six. Measured at ba321d1: package llmtest had SIX
+      substitute-T sites (golden_test.go:28,35,49; reachable_test.go:26,47,70), FOUR of them
+      goroutine sites; the fifth goroutine site is skiporfail_test.go, a different package.
+      So issue lines 74 and 289 ("collapsed five package llmtest sites") are six, and lines
+      119 and 267 ("all five goroutine sites in package llmtest") are four goroutine / six
+      routed; line 126's cross-package five is correct. Measured prevalence four sites. The
+      rule is already written verbatim in the Done-when — a count in a durable artifact is a
+      restatement of a fact the code owns, and it drifts — and was applied at exactly one
+      row. Rule-level fix: replace every remaining code-site count in the issue with the
+      invariant plus its derivation grep, the way that row already does.
+  - id: new
+    severity: Minor
+    family: test-inherits-ambient-env
+    title: |
+      substituteT's doc says the mode is set "for the duration", but t.Setenv binds to the calling test, not to fn
+    detail: |
+      This is the 2nd finding in family test-inherits-ambient-env (BR-1 was the missed
+      reachable_test.go site). Do NOT special-case a caller. internal/llm/llmtest/substitute_test.go:35
+      calls t.Setenv on the parent t, so the mode outlives fn and persists to the end of the
+      test. Measured prevalence: 0 affected sites today — each caller uses one mode and every
+      call re-sets the variable. The rule that covers it: a helper that sets an environment
+      variable on a callee's behalf must state whose scope it restores at, so a caller mixing
+      modes in one test body knows it needs a t.Run. Cheapest expression is the doc line at
+      substitute_test.go:10 — "for the remainder of the calling test", not "for the duration".
+  - id: new
+    severity: Minor
+    family: swallowed-error-misattributes-cause
+    title: |
+      wiring_test.go discards CombinedOutput's error, so a spawn failure is reported as a wiring bug
+    detail: |
+      internal/conformance/wiring_test.go:59 does out, _ := cmd.CombinedOutput(). The discard
+      is right for the exit status (non-zero under strict, by design) but also swallows a
+      genuine spawn failure; out is then empty and the assertion at :62 reports "SkipOrFail is
+      not routing through message()" — a confident wrong cause for a reader debugging CI.
+      Capture the error and include it in the t.Errorf alongside the transcript.
+```

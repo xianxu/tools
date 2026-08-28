@@ -34,20 +34,36 @@ func TestSkipOrFailPrintsTheMessage(t *testing.T) {
 		return
 	}
 
+	// The strict suffix must be asserted in BOTH directions — present under
+	// strict, ABSENT by default.
+	//
+	// Asserting only presence made the default row unable to fail for the mode it
+	// names, because its want string is a PREFIX of the strict message (BR-6).
+	// Measured: mutating SkipOrFail so every offline skip announces
+	// "(CONFORMANCE_STRICT is set)" left both packages and `go test ./...` green
+	// in both env states. That also means the row could not detect its own
+	// CONFORMANCE_STRICT="" override failing to beat an inherited =1 — the
+	// ambient-environment bug this whole issue is about, in the test written to
+	// prove it fixed.
+	strictSuffix := "(" + conformance.StrictEnv + " is set)"
+
 	for _, tc := range []struct {
-		name   string
-		strict string
-		want   string
+		name       string
+		strict     string
+		want       string
+		wantSuffix bool
 	}{
 		{
-			name:   "default: the skip carries reason and cause",
-			strict: "",
-			want:   "network unavailable: dial refused",
+			name:       "default: the skip carries reason and cause, and does NOT claim strict",
+			strict:     "",
+			want:       "network unavailable: dial refused",
+			wantSuffix: false,
 		},
 		{
-			name:   "strict: the failure also names the variable",
-			strict: "1",
-			want:   "network unavailable: dial refused (CONFORMANCE_STRICT is set)",
+			name:       "strict: the failure also names the variable",
+			strict:     "1",
+			want:       "network unavailable: dial refused",
+			wantSuffix: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -56,11 +72,20 @@ func TestSkipOrFailPrintsTheMessage(t *testing.T) {
 				marker+"=1",
 				conformance.StrictEnv+"="+tc.strict,
 			)
-			out, _ := cmd.CombinedOutput() // non-zero under strict, by design
+			// The error is kept, not discarded: a non-zero exit is EXPECTED under
+			// strict, but so is a spawn failure, and swallowing both reports an
+			// empty transcript as "not routing through message()" — a confident
+			// wrong cause for whoever is reading CI (BR-9).
+			out, runErr := cmd.CombinedOutput()
+			transcript := string(out)
 
-			if !strings.Contains(string(out), tc.want) {
-				t.Errorf("the test binary never printed %q.\nSkipOrFail is not routing through message().\n--- transcript ---\n%s",
-					tc.want, out)
+			if !strings.Contains(transcript, tc.want) {
+				t.Errorf("the test binary never printed %q (exec: %v).\nSkipOrFail is not routing through message().\n--- transcript ---\n%s",
+					tc.want, runErr, transcript)
+			}
+			if got := strings.Contains(transcript, strictSuffix); got != tc.wantSuffix {
+				t.Errorf("strict suffix %q present = %v, want %v (exec: %v).\n--- transcript ---\n%s",
+					strictSuffix, got, tc.wantSuffix, runErr, transcript)
 			}
 		})
 	}
