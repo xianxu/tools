@@ -417,3 +417,159 @@ findings:
       not routing through message()" — a confident wrong cause for a reader debugging CI.
       Capture the error and include it in the t.Errorf alongside the transcript.
 ```
+
+---
+
+## Re-review — 2026-08-27T22:03:56-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 25 — conformance guard: the strict inversion was unpinned, and it broke a test that had pinned it |
+| repo | tools |
+| issue file | workshop/issues/000025-conformance-guard-unpinned.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 27b6f1023770b6f76bc74426b6b90b94efeb97b8..82a5679e8ac6335f97bdb7691ff028e122e5bd04 |
+| command | sdlc close --issue 25 |
+| reviewer | claude |
+| timestamp | 2026-08-27T22:03:56-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All four open findings from round 3 are genuinely addressed, and I verified the load-bearing one by mutation rather than by reading the commit message: mutating `SkipOrFail` so every offline skip announces `(CONFORMANCE_STRICT is set)` now reddens `TestSkipOrFailPrintsTheMessage/default:…` in **both** env states, where round 3 measured it green. I independently reproduced the Log's `Strict()`-inverted mutation row and it named exactly the tests recorded. The suite is green in both env states under `-race`, `go vet` is clean, and the Done-when's derivation greps produce the invariant they claim (6 `substituteT` sites, 1 goroutine in `package llmtest`, 2 substitute-`T` constructions). What holds this back from SHIP is one measured gap of exactly the kind this issue exists to close: `SkipOrFail`'s `t.Helper()` is verified by having read output once and by nothing else — deleting it moves every conformance red-log line from the caller to `conformance.go:75` across all 18 call sites, and leaves `internal/conformance`, `internal/llm/llmtest` and `go test ./...` green in both modes.
+
+### 1. Strengths
+
+- **`message_test.go` and `wiring_test.go` split the assertion correctly.** `message_test.go:31` hardcodes the literal `"…(CONFORMANCE_STRICT is set)"` so the variable *name* is pinned, while `wiring_test.go:47` derives `strictSuffix` from `conformance.StrictEnv` so the *shape* is pinned without re-implementing the format. That split avoids the PQ-1 vacuity in one direction and the brittleness in the other; it is the right decomposition, not an accident.
+- **The BR-6 fix is real and reddens where it should.** `wiring_test.go:86` asserting the suffix `ABSENT` by default is what turns a prefix-containment check into a two-directional one. Verified: the round-3 mutation now fails in both env states, which also proves the `CONFORMANCE_STRICT=""` child override beats an inherited `=1` (Go dedups `Cmd.Env` last-wins).
+- **`substituteT` makes the mode a parameter rather than a convention** (`substitute_test.go:38`). The BR-1 defect — two of three sites given `t.Setenv` by hand — is structurally unrepeatable now, and the grep-derived invariant in the Done-when confirms it holds today with zero remaining raw goroutine sites in `package llmtest`.
+- **BR-9's fix is reachable, not decorative.** `exec: <nil>` appeared in every mutation transcript I produced, so `runErr` is genuinely on the reporting path.
+- **The `## Estimate` remediation rows** are an honest structural correction — pricing *fixing* what a review finds, not just *conducting* it — rather than a fudge factor, and the refusal to carry #24's 0.67 ratio as a multiplier is the right call.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**`internal/conformance/conformance.go:72` — `t.Helper()` is the one property of `SkipOrFail` still verified by reading output, and nothing asserts it.**
+
+Measured on a scratch copy of clean head: deleting `t.Helper()` leaves `internal/conformance`, `internal/llm/llmtest` and `go test ./...` **green in both env states**. The effect is observable and one `strings.Contains` away — the child transcript changes from
+
+```
+wiring_test.go:33: network unavailable: dial refused     (with t.Helper)
+conformance.go:75: network unavailable: dial refused     (without)
+```
+
+`message()`'s own doc says the reader "needs to know that the DEPENDENCY was missing, not the code broken" — and *which file:line the log names* is half of how they learn that. Lose it and all 18 `SkipOrFail` call sites point at the guard. `TestSkipOrFailPrintsTheMessage` is the only place in the tree where this is observable, and it already reads the transcript. Fix sketch: add `wantCallSite: "wiring_test.go:"` to the table (or assert `!strings.Contains(transcript, "conformance.go:")`), one row each direction.
+
+### 4. Minor findings
+
+- **`internal/conformance/wiring_test.go:70` — 2nd in family `swallowed-error-misattributes-cause`.** The `-test.run=^TestSkipOrFailPrintsTheMessage$` selector is a string literal, unrelated to the function name. I renamed the selector target on a scratch copy: the child ran zero tests, exited 0, and the parent reported `SkipOrFail is not routing through message()` with `exec: <nil>` — BR-9's failure mode reached through a different door. Per the escalation, the rule rather than the instance: *a child-process assertion must first establish that the child DID the work, before reading its output as evidence about the code under test.* Measured prevalence: 1 (`grep -rn 'os.Args\[0\]' --include='*.go'` returns only this line; `cmd/define/pty_conformance_test.go` builds a separate binary and is a different shape). Cheapest expression covering both doors: capture `name := t.Name()` once at the top, build the selector from it, and assert the transcript contains `"--- SKIP: "+name` / `"--- FAIL: "+name`.
+- **`internal/conformance/conformance.go:65` — `CONFORMANCE_STRICT=0` turns strict ON, and this boundary pins it as intended without saying so anywhere a reader looks.** `skiporfail_test.go:66` newly asserts `{"0", true}`, but the test's name advertises only the empty case, and `Strict()`'s doc, the package doc, `README.md:302,308` and `atlas/define.md:1015` all say only "set". The test's own comment reasons that `CONFORMANCE_STRICT=` "is a plausible way to try to turn the mode off" — `=0` is the *more* common way. One line on `Strict()`: "any non-empty value, including `0`, means strict; only unset or empty is off."
+- `workshop/issues/000025-…md:71-73` — "Three versions of this row carried a number — eight, then seven" lists two numbers for three versions.
+
+### 5. Test coverage notes
+
+Independently run, all against clean head:
+
+| check | result |
+|---|---|
+| `go test ./...`, default and `CONFORMANCE_STRICT=1` | green both; no test flips verdict on the variable |
+| `go test -race ./internal/conformance/ ./internal/llm/llmtest/`, both modes | green |
+| `go vet` on both packages | clean |
+| BR-6 mutation (`t.Skip(message(…, true))`) | reddens `TestSkipOrFailPrintsTheMessage/default:…` in both modes ✅ |
+| `Strict()` inverted | reddens all 4 `TestSkipOrFailBothDirections` rows + `TestStrictTreatsAnEmptyValueAsOff` + `TestSkipsOnlyWhenNothingIsListening` + `TestStrictTurnsAnUnreachableServiceIntoAFailure` — exactly as the Log's table records ✅ |
+| `t.Helper()` removed | **green in both modes** ❌ (finding above) |
+
+One further unpinned direction, below the bar for a finding but worth knowing: swapping `t.Fatal` → `t.Error` in the strict branch keeps everything green (`Failed()` is still true, the transcript still carries the text), so the *abort* semantics — which is what stops a conformance test from continuing against an absent dependency — rest on `Fatal` being read, not asserted. It is genuinely awkward to pin through a substitute `T`; the child transcript's `--- SKIP:`/`--- FAIL:` line is the cheap seam if the `t.Helper()` fix goes in anyway.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** Exactly two substitute-`T` constructions remain (`substitute_test.go:44`, `skiporfail_test.go:36`), and the recorded reason for keeping the second inline is now the *correct* one after BR-2: `internal/conformance`'s test is genuinely cross-package, and exporting a test helper from a production package to save ~8 lines is the worse trade. I checked the premise rather than the prose — `golden_test.go` and `reachable_test.go` are both `package llmtest`, so the helper couples nothing.
+- **ARCH-PURE — pass.** `message()` is the pure core and is unit-tested with no IO; `SkipOrFail` is thin env-read + `Fatal`/`Skip` glue. `wiring_test.go`'s subprocess is IO by necessity, not by leakage — the printed text is only observable in a real test binary, and the comment says so.
+- **ARCH-PURPOSE — pass, with the Important above as the residue.** Shadow-sweep run: `Strict()` is the single source, its only consumer is `SkipOrFail`, `message()` takes the mode as a parameter, and every unit test of a routed helper (`SkipIfUnreachable`, the only one — `grep 'conformance.SkipOrFail'` shows all other sites are conformance suites that *should* track the variable) now states its mode. No hand-maintained restatement of the model survives. The declared non-goal (mechanical cross-mode enforcement is a property of a RUN, not of the source) is an honest stopping point, correctly argued.
+- **ARCH-MOCK — pass, not applicable.** No new external binary or service seam; the re-exec target is this test binary itself, and `llmtest`'s stateful fake at the wire boundary is untouched.
+- Forward-looking: the deferred MIRROR half — an absent dependency written as an unconditional `Fatal`, invisible to `guard_test.go`'s `t.Skipf?\(|t.SkipNow\(` pattern — remains the largest real gap in this rule and is correctly tracked in #24's Risks rather than smuggled in here.
+
+### 7. Plan revision recommendations
+
+- If the `t.Helper()` finding is taken, add a `## Revisions` entry extending the failure-TEXT Done-when row: what a red log shows is the message *and* the site it is attributed to, and the second half was unasserted until now. If it is deliberately declined, it belongs in the non-goal paragraph, not unstated.
+- `## Log` → "Verified UNSANDBOXED in both env states" reads as covering the `llm` conformance suites, but those sit behind `//go:build conformance` and are absent from a bare `go test ./...`. Naming the flag (`-tags conformance`) makes the bullet reproducible in one step; I needed two to work out which run it described. Precision note, not a new finding — the family's rule is already stated in the Done-when.
+
+```findings
+dispose:
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Verified by mutation, not by the commit message: the strict-suffix mutation now reddens the named default row in BOTH env states.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      Code-site counts removed; surviving "five"s are lines-of-code and estimate rows. I ran both derivation greps and the invariant holds.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      substitute_test.go:8-14 now states the real t.Setenv scope and the two-subtest remedy.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      runErr captured and reachable at both assertions — it printed as "exec: <nil>" in every mutation transcript I produced.
+findings:
+  - id: new
+    severity: Important
+    family: verified-by-reading-not-by-a-test
+    title: |
+      t.Helper() in SkipOrFail is unpinned; deleting it leaves both packages and go test ./... green in both env states
+    detail: |
+      Measured on a scratch copy of clean head: removing t.Helper() at
+      internal/conformance/conformance.go:72 keeps internal/conformance,
+      internal/llm/llmtest and go test ./... green in default AND strict mode, while the
+      child transcript changes from "wiring_test.go:33: network unavailable: dial refused"
+      to "conformance.go:75: ...". message()'s own doc says the reader must learn that the
+      DEPENDENCY was missing rather than the code broken, and the attributed file:line is
+      half of how they learn it — lost, all 18 SkipOrFail call sites point at the guard.
+      This is the same shape as the defect the issue exists to fix: a property of the guard
+      established by having read output once and by no test. TestSkipOrFailPrintsTheMessage
+      already reads the transcript, so the fix is a wantCallSite column in the existing
+      table (or asserting the transcript does NOT contain "conformance.go:"), one row per
+      direction (ARCH-PURPOSE).
+  - id: new
+    severity: Minor
+    family: swallowed-error-misattributes-cause
+    title: |
+      the re-exec selector is a literal unrelated to the test name, so a child that runs zero tests is reported as a wiring defect
+    detail: |
+      This is the 2nd finding in family swallowed-error-misattributes-cause. Do NOT fix the
+      instance. BR-9 closed the spawn-failure door; this is the child-ran-nothing door.
+      Reproduced on a scratch copy by pointing wiring_test.go:70's
+      -test.run=^TestSkipOrFailPrintsTheMessage$ at a renamed target: the child exits 0
+      with "testing: warning: no tests to run", and the parent reports "SkipOrFail is not
+      routing through message()" with exec: <nil> — a confident wrong cause. The rule that
+      covers both doors: a child-process assertion must first establish that the child DID
+      the work before reading its output as evidence about the code under test. Measured
+      prevalence 1 — grep -rn 'os.Args\[0\]' --include='*.go' returns only this line;
+      cmd/define/pty_conformance_test.go builds a separate binary and is a different shape.
+      Cheapest expression: capture name := t.Name() once, build the selector from it (so it
+      cannot drift), and assert the transcript contains "--- SKIP: "+name / "--- FAIL: "+name.
+  - id: new
+    severity: Minor
+    family: contract-pinned-only-in-a-test
+    title: |
+      CONFORMANCE_STRICT=0 turns strict ON, newly pinned by a test whose name advertises only the empty case and documented nowhere
+    detail: |
+      skiporfail_test.go:66 newly asserts {"0", true}, deciding a surprising contract. Its
+      test name (TestStrictTreatsAnEmptyValueAsOff) covers one of four rows, and neither
+      Strict()'s doc at conformance.go:64, the package doc, README.md:302,308 nor
+      atlas/define.md:1015 says that any non-empty value counts. The test's own comment
+      argues that "CONFORMANCE_STRICT=" is a plausible way to try to turn the mode off —
+      "=0" is the more common way, and it silently turns it on. The rule: when a test is
+      the only place a surprising contract is decided, the contract belongs in the doc
+      comment of the symbol that owns it. One line on Strict().
+```

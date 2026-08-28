@@ -59,9 +59,25 @@ import (
 )
 
 // StrictEnv is the variable that makes a skip a failure.
+//
+// SET vs UNSET, not true vs false. ANY non-empty value turns strict ON —
+// including "0" and "false". This is the ordinary shell convention for a flag
+// variable, and it is stated here because it surprises: someone writing
+// CONFORMANCE_STRICT=0 to turn the mode OFF turns it on, and gets a red suite
+// they did not ask for. The way off is to unset it, or set it empty.
+//
+//	CONFORMANCE_STRICT=1      strict          CONFORMANCE_STRICT=       default
+//	CONFORMANCE_STRICT=0      strict (!)      (unset)                   default
+//	CONFORMANCE_STRICT=false  strict (!)
+//
+// Parsing the value instead would be worse: it invites "true"/"yes"/"on" and a
+// table of spellings, and makes a typo silently mean OFF in the mode whose whole
+// purpose is that green means something.
 const StrictEnv = "CONFORMANCE_STRICT"
 
 // Strict reports whether a missing dependency should fail rather than skip.
+//
+// See StrictEnv: set-vs-unset, so any non-empty value is on.
 func Strict() bool { return os.Getenv(StrictEnv) != "" }
 
 // SkipOrFail handles an absent EXTERNAL dependency: skip, or fail under strict.

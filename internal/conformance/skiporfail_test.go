@@ -52,12 +52,15 @@ func TestSkipOrFailBothDirections(t *testing.T) {
 	}
 }
 
-// Strict() reads the variable, and an empty value is NOT set.
+// Strict() is SET vs UNSET — an empty value is off, and every other value,
+// INCLUDING "0" and "false", is on.
 //
-// `CONFORMANCE_STRICT=` on a command line is a plausible way to try to turn the
-// mode off; treating it as on would make the offline suite red for anyone who
-// did that.
-func TestStrictTreatsAnEmptyValueAsOff(t *testing.T) {
+// The name used to advertise only the empty case while the table already pinned
+// the surprising half (BR-12): `CONFORMANCE_STRICT=0` turns strict ON. That is
+// the ordinary shell convention for a flag variable, but it is exactly the thing
+// someone gets wrong when they mean to switch the mode off — so it is named
+// here, and documented on StrictEnv where a caller reads it.
+func TestStrictIsSetVsUnsetSoEvenZeroTurnsItOn(t *testing.T) {
 	for _, tc := range []struct {
 		value string
 		want  bool

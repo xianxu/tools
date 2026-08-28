@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -26,6 +27,13 @@ import (
 // for real, the parent reads the transcript.
 func TestSkipOrFailPrintsTheMessage(t *testing.T) {
 	const marker = "CONFORMANCE_WIRING_HELPER"
+
+	// The child selector is DERIVED from this test's name, not a literal copy of
+	// it. A literal silently decays on rename: the child then matches zero tests,
+	// prints nothing, and the assertions below report "SkipOrFail is not routing
+	// through message()" — a confident wrong cause (BR-11), the same
+	// misattribution BR-9 fixed for a spawn failure.
+	selector := "^" + regexp.QuoteMeta(t.Name()) + "$"
 
 	// The helper branch: run inside the child process, where the skip or failure
 	// is genuine and `go test -v` prints its reason.
@@ -67,7 +75,7 @@ func TestSkipOrFailPrintsTheMessage(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cmd := exec.Command(os.Args[0], "-test.run=^TestSkipOrFailPrintsTheMessage$", "-test.v")
+			cmd := exec.Command(os.Args[0], "-test.run="+selector, "-test.v")
 			cmd.Env = append(os.Environ(),
 				marker+"=1",
 				conformance.StrictEnv+"="+tc.strict,
@@ -79,9 +87,30 @@ func TestSkipOrFailPrintsTheMessage(t *testing.T) {
 			out, runErr := cmd.CombinedOutput()
 			transcript := string(out)
 
+			// Distinguish "the child ran and printed the wrong thing" from "the
+			// child never ran at all" before blaming the wiring.
+			if !strings.Contains(transcript, "RUN   "+t.Name()[:strings.Index(t.Name(), "/")]) {
+				t.Fatalf("the child process ran no test for selector %q (exec: %v) — "+
+					"this is a harness fault, not a wiring defect.\n--- transcript ---\n%s",
+					selector, runErr, transcript)
+			}
 			if !strings.Contains(transcript, tc.want) {
 				t.Errorf("the test binary never printed %q (exec: %v).\nSkipOrFail is not routing through message().\n--- transcript ---\n%s",
 					tc.want, runErr, transcript)
+			}
+			// BR-10: t.Helper() must attribute the skip/failure to the CALLER.
+			// Deleting it left both packages and go test ./... green in both env
+			// states — the location a reader needs in order to find which check
+			// bailed was verified by reading, never by a test. Measured: with the
+			// call, the transcript says wiring_test.go:NN; without it,
+			// conformance.go:NN.
+			if !strings.Contains(transcript, "wiring_test.go:") {
+				t.Errorf("the message is not attributed to the caller — t.Helper() is missing from SkipOrFail.\n--- transcript ---\n%s",
+					transcript)
+			}
+			if strings.Contains(transcript, "conformance.go:") {
+				t.Errorf("the message is attributed to the helper's own file; t.Helper() is not in effect.\n--- transcript ---\n%s",
+					transcript)
 			}
 			if got := strings.Contains(transcript, strictSuffix); got != tc.wantSuffix {
 				t.Errorf("strict suffix %q present = %v, want %v (exec: %v).\n--- transcript ---\n%s",

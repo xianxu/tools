@@ -153,6 +153,78 @@ rounds:
           family: swallowed-error-misattributes-cause
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-27T22:03:56-07:00"
+      agent: claude
+      dispose:
+        - id: BR-6
+          disposition: addressed
+          note: 'Verified by mutation, not by the commit message: the strict-suffix mutation now reddens the named default row in BOTH env states.'
+          round: 4
+        - id: BR-7
+          disposition: addressed
+          note: Code-site counts removed; surviving "five"s are lines-of-code and estimate rows. I ran both derivation greps and the invariant holds.
+          round: 4
+        - id: BR-8
+          disposition: addressed
+          note: substitute_test.go:8-14 now states the real t.Setenv scope and the two-subtest remedy.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: 'runErr captured and reachable at both assertions — it printed as "exec: <nil>" in every mutation transcript I produced.'
+          round: 4
+      findings:
+        - id: BR-10
+          severity: Important
+          title: t.Helper() in SkipOrFail is unpinned; deleting it leaves both packages and go test ./... green in both env states
+          detail: |-
+            Measured on a scratch copy of clean head: removing t.Helper() at
+            internal/conformance/conformance.go:72 keeps internal/conformance,
+            internal/llm/llmtest and go test ./... green in default AND strict mode, while the
+            child transcript changes from "wiring_test.go:33: network unavailable: dial refused"
+            to "conformance.go:75: ...". message()'s own doc says the reader must learn that the
+            DEPENDENCY was missing rather than the code broken, and the attributed file:line is
+            half of how they learn it — lost, all 18 SkipOrFail call sites point at the guard.
+            This is the same shape as the defect the issue exists to fix: a property of the guard
+            established by having read output once and by no test. TestSkipOrFailPrintsTheMessage
+            already reads the transcript, so the fix is a wantCallSite column in the existing
+            table (or asserting the transcript does NOT contain "conformance.go:"), one row per
+            direction (ARCH-PURPOSE).
+          family: verified-by-reading-not-by-a-test
+          round: 4
+        - id: BR-11
+          severity: Minor
+          title: the re-exec selector is a literal unrelated to the test name, so a child that runs zero tests is reported as a wiring defect
+          detail: |-
+            This is the 2nd finding in family swallowed-error-misattributes-cause. Do NOT fix the
+            instance. BR-9 closed the spawn-failure door; this is the child-ran-nothing door.
+            Reproduced on a scratch copy by pointing wiring_test.go:70's
+            -test.run=^TestSkipOrFailPrintsTheMessage$ at a renamed target: the child exits 0
+            with "testing: warning: no tests to run", and the parent reports "SkipOrFail is not
+            routing through message()" with exec: <nil> — a confident wrong cause. The rule that
+            covers both doors: a child-process assertion must first establish that the child DID
+            the work before reading its output as evidence about the code under test. Measured
+            prevalence 1 — grep -rn 'os.Args\[0\]' --include='*.go' returns only this line;
+            cmd/define/pty_conformance_test.go builds a separate binary and is a different shape.
+            Cheapest expression: capture name := t.Name() once, build the selector from it (so it
+            cannot drift), and assert the transcript contains "--- SKIP: "+name / "--- FAIL: "+name.
+          family: swallowed-error-misattributes-cause
+          round: 4
+        - id: BR-12
+          severity: Minor
+          title: CONFORMANCE_STRICT=0 turns strict ON, newly pinned by a test whose name advertises only the empty case and documented nowhere
+          detail: |-
+            skiporfail_test.go:66 newly asserts {"0", true}, deciding a surprising contract. Its
+            test name (TestStrictTreatsAnEmptyValueAsOff) covers one of four rows, and neither
+            Strict()'s doc at conformance.go:64, the package doc, README.md:302,308 nor
+            atlas/define.md:1015 says that any non-empty value counts. The test's own comment
+            argues that "CONFORMANCE_STRICT=" is a plausible way to try to turn the mode off —
+            "=0" is the more common way, and it silently turns it on. The rule: when a test is
+            the only place a surprising contract is decided, the contract belongs in the doc
+            comment of the symbol that owns it. One line on Strict().
+          family: contract-pinned-only-in-a-test
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#25 (boundary-review)
@@ -251,9 +323,55 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   not routing through message()" — a confident wrong cause for a reader debugging CI.
   Capture the error and include it in the t.Errorf alongside the transcript.
 
+## Round 4 — 2026-08-27T22:03:56-07:00 (claude) — passed
+
+### Disposed
+
+- BR-6 — addressed — Verified by mutation, not by the commit message: the strict-suffix mutation now reddens the named default row in BOTH env states.
+- BR-7 — addressed — Code-site counts removed; surviving "five"s are lines-of-code and estimate rows. I ran both derivation greps and the invariant holds.
+- BR-8 — addressed — substitute_test.go:8-14 now states the real t.Setenv scope and the two-subtest remedy.
+- BR-9 — addressed — runErr captured and reachable at both assertions — it printed as "exec: <nil>" in every mutation transcript I produced.
+
+### Raised
+
+- **BR-10** [Important] `verified-by-reading-not-by-a-test` t.Helper() in SkipOrFail is unpinned; deleting it leaves both packages and go test ./... green in both env states
+  Measured on a scratch copy of clean head: removing t.Helper() at
+  internal/conformance/conformance.go:72 keeps internal/conformance,
+  internal/llm/llmtest and go test ./... green in default AND strict mode, while the
+  child transcript changes from "wiring_test.go:33: network unavailable: dial refused"
+  to "conformance.go:75: ...". message()'s own doc says the reader must learn that the
+  DEPENDENCY was missing rather than the code broken, and the attributed file:line is
+  half of how they learn it — lost, all 18 SkipOrFail call sites point at the guard.
+  This is the same shape as the defect the issue exists to fix: a property of the guard
+  established by having read output once and by no test. TestSkipOrFailPrintsTheMessage
+  already reads the transcript, so the fix is a wantCallSite column in the existing
+  table (or asserting the transcript does NOT contain "conformance.go:"), one row per
+  direction (ARCH-PURPOSE).
+- **BR-11** [Minor] `swallowed-error-misattributes-cause` the re-exec selector is a literal unrelated to the test name, so a child that runs zero tests is reported as a wiring defect
+  This is the 2nd finding in family swallowed-error-misattributes-cause. Do NOT fix the
+  instance. BR-9 closed the spawn-failure door; this is the child-ran-nothing door.
+  Reproduced on a scratch copy by pointing wiring_test.go:70's
+  -test.run=^TestSkipOrFailPrintsTheMessage$ at a renamed target: the child exits 0
+  with "testing: warning: no tests to run", and the parent reports "SkipOrFail is not
+  routing through message()" with exec: <nil> — a confident wrong cause. The rule that
+  covers both doors: a child-process assertion must first establish that the child DID
+  the work before reading its output as evidence about the code under test. Measured
+  prevalence 1 — grep -rn 'os.Args\[0\]' --include='*.go' returns only this line;
+  cmd/define/pty_conformance_test.go builds a separate binary and is a different shape.
+  Cheapest expression: capture name := t.Name() once, build the selector from it (so it
+  cannot drift), and assert the transcript contains "--- SKIP: "+name / "--- FAIL: "+name.
+- **BR-12** [Minor] `contract-pinned-only-in-a-test` CONFORMANCE_STRICT=0 turns strict ON, newly pinned by a test whose name advertises only the empty case and documented nowhere
+  skiporfail_test.go:66 newly asserts {"0", true}, deciding a surprising contract. Its
+  test name (TestStrictTreatsAnEmptyValueAsOff) covers one of four rows, and neither
+  Strict()'s doc at conformance.go:64, the package doc, README.md:302,308 nor
+  atlas/define.md:1015 says that any non-empty value counts. The test's own comment
+  argues that "CONFORMANCE_STRICT=" is a plausible way to try to turn the mode off —
+  "=0" is the more common way, and it silently turns it on. The rule: when a test is
+  the only place a surprising contract is decided, the contract belongs in the doc
+  comment of the symbol that owns it. One line on Strict().
+
 ## Open findings
 
-- **BR-6** [Important] `check-that-cannot-fail-reads-as-green` wiring_test.go's default-mode row cannot fail for the mode it names — its want string is a prefix of the strict message
-- **BR-7** [Minor] `unreproducible-evidence-claim` "five" is wrong in four places, including the sentence that explains why counts do not belong in this issue
-- **BR-8** [Minor] `test-inherits-ambient-env` substituteT's doc says the mode is set "for the duration", but t.Setenv binds to the calling test, not to fn
-- **BR-9** [Minor] `swallowed-error-misattributes-cause` wiring_test.go discards CombinedOutput's error, so a spawn failure is reported as a wiring bug
+- **BR-10** [Important] `verified-by-reading-not-by-a-test` t.Helper() in SkipOrFail is unpinned; deleting it leaves both packages and go test ./... green in both env states
+- **BR-11** [Minor] `swallowed-error-misattributes-cause` the re-exec selector is a literal unrelated to the test name, so a child that runs zero tests is reported as a wiring defect
+- **BR-12** [Minor] `contract-pinned-only-in-a-test` CONFORMANCE_STRICT=0 turns strict ON, newly pinned by a test whose name advertises only the empty case and documented nowhere

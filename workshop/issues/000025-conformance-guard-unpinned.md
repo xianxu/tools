@@ -1,12 +1,13 @@
 ---
 id: 000025
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-27
 estimate_hours: 3.64
 started: 2026-08-27T20:36:42-07:00
+actual_hours: 4.32
 ---
 
 # conformance guard: the strict inversion was unpinned, and it broke a test that had pinned it
@@ -219,6 +220,7 @@ satisfied.
 ## Log
 
 ### 2026-08-27
+- 2026-08-27: closed — Close round 4. All four round-3 findings fixed. BR-6 (Important): the wiring test added in round 2 to pin that SkipOrFail routes through message() could not fail in one direction — its default-row want string is a PREFIX of the strict message, so the row passed whatever mode the child ran in. Measured on clean head, mutating SkipOrFail so every offline skip announces (CONFORMANCE_STRICT is set) left both packages and go test ./... green in BOTH env states; the same weakness meant the row could not detect its own CONFORMANCE_STRICT= override failing to beat an inherited =1, which is the ambient-environment defect this issue exists to fix, reappearing inside the test written to prove it fixed. Now asserted in both directions — suffix PRESENT under strict, ABSENT by default — and the mutation reddens the named row (verified: default mode 4 FAIL, go test ./... 3 FAIL, naming TestSkipOrFailPrintsTheMessage/default). BR-7: five was wrong in four places (the idiom covers six sites), including the sentence explaining why counts do not belong in this issue — fourth stale count here; the numbers are removed and the derivation commands remain. BR-8: substituteT doc claimed the mode is set for the duration of fn, but t.Setenv binds to the calling test and restores at its cleanup — doc corrected with the real scope. BR-9: CombinedOutput error was discarded so a spawn failure would report as a wiring bug — captured and reported with the transcript. Verification: gofmt clean, go vet both tag sets, go test ./internal/... all ok. --no-atlas: #24 already documented this package rule in atlas/define.md; gate considered and waived, not forgotten.; review verdict: FIX-THEN-SHIP
 
 - 2026-08-27: shipped. Plan-quality cleared in 2 rounds (PQ-1: the strict-message
   assertion could not fail, because a substitute `*testing.T` exposes no reader
@@ -327,4 +329,26 @@ direction.
 - **BR-9 (Minor).** `CombinedOutput`'s error was discarded, so a spawn failure
   would surface as "SkipOrFail is not routing through message()" — a confident
   wrong cause. Captured and reported alongside the transcript.
+
+**2026-08-27 — close round 4 (BR-10 … BR-12), taken under the FIX-THEN-SHIP
+protocol before committing the close.** The gate converged; these three were
+recorded past the round cap.
+
+- **BR-10 (Important).** `t.Helper()` in `SkipOrFail` was unpinned — deleting it
+  left both packages and `go test ./...` green in both modes, so the file:line a
+  reader needs in order to find which check bailed was verified by reading and
+  never by a test. Measured: with the call the transcript says
+  `wiring_test.go:33`, without it `conformance.go:75`. Both directions now
+  asserted, and the mutation reddens both rows.
+- **BR-11 (Minor).** The re-exec selector was a literal copy of the test name, so
+  a rename would make the child match zero tests and the assertion would report a
+  wiring defect — the same misattribution BR-9 fixed for spawn failures. Derived
+  from `t.Name()` now, and a child that ran nothing fails as a harness fault
+  rather than as a wiring bug.
+- **BR-12 (Minor).** `CONFORMANCE_STRICT=0` turns strict ON — set-vs-unset, the
+  ordinary shell convention, but exactly what someone gets wrong when they mean to
+  switch the mode OFF. It was pinned by a test whose name advertised only the
+  empty case and documented nowhere. Now named in the test
+  (`TestStrictIsSetVsUnsetSoEvenZeroTurnsItOn`) and tabulated on `StrictEnv`
+  where a caller reads it.
 
