@@ -46,7 +46,7 @@ One subsystem: the audio URL builder and the flag that feeds it. `#18 M2` (deck 
 | Name | Lives in | Status |
 |------|----------|--------|
 | `voice` | `cmd/define/voice.go` | new |
-| ~~`voices`~~ | `cmd/define/voice.go` | **superseded by `#23`** — see Revisions |
+| ~~voices~~ (never built) | `cmd/define/voice.go` | **superseded by `#23`** — see Revisions |
 | `AudioCandidates` | `cmd/define/audiourl.go` | modified |
 
 - **`voice`** — the language plus regional variant a recording is asked for: `voice{Lang: "es", Locale: "es"}`.
@@ -54,7 +54,7 @@ One subsystem: the audio URL builder and the flag that feeds it. `#18 M2` (deck 
   - **DRY rationale:** First occurrence, and it exists to kill a *mix-up hazard rather than a duplication*. `"es"` is a valid value of BOTH fields — `AudioCandidates(w, "es", "es")` (Castilian) and a transposed `AudioCandidates(w, "es", "en")` are indistinguishable at the call site, and there are 20+ call sites in tests. A two-field struct makes the transposition unspellable.
   - **Future extensions:** `#18 M2` gives the deck a language, so a word will carry its own `voice`; this is the type that lands on it. A third field (dialect, speaker sex) widens here without touching callers.
 
-- **~~`voices`~~ — DELETED, not adapted.** `#23` made the language a declared MODE, so there is nothing to order: the mode supplies exactly one language and `AudioCandidates` builds for it alone. What shipped instead is `localeFor`, the interim locale rule `#27` inherits.
+- **~~voices~~ — DELETED, not adapted.** `#23` made the language a declared MODE, so there is nothing to order: the mode supplies exactly one language and `AudioCandidates` builds for it alone. What shipped instead is `localeFor`, the interim locale rule `#27` inherits.
   - **Relationships:** pure `voice → []voice`. Called only by `AudioCandidates`.
   - **DRY rationale:** Splitting the policy from the URL construction is what makes the policy testable as a table without asserting on URL strings. `AudioCandidates` then has one job (spell a URL) and `voices` has one job (decide what to ask for).
   - **Why it is its own function, not an `if` inside `AudioCandidates`:** the ordering is the part with measured facts behind it and the part most likely to change (a third language, a cheaper probe, a per-deck default). Burying it in string concatenation is how the `_en_` literal happened in the first place.

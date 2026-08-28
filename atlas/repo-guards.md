@@ -118,8 +118,12 @@ describe the tool as it IS must be swept; docs that RECORD what was true when
 written must not, or the "fix" is falsifying history. `currentTruthOnly` finds
 records by SHAPE — a `## Revisions` or `## Log` heading, or a `###` block
 carrying `**closed:**` — rather than by a list of filenames, so a new record
-section is covered without anyone remembering it. Issues, plans, lessons and
-`workshop/history/` are records wholesale and are not swept at all.
+section is covered without anyone remembering it. Issues, lessons and `workshop/history/` are records
+wholesale and are not swept at all. **Active plans are the exception**, and it is
+worth stating: their Core-concepts tables and their live prose ARE swept — by
+`TestPlanTablesNameEntitiesThatExist` and `TestNoArtifactNamesARetiredSymbol` —
+because a plan's design sections describe the design as it IS, while everything
+from its `## Revisions` heading on is a record and is skipped.
 
 **Rows three to six are the SYMBOL half**, which recurred NINE times while the
 first two ratchets counted filenames only. Table rows were the tractable part; plans named `deckDeps`, `MigrateFlatDeck`,

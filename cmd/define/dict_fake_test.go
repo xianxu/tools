@@ -212,3 +212,79 @@ func TestParseLangPairs(t *testing.T) {
 		})
 	}
 }
+
+// capturedLanguages reads the SET of languages the corpus actually holds.
+//
+// Every check over the corpus takes its language dimension from HERE rather than
+// spelling store.DefaultLang, which is the rule this exists for: when a corpus
+// gains a dimension, the checks over it gain the same dimension — or the new
+// half is unchecked while two documents claim otherwise. M2 added five real
+// Larousse captures and nothing byte-compared them to anything.
+//
+// Derived from the directory rather than listed, so capturing a third language
+// brings it under every check without anyone remembering to widen one.
+func capturedLanguages(t *testing.T) []store.Lang {
+	t.Helper()
+	entries, err := os.ReadDir("testdata/entries")
+	if err != nil {
+		t.Fatalf("reading the corpus: %v", err)
+	}
+	var out []store.Lang
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		l, err := store.ParseLang(e.Name())
+		if err != nil {
+			t.Errorf("testdata/entries/%s is not a language directory", e.Name())
+			continue
+		}
+		out = append(out, l)
+	}
+	if len(out) < 2 {
+		t.Fatalf("found %d captured language(s); #23 M2 committed at least en and es, so this "+
+			"check would be blind to the very dimension it exists for", len(out))
+	}
+	return out
+}
+
+// Every captured language loads, and none is empty — the generic form of
+// TestFakeDictionaryLoadsRealFixtures, which named English.
+func TestEveryCapturedLanguageLoads(t *testing.T) {
+	for _, lang := range capturedLanguages(t) {
+		d, err := loadFakeDictionary("testdata/entries", lang)
+		if err != nil {
+			t.Errorf("%s: %v", lang, err)
+			continue
+		}
+		if len(d.entries) == 0 {
+			t.Errorf("%s: corpus is empty — later invariant tests would be vacuous", lang)
+		}
+	}
+}
+
+// The no-data-loss invariant, over EVERY captured language.
+//
+// TestRenderLosesNothing goes through testDict(t), which is English by
+// definition, so the Spanish captures — different script conventions, different
+// punctuation, inflection lists in parentheses — were never run through the
+// parser and renderer at all.
+func TestRenderLosesNothingInEveryCapturedLanguage(t *testing.T) {
+	for _, lang := range capturedLanguages(t) {
+		d, err := loadFakeDictionary("testdata/entries", lang)
+		if err != nil {
+			t.Fatalf("%s: %v", lang, err)
+		}
+		for word := range d.entries {
+			raw, err := d.Lookup(word)
+			if err != nil {
+				t.Errorf("%s/%s: %v", lang, word, err)
+				continue
+			}
+			out := Render(ParseEntry(raw), RenderOpts{Width: 0})
+			if strings.TrimSpace(out) == "" {
+				t.Errorf("%s/%s rendered to nothing from %d bytes of entry", lang, word, len(raw))
+			}
+		}
+	}
+}

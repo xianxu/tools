@@ -286,7 +286,7 @@ made.
 
 ## Risks
 
-**The private symbols can vanish on an OS update.** The whole of M2 rests on nine undocumented symbols. Mitigated by `dlsym` + fallback to today's behaviour (so the failure mode is "M1's tool", not a crash) and by Task 10's conformance check. Recorded as a Done-when row in the issue, not as a note.
+**The private symbols can vanish on an OS update.** The whole of M2 rests on the undocumented symbols in `dcsPrivateSymbols` — a list, deliberately not a count, since "nine" was repeated into four documents and was wrong in all four. Mitigated by `dlsym` + fallback to today's behaviour (so the failure mode is "M1's tool", not a crash) and by Task 10's conformance check. Recorded as a Done-when row in the issue, not as a note.
 
 **CFSet, not CFArray.** Measured: getting this wrong is an uncaught ObjC exception, not a wrong answer.
 
@@ -686,3 +686,36 @@ BR-29. Sidecar: `workshop/plans/000023-deck-language-close-review.md`.
   `CFRetain`s now and releases after the lookup. `dict_darwin.go` gets the same
   sequence right by ordering; two implementations of one boundary should not
   disagree about handle lifetime.
+
+### 2026-08-28 — close sanctioned (FIX-THEN-SHIP); three demoted findings fixed anyway
+
+**Reason.** Round 8 returned FIX-THEN-SHIP with no blocking findings. BR-29,
+BR-31 and BR-32 were demoted past the round cap and would NOT block — *and no
+later gate picks them up*, so leaving them meant shipping findings nothing would
+ever revisit. Per `#174` the fixes are bundled into the close commit.
+
+**Delta.**
+
+- **BR-32 — my own plan-table guard read only the FIRST name in a row.** Rows like
+  `` | `dictMeta` / `chooseDictionary` / `dictionaryFor` | `` name three entities;
+  7 of 16 symbols in this repo's plans were unchecked. It reads every backticked
+  name in the cell now, and immediately caught a struck-through `` `voices` `` row
+  in `#27`'s plan — strikethrough is not enough when the name is still backticked.
+- **BR-31 — M2's Spanish corpus was outside every check that keeps the fake
+  honest**, while the atlas and this plan both described the corpus as
+  conformance-checked. `loadFakeDictionary(…, store.DefaultLang)` was hardcoded at
+  two sites and `TestRenderLosesNothing` goes through `testDict`, which is English
+  by definition — so five real Larousse captures were byte-compared to nothing and
+  never run through the parser at all.
+  - The rule, not the two sites: **when a corpus gains a dimension, every check
+    over it takes that dimension.** `capturedLanguages` reads the SET from the
+    directory, so a third language comes under every check without anyone
+    widening one.
+  - Run unsandboxed: the Spanish fixtures now byte-compare to the live Larousse
+    and match. That is the first time they have been checked against anything.
+- **BR-29's residue — the COUNT clause and a false scope claim.** The plan's Risks
+  section still said M2 "rests on nine undocumented symbols"; it names
+  `dcsPrivateSymbols` now, deliberately a list rather than a count.
+  `atlas/repo-guards.md` said plans are records "not swept at all", which two
+  guards added this range contradict — active plans' design sections ARE swept,
+  and everything from `## Revisions` on is not.

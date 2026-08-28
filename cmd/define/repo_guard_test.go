@@ -558,8 +558,11 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 		t.Skip("no active plans")
 	}
 
-	// `| `Name` | `path` | ...` — the shape the plan template produces.
-	row := regexp.MustCompile("^\\|\\s*`([A-Za-z_][A-Za-z0-9_.]*)`[^|]*\\|\\s*`([^`]+\\.go)`")
+	// `| `A` / `B` | `path` | ...` — the shape the plan template produces. A row
+	// often names SEVERAL entities in its first cell; a first version captured
+	// only the first, leaving 7 of 16 symbols unchecked in this repo's own plans.
+	row := regexp.MustCompile("^\\|([^|]*)\\|\\s*`([^`]+\\.go)`")
+	nameCell := regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_.]*)`")
 	checked := 0
 	for _, plan := range plans {
 		b, err := os.ReadFile(plan)
@@ -572,36 +575,9 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 			if m == nil {
 				continue
 			}
-			name, path := m[1], m[2]
-			// A plan names entities as a READER sees them — store.RuntimeFiles —
-			// while the file that declares them is inside that package and says
-			// RuntimeFiles. Strip a package qualifier that matches the file's own
-			// directory; anything else stays qualified and will not match, which
-			// is correct.
-			if pkg, bare, ok := strings.Cut(name, "."); ok && filepath.Base(filepath.Dir(path)) == pkg {
-				name = bare
-			}
-			src, err := os.ReadFile(filepath.Join(root, path))
-			if err != nil {
-				// The file does not exist yet: a plan legitimately precedes its
-				// code. Only a row pointing at a REAL file makes a checkable claim.
-				continue
-			}
-			checked++
-			// Declared, in any of the forms Go declares things.
-			declared := regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
-				regexp.QuoteMeta(name) + `\b`)
-			assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
-			// DECLARED or ASSIGNED only. A first version also accepted any
-			// occurrence anywhere in the file, which admitted COMMENTS — and a
-			// stale `newDeck` row stayed green solely because one comment still
-			// mentioned the old name. A guard that a comment can satisfy is not
-			// checking the tree.
-			if !declared.Match(src) && !assigned.Match(src) {
-				t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
-					"artifact a reader trusts to describe the design, so a stale entity name "+
-					"there is worse than none. Update the row when the code renames.",
-					filepath.Base(plan), name, path)
+			path := m[2]
+			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
+				checkPlanName(t, root, filepath.Base(plan), nm[1], path, &checked)
 			}
 		}
 	}
@@ -610,6 +586,43 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 		// set of plans whose files do not exist yet is a design in progress, not
 		// drift. Rows become checkable as their files land.
 		t.Skip("no Core-concepts rows pointed at existing files")
+	}
+}
+
+// checkPlanName asserts one Name cell resolves to a declaration at the stated path.
+func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
+	t.Helper()
+	{
+		// A plan names entities as a READER sees them — store.RuntimeFiles —
+		// while the file that declares them is inside that package and says
+		// RuntimeFiles. Strip a package qualifier that matches the file's own
+		// directory; anything else stays qualified and will not match, which
+		// is correct.
+		if pkg, bare, ok := strings.Cut(name, "."); ok && filepath.Base(filepath.Dir(path)) == pkg {
+			name = bare
+		}
+		src, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			// The file does not exist yet: a plan legitimately precedes its
+			// code. Only a row pointing at a REAL file makes a checkable claim.
+			return
+		}
+		*checked++
+		// Declared, in any of the forms Go declares things.
+		declared := regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
+			regexp.QuoteMeta(name) + `\b`)
+		assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
+		// DECLARED or ASSIGNED only. A first version also accepted any
+		// occurrence anywhere in the file, which admitted COMMENTS — and a
+		// stale `newDeck` row stayed green solely because one comment still
+		// mentioned the old name. A guard that a comment can satisfy is not
+		// checking the tree.
+		if !declared.Match(src) && !assigned.Match(src) {
+			t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
+				"artifact a reader trusts to describe the design, so a stale entity name "+
+				"there is worse than none. Update the row when the code renames.",
+				plan, name, path)
+		}
 	}
 }
 

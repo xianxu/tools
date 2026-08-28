@@ -25,48 +25,60 @@ import (
 )
 
 func TestFixturesMatchLiveDictionary(t *testing.T) {
-	fake, err := loadFakeDictionary("testdata/entries", store.DefaultLang)
-	if err != nil {
-		t.Fatalf("loadFakeDictionary: %v", err)
-	}
-	live, _ := systemDictionary(store.DefaultLang, nil)
-	// PROBE FIRST, because a sandboxed run and a drifted fixture look identical
-	// from inside the loop: DCSCopyTextDefinition returns silence without real
-	// access to /System/Library/AssetsV2, so EVERY word fails the same way. One
-	// lookup up front separates the two — past this point a failed lookup means
-	// the fixture and the live dictionary genuinely disagree, which is the thing
-	// this test exists to report.
-	//
-	// It routes through skipOrFail for the same reason the Skipf sites do (BR-9),
-	// and it is the half of that rule a `grep 't\.Skipf('` cannot see: written as
-	// an unconditional t.Errorf, an absent dependency was a hard FAILURE, so the
-	// non-strict `go test -tags conformance ./...` could never be green offline.
-	// One helper now owns both directions.
-	if _, err := live.Lookup("sycophantic"); err != nil {
-		conformance.SkipOrFail(t, "system dictionary unreachable", err)
-	}
-	// Read through Lookup, not fake.entries: a conformance check that bypasses
-	// the seam cannot see the fake diverging from the dependency at that seam.
-	for word := range fake.entries {
-		want, err := fake.Lookup(word)
-		if err != nil {
-			t.Errorf("%s: unreachable through the fake seam: %v", word, err)
-			continue
-		}
-		got, err := live.Lookup(word)
-		if err != nil {
-			t.Errorf("%s: live lookup failed: %v (sandboxed?)", word, err)
-			continue
-		}
-		if got != want {
-			t.Errorf("%s: NOAD drifted from the fixture — re-run testdata/capture.sh\n live: %.120q\n fixt: %.120q",
-				word, got, want)
-		}
+	// EVERY captured language, not just English. M2 added five real Larousse
+	// captures and nothing byte-compared them to the live dictionary, while the
+	// atlas and the plan both described the corpus as conformance-checked. When a
+	// corpus gains a dimension, the checks over it take that dimension.
+	for _, lang := range capturedLanguages(t) {
+		t.Run(string(lang), func(t *testing.T) {
+			fake, err := loadFakeDictionary("testdata/entries", lang)
+			if err != nil {
+				t.Fatalf("loadFakeDictionary: %v", err)
+			}
+			live, name := systemDictionary(lang, nil)
+			if name == everyActiveDictionary {
+				// The fixtures were captured through a CURATED dictionary. With
+				// none installed, comparing them against the whole active set
+				// would report drift that is really a different machine.
+				conformance.SkipOrFail(t, "no curated "+string(lang)+" dictionary is installed",
+					errors.New("selection fell back to the NULL search"))
+				return
+			}
+			// PROBE FIRST, because a sandboxed run and a drifted fixture look
+			// identical from inside the loop: DCSCopyTextDefinition returns
+			// silence without real access to /System/Library/AssetsV2, so every
+			// word fails the same way. One lookup up front separates the two.
+			var probe string
+			for w := range fake.entries {
+				probe = w
+				break
+			}
+			if _, err := live.Lookup(probe); err != nil {
+				conformance.SkipOrFail(t, "system dictionary unreachable", err)
+				return
+			}
+			// Read through Lookup, not fake.entries: a conformance check that
+			// bypasses the seam cannot see the fake diverging at that seam.
+			for word := range fake.entries {
+				want, err := fake.Lookup(word)
+				if err != nil {
+					t.Errorf("%s: unreachable through the fake seam: %v", word, err)
+					continue
+				}
+				got, err := live.Lookup(word)
+				if err != nil {
+					t.Errorf("%s: live lookup failed: %v (sandboxed?)", word, err)
+					continue
+				}
+				if got != want {
+					t.Errorf("%s: the %s dictionary drifted from the fixture — re-run "+
+						"testdata/capture.sh\n live: %.120q\n fixt: %.120q", word, lang, got, want)
+				}
+			}
+		})
 	}
 }
 
-// The PRIVATE surface, which is the whole risk M2 took on.
-//
 // Undocumented symbols, absent from the SDK header, free to disappear on any OS
 // update. The list is dcsPrivateSymbols and each member is checked by name, so
 // there is no count in prose to go stale. The seam degrades to the pre-#23 NULL search when they do, which is

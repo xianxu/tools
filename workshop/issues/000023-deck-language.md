@@ -1,12 +1,13 @@
 ---
 id: 000023
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-28
 estimate_hours: 5.23
 started: 2026-08-28T10:47:27-07:00
+actual_hours: 9.20
 ---
 
 # deck grouped by language, one language per --play session
@@ -300,6 +301,23 @@ second copy of the tasks.
 ## Log
 
 ### 2026-08-28
+- 2026-08-28: closed — M2 makes the dictionary follow the mode; all 13 Done-when rows ticked. Close-review rounds 5, 6 and 7 addressed as rules.; review verdict: FIX-THEN-SHIP
+
+HEADLINE, re-run unsandboxed after every refactor: `define mesa` = flat-topped hill; `define -lang es mesa` = "nombre femenino ... Mueble formado por un tablero horizontal"; `define -lang es sycophantic` = no entry; `define iPhone` answers via the second curated book; `define madrugar` = no entry, where the NULL search returns the Spanish entry.
+
+ROUND 7:
+
+BR-20/BR-29 — my sweep was three sites short, and the three were newDeck comments left by the very commit that added the guard against stale symbol names. Ninth in that family, and it names what was missing: a rename cannot be detected automatically, because only the person doing it knows the old name. retiredSymbolNames is that one human-written row; TestNoArtifactNamesARetiredSymbol makes the rest mechanical across non-test Go, README, atlas/ and active plans. Mutation-checked. It immediately found a live D1 bullet naming deckDeps to explain what the plan first called it — a backreference that belongs in ## Revisions, where it already was.
+
+BR-28 — capture.sh hand-restated the curated identifiers, the same divergence that already bit once (English captured through NULL while production selected curated ids, agreeing only because this host active set matched). A shell script cannot import a Go map, so TestCaptureScriptUsesTheCuratedDictionaries COMPARES them — the same move as the cgo-preamble symbol guard. Mutation-checked both directions.
+
+MINOR, A REAL DEFECT: capture.py returned a DCSDictionaryRef borrowed from the copied CFSet from inside a try whose finally released that set, then passed the ref to DCSCopyTextDefinition — use-after-release that worked only because CoreServices keeps dictionaries alive. It retains now and releases after the lookup; re-verified capturing mesa, bonito and madrugar unsandboxed.
+
+EARLIER ROUNDS (disposed): C1, BR-2, BR-13 — the language-derived set went doc-comment -> struct -> EMBEDDED struct, because each weaker form went stale; BR-22b — the headline d.newDict wiring had zero tests and its first pin replicated the production line instead of calling run(); BR-23 — pure logic behind //go:build darwin broke GOOS=linux go vet and let a fix ship inoperative; BR-24 — dcsPrivateSymbols was two producers.
+
+TESTS: go build ./... && go vet ./... && GOOS=linux go vet ./cmd/define/ && go test ./... all green; gofmt -l ./cmd/ empty. Conformance passes unsandboxed in both env states, skips sandboxed.
+
+ACTUAL: omitted so close measures and adopts. The issue Log records this row should be UNTRUSTED for calibration — the window base is a pre-claim 2026-08-27 commit ~20h before started:, with mention-fallback attribution across eleven issues.
 - 2026-08-28: closed M1 — M1 ships a working single-language define. Three boundary-review rounds, all addressed as rules rather than instances.; review verdict: FIX-THEN-SHIP
 
 **Three ledger rows read "open" and are NOT outstanding work.** They were fixed

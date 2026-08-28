@@ -546,3 +546,167 @@ findings:
       so the two implementations of one boundary disagree on handle lifetime. Move the
       release to after lookup(), or CFRetain the ref before returning it.
 ```
+
+---
+
+## Re-review — 2026-08-28T15:23:18-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 23 — deck grouped by language, one language per --play session |
+| repo | tools |
+| issue file | workshop/issues/000023-deck-language.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 2e929fc56d1edc6b04af61100116a02abb7d9146..ec3b22bd385673eae7b4afcb508f92fbaede1c67 |
+| command | sdlc close --issue 23 |
+| reviewer | claude |
+| timestamp | 2026-08-28T15:23:18-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+`ec3b22b` genuinely closes three of the seven open findings — I mutation-proved both new ratchets (planting `newDeck` in `atlas/define.md` and in `voice.go` reddens `TestNoArtifactNamesARetiredSymbol`; renaming `com.apple.dictionary.es.DGLEV` in `capture.sh` reddens `TestCaptureScriptUsesTheCuratedDictionaries` in both directions), and the `capture.py` use-after-release is really fixed with `CFRetain` + a release after `lookup()`. `go build`, `go test ./...`, `GOOS=linux go vet ./...` and `gofmt -l` are all clean. What keeps this off SHIP is residue, not defects: BR-25/26/27 are untouched at HEAD, BR-29's *count* half is still live (plan:289 says M2 "rests on nine undocumented symbols" while `dict_darwin.go:186-189` explicitly documents that number as wrong and resolves three), and two new coverage holes — M2's entire Spanish corpus sits outside every check that exists to keep the fake honest, and the plan-table ratchet reads only the first name in a multi-name row (mutation-proved: `localeForNOPE` and `newLangDepsNOPE` both stay green).
+
+### 1. Strengths
+
+- **`foldLookupError` is the right extraction, and the comment says why honestly** (`dictselect.go:161-179`): the rule "an absence never overwrites a real failure" is now a pure function with a table test covering the status-3-then-1 case that shipped inoperative last round. This is the diff's best example of ARCH-PURE paying off.
+- **The two "boundaries Go cannot see into" guards are the same move, correctly generalised** — `TestTheCResolverAndTheGoSymbolListAgree` compares the cgo preamble's `dlsym` literals to `dcsPrivateSymbols`, and `TestCaptureScriptUsesTheCuratedDictionaries` compares `capture.sh`'s identifiers to `curated`, bidirectionally (`dictselect_test.go:360-381`). Both close gaps that had already caused a real failure.
+- **`retiredSymbolNames` is the honest answer to a nine-round family** (`repo_guard_test.go:617-632`): a rename cannot be detected automatically, so exactly one human-written row is required and everything after it is mechanical. It found a live `deckDeps` backreference in D1 on its first run.
+- **`dcs_describe_all` copies the CFSet once and describes all N in one pass** (`dict_darwin.go:75-113`), with the `CFSetGetValues`-not-`CFArrayGetValueAtIndex` measurement recorded at the site where getting it wrong is an uncaught ObjC exception.
+- **`monolingualIn` requires EVERY pair to be L→L** (`dictselect.go:38-47`) with the reason stated — "any" would accept the bilingual Gran Diccionario Oxford — and it is pinned by `TestChooseDictionaryRequiresEVERYPairToBeMonolingual`.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-a. `cmd/define/dict_conformance_test.go:28` + `cmd/define/invariant_test.go:80,123` — M2's Spanish corpus is outside every check that keeps the fake honest.**
+**This is the 4th finding in family `language-derived-state-unscoped`.** Do not fix the two call sites. The rule: *when the corpus gained a language dimension, every check over it takes that dimension too — a check reads the SET of captured languages, it does not spell `store.DefaultLang`.* Measured at HEAD: `loadFakeDictionary("testdata/entries", store.DefaultLang)` is hardcoded at `dict_conformance_test.go:28` (`TestFixturesMatchLiveDictionary`) and `invariant_test.go:123` (`FuzzRenderLosesNothing`'s seed corpus), and `TestRenderLosesNothing` (`invariant_test.go:80`) goes through `testDict(t)`, which is English by definition. So the five real Larousse captures added by this range are (a) never byte-compared to the live dictionary, and (b) never run through the no-data-loss invariant or the fuzzer. Two current-truth artifacts already claim otherwise: `atlas/define.md:1183` says `dict_conformance_test.go` asserts "live lookups still byte-match **every** fixture", and `capture.sh:16` says "Re-run after a macOS upgrade; `dict_conformance_test.go` detects the drift." Neither is true for `entries/es/`. The parser and renderer were developed entirely against NOAD-shaped text and M2 routes Larousse-shaped text ("nombre femenino", "adjetivo (femenino bonita)") through the same `ParseEntry`/`Render` pipeline. I checked: the Spanish fixtures pass the invariant today (scratch test, green), so this is a coverage hole rather than a live defect — which is what makes it cheap. The enumeration the class fix needs is small: drive the checks off `curated`'s keys, or off the subdirectories of `testdata/entries/`, and add a non-vacuity assertion that more than one language was walked. **ARCH-MOCK** (the fake's per-language model has no live conformance check for the half M2 exists to deliver) and **ARCH-PURPOSE** (the English half got the check; the Spanish half, which is the point of the milestone, did not).
+
+**I-b. `cmd/define/repo_guard_test.go:561` — `TestPlanTablesNameEntitiesThatExist` reads only the FIRST name in a Core-concepts row.**
+**This is the 6th finding in family `runtime-artifact-guard-coverage`.** Do not fix by re-shaping the plan's rows. The rule: *a ratchet must consume the full surface the artifact states, and be mutation-proved on the LAST element of that surface, not the first.* The row regex `^\|\s*` + "`name`" + `[^|]*\|\s*` + "`path.go`" captures one identifier and discards the rest of the name cell. Measured on the active plan: 4 of 13 Core-concepts rows are multi-name (`voice` / `localeFor`, `dictMeta` / `chooseDictionary` / `dictionaryFor`, `ReadLang` / `WriteLang`, `langDeps` / `newLangDeps`), so 7 of the 16 symbols the table names are unchecked. Mutation proof on a scratch worktree: rewriting the rows to `localeForNOPE` and `newLangDepsNOPE` leaves `TestPlanTablesNameEntitiesThatExist` PASS. This is the same test BR-20 was raised against one round ago — that round removed the comment-admitting fallback but left the row only half-read. Fix: collect every backticked token in the name cell and check each; all seven currently-unchecked names do resolve (`newLangDeps` matches the `assigned` arm via `main.go:309`), so the sweep should land green.
+
+### 4. Minor findings
+
+- `cmd/define/dictselect.go:214-224` — `parseLangPairs` silently `continue`s on a pair whose tag `ParseLang` refuses (three-letter codes, `zh_Hant` is fine but `haw`/`fil` are not), which is exactly the "a malformed pair makes a bilingual dictionary look monolingual" failure the function's own doc names two lines above. Inert today because `chooseDictionary` also requires the ID to be on the curated list, but the doc claims a guarantee the code does not give.
+- `cmd/define/dictselect_test.go:352` — the identifier regex `com\.apple\.[A-Za-z0-9._]+` scans all of `capture.sh` including comments, so a non-curated identifier mentioned in prose there would fail the guard as if it were a capture target. Restrict to assignment lines, or note the constraint at the site.
+
+### 5. Test coverage notes
+
+- The suite is strong where it was weak: `dictselect_test.go` covers all three `dictionaryFor` outcomes plus the empty-set case with no CoreServices, `migrate_test.go` covers the never-overwrite/never-delete/idempotent rules on both artifacts, and `lang_scope_test.go` drives `/lang` through `run()` and asserts what the CDN was *asked for* rather than what a unit computed.
+- The gap is I-a: the highest-risk new text shape in the range (Larousse output) has no invariant, no fuzz seed, and no live drift check. Adding it is a loop, and it passes.
+- `TestFixturesMatchLiveDictionary`, `TestPrivateDictionarySurfaceStillResolves` and `TestSelectedDictionaryAnswersInItsOwnLanguage` are conformance-tagged and therefore on-demand; I did not run them (they need an unsandboxed host with the dictionaries installed). Every non-tagged test in `./...` ran green, and I verified the four repo guards are reachable rather than skipping.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** One producer per runtime name (`UserModelName`, `LangFileName`, `newTempFile`, with `RuntimeFiles` *built* from them); one builder for the whole language-derived set (`newLangDeps`, adopted whole at `command.go:391`); and where a second language forces a restatement across a boundary Go cannot import through, the two copies are COMPARED (`capture.sh` vs `curated`, cgo preamble vs `dcsPrivateSymbols`). No duplicated logic found in the range.
+- **ARCH-PURE — pass.** `chooseDictionary`, `dictionaryFor`, `foldLookupError`, `parseDictRecords`, `parseLangPairs`, `localeFor`/`voiceFor` are all pure and all off the `darwin` tag; `GOOS=linux go vet ./...` exits 0. The cgo shell is genuinely thin — `installedDictionaries` is six lines and `systemDictionary` seven, both pure delegation.
+- **ARCH-PURPOSE — flag.** Two instances, both in findings above: I-a defers the conformance half of the milestone's own subject, and BR-29's count clause was mechanised for symbol *names* only while the *count* restatement it explicitly named remains live. Also unresolved from BR-29: `atlas/repo-guards.md:123` still says "Issues, plans, lessons and `workshop/history/` are records wholesale and are not swept at all", which two guards in that same table now contradict — the scope decision has to be written down before the guard set grows again.
+- **ARCH-MOCK — flag.** See I-a. The fake models a *set of dictionaries* correctly and production and test share the `Dictionary` seam, but the live conformance cadence covers one language of two.
+
+### 7. Plan revision recommendations
+
+- `workshop/plans/000023-deck-language-plan.md:289` (`## Risks`) — replace "The whole of M2 rests on nine undocumented symbols" with the private-symbol wording `dict_darwin.go:186-189` prescribes. That comment already records this exact count as "repeated in four documents and wrong in all four"; `:279` was swept in the round-6 sidecar and `:289` was not.
+- A `## Revisions` entry recording the round-9 disposition: BR-20/BR-28/BR-30 closed with the mutation evidence, and the two guard-scope decisions the range left open (plan files as records vs. current truth; multi-name Core-concepts rows).
+
+```findings
+dispose:
+  - id: BR-20
+    disposition: addressed
+    note: |
+      Fallback clause gone; retiredSymbolNames + TestNoArtifactNamesARetiredSymbol mutation-verified in atlas and non-test Go; no `newDeck` survives outside test-local and self.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      Unchanged at HEAD — main.go:117 storeDeps' doc still runs into `type langDeps` (:125), main.go:212 openStore's doc still runs into `func newsFeedFor` (:236).
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      cmd/define/main.go:423 still opens --help with "Looks the word up in macOS's active dictionaries", which is now the fallback path.
+  - id: BR-27
+    disposition: not-addressed
+    note: |
+      dict_conformance_test.go:91 still routes a vanished private symbol through conformance.SkipOrFail rather than the SHAPE-drift class.
+  - id: BR-28
+    disposition: addressed
+    note: |
+      TestCaptureScriptUsesTheCuratedDictionaries compares both directions; renaming DGLEV in capture.sh reddens it naming both the missing and the unknown id.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      Symbol-name half landed and is mutation-proved over Go comments and active plans. The COUNT clause is not mechanised and its named instance is live at plan:289 ("rests on nine undocumented symbols"); atlas/repo-guards.md:123 still says plans are records "not swept at all", which two guards now contradict.
+  - id: BR-30
+    disposition: addressed
+    note: |
+      capture.py CFRetains before returning and releases after lookup() in a finally; CFRetain restype/argtypes declared.
+findings:
+  - id: new
+    severity: Important
+    family: language-derived-state-unscoped
+    title: |
+      M2's Spanish corpus is outside every check that keeps the fake honest, and two docs claim otherwise
+    detail: |
+      4th finding in this family — do NOT fix the two call sites. The rule: when a corpus gains a
+      language dimension, every check over it takes that dimension; a check reads the SET of captured
+      languages rather than spelling store.DefaultLang. Measured at HEAD, loadFakeDictionary(...,
+      store.DefaultLang) is hardcoded at dict_conformance_test.go:28 (TestFixturesMatchLiveDictionary)
+      and invariant_test.go:123 (FuzzRenderLosesNothing's seed), and TestRenderLosesNothing
+      (invariant_test.go:80) goes through testDict(t), which is English by definition. So the five real
+      Larousse captures this range added are never byte-compared to the live dictionary and never run
+      through the no-data-loss invariant or the fuzzer — while atlas/define.md:1183 states
+      dict_conformance_test.go asserts "live lookups still byte-match every fixture" and capture.sh:16
+      says "dict_conformance_test.go detects the drift". Neither holds for entries/es/. The parser and
+      renderer were built entirely against NOAD-shaped text and M2 routes Larousse-shaped text through
+      the same ParseEntry/Render pipeline. I confirmed by scratch test that the Spanish fixtures pass
+      the invariant today, so this is a coverage hole rather than a live defect — which makes the class
+      fix free: drive the checks off curated's keys or off testdata/entries/'s subdirectories, plus a
+      non-vacuity assertion that more than one language was walked. ARCH-MOCK (no live conformance for
+      the half M2 exists to deliver) and ARCH-PURPOSE (the English half got the check; the Spanish half
+      is the point).
+  - id: new
+    severity: Important
+    family: runtime-artifact-guard-coverage
+    title: |
+      TestPlanTablesNameEntitiesThatExist reads only the FIRST name in a Core-concepts row; 7 of 16 symbols are unchecked
+    detail: |
+      6th finding in this family — do NOT fix by re-shaping the plan's rows. The rule: a ratchet must
+      consume the full surface the artifact states, and be mutation-proved on the LAST element of that
+      surface, not the first. repo_guard_test.go:561's row regex captures one identifier and discards
+      the rest of the name cell. Measured on the active plan, 4 of 13 Core-concepts rows are multi-name
+      (voice/localeFor, dictMeta/chooseDictionary/dictionaryFor, ReadLang/WriteLang,
+      langDeps/newLangDeps), so 7 of the 16 named symbols are never checked. Mutation proof on a scratch
+      worktree at HEAD: rewriting those rows to `localeForNOPE` and `newLangDepsNOPE` leaves the test
+      PASS. This is the same test BR-20 was raised against one round ago — that round removed the
+      comment-admitting fallback but left the row half-read. Fix: collect every backticked token in the
+      name cell and check each. All seven currently-unchecked names resolve (newLangDeps matches the
+      `assigned` arm via main.go:309), so the sweep should land green.
+  - id: new
+    severity: Minor
+    family: comment-contract-drift
+    title: |
+      parseLangPairs silently drops an unparseable pair, which is the exact failure its own doc says it exists to prevent
+    detail: |
+      dictselect.go:214-224 — a language pair whose tag ParseLang refuses (a three-letter code such as
+      haw or fil) is `continue`d, and dropping pairs can only make a dictionary look MORE monolingual.
+      The doc two lines above says "This is the one place a malformed pair could silently make a
+      bilingual dictionary look monolingual, which is why it is separate and tested." Inert today only
+      because chooseDictionary also requires the ID to be on the curated list; the doc claims a
+      guarantee the code does not give.
+  - id: new
+    severity: Minor
+    family: runtime-artifact-guard-coverage
+    title: |
+      The capture.sh identifier guard scans comments as if they were capture targets
+    detail: |
+      dictselect_test.go:352 — the regex com\.apple\.[A-Za-z0-9._]+ runs over the whole file, so a
+      non-curated identifier mentioned in a capture.sh comment would fail the guard as though the
+      script captured through it. No such comment exists today. Restrict the scan to assignment lines,
+      or state the constraint at the site.
+```

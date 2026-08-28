@@ -2241,3 +2241,29 @@ copy.
 **Rule:** a test that reproduces the production wiring tests the reproduction.
 Drive the real entry point, and verify by DELETING the production line and
 watching the test fail. If it does not fail, the test is pinning a copy.
+
+## When a corpus gains a dimension, every check over it gains one (#23 BR-31)
+
+M2 made the fixture corpus per-language and added five real Spanish captures.
+Every check over it kept naming English: `loadFakeDictionary(…, DefaultLang)` at
+two sites, and the no-data-loss invariant through `testDict`, which is English by
+definition. So the new half was byte-compared to nothing and never parsed — while
+the atlas and the plan both described the corpus as conformance-checked.
+
+**Rule:** a check that spells one value of a dimension is blind to the rest of it.
+Read the SET from the artifact — here, the language directories — so adding a
+member brings it under every check with no edit. And when adding the dimension,
+grep the checks for the old constant: each surviving mention is a check that
+silently narrowed.
+
+## A guard is code, and gets the same scrutiny (#23 BR-20, BR-32)
+
+Three guards written to close review families each shipped with a hole a review
+found: one passed on a COMMENT mention, one read only the first name in a row
+naming three, and two more had unrouted skips that would report green for checks
+that never ran.
+
+**Rule:** the test you add to stop a class of bug is not exempt from that class.
+Before trusting a new guard, mutate the thing it claims to catch and watch it
+fail — and check its own skips, its own scope, and whether a weaker match
+satisfies it.
