@@ -1,7 +1,7 @@
 ---
 id: 000026
 status: open
-deps: []
+deps: [tools#27]
 github_issue:
 created: 2026-08-27
 updated: 2026-08-27
@@ -47,8 +47,11 @@ recognise. Two questions to settle before coding:
 1. Is the fix in the notation converter (recognise the multi-locale block) or in
    the block splitter (this is a pronunciation field being mistaken for prose)?
 2. What does the rendered output *want* to be — both pronunciations, or the one
-   matching the deck's locale? #18 (Spanish support) is about to make locale a
-   real concept, so this may want to wait for or inform it.
+   matching the deck's locale? **This is why the issue depends on [tools#27].**
+   The question is unanswerable while "locale" is a literal inside a URL builder
+   (`audiourl.go:41`); #27 makes language and locale parameters, and only then is
+   "render the one matching the deck's locale" a thing the code can express.
+   Triage AFTER #27 lands, not before.
 
 ## Done when
 
@@ -81,3 +84,14 @@ recognise. Two questions to settle before coding:
   go test -tags conformance ./cmd/define/ -run TestRenderLosesNothingOverLiveEntries -v
   ```
   Must run unsandboxed; takes ~51s over 73502 live entries.
+
+### 2026-08-28
+
+- **Blocked on [tools#27]** (pronunciation locale as a parameter), split out of
+  #18 the same day for this reason among others. Deliberately NOT started: the
+  cheap fix here is to widen the notation converter to swallow
+  `| AmE …, BrE … |`, and that would bake in "show both" as a decision by
+  accident, at the exact moment the codebase is about to gain a real locale.
+- The ratchet stays red until then, which is correct — it is reporting a true
+  regression, and the number must not be raised to 32 to silence it.
+

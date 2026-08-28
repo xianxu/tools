@@ -35,7 +35,16 @@ Everything below was **measured on 2026-08-22**, not reasoned about.
 
 ## Spec
 
-### M1 — pronunciation, and why the locale is load-bearing
+### M1 — pronunciation locale — **SPLIT OUT to [tools#27] (2026-08-28)**
+
+Independently shippable and blocked on nothing, while everything below waits on
+`#10`/`#12` — and two other issues (`#26`, and this issue's own M2) need the
+locale concept before they can be designed. The full Spec and measurements moved
+to `#27`; kept here in outline only.
+
+<details>
+<summary>original M1 spec (now in #27)</summary>
+
 
 `AudioCandidates` (`cmd/define/audiourl.go:41`) writes the language as a **literal**:
 
@@ -78,6 +87,8 @@ and `-lang es` reorders rather than restricts. A conformance assertion belongs
 beside `TestCDNStillServesTheExpectedPaths`, which pins the English ordering the
 same way.
 
+</details>
+
 ### M2 — the deck has to know what language a word is
 
 Blocked on #10/#12 existing. Three things Spanish needs that English let us dodge:
@@ -111,16 +122,7 @@ is the difference between a real item and one a learner solves by inspection.
 
 ## Done when
 
-M1:
-- [ ] `define madrugar` plays a recording; asserted against the fake, and a
-      conformance test measures the live CDN the way the English ordering is.
-- [ ] `-lang` selects the language and `-locale` still selects the variant;
-      `es_es` and `es_us` both reachable, and the help text says what the
-      difference *is* (θ vs seseo) rather than naming two country codes.
-- [ ] An English word with no recording still degrades to a warning, exit 0 —
-      the existing behaviour does not regress.
-- [ ] No pronunciation is rendered for a Spanish entry, and a test says that is
-      expected rather than a gap.
+M1 — moved to [tools#27]; not tracked here.
 
 M2:
 - [ ] A Spanish word looked up in an inflected form lands in the deck once, under
@@ -133,8 +135,9 @@ M2:
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing. M1 is independently
-      shippable and does not wait on #10.
+- [ ] Design via `sdlc start-plan` before implementing. M1 was split to
+      [tools#27] on 2026-08-28 precisely because it did not wait on #10; what
+      remains here does.
 
 ## Log
 
@@ -152,3 +155,13 @@ sandbox and reports the failure as a clean miss, which is indistinguishable from
 a genuinely absent word. Same binary, same word, sandbox off → full entry. Filed
 to `workshop/lessons.md`; the operator's observation should have outranked my
 probe.
+
+### 2026-08-28
+
+- **M1 split out to [tools#27].** It was marked independently shippable from the
+  day this issue was written, and two other issues need the locale concept before
+  they can be designed — `#26`'s open question is whether a dual-locale block
+  renders both pronunciations or the deck's, which is unanswerable while locale is
+  a literal in a URL builder. What remains here (deck language dimension,
+  lemma identity, gender, agreement-safe distractors) genuinely waits on `#10`/`#12`.
+

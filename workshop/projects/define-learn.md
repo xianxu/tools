@@ -195,7 +195,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       `#17 M2` into [tools#7]'s Done-when**, where the chosen distractor IS the
       error kind. Not delivered; not separately tracked.
 - [ ] deck grouped by language; one language per `--play` [tools#23]
-- [ ] Spanish — pronunciation locale (independently shippable) [tools#18 M1]
+- [ ] Spanish — pronunciation locale (independently shippable) [tools#27]
 - [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
 <a id="tools-11-m1"></a>
@@ -398,10 +398,14 @@ classification. It is now a Done-when row on `#7` ("record the CHOSEN option, no
 just correctness") rather than an issue whose first design question would be
 "wait for `#7`".
 
-<a id="tools-18-m1"></a>
-### tools#18 M1 — Spanish pronunciation locale
+<a id="tools-27"></a>
+### tools#27 — pronunciation locale and language as parameters
 
-**status:** open — independently shippable, blocked on nothing
+**status:** open — independently shippable, blocked on nothing. **Split out of
+`#18 M1` on 2026-08-28**, because two other items need the locale concept before
+they can be designed: `#26`'s open question (does a dual-locale NOAD block render
+both pronunciations, or the deck's?) is unanswerable while locale is a literal in
+a URL builder, and `#18 M2`'s deck language dimension builds straight on it.
 
 `AudioCandidates` hardcodes `_en_`, so a Spanish word is only ever requested as an
 English one. Measured: `madrugar_en_us_1` 404s while `madrugar_es_es_1` and
@@ -575,7 +579,8 @@ guards could fail.
 [tools#16 M2]: #tools-16-m2
 [tools#17 M1]: #tools-17-m1
 [tools#17 M2]: #tools-17-m2
-[tools#18 M1]: #tools-18-m1
+[tools#27]: #tools-27
+[tools#18 M1]: #tools-27
 [tools#18 M2]: #tools-18-m2
 [tools#19]: ../issues/000019-llm-overloaded.md
 [tools#23]: ../issues/000023-deck-language.md
