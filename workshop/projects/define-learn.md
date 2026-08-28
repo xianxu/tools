@@ -195,7 +195,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       `#17 M2` into [tools#7]'s Done-when**, where the chosen distractor IS the
       error kind. Not delivered; not separately tracked.
 - [x] deck grouped by language; one language per `--play` [tools#23 M1]
-- [ ] the dictionary follows the mode — private DictionaryServices seam [tools#23 M2]
+- [x] the dictionary follows the mode — private DictionaryServices seam [tools#23 M2]
 - [ ] Spanish — pronunciation locale (independently shippable) [tools#27]
 - [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
@@ -451,6 +451,44 @@ refused the instance fixes and demanded the rules, which is where the two
 mechanical guards came from. Roughly half of M1's measured hours are that loop;
 the alternative was shipping a tool whose Spanish mode quietly spoke English.
 
+<a id="tools-23-m2"></a>
+### tools#23 M2 — the dictionary follows the mode
+
+**est:** 5.23 (whole issue)
+**actual:** see the issue's close
+**closed:** 2026-08-28
+
+`mesa` in a Spanish session is now *"Mueble formado por un tablero horizontal"*
+and in English is still *"an isolated flat-topped hill"*. `sycophantic` in
+Spanish reports **no entry** — an answer this tool could not give about anything
+before. The nine private DictionaryServices symbols are `dlsym`'d at run time,
+so a disappearance degrades to the pre-`#23` whole-set search rather than a
+crash.
+
+**The decision worth not re-deriving: metadata NARROWS, a curated list DECIDES.**
+Only the first is derivable. Requiring every language pair to be L→L leaves one
+candidate for Spanish and six for English — two thesauruses and an accessibility
+dictionary among them — and a deterministic tiebreak over that set picks the
+accessibility dictionary for English and the *bilingual* Oxford for Spanish.
+Deterministic and wrong is still wrong, so the honest design is a short curated
+list plus an explicit fallback when nothing on it is installed.
+
+**The correction the conformance suite forced.** Selecting NOAD alone lost
+`iPhone`, `iPad` and `MacBook` — Apple Dictionary entries — and
+`TestFixturesMatchLiveDictionary` went red for exactly the right reason: the fake
+and the live seam had genuinely diverged. Selecting *nothing* is worse: the NULL
+search answers `madrugar` in English mode, which is the row the milestone exists
+for. Curation became an ordered LIST of same-language books, which satisfies
+both because every one of them indexes L→L and so cannot leak.
+
+**Deliberate scope refusal, recorded with a trigger.** `usage/` is still not
+language-scoped: the news feed hardcodes `hl=en-US`, so it is English by
+construction and is simply not consulted elsewhere. Scoping the cache now would
+create `usage/es/` full of English sentences — scoping without correctness. When
+`#10` or `#18` makes the feed language-aware it becomes required. Decided in the
+plan because the M1 review's lesson was that the learner model's scoping was
+*discovered* at a boundary rather than decided in one.
+
 <a id="tools-27"></a>
 ### tools#27 — pronunciation locale and language as parameters
 
@@ -638,7 +676,7 @@ guards could fail.
 [tools#19]: ../issues/000019-llm-overloaded.md
 [tools#23]: ../issues/000023-deck-language.md
 [tools#23 M1]: #tools-23-m1
-[tools#23 M2]: ../issues/000023-deck-language.md
+[tools#23 M2]: #tools-23-m2
 
 ### 2026-08-26 — scope event: two console features shipped alongside, outside MVP
 
