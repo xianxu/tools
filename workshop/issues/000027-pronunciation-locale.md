@@ -1,11 +1,12 @@
 ---
 id: 000027
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-08-28
 updated: 2026-08-28
 estimate_hours:
+started: 2026-08-28T00:38:19-07:00
 ---
 
 # pronunciation locale and language as parameters, not literals
