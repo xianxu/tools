@@ -206,11 +206,25 @@ func TestNoTrackedRuntimeState(t *testing.T) {
 			continue
 		}
 		seen++
-		for _, p := range strings.Split(filepath.ToSlash(f), "/") {
+		segs := strings.Split(filepath.ToSlash(f), "/")
+		for _, p := range segs {
 			if isRuntimeDir(p) {
 				t.Errorf("runtime deck state is tracked: %s", f)
 				break
 			}
+		}
+		// A runtime FILE, by basename. RuntimeDirs could only ever see a
+		// directory, which is how user-model.md — inferred claims about the
+		// learner, written into the working directory — reached none of the three
+		// places RuntimeDirs was built to reach.
+		//
+		// This also makes the basename RESERVED, which is the point: .gitignore
+		// hides these names un-anchored, so a tracked file that shares one is
+		// silently un-addable after any git rm. testdata/golden/user-model.md was
+		// exactly that, and is now user-model.golden.md.
+		if isRuntimeFile(segs[len(segs)-1]) {
+			t.Errorf("a runtime artifact's basename is tracked: %s — .gitignore hides that name "+
+				"un-anchored, so this file is un-addable after a git rm. Rename it.", f)
 		}
 	}
 	if seen == 0 {
@@ -249,12 +263,17 @@ func TestNoRuntimeStateInHistory(t *testing.T) {
 		t.Fatal("rev-list returned no path-bearing objects; this test would pass vacuously")
 	}
 	for _, path := range paths {
-		for _, seg := range strings.Split(filepath.ToSlash(path), "/") {
+		segs := strings.Split(filepath.ToSlash(path), "/")
+		for _, seg := range segs {
 			if isRuntimeDir(seg) {
 				t.Errorf("runtime deck state is reachable from HEAD: %s — rewrite the commit "+
 					"that adds it; removing the file in a later commit does not remove the cost", path)
 				break
 			}
+		}
+		if isRuntimeFile(segs[len(segs)-1]) && !legacyRuntimeFilePaths[filepath.ToSlash(path)] {
+			t.Errorf("a runtime artifact's basename is reachable from HEAD: %s — rewrite the "+
+				"commit that adds it; removing the file in a later commit does not remove the cost", path)
 		}
 	}
 }
@@ -271,6 +290,73 @@ func isRuntimeDir(seg string) bool {
 		}
 	}
 	return false
+}
+
+// isRuntimeFile is the same question for a FILE, asked of the same store.
+//
+// By BASENAME, not by path segment: these are files, and a directory that
+// happens to share the name is a different thing. That asymmetry is also why
+// the persisted language is lang.txt rather than lang — an un-anchored
+// `lang` in .gitignore would hide any DIRECTORY of that name too, which this
+// guard structurally cannot see.
+func isRuntimeFile(base string) bool {
+	for _, f := range store.RuntimeFiles {
+		if base == f {
+			return true
+		}
+	}
+	return false
+}
+
+// legacyRuntimeFilePaths is a RATCHET, not an exemption.
+//
+// The reserved-basename rule arrived with #23; this path predates it. The rename
+// to user-model.golden.md clears the INDEX, but nothing clears history short of
+// rewriting it, and these two blobs do not justify that: 995 bytes each of
+// renderUserModel(sampleLearnerModel(), sampleMeta()) output — synthetic sample
+// data, no learner content, which is the cost this guard exists to prevent.
+//
+// Pinned as an exact set rather than described in a comment, per the repo's own
+// rule: a comment drifts, while an exact set fails the moment a SECOND path
+// appears and can only ever be shortened. If history is ever rewritten for
+// another reason, this map goes with it.
+var legacyRuntimeFilePaths = map[string]bool{
+	"cmd/define/testdata/golden/user-model.md": true,
+}
+
+// The .gitignore half, mirroring TestGitignoreCoversRuntimeDirs — including its
+// anchoring rule, which is the part that has cost this repo review rounds.
+//
+// RuntimeDirs exists so a new runtime artifact reaches .gitignore, the index
+// guard and the history guard together, and it covers directories only. So
+// user-model.md slipped through all three: `git check-ignore -v user-model.md`
+// matched nothing, while --reflect writes it into the CURRENT directory with
+// inferred claims about the learner in it. Nothing leaked, but #23's language
+// setting would have been the second instance — which is why this is a list and
+// not two more lines in .gitignore.
+func TestGitignoreCoversRuntimeFiles(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoRoot(t), ".gitignore"))
+	if err != nil {
+		t.Fatalf("reading .gitignore: %v", err)
+	}
+	lines := map[string]bool{}
+	for _, l := range strings.Split(string(b), "\n") {
+		lines[strings.TrimSpace(l)] = true
+	}
+
+	if len(store.RuntimeFiles) == 0 {
+		t.Fatal("store.RuntimeFiles is empty; this test would pass vacuously")
+	}
+	for _, f := range store.RuntimeFiles {
+		if !lines[f] {
+			t.Errorf(".gitignore has no un-anchored %q entry — define writes it into the "+
+				"working directory and a git add -A would commit it", f)
+		}
+		if lines["/"+f] {
+			t.Errorf(".gitignore anchors %q to the repo root; go test runs in the package "+
+				"directory, where an anchored pattern does not match", f)
+		}
+	}
 }
 
 // The loop the compiler cannot close: .gitignore is not Go, so nothing makes it

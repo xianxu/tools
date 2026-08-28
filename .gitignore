@@ -33,6 +33,18 @@ words/
 events/
 usage/
 
+# The runtime FILES, single-sourced in store.RuntimeFiles the same way — a
+# directory list could never cover them, which is how user-model.md (inferred
+# claims about the learner, written by --reflect into the CURRENT directory) was
+# ignored by nothing at all until #23.
+#
+# Un-anchored for the same reason as the directories above, which makes these
+# basenames RESERVED: a tracked file sharing one becomes un-addable after a git
+# rm. TestNoTrackedRuntimeState enforces that; testdata/golden/user-model.md was
+# renamed to user-model.golden.md when it did.
+user-model.md
+lang.txt
+
 # `go build ./` inside a cmd/<name>/ directory writes an extensionless binary
 # named after that directory — a 9.6 MB one was committed this way. bin/ is the
 # sanctioned output.

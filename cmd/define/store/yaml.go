@@ -40,6 +40,26 @@ func NewYAML(dir string, warn io.Writer) *YAML { return &YAML{dir: dir, warn: wa
 // compiler cannot: adding a name here and forgetting .gitignore fails a test.
 var RuntimeDirs = []string{"words", "events", "usage"}
 
+// RuntimeFiles names every FILE define writes into the working directory.
+//
+// The sibling of RuntimeDirs, and it exists because that list covers directories
+// only. user-model.md is a runtime file — --reflect writes it into the current
+// directory, carrying inferred claims about the learner — and it reached none of
+// the three places RuntimeDirs was built to reach: `git check-ignore -v
+// user-model.md` matched nothing. Nothing leaked, but #23's language setting
+// would have been the second instance, which is why this is a list and not two
+// more lines in .gitignore.
+//
+// A name here is RESERVED. .gitignore hides these un-anchored (go test runs in
+// the package directory), so a tracked file sharing one is silently un-addable
+// after any git rm — repo_guard_test.go's index guard is what says so out loud,
+// and testdata/golden/user-model.md was renamed to clear the way for it.
+//
+// lang.txt, not lang: an un-anchored `lang` would also hide any DIRECTORY of
+// that name anywhere in the tree, and a basename guard structurally cannot see
+// that. The extension costs nothing and closes the hole.
+var RuntimeFiles = []string{"user-model.md", "lang.txt"}
+
 func (y *YAML) wordsDir() string  { return filepath.Join(y.dir, RuntimeDirs[0]) }
 func (y *YAML) eventsDir() string { return filepath.Join(y.dir, RuntimeDirs[1]) }
 
