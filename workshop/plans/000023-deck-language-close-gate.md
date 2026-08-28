@@ -117,6 +117,81 @@ rounds:
           round: 4
       boundary: M1
       blocked: true
+    - "n": 5
+      timestamp: "2026-08-28T13:18:45-07:00"
+      agent: claude
+      dispose:
+        - id: BR-6
+          disposition: addressed
+          note: Rule stated and mechanised for Go; ratchet verified reachable by planting a spelling in reflect.go. Residual prose scope raised as a new finding.
+          round: 5
+        - id: BR-7
+          disposition: addressed
+          note: 'Mutation-verified twice on scratch copies: tmpPattern and userModelPrefix changes each redden TestGitignoreCoversRuntimeFiles by name.'
+          round: 5
+        - id: BR-8
+          disposition: addressed
+          note: 2.15h now recorded; consistent with sdlc actual at HEAD (7.05h) minus the 4.92h pre-implementation baseline the issue Log documents.
+          round: 5
+        - id: BR-9
+          disposition: addressed
+          note: README.md:36 marks the example English-only and a new paragraph states the rule.
+          round: 5
+        - id: BR-10
+          disposition: addressed
+          note: PATTERNS comment merged into the RuntimeFiles doc; MigrateToLanguages' doc names the two artifacts it moves.
+          round: 5
+      findings:
+        - id: BR-11
+          severity: Important
+          title: BR-6's rule binds prose but is enforced over *.go only, and the hand-swept half left a live false claim in the project file
+          detail: |-
+            6th finding in this family — do NOT fix the instance. The rule is already
+            written and correct; what is missing is that its enforcement stops at
+            `git ls-files '*.go'`, so the half the rule was actually raised about
+            (README/atlas/plan lines) is still swept by hand. Measured at HEAD:
+            README.md and atlas/ are clean, but workshop/projects/define-learn.md
+            carries 6 live restatements (lines 5, 61, 140, 316, 349, 360, 494) plus 2
+            historical ones, and :140 "A single user-model.md, batch-generated,
+            human-correctable" and :494 "One user-model.md" are now FALSE — BR-2 made
+            the model one file per language. :5 is the project's done_when frontmatter.
+            A second live instance of the same family, pre-existing rather than
+            introduced here: store/yaml.go:478-488 runs Forget's doc comment straight
+            into the newsFile comment with no blank line, so godoc attaches "Forget
+            removes one word file" to `type newsFile` — the same shape as BR-10, in
+            the file BR-10 named. Class fix: extend the ratchet to markdown with an
+            explicit allowlist (workshop/history/, the *-gate.md / *-review.md
+            ledgers, and "## Revisions" sections, which legitimately record what was
+            once true), and state that scope in the rule. For the orphaned comment the
+            mechanical form is one check over top-level decls — a doc comment whose
+            first word is not the declared identifier is attached to the wrong thing.
+          family: comment-contract-drift
+          round: 5
+        - id: BR-12
+          severity: Minor
+          title: Two test fixtures/paths are hand-restated outside the store package; one is now stranded at the pre-#23 flat layout
+          detail: |-
+            3rd finding in this family — do NOT fix the words/en/ instance. The rule is
+            the family's own: a path or name a test asserts against must come from the
+            function that produces it. store/yaml_test.go:45 still plants
+            ".tmp-halfwritten" at dir/words/, while wordsDir() is now words/en/, so
+            TestYAMLIgnoresInterruptedWrites no longer exercises Deck()'s temp-file
+            skip at all — the sibling test 25 lines below had its path corrected with a
+            comment about exactly this. Honest caveat: removing Deck()'s .yaml suffix
+            check leaves the whole suite green at BOTH base and HEAD (the fixture's
+            unparseable body masks it), so this is a pre-existing weak pin that this
+            range made structurally unreachable, not a regression in detection.
+            Second instance: cmd/define/lang_cmd_test.go:180 restates "lang.txt" in a
+            NEGATIVE assertion, which passes vacuously after a rename (:159's positive
+            one would redden). store.UserModelName was exported so consumers could
+            derive; there is no equivalent for the language file. Class fix: move the
+            temp-file test into package store (internal, as lang_test.go already is) so
+            it plants via y.wordsDir() and newTempFile(), and export a producer for the
+            language filename so package main's tests derive it too.
+          family: runtime-artifact-guard-coverage
+          round: 5
+      boundary: M1
+      blocked: false
 ---
 
 # Gate ledger — tools#23 (boundary-review)
@@ -180,10 +255,58 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-10** [Minor] `comment-contract-drift` The PATTERNS explanation at store/yaml.go:75-87 is a detached comment godoc attaches to nothing
   Blank line before it and after it, so it documents neither RuntimeFiles nor wordsDir. Merge it into the RuntimeFiles doc comment. Same for store/migrate.go:11, whose opening line says MigrateToLanguages moves a DIRECTORY when it moves two named artifacts.
 
+## Round 5 — 2026-08-28T13:18:45-07:00 (claude) — passed
+
+### Disposed
+
+- BR-6 — addressed — Rule stated and mechanised for Go; ratchet verified reachable by planting a spelling in reflect.go. Residual prose scope raised as a new finding.
+- BR-7 — addressed — Mutation-verified twice on scratch copies: tmpPattern and userModelPrefix changes each redden TestGitignoreCoversRuntimeFiles by name.
+- BR-8 — addressed — 2.15h now recorded; consistent with sdlc actual at HEAD (7.05h) minus the 4.92h pre-implementation baseline the issue Log documents.
+- BR-9 — addressed — README.md:36 marks the example English-only and a new paragraph states the rule.
+- BR-10 — addressed — PATTERNS comment merged into the RuntimeFiles doc; MigrateToLanguages' doc names the two artifacts it moves.
+
+### Raised
+
+- **BR-11** [Important] `comment-contract-drift` BR-6's rule binds prose but is enforced over *.go only, and the hand-swept half left a live false claim in the project file
+  6th finding in this family — do NOT fix the instance. The rule is already
+  written and correct; what is missing is that its enforcement stops at
+  `git ls-files '*.go'`, so the half the rule was actually raised about
+  (README/atlas/plan lines) is still swept by hand. Measured at HEAD:
+  README.md and atlas/ are clean, but workshop/projects/define-learn.md
+  carries 6 live restatements (lines 5, 61, 140, 316, 349, 360, 494) plus 2
+  historical ones, and :140 "A single user-model.md, batch-generated,
+  human-correctable" and :494 "One user-model.md" are now FALSE — BR-2 made
+  the model one file per language. :5 is the project's done_when frontmatter.
+  A second live instance of the same family, pre-existing rather than
+  introduced here: store/yaml.go:478-488 runs Forget's doc comment straight
+  into the newsFile comment with no blank line, so godoc attaches "Forget
+  removes one word file" to `type newsFile` — the same shape as BR-10, in
+  the file BR-10 named. Class fix: extend the ratchet to markdown with an
+  explicit allowlist (workshop/history/, the *-gate.md / *-review.md
+  ledgers, and "## Revisions" sections, which legitimately record what was
+  once true), and state that scope in the rule. For the orphaned comment the
+  mechanical form is one check over top-level decls — a doc comment whose
+  first word is not the declared identifier is attached to the wrong thing.
+- **BR-12** [Minor] `runtime-artifact-guard-coverage` Two test fixtures/paths are hand-restated outside the store package; one is now stranded at the pre-#23 flat layout
+  3rd finding in this family — do NOT fix the words/en/ instance. The rule is
+  the family's own: a path or name a test asserts against must come from the
+  function that produces it. store/yaml_test.go:45 still plants
+  ".tmp-halfwritten" at dir/words/, while wordsDir() is now words/en/, so
+  TestYAMLIgnoresInterruptedWrites no longer exercises Deck()'s temp-file
+  skip at all — the sibling test 25 lines below had its path corrected with a
+  comment about exactly this. Honest caveat: removing Deck()'s .yaml suffix
+  check leaves the whole suite green at BOTH base and HEAD (the fixture's
+  unparseable body masks it), so this is a pre-existing weak pin that this
+  range made structurally unreachable, not a regression in detection.
+  Second instance: cmd/define/lang_cmd_test.go:180 restates "lang.txt" in a
+  NEGATIVE assertion, which passes vacuously after a rename (:159's positive
+  one would redden). store.UserModelName was exported so consumers could
+  derive; there is no equivalent for the language file. Class fix: move the
+  temp-file test into package store (internal, as lang_test.go already is) so
+  it plants via y.wordsDir() and newTempFile(), and export a producer for the
+  language filename so package main's tests derive it too.
+
 ## Open findings
 
-- **BR-6** [Important] `comment-contract-drift` The user-model rename swept 3 of ~12 restatements, including --reflect's success line, which names a file it did not write
-- **BR-7** [Important] `runtime-artifact-guard-coverage` RuntimeFiles coverage is asserted from hand-typed literals, so changing the atomic-write temp prefix escapes every guard green
-- **BR-8** [Minor] `project-ledger-lag` The project file records M1's actual and closed date from before three rounds of boundary-review fixes
-- **BR-9** [Minor] `comment-contract-drift` README never states that -locale is English-only, three lines above the new -lang example
-- **BR-10** [Minor] `comment-contract-drift` The PATTERNS explanation at store/yaml.go:75-87 is a detached comment godoc attaches to nothing
+- **BR-11** [Important] `comment-contract-drift` BR-6's rule binds prose but is enforced over *.go only, and the hand-swept half left a live false claim in the project file
+- **BR-12** [Minor] `runtime-artifact-guard-coverage` Two test fixtures/paths are hand-restated outside the store package; one is now stranded at the pre-#23 flat layout

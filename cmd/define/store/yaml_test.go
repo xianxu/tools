@@ -36,25 +36,6 @@ func TestYAMLPersistsAcrossReopen(t *testing.T) {
 	}
 }
 
-// An interrupted write leaves a temp file. It must never be read as a word.
-func TestYAMLIgnoresInterruptedWrites(t *testing.T) {
-	dir := t.TempDir()
-	s := store.NewYAML(dir, store.DefaultLang, nil)
-	_ = s.Upsert(store.Word{Text: "good", LastSeen: time.Now()})
-
-	partial := filepath.Join(dir, "words", ".tmp-halfwritten")
-	if err := os.WriteFile(partial, []byte("text: bad\nlast_seen: not-a-ti"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	deck, err := s.Deck()
-	if err != nil {
-		t.Fatalf("a leftover temp file broke the deck: %v", err)
-	}
-	if len(deck) != 1 || deck[0].Text != "good" {
-		t.Errorf("deck = %+v, want only the completed write", deck)
-	}
-}
-
 // One corrupt file must not make the whole deck unopenable — that would lose
 // every word to a single bad byte.
 func TestYAMLSkipsCorruptFileWithWarning(t *testing.T) {

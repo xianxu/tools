@@ -216,13 +216,16 @@ func TestLangSwitchReDerivesEverythingDownstreamOfTheLanguage(t *testing.T) {
 // -lang, so replacing ReadLang with DefaultLang left the suite green.
 func TestAOneShotLookupReadsThePersistedLanguage(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		args     []string
-		wantLang store.Lang
+		name      string
+		args      []string
+		wantLang  store.Lang
+		emptyLang store.Lang
 	}{
-		{name: "the persisted setting is used", args: []string{"sycophantic"}, wantLang: "es"},
+		{name: "the persisted setting is used", args: []string{"sycophantic"},
+			wantLang: "es", emptyLang: "en"},
 		// The precedence, not just the read: the flag still wins for one run.
-		{name: "-lang overrides it", args: []string{"-lang", "en", "sycophantic"}, wantLang: "en"},
+		{name: "-lang overrides it", args: []string{"-lang", "en", "sycophantic"},
+			wantLang: "en", emptyLang: "es"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -248,6 +251,15 @@ func TestAOneShotLookupReadsThePersistedLanguage(t *testing.T) {
 			}
 			if len(deck) != 1 || deck[0].Text != "sycophantic" {
 				t.Errorf("the word did not land in words/%s/: %+v", tc.wantLang, deck)
+			}
+			// The negative half: the positive one alone survives a DOUBLE write,
+			// which is exactly what a precedence bug looks like.
+			other, err := store.NewYAML(dir, tc.emptyLang, nil).Deck()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(other) != 0 {
+				t.Errorf("the word also landed in words/%s/: %+v", tc.emptyLang, other)
 			}
 		})
 	}

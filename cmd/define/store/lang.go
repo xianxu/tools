@@ -56,6 +56,13 @@ func isASCIILower(b byte) bool { return b >= 'a' && b <= 'z' }
 // covered, which is what keeps the guards and the writer in step.
 const langFileName = "lang.txt"
 
+// LangFileName is the one producer of the language setting's filename.
+//
+// Exported for the same reason UserModelName is: package main's tests were
+// restating the literal, which is a second source for a name the store owns.
+// A test that spells it keeps passing while the writer moves.
+func LangFileName() string { return langFileName }
+
 func langFile(dir string) string { return filepath.Join(dir, langFileName) }
 
 // ReadLang returns the directory's language, or DefaultLang when there is none.

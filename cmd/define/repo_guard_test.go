@@ -440,3 +440,89 @@ func TestRuntimeArtifactNamesAreSpelledOnceInSource(t *testing.T) {
 		t.Fatal("no Go source was examined; this test would pass vacuously")
 	}
 }
+
+// The same rule, over the PROSE that is read as current truth.
+//
+// The Go ratchet above stops at `git ls-files '*.go'`, and the artifact-name
+// rule was written for "no output line, comment, README line, atlas line or plan
+// line". The half it did not reach was swept by hand and, predictably, left a
+// live FALSE claim: the project file still said "a single user-model.md" after
+// the model became one per language. Sixth finding in that family, and the
+// reason it is mechanical now.
+//
+// SCOPE, which is the interesting decision. This binds the three artifact kinds
+// a reader takes as describing the tool AS IT IS — README, atlas/ and the
+// project portfolio view. It deliberately does NOT bind issues, plans, lessons
+// or workshop/history/: those are dated RECORDS, and a Spec or a Log or a
+// ## Revisions entry naming what was true when it was written is correct.
+// Rewriting them to match today is the actual lie, which is why the rule's
+// enforcement stops here rather than everywhere the string appears.
+//
+// A doc that spells a stale name is not a style problem: a learner who
+// hand-edits the file the docs name loses their ## Corrections.
+func TestProseDoesNotSpellStaleRuntimeArtifactNames(t *testing.T) {
+	root := repoRoot(t)
+
+	// Where naming the concrete file is deliberate, with the count. Layout
+	// blocks, the migration's before/after, and repo-guards.md — whose SUBJECT
+	// is this very naming rule, so it cannot state it without naming names.
+	allowed := map[string]int{
+		"README.md":            3,
+		"atlas/define.md":      2,
+		"atlas/repo-guards.md": 6,
+	}
+	binds := func(p string) bool {
+		return p == "README.md" ||
+			strings.HasPrefix(p, "atlas/") ||
+			strings.HasPrefix(p, "workshop/projects/")
+	}
+
+	seen := 0
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z", "*.md")), "\x00") {
+		p := filepath.ToSlash(f)
+		if p == "" || !binds(p) || strings.HasPrefix(p, "workshop/projects/roadmap/") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		seen++
+		text := currentTruthOnly(string(b))
+		if n := strings.Count(text, "user-model."); n > allowed[p] {
+			t.Errorf("%s spells a runtime artifact's name %d time(s), allowed %d — name the "+
+				"artifact (\"the learner model\") unless the line is a current layout, the "+
+				"migration's own subject, or this rule's own documentation. A stale name here "+
+				"sends a learner's ## Corrections to a file nothing reads.", p, n, allowed[p])
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no current-truth markdown was examined; this test would pass vacuously")
+	}
+}
+
+// currentTruthOnly strips the parts of a markdown artifact that are RECORDS.
+//
+// A record is allowed — required, even — to name what was true when it was
+// written; revising it to match today is the lie. Two shapes qualify, and both
+// are self-identifying rather than listed by name, so a new one is covered
+// without anyone remembering to add it:
+//
+//   - everything from a "## Revisions" or "## Log" heading onward;
+//   - any "### " section carrying a "**closed:**" line, which is how a project
+//     file marks a milestone detail block as finished.
+func currentTruthOnly(text string) string {
+	for _, marker := range []string{"\n## Revisions", "\n## Log"} {
+		if i := strings.Index(text, marker); i >= 0 {
+			text = text[:i]
+		}
+	}
+	var kept []string
+	for _, sec := range strings.Split(text, "\n### ") {
+		if strings.Contains(sec, "**closed:**") {
+			continue
+		}
+		kept = append(kept, sec)
+	}
+	return strings.Join(kept, "\n### ")
+}

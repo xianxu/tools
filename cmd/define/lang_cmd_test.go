@@ -156,7 +156,7 @@ func TestLangCommandPersistsFromAOneShotRun(t *testing.T) {
 		t.Errorf("after a one-shot /lang es, the directory says %q", got)
 	}
 	// And the next invocation inherits it, which is the point.
-	if _, err := os.Stat(filepath.Join(dir, "lang.txt")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, store.LangFileName())); err != nil {
 		t.Errorf("the setting is not on disk: %v", err)
 	}
 }
@@ -177,7 +177,9 @@ func TestLangFlagDoesNotPersist(t *testing.T) {
 	if !strings.Contains(out.String(), "es") {
 		t.Errorf("-lang did not reach the session: %q", out.String())
 	}
-	if _, err := os.Stat(filepath.Join(dir, "lang.txt")); !os.IsNotExist(err) {
+	// Derived, not spelled: a negative assertion against a hand-typed name
+	// passes VACUOUSLY the moment the writer renames the file.
+	if _, err := os.Stat(filepath.Join(dir, store.LangFileName())); !os.IsNotExist(err) {
 		t.Error("-lang wrote the setting; it is for one invocation")
 	}
 }

@@ -475,11 +475,6 @@ func endsWithNewline(path string) bool {
 	return b[0] == '\n'
 }
 
-// Forget removes one word file. Events are untouched: the deck is a working set,
-// the log is history.
-//
-// Filename derivation goes through wordFileName, the same function Upsert uses —
-// see its doc comment for what that guard is and is not worth.
 // newsFile is a WHOLE-FILE record, like words/ and unlike the append-only day
 // log in events/. It is written through writeBytesAtomic and therefore cannot
 // tear; the failure to handle is a file corrupted from outside, and the
@@ -536,6 +531,11 @@ func (y *YAML) SetNewsItems(key string, items []NewsItem, at time.Time) error {
 	return writeBytesAtomic(filepath.Join(y.usageDir(), name), b)
 }
 
+// Forget removes one word file. Events are untouched: the deck is a working set,
+// the log is history.
+//
+// Filename derivation goes through wordFileName, the same function Upsert uses —
+// see its doc comment for what that guard is and is not worth.
 func (y *YAML) Forget(key string) (bool, error) {
 	k := Key(key)
 	if k == "" {

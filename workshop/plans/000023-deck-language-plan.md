@@ -455,3 +455,55 @@ converging: fix rules, not instances.* Sidecar:
   examples in a Spanish session are not the English ones and the cache is keyed
   by word alone. Discovering that at M2's boundary is exactly how the learner
   model arrived at M1's.
+
+### 2026-08-28 — M1 boundary review round 4: FIX-THEN-SHIP, fixes bundled into the close
+
+**Reason.** Round 4 disposed BR-6..BR-10 and returned FIX-THEN-SHIP. BR-11
+(Important) was demoted past the round cap and would NOT block — and no later
+gate picks it up, so leaving it would have meant shipping a finding nothing
+would ever revisit. Fixed. Per `#174` these fixes are bundled into the
+milestone-close commit rather than triggering a fifth review.
+
+**Delta.**
+
+- **BR-11 — the artifact-name rule binds prose, but was enforced over `*.go`
+  only, and the hand-swept half left a LIVE FALSE claim.** The project file still
+  said "a single `user-model.md`" after BR-2 made it one per language. Sixth
+  finding in `comment-contract-drift`, so again the rule, not the site:
+  `TestProseDoesNotSpellStaleRuntimeArtifactNames` now enforces it over the three
+  artifact kinds a reader takes as describing the tool AS IT IS — README,
+  `atlas/`, and the project portfolio view.
+  - **The scope is the interesting decision.** It deliberately does NOT bind
+    issues, plans, lessons or `workshop/history/`: those are dated RECORDS, and a
+    Spec or Log naming what was true when written is correct — rewriting them to
+    match today is the actual lie. `currentTruthOnly` strips the record-bearing
+    parts by SHAPE rather than by a list of names (`## Revisions`, `## Log`, and
+    any `###` block carrying `**closed:**`), so a new record section is covered
+    without anyone remembering to add it.
+  - Mutation-checked: reintroducing the exact false sentence reddens it.
+- **The orphaned doc comment (BR-10's shape, still live).** `Forget`'s doc ran
+  into `type newsFile` with no blank line, so godoc attached "Forget removes one
+  word file" to the wrong declaration. Reattached.
+- **Minors, each fixed as the family's own rule — a path or name a test asserts
+  against comes from the function that produces it.**
+  - `TestYAMLIgnoresInterruptedWrites` planted its fixture at the pre-`#23` flat
+    path while `wordsDir()` had moved, so `Deck()` never listed it and the test
+    exercised nothing. Moved INTERNAL as `TestDeckIgnoresInterruptedWrites`,
+    deriving both the directory and the temp name from their producers. Its body
+    is now valid YAML, which the reviewer's own caveat showed matters: with the
+    old unparseable fixture, deleting `Deck()`'s suffix check left the suite
+    green at BOTH base and HEAD. It now reddens — a pin that was decorative is
+    load-bearing.
+  - `store.LangFileName()` exported, so package `main`'s tests stop restating
+    `lang.txt`. The absence assertion at `lang_cmd_test.go` was the dangerous
+    one: a negative assertion against a hand-typed name passes VACUOUSLY the
+    moment the writer renames the file.
+  - `TestAOneShotLookupReadsThePersistedLanguage` gained its negative half; the
+    positive one alone survives a double write, which is what a precedence bug
+    looks like.
+- **Carried into M2's plan, not fixed here:** `usage/` is correctly unscoped
+  today because the news feed takes no language, but it becomes a scoping
+  candidate the moment the dictionary follows the mode — `mesa`'s usage examples
+  in a Spanish session are not the English ones, and the cache is keyed by word
+  alone. Decide it in M2's plan; discovering it at M2's boundary is exactly how
+  the learner model arrived at M1's.

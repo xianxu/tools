@@ -2110,3 +2110,45 @@ through `run()` and asserts what the fake CDN was **asked for**.
 pins the function and says nothing about the cache. Add one assertion at the
 altitude where the cached value is consumed — and give it a non-vacuity check, or
 a session that fetched nothing at all passes it.
+
+## A rule stated in prose is enforced where you can run it (#23 BR-6, BR-11)
+
+The artifact-name rule was written correctly the first time: *no output line,
+comment, README line, atlas line or plan line may spell a name the code owns.*
+It was then swept by hand, and the sweep was 3 of ~12 — including the
+user-facing line, which told the learner to edit a file the tool had not
+written.
+
+Mechanising it over Go source immediately found four more sites the manual
+enumeration had missed. One round later the same family returned, because the
+ratchet stopped at `*.go` while the rule bound prose: the project file still
+claimed a single shared learner model after it had become one per language.
+
+**Rule:** when a review finding names a rule rather than a site, ship the
+ENFORCEMENT in the same commit, and make its scope match the rule's own words.
+A rule enforced over a subset of what it claims to bind reads as settled while
+the unenforced half keeps drifting — and the half nobody checks is the half that
+goes stale.
+
+**Corollary — enforcement needs an explicit theory of records.** Docs that
+describe the tool as it IS must be swept; docs that RECORD what was true when
+written must not, or the fix is falsifying history. Identify records by shape
+(`## Revisions`, `## Log`, a block carrying `**closed:**`) rather than by a list
+of filenames, so a new one is covered without anyone remembering it.
+
+## Move the test to where the paths come from (#23, round 4)
+
+`TestYAMLIgnoresInterruptedWrites` planted its fixture at `words/.tmp-halfwritten`
+from outside the package. When the deck moved to `words/<lang>/`, the fixture
+stayed put, `Deck()` stopped listing it, and the test kept passing while
+exercising nothing.
+
+Worse, it had never been load-bearing: the fixture body was unparseable, so
+deleting the suffix check the test exists to pin left it warned-and-skipped and
+the suite green either way.
+
+**Rule:** an external test that hardcodes an internal path will silently stop
+testing when the layout moves. Put it in the package and obtain the path from the
+function that produces it. And make the fixture VALID except for the one property
+under test — an invalid fixture passes for whichever reason comes first, which
+may not be the one the test names.

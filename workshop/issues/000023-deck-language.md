@@ -289,7 +289,7 @@ second copy of the tasks.
 
 - [x] Design via `sdlc start-plan` before implementing. Coordinate with `#18 M1`,
       which owns the audio half of the same `-lang` flag.
-- [ ] M1 — the mode exists and the deck follows it: `Lang` + the runtime-FILE
+- [x] M1 — the mode exists and the deck follows it: `Lang` + the runtime-FILE
       guard, `words/<lang>/`, the flat-deck migration, `-lang` / `lang.txt` /
       `/lang`, the recording following the mode, `--play` and `--forget`
       inheriting it, docs. Ships a working single-language `define`.
@@ -300,6 +300,25 @@ second copy of the tasks.
 ## Log
 
 ### 2026-08-28
+- 2026-08-28: closed M1 — M1 ships a working single-language define. Three boundary-review rounds, all addressed as rules rather than instances.; review verdict: FIX-THEN-SHIP
+
+ROUND 3 BLOCKERS FIXED AS RULES (the gate said "4 repeat families — not converging: fix rules, not instances", and the reviewer said explicitly not to fix the instances):
+
+BR-7 rule — a runtime artifact name has exactly ONE producing function; guards, migrations and tests derive from it. Four producers now (UserModelName, langFileName, newTempFile, userModelLegacy), and RuntimeFiles BUILDS its two pattern entries from them. Mutation-checked BOTH ways: changing the atomic-write prefix, and changing the learner-model scheme, each now fail TestGitignoreCoversRuntimeFiles BY NAME. Before this, the reviewer proved the prefix change left the entire suite green while the shadow beside the two root-level runtime files matched no .gitignore pattern.
+
+BR-6 rule — no output line, comment or doc may spell a runtime artifact filename or a symbol the code owns. Now MECHANICAL: TestRuntimeArtifactNamesAreSpelledOnceInSource permits a learner-model filename in non-test Go only in the two consts that build every such name, and it is mutation-checked. Mechanising found FOUR sites the manual enumeration missed. The user-facing one is why it matters: --reflect printed "wrote user-model.md" while writing the per-language file, and README tells the learner to hand-edit that file ## Corrections, so following the tool own output put corrections where UserModel() never looks. store.UserModelName(lang) is exported so a consumer names the file without restating the scheme. The symbol half swept too — atlas, a main.go comment and the plan named MigrateFlatDeck, which the tree does not export; the plan records the rule, since this was the second absent entity it named.
+
+ROUND 3 MINORS FIXED: detached PATTERNS comment merged into its doc; MigrateToLanguages doc says it moves two named artifacts; wordsDir comment corrected (it still claimed userModelFile was unscoped); README states -locale is English-only three lines from where it demonstrates it; d.history identity across a switch asserted rather than only argued; project actual corrected from 1.03h, which predated the review rounds.
+
+EARLIER ROUNDS (disposed): C1 — applyLang owns the full enumeration with the rule that generates it, applyVoice is one derivation with two callers. BR-2 — the learner model is per-language, since it is DERIVED from the language-scoped deck; the events/ argument does not transfer to a summary of a deck. I1/I2/I3/I4 all fixed.
+
+VERIFIED BEYOND TESTS: git check-ignore -v matches user-model.md, user-model.en.md, user-model.es.md, lang.txt and .tmp-abc, and still does NOT match the golden fixture. Running the binary in a directory holding a pre-language user-model.md prints "moved user-model.md to user-model.en.md" and leaves exactly that file. go test -tags conformance CDNStillServesSpanish passes against the LIVE CDN.
+
+FULL SUITE: go build ./... && go vet ./... && go test ./... green; gofmt -l ./cmd/ empty.
+
+ACTUAL: 2.15h is the M1 increment, not the issue total — session commit timestamps 10:55 to 13:05, continuous. sdlc actual measures from a PRE-CLAIM 2026-08-27 commit with mention-fallback attribution across eleven issues; the issue Log records that this row should be marked untrusted for calibration.
+
+M2 NOT in scope: mesa in a Spanish session is filed as Spanish but still defined as the flat-topped hill. The review also flagged that usage/ becomes a scoping candidate the moment the dictionary follows the mode — carried into M2 planning rather than discovered at M2 boundary.
 
 Plan cleared plan-quality on round 2 (verdict CLEAN); five blocking findings
 PQ-1..PQ-5 answered as D1–D5 in the plan, each verified against the tree before
