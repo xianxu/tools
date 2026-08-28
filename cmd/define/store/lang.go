@@ -2,6 +2,8 @@ package store
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -40,3 +42,42 @@ func ParseLang(s string) (Lang, error) {
 }
 
 func isASCIILower(b byte) bool { return b >= 'a' && b <= 'z' }
+
+// langFile is where a directory's language lives.
+//
+// Named through RuntimeFiles rather than spelled here, so the guards that keep
+// it out of git and the code that writes it cannot disagree about the name.
+func langFile(dir string) string { return filepath.Join(dir, RuntimeFiles[1]) }
+
+// ReadLang returns the directory's language, or DefaultLang when there is none.
+//
+// Absent, empty, unreadable and malformed all mean the default. That is a
+// deliberate flattening: the learner typed a word, not a request for a
+// configuration audit, and failing a lookup because a one-line settings file has
+// a typo in it would be the tool inventing a way to be useless. The cost is that
+// a typo is silent — which is why /lang REPORTS the current language, so the
+// answer is one command away rather than a mystery.
+func ReadLang(dir string) Lang {
+	b, err := os.ReadFile(langFile(dir))
+	if err != nil {
+		return DefaultLang
+	}
+	l, err := ParseLang(string(b))
+	if err != nil {
+		return DefaultLang
+	}
+	return l
+}
+
+// WriteLang persists the directory's language.
+//
+// It validates rather than trusting its caller: this value becomes a path
+// segment on the NEXT run, and a store that read it back would have no way to
+// tell it was written rather than typed.
+func WriteLang(dir string, l Lang) error {
+	valid, err := ParseLang(string(l))
+	if err != nil {
+		return err
+	}
+	return writeBytesAtomic(langFile(dir), []byte(string(valid)+"\n"))
+}

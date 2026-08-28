@@ -1,6 +1,10 @@
 package store
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 // A language tag is validated at the EDGE, once, so nothing downstream has to
 // wonder whether "ES " or "" is a language.
@@ -53,6 +57,65 @@ func TestAcceptedLangIsASafePathSegment(t *testing.T) {
 			if string(l) == bad || len(string(l)) != 2 {
 				t.Errorf("ParseLang(%q) = %q, which is not a two-letter path segment", in, l)
 			}
+		}
+	}
+}
+
+// The setting survives the session, because a one-shot lookup has no session to
+// inherit from. That is the one way language deliberately differs from /sound.
+func TestLangRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	if got := ReadLang(dir); got != DefaultLang {
+		t.Errorf("an unset directory = %q, want %q", got, DefaultLang)
+	}
+	if err := WriteLang(dir, Lang("es")); err != nil {
+		t.Fatal(err)
+	}
+	if got := ReadLang(dir); got != "es" {
+		t.Errorf("after WriteLang, ReadLang = %q, want es", got)
+	}
+	// And it is the file the guards know about, not some other name.
+	if _, err := os.Stat(filepath.Join(dir, RuntimeFiles[1])); err != nil {
+		t.Errorf("the setting is not at %s: %v", RuntimeFiles[1], err)
+	}
+}
+
+// A garbage, empty or unreadable setting degrades to the default rather than
+// failing the lookup: the learner asked for a word, not a configuration audit.
+func TestABrokenLangFileFallsBackToTheDefault(t *testing.T) {
+	for _, body := range []string{"not-a-language", "", "   ", "../etc", "en es"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, RuntimeFiles[1]), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := ReadLang(dir); got != DefaultLang {
+			t.Errorf("ReadLang with %q on disk = %q, want the default", body, got)
+		}
+	}
+}
+
+// WriteLang refuses what ParseLang refuses — the file is written by /lang, and a
+// bad value there would become a path segment on the next run.
+func TestWriteLangRejectsAnInvalidTag(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteLang(dir, Lang("../etc")); err == nil {
+		t.Error("WriteLang accepted a traversal as a language")
+	}
+	if _, err := os.Stat(filepath.Join(dir, RuntimeFiles[1])); !os.IsNotExist(err) {
+		t.Error("a rejected language still wrote a file")
+	}
+}
+
+// Trailing newline included, because ReadLang has to survive both what WriteLang
+// produces and what a person types into the file with an editor.
+func TestReadLangToleratesHowAPersonWouldWriteIt(t *testing.T) {
+	for _, body := range []string{"es", "es\n", " ES \n", "es\r\n"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, RuntimeFiles[1]), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := ReadLang(dir); got != "es" {
+			t.Errorf("ReadLang with %q on disk = %q, want es", body, got)
 		}
 	}
 }

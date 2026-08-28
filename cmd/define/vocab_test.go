@@ -393,3 +393,77 @@ func TestHistoryIsSafeUnderConcurrency(t *testing.T) {
 		t.Error("the loaded entry did not survive concurrent access")
 	}
 }
+
+// The same wiring assertion as above, AFTER a mid-session /lang — plus the half
+// that a deps swap cannot reach.
+//
+// runEditor resolves the highlight set into a LOCAL before its loop starts, so
+// reassigning d alone would leave the editor highlighting the previous
+// language's words while every other path had moved on. sessionSetLang takes
+// &voc for exactly that reason, and the `notWant` assertions below are what
+// redden if it stops.
+func TestLangSwitchKeepsOneHighlightSetAndItIsTheNewLanguages(t *testing.T) {
+	dir := t.TempDir()
+	for _, seed := range []struct {
+		lang store.Lang
+		word string
+	}{{"en", "sycophantic"}, {"es", "madrugar"}} {
+		if err := store.NewYAML(dir, seed.lang, nil).Upsert(store.Word{Text: seed.word}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(dir)
+
+	var warn bytes.Buffer
+	opt := options{color: true}
+	d := deps{newStore: openStore}.withStore(opt, &warn)
+	voc := vocabularyFor(d, opt)
+
+	if d.lang != "en" {
+		t.Fatalf("started in %q, want the default", d.lang)
+	}
+	if !voc.Has(store.Key("sycophantic")) || voc.Has(store.Key("madrugar")) {
+		t.Fatal("the English session does not start from the English deck")
+	}
+
+	setLang := sessionSetLang(&d, opt, d.persistLang, &voc)
+	if setLang == nil {
+		t.Fatal("no setLang in a directory that has a store")
+	}
+	if err := setLang("es"); err != nil {
+		t.Fatal(err)
+	}
+
+	if d.lang != "es" {
+		t.Errorf("d.lang = %q after the switch", d.lang)
+	}
+	// The editor's cached set followed the switch.
+	if !voc.Has(store.Key("madrugar")) {
+		t.Error("the editor's highlight set did not follow /lang: it cannot see the Spanish deck")
+	}
+	if voc.Has(store.Key("sycophantic")) {
+		t.Error("the editor's highlight set is still the English one after /lang es")
+	}
+	// And the capturer and the renderer are still ONE set — the original
+	// invariant, which a rebuild is exactly the thing that could break.
+	d.capture.Capture("bonito", true, opt)
+	if !d.vocab.Has(store.Key("bonito")) {
+		t.Error("after /lang, the capturer and the renderer hold different sets")
+	}
+	if !voc.Has(store.Key("bonito")) {
+		t.Error("after /lang, the EDITOR holds a third set that captures do not reach")
+	}
+	// The switch is durable, not just live.
+	if got := store.ReadLang(dir); got != "es" {
+		t.Errorf("the directory says %q; /lang must persist", got)
+	}
+}
+
+// No directory, no setLang — which is what makes /lang report honestly instead
+// of accepting a switch it cannot keep.
+func TestSessionSetLangIsNilWithNowhereToPersist(t *testing.T) {
+	d := deps{}
+	if got := sessionSetLang(&d, options{}, nil, nil); got != nil {
+		t.Error("built a session switch with no directory to persist to")
+	}
+}

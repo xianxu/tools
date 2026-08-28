@@ -43,6 +43,29 @@ type deps struct {
 	// the words still being learned: a word that has become the learner's own
 	// stops being highlighted, and that swap must be this one seam.
 	vocab Vocabulary
+	// lang is the language this process is operating in — the deck it reads and
+	// writes, the recording it asks for, and the dictionary it consults. Resolved
+	// ONCE at the boundary (openStore, which is the only thing that knows the
+	// directory) and passed down; nothing below here re-reads the setting.
+	lang store.Lang
+	// newDeck rebuilds the LANGUAGE-SCOPED dependencies for another language.
+	//
+	// The one builder, called twice: openStore calls it to construct the session,
+	// and /lang calls it to switch mid-session. Only these three are rebuilt —
+	// history reads events/ and usage reads usage/, neither of which is
+	// language-scoped, and re-deriving history would put a second, UNLOADED
+	// History beside the one runEditor has already Load()ed.
+	//
+	// nil means there is no store here (a --llm-check run, an unopenable
+	// directory, a test that supplied its own deps): /lang can still write the
+	// setting, it just has no session to re-derive.
+	newDeck func(store.Lang) (store.Store, Capturer, Vocabulary)
+	// persistLang writes the directory's language setting. Separate from newDeck
+	// because the two halves of /lang have different preconditions: persisting
+	// needs a DIRECTORY, re-deriving needs a SESSION, and a one-shot
+	// `define /lang es` has the first without the second. nil means there is no
+	// directory to write to.
+	persistLang func(store.Lang) error
 	// newStore builds the three store-backed dependencies AFTER flags are parsed —
 	// it cannot happen in realDeps, because DEFINE_NO_CAPTURE is read at flag
 	// parse and decides whether anything is opened at all. Tests leave it nil and
@@ -104,6 +127,12 @@ type storeDeps struct {
 	deck    store.Store
 	vocab   Vocabulary
 	usage   UsageSource
+	// lang is the language openStore RESOLVED — the flag if one was given, else
+	// the directory's setting, else English. The flag half lives in options; this
+	// is the answer, and it is what everything downstream reads.
+	lang        store.Lang
+	newDeck     func(store.Lang) (store.Store, Capturer, Vocabulary)
+	persistLang func(store.Lang) error
 	// clock is the process's ONE answer to "what time is it". It used to be
 	// constructed inline where the capturer was built, so nothing else could
 	// reach it — and #15's /history needs the same clock to compute a local-day
@@ -145,6 +174,16 @@ func (d deps) withStore(opt options, warn io.Writer) deps {
 	if d.usage == nil {
 		d.usage = sd.usage
 	}
+	if d.newDeck == nil {
+		d.newDeck = sd.newDeck
+	}
+	if d.persistLang == nil {
+		d.persistLang = sd.persistLang
+	}
+	// The flag is the fallback here, not the winner: openStore has already
+	// applied the precedence when there was a directory to apply it against. This
+	// branch is what a test with no newStore gets, where the flag is all there is.
+	d.lang = orElse(d.lang, orElse(sd.lang, orElse(opt.lang, store.DefaultLang)))
 	// Same shape as the memHistory/noopCapturer fallbacks above: a test that
 	// supplies no newStore still gets a usable process. A test that wants to
 	// control time sets d.clock and it survives.
@@ -185,10 +224,14 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	// anywhere to write at all. decideCapture stays the only thing that decides
 	// whether a given lookup counts.
 	clk := store.SystemClock()
+	// With no directory there is no persisted setting to consult, so the flag is
+	// the whole of the precedence. newDeck stays nil on both of these paths: /lang
+	// can still validate and report, it just has nothing to re-derive.
 	if opt.noCapture {
 		return storeDeps{
 			history: &memHistory{}, capture: noopCapturer{},
 			usage: sessionUsage(clk, warn), clock: clk,
+			lang: orElse(opt.lang, store.DefaultLang),
 		}
 	}
 	dir, err := os.Getwd()
@@ -197,6 +240,7 @@ func openStore(opt options, warn io.Writer) storeDeps {
 		return storeDeps{
 			history: &memHistory{}, capture: noopCapturer{},
 			usage: sessionUsage(clk, warn), clock: clk,
+			lang: orElse(opt.lang, store.DefaultLang),
 		}
 	}
 	// Before anything reads the deck: a deck written before #23 lives flat in
@@ -205,21 +249,44 @@ func openStore(opt options, warn io.Writer) storeDeps {
 	if err := store.MigrateFlatDeck(dir, warn); err != nil {
 		fmt.Fprintf(warn, "define: could not migrate the existing deck (%v); it stays where it is\n", err)
 	}
-	st := store.NewYAML(dir, store.DefaultLang, warn)
-	// ONE highlight set, handed to both the capturer that grows it and the
-	// renderers that read it. Two instances would mean lookups landing in a set
-	// nothing draws from — TestOpenStoreSharesOneHighlightSet is the pin.
-	voc := newStoreVocabulary(st, warn)
+	// #23's precedence, applied ONCE and only here, because this is the only
+	// thing that knows the directory: the flag wins for THIS invocation and does
+	// not persist; otherwise the directory's setting; otherwise English.
+	lang := opt.lang
+	if lang == "" {
+		lang = store.ReadLang(dir)
+	}
+
+	newDeck := func(l store.Lang) (store.Store, Capturer, Vocabulary) {
+		st := store.NewYAML(dir, l, warn)
+		// ONE highlight set, handed to both the capturer that grows it and the
+		// renderers that read it. Two instances would mean lookups landing in a
+		// set nothing draws from — TestOpenStoreSharesOneHighlightSet is the pin,
+		// and TestLangSwitchKeepsOneHighlightSet is the same pin after a switch.
+		voc := newStoreVocabulary(st, warn)
+		return st, newStoreCapturer(st, clk, warn, voc), voc
+	}
+	deck, capturer, voc := newDeck(lang)
+
+	// A SECOND store, deliberately, and the language it carries is irrelevant to
+	// it: history reads events/ and the usage cache reads usage/, neither of
+	// which is language-scoped. Building them from the deck's store would tie
+	// two lifetimes together for no reason — /lang replaces the deck and must
+	// leave these two alone, or the editor's already-Load()ed History is orphaned.
+	flat := store.NewYAML(dir, store.DefaultLang, warn)
 	return storeDeps{
-		history: newStoreHistory(st, warn),
-		capture: newStoreCapturer(st, clk, warn, voc),
-		deck:    st,
+		history: newStoreHistory(flat, warn),
+		capture: capturer,
+		deck:    deck,
 		vocab:   voc,
 		// One feed, wrapped in the cache that owns the three outcomes, wrapped in
 		// the source that merges it with the dictionary. Same layering as
 		// fetch.go's cachingAudioSource over httpAudioSource.
-		usage: &bothSources{news: newCachingFeed(newHTTPFeed(), st, clk), warn: warn},
-		clock: clk,
+		usage:   &bothSources{news: newCachingFeed(newHTTPFeed(), flat, clk), warn: warn},
+		clock:       clk,
+		lang:        lang,
+		newDeck:     newDeck,
+		persistLang: func(l store.Lang) error { return store.WriteLang(dir, l) },
 	}
 }
 
@@ -259,6 +326,11 @@ type options struct {
 	// UI can be erased. Distinct from color (same probe, different question) and
 	// from stdinIsTerminal (different stream entirely).
 	tty bool
+	// lang is the -lang FLAG, empty when it was not given — not the language in
+	// effect, which is deps.lang. The distinction matters because the flag is
+	// one-third of a precedence openStore applies (flag, then the directory's
+	// setting, then English), and only openStore knows the directory.
+	lang store.Lang
 }
 
 // run is the thin IO shell: parse flags, look up, render, print, play. All of
@@ -276,6 +348,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// both is a mistyped command, not a preference to guess at.
 	times := fs.Int("times", 3, "how many times to play the pronunciation (older name for -sound)")
 	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
+	// -lang exists so a script can ask a question without mutating state: it
+	// applies to THIS invocation and does not persist. /lang is the other half —
+	// it persists and does not need re-typing.
+	langFlag := fs.String("lang", "", "language for this invocation: en, es (default: the directory's setting)")
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	reflect := fs.Bool("reflect", false, "read the deck and write user-model.md")
@@ -345,6 +421,18 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			flagName, *times, maxSoundTimes)
 		return 2
 	}
+	// Validated HERE, before anything opens a directory: this value becomes a
+	// path segment (words/<lang>/), and a usage error must not be the thing that
+	// creates a directory — the same rule the --forget checks below follow.
+	var lang store.Lang
+	if *langFlag != "" {
+		parsed, err := store.ParseLang(*langFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "define: %v\n", err)
+			return 2
+		}
+		lang = parsed
+	}
 	opt := options{
 		raw:   *raw,
 		color: !*noColor && isTerminal(stdout),
@@ -363,6 +451,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		times:     *times,
 		locale:    *locale,
 		count:     *count,
+		lang:      lang,
 	}
 
 	// Usage errors are settled BEFORE a store is opened. A mistyped command must
