@@ -322,3 +322,160 @@ findings:
       reconcile each before the verdict is recorded." Same family fired on the project file this round; the
       enumeration was written for one axis and the other axis is where the drift was.
 ```
+
+---
+
+## Re-review — 2026-08-27T23:11:57-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 17 — learner model: batch analysis into a durable user-model.md |
+| repo | tools |
+| issue file | workshop/issues/000017-user-model.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 145a0e74438c3a94b0b2ae7995330ebc67f6e1de..34c47cbc2405395d594f22fda60b5194ead6bf24 |
+| command | sdlc close --issue 17 |
+| reviewer | claude |
+| timestamp | 2026-08-27T23:11:57-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 7's two Important findings are genuinely and verifiably fixed — I reverted each in a scratch worktree and confirmed the named tests go red, which is the bar the claimed-fixes protocol sets. The shipped code is correct: `go test ./...` and `go vet ./...` are green, `runReflect` is a thin IO shell over pure `foldLookups`/`checkEvidence`/`renderUserModel`/`spliceCorrections`, and the atlas + README both carry the `--reflect` surface including its exit codes. What keeps this off SHIP is not the code: it is that the round-6 commit answered BR-21 by correcting the three artifacts the *finding* enumerated and did not enumerate the rest — `reflect.go:161` still asserts a whole-suite measurement that I measured false at the exact commit it names. That is the third instance of `comment-outruns-code`, landing inside the commit that wrote the rule into `lessons.md`. Ten Minor findings (BR-1, 6, 7, 8, 9, 10, 11, 13, 20, 23) are now carried un-disposed across four rounds; none blocks the gate, but seven of them are one class — a durable artifact restating a fact the tree contradicts — and that class is what BR-23 asked for a rule about.
+
+## 1. Strengths
+
+- **`TestDropDiagnosticRendersEveryShape`** (`cmd/define/reflect_run_test.go:383`) is exactly the right shape for BR-22: one row per input shape the formatter can receive (nil / empty / populated / no-citation), asserting the *whole* rendered line rather than a substring. Measured: re-introducing the `len(d.Cited)` branch reddens two named rows with a diff that reads as the bug (`"level C1: cites"` vs the full sentence).
+- **The `Cites` flag** (`cmd/define/reflect.go:171-183`) is the right fix rather than the cheap one — it makes "rejected *for* its citations" a distinct state from "cited nothing", which is the distinction `citeAll`'s empty branch existed to serve and which `len()` collapsed.
+- **BR-21's self-correction is honest and correct.** I verified it independently: deleting `sanitiseMeta`'s body at HEAD reddens `TestEveryUntrustedFieldIsNeutralised/"the frontmatter's model name"` (`usermodel_test.go:331`), so the removed test really was a duplicate and the reviewer's premise really was half wrong. Retracting a fix you already shipped, in the ledger, is the expensive direction.
+- **`sanitiseModel`/`sanitiseMeta` as one pass over the struct** (`usermodel.go:213-243`) is the structural answer to the list-that-drifts failure — a new render site is safe by construction, not by remembering. `ARCH-DRY` pass.
+- **`foldLookups` calls `summariseLookups`** rather than re-deriving the per-word fold (`reflect.go:59-89`). `ARCH-DRY` pass, and the plan's D6 states why.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**`cmd/define/reflect.go:161` — the `dropClaim` doc comment asserts a whole-suite measurement that is false at the commit it cites.**
+
+The comment reads: *"deleting the sanitiser left the whole suite green, because no test constructed a subject that carried a newline at three of the five arms."* The subordinate clause contradicts the main clause — if three of five arms were uncovered, two were covered — and I measured the main clause directly. In a scratch worktree at `c179efa` (the tree BR-17's premise named), removing `oneLine` from both `cite` and `citeAll`:
+
+```
+--- FAIL: TestDroppedClaimDiagnosticsCannotForgeALine
+    reflect_run_test.go:305: stderr has 5 lines, want 3
+    reflect_run_test.go:310: a diagnostic line does not start with the program name: "FORGED-LEVEL: ..."
+```
+
+The project's own round-5 Log records the accurate per-arm version (*"unsanitising the share-out-of-range arm reddened 0 tests"*). The comment overstated it into a suite claim.
+
+Fix sketch: this is not a sentence edit. Round 6 disposed BR-21 by correcting the three artifacts BR-21's text listed and stopped there; the rule it wrote into `lessons.md:761` implies an enumeration nobody ran. Run it — `grep -rniE 'suite green|left the suite|reddens? [0-9]|no test .*(constructed|supplied)' cmd/ internal/ atlas/ workshop/` returns ~25 sites — and either measure each claim or rewrite it to the scope actually measured. Two sites are in this window: `reflect.go:161` (false as written) and `reflect_run_test.go:322-324` (defensible — "them" scopes to the three unpinned sanitisers, but it sits one line from the false one).
+
+## 4. Minor findings
+
+*(No new Minor findings; the ten carried ones are dispositioned in the block below rather than restated here.)*
+
+## 5. Test coverage notes
+
+- Suite green at HEAD: `go test ./cmd/define/... ./internal/...` all `ok` (`cmd/define` 94.4s), `go vet ./...` silent.
+- Both round-7 fixes are mutation-verified, not read-verified. `ARCH-MOCK` pass: `reflectRig` drives the real YAML store in a temp dir behind the wire-level `llmtest.Fake`, and `reflect_conformance_test.go` is the live drift check.
+- The gap BR-13 names is still real and I re-measured its shape: the only test routing `--reflect` through `run()` is `TestReflectWithAWordIsAUsageError` (`reflect_run_test.go:207`), the usage-error path. Every happy-path test calls `runReflect` directly, so D5's "dispatched after `withStore`" decision is pinned by nothing.
+
+## 6. Architectural notes for upcoming work
+
+- `ARCH-DRY` — pass. `dropClaim.String` is the consolidation the round-5 refactor promised, and it now has the per-branch rows that make consolidation safe.
+- `ARCH-PURE` — pass, with one artifact: `foldLookups`'s unused `now` parameter (BR-6) is purity theatre — a parameter added to *look* injected. Either clamp `To` to it or drop it; a pure signature that lies is worse than a smaller one.
+- `ARCH-PURPOSE` — flag, and it is the shape of this whole gate. M1's purpose is delivered and consumed (`ask.go:268`). But findings on this issue keep being answered at the site they name: BR-17 → four sites, not the class; BR-21 → three artifacts, not the enumeration. `dropClaim.Reason` being documented as *"unused when `Cites` is set"* is the same axis in the type system — a struct with mutually exclusive fields where a sum type would make the invalid state unrepresentable. Worth reaching for on the next formatter.
+- `ARCH-MOCK` — pass.
+
+## 7. Plan revision recommendations
+
+`workshop/plans/000017-user-model-plan.md` needs one `## Revisions` entry that closes three still-open contradictions at once, rather than three entries:
+
+- **Core concepts** — delete the `citedOrNothing` row (the symbol was removed in `692ec09`); add rows for `modelMeta`, `dropClaim`, `dropClaim.String`, `cite`, `citeAll`, `oneLine`, `oneLineAll`, `sanitiseModel`, `sanitiseMeta`. Correct the entry that asserts *"Reconciled to empty before this commit"* — re-running the plan's own cited command still reports the gap, four rounds after it was first raised.
+- **D1** — restate it as the prune-then-drop-if-empty semantics `checkEvidence` actually implements (`reflect.go:224-231` keeps a partially-supported claim), so `D1` is the single statement of its fact and the task bodies can cite it.
+- **Task checkboxes** — 41 `- [ ]` and 0 `- [x]` against a Revisions entry saying *"Tasks 1–8 done"*. Tick them, or state in the entry that the boxes are not maintained and the Revisions section is the record.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      D1 still reads "drops any claim citing a word the deck does not contain"; checkEvidence prunes and keeps.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      reflect.go:59-89 still never reads `now`; the purity comment at :57-58 still justifies it.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Half 1 stands — reflect.go:302 prints len(ev.Words) as "words in the deck", and YAML.Events skips a warned day file, so the number shrinks silently. Half 2 is now unreachable (the empty-band arm fires first).
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      usermodel.go:120-122 still returns `generated` whole with nothing written to errOut.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Table still names citedOrNothing (deleted in 692ec09); modelMeta, cite, citeAll, dropClaim, String, oneLine, oneLineAll, sanitiseModel, sanitiseMeta have no row; the Revisions entry still claims "Reconciled to empty".
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      No mode-count guard. main.go:372 dispatches --llm-check before the switch, :419 --forget and :430 --play before `if *reflect` at :432; each pair silently honours one mode.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      usermodel.go:49-55 still emits four keys; no `learner:`, and no Revisions entry recording the departure.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      The only run()-level --reflect test is TestReflectWithAWordIsAUsageError (reflect_run_test.go:207); every happy-path test calls runReflect directly, so D5's dispatch site is unpinned.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      000017-user-model.md:212 is still `- [x]` on work its own text calls "not delivered"; the Done-when header clarifies prose but not the grep.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      Verified by mutation at HEAD — deleting sanitiseMeta's body reddens TestEveryUntrustedFieldIsNeutralised/"the frontmatter's model name", so the duplicate test is correctly removed and the Log correction is right. See the new finding for the residue.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      Verified by reverting String() to the len(Cited) branch in a scratch worktree — TestDropDiagnosticRendersEveryShape's "cited NOTHING" and "cited an empty list" rows both go red with the truncated sentence.
+  - id: BR-23
+    disposition: not-addressed
+    note: |
+      Re-measured: workshop/plans/000017-user-model-plan.md has 41 unticked boxes and 0 ticked, against a Revisions entry saying "Tasks 1-8 done".
+findings:
+  - id: new
+    severity: Important
+    family: comment-outruns-code
+    title: |
+      reflect.go's dropClaim comment still asserts "deleting the sanitiser left the whole suite green" — measured false at the commit it names
+    detail: |
+      This is the 3rd finding in family `comment-outruns-code` (BR-6, BR-21, this).
+      Earlier rounds fixed instances. Do NOT fix this instance — state the rule that
+      covers all of them, and fix that.
+      Measured, in a scratch worktree at c179efa (the tree BR-17's premise named and the
+      tree this comment describes): removing oneLine from cite() and citeAll() reddens
+      TestDroppedClaimDiagnosticsCannotForgeALine ("stderr has 5 lines, want 3"). The suite
+      was NOT green. reflect.go:159-162 says it was, and its own subordinate clause
+      contradicts it — three of five arms uncovered means two were covered. The issue Log's
+      round-5 entry states the accurate per-arm version ("unsanitising the share-out-of-range
+      arm reddened 0 tests"); the code comment inflated it into a suite claim.
+      Why this is the class and not the site: round 6 disposed BR-21 by correcting the three
+      artifacts BR-21's own text listed (Log, commit body, test comment) and wrote the rule
+      into lessons.md:761 — then did not run the enumeration that rule implies. This
+      sentence was in the diff of the same commit. The enumeration exists and is cheap:
+      grep -rniE 'suite green|left the suite|reddens? [0-9]|no test .*(constructed|supplied)'
+      over cmd/ internal/ atlas/ workshop/ returns ~25 sites, two of them in this window
+      (reflect.go:161 false as written, reflect_run_test.go:322-324 defensible but adjacent).
+      The deliverable is that sweep plus the rule stated as an enumeration, not a reworded
+      sentence.
+```

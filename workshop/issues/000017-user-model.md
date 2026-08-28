@@ -388,9 +388,10 @@ they recur *inside the fix for the round that named them*.
 
 ### 2026-08-26 — M1 round 4: the gate passed, and named the gap my own sweep left
 
-One finding, and it is the right one: **four neutralisation sites, and not all of
-them had a positive control.** Deleting `sanitiseMeta`'s body — the frontmatter's
-model name — left the whole suite green.
+One finding, and it is *half* right: **four neutralisation sites named, three of
+which genuinely had no positive control.** The fourth — `sanitiseMeta`, the
+frontmatter's model name — was already covered; see round 6's BR-21, which
+measured this and corrected the claim recorded here.
 
 That is the same rule as #16's BR-45 (*a fix added to defend a finding must have
 a read site that can fail*) applied to the sweep I ran proactively last round. I
@@ -498,4 +499,22 @@ Both findings are about round 5's own fix.
   remembering-sites for one unpinned one unless the formatter's own branches each
   get a row. A refactor justified as "one place to get it right" has to pin that
   place.
+
+### 2026-08-27 — close round 7 (BR-24)
+
+- **BR-24 (Important, `comment-outruns-code` again).** Round 6 corrected the false
+  "left the whole suite green" claim in the three places BR-21 enumerated — and
+  missed a fourth, `reflect.go`'s own `dropClaim` comment. I ran the reviewer's
+  list instead of my own grep, which is the same substitution BR-21 was about, one
+  level down: trusting an enumeration because someone authoritative wrote it.
+  Swept properly this time
+  (`grep -rniE "left the (whole )?suite green" cmd/ workshop/`), which found
+  three surviving instances in this issue's scope, not the one the finding named.
+  All now state the measurement that was actually run — unsanitising the
+  share-out-of-range arm reddens ZERO at `c179efa` — and say explicitly that the
+  `sanitiseMeta` half was false.
+  **The rule** (folded into `lessons.md`'s verification entry rather than
+  appended as a sibling): a finding tells you a CLASS exists; it does not tell you
+  where every member is. When a finding names N sites, grep for the class before
+  believing N.
 

@@ -320,10 +320,15 @@ func TestDroppedClaimDiagnosticsCannotForgeALine(t *testing.T) {
 // forge a line — the positive control the neutralisation never had.
 //
 // TestDroppedClaimDiagnosticsCannotForgeALine reaches two of checkEvidence's
-// five arms, so three sanitisers were unpinned: deleting them left the whole
-// suite green (BR-17). A neutralising call with no test that constructs the
-// violation is a check that cannot fail, and this is the third finding in that
-// family on this file.
+// five arms, so three sanitisers were unpinned. MEASURED at c179efa:
+// unsanitising the share-out-of-range arm reddened ZERO tests (BR-17). A
+// neutralising call with no test that constructs the violation is a check that
+// cannot fail.
+//
+// Scoped to the THREE diagnostic arms deliberately. The finding also named
+// sanitiseMeta, and that half was false — the frontmatter was already covered by
+// TestEveryUntrustedFieldIsNeutralised (BR-21), so the test added for it here
+// was a duplicate and has been removed.
 //
 // Driven through dropClaim.String rather than the whole run, because the point
 // is the ONE formatter every arm now goes through: a new arm gets this coverage

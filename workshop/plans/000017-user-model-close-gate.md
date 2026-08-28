@@ -573,6 +573,85 @@ rounds:
           family: docs-enumeration-not-swept
           round: 7
       blocked: true
+    - "n": 8
+      timestamp: "2026-08-27T23:11:57-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: D1 still reads "drops any claim citing a word the deck does not contain"; checkEvidence prunes and keeps.
+          round: 8
+        - id: BR-6
+          disposition: not-addressed
+          note: reflect.go:59-89 still never reads `now`; the purity comment at :57-58 still justifies it.
+          round: 8
+        - id: BR-7
+          disposition: not-addressed
+          note: Half 1 stands — reflect.go:302 prints len(ev.Words) as "words in the deck", and YAML.Events skips a warned day file, so the number shrinks silently. Half 2 is now unreachable (the empty-band arm fires first).
+          round: 8
+        - id: BR-8
+          disposition: not-addressed
+          note: usermodel.go:120-122 still returns `generated` whole with nothing written to errOut.
+          round: 8
+        - id: BR-9
+          disposition: not-addressed
+          note: Table still names citedOrNothing (deleted in 692ec09); modelMeta, cite, citeAll, dropClaim, String, oneLine, oneLineAll, sanitiseModel, sanitiseMeta have no row; the Revisions entry still claims "Reconciled to empty".
+          round: 8
+        - id: BR-10
+          disposition: not-addressed
+          note: No mode-count guard. main.go:372 dispatches --llm-check before the switch, :419 --forget and :430 --play before `if *reflect` at :432; each pair silently honours one mode.
+          round: 8
+        - id: BR-11
+          disposition: not-addressed
+          note: usermodel.go:49-55 still emits four keys; no `learner:`, and no Revisions entry recording the departure.
+          round: 8
+        - id: BR-13
+          disposition: not-addressed
+          note: The only run()-level --reflect test is TestReflectWithAWordIsAUsageError (reflect_run_test.go:207); every happy-path test calls runReflect directly, so D5's dispatch site is unpinned.
+          round: 8
+        - id: BR-20
+          disposition: not-addressed
+          note: 000017-user-model.md:212 is still `- [x]` on work its own text calls "not delivered"; the Done-when header clarifies prose but not the grep.
+          round: 8
+        - id: BR-21
+          disposition: addressed
+          note: Verified by mutation at HEAD — deleting sanitiseMeta's body reddens TestEveryUntrustedFieldIsNeutralised/"the frontmatter's model name", so the duplicate test is correctly removed and the Log correction is right. See the new finding for the residue.
+          round: 8
+        - id: BR-22
+          disposition: addressed
+          note: Verified by reverting String() to the len(Cited) branch in a scratch worktree — TestDropDiagnosticRendersEveryShape's "cited NOTHING" and "cited an empty list" rows both go red with the truncated sentence.
+          round: 8
+        - id: BR-23
+          disposition: not-addressed
+          note: 'Re-measured: workshop/plans/000017-user-model-plan.md has 41 unticked boxes and 0 ticked, against a Revisions entry saying "Tasks 1-8 done".'
+          round: 8
+      findings:
+        - id: BR-24
+          severity: Important
+          title: reflect.go's dropClaim comment still asserts "deleting the sanitiser left the whole suite green" — measured false at the commit it names
+          detail: |-
+            This is the 3rd finding in family `comment-outruns-code` (BR-6, BR-21, this).
+            Earlier rounds fixed instances. Do NOT fix this instance — state the rule that
+            covers all of them, and fix that.
+            Measured, in a scratch worktree at c179efa (the tree BR-17's premise named and the
+            tree this comment describes): removing oneLine from cite() and citeAll() reddens
+            TestDroppedClaimDiagnosticsCannotForgeALine ("stderr has 5 lines, want 3"). The suite
+            was NOT green. reflect.go:159-162 says it was, and its own subordinate clause
+            contradicts it — three of five arms uncovered means two were covered. The issue Log's
+            round-5 entry states the accurate per-arm version ("unsanitising the share-out-of-range
+            arm reddened 0 tests"); the code comment inflated it into a suite claim.
+            Why this is the class and not the site: round 6 disposed BR-21 by correcting the three
+            artifacts BR-21's own text listed (Log, commit body, test comment) and wrote the rule
+            into lessons.md:761 — then did not run the enumeration that rule implies. This
+            sentence was in the diff of the same commit. The enumeration exists and is cheap:
+            grep -rniE 'suite green|left the suite|reddens? [0-9]|no test .*(constructed|supplied)'
+            over cmd/ internal/ atlas/ workshop/ returns ~25 sites, two of them in this window
+            (reflect.go:161 false as written, reflect_run_test.go:322-324 defensible but adjacent).
+            The deliverable is that sweep plus the rule stated as an enumeration, not a reworded
+            sentence.
+          family: comment-outruns-code
+          round: 8
+      blocked: true
 ---
 
 # Gate ledger — tools#17 (boundary-review)
@@ -880,6 +959,46 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   reconcile each before the verdict is recorded." Same family fired on the project file this round; the
   enumeration was written for one axis and the other axis is where the drift was.
 
+## Round 8 — 2026-08-27T23:11:57-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — D1 still reads "drops any claim citing a word the deck does not contain"; checkEvidence prunes and keeps.
+- BR-6 — not-addressed — reflect.go:59-89 still never reads `now`; the purity comment at :57-58 still justifies it.
+- BR-7 — not-addressed — Half 1 stands — reflect.go:302 prints len(ev.Words) as "words in the deck", and YAML.Events skips a warned day file, so the number shrinks silently. Half 2 is now unreachable (the empty-band arm fires first).
+- BR-8 — not-addressed — usermodel.go:120-122 still returns `generated` whole with nothing written to errOut.
+- BR-9 — not-addressed — Table still names citedOrNothing (deleted in 692ec09); modelMeta, cite, citeAll, dropClaim, String, oneLine, oneLineAll, sanitiseModel, sanitiseMeta have no row; the Revisions entry still claims "Reconciled to empty".
+- BR-10 — not-addressed — No mode-count guard. main.go:372 dispatches --llm-check before the switch, :419 --forget and :430 --play before `if *reflect` at :432; each pair silently honours one mode.
+- BR-11 — not-addressed — usermodel.go:49-55 still emits four keys; no `learner:`, and no Revisions entry recording the departure.
+- BR-13 — not-addressed — The only run()-level --reflect test is TestReflectWithAWordIsAUsageError (reflect_run_test.go:207); every happy-path test calls runReflect directly, so D5's dispatch site is unpinned.
+- BR-20 — not-addressed — 000017-user-model.md:212 is still `- [x]` on work its own text calls "not delivered"; the Done-when header clarifies prose but not the grep.
+- BR-21 — addressed — Verified by mutation at HEAD — deleting sanitiseMeta's body reddens TestEveryUntrustedFieldIsNeutralised/"the frontmatter's model name", so the duplicate test is correctly removed and the Log correction is right. See the new finding for the residue.
+- BR-22 — addressed — Verified by reverting String() to the len(Cited) branch in a scratch worktree — TestDropDiagnosticRendersEveryShape's "cited NOTHING" and "cited an empty list" rows both go red with the truncated sentence.
+- BR-23 — not-addressed — Re-measured: workshop/plans/000017-user-model-plan.md has 41 unticked boxes and 0 ticked, against a Revisions entry saying "Tasks 1-8 done".
+
+### Raised
+
+- **BR-24** [Important] `comment-outruns-code` reflect.go's dropClaim comment still asserts "deleting the sanitiser left the whole suite green" — measured false at the commit it names
+  This is the 3rd finding in family `comment-outruns-code` (BR-6, BR-21, this).
+  Earlier rounds fixed instances. Do NOT fix this instance — state the rule that
+  covers all of them, and fix that.
+  Measured, in a scratch worktree at c179efa (the tree BR-17's premise named and the
+  tree this comment describes): removing oneLine from cite() and citeAll() reddens
+  TestDroppedClaimDiagnosticsCannotForgeALine ("stderr has 5 lines, want 3"). The suite
+  was NOT green. reflect.go:159-162 says it was, and its own subordinate clause
+  contradicts it — three of five arms uncovered means two were covered. The issue Log's
+  round-5 entry states the accurate per-arm version ("unsanitising the share-out-of-range
+  arm reddened 0 tests"); the code comment inflated it into a suite claim.
+  Why this is the class and not the site: round 6 disposed BR-21 by correcting the three
+  artifacts BR-21's own text listed (Log, commit body, test comment) and wrote the rule
+  into lessons.md:761 — then did not run the enumeration that rule implies. This
+  sentence was in the diff of the same commit. The enumeration exists and is cheap:
+  grep -rniE 'suite green|left the suite|reddens? [0-9]|no test .*(constructed|supplied)'
+  over cmd/ internal/ atlas/ workshop/ returns ~25 sites, two of them in this window
+  (reflect.go:161 false as written, reflect_run_test.go:322-324 defensible but adjacent).
+  The deliverable is that sweep plus the rule stated as an enumeration, not a reworded
+  sentence.
+
 ## Open findings
 
 - **BR-1** [Minor] `single-source-of-truth` D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned
@@ -891,6 +1010,5 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-11** [Minor] `spec-drift-undocumented` The rendered frontmatter omits the Spec's `learner:` field and the Revisions entry does not say so
 - **BR-13** [Minor] `decision-unpinned-by-test` D5's dispatch site survives being moved before withStore with the whole suite green
 - **BR-20** [Minor] `gate-satisfied-not-met` The M2 Plan row is ticked while its own text says "not delivered", and the M2 Done-when rows stay unticked
-- **BR-21** [Important] `comment-outruns-code` BR-17's frontmatter half was measured wrong, and the Log, commit body and new test comment all record the false measurement
-- **BR-22** [Important] `decision-unpinned-by-test` The dropClaim refactor truncated the cited-nothing diagnostic and left citeAll's empty branch dead, with no test over the shape
 - **BR-23** [Minor] `docs-enumeration-not-swept` The durable plan still shows 40 unticked step boxes while its own Revisions entry says Tasks 1-8 are done
+- **BR-24** [Important] `comment-outruns-code` reflect.go's dropClaim comment still asserts "deleting the sanitiser left the whole suite green" — measured false at the commit it names

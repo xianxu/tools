@@ -158,8 +158,15 @@ func citeAll(words []string) string {
 // Every arm used to build its own string with cite(subject) inline — five call
 // sites, each of which had to remember. That is the list-that-drifts shape
 // renderUserModel was refactored away from, reproduced here in the diagnostics
-// (BR-17): deleting the sanitiser left the whole suite green, because no test
-// constructed a subject that carried a newline at three of the five arms.
+// (BR-17). MEASURED at c179efa: unsanitising the share-out-of-range arm reddened
+// ZERO tests, because no test constructed a subject carrying a newline at three
+// of the five arms.
+//
+// The claim is stated as a measurement because the first version of this comment
+// asserted a broader one — "deleting the sanitiser left the whole suite green" —
+// that was false for the fourth site, sanitiseMeta, which a test added the round
+// before already covered (BR-21). A comment that asserts coverage is a claim
+// about a mutation someone has to have run.
 //
 // With the subject and citations held as fields, an arm CANNOT forget: String is
 // the only path to text, and it is where oneLine happens.

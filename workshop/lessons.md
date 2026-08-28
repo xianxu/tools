@@ -773,6 +773,18 @@ log line asserting it. Accepting a premise on trust is the same error as
 accepting a fix on trust — the reviewer's authority does not convert a claim into
 a measurement.
 
+**And the finding's ENUMERATION is a claim too (#17 BR-24, the very next round).**
+Correcting the false measurement above, I fixed the three sites BR-21 listed —
+issue Log, commit body, test comment — and the next review found a fourth, in
+`reflect.go`'s own type comment. I had run the reviewer's list instead of my own
+grep, which is the same substitution one level down: trusting an enumeration
+because someone authoritative wrote it. A finding tells you a class exists; it
+does not tell you where every member is.
+
+**Rule: when a finding names N sites, grep for the class before believing N.** The
+sweep costs one command; the alternative is a review round per missed site, and
+here it was exactly that.
+
 ## Drive a traversal from the generator's vocabulary, not the reproduction (define #11 M2)
 
 Four fixes in a row for one bug — missing required fields decoding to a partial
