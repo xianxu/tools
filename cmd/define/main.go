@@ -199,6 +199,12 @@ func openStore(opt options, warn io.Writer) storeDeps {
 			usage: sessionUsage(clk, warn), clock: clk,
 		}
 	}
+	// Before anything reads the deck: a deck written before #23 lives flat in
+	// words/ and Deck() now reads words/<lang>/, so without this it is orphaned.
+	// Idempotent and language-blind by design — see MigrateFlatDeck.
+	if err := store.MigrateFlatDeck(dir, warn); err != nil {
+		fmt.Fprintf(warn, "define: could not migrate the existing deck (%v); it stays where it is\n", err)
+	}
 	st := store.NewYAML(dir, store.DefaultLang, warn)
 	// ONE highlight set, handed to both the capturer that grows it and the
 	// renderers that read it. Two instances would mean lookups landing in a set
