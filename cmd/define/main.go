@@ -43,6 +43,14 @@ type deps struct {
 	// the words still being learned: a word that has become the learner's own
 	// stops being highlighted, and that swap must be this one seam.
 	vocab Vocabulary
+	// dictName is which dictionary answered, for /lang to report. A learner on a
+	// machine with a different installed set asks that question once, so the
+	// answer belongs in a command rather than in a line per lookup.
+	dictName string
+	// newDict builds the dictionary for a language, and is the M2 member of
+	// applyLang's enumeration — registered in that comment before it existed.
+	// nil when a test supplied its own dict, exactly like newDeck.
+	newDict func(store.Lang, io.Writer) (Dictionary, string)
 	// lang is the language this process is operating in — the deck it reads and
 	// writes, the recording it asks for, and the dictionary it consults. Resolved
 	// ONCE at the boundary (openStore, which is the only thing that knows the
@@ -98,7 +106,7 @@ type deps struct {
 
 func realDeps() deps {
 	return deps{
-		dict:            systemDictionary(),
+		newDict:         systemDictionary, // dict itself is language-dependent, built in run()
 		audio:           newHTTPAudioSource(),
 		player:          afplayPlayer{},
 		newStore:        openStore,
@@ -536,6 +544,11 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// function /lang re-derives it with — one derivation, two callers, which is
 	// what stops the two from disagreeing after a switch.
 	applyVoice(&opt, d.lang, stderr)
+	// The dictionary follows the mode too (#23 M2). Only when a test did not
+	// supply one — same nil-merge rule withStore uses for the store-backed deps.
+	if d.dict == nil && d.newDict != nil {
+		d.dict, d.dictName = d.newDict(d.lang, stderr)
+	}
 
 	if forgetting {
 		return forgetWord(d, opt, *forget, stdout, stderr)

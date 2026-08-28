@@ -173,6 +173,10 @@ type commandCtx struct {
 	// means there is no directory either, which is the only case /lang refuses.
 	lang    store.Lang
 	setLang func(store.Lang) error
+	// dictName is which dictionary is answering, so /lang can say. Empty when
+	// nothing resolved one — a test's fake, or a run that never opened a
+	// dictionary at all.
+	dictName string
 }
 
 // newCommandCtx is the single construction point. Built at two call sites (both
@@ -186,8 +190,9 @@ func newCommandCtx(d deps, opt options, stdout, stderr io.Writer) commandCtx {
 		deck: d.deck, clock: d.clock,
 		stdout: stdout, stderr: stderr,
 		width: opt.width, noCapture: opt.noCapture,
-		times: opt.times,
-		lang:  d.lang,
+		times:    opt.times,
+		lang:     d.lang,
+		dictName: d.dictName,
 		// The DURABLE half only. Both loops override this with a version that
 		// also re-derives the session; a one-shot keeps this one, which is why
 		// `define /lang es` still sets the directory's language.
@@ -352,6 +357,11 @@ func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPt
 //     used, so a switch cannot construct a differently-wired graph.
 //   - opt.voice     — the CDN asks per language; derived via applyVoice, the
 //     same function the boundary uses.
+//   - d.dict /
+//     d.dictName    — #23 M2: the dictionary follows the mode. Registered in
+//     this list while it was still M2's to build, which is the
+//     point of writing an enumeration down rather than sweeping
+//     by hand.
 //   - *vocPtr       — the raw editor resolves the highlight set into a LOCAL
 //     before its loop and reads it on every redraw. A deps
 //     reassignment structurally cannot reach that local; without
@@ -360,10 +370,12 @@ func sessionSetLang(d *deps, opt *options, persist func(store.Lang) error, vocPt
 //
 // Deliberately NOT here: d.history (events/) and d.usage (usage/) are not
 // language-scoped, and rebuilding history would orphan the one runEditor has
-// already Load()ed. When #23 M2 makes the dictionary follow the mode, d.dict
-// joins this list — and this comment is the place that says so.
+// already Load()ed.
 func applyLang(d *deps, opt *options, l store.Lang, vocPtr *Vocabulary, warn io.Writer) {
 	d.lang = l
+	if d.newDict != nil {
+		d.dict, d.dictName = d.newDict(l, warn)
+	}
 	// NOT opt.lang: that field is the -lang FLAG, documented as "empty when it
 	// was not given", and a switch does not retroactively make the flag present.
 	// d.lang is the language in effect and the only thing that should answer it.

@@ -41,6 +41,13 @@ func runLang(c commandCtx, args []string) int {
 	}
 	if !set {
 		fmt.Fprintf(c.stdout, "  defining in %s\n", c.lang)
+		// Which dictionary is answering. The curated list is a short honest list,
+		// so on a machine with a different set installed a wrong pick should be
+		// findable rather than puzzling — and this is where a learner looks,
+		// instead of a line printed on every lookup.
+		if c.dictName != "" {
+			fmt.Fprintf(c.stdout, "  from %s\n", c.dictName)
+		}
 		return 0
 	}
 	if c.setLang == nil {

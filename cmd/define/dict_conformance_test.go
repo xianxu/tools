@@ -17,10 +17,12 @@ package main
 import (
 	"github.com/xianxu/tools/internal/conformance"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 func TestFixturesMatchLiveDictionary(t *testing.T) {
-	fake, err := loadFakeDictionary("testdata/entries")
+	fake, err := loadFakeDictionary("testdata/entries", store.DefaultLang)
 	if err != nil {
 		t.Fatalf("loadFakeDictionary: %v", err)
 	}
