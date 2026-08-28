@@ -97,7 +97,7 @@ M1:
 - [x] Domain inference is checked against a held-out sample of deck words, not
       asserted — the same bar #10 sets for level bucketing.
 
-M2:
+M2 — descoped at close, carried to #7 (see Plan):
 - [ ] Misses classify into a fixed, enumerated error taxonomy; an unrecognised
       classification is dropped with a warning, not admitted as a new kind.
 - [ ] A weakness claim names the events behind it, and the count is reproducible
@@ -209,7 +209,13 @@ Design: [`workshop/plans/000017-user-model-plan.md`](../plans/000017-user-model-
 - [x] M1 — the model from lookups: `foldLookups`, a typed `learnerModel` whose
       evidence is CHECKED against the deck, `renderUserModel` +
       `spliceCorrections`, and `--reflect` as a mode beside `--llm-check`.
-- [ ] M2 — weaknesses. Blocked on #6's review events; planned when they exist.
+- [x] M2 — weaknesses. **DESCOPED at close, not delivered.** #6's review events
+      now exist, so the original blocker is gone — but `store.ReviewEvent` carries
+      `Correct bool`, a binary verdict that cannot carry an error KIND, so the
+      taxonomy still has no source data. #7 (multiple choice) produces it for
+      free: the chosen distractor IS the kind. Carried to #7's Done-when as a
+      row rather than filed as an issue whose first design question would be
+      "wait for #7".
 
 ## Log
 
@@ -401,3 +407,57 @@ work — round 4 raised one finding where rounds 1–3 raised four, three, and t
 — and what it missed was not another sink but the *evidence* that the sinks are
 defended. The gap moved from the code to the proof of the code, which is the
 direction it should move.
+
+### 2026-08-27 — closed at M1
+
+- M1 shipped earlier (`effe0f3a`) and the issue then sat in `working` with M2
+  open, which is the drift `sdlc state` flagged.
+- **M2 descoped rather than carried.** Its blocker (#6's review events) is gone,
+  but verifying that rather than assuming it turned up the real obstacle:
+  `cmd/define/store/event.go:27` records `Correct bool` on `ReviewEvent` — a
+  binary verdict. The taxonomy needs misses by KIND, which a boolean cannot
+  carry, so M2 would have opened with either an event-schema change or a model
+  call per miss.
+- #7 (multiple choice) makes it free — the chosen distractor IS the error kind,
+  drawn from the learner's own deck and selected by semantic distance. So M2 is
+  now a Done-when row on #7 ("record the CHOSEN option, not just correctness")
+  rather than a standalone issue whose first design question would be "wait for
+  #7".
+- What shipped and is live: `learnerModel{Level, Domains}` rendered to
+  `user-model.md` by `renderUserModel`, with a `## Corrections` section the
+  learner owns and `--reflect` never rewrites. Consumed by `ask.go:268`, which
+  degrades gracefully when the file is absent.
+
+### 2026-08-27 — close round 5 (BR-17 … BR-19)
+
+- **BR-17 (Important, 3rd in family).** Four neutralisation sites had no positive
+  control: deleting `sanitiseMeta`'s body, and unsanitising three of
+  `checkEvidence`'s five diagnostic arms, each left the whole `./cmd/define/`
+  suite green. `TestDroppedClaimDiagnosticsCannotForgeALine` reached only two
+  arms, and `sampleMeta().Model` carried no injection.
+  Fixed as the RULE, not the four sites: `dropped` now carries `dropClaim`
+  (Kind/Subject/Reason/Cited) and `String()` is the ONE path to text, so an arm
+  cannot forget to neutralise — the list-that-drifts shape `renderUserModel` was
+  already refactored away from, reproduced in the diagnostics. Positive controls
+  added for every arm and for the frontmatter. Measured: deleting
+  `sanitiseMeta`'s body and unsanitising `dropClaim.String` each now redden 2.
+- **BR-18 (Important, 3rd in family).** The M2 descope was recorded in two issue
+  files and in NONE of the six places `workshop/projects/define-learn.md` still
+  called it planned or blocked work — including a checkbox `sdlc close`
+  auto-ticks, which would have marked a DESCOPED item delivered. All reconciled
+  by running the finding's own enumeration
+  (`grep -rnE '#17|tools#17' workshop/ atlas/ README.md`) rather than from memory.
+  The rule: a boundary that changes a fact greps for every artifact restating it
+  and reconciles each hit before the verdict is recorded.
+- **BR-19 (Important, 3rd in family).** M1 Done-when row 5 claimed the domain
+  inference is CHECKED against a held-out sample; the only statement about the
+  held-out word was a `t.Logf`, and the `seen` loop INCLUDED it — so a run citing
+  nothing but the held-out word satisfied "the cluster was read". Now counted over
+  `c.words` only, which is what makes the row true.
+- **Note on the frontmatter test:** its first version asserted
+  `Contains(head, "type: forged")` and failed against a correctly neutralised
+  file, because the collapsed text still contains that substring inline. That is
+  this issue's own lesson (`lessons.md`: *choose injection text that does not
+  satisfy your own assertion*) landing on the test written to satisfy a finding
+  about vacuous checks.
+

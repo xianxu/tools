@@ -315,3 +315,89 @@ func TestDroppedClaimDiagnosticsCannotForgeALine(t *testing.T) {
 		t.Errorf("the rejected text was dropped rather than neutralised:\n%s", errb.String())
 	}
 }
+
+// EVERY arm that renders untrusted text is exercised with text that tries to
+// forge a line — the positive control the neutralisation never had.
+//
+// TestDroppedClaimDiagnosticsCannotForgeALine reaches two of checkEvidence's
+// five arms, so three sanitisers were unpinned: deleting them left the whole
+// suite green (BR-17). A neutralising call with no test that constructs the
+// violation is a check that cannot fail, and this is the third finding in that
+// family on this file.
+//
+// Driven through dropClaim.String rather than the whole run, because the point
+// is the ONE formatter every arm now goes through: a new arm gets this coverage
+// by construction, where the old inline strings each needed remembering.
+func TestEveryDropDiagnosticNeutralisesItsSubject(t *testing.T) {
+	const forged = "\nFORGED"
+
+	for _, tc := range []struct {
+		name string
+		drop dropClaim
+	}{
+		{"level, no band or rationale", dropClaim{
+			Kind: "level", Subject: "C1" + forged,
+			Reason: "no band or no rationale — nothing a reader could check"}},
+		{"level, evidence not in deck", dropClaim{
+			Kind: "level", Subject: "C1" + forged,
+			Reason: "cites", Cited: []string{"luffing" + forged}}},
+		{"domain, no name or directive", dropClaim{
+			Kind: "domain", Subject: "law" + forged,
+			Reason: "no name or no directive — nothing authoring could act on"}},
+		{"domain, share out of range", dropClaim{
+			Kind: "domain", Subject: "law" + forged,
+			Reason: "share out of range"}},
+		{"domain, evidence not in deck", dropClaim{
+			Kind: "domain", Subject: "law" + forged,
+			Reason: "cites", Cited: []string{"clew" + forged}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.drop.String()
+
+			if strings.Contains(got, "\n") {
+				t.Errorf("the diagnostic spans lines, so the model can forge one: %q", got)
+			}
+			// Neutralised, not discarded: a message that hides what it rejected
+			// cannot be acted on.
+			if !strings.Contains(got, "FORGED") {
+				t.Errorf("the rejected text was dropped rather than neutralised: %q", got)
+			}
+		})
+	}
+}
+
+// The frontmatter's provenance line is the same class, and was the site the
+// original sweep found AFTER the table (lessons.md: "a class found in one place
+// is not fixed until you look for it in the others").
+//
+// It had no positive control either: sampleMeta().Model carries no injection, so
+// deleting sanitiseMeta's body left the suite green (BR-17). A newline here
+// breaks the YAML frontmatter it sits inside.
+func TestModelNameCannotBreakTheFrontmatter(t *testing.T) {
+	out := renderUserModel(
+		learnerModel{Level: levelClaim{Band: "C1", Rationale: "r", EvidenceWords: []string{"w"}}},
+		modelMeta{Model: "claude\ntype: forged"},
+	)
+
+	head, _, ok := strings.Cut(strings.TrimPrefix(out, "---\n"), "\n---\n")
+	if !ok {
+		t.Fatalf("no frontmatter block:\n%s", out)
+	}
+	// A LINE of its own is the violation, not the substring. The first version
+	// asserted strings.Contains(head, "type: forged") and failed against a
+	// correctly neutralised file, because the collapsed text still contains that
+	// substring inline — "generated_by: define --reflect (claude type: forged)".
+	// That is this file's own lesson: choose injection text that does not satisfy
+	// your own assertion.
+	for _, line := range strings.Split(head, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "type: forged") {
+			t.Errorf("the model name forged a frontmatter key:\n%s", head)
+		}
+	}
+	if got := strings.Count(head, "\n") + 1; got != 4 {
+		t.Errorf("frontmatter has %d lines, want 4 — the model name started one of its own:\n%s", got, head)
+	}
+	if !strings.Contains(head, "forged") {
+		t.Errorf("the model name was discarded rather than neutralised:\n%s", head)
+	}
+}

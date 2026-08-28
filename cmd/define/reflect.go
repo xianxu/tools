@@ -152,6 +152,33 @@ func citeAll(words []string) string {
 	return strings.Join(out, ", ")
 }
 
+// dropClaim is one rejected claim, carried as DATA so that neutralising it
+// happens in exactly one place.
+//
+// Every arm used to build its own string with cite(subject) inline — five call
+// sites, each of which had to remember. That is the list-that-drifts shape
+// renderUserModel was refactored away from, reproduced here in the diagnostics
+// (BR-17): deleting the sanitiser left the whole suite green, because no test
+// constructed a subject that carried a newline at three of the five arms.
+//
+// With the subject and citations held as fields, an arm CANNOT forget: String is
+// the only path to text, and it is where oneLine happens.
+type dropClaim struct {
+	Kind    string   // authored here: "level" or "domain"
+	Subject string   // UNTRUSTED — model-supplied, neutralised by String
+	Reason  string   // authored here
+	Cited   []string // UNTRUSTED — the words the claim named; empty when it named none
+}
+
+// String is the ONE place a dropped claim becomes text.
+func (d dropClaim) String() string {
+	msg := d.Kind + " " + cite(d.Subject) + ": " + d.Reason
+	if len(d.Cited) > 0 {
+		msg += " " + citeAll(d.Cited) + ", none of which is in the deck"
+	}
+	return msg
+}
+
 // checkEvidence enforces D1: a claim may cite only words the deck holds.
 //
 // The model may READ the deck and may not ADD to it — the same rule this project
@@ -164,8 +191,8 @@ func citeAll(words []string) string {
 // dropped whole: the domain may well be real even where one citation is not.
 // Returns what it dropped, so the caller can say so out loud rather than
 // silently shipping a shorter file.
-func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string) {
-	var dropped []string
+func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []dropClaim) {
+	var dropped []dropClaim
 	// Matched on store.Key, the deck's own identity: raw matching would drop
 	// every capitalised or double-spaced citation as if it were invented.
 	supported := func(words []string) []string {
@@ -185,7 +212,8 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 	// with nothing after the dash.
 	switch ev := supported(m.Level.EvidenceWords); {
 	case strings.TrimSpace(m.Level.Band) == "" || strings.TrimSpace(m.Level.Rationale) == "":
-		dropped = append(dropped, "level "+cite(m.Level.Band)+": no band or no rationale — nothing a reader could check")
+		dropped = append(dropped, dropClaim{Kind: "level", Subject: m.Level.Band,
+			Reason: "no band or no rationale — nothing a reader could check"})
 		m.Level = levelClaim{}
 	case len(ev) > 0:
 		m.Level.EvidenceWords = ev
@@ -194,7 +222,8 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 		// deck" is the same unactionable shape as a claim that names none, and
 		// this message is the only place a person can see WHY the level went
 		// missing from their file.
-		dropped = append(dropped, "level "+cite(m.Level.Band)+": cites "+citeAll(m.Level.EvidenceWords)+", none of which is in the deck")
+		dropped = append(dropped, dropClaim{Kind: "level", Subject: m.Level.Band,
+			Reason: "cites", Cited: m.Level.EvidenceWords})
 		m.Level = levelClaim{}
 	}
 
@@ -207,18 +236,21 @@ func checkEvidence(m learnerModel, deck map[string]bool) (learnerModel, []string
 		// shape. A domain with no name or no directive tells authoring nothing,
 		// which is the only reason a domain claim is generated at all.
 		if strings.TrimSpace(d.Name) == "" || strings.TrimSpace(d.Directive) == "" {
-			dropped = append(dropped, "domain "+cite(d.Name)+": no name or no directive — nothing authoring could act on")
+			dropped = append(dropped, dropClaim{Kind: "domain", Subject: d.Name,
+				Reason: "no name or no directive — nothing authoring could act on"})
 			continue
 		}
 		if d.Share < 0 || d.Share > 1 {
 			// Rendered as a percentage, so 5.0 becomes "500%" — a number a
 			// reader cannot act on and would not believe.
-			dropped = append(dropped, "domain "+cite(d.Name)+": share out of range")
+			dropped = append(dropped, dropClaim{Kind: "domain", Subject: d.Name,
+				Reason: "share out of range"})
 			continue
 		}
 		ev := supported(d.EvidenceWords)
 		if len(ev) == 0 {
-			dropped = append(dropped, "domain "+cite(d.Name)+": cites "+citeAll(d.EvidenceWords)+", none of which is in the deck")
+			dropped = append(dropped, dropClaim{Kind: "domain", Subject: d.Name,
+				Reason: "cites", Cited: d.EvidenceWords})
 			continue
 		}
 		d.EvidenceWords = ev

@@ -93,15 +93,26 @@ func TestReflectAgainstTheLiveService(t *testing.T) {
 	//    correctly and simply cited one representative word each. That asserted
 	//    VERBOSITY, not comprehension — the model choosing fewer examples is not
 	//    the model failing to see the domain.
+	//    Counted over c.words ONLY — the held-out word is deliberately excluded.
+	//
+	//    It used to be appended here, which made the held-out design decorative:
+	//    a run that cited nothing but the held-out word satisfied "the cluster was
+	//    read", and the ONLY statement about holding it out was a t.Logf below
+	//    (BR-19). Done-when row 5 claims the domain inference is CHECKED against a
+	//    held-out sample rather than asserted, and a row is ticked only when a
+	//    named test fails if the property is removed. Excluding it here is what
+	//    makes that true: the domain must be inferable from the words that were
+	//    NOT withheld.
 	for _, c := range reflectClusters {
 		var seen int
-		for _, w := range append(append([]string{}, c.words...), c.heldOut) {
+		for _, w := range c.words {
 			if strings.Contains(got, "`"+w+"`") {
 				seen++
 			}
 		}
 		if seen == 0 {
-			t.Errorf("%s: none of its words were cited anywhere; the cluster was not read\n%s", c.domain, got)
+			t.Errorf("%s: none of its non-held-out words were cited; the cluster was not read from the words it was given\n%s",
+				c.domain, got)
 		}
 	}
 

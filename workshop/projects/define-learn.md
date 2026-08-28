@@ -170,8 +170,8 @@ and it exercises the harness end to end on a real task before anything depends o
 
 `#17` also lands early in a reduced form: **domain and level fall out of lookups
 alone**, which already exist — only the weakness taxonomy needs review events. So
-authoring is learner-aware from the first generated item, and `#17 M2` deepens it
-once `#6` is producing misses.
+authoring is learner-aware from the first generated item. `#17 M2` was to deepen
+it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 
 - [x] define REPL — bare invocation reads, defines, speaks; bare return replays [tools#2]
 - [x] REPL line editor — history, prefix search, inline autosuggestion [tools#14]
@@ -191,7 +191,9 @@ once `#6` is producing misses.
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]
 - [ ] form 2.4 — free sentence, graded [tools#13]
-- [ ] learner model — weakness taxonomy from review events, steers authoring [tools#17 M2]
+- [ ] learner model — weakness taxonomy, steers authoring — **descoped from
+      `#17 M2` into [tools#7]'s Done-when**, where the chosen distractor IS the
+      error kind. Not delivered; not separately tracked.
 - [ ] deck grouped by language; one language per `--play` [tools#23]
 - [ ] Spanish — pronunciation locale (independently shippable) [tools#18 M1]
 - [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
@@ -382,7 +384,19 @@ payoff is designed to land.
 <a id="tools-17-m2"></a>
 ### tools#17 M2 — weakness taxonomy
 
-**status:** blocked — needs review events from [tools#6]
+**status:** DESCOPED into [tools#7] at `#17`'s close (2026-08-27) — not delivered.
+
+The recorded blocker ("needs review events from `#6`") is stale: those events
+exist. Verifying that rather than assuming it found the real obstacle —
+`store.ReviewEvent` carries `Correct bool`, a binary verdict that cannot carry an
+error KIND, so the taxonomy still had no source data and would have opened with
+an event-schema change or a model call per miss.
+
+`#7`'s multiple choice produces it for free: distractors come from the learner's
+own deck and are selected by semantic distance, so the option they picked IS the
+classification. It is now a Done-when row on `#7` ("record the CHOSEN option, not
+just correctness") rather than an issue whose first design question would be
+"wait for `#7`".
 
 <a id="tools-18-m1"></a>
 ### tools#18 M1 — Spanish pronunciation locale
@@ -610,7 +624,8 @@ built, with no key and offline.
 `lookups → user-model → authored items → review → events → user-model`. Building
 the authoring half first would have produced items with **no review events to
 learn from** — the arrow back into the model would have had nothing on it, and
-`#17 M2`'s weakness taxonomy is blocked on exactly those events. Doing retention
+`#17 M2`'s weakness taxonomy needed exactly those events (it is now descoped into
+`#7`, which produces the classification for free). Doing retention
 first closes the small loop (lookup → schedule → review → events) and gives the
 authoring half a learner to adapt to when it arrives. `#9` was not wasted: it is
 the input `#10` needs, and it is done and cached.

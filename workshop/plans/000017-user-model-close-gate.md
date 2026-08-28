@@ -387,6 +387,87 @@ rounds:
           round: 5
       boundary: M1
       blocked: false
+    - "n": 6
+      timestamp: "2026-08-27T22:29:11-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: plan.md D1 unchanged — still "drops any claim citing a word the deck does not contain"; the code prunes and drops only when nothing survives.
+          round: 6
+        - id: BR-6
+          disposition: not-addressed
+          note: reflect.go:59 still takes `now`; lines 60-88 never read it and the doc comment at :57-58 still justifies it as what makes the window a table row.
+          round: 6
+        - id: BR-7
+          disposition: not-addressed
+          note: 'reflect.go:260 and :329 still call deck-intersect-log "words in the deck"; reproduced live — 13 word files and no events prints "define: 0 words in the deck".'
+          round: 6
+        - id: BR-8
+          disposition: not-addressed
+          note: usermodel.go:114-118 unchanged; an existing file with no out-of-fence marker is still returned over without a word to errOut.
+          round: 6
+        - id: BR-9
+          disposition: not-addressed
+          note: Re-ran the plan's own cited command — seven symbols still have no row (modelMeta, cite, citeAll, oneLine, oneLineAll, sanitiseModel, sanitiseMeta) and citedOrNothing is stale.
+          round: 6
+        - id: BR-10
+          disposition: not-addressed
+          note: Re-verified with the built binary — `--forget nonexistent --reflect` runs forget only, `--llm-check --reflect` runs llm-check only, neither mentioning the ignored flag; --play is now a fourth mode with no count guard.
+          round: 6
+        - id: BR-11
+          disposition: not-addressed
+          note: usermodel.go:49-55 still omits `learner:` and still renders "M questions" where the Spec shows "M reviews"; the Revisions entry still says "Two departures".
+          round: 6
+        - id: BR-13
+          disposition: not-addressed
+          note: Re-verified by mutation on current code — moving `if *reflect` above withStore leaves the whole ./cmd/define/ suite green while the binary would refuse every run.
+          round: 6
+        - id: BR-17
+          disposition: not-addressed
+          note: Render half landed and is mutation-verified (deleting sanitiseMeta's body now reddens); the diagnostic half did not — unsanitising cite() at reflect.go:188, :210 and :216 leaves the full suite GREEN, and the one-formatter fix was not made.
+          round: 6
+      findings:
+        - id: BR-18
+          severity: Important
+          title: The M2 descope is recorded in two issue files and in none of the four places the project still calls it planned work
+          detail: |-
+            This is the 3rd finding in family `docs-enumeration-not-swept`, so the deliverable is the
+            enumeration, not the four lines. Rule: at a boundary that changes a fact, grep for every
+            artifact that restates it and reconcile each hit before the verdict is recorded. Measured for
+            this close: `grep -rn '#17|tools#17' workshop/ atlas/ README.md` returns 24 hits;
+            workshop/projects/define-learn.md:171-173, :194, :383-386, :563 and :613 all still describe
+            #17 M2 as planned or blocked-on-#6 work, and :385's "blocked — needs review events from
+            tools#6" is now false. The remaining hits are still true. Note that sdlc close auto-ticks
+            referencing project rows, so :194 risks being marked delivered.
+          family: docs-enumeration-not-swept
+          round: 6
+        - id: BR-19
+          severity: Important
+          title: M1 Done-when row 5 is ticked and the held-out property is a t.Logf, not an assertion
+          detail: |-
+            This is the 3rd finding in family `vacuous-verification` after BR-2 and BR-14, so the
+            deliverable is the rule: a Done-when row is ticked only when a named test FAILS if the
+            property is removed. I ran that enumeration over M1's five rows — rows 1, 2, 3 are pinned by
+            named tests, row 4 is pinned (mutation-verified: setting c.UserModel aside in ask.go:270
+            reddens TestAskStreamsAnAnswerWithTheDirectoryAsContext), and row 5 is the only unpinned one.
+            In reflect_conformance_test.go the held-out word is in the deck, in the prompt AND in the
+            representation loop at :95, and the only statement about it is a t.Logf at :125. Cheapest
+            real fix: count `seen` over c.words only.
+          family: vacuous-verification
+          round: 6
+        - id: BR-20
+          severity: Minor
+          title: The M2 Plan row is ticked while its own text says "not delivered", and the M2 Done-when rows stay unticked
+          detail: |-
+            000017-user-model.md:212 marks `- [x] M2 — weaknesses. DESCOPED at close, not delivered.`
+            while :98-105 leave the M2 Done-when rows `- [ ]`, so one file answers "was M2 done" both
+            ways and a `grep '\- \[ \]'` over the tracker no longer means what it did. The plan-unchecked
+            gate has `--no-plan-check` for precisely this case — leave the box unticked and put the
+            descope reasoning in `--verified`.
+          family: gate-satisfied-not-met
+          round: 6
+      blocked: true
 ---
 
 # Gate ledger — tools#17 (boundary-review)
@@ -597,6 +678,47 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   (usermodel.go:210-211) claims adding a learnerModel field "makes this function fail to compile" —
   it does not, and M2's Weaknesses would silently bypass it.
 
+## Round 6 — 2026-08-27T22:29:11-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — plan.md D1 unchanged — still "drops any claim citing a word the deck does not contain"; the code prunes and drops only when nothing survives.
+- BR-6 — not-addressed — reflect.go:59 still takes `now`; lines 60-88 never read it and the doc comment at :57-58 still justifies it as what makes the window a table row.
+- BR-7 — not-addressed — reflect.go:260 and :329 still call deck-intersect-log "words in the deck"; reproduced live — 13 word files and no events prints "define: 0 words in the deck".
+- BR-8 — not-addressed — usermodel.go:114-118 unchanged; an existing file with no out-of-fence marker is still returned over without a word to errOut.
+- BR-9 — not-addressed — Re-ran the plan's own cited command — seven symbols still have no row (modelMeta, cite, citeAll, oneLine, oneLineAll, sanitiseModel, sanitiseMeta) and citedOrNothing is stale.
+- BR-10 — not-addressed — Re-verified with the built binary — `--forget nonexistent --reflect` runs forget only, `--llm-check --reflect` runs llm-check only, neither mentioning the ignored flag; --play is now a fourth mode with no count guard.
+- BR-11 — not-addressed — usermodel.go:49-55 still omits `learner:` and still renders "M questions" where the Spec shows "M reviews"; the Revisions entry still says "Two departures".
+- BR-13 — not-addressed — Re-verified by mutation on current code — moving `if *reflect` above withStore leaves the whole ./cmd/define/ suite green while the binary would refuse every run.
+- BR-17 — not-addressed — Render half landed and is mutation-verified (deleting sanitiseMeta's body now reddens); the diagnostic half did not — unsanitising cite() at reflect.go:188, :210 and :216 leaves the full suite GREEN, and the one-formatter fix was not made.
+
+### Raised
+
+- **BR-18** [Important] `docs-enumeration-not-swept` The M2 descope is recorded in two issue files and in none of the four places the project still calls it planned work
+  This is the 3rd finding in family `docs-enumeration-not-swept`, so the deliverable is the
+  enumeration, not the four lines. Rule: at a boundary that changes a fact, grep for every
+  artifact that restates it and reconcile each hit before the verdict is recorded. Measured for
+  this close: `grep -rn '#17|tools#17' workshop/ atlas/ README.md` returns 24 hits;
+  workshop/projects/define-learn.md:171-173, :194, :383-386, :563 and :613 all still describe
+  #17 M2 as planned or blocked-on-#6 work, and :385's "blocked — needs review events from
+  tools#6" is now false. The remaining hits are still true. Note that sdlc close auto-ticks
+  referencing project rows, so :194 risks being marked delivered.
+- **BR-19** [Important] `vacuous-verification` M1 Done-when row 5 is ticked and the held-out property is a t.Logf, not an assertion
+  This is the 3rd finding in family `vacuous-verification` after BR-2 and BR-14, so the
+  deliverable is the rule: a Done-when row is ticked only when a named test FAILS if the
+  property is removed. I ran that enumeration over M1's five rows — rows 1, 2, 3 are pinned by
+  named tests, row 4 is pinned (mutation-verified: setting c.UserModel aside in ask.go:270
+  reddens TestAskStreamsAnAnswerWithTheDirectoryAsContext), and row 5 is the only unpinned one.
+  In reflect_conformance_test.go the held-out word is in the deck, in the prompt AND in the
+  representation loop at :95, and the only statement about it is a t.Logf at :125. Cheapest
+  real fix: count `seen` over c.words only.
+- **BR-20** [Minor] `gate-satisfied-not-met` The M2 Plan row is ticked while its own text says "not delivered", and the M2 Done-when rows stay unticked
+  000017-user-model.md:212 marks `- [x] M2 — weaknesses. DESCOPED at close, not delivered.`
+  while :98-105 leave the M2 Done-when rows `- [ ]`, so one file answers "was M2 done" both
+  ways and a `grep '\- \[ \]'` over the tracker no longer means what it did. The plan-unchecked
+  gate has `--no-plan-check` for precisely this case — leave the box unticked and put the
+  descope reasoning in `--verified`.
+
 ## Open findings
 
 - **BR-1** [Minor] `single-source-of-truth` D1 says checkEvidence drops a claim citing an absent word; Task 2's test keeps it with evidence pruned
@@ -608,3 +730,6 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-11** [Minor] `spec-drift-undocumented` The rendered frontmatter omits the Spec's `learner:` field and the Revisions entry does not say so
 - **BR-13** [Minor] `decision-unpinned-by-test` D5's dispatch site survives being moved before withStore with the whole suite green
 - **BR-17** [Important] `model-text-unconstrained-by-format` Four neutralisation sites have no positive control — deleting sanitiseMeta's body leaves the whole suite green
+- **BR-18** [Important] `docs-enumeration-not-swept` The M2 descope is recorded in two issue files and in none of the four places the project still calls it planned work
+- **BR-19** [Important] `vacuous-verification` M1 Done-when row 5 is ticked and the held-out property is a t.Logf, not an assertion
+- **BR-20** [Minor] `gate-satisfied-not-met` The M2 Plan row is ticked while its own text says "not delivered", and the M2 Done-when rows stay unticked
