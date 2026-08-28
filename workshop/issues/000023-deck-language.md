@@ -1,11 +1,12 @@
 ---
 id: 000023
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-08-27
-updated: 2026-08-27
+updated: 2026-08-28
 estimate_hours:
+started: 2026-08-28T10:47:27-07:00
 ---
 
 # deck grouped by language, one language per --play session
