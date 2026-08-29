@@ -112,13 +112,13 @@ absorbed" asks for.
       diagnostic cap by hand — a cost this issue already paid once.
 - [ ] The classifier is testable WITHOUT the live dictionary: one real captured
       exemplar per cause, so the taxonomy is not conformance-only (ARCH-MOCK).
-- [ ] `atlas/define.md`'s count DERIVES from `knownRawNotationEntries` rather
-      than restating it — the number has drifted three times, which is the
-      repo's own trigger for making a doc a consumer.
-- [ ] Every measured claim the re-measurement invalidated is corrected, from a
-      grep that ran rather than a hand list: the sweep width, the non-Latin
-      count, the fixture count, the attribution, and the live test's own comment
-      claiming there is no API to select a dictionary.
+- [ ] Every measured number in the docs is either DERIVED from a producer with a
+      doc-sync test, or DATED as a measurement — the rule, not the six sites.
+      The count has drifted three times, which is this repo's own trigger for
+      making a doc a consumer.
+- [ ] The live test's own comment claiming "there is no public API to select
+      one" is corrected — untrue since `#23 M2`, and it sits in the file this
+      issue edits.
 
 ## Estimate
 
@@ -160,22 +160,50 @@ Derivation notes.
 
 ## Plan
 
-- [ ] **M1 — the ratchet describes itself.** Classify each survivor by cause
-      (prose-numeral, headword-glued pronunciation, phrase-block pronunciation,
-      literal-pipe-as-content) and report per-cause counts. Capture one real
-      exemplar per cause into `testdata/rawnotation/` — deliberately NOT under
-      `testdata/entries/<lang>/`, which `capturedLanguages` walks and over which
-      `TestNoRawPronunciationNotationSurvives` asserts a hard zero. Unit-test the
-      classifier against those exemplars offline.
-- [ ] **M2 — the number and the claims.** Lower `knownRawNotationEntries` to the
-      measured count; make `atlas/define.md` a CONSUMER of it on the
-      `TestREADMEQuotesThePromptsTheLoopActuallyPrints` precedent; sweep the
-      claims the grep found — `atlas/define.md` fixture count (29 → 33), sweep
-      width (70,897 → 70,886), non-Latin (530 → 0, with the reason), the
-      attribution, and `live_property_test.go`'s own comment asserting "there is
-      no public API to select one", untrue since `#23 M2` and sitting in the file
-      this issue edits.
-- [ ] Re-run the live ratchet unsandboxed and confirm green in BOTH directions.
+Plain checkboxes, one `sdlc close`: one coherent deliverable across a test file,
+a fixture directory and two docs is a single review boundary, not two.
+
+- [ ] **Move the pinned count and the classifier into an UNTAGGED file**
+      (`rawnotation_test.go`, package `main`). `live_property_test.go` is
+      `//go:build darwin && conformance`, so nothing in the normal suite can see
+      `knownRawNotationEntries` today — which is why the atlas cannot consume it
+      and why a live-only taxonomy would be untestable off-conformance. Untagged
+      files compile into every build, so one producer then serves three
+      consumers: the live ratchet, the classifier's unit test, and the doc-sync
+      test below.
+- [ ] **Classify each survivor by cause and report per-cause counts**, so a
+      future 27 names which group moved instead of printing one number and three
+      samples. Risky inputs for the classifier, named because they are what a
+      table would otherwise miss: an entry whose content legitimately contains a
+      pipe, and an entry matching two causes at once.
+- [ ] **One real captured exemplar per cause** in `testdata/rawnotation/` —
+      deliberately NOT under `testdata/entries/<lang>/`, which `capturedLanguages`
+      walks and over which `TestNoRawPronunciationNotationSurvives` asserts a hard
+      zero. Captured through the curated identifiers like every other fixture, so
+      the classifier is pinned offline (ARCH-MOCK).
+- [ ] **Lower the pinned count to the measured value** and rewrite its comment
+      with the four causes.
+- [ ] **Make the derivable numbers CONSUMERS, and DATE the rest.** See the rule
+      below; on the `TestREADMEQuotesThePromptsTheLoopActuallyPrints` precedent.
+- [ ] Re-run the live ratchet unsandboxed; green in BOTH directions.
+
+### The rule this issue is fixing, not the six sites
+
+Second finding in the `doc-sweep-incomplete` family, so the deliverable is the
+rule. A measured number in a document may exist in exactly two forms:
+
+1. **DERIVED** — the doc quotes a value the code owns, and a doc-sync test
+   asserts it. Applies to the pinned raw-notation count and the captured-fixture
+   count, both of which a producer can supply in the normal suite.
+2. **DATED** — the doc states it as *"measured YYYY-MM-DD: N"*. Applies to the
+   live sweep width and the non-Latin count, which only a conformance run against
+   the host's dictionaries can produce. A dated measurement is a RECORD and
+   cannot go stale; an undated one reads as a standing fact and drifts silently,
+   which is what happened to all four.
+
+Anything that is neither is the defect. That is what makes this a rule rather
+than a sweep: the atlas's *"every reachable entry — 70,897"* was wrong because it
+was written as a fact, not because nobody re-ran the number.
 
 **Non-goal, stated rather than left implicit:** the `pipe` family is not excluded
 from the count. Those four entries define the pipe character, so their content
