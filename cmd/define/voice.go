@@ -102,3 +102,19 @@ func applyVoice(opt *options, l store.Lang) {
 const localeHelp = "regional variant of the pronunciation, per language: " +
 	"en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). " +
 	"Others exist — the CDN decides, not a list here"
+
+// pronHelp is THE statement of what -pron means, and the one source for it.
+//
+// Same mechanism as localeHelp above, for the same reason: the -locale policy
+// was once written in four places with nothing keeping them in step, so
+// TestDocsQuoteThePronHelp makes the README and the atlas CONSUMERS of this
+// string rather than restatements of it.
+//
+// It says "this lookup" because that is the whole distinction from -lang. A mode
+// moves the deck, the dictionary and the highlight set; this moves nothing but
+// the recording. And it names ORIGIN, because that is where a reader finds the
+// language to type — #29 chose a declared language over an inferred one, so the
+// help has to say where the answer is.
+const pronHelp = "hear THIS lookup in another language without switching the " +
+	"session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back " +
+	"to the session's recording, and says so, when the source has none"

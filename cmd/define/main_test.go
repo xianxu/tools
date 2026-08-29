@@ -285,3 +285,69 @@ func TestRunNegativeTimesIsUsageError(t *testing.T) {
 		t.Errorf("exit = %d, want 2", code)
 	}
 }
+
+// -pron applies to ONE lookup and must not become a session mode (#29 D3): a
+// pronunciation language in opt.voice would survive a /lang switch and ask for
+// fr_fr recordings in a Spanish session.
+func TestPronWithoutAWordIsRefusedAndPointsAtTheCommand(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := run(t.Context(), []string{"-pron", "fr"}, testDeps(t), strings.NewReader(""), &out, &errb)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2 (a usage error)", code)
+	}
+	if !strings.Contains(errb.String(), "/pron") {
+		t.Errorf("the refusal must name the in-session form; stderr = %q", errb.String())
+	}
+}
+
+func TestPronRejectsSomethingThatIsNotALanguageTag(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := run(t.Context(), []string{"-pron", "french", "sycophantic"}, testDeps(t), strings.NewReader(""), &out, &errb)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	// store.ParseLang's message, not a second one invented at the flag.
+	if !strings.Contains(errb.String(), "two letters") {
+		t.Errorf("stderr should carry ParseLang's complaint, got %q", errb.String())
+	}
+}
+
+// The whole point of #29, end to end: the RECORDING comes from the source
+// language while the deck, the dictionary and the session stay English.
+//
+// jalapeno is the case that needs every piece — typed unaccented, headword
+// jalapeño, and jalapeno_es_es is a 404 where jalapeño_es_es is a 200.
+func TestPronFetchesTheSourceRecordingWithoutMovingTheSession(t *testing.T) {
+	es := voice{Lang: "es", Locale: "es"}
+	rig := newAudioRigServing(t, AudioCandidates("jalapeño", es)[0])
+	var out, errb bytes.Buffer
+
+	code := run(t.Context(), []string{"-pron", "es", "jalapeno"}, rig.deps, strings.NewReader(""), &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	asked := rig.cdn.Requested()
+	if len(asked) == 0 {
+		t.Fatal("nothing was requested from the CDN")
+	}
+	// FIRST, and spelled the way Spanish spells it — not the way it was typed.
+	want := stripHost(t, AudioCandidates("jalapeño", es)[0], audioBase)
+	if asked[0] != want {
+		t.Errorf("first request = %q, want %q", asked[0], want)
+	}
+	// And it STOPPED there. The typed spelling is a legitimate later candidate —
+	// SourceSpellings keeps it as the safety net — so "never asked" would be the
+	// wrong assertion; "never needed, because the accented one answered" is the
+	// right one, and it is what saves jalapeno_es_es's measured 404.
+	if len(asked) != 1 {
+		t.Errorf("walked %d candidates, want 1 — the first answered: %q", len(asked), asked)
+	}
+	// The English entry was still printed, and nothing was reported: the source
+	// recording answered.
+	if !strings.Contains(out.String(), "chili pepper") {
+		t.Errorf("the English entry should still be shown, got %q", out.String())
+	}
+	if errb.Len() != 0 {
+		t.Errorf("the source recording answered, so nothing should be reported: %q", errb.String())
+	}
+}

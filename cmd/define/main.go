@@ -406,6 +406,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// applies to THIS invocation and does not persist. /lang is the other half —
 	// it persists and does not need re-typing.
 	langFlag := fs.String("lang", "", "language for this invocation: en, es (default: the directory's setting)")
+	// -pron is NOT -lang's sibling despite the shape. -lang moves the mode: the
+	// deck, the dictionary, the highlight set and the recording. -pron moves only
+	// the recording, for one lookup, which is the whole of #29.
+	pronFlag := fs.String("pron", "", pronHelp)
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	// Names the artifact, not the file: the filename is per-language and this
@@ -495,6 +499,19 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		}
 		lang = parsed
 	}
+	// Validated HERE with -lang, before anything opens a directory, and for the
+	// same reason: this value becomes a path segment on the CDN. store.ParseLang
+	// is the validator, so the complaint is its one message rather than a second
+	// spelling of "that is not a language".
+	var pron store.Lang
+	if *pronFlag != "" {
+		parsed, err := store.ParseLang(*pronFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "define: %v\n", err)
+			return 2
+		}
+		pron = parsed
+	}
 	opt := options{
 		raw:   *raw,
 		color: !*noColor && isTerminal(stdout),
@@ -561,7 +578,19 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 		fs.Usage()
 		return 2
+	// -pron applies to ONE lookup, so it needs one. Refused rather than quietly
+	// made session-wide: a pronunciation language living in opt.voice would
+	// survive a /lang switch and ask for fr_fr recordings in a Spanish session,
+	// which is the drift applyLang's enumeration exists to stop (#29 D3). The
+	// message names /pron rather than leaving the in-session form to be found.
+	case pron != "" && oneShot.kind != cmdDefine:
+		fmt.Fprintln(stderr, "define: -pron applies to one lookup; at the prompt use /pron fr")
+		return 2
 	}
+	// The flag rides on the LINE, beside `literal`, because that is what it is:
+	// a per-line modifier. parseREPLLine never sets it, so nothing either loop
+	// parses carries a language.
+	oneShot.pron = pron
 
 	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
 	// flag-parse-time input and decides whether anything is opened at all.

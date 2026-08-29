@@ -254,3 +254,36 @@ func TestRawNotationExemplarsMatchLiveDictionary(t *testing.T) {
 		})
 	}
 }
+
+// The real dictionary resolves an UNACCENTED query to its accented headword, and
+// fakeDictionary now models that (#29).
+//
+// This is the live half of that model. It is not decoration: #29's whole
+// mechanism begins with "what a person types is not the source orthography", and
+// the evidence for it is that NOAD hands back `jalapeño` when asked for
+// `jalapeno`. If the dictionary ever stops doing that, SourceSpellings' first
+// and best source dries up — every borrowing would fall back to the session's
+// recording, quietly, with the unit suite still green because the fake would go
+// on modelling behaviour the dependency no longer has.
+func TestLiveDictionaryResolvesAnUnaccentedQuery(t *testing.T) {
+	for _, tc := range []struct{ typed, headword string }{
+		{"jalapeno", "jalapeño"},
+		{"pinata", "piñata"},
+		{"senor", "Señor"},
+		{"cliche", "cliché"},
+		{"fiance", "fiancé"},
+	} {
+		t.Run(tc.typed, func(t *testing.T) {
+			raw, err := noadDictionary{}.Lookup(tc.typed)
+			if err != nil {
+				conformance.SkipOrFail(t, "NOAD unavailable", err)
+				return
+			}
+			if got := ParseEntry(raw).Headword(); got != tc.headword {
+				t.Errorf("Lookup(%q) headword = %q, want %q — an unaccented query no "+
+					"longer reaches the accented entry, so SourceSpellings' best source "+
+					"is gone and every borrowing silently falls back", tc.typed, got, tc.headword)
+			}
+		})
+	}
+}
