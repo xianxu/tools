@@ -124,6 +124,46 @@ rounds:
           family: doc-sweep-incomplete
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-29T15:16:54-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-2
+          disposition: addressed
+          note: Task 4 names all three surfaces by kind and extends the marked-span mechanism to a new pronCommandHelp const, leaving the flag's pronHelp untouched.
+          round: 3
+        - id: PQ-4
+          disposition: not-addressed
+          note: Task 2 still says "newCommandCtx fills it from the session"; command.go:198 takes no session and main.go:651 has none.
+          round: 3
+        - id: PQ-6
+          disposition: addressed
+          note: Table now ranges over testdata/entries/en/*; run and bank are correctly attributed against the fixtures, and D2's explicit Germanic mask is stated.
+          round: 3
+        - id: PQ-7
+          disposition: addressed
+          note: 'pronHelp and the commands summary are both left alone with D6 and #31 cited; the three sites are classified derivable vs hand-swept.'
+          round: 3
+      findings:
+        - id: PQ-8
+          severity: Minor
+          title: Done-when row 5 pins D5 on TestDocsQuoteThePronHelp, a test Task 4 explicitly leaves untouched
+          detail: |-
+            This is the 2nd finding in family `unbacked-existing-behavior`. The rule
+            covering the class: every coverage cell naming a PRE-EXISTING test must
+            name one whose assertion actually covers the wiring the row claims, and
+            every new derived span the plan introduces must appear as its own row.
+            Measured prevalence is 1 bad cell of the 2 that name existing tests —
+            row 4's TestPronReplaysOnceAndLeavesNoMode (pron_cmd_test.go:32) genuinely
+            pins the override by asserting the CDN request sequence, but row 5's
+            TestDocsQuoteThePronHelp (doc_sync_test.go:123) asserts only the pronHelp
+            span, which Task 4 now deliberately does not edit, so it stays green
+            whatever the atlas records about D5. Row 5 is a leftover from the pre-PQ-7
+            draft; the new pronCommandHelp span and its doc-sync test have no row at all.
+          family: unbacked-existing-behavior
+          round: 3
+      blocked: false
+content_hash: bf22eead90b36feec2bcb7cffcab3c6a58e57955bb3f6a809670c1150a234e2f
 ---
 
 # Gate ledger — tools#35 (plan-quality)
@@ -204,9 +244,31 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   covers the class: which doc claims about /pron's argument rule and the
   voice walk are code-derived, and what mechanism makes each derive.
 
+## Round 3 — 2026-08-29T15:16:54-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-2 — addressed — Task 4 names all three surfaces by kind and extends the marked-span mechanism to a new pronCommandHelp const, leaving the flag's pronHelp untouched.
+- PQ-4 — not-addressed — Task 2 still says "newCommandCtx fills it from the session"; command.go:198 takes no session and main.go:651 has none.
+- PQ-6 — addressed — Table now ranges over testdata/entries/en/*; run and bank are correctly attributed against the fixtures, and D2's explicit Germanic mask is stated.
+- PQ-7 — addressed — pronHelp and the commands summary are both left alone with D6 and #31 cited; the three sites are classified derivable vs hand-swept.
+
+### Raised
+
+- **PQ-8** [Minor] `unbacked-existing-behavior` Done-when row 5 pins D5 on TestDocsQuoteThePronHelp, a test Task 4 explicitly leaves untouched
+  This is the 2nd finding in family `unbacked-existing-behavior`. The rule
+  covering the class: every coverage cell naming a PRE-EXISTING test must
+  name one whose assertion actually covers the wiring the row claims, and
+  every new derived span the plan introduces must appear as its own row.
+  Measured prevalence is 1 bad cell of the 2 that name existing tests —
+  row 4's TestPronReplaysOnceAndLeavesNoMode (pron_cmd_test.go:32) genuinely
+  pins the override by asserting the CDN request sequence, but row 5's
+  TestDocsQuoteThePronHelp (doc_sync_test.go:123) asserts only the pronHelp
+  span, which Task 4 now deliberately does not edit, so it stays green
+  whatever the atlas records about D5. Row 5 is a leftover from the pre-PQ-7
+  draft; the new pronCommandHelp span and its doc-sync test have no row at all.
+
 ## Open findings
 
-- **PQ-2** [Important] `doc-sweep-incomplete` pronHelp documents the -pron FLAG; the /pron command's argument rule is hand-written prose no test pins
 - **PQ-4** [Minor] `unbacked-existing-behavior` newCommandCtx has three call sites and does not take a session
-- **PQ-6** [Important] `origin-match-scope` 2nd in family — pin OriginLanguage over the WHOLE corpus, not a curated twelve; 5 of 8 suppression cases are untested and `run` has no cognate marker
-- **PQ-7** [Important] `doc-sweep-incomplete` 2nd in family — Task 4 contradicts D6 and reverses the recorded "argument syntax is out of the summary" decision, while the three false prose lines stay unswept
+- **PQ-8** [Minor] `unbacked-existing-behavior` Done-when row 5 pins D5 on TestDocsQuoteThePronHelp, a test Task 4 explicitly leaves untouched

@@ -5,7 +5,7 @@ deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
-estimate_hours:
+estimate_hours: 1.33
 started: 2026-08-29T14:56:14-07:00
 ---
 
@@ -124,6 +124,64 @@ one-word answer.
       by a test rather than by assertion.
 - [ ] The extraction is pure and table-tested over captured ORIGIN text, not only
       exercised through the live dictionary.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.35 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.03 impl=0.14
+item: smaller-go-module        design=0.00 impl=0.08
+item: cross-cutting-refactor   design=0.03 impl=0.12
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.08
+item: milestone-review         design=0.00 impl=0.12
+design-buffer: 0.15
+total: 1.33
+```
+
+Derivation notes.
+
+- **`issue-spec` design 0.35 is BELOW the 0.5–1.5 band floor, deliberately and
+  with the measurement behind it.** The claim synced at `14:56` and the plan
+  cleared plan-quality at `15:17` — **0.35h measured**, covering the origin-vocab
+  survey over 300 entries, the corrected-rule measurement, filing the issue,
+  reshaping `#30`, and three plan-gate rounds. `#29` priced this line at 0.70 and
+  `#31` at 0.50; this design was genuinely smaller because the *question* was
+  settled in conversation before the issue existed — the operator had already
+  chosen inference, and the gate rounds refined a rule rather than choosing one.
+  Recorded as a floor breach rather than rounded up to hide it, which is the
+  accounting `#31`'s estimate gate asked for in the other direction.
+
+- **Task 1 at 0.12 is the largest module line**, and it is the tables rather than
+  the code: the corpus sweep asserts an outcome for all 34 fixtures, so the work
+  is deciding 34 expected values against measured ORIGIN text, not writing
+  mask-then-search.
+
+- **Task 2 at 0.14 is the widest**, because `commandCtx` gains a field that three
+  construction sites must fill and both loops must supply from `session.entry`.
+  `#29` priced its equivalent at 0.18 when it also had to invent the closure;
+  here the closure exists.
+
+- **Task 4 is `cross-cutting-refactor`, not `atlas-docs`.** It adds a code-owned
+  const with a doc-sync consumer AND sweeps two prose sites by hand across two
+  files — `#29`'s review made exactly this reclassification when a docs task
+  turned out to be a multi-site sweep, and `#31`'s block was corrected the other
+  way when it genuinely was a docs pass. 0.12 sits inside the scaled 0.08–0.20.
+
+- **Three `milestone-review` rows**, the shape `#29` and `#31` both settled on:
+  running the boundary review (0.16), the manual verification pass (0.08), and
+  REMEDIATING what the review returns (0.12). The last is not padding — `#29` took
+  four rounds and `#31` four, and the two most recent boundary reviews each
+  returned work on the first pass.
+
+- **No point forecast.** `#29` closed at 0.83× and `#31` at 0.90× against a
+  `tools` v3.1 median near 0.7, so the recent rows sit closer to 1.0 than the
+  median does. Two rows is not a trend; the ledger is the measurement.
 
 ## Plan
 

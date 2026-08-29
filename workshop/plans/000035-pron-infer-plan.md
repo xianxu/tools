@@ -218,7 +218,8 @@ Then in a scratch directory: `arrondissement` + `/pron` (French, and says so); `
 | 2 | errors with the reason | `TestOriginLanguage` table + `TestPronReportsWhyItCannotInfer` | the cognate cut is removed — `read` then infers Dutch |
 | 3 | historical stages excluded by category | `TestOriginLanguage`'s Old French / Latin / Greek rows | `historicalStages` is emptied |
 | 4 | `/pron fr` still overrides | `TestPronReplaysOnceAndLeavesNoMode` (existing) | the argument path is removed |
-| 5 | the table is a recorded decision | atlas prose + `TestDocsQuoteThePronHelp` | the marked span is edited away |
+| 5 | the table is a recorded decision | **no test** — D5 is dated prose in the atlas, and `TestDocsQuoteThePronHelp` does NOT pin it: that test asserts the `pronHelp` span, which Task 4 deliberately leaves alone. Claiming it would be the over-claim `#29` closed | — |
+| — | the `/pron` argument rule is code-owned | `TestDocsQuoteThePronCommandHelp` (Task 4) | the atlas's marked span drops the rule |
 | 6 | D1 untouched | `TestAnOrdinaryLookupNeverInfersTheOrigin` (Task 3) | `defineOnce` infers |
 | 7 | extraction is pure and table-tested | `TestOriginLanguage` runs with no dictionary | — |
 
