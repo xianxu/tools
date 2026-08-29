@@ -26,9 +26,15 @@ func newFakeCDN(t *testing.T, present map[string][]byte) *fakeCDN {
 	t.Helper()
 	c := &fakeCDN{present: present}
 	c.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// EscapedPath, not Path. Path is percent-DECODED, so a fake keyed by it
+		// answers 404 for every URL carrying a non-ASCII character while the real
+		// CDN serves it — jalapeño_es_es_1.mp3 is a 200 there and was
+		// unreachable here. No test had used an accented word before #29, whose
+		// whole point is that the source spelling carries the accent.
+		path := r.URL.EscapedPath()
 		c.mu.Lock()
-		c.requested = append(c.requested, r.URL.Path)
-		body, ok := c.present[r.URL.Path]
+		c.requested = append(c.requested, path)
+		body, ok := c.present[path]
 		c.mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)

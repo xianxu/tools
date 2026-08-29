@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // testDeps is for tests about the DEFINITION half: a real fixture dictionary,
@@ -31,10 +33,25 @@ type audioRig struct {
 // exercises AudioCandidates' actual output rather than a hand-written URL.
 func newAudioRig(t *testing.T, word string, present bool) *audioRig {
 	t.Helper()
+	if !present {
+		return newAudioRigServing(t)
+	}
+	return newAudioRigServing(t, AudioCandidates(word, voice{Lang: "en", Locale: "us"})[0])
+}
+
+// newAudioRigServing is newAudioRig's general form: it serves EXACTLY the URLs
+// given and nothing else.
+//
+// #29 needs worlds newAudioRig cannot describe — one where the source-language
+// recording is missing and only the session's exists, which is what makes the
+// fallback and its report testable at all. Taking whole URLs from
+// AudioCandidates rather than paths keeps the production derivation in the loop,
+// which is the property newAudioRig was written for and this must not lose.
+func newAudioRigServing(t *testing.T, urls ...string) *audioRig {
+	t.Helper()
 	files := map[string][]byte{}
-	if present {
-		first := AudioCandidates(word, voice{Lang: "en", Locale: "us"})[0]
-		files[stripHost(t, first, audioBase)] = []byte("ID3fakeaudio")
+	for _, u := range urls {
+		files[stripHost(t, u, audioBase)] = []byte("ID3fakeaudio")
 	}
 	cdn := newFakeCDN(t, files)
 	p := &fakePlayer{}
@@ -49,14 +66,28 @@ func newAudioRig(t *testing.T, word string, present bool) *audioRig {
 // rebasedSource points the real fetch logic at the fake server while keeping the
 // production URL derivation intact — the path that reaches the CDN is exactly
 // what AudioCandidates produced.
+//
+// It TRANSLATES THE ANSWER BACK, and that is not tidiness. #29 made the returned
+// URL load-bearing: reportVoice decides which voice was heard by testing that
+// URL for membership in the candidate list. Handing back the rebased form leaks
+// the rig's own rewriting into the value under assertion, so a source recording
+// that answered perfectly well is reported as a fallback — a test failure with
+// no defect behind it. In production nothing rebases, so `from` is always one of
+// the URLs passed in; the double has to keep that true.
 type rebasedSource struct{ cdn *fakeCDN }
 
 func (r *rebasedSource) Fetch(ctx context.Context, urls []string) ([]byte, string, error) {
 	rebased := make([]string, len(urls))
+	origin := make(map[string]string, len(urls))
 	for i, u := range urls {
 		rebased[i] = r.cdn.URL + strings.TrimPrefix(u, audioBase)
+		origin[rebased[i]] = u
 	}
-	return r.cdn.source().Fetch(ctx, rebased)
+	data, from, err := r.cdn.source().Fetch(ctx, rebased)
+	if was, ok := origin[from]; ok {
+		from = was
+	}
+	return data, from, err
 }
 
 func TestRunPrintsDefinition(t *testing.T) {
@@ -254,5 +285,123 @@ func TestRunNegativeTimesIsUsageError(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run(t.Context(), []string{"-times", "-1", "sycophantic"}, rig.deps, strings.NewReader(""), &out, &errb); code != 2 {
 		t.Errorf("exit = %d, want 2", code)
+	}
+}
+
+// -pron applies to ONE lookup and must not become a session mode (#29 D3): a
+// pronunciation language in opt.voice would survive a /lang switch and ask for
+// fr_fr recordings in a Spanish session.
+func TestPronWithoutAWordIsRefusedAndPointsAtTheCommand(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := run(t.Context(), []string{"-pron", "fr"}, testDeps(t), strings.NewReader(""), &out, &errb)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2 (a usage error)", code)
+	}
+	if !strings.Contains(errb.String(), "/pron") {
+		t.Errorf("the refusal must name the in-session form; stderr = %q", errb.String())
+	}
+}
+
+func TestPronRejectsSomethingThatIsNotALanguageTag(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := run(t.Context(), []string{"-pron", "french", "sycophantic"}, testDeps(t), strings.NewReader(""), &out, &errb)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	// store.ParseLang's message, not a second one invented at the flag.
+	if !strings.Contains(errb.String(), "two letters") {
+		t.Errorf("stderr should carry ParseLang's complaint, got %q", errb.String())
+	}
+}
+
+// The whole point of #29, end to end: the RECORDING comes from the source
+// language while the deck, the dictionary and the session stay English.
+//
+// jalapeno is the case that needs every piece — typed unaccented, headword
+// jalapeño, and jalapeno_es_es is a 404 where jalapeño_es_es is a 200.
+func TestPronFetchesTheSourceRecordingWithoutMovingTheSession(t *testing.T) {
+	es := voice{Lang: "es", Locale: "es"}
+	rig := newAudioRigServing(t, AudioCandidates("jalapeño", es)[0])
+	cap := &countingCapturer{}
+	rig.deps.capture = cap
+	var out, errb bytes.Buffer
+
+	code := run(t.Context(), []string{"-pron", "es", "jalapeno"}, rig.deps, strings.NewReader(""), &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	asked := rig.cdn.Requested()
+	if len(asked) == 0 {
+		t.Fatal("nothing was requested from the CDN")
+	}
+	// FIRST, and spelled the way Spanish spells it — not the way it was typed.
+	want := stripHost(t, AudioCandidates("jalapeño", es)[0], audioBase)
+	if asked[0] != want {
+		t.Errorf("first request = %q, want %q", asked[0], want)
+	}
+	// And it STOPPED there. The typed spelling is a legitimate later candidate —
+	// SourceSpellings keeps it as the safety net — so "never asked" would be the
+	// wrong assertion; "never needed, because the accented one answered" is the
+	// right one, and it is what saves jalapeno_es_es's measured 404.
+	if len(asked) != 1 {
+		t.Errorf("walked %d candidates, want 1 — the first answered: %q", len(asked), asked)
+	}
+	// The English entry was still printed, and nothing was reported: the source
+	// recording answered.
+	if !strings.Contains(out.String(), "chili pepper") {
+		t.Errorf("the English entry should still be shown, got %q", out.String())
+	}
+	if errb.Len() != 0 {
+		t.Errorf("the source recording answered, so nothing should be reported: %q", errb.String())
+	}
+
+	// THE SESSION DID NOT MOVE — #29's first Done-when, and the reason this test
+	// is named for it. Asserting the Spanish URL alone would pass just as well
+	// for a -pron that had quietly switched the whole session to Spanish, which
+	// is the mode this issue exists NOT to be. The capture is where a lookup's
+	// language becomes observable: a word files into words/<lang>/, so the voice
+	// at capture time IS the deck it landed in.
+	if len(cap.calls) != 1 || cap.calls[0] != "jalapeno" {
+		t.Fatalf("captured %v, want exactly [jalapeno]", cap.calls)
+	}
+	if got := cap.voices[0]; got.Lang != store.DefaultLang {
+		t.Errorf("the word was filed under %q, want %q — -pron moved the session, "+
+			"which is the mode #29 exists not to be", got.Lang, store.DefaultLang)
+	}
+}
+
+// Done-when 6 / D4: the locale for a source recording comes from #27's policy,
+// which means -locale keeps qualifying whatever language is IN EFFECT.
+//
+// `-pron es` alone is Castilian (es_es, where cazar /θ/ and casar /s/ differ);
+// `-pron es -locale us` is Latin American seseo, where both are /s/. Choosing
+// one chooses which sound system a learner hears, so it is not a flavour.
+//
+// This existed as an ARGUMENT — "voiceFor is unchanged, so the locale is
+// literally #27's" — and the close review showed the argument is not a pin:
+// utteranceFor's CALL SITE is new code, and rewriting it to voiceFor(pron, "")
+// left the entire suite green. A reused function cannot vouch for a new caller.
+func TestPronHonoursTheLocaleFlagForTheSourceLanguage(t *testing.T) {
+	seseo := voice{Lang: "es", Locale: "us"}
+	rig := newAudioRigServing(t, AudioCandidates("jalapeño", seseo)[0])
+	var out, errb bytes.Buffer
+
+	code := run(t.Context(), []string{"-pron", "es", "-locale", "us", "jalapeno"},
+		rig.deps, strings.NewReader(""), &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	asked := rig.cdn.Requested()
+	if len(asked) == 0 {
+		t.Fatal("nothing was requested from the CDN")
+	}
+	want := stripHost(t, AudioCandidates("jalapeño", seseo)[0], audioBase)
+	if asked[0] != want {
+		t.Errorf("first request = %q, want %q — -locale did not reach the SOURCE voice, "+
+			"so -pron es -locale us asked for Castilian when seseo was requested",
+			asked[0], want)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("the es_us recording answered, so nothing should be reported: %q", errb.String())
 	}
 }

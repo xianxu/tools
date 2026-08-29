@@ -13,6 +13,21 @@ type voice struct {
 	Locale string
 }
 
+// langOrDefault is the language this voice really means: a zero Lang is English,
+// which is what store.DefaultLang says a directory with no setting means.
+//
+// It exists because that rule was written INSIDE AudioCandidates and nowhere
+// else, so anything else reading voice.Lang saw the raw field. #29's reportVoice
+// did, and a zero session voice made it print "played the  one" — a record with
+// a hole in it, which is the one thing that design insists must be true. One
+// accessor, both readers.
+func (v voice) langOrDefault() store.Lang {
+	if v.Lang == "" {
+		return store.DefaultLang
+	}
+	return v.Lang
+}
+
 // defaultLocale is the locale a language implies when nobody says otherwise.
 //
 // ONE rule with ONE exception: the locale is the language code (es -> es_es),
@@ -102,3 +117,19 @@ func applyVoice(opt *options, l store.Lang) {
 const localeHelp = "regional variant of the pronunciation, per language: " +
 	"en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). " +
 	"Others exist — the CDN decides, not a list here"
+
+// pronHelp is THE statement of what -pron means, and the one source for it.
+//
+// Same mechanism as localeHelp above, for the same reason: the -locale policy
+// was once written in four places with nothing keeping them in step, so
+// TestDocsQuoteThePronHelp makes the README and the atlas CONSUMERS of this
+// string rather than restatements of it.
+//
+// It says "this lookup" because that is the whole distinction from -lang. A mode
+// moves the deck, the dictionary and the highlight set; this moves nothing but
+// the recording. And it names ORIGIN, because that is where a reader finds the
+// language to type — #29 chose a declared language over an inferred one, so the
+// help has to say where the answer is.
+const pronHelp = "hear THIS lookup in another language without switching the " +
+	"session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back " +
+	"to the session's recording, and says so, when the source has none"

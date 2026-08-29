@@ -63,6 +63,10 @@ func TestAudioCandidatesMultiWord(t *testing.T) {
 
 // One language, and the legacy path for English only.
 //
+// Still true after #29, and enumerated in that issue's sweep rather than left
+// unexamined: this documents AudioCandidates, which really does build for one
+// voice. The cross-language walk is utterance.Candidates, one level up.
+//
 // Measured 2026-08-28: madrugar--_us_1 and madrugar--_es_1 are BOTH 404 while
 // sycophantic--_us_1 is 200, so /sounds/oxford/ is an English-only generation.
 // A Spanish candidate there is a guaranteed miss at ~450ms, which is the whole
@@ -181,7 +185,14 @@ func TestVoiceForBuildsBothFieldsTogether(t *testing.T) {
 // 2026-08-28, a miss costs ~300-600ms against ~40ms for a hit, so the two legacy
 // URLs a language-blind version would try are most of a second per lookup, every
 // lookup, for a guaranteed 404.
-func TestTheFetchLoopAsksOnlyForTheSessionsLanguage(t *testing.T) {
+// The scope is "the session's language" — meaning NO -pron was given. With one,
+// the loop deliberately asks for another language first (#29,
+// TestAnUtteranceAsksTheSourceFirstAndFallsBackToTheSession). The name says
+// "only" and that remains true of every case below, all of which build their
+// candidates straight from AudioCandidates; it would be false of an utterance
+// that was handed a source. A name asserting an invariant the tree no longer
+// holds is the same defect as a comment doing it.
+func TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		v       voice
@@ -249,4 +260,127 @@ func TestAudioCandidatesEscapesTheLocale(t *testing.T) {
 			t.Errorf("the locale was not escaped: %s", u)
 		}
 	}
+}
+
+// The ORDER is the contract: each spelling costs two CDN requests before the
+// next is tried, at ~300–600ms per miss (#29).
+func TestSourceSpellingsPutsTheAccentedFormFirst(t *testing.T) {
+	for _, tc := range []struct {
+		name, typed, raw string
+		want             []string
+	}{
+		{
+			"the headword carries the accent the typist omitted",
+			// jalapeño_es_es is a 200; jalapeno_es_es is a 404 — measured
+			// 2026-08-28. The typed form stays as the last resort.
+			"jalapeno",
+			"jalapeño ja·la·pe·ño | ˌhaləˈpān(y)ō | noun a chili pepper.",
+			[]string{"jalapeño", "jalapeno"},
+		},
+		{
+			// This cell is the one a headword-first ordering gets wrong: NOAD
+			// heads this entry `cafe` and files `café` as the alternative, and it
+			// is `café` the CDN serves.
+			"the alternative carries it instead, so the alternative goes first",
+			"cafe",
+			"cafe ca·fe | kaˈfā | (also café) noun 1 a small restaurant.",
+			[]string{"café", "cafe"},
+		},
+		{
+			"nothing differs, so there is one spelling and no wasted request",
+			"arrondissement",
+			"arrondissement ar·ron·disse·ment | əˈrändəsmənt | noun a district.",
+			[]string{"arrondissement"},
+		},
+		{
+			"a capitalised headword is lowered — Señor_es_es is 404, señor_es_es is 200",
+			"senor",
+			"Señor Se·ñor | sānˈyôr | noun a title for a Spanish man.",
+			[]string{"señor", "senor"},
+		},
+		{
+			"an unparseable entry still leaves the typed word to try",
+			"ciao",
+			"",
+			[]string{"ciao"},
+		},
+		{
+			"among equals the source order stands — sorting is a partition, not a rank",
+			"cafe",
+			"café ca·fé | kaˈfā | (also cafè) noun 1 a small restaurant.",
+			[]string{"café", "cafè", "cafe"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SourceSpellings(tc.typed, ParseEntry(tc.raw))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("SourceSpellings(%q) = %q, want %q", tc.typed, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAnUtteranceAsksTheSourceFirstAndFallsBackToTheSession(t *testing.T) {
+	en := voice{Lang: "en", Locale: "us"}
+	es := voice{Lang: "es", Locale: "es"}
+	it := voice{Lang: "it", Locale: "it"}
+
+	// The no-regression assertion for every caller that never asks for a source:
+	// the walk must be the SAME BYTES it was before #29, not merely equivalent.
+	t.Run("no source asked for leaves the ordinary walk untouched", func(t *testing.T) {
+		u := utterance{Word: "sycophantic", Session: en}
+		if got, want := u.Candidates(), AudioCandidates("sycophantic", en); !slices.Equal(got, want) {
+			t.Errorf("an utterance with no source changed the ordinary walk:\ngot  %q\nwant %q", got, want)
+		}
+	})
+
+	t.Run("every source spelling is tried before the session's own", func(t *testing.T) {
+		u := utterance{Word: "jalapeno", Spellings: []string{"jalapeño", "jalapeno"}, Source: es, Session: en}
+		var want []string
+		want = append(want, AudioCandidates("jalapeño", es)...)
+		want = append(want, AudioCandidates("jalapeno", es)...)
+		want = append(want, AudioCandidates("jalapeno", en)...)
+		if got := u.Candidates(); !slices.Equal(got, want) {
+			t.Errorf("walk order wrong:\ngot  %q\nwant %q", got, want)
+		}
+		// The walk ENDS at the session's recording, which is what makes a source
+		// miss degrade rather than go silent: fr coverage is partial (hotel and
+		// debut are 404 on fr_fr, 200 on en_us) and Italian is absent entirely.
+		// By MEMBERSHIP, not by matching "_en_us_" in the string. An English walk
+		// ends on the LEGACY path — /sounds/oxford/jalapeno--_us_2.mp3 — which
+		// carries no such marker, so a substring check calls the right answer
+		// wrong. Same rule spokeSource follows one level down.
+		got := u.Candidates()
+		if last := got[len(got)-1]; !slices.Contains(AudioCandidates(u.Word, u.Session), last) {
+			t.Errorf("the walk does not end at the session's recording: %q", last)
+		}
+	})
+
+	t.Run("a source equal to the session is not asked for twice", func(t *testing.T) {
+		u := utterance{Word: "madrugar", Spellings: []string{"madrugar"}, Source: es, Session: es}
+		if got, want := u.Candidates(), AudioCandidates("madrugar", es); !slices.Equal(got, want) {
+			t.Errorf("/pron es in a Spanish session doubled the walk:\ngot  %q\nwant %q", got, want)
+		}
+	})
+
+	// By MEMBERSHIP in the list actually built, never by reading the URL: the
+	// report this feeds is a record, and a record has to be true.
+	t.Run("spokeSource answers by membership, not by parsing", func(t *testing.T) {
+		u := utterance{Word: "ciao", Spellings: []string{"ciao"}, Source: it, Session: en}
+		if src := AudioCandidates("ciao", it)[0]; !u.spokeSource(src) {
+			t.Errorf("a source URL was not recognised as one: %q", src)
+		}
+		if ses := AudioCandidates("ciao", en)[0]; u.spokeSource(ses) {
+			t.Errorf("the session's URL was reported as a source one: %q", ses)
+		}
+		if u.spokeSource("https://example.invalid/nothing.mp3") {
+			t.Error("a URL in neither list was reported as a source one")
+		}
+		// And with no source asked for, nothing is a source — including the URL
+		// that will actually answer.
+		plain := utterance{Word: "ciao", Session: en}
+		if plain.spokeSource(AudioCandidates("ciao", en)[0]) {
+			t.Error("an utterance with no source claimed one spoke")
+		}
+	})
 }

@@ -36,6 +36,7 @@ define -no-audio bank       # no fetch, no sound
 define -locale gb schedule  # British pronunciation
 define -lang es -locale us jalapeño   # Latin American, not Castilian
 define -lang es madrugar    # one lookup in Spanish, without switching
+define -pron fr arrondissement  # the French recording, English everything else
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```
@@ -191,8 +192,28 @@ setting stays with the directory — unlike `/sound`, which lasts one session.
 It has to persist: a one-shot `define madrugar` has no session to inherit from,
 and re-declaring the language at every lookup is the friction the mode removes.
 Everything follows it — the deck a word files into, the words `--play` offers,
-and the recording that is fetched. `-lang es` is the one-run form, for scripts
-that should not have to change state to ask a question.
+and the recording that is fetched, unless `-pron` asked otherwise for one
+lookup. `-lang es` is the one-run form, for scripts that should not have to
+change state to ask a question.
+
+**Hearing a borrowed word in its source language.** `define -pron fr
+arrondissement` plays the French recording and changes nothing else: the entry
+is still the English one, the word still files into the English deck, and the
+next lookup is English again.
+
+<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
+
+You name the language; the tool never guesses it. That is a decision with
+measurements behind it — the dictionary writes `ORIGIN French` for
+*arrondissement* and for *police* alike, and the CDN serves `police_fr_fr`,
+`restaurant_fr_fr` and `machine_fr_fr` perfectly happily. Anything automatic
+would replace the English recording for a large class of ordinary words that
+merely came from French centuries ago. The entry prints its `ORIGIN` right
+above, so the answer is on screen when you need it.
+
+Coverage is partial and the tool says so rather than going quiet: `-pron fr
+hotel` prints `no fr recording for hotel; played the en one`. Italian and
+Japanese have no recordings in this CDN generation at all, so they always report.
 
 `-locale` picks the regional variant, and it works for **every** language:
 
@@ -314,6 +335,12 @@ session; `/sound` on its own reports it, and `0` turns playback off. It is the
 in-session form of `--sound`, which sets it for one run. (`-times` is the older
 name for `--sound` and still works; passing both is a usage error rather than a
 guess at which you meant.)
+
+`/pron fr` replays the word you just looked up in another language, once, and
+leaves nothing switched on — the next word is back to the session's own voice.
+It is an action, not a setting, which is the difference from both `/sound` and
+`/lang`: there is no `/pron` to undo. `-pron fr <word>` is the same thing for a
+one-shot lookup.
 
 `/lang` reports the language this directory is in; `/lang es` switches it and
 keeps it. That is the deliberate difference from `/sound`: a language has to

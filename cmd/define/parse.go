@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // HeadKind classifies a token in an entry's head.
@@ -55,10 +56,109 @@ func (e Entry) headOf(k HeadKind) string {
 	return ""
 }
 
+// differsOnlyByDiacritics reports whether two strings are the same word wearing
+// different accents — café vs cafe, señor vs senor, cliche vs cliché.
+//
+// This is the filter that makes `(also …)` usable as a source-spelling source
+// (#29). Measured over 400 live NOAD entries (2026-08-29), `(also …)` holds
+// phrases ("(also good as gold)"), compounds ("(also jalapeño pepper)"),
+// derivatives ("(also naïveness)") and real English spelling variants ("(also
+// advisor)", "(also caldron)", "(also convertor)"). Admitting them all would
+// cost two wasted CDN requests each at ~300–600ms per miss; admitting only
+// these took every real gain in that sample and nothing else.
+//
+// NOT an NFD fold, deliberately. That would need golang.org/x/text, which this
+// module does not depend on, for a rule this states directly: same length, and
+// every difference sits where at least one side left ASCII. Two consequences
+// are accepted rather than overlooked — ß/ss and œ/oe expansions change the
+// length and are refused, so an entry spelling its alternative that way
+// degrades to the session recording and says so, which is what any other miss
+// already does.
+//
+// Case-insensitive because the CDN is not: Señor_es_es is a 404 where
+// señor_es_es is a 200, and AudioCandidates lowercases anyway.
+func differsOnlyByDiacritics(alt, head string) bool {
+	// Valid UTF-8 is a precondition of being a spelling, and checking it is not
+	// paranoia: []rune turns a stray byte into U+FFFD, which is outside ASCII and
+	// so reads to the loop below as a diacritic. Without this, "caf\xff" is
+	// admitted against "cafe" and spends two CDN requests on an escaped
+	// replacement character.
+	if !utf8.ValidString(alt) || !utf8.ValidString(head) {
+		return false
+	}
+	a, h := []rune(strings.ToLower(alt)), []rune(strings.ToLower(head))
+	if len(a) == 0 || len(a) != len(h) {
+		return false
+	}
+	diff := false
+	for i := range a {
+		if a[i] == h[i] {
+			continue
+		}
+		// A difference is only allowed to BE a diacritic, which in a precomposed
+		// string means one of the two runes is outside ASCII. Two ASCII runes
+		// differing is a different word (adviser/advisor), not a different dress.
+		if a[i] < utf8.RuneSelf && h[i] < utf8.RuneSelf {
+			return false
+		}
+		diff = true
+	}
+	return diff
+}
+
 func (e Entry) Headword() string  { return e.headOf(HeadWord) }
 func (e Entry) Homograph() string { return e.headOf(HeadHomograph) }
 func (e Entry) Syllables() string { return e.headOf(HeadSyllables) }
 func (e Entry) HeadPOS() string   { return e.headOf(HeadPOS) }
+
+// alsoPrefix opens the parenthetical NOAD uses for an alternative form.
+const alsoPrefix = "(also "
+
+// AlsoSpellings returns the `(also …)` alternatives that are the SOURCE
+// orthography of this headword — the same word up to diacritics, nothing else.
+//
+// It joins the Headword()/Homograph()/Syllables() family and derives from Blocks
+// for the same reason they derive from Head: one representation, so the accessor
+// and what Render shows cannot drift.
+//
+// Why it is needed at all (#29): NOAD files the accented form on EITHER side of
+// the headword. `define jalapeno` heads the entry `jalapeño`, but `define cafe`
+// heads it `cafe` and puts `café` here — and café_fr_fr is the 200 while
+// cafe_fr_fr is a 404. Headword alone would have taken jalapeño, piñata, señor,
+// cliché and fiancé and missed café, naïve and façade.
+//
+// EVERY occurrence in a gloss, not the first. Measured, not supposed: ParseEntry
+// returns one gloss reading "(also naïve) (also naïveness)". Stopping at the
+// first parenthetical happens to work when the spelling is written first and
+// silently drops it when it is not, which is a bug whose only symptom is a word
+// quietly degrading to the session's recording.
+func (e Entry) AlsoSpellings() []string {
+	head := e.Headword()
+	if head == "" {
+		return nil
+	}
+	var out []string
+	for _, b := range e.Blocks {
+		for _, s := range b.Senses {
+			rest := s.Gloss
+			for {
+				i := strings.Index(rest, alsoPrefix)
+				if i < 0 {
+					break
+				}
+				alt, after, ok := strings.Cut(rest[i+len(alsoPrefix):], ")")
+				if !ok {
+					break // an unclosed parenthetical is not an alternative
+				}
+				rest = after
+				if alt = strings.TrimSpace(alt); differsOnlyByDiacritics(alt, head) {
+					out = append(out, alt)
+				}
+			}
+		}
+	}
+	return out
+}
 
 // Block is one part-of-speech run within an entry.
 type Block struct {

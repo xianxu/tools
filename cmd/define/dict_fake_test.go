@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -61,6 +63,29 @@ func loadFakeDictionary(dir string, lang store.Lang) (*fakeDictionary, error) {
 func (d *fakeDictionary) Lookup(word string) (string, error) {
 	if s, ok := d.entries[strings.ToLower(word)]; ok {
 		return s, nil
+	}
+	// ACCENT-INSENSITIVE on a miss, because the real dependency is: `define
+	// jalapeno` returns the `jalapeño` entry, and so do pinata, senor, cliche and
+	// fiance (measured 2026-08-29; TestLiveDictionaryResolvesAnUnaccentedQuery
+	// pins it).
+	//
+	// #29 is what made this divergence matter rather than merely exist. Its whole
+	// mechanism starts from "the typed form is not the source orthography", so a
+	// fake that can only be reached by the accented spelling cannot represent the
+	// case the feature is FOR — the end-to-end test would have had to type
+	// `jalapeño`, where typed and headword agree and nothing is exercised.
+	//
+	// differsOnlyByDiacritics is the production predicate, so the fake and the
+	// feature agree on what "the same word in another dress" means by
+	// construction rather than by two similar loops (ARCH-DRY).
+	// SORTED, because a Go map iterates in random order: two entries differing
+	// from the query only by diacritics would otherwise answer differently run to
+	// run, and a fake that is not deterministic makes every test above it flaky
+	// for reasons that look like the code.
+	for _, key := range slices.Sorted(maps.Keys(d.entries)) {
+		if differsOnlyByDiacritics(key, word) {
+			return d.entries[key], nil
+		}
 	}
 	return "", ErrNoEntry
 }

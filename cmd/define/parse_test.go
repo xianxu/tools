@@ -185,3 +185,136 @@ func TestParseExampleGrammarLabel(t *testing.T) {
 		}
 	}
 }
+
+// The rule that keeps `(also …)` mining honest, case by measured case (#29).
+//
+// Surveyed over 400 live NOAD entries (2026-08-29), `(also …)` is NOT a spelling
+// list: it holds phrases, compounds, derivatives and genuine English variants.
+// Each one admitted costs a wasted pair of CDN requests at ~300–600ms per miss.
+// This predicate took all three real gains — café, naïve, façade — and, across
+// that 400-entry sample, nothing else at all.
+func TestDiacriticsOnlyAdmitsTheSameWordInAnotherDress(t *testing.T) {
+	for _, tc := range []struct {
+		name, alt, head string
+		want            bool
+	}{
+		{"an accent added", "café", "cafe", true},
+		{"a diaeresis added", "naïve", "naive", true},
+		{"a cedilla added", "façade", "facade", true},
+		{"a circumflex added", "rôle", "role", true},
+		{"an accent REMOVED — the headword is the accented one", "cliche", "cliché", true},
+		{"a tilde, mid-word", "señor", "senor", true},
+		{"case is not a difference that matters", "Señor", "senor", true},
+
+		{"a different English spelling is not a diacritic", "advisor", "adviser", false},
+		{"nor is another one", "convertor", "converter", false},
+		{"a dropped letter changes the length", "caldron", "cauldron", false},
+		{"a derivative is a different word", "naïveness", "naive", false},
+		{"a compound is not a spelling", "jalapeño pepper", "jalapeño", false},
+		{"a phrase certainly is not", "good as gold", "gold", false},
+		{"identical is not a DIFFERENT dress", "cafe", "cafe", false},
+		{"identical up to case is still not one", "Cafe", "cafe", false},
+		{"empty alternative", "", "cafe", false},
+		{"empty headword", "café", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := differsOnlyByDiacritics(tc.alt, tc.head); got != tc.want {
+				t.Errorf("differsOnlyByDiacritics(%q, %q) = %v, want %v", tc.alt, tc.head, got, tc.want)
+			}
+		})
+	}
+}
+
+// The class the table above cannot reach: this predicate runs over arbitrary
+// NOAD gloss text, so what matters is not more equality cases but that hostile
+// or malformed input cannot panic it or smuggle a non-spelling through (#29).
+//
+// The interesting cell is INVALID UTF-8, and it is not a crash: []rune turns a
+// stray byte into U+FFFD, which is outside ASCII and therefore looks exactly
+// like a diacritic. "caf\xff" would be admitted against "cafe" and spend two CDN
+// requests on a URL-escaped replacement character. Valid UTF-8 is a precondition
+// of being a spelling at all, so it is checked rather than assumed.
+func TestDiacriticsOnlyRefusesMalformedInput(t *testing.T) {
+	for _, tc := range []struct {
+		name, alt, head string
+	}{
+		{"a stray byte is not a diacritic", "caf\xff", "cafe"},
+		{"nor is one in the headword", "café", "caf\xff"},
+		{"a decomposed accent is longer than a precomposed one", "café", "café"},
+		{"and longer than the bare word", "café", "cafe"},
+		{"a zero-width joiner is a rune, so the lengths differ", "cafe‍", "cafe"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if differsOnlyByDiacritics(tc.alt, tc.head) {
+				t.Errorf("differsOnlyByDiacritics(%q, %q) admitted malformed input", tc.alt, tc.head)
+			}
+		})
+	}
+}
+
+// Whatever arrives, it returns. A gloss is untrusted text of unbounded length.
+func FuzzDiacriticsOnlyDoesNotPanic(f *testing.F) {
+	f.Add("café", "cafe")
+	f.Add("caf\xff", "cafe")
+	f.Add(strings.Repeat("ñ", 4096), strings.Repeat("n", 4096))
+	f.Add("", "")
+	f.Fuzz(func(t *testing.T, alt, head string) {
+		// Both directions, because AlsoSpellings controls neither argument.
+		_ = differsOnlyByDiacritics(alt, head)
+		_ = differsOnlyByDiacritics(head, alt)
+	})
+}
+
+// `(also X)` lands as an UNNUMBERED sense in the POS-less first block — verified
+// against the live dictionary 2026-08-29, e.g. cafe parses to
+// Blocks[0]{POS:"", Senses:[{Number:"", Gloss:"(also café)"}]}. The accessor
+// derives from that shape rather than re-scanning Raw, so it cannot disagree
+// with what Render shows (#29).
+func TestAlsoSpellingsTakesOnlyTheSourceOrthographies(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		want      []string
+	}{
+		{
+			"the accented alternative NOAD files under an unaccented head",
+			"cafe ca·fe | kaˈfā | (also café) noun 1 a small restaurant.",
+			[]string{"café"},
+		},
+		{
+			"a compound is not a spelling",
+			"jalapeño ja·la·pe·ño | ˌhaləˈpān(y)ō | (also jalapeño pepper) noun a chili pepper.",
+			nil,
+		},
+		{
+			"an English spelling variant is not a source orthography",
+			"adviser ad·vis·er | ədˈvīzər | (also advisor) noun a person who advises.",
+			nil,
+		},
+		{
+			"no parenthetical at all",
+			"arrondissement ar·ron·disse·ment | əˈrändəsmənt | noun an administrative district.",
+			nil,
+		},
+		// ONE gloss, TWO parentheticals — measured, not supposed: ParseEntry
+		// returns Gloss == "(also naïve) (also naïveness)" for the first of these.
+		// A first-match read passes the first case and silently drops the source
+		// spelling in the second, so both orderings are here on purpose.
+		{
+			"two alternatives, the spelling written first",
+			"naive na·ive | näˈēv | (also naïve) (also naïveness) adjective of a person.",
+			[]string{"naïve"},
+		},
+		{
+			"two alternatives, the spelling written SECOND",
+			"naive na·ive | näˈēv | (also naïveness) (also naïve) adjective of a person.",
+			[]string{"naïve"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseEntry(tc.raw).AlsoSpellings()
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("AlsoSpellings() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

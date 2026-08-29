@@ -731,14 +731,34 @@ switches on outcome (found / not found), never on which command it is, and
 `nearestCommands` REPORTS whether anything was close rather than leaving the
 caller to infer it from a count — inferring it was wrong for every near-miss
 while one command was registered (BR-9).
-`commandCtx` is deliberately narrower than `deps` — a command cannot reach the
-dictionary or the player.
+`commandCtx` is deliberately narrower than `deps` — a command still cannot reach
+the dictionary or the player. `#29`'s `/pron` did not widen that: `commandCtx`
+gained a `replay` CLOSURE, so the command records a language and the loop
+performs the playback, in raw mode, where Ctrl-C can still reach the key reader.
 
+**The registry is the single source, and this list derives from it.** It listed
+three of five commands for two releases — `/lang` (`#23`) and `/pron` (`#29`)
+were both added without it, 2 for 2 — so it is generated from `commands` and
+pinned by `TestDocsQuoteTheCommandList`, the mechanism `localeHelp` and
+`pronHelp` already use. Add a command and this page fails the build until it
+catches up.
+
+<!-- command-list -->
 | command | does |
 |---|---|
-| `/help` | lists the commands |
-| `/history [N]` | words looked up in the last N local days (default 2); `N`, `--days N` and `--days=N` are all accepted |
-| `/sound [N]` | how many times a pronunciation plays, for the rest of the session |
+| `/help` | list the commands |
+| `/history` | words looked up recently |
+| `/sound` | how many times to play a pronunciation |
+| `/lang` | the language this deck is in |
+| `/pron` | replay this word in another language, once |
+<!-- /command-list -->
+
+Argument forms are documented with each command rather than in the summary: the
+summary is what `/help` prints, and a table that padded it with syntax would stop
+matching the screen. `/history [N]` takes `N`, `--days N` or `--days=N`;
+`/sound [N]` reports when bare; `/lang` reports when bare and persists when
+given; `/pron` REQUIRES a language, because it is an action with nothing to
+report.
 
 **Opening a store does not read it.** `storeHistory` used to read the whole event
 log in its constructor, so `define /help` paid for a log it never consulted and
@@ -1116,11 +1136,19 @@ strictly dominates the legacy paths (`gaslighting` exists only on the newer one;
 *list* rather than one URL, and `fetch_conformance_test.go` asserts both facts
 still hold.
 
-**One language, no fallback (`#23`).** `AudioCandidates` takes a `voice{Lang,
-Locale}` and builds for that language alone. There is no ordering policy across
-languages and no cross-language fallback, because the mode already answered the
-question a fallback would be guessing at. `#27`'s planned `voices()` was deleted
-rather than adapted for exactly that reason.
+**One language unless you name another (`#23`, then `#29`).** `AudioCandidates`
+takes a `voice{Lang, Locale}` and still builds for that language alone — nothing
+in it searches. What changed is one level up: `utterance.Candidates` walks a
+SOURCE voice first and then the session's own, and `utterance` is the type every
+play site now goes through.
+
+The walk exists only when `-pron` or `/pron` named a language. `#23` deleted
+`#27`'s planned `voices()` because a fallback would have been *guessing* which
+language a word belongs to, on every lookup, at every user's expense — and `#29`
+measured how badly that guess would go (see below). Being told is a different
+thing from guessing, and a told fallback is announced: `reportVoice` says which
+voice actually answered, read off the URL that answered rather than predicted
+from the request.
 
 `voice` is a struct rather than two strings because `"es"` is a legal value of
 **both** fields — two positional arguments are transposable at every call site
@@ -1129,7 +1157,7 @@ and the compiler cannot tell.
 **The legacy generation is gated to English**, on measurement: `madrugar--_us_1`
 and `madrugar--_es_1` are both 404 while `sycophantic--_us_1` is 200. At
 ~300–600 ms per miss against ~40 ms per hit, asking anyway costs most of a second
-per Spanish lookup for a guaranteed 404. `TestTheFetchLoopAsksOnlyForTheSessionsLanguage`
+per Spanish lookup for a guaranteed 404. `TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed`
 asserts what is actually REQUESTED, not just what the pure function
 returns — its negative case is the one that catches a regression here.
 
@@ -1238,6 +1266,85 @@ for English, and other languages take their examples from their own dictionary
 entry. That is also why `usage/` has no language dimension: nothing writes it
 outside English. If `#10` or `#18` makes the feed language-aware, scoping the
 cache becomes required, and that is the moment to add it.
+
+## Source pronunciation (`#29`)
+
+`define -pron fr arrondissement` plays the French recording while the deck, the
+dictionary and the highlight set stay English. `/pron fr` is the in-session
+form: it replays the current word once and leaves no mode behind, which is why
+it is an ACTION where `/sound` and `/lang` are settings.
+
+**One source for the policy text, and this page consumes it:**
+
+<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
+
+**The language is DECLARED, never inferred, and that is measured rather than
+inherited.** NOAD writes the two cases identically —
+
+```
+arrondissement  ORIGIN French, from arrondir 'make round'.
+police          ORIGIN … from French, from medieval Latin politia …
+```
+
+— and the CDN does not discriminate either: `police_fr_fr`,
+`restaurant_fr_fr`, `garage_fr_fr`, `machine_fr_fr`, `unique_fr_fr`,
+`genre_fr_fr`, `nuance_fr_fr`, `montage_fr_fr` and `bureau_fr_fr` are **all
+200**. So "try the origin language and fall back" would silently replace the
+English recording for a large class of fully naturalised words. This re-derives
+`#23`'s rejection of inference from new evidence at a narrower scope.
+`TestCDNStillCannotTellALoanwordFromANaturalisedOne` is the live row; if it ever
+fails, the decision is worth reopening.
+
+**The source recording is keyed on the source ORTHOGRAPHY**, so the spelling is
+an input beside the language:
+
+```
+jalapeno_en_us  200   ← what define asked for before #29
+jalapeño_es_es  200   ← the Spanish recording
+jalapeno_es_es  404   ← the same word, Spanish locale, unaccented
+```
+
+`SourceSpellings` answers it from three places: the HEADWORD, the `(also …)`
+alternatives that differ from it **only by diacritics**, and the typed word as a
+last resort. Both dictionary sources are needed because NOAD files the accent on
+either side of the headword — `jalapeño`, `piñata`, `Señor`, `cliché` and
+`fiancé` are headwords, while `café`, `naïve` and `façade` sit under unaccented
+ones. Accented spellings are tried first: headword-first is right 5 times in 8,
+non-ASCII-first 8 times in 8.
+
+**`(also …)` is not a spelling list**, which is what the diacritic filter is for.
+Surveyed across 400 live entries it holds phrases (`(also good as gold)`),
+compounds (`(also jalapeño pepper)`), derivatives (`(also naïveness)`) and real
+English variants (`(also advisor)`, `(also caldron)`, `(also convertor)`) — each
+worth two wasted requests if admitted. The filter took the three real gains and
+nothing else in that sample.
+
+**A known limitation, recorded so it is inherited rather than rediscovered:**
+`role` has a French recording (`rôle_fr_fr` is a 200) that no rule here reaches.
+NOAD heads the entry `role`, offers no `(also rôle)`, and spells the accented
+form only inside ORIGIN — *"from French rôle, from obsolete French roule
+'roll'"*. Mining ORIGIN would be a parsing problem rather than a fourth lookup:
+that one sentence offers three candidate tokens.
+
+**Coverage is partial, and a miss is REPORTED rather than silent.** `hotel` and
+`debut` are 404 on `fr_fr` and 200 on `en_us`; Italian (`ciao`, `pizza`,
+`espresso`, `opera`) and Japanese (`karaoke`, `tsunami`) have no recordings in
+this generation at all. So `-pron it ciao` plays the English recording and says
+`no it recording for ciao; played the en one`. The line is written AFTER the
+fetch, from the URL that answered — it survives on a pipe, so it is a record and
+a record has to be true.
+
+**The locale comes from `#27`, unchanged.** `voiceFor`, `localeFor`,
+`defaultLocale` and `applyVoice` are untouched by `#29`; the source voice is
+`voiceFor(pron, opt.locale)`. So `-pron es` builds `es_es` and `-pron es -locale
+us` builds `es_us`, and there is no second locale policy to keep in step.
+
+**`-pron` never enters `options`, and that is load-bearing.** `opt.voice` is a
+session value `applyLang` re-derives on every `/lang`; an override stored there
+would survive the switch and ask for `fr_fr` recordings in a Spanish session.
+It rides on `replCommand` instead, beside `literal`, because a per-line modifier
+is what it is — which is also why `-pron` with no word is refused rather than
+quietly made session-wide.
 
 ## Conformance
 

@@ -113,6 +113,27 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 //
 // Narrow on purpose, like the prompt test above: it pins the one line a reader
 // acts on, not the prose around it, which should stay free to be rewritten.
+// The same mechanism for -pron (#29), and for the same reason the -locale one
+// exists: this policy is stated in the flag, the README and the atlas, and
+// nothing but a test keeps three copies in step.
+//
+// It is a SEPARATE test rather than a row in the one below because the failure
+// messages differ — a reader who breaks this one needs to be told about -pron,
+// not about locales.
+func TestDocsQuoteThePronHelp(t *testing.T) {
+	want := "<!-- pron-help -->" + pronHelp + "<!-- /pron-help -->"
+	for _, doc := range []string{"../../README.md", "../../atlas/define.md"} {
+		b, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc, err)
+		}
+		if !strings.Contains(string(b), want) {
+			t.Errorf("%s does not quote the -pron help.\nwant the marked span to read:\n%s\n"+
+				"pronHelp owns this text; the docs consume it.", doc, want)
+		}
+	}
+}
+
 func TestDocsQuoteTheLocaleHelp(t *testing.T) {
 	// EVERY doc that states the policy, not just the first one wired up. Fixing
 	// the README alone left atlas/define.md as the next copy to go stale, which
@@ -127,5 +148,42 @@ func TestDocsQuoteTheLocaleHelp(t *testing.T) {
 			t.Errorf("%s does not quote the -locale help.\nwant the marked span to read:\n%s\n"+
 				"localeHelp owns this text; the docs consume it.", doc, want)
 		}
+	}
+}
+
+// The atlas's command list DERIVES from the registry, or it drifts.
+//
+// Third instance of the `doc-sweep-incomplete` family on this page, and the
+// measured shape is what makes a mechanism the right answer rather than a row:
+// the list held three of five commands, and the two missing were the two most
+// recently added — `/lang` (#23) and `/pron` (#29). Two for two. Every author
+// added a command, updated the registry, and did not know this table existed.
+//
+// So the table is generated here and the page consumes it, exactly as
+// TestDocsQuoteTheLocaleHelp does for localeHelp. The next command fails the
+// build until the page catches up, which is the only thing that has ever worked
+// for this family.
+//
+// The NAME and SUMMARY only, in registry order. Argument syntax is deliberately
+// out: the summary is what /help prints, so padding it with forms would make the
+// table stop matching the screen — and the screen is what a reader checks it
+// against.
+func TestDocsQuoteTheCommandList(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<!-- command-list -->\n| command | does |\n|---|---|\n")
+	for _, c := range commands {
+		fmt.Fprintf(&b, "| `/%s` | %s |\n", c.name, c.summary)
+	}
+	b.WriteString("<!-- /command-list -->")
+
+	doc := "../../atlas/define.md"
+	raw, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatalf("%s unreadable: %v", doc, err)
+	}
+	if !strings.Contains(string(raw), b.String()) {
+		t.Errorf("%s does not quote the command list the registry produces.\nwant the "+
+			"marked span to read:\n%s\n`commands` owns this list; the page consumes it.",
+			doc, b.String())
 	}
 }

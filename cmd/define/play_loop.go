@@ -173,7 +173,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 					if raw.sess != nil {
 						raw.sess.restore()
 					}
-					playAnnounced(ctx, d, opt, word, defaultIndicator(opt), stdout, stderr)
+					// No source language here: a review session is the deck's own
+					// language throughout, and #29's -pron is a per-lookup flag that
+					// --play has no line to carry.
+					playAnnounced(ctx, d, opt, utteranceFor(word, "", "", opt),
+						defaultIndicator(opt), stdout, stderr)
 					if raw.sess != nil {
 						again, err := enterRaw(raw.f)
 						if err != nil {

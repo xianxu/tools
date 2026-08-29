@@ -406,6 +406,10 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// applies to THIS invocation and does not persist. /lang is the other half —
 	// it persists and does not need re-typing.
 	langFlag := fs.String("lang", "", "language for this invocation: en, es (default: the directory's setting)")
+	// -pron is NOT -lang's sibling despite the shape. -lang moves the mode: the
+	// deck, the dictionary, the highlight set and the recording. -pron moves only
+	// the recording, for one lookup, which is the whole of #29.
+	pronFlag := fs.String("pron", "", pronHelp)
 	forget := fs.String("forget", "", "remove a word from the deck (events are kept)")
 	llmCheck := fs.Bool("llm-check", false, "check the model configuration and exit")
 	// Names the artifact, not the file: the filename is per-language and this
@@ -425,12 +429,18 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			"shows what you looked up in the last two days (/history 7, or\n"+
 			"--days 7, for a wider window); /sound sets how many times a\n"+
 			"pronunciation plays for the rest of the session; /lang says which\n"+
-			"language this deck is in, and /lang es switches it.\n\n"+
+			"language this deck is in, and /lang es switches it; /pron fr\n"+
+			"replays the word you just looked up in French, once.\n\n"+
 			"define works in ONE language at a time. The setting lives in the\n"+
 			"directory, so a one-shot lookup inherits it with no session to ask;\n"+
 			"-lang es applies to one run without changing it. Each language has\n"+
 			"its own deck under words/<lang>/, so a review session never mixes\n"+
 			"them.\n\n"+
+			"-pron is the exception, and it is not a mode: -pron fr arrondissement\n"+
+			"plays the French recording and changes nothing else — same entry,\n"+
+			"same deck, and the next lookup is English again. You name the\n"+
+			"language; the entry's ORIGIN says which. A source with no recording\n"+
+			"falls back to the session's and says so.\n\n"+
 			"A line that is not a word and reads as a question is answered by\n"+
 			"the model rather than looked up — there is no mode to switch. The\n"+
 			"dictionary is asked first, so multi-word headwords (hot dog) are\n"+
@@ -494,6 +504,19 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 			return 2
 		}
 		lang = parsed
+	}
+	// Validated HERE with -lang, before anything opens a directory, and for the
+	// same reason: this value becomes a path segment on the CDN. store.ParseLang
+	// is the validator, so the complaint is its one message rather than a second
+	// spelling of "that is not a language".
+	var pron store.Lang
+	if *pronFlag != "" {
+		parsed, err := store.ParseLang(*pronFlag)
+		if err != nil {
+			fmt.Fprintf(stderr, "define: %v\n", err)
+			return 2
+		}
+		pron = parsed
 	}
 	opt := options{
 		raw:   *raw,
@@ -561,7 +584,19 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	case !forgetting && oneShot.kind != cmdCommand && oneShot.kind != cmdAsk && fs.NArg() > 1:
 		fs.Usage()
 		return 2
+	// -pron applies to ONE lookup, so it needs one. Refused rather than quietly
+	// made session-wide: a pronunciation language living in opt.voice would
+	// survive a /lang switch and ask for fr_fr recordings in a Spanish session,
+	// which is the drift applyLang's enumeration exists to stop (#29 D3). The
+	// message names /pron rather than leaving the in-session form to be found.
+	case pron != "" && oneShot.kind != cmdDefine:
+		fmt.Fprintln(stderr, "define: -pron applies to one lookup; at the prompt use /pron fr")
+		return 2
 	}
+	// The flag rides on the LINE, beside `literal`, because that is what it is:
+	// a per-line modifier. parseREPLLine never sets it, so nothing either loop
+	// parses carries a language.
+	oneShot.pron = pron
 
 	// Store-backed dependencies are built HERE, not in realDeps: the opt-out is a
 	// flag-parse-time input and decides whether anything is opened at all.
@@ -669,7 +704,8 @@ func defineOnce(ctx context.Context, d deps, opt options, cmd replCommand, stdou
 		// A missing recording is not a failed lookup: the definition is the
 		// deliverable and has already been printed, so audio problems warn on
 		// stderr and leave the exit code at 0.
-		playAnnounced(ctx, d, opt, cmd.word, defaultIndicator(opt), stdout, stderr)
+		playAnnounced(ctx, d, opt, utteranceFor(cmd.word, out.entry, cmd.pron, opt),
+			defaultIndicator(opt), stdout, stderr)
 	}
 	return out
 }
@@ -764,7 +800,7 @@ type indicator struct {
 //
 // Returns true when playback finished with nothing reported, so the caller can
 // decide whether its redrawn UI is still intact.
-func playAnnounced(ctx context.Context, d deps, opt options, word string, ind indicator, stdout, stderr io.Writer) bool {
+func playAnnounced(ctx context.Context, d deps, opt options, u utterance, ind indicator, stdout, stderr io.Writer) bool {
 	// An erasable indicator is ephemeral UI and may be optimistic — if playback
 	// fails it is taken back and never seen. A non-erasable one (a pipe, or
 	// -no-color) is a RECORD, and a record has to be true: announced only after
@@ -775,7 +811,7 @@ func playAnnounced(ctx context.Context, d deps, opt options, word string, ind in
 		fmt.Fprint(stdout, ind.before)
 		fmt.Fprintf(stdout, "  ♫ playing %d×", opt.times)
 	}
-	err := speak(ctx, d, word, opt.voice, opt.times)
+	from, err := speak(ctx, d, u, opt.times)
 	if erasable {
 		fmt.Fprint(stdout, ind.erase)
 	}
@@ -789,6 +825,10 @@ func playAnnounced(ctx context.Context, d deps, opt options, word string, ind in
 		}
 		return false
 	}
+	// AFTER the erase and only on success, because this is a record rather than
+	// the ephemeral indicator above it: on a pipe it cannot be taken back, so it
+	// is written once the answer is known instead of predicted from the request.
+	reportVoice(stderr, u, from)
 	if ind.show && !erasable {
 		fmt.Fprint(stdout, ind.before)
 		fmt.Fprintf(stdout, "  ♫ playing %d×%s", opt.times, ind.trail)
@@ -796,25 +836,78 @@ func playAnnounced(ctx context.Context, d deps, opt options, word string, ind in
 	return true
 }
 
+// reportVoice says what actually played, when it was not what was asked for.
+//
+// ONLY in that case (#29). A line on every lookup would be noise, and a line
+// when no source was asked for would answer a question nobody put. The Italian
+// case is why it exists at all: nine probes found no Italian audio in this CDN
+// generation, so `/pron it ciao` will always fall back — and falling back
+// silently would present the English recording as the Italian one.
+//
+// It reads `from`, the URL that ANSWERED, through utterance.spokeSource, which
+// tests membership in the list actually built. Predicting from the request
+// instead would report a fallback that did not happen the moment coverage
+// changes.
+func reportVoice(w io.Writer, u utterance, from string) {
+	if !u.askedForSource() || u.spokeSource(from) {
+		return
+	}
+	// NORMALISED, not the raw fields: a zero session voice would otherwise print
+	// "played the  one". AudioCandidates defaults the same way, so the record
+	// names the language actually asked for.
+	fmt.Fprintf(w, "define: no %s recording for %s; played the %s one\n",
+		u.Source.langOrDefault(), u.Word, u.Session.langOrDefault())
+}
+
+// utteranceFor builds one request: the session's voice always, and a source
+// voice only when a language was asked for.
+//
+// ONE builder for every call site — the one-shot, both loops' replay, the raw
+// loop's post-lookup play and the review session — because the source spellings
+// have to be derived identically at each. Two paths that each decide what to ask
+// the CDN is #14's "two loops, one decision table" in a new costume, and that
+// divergence is silent because each path is individually tested.
+//
+// `entry` may be empty: a caller with no raw text still gets a working
+// session-voice request, and SourceSpellings falls back to the typed word.
+//
+// The source voice comes from voiceFor — #27's function, UNCHANGED — so the
+// locale is #27's policy rather than a second one invented here, and -locale
+// still qualifies whatever language is in effect: `-pron es` builds es_es,
+// `-pron es -locale us` builds es_us, Latin American seseo.
+func utteranceFor(word, entry string, pron store.Lang, opt options) utterance {
+	u := utterance{Word: word, Session: opt.voice}
+	if pron == "" {
+		return u
+	}
+	u.Source = voiceFor(pron, opt.locale)
+	u.Spellings = SourceSpellings(word, ParseEntry(entry))
+	return u
+}
+
 // speak fetches the recording and plays it n times. It prints NOTHING — the
 // announcement belongs to the caller, because a replay in the loop must leave
 // the screen exactly as it was.
-func speak(ctx context.Context, d deps, word string, v voice, n int) error {
-	data, _, err := d.audio.Fetch(ctx, AudioCandidates(word, v))
+//
+// Returns the URL that ANSWERED, which it used to fetch and discard. That is
+// what lets the caller report which voice was heard from what actually happened
+// rather than from what was requested (#29).
+func speak(ctx context.Context, d deps, u utterance, n int) (from string, err error) {
+	data, from, err := d.audio.Fetch(ctx, u.Candidates())
 	if err != nil {
-		return fmt.Errorf("%s: %w", word, err)
+		return "", fmt.Errorf("%s: %w", u.Word, err)
 	}
 	dir, err := os.MkdirTemp("", "define-audio-")
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer os.RemoveAll(dir)
 
 	path := filepath.Join(dir, "pronunciation.mp3")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return err
+		return "", err
 	}
-	return playN(ctx, d.player, path, n)
+	return from, playN(ctx, d.player, path, n)
 }
 
 // isSet reports whether a flag was given at all, which is different from being

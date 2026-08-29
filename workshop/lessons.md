@@ -2328,3 +2328,143 @@ step part of the same edit as the thing that triggers it — rename and row in o
 commit — and treat a mechanism with an unsupplied input as unprotected rather
 than protected.
 
+
+## A structural argument is not a pin (define #29, close review round 2)
+
+Done-when 6 was "covered" by a sentence: *`voiceFor` is unchanged, so the locale
+is literally `#27`'s.* True, and worthless — rewriting the CALL SITE to
+`voiceFor(pron, "")` left the whole suite green. **A reused function cannot vouch
+for a new caller.** The reuse is real; the wiring to it is new code and can be
+wrong without touching the thing reused.
+
+The rule, and it is decidable at plan time: **every Done-when coverage cell names
+a `Test…` symbol, and that test is OBSERVED red with the wiring removed.** A cell
+that can only name a task, a decision, or a design property is a cell with no
+pin, and should say so rather than implying one.
+
+Measured on that issue: of six Done-whens, the two whose cells named a task or a
+decision instead of a test were *exactly* the two that turned out unpinned. Two
+for two, found one review round apart.
+
+## "unchanged" is a claim about the diff, and git already knows (define #29)
+
+A plan's Core-concepts status column says `new`/`modified`/`unchanged`. Those are
+not opinions about behaviour — they say whether this window touched the symbol,
+which is mechanically checkable. Four of twenty rows were wrong across two review
+rounds, and the round that fixed them BY HAND caught three of four: the fourth
+had been sitting there the whole time claiming "unchanged" about a symbol the
+same plan's own doc sweep rewrote.
+
+Two details decide whether the check is usable:
+
+- **Declaration level, not file level.** `voice.go` changed while `voiceFor`,
+  `localeFor`, `defaultLocale` and `applyVoice` did not, and that row was
+  correct. A file-level check condemns it.
+- **The doc comment is part of the declaration.** A symbol whose comment this
+  window rewrote is not "unchanged" to the reader the plan is written for.
+
+And when the mechanism landed it immediately caught two rows the *previous* round
+had added by hand — both naming a TYPE while what changed was its method.
+
+## A heuristic that fails in both directions wants a vocabulary (define #29)
+
+The same status cell got two heuristics. `Contains(lower(cell), "new")` also
+matched "renewed". The fix — first word equals "new" — then missed `**new**`, and
+bold cells are this repo's live convention. Two failures in opposite directions
+is the signal to stop guessing at the shape: it is a **controlled vocabulary**
+(`new`/`modified`/`unchanged`/`deleted`), so normalise the cell and match the
+set, and **fail loudly on anything outside it** rather than letting an
+unrecognised value fall into whichever branch the heuristic happens to pick.
+
+## A negative check must cover the whole thing it claims (define #29)
+
+Three live conformance rows pinned claims about a WALK — "Italian is absent",
+"French coverage is partial", "`jalapeno_es_es` is a 404" — by probing
+`AudioCandidates(word, voice)[0]`. One URL. A recording appearing only at the
+`_2` suffix would leave every row green while the fallback quietly stopped
+firing, and the row would be pinning a strictly smaller claim than its name.
+
+Assert through the production shape — `Fetch(ctx, AudioCandidates(…))` returning
+`ErrNoAudio` — so the check and the code walk the same list.
+
+## A doc that ENUMERATES something must derive from it (define #29)
+
+The atlas listed three of five commands, and the two missing were the two most
+recently added — `/lang` and `/pron`, two for two. Every author added a registry
+row and did not know the table existed. Prose *about* a mechanism can be written
+by hand; a prose *enumeration of its members* cannot, because the members grow
+and the prose does not. Generate it from the registry and pin it, exactly as
+`localeHelp`/`pronHelp` are pinned.
+
+## Mutation testing, two more ways to get a false reading (define #29)
+
+Both happened in one session, on top of the four already recorded:
+
+- **Mutating BEFORE the thing that overwrites it.** A mutation setting
+  `opt.voice` was placed above `applyVoice`, which recomputes it — so the suite
+  stayed green and read as "this assertion is blind". The assertion was fine; the
+  mutation never survived to the code under test. Put it where the value is
+  actually read.
+- **`git checkout <file>` to revert, on an UNCOMMITTED baseline.** This is
+  already in this file, and it happened again anyway — twice more in the same
+  session, the second time discarding ~150 lines of guard work written minutes
+  earlier. **Three occurrences in one session, with the rule already written
+  down**, so the rule needs an operational trigger rather than good intentions:
+  *`git checkout` is not a revert tool — it is a "discard everything since the
+  last commit in this file" tool.* Before typing it, `git status --short` the
+  file. Better: commit, THEN mutate, and treat "I want to mutate an uncommitted
+  file" as the signal to commit first, not as a thing to be careful about.
+
+## Run the chain against the real dependency before believing the probe (define #29)
+
+Nine CDN probes said `rôle_fr_fr` is a 200 and `role_fr_fr` a 404, so "the
+accented spelling wins" went into three files as a 9-of-9 rule. Running the
+finished pipeline against the live dictionary showed `SourceSpellings("role", …)`
+returns `["role"]`: NOAD heads the entry `role`, has no `(also rôle)`, and spells
+the accented form only inside ORIGIN prose. The probe measured the CDN correctly
+and said nothing about whether the code could ever *reach* that URL.
+
+**A probe of a dependency is not a test of the path to it.** The rule is 8 of 8,
+and `role` is a recorded limitation.
+
+## A fake that diverges from its dependency blocks the test you need (define #29)
+
+Three doubles were wrong in ways that had been harmless until this issue made
+them load-bearing, and each one blocked the end-to-end test rather than merely
+being imprecise:
+
+- `fakeDictionary` was keyed by exact spelling while NOAD is accent-insensitive.
+  With it unfixed, the test would have had to type `jalapeño` — where typed and
+  headword agree and the entire mechanism goes unexercised. **A fake that cannot
+  represent the case the feature is FOR turns the test into a tautology.**
+- `fakeCDN` keyed on `r.URL.Path`, which Go percent-DECODES, so every URL with a
+  non-ASCII character 404'd there while the real CDN serves it.
+- `rebasedSource` returned its own rewritten URL as "the one that answered" —
+  harmless while the value was discarded, wrong the moment it was read.
+
+The pattern: a double's divergence is invisible until a feature depends on the
+part that diverges. When a new feature makes a previously-ignored value
+load-bearing, **check what the doubles do with that value first.**
+
+## Run the suite the checklist names, not the one you have been running (define #29)
+
+Three close-review rounds ran on `go test ./cmd/define`. The plan's own
+`## Verification before close` says `go test ./...`, and when the reviewer ran
+that it was **RED** — a repo-wide guard (`TestEverySkipIsRoutedOrWaived`) had
+been failing since the previous round on two `t.Skip` sites added in the commit
+that answered it.
+
+Two things generalise:
+
+- **A narrower run is not weaker evidence, it is DIFFERENT evidence.** Package
+  tests cannot see a guard that walks the whole tree, and the guards most worth
+  having are exactly the tree-walking ones.
+- **Evidence has a timestamp.** The `--verified` text was measured before the
+  last two commits, which is the same class as a commit message asserting a
+  deletion: re-run on the FINAL head, after the last fix, not after the round
+  the fixes answered.
+
+Corollary found the hard way: `internal/conformance`'s waiver marker must sit on
+the skip line or within **three lines above it**. A four-line comment block whose
+first line carries the marker does not count, and the failure message does not
+say so.

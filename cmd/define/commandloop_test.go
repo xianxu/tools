@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -424,5 +425,67 @@ func TestSubmitClearsTheMenuBeforeOutput(t *testing.T) {
 	want := strings.Repeat("\r\n"+eraseLine, rows) + fmt.Sprintf("\x1b[%dA\r", rows)
 	if !strings.Contains(s[:i], want) {
 		t.Errorf("the menu was not cleared before the output was written under it: %q", s[:i])
+	}
+}
+
+// The raw editor's /pron branch, and specifically the property that makes it
+// safe: playback happens OUTSIDE the cooked block (#29).
+//
+// This is the design's only real hazard. Commands are dispatched inside
+// cooked(), and playing there hands Ctrl-C to the line discipline, which
+// swallows the byte — the key reader sees nothing and the session looks frozen
+// for the length of the recording. workshop/lessons.md records that as "render
+// cooked, play raw", and the whole reason runPron RECORDS a language rather than
+// playing one is to obey it.
+//
+// The property is directly assertable: count CDN requests made while the cooked
+// callback is running. The lookup's own playback is already outside it, so the
+// correct answer is zero, and a runPron that played in place would make it two.
+// The repo pairs TestLineLoopDispatchesCommands with TestRawEditorDispatchesCommands
+// for exactly this two-loops reason; this is /pron's half of that pair.
+func TestRawEditorPronPlaysOutsideTheCookedBlock(t *testing.T) {
+	en := voice{Lang: "en", Locale: "us"}
+	es := voice{Lang: "es", Locale: "es"}
+	english := AudioCandidates("jalapeno", en)[0]
+	spanish := AudioCandidates("jalapeño", es)[0]
+
+	rig := newAudioRigServing(t, english, spanish)
+	rig.deps.stdinIsTerminal = func() bool { return true }
+	// locale EMPTY, unlike editorRig's "us", and the difference is not cosmetic:
+	// opt.locale is the -locale FLAG, and #29 D4 keeps it qualifying whatever
+	// language is in effect. With "us" this same script correctly asks for
+	// jalapeño_es_us — Latin American seseo — which is the flag working, not a
+	// bug. An unqualified session is what a reader of this test should picture.
+	opt := options{times: 1, tty: true, color: true}
+
+	duringCooked := 0
+	cooked := func(run func()) error {
+		before := len(rig.cdn.Requested())
+		run()
+		duringCooked += len(rig.cdn.Requested()) - before
+		return nil
+	}
+
+	var out, errb bytes.Buffer
+	code := runEditor(t.Context(), scriptKeys("jalapeno\r/pron es\r"), nil,
+		rig.deps, opt, cooked, func() {}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+
+	// It replayed, in Spanish, on the SOURCE spelling.
+	want := []string{stripHost(t, english, audioBase), stripHost(t, spanish, audioBase)}
+	if got := rig.cdn.Requested(); !slices.Equal(got, want) {
+		t.Errorf("the CDN was asked for:\n  %q\nwant:\n  %q", got, want)
+	}
+	if got := rig.player.count(); got != 2 {
+		t.Errorf("played %d times, want 2 — the lookup and the /pron replay", got)
+	}
+	// And it played where it must: not while the terminal was cooked.
+	if duringCooked != 0 {
+		t.Errorf("%d CDN requests happened INSIDE the cooked block; want 0. "+
+			"Playing there hands Ctrl-C to the line discipline, which swallows it — "+
+			"runPron must record the language and let the loop replay in raw mode",
+			duringCooked)
 	}
 }

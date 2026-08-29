@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -149,5 +151,86 @@ func TestCachingAudioSourceCachesErrNoAudio(t *testing.T) {
 	}
 	if got := len(cdn.Requested()); got != before {
 		t.Errorf("made %d more requests for a word with no recording, want 0", got-before)
+	}
+}
+
+// Italian's absence must be REPORTED, not heard as an English recording nobody
+// said was English (#29). Nine probes across three locale forms found no Italian
+// audio in this CDN generation, so this is the permanent case, not a transient.
+func TestPlayAnnouncedReportsTheVoiceThatAnswered(t *testing.T) {
+	en := voice{Lang: "en", Locale: "us"}
+	it := voice{Lang: "it", Locale: "it"}
+	asked := utterance{Word: "ciao", Spellings: []string{"ciao"}, Source: it, Session: en}
+	plain := utterance{Word: "ciao", Session: en}
+
+	for _, tc := range []struct {
+		name    string
+		u       utterance
+		serve   []string // which URLs the CDN has
+		wantErr []string // substrings stderr must carry; empty means stderr must be EMPTY
+	}{
+		{
+			name:    "a source was asked for and is missing: the session's plays, and it says so",
+			u:       asked,
+			serve:   AudioCandidates("ciao", en),
+			wantErr: []string{"no it recording for ciao", "played the en one"},
+		},
+		{
+			// The counterpart, so the report cannot quietly become a line on
+			// every lookup.
+			name:  "a source was asked for and answered: nothing to report",
+			u:     asked,
+			serve: AudioCandidates("ciao", it),
+		},
+		{
+			// The third cell: the session's recording played, but nobody asked
+			// for anything else, so there is no surprise to report.
+			name:  "no source was asked for: nothing to report",
+			u:     plain,
+			serve: AudioCandidates("ciao", en),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rig := newAudioRigServing(t, tc.serve...)
+			opt := options{times: 1}
+			var out, errb bytes.Buffer
+
+			playAnnounced(t.Context(), rig.deps, opt, tc.u, indicator{}, &out, &errb)
+
+			if n := rig.player.count(); n != opt.times {
+				t.Errorf("played %d times, want %d — nothing reached the player", n, opt.times)
+			}
+			if len(tc.wantErr) == 0 {
+				if errb.Len() != 0 {
+					t.Errorf("stderr should be empty, got %q", errb.String())
+				}
+				return
+			}
+			for _, want := range tc.wantErr {
+				if !strings.Contains(errb.String(), want) {
+					t.Errorf("stderr missing %q, got %q", want, errb.String())
+				}
+			}
+		})
+	}
+}
+
+// A record with a hole in it is the one failure this design cannot afford.
+//
+// reportVoice used to print voice.Lang raw, while AudioCandidates defaults an
+// empty Lang to English — so a zero session voice produced "played the  one".
+// Latent in production (applyVoice always runs) and exactly the kind of latent
+// the close review found by scratch-running it.
+func TestTheVoiceReportNamesALanguageEvenWithAZeroVoice(t *testing.T) {
+	u := utterance{
+		Word:      "ciao",
+		Spellings: []string{"ciao"},
+		Source:    voice{Lang: "it", Locale: "it"},
+		Session:   voice{}, // never through applyVoice
+	}
+	var b bytes.Buffer
+	reportVoice(&b, u, "https://example.invalid/not-a-source.mp3")
+	if got := b.String(); !strings.Contains(got, "played the en one") {
+		t.Errorf("report = %q, want it to name a language rather than a blank", got)
 	}
 }
