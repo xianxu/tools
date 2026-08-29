@@ -115,11 +115,26 @@ func TestOriginLanguageRules(t *testing.T) {
 		{"a stage is masked before the search", "via Old French from Latin natio(n-).", ""},
 		{"bare Greek is ancient", "from Greek ephemeros.", ""},
 		{"Germanic is a family, not a language", "Old English rinnan, of Germanic origin, reinforced by Old Norse.", ""},
-		// THE rule that actually protects the case above, pinned on its own so a
-		// change to the matching rule reddens here rather than silently making
-		// `run` infer German. The mask list is redundancy; this is the guard.
-		{"German does not match inside Germanic", "of Germanic origin.", ""},
-		{"and the boundary is not doing it by accident", "from German Schadenfreude.", "de"},
+		// THE word-boundary guard, on a case the MASK CANNOT SAVE.
+		//
+		// "of Germanic origin" was the first attempt and it pinned nothing: the
+		// `Germanic` mask holds it green, so the two mechanisms were mutually
+		// redundant and each hid the other's removal. The mutation that "proved"
+		// the boundary changed BOTH at once and the redness was attributed to
+		// one — an invalid result of exactly the kind workshop/lessons.md records.
+		//
+		// "Germany" is in no mask list, so only \b stops it matching German.
+		{"a country is not a language", "named after a town in Germany.", ""},
+		{"nor is a person", "named for the Frenchman Germaine.", ""},
+		{"and the boundary is not refusing everything", "from German Schadenfreude.", "de"},
+
+		// The derived stage mask (D4 as a CATEGORY): every mapped language
+		// generates its own stages, so these four leaked while Old French did not.
+		{"Old Italian is a stage", "from Old Italian mezzo.", ""},
+		{"Middle French is a stage", "from Middle French bureau.", ""},
+		{"Old Spanish is a stage", "from Old Spanish casco.", ""},
+		{"Low German is a stage", "from Low German bugseren.", ""},
+		{"Old High German is masked whole", "from Old High German hus.", ""},
 		{"no ORIGIN content at all", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

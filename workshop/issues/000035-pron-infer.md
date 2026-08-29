@@ -1,12 +1,13 @@
 ---
 id: 000035
-status: working
+status: codecomplete
 deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours: 1.39
 started: 2026-08-29T14:56:14-07:00
+actual_hours: 0.85
 ---
 
 # /pron with no language: infer the origin from ORIGIN, error only when it cannot be determined
@@ -207,6 +208,7 @@ single pass, no `Mx`).
 ## Log
 
 ### 2026-08-29
+- 2026-08-29: closed — ACTUAL IS A LABELLED JUDGMENT, not a measurement: sdlc actual reports "no measurable activity for #35", so this is claim-to-close wall clock — 14:56 to 15:45 = 0.82h — rounded to 0.85 for the close review still to run. v3.1 counts gate and suite waits as elapsed, and there was no idle in this window, so wall clock and focused hours coincide here. Flagged so #117 does not read it as engine-measured. EVIDENCE: both suites on the final head — go test ./... 0 failures; go test -tags conformance ./cmd/define/ green unfiltered (293s) UNSANDBOXED so the NOAD rows executed. Live CLI: arrondissement + bare /pron prints "ORIGIN says French" and plays French; jalapeno prints "ORIGIN says Spanish"; read declines with "names only historical stages or cognates" because its Dutch and German follow "related to"; granulate declines for having no ORIGIN; /pron it still overrides and falls back with its report. The inference is pinned over the WHOLE 34-fixture corpus with an outcome per file rather than a curated list, because the case that matters is one nobody would pick — run has no cognate marker at all. #29 D1 pinned by TestAnOrdinaryLookupNeverInfersTheOrigin, verified red by making defineOnce infer. Mutation-verified: dropping the cognate cut reddens 7 fixtures, dropping the word boundary reddens 5 rule cases. Two claims of mine were disproved by measurement and corrected rather than shipped: a comment said the Germanic mask protects run when the word boundary does, and the estimate block declared 1.33 against arithmetic of 1.395. A plan-gate finding caught my fix for the unpinned argument rule contradicting D6 four paragraphs above it and reversing #31 recorded decision.; review verdict: FIX-THEN-SHIP
 
 Filed from the operator's request while discussing `#30`. Every number above was
 measured before filing. Sequenced BEFORE `#30` deliberately: it makes both of
@@ -256,3 +258,21 @@ first time this session they caught ordinary work rather than a review finding:
 `#31`'s plan-status guard flagged a stale `newCommandCtx` row, `#31`'s derived
 command table reddened when the summary changed, and the old contract test
 reddened when the contract did.
+
+### 2026-08-29 — close review
+
+Four findings, all mine. Two are about verification rather than code, and those
+are the ones worth carrying forward:
+
+- **My mutation proof for the word boundary was invalid.** It changed the regex
+  AND removed `Germanic` from the mask in one edit, then attributed the redness
+  to the regex. The two mechanisms were mutually redundant and each hid the
+  other's removal. Re-pinned with cases the mask cannot save, and re-verified by
+  changing only one thing.
+- **A test column that is never asserted is not a test.** `because` sat unread,
+  and that is precisely what let `gaslighting` ship being told its ORIGIN "names
+  only historical stages or cognates" when it names no language at all.
+
+Plus: the stage mask enumerated instances where D4 promises a category — `Old
+Italian`, `Middle French`, `Old Spanish` and `Low German` all leaked — and bare
+`/pron` before any lookup blamed a non-existent entry.

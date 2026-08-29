@@ -116,8 +116,11 @@ func TestPronReportsWhyItCannotInfer(t *testing.T) {
 	for _, tc := range []struct{ word, because string }{
 		// Dutch and German appear only after "related to".
 		{"read", "cognate"},
-		// "1960s: see gaslight (verb)" — no language at all.
-		{"gaslighting", "ORIGIN"},
+		// "1960s: see gaslight (verb)" — an ORIGIN that names no language at
+		// all, which is a DIFFERENT reason and must say so. The `because` field
+		// went unasserted in the first version of this test, and that is what let
+		// this case ship with the cognates-and-stages message.
+		{"gaslighting", "names no language"},
 	} {
 		t.Run(tc.word, func(t *testing.T) {
 			rig := newAudioRigServing(t, AudioCandidates(tc.word, voice{Lang: "en", Locale: "us"})[0])
@@ -128,6 +131,12 @@ func TestPronReportsWhyItCannotInfer(t *testing.T) {
 
 			if !strings.Contains(errb.String(), "/pron") {
 				t.Errorf("the refusal does not name the command: %q", errb.String())
+			}
+			// The REASON, asserted. Both shapes decline, and telling a user their
+			// entry names only stages when it names no language at all is a
+			// record that is not true.
+			if !strings.Contains(errb.String(), tc.because) {
+				t.Errorf("the refusal does not say WHY (want %q): %q", tc.because, errb.String())
 			}
 			// Exactly ONE request: the lookup's own. No inferred replay happened.
 			if got := rig.cdn.Requested(); len(got) != 1 {

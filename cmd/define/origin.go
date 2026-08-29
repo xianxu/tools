@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/store"
@@ -32,7 +33,7 @@ var originLanguages = map[string]store.Lang{
 	"Finnish": "fi", "Hungarian": "hu",
 }
 
-// historicalStages are masked out of an ORIGIN before any modern language is
+// Historical stages are masked out of an ORIGIN before any modern language is
 // looked for.
 //
 // Excluded BY CATEGORY, not because the CDN 404s them. `Latin` has the code
@@ -41,34 +42,56 @@ var originLanguages = map[string]store.Lang{
 // Google added Latin. They are excluded because a superseded stage of a language
 // is not something a speaker says today: the thing /pron offers does not apply.
 //
-// THE ORDER MATTERS, and it is the most common case rather than an edge one.
-// Measured over 300 entries: `Old French` occurs 11 times against `French`'s 8,
-// so searching for modern names first would call the majority case French.
+// THE ORDER MATTERS, and it is the common case rather than an edge one. Measured
+// over 300 entries: `Old French` occurs 11 times against `French`'s 8, so
+// searching for modern names first would call the majority case French.
 //
-// `Greek` is here despite `el` existing, because NOAD's bare "Greek" means
-// ANCIENT Greek — it is the second most frequent language word in the survey,
-// behind Latin. NOAD writes "modern Greek" for the living language; that is left
-// unhandled rather than special-cased, because it did not occur in the survey
-// and a rule written for a case nobody has seen is a guess.
+// `Greek` is masked despite `el` existing, because NOAD's bare "Greek" means
+// ANCIENT Greek — the second most frequent language word in the survey, behind
+// Latin. NOAD writes "modern Greek" for the living language; that is left
+// unhandled rather than special-cased, because it did not occur in the survey and
+// a rule written for a case nobody has seen is a guess.
 //
-// `Germanic` is a FAMILY, not a language, and it is masked to say so — but NOT
-// because the search would otherwise match it. That claim was written here and
-// measured false: removing `Germanic` from this list leaves every fixture green,
-// including `run` ("of Germanic origin, probably reinforced in Middle English by
-// Old Norse"), which carries no cognate marker and would be the case to fail.
-// What actually protects `run` is the WORD BOUNDARY in the search below —
-// `\bGerman\b` does not match inside "Germanic" — and that is pinned by its own
-// case in TestOriginLanguageRules rather than left to this comment.
-//
-// The mask stays because a family name has no business being read as a source
-// language even if the matching rule later changes, and because it documents the
-// distinction. It is redundancy, and it is labelled as redundancy.
-var historicalStages = []string{
-	"Old English", "Middle English", "Old French", "Anglo-Norman French",
-	"Old Norse", "Middle Dutch", "Middle Low German", "Old High German",
-	"Old Saxon", "Latin", "Greek", "Sanskrit", "Germanic", "Scots",
-	"Old Irish", "Old Provençal", "Frankish",
+// `Germanic` is a FAMILY, not a language, and is masked to say so — but NOT
+// because the search would otherwise match it. That claim was written here once
+// and measured false: `\bGerman\b` does not match inside "Germanic", and the WORD
+// BOUNDARY is what protects `run`. It is redundancy, labelled as such, and
+// TestOriginLanguageRules pins the boundary with a case this mask cannot save.
+var stagePrefixes = []string{
+	"Old", "Middle", "Old High", "Middle High", "Middle Low", "Low", "Early",
+	"Anglo-Norman", "Anglo-",
 }
+
+// stagesWithNoModernMember carries the stages whose language has no row in
+// originLanguages, so no prefix rule can generate them.
+var stagesWithNoModernMember = []string{
+	"Latin", "Greek", "Sanskrit", "Old Norse", "Frankish", "Germanic", "Scots",
+	"Old Irish", "Old Provençal", "Old Saxon", "Old Church Slavonic",
+}
+
+// historicalStages is DERIVED from originLanguages rather than enumerated.
+//
+// Enumerating instances was the first shape and it leaked, measured at the close
+// review: `Old French`, `Old English` and `Middle Dutch` were masked while `Old
+// Italian`, `Middle French`, `Old Spanish` and `Low German` were not — each
+// inferring a modern recording for an explicitly superseded stage, and each
+// printing "ORIGIN says Italian" when ORIGIN said *Old* Italian, so the record
+// was untrue as well. D4 promises a CATEGORY; a hand list is instances of one.
+//
+// So every mapped language generates its own stages, and the hand list carries
+// only those whose language has no modern member to generate from.
+var historicalStages = func() []string {
+	out := append([]string(nil), stagesWithNoModernMember...)
+	for name := range originLanguages {
+		for _, p := range stagePrefixes {
+			out = append(out, p+" "+name)
+		}
+	}
+	// LONGEST FIRST, so "Old High German" is masked whole rather than "Old
+	// German" eating its head and leaving "High German" behind.
+	slices.SortFunc(out, func(a, b string) int { return len(b) - len(a) })
+	return out
+}()
 
 // cognateMarkers open a clause that names related words rather than sources.
 //
@@ -118,6 +141,12 @@ func OriginLanguage(e Entry) (store.Lang, string, error) {
 	if strings.TrimSpace(text) == "" {
 		return "", "", fmt.Errorf("%w: this entry has no ORIGIN", ErrNoOriginLanguage)
 	}
+	// Whether the RAW section mentions any mapped language at all decides which
+	// of two declines the user gets, and they are genuinely different facts:
+	// "gaslighting" reads "1960s: see gaslight (verb)" and names no language,
+	// while "read" names Dutch and German as cognates. Telling the first user
+	// their entry names only stages or cognates is a record that is not true.
+	mentionsAny := anyLanguageIn(text)
 	for _, marker := range cognateMarkers {
 		if i := strings.Index(text, marker); i >= 0 {
 			text = text[:i]
@@ -140,7 +169,25 @@ func OriginLanguage(e Entry) (store.Lang, string, error) {
 		}
 	}
 	if bestName == "" {
-		return "", "", fmt.Errorf("%w: its ORIGIN names only historical stages or cognates", ErrNoOriginLanguage)
+		if !mentionsAny {
+			return "", "", fmt.Errorf("%w: its ORIGIN names no language", ErrNoOriginLanguage)
+		}
+		return "", "", fmt.Errorf("%w: its ORIGIN names languages only as historical stages or cognates", ErrNoOriginLanguage)
 	}
 	return originLanguages[bestName], bestName, nil
+}
+
+// anyLanguageIn reports whether the text mentions a mapped language ANYWHERE,
+// before cognate clauses are cut or stages masked.
+//
+// It answers "was there a language to reject", which is what separates the two
+// declines. Same word-boundary rule as the search proper, so the two cannot
+// disagree about what counts as a mention.
+func anyLanguageIn(text string) bool {
+	for name := range originLanguages {
+		if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(text) {
+			return true
+		}
+	}
+	return false
 }

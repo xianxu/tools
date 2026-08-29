@@ -287,3 +287,39 @@ by hand, instead of implying one mechanism covers all three.
   this session they have fired on ordinary work rather than on a review finding:
   the atlas command table reddened when `/pron`'s summary changed, and
   `TestParsePronArgs` reddened when the argument contract changed.
+
+### 2026-08-29 — close review (FIX-THEN-SHIP, fixes bundled per `#174`)
+
+Four findings, all mine, and two are about verification rather than code.
+
+**(a) The word boundary was asserted to be pinned and was not — and my mutation
+proof was invalid.** The two rows meant to pin it (`"of Germanic origin."`) are
+held green by the `Germanic` MASK, so the two mechanisms were mutually redundant
+and each hid the other's removal. Worse, the mutation I ran to "prove" the
+boundary changed the regex **and** removed `Germanic` from the mask in the same
+edit, then attributed the redness to one of them — an invalid result of exactly
+the kind `workshop/lessons.md` records. Now pinned by cases the mask cannot save
+(`"a town in Germany"`, `"the Frenchman Germaine"`), and re-verified by changing
+**only** the regex: 2 cases redden.
+
+**(b) `historicalStages` enumerated instances where D4 promises a CATEGORY.**
+`Old French`, `Old English` and `Middle Dutch` were masked; `Old Italian`,
+`Middle French`, `Old Spanish` and `Low German` were not — each inferring a
+modern recording for an explicitly superseded stage, and each printing
+`ORIGIN says Italian` when ORIGIN said *Old* Italian, so the record was untrue
+too. The mask is now DERIVED from `originLanguages` by prefix, with a hand list
+only for stages whose language has no modern member. Sorted longest-first so
+`Old High German` is masked whole.
+
+**(c) Bare `/pron` before any lookup blamed an entry that did not exist**, because
+the inference ran above the "nothing looked up" check — and `command.go` claimed
+the opposite in a comment. The check moved up; `replay` is nil exactly when the
+session has no current word, so it is the same condition the argument form
+already used.
+
+**(d) A test field was never asserted, and that is what let a wrong message
+ship.** `TestPronReportsWhyItCannotInfer` carried a `because` column and checked
+only that stderr said `/pron`, so `gaslighting` — whose ORIGIN names no language
+at all — was told its ORIGIN "names only historical stages or cognates". There
+are three declines, not two, and `anyLanguageIn` decides which by asking whether
+the RAW section mentioned a language before anything was cut.

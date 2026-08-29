@@ -2478,3 +2478,46 @@ Corollary found the hard way: `internal/conformance`'s waiver marker must sit on
 the skip line or within **three lines above it**. A four-line comment block whose
 first line carries the marker does not count, and the failure message does not
 say so.
+
+## A mutation that changes two things proves nothing about either (define #35)
+
+To show a word-boundary regex was load-bearing I removed the boundary AND
+deleted the redundant mask entry in the same edit, saw five subtests redden, and
+wrote "dropping the boundary reddens five subtests" into a comment and an issue
+Log. The close review measured the truth: with only the regex changed, **nothing
+reddened** — the mask was holding those rows green the whole time.
+
+Two mechanisms that both prevent the same failure are **mutually redundant**, and
+each hides the other's removal. The tell is that the case you are testing with is
+covered by both. The fix is a case only ONE of them can save: `"a town in
+Germany"` is in no mask list, so only `\b` stops it matching `German`.
+
+**Rule: one mutation, one change.** If the thing you removed is not the only
+thing preventing the failure, you have measured the pair, not the part.
+
+## A test column nobody asserts is documentation (define #35)
+
+`TestPronReportsWhyItCannotInfer` had a `{word, because}` table and a doc comment
+saying "it declines with the reason, on the two shapes that differ" — and the
+body only checked that stderr mentioned the command. `because` was never read.
+
+The cost was not hypothetical: it let a wrong message ship. An entry naming no
+language at all was told its ORIGIN "names only historical stages or cognates",
+which is a record that is not true — the exact property the surrounding design
+insists on. Asserting the column turned it red immediately.
+
+**Before adding a field to a test table, grep the body for it.** An unread field
+reads as coverage in every review and provides none.
+
+## Enumerate the category, not the instances you happened to meet (define #35)
+
+A mask list held `Old French`, `Old English` and `Middle Dutch` — the stages the
+corpus happened to contain — under a decision that promised to exclude
+superseded stages *as a category*. `Old Italian`, `Middle French`, `Old Spanish`
+and `Low German` all sailed through, each inferring a modern recording for a dead
+stage and each REPORTING the modern language, so the record was wrong too.
+
+When a rule says "category", derive the members from whatever defines the
+category. Here every mapped language generates its own stages by prefix, and the
+hand list shrinks to the stages with no modern member to generate from — which is
+also the only part a reader has to check.

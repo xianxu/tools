@@ -50,6 +50,15 @@ func runPron(c commandCtx, args []string) int {
 		fmt.Fprintf(c.stderr, "define: /pron: %v\n", err)
 		return 2
 	}
+	// NOTHING LOOKED UP is answered BEFORE the inference, or bare /pron as the
+	// first line of a session blames an entry that does not exist: it printed
+	// "this entry has no ORIGIN" when there was no entry at all. `replay` is nil
+	// exactly when the session has no current word, so this is the same condition
+	// the argument form already used — it was simply below the inference.
+	if c.replay == nil {
+		fmt.Fprintln(c.stderr, "define: /pron replays the word you just looked up; there is none yet")
+		return 2
+	}
 	// No language: read it off the entry the user is looking at (#35).
 	//
 	// The REPORT is not decoration. A silent inference cannot be audited, and it
@@ -64,10 +73,6 @@ func runPron(c commandCtx, args []string) int {
 		}
 		fmt.Fprintf(c.stdout, "  ORIGIN says %s\n", named)
 		lang = got
-	}
-	if c.replay == nil {
-		fmt.Fprintln(c.stderr, "define: /pron replays the word you just looked up; there is none yet")
-		return 2
 	}
 	c.replay(lang)
 	return 0
