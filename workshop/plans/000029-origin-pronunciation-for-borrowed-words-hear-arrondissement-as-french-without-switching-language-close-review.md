@@ -272,3 +272,100 @@ Append one `## Revisions` entry, dated 2026-08-29, covering:
 - **Task 7's `**Files:**` line names `cmd/define/repl_test.go`, which was never touched** — the raw-editor `/pron` test landed in `cmd/define/commandloop_test.go` beside `TestRawEditorDispatchesCommands`, which is where it belongs. The prior Revisions entry says the test now exists but not that it lives elsewhere.
 - **`## Verification before close`'s "Done-when coverage" cells 4 and 6 name decisions, not tests** — replace each cell with the test symbol that goes red without the wiring, and record that cell 6 had no such test (`voiceFor(pron, "")` left the suite green) until I-1's sweep.
 - **Task 8 Step 4's third grep expects `NOTHING` for a site the task dispositions as AMEND** — correct the expectation so re-running the block verifies the change rather than contradicting it.
+
+---
+
+## Re-review — 2026-08-29T09:17:02-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 29 — origin pronunciation for borrowed words: hear arrondissement as French, without switching language |
+| repo | tools |
+| issue file | workshop/issues/000029-origin-pronunciation-for-borrowed-words-hear-arrondissement-as-french-without-switching-language.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a9ea60371a708172c0347261d2c110af8879200f..540b12f50fb459f432e5e4fabcb192d0df206be0 |
+| command | sdlc close --issue 29 |
+| reviewer | claude |
+| timestamp | 2026-08-29T09:17:02-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+All ten open findings (BR-1…BR-10) are genuinely addressed, and I verified the four that a commit message could have faked by mutation rather than by reading: re-adding `applyVoice(&opt, pron)` *after* `applyVoice(&opt, d.lang)` reddens `main_test.go:368`; moving the replay inside the cooked closure reddens `commandloop_test.go:486`; `voiceFor(pron, "")` reddens `main_test.go:400`; flipping the plan's `AudioCandidates` row to `unchanged` reddens the new plan-status guard; dropping the session tail from `Candidates()` reddens two tests. The feature itself is sound and I found no correctness defect in it. What blocks the gate is that **`go test ./...` is RED at `540b12f`** — `TestEverySkipIsRoutedOrWaived` fails on two unwaived `t.Skip` sites that commit `8832440` introduced. The base commit is green, so this window broke it, and the plan's own `## Verification before close` names `go test ./...` as the evidence. Beyond that, the ~200 lines of new guard machinery that answered round 2's family findings landed without being reviewed themselves: the emphasis-stripping that *is* M-2's rule is entered by no fixture (removing it leaves the suite green), and the new git calls swallow errors into a silent skip in the one file whose own `git()` helper documents why that was removed before.
+
+## 1. Strengths
+
+- **The three test-double corrections remain the strongest part of the diff (ARCH-MOCK).** `fakeCDN`'s `EscapedPath`, `fakeDictionary` folding through `differsOnlyByDiacritics` with `slices.Sorted(maps.Keys(...))`, and `rebasedSource` translating the answering URL back (`main_test.go:66-90`) are each load-bearing. `TestLiveDictionaryResolvesAnUnaccentedQuery` is the live half of the model.
+- **`utterance` is the right seam, and `spokeSource` by membership is the right call** (`audiourl.go:216-226`). The report is written after the fetch, from what answered, and the walk-order test asserts the no-source case is *byte-identical* to `AudioCandidates`.
+- **BR-5 was fixed as a class, not a line** — `voice.langOrDefault` (`voice.go:24`) became one accessor with both readers deriving from it, pinned by `TestTheVoiceReportNamesALanguageEvenWithAZeroVoice`.
+- **The plan-status guard genuinely works, including its subtlest claim.** Declaration-level rather than file-level is correct (the `voiceFor/localeFor/defaultLocale/applyVoice` row survives while `voice.go` changed), and I confirmed the doc-comment expansion is load-bearing: deleting the backwards walk over `//` lines reddens on `rebasedSource`.
+- **`TestDocsQuoteTheCommandList` closed `/lang` and `/pron` together** rather than adding the missing rows — the class-level answer M-1 asked for.
+- **Conformance is green and non-vacuous**: `go test -tags conformance ./cmd/define/` passes unfiltered (105s), and the four new `TestCDN*` rows pass live. `missesEntirely` asserting through `newHTTPAudioSource().Fetch` is the right production shape.
+
+## 2. Critical findings
+
+**C-1 — `go test ./...` is RED at the review head** (`cmd/define/repo_guard_test.go:825`, `:857`)
+
+```
+--- FAIL: TestEverySkipIsRoutedOrWaived (0.07s)
+    guard_test.go:90: 2 skip site(s) neither routed through conformance.SkipOrFail nor waived:
+        cmd/define/repo_guard_test.go:825  t.Skip("no active plans")
+        cmd/define/repo_guard_test.go:857  t.Skip("no unchanged/modified rows pointed at files this window touched")
+```
+
+I ran it on a clean tree at `540b12f` and again at the base `a9ea6037`, where `internal/conformance` is **ok**. So this window introduced it, in `8832440` — the commit that answered round 2. `TestPlanTableStatusMatchesTheChangeWindow` added three skip sites; the author waived the first one correctly (`repo_guard_test.go:816`, `conformance:inapplicable — on a merged branch there is no window`) and missed the other two in the same function.
+
+Fix: give both skips a `conformance:inapplicable — <why>` comment on the line or in the three above it — and for `:857` decide first whether "checked nothing" should be a skip at all, since the sibling at `:617` reasons it out explicitly while this one does not.
+
+The rule underneath: the evidence was measured before the last two commits, not after them. Re-run `go test ./... && go test -tags conformance ./cmd/define/` on the final HEAD and put *that* in `--verified`.
+
+## 3. Important findings
+
+**I-1 — `planStatus`'s emphasis stripping is entered by no fixture; the rule M-2 asked for shipped unpinned** (`cmd/define/repo_guard_test.go:639-646`)
+
+> **This is the 3rd finding in family `done-when-unpinned`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+I replaced `strings.Trim(fields[0], "*_`")` with `fields[0]` and `go test ./cmd/define -run TestPlanTable` stayed **green**. No plan in the tree writes a bolded status cell, so the branch that handles `**new**` — the entire substance of round 2's M-2 — is protection that has never been exercised. The out-of-vocabulary `t.Errorf` branch is likewise unreached. This is the third spelling of this one parse (`Contains(…, "new")` → `Fields(…)[0] == "new"` → vocabulary), and the first two both shipped broken.
+
+The rule, which is the widening the family now needs: **the "observed red when the wiring is removed" discipline the plan applies to Done-when cells applies to *every* fix delivered in answer to a finding, not only to Done-whens.** A finding-fix with no test that reddens without it is `not-addressed`, however plausible the diff. Concretely: `planStatus` is a pure function taking a string and returning `(string, bool)` — it wants a table test (`new`, `**new**`, `` `modified` ``, `*unchanged*`, `Modified — gains X`, `renewed` → not-ok, `` `` → not-ok), and the same pass applied to this round's other fixes would have caught it before the gate.
+
+**I-2 — the new guard's git calls swallow errors into a silent skip, in the file whose own helper documents why that is wrong** (`cmd/define/repo_guard_test.go:864`, `:869`, `:881`)
+
+`repo_guard_test.go:45-53` already has `git(t, args...)` with the comment: *"Deliberately Fatal, never Skip. The previous version skipped on any git error, so it was a silent no-op in an exported tree or without git on PATH — a guard that reports nothing when it cannot run certifies nothing."* `changeWindowBase` and `changedLines` bypass it. `changedLines` returns `nil` on `err != nil`, which is the same value it returns for "this window did not touch the file" — so a git failure downgrades every `modified`/`unchanged` row to unchecked, silently. `changeWindowBase` turns any `merge-base` failure into `t.Skip`, conflating "on main / no window" (legitimately inapplicable) with "git is unavailable" (the guard did not run). This is the `check-that-cannot-fail-reads-as-green` family `internal/conformance/guard_test.go:12-27` records four rounds of.
+
+Fix: route `rev-parse HEAD` and `diff --unified=0` through the existing `git()` helper (Fatal), and keep the skip only for the one genuinely inapplicable case — `merge-base` failing because there is no `main` — with the waiver comment C-1 needs anyway.
+
+## 4. Minor findings
+
+- **`checkPlanName` and `checkPlanStatus`/`declarationRegion` write the same symbol locator twice** (`repo_guard_test.go:656-685` vs `:915-921` + `:938-941`) — the receiver-split block is duplicated verbatim and the declaration regexes are written twice, and they have *already* diverged: `checkPlanName` also accepts an `assigned` form (`^name :?=`) that `declarationRegion` returns `ok=false` for and silently skips. **This is the 2nd finding in family `one-predicate-two-spellings`.** Do not fix the site: the rule BR-6 established — one named function, the second call site calls it — applies here as `splitReceiver(name, path) (recv, bare string)` and `declRegexp(name, recv) *regexp.Regexp`, both shared. Prevalence: 2 instances on this issue, the second landing in the commit that fixed the first.
+- `repo_guard_test.go:812-858` — the guard checks *every* active plan against *this branch's* window, so with two plans in flight touching a shared file, the other issue's `modified` row fails here for work that legitimately happened on another branch. Scope the check to the plan whose issue the window belongs to, or skip rows from plans the window does not otherwise touch.
+- `cmd/define/replraw.go:249` — `pron = ""` after `replayInPlace` is dead: `pron` is declared inside the `cmdCommand` block and does not outlive the iteration.
+- `cmd/define/pron_cmd_test.go:65` — `TestPronWithNothingLookedUpSaysSo` still discards `run`'s exit code; `runPron` returns 2 and the README documents 2 for a usage error. One line pins the path `fail()` exists for. (Raised as a coverage note last round, never as a finding.)
+
+## 5. Test coverage notes
+
+- Ran by me, not taken on report: `go build ./...` and `go vet ./...` clean; `go test ./...` **FAILS** (see C-1) with `cmd/define` itself green at 97.8s; `go test -tags conformance ./cmd/define/` green unfiltered at 105s, with the four new `TestCDN*` rows individually passing live.
+- Mutation results — confirmed pinned: BR-1 (`applyVoice(&opt, pron)` after the session's derivation → `main_test.go:368`), BR-2 (replay inside the cooked closure → `commandloop_test.go:486`), Done-when 6 (`voiceFor(pron, "")` → `main_test.go:400`), Done-when 2 (`Candidates()` stops appending the session tail → two tests), the plan-status guard (`modified`→`unchanged` on `AudioCandidates`), and the doc-comment half of `declarationRegion` (via `rebasedSource`). Confirmed **not** pinned: `planStatus`'s emphasis stripping (I-1).
+- A useful negative result for anyone repeating this: mutating `opt.voice` *above* `applyVoice(&opt, d.lang)` (`main.go:614`) reads as "the assertion is blind" when it is not — the mutation never survives to the read. `workshop/lessons.md` now records this; it is correct and worth keeping.
+- The NOAD-backed rows (`TestLiveDictionaryResolvesAnUnaccentedQuery`, `TestFixturesMatchLiveDictionary`) **SKIP** from this process context, third round running. The plan's `## Verification before close` CLI script is therefore still not reproducible at this gate; it needs one run somewhere NOAD answers before close.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag, at the Minor above.** The feature code is clean: `utteranceFor` as the single builder for all five play sites, `replayInPlace` parameterised rather than forked, `nothingToReplay` as one const, `sourceCandidates` calling `askedForSource()`, `fakeDictionary` folding through the production predicate. The duplication is entirely in the new guard machinery, and it is the second instance of the family BR-6 opened.
+- **ARCH-PURE — pass.** `differsOnlyByDiacritics`, `Entry.AlsoSpellings`, `SourceSpellings`, `utterance` and `parsePronArgs` are deterministic and unit-tested with no IO and no mocks. `reportVoice` taking an `io.Writer` is what made `TestTheVoiceReportNamesALanguageEvenWithAZeroVoice` a two-line test. `speak` returning the URL that answered moved the decision out of the IO layer rather than adding a second one inside it.
+- **ARCH-PURPOSE — pass on the feature, flag on the finding-class discipline.** Shadow-sweep: `pronHelp` has three consumers (flag registration, README, atlas) and all three derive, pinned; the `commands` registry now has the atlas as a derived consumer, and the README states each command in prose with all five present, so no hand-maintained enumeration remains; the `#23` invariant sweep's five sites are all disposed and I re-ran the plan's own greps (all five give the expected result). `#31` files the split-out curation, D6 disposes of the notation-labelling option. The flag is I-1: the class-level answers to round 2 were written into the *code* but not into the *tests*, so one of them does nothing.
+- **ARCH-MOCK — pass.** No new external dependency; production and test flow share the `AudioSource` seam; the fake is stateful and ordered; every measurement the design rests on has a live row that fails with the decision it invalidates, and `missesEntirely` now walks the whole candidate list the way production does. The new `git` calls are test-only and consistent with the file's existing practice — the objection to them is I-2's error handling, not the seam.
+- For `#30`, `Entry.AlsoSpellings` and `SourceSpellings` remain the surfaces it will consume; both are pure and table-tested. The `role`/ORIGIN-mining limitation is recorded in three places and is the first thing a click dissolves.
+
+## 7. Plan revision recommendations
+
+The plan now matches the tree on the Core-concepts tables (mechanically, per `TestPlanTableStatusMatchesTheChangeWindow`), and the three `## Revisions` entries cover rounds 1 and 2 honestly. One entry is still owed, dated 2026-08-29, reason "close review round 3":
+
+- **`## Verification before close` was ticked on evidence measured before the last two commits.** `go test ./...` is red at HEAD; record that the suite must be re-run on the *final* HEAD, after the last fix commit, not after the round the fixes answered.
+- **Widen the "Done-when coverage" rule from Done-when cells to every finding-fix.** The plan already states "a Done-when is pinned only by a NAMED TEST observed red under removal of the wiring". Round 3 found the same rule broken one level up: `planStatus`'s emphasis stripping — the class-level fix for `guard-heuristic-too-loose` — is green when removed. Record that a finding disposed `addressed` names the test that reddens without it, or is not addressed.

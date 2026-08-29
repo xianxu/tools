@@ -63,8 +63,13 @@ func TestPronWithNothingLookedUpSaysSo(t *testing.T) {
 	rig.deps.stdinIsTerminal = func() bool { return false }
 	var out, errb bytes.Buffer
 
-	run(t.Context(), nil, rig.deps, strings.NewReader("/pron fr\n"), &out, &errb)
+	code := run(t.Context(), nil, rig.deps, strings.NewReader("/pron fr\n"), &out, &errb)
 
+	// EXIT 2, the usage code the README documents and the one `fail()` exists to
+	// propagate out of the loop. Discarding it left that path unpinned.
+	if code != 2 {
+		t.Errorf("exit = %d, want 2 — a command that cannot do its one thing is a usage error", code)
+	}
 	if !strings.Contains(errb.String(), "/pron") {
 		t.Errorf("stderr should explain what /pron could not do, got %q", errb.String())
 	}

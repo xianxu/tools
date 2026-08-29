@@ -52,6 +52,37 @@ func git(t *testing.T, args ...string) []byte {
 	return out
 }
 
+// splitReceiver separates a plan's qualified entity name into a receiver and a
+// bare name: `store.RuntimeFiles` drops the PACKAGE qualifier when it matches the
+// file's own directory, while `Entry.AlsoSpellings` keeps `Entry` as a TYPE
+// qualifier so the method can be pinned to it.
+//
+// ONE locator, shared by both plan guards. It was written twice, and the two
+// copies had ALREADY diverged — only one also accepted an assigned form. Same
+// one-predicate-two-spellings family the audiourl fix closed earlier in this
+// issue, with the second spelling landing in the commit that fixed the first.
+func splitReceiver(name, path string) (recv, bare string) {
+	qual, rest, ok := strings.Cut(name, ".")
+	if !ok {
+		return "", name
+	}
+	if filepath.Base(filepath.Dir(path)) == qual {
+		return "", rest // a package qualifier the file is already inside
+	}
+	return qual, rest
+}
+
+// declRegexp matches a Go declaration of name, pinned to recv when there is one
+// so `Entry.AlsoSpellings` cannot be satisfied by another type's method.
+func declRegexp(name, recv string) *regexp.Regexp {
+	if recv != "" {
+		return regexp.MustCompile(`(?m)^func\s+\(\w+\s+\*?` +
+			regexp.QuoteMeta(recv) + `\)\s*` + regexp.QuoteMeta(name) + `\b`)
+	}
+	return regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
+		regexp.QuoteMeta(name) + `\b`)
+}
+
 // `go test` runs with cwd set to the PACKAGE directory, so a bare `git ls-files`
 // yields paths relative to it. Resolve the root explicitly; the first version of
 // this test skipped the very artifact it was written for because of that.
@@ -648,26 +679,7 @@ func planStatus(cell string) (string, bool) {
 func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 	t.Helper()
 	{
-		// A plan names entities as a READER sees them — store.RuntimeFiles —
-		// while the file that declares them is inside that package and says
-		// RuntimeFiles. Strip a package qualifier that matches the file's own
-		// directory; anything else stays qualified and will not match, which
-		// is correct.
-		var recv string
-		if qual, bare, ok := strings.Cut(name, "."); ok {
-			if filepath.Base(filepath.Dir(path)) == qual {
-				name = bare
-			} else {
-				// A TYPE qualifier, the way a reader names a method:
-				// Entry.AlsoSpellings. Same idea as the package one above, and
-				// without it the guard cannot express a method at all — the
-				// receiver sits between `func` and the name, so the bare pattern
-				// below matches `func (e Entry) AlsoSpellings` for a row that says
-				// `AlsoSpellings` and fails one that says which type it is on.
-				// Punishing the more precise row is the wrong way round.
-				recv, name = qual, bare
-			}
-		}
+		recv, name := splitReceiver(name, path)
 		src, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
 			// The file does not exist yet: a plan legitimately precedes its
@@ -675,15 +687,7 @@ func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 			return
 		}
 		*checked++
-		// Declared, in any of the forms Go declares things.
-		declared := regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
-			regexp.QuoteMeta(name) + `\b`)
-		if recv != "" {
-			// Pinned to the named receiver, so `Entry.AlsoSpellings` is not
-			// satisfied by some other type happening to have that method.
-			declared = regexp.MustCompile(`(?m)^func\s+\(\w+\s+\*?` +
-				regexp.QuoteMeta(recv) + `\)\s*` + regexp.QuoteMeta(name) + `\b`)
-		}
+		declared := declRegexp(name, recv)
 		assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
 		// DECLARED or ASSIGNED only. A first version also accepted any
 		// occurrence anywhere in the file, which admitted COMMENTS — and a
@@ -811,17 +815,24 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 // way that matters to a reader.
 func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 	root := repoRoot(t)
-	base, ok := changeWindowBase(t, root)
+	base, ok := changeWindowBase(t)
 	if !ok {
-		// conformance:inapplicable — on a merged branch there is no window, and a
-		// plan describing no changes cannot contradict one.
-		t.Skip("no change window (not on a feature branch, or git unavailable)")
+		// This is the ONLY skip in this guard: git being absent or broken is
+		// Fatal through git(), because a guard that reports nothing when it
+		// cannot run certifies nothing.
+		//
+		// conformance:inapplicable — on main there is no window, and a plan
+		// describing no changes cannot contradict one.
+		t.Skip("no change window: HEAD is the merge-base with main")
 	}
 	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(plans) == 0 {
+		// conformance:inapplicable — every plan is archived to workshop/history/
+		// at close, a legitimate state between issues rather than a missing file.
+		// Same reasoning as the sibling guard above.
 		t.Skip("no active plans")
 	}
 
@@ -829,6 +840,14 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 	nameCell := regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_.]*)`")
 	checked := 0
 	for _, plan := range plans {
+		// ONLY the plan this window belongs to. Another issue in flight has its
+		// own branch, and its `modified` rows describe work that happened there —
+		// judging them against THIS window would fail them for being someone
+		// else's. The window touching the plan file is what identifies it.
+		rel, err := filepath.Rel(root, plan)
+		if err != nil || changedLines(t, base, rel) == nil {
+			continue
+		}
 		b, err := os.ReadFile(plan)
 		if err != nil {
 			t.Fatalf("reading %s: %v", plan, err)
@@ -844,7 +863,7 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 				// `deleted` has no declaration left to locate.
 				continue
 			}
-			touched := changedLines(t, root, base, m[2])
+			touched := changedLines(t, base, m[2])
 			if touched == nil {
 				continue // the file itself is untouched by this window
 			}
@@ -854,32 +873,42 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 		}
 	}
 	if checked == 0 {
+		// conformance:inapplicable — a window editing only prose, or only files
+		// no row names, has no status claim to contradict. Reachable on a
+		// docs-only commit, which is a normal state rather than drift.
 		t.Skip("no unchanged/modified rows pointed at files this window touched")
 	}
 }
 
 // changeWindowBase is the commit this branch diverged from main.
-func changeWindowBase(t *testing.T, root string) (string, bool) {
+//
+// Through git(), which is FATAL, not Skip. That helper's own comment carries the
+// reason — "a guard that reports nothing when it cannot run certifies nothing" —
+// and the first version of this function swallowed every git error into a skip,
+// conflating "on main" (genuinely inapplicable) with "git is broken" (the guard
+// did not run). Only the first is reported here.
+func changeWindowBase(t *testing.T) (string, bool) {
 	t.Helper()
-	out, err := exec.Command("git", "-C", root, "merge-base", "main", "HEAD").Output()
-	if err != nil {
-		return "", false
-	}
-	base := strings.TrimSpace(string(out))
-	head, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
-	if err != nil || strings.TrimSpace(string(head)) == base {
-		return "", false // on main, or nothing to compare
-	}
-	return base, true
+	base := strings.TrimSpace(string(git(t, "merge-base", "main", "HEAD")))
+	head := strings.TrimSpace(string(git(t, "rev-parse", "HEAD")))
+	return base, head != base
 }
 
 // changedLines returns the line numbers this window touched in path, or nil when
 // it touched none. Uses the NEW-side hunk headers, which is what maps onto the
 // file as it stands.
-func changedLines(t *testing.T, root, base, path string) map[int]bool {
+// Also through git(): returning nil on an error would be the same value as "this
+// window did not touch the file", so a git failure would silently downgrade every
+// row to unchecked — a check that cannot fail reading as green.
+//
+// ":/" makes the pathspec repo-root-relative. git() runs with cwd set to the
+// PACKAGE directory, so a bare repo-relative path matches nothing and every row
+// reads as untouched — the same trap repoRoot's comment records for `git
+// ls-files`, and it made this guard silently skip on its first run.
+func changedLines(t *testing.T, base, path string) map[int]bool {
 	t.Helper()
-	out, err := exec.Command("git", "-C", root, "diff", "--unified=0", base+"..HEAD", "--", path).Output()
-	if err != nil || len(out) == 0 {
+	out := git(t, "diff", "--unified=0", base+"..HEAD", "--", ":/"+path)
+	if len(out) == 0 {
 		return nil
 	}
 	hunk := regexp.MustCompile(`(?m)^@@ -\S+ \+(\d+)(?:,(\d+))? @@`)
@@ -912,14 +941,7 @@ func atoiTest(t *testing.T, s string) int {
 // checkPlanStatus holds one row's claim against the window.
 func checkPlanStatus(t *testing.T, root, plan, name, path, status string, touched map[int]bool, checked *int) {
 	t.Helper()
-	recv := ""
-	if qual, bare, ok := strings.Cut(name, "."); ok {
-		if filepath.Base(filepath.Dir(path)) == qual {
-			name = bare
-		} else {
-			recv, name = qual, bare
-		}
-	}
+	recv, name := splitReceiver(name, path)
 	src, err := os.ReadFile(filepath.Join(root, path))
 	if err != nil {
 		return
@@ -951,10 +973,7 @@ func checkPlanStatus(t *testing.T, root, plan, name, path, status string, touche
 // declarationRegion locates a symbol's declaration INCLUDING its doc comment,
 // which is part of what a reader means by "unchanged".
 func declarationRegion(src, name, recv string) (lo, hi int, ok bool) {
-	decl := regexp.MustCompile(`^(func|type|var|const)\s+(\([^)]*\)\s*)?` + regexp.QuoteMeta(name) + `\b`)
-	if recv != "" {
-		decl = regexp.MustCompile(`^func\s+\(\w+\s+\*?` + regexp.QuoteMeta(recv) + `\)\s*` + regexp.QuoteMeta(name) + `\b`)
-	}
+	decl := declRegexp(name, recv)
 	next := regexp.MustCompile(`^(func|type|var|const)\s`)
 	lines := strings.Split(src, "\n")
 	start := -1
@@ -983,4 +1002,49 @@ func declarationRegion(src, name, recv string) (lo, hi int, ok bool) {
 		}
 	}
 	return lo + 1, hi + 1, true // 1-indexed, matching git
+}
+
+// planStatus is the third spelling of one parse, and the first two shipped
+// broken — so this time every branch is entered by a fixture.
+//
+// `Contains(lower(cell), "new")` also matched "renewed". `Fields(cell)[0] ==
+// "new"` then missed `**new**`, and bold cells are this repo's convention. The
+// vocabulary version was written to end that, and the close review found the
+// emphasis-stripping — the entire substance of the fix — was GREEN WHEN REMOVED,
+// because no plan in the tree happens to write a bolded status today.
+//
+// The rule that generalises: the "observed red when the wiring is removed"
+// discipline the plan applies to Done-when cells applies to EVERY fix delivered
+// in answer to a finding. A finding-fix with no test that reddens without it is
+// not addressed, however plausible the diff.
+func TestPlanStatusNormalisesToTheVocabulary(t *testing.T) {
+	for _, tc := range []struct {
+		name, cell, want string
+		ok               bool
+	}{
+		{"plain", "new", "new", true},
+		{"padded", "  modified  ", "modified", true},
+		{"trailing prose", "modified — gains `pron store.Lang`", "modified", true},
+		{"an em-dash note after unchanged", "unchanged — D3", "unchanged", true},
+		{"deleted", "deleted", "deleted", true},
+		// The emphasis cells. No plan in the tree writes one today, which is
+		// exactly why they must be fixtures: removing the Trim leaves every
+		// other row here green.
+		{"bold", "**new**", "new", true},
+		{"bold with prose", "**modified** — keys on `EscapedPath`", "modified", true},
+		{"italic", "*unchanged*", "unchanged", true},
+		{"code-quoted", "`deleted`", "deleted", true},
+		// And the loud-failure branch, likewise unreached by any real plan.
+		{"a word that merely contains new", "renewed", "renewed", false},
+		{"another", "newly added", "newly", false},
+		{"empty", "   ", "", false},
+		{"outside the vocabulary", "reused", "reused", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := planStatus(tc.cell)
+			if got != tc.want || ok != tc.ok {
+				t.Errorf("planStatus(%q) = %q, %v; want %q, %v", tc.cell, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
 }

@@ -246,8 +246,9 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					}
 					if pron != "" {
 						// The same replay a bare Enter takes, one parameter apart.
+						// No reset: pron is declared inside this block and
+						// does not outlive the iteration.
 						replayInPlace(ctx, d, opt, sess, pron, stdout, stderr)
-						pron = ""
 					}
 					fmt.Fprint(stdout, "\r\n")
 					draw()

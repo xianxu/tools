@@ -119,6 +119,11 @@ rounds:
       agent: claude
       blocked: true
       protocol_error: no valid findings block
+    - "n": 3
+      timestamp: "2026-08-29T09:17:02-07:00"
+      agent: claude
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#29 (boundary-review)
@@ -188,6 +193,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   issue's purpose — but a promised split with no tracker item evaporates.
 
 ## Round 2 — 2026-08-29T08:42:14-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
+
+## Round 3 — 2026-08-29T09:17:02-07:00 (claude) — BLOCKED
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 
