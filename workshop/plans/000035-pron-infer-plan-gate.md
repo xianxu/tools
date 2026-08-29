@@ -66,6 +66,64 @@ rounds:
           family: unstated-non-goal
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-29T15:13:07-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: D0's cognate cut, the Germanic family exclusion and the dissolved ambiguity branch answer the scope question; residue raised below as the class.
+          round: 2
+        - id: PQ-2
+          disposition: not-addressed
+          note: Task 4 bullet 1 contradicts D6; bullet 2 reverses a recorded decision; the three named prose surfaces are still unswept.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: Verified all twelve table fixtures plus concrete/read/gaslighting/jalapeño exist in cmd/define/testdata/entries/en/.
+          round: 2
+        - id: PQ-4
+          disposition: not-addressed
+          note: Task 2's contract is unchanged; newCommandCtx still takes no session and main.go:651 has none.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: D6 records the -pron flag non-goal with the fs.String reasoning.
+          round: 2
+      findings:
+        - id: PQ-6
+          severity: Important
+          title: 2nd in family — pin OriginLanguage over the WHOLE corpus, not a curated twelve; 5 of 8 suppression cases are untested and `run` has no cognate marker
+          detail: |-
+            Measured over all 34 committed fixtures: eight declining ORIGINs carry a
+            language token the rule must suppress — bank, bargainer, even, man, read,
+            run, set, thing. The table pins three. `run` ("Old English rinnan, irnan
+            (verb), of Germanic origin, probably reinforced in Middle English by Old
+            Norse rinna, renna.") has NO cognate marker, so D0's cut never fires and
+            only the Germanic exclusion stops a substring match returning `de` — the
+            #29 D1 failure, unpinned. The `bank` row is also mis-attributed: it
+            declines via the cut at "related to bench", not via Germanic, so no row
+            tests what it claims. The rule, not the instances: run the table over
+            testdata/entries/en/* asserting an outcome per file — cheaper than twelve
+            curated rows, compresses the prose case list, and covers the class. Add
+            one sentence stating Germanic is masked in D2's pass, before the search.
+          family: origin-match-scope
+          round: 2
+        - id: PQ-7
+          severity: Important
+          title: 2nd in family — Task 4 contradicts D6 and reverses the recorded "argument syntax is out of the summary" decision, while the three false prose lines stay unswept
+          detail: |-
+            pronHelp is the -pron FLAG's help (main.go:412, fs.String; main.go:513
+            treats "" as not-given), so "a language is optional" makes it false and
+            contradicts D6. The commands-summary route reverses a decision recorded at
+            doc_sync_test.go:167-170 and atlas/define.md:756, and changes /help's
+            output. Neither move sweeps atlas/define.md:760, atlas/define.md:1145 or
+            README.md:340-343, which go false and stay green. State the rule that
+            covers the class: which doc claims about /pron's argument rule and the
+            voice walk are code-derived, and what mechanism makes each derive.
+          family: doc-sweep-incomplete
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#35 (plan-quality)
@@ -111,10 +169,44 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   feature on the one-shot side and cannot express inference at all; say so as a
   recorded non-goal rather than leaving it unmentioned.
 
+## Round 2 — 2026-08-29T15:13:07-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — D0's cognate cut, the Germanic family exclusion and the dissolved ambiguity branch answer the scope question; residue raised below as the class.
+- PQ-2 — not-addressed — Task 4 bullet 1 contradicts D6; bullet 2 reverses a recorded decision; the three named prose surfaces are still unswept.
+- PQ-3 — addressed — Verified all twelve table fixtures plus concrete/read/gaslighting/jalapeño exist in cmd/define/testdata/entries/en/.
+- PQ-4 — not-addressed — Task 2's contract is unchanged; newCommandCtx still takes no session and main.go:651 has none.
+- PQ-5 — addressed — D6 records the -pron flag non-goal with the fs.String reasoning.
+
+### Raised
+
+- **PQ-6** [Important] `origin-match-scope` 2nd in family — pin OriginLanguage over the WHOLE corpus, not a curated twelve; 5 of 8 suppression cases are untested and `run` has no cognate marker
+  Measured over all 34 committed fixtures: eight declining ORIGINs carry a
+  language token the rule must suppress — bank, bargainer, even, man, read,
+  run, set, thing. The table pins three. `run` ("Old English rinnan, irnan
+  (verb), of Germanic origin, probably reinforced in Middle English by Old
+  Norse rinna, renna.") has NO cognate marker, so D0's cut never fires and
+  only the Germanic exclusion stops a substring match returning `de` — the
+  #29 D1 failure, unpinned. The `bank` row is also mis-attributed: it
+  declines via the cut at "related to bench", not via Germanic, so no row
+  tests what it claims. The rule, not the instances: run the table over
+  testdata/entries/en/* asserting an outcome per file — cheaper than twelve
+  curated rows, compresses the prose case list, and covers the class. Add
+  one sentence stating Germanic is masked in D2's pass, before the search.
+- **PQ-7** [Important] `doc-sweep-incomplete` 2nd in family — Task 4 contradicts D6 and reverses the recorded "argument syntax is out of the summary" decision, while the three false prose lines stay unswept
+  pronHelp is the -pron FLAG's help (main.go:412, fs.String; main.go:513
+  treats "" as not-given), so "a language is optional" makes it false and
+  contradicts D6. The commands-summary route reverses a decision recorded at
+  doc_sync_test.go:167-170 and atlas/define.md:756, and changes /help's
+  output. Neither move sweeps atlas/define.md:760, atlas/define.md:1145 or
+  README.md:340-343, which go false and stay green. State the rule that
+  covers the class: which doc claims about /pron's argument rule and the
+  voice walk are code-derived, and what mechanism makes each derive.
+
 ## Open findings
 
-- **PQ-1** [Critical] `origin-match-scope` Mask-then-search over the whole ORIGIN text infers from cognate clauses and from "Germanic"
 - **PQ-2** [Important] `doc-sweep-incomplete` pronHelp documents the -pron FLAG; the /pron command's argument rule is hand-written prose no test pins
-- **PQ-3** [Important] `fixture-provenance` Task 2 and Task 3 name fixtures that are not in the captured corpus
 - **PQ-4** [Minor] `unbacked-existing-behavior` newCommandCtx has three call sites and does not take a session
-- **PQ-5** [Minor] `unstated-non-goal` No non-goal stated for the -pron flag / one-shot path
+- **PQ-6** [Important] `origin-match-scope` 2nd in family — pin OriginLanguage over the WHOLE corpus, not a curated twelve; 5 of 8 suppression cases are untested and `run` has no cognate marker
+- **PQ-7** [Important] `doc-sweep-incomplete` 2nd in family — Task 4 contradicts D6 and reverses the recorded "argument syntax is out of the summary" decision, while the three false prose lines stay unswept

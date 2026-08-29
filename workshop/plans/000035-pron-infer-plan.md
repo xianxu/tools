@@ -86,22 +86,41 @@ So "cannot determine" now means exactly one thing: **no modern language is named
 - exactly one modern language → its code and the name as written;
 - more than one → error naming the candidates, per the operator's "error out if you can't determine".
 
-**The table test's cases come from the COMMITTED corpus**, so the fixtures are already captured and already conformance-checked against the live dictionary. Each is here because it fails a plausible simpler rule:
+**The table ranges over the WHOLE committed corpus, one expected outcome per
+fixture — not a curated dozen.** Measured across all 34 English fixtures, **eight**
+declining ORIGINs carry a language token the rule must suppress: `bank`,
+`bargainer`, `even`, `man`, `read`, `run`, `set`, `thing`. A hand-picked list
+pinned three of them, and the one it most needed is not one a person would pick:
 
-| fixture | ORIGIN, abbreviated | expect | kills the rule |
-|---|---|---|---|
-| `jalapeño` | `from Mexican Spanish (chile) jalapeño` | `es` | a qualified name must still match |
-| `mesa` | `Spanish, literally 'table', from Latin mensa` | `es` | a chain: first-named wins, Latin masked |
-| `concrete` | `from French concret or Latin concretus` | `fr` | same, with `or` rather than a comma |
-| `parrot` | `probably from dialect French perrot` | `fr` | a hedge and a modifier before the name |
-| **`even`** | `Old English efen …, of Germanic origin; related to Dutch even` | **declines** | **D0** — whole-section search says Dutch |
-| **`read`** | `Old English rǣdan, …; related to Dutch raden and German raten` | **declines** | D0, with two cognates |
-| `bank` | `Middle English: from Old Norse bakki, of Germanic origin` | declines | `Germanic` is a family, not a language |
-| `content` | `via Old French from Latin contentus` | declines | D2 — search-before-mask says French |
-| `ephemeral` | `from Greek ephēmeros` | declines | **D3** — bare Greek is ancient |
-| `a priori` | `Latin, 'from what is before'` | declines | the most common shape in the corpus |
-| `quokka` | `from Nyungar kwaka` | declines | a real modern language absent from the map: decline, do not guess |
-| `gaslighting` | `1960s: see gaslight (verb)` | declines | an ORIGIN naming no language at all |
+```
+run   Old English rinnan, irnan (verb), of Germanic origin, probably
+      reinforced in Middle English by Old Norse rinna, renna.
+```
+
+**`run` has NO cognate marker**, so D0's cut never fires. It declines only
+because `Germanic` is masked in D2's pass before any modern name is searched for
+— which is also why D2's mask list must contain `Germanic` explicitly rather than
+relying on `\bGerman\b` failing to match inside it. Nothing would have tested
+that path, and its failure mode is `run` inferring `de`: `#29`'s D1, unpinned.
+
+Ranging over `testdata/entries/en/*` with an expected outcome per file is cheaper
+than curated rows, compresses the prose case list, and forces a decision when a
+fixture is added. The rows worth naming in prose are the ones that kill a
+plausible simpler rule:
+
+| fixture | why this one | expect |
+|---|---|---|
+| `jalapeño` | a qualified name (`Mexican Spanish`) must still match | `es` |
+| `mesa` | a chain — first-named wins, `Latin` masked | `es` |
+| `concrete` | same chain shape with `or` rather than a comma | `fr` |
+| `parrot` | a hedge and a modifier before the name (`probably from dialect French`) | `fr` |
+| `even`, `read` | **D0** — languages appear only after `related to` | decline |
+| **`run`** | **no cognate marker at all**; declines via the `Germanic` mask alone | decline |
+| `bank` | declines via the cut at `related to bench` — NOT via `Germanic`, which an earlier draft of this table mis-attributed | decline |
+| `content` | **D2** — search-before-mask says French | decline |
+| `ephemeral` | **D3** — bare Greek is ancient | decline |
+| `quokka` | a real modern language absent from the map: decline, do not guess | decline |
+| `gaslighting` | an ORIGIN naming no language at all | decline |
 
 - [ ] **Step 1:** write the table; run it; watch it fail undefined.
 - [ ] **Step 2:** implement mask-then-search.
@@ -140,14 +159,45 @@ So "cannot determine" now means exactly one thing: **no modern language is named
 
 ---
 
-## Task 4: docs
+## Task 4: docs, and the three prose sites that go false
 
-**Files:** `README.md`, `atlas/define.md`, `cmd/define/voice.go` (`pronHelp`), `cmd/define/main.go` (`fs.Usage`).
+**Files:** `cmd/define/pron_cmd.go`, `atlas/define.md`, `README.md`, `cmd/define/doc_sync_test.go`.
 
-- [ ] `pronHelp` says a language is optional and where the default comes from. It is the single source both docs already consume via `TestDocsQuoteThePronHelp`, so the docs follow mechanically.
-- [ ] **The `/pron` COMMAND's argument rule goes in the `commands` registry summary**, not hand-written prose. `pronHelp` documents the `-pron` FLAG; the command is a different surface, and `#31` made the atlas's command table a derived consumer of `commands` pinned by `TestDocsQuoteTheCommandList`. The summary is what makes the rule swept.
-- [ ] The atlas records D2–D5 — especially that bare `Greek` is ancient and that the table is accepted here while `ParseLang` refuses one, since that asymmetry is the thing a reader will trip on.
-- [ ] Verify the additions by grep rather than asserting them.
+An earlier draft of this task got PQ-2 wrong in two ways at once, and both are
+recorded because each was a decision this repo had already made:
+
+- It would have put "a language is optional" into **`pronHelp`**, which is the
+  `-pron` **FLAG's** help — and D6 says the flag does **not** infer. The sentence
+  would have been false where it was written.
+- It would have moved the argument rule into the **`commands` registry summary**,
+  reversing `#31`'s recorded decision that *"argument forms are documented with
+  each command rather than in the summary: the summary is what `/help` prints,
+  and a table that padded it with syntax would stop matching the screen."*
+
+**Three prose sites state something this change makes false, and they are not all
+the same kind of claim.** Saying so is the rule, because pretending one mechanism
+covers all three is how the last two doc-sweep findings happened:
+
+| site | says | kind |
+|---|---|---|
+| `atlas/define.md:760` | "`/pron` REQUIRES a language, because it is an action with nothing to report" | the ARGUMENT RULE — mechanically derivable |
+| `atlas/define.md:1145` | "The walk exists only when `-pron` or `/pron` **named** a language" | explanatory prose about behaviour |
+| `README.md:340-343` | describes only `/pron fr` | explanatory prose, incomplete rather than false |
+
+- [ ] **The argument rule becomes code-owned.** A `pronCommandHelp` const in
+      `pron_cmd.go` states it once; the atlas's per-command paragraph consumes it
+      through a marked span pinned by a doc-sync test, the mechanism `localeHelp`
+      and `pronHelp` already use. That is the site `#31` said argument forms
+      belong at, so this follows the existing decision rather than reversing it.
+- [ ] **`pronHelp` is left alone.** It documents the flag, the flag does not
+      infer, and D6 is why.
+- [ ] **The `commands` summary is left alone**, per `#31`.
+- [ ] **The other two sites are swept BY HAND, and the plan says so** rather than
+      claiming a mechanism. They are prose about behaviour with no code-owned
+      string to derive from; inventing one to make them checkable would be
+      machinery for its own sake. The atlas walk sentence becomes "named or
+      inferred one"; the README gains the bare form.
+- [ ] Verify every edit by grep rather than asserting it.
 
 ---
 
@@ -201,3 +251,20 @@ for bare Greek. No new capture, and the table inherits
 `TestFixturesMatchLiveDictionary`'s live check.
 
 **Minor** — D6 records that the `-pron` flag deliberately does not infer.
+
+### 2026-08-29 — plan-quality round 2
+
+**PQ-6 replaced a curated table with a corpus sweep, and named the case a person
+would not pick.** Eight of the 34 committed fixtures carry a language token the
+rule must suppress; the hand-picked table pinned three. `run` is the one that
+matters: it has no cognate marker, so D0's cut never fires, and it declines only
+because `Germanic` is masked before the search. Unpinned, its failure mode is
+`run` inferring `de`. The `bank` row was also mis-attributed — it declines via
+the cut at "related to bench", not via `Germanic`, so it tested nothing it
+claimed.
+
+**PQ-7 caught my PQ-2 fix contradicting two decisions at once** — D6, four
+paragraphs above it in this same plan, and `#31`'s recorded reason for keeping
+argument syntax out of the `commands` summary. Task 4 is rewritten to name which
+of the three false prose sites is mechanically derivable and which two are swept
+by hand, instead of implying one mechanism covers all three.
