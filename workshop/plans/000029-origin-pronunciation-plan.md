@@ -76,12 +76,12 @@ Argued from measurement taken 2026-08-28/29. Full evidence in `workshop/issues/0
 | `utteranceFor` | `cmd/define/main.go` | new | — (glue) |
 | `replayInPlace` | `cmd/define/replraw.go` | modified | raw terminal + player |
 | `runPron` | `cmd/define/pron_cmd.go` | new | `commandCtx` |
-| `commandCtx.replay` | `cmd/define/command.go` | modified | the player, via a closure |
+| `commandCtx` | `cmd/define/command.go` | modified | the player, via a `replay` closure |
 | `fakeCDN` | `cmd/define/fetch_fake_test.go` | unchanged — REUSED | Google's CDN |
 
 - **`speak`** — takes an `utterance`; returns the URL that answered, which it currently fetches and discards. The reasoning it used to imply moves into `utterance.Candidates()`.
 - **`reportVoice`** — says what actually played, only when a source was asked for and the session answered. Written after the fetch, from the URL that answered.
-- **`commandCtx.replay func(store.Lang)`** — the only capability a command gains over playback, and it does **not** play: it RECORDS a request the loop performs. In the raw editor, commands dispatch inside `cooked(func(){…})`; playing there hands Ctrl-C to the line discipline, which swallows the byte — `workshop/lessons.md`, *"Raw mode: render cooked, play raw"*. A closure like the existing `setLang`/`setTimes`, so "a command has no business reaching the dictionary or the player" holds in substance.
+- **`commandCtx`** gains `replay func(store.Lang)` — the only capability a command gains over playback, and it does **not** play: it RECORDS a request the loop performs. In the raw editor, commands dispatch inside `cooked(func(){…})`; playing there hands Ctrl-C to the line discipline, which swallows the byte — `workshop/lessons.md`, *"Raw mode: render cooked, play raw"*. A closure like the existing `setLang`/`setTimes`, so "a command has no business reaching the dictionary or the player" holds in substance.
 
 **ARCH-MOCK.** The external dependency is Google's CDN and it already has a stateful fake behind the `AudioSource` seam: `fakeCDN` records **every path requested, in order** — the only way to assert a walk order. No new fake; the deliverable REUSES this one. `fetch_conformance_test.go` is the live conformance check and Task 9 adds the rows these decisions rest on.
 

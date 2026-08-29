@@ -546,6 +546,21 @@ func currentTruthOnly(text string) string {
 // tables in ACTIVE plans, not prose, not history, and not rows whose file does
 // not exist yet — a plan is written before the code, so an unbuilt row is a
 // plan, while a WRONG row is a lie.
+//
+// The file-does-not-exist exemption assumed a plan CREATES the files it names,
+// and #29 is the counterexample: seven of its entities are new symbols in files
+// that already exist (parse.go, audiourl.go, main.go), so every unbuilt row read
+// as a lie and the suite was red for the whole implementation phase — which
+// costs exactly the regression signal a green suite between tasks exists to give.
+//
+// The STATUS cell is the missing signal, and the table already carries it. A row
+// marked `new` says "this will be created here": a promise about the future, the
+// same kind of statement the missing-file exemption already honours. A row
+// marked `modified` / `unchanged` / `deleted` is a claim about the tree as it
+// stands and stays checked. The promise is only honoured while the plan still
+// has unticked steps — once every box is ticked the plan claims to be finished,
+// and a finished plan naming a symbol nobody wrote is the lie this guard is for.
+// `sdlc close`'s plan-unchecked gate is what makes that condition reachable.
 func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 	root := repoRoot(t)
 	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
@@ -561,7 +576,10 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 	// `| `A` / `B` | `path` | ...` — the shape the plan template produces. A row
 	// often names SEVERAL entities in its first cell; a first version captured
 	// only the first, leaving 7 of 16 symbols unchecked in this repo's own plans.
-	row := regexp.MustCompile("^\\|([^|]*)\\|\\s*`([^`]+\\.go)`")
+	// The third cell is Status, in both the Pure-entities and Integration-points
+	// tables. Optional in the pattern so a malformed row still gets CHECKED
+	// rather than silently exempted — fail closed.
+	row := regexp.MustCompile("^\\|([^|]*)\\|\\s*`([^`]+\\.go)`\\s*\\|?([^|]*)")
 	nameCell := regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_.]*)`")
 	checked := 0
 	for _, plan := range plans {
@@ -570,12 +588,18 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 			t.Fatalf("reading %s: %v", plan, err)
 		}
 		body := currentTruthOnly(string(b))
+		// An unticked step means the plan is still a plan. Scanned per plan, not
+		// per row, because it is a property of the document.
+		inProgress := strings.Contains(body, "- [ ] ")
 		for _, line := range strings.Split(body, "\n") {
 			m := row.FindStringSubmatch(line)
 			if m == nil {
 				continue
 			}
 			path := m[2]
+			if inProgress && strings.Contains(strings.ToLower(m[3]), "new") {
+				continue
+			}
 			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
 				checkPlanName(t, root, filepath.Base(plan), nm[1], path, &checked)
 			}
