@@ -76,11 +76,17 @@ type countingCapturer struct {
 	asked     []string
 	askedWord []string
 	reviews   int
+	// voices records the SESSION voice each capture happened under. #29 needs it:
+	// its first Done-when is that the session does not move, and the capture is
+	// where a lookup's language becomes observable — a word files into
+	// words/<lang>/, so the voice at capture time is the deck it landed in.
+	voices []voice
 }
 
-func (c *countingCapturer) Capture(word string, found bool, _ options) {
+func (c *countingCapturer) Capture(word string, found bool, opt options) {
 	c.calls = append(c.calls, word)
 	c.found = append(c.found, found)
+	c.voices = append(c.voices, opt.voice)
 }
 
 // asked records questions separately from lookups, so a test can assert that a

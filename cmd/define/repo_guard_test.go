@@ -597,7 +597,12 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 				continue
 			}
 			path := m[2]
-			if inProgress && strings.Contains(strings.ToLower(m[3]), "new") {
+			// The FIRST WORD of the status cell, not a substring of it: "renewed"
+			// and "newly" both contain "new" and would have exempted a row that
+			// claims to describe the tree as it stands. Fields() also tolerates
+			// the trailing prose these cells carry ("modified — gains …").
+			if status := strings.Fields(strings.ToLower(m[3])); inProgress &&
+				len(status) > 0 && status[0] == "new" {
 				continue
 			}
 			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {

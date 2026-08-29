@@ -852,8 +852,11 @@ func reportVoice(w io.Writer, u utterance, from string) {
 	if !u.askedForSource() || u.spokeSource(from) {
 		return
 	}
+	// NORMALISED, not the raw fields: a zero session voice would otherwise print
+	// "played the  one". AudioCandidates defaults the same way, so the record
+	// names the language actually asked for.
 	fmt.Fprintf(w, "define: no %s recording for %s; played the %s one\n",
-		u.Source.Lang, u.Word, u.Session.Lang)
+		u.Source.langOrDefault(), u.Word, u.Session.langOrDefault())
 }
 
 // utteranceFor builds one request: the session's voice always, and a source

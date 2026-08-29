@@ -113,9 +113,7 @@ func AudioCandidates(word string, v voice) []string {
 	if word == "" {
 		return nil
 	}
-	if v.Lang == "" {
-		v.Lang = store.DefaultLang
-	}
+	v.Lang = v.langOrDefault()
 	if v.Locale == "" {
 		v.Locale = defaultLocale(v.Lang)
 	}
@@ -178,7 +176,7 @@ type utterance struct {
 // session's — `/pron es` inside a Spanish session asks for the recording already
 // being fetched, and asking twice is two requests for one answer.
 func (u utterance) sourceCandidates() []string {
-	if u.Source.Lang == "" || u.Source == u.Session {
+	if !u.askedForSource() {
 		return nil
 	}
 	var out []string
@@ -228,8 +226,11 @@ func (u utterance) spokeSource(from string) bool {
 }
 
 // askedForSource reports whether this utterance requested another language at
-// all — and treats "the source IS the session" as not having asked, so the two
-// places that branch on it agree with sourceCandidates about what counts.
+// all, treating "the source IS the session" as not having asked.
+//
+// THE predicate, not a copy of one: sourceCandidates calls it rather than
+// spelling the same condition negated, which is how the two came to need a
+// comment promising they agreed (ARCH-DRY).
 func (u utterance) askedForSource() bool {
 	return u.Source.Lang != "" && u.Source != u.Session
 }

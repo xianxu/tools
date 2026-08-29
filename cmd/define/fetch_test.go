@@ -214,3 +214,23 @@ func TestPlayAnnouncedReportsTheVoiceThatAnswered(t *testing.T) {
 		})
 	}
 }
+
+// A record with a hole in it is the one failure this design cannot afford.
+//
+// reportVoice used to print voice.Lang raw, while AudioCandidates defaults an
+// empty Lang to English — so a zero session voice produced "played the  one".
+// Latent in production (applyVoice always runs) and exactly the kind of latent
+// the close review found by scratch-running it.
+func TestTheVoiceReportNamesALanguageEvenWithAZeroVoice(t *testing.T) {
+	u := utterance{
+		Word:      "ciao",
+		Spellings: []string{"ciao"},
+		Source:    voice{Lang: "it", Locale: "it"},
+		Session:   voice{}, // never through applyVoice
+	}
+	var b bytes.Buffer
+	reportVoice(&b, u, "https://example.invalid/not-a-source.mp3")
+	if got := b.String(); !strings.Contains(got, "played the en one") {
+		t.Errorf("report = %q, want it to name a language rather than a blank", got)
+	}
+}

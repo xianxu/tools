@@ -13,6 +13,21 @@ type voice struct {
 	Locale string
 }
 
+// langOrDefault is the language this voice really means: a zero Lang is English,
+// which is what store.DefaultLang says a directory with no setting means.
+//
+// It exists because that rule was written INSIDE AudioCandidates and nowhere
+// else, so anything else reading voice.Lang saw the raw field. #29's reportVoice
+// did, and a zero session voice made it print "played the  one" — a record with
+// a hole in it, which is the one thing that design insists must be true. One
+// accessor, both readers.
+func (v voice) langOrDefault() store.Lang {
+	if v.Lang == "" {
+		return store.DefaultLang
+	}
+	return v.Lang
+}
+
 // defaultLocale is the locale a language implies when nobody says otherwise.
 //
 // ONE rule with ONE exception: the locale is the language code (es -> es_es),

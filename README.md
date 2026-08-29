@@ -36,6 +36,7 @@ define -no-audio bank       # no fetch, no sound
 define -locale gb schedule  # British pronunciation
 define -lang es -locale us jalapeño   # Latin American, not Castilian
 define -lang es madrugar    # one lookup in Spanish, without switching
+define -pron fr arrondissement  # the French recording, English everything else
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
 ```

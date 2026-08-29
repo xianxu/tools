@@ -3,8 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,9 +78,13 @@ func (d *fakeDictionary) Lookup(word string) (string, error) {
 	// differsOnlyByDiacritics is the production predicate, so the fake and the
 	// feature agree on what "the same word in another dress" means by
 	// construction rather than by two similar loops (ARCH-DRY).
-	for key, entry := range d.entries {
+	// SORTED, because a Go map iterates in random order: two entries differing
+	// from the query only by diacritics would otherwise answer differently run to
+	// run, and a fake that is not deterministic makes every test above it flaky
+	// for reasons that look like the code.
+	for _, key := range slices.Sorted(maps.Keys(d.entries)) {
 		if differsOnlyByDiacritics(key, word) {
-			return entry, nil
+			return d.entries[key], nil
 		}
 	}
 	return "", ErrNoEntry

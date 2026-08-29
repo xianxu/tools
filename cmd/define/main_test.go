@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // testDeps is for tests about the DEFINITION half: a real fixture dictionary,
@@ -320,6 +322,8 @@ func TestPronRejectsSomethingThatIsNotALanguageTag(t *testing.T) {
 func TestPronFetchesTheSourceRecordingWithoutMovingTheSession(t *testing.T) {
 	es := voice{Lang: "es", Locale: "es"}
 	rig := newAudioRigServing(t, AudioCandidates("jalapeño", es)[0])
+	cap := &countingCapturer{}
+	rig.deps.capture = cap
 	var out, errb bytes.Buffer
 
 	code := run(t.Context(), []string{"-pron", "es", "jalapeno"}, rig.deps, strings.NewReader(""), &out, &errb)
@@ -349,5 +353,19 @@ func TestPronFetchesTheSourceRecordingWithoutMovingTheSession(t *testing.T) {
 	}
 	if errb.Len() != 0 {
 		t.Errorf("the source recording answered, so nothing should be reported: %q", errb.String())
+	}
+
+	// THE SESSION DID NOT MOVE — #29's first Done-when, and the reason this test
+	// is named for it. Asserting the Spanish URL alone would pass just as well
+	// for a -pron that had quietly switched the whole session to Spanish, which
+	// is the mode this issue exists NOT to be. The capture is where a lookup's
+	// language becomes observable: a word files into words/<lang>/, so the voice
+	// at capture time IS the deck it landed in.
+	if len(cap.calls) != 1 || cap.calls[0] != "jalapeno" {
+		t.Fatalf("captured %v, want exactly [jalapeno]", cap.calls)
+	}
+	if got := cap.voices[0]; got.Lang != store.DefaultLang {
+		t.Errorf("the word was filed under %q, want %q — -pron moved the session, "+
+			"which is the mode #29 exists not to be", got.Lang, store.DefaultLang)
 	}
 }

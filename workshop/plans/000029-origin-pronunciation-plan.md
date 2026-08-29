@@ -77,7 +77,9 @@ Argued from measurement taken 2026-08-28/29. Full evidence in `workshop/issues/0
 | `replayInPlace` | `cmd/define/replraw.go` | modified | raw terminal + player |
 | `runPron` | `cmd/define/pron_cmd.go` | new | `commandCtx` |
 | `commandCtx` | `cmd/define/command.go` | modified | the player, via a `replay` closure |
-| `fakeCDN` | `cmd/define/fetch_fake_test.go` | unchanged — REUSED | Google's CDN |
+| `fakeCDN` | `cmd/define/fetch_fake_test.go` | **modified** — keys on `EscapedPath` | Google's CDN |
+| `fakeDictionary` | `cmd/define/dict_fake_test.go` | **modified** — accent-insensitive on a miss | NOAD |
+| `rebasedSource` | `cmd/define/main_test.go` | **modified** — translates the answer back | the fake CDN |
 
 - **`speak`** — takes an `utterance`; returns the URL that answered, which it currently fetches and discards. The reasoning it used to imply moves into `utterance.Candidates()`.
 - **`reportVoice`** — says what actually played, only when a source was asked for and the session answered. Written after the fetch, from the URL that answered.
@@ -396,3 +398,41 @@ And both opt-in suites, per `workshop/lessons.md` rule 2: `go test ./... && go t
 - **PQ-5 (Minor, `unstated-seam-threading`)** — resolved without an `options` field, which the finding correctly flagged as recreating what D3 refuses. `-pron` rides on `replCommand`, which `defineOnce` already receives and which already carries `literal`, a per-line modifier of the same kind. Task 6 states the four-line path.
 - **PQ-6 (Minor, `unstated-non-goal`)** — the Spec's third option (labelling which notation variant is which) is now **D6**, disposed of with its reason rather than left unanswered at close.
 - **PQ-7 (Minor, `plan-restates-the-diff`)** — the plan was 1131 lines, mostly pre-written bodies and doc comments that get rewritten within the hour. Rewritten to state each function's CONTRACT and the CLASS its tests must cover. The measured tables are kept — they are the evidence, and evidence does not regenerate. For `differsOnlyByDiacritics`, which runs over arbitrary gloss text, Task 1 Step 4 now names the malformed-input class (invalid UTF-8, decomposed combining marks, huge input) instead of fourteen hand-picked pairs.
+
+### 2026-08-29 — implementation-phase measurement corrected the plan's model of the test doubles
+
+**Reason:** the plan asserted `fakeCDN` was `unchanged — REUSED`, and the close
+review (BR-4) found the diff had changed it. Two more doubles were changed and
+appeared in no row at all. The issue's `## Log` recorded all three honestly; the
+plan did not, and the plan is the artifact a reader trusts to describe the design.
+
+- **`fakeCDN` — modified, not reused.** It keyed on `r.URL.Path`, which Go
+  percent-DECODES, so every URL carrying a non-ASCII character 404'd there while
+  the real CDN serves it. Now `EscapedPath()`. No test had used an accented word
+  before an issue whose point is that the source spelling carries one.
+- **`fakeDictionary` — modified.** Keyed by exact spelling while NOAD is
+  accent-insensitive (`define jalapeno` → the `jalapeño` entry). It now folds
+  through `differsOnlyByDiacritics`, the production predicate, and iterates
+  sorted keys so two diacritic-equal entries cannot answer nondeterministically.
+  `TestLiveDictionaryResolvesAnUnaccentedQuery` is the live half.
+- **`rebasedSource` — modified.** It returned the REBASED URL as the one that
+  answered. Harmless while `from` was discarded; the moment `#29` made it
+  load-bearing it reported a source recording that answered as a fallback.
+
+**Two tasks promised assertions that were not written, and the close review
+caught both.** Task 6 Step 1(c) named a `d.lang` + deck assertion, and the
+delivered test checked only the CDN walk — so the issue's FIRST Done-when lived
+unpinned inside the test named for it (BR-1). Task 7 named
+`cmd/define/repl_test.go` and never touched it, leaving the raw editor's
+record-in-cooked / perform-in-raw split — the design's only real hazard —
+untested (BR-2). Both now exist:
+`TestPronFetchesTheSourceRecordingWithoutMovingTheSession` asserts the session
+voice at capture time, and `TestRawEditorPronPlaysOutsideTheCookedBlock` counts
+CDN requests made inside the cooked callback and requires zero.
+
+**On PQ-4's entry, for the record.** It was EDITED IN PLACE during
+implementation when the live dictionary disproved the `rôle` claim, rather than
+superseded by a dated entry. The text is honest about the disproof, so nothing is
+lost — but AGENTS.md §1 asks for append, and appending is what makes a correction
+legible as a second measurement rather than a first one. Noted here rather than
+re-edited, which would repeat the mistake.
