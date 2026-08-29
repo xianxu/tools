@@ -5,7 +5,7 @@ deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
-estimate_hours:
+estimate_hours: 1.77
 started: 2026-08-29T11:29:22-07:00
 ---
 
@@ -85,6 +85,75 @@ Scope narrowed to Italian on 2026-08-29 — see `## Revisions`.
       English-only (`live_property_test.go` walks `/usr/share/dict/words`), so
       either Italian gets a ratchet of its own or the gap is stated as a
       decision rather than left as an oversight.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.50 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.06
+item: smaller-go-module        design=0.02 impl=0.10
+item: atlas-docs               design=0.03 impl=0.07
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.00 impl=0.06
+item: smaller-go-module        design=0.03 impl=0.12
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.08
+item: smaller-go-module        design=0.00 impl=0.12
+design-buffer: 0.15
+total: 1.77
+```
+
+Derivation notes.
+
+- **`issue-spec` design 0.50 sits AT the band floor, and the measurement is why
+  rather than the band.** The claim synced at `11:29`; the plan cleared
+  plan-quality at `11:54` — **0.42h measured**, covering the four-dictionary
+  probe, the render-quality and pipes/IPA measurements, the operator's scope
+  decision, filing `#34`, and three plan-gate rounds. 0.50 is that plus the
+  estimate round still to run. `#29` priced this line at 0.70 for a window that
+  measured longer and carried a genuinely open design question; here the design
+  question was answered by a table.
+
+- **Seven `smaller-go-module`s, all ×0.2 on design**, and they are not equal.
+  Task 2 is 0.06 — one map row and a comment rewrite. Task 5's paired
+  `curated`-derived guards are 0.12 because they are two tests plus their removal
+  verification. Task 3 (0.10) is a rewrite rather than an addition: the
+  own-language conformance check is Spanish-hardcoded and becomes a table, which
+  is where a second language would otherwise become a second copy.
+
+- **Task 1 is priced as a module (0.08) though most of it is data.** The bash
+  edit is small; what costs is that the capture must run UNSANDBOXED and fails
+  hard on a short read, so a failed run is a diagnose-and-retry loop rather than
+  an error message.
+
+- **`atlas-docs` 0.07, inside the v3.1-scaled 0.02–0.08.** `#29` had to
+  reclassify its docs task as `cross-cutting-refactor` because a five-site
+  invariant sweep is not a docs pass. This one genuinely is: one atlas section,
+  one README paragraph, one notation table. The two stale comments D3 repairs are
+  priced with Task 5a, where the test they describe changes.
+
+- **No `real-api-discovery`.** `#29` mislabelled its conformance work that way
+  and the review caught it. The dictionaries here are already behind
+  `fakeDictionary` with a live half, and this issue probed them ~40 times during
+  design; there is nothing left to discover.
+
+- **A remediation line, because `#29` proved the boundary review returns work.**
+  Four rounds there, and `#27` before it produced two follow-up commits. 0.12,
+  design-free. The second `milestone-review` at 0.08 is the manual verification
+  pass — five CLI invocations plus `go test ./...` and the unfiltered conformance
+  suite, which `#29`'s round 3 showed is not optional and not free.
+
+- **Expect this to land near or above the estimate, not below.** `#29` came in at
+  0.8× (3.34 actual on 2.78) against a `tools` v3.1 median of 0.64 — so the
+  repo's under-bias did not hold for the most recent row, and four review rounds
+  were the reason. This plan is smaller but has the same gate ahead of it, which
+  is what the remediation line prices. No point forecast; the ledger row is the
+  measurement.
 
 ## Plan
 

@@ -116,6 +116,28 @@ rounds:
           family: doc-sweep-incomplete
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-29T11:54:10-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: D3 now names render_test.go:230 as the corpus sweep and converts it; D4 adds the Italian IPA closure.
+          round: 3
+        - id: PQ-2
+          disposition: addressed
+          note: Step 3 and Done-when row 3 now name TestFixturesMatchLiveDictionary, the only capturedLanguages test with t.Run.
+          round: 3
+        - id: PQ-6
+          disposition: addressed
+          note: D5 pins language names in a test-local map rather than changing curated's value shape.
+          round: 3
+        - id: PQ-7
+          disposition: addressed
+          note: Issue Plan now lists five tasks including Task 5's mechanisms.
+          round: 3
+      blocked: false
+content_hash: 1ddc722e02a36a7ab68b262282c9456d7bbc822993cc332298f290a36f78a55f
 ---
 
 # Gate ledger — tools#31 (plan-quality)
@@ -189,9 +211,15 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   mechanisms are the ones PQ-3 and PQ-5 turn on. The close gate's
   plan-unchecked guard will read the stale list.
 
+## Round 3 — 2026-08-29T11:54:10-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — D3 now names render_test.go:230 as the corpus sweep and converts it; D4 adds the Italian IPA closure.
+- PQ-2 — addressed — Step 3 and Done-when row 3 now name TestFixturesMatchLiveDictionary, the only capturedLanguages test with t.Run.
+- PQ-6 — addressed — D5 pins language names in a test-local map rather than changing curated's value shape.
+- PQ-7 — addressed — Issue Plan now lists five tasks including Task 5's mechanisms.
+
 ## Open findings
 
-- **PQ-1** [Critical] `corpus-check-language-blind` Plan claims the it corpus auto-enters suites that are hardcoded to English, and D3/Done-when-6 rest on it
-- **PQ-2** [Important] `unbacked-existing-behavior-claim` Task 1 Step 3's confirmation command cannot produce the it subtest it tells the implementer to look for
-- **PQ-6** [Important] `source-lacks-the-fact-consumer-renders` Task 5's generated doc span has no source — `curated` holds identifiers, the README prose names book titles
-- **PQ-7** [Minor] `doc-sweep-incomplete` The issue file's `## Plan` still says "4 tasks" and omits Task 5's two mechanisms
+(none — every finding has been disposed)
