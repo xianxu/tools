@@ -1,7 +1,7 @@
 ---
 id: 000029
 status: open
-deps: []
+deps: [tools#27]
 github_issue:
 created: 2026-08-28
 updated: 2026-08-28
@@ -115,6 +115,52 @@ source recording" may matter less than **saying which pronunciation is which**.
 `/əˈrändəsmənt, eˌrändēsˈmäN/` does not tell the reader that the first is
 English and the second French.
 
+### Spanish borrowings are the strongest case, and they carry a constraint
+
+Measured 2026-08-28, after the issue was first written. Spanish borrowings in
+English are common, their anglicisation is often far from the source, and CDN
+coverage is **much better than French**:
+
+| word | `_es_es_` | `_en_us_` |
+|---|---|---|
+| `tortilla`, `chorizo`, `quesadilla`, `burrito`, `guacamole` | **200** | 200 |
+| `jalapeño` | **200** (and `es_us` 200) | 200 (as `jalapeno`) |
+
+Compare French, where `déjeuner` and `rendez-vous` are 404 in every form tried.
+If this issue ships one language first, Spanish is the one that pays.
+
+**THE CONSTRAINT, and it is not a detail:**
+
+```
+jalapeno_en_us   200   ← what define asks for today
+jalapeño_es_es   200   ← the Spanish recording
+jalapeno_es_es   404   ← the same word, Spanish locale, UNACCENTED
+```
+
+**The source recording is keyed on the source ORTHOGRAPHY.** English keys
+`jalapeno`, Spanish keys `jalapeño`. So this issue cannot simply swap the
+language field in the existing URL builder: `define jalapeno` — which is what a
+person types — carries the wrong string for the Spanish URL.
+
+The information is available: NOAD's headword renders `jalapeño` with the tilde
+even though the word was typed without it. So the fix is reachable, but it means
+the source SPELLING is an input to the candidate builder alongside the source
+language, and `AudioCandidates` currently takes only the typed word.
+
+### Relationship to `#27` — orthogonal, and this issue depends on it
+
+They answer different questions and compose:
+
+- **`#27` — which VARIANT of one language.** The Castilian/seseo split is
+  phonemic, not an accent flavour: `cazar` /θ/ ≠ `casar` /s/ in `es_es`, both /s/
+  in `es_us`. It applies whether or not a borrowing is involved.
+- **`#29` — which LANGUAGE, per word, without switching mode.**
+
+`jalapeño` needs both, and proves the dependency direction: `jalapeño_es_es` and
+`jalapeño_es_us` are BOTH 200, so knowing the word is Spanish does not determine
+which recording to fetch. This issue must defer to `#27`'s locale policy rather
+than inventing one. **`#29` depends on `#27`, not the reverse.**
+
 ## Done when
 
 - [ ] A borrowed word can be heard in its source language **without changing the
@@ -125,6 +171,11 @@ English and the second French.
 - [ ] Italian's absence from the CDN is reported honestly rather than as silence.
 - [ ] Whether the language is declared or inferred is a DECISION with its reason
       recorded, reconciled against `#23`'s rejection of inference.
+- [ ] A word whose source spelling differs from its typed form is fetched
+      correctly — `jalapeno` typed must reach `jalapeño_es_es`, not
+      `jalapeno_es_es`, which is a 404.
+- [ ] The locale for a source-language recording comes from `#27`'s policy rather
+      than a second one invented here.
 
 ## Plan
 

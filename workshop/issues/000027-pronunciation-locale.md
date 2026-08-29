@@ -65,6 +65,37 @@ widening it costs no new mechanism — an unspecified language can try several, 
 `TestCDNStillServesTheExpectedPaths`, which pins the English ordering the same
 way.
 
+### `#29` consumes this policy, and a borrowing shows why (added 2026-08-28)
+
+`#29` — origin pronunciation for borrowed words — **depends on this issue**, and
+the reason is concrete. Measured:
+
+```
+jalapeño_es_es   200      ← Castilian
+jalapeño_es_us   200      ← seseo
+```
+
+Knowing that `jalapeño` is a Spanish word does not determine which recording to
+fetch: both exist, and they differ by exactly the phonemic split this issue is
+about. So the locale policy decided here is consumed there rather than
+reinvented — which is the argument for keeping it a POLICY with one home, not a
+default buried in a URL builder.
+
+**A caveat on this Spec's own claim, so `#29` does not inherit it wrongly.**
+Above, this issue states that Spanish entries carry *no phonetic notation at
+all* — verified, and true of **Spanish dictionary** entries. It is not true of a
+Spanish word looked up in an ENGLISH dictionary: NOAD gives `jalapeño` four
+pronunciations, all anglicised (`/ˌhaləˈpān(y)ō/` and three variants). Same word,
+different entry, different fact. The claim needs its scope stated, or `#29`'s
+design will read it as "there is no notation to compare against" when for
+borrowings there is.
+
+**And a constraint this issue's URL work should carry:** the Spanish recording is
+keyed on the source ORTHOGRAPHY. `jalapeno_es_es` (unaccented) is a **404**;
+`jalapeño_es_es` is a 200, while the English recording keys the unaccented
+`jalapeno`. Whatever this issue does to make language and locale parameters, the
+SPELLING is a third input — not a property that follows from the other two.
+
 ## Done when
 
 - [ ] `define madrugar` plays a recording; asserted against the fake, and a
