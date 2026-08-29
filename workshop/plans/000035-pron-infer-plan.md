@@ -136,7 +136,7 @@ plausible simpler rule:
 **Contract.**
 
 - `parsePronArgs(nil)` returns `("", nil)` — no argument is now a request to infer, not a usage error. Two arguments stay an error.
-- `commandCtx` gains `entry string`; `newCommandCtx` fills it from the session, and both loops already hold `sess.entry`.
+- `commandCtx` gains `entry string`. **`newCommandCtx` does NOT take a session** — it has three call sites and one of them (the one-shot in `main.go`) has no session at all — so the field is set post-construction by the two loops that hold `sess.entry`, exactly as they already do for `setTimes`, `setLang` and `replay`. Threading a session through a constructor that two of three callers cannot supply is the change this deliberately does not make.
 - `runPron` with no language calls `OriginLanguage`. On success it prints `<word>: ORIGIN says French` and replays; on failure it prints the reason and exits 2, naming `/pron fr` as the override.
 
 **The report is not decoration.** A silent inference cannot be audited, and this repo's rule is that a record has to be true. It is also what makes `piano`'s contested case visible instead of decided behind your back.

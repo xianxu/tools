@@ -163,7 +163,20 @@ rounds:
           family: unbacked-existing-behavior
           round: 3
       blocked: false
-content_hash: bf22eead90b36feec2bcb7cffcab3c6a58e57955bb3f6a809670c1150a234e2f
+    - "n": 4
+      timestamp: "2026-08-29T15:19:14-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-8
+          disposition: addressed
+          note: Row 5 now says "no test"; the pronCommandHelp span got its own row.
+          round: 4
+        - id: PQ-4
+          disposition: not-addressed
+          note: Plan line 139 unchanged; newCommandCtx still has no session and three call sites. Minor.
+          round: 4
+      blocked: false
+content_hash: b1bc24f1fce0228b96e8d8272b2efcb149dabd75bb99554529a3e2472981c6c1
 ---
 
 # Gate ledger — tools#35 (plan-quality)
@@ -268,7 +281,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   whatever the atlas records about D5. Row 5 is a leftover from the pre-PQ-7
   draft; the new pronCommandHelp span and its doc-sync test have no row at all.
 
+## Round 4 — 2026-08-29T15:19:14-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-8 — addressed — Row 5 now says "no test"; the pronCommandHelp span got its own row.
+- PQ-4 — not-addressed — Plan line 139 unchanged; newCommandCtx still has no session and three call sites. Minor.
+
 ## Open findings
 
 - **PQ-4** [Minor] `unbacked-existing-behavior` newCommandCtx has three call sites and does not take a session
-- **PQ-8** [Minor] `unbacked-existing-behavior` Done-when row 5 pins D5 on TestDocsQuoteThePronHelp, a test Task 4 explicitly leaves untouched

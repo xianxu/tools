@@ -5,7 +5,7 @@ deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
-estimate_hours: 1.33
+estimate_hours: 1.39
 started: 2026-08-29T14:56:14-07:00
 ---
 
@@ -141,7 +141,7 @@ item: milestone-review         design=0.00 impl=0.16
 item: milestone-review         design=0.00 impl=0.08
 item: milestone-review         design=0.00 impl=0.12
 design-buffer: 0.15
-total: 1.33
+total: 1.39
 ```
 
 Derivation notes.
@@ -178,6 +178,12 @@ Derivation notes.
   REMEDIATING what the review returns (0.12). The last is not padding — `#29` took
   four rounds and `#31` four, and the two most recent boundary reviews each
   returned work on the first pass.
+
+- **The declared total was 1.33 and the arithmetic is 1.39.** Caught by my own
+  reconciliation check rather than by the gate, which let it through. Corrected
+  rather than left, because a ledger row that does not add up is worse than one
+  that is merely wrong: `#117` reads these to calibrate, and a 0.06 slip is
+  indistinguishable from a deliberate adjustment.
 
 - **No point forecast.** `#29` closed at 0.83× and `#31` at 0.90× against a
   `tools` v3.1 median near 0.7, so the recent rows sit closer to 1.0 than the
