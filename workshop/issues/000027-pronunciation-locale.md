@@ -1,12 +1,13 @@
 ---
 id: 000027
-status: working
+status: codecomplete
 deps: [tools#23]
 github_issue:
 created: 2026-08-28
 updated: 2026-08-28
 estimate_hours: 0.93
 started: 2026-08-28T00:38:19-07:00
+actual_hours: 1.89
 ---
 
 # pronunciation locale and language as parameters, not literals
@@ -160,6 +161,17 @@ Derivation notes.
 ## Log
 
 ### 2026-08-28
+- 2026-08-28: closed — Round-2 finding fixed.; review verdict: FIX-THEN-SHIP
+
+BR-8: #26 built retiredSymbolNames + TestNoArtifactNamesARetiredSymbol so a rename sweeps every prose restatement of the old symbol, and its own comment states why one step must stay manual — a rename cannot be detected automatically, because only the person doing it knows the old name. One issue later I renamed TestREADMEQuotesTheLocaleHelp to TestDocsQuoteTheLocaleHelp, skipped the row, and left a stale mention in voice.go — in the SAME commit that widened the test being renamed. The guard could not fire, because its input is the thing I did not supply.
+
+Row added, stale mention corrected, and mutation-verified: reintroducing the old name in voice.go now fails by name with the replacement named.
+
+Lesson recorded in workshop/lessons.md: the human half of a mechanical guard is the half that fails, and "I built the guard" is not "the guard is armed" — a mechanism with an unsupplied input is unprotected, not protected.
+
+EARLIER ROUNDS (disposed): -locale honoured for every language with the whitelist withdrawn at the plan gate in favour of ParseLang open-domain stance; the dead complaint plumbing removed; the Spanish-notation claim scoped with both halves tested and jalapeño captured so the English half asserts rather than skips; conformance covering both es locales plus cazar/casar; the doc-sync reaching BOTH docs; and TestLocaleFlagReachesTheCDN pinning the flag-to-CDN wiring, proved to earn its place by a mutation that leaves the pure function green and the wiring test red.
+
+TESTS: go build ./... && go vet ./... && GOOS=linux go vet ./cmd/define/ && go test ./... all green; gofmt -l ./cmd/ empty.
 
 - **Split out of #18** so the locale concept can land ahead of the two issues that
   want it, neither of which needs #18's deck/agreement scope:
@@ -266,4 +278,25 @@ locales while passing the ENGLISH fake corpus, so the lookup failed, no audio wa
 fetched, and the rows asserted nothing — they reported "never asked for _es_us_"
 which reads like a wiring bug and was a fixture bug. The guard now fails loudly
 when a row requests nothing at all.
+
+### 2026-08-28 — close sanctioned; three Minors fixed before committing
+
+**BR-5 was a real input-handling bug, not a nit.** The locale reaches the CDN
+path straight from `-locale`, unescaped, while the word beside it goes through
+`url.PathEscape`. A locale containing `/` would rewrite the path rather than 404
+— and a clean miss is this issue's contract, since nothing whitelists which
+locales exist. Escaped now, and pinned.
+
+**BR-4: `localeSet` went inert in my own change and I kept it.** Changing the
+flag's default from `"us"` to `""` made the value carry "not given" by itself;
+the separate bool was only ever needed because `"us"` is a real locale, so
+`fs.Visit` was the only way to tell "asked for American" from "said nothing".
+Removed rather than kept warm — the same call as the complaint plumbing earlier
+in this issue.
+
+**BR-3: three comments described rules this issue deleted** — `voice.go` still
+said `#27` *owns* the locale policy as future work, and `main.go` explained a
+`-locale` complaint that no longer exists. Corrected, keeping the historical note
+where it explains why the English exception survives (it is a fact about the
+CDN's key format, not a policy).
 

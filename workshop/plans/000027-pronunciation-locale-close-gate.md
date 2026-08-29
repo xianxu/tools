@@ -153,6 +153,45 @@ rounds:
           family: session-value-reinterpreted-by-a-mode-switch
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-28T23:06:48-07:00"
+      agent: claude
+      dispose:
+        - id: BR-8
+          disposition: addressed
+          note: |-
+            Verified by revert, not by message: reintroducing TestREADMEQuotesTheLocaleHelp into
+            voice.go makes TestNoArtifactNamesARetiredSymbol fail naming cmd/define/voice.go.
+          round: 3
+        - id: BR-3
+          disposition: not-addressed
+          note: |-
+            All three sites intact at HEAD (voice.go:23-25, main.go:384, main.go:387-389); this is the
+            enumeration half BR-8's own detail named, and c9ccf5e swept only the rename half.
+          round: 3
+        - id: BR-4
+          disposition: not-addressed
+          note: voice.go:51 still branches on !flagSet || flag == "", decided by flag == "" alone.
+          round: 3
+        - id: BR-5
+          disposition: not-addressed
+          note: Two sites, audiourl.go:50 and :58; re-measured, -locale '%zz' still errors instead of warning.
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: |-
+            CDN half now settled by probe (jalapeno_es_us and _es_es both 200); the dictionary half is
+            still unconfirmed — capture.sh:91 es_words lacks jalapeno and the Larousse is not installed here.
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: Five rows still unticked, no Revisions entry; plus plan:57 stale and no localeHelp row.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: Reproduced at HEAD — {-locale gb} then /lang es requests sycophantic_es_gb_*, silent thereafter.
+          round: 3
+      blocked: false
 ---
 
 # Gate ledger — tools#27 (boundary-review)
@@ -246,6 +285,21 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   pinning the unserved pair (want _es_gb_, exit 0, warning present), so the trade is a recorded
   decision rather than untested drift.
 
+## Round 3 — 2026-08-28T23:06:48-07:00 (claude) — passed
+
+### Disposed
+
+- BR-8 — addressed — Verified by revert, not by message: reintroducing TestREADMEQuotesTheLocaleHelp into
+voice.go makes TestNoArtifactNamesARetiredSymbol fail naming cmd/define/voice.go.
+- BR-3 — not-addressed — All three sites intact at HEAD (voice.go:23-25, main.go:384, main.go:387-389); this is the
+enumeration half BR-8's own detail named, and c9ccf5e swept only the rename half.
+- BR-4 — not-addressed — voice.go:51 still branches on !flagSet || flag == "", decided by flag == "" alone.
+- BR-5 — not-addressed — Two sites, audiourl.go:50 and :58; re-measured, -locale '%zz' still errors instead of warning.
+- BR-6 — not-addressed — CDN half now settled by probe (jalapeno_es_us and _es_es both 200); the dictionary half is
+still unconfirmed — capture.sh:91 es_words lacks jalapeno and the Larousse is not installed here.
+- BR-7 — not-addressed — Five rows still unticked, no Revisions entry; plus plan:57 stale and no localeHelp row.
+- BR-9 — not-addressed — Reproduced at HEAD — {-locale gb} then /lang es requests sycophantic_es_gb_*, silent thereafter.
+
 ## Open findings
 
 - **BR-3** [Minor] `stale-comment-at-changed-site` three comments describe rules this commit deleted
@@ -253,5 +307,4 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-5** [Minor] `unescaped-input-in-url` the locale is interpolated into the CDN URL unescaped, so some values error instead of missing cleanly
 - **BR-6** [Minor] `doc-example-not-verified` the README's jalapeño example depends on a Larousse entry nothing in the tree can confirm
 - **BR-7** [Minor] `plan-state-lags-the-code` all five plan tasks are still unticked though the code delivers them
-- **BR-8** [Important] `stale-comment-at-changed-site` the rename in c17d1c8 skipped its retiredSymbolNames row, so voice.go:84 still names a symbol the tree retired
 - **BR-9** [Minor] `session-value-reinterpreted-by-a-mode-switch` a mid-session /lang silently reinterprets -locale, and the old code used to say so

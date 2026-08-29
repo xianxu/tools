@@ -242,7 +242,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 - [x] news seam — Google News RSS (not the SERP) [tools#9]
 - [x] scheduling engine — Leitner, pure [tools#5]
 - [x] `--play` loop + form 2.1 [tools#6]
-- [ ] Spanish — pronunciation locale (independently shippable) [tools#27] —
+- [x] Spanish — pronunciation locale (independently shippable) [tools#27] —
       **moved up 2026-08-28**: its only dependency was `#23`, now done, and
       `#23 M1` wrote D2's interim locale rule specifically for it to inherit.
       Small, and it finishes the language thread rather than leaving Spanish

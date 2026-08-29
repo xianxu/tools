@@ -20,9 +20,10 @@ type voice struct {
 // _en_en_. Both halves are measured, not assumed — madrugar_es_es_1.mp3 is a 200
 // and sycophantic_en_us_1.mp3 is a 200.
 //
-// #27 owns real locale policy (es_es vs es_us, the θ/seseo split). This is the
-// interim rule it inherits, written down rather than left to fall out of a
-// default.
+// This is the DEFAULT only — `-locale` overrides it for any language. #27
+// replaced the interim rule that made the flag English-only; the exception here
+// survives because it is a fact about the CDN, not a policy: English recordings
+// are keyed _en_us_ and _en_gb_, never _en_en_.
 func defaultLocale(l store.Lang) string {
 	if l == store.DefaultLang {
 		return "us"
@@ -48,8 +49,13 @@ func defaultLocale(l store.Lang) string {
 // So an unserved pair — `-lang es -locale gb` builds `madrugar_es_gb` — 404s and
 // degrades to the warning every missing recording already produces. The CDN
 // stays the authority on what exists.
-func localeFor(l store.Lang, flag string, flagSet bool) string {
-	if !flagSet || flag == "" {
+// An empty flag means "not given": #27 changed the flag's default from "us" to
+// "", so the value alone carries that. The separate flagSet bool it used to take
+// became inert in the same change and was removed rather than kept warm — the
+// default was "us" before, which is a real locale, so only fs.Visit could tell
+// "asked for American" from "said nothing".
+func localeFor(l store.Lang, flag string) string {
+	if flag == "" {
 		return defaultLocale(l)
 	}
 	return flag
@@ -57,8 +63,8 @@ func localeFor(l store.Lang, flag string, flagSet bool) string {
 
 // voiceFor is the one place a voice is built from the session's language and
 // flags, so the two fields cannot be assembled inconsistently at a call site.
-func voiceFor(l store.Lang, flag string, flagSet bool) voice {
-	return voice{Lang: l, Locale: localeFor(l, flag, flagSet)}
+func voiceFor(l store.Lang, flag string) voice {
+	return voice{Lang: l, Locale: localeFor(l, flag)}
 }
 
 // applyVoice derives the session's voice from a language.
@@ -74,7 +80,7 @@ func voiceFor(l store.Lang, flag string, flagSet bool) voice {
 // left to say and the parameter went with it rather than being kept warm for a
 // hypothetical caller.
 func applyVoice(opt *options, l store.Lang) {
-	opt.voice = voiceFor(l, opt.locale, opt.localeSet)
+	opt.voice = voiceFor(l, opt.locale)
 }
 
 // localeHelp is THE statement of what -locale means, and the one source for it.

@@ -109,29 +109,28 @@ func TestAudioCandidatesEnglishUnchanged(t *testing.T) {
 // conformance tests own the measurement.
 func TestLocaleFor(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		lang    store.Lang
-		flag    string
-		flagSet bool
-		want    string
+		name string
+		lang store.Lang
+		flag string
+		want string
 	}{
 		{name: "English defaults to us", lang: "en", want: "us"},
-		{name: "English honours the flag", lang: "en", flag: "gb", flagSet: true, want: "gb"},
+		{name: "English honours the flag", lang: "en", flag: "gb", want: "gb"},
 		{name: "Spanish defaults to es", lang: "es", want: "es"},
 		// THE change #27 makes. This was refused with a diagnostic before, and
 		// es_us is a real recording — the Latin American seseo, phonemically
 		// distinct from Castilian es_es, which is the whole point of the flag.
-		{name: "Spanish honours the flag: seseo", lang: "es", flag: "us", flagSet: true, want: "us"},
+		{name: "Spanish honours the flag: seseo", lang: "es", flag: "us", want: "us"},
 		{name: "an unknown language is its own locale", lang: "de", want: "de"},
-		{name: "and honours the flag too", lang: "fr", flag: "ca", flagSet: true, want: "ca"},
+		{name: "and honours the flag too", lang: "fr", flag: "ca", want: "ca"},
 		// NOT rejected. es_gb 404s and degrades to the warning every missing
 		// recording produces; the CDN is the authority on what exists, not a
 		// table here.
-		{name: "an unserved pair is built, not refused", lang: "es", flag: "gb", flagSet: true, want: "gb"},
+		{name: "an unserved pair is built, not refused", lang: "es", flag: "gb", want: "gb"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := localeFor(tc.lang, tc.flag, tc.flagSet); got != tc.want {
-				t.Errorf("localeFor(%q, %q, %v) = %q, want %q", tc.lang, tc.flag, tc.flagSet, got, tc.want)
+			if got := localeFor(tc.lang, tc.flag); got != tc.want {
+				t.Errorf("localeFor(%q, %q) = %q, want %q", tc.lang, tc.flag, got, tc.want)
 			}
 		})
 	}
@@ -165,7 +164,7 @@ func TestAudioCandidatesSpanishLocales(t *testing.T) {
 // The mix-up the struct exists to prevent: "es" is a legal value of both fields,
 // so a transposed pair must not silently build a plausible URL.
 func TestVoiceForBuildsBothFieldsTogether(t *testing.T) {
-	v := voiceFor("es", "", false)
+	v := voiceFor("es", "")
 	if v.Lang != "es" || v.Locale != "es" {
 		t.Errorf("voiceFor(es) = %+v", v)
 	}
@@ -234,5 +233,20 @@ func TestTheFetchLoopAsksOnlyForTheSessionsLanguage(t *testing.T) {
 					strings.Join(got, "\n  "), strings.Join(tc.want, "\n  "))
 			}
 		})
+	}
+}
+
+// The locale is user input and reaches a URL path, so it is escaped like the
+// word. Unescaped, a value containing "/" rewrites the path instead of missing
+// cleanly — and a clean miss is the contract, since nothing whitelists which
+// locales exist.
+func TestAudioCandidatesEscapesTheLocale(t *testing.T) {
+	for _, u := range AudioCandidates("madrugar", voice{Lang: "es", Locale: "a/b"}) {
+		if strings.Contains(u, "_a/b_") {
+			t.Errorf("an unescaped locale rewrote the path: %s", u)
+		}
+		if !strings.Contains(u, "a%2Fb") {
+			t.Errorf("the locale was not escaped: %s", u)
+		}
 	}
 }

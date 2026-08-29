@@ -287,3 +287,112 @@ findings:
       pinning the unserved pair (want _es_gb_, exit 0, warning present), so the trade is a recorded
       decision rather than untested drift.
 ```
+
+---
+
+## Re-review — 2026-08-28T23:06:48-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 27 — pronunciation locale and language as parameters, not literals |
+| repo | tools |
+| issue file | workshop/issues/000027-pronunciation-locale.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 1e568519dd837fb5506110c3d24dfdb6f8869213..c9ccf5eb1696a2c6f1871a840f3618de03bb4b9b |
+| command | sdlc close --issue 27 |
+| reviewer | claude |
+| timestamp | 2026-08-28T23:06:48-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The one Important finding from round 2 (BR-8) is genuinely fixed and I mutation-verified it: reintroducing `TestREADMEQuotesTheLocaleHelp` into `voice.go` makes `TestNoArtifactNamesARetiredSymbol` fail by name, so the row re-arms the guard rather than merely satisfying it. The feature itself is delivered end-to-end and pinned — I reverted `localeFor`'s deleted English-only guard in a scratch worktree and `TestLocaleFlagReachesTheCDN`'s `es_us` row went red naming the URLs actually requested, and I drifted the atlas' `locale-help` span and `TestDocsQuoteTheLocaleHelp` went red naming `atlas/define.md`. Full suite green (94s), conformance live-green against the real CDN. Nothing Critical or Important remains open, so this passes the gate. What holds it back from a clean SHIP is that the closing commit disposed exactly one of round 2's seven findings and left six Minors untouched — the implementor's own ledger records them `not-addressed` — including the enumeration that BR-8's detail explicitly named as the class half of its own fix. Those six need either a fix or an explicit withdrawal with reasons, not a third round of carrying.
+
+## 1. Strengths
+
+- **`cmd/define/voice.go:33-78` — the pure core got purer, not just preserved.** Removing the refusal let `localeFor`, `voiceFor` and `applyVoice` all shed their `io.Writer`; the file now imports only `store`. The `applyVoice` comment (`voice.go:72-75`) argues the parameter's removal rather than keeping it warm, which is the right instinct.
+- **`cmd/define/lang_scope_test.go:383` `TestLocaleFlagReachesTheCDN` — the right test at the right altitude.** It asserts what the fetch loop *requested*, so it covers flag parse → `localeSet` → `applyVoice` → `AudioCandidates` → fetch. The `t.Fatalf` on an empty request log (`:428`) is a real non-vacuity guard, not decoration. Mutation-verified red.
+- **`cmd/define/doc_sync_test.go:121` — the doc-sync reaches both consumers.** Wiring only the README would have left the atlas as the next copy to go stale; the loop over `{README.md, atlas/define.md}` closes the class. Mutation-verified red on the atlas half specifically.
+- **`README.md:36` — `colour` → `schedule` is a correctness fix, not cosmetics.** The plan's own re-measurement caught that `colour_en_us` *and* `colour_en_gb` are both 404, so the old example demonstrated nothing. I independently measured `schedule_en_gb_1.mp3` → 200.
+- **`cmd/define/fetch_conformance_test.go:74-85` + `workshop/lessons.md:2314`.** The conformance row now covers both Spanish locales *and* the `cazar`/`casar` pair the phonemic distinction is actually about — live-green when I ran it. And the lesson generalises BR-8 to the rule ("a mechanism with an unsupplied input is unprotected"), rather than just recording the slip.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None open. BR-8 disposed `addressed` — verified by revert, not by commit message.
+
+## 4. Minor findings
+
+All six are prior findings re-raised, not new ones. Measured at HEAD:
+
+- **BR-3** — all three sites intact. `voice.go:23-25` still forward-refers to "#27 owns real locale policy … the interim rule it inherits"; `main.go:384` still explains a "-locale complaint" that no longer exists; `main.go:387-389` still says the flag default is `"us"` (it is `""` at `main.go:409`). BR-8's detail named exactly this enumeration as the non-rename half of its own class, and the closing commit swept only the rename half.
+- **BR-4** — `localeFor` (`voice.go:51`) still branches on `!flagSet || flag == ""`, which `flag == ""` decides alone for every input. `TestLocaleFor`'s `flagSet` column still asserts nothing.
+- **BR-5** — two sites, not one: `audiourl.go:50` and `audiourl.go:58` both interpolate `v.Locale` raw while `PathEscape`-ing the word. Re-measured at HEAD: `-locale '%zz'` yields `define: madrugar: parse "…madrugar_es_%zz_1.mp3": invalid URL escape "%zz"` instead of the promised "no recorded pronunciation"; `-locale ../../x` rewrites the path.
+- **BR-6** — narrower than round 2 stated. I probed the CDN: `jalape%C3%B1o_es_us_1.mp3` and `…_es_es_1.mp3` are both 200, so the percent-escaping of the non-ASCII headword works. The unconfirmed half is the *dictionary* lookup that must succeed before `speak()` — `capture.sh:91` still has `es_words=(mesa bonito once real madrugar)`, and the Larousse is not installed on this machine either.
+- **BR-7** — all five `- [ ]` rows unticked (`plan:142,160,176,185,188`), no `## Revisions` entry recording delivery. Two more instances of the same lag: `plan:57` still calls `localeFor` "the interim locale rule `#27` inherits", and the new `localeHelp` const has no Core-concepts row (the table guard only catches stale rows, not missing ones).
+- **BR-9** — reproduced at HEAD. Driving `run()` with `{-locale gb}` and stdin `/lang es\nsycophantic\n` requests `sycophantic_es_gb_1.mp3`/`_2`, both 404, stderr carrying only the generic warning, and every later Spanish lookup stays silent with no `/locale` to recover.
+
+## 5. Test coverage notes
+
+Coverage of the shipped feature is good and honestly pinned — the two mutations I ran both went red at the right test with the right message. The gaps are exactly the untested boundaries the open Minors name: the mid-session `/lang` × `-locale` interaction (BR-9 — one more row in `TestLocaleFlagReachesTheCDN` would convert it from untested drift to a recorded decision), the malformed-locale path (BR-5), and `TestLocaleFor`'s inert `flagSet` column (BR-4). The `-no-audio=false` in every `TestLocaleFlagReachesTheCDN` row is redundant against the current default; harmless, but it means the rows would not notice if that default flipped.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `localeHelp` (`voice.go:96`) is a real single source with three derived consumers (flag help, README, atlas), and I confirmed the atlas one is not decorative. The only remaining hand-maintained restatements of the model are BR-3's two `main.go` comments.
+- **ARCH-PURE — pass, improved.** The policy is now `(store.Lang, string, bool) → string` with no IO; `TestLocaleFor` and `TestAudioCandidatesSpanishLocales` run without any mock. BR-4 is the one residue: a parameter the body can no longer use to reach a different answer.
+- **ARCH-PURPOSE — flag (already open as BR-3).** The issue's purpose is fully delivered — `-locale` works for every language, the help says what the choice *is*, both Spanish locales are live-verified. But the shadow-sweep on BR-8's own class shows the instance fixed and the enumeration it named left in place. That is the "instance, not the class" pattern the principle names, and it is the third round this family has appeared.
+- **ARCH-MOCK — pass.** `fakeCDN` is stateful (ordered request log), injected through `deps.audio` — the same `AudioSource` seam production fills with `newHTTPAudioSource()` — and the new `run()`-level test drives the whole stack through it. Live conformance is build-tagged and routes through `conformance.SkipOrFail` (`fetch_conformance_test.go:28`), satisfying Done-when row 5.
+- **For `#29`:** the no-whitelist decision is the right foundation — an origin-language voice can select `_fr_fr_` without touching `localeFor`. Keep `applyVoice` as the single derivation point when the deck word starts carrying its own `voice`; BR-9 is early evidence that a second derivation site is where this drifts.
+
+## 7. Plan revision recommendations
+
+The plan still claims work as pending that `main` has. It needs one `## Revisions` entry, dated 2026-08-28, saying:
+
+- **All five `## Tasks` rows shipped** — name the delivering commits (`3d0b750`, `c17d1c8`, `c9ccf5e`) and tick them.
+- **The "one source" task landed wider than written.** It specified the README as the derived consumer; the boundary review found that wiring one doc left the atlas as the next copy to go stale, so `TestDocsQuoteTheLocaleHelp` (renamed from `TestREADMEQuotesTheLocaleHelp`) now covers both.
+- **`plan:57` is stale.** `localeFor` is no longer "the interim locale rule `#27` inherits" — this issue replaced it. Restate the row as the delivered policy.
+- **Add a Core-concepts row for `localeHelp`** (`cmd/define/voice.go`, PURE, new) — a new pure entity shipped with no row, and the table guard only catches stale rows, not absent ones.
+
+```findings
+dispose:
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Verified by revert, not by message: reintroducing TestREADMEQuotesTheLocaleHelp into
+      voice.go makes TestNoArtifactNamesARetiredSymbol fail naming cmd/define/voice.go.
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      All three sites intact at HEAD (voice.go:23-25, main.go:384, main.go:387-389); this is the
+      enumeration half BR-8's own detail named, and c9ccf5e swept only the rename half.
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      voice.go:51 still branches on !flagSet || flag == "", decided by flag == "" alone.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      Two sites, audiourl.go:50 and :58; re-measured, -locale '%zz' still errors instead of warning.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      CDN half now settled by probe (jalapeno_es_us and _es_es both 200); the dictionary half is
+      still unconfirmed — capture.sh:91 es_words lacks jalapeno and the Larousse is not installed here.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      Five rows still unticked, no Revisions entry; plus plan:57 stale and no localeHelp row.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      Reproduced at HEAD — {-locale gb} then /lang es requests sycophantic_es_gb_*, silent thereafter.
+```
