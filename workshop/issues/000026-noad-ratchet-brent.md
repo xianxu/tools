@@ -89,9 +89,24 @@ said "unreachable", which is a different claim and a wrong one (PQ-1).
 Only 7 of 26 are the cause the ratchet's own comment claims covers all of them,
 and `atlas/define.md` repeats that attribution.
 
-**The `pipe` family is a false positive, and the oracle stays broad anyway.** The
-check is `IndexByte(out, '|') >= 0`; those four entries define the pipe
-character, so their content legitimately contains one. Narrowing the oracle to
+**The oracle is a DISJUNCTION of two, not the pipe check a first draft of this
+Spec claimed.** Read at `cmd/define/live_property_test.go:84`:
+
+```go
+if near, bar := strayStress(out), strings.IndexByte(out, '|'); near != "" || bar >= 0 {
+```
+
+`strayStress` (`cmd/define/invariant_test.go:42`) strips `/…/` spans and then
+looks for a stress mark `ˈ`/`ˌ`. So the headword-glued and phrase-block groups —
+`(aˈhəndrədzˈhəndrəd/)`, `lick someoneˌoud əv ˈSHāp/` — fire on STRESS MARKS and
+carry no pipe at all. A pipe-keyed classifier would mis-handle most of the
+population Done-when row 3 wants attributed. The per-oracle split is deliberately
+NOT asserted here; it is measured during implementation, because asserting it is
+how this Spec was wrong twice already.
+
+**The `pipe` family is a false positive, and the oracle stays broad anyway.**
+Those four entries define the pipe character, so their content legitimately
+contains one. Narrowing the oracle to
 exclude them is exactly the move `workshop/lessons.md` records as having already
 failed here — the narrow oracle read 0% while 2.2% of entries showed raw pipes,
 and that false 0% was published in the atlas. So the count stays 26 and the four
@@ -147,9 +162,12 @@ Derivation notes.
   offline exemplars, not a number. Three `smaller-go-module`s: the classifier and
   its reporting, the exemplar corpus and its unit test, and the atlas doc-sync
   test.
-- **`cross-cutting-refactor` for the doc sweep**, six sites across two files,
-  enumerated by a grep that ran (PQ-2) rather than by hand. Small, but it is the
-  shape `#24`'s nine call sites were priced as, not a one-liner.
+- **`cross-cutting-refactor` for the artifact sweep.** The sites are whatever the
+  grep returns at implementation time, deliberately not counted here: a first
+  draft of this note said "six sites across two files", which is a hand
+  enumeration surviving inside the block that claims to have replaced hand
+  enumerations. Priced as the shape `#24`'s call-site change was, not as a
+  one-liner.
 - **`issue-spec` stays 0.15** — the triage, the live enumeration and the positive
   control were spent before this block existed.
 - **One `milestone-review`** at 0.16 rather than the 0.20 ceiling: the diff is a
@@ -171,11 +189,19 @@ a fixture directory and two docs is a single review boundary, not two.
       files compile into every build, so one producer then serves three
       consumers: the live ratchet, the classifier's unit test, and the doc-sync
       test below.
-- [ ] **Classify each survivor by cause and report per-cause counts**, so a
-      future 27 names which group moved instead of printing one number and three
-      samples. Risky inputs for the classifier, named because they are what a
-      table would otherwise miss: an entry whose content legitimately contains a
-      pipe, and an entry matching two causes at once.
+- [ ] **`classifyRawNotation(rendered string) rawCause`** — pure, untagged,
+      returning exactly one of a closed set: `causeProseNumeral`,
+      `causeHeadwordPronunciation`, `causePhrasePronunciation`,
+      `causeLiteralPipe`, `causeUnclassified`.
+      **Totality is the design, not a detail:** every survivor gets exactly one
+      cause, and `causeUnclassified` is a real bucket the live run asserts is
+      ZERO. A new shape then surfaces as unclassified rather than being absorbed
+      into whichever existing cause it happens to resemble — which is the failure
+      mode this issue exists to end.
+      It must key on BOTH oracles (see the Spec): a pipe-keyed classifier
+      mis-handles the stress-mark majority. Risky inputs a table would miss: an
+      entry whose content legitimately contains a pipe, and an entry matching two
+      causes at once — hence "exactly one", decided by a stated precedence.
 - [ ] **One real captured exemplar per cause** in `testdata/rawnotation/` —
       deliberately NOT under `testdata/entries/<lang>/`, which `capturedLanguages`
       walks and over which `TestNoRawPronunciationNotationSurvives` asserts a hard
@@ -187,10 +213,11 @@ a fixture directory and two docs is a single review boundary, not two.
       below; on the `TestREADMEQuotesThePromptsTheLoopActuallyPrints` precedent.
 - [ ] Re-run the live ratchet unsandboxed; green in BOTH directions.
 
-### The rule this issue is fixing, not the six sites
+### The rule this issue is fixing, not the sites
 
 Second finding in the `doc-sweep-incomplete` family, so the deliverable is the
-rule. A measured number in a document may exist in exactly two forms:
+rule. A measured number stated in ANY artifact — a code comment as much as the
+atlas, the README, an issue or a plan — may exist in exactly two forms:
 
 1. **DERIVED** — the doc quotes a value the code owns, and a doc-sync test
    asserts it. Applies to the pinned raw-notation count and the captured-fixture
@@ -204,6 +231,19 @@ rule. A measured number in a document may exist in exactly two forms:
 Anything that is neither is the defect. That is what makes this a rule rather
 than a sweep: the atlas's *"every reachable entry — 70,897"* was wrong because it
 was written as a fact, not because nobody re-ran the number.
+
+**Scoping it to "a document" was itself the second miss.** `cmd/define/parse.go:535`
+carries *"27 of 70,897 live entries (0.04%)"* in a CODE comment — same number,
+same staleness, outside a rule that said "document". Artifacts, not documents.
+
+### And a second rule, because the same shape produced two wrong claims
+
+**Every statement about existing behavior in a Spec or Plan carries a `file:line`
+and is read against it before being written.** Two of the two behavioral claims
+this gate checked were wrong: *"ratio/glop/logarithmic are no longer reachable"*
+(falsified by running the code) and *"the check is `IndexByte(out, '|')`"*
+(falsified by reading it). Both were written from memory of code I had touched
+hours earlier, which is exactly the condition under which memory feels reliable.
 
 **Non-goal, stated rather than left implicit:** the `pipe` family is not excluded
 from the count. Those four entries define the pipe character, so their content

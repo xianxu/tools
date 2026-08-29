@@ -169,6 +169,44 @@ rounds:
           family: over-split-milestones
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-28T18:11:48-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-8
+          disposition: not-addressed
+          note: Rule landed but scopes to "a document"; parse.go:535 and the Estimate's "six sites across two files" both survive.
+          round: 3
+        - id: PQ-9
+          disposition: addressed
+          note: Row 1 names rawnotation_test.go, package main, untagged, with the three consumers.
+          round: 3
+        - id: PQ-10
+          disposition: not-addressed
+          note: Risky-input classes named; classifier function still unnamed and totality still unstated.
+          round: 3
+        - id: PQ-11
+          disposition: addressed
+          note: Plain checkboxes, one sdlc close, stated at the top of the Plan.
+          round: 3
+      findings:
+        - id: PQ-12
+          severity: Important
+          title: The live oracle is a two-oracle disjunction, not the pipe check the plan says it is
+          detail: |-
+            Plan and Spec both state "The check is IndexByte(out, '|') >= 0";
+            live_property_test.go:84 is strayStress(out) != "" || IndexByte(out,'|') >= 0,
+            with strayStress at invariant_test.go:42. By the plan's own taxonomy 14 of 26
+            survivors (the headword-glued and phrase-block pronunciations) are stress-mark
+            hits carrying no pipe, so a pipe-keyed classifier mis-handles the majority of
+            the population Done-when row 3 wants attributed. Second in this family, so the
+            deliverable is the rule, not the sentence: every claim about existing behavior
+            in Spec or Plan carries a file:line and is read against it before being
+            written. PQ-1 was falsified by running the code; this one by reading it.
+            Prevalence: 2 of 2 behavioral claims this gate has checked were wrong.
+          family: unbacked-behavior-claim
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#26 (plan-quality)
@@ -268,9 +306,31 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   checkboxes closing in one sdlc close look right; keep the split only if you genuinely
   intend to close M1 separately.
 
+## Round 3 — 2026-08-28T18:11:48-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-8 — not-addressed — Rule landed but scopes to "a document"; parse.go:535 and the Estimate's "six sites across two files" both survive.
+- PQ-9 — addressed — Row 1 names rawnotation_test.go, package main, untagged, with the three consumers.
+- PQ-10 — not-addressed — Risky-input classes named; classifier function still unnamed and totality still unstated.
+- PQ-11 — addressed — Plain checkboxes, one sdlc close, stated at the top of the Plan.
+
+### Raised
+
+- **PQ-12** [Important] `unbacked-behavior-claim` The live oracle is a two-oracle disjunction, not the pipe check the plan says it is
+  Plan and Spec both state "The check is IndexByte(out, '|') >= 0";
+  live_property_test.go:84 is strayStress(out) != "" || IndexByte(out,'|') >= 0,
+  with strayStress at invariant_test.go:42. By the plan's own taxonomy 14 of 26
+  survivors (the headword-glued and phrase-block pronunciations) are stress-mark
+  hits carrying no pipe, so a pipe-keyed classifier mis-handles the majority of
+  the population Done-when row 3 wants attributed. Second in this family, so the
+  deliverable is the rule, not the sentence: every claim about existing behavior
+  in Spec or Plan carries a file:line and is read against it before being
+  written. PQ-1 was falsified by running the code; this one by reading it.
+  Prevalence: 2 of 2 behavioral claims this gate has checked were wrong.
+
 ## Open findings
 
 - **PQ-8** [Important] `doc-sweep-incomplete` Second in this family — the sweep enumeration is still hand-made; fix the rule, not the sites
-- **PQ-9** [Important] `derivation-behind-build-tag` The atlas cannot consume knownRawNotationEntries — the const is behind darwin and conformance
 - **PQ-10** [Minor] `attribution-not-mechanized` Second in this family — no classifier function named, and the classification is not stated as total
-- **PQ-11** [Minor] `over-split-milestones` M1 and M2 are two review boundaries for a diff of one test file, one fixture dir and two docs
+- **PQ-12** [Important] `unbacked-behavior-claim` The live oracle is a two-oracle disjunction, not the pipe check the plan says it is
