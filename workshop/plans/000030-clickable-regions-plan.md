@@ -34,6 +34,41 @@
 
 ---
 
+## What this plan asserts about the existing tree, verified
+
+**THE RULE, and it is the deliverable of PQ-10 rather than the three sites it
+named: every claim this plan makes about current `cmd/define` behaviour carries a
+`file:line` and was checked.** Three such claims were wrong in one round — and
+this session has produced the same class four times before (a `rôle` measurement
+cited about the wrong thing, two test names that did not exist, a comment about a
+mask that measurement disproved). A plan is read as a description of the tree, so
+an unchecked claim about it is worse than a missing one.
+
+| claim | verified at | status |
+|---|---|---|
+| `Render` colours the section NAME, not the language inside it | `render.go:200-218` | true — hence a new pass (PQ-1) |
+| `crlfWriter` is the raw-mode line-ending seam | `crlf.go:14-20` | true; wrapped for the ask path and `--play`, NOT for `replayInPlace` |
+| the menu's erase arithmetic has a documented known limit | `replraw.go:90-97` | true — "if the menu does not fit below the cursor the terminal scrolls and the cursor-up count lands a row off" |
+| `cooked()` drops raw mode around a lookup | `replraw.go:38-51` | true |
+| `enterRaw` / `restore` own terminal state | `rawterm.go:21,29` | true — so `enterAlt`/`leaveAlt` belong beside them |
+| the CSI scanner delimits `ESC[5~`/`ESC[6~` correctly | `key.go:102-116` | **half true** — it delimits, then returns `KeyUnknown`. New `KeyKind`s are needed; "decoded by the existing scanner" was wrong |
+| **Ctrl-U and Ctrl-D are free for scrolling** | `key.go:48-55` | **FALSE** — `0x04` is `KeyEOF` (ends the session on an empty line, `editor.go:107`) and `0x15` is `KeyKillLine` (`editor.go:100`). Rebinding either is a regression, and a row testing only PageDown would ship it green |
+| `newPalette` spends six colours plus deck-word bold-green | `render.go:28-37`, `highlight.go:15` | true |
+| `sgrState.resume()` splices an attribute into already-styled text | `sgr.go:27,57` | true — this is the machinery M2.5 uses, not a new one |
+| `OriginLanguage`'s stage mask is length-changing | `origin.go:156` | true, `strings.ReplaceAll(text, stage, " ")` — see the offset correction below |
+| the width probe runs once, at flag parse | `main.go:961` | true — there is no resize handling to build on |
+
+**The offset bug this sweep caught before it shipped.** `Mention.Offset` was to be
+the position of a language name, and the search runs AFTER the stage mask
+replaces variable-length stage names with a single space. That offset indexes the
+MASKED text, not `sec.Text` — measured on the `concrete` fixture, a 13-character
+shift before "French" — so every `ORIGIN` region would have been drawn in the
+wrong column. The mask must therefore be length-PRESERVING (replace each stage
+with spaces of the same width) so offsets survive it, which is a one-line change
+to `#35`'s code and is where `M2.1` starts.
+
+---
+
 ## Milestone M1 — the screen owns the terminal
 
 ### Core concepts
@@ -74,7 +109,9 @@
 - [ ] **M1.1 — `screen` as a pure model.** `Write`, `Frame`, `Scroll`, plus rows/cols. Table tests: a partial write continues the last line; a write containing `\n\n` appends an empty line; `Frame` clamps the offset at both ends; a viewport taller than the buffer pads rather than repeating. No terminal.
 - [ ] **M1.2 — `Paint` and the alt screen.** `enterAlt`/`leaveAlt` on `rawSession`, so a Ctrl-C or a panic leaves the terminal restored — the same obligation `enterRaw` already carries and the reason this belongs there rather than in `screen`.
 - [ ] **M1.3 — the editor draws through the screen**, `cooked` deleted (D4). Every current writer keeps writing; only the destination changes.
-- [ ] **M1.4a — KEYS that move the viewport.** Without this `M1` ships a scroll model nothing exercises and a user cannot reach: the wheel is `M2`, and no key scrolls today. PageUp/PageDown and Ctrl-U/Ctrl-D, decoded by the existing CSI scanner. This is what makes `M1` independently usable rather than a layer waiting for `M2`.
+- [ ] **M1.4a — KEYS that move the viewport.** Without this `M1` ships a scroll model nothing exercises and a user cannot reach: the wheel is `M2`, and no key scrolls today.
+      **PageUp/PageDown ONLY. NOT Ctrl-U/Ctrl-D**, which an earlier draft proposed and which are already bound: `0x04` is `KeyEOF` and ends the session on an empty line (`key.go:48`, `editor.go:107`), `0x15` is `KeyKillLine` (`key.go:50`, `editor.go:100`). Taking either is a silent regression in an editor people already use.
+      The CSI scanner DELIMITS `ESC[5~`/`ESC[6~` correctly (`key.go:102-116`) and then returns `KeyUnknown`, so this adds two `KeyKind`s — not "already decoded", as the same draft said.
 - [ ] **M1.4 — resize.** SIGWINCH → re-measure → repaint. The one thing that cannot be unit-tested is the signal, so the pty row drives a real `TIOCSWINSZ`.
 - [ ] **M1.5 — the transcript on exit** (D3), and the pty row that it survives.
 - [ ] **M1.6 — docs**: the atlas's raw-mode section, which currently explains the cooked/raw dance that D4 removes. That prose goes false, so it is rewritten rather than appended to.
@@ -86,7 +123,8 @@
 | 1 | the viewport arithmetic is right | `TestScreenFrame` | `Frame` stops clamping the offset |
 | 2 | a streamed fragment lands as text, not a frame | `TestScreenWriteContinuesAPartialLine` | `Write` splits on every call boundary |
 | 3 | the terminal is restored on every exit | `TestPTYAltScreenIsLeftOnExit` | `leaveAlt` is dropped from the restore path |
-| 4 | the viewport can be moved by a user | `TestEditorPageDownScrolls` | the key case is removed from the select |
+| 4 | the viewport can be moved by a user | `TestEditorPageKeysScroll` | the key case is removed from the select |
+| 4b | **the keys it already had still work** | `TestCtrlDStillEndsTheSession`, `TestCtrlUStillKillsTheLine` | Ctrl-U or Ctrl-D is rebound to scrolling |
 | 5 | a resize repaints | `TestPTYResizeRepaints` | the SIGWINCH case is removed from the select |
 | 6 | the transcript survives exit | `TestPTYTranscriptIsPrintedOnExit` | D3's loop is removed |
 | 7 | the one-shot and piped paths are untouched | the existing suite, unchanged | any of them starts entering the alt screen |
@@ -121,6 +159,7 @@
 - [ ] **M2.3 — hit test**: `screen.RegionAt(row, col)`, which is a lookup in the per-line region list. Pure.
 - [ ] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
 - [ ] **M2.5 — discoverability, STATIC rather than on hover** — and the tracking mode is the reason. Hover needs `1003` (any-event tracking), which streams an event for every cell the pointer crosses, so the loop would wake constantly to redraw an underline. `1000` (button press only) is what this issue enables, and with it the app never learns where the pointer is. So a clickable span is marked in the FRAME: the palette (`newPalette`) already spends `head`, `ipa`, `pos`, `num`, `ex`, `sect` and bold-green for deck words, so the mark is an ATTRIBUTE — underline — added to the span's existing colour rather than a seventh colour competing with them.
+      It is spliced by the SCREEN, not by `Render`, because D6 promises the one-shot and `-raw` bytes are unchanged. `sgr.go`'s `sgrState.observe`/`resume` (`sgr.go:27,57`) is the existing machinery for reopening styles around an inserted attribute; this uses it rather than a second one.
 - [ ] **M2.6 — degrade.** A terminal that reports no mouse must behave exactly as `M1` does.
 
 ### M2 Done-when
@@ -130,7 +169,7 @@
 | 1 | clicking the headword plays it | `TestClickOnHeadwordReplays` | `RegionAt` stops matching the headword span |
 | 2 | clicking `ORIGIN French` plays French | `TestClickOnOriginLanguagePlaysIt` | the region's language is dropped |
 | 3 | rendering is byte-identical | `TestRenderOutputUnchangedByRegions` | `Render` alters a byte while collecting |
-| 4 | a clickable span is visibly clickable before it is clicked | `TestRenderMarksClickableSpans` | the underline attribute is dropped |
+| 4 | a clickable span is visibly clickable before it is clicked | `TestScreenMarksClickableSpans` — the SCREEN, not `Render`: D6 promises `define <word>` and `-raw` keep today's bytes, so an underline emitted by `Render` would leak to them and redden row 3 | the underline attribute is dropped from the frame |
 | 5 | the mouse decoder is bounded and correct | `TestDecodeMouse` + `FuzzDecodeMouseIsBounded` | it consumes past the final byte |
 | 6 | a mouse-less terminal is unaffected | `TestPTYWithoutMouseBehavesAsBefore` | the enable is emitted unconditionally |
 | 7 | regions are one registry, not two special cases | `TestEveryRegionKindIsActionable` | a kind is added with no action |
@@ -181,3 +220,28 @@ Then, on a real terminal: look a word up, click the headword, click `ORIGIN Fren
   turns on the tracking mode: hover needs `1003`, which streams an event per cell
   crossed, so `1000` is enabled and the mark is static — an underline attribute
   on the span's existing colour, not a seventh colour.
+
+### 2026-08-29 — plan-quality round 2 (PQ-10, PQ-11)
+
+**PQ-10 is the second appearance of `unbacked-existing-behavior`, and the rule is
+the deliverable.** Three claims about the current tree were wrong in one round:
+Ctrl-U/Ctrl-D are already bound (`KeyKillLine`, `KeyEOF`), PageUp/PageDown are
+delimited but return `KeyUnknown` rather than being "already decoded", and
+`Mention.Offset` would have indexed the MASKED text rather than `sec.Text`.
+
+So the plan now carries a verified table of every claim it makes about
+`cmd/define`, with `file:line`. That sweep caught a bug before it shipped: the
+stage mask is `strings.ReplaceAll(text, stage, " ")`, which changes length, so
+every `ORIGIN` region would have been drawn in the wrong column — measured as a
+13-character shift on the `concrete` fixture. The mask becomes length-preserving,
+which is a one-line change to `#35`.
+
+This class has now cost five findings across four issues this session. The
+pattern is always the same: a plan describes the tree from memory, and memory is
+usually right, which is what makes the wrong ones expensive.
+
+**PQ-11** — the underline belongs to the SCREEN, not `Render`: D6 promises
+`define <word>` and `-raw` keep today's bytes, and an underline emitted by
+`Render` would leak into both and contradict the row asserting rendering is
+byte-identical. `sgr.go`'s `sgrState` is named as the existing machinery for
+splicing an attribute into already-styled text.
