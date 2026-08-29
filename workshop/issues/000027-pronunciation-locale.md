@@ -5,7 +5,7 @@ deps: [tools#23]
 github_issue:
 created: 2026-08-28
 updated: 2026-08-28
-estimate_hours:
+estimate_hours: 0.93
 started: 2026-08-28T00:38:19-07:00
 ---
 
@@ -110,6 +110,48 @@ SPELLING is a third input — not a property that follows from the other two.
 - [ ] The new conformance assertions route their dependency probe through
       `conformance.SkipOrFail` (#25) — a CDN that cannot be reached SKIPS by
       default and FAILS under `CONFORMANCE_STRICT`.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.15 impl=0.08
+item: smaller-go-module        design=0.05 impl=0.10
+item: smaller-go-module        design=0.05 impl=0.12
+item: smaller-go-module        design=0.00 impl=0.08
+item: atlas-docs               design=0.04 impl=0.06
+item: milestone-review         design=0.00 impl=0.16
+design-buffer: 0.15
+total: 0.93
+```
+
+Derivation notes.
+
+- **`issue-spec` impl 0.08 covers the gate rounds that follow the claim,** not
+  the planning that preceded it. `#26` taught this: `sdlc actual` anchors on the
+  claim commit, and pricing pre-claim triage at zero while post-claim gate
+  iteration goes unpriced is how that issue's first block was wrong. The plan
+  rewrite and two gate rounds are inside the window.
+- **Three `smaller-go-module`s, and the first is genuinely small.** The locale
+  policy change is deleting one guard — the whitelist I planned was withdrawn at
+  the gate — so 0.10 is the table test around it rather than the edit. The second
+  is the help-const plus its README doc-sync, which is a mechanism this repo
+  already has and I am copying. The third is the Spanish-notation test at 0.08
+  design-free, because the plan already scoped it (Spanish dictionary, not
+  Spanish word) and the `entries/es/` corpus exists.
+- **No `real-api-discovery` line, deliberately, and `#26` is why I checked.**
+  That issue needed one because the classifier had to CONVERGE against a live
+  population it had never run over. Here the CDN facts are already measured and
+  the `es_us` conformance row is one assertion beside an existing one — a live
+  run to confirm, not a loop to converge.
+- **One `milestone-review` at 0.16.** Below the 0.20 ceiling: the diff is a guard
+  deletion, a const, two tests and doc lines.
+- Library-availability check: nothing external; no halving applies.
+
+Σdesign 0.29 × 1.15 = 0.3335; Σimpl 0.60; total **0.93**.
 
 ## Plan
 
