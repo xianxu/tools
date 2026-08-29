@@ -88,7 +88,18 @@ Scope narrowed to Italian on 2026-08-29 — see `## Revisions`.
 
 ## Plan
 
-- [ ] Claim, then design via `sdlc start-plan`.
+Designed. Durable plan: `workshop/plans/000031-curate-dictionaries-plan.md`
+(4 tasks, single pass, no `Mx`).
+
+- [x] Claim, then design via `sdlc start-plan`.
+- [ ] Capture the Italian corpus — words chosen for what they prove, not for
+      vocabulary, following `capture.sh`'s own convention.
+- [ ] The `curated` row, plus rewriting the doc comment sentence that this
+      issue's measurement made half wrong.
+- [ ] Generalise the own-language conformance check to a table rather than
+      copying the Spanish one.
+- [ ] Docs: Italian, the English-only ratchet gap, and the notation table `#30`
+      reads.
 
 ## Log
 
