@@ -8,12 +8,13 @@ import (
 )
 
 func TestParsePronArgs(t *testing.T) {
-	// A language is REQUIRED, which is where this differs from /lang and /sound.
-	// Those split "set" from "report" because they name a SETTING with a current
-	// value worth printing. /pron names an ACTION and leaves nothing behind, so a
-	// bare one is a half-typed command rather than a question.
-	if _, err := parsePronArgs(nil); err == nil {
-		t.Error("a bare /pron was accepted; it has nothing to do and nothing to report")
+	// NO argument is a request to INFER (#35), not a usage error. #29 shipped it
+	// as an error because it had rejected inference — but that rejection was
+	// about inferring on EVERY lookup, where a wrong guess is silent and
+	// unasked-for. Here the user typed the gesture and the choice is reported.
+	if lang, err := parsePronArgs(nil); err != nil || lang != "" {
+		t.Errorf("parsePronArgs(nil) = %q, %v; want \"\", nil — an absent language means "+
+			"read it off the entry, and runPron owns that reading", lang, err)
 	}
 	if _, err := parsePronArgs([]string{"fr", "es"}); err == nil {
 		t.Error("/pron took two languages")
@@ -75,5 +76,72 @@ func TestPronWithNothingLookedUpSaysSo(t *testing.T) {
 	}
 	if n := rig.player.count(); n != 0 {
 		t.Errorf("played %d times with nothing looked up, want 0", n)
+	}
+}
+
+// Bare /pron infers the language from ORIGIN and says which it chose (#35).
+//
+// On committed fixtures, so the cases are the ones origin_test.go already
+// reasons about: `concrete` names French, `read` names Dutch and German only as
+// COGNATES, and `gaslighting` names no language at all.
+func TestPronInfersTheOriginLanguage(t *testing.T) {
+	en := voice{Lang: "en", Locale: "us"}
+	fr := voice{Lang: "fr", Locale: "fr"}
+	rig := newAudioRigServing(t,
+		AudioCandidates("concrete", en)[0],
+		AudioCandidates("concrete", fr)[0])
+	rig.deps.stdinIsTerminal = func() bool { return false }
+	var out, errb bytes.Buffer
+
+	code := run(t.Context(), nil, rig.deps, strings.NewReader("concrete\n/pron\n"), &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	want := []string{
+		stripHost(t, AudioCandidates("concrete", en)[0], audioBase),
+		stripHost(t, AudioCandidates("concrete", fr)[0], audioBase),
+	}
+	if got := rig.cdn.Requested(); !slices.Equal(got, want) {
+		t.Errorf("the CDN was asked for:\n  %q\nwant:\n  %q", got, want)
+	}
+	// It SAYS what it read. A silent inference cannot be audited, and it is what
+	// makes a contested ORIGIN visible rather than decided behind your back.
+	if !strings.Contains(out.String()+errb.String(), "ORIGIN says French") {
+		t.Errorf("it did not report the language it inferred:\n%s%s", out.String(), errb.String())
+	}
+}
+
+// And it declines with the reason, on the two shapes that differ.
+func TestPronReportsWhyItCannotInfer(t *testing.T) {
+	for _, tc := range []struct{ word, because string }{
+		// Dutch and German appear only after "related to".
+		{"read", "cognate"},
+		// "1960s: see gaslight (verb)" — an ORIGIN that names no language at
+		// all, which is a DIFFERENT reason and must say so. The `because` field
+		// went unasserted in the first version of this test, and that is what let
+		// this case ship with the cognates-and-stages message.
+		{"gaslighting", "names no language"},
+	} {
+		t.Run(tc.word, func(t *testing.T) {
+			rig := newAudioRigServing(t, AudioCandidates(tc.word, voice{Lang: "en", Locale: "us"})[0])
+			rig.deps.stdinIsTerminal = func() bool { return false }
+			var out, errb bytes.Buffer
+
+			run(t.Context(), nil, rig.deps, strings.NewReader(tc.word+"\n/pron\n"), &out, &errb)
+
+			if !strings.Contains(errb.String(), "/pron") {
+				t.Errorf("the refusal does not name the command: %q", errb.String())
+			}
+			// The REASON, asserted. Both shapes decline, and telling a user their
+			// entry names only stages when it names no language at all is a
+			// record that is not true.
+			if !strings.Contains(errb.String(), tc.because) {
+				t.Errorf("the refusal does not say WHY (want %q): %q", tc.because, errb.String())
+			}
+			// Exactly ONE request: the lookup's own. No inferred replay happened.
+			if got := rig.cdn.Requested(); len(got) != 1 {
+				t.Errorf("made %d CDN requests, want 1 — it replayed despite declining: %q", len(got), got)
+			}
+		})
 	}
 }

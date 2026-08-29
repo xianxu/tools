@@ -1,12 +1,13 @@
 ---
 id: 000035
-status: working
+status: codecomplete
 deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
-estimate_hours:
+estimate_hours: 1.39
 started: 2026-08-29T14:56:14-07:00
+actual_hours: 0.85
 ---
 
 # /pron with no language: infer the origin from ORIGIN, error only when it cannot be determined
@@ -111,27 +112,103 @@ one-word answer.
 
 ## Done when
 
-- [ ] `/pron` with no argument plays the source recording for a word whose ORIGIN
+- [x] `/pron` with no argument plays the source recording for a word whose ORIGIN
       names exactly one modern language, and SAYS which language it chose.
-- [ ] `/pron` errors, naming what it found, when ORIGIN is absent, names only
+- [x] `/pron` errors, naming what it found, when ORIGIN is absent, names only
       historical stages, or names more than one modern language.
-- [ ] Historical stages are excluded BY CATEGORY with the reason recorded, not by
+- [x] Historical stages are excluded BY CATEGORY with the reason recorded, not by
       relying on the CDN to 404 them.
-- [ ] `/pron fr` still overrides, and is unchanged.
-- [ ] The language-name table is a DECISION with its reason recorded, reconciled
+- [x] `/pron fr` still overrides, and is unchanged.
+- [x] The language-name table is a DECISION with its reason recorded, reconciled
       against `ParseLang` and `localeFor` both refusing to enumerate.
-- [ ] `#29`'s D1 — no AUTOMATIC origin audio — is demonstrably untouched, pinned
+- [x] `#29`'s D1 — no AUTOMATIC origin audio — is demonstrably untouched, pinned
       by a test rather than by assertion.
-- [ ] The extraction is pure and table-tested over captured ORIGIN text, not only
+- [x] The extraction is pure and table-tested over captured ORIGIN text, not only
       exercised through the live dictionary.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.35 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.03 impl=0.14
+item: smaller-go-module        design=0.00 impl=0.08
+item: cross-cutting-refactor   design=0.03 impl=0.12
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.08
+item: milestone-review         design=0.00 impl=0.12
+design-buffer: 0.15
+total: 1.39
+```
+
+Derivation notes.
+
+- **`issue-spec` design 0.35 is BELOW the 0.5–1.5 band floor, deliberately and
+  with the measurement behind it.** The claim synced at `14:56` and the plan
+  cleared plan-quality at `15:17` — **0.35h measured**, covering the origin-vocab
+  survey over 300 entries, the corrected-rule measurement, filing the issue,
+  reshaping `#30`, and three plan-gate rounds. `#29` priced this line at 0.70 and
+  `#31` at 0.50; this design was genuinely smaller because the *question* was
+  settled in conversation before the issue existed — the operator had already
+  chosen inference, and the gate rounds refined a rule rather than choosing one.
+  Recorded as a floor breach rather than rounded up to hide it, which is the
+  accounting `#31`'s estimate gate asked for in the other direction.
+
+- **Task 1 at 0.12 is the largest module line**, and it is the tables rather than
+  the code: the corpus sweep asserts an outcome for all 34 fixtures, so the work
+  is deciding 34 expected values against measured ORIGIN text, not writing
+  mask-then-search.
+
+- **Task 2 at 0.14 is the widest**, because `commandCtx` gains a field that three
+  construction sites must fill and both loops must supply from `session.entry`.
+  `#29` priced its equivalent at 0.18 when it also had to invent the closure;
+  here the closure exists.
+
+- **Task 4 is `cross-cutting-refactor`, not `atlas-docs`.** It adds a code-owned
+  const with a doc-sync consumer AND sweeps two prose sites by hand across two
+  files — `#29`'s review made exactly this reclassification when a docs task
+  turned out to be a multi-site sweep, and `#31`'s block was corrected the other
+  way when it genuinely was a docs pass. 0.12 sits inside the scaled 0.08–0.20.
+
+- **Three `milestone-review` rows**, the shape `#29` and `#31` both settled on:
+  running the boundary review (0.16), the manual verification pass (0.08), and
+  REMEDIATING what the review returns (0.12). The last is not padding — `#29` took
+  four rounds and `#31` four, and the two most recent boundary reviews each
+  returned work on the first pass.
+
+- **The declared total was 1.33 and the arithmetic is 1.39.** Caught by my own
+  reconciliation check rather than by the gate, which let it through. Corrected
+  rather than left, because a ledger row that does not add up is worse than one
+  that is merely wrong: `#117` reads these to calibrate, and a 0.06 slip is
+  indistinguishable from a deliberate adjustment.
+
+- **No point forecast.** `#29` closed at 0.83× and `#31` at 0.90× against a
+  `tools` v3.1 median near 0.7, so the recent rows sit closer to 1.0 than the
+  median does. Two rows is not a trend; the ledger is the measurement.
 
 ## Plan
 
-- [ ] Claim, then design via `sdlc start-plan`.
+Designed. Durable plan: `workshop/plans/000035-pron-infer-plan.md` (4 tasks,
+single pass, no `Mx`).
+
+- [x] Claim, then design via `sdlc start-plan`.
+- [x] `OriginLanguage` — the pure inference, mask-then-search over two measured
+      tables.
+- [x] `/pron` uses it: no argument infers, reports the choice, errors with the
+      reason.
+- [x] Pin that #29's D1 is untouched — an ordinary lookup never infers.
+- [x] Docs: `pronHelp` (which both docs already consume) plus the atlas record
+      of why bare Greek is ancient and why this table is accepted where
+      ParseLang refuses one.
 
 ## Log
 
 ### 2026-08-29
+- 2026-08-29: closed — ACTUAL IS A LABELLED JUDGMENT, not a measurement: sdlc actual reports "no measurable activity for #35", so this is claim-to-close wall clock — 14:56 to 15:45 = 0.82h — rounded to 0.85 for the close review still to run. v3.1 counts gate and suite waits as elapsed, and there was no idle in this window, so wall clock and focused hours coincide here. Flagged so #117 does not read it as engine-measured. EVIDENCE: both suites on the final head — go test ./... 0 failures; go test -tags conformance ./cmd/define/ green unfiltered (293s) UNSANDBOXED so the NOAD rows executed. Live CLI: arrondissement + bare /pron prints "ORIGIN says French" and plays French; jalapeno prints "ORIGIN says Spanish"; read declines with "names only historical stages or cognates" because its Dutch and German follow "related to"; granulate declines for having no ORIGIN; /pron it still overrides and falls back with its report. The inference is pinned over the WHOLE 34-fixture corpus with an outcome per file rather than a curated list, because the case that matters is one nobody would pick — run has no cognate marker at all. #29 D1 pinned by TestAnOrdinaryLookupNeverInfersTheOrigin, verified red by making defineOnce infer. Mutation-verified: dropping the cognate cut reddens 7 fixtures, dropping the word boundary reddens 5 rule cases. Two claims of mine were disproved by measurement and corrected rather than shipped: a comment said the Germanic mask protects run when the word boundary does, and the estimate block declared 1.33 against arithmetic of 1.395. A plan-gate finding caught my fix for the unpinned argument rule contradicting D6 four paragraphs above it and reversing #31 recorded decision.; review verdict: FIX-THEN-SHIP
 
 Filed from the operator's request while discussing `#30`. Every number above was
 measured before filing. Sequenced BEFORE `#30` deliberately: it makes both of
@@ -139,3 +216,63 @@ measured before filing. Sequenced BEFORE `#30` deliberately: it makes both of
 click is a replay, and a click on `ORIGIN French` is `/pron` with that language —
 so the inference question is settled before the screen work starts rather than
 tangled into it.
+
+### 2026-08-29 — shipped
+
+`/pron` reads the source language off `ORIGIN` and says which it chose. Four
+tasks, one boundary.
+
+**The plan gate reshaped the rule and then simplified it.** The first design
+searched the whole `ORIGIN` section, which infers from COGNATE clauses: `bring`
+is *"Old English bringan, of Germanic origin; related to Dutch brengen and
+German bringen"* — an Old English word with no source at all, from which the rule
+would have inferred German. That is `#29`'s D1 arriving by another road, and it
+was Critical.
+
+Measuring the fix removed a branch the plan had: `casque` (*"from French, from
+Spanish casco"*), `knout`, `ballet` and `mesa` are borrowing CHAINS, not
+ambiguities. NOAD's convention is that the first-named source is the immediate
+one, so first-named-wins is the correct reading rather than a tiebreak, and after
+cutting cognates nothing is left needing an ambiguity error. "Cannot determine"
+now means exactly one thing.
+
+**Two claims of mine were disproved by measurement rather than by argument:**
+
+1. A comment said masking `Germanic` is what stops `run` inferring German.
+   Removing the mask leaves every fixture green — `\bGerman\b` does not match
+   inside "Germanic", so the WORD BOUNDARY does the work. Corrected, and the real
+   guard is pinned by its own case rather than left to a comment.
+2. The estimate block declared 1.33 against arithmetic of 1.395. Caught by my own
+   reconciliation check, not the gate.
+
+**A plan-gate finding caught me contradicting myself twice in one fix.** Answering
+"the argument rule is unpinned" by putting it in `pronHelp` would have made it
+false — that const documents the `-pron` FLAG, and D6 says the flag does not
+infer — and putting it in the `commands` summary would have reversed `#31`'s
+recorded reason for keeping argument syntax out of it. It lives in its own const
+with a marked atlas span, and the two prose sites with no code-owned string are
+swept by hand and named as such.
+
+**Three mechanisms built in earlier issues fired on this one**, which is the
+first time this session they caught ordinary work rather than a review finding:
+`#31`'s plan-status guard flagged a stale `newCommandCtx` row, `#31`'s derived
+command table reddened when the summary changed, and the old contract test
+reddened when the contract did.
+
+### 2026-08-29 — close review
+
+Four findings, all mine. Two are about verification rather than code, and those
+are the ones worth carrying forward:
+
+- **My mutation proof for the word boundary was invalid.** It changed the regex
+  AND removed `Germanic` from the mask in one edit, then attributed the redness
+  to the regex. The two mechanisms were mutually redundant and each hid the
+  other's removal. Re-pinned with cases the mask cannot save, and re-verified by
+  changing only one thing.
+- **A test column that is never asserted is not a test.** `because` sat unread,
+  and that is precisely what let `gaslighting` ship being told its ORIGIN "names
+  only historical stages or cognates" when it names no language at all.
+
+Plus: the stage mask enumerated instances where D4 promises a category — `Old
+Italian`, `Middle French`, `Old Spanish` and `Low German` all leaked — and bare
+`/pron` before any lookup blamed a non-existent entry.

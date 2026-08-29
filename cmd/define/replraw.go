@@ -232,6 +232,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 						// previous language's deck — the one thing a deps swap
 						// cannot reach.
 						cc.setLang = sessionSetLang(&d, &opt, cc.setLang, &voc, stderr)
+						cc.entry = sess.entry
 						// RECORDED here, PERFORMED below — outside the cooked
 						// block. Playing in cooked mode hands Ctrl-C to the line
 						// discipline, which swallows the byte and leaves the
