@@ -352,7 +352,14 @@ func TestCaptureScriptUsesTheCuratedDictionaries(t *testing.T) {
 	script := string(b)
 
 	inScript := map[string]bool{}
-	for _, m := range regexp.MustCompile(`com\.apple\.[A-Za-z0-9._]+`).FindAllString(script, -1) {
+	// The HYPHEN is in the class because Apple's identifiers use it —
+	// it.Devoto-Oli, nl-en.oup, zh_TW-en.DrEye. Without it this regex truncated
+	// "com.apple.dictionary.it.Devoto-Oli" to "…it.Devoto" and then reported the
+	// pair as mismatched in BOTH directions: the curated id looked absent from
+	// the script, and the script's id looked uncurated. Every curated identifier
+	// happened to be hyphen-free until #31, so the defect was latent rather than
+	// absent.
+	for _, m := range regexp.MustCompile(`com\.apple\.[A-Za-z0-9._-]+`).FindAllString(script, -1) {
 		inScript[m] = true
 	}
 	if len(inScript) == 0 {
@@ -378,5 +385,29 @@ func TestCaptureScriptUsesTheCuratedDictionaries(t *testing.T) {
 			t.Errorf("capture.sh captures through %q, which no curated list names — fixtures "+
 				"from a dictionary production never consults cannot be conformance-checked", id)
 		}
+	}
+}
+
+// Italian resolves to the Devoto-Oli, and the BILINGUAL Oxford is rejected (#31).
+//
+// The second half is the one worth having. `OxfordItalian` is installed on this
+// host and indexes `it>it` AND `en>it`, so a rule that accepted "indexes Italian"
+// would put English glosses in front of an Italian learner — the outcome #23's
+// mode exists to prevent, and the reason "just prefer the other Italian book" is
+// not available to #34 either.
+func TestChooseDictionaryPicksTheCuratedItalian(t *testing.T) {
+	devoto := dictMeta{ID: "com.apple.dictionary.it.Devoto-Oli",
+		Langs: []langPair{{Index: "it", Description: "it"}}}
+	bilingual := dictMeta{ID: "com.apple.dictionary.OxfordItalian",
+		Langs: []langPair{{Index: "it", Description: "it"}, {Index: "en", Description: "it"}}}
+
+	got, ok := chooseDictionary([]dictMeta{bilingual, devoto}, "it")
+	if !ok || len(got) != 1 || got[0].ID != devoto.ID {
+		t.Errorf("chooseDictionary(it) = %v, %v; want just the Devoto-Oli", got, ok)
+	}
+	// The bilingual book ALONE is not a fallback: no curated monolingual book
+	// means the NULL search, never a different-language dictionary.
+	if got, ok := chooseDictionary([]dictMeta{bilingual}, "it"); ok {
+		t.Errorf("chooseDictionary(it) accepted the bilingual Oxford: %v", got)
 	}
 }

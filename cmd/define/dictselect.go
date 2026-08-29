@@ -78,9 +78,15 @@ func (m dictMeta) monolingualIn(l store.Lang) bool {
 // causeUnclassified is a reachable bucket rather than a decoration. Expect it,
 // then decide: fix the renderer, or drop the book.
 //
-// Same for a new language. fr.Multi, it.Devoto-Oli and de.DDDSI are installed
-// here and all strictly monolingual, so each is one line — and each brings its
-// own notation conventions with it.
+// Same for a new language — and "one line" is true of THIS MAP and false of the
+// reading experience, which #31 measured rather than assumed. Over five common
+// words each, the parser finds 245 senses in it.Devoto-Oli against NOAD's 153,
+// but SIX in fr.Multi and FIVE in de.DDDSI, whose longest single
+// undifferentiated blob runs 2,811 and 4,404 runes. Italian survives because
+// Devoto-Oli numbers senses 1/2 and marks sub-senses •, shapes parseSenses
+// already knows; French and German need posWords and sectionWords, both of which
+// are English (`noun`, `ORIGIN` — not `nom masculin`, `HERKUNFT`). That is #34,
+// and it is a parser question, not a row here.
 //
 // A LIST per language, in preference order, because "the English dictionary" is
 // not one book. NOAD answers ordinary words and is the one whose notation matches
@@ -96,6 +102,14 @@ func (m dictMeta) monolingualIn(l store.Lang) bool {
 var curated = map[store.Lang][]string{
 	"en": {"com.apple.dictionary.NOAD", "com.apple.dictionary.AppleDictionary"},
 	"es": {"com.apple.dictionary.es.DGLEV"},
+	// Italian: the Devoto-Oli, not OxfordItalian, which is installed here and
+	// BILINGUAL (it>it AND en>it). monolingualIn rejects it, which is the guard
+	// working — a bilingual book would put English glosses in front of an
+	// Italian learner. #31 measured that Devoto-Oli carries no IPA at all: its
+	// (cià·o) is syllabification with stress, which isPronunciation correctly
+	// declines. And the CDN has no Italian recordings in this generation, so an
+	// Italian session gives definitions and silence.
+	"it": {"com.apple.dictionary.it.Devoto-Oli"},
 }
 
 // chooseDictionary answers "which installed dictionaries serve language L".
