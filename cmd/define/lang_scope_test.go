@@ -368,3 +368,72 @@ func TestTheDictionaryIsBuiltForTheLanguageAtBothMoments(t *testing.T) {
 		t.Errorf("dictName = %q; /lang reports it, so it must follow too", d.dictName)
 	}
 }
+
+// -locale reaches the CDN, driven through run() rather than through localeFor.
+//
+// The pure function was tested from the start and was right the whole time —
+// which is exactly why this was missing and why it matters. `#23`'s C1 was the
+// same shape: `voiceFor` was correct while nothing re-derived `opt.voice`, so a
+// unit test could not have caught it. `workshop/lessons.md` records the rule
+// ("test what the pure function's CALLER does"), and this issue shipped without
+// it until the boundary review said so.
+//
+// Asserts what the fetch loop REQUESTED, so the whole chain is covered: flag
+// parse -> options.localeSet -> applyVoice -> voice -> AudioCandidates -> fetch.
+func TestLocaleFlagReachesTheCDN(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		dict    store.Lang // the fake corpus: a failed lookup never reaches the audio path
+		args    []string
+		want    string
+		notWant string
+	}{
+		{
+			name: "the default English locale", dict: "en",
+			args: []string{"-no-audio=false", "sycophantic"},
+			want: "_en_us_", notWant: "_en_gb_",
+		},
+		{
+			name: "-locale gb, English", dict: "en",
+			args: []string{"-locale", "gb", "-no-audio=false", "sycophantic"},
+			want: "_en_gb_", notWant: "_en_us_",
+		},
+		{
+			// THE row this issue exists for. Before #27 this was refused with a
+			// diagnostic and fell back to es_es.
+			name: "-locale us with -lang es is the seseo recording", dict: "es",
+			args: []string{"-lang", "es", "-locale", "us", "-no-audio=false", "madrugar"},
+			want: "_es_us_", notWant: "_es_es_",
+		},
+		{
+			name: "-lang es alone defaults to Castilian", dict: "es",
+			args: []string{"-lang", "es", "-no-audio=false", "madrugar"},
+			want: "_es_es_", notWant: "_es_us_",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cdn := newFakeCDN(t, nil) // every URL 404s: we watch what is ASKED for
+			d := deps{
+				dict: testDictFor(t, tc.dict), audio: &rebasedSource{cdn: cdn},
+				player: &fakePlayer{}, newStore: openStore,
+			}
+			t.Chdir(dir)
+
+			var out, errb bytes.Buffer
+			run(t.Context(), tc.args, d, strings.NewReader(""), &out, &errb)
+
+			asked := strings.Join(cdn.Requested(), "\n")
+			if asked == "" {
+				t.Fatalf("the session requested nothing at all — the lookup probably failed, so "+
+					"this row would assert nothing. stderr:\n%s", errb.String())
+			}
+			if !strings.Contains(asked, tc.want) {
+				t.Errorf("the session never asked for %s:\n%s", tc.want, asked)
+			}
+			if strings.Contains(asked, tc.notWant) {
+				t.Errorf("the session asked for %s, which the flags did not select:\n%s", tc.notWant, asked)
+			}
+		})
+	}
+}

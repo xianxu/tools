@@ -38,6 +38,11 @@ func AudioCandidates(word string, v voice) []string {
 	// Multi-word headwords are spelled with underscores on the CDN.
 	slug := strings.ReplaceAll(word, " ", "_")
 	esc := url.PathEscape(slug)
+	// The locale is user input too — it comes straight from -locale — so it is
+	// escaped like the word. Unescaped, a value containing "/" would rewrite the
+	// path rather than 404 cleanly, and the tool's contract for an unserved
+	// locale is a clean miss (nothing whitelists which locales exist).
+	loc := url.PathEscape(v.Locale)
 
 	// The shard is the first two letters — or one, for a single-letter word.
 	shard := esc
@@ -47,7 +52,7 @@ func AudioCandidates(word string, v voice) []string {
 
 	var out []string
 	for _, n := range []string{"1", "2"} {
-		out = append(out, audioBase+"/pronunciation/2022-03-02/audio/"+shard+"/"+esc+"_"+string(v.Lang)+"_"+v.Locale+"_"+n+".mp3")
+		out = append(out, audioBase+"/pronunciation/2022-03-02/audio/"+shard+"/"+esc+"_"+string(v.Lang)+"_"+loc+"_"+n+".mp3")
 	}
 	// The legacy generation is ENGLISH-ONLY. Measured 2026-08-28: madrugar--_us_1
 	// and madrugar--_es_1 are both 404 while sycophantic--_us_1 is 200. Asking
@@ -55,7 +60,7 @@ func AudioCandidates(word string, v voice) []string {
 	// #23's declared mode exists to stop paying.
 	if v.Lang == store.DefaultLang {
 		for _, n := range []string{"1", "2"} {
-			out = append(out, audioBase+"/sounds/oxford/"+esc+"--_"+v.Locale+"_"+n+".mp3")
+			out = append(out, audioBase+"/sounds/oxford/"+esc+"--_"+loc+"_"+n+".mp3")
 		}
 	}
 	return out

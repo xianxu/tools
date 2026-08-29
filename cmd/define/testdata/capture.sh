@@ -62,6 +62,12 @@ words=(
     "hot dog" "a priori"
     # concrete has NO pronunciation of its own but DERIVATIVES has one.
     concrete
+    # jalapeño is here for #27: a SPANISH word in the ENGLISH dictionary, which
+    # does carry notation (four anglicised pronunciations) — the case that scopes
+    # "Spanish entries have no notation" to the Spanish DICTIONARY rather than to
+    # Spanish words. Its tilde also matters: the CDN keys the Spanish recording
+    # on jalapeño and the English one on jalapeno.
+    "jalapeño"
     # mesa is here for #23 rather than for the parser: it is the homograph that
     # makes the language mode visible. Through the English dictionary it is "an
     # isolated flat-topped hill"; through the Larousse below it is furniture.

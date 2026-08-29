@@ -645,6 +645,12 @@ var retiredSymbolNames = map[string]string{
 	"MigrateFlatDeck": "MigrateToLanguages",
 	"dictChoice":      "dictMeta",
 	"dcsDictionaries": "installedDictionaries",
+	// #27 renamed this when the atlas joined the README as a consumer. The
+	// rename skipped this row and left a stale mention in voice.go — the human
+	// half of this mechanism failing, in the same commit that widened the test
+	// it names. Adding the row is the whole discipline; everything after is
+	// mechanical.
+	"TestREADMEQuotesTheLocaleHelp": "TestDocsQuoteTheLocaleHelp",
 }
 
 // No current-truth artifact names a symbol the tree has retired.

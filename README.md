@@ -33,7 +33,8 @@ define sycophantic          # definition + /ˌsikəˈfan(t)ik/, played 3x
 define /history             # a command works as an argument too
 define --sound 1 record     # play once instead of three times
 define -no-audio bank       # no fetch, no sound
-define -locale gb colour    # British pronunciation (English only)
+define -locale gb schedule  # British pronunciation
+define -lang es -locale us jalapeño   # Latin American, not Castilian
 define -lang es madrugar    # one lookup in Spanish, without switching
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
@@ -193,10 +194,19 @@ Everything follows it — the deck a word files into, the words `--play` offers,
 and the recording that is fetched. `-lang es` is the one-run form, for scripts
 that should not have to change state to ask a question.
 
-`-locale` picks a regional variant and applies to **English only** — `us` or
-`gb`. Every other language uses its own single locale (`es` → `es_es`), and
-passing `-locale` alongside another language says so rather than quietly
-building a URL nobody has measured.
+`-locale` picks the regional variant, and it works for **every** language:
+
+<!-- locale-help -->regional variant of the pronunciation, per language: en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). Others exist — the CDN decides, not a list here<!-- /locale-help -->
+
+For Spanish the choice is **phonemic, not an accent flavour**: `es_es` is
+Castilian, where *cazar* /θ/ and *casar* /s/ are different words; `es_us` is
+Latin American *seseo*, where both are /s/. Picking one picks which sound system
+you learn. Spanish entries carry no written pronunciation at all — the spelling
+already determines it — so the recording is the *only* place that information
+exists, which makes this choice matter more for Spanish than for English.
+
+Nothing here enumerates which combinations exist: a pair the CDN does not serve
+simply gets the same "no recording" warning as any other miss.
 
 The event log is deliberately *not* split by language: a review event names a
 word, and which deck it came from is the deck's business. "How much did I study

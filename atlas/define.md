@@ -1133,13 +1133,40 @@ per Spanish lookup for a guaranteed 404. `TestTheFetchLoopAsksOnlyForTheSessions
 asserts what is actually REQUESTED, not just what the pure function
 returns — its negative case is the one that catches a regression here.
 
-**The interim locale rule, which `#27` inherits.** `localeFor` gives one rule and
-one exception: the locale is the language code (`es` → `es_es`), except English,
-whose CDN recordings are `_en_us_` / `_en_gb_`. `-locale` is documented as "us or
-gb" — English variants — so it applies to English only and *says so* for any
-other language rather than being silently dropped, which would build
-`madrugar_es_gb_1.mp3`, a URL form nothing has measured. The complaint is printed
-once, where the language and the flags first meet, not once per replay.
+**The locale rule (`#27`).** `localeFor` defaults the locale to the language code
+with one exception — English is `us`, because the CDN writes `_en_us_` and
+`_en_gb_` rather than `_en_en_`. `-locale` then overrides it **for every
+language**: `-lang es -locale us` builds `madrugar_es_us`.
+
+**Nothing whitelists which pairs exist**, and that is a decision. A table of valid
+language/locale combinations would restate a fact the CDN owns and go stale the
+moment Google adds a variant — the same argument `ParseLang` makes for not
+enumerating languages, and using a different philosophy for the adjacent field
+would be the inconsistency. So `-lang es -locale gb` builds `madrugar_es_gb`,
+which 404s and degrades to the warning every missing recording produces.
+
+**For Spanish the choice is phonemic, not an accent flavour.** `es_es` is
+Castilian, where *cazar* /θ/ and *casar* /s/ are distinct; `es_us` is Latin
+American *seseo*, where both are /s/. Choosing one chooses which sound system the
+learner acquires. It matters more for Spanish than for English because Spanish
+orthography is phonemic, so the dictionary writes **no notation at all** — the
+recording is the only place that information exists.
+`TestSpanishEntriesCarryNoPronunciationNotation` pins that as expected rather than
+a gap, and its sibling pins the scope: a Spanish word in an ENGLISH entry does
+carry notation, four anglicised pronunciations for `jalapeño`.
+
+**One source for the policy text, and this page consumes it too:**
+
+<!-- locale-help -->regional variant of the pronunciation, per language: en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). Others exist — the CDN decides, not a list here<!-- /locale-help -->
+
+`localeHelp` is that string, and both this page and the README derive from it
+through `TestDocsQuoteTheLocaleHelp`. The policy was stated in four places with
+nothing keeping them in step; wiring only the README would have left this page as
+the next copy to go stale, which is the half-fix the boundary review caught.
+
+For one milestone `-locale` was English-only: `#23 M1`'s D2 shipped that as an
+explicit interim rule, named `#27` as its successor, and printed a diagnostic
+rather than silently ignoring the flag. That is now history.
 
 `playN` keeps the repeat loop in the shell rather than behind `Player.Play(n)`,
 so `fakePlayer` can count plays — which is how "play it three times" is an

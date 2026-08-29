@@ -65,12 +65,26 @@ func TestCDNStillServesTheExpectedPaths(t *testing.T) {
 // silence in Spanish sessions — a language whose recordings simply stopped
 // arriving, with every test still green.
 func TestCDNStillServesSpanishOnTheExpectedPaths(t *testing.T) {
-	cands := AudioCandidates("madrugar", voice{Lang: "es", Locale: "es"})
-	// Fact 1: the 2022 generation serves Spanish at _es_es_.
-	if got := head(t, cands[0]); got != http.StatusOK {
-		t.Errorf("madrugar on the Spanish 2022 path = %d, want 200 — Spanish recordings "+
-			"may have moved, and a Spanish session would go silent", got)
+	// BOTH locales, because #27 makes both selectable and es_us was the one
+	// nothing checked. They are not two accents of one recording: es_es is
+	// Castilian (cazar /θ/ ≠ casar /s/), es_us is Latin American seseo (both
+	// /s/), so a learner acquires a different sound system from each. If one
+	// disappears, that half of the flag silently stops working.
+	for _, locale := range []string{"es", "us"} {
+		cands := AudioCandidates("madrugar", voice{Lang: "es", Locale: locale})
+		if got := head(t, cands[0]); got != http.StatusOK {
+			t.Errorf("madrugar on es_%s = %d, want 200 — that locale's recordings may have "+
+				"moved, and -locale %s would go silent for Spanish", locale, got, locale)
+		}
 	}
+	// And the pair the distinction is ABOUT, so a drift in coverage shows up on
+	// the words where the phonemic split is audible rather than only on one verb.
+	for _, w := range []string{"cazar", "casar"} {
+		if got := head(t, AudioCandidates(w, voice{Lang: "es", Locale: "es"})[0]); got != http.StatusOK {
+			t.Errorf("%s on es_es = %d, want 200 — the Castilian /θ/ evidence", w, got)
+		}
+	}
+	cands := AudioCandidates("madrugar", voice{Lang: "es", Locale: "es"})
 	// Fact 2: the legacy generation does NOT, which is why AudioCandidates emits
 	// it for English only. If this starts returning 200 the gate is no longer
 	// justified by measurement and should be re-surveyed rather than kept.

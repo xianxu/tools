@@ -381,15 +381,10 @@ type options struct {
 	// voice is the recording to ask for: the language in effect plus its regional
 	// variant. DERIVED FROM THE LANGUAGE, so /lang has to re-derive it — see
 	// applyLang, which owns the whole enumeration. Built once at the boundary
-	// rather than per play so the -locale complaint is not re-emitted on every
-	// replay.
+	// rather than per play because it is a session-level fact, not a per-lookup
+	// one. (It also used to carry a -locale complaint that would otherwise
+	// re-print on every replay; #27 removed the refusal that produced it.)
 	voice voice
-	// localeSet records whether -locale was GIVEN, not just what it holds: the
-	// flag's default is "us", so its value alone cannot distinguish "the user
-	// asked for American English" from "nobody said". localeFor needs that
-	// distinction, and it has to survive to a mid-session /lang, which is why it
-	// lives here rather than staying a fs.Visit inside run.
-	localeSet bool
 }
 
 // run is the thin IO shell: parse flags, look up, render, print, play. All of
@@ -406,7 +401,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// documented and in people's shell history. One of them wins, and asking for
 	// both is a mistyped command, not a preference to guess at.
 	times := fs.Int("times", 3, "how many times to play the pronunciation (older name for -sound)")
-	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
+	locale := fs.String("locale", "", localeHelp)
 	// -lang exists so a script can ask a question without mutating state: it
 	// applies to THIS invocation and does not persist. /lang is the other half —
 	// it persists and does not need re-typing.
@@ -519,7 +514,6 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		locale:    *locale,
 		count:     *count,
 		lang:      lang,
-		localeSet: isSet(fs, "locale"),
 	}
 
 	// Usage errors are settled BEFORE a store is opened. A mistyped command must
@@ -582,7 +576,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// derived here rather than at flag parse. Through applyVoice, the same
 	// function /lang re-derives it with — one derivation, two callers, which is
 	// what stops the two from disagreeing after a switch.
-	applyVoice(&opt, d.lang, stderr)
+	applyVoice(&opt, d.lang)
 	// The dictionary follows the mode too (#23 M2). Only when a test did not
 	// supply one — same nil-merge rule withStore uses for the store-backed deps.
 	if d.dict == nil && d.newDict != nil {
