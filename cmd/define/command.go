@@ -26,7 +26,7 @@ var commands = []command{
 	{name: "history", summary: "words looked up recently", run: runHistory},
 	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
 	{name: "lang", summary: "the language this deck is in", run: runLang},
-	{name: "pron", summary: "replay this word in another language, once", run: runPron},
+	{name: "pron", summary: "replay this word in its source language, once", run: runPron},
 }
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
@@ -178,6 +178,19 @@ type commandCtx struct {
 	// nothing resolved one — a test's fake, or a run that never opened a
 	// dictionary at all.
 	dictName string
+	// entry is the RAW dictionary text of the current word, so /pron can read
+	// its ORIGIN (#35).
+	//
+	// DATA, not a capability. commandCtx is deliberately narrower than deps — a
+	// command may not reach the dictionary or the player — and this is text the
+	// session already holds, the same kind of thing as lang and dictName. The
+	// inference lives in the COMMAND because the command owns the message that
+	// explains it; putting it in the loop would split the decision from its
+	// explanation.
+	//
+	// Empty when nothing has been looked up, which /pron reports rather than
+	// inferring from nothing.
+	entry string
 	// replay asks the LOOP to play the current word once in another language
 	// (#29). A closure, like setTimes and setLang, rather than the Player: a
 	// command still cannot reach the dictionary or the player, it can only ask

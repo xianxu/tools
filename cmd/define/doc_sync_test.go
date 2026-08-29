@@ -187,3 +187,23 @@ func TestDocsQuoteTheCommandList(t *testing.T) {
 			doc, b.String())
 	}
 }
+
+// The atlas quotes the /pron COMMAND's argument rule from the code that owns it.
+//
+// Third prose site for this one rule — #31's per-command paragraph, the walk
+// sentence in the pronunciation section, and the README — and the first two went
+// stale the moment #35 made the argument optional. This pins the one that states
+// the RULE; the other two are prose about behaviour, swept by hand and named as
+// such in #35's plan rather than pretending a mechanism covers them.
+func TestDocsQuoteThePronCommandHelp(t *testing.T) {
+	want := "<!-- pron-command-help -->" + pronCommandHelp + "<!-- /pron-command-help -->"
+	doc := "../../atlas/define.md"
+	b, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatalf("%s unreadable: %v", doc, err)
+	}
+	if !strings.Contains(string(b), want) {
+		t.Errorf("%s does not quote the /pron argument rule.\nwant the marked span to read:\n%s\n"+
+			"pronCommandHelp owns this text; the page consumes it.", doc, want)
+	}
+}

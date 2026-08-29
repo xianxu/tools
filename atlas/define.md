@@ -750,15 +750,19 @@ catches up.
 | `/history` | words looked up recently |
 | `/sound` | how many times to play a pronunciation |
 | `/lang` | the language this deck is in |
-| `/pron` | replay this word in another language, once |
+| `/pron` | replay this word in its source language, once |
 <!-- /command-list -->
 
 Argument forms are documented with each command rather than in the summary: the
 summary is what `/help` prints, and a table that padded it with syntax would stop
 matching the screen. `/history [N]` takes `N`, `--days N` or `--days=N`;
 `/sound [N]` reports when bare; `/lang` reports when bare and persists when
-given; `/pron` REQUIRES a language, because it is an action with nothing to
-report.
+given.
+
+`/pron`'s own rule is code-owned rather than restated here, because this is the
+third prose site to state it and the first two went stale:
+
+<!-- pron-command-help -->`/pron` takes a language, or nothing: with no argument it reads the source language off the entry's ORIGIN and says which it chose. It declines when ORIGIN names only historical stages (Old French, Latin) or cognates ("related to Dutch …"), because neither is a language anyone speaks the word in today.<!-- /pron-command-help -->
 
 **Opening a store does not read it.** `storeHistory` used to read the whole event
 log in its constructor, so `define /help` paid for a log it never consulted and
@@ -1142,7 +1146,8 @@ in it searches. What changed is one level up: `utterance.Candidates` walks a
 SOURCE voice first and then the session's own, and `utterance` is the type every
 play site now goes through.
 
-The walk exists only when `-pron` or `/pron` named a language. `#23` deleted
+The walk exists only when `-pron` or `/pron` named a language, or `/pron` read
+one off the entry's `ORIGIN` (`#35`). `#23` deleted
 `#27`'s planned `voices()` because a fallback would have been *guessing* which
 language a word belongs to, on every lookup, at every user's expense — and `#29`
 measured how badly that guess would go (see below). Being told is a different
@@ -1316,7 +1321,7 @@ it is an ACTION where `/sound` and `/lang` are settings.
 
 **One source for the policy text, and this page consumes it:**
 
-<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
+<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which; at the prompt /pron alone reads it for you. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
 
 **The language is DECLARED, never inferred, and that is measured rather than
 inherited.** NOAD writes the two cases identically —

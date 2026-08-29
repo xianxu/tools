@@ -202,7 +202,7 @@ arrondissement` plays the French recording and changes nothing else: the entry
 is still the English one, the word still files into the English deck, and the
 next lookup is English again.
 
-<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
+<!-- pron-help -->hear THIS lookup in another language without switching the session: -pron fr arrondissement. The entry's ORIGIN says which; at the prompt /pron alone reads it for you. Falls back to the session's recording, and says so, when the source has none<!-- /pron-help -->
 
 You name the language; the tool never guesses it. That is a decision with
 measurements behind it — the dictionary writes `ORIGIN French` for
@@ -337,7 +337,12 @@ in-session form of `--sound`, which sets it for one run. (`-times` is the older
 name for `--sound` and still works; passing both is a usage error rather than a
 guess at which you meant.)
 
-`/pron fr` replays the word you just looked up in another language, once, and
+`/pron` replays the word you just looked up in its source language, once.
+With no argument it reads the language off the entry's `ORIGIN` and tells you
+which it chose — `ORIGIN says French` — and declines when `ORIGIN` names only a
+historical stage (`Old French`, `Latin`) or a cognate (*"related to Dutch…"*),
+because neither is a language anyone says the word in today. `/pron fr` names it
+explicitly. Either way it
 leaves nothing switched on — the next word is back to the session's own voice.
 It is an action, not a setting, which is the difference from both `/sound` and
 `/lang`: there is no `/pron` to undo. `-pron fr <word>` is the same thing for a

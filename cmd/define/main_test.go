@@ -430,3 +430,34 @@ func TestTheLangFlagRegistersTheDerivedHelp(t *testing.T) {
 			langHelp, errb.String())
 	}
 }
+
+// An ORDINARY lookup never infers the origin — #29's D1, pinned (#35).
+//
+// #35 taught `/pron` to read the source language off ORIGIN. D1 is the decision
+// that this must NOT happen on every lookup, and it is measured rather than
+// stylistic: NOAD writes `ORIGIN … French` identically for `arrondissement` and
+// `police`, and the CDN serves `police_fr_fr` at 200 — so automatic inference
+// would replace the English recording for a large class of naturalised words.
+//
+// `jalapeño` is the case, and it is in the committed corpus: its ORIGIN names
+// Mexican Spanish and `jalapeño_es_es` is a live 200. A test that only checked
+// the word plays would be green either way, which is exactly why this one
+// asserts what was REQUESTED.
+func TestAnOrdinaryLookupNeverInfersTheOrigin(t *testing.T) {
+	en := voice{Lang: "en", Locale: "us"}
+	rig := newAudioRigServing(t, AudioCandidates("jalapeño", en)[0])
+	var out, errb bytes.Buffer
+
+	if code := run(t.Context(), []string{"jalapeño"}, rig.deps, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	for _, asked := range rig.cdn.Requested() {
+		if !strings.Contains(asked, "_en_") && !strings.Contains(asked, "/sounds/oxford/") {
+			t.Errorf("an ordinary lookup asked for %q — it inferred the origin, which is the "+
+				"automatic inference #29 D1 rejected on measurement", asked)
+		}
+	}
+	if errb.Len() != 0 {
+		t.Errorf("an ordinary lookup reported something: %q", errb.String())
+	}
+}

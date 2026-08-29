@@ -18,11 +18,13 @@ func parsePronArgs(args []string) (store.Lang, error) {
 	switch len(args) {
 	case 1:
 	case 0:
-		// The message points at where the answer IS. #29 chose a declared
-		// language over an inferred one because ORIGIN and the CDN both fail to
-		// tell a live loanword from a naturalised one, so the entry on screen is
-		// what the learner reads the language off.
-		return "", fmt.Errorf("which language? /pron fr — the entry's ORIGIN says which")
+		// NO LANGUAGE is a request to INFER, not a usage error (#35). #29 shipped
+		// it as an error because it had rejected inference — but that rejection
+		// was about inferring on EVERY lookup, where a wrong guess is silent and
+		// unasked-for. Here the user typed the gesture and the answer is
+		// reported, so the inference is opt-in and auditable. runPron owns the
+		// reading; this function only says an argument is optional.
+		return "", nil
 	default:
 		return "", fmt.Errorf("/pron takes one language, not %q", strings.Join(args, " "))
 	}
@@ -48,6 +50,21 @@ func runPron(c commandCtx, args []string) int {
 		fmt.Fprintf(c.stderr, "define: /pron: %v\n", err)
 		return 2
 	}
+	// No language: read it off the entry the user is looking at (#35).
+	//
+	// The REPORT is not decoration. A silent inference cannot be audited, and it
+	// is what makes a contested ORIGIN visible — `piano` reads "either from
+	// French, or …", and taking the first-named while saying so leaves the hedge
+	// where the reader can see it and override in one word.
+	if lang == "" {
+		got, named, err := OriginLanguage(ParseEntry(c.entry))
+		if err != nil {
+			fmt.Fprintf(c.stderr, "define: /pron: %v. Name one: /pron fr\n", err)
+			return 2
+		}
+		fmt.Fprintf(c.stdout, "  ORIGIN says %s\n", named)
+		lang = got
+	}
 	if c.replay == nil {
 		fmt.Fprintln(c.stderr, "define: /pron replays the word you just looked up; there is none yet")
 		return 2
@@ -55,3 +72,22 @@ func runPron(c commandCtx, args []string) int {
 	c.replay(lang)
 	return 0
 }
+
+// pronCommandHelp is THE statement of the /pron COMMAND's argument rule.
+//
+// A separate const from pronHelp, and the distinction is the point: pronHelp
+// documents the -pron FLAG, which deliberately does NOT infer (#35 D6). Writing
+// "the language is optional" there would be false where it was written.
+//
+// It is not folded into the `commands` registry summary either, because #31
+// recorded why argument forms stay out of it: the summary is what /help prints,
+// and padding it with syntax makes the table stop matching the screen.
+//
+// So it lives here and atlas/define.md consumes it through a marked span, the
+// mechanism localeHelp and pronHelp already use — this being the third prose
+// site to state this rule, after two went stale.
+const pronCommandHelp = "`/pron` takes a language, or nothing: with no argument " +
+	"it reads the source language off the entry's ORIGIN and says which it chose. " +
+	"It declines when ORIGIN names only historical stages (Old French, Latin) or " +
+	"cognates (\"related to Dutch …\"), because neither is a language anyone speaks " +
+	"the word in today."

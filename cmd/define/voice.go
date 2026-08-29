@@ -137,8 +137,9 @@ const localeHelp = "regional variant of the pronunciation, per language: " +
 // language to type — #29 chose a declared language over an inferred one, so the
 // help has to say where the answer is.
 const pronHelp = "hear THIS lookup in another language without switching the " +
-	"session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back " +
-	"to the session's recording, and says so, when the source has none"
+	"session: -pron fr arrondissement. The entry's ORIGIN says which; at the prompt " +
+	"/pron alone reads it for you. Falls back to the session's recording, and says " +
+	"so, when the source has none"
 
 // langHelp is the -lang flag's text, DERIVED from curated rather than restating
 // it (#31).
