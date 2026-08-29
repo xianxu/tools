@@ -278,11 +278,31 @@ Derivation notes.
   mode. `M1.3` is priced as greenfield precisely because it is the part that is
   genuinely new.
 
-- **Expect this one to run long rather than short.** The three closed rows this
-  session are 0.83×, 0.90× and roughly 1.6× — no trend — but the two that ran
-  over were the two with the widest surface, and this has the widest of the four
-  by some way. The estimate is not padded for that; v3.1 is applied as written so
-  the ledger row means something.
+- **Step 2.5, the library-availability check, which the first draft SKIPPED.**
+  v2.1 makes it a required step and its own examples read *"Cross-platform
+  terminal UIs → bubbletea/lipgloss/bubbles"* — and `M1`'s four missing pieces
+  (alt screen, viewport/scroll, SIGWINCH, SGR-1006 decoding) are all primitives
+  those libraries ship. Skipping it is what drove v2's worst outlier, so:
+
+  **Checked, and hand-rolled deliberately.** Step 2.5 exempts "choosing to do it
+  from scratch for control or footprint reasons", and both apply. This is not a
+  greenfield terminal layer with gaps to fill — it is an EXISTING one with four
+  pieces missing: raw mode (`rawterm.go`), a CSI scanner that survived `#14`'s
+  length bug (`key.go`), a pure `Editor`/`RenderLine` pair, and a `puretest`
+  package that mechanically enforces the pure/IO split. Adopting bubbletea means
+  replacing all of that with its Model/Update/View, discarding four issues' worth
+  of measured decisions and the purity guard with them, for a CLI that today has
+  four direct dependencies. The design hours are NOT halved.
+
+  Recorded because the step's value is the visibility, not the arithmetic — it
+  moves ~0.03 either way.
+
+- **Expect this one to run long rather than short**, and here is the number so
+  the close can tell a calibration miss from a confirmed prediction. 3.19 is only
+  **1.15×** `#29`'s estimate (2.78) and **below** `#29`'s measured actual (3.34),
+  while carrying 13 tasks across two boundaries. At this session's own over-run
+  rate the actual lands near **3.7–3.9h**. The estimate is NOT padded toward
+  that — v3.1 is applied as written, or the ledger row means nothing.
 
 ## Plan
 
