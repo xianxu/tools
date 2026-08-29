@@ -269,3 +269,35 @@ the second time this repo's own written rule did not stop the instance.
 **And the class fix's own mechanism had a hole:** the doc guard used
 `strings.Contains`, so renaming the atlas row to `Italiano` kept it green. It is
 word-boundary now, and the near-miss is reproduced as the removal check.
+
+### 2026-08-29 — close review round 3
+
+**BR-13 named why rounds 1 and 2 kept finding more sites: the class was enforced
+PER-SITE.** Each round pinned the surfaces its author could see, so a new surface
+was covered only if someone remembered to write a test for it. `curated` now has
+ONE registry of the surfaces obliged to name every curated language, each row
+supplying its own text and its own spelling — the docs write `Italian`, the flag
+help writes `it`. One assertion ranges over registry × `curated`, and the only
+hand-written list left in the family is "which surfaces exist".
+
+That also closed the gap **BR-10** had kept open, which is a distinction worth
+recording: `TestTheLangFlagRegistersTheDerivedHelp` pins that `run()` PASSES
+`langHelp` rather than a literal — delivery — while nothing pinned that
+`langHelp` DERIVES. Hardcoding its list to `{"en","es"}` keeps the delivery test
+green and fails the registry row. Verified both ways.
+
+**Row 9** — the language-keyed notation table — now cross-checks `curated` with
+an explicit exempt list carrying reasons, because "no row" and "deliberately no
+row" were indistinguishable. `#34` will add German, whose Duden field is real, to
+a table asserting the opposite, and the exemption is where that gets said.
+
+**BR-12 was mine to have caught.** Merging the Spanish and Italian notation tests
+and deleting a subsumed sweep are both renames in the sense `retiredSymbolNames`
+exists for, and I added no rows — so the atlas, this plan and `#30` all named
+tests the tree does not declare, and the guard stayed green over them. Rows
+added, all three swept. And since the human half has now failed twice (`#27` is
+recorded in that same map), the TRIGGER is mechanical:
+`TestARemovedDeclarationIsSweptOrRetired` reads removed declarations out of the
+change window and requires a row or zero current-truth mentions. The MAPPING
+still needs a person — only the one renaming knows the old name — but noticing
+that something was removed does not.

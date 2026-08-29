@@ -469,10 +469,7 @@ func TestEveryCuratedLanguageHasACorpus(t *testing.T) {
 			// MIN_BYTES floor exists for, and this guard would have called it
 			// coverage.
 			d, err := loadFakeDictionary("testdata/entries", lang)
-			if err == nil && len(d.entries) > 0 {
-				return
-			}
-			{
+			if err != nil || len(d.entries) == 0 {
 				t.Errorf("production curates %v for %s, but testdata/entries/%s holds no "+
 					"usable fixtures (%v) — the seam has nothing to conformance-check, so a "+
 					"change in that dictionary would surface as a user complaint rather than "+

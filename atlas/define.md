@@ -1267,7 +1267,6 @@ entry. That is also why `usage/` has no language dimension: nothing writes it
 outside English. If `#10` or `#18` makes the feed language-aware, scoping the
 cache becomes required, and that is the moment to add it.
 
-
 **The curated languages are named below, not counted here** — a count is a
 restatement that goes stale silently, and this sentence said "three" from four
 lines outside the guarded span, where nothing could check it. The list is a
@@ -1299,8 +1298,9 @@ sampled entries render the bare headword.
 `#31`, so `es` and `it` are checked at CORPUS width — over whatever
 `testdata/entries/<lang>/` holds, which `TestEveryCuratedLanguageHasACorpus`
 requires to be non-empty. Not a number here: this sentence read "six fixtures
-each" while `entries/es/` held five. The live
-ratchet in `live_property_test.go` is the one that sweeps at DICTIONARY width,
+each" while `entries/es/` held five.
+
+The live ratchet in `live_property_test.go` is the one that sweeps at DICTIONARY width,
 and it walks `/usr/share/dict/words` against `systemDictionary(DefaultLang)`.
 There is no Italian or Spanish word list on the host, so neither language has a
 ratchet at that width. This is stated rather than fixed: `#23 M2` added Spanish
