@@ -1,7 +1,7 @@
 ---
 id: 000030
 status: open
-deps: [tools#29]
+deps: [tools#29, tools#35]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
@@ -26,11 +26,15 @@ inert text and the action has to be retyped as a command.
 
 Two consumers are already named:
 
-- **`French` after `ORIGIN`** → play the recording in that language. `#29` builds
-  the mechanism (`-pron fr` / `/pron fr`); this is the gesture that reaches it
-  without typing a language code.
-- **the IPA notation** → replay the recording. Today playback is automatic on
-  every lookup; a click target is what would let it stop being automatic.
+- **the HEADWORD** → play the recording. The operator's clarification, and the
+  right primary target: every entry has one, in every language, whereas the IPA
+  is English-only (`#31` measured it — Spanish writes none, Italian writes
+  syllabification rather than transcription). `Entry.Headword()` and
+  `Entry.Syllables()` already expose both forms as separate head tokens.
+- **`French` after `ORIGIN`** → play the recording in that language. `#29` built
+  the mechanism and `#35` makes it inferrable, so this click is a thin wrapper
+  over `/pron` rather than the thing that introduces inference.
+- **the IPA notation** → a second target where it exists, not the mechanism.
 
 ## Spec
 
@@ -112,14 +116,75 @@ PRECONDITION for measuring this row honestly.
   spans → row/col, which changes its contract. It is pure, so this half is
   unit-testable without a terminal — keep it that way.
 
-### The hard part is scrollback, and it should be decided rather than assumed
+### The scrollback question is DECIDED: `define` becomes a TUI and owns the screen
 
-Coordinates go stale as soon as the next word is typed and the entry scrolls up.
-The raw loop knows how many lines it printed, so tracking a delta is *possible*,
-but a resize, a wrap, or scrollback the user scrolled by hand all break it. The
-plausible answers — regions valid only for the most recent entry; an alternate
-screen buffer; re-rendering on click — are different sizes and different
-products. This is the design question, not the mouse decoding.
+Operator, 2026-08-29, after the alternatives were laid out:
+
+> I don't mean OSC 8 style link. rather define become TUI program and owns all
+> the rendering, so you know what is rendered precisely?
+
+Yes — and it removes the problem by construction rather than managing it. The
+interactive loop enters the alternate screen, keeps its own buffer of rendered
+lines plus a viewport offset, and draws everything. A mouse click at viewport row
+R maps to buffer line `R + scrollOffset`, and that mapping is exact because
+`define` caused every line and every scroll.
+
+**Three alternatives were considered and rejected, so the next reader does not
+re-open them:**
+
+- **Colour as the carrier.** The operator's first proposal, and the instinct
+  behind it is right — the palette in `newPalette` is already markup by MEANING
+  (`head`, `ipa`, `pos`, `num`, `ex`, `sect`), not colours that acquired
+  meanings. It fails on one fact: **there is no escape sequence for "report the
+  attributes at row R, column C".** Mouse reporting sends coordinates and a
+  button. The terminal remembers the colour and can never be asked about it, so
+  colour is markup a HUMAN reads, not markup the app can query.
+- **OSC 8 hyperlinks.** The correct implementation of "markup the terminal
+  carries", and genuinely scroll-agnostic. Rejected on cost: Terminal.app does
+  not support OSC 8 at all, and a click opens a URL through the OS, so reaching
+  the RUNNING `define` needs a custom scheme plus a helper that talks back into
+  the session.
+- **Most-recent-entry only.** Cheapest, and honest, but it makes the affordance
+  disappear the moment you look anything else up.
+
+### What a TUI actually costs, and what already exists
+
+**Already in the tree**, which is why this is an extension rather than a rewrite:
+raw mode (`enterRaw`/`restore`), key decoding that scans to the CSI final byte
+(`#14`) — so `ESC[<b;x;yM` mouse sequences already parse structurally and are
+merely discarded — and a width probe.
+
+**Missing:** the alternate screen, a line buffer + viewport + scrolling, SIGWINCH
+(there is none today; width is read ONCE at flag parse), mouse decoding, and the
+region map.
+
+**`Render` does not change**, and that is the load-bearing good news. It returns
+a string; the screen layer splits it into lines and owns placement. The parser,
+the renderer, the no-data-loss invariant and the whole fixture corpus are
+untouched. This is a layer BENEATH them.
+
+**Three costs to decide, not discover:**
+
+1. **Terminal scrollback after exit.** The alternate screen tears down on quit,
+   so the session's entries vanish from the terminal's history — today
+   `define arrondissement` leaves the entry where you can scroll back to it
+   tomorrow. The standard mitigation is to print the transcript into the normal
+   buffer on exit. Decide it.
+2. **Copy/paste.** With mouse tracking on, drag-select goes to the app. Either
+   the user holds Option, or `define` implements selection, which is a real chunk
+   of work.
+3. **ONLY the interactive loop becomes a TUI.** `define <word>`, `echo w |
+   define`, `-raw` and `> out.txt` stay exactly as they are. That also means the
+   "ephemeral UI vs record" doctrine keeps applying on those paths while becoming
+   vacuous inside the alternate screen, where everything is ephemeral. State the
+   split; do not discard the doctrine.
+
+**One fact to MEASURE before sizing the scroll machinery:** with mouse tracking
+enabled, most terminals send wheel events to the application instead of scrolling
+the viewport. If that holds on the operator's terminal, `define` causes every
+scroll and the viewport model is bookkeeping. If it does not, the app must track
+an offset it never observes, which is the hard version. Measure it; do not reason
+about it.
 
 ### Cost that must be accepted deliberately
 
@@ -149,9 +214,13 @@ back into a running `define`. Terminal.app does not support them at all.
 
 ## Plan
 
-- [ ] Blocked on `#29` for the pronunciation-language mechanism. Wire the
-      fr/it/de dictionaries into `curated` first — the notation row above cannot
-      be measured honestly until then.
+- [x] Blocked on `#29` for the pronunciation-language mechanism — shipped.
+- [x] The notation row is measured: `#31` did it. English IPA always, Spanish
+      none, Italian syllabification-not-transcription, French none, German real
+      but lossy. Curating fr/de turned out NOT to be a precondition, and is
+      `#34`.
+- [ ] Blocked on `#35`, so the click is a wrapper over an existing gesture.
+- [ ] MEASURE the wheel-capture fact above before sizing the scroll model.
 - [ ] Design via `sdlc start-plan`.
 
 ## Log
@@ -167,3 +236,25 @@ rather than a number.
 The insight worth keeping: clicking removes the AMBIGUITY objection to
 ORIGIN-inference (`piano` names two languages; a pointer picks one) but not the
 CLOSED-TABLE objection. `#29` recorded both; only one is dissolved here.
+
+## Revisions
+
+### 2026-08-29 — the scrollback question is answered, and the target changed
+
+**Reason:** discussed with the operator after `#29` and `#31` shipped. Two
+decisions and one correction.
+
+- **DECIDED: `define` becomes a TUI for the interactive loop**, owning the screen
+  so click coordinates are exact by construction. Colour-as-carrier and OSC 8
+  are recorded above as considered-and-rejected with their reasons.
+- **The primary click target is the HEADWORD, not the IPA.** `#31` measured why:
+  the IPA is an English-only affordance. Spanish writes no notation at all
+  (phonemic orthography) and Italian writes syllabification, which is not a
+  transcription. A headword exists in every entry in every language.
+- **Sequenced behind `#35`.** With `/pron` inferring, both click targets become
+  thin wrappers over gestures that already exist, and the inference question is
+  settled before the screen work starts rather than tangled into it.
+
+The Spec's earlier claim that this issue was blocked on curating fr/de was
+wrong — `#31` answered the notation question by measurement without curating
+either, and split them to `#34`.
