@@ -167,7 +167,7 @@ It guarantees **fidelity, not completeness** — see Limits.
   — see the sampling note above.
 
 - **A prose numeral that continues a sense sequence is taken as a sense number.**
-  7 of those entries. `define charge` buries its real sense 2 inside a
+  <!-- raw:prose-numeral -->7<!-- /raw:prose-numeral --> of those entries. `define charge` buries its real sense 2 inside a
   quoted example, and two raw `|` reach the screen; `just`, `depth` and
   `shortness` are the same shape. (`ratio`, `glop` and `logarithmic` were named
   here too and no longer are: they render CLEAN now, which is not the same as

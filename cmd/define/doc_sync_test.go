@@ -90,5 +90,15 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 			t.Errorf("atlas/define.md does not quote the pinned count for %s.\n"+
 				"want the marked span to read %q", c, want)
 		}
+		// EVERY occurrence, not the first. The count is stated twice for
+		// prose-numeral — once in the breakdown and once in the Limits entry —
+		// and marking only one leaves the other an unmarked restatement that
+		// strings.Contains cannot see.
+		open := fmt.Sprintf("<!-- raw:%s -->", c)
+		if n, m := strings.Count(atlas, open), strings.Count(atlas, want); n != m {
+			t.Errorf("atlas/define.md marks %s %d time(s) but only %d carry the pinned value %d — "+
+				"an unmarked or stale restatement is exactly what the markers exist to prevent",
+				c, n, m, knownRawByCause[c])
+		}
 	}
 }

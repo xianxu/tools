@@ -109,6 +109,82 @@ rounds:
           family: doc-sweep-incomplete
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-28T20:44:19-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: Verified by reverting in a scratch copy — restoring the catch-alls reddens all three reachability cases.
+          round: 3
+        - id: BR-2
+          disposition: addressed
+          note: atlas/define.md:126-133 replaced; no standing "measure 0" claim remains.
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: Re-ran the enumeration over atlas/define.md and cmd/define/*.go — every residue is dated, derived or past-tense.
+          round: 3
+        - id: BR-4
+          disposition: not-addressed
+          note: Mechanism verified fixed (the compensating swap now reddens by cause name), but the second site the finding named, atlas/define.md:170 "7 of those entries", is still an unmarked restatement that strings.Contains cannot see.
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: Comment now sits above var curated; but its behavioral promise is wrong — see the new finding.
+          round: 3
+        - id: BR-6
+          disposition: addressed
+          note: capture.sh RAW_WORDS loop plus TestRawNotationExemplarsMatchLiveDictionary; compiles under -tags conformance, unrunnable on this host.
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: Three sites converted; rawnotation_test.go:180 still spells the disjunction by hand, and stressWindow is a fourth copy of strayStress's window with a different radius.
+          round: 3
+        - id: BR-8
+          disposition: addressed
+          note: Signature is classifyRawNotation(rendered string) at all three call sites.
+          round: 3
+        - id: BR-9
+          disposition: not-addressed
+          note: capture.sh:44-45 unchanged in this window.
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: rawnotation_test.go:233 still asserts by exclusion; the input actually yields headword-pronunciation.
+          round: 3
+        - id: BR-11
+          disposition: not-addressed
+          note: No boundary case added; the two justifying figures are correct but asserted nowhere.
+          round: 3
+        - id: BR-12
+          disposition: not-addressed
+          note: Still four exemplars, and the catch-all-to-positive change made sibling misclassification newly possible.
+          round: 3
+        - id: BR-13
+          disposition: not-addressed
+          note: workshop/projects/define-learn.md:788 unchanged in this window.
+          round: 3
+      findings:
+        - id: BR-14
+          severity: Important
+          title: 'The headword branch is still a position-only catch-all, so the stress-marked form of #26''s own dormant shape is absorbed'
+          detail: |-
+            This is the 2nd finding in family attribution-not-mechanized. Do NOT fix the instance. The RULE: every
+            cause branch's predicate must be a positive signature of the SHAPE it names; a predicate that tests
+            position or context rather than shape is a catch-all and absorbs novel input. The enumeration is the four
+            branches of classifyRawNotation, and measured prevalence is 1 of 4 still failing it —
+            cmd/define/rawnotation_test.go:96 `case i < headwordBlockBytes` claims any stray stress mark in the first
+            128 bytes. Probed: "hundred | AmE ˈhəndrəd, BrE ˈhʌndrəd |" -> headword-pronunciation,
+            "laboratory | AmE ˈlabrəˌtôrē, BrE ləˈbɒrət(ə)ri |" -> headword-pronunciation, and an invented leak at
+            byte 44 -> headword-pronunciation. The captured brent case reaches the residue only because it is a
+            monosyllable with no stress mark. Consequently cmd/define/dictselect.go:75, the comment added for BR-5,
+            promises "the live ratchet reports the new entries as unclassified" for a book whose entries mostly will
+            not. Give the branch a shape tell (position AND the glued-gloss "(…/" run), extend the reachability table
+            with the polysyllabic dual-locale case, and correct the dictselect.go promise.
+          family: attribution-not-mechanized
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#26 (boundary-review)
@@ -162,18 +238,47 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-12** [Minor] `family-pinned-by-one-member` Three of the four literal-pipe entries rest entirely on the "the symbol |" substring, checked only by the conformance run
 - **BR-13** [Minor] `doc-sweep-incomplete` workshop/projects/define-learn.md:788 quotes the old failure text "lower knownRawNotationEntries"; the message now says knownRawByCause
 
+## Round 3 — 2026-08-28T20:44:19-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Verified by reverting in a scratch copy — restoring the catch-alls reddens all three reachability cases.
+- BR-2 — addressed — atlas/define.md:126-133 replaced; no standing "measure 0" claim remains.
+- BR-3 — addressed — Re-ran the enumeration over atlas/define.md and cmd/define/*.go — every residue is dated, derived or past-tense.
+- BR-4 — not-addressed — Mechanism verified fixed (the compensating swap now reddens by cause name), but the second site the finding named, atlas/define.md:170 "7 of those entries", is still an unmarked restatement that strings.Contains cannot see.
+- BR-5 — addressed — Comment now sits above var curated; but its behavioral promise is wrong — see the new finding.
+- BR-6 — addressed — capture.sh RAW_WORDS loop plus TestRawNotationExemplarsMatchLiveDictionary; compiles under -tags conformance, unrunnable on this host.
+- BR-7 — not-addressed — Three sites converted; rawnotation_test.go:180 still spells the disjunction by hand, and stressWindow is a fourth copy of strayStress's window with a different radius.
+- BR-8 — addressed — Signature is classifyRawNotation(rendered string) at all three call sites.
+- BR-9 — not-addressed — capture.sh:44-45 unchanged in this window.
+- BR-10 — not-addressed — rawnotation_test.go:233 still asserts by exclusion; the input actually yields headword-pronunciation.
+- BR-11 — not-addressed — No boundary case added; the two justifying figures are correct but asserted nowhere.
+- BR-12 — not-addressed — Still four exemplars, and the catch-all-to-positive change made sibling misclassification newly possible.
+- BR-13 — not-addressed — workshop/projects/define-learn.md:788 unchanged in this window.
+
+### Raised
+
+- **BR-14** [Important] `attribution-not-mechanized` The headword branch is still a position-only catch-all, so the stress-marked form of #26's own dormant shape is absorbed
+  This is the 2nd finding in family attribution-not-mechanized. Do NOT fix the instance. The RULE: every
+  cause branch's predicate must be a positive signature of the SHAPE it names; a predicate that tests
+  position or context rather than shape is a catch-all and absorbs novel input. The enumeration is the four
+  branches of classifyRawNotation, and measured prevalence is 1 of 4 still failing it —
+  cmd/define/rawnotation_test.go:96 `case i < headwordBlockBytes` claims any stray stress mark in the first
+  128 bytes. Probed: "hundred | AmE ˈhəndrəd, BrE ˈhʌndrəd |" -> headword-pronunciation,
+  "laboratory | AmE ˈlabrəˌtôrē, BrE ləˈbɒrət(ə)ri |" -> headword-pronunciation, and an invented leak at
+  byte 44 -> headword-pronunciation. The captured brent case reaches the residue only because it is a
+  monosyllable with no stress mark. Consequently cmd/define/dictselect.go:75, the comment added for BR-5,
+  promises "the live ratchet reports the new entries as unclassified" for a book whose entries mostly will
+  not. Give the branch a shape tell (position AND the glued-gloss "(…/" run), extend the reachability table
+  with the polysyllabic dual-locale case, and correct the dictselect.go promise.
+
 ## Open findings
 
-- **BR-1** [Important] `attribution-not-mechanized` causeUnclassified cannot fire for oracle-tripping input, so the totality assertion is dead and new shapes are absorbed
-- **BR-2** [Important] `unbacked-behavior-claim` atlas/define.md:129 says the two oracles "measure 0 over the live sample" — contradicted by the 26 added at :148
-- **BR-3** [Important] `doc-sweep-incomplete` The DERIVED-or-DATED rule was applied to the named sites, not the class — four more remain in the two edited files
 - **BR-4** [Important] `restatement-not-consumer` The atlas per-cause breakdown is hand-restated, not derived — a compensating swap keeps the whole suite green
-- **BR-5** [Important] `record-not-at-point-of-use` The dormant AmE/BrE shape's resurrection condition is written nowhere the next person adding a dictionary will meet it
-- **BR-6** [Important] `fake-without-conformance` testdata/rawnotation has no capture path in capture.sh and no live conformance check (ARCH-MOCK)
 - **BR-7** [Important] `oracle-restated-not-shared` The two-oracle disjunction is restated at four sites and strayStress's body is copy-pasted into the classifier (ARCH-DRY)
-- **BR-8** [Minor] `dead-parameter` classifyRawNotation's word parameter is read at zero sites, and the Plan specified a one-argument signature
 - **BR-9** [Minor] `doc-sweep-incomplete` capture.sh:45 still claims "there is no public API to select one" while the same file selects by identifier
 - **BR-10** [Minor] `assertion-by-exclusion` TestClassifyRawNotationIsTotal asserts only "not literal-pipe" for the both-oracles case rather than the exact cause
 - **BR-11** [Minor] `constant-not-pinned` headwordBlockBytes = 128 has no boundary test; only exemplars at bytes 27 and 2436 constrain it
 - **BR-12** [Minor] `family-pinned-by-one-member` Three of the four literal-pipe entries rest entirely on the "the symbol |" substring, checked only by the conformance run
 - **BR-13** [Minor] `doc-sweep-incomplete` workshop/projects/define-learn.md:788 quotes the old failure text "lower knownRawNotationEntries"; the message now says knownRawByCause
+- **BR-14** [Important] `attribution-not-mechanized` The headword branch is still a position-only catch-all, so the stress-marked form of #26's own dormant shape is absorbed

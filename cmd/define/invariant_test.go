@@ -41,11 +41,57 @@ var slashSpan = regexp.MustCompile(`/[^/\n]*/`)
 // is unconverted source.
 func strayStress(out string) string {
 	if i := strayStressAt(out); i >= 0 {
-		rest := slashSpan.ReplaceAllString(out, "")
-		lo, hi := max(0, i-50), min(len(rest), i+50)
-		return rest[lo:hi]
+		return strayStressWindow(out, i, 50)
 	}
 	return ""
+}
+
+// strayStressWindow is THE windowing, so callers that want different radii do
+// not each re-derive the stripped coordinate space. It was written twice with
+// two radii before the boundary review counted it as a fourth copy of the
+// oracle.
+func strayStressWindow(out string, i, radius int) string {
+	rest := slashSpan.ReplaceAllString(out, "")
+	lo, hi := max(0, i-radius), min(len(rest), i+radius)
+	return rest[lo:hi]
+}
+
+// stressIsParenthesised reports whether the stray stress at i sits inside a
+// (…) group — the positive signature of a pronunciation collapsed into the
+// headword block, "(aˈhəndrədzˈhəndrəd/)".
+//
+// Scans outward in the stripped space rather than pattern-matching a window,
+// so it cannot be satisfied by a parenthesis belonging to some other span.
+func stressIsParenthesised(out string, i int) bool {
+	rest := slashSpan.ReplaceAllString(out, "")
+	if i < 0 || i >= len(rest) {
+		return false
+	}
+	open := false
+	for j := i; j >= 0; j-- {
+		if rest[j] == ')' {
+			return false
+		}
+		if rest[j] == '(' {
+			open = true
+			break
+		}
+		if rest[j] == '\n' {
+			return false // a group does not span lines
+		}
+	}
+	if !open {
+		return false
+	}
+	for j := i; j < len(rest); j++ {
+		if rest[j] == '(' || rest[j] == '\n' {
+			return false
+		}
+		if rest[j] == ')' {
+			return true
+		}
+	}
+	return false
 }
 
 // strayStressAt is the same oracle returning the POSITION, in the coordinate

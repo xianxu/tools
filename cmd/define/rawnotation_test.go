@@ -92,18 +92,25 @@ var rawCauses = []rawCause{
 func classifyRawNotation(rendered string) rawCause {
 	if i := strayStressAt(rendered); i >= 0 {
 		switch {
-		// Glued to the headword: the leak sits in the opening block, before any
-		// sense text. Measured over the captured exemplars — `hundred` puts it at
-		// byte 27 of 1828, `shape` at 2436 of 4116 — so the cut is two orders of
-		// magnitude from either population.
-		case i < headwordBlockBytes:
+		// Glued to the headword: NOAD collapses the pronunciation into a
+		// parenthesised group in the opening block — "(aˈhəndrədzˈhəndrəd/)".
+		//
+		// The PARENTHESIS is the signature; position alone is not. A first
+		// version tested only `i < headwordBlockBytes`, which claimed any stray
+		// stress in the first 128 bytes and therefore absorbed the stress-marked
+		// form of #26's own dormant shape — "| AmE ˈhəndrəd, BrE ˈhʌndrəd |"
+		// classified as headword-pronunciation. The captured `brent` reached the
+		// residue only because it is a monosyllable carrying no stress mark,
+		// which is luck rather than design. Position is kept as a cheap
+		// conjunct, not as the test.
+		case i < headwordBlockBytes && stressIsParenthesised(rendered, i):
 			return causeHeadwordPronunciation
 		// A phrase block's pronunciation run into prose: NOAD writes these as an
 		// idiom followed immediately by its pronunciation, so the stress mark is
 		// preceded by lowercase prose with no sentence break — "lick
 		// someoneˌoud əv ˈSHāp/". The trailing slash is the tell: the closing
 		// delimiter survived while the opening one was consumed.
-		case strings.Contains(stressWindow(rendered, i), "/"):
+		case strings.Contains(strayStressWindow(rendered, i, 60), "/"):
 			return causePhrasePronunciation
 		}
 		return causeUnclassified
@@ -127,14 +134,6 @@ func classifyRawNotation(rendered string) rawCause {
 // proseNumeralPipe matches a sense-number run followed by a pipe on the same
 // line — the signature of a prose numeral accepted as a sense opener.
 var proseNumeralPipe = regexp.MustCompile(`(?m)^\s*\d+\.[^|\n]*\|`)
-
-// stressWindow returns the text around a stray stress mark, in the stripped
-// coordinate space strayStressAt indexes into.
-func stressWindow(out string, i int) string {
-	rest := slashSpan.ReplaceAllString(out, "")
-	lo, hi := max(0, i-60), min(len(rest), i+60)
-	return rest[lo:hi]
-}
 
 // headwordBlockBytes is how far into an entry the headword's own block reaches.
 // Measured, not guessed — see classifyRawNotation.
@@ -177,7 +176,7 @@ func TestClassifyRawNotationOverRealEntries(t *testing.T) {
 			out := Render(ParseEntry(string(raw)), RenderOpts{Width: 0})
 			// The exemplar must actually still trip the live oracle, or it has
 			// stopped being an exemplar and this test passes vacuously.
-			if strayStress(out) == "" && !strings.ContainsRune(out, '|') {
+			if _, tripped := rawNotationNear(out); !tripped {
 				t.Fatalf("%s no longer renders raw notation — re-capture or retire the exemplar", tc.word)
 			}
 			if got := classifyRawNotation(out); got != tc.want {
@@ -206,7 +205,16 @@ func TestUnclassifiedIsReachableForOracleTrippingInput(t *testing.T) {
 		// curated["en"] — and if one is ever added back, this is what makes it
 		// surface as unclassified rather than be silently counted as something
 		// it is not.
+		//
+		// THREE forms, because the first version of this test used only the
+		// monosyllable and passed for the wrong reason: `brent` carries no stress
+		// mark at all, so it reached the residue via the pipe branch while a
+		// POSITION-ONLY headword branch was still absorbing every polysyllabic
+		// form. The two below are the cases that were silently mis-attributed —
+		// they sit inside the first 128 bytes and do carry stress marks.
 		{"the dormant AmE/BrE block", "brent\n\n    | AmE brɛnt, BrE brɛnt | noun (British English) "},
+		{"dual-locale, polysyllabic", "hundred  hun·dred\n\n    | AmE ˈhəndrəd, BrE ˈhʌndrəd | numeral\n"},
+		{"dual-locale, longer word", "laboratory\n\n    | AmE ˈlabrəˌtôrē, BrE ləˈbɒrət(ə)ri | noun\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, tripped := rawNotationNear(tc.in); !tripped {

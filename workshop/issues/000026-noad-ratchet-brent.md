@@ -432,3 +432,45 @@ and a claim that both oracles "measure 0" twenty lines above the count that
 falsifies it. Swept, and the rule gained a third legitimate form — HISTORICAL,
 for past-tense narration — so the exception is stated rather than unexplained.
 
+### 2026-08-28 — close review round 3: BR-1's fix was three-quarters done
+
+**BR-14 is BR-1 again, in the one branch I left position-only.** Three of the
+four causes became positive signatures; `headword-pronunciation` stayed
+`i < headwordBlockBytes`, which tests POSITION rather than shape and therefore
+claims any stray stress in the first 128 bytes. The reviewer probed the exact
+consequence: `| AmE ˈhəndrəd, BrE ˈhʌndrəd |` and
+`| AmE ˈlabrəˌtôrē, BrE ləˈbɒrət(ə)ri |` both classified as
+headword-pronunciation.
+
+**And my own test passed for the wrong reason.** It used `brent` — a
+MONOSYLLABLE, carrying no stress mark — so it reached the residue through the
+pipe branch while every polysyllabic form of the same shape was being absorbed.
+Luck, not design.
+
+**Worse, that falsified the promise I had just written for BR-5.** The comment
+above `curated` tells the next person that re-adding a British dictionary will
+surface as `unclassified`. For any word longer than one syllable it would not
+have.
+
+Fixed with the real signature, read off the captured data: NOAD collapses a
+headword pronunciation into a PARENTHESISED group — `(aˈhəndrədzˈhəndrəd/)` —
+while the dual-locale form is pipe-delimited with `AmE`/`BrE` labels.
+`stressIsParenthesised` scans outward in the stripped space rather than matching
+a window, so it cannot be satisfied by a parenthesis belonging to another span.
+Both probed cases now reach the residue and are permanent test rows.
+
+**BR-4's residue: I marked the breakdown and missed a second statement of the
+same number** in the Limits entry, where `strings.Contains` could not see it. The
+doc-sync now counts markers against values, so an unmarked or stale second
+occurrence fails — mutation-verified.
+
+**BR-7's residue: `stressWindow` was a fourth copy of the oracle's windowing**
+with a different radius, and the exemplar test still spelled the disjunction by
+hand. One `strayStressWindow(out, i, radius)` now, and `rawNotationNear`
+everywhere.
+
+**The live population is unchanged through all of it** — 7 / 7 / 8 / 4,
+unclassified 0, over 70,886 entries — which is the point: the numbers were right
+before, and only now are they earned by predicates that could have said
+otherwise.
+
