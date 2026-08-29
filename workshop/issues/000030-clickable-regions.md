@@ -66,7 +66,7 @@ untouched here: a click is opt-in by construction.
 | dictionary | notation | evidence |
 |---|---|---|
 | English NOAD | **always** | `potassium \| pəˈtasēəm \|` |
-| Spanish Larousse `es>es` | **never** | `madrugar`, `casa`, `cazar` carry no `\| … \|`; `TestSpanishEntriesCarryNoPronunciationNotation` asserts it over the whole corpus |
+| Spanish Larousse `es>es` | **never** | `madrugar`, `casa`, `cazar` carry no `\| … \|`; `TestNonEnglishEntriesCarryNoPronunciationNotation` asserts it over the whole corpus |
 | French / Italian / German | **unknown** | unmeasurable today — see below |
 
 Spanish has no notation because its orthography is phonemic: the dictionary has

@@ -1179,7 +1179,7 @@ American *seseo*, where both are /s/. Choosing one chooses which sound system th
 learner acquires. It matters more for Spanish than for English because Spanish
 orthography is phonemic, so the dictionary writes **no notation at all** — the
 recording is the only place that information exists.
-`TestSpanishEntriesCarryNoPronunciationNotation` pins that as expected rather than
+`TestNonEnglishEntriesCarryNoPronunciationNotation` pins that as expected rather than
 a gap, and its sibling pins the scope: a Spanish word in an ENGLISH entry does
 carry notation, four anglicised pronunciations for `jalapeño`.
 

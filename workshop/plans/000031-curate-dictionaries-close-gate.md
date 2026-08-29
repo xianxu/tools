@@ -173,6 +173,104 @@ rounds:
           family: one-predicate-two-spellings
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-29T13:26:29-07:00"
+      agent: claude
+      dispose:
+        - id: BR-2
+          disposition: addressed
+          note: TestDocsNameEveryCuratedLanguage now loops README + atlas (verified red on the atlas row), and the own-language table gained its cross-check (verified red).
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: 'Measured at HEAD: renaming the README bullet label to "- **Itaian** —" still passes, because the same bullet''s next sentence says "Italian"; the word-boundary change only closed the "Italiano" near-miss.'
+          round: 3
+        - id: BR-7
+          disposition: addressed
+          note: TestEveryCuratedLanguageHasACorpus now goes through loadFakeDictionary, which also rejects zero-byte fixtures.
+          round: 3
+        - id: BR-8
+          disposition: addressed
+          note: Blank line present before "## Source pronunciation"; a new double-blank appeared four lines earlier (raised as doc-formatting).
+          round: 3
+        - id: BR-9
+          disposition: addressed
+          note: Task 5's Files line now names the files that actually changed, and the Revisions entry records why the comment fix was not performed.
+          round: 3
+        - id: BR-10
+          disposition: not-addressed
+          note: Five of six sites verified red on removal; site 6 is half-closed — replacing langHelp's body with the stale literal "en, es" and dropping the three imports leaves go test ./... fully green (measured), which is the exact regression the finding described.
+          round: 3
+        - id: BR-11
+          disposition: addressed
+          note: The subsumed test is deleted with a tombstone, and TestRenderLosesNothing verifiably emits en/es/it subtests.
+          round: 3
+      findings:
+        - id: BR-12
+          severity: Important
+          title: the rename/deletion this round performed never got its retiredSymbolNames row, so the atlas and the plan name tests the tree does not declare
+          detail: |-
+            atlas/define.md:1181 names TestSpanishEntriesCarryNoPronunciationNotation (renamed to
+            TestNonEnglishEntriesCarryNoPronunciationNotation); the plan names it plus the deleted
+            TestRenderLosesNothingInEveryCapturedLanguage and a TestItalianEntriesCarryNoPronunciationNotation
+            that never existed. Measured: adding the two rows to retiredSymbolNames
+            (repo_guard_test.go:719) turns TestNoArtifactNamesARetiredSymbol red on atlas/define.md and
+            twice on the plan. The map's own comment records this human half failing once before (#27),
+            so the rule to build is mechanical: derive removed func declarations from the review window
+            with git — TestPlanTableStatusMatchesTheChangeWindow already shells to git in this file — and
+            require either a retiredSymbolNames row or zero current-truth mentions.
+          family: retired-symbol-unswept
+          round: 3
+        - id: BR-13
+          severity: Important
+          title: the class is still enforced per-site; two hand-written enumerations remain and the mechanism should be one surface registry
+          detail: |-
+            This is the 5th finding in this family, so do NOT patch the two sites. Shadow-sweep at HEAD:
+            nine consumers of curated, seven enforced. Unenforced — (a) the {es,it} table in
+            TestNonEnglishEntriesCarryNoPronunciationNotation (render_test.go:366), which is a
+            language-keyed table with no cross-check, so #34 can curate fr and gain no row; (b) the doc
+            list {README, atlas} spelled three times (dictselect_test.go:515, doc_sync_test.go:125, :142),
+            so a third doc is covered only by whichever test its author remembered. Rule: curated gets ONE
+            registry of surfaces obliged to name every curated language, and each row supplies the
+            surface's TEXT (README span, atlas span, langHelp) so the assertion is "every curated language
+            appears in that text" — which makes replacing a derivation with a literal fail, the gap BR-10
+            leaves open. Language-keyed predicate tables get a cross-check with an EXPLICIT exempt list,
+            because German's Duden field is real and an IPA=="" row for de would be wrong; today "no row"
+            and "deliberately no row" are indistinguishable. ARCH-PURPOSE, ARCH-DRY.
+          family: curated-consumer-unpinned
+          round: 3
+        - id: BR-14
+          severity: Minor
+          title: the per-captured-language sweep harness is now spelled three times, two of them new in this diff
+          detail: |-
+            This is the 4th finding in this family, so the fix is the helper, not the site. Measured
+            prevalence: invariant_test.go:170, render_test.go:242, render_test.go:326 all read
+            `for lang := range capturedLanguages(t) { t.Run(string(lang), func(t){ xIn(t, testDictFor(t, lang)) }) }`.
+            One forEachCapturedLanguage(t, func(*testing.T, *fakeDictionary)) collapses all three, and a
+            fourth sweep then cannot be written narrower than the corpus by accident.
+          family: one-predicate-two-spellings
+          round: 3
+        - id: BR-15
+          severity: Minor
+          title: atlas/define.md:1269-1270 has a double blank line and a raggedly re-wrapped paragraph
+          detail: |-
+            This is the 2nd finding in this family (BR-8 was a missing blank line before a heading), so
+            state the rule rather than patching the line: nothing in the repo checks markdown block
+            spacing or wrap in atlas/ and README.md, and both instances were introduced by hand-editing
+            prose. Either run a markdown formatter over the touched docs as part of the boundary, or
+            accept the class explicitly. Also at :1288 the ragged rewrap left "…held five. The live /
+            ratchet in live_property_test.go…".
+          family: doc-formatting
+          round: 3
+        - id: BR-16
+          severity: Minor
+          title: dictselect_test.go:475 wraps a single t.Errorf in a bare block instead of inverting the guard
+          detail: |-
+            `if err == nil && len(d.entries) > 0 { return }` followed by `{ t.Errorf(...) }` reads as
+            `if err != nil || len(d.entries) == 0 { t.Errorf(...) }`.
+          family: redundant-syntax
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#31 (boundary-review)
@@ -271,12 +369,66 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   Spanish captures were never run through the parser and renderer at all", which this round
   made false. Enumerated at HEAD: this is the only site.
 
+## Round 3 — 2026-08-29T13:26:29-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-2 — addressed — TestDocsNameEveryCuratedLanguage now loops README + atlas (verified red on the atlas row), and the own-language table gained its cross-check (verified red).
+- BR-6 — not-addressed — Measured at HEAD: renaming the README bullet label to "- **Itaian** —" still passes, because the same bullet's next sentence says "Italian"; the word-boundary change only closed the "Italiano" near-miss.
+- BR-7 — addressed — TestEveryCuratedLanguageHasACorpus now goes through loadFakeDictionary, which also rejects zero-byte fixtures.
+- BR-8 — addressed — Blank line present before "## Source pronunciation"; a new double-blank appeared four lines earlier (raised as doc-formatting).
+- BR-9 — addressed — Task 5's Files line now names the files that actually changed, and the Revisions entry records why the comment fix was not performed.
+- BR-10 — not-addressed — Five of six sites verified red on removal; site 6 is half-closed — replacing langHelp's body with the stale literal "en, es" and dropping the three imports leaves go test ./... fully green (measured), which is the exact regression the finding described.
+- BR-11 — addressed — The subsumed test is deleted with a tombstone, and TestRenderLosesNothing verifiably emits en/es/it subtests.
+
+### Raised
+
+- **BR-12** [Important] `retired-symbol-unswept` the rename/deletion this round performed never got its retiredSymbolNames row, so the atlas and the plan name tests the tree does not declare
+  atlas/define.md:1181 names TestSpanishEntriesCarryNoPronunciationNotation (renamed to
+  TestNonEnglishEntriesCarryNoPronunciationNotation); the plan names it plus the deleted
+  TestRenderLosesNothingInEveryCapturedLanguage and a TestItalianEntriesCarryNoPronunciationNotation
+  that never existed. Measured: adding the two rows to retiredSymbolNames
+  (repo_guard_test.go:719) turns TestNoArtifactNamesARetiredSymbol red on atlas/define.md and
+  twice on the plan. The map's own comment records this human half failing once before (#27),
+  so the rule to build is mechanical: derive removed func declarations from the review window
+  with git — TestPlanTableStatusMatchesTheChangeWindow already shells to git in this file — and
+  require either a retiredSymbolNames row or zero current-truth mentions.
+- **BR-13** [Important] `curated-consumer-unpinned` the class is still enforced per-site; two hand-written enumerations remain and the mechanism should be one surface registry
+  This is the 5th finding in this family, so do NOT patch the two sites. Shadow-sweep at HEAD:
+  nine consumers of curated, seven enforced. Unenforced — (a) the {es,it} table in
+  TestNonEnglishEntriesCarryNoPronunciationNotation (render_test.go:366), which is a
+  language-keyed table with no cross-check, so #34 can curate fr and gain no row; (b) the doc
+  list {README, atlas} spelled three times (dictselect_test.go:515, doc_sync_test.go:125, :142),
+  so a third doc is covered only by whichever test its author remembered. Rule: curated gets ONE
+  registry of surfaces obliged to name every curated language, and each row supplies the
+  surface's TEXT (README span, atlas span, langHelp) so the assertion is "every curated language
+  appears in that text" — which makes replacing a derivation with a literal fail, the gap BR-10
+  leaves open. Language-keyed predicate tables get a cross-check with an EXPLICIT exempt list,
+  because German's Duden field is real and an IPA=="" row for de would be wrong; today "no row"
+  and "deliberately no row" are indistinguishable. ARCH-PURPOSE, ARCH-DRY.
+- **BR-14** [Minor] `one-predicate-two-spellings` the per-captured-language sweep harness is now spelled three times, two of them new in this diff
+  This is the 4th finding in this family, so the fix is the helper, not the site. Measured
+  prevalence: invariant_test.go:170, render_test.go:242, render_test.go:326 all read
+  `for lang := range capturedLanguages(t) { t.Run(string(lang), func(t){ xIn(t, testDictFor(t, lang)) }) }`.
+  One forEachCapturedLanguage(t, func(*testing.T, *fakeDictionary)) collapses all three, and a
+  fourth sweep then cannot be written narrower than the corpus by accident.
+- **BR-15** [Minor] `doc-formatting` atlas/define.md:1269-1270 has a double blank line and a raggedly re-wrapped paragraph
+  This is the 2nd finding in this family (BR-8 was a missing blank line before a heading), so
+  state the rule rather than patching the line: nothing in the repo checks markdown block
+  spacing or wrap in atlas/ and README.md, and both instances were introduced by hand-editing
+  prose. Either run a markdown formatter over the touched docs as part of the boundary, or
+  accept the class explicitly. Also at :1288 the ragged rewrap left "…held five. The live /
+  ratchet in live_property_test.go…".
+- **BR-16** [Minor] `redundant-syntax` dictselect_test.go:475 wraps a single t.Errorf in a bare block instead of inverting the guard
+  `if err == nil && len(d.entries) > 0 { return }` followed by `{ t.Errorf(...) }` reads as
+  `if err != nil || len(d.entries) == 0 { t.Errorf(...) }`.
+
 ## Open findings
 
-- **BR-2** [Important] `curated-consumer-unpinned` TestDocsNameEveryCuratedLanguage pins README only; the atlas table this diff added is unchecked
 - **BR-6** [Minor] `curated-consumer-unpinned` the README guard is free-text containment inside the span, so a broken bullet label survives
-- **BR-7** [Minor] `one-predicate-two-spellings` TestEveryCuratedLanguageHasACorpus re-globs instead of calling loadFakeDictionary
-- **BR-8** [Minor] `doc-formatting` atlas/define.md:1301 has no blank line before the "## Source pronunciation" heading
-- **BR-9** [Minor] `plan-table-drifts-from-code` Task 5's Files line names doc_sync_test.go and dict_fake_test.go, neither of which changed
 - **BR-10** [Important] `curated-consumer-unpinned` the class was declared closed in 19b5ea1 but the enumeration was never written; six sites remain, two wrong today
-- **BR-11** [Minor] `one-predicate-two-spellings` the widened strong invariant subsumes TestRenderLosesNothingInEveryCapturedLanguage, whose comment is now false
+- **BR-12** [Important] `retired-symbol-unswept` the rename/deletion this round performed never got its retiredSymbolNames row, so the atlas and the plan name tests the tree does not declare
+- **BR-13** [Important] `curated-consumer-unpinned` the class is still enforced per-site; two hand-written enumerations remain and the mechanism should be one surface registry
+- **BR-14** [Minor] `one-predicate-two-spellings` the per-captured-language sweep harness is now spelled three times, two of them new in this diff
+- **BR-15** [Minor] `doc-formatting` atlas/define.md:1269-1270 has a double blank line and a raggedly re-wrapped paragraph
+- **BR-16** [Minor] `redundant-syntax` dictselect_test.go:475 wraps a single t.Errorf in a bare block instead of inverting the guard

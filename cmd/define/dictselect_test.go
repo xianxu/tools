@@ -483,70 +483,118 @@ func TestEveryCuratedLanguageHasACorpus(t *testing.T) {
 	}
 }
 
-// The README names every curated language, or it goes stale the way the atlas
-// command table did — three of five commands listed, the two missing being the
-// two most recently added (#29).
+// derivedDocs is the doc set that consumes code-owned strings, named ONCE.
 //
-// NOT a generated span, and that is a decision. `TestDocsQuoteTheCommandList`
-// can generate because `commands` owns the strings the doc prints; `curated`
-// owns bundle IDENTIFIERS while the README names book TITLES ("Larousse
-// Diccionario General"), and nothing maps one to the other. The three ways out
-// were: add a title field to `curated`, replace the prose with an identifier
-// table, or pin the LANGUAGES. The first puts a display string into production
-// data to serve a doc test and changes the shape every consumer of `curated`
-// reads; the second makes a friendly paragraph unfriendly. The drift actually
-// worth catching is a language curated but undocumented, and that is this.
+// It was spelled three times — here and twice in doc_sync_test.go — so a third
+// document is covered only by whichever test its author happened to remember.
+var derivedDocs = []string{"../../README.md", "../../atlas/define.md"}
+
+// curatedSurface is one place obliged to name every curated language, plus how
+// that place SPELLS a language: the docs write "Italian", the flag help writes
+// "it".
+type curatedSurface struct {
+	what  string
+	text  func(t *testing.T) string
+	token func(store.Lang) string
+}
+
+// langCode and langName are the two spellings a surface can use.
 //
-// The code→name map lives HERE rather than in production because it is a fact
-// about English prose, not about the dictionaries.
+// The name map lives in the TEST because it is a fact about English prose, not
+// about the dictionaries — `curated` holds identifiers and has no business
+// carrying display strings.
+func langCode(l store.Lang) string { return string(l) }
+
+func langName(l store.Lang) string {
+	switch l {
+	case "en":
+		return "English"
+	case "es":
+		return "Spanish"
+	case "it":
+		return "Italian"
+	}
+	return "" // unknown: reported as a missing name rather than silently passing
+}
+
+// curatedSurfaces is THE registry, and the only hand-written list left in this
+// family: "which surfaces exist". Everything else ranges over it.
 //
-// SCOPED TO A MARKED SPAN, not to the whole file. Free-text containment passed
-// the moment it was written, and for the wrong reason: #29 had left the sentence
-// "Italian and Japanese have no recordings in this CDN generation" in the -pron
-// section, so the README "named Italian" while its dictionary paragraph still
-// listed two languages. A check satisfied by an unrelated sentence certifies
-// nothing — the class internal/conformance/guard_test.go records four rounds of.
-func TestDocsNameEveryCuratedLanguage(t *testing.T) {
-	names := map[store.Lang]string{"en": "English", "es": "Spanish", "it": "Italian"}
-	// EVERY doc that enumerates the languages, not the first one wired up. The
-	// atlas gained a dictionary table in the same diff as the README paragraph
-	// and it was unchecked — which is the half-fix this family keeps producing,
-	// and the reason TestDocsQuoteTheLocaleHelp covers two files rather than one.
-	for _, doc := range []string{"../../README.md", "../../atlas/define.md"} {
-		raw, err := os.ReadFile(doc)
-		if err != nil {
-			t.Fatalf("%s unreadable: %v", doc, err)
-		}
-		_, rest, ok := strings.Cut(string(raw), "<!-- curated-languages -->")
-		if !ok {
-			t.Errorf("%s has no <!-- curated-languages --> span; the paragraph that lists the "+
-				"books is what must name every curated language, and an unmarked one cannot "+
-				"be checked", doc)
-			continue
-		}
-		span, _, ok := strings.Cut(rest, "<!-- /curated-languages -->")
-		if !ok {
-			t.Errorf("%s opens <!-- curated-languages --> and never closes it", doc)
-			continue
-		}
-		for lang := range curated {
-			name, ok := names[lang]
-			if !ok {
-				t.Errorf("curated has %s but this test has no English name for it — add the "+
-					"row here and the language to the docs, which is the pair this test "+
-					"keeps together", lang)
-				continue
+// Five rounds of `curated-consumer-unpinned` findings got here. Each earlier
+// round fixed the sites it could see, and the next round found more — because
+// the enforcement was per-site, so a new surface was pinned only if its author
+// remembered to write a test. With a registry, a new surface is a row and the
+// assertion already exists.
+func curatedSurfaces() []curatedSurface {
+	return []curatedSurface{
+		{
+			// This row is what pins langHelp's DERIVATION. The flagset test pins
+			// its DELIVERY — that run() passes it rather than a literal — and the
+			// two are different: replacing langHelp's body with a hardcoded
+			// "en, es" keeps delivery green and fails here.
+			what:  "the -lang flag help (langHelp)",
+			text:  func(*testing.T) string { return langHelp },
+			token: langCode,
+		},
+		{
+			what:  "README.md's curated-languages span",
+			text:  func(t *testing.T) string { return markedSpan(t, "../../README.md", "curated-languages") },
+			token: langName,
+		},
+		{
+			what:  "atlas/define.md's curated-languages span",
+			text:  func(t *testing.T) string { return markedSpan(t, "../../atlas/define.md", "curated-languages") },
+			token: langName,
+		},
+	}
+}
+
+// markedSpan returns the text between <!-- name --> and <!-- /name -->.
+//
+// SCOPED, not whole-file: free-text containment over a README passes for the
+// wrong reason — #29 had left "Italian and Japanese have no recordings" in an
+// unrelated section, which satisfied an earlier version of this check while the
+// dictionary paragraph still listed two languages.
+func markedSpan(t *testing.T, doc, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatalf("%s unreadable: %v", doc, err)
+	}
+	_, rest, ok := strings.Cut(string(b), "<!-- "+name+" -->")
+	if !ok {
+		t.Fatalf("%s has no <!-- %s --> span; an unmarked paragraph cannot be checked", doc, name)
+	}
+	span, _, ok := strings.Cut(rest, "<!-- /"+name+" -->")
+	if !ok {
+		t.Fatalf("%s opens <!-- %s --> and never closes it", doc, name)
+	}
+	return span
+}
+
+// Every registered surface names every curated language.
+//
+// ONE assertion over the registry, replacing three per-site tests. Word-boundary
+// rather than Contains, because "Italiano" contains "Italian" and a renamed row
+// passed the substring version — a check a near-miss satisfies is the same
+// defect as one an unrelated sentence satisfies.
+func TestEverySurfaceNamesEveryCuratedLanguage(t *testing.T) {
+	for _, surface := range curatedSurfaces() {
+		t.Run(surface.what, func(t *testing.T) {
+			text := surface.text(t)
+			for lang := range curated {
+				token := surface.token(lang)
+				if token == "" {
+					t.Errorf("curated has %s but this test has no spelling for it — add it to "+
+						"langName, which is the pair that keeps the docs and the map together", lang)
+					continue
+				}
+				if !regexp.MustCompile(`\b` + regexp.QuoteMeta(token) + `\b`).MatchString(text) {
+					t.Errorf("%s never names %s (%s), which production curates %v for — a "+
+						"reader cannot discover a language the surface omits",
+						surface.what, token, lang, curated[lang])
+				}
 			}
-			// WORD-BOUNDARY, not Contains. "Italiano" contains "Italian", so a
-			// renamed or mistyped row passed — the close review reproduced it.
-			// A check a near-miss satisfies is the same defect as one an
-			// unrelated sentence satisfies, which is what scoped this test to a
-			// span in the first place.
-			if !regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(span) {
-				t.Errorf("%s's marked span never names %s (%s), which production curates %v "+
-					"for — a reader cannot discover a language the docs omit",
-					doc, name, lang, curated[lang])
-			}
-		}
+		})
 	}
 }

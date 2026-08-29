@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -362,8 +363,19 @@ func wrappedLosesNothingIn(t *testing.T, d *fakeDictionary) {
 // different case with real notation — NOAD gives `jalapeño` four anglicised
 // pronunciations — and conflating the two is how "Spanish has no notation"
 // becomes wrong. The English half is asserted below.
+// notationExempt names languages whose dictionary DOES write pronunciation, so a
+// missing row below is distinguishable from a deliberate absence.
+//
+// Without it, "this language has no row" and "this language must not have a row"
+// look identical, and #34 would add German — whose Duden field is REAL
+// (`Wạsser`, `ˈkatsə, Kạtze`) — to a table asserting the opposite. The value is
+// the reason, because a bare set would answer "which" and not "why".
+var notationExempt = map[store.Lang]string{
+	"en": "NOAD writes IPA for every entry; English is the baseline the others are contrasted with",
+}
+
 func TestNonEnglishEntriesCarryNoPronunciationNotation(t *testing.T) {
-	for _, tc := range []struct {
+	rows := []struct {
 		lang store.Lang
 		// why says what a failure MEANS for this language. The two languages
 		// reach the same zero for different reasons, and a shared message would
@@ -388,7 +400,26 @@ func TestNonEnglishEntriesCarryNoPronunciationNotation(t *testing.T) {
 				"breaks as pronunciation. Measured 0 of 15 against the live dictionary before " +
 				"the corpus was captured",
 		},
-	} {
+	}
+	// EVERY curated language is either a row or exempt, with its reason. Fifth
+	// instance of the family: a language-keyed table that does not range over
+	// `curated` silently gains no row when a language is curated.
+	for lang := range curated {
+		if _, exempt := notationExempt[lang]; exempt {
+			continue
+		}
+		if !slices.ContainsFunc(rows, func(r struct {
+			lang store.Lang
+			why  string
+		}) bool {
+			return r.lang == lang
+		}) {
+			t.Errorf("production curates %v for %s, and it is neither a row here nor in "+
+				"notationExempt — so nothing states whether that dictionary writes "+
+				"pronunciation, which is the fact #30 reads", curated[lang], lang)
+		}
+	}
+	for _, tc := range rows {
 		t.Run(string(tc.lang), func(t *testing.T) {
 			d := testDictFor(t, tc.lang)
 			if len(d.entries) == 0 {
