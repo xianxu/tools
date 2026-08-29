@@ -221,8 +221,12 @@ back into a running `define`. Terminal.app does not support them at all.
       but lossy. Curating fr/de turned out NOT to be a precondition, and is
       `#34`.
 - [ ] Blocked on `#35`, so the click is a wrapper over an existing gesture.
-- [ ] MEASURE the wheel-capture fact above before sizing the scroll model.
-- [ ] Design via `sdlc start-plan`.
+- [x] MEASURE the wheel-capture fact — NOT NEEDED, and the plan records why: the
+      alternate screen has no scrollback, so there is no offset define does not
+      own. The wheel survives as a UX question, not a correctness one.
+- [x] Design via `sdlc start-plan`. Plan:
+      `workshop/plans/000030-clickable-regions-plan.md` (M1 the screen layer,
+      M2 the clicks; two boundaries, one publish).
 
 ## Log
 
