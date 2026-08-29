@@ -109,12 +109,12 @@ Argued from measurement taken 2026-08-28/29. Full evidence in `workshop/issues/0
 
 and **refuse** `adviser`/`advisor`, `converter`/`convertor` (different letters), `cauldron`/`caldron` (length), `naive`/`naïveness` (derivative), `jalapeño`/`jalapeño pepper` (compound), every phrase, and an identical string.
 
-- [ ] **Step 1:** write the table test over both lists above, plus the empty-string and identical-string cells.
-- [ ] **Step 2:** run `go test ./cmd/define -run TestDiacriticsOnly -v` — FAIL, undefined.
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** add the **malformed-input class**, which the table does not reach. This predicate runs over arbitrary NOAD gloss text, so it must not panic or misbehave on invalid UTF-8, lone surrogates, combining marks arriving decomposed (`e` + U+0301, which is length-2 against a length-1 `é` and must simply return false, not crash), zero-width joiners, or a multi-KB gloss. A short `testing/quick` or fuzz target over random byte strings asserting only "returns, and is symmetric in neither argument's absence" is enough; the point is the crash class, not more equality cases.
-- [ ] **Step 5:** `go test ./cmd/define -run 'TestDiacriticsOnly|FuzzDiacritics' -v` — PASS.
-- [ ] **Step 6:** commit — `#29: the same word in another dress — the diacritic test`
+- [x] **Step 1:** write the table test over both lists above, plus the empty-string and identical-string cells.
+- [x] **Step 2:** run `go test ./cmd/define -run TestDiacriticsOnly -v` — FAIL, undefined.
+- [x] **Step 3:** implement.
+- [x] **Step 4:** add the **malformed-input class**, which the table does not reach. This predicate runs over arbitrary NOAD gloss text, so it must not panic or misbehave on invalid UTF-8, lone surrogates, combining marks arriving decomposed (`e` + U+0301, which is length-2 against a length-1 `é` and must simply return false, not crash), zero-width joiners, or a multi-KB gloss. A short `testing/quick` or fuzz target over random byte strings asserting only "returns, and is symmetric in neither argument's absence" is enough; the point is the crash class, not more equality cases.
+- [x] **Step 5:** `go test ./cmd/define -run 'TestDiacriticsOnly|FuzzDiacritics' -v` — PASS.
+- [x] **Step 6:** commit — `#29: the same word in another dress — the diacritic test`
 
 ---
 
@@ -139,11 +139,11 @@ cafe → Blocks[0]{POS:"", Senses:[{Number:"", Gloss:"(also café)"}]}
 
 A `CutPrefix` + `Cut(rest, ")")` reads only the first and passes only because the diacritic one happens to be written first. **The reversed order — measured to parse as `"(also naïveness) (also naïve)"` — would read `naïveness`, fail the diacritic test, and return nothing, silently dropping the source spelling.** Scan the whole gloss.
 
-- [ ] **Step 1:** write the table test: `cafe`→`[café]`; `jalapeño`+`(also jalapeño pepper)`→`nil`; `adviser`+`(also advisor)`→`nil`; no parenthetical→`nil`; **and both orderings of the two-parenthetical `naive` gloss, each →`[naïve]`** — the second is the one that fails a first-match implementation.
-- [ ] **Step 2:** run — FAIL, undefined.
-- [ ] **Step 3:** implement, scanning every `(also …)` in each gloss.
-- [ ] **Step 4:** `go test ./cmd/define` — PASS, package still green.
-- [ ] **Step 5:** commit — `#29: every alternative in a gloss, not the first one`
+- [x] **Step 1:** write the table test: `cafe`→`[café]`; `jalapeño`+`(also jalapeño pepper)`→`nil`; `adviser`+`(also advisor)`→`nil`; no parenthetical→`nil`; **and both orderings of the two-parenthetical `naive` gloss, each →`[naïve]`** — the second is the one that fails a first-match implementation.
+- [x] **Step 2:** run — FAIL, undefined.
+- [x] **Step 3:** implement, scanning every `(also …)` in each gloss.
+- [x] **Step 4:** `go test ./cmd/define` — PASS, package still green.
+- [x] **Step 5:** commit — `#29: every alternative in a gloss, not the first one`
 
 ---
 
@@ -179,11 +179,11 @@ Ordering by "carries a non-ASCII rune" is right 8 times in 8, and saves the `caf
 
 **Why lowercasing must reach the headword-derived spelling:** `Señor_es_es` is a 404 where `señor_es_es` is a 200.
 
-- [ ] **Step 1:** table test over `jalapeno`→`[jalapeño jalapeno]`, `cafe`→`[café cafe]` (non-ASCII first — this cell fails a headword-first implementation), `arrondissement`→`[arrondissement]` (one spelling, no wasted request), `senor` with head `Señor`→`[señor senor]`, and an empty entry→`[ciao]` (an unparseable entry still leaves the typed word).
-- [ ] **Step 2:** run — FAIL, undefined.
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** run — PASS.
-- [ ] **Step 5:** commit — `#29: the source recording is keyed on the source orthography`
+- [x] **Step 1:** table test over `jalapeno`→`[jalapeño jalapeno]`, `cafe`→`[café cafe]` (non-ASCII first — this cell fails a headword-first implementation), `arrondissement`→`[arrondissement]` (one spelling, no wasted request), `senor` with head `Señor`→`[señor senor]`, and an empty entry→`[ciao]` (an unparseable entry still leaves the typed word).
+- [x] **Step 2:** run — FAIL, undefined.
+- [x] **Step 3:** implement.
+- [x] **Step 4:** run — PASS.
+- [x] **Step 5:** commit — `#29: the source recording is keyed on the source orthography`
 
 ---
 
@@ -212,11 +212,11 @@ func (u utterance) spokeSource(from string) bool // membership in sourceCandidat
 
 **Why the fallback exists at all** — source coverage is partial, measured 2026-08-28/29: `hotel_fr_fr` and `debut_fr_fr` are 404 while their `_en_us_` are 200; Italian is absent from this CDN generation entirely (`ciao`, `pizza`, `espresso`, `opera`), as is Japanese (`karaoke`, `tsunami`). Without it those words play nothing.
 
-- [ ] **Step 1:** four tests — (a) an utterance with no source is **byte-identical** to `AudioCandidates(word, session)`, which is the no-regression assertion for every existing caller; (b) every source spelling precedes the session's, and the walk ENDS at the session's recording; (c) `Source == Session` does not double the walk; (d) `spokeSource` is true for a source URL, false for the session's, false for a URL in neither list.
-- [ ] **Step 2:** run — FAIL, undefined.
-- [ ] **Step 3:** implement. `Candidates` allocates a fresh slice — do not `append` onto the slice `sourceCandidates` returned.
-- [ ] **Step 4:** `go test ./cmd/define` — PASS, whole package green.
-- [ ] **Step 5:** commit — `#29: one utterance owns the walk — source first, session as the fallback`
+- [x] **Step 1:** four tests — (a) an utterance with no source is **byte-identical** to `AudioCandidates(word, session)`, which is the no-regression assertion for every existing caller; (b) every source spelling precedes the session's, and the walk ENDS at the session's recording; (c) `Source == Session` does not double the walk; (d) `spokeSource` is true for a source URL, false for the session's, false for a URL in neither list.
+- [x] **Step 2:** run — FAIL, undefined.
+- [x] **Step 3:** implement. `Candidates` allocates a fresh slice — do not `append` onto the slice `sourceCandidates` returned.
+- [x] **Step 4:** `go test ./cmd/define` — PASS, whole package green.
+- [x] **Step 5:** commit — `#29: one utterance owns the walk — source first, session as the fallback`
 
 ---
 
@@ -234,11 +234,11 @@ func (u utterance) spokeSource(from string) bool // membership in sourceCandidat
 
 **Why the report is stderr and late:** it is a record, not ephemeral UI. Announcing it up front would file the claim before the fact — the defect `workshop/lessons.md` records under *"Ephemeral UI vs. a record"*.
 
-- [ ] **Step 1:** three tests covering the whole truth table — (a) source asked for and MISSING: the English recording plays AND stderr names both languages (drive it with `it`/`ciao`, the measured-absent case); (b) source asked for and PRESENT: stderr is **empty**, so the report cannot become noise on every lookup; (c) no source asked for: stderr is empty even though the session's recording is what played.
-- [ ] **Step 2:** run — FAIL, `playAnnounced` does not take an `utterance`.
-- [ ] **Step 3:** implement, and thread `utteranceFor` through all five call sites.
-- [ ] **Step 4:** `go test ./cmd/define`. **`TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed` must pass unchanged** — an ordinary lookup's request list is byte-identical to before. Task 8 is where that name gained its qualifier.
-- [ ] **Step 5:** commit — `#29: report the voice that answered, not the one that was asked for`
+- [x] **Step 1:** three tests covering the whole truth table — (a) source asked for and MISSING: the English recording plays AND stderr names both languages (drive it with `it`/`ciao`, the measured-absent case); (b) source asked for and PRESENT: stderr is **empty**, so the report cannot become noise on every lookup; (c) no source asked for: stderr is empty even though the session's recording is what played.
+- [x] **Step 2:** run — FAIL, `playAnnounced` does not take an `utterance`.
+- [x] **Step 3:** implement, and thread `utteranceFor` through all five call sites.
+- [x] **Step 4:** `go test ./cmd/define`. **`TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed` must pass unchanged** — an ordinary lookup's request list is byte-identical to before. Task 8 is where that name gained its qualifier.
+- [x] **Step 5:** commit — `#29: report the voice that answered, not the one that was asked for`
 
 ---
 
@@ -266,11 +266,11 @@ case pron != "" && oneShot.kind != cmdDefine:
     "define: -pron applies to one lookup; at the prompt use /pron fr"  → exit 2
 ```
 
-- [ ] **Step 1:** tests — (a) `-pron fr` with no word exits 2 and the message NAMES `/pron`; (b) `-pron french` exits 2 via `ParseLang`; (c) end to end against the fake CDN: `-pron fr arrondissement` requests the French path FIRST, `d.lang` is still `en`, and the capturer filed the word in the ENGLISH deck — which is the issue's first Done-when.
-- [ ] **Step 2:** run — FAIL, `flag provided but not defined: -pron`.
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** run — PASS.
-- [ ] **Step 5:** commit — `#29: -pron fr — one lookup in another language, session untouched`
+- [x] **Step 1:** tests — (a) `-pron fr` with no word exits 2 and the message NAMES `/pron`; (b) `-pron french` exits 2 via `ParseLang`; (c) end to end against the fake CDN: `-pron fr arrondissement` requests the French path FIRST, `d.lang` is still `en`, and the capturer filed the word in the ENGLISH deck — which is the issue's first Done-when.
+- [x] **Step 2:** run — FAIL, `flag provided but not defined: -pron`.
+- [x] **Step 3:** implement.
+- [x] **Step 4:** run — PASS.
+- [x] **Step 5:** commit — `#29: -pron fr — one lookup in another language, session untouched`
 
 ---
 
@@ -295,11 +295,11 @@ var pending store.Lang
 if pending != "" { replayInPlace(ctx, d, opt, sess, pending, stdout, stderr) }
 ```
 
-- [ ] **Step 1:** tests — (a) `parsePronArgs` table: bare rejected, two languages rejected, `FR`→`fr`; (b) **the no-mode assertion**, which is D2 and the one that would catch someone "simplifying" this into a session field later: drive the piped loop with `arrondissement`, `/pron fr`, `police` and assert the fake CDN saw `arrondissement_en_us…`, then `arrondissement_fr_fr…`, then `police_en_us…`; (c) `/pron fr` with nothing looked up says so rather than playing silence.
-- [ ] **Step 2:** run — FAIL, undefined.
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** `go test ./cmd/define` — PASS, including the `/help` fixture tests.
-- [ ] **Step 5:** commit — `#29: /pron fr — say it that way once, leave no mode behind`
+- [x] **Step 1:** tests — (a) `parsePronArgs` table: bare rejected, two languages rejected, `FR`→`fr`; (b) **the no-mode assertion**, which is D2 and the one that would catch someone "simplifying" this into a session field later: drive the piped loop with `arrondissement`, `/pron fr`, `police` and assert the fake CDN saw `arrondissement_en_us…`, then `arrondissement_fr_fr…`, then `police_en_us…`; (c) `/pron fr` with nothing looked up says so rather than playing silence.
+- [x] **Step 2:** run — FAIL, undefined.
+- [x] **Step 3:** implement.
+- [x] **Step 4:** `go test ./cmd/define` — PASS, including the `/help` fixture tests.
+- [x] **Step 5:** commit — `#29: /pron fr — say it that way once, leave no mode behind`
 
 ---
 
@@ -321,10 +321,10 @@ if pending != "" { replayInPlace(ctx, d, opt, sess, pending, stdout, stderr) }
 
 Then the atlas gains, in the same section: the source-orthography constraint with the `jalapeño`/`jalapeno` measurement, the `(also …)` filter with the 400-entry survey behind it, and D1's `police_fr_fr` 200 — the row a future reader will want when they wonder why this is not automatic.
 
-- [ ] **Step 1:** add `TestDocsQuoteThePronHelp`, modelled exactly on `TestDocsQuoteTheLocaleHelp`, over both `../../README.md` and `../../atlas/define.md`, pinning `<!-- pron-help -->` + `pronHelp` + `<!-- /pron-help -->`. Run it and watch it FAIL, naming both docs.
-- [ ] **Step 2:** work the table above, top to bottom.
-- [ ] **Step 3:** README flag table, the `/pron` row in the command list, and the `-pron` sentence in `fs.Usage`.
-- [ ] **Step 4: verify the deletions, do not assert them.** `workshop/lessons.md`: a `replace()` on reflowed text is a silent no-op and a commit message is not evidence.
+- [x] **Step 1:** add `TestDocsQuoteThePronHelp`, modelled exactly on `TestDocsQuoteTheLocaleHelp`, over both `../../README.md` and `../../atlas/define.md`, pinning `<!-- pron-help -->` + `pronHelp` + `<!-- /pron-help -->`. Run it and watch it FAIL, naming both docs.
+- [x] **Step 2:** work the table above, top to bottom.
+- [x] **Step 3:** README flag table, the `/pron` row in the command list, and the `-pron` sentence in `fs.Usage`.
+- [x] **Step 4: verify the deletions, do not assert them.** `workshop/lessons.md`: a `replace()` on reflowed text is a silent no-op and a commit message is not evidence.
 
 ```bash
 grep -rn "never a search across languages" cmd/define/     # NOTHING
@@ -335,7 +335,7 @@ grep -c  "pron-help" README.md atlas/define.md             # 1 each
 go test ./cmd/define
 ```
 
-- [ ] **Step 5:** commit — `#29: the tree said one language and no fallback in five places`
+- [x] **Step 5:** commit — `#29: the tree said one language and no fallback in five places`
 
 ---
 
@@ -349,12 +349,12 @@ go test ./cmd/define
 
 Rows to add, each failing with the DECISION it invalidates rather than a URL:
 
-- [ ] `TestCDNStillKeysSourceRecordingsOnTheSourceSpelling` — `jalapeño_es_es` 200 **and** `jalapeno_es_es` not-200. If the second starts answering, `SourceSpellings` is carrying weight it no longer needs.
-- [ ] `TestCDNStillCannotTellALoanwordFromANaturalisedOne` — `police_fr_fr` 200. This is D1's evidence; if it stops answering, the argument against ORIGIN inference weakens and the decision deserves re-opening.
-- [ ] `TestCDNItalianIsStillAbsentFromThisGeneration` — `ciao`, `pizza`, `espresso` all not-200. If Italian arrives, the reporting path stops firing for it and the atlas's limitation note is stale.
-- [ ] `TestCDNFrenchCoverageIsStillPartial` — `hotel`/`debut` 404 on `fr_fr` and 200 on `en_us`. This is why the fallback exists.
-- [ ] **Run the WHOLE suite, unfiltered:** `go test -tags conformance ./cmd/define/ -v`. Not `-run CDN` — that is the filter this task exists to stop trusting.
-- [ ] commit — `#29: pin the measurements the design rests on, live`
+- [x] `TestCDNStillKeysSourceRecordingsOnTheSourceSpelling` — `jalapeño_es_es` 200 **and** `jalapeno_es_es` not-200. If the second starts answering, `SourceSpellings` is carrying weight it no longer needs.
+- [x] `TestCDNStillCannotTellALoanwordFromANaturalisedOne` — `police_fr_fr` 200. This is D1's evidence; if it stops answering, the argument against ORIGIN inference weakens and the decision deserves re-opening.
+- [x] `TestCDNItalianIsStillAbsentFromThisGeneration` — `ciao`, `pizza`, `espresso` all not-200. If Italian arrives, the reporting path stops firing for it and the atlas's limitation note is stale.
+- [x] `TestCDNFrenchCoverageIsStillPartial` — `hotel`/`debut` 404 on `fr_fr` and 200 on `en_us`. This is why the fallback exists.
+- [x] **Run the WHOLE suite, unfiltered:** `go test -tags conformance ./cmd/define/ -v`. Not `-run CDN` — that is the filter this task exists to stop trusting.
+- [x] commit — `#29: pin the measurements the design rests on, live`
 
 ---
 

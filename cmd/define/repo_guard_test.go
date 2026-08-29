@@ -622,8 +622,20 @@ func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 		// RuntimeFiles. Strip a package qualifier that matches the file's own
 		// directory; anything else stays qualified and will not match, which
 		// is correct.
-		if pkg, bare, ok := strings.Cut(name, "."); ok && filepath.Base(filepath.Dir(path)) == pkg {
-			name = bare
+		var recv string
+		if qual, bare, ok := strings.Cut(name, "."); ok {
+			if filepath.Base(filepath.Dir(path)) == qual {
+				name = bare
+			} else {
+				// A TYPE qualifier, the way a reader names a method:
+				// Entry.AlsoSpellings. Same idea as the package one above, and
+				// without it the guard cannot express a method at all — the
+				// receiver sits between `func` and the name, so the bare pattern
+				// below matches `func (e Entry) AlsoSpellings` for a row that says
+				// `AlsoSpellings` and fails one that says which type it is on.
+				// Punishing the more precise row is the wrong way round.
+				recv, name = qual, bare
+			}
 		}
 		src, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
@@ -635,6 +647,12 @@ func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 		// Declared, in any of the forms Go declares things.
 		declared := regexp.MustCompile(`(?m)^(func|type|var|const)\s+(\([^)]*\)\s*)?` +
 			regexp.QuoteMeta(name) + `\b`)
+		if recv != "" {
+			// Pinned to the named receiver, so `Entry.AlsoSpellings` is not
+			// satisfied by some other type happening to have that method.
+			declared = regexp.MustCompile(`(?m)^func\s+\(\w+\s+\*?` +
+				regexp.QuoteMeta(recv) + `\)\s*` + regexp.QuoteMeta(name) + `\b`)
+		}
 		assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
 		// DECLARED or ASSIGNED only. A first version also accepted any
 		// occurrence anywhere in the file, which admitted COMMENTS — and a
