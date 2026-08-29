@@ -81,9 +81,9 @@
 | `acqua` | a domain label (`chim.`) before the gloss |
 | `essere` | the largest entry available — the blob ceiling, so a regression in sense splitting shows up as one giant example |
 
-- [ ] **Step 1:** add `it_words`, `IT_DICT`, `mkdir -p entries/it`, and the capture loop, mirroring the Spanish block — **including the script's closing summary**, whose `echo` counts English and Spanish only and whose `wc -c` line globs `entries/en` and `entries/es`. A summary that under-reports the corpus is how a short capture goes unnoticed, which is the same failure `MIN_BYTES` exists to prevent.
-- [ ] **Step 2:** run `bash cmd/define/testdata/capture.sh` **UNSANDBOXED** — `DCSCopyTextDefinition` returns silence, not an error, without real access to `/System/Library/AssetsV2`, and the script's `MIN_BYTES` floor exists because a directory of empty fixtures makes `TestRenderLosesNothing` vacuously green.
-- [ ] **Step 3:** confirm the corpus actually entered the suites rather than assuming it. Three tests iterate `capturedLanguages`, but only ONE emits a per-language subtest — `TestFixturesMatchLiveDictionary` does `t.Run(string(lang))`; `TestEveryCapturedLanguageLoads` and `TestRenderLosesNothingInEveryCapturedLanguage` iterate inline, so grepping their `-v` output for `/it` returns 0 on a perfectly good capture:
+- [x] **Step 1:** add `it_words`, `IT_DICT`, `mkdir -p entries/it`, and the capture loop, mirroring the Spanish block — **including the script's closing summary**, whose `echo` counts English and Spanish only and whose `wc -c` line globs `entries/en` and `entries/es`. A summary that under-reports the corpus is how a short capture goes unnoticed, which is the same failure `MIN_BYTES` exists to prevent.
+- [x] **Step 2:** run `bash cmd/define/testdata/capture.sh` **UNSANDBOXED** — `DCSCopyTextDefinition` returns silence, not an error, without real access to `/System/Library/AssetsV2`, and the script's `MIN_BYTES` floor exists because a directory of empty fixtures makes `TestRenderLosesNothing` vacuously green.
+- [x] **Step 3:** confirm the corpus actually entered the suites rather than assuming it. Three tests iterate `capturedLanguages`, but only ONE emits a per-language subtest — `TestFixturesMatchLiveDictionary` does `t.Run(string(lang))`; `TestEveryCapturedLanguageLoads` and `TestRenderLosesNothingInEveryCapturedLanguage` iterate inline, so grepping their `-v` output for `/it` returns 0 on a perfectly good capture:
 
 ```bash
 go test -tags conformance ./cmd/define/ -run TestFixturesMatchLiveDictionary -v | grep -c '/it'
@@ -91,7 +91,7 @@ go test -tags conformance ./cmd/define/ -run TestFixturesMatchLiveDictionary -v 
 
   Non-zero, run UNSANDBOXED. For the other two, the honest confirmation is removal: empty `entries/it/` and watch them redden.
 
-- [ ] **Step 4:** do NOT commit yet — see Task 2.
+- [x] **Step 4:** do NOT commit yet — see Task 2.
 
 ---
 
@@ -103,10 +103,10 @@ go test -tags conformance ./cmd/define/ -run TestFixturesMatchLiveDictionary -v 
 
 **The doc comment must be updated, not just the map.** It currently reads *"fr.Multi, it.Devoto-Oli and de.DDDSI are installed here and all strictly monolingual, so each is one line — and each brings its own notation conventions with it."* That sentence is now measured and half wrong: one line is true of the map and false of the reading experience for two of the three. Rewrite it to point at `#34` with the numbers, so the next person to reach for that sentence gets the evidence rather than the invitation.
 
-- [ ] **Step 1:** a `chooseDictionary` unit test — `it` resolves to Devoto-Oli; a metadata set containing only the BILINGUAL `OxfordItalian` (`it>it` AND `en>it`) resolves to **nothing**, which is `monolingualIn` doing its job and the reason "prefer the other Italian book" is not available.
-- [ ] **Step 2:** run it, watch it fail.
-- [ ] **Step 3:** add the row and rewrite the comment.
-- [ ] **Step 4:** run, then commit Tasks 1 and 2 TOGETHER. `TestCaptureScriptUsesTheCuratedDictionaries` errors on a `com.apple.*` in the script that no curated list names AND on a curated identifier the script omits, so either edit alone is a red commit on plain `go test ./cmd/define`.
+- [x] **Step 1:** a `chooseDictionary` unit test — `it` resolves to Devoto-Oli; a metadata set containing only the BILINGUAL `OxfordItalian` (`it>it` AND `en>it`) resolves to **nothing**, which is `monolingualIn` doing its job and the reason "prefer the other Italian book" is not available.
+- [x] **Step 2:** run it, watch it fail.
+- [x] **Step 3:** add the row and rewrite the comment.
+- [x] **Step 4:** run, then commit Tasks 1 and 2 TOGETHER. `TestCaptureScriptUsesTheCuratedDictionaries` errors on a `com.apple.*` in the script that no curated list names AND on a curated identifier the script omits, so either edit alone is a red commit on plain `go test ./cmd/define`.
 
 ---
 
@@ -125,8 +125,8 @@ Make it a table whose row is `{lang, shared word, marker the entry must carry, w
 
 Both halves matter and the second is the one `#23` was built for: the shared word proves selection took effect, and the absence proves an Italian session does not answer an English word from English.
 
-- [ ] **Step 1:** convert to a table, add the `it` row, run under `-tags conformance` **unsandboxed** (it skips where NOAD is unreachable, which is what hid it at all four of `#29`'s gates).
-- [ ] **Step 2:** commit.
+- [x] **Step 1:** convert to a table, add the `it` row, run under `-tags conformance` **unsandboxed** (it skips where NOAD is unreachable, which is what hid it at all four of `#29`'s gates).
+- [x] **Step 2:** commit.
 
 ---
 
@@ -134,12 +134,12 @@ Both halves matter and the second is the one `#23` was built for: the shared wor
 
 **Files:** `atlas/define.md`, `README.md`.
 
-- [ ] **Step 1:** the atlas's dictionary section gains Italian, plus **D3's ratchet gap** — the live raw-notation sweep is English-only, so `es` and now `it` are swept at corpus width only. Stated as a standing limitation with its reason (no host word list), not as a TODO.
-- [ ] **Step 2:** record the notation table `#30` needs, since it was measured here and `#30` reads it: English IPA always; Spanish none; Italian **syllabification, not IPA** (`(cià·o)`); French none; German real but lossy. The last two are `#34`'s, and belong in the atlas anyway because the measurement is done.
-- [ ] **Step 3:** README — `/lang it` in the language prose, and the honest sentence that Italian has **no recordings in this CDN generation**, so a session gives definitions and silence. Per D2 this is documentation, not a runtime claim.
+- [x] **Step 1:** the atlas's dictionary section gains Italian, plus **D3's ratchet gap** — the live raw-notation sweep is English-only, so `es` and now `it` are swept at corpus width only. Stated as a standing limitation with its reason (no host word list), not as a TODO.
+- [x] **Step 2:** record the notation table `#30` needs, since it was measured here and `#30` reads it: English IPA always; Spanish none; Italian **syllabification, not IPA** (`(cià·o)`); French none; German real but lossy. The last two are `#34`'s, and belong in the atlas anyway because the measurement is done.
+- [x] **Step 3:** README — `/lang it` in the language prose, and the honest sentence that Italian has **no recordings in this CDN generation**, so a session gives definitions and silence. Per D2 this is documentation, not a runtime claim.
 
 **The README's book list is a hand-maintained restatement of `curated`** ("In English that is the New Oxford American Dictionary … plus Apple Dictionary … in Spanish it is the Larousse"), and Task 4 would make Italian its third unpinned entry. Do NOT just add a clause — that is the `doc-sweep-incomplete` shape `#29` closed twice, most recently by generating the atlas command table from the `commands` registry. Task 5 does the same here.
-- [ ] **Step 4:** verify the deletions/additions by grep rather than asserting them, then commit.
+- [x] **Step 4:** verify the deletions/additions by grep rather than asserting them, then commit.
 
 ---
 
@@ -149,11 +149,11 @@ Both halves matter and the second is the one `#23` was built for: the shared wor
 
 Four checks the captured directory does NOT give for free. Each is a third instance of a family `#29` closed with a mechanism, so each gets a mechanism.
 
-- [ ] **`TestNoRawPronunciationNotationSurvives` sweeps every captured language** (D3). It takes `testDict(t)` today, so the hard zero it asserts covers English while two committed comments say "the committed corpus". Convert it the way `TestRenderLosesNothingInEveryCapturedLanguage` is written, then **fix both comments** — `capture.sh` and `rawnotation_test.go` — because a corrected test with stale prose beside it is how the next reader is misled.
-- [ ] **The Italian no-IPA sibling** (D4): `testDictFor(t, "it")`, assert `ParseEntry(raw).IPA == ""` across the corpus, beside `TestSpanishEntriesCarryNoPronunciationNotation`. Measured 0/15, and it pins that `isPronunciation` declines `(pìz·za)`.
-- [ ] **`TestDocsNameEveryCuratedLanguage`** (D5): every key in `curated` is named in the README's dictionary paragraph, via a code→name map local to the test. NOT a generated span — see D5 for why `curated` does not gain a title field.
-- [ ] **`TestEveryCuratedLanguageHasACorpus`**: every key in `curated` has a non-empty `testdata/entries/<lang>/`. This is the direction nothing checks — `capturedLanguages` derives from the DIRECTORY and guards only `len(out) >= 2`, so DELETING `entries/it/` leaves `en`+`es` and reddens nothing.
-- [ ] Each verified by removal, per `#29`'s rule: drop the `it` row and both `curated`-derived tests redden; delete `entries/it/` and the corpus guard reddens; empty it and the sweeps redden.
+- [x] **`TestNoRawPronunciationNotationSurvives` sweeps every captured language** (D3). It takes `testDict(t)` today, so the hard zero it asserts covers English while two committed comments say "the committed corpus". Convert it the way `TestRenderLosesNothingInEveryCapturedLanguage` is written, then **fix both comments** — `capture.sh` and `rawnotation_test.go` — because a corrected test with stale prose beside it is how the next reader is misled.
+- [x] **The Italian no-IPA sibling** (D4): `testDictFor(t, "it")`, assert `ParseEntry(raw).IPA == ""` across the corpus, beside `TestSpanishEntriesCarryNoPronunciationNotation`. Measured 0/15, and it pins that `isPronunciation` declines `(pìz·za)`.
+- [x] **`TestDocsNameEveryCuratedLanguage`** (D5): every key in `curated` is named in the README's dictionary paragraph, via a code→name map local to the test. NOT a generated span — see D5 for why `curated` does not gain a title field.
+- [x] **`TestEveryCuratedLanguageHasACorpus`**: every key in `curated` has a non-empty `testdata/entries/<lang>/`. This is the direction nothing checks — `capturedLanguages` derives from the DIRECTORY and guards only `len(out) >= 2`, so DELETING `entries/it/` leaves `en`+`es` and reddens nothing.
+- [x] Each verified by removal, per `#29`'s rule: drop the `it` row and both `curated`-derived tests redden; delete `entries/it/` and the corpus guard reddens; empty it and the sweeps redden.
 
 ---
 
@@ -184,8 +184,15 @@ ls words/                    # it/ appears only after an it lookup
 | 4 | the notation question is measured and recorded | `TestItalianEntriesCarryNoPronunciationNotation` (D4) for the measured half; the cross-language table is dated prose in the atlas | Devoto-Oli starts emitting a parsed IPA |
 | 5 | Italian's audio absence is stated | **REVISED by D2** — documentation, not runtime. No test; the claim is dated prose, and pretending a test pins it would be the over-claim `#29` closed |
 | 6 | the new language does not enter unswept | `TestNoRawPronunciationNotationSurvives`, now over every captured language (D3) | `entries/it/` is emptied. The DICTIONARY-width gap stays open and is stated in D3 rather than papered over |
-| — | the docs name every curated language | `TestDocsNameEveryCuratedLanguage` (D5) | the `it` row is added to `curated` without touching the README |
-| — | a curated language always has a corpus | `TestEveryCuratedLanguageHasACorpus` | `entries/it/` is deleted outright |
+| — | the docs name every curated language | `TestDocsNameEveryCuratedLanguage` (D5) | **Italian is removed from the README span while the `curated` row STAYS** |
+| — | a curated language always has a corpus | `TestEveryCuratedLanguageHasACorpus` | **`entries/it/` is emptied while the `curated` row STAYS** |
+
+**On those last two removals specifically.** The obvious mutation — delete the
+`it` row from `curated` — leaves both tests GREEN, and that is correct
+behaviour, not a hole: uncurating a language removes the obligation, so there is
+nothing left to check. The removal that pins an obligation has to BREAK it, not
+withdraw it. Verified both ways: dropping the row is green, breaking what the row
+obliges is red.
 
 **Close:** single pass, plain checkboxes, no `Mx`.
 
@@ -211,3 +218,20 @@ consumer of `curated` the way the atlas command table became a consumer of
 **PQ-2 and PQ-4** corrected in place: the confirmation command now names tests
 that can produce an `it` subtest, and Task 1 covers `capture.sh`'s closing
 summary, which counts `en` and `es` only.
+
+### 2026-08-29 — implementation notes
+
+- **`TestDocsNameEveryCuratedLanguage` passed the moment it was written**, and
+  for the wrong reason: `#29` had left "Italian and Japanese have no recordings
+  in this CDN generation" in the `-pron` section, so free-text containment over
+  the whole README was satisfied while the dictionary paragraph still listed two
+  languages. Scoped to a `<!-- curated-languages -->` span, it went red until the
+  docs caught up. A check satisfied by an unrelated sentence certifies nothing.
+- **The `capture.sh`/`curated` guard could not express a hyphen.** Its identifier
+  regex was `com\.apple\.[A-Za-z0-9._]+`, so `…it.Devoto-Oli` truncated to
+  `…it.Devoto` and it then reported the pair mismatched in BOTH directions.
+  Latent, not absent: every curated identifier happened to be hyphen-free until
+  this issue, while installed ones (`nl-en.oup`, `zh_TW-en.DrEye`) are not.
+- **Widening `TestNoRawPronunciationNotationSurvives` made two committed comments
+  TRUE** rather than requiring their repair, which is why D3 chose to widen the
+  check rather than narrow the claim.

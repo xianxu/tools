@@ -70,18 +70,18 @@ having; it should not be a surprise.
 
 Scope narrowed to Italian on 2026-08-29 — see `## Revisions`.
 
-- [ ] `/lang it` answers from `it.Devoto-Oli` rather than falling back to NOAD.
-- [ ] A curated book that is NOT installed still degrades loudly, as `#23 M2`'s
+- [x] `/lang it` answers from `it.Devoto-Oli` rather than falling back to NOAD.
+- [x] A curated book that is NOT installed still degrades loudly, as `#23 M2`'s
       three-outcome table requires — adding a row must not turn a missing
       dictionary into a silent English answer.
-- [ ] Italian has a committed fixture corpus, so the parser suite and the
+- [x] Italian has a committed fixture corpus, so the parser suite and the
       no-data-loss invariant cover it rather than covering `en` and `es` and
       claiming more.
-- [ ] Whether these dictionaries carry pronunciation notation is MEASURED and
+- [x] Whether these dictionaries carry pronunciation notation is MEASURED and
       recorded, since `#30` reads that row. **Already done — see Revisions.**
-- [ ] The absence of Italian audio is stated where a learner will meet it, not
+- [x] The absence of Italian audio is stated where a learner will meet it, not
       discovered as silence.
-- [ ] The new language does NOT enter unswept: the live raw-notation ratchet is
+- [x] The new language does NOT enter unswept: the live raw-notation ratchet is
       English-only (`live_property_test.go` walks `/usr/share/dict/words`), so
       either Italian gets a ratchet of its own or the gap is stated as a
       decision rather than left as an oversight.
@@ -180,17 +180,17 @@ Designed. Durable plan: `workshop/plans/000031-curate-dictionaries-plan.md`
 (5 tasks, single pass, no `Mx`).
 
 - [x] Claim, then design via `sdlc start-plan`.
-- [ ] Capture the Italian corpus — words chosen for what they prove, not for
+- [x] Capture the Italian corpus — words chosen for what they prove, not for
       vocabulary, following `capture.sh`'s own convention.
-- [ ] The `curated` row, plus rewriting the doc comment sentence this issue's
+- [x] The `curated` row, plus rewriting the doc comment sentence this issue's
       measurement made half wrong. **Same commit as the capture**, because
       `TestCaptureScriptUsesTheCuratedDictionaries` compares the script against
       `curated` in both directions and either edit alone is red.
-- [ ] Generalise the own-language conformance check to a table rather than
+- [x] Generalise the own-language conformance check to a table rather than
       copying the Spanish one.
-- [ ] Docs: Italian, the ratchet gap D3 leaves open, and the notation table
+- [x] Docs: Italian, the ratchet gap D3 leaves open, and the notation table
       `#30` reads.
-- [ ] The four checks the captured directory does not give for free: sweep the
+- [x] The four checks the captured directory does not give for free: sweep the
       raw-notation assertion over every captured language, pin Italian's absence
       of IPA, and make the README's language list and the corpus's coverage both
       derive from `curated`.
@@ -257,3 +257,40 @@ fabricated, it is *lossy*, and it needs deciding rather than shipping.
   are BILINGUAL (`fr>fr` AND `en>fr`). `monolingualIn` correctly rejects them —
   which is the guard working, and the reason `#34` cannot simply prefer "the
   other French dictionary".
+
+### 2026-08-29 — shipped
+
+`/lang it` answers from the Devoto-Oli. Five tasks, one boundary. Plan:
+`workshop/plans/000031-curate-dictionaries-plan.md`.
+
+**The measurement was the work.** `#29` promised "one line each" for three
+dictionaries; probing them turned that into one line for ONE dictionary and a
+separate issue (`#34`) for the other two, because the parser's POS words and
+section names are English and French/German collapse into a single blob of 2,811
+and 4,404 runes.
+
+**Three latent defects surfaced, each invisible until this issue's data reached
+them:**
+
+1. `TestCaptureScriptUsesTheCuratedDictionaries` matched identifiers with
+   `[A-Za-z0-9._]+` — no hyphen — so `…it.Devoto-Oli` truncated to `…it.Devoto`
+   and it reported the pair mismatched in both directions. Every curated
+   identifier had been hyphen-free until now.
+2. `TestNoRawPronunciationNotationSurvives` swept English while two committed
+   comments called it a hard zero "over the committed corpus". Widened rather
+   than the claim narrowed — measured first, so Italian passes the zero rather
+   than needing an exemption, and both comments became true.
+3. `TestDocsNameEveryCuratedLanguage`, which I wrote for this issue, **passed the
+   moment it existed** — `#29` had left "Italian and Japanese have no recordings"
+   in the `-pron` section, so free-text containment was satisfied while the
+   dictionary paragraph still listed two languages.
+
+**And I mis-verified my own guards once.** For the two `curated`-derived checks I
+removed the `curated` row and found them still green — reading that as unpinned.
+It is not: uncurating a language removes the obligation, so nothing is left to
+check. The removal that pins an obligation must BREAK it, not withdraw it. Both
+redden when the row stays and the README span or the corpus is emptied.
+
+`#34` inherits the French/German measurements, including that `fr.Multi` is
+Québécois and that German's Duden pronunciation field is lossy rather than
+fabricated.
