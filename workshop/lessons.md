@@ -2406,10 +2406,14 @@ Both happened in one session, on top of the four already recorded:
   mutation never survived to the code under test. Put it where the value is
   actually read.
 - **`git checkout <file>` to revert, on an UNCOMMITTED baseline.** This is
-  already in this file, and it happened again anyway — it silently took a fix
-  made ten minutes earlier in the same file. Commit first, then mutate, then
-  restore. The tell is that the revert is *supposed* to be a no-op on everything
-  but the mutation, and it never is.
+  already in this file, and it happened again anyway — twice more in the same
+  session, the second time discarding ~150 lines of guard work written minutes
+  earlier. **Three occurrences in one session, with the rule already written
+  down**, so the rule needs an operational trigger rather than good intentions:
+  *`git checkout` is not a revert tool — it is a "discard everything since the
+  last commit in this file" tool.* Before typing it, `git status --short` the
+  file. Better: commit, THEN mutate, and treat "I want to mutate an uncommitted
+  file" as the signal to commit first, not as a thing to be careful about.
 
 ## Run the chain against the real dependency before believing the probe (define #29)
 
@@ -2441,3 +2445,26 @@ being imprecise:
 The pattern: a double's divergence is invisible until a feature depends on the
 part that diverges. When a new feature makes a previously-ignored value
 load-bearing, **check what the doubles do with that value first.**
+
+## Run the suite the checklist names, not the one you have been running (define #29)
+
+Three close-review rounds ran on `go test ./cmd/define`. The plan's own
+`## Verification before close` says `go test ./...`, and when the reviewer ran
+that it was **RED** — a repo-wide guard (`TestEverySkipIsRoutedOrWaived`) had
+been failing since the previous round on two `t.Skip` sites added in the commit
+that answered it.
+
+Two things generalise:
+
+- **A narrower run is not weaker evidence, it is DIFFERENT evidence.** Package
+  tests cannot see a guard that walks the whole tree, and the guards most worth
+  having are exactly the tree-walking ones.
+- **Evidence has a timestamp.** The `--verified` text was measured before the
+  last two commits, which is the same class as a commit message asserting a
+  deletion: re-run on the FINAL head, after the last fix, not after the round
+  the fixes answered.
+
+Corollary found the hard way: `internal/conformance`'s waiver marker must sit on
+the skip line or within **three lines above it**. A four-line comment block whose
+first line carries the marker does not count, and the failure message does not
+say so.
