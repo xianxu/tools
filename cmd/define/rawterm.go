@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 
@@ -16,6 +17,11 @@ import (
 type rawSession struct {
 	fd    int
 	state *term.State
+	// f is the terminal itself, kept so restore can also leave the alternate
+	// screen. Without it the two guarantees would live in different places and
+	// a Ctrl-C would honour one of them.
+	f   *os.File
+	alt bool
 }
 
 func enterRaw(f *os.File) (*rawSession, error) {
@@ -23,11 +29,18 @@ func enterRaw(f *os.File) (*rawSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &rawSession{fd: int(f.Fd()), state: st}, nil
+	return &rawSession{fd: int(f.Fd()), state: st, f: f}, nil
 }
 
 func (r *rawSession) restore() {
-	if r == nil || r.state == nil {
+	if r == nil {
+		return
+	}
+	// The alternate screen goes FIRST, so the terminal is back on the normal
+	// buffer before raw mode ends — the reverse order leaves a cooked terminal
+	// briefly drawing into a buffer that is about to be discarded.
+	r.leaveAlt()
+	if r.state == nil {
 		return
 	}
 	_ = term.Restore(r.fd, r.state)
@@ -90,4 +103,43 @@ func readKeys(ctx context.Context, r io.Reader, interrupts *interrupter) <-chan 
 		}
 	}()
 	return out
+}
+
+// The alternate screen: one buffer, no scrollback, discarded on exit.
+//
+// #30 takes it so a click's coordinates are exact — with no scrollback there is
+// nothing above the viewport for the terminal to show, so nothing but `screen`
+// can move the view. The session's own history is not lost: it is printed back
+// into the normal buffer on exit (#30 D3), because losing it silently would be a
+// regression a user meets immediately.
+const (
+	altScreenOn  = "\x1b[?1049h"
+	altScreenOff = "\x1b[?1049l"
+)
+
+// enterAlt switches the terminal to the alternate screen.
+//
+// It lives on rawSession, and that placement is the whole point: a terminal left
+// in the alternate screen is as bad an outcome as one left raw — the user's
+// shell keeps working but everything they had scrolled back to is hidden behind
+// a buffer nobody is drawing. rawSession already guarantees restoration from a
+// defer AND on the cancellation path, so folding this in means the guarantee
+// covers both rather than two mechanisms each covering half.
+func (r *rawSession) enterAlt() {
+	if r == nil || r.f == nil || r.alt {
+		return
+	}
+	fmt.Fprint(r.f, altScreenOn)
+	r.alt = true
+}
+
+// leaveAlt returns to the normal screen. Idempotent, for the same reason
+// restore is: it runs from more than one path and claiming a second call is an
+// error would make the paths care about each other.
+func (r *rawSession) leaveAlt() {
+	if r == nil || r.f == nil || !r.alt {
+		return
+	}
+	fmt.Fprint(r.f, altScreenOff)
+	r.alt = false
 }

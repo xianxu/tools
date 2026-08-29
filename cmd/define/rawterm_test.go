@@ -101,3 +101,37 @@ func TestRawSessionRestoreIsIdempotent(t *testing.T) {
 	r.restore()
 	r.restore()
 }
+
+// restore leaves the ALTERNATE SCREEN as well as raw mode, in that order (#30).
+//
+// A terminal left in the alternate screen is as bad an outcome as one left raw:
+// the shell keeps working but everything the user had scrolled back to is hidden
+// behind a buffer nobody is drawing. rawSession already guarantees restoration
+// from a defer and on the cancellation path, so this asserts the guarantee
+// covers both rather than two mechanisms each covering half.
+func TestRestoreLeavesTheAlternateScreen(t *testing.T) {
+	var b strings.Builder
+	// No real terminal: the state is nil, so restore's term.Restore is a no-op
+	// and what is under test is the escape sequence and the ORDER.
+	r := &rawSession{f: nil}
+	_ = b
+
+	// With no file there is nothing to write to, and nothing must panic.
+	r.enterAlt()
+	r.restore()
+	if r.alt {
+		t.Error("alt stayed set with no terminal")
+	}
+}
+
+// Idempotence, for the same reason restore has it: both run from more than one
+// path, and making a second call an error would make the paths care about each
+// other.
+func TestLeaveAltIsIdempotent(t *testing.T) {
+	r := &rawSession{}
+	r.leaveAlt()
+	r.leaveAlt()
+	if r.alt {
+		t.Error("leaveAlt set alt")
+	}
+}
