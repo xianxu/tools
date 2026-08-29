@@ -90,7 +90,9 @@ type Sense struct {
 // NOAD writes "4 the cushion of a pool table: [as modifier] : a bank shot",
 // where "[as modifier]" qualifies the example rather than being part of it.
 // Splitting only on the first ":" left the label and a stray colon inside the
-// quotes on 13.8% of entries. Block.Label already models this concept one level
+// quotes on 13.8% of entries (measured 2026-08-25, before #23 M2 narrowed the
+// dictionary set — a dated reading, not a standing fact). Block.Label already
+// models this concept one level
 // up; this is its counterpart.
 type Example struct {
 	Label string
@@ -532,8 +534,10 @@ func parseSenses(text string) []Sense {
 		// A continuing number is NOT exempt because the sequence proves it — it
 		// does not. Any prose numeral equal to the next expected value is
 		// accepted, which is a real defect: `charge` buries its real sense 2
-		// inside a quoted example. 27 of 70,897 live entries (0.04%) are affected
-		// and the live sweep pins that count.
+		// inside a quoted example. The live sweep pins how many entries this
+		// affects — see knownRawByCause's causeProseNumeral entry, which owns the
+		// number so a comment cannot restate it staler. (This one did: it read
+		// "27 of 70,897" while the measured values were 7 and 70,886.)
 		//
 		// The exemption stands because the alternative is worse: requiring
 		// structural placement for every number regresses senses NOAD genuinely

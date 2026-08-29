@@ -1,12 +1,13 @@
 ---
 id: 000026
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-28
-estimate_hours: 1.22
+estimate_hours: 1.57
 started: 2026-08-28T17:57:39-07:00
+actual_hours: 1.67
 ---
 
 # NOAD ratchet regressed 27 to 32: a British-English pronunciation block renders raw
@@ -115,23 +116,23 @@ absorbed" asks for.
 
 ## Done when
 
-- [ ] The `| AmE … , BrE … |` shape is DISPOSITIONED rather than ticked: recorded
+- [x] The `| AmE … , BrE … |` shape is DISPOSITIONED rather than ticked: recorded
       as unreachable on the curated path — with its positive control — and with
       the condition that resurrects it (a British dictionary entering
       `curated["en"]`) written where the next person adding one will meet it.
-- [ ] The ratchet is re-measured and `knownRawNotationEntries` lowered to the new
+- [x] The ratchet is re-measured and `knownRawNotationEntries` lowered to the new
       true count — not raised to make the test pass.
-- [ ] **The run itself names which group moved.** Each survivor is classified by
+- [x] **The run itself names which group moved.** Each survivor is classified by
       cause and the per-cause counts are reported, so a future 27 does not print
       one number and three samples and send the next person back to raising the
       diagnostic cap by hand — a cost this issue already paid once.
-- [ ] The classifier is testable WITHOUT the live dictionary: one real captured
+- [x] The classifier is testable WITHOUT the live dictionary: one real captured
       exemplar per cause, so the taxonomy is not conformance-only (ARCH-MOCK).
-- [ ] Every measured number in the docs is either DERIVED from a producer with a
+- [x] Every measured number in the docs is either DERIVED from a producer with a
       doc-sync test, or DATED as a measurement — the rule, not the six sites.
       The count has drifted three times, which is this repo's own trigger for
       making a doc a consumer.
-- [ ] The live test's own comment claiming "there is no public API to select
+- [x] The live test's own comment claiming "there is no public API to select
       one" is corrected — untrue since `#23 M2`, and it sits in the file this
       issue edits.
 
@@ -142,15 +143,16 @@ absorbed" asks for.
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
-item: issue-spec               design=0.15 impl=0.05
+item: issue-spec               design=0.15 impl=0.20
 item: smaller-go-module        design=0.05 impl=0.16
 item: smaller-go-module        design=0.05 impl=0.12
 item: smaller-go-module        design=0.05 impl=0.10
+item: real-api-discovery       design=0.00 impl=0.20
 item: cross-cutting-refactor   design=0.05 impl=0.12
 item: atlas-docs               design=0.04 impl=0.06
 item: milestone-review         design=0.00 impl=0.16
 design-buffer: 0.15
-total: 1.22
+total: 1.57
 ```
 
 Derivation notes.
@@ -168,20 +170,30 @@ Derivation notes.
   enumeration surviving inside the block that claims to have replaced hand
   enumerations. Priced as the shape `#24`'s call-site change was, not as a
   one-liner.
-- **`issue-spec` stays 0.15** — the triage, the live enumeration and the positive
-  control were spent before this block existed.
+- **`issue-spec` impl is 0.20, not 0.05, and the correction is the interesting
+  one.** The first block defended 0.05 with "the triage was spent before this
+  block existed" — but `sdlc actual` anchors on the CLAIM commit, and four
+  plan-gate rounds have landed since it. Pre-claim triage is genuinely excluded;
+  post-claim gate iteration is not, and nothing was pricing it. The design half
+  stays 0.15 because the triage really did happen before the claim.
+- **`real-api-discovery` for the live convergence loop**, which nothing covered.
+  The Plan commits `causeUnclassified` to ZERO across the live population, so the
+  classifier must be iterated against 26 survivors it has never run over, at ~51s
+  per unsandboxed cycle against a host-dependent dictionary. That is probing an
+  external system from outside the test suite — this vocabulary's closest
+  primitive — and it is convergence, not the writing the classifier item prices.
 - **One `milestone-review`** at 0.16 rather than the 0.20 ceiling: the diff is a
   test, a fixture directory and doc corrections.
 - Library-availability check: nothing external; no halving applies.
 
-Σdesign 0.39 × 1.15 = 0.4485; Σimpl 0.77; total **1.22**.
+Σdesign 0.39 × 1.15 = 0.4485; Σimpl 1.12; total **1.57**.
 
 ## Plan
 
 Plain checkboxes, one `sdlc close`: one coherent deliverable across a test file,
 a fixture directory and two docs is a single review boundary, not two.
 
-- [ ] **Move the pinned count and the classifier into an UNTAGGED file**
+- [x] **Move the pinned count and the classifier into an UNTAGGED file**
       (`rawnotation_test.go`, package `main`). `live_property_test.go` is
       `//go:build darwin && conformance`, so nothing in the normal suite can see
       `knownRawNotationEntries` today — which is why the atlas cannot consume it
@@ -189,7 +201,7 @@ a fixture directory and two docs is a single review boundary, not two.
       files compile into every build, so one producer then serves three
       consumers: the live ratchet, the classifier's unit test, and the doc-sync
       test below.
-- [ ] **`classifyRawNotation(rendered string) rawCause`** — pure, untagged,
+- [x] **`classifyRawNotation(rendered string) rawCause`** — pure, untagged,
       returning exactly one of a closed set: `causeProseNumeral`,
       `causeHeadwordPronunciation`, `causePhrasePronunciation`,
       `causeLiteralPipe`, `causeUnclassified`.
@@ -201,17 +213,21 @@ a fixture directory and two docs is a single review boundary, not two.
       It must key on BOTH oracles (see the Spec): a pipe-keyed classifier
       mis-handles the stress-mark majority. Risky inputs a table would miss: an
       entry whose content legitimately contains a pipe, and an entry matching two
-      causes at once — hence "exactly one", decided by a stated precedence.
-- [ ] **One real captured exemplar per cause** in `testdata/rawnotation/` —
+      causes at once — hence "exactly one", by this precedence:
+      **stress-mark causes outrank pipe causes.** A stress mark surviving outside
+      a `/…/` span is unambiguously leaked notation; a pipe can be legitimate
+      content (`pipe` defines the character). So an entry firing both is a
+      pronunciation leak that happens to contain a pipe, not the reverse.
+- [x] **One real captured exemplar per cause** in `testdata/rawnotation/` —
       deliberately NOT under `testdata/entries/<lang>/`, which `capturedLanguages`
       walks and over which `TestNoRawPronunciationNotationSurvives` asserts a hard
       zero. Captured through the curated identifiers like every other fixture, so
       the classifier is pinned offline (ARCH-MOCK).
-- [ ] **Lower the pinned count to the measured value** and rewrite its comment
+- [x] **Lower the pinned count to the measured value** and rewrite its comment
       with the four causes.
-- [ ] **Make the derivable numbers CONSUMERS, and DATE the rest.** See the rule
+- [x] **Make the derivable numbers CONSUMERS, and DATE the rest.** See the rule
       below; on the `TestREADMEQuotesThePromptsTheLoopActuallyPrints` precedent.
-- [ ] Re-run the live ratchet unsandboxed; green in BOTH directions.
+- [x] Re-run the live ratchet unsandboxed; green in BOTH directions.
 
 ### The rule this issue is fixing, not the sites
 
@@ -220,7 +236,9 @@ rule. A measured number stated in ANY artifact — a code comment as much as the
 atlas, the README, an issue or a plan — may exist in exactly two forms:
 
 1. **DERIVED** — the doc quotes a value the code owns, and a doc-sync test
-   asserts it. Applies to the pinned raw-notation count and the captured-fixture
+   asserts it. EVERY figure, not just a headline one: marking only the total let
+   a compensating swap (one cause up, another down) keep the whole suite green
+   while two atlas numbers were wrong. Applies to the pinned raw-notation count and the captured-fixture
    count, both of which a producer can supply in the normal suite.
 2. **DATED** — the doc states it as *"measured YYYY-MM-DD: N"*. Applies to the
    live sweep width and the non-Latin count, which only a conformance run against
@@ -228,7 +246,11 @@ atlas, the README, an issue or a plan — may exist in exactly two forms:
    cannot go stale; an undated one reads as a standing fact and drifts silently,
    which is what happened to all four.
 
-Anything that is neither is the defect. That is what makes this a rule rather
+3. **HISTORICAL** — past-tense narration of a number that was true then and is
+   being reported as a past state ("the atlas published 0% while 2.0% of entries
+   were still rendering raw pipes"). A record, in the sense `#23` established.
+
+Anything that is none of the three is the defect. That is what makes this a rule rather
 than a sweep: the atlas's *"every reachable entry — 70,897"* was wrong because it
 was written as a fact, not because nobody re-ran the number.
 
@@ -273,6 +295,21 @@ ATTRIBUTED instead, which is what "attributable rather than absorbed" asks for.
   Must run unsandboxed; takes ~51s over 73502 live entries.
 
 ### 2026-08-28
+- 2026-08-28: closed — Round-3 findings addressed. The classifier now has four positive signatures and none of them is a catch-all.; review verdict: FIX-THEN-SHIP
+
+BR-14 IS BR-1 AGAIN, in the one branch I left position-only. Three causes became positive signatures; headword-pronunciation stayed "i < headwordBlockBytes", which tests POSITION rather than shape and claims any stray stress in the first 128 bytes. The reviewer probed the consequence: "| AmE ˈhəndrəd, BrE ˈhʌndrəd |" and "| AmE ˈlabrəˌtôrē, BrE ləˈbɒrət(ə)ri |" both classified as headword-pronunciation.
+
+AND MY OWN TEST PASSED FOR THE WRONG REASON: it used brent, a MONOSYLLABLE carrying no stress mark, so it reached the residue through the pipe branch while every polysyllabic form of the same shape was absorbed. That also falsified the promise I had just written above curated for BR-5 — re-adding a British dictionary would NOT have surfaced as unclassified for any word longer than one syllable.
+
+FIXED WITH THE REAL SIGNATURE, read off the captured data rather than guessed: NOAD collapses a headword pronunciation into a PARENTHESISED group, (aˈhəndrədzˈhəndrəd/), while the dual-locale form is pipe-delimited with AmE/BrE labels. stressIsParenthesised scans outward in the stripped coordinate space so it cannot be satisfied by a parenthesis belonging to another span. Both probed cases are permanent test rows now, alongside the monosyllable.
+
+BR-4 RESIDUE: I marked the breakdown and missed a second statement of the same number in the Limits entry, which strings.Contains could not see. The doc-sync counts markers against values now, so an unmarked or stale second occurrence fails — mutation-verified by leaving one site stale.
+
+BR-7 RESIDUE: stressWindow was a fourth copy of the oracle windowing with a different radius, and the exemplar test still spelled the disjunction by hand. One strayStressWindow(out, i, radius), and rawNotationNear at every site.
+
+THE LIVE POPULATION IS UNCHANGED THROUGH ALL OF IT: 7 prose-numeral / 7 headword / 8 phrase / 4 literal-pipe, unclassified 0, over 70,886 entries. That is the point — the numbers were right before, and only now are they produced by predicates that could have said otherwise.
+
+TESTS: go build ./... && go vet ./... && GOOS=linux go vet ./cmd/define/ && go test ./... all green; gofmt -l ./cmd/ empty. Conformance green unsandboxed: the live ratchet, the exemplar byte-comparison, and the per-language fixture check.
 
 - **Blocked on [tools#27]** (pronunciation locale as a parameter), split out of
   #18 the same day for this reason among others. Deliberately NOT started: the
@@ -317,4 +354,139 @@ close it. The uncovered-shape half of the Problem no longer reproduces.
 **Its `deps: [tools#27]` is now moot** — the dependency was on `#27` owning
 locale as a parameter, and the British-English entry that motivated it is
 unreachable on the curated path.
+
+### 2026-08-28 — implemented; the classifier agrees with the hand enumeration
+
+The live run, unsandboxed, after the work:
+
+```
+checked 70886 live entries: 0 lost content, 26 kept raw notation; 0 non-Latin, 165090 absent
+  raw notation by cause: prose-numeral            7
+  raw notation by cause: headword-pronunciation   7
+  raw notation by cause: phrase-pronunciation     8
+  raw notation by cause: literal-pipe             4
+  raw notation by cause: unclassified             0
+```
+
+**`classifyRawNotation` reproduces the hand enumeration exactly** — 7/7/8/4 — and
+`causeUnclassified` is 0, so the taxonomy is total over the live population. That
+agreement is the evidence the classifier is right; the hand grouping was done
+first and independently, from the enumerated snippets.
+
+**Two things the implementation found that the Plan had wrong.**
+
+`strayStress` windows the STRIPPED text (`slashSpan.ReplaceAllString`), so its
+return does not exist verbatim in the rendered entry. A first classifier searched
+for it with `strings.Index(rendered, …)` and silently got `-1` every time; only
+the headword check was carrying `hundred`. The classifier now strips in the same
+way, so its index is in the same coordinate space as the oracle's.
+
+The headword/phrase discriminator was a guessed fraction (`idx < len/3`) and
+misclassified `shape`. Measured instead: `hundred` puts the stress at byte 27 of
+1828, `shape` at 2436 of 4116 — two orders of magnitude apart, so
+`headwordBlockBytes = 128` sits nowhere near either population.
+
+**The pin is per-cause, not a total.** A single number is a weak ratchet: two
+causes can move opposite ways and leave it unchanged, and a misclassification
+between two known causes is invisible in a sum. `knownRawNotationEntries` is now
+DERIVED from `knownRawByCause`, so the two cannot disagree.
+
+**Mutation-checked.** Moving a cause count reddens the atlas doc-sync by name;
+disabling the stress-mark half of the classifier reddens the exemplars.
+
+### 2026-08-28 — close review round 2: seven findings, and BR-1 was the real one
+
+**BR-1: the totality assertion was DEAD, and I reported its passing as evidence.**
+Both branches of the first classifier were catch-alls — a stress mark that was
+not headword-shaped fell into *phrase*, a pipe that was not the literal case fell
+into *prose numeral* — so every oracle survivor landed in a named bucket BY
+CONSTRUCTION. `causeUnclassified` could not fire for any input the live run
+passes it, so `unclassified == 0` was vacuously true. A new shape would have been
+absorbed into whichever bucket it resembled, which is precisely the failure this
+classifier was written to end, implemented as its opposite. Probed and confirmed
+before fixing.
+
+Every cause is a POSITIVE test now — headword position, a trailing slash in the
+stress window, a sense-number-then-pipe regex, `the symbol |` — with
+`causeUnclassified` as the residue. Verified reachable for three novel shapes,
+including this issue's own dormant `| AmE brɛnt, BrE brɛnt |`: if a British
+dictionary is ever re-added, it surfaces as unclassified rather than being
+miscounted as a prose numeral.
+
+**The live population is unchanged and the breakdown is now earned:** 7 / 7 / 8 /
+4, unclassified 0, over 70,886 entries. Same numbers as before the fix — but
+before, the zero could not have been anything else.
+
+**BR-4 falsified a claim in the previous Log entry.** It said "moving a cause
+count reddens the atlas doc-sync by name". The reviewer swapped two causes,
+keeping the total at 26, and the whole suite stayed green while two atlas numbers
+were wrong. Only the total had a marker span. Every cause has one now and the
+doc-sync loops `rawCauses`; the reviewer's exact mutation reddens both.
+
+**BR-6 was a rule I had just written in `#23` and broke here.** The exemplar
+corpus had no path in `capture.sh` and no conformance check — a fake with no live
+check becomes a fossil, and a macOS update fixing one of these shapes upstream
+would have left the classifier green against text the tool no longer produces.
+`capture.sh` now captures them through the same curated books, and
+`TestRawNotationExemplarsMatchLiveDictionary` byte-compares each one and asserts
+it still trips the oracle.
+
+**BR-7: the oracle was written in three spellings** across `invariant_test.go`,
+`live_property_test.go` and `render_test.go`, and its body was copy-pasted into
+the classifier — three chances for the ratchet, the corpus test and the
+classifier to disagree about what they count. `strayStressAt` and
+`rawNotationNear` are the shared pair now.
+
+**BR-5: the resurrection condition sat only in this issue,** which archives to
+`workshop/history/`. It is a comment above `curated` now — the exact line someone
+edits when adding a dictionary — and it says what will happen (new entries report
+as unclassified) rather than only that a risk exists.
+
+**BR-2, BR-3: the DERIVED-or-DATED rule reached its named sites, not its class.**
+Four more undated standing measurements remained, including a third sweep width
+and a claim that both oracles "measure 0" twenty lines above the count that
+falsifies it. Swept, and the rule gained a third legitimate form — HISTORICAL,
+for past-tense narration — so the exception is stated rather than unexplained.
+
+### 2026-08-28 — close review round 3: BR-1's fix was three-quarters done
+
+**BR-14 is BR-1 again, in the one branch I left position-only.** Three of the
+four causes became positive signatures; `headword-pronunciation` stayed
+`i < headwordBlockBytes`, which tests POSITION rather than shape and therefore
+claims any stray stress in the first 128 bytes. The reviewer probed the exact
+consequence: `| AmE ˈhəndrəd, BrE ˈhʌndrəd |` and
+`| AmE ˈlabrəˌtôrē, BrE ləˈbɒrət(ə)ri |` both classified as
+headword-pronunciation.
+
+**And my own test passed for the wrong reason.** It used `brent` — a
+MONOSYLLABLE, carrying no stress mark — so it reached the residue through the
+pipe branch while every polysyllabic form of the same shape was being absorbed.
+Luck, not design.
+
+**Worse, that falsified the promise I had just written for BR-5.** The comment
+above `curated` tells the next person that re-adding a British dictionary will
+surface as `unclassified`. For any word longer than one syllable it would not
+have.
+
+Fixed with the real signature, read off the captured data: NOAD collapses a
+headword pronunciation into a PARENTHESISED group — `(aˈhəndrədzˈhəndrəd/)` —
+while the dual-locale form is pipe-delimited with `AmE`/`BrE` labels.
+`stressIsParenthesised` scans outward in the stripped space rather than matching
+a window, so it cannot be satisfied by a parenthesis belonging to another span.
+Both probed cases now reach the residue and are permanent test rows.
+
+**BR-4's residue: I marked the breakdown and missed a second statement of the
+same number** in the Limits entry, where `strings.Contains` could not see it. The
+doc-sync now counts markers against values, so an unmarked or stale second
+occurrence fails — mutation-verified.
+
+**BR-7's residue: `stressWindow` was a fourth copy of the oracle's windowing**
+with a different radius, and the exemplar test still spelled the disjunction by
+hand. One `strayStressWindow(out, i, radius)` now, and `rawNotationNear`
+everywhere.
+
+**The live population is unchanged through all of it** — 7 / 7 / 8 / 4,
+unclassified 0, over 70,886 entries — which is the point: the numbers were right
+before, and only now are they earned by predicates that could have said
+otherwise.
 

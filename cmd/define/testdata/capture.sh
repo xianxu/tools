@@ -41,10 +41,13 @@ mkdir -p entries/en entries/es
 #   pulp     opening straight after an editorial note's closing bracket
 #   bargainer PHRASES text carrying example-separator pipes
 #
-# NOTE: DCSCopyTextDefinition searches the host's ACTIVE dictionaries, not NOAD
-# specifically (there is no public API to select one). iPhone, iPad and MacBook
-# below are Apple Dictionary entries, not NOAD -- which is precisely why they
-# have no pronunciation and exercise that branch.
+# NOTE: these are captured through the CURATED identifiers in EN_DICTS, not
+# through the NULL search over the host's active dictionaries. An earlier version
+# of this note said there is no public API to select one -- true of the SDK
+# header, false of the framework, and false of this script, which selects by
+# identifier three lines below. iPhone, iPad and MacBook come from Apple
+# Dictionary rather than NOAD, which is why they have no pronunciation and
+# exercise that branch, and why EN_DICTS lists both books.
 #
 # The last three, plus content/even/desert/minute/use/subject/iPad/MacBook/Amazon,
 # were all rendering with dropped or reordered content at the M1 boundary review.
@@ -83,6 +86,10 @@ ES_DICT=com.apple.dictionary.es.DGLEV
 # English is two books, in the same preference order chooseDictionary uses: NOAD
 # answers ordinary words, Apple Dictionary answers iPhone/iPad/MacBook.
 EN_DICTS=(com.apple.dictionary.NOAD com.apple.dictionary.AppleDictionary)
+# One exemplar per raw-notation cause, in knownRawByCause order: a prose numeral
+# read as a sense number, a pronunciation glued to the headword, a phrase block's
+# pronunciation run into prose, and an entry whose SUBJECT is the pipe character.
+RAW_WORDS=(charge hundred shape pipe)
 
 MIN_BYTES=40
 
@@ -115,9 +122,22 @@ capture() { # <word> <outdir> <dictionary-id>...
 for w in "${words[@]}"; do
     capture "$w" entries/en "${EN_DICTS[@]}"
 done
+
+# The raw-notation exemplars (#26) — one real entry per cause the live ratchet
+# classifies. A SEPARATE corpus, not entries/<lang>/, because these are the
+# entries that still render unconverted notation: capturedLanguages walks
+# entries/ expecting language names, and TestNoRawPronunciationNotationSurvives
+# asserts a hard ZERO over it. Here the raw notation is the point.
+#
+# Captured through the same curated English books production selects, so the
+# classifier is pinned against what the tool actually renders.
+mkdir -p rawnotation
+for w in "${RAW_WORDS[@]}"; do
+    capture "$w" rawnotation "${EN_DICTS[@]}"
+done
 for w in "${es_words[@]}"; do
     capture "$w" entries/es "$ES_DICT"
 done
 
-echo "captured ${#words[@]} English and ${#es_words[@]} Spanish entries:"
-wc -c entries/en/*.txt entries/es/*.txt
+echo "captured ${#words[@]} English, ${#es_words[@]} Spanish, ${#RAW_WORDS[@]} raw-notation entries:"
+wc -c entries/en/*.txt entries/es/*.txt rawnotation/*.txt

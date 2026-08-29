@@ -78,18 +78,30 @@ reviews found bugs that each narrower check had shipped green:
 
 | check | scope | catches |
 |---|---|---|
-| `TestRenderLosesNothing` | the 29 captured fixtures | regressions on known shapes |
+| `TestRenderLosesNothing` | the captured fixtures under `testdata/entries/<lang>/` | regressions on known shapes |
 | `FuzzRenderLosesNothing` | arbitrary strings, corpus-seeded | parser crashes, boundary bugs |
-| `TestRenderLosesNothingOverLiveEntries` (conformance) | **every** reachable entry — 70,897 | shapes nobody thought to sample |
+| `TestRenderLosesNothingOverLiveEntries` (conformance) | **every** reachable entry | shapes nobody thought to sample |
+| `TestClassifyRawNotationOverRealEntries` | one captured exemplar per raw-notation cause | the taxonomy, without needing the live dictionary |
 
 The third is what earns the claim "safe against entries nobody sampled"; a corpus
 test alone covers only what someone already sampled. Content loss over the live
-sample went 7% → **0%**, measured over **all 70,897** reachable entries — not a
-sample. The 530 non-Latin entries from other active dictionaries are counted and
-excluded, not silently skipped. The sweep runs in ~38s.
+sweep is **0%**, over every reachable entry rather than a sample.
+
+**Measured 2026-08-28: 70,886 entries reachable, 0 non-Latin, ~116s.** Those are
+DATED rather than stated as standing facts, and the distinction is the point —
+each is a property of one host's installed dictionaries on one day, and every
+one of them was wrong in this file until `#26` re-ran them. A number that only a
+live run can produce is a record; a number the code owns is consumed instead (see
+the raw-notation count below). Anything written as neither drifts silently.
+
+The non-Latin count was 530 before `#23 M2` and is 0 after it: the sweep used to
+search every ACTIVE dictionary, and now asks the curated English books. The
+counting branch is kept anyway, because adding a book to the curated list can
+bring the shape back.
 
 Sampling is why this section had to be rewritten three times: at 2,749 entries
-(3.8%) the raw-notation count read 0, and at full width it was 27.
+(3.8%) the raw-notation count read 0, and at full width it was 27 — both
+historical readings, not current ones. The current count is derived below.
 
 ### Two things the property cannot see
 
@@ -114,8 +126,11 @@ The check now uses **two** oracles, neither of which consults the parser:
 
 The second exists because the first was still too narrow: example-separator
 pipes carry no stress mark, so `strayStress` could not see them, and the atlas
-published "0%" while 2.0% of entries were still rendering raw `|`. Both now
-measure **0** over the live sample. The lesson generalises past the first fix —
+published "0%" while 2.0% of entries were still rendering raw `|`. Neither reads
+zero: together they trip on the pinned handful counted below, which is why that
+count exists. (An earlier version of this line said "both now measure 0", stated
+undated, twenty lines above the count that falsifies it.) The lesson generalises
+past the first fix —
 *an honest oracle can still be a narrow one, and a claim must not outrun what was
 actually measured.*
 
@@ -129,10 +144,34 @@ It guarantees **fidelity, not completeness** — see Limits.
 - **NOAD has gaps.** Recent coinages (`rizz`, `unalive`) are absent; `define`
   exits 1. Their audio is missing too — the gaps correlate, both tracing to Oxford.
 - **No second dictionary source**, by decision.
+- **Raw NOAD notation survives on a pinned handful of entries — FOUR causes, not
+  one.** The ratchet is `knownRawByCause` (`cmd/define/rawnotation_test.go`),
+  which pins the population per cause; `TestAtlasQuotesTheRawNotationCount` keeps
+  the number below in step with it, because this one has drifted three times.
+
+  <!-- raw-notation-count -->26<!-- /raw-notation-count --> entries, as
+  *prose numeral* <!-- raw:prose-numeral -->7<!-- /raw:prose-numeral -->,
+  *headword pronunciation* <!-- raw:headword-pronunciation -->7<!-- /raw:headword-pronunciation -->,
+  *phrase pronunciation* <!-- raw:phrase-pronunciation -->8<!-- /raw:phrase-pronunciation -->,
+  *literal pipe* <!-- raw:literal-pipe -->4<!-- /raw:literal-pipe -->.
+
+  A total alone is a weak ratchet — two causes can move opposite ways and leave
+  it unchanged — so the breakdown is what makes a movement attributable. Each
+  number above is DERIVED: the doc-sync loops over every cause, because marking
+  only the total let exactly that compensating swap pass green.
+
+  Only the first is a parser defect in the sense below. The *literal pipe* four
+  (`pipe`, `piped`, `pipeful`, `pipeless`) are a false positive the oracle keeps
+  deliberately: those entries define the `|` character, so their content contains
+  one. Narrowing the oracle to exclude them is the move that already failed here
+  — see the sampling note above.
+
 - **A prose numeral that continues a sense sequence is taken as a sense number.**
-  27 of 70,897 entries (0.04%). `define charge` buries its real sense 2 inside a
-  quoted example, and two raw `|` reach the screen; `just`, `ratio`, `glop`,
-  `logarithmic`, `depth` and `shortness` are the same shape. A sequence-opening
+  <!-- raw:prose-numeral -->7<!-- /raw:prose-numeral --> of those entries. `define charge` buries its real sense 2 inside a
+  quoted example, and two raw `|` reach the screen; `just`, `depth` and
+  `shortness` are the same shape. (`ratio`, `glop` and `logarithmic` were named
+  here too and no longer are: they render CLEAN now, which is not the same as
+  being unreachable — all three still resolve.) A sequence-opening
   `1` must be structurally placed, but a continuing number is exempt — and that
   exemption is the defect. It stands because requiring placement for every number
   regresses senses NOAD genuinely writes unplaced (`bases`: "plural form of
@@ -141,7 +180,10 @@ It guarantees **fidelity, not completeness** — see Limits.
 - **Some block boundaries are genuinely ambiguous in the source, and this is not
   rare.** A part-of-speech opens a block when it follows a sentence end or a
   closing `. ) : ; ]`, but NOAD does not always write one. Two shapes remain,
-  measured over all 71,427 reachable entries:
+  **measured 2026-08-27 over 71,427 reachable entries** — a different width from
+  the 70,886 dated above, because that sweep predates `#23 M2` narrowing the
+  dictionary set. Dated rather than restated, so the two are visibly different
+  measurements rather than one of them being stale:
   - **~32 entries lose a block into a quoted example** — a register label sits
     where punctuation would be (`shuttle`, `chloroform`: "mainly British English
     verb …"). `parrot` is the no-punctuation variant ("…and budgerigars verb…").

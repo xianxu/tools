@@ -207,6 +207,24 @@ rounds:
           family: unbacked-behavior-claim
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-28T18:14:20-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-8
+          disposition: addressed
+          note: Rule is DERIVED-or-DATED over artifacts including .go; parse.go:535 named as the second miss; estimate stopped enumerating sites.
+          round: 4
+        - id: PQ-10
+          disposition: addressed
+          note: classifyRawNotation named, closed codomain with causeUnclassified asserted zero, both risky-input classes given a guard.
+          round: 4
+        - id: PQ-12
+          disposition: addressed
+          note: Verified live_property_test.go:84 and invariant_test.go:42; the disjunction is stated correctly and the file:line rule is now standing.
+          round: 4
+      blocked: false
+content_hash: 1d6e8342b520faa1ecdd7a591cbfb97ba839995c666ffb20cfb6b180f7b47a73
 ---
 
 # Gate ledger — tools#26 (plan-quality)
@@ -329,8 +347,14 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   written. PQ-1 was falsified by running the code; this one by reading it.
   Prevalence: 2 of 2 behavioral claims this gate has checked were wrong.
 
+## Round 4 — 2026-08-28T18:14:20-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-8 — addressed — Rule is DERIVED-or-DATED over artifacts including .go; parse.go:535 named as the second miss; estimate stopped enumerating sites.
+- PQ-10 — addressed — classifyRawNotation named, closed codomain with causeUnclassified asserted zero, both risky-input classes given a guard.
+- PQ-12 — addressed — Verified live_property_test.go:84 and invariant_test.go:42; the disjunction is stated correctly and the file:line rule is now standing.
+
 ## Open findings
 
-- **PQ-8** [Important] `doc-sweep-incomplete` Second in this family — the sweep enumeration is still hand-made; fix the rule, not the sites
-- **PQ-10** [Minor] `attribution-not-mechanized` Second in this family — no classifier function named, and the classification is not stated as total
-- **PQ-12** [Important] `unbacked-behavior-claim` The live oracle is a two-oracle disjunction, not the pipe check the plan says it is
+(none — every finding has been disposed)

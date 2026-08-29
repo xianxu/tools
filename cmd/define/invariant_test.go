@@ -40,12 +40,94 @@ var slashSpan = regexp.MustCompile(`/[^/\n]*/`)
 // (ˈ or ˌ) may appear only inside a /…/ span in rendered output. Anything else
 // is unconverted source.
 func strayStress(out string) string {
-	rest := slashSpan.ReplaceAllString(out, "")
-	if i := strings.IndexAny(rest, "ˈˌ"); i >= 0 {
-		lo, hi := max(0, i-50), min(len(rest), i+50)
-		return rest[lo:hi]
+	if i := strayStressAt(out); i >= 0 {
+		return strayStressWindow(out, i, 50)
 	}
 	return ""
+}
+
+// strayStressWindow is THE windowing, so callers that want different radii do
+// not each re-derive the stripped coordinate space. It was written twice with
+// two radii before the boundary review counted it as a fourth copy of the
+// oracle.
+func strayStressWindow(out string, i, radius int) string {
+	rest := slashSpan.ReplaceAllString(out, "")
+	lo, hi := max(0, i-radius), min(len(rest), i+radius)
+	return rest[lo:hi]
+}
+
+// stressIsParenthesised reports whether the stray stress at i sits inside a
+// (…) group — the positive signature of a pronunciation collapsed into the
+// headword block, "(aˈhəndrədzˈhəndrəd/)".
+//
+// Scans outward in the stripped space rather than pattern-matching a window,
+// so it cannot be satisfied by a parenthesis belonging to some other span.
+func stressIsParenthesised(out string, i int) bool {
+	rest := slashSpan.ReplaceAllString(out, "")
+	if i < 0 || i >= len(rest) {
+		return false
+	}
+	open := false
+	for j := i; j >= 0; j-- {
+		if rest[j] == ')' {
+			return false
+		}
+		if rest[j] == '(' {
+			open = true
+			break
+		}
+		if rest[j] == '\n' {
+			return false // a group does not span lines
+		}
+	}
+	if !open {
+		return false
+	}
+	for j := i; j < len(rest); j++ {
+		if rest[j] == '(' || rest[j] == '\n' {
+			return false
+		}
+		if rest[j] == ')' {
+			return true
+		}
+	}
+	return false
+}
+
+// strayStressAt is the same oracle returning the POSITION, in the coordinate
+// space of the stripped text.
+//
+// Split out because two callers need different things from one fact: this test
+// wants a window to print, and classifyRawNotation wants the index to decide
+// whether the leak sits in the headword block. A copy of these two lines lived
+// in the classifier until the boundary review pointed out that an oracle
+// restated is an oracle that can drift from itself.
+//
+// The stripped coordinate space is load-bearing, not incidental: the window
+// strayStress returns does NOT exist verbatim in `out`, so a caller that
+// searched for it there got -1 every time. That bug is why this returns an
+// index rather than leaving each caller to find one.
+func strayStressAt(out string) int {
+	return strings.IndexAny(slashSpan.ReplaceAllString(out, ""), "ˈˌ")
+}
+
+// rawNotationNear reports whether ANY unconverted NOAD notation survived, and a
+// window to show. THE one trip predicate — it was written in three spellings
+// across three files, which is three chances for the ratchet, the corpus test
+// and the classifier to disagree about what they are counting.
+//
+// A disjunction of two independent oracles, and both halves are needed: the
+// stress-mark oracle cannot see example-separator pipes (they carry no stress
+// mark), and the pipe oracle cannot see a stress mark that leaked without one.
+func rawNotationNear(out string) (string, bool) {
+	if near := strayStress(out); near != "" {
+		return near, true
+	}
+	if i := strings.IndexByte(out, '|'); i >= 0 {
+		lo, hi := max(0, i-50), min(len(out), i+50)
+		return out[lo:hi], true
+	}
+	return "", false
 }
 
 func alnum(s string) []rune {

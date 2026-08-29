@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -47,5 +48,57 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 					"intended one.", tc.line)
 			}
 		})
+	}
+}
+
+// The atlas's raw-notation count DERIVES from the ratchet rather than restating
+// it.
+//
+// Same move as the prompt test above, for the same reason and with a longer
+// record behind it: this number has drifted three times. `#26` found it stated
+// as 27 in the atlas and again in a parse.go comment while the measured value
+// was 26, and the atlas additionally attributed the whole population to one
+// cause when it is four.
+//
+// The marker comment is what makes it machine-checkable without pinning the
+// surrounding prose, which should stay free to be rewritten — the narrowness is
+// deliberate, exactly as it is for the play-loop prompts.
+func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
+	b, err := os.ReadFile("../../atlas/define.md")
+	if err != nil {
+		// NOT a skip: the atlas is in the repo, so an unreadable one is a broken
+		// checkout or a moved file, never an absent dependency.
+		t.Fatalf("atlas/define.md unreadable: %v", err)
+	}
+	atlas := string(b)
+	want := fmt.Sprintf("<!-- raw-notation-count -->%d<!-- /raw-notation-count -->", knownRawNotationEntries)
+	if !strings.Contains(atlas, want) {
+		t.Errorf("atlas/define.md does not quote the pinned raw-notation count.\n"+
+			"want the marked span to read %q — the ratchet owns this number, the doc consumes it.\n"+
+			"If the count moved, knownRawByCause moved first and the atlas follows.", want)
+	}
+	// EVERY CAUSE, not just the total. Marking only the total let a compensating
+	// swap — one cause up, another down — keep the whole suite green while both
+	// atlas numbers were wrong, which is the same weakness the per-cause pin was
+	// added to close in the code.
+	for _, c := range rawCauses {
+		if c == causeUnclassified {
+			continue // the live run asserts it is zero; it is not a doc figure
+		}
+		want := fmt.Sprintf("<!-- raw:%s -->%d<!-- /raw:%s -->", c, knownRawByCause[c], c)
+		if !strings.Contains(atlas, want) {
+			t.Errorf("atlas/define.md does not quote the pinned count for %s.\n"+
+				"want the marked span to read %q", c, want)
+		}
+		// EVERY occurrence, not the first. The count is stated twice for
+		// prose-numeral — once in the breakdown and once in the Limits entry —
+		// and marking only one leaves the other an unmarked restatement that
+		// strings.Contains cannot see.
+		open := fmt.Sprintf("<!-- raw:%s -->", c)
+		if n, m := strings.Count(atlas, open), strings.Count(atlas, want); n != m {
+			t.Errorf("atlas/define.md marks %s %d time(s) but only %d carry the pinned value %d — "+
+				"an unmarked or stale restatement is exactly what the markers exist to prevent",
+				c, n, m, knownRawByCause[c])
+		}
 	}
 }
