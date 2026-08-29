@@ -83,6 +83,10 @@ ES_DICT=com.apple.dictionary.es.DGLEV
 # English is two books, in the same preference order chooseDictionary uses: NOAD
 # answers ordinary words, Apple Dictionary answers iPhone/iPad/MacBook.
 EN_DICTS=(com.apple.dictionary.NOAD com.apple.dictionary.AppleDictionary)
+# One exemplar per raw-notation cause, in knownRawByCause order: a prose numeral
+# read as a sense number, a pronunciation glued to the headword, a phrase block's
+# pronunciation run into prose, and an entry whose SUBJECT is the pipe character.
+RAW_WORDS=(charge hundred shape pipe)
 
 MIN_BYTES=40
 
@@ -115,9 +119,22 @@ capture() { # <word> <outdir> <dictionary-id>...
 for w in "${words[@]}"; do
     capture "$w" entries/en "${EN_DICTS[@]}"
 done
+
+# The raw-notation exemplars (#26) — one real entry per cause the live ratchet
+# classifies. A SEPARATE corpus, not entries/<lang>/, because these are the
+# entries that still render unconverted notation: capturedLanguages walks
+# entries/ expecting language names, and TestNoRawPronunciationNotationSurvives
+# asserts a hard ZERO over it. Here the raw notation is the point.
+#
+# Captured through the same curated English books production selects, so the
+# classifier is pinned against what the tool actually renders.
+mkdir -p rawnotation
+for w in "${RAW_WORDS[@]}"; do
+    capture "$w" rawnotation "${EN_DICTS[@]}"
+done
 for w in "${es_words[@]}"; do
     capture "$w" entries/es "$ES_DICT"
 done
 
-echo "captured ${#words[@]} English and ${#es_words[@]} Spanish entries:"
-wc -c entries/en/*.txt entries/es/*.txt
+echo "captured ${#words[@]} English, ${#es_words[@]} Spanish, ${#RAW_WORDS[@]} raw-notation entries:"
+wc -c entries/en/*.txt entries/es/*.txt rawnotation/*.txt

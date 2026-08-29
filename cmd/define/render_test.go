@@ -232,15 +232,13 @@ func TestNoRawPronunciationNotationSurvives(t *testing.T) {
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			out := Render(ParseEntry(raw), RenderOpts{Color: false})
-			if near := strayStress(out); near != "" {
+			// THE trip predicate, shared with the live ratchet and the
+			// classifier — it was written in three spellings across three files,
+			// which is three chances for them to disagree about what they count.
+			// It is a disjunction: the stress oracle cannot see
+			// example-separator pipes, which carry no stress mark.
+			if near, tripped := rawNotationNear(out); tripped {
 				t.Errorf("unconverted NOAD notation survived rendering, near %q", near)
-			}
-			// Second, blunter oracle: a raw "|" is NOAD's delimiter and has no
-			// place in rendered output. strayStress cannot see example-separator
-			// pipes, because those carry no stress mark.
-			if i := strings.IndexByte(out, '|'); i >= 0 {
-				lo, hi := max(0, i-50), min(len(out), i+50)
-				t.Errorf("raw NOAD delimiter survived rendering, near %q", out[lo:hi])
 			}
 		})
 	}

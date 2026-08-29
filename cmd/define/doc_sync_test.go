@@ -70,10 +70,25 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 		// checkout or a moved file, never an absent dependency.
 		t.Fatalf("atlas/define.md unreadable: %v", err)
 	}
+	atlas := string(b)
 	want := fmt.Sprintf("<!-- raw-notation-count -->%d<!-- /raw-notation-count -->", knownRawNotationEntries)
-	if !strings.Contains(string(b), want) {
+	if !strings.Contains(atlas, want) {
 		t.Errorf("atlas/define.md does not quote the pinned raw-notation count.\n"+
 			"want the marked span to read %q — the ratchet owns this number, the doc consumes it.\n"+
 			"If the count moved, knownRawByCause moved first and the atlas follows.", want)
+	}
+	// EVERY CAUSE, not just the total. Marking only the total let a compensating
+	// swap — one cause up, another down — keep the whole suite green while both
+	// atlas numbers were wrong, which is the same weakness the per-cause pin was
+	// added to close in the code.
+	for _, c := range rawCauses {
+		if c == causeUnclassified {
+			continue // the live run asserts it is zero; it is not a doc figure
+		}
+		want := fmt.Sprintf("<!-- raw:%s -->%d<!-- /raw:%s -->", c, knownRawByCause[c], c)
+		if !strings.Contains(atlas, want) {
+			t.Errorf("atlas/define.md does not quote the pinned count for %s.\n"+
+				"want the marked span to read %q", c, want)
+		}
 	}
 }

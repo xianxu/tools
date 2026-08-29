@@ -90,7 +90,9 @@ type Sense struct {
 // NOAD writes "4 the cushion of a pool table: [as modifier] : a bank shot",
 // where "[as modifier]" qualifies the example rather than being part of it.
 // Splitting only on the first ":" left the label and a stray colon inside the
-// quotes on 13.8% of entries. Block.Label already models this concept one level
+// quotes on 13.8% of entries (measured 2026-08-25, before #23 M2 narrowed the
+// dictionary set — a dated reading, not a standing fact). Block.Label already
+// models this concept one level
 // up; this is its counterpart.
 type Example struct {
 	Label string

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -69,47 +70,70 @@ var rawCauses = []rawCause{
 	causePhrasePronunciation, causeLiteralPipe, causeUnclassified,
 }
 
-// classifyRawNotation says WHICH of the four shapes an entry's rendered output
-// hit, so a future movement in the count names the group that moved rather than
-// printing one number and three samples.
+// classifyRawNotation says WHICH of the known shapes an entry hit, so a movement
+// in the count names the group that moved rather than printing one number.
 //
-// TOTAL: every input gets exactly one cause. The precedence is
-// stress-mark-before-pipe, and it is a decision rather than an ordering
-// accident — a stress mark surviving outside a /…/ span is unambiguously leaked
-// notation, while a pipe can be legitimate content (`pipe` defines the
-// character). An entry firing both is therefore a pronunciation leak that
-// happens to contain a pipe, not the reverse.
+// EVERY cause is a POSITIVE test, and causeUnclassified is the residue. That is
+// the whole design, and a first version got it backwards: it had two catch-all
+// branches — any stress mark that was not headword-shaped fell into "phrase",
+// any pipe that was not the literal case fell into "prose numeral" — so every
+// oracle survivor landed in a named bucket BY CONSTRUCTION. The live run's
+// assertion that causeUnclassified is zero could not fail, and a genuinely new
+// shape would have been absorbed into whichever bucket it resembled. That is the
+// exact failure this classifier exists to prevent, implemented as its opposite.
 //
-// It must consult BOTH oracles, because the live check is a disjunction
-// (live_property_test.go: `strayStress(out) != "" || IndexByte(out,'|') >= 0`)
-// and the stress-mark half carries no pipe at all. A pipe-keyed classifier would
-// mis-handle most of the population.
-func classifyRawNotation(word, rendered string) rawCause {
-	// The SAME strip the oracle performs (strayStress, invariant_test.go), so
-	// the index below is measured in the same coordinate space. strayStress
-	// returns a window cut from the STRIPPED text, which does not exist verbatim
-	// in the input — a first version searched for it in `rendered` and silently
-	// got -1 every time.
-	rest := slashSpan.ReplaceAllString(rendered, "")
-	if i := strings.IndexAny(rest, "ˈˌ"); i >= 0 {
-		// Glued to the headword, or deep among the idioms? Measured over the
-		// captured exemplars: `hundred` puts it at byte 27 of 1828, immediately
-		// after the headword line; `shape` at 2436 of 4116, in a phrase block
-		// two thirds of the way down. The gap is two orders of magnitude, so the
-		// cut is nowhere near either population.
-		if i < headwordBlockBytes {
+// Probed after the fix: an invented shape with a stress mark in no recognised
+// position, and this issue's own dormant "| AmE brɛnt, BrE brɛnt |", both now
+// reach causeUnclassified.
+//
+// Precedence is stress-before-pipe where both match, because a stress mark
+// outside a /…/ span is unambiguously leaked notation while a pipe can be
+// legitimate content (`pipe` defines the character).
+func classifyRawNotation(rendered string) rawCause {
+	if i := strayStressAt(rendered); i >= 0 {
+		switch {
+		// Glued to the headword: the leak sits in the opening block, before any
+		// sense text. Measured over the captured exemplars — `hundred` puts it at
+		// byte 27 of 1828, `shape` at 2436 of 4116 — so the cut is two orders of
+		// magnitude from either population.
+		case i < headwordBlockBytes:
 			return causeHeadwordPronunciation
+		// A phrase block's pronunciation run into prose: NOAD writes these as an
+		// idiom followed immediately by its pronunciation, so the stress mark is
+		// preceded by lowercase prose with no sentence break — "lick
+		// someoneˌoud əv ˈSHāp/". The trailing slash is the tell: the closing
+		// delimiter survived while the opening one was consumed.
+		case strings.Contains(stressWindow(rendered, i), "/"):
+			return causePhrasePronunciation
 		}
-		return causePhrasePronunciation
+		return causeUnclassified
 	}
 	if strings.IndexByte(rendered, '|') >= 0 {
+		switch {
 		// The entry's SUBJECT is the character: "• the symbol |."
-		if strings.Contains(rendered, "the symbol |") {
+		case strings.Contains(rendered, "the symbol |"):
 			return causeLiteralPipe
+		// A prose numeral taken as a sense number leaves the pipe adjacent to a
+		// digit-and-period run — "2. euros for the postcard | the restaurant".
+		// POSITIVE, not an else: that adjacency is what the defect produces.
+		case proseNumeralPipe.MatchString(rendered):
+			return causeProseNumeral
 		}
-		return causeProseNumeral
+		return causeUnclassified
 	}
 	return causeUnclassified
+}
+
+// proseNumeralPipe matches a sense-number run followed by a pipe on the same
+// line — the signature of a prose numeral accepted as a sense opener.
+var proseNumeralPipe = regexp.MustCompile(`(?m)^\s*\d+\.[^|\n]*\|`)
+
+// stressWindow returns the text around a stray stress mark, in the stripped
+// coordinate space strayStressAt indexes into.
+func stressWindow(out string, i int) string {
+	rest := slashSpan.ReplaceAllString(out, "")
+	lo, hi := max(0, i-60), min(len(rest), i+60)
+	return rest[lo:hi]
 }
 
 // headwordBlockBytes is how far into an entry the headword's own block reaches.
@@ -156,17 +180,49 @@ func TestClassifyRawNotationOverRealEntries(t *testing.T) {
 			if strayStress(out) == "" && !strings.ContainsRune(out, '|') {
 				t.Fatalf("%s no longer renders raw notation — re-capture or retire the exemplar", tc.word)
 			}
-			if got := classifyRawNotation(tc.word, out); got != tc.want {
+			if got := classifyRawNotation(out); got != tc.want {
 				t.Errorf("classifyRawNotation(%s) = %q, want %q", tc.word, got, tc.want)
 			}
 		})
 	}
 }
 
-// The taxonomy is TOTAL: anything that trips the oracle gets a cause, and only
-// input that trips NEITHER oracle is unclassified.
+// causeUnclassified must be REACHABLE for input that TRIPS the oracle.
+//
+// This is the guard on the design, and it exists because the first version got
+// it exactly backwards. Both branches were catch-alls, so every oracle survivor
+// landed in a named bucket by construction, the live run's
+// `unclassified == 0` could not fail, and a new shape would have been absorbed
+// into whichever bucket it resembled — the failure this classifier exists to
+// prevent, shipped as its opposite. A guard that cannot fail is not a guard, and
+// its passing was reported as evidence.
+//
+// So: novel shapes, each tripping the oracle, each landing in the residue.
+func TestUnclassifiedIsReachableForOracleTrippingInput(t *testing.T) {
+	for _, tc := range []struct{ name, in string }{
+		{"a stress mark in no recognised position", strings.Repeat("x", 3000) + "ˈnovel-shape"},
+		{"a pipe with no sense-number run", strings.Repeat("y", 3000) + " a | in a new context"},
+		// The shape #26 was filed for. It is dormant — a British dictionary left
+		// curated["en"] — and if one is ever added back, this is what makes it
+		// surface as unclassified rather than be silently counted as something
+		// it is not.
+		{"the dormant AmE/BrE block", "brent\n\n    | AmE brɛnt, BrE brɛnt | noun (British English) "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, tripped := rawNotationNear(tc.in); !tripped {
+				t.Fatalf("the input does not trip the oracle, so this proves nothing")
+			}
+			if got := classifyRawNotation(tc.in); got != causeUnclassified {
+				t.Errorf("a novel shape classified as %q — the residue is unreachable and new "+
+					"shapes are being absorbed into named causes", got)
+			}
+		})
+	}
+}
+
+// Input that trips NEITHER oracle is unclassified too, and the precedence holds.
 func TestClassifyRawNotationIsTotal(t *testing.T) {
-	if got := classifyRawNotation("clean", "an ordinary rendered entry with no notation"); got != causeUnclassified {
+	if got := classifyRawNotation("an ordinary rendered entry with no notation"); got != causeUnclassified {
 		t.Errorf("clean text = %q, want %q", got, causeUnclassified)
 	}
 	// Precedence, stated in classifyRawNotation and asserted here: a stress mark
@@ -174,7 +230,7 @@ func TestClassifyRawNotationIsTotal(t *testing.T) {
 	// legitimate content — so an entry firing BOTH is a pronunciation leak that
 	// happens to contain a pipe, not a pipe case.
 	both := "someˌstress here and the symbol | too"
-	if got := classifyRawNotation("both", both); got == causeLiteralPipe {
+	if got := classifyRawNotation(both); got == causeLiteralPipe {
 		t.Errorf("an entry firing both oracles classified as %q; stress-mark causes outrank pipe causes", got)
 	}
 }

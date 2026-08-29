@@ -235,7 +235,9 @@ rule. A measured number stated in ANY artifact — a code comment as much as the
 atlas, the README, an issue or a plan — may exist in exactly two forms:
 
 1. **DERIVED** — the doc quotes a value the code owns, and a doc-sync test
-   asserts it. Applies to the pinned raw-notation count and the captured-fixture
+   asserts it. EVERY figure, not just a headline one: marking only the total let
+   a compensating swap (one cause up, another down) keep the whole suite green
+   while two atlas numbers were wrong. Applies to the pinned raw-notation count and the captured-fixture
    count, both of which a producer can supply in the normal suite.
 2. **DATED** — the doc states it as *"measured YYYY-MM-DD: N"*. Applies to the
    live sweep width and the non-Latin count, which only a conformance run against
@@ -243,7 +245,11 @@ atlas, the README, an issue or a plan — may exist in exactly two forms:
    cannot go stale; an undated one reads as a standing fact and drifts silently,
    which is what happened to all four.
 
-Anything that is neither is the defect. That is what makes this a rule rather
+3. **HISTORICAL** — past-tense narration of a number that was true then and is
+   being reported as a past state ("the atlas published 0% while 2.0% of entries
+   were still rendering raw pipes"). A record, in the sense `#23` established.
+
+Anything that is none of the three is the defect. That is what makes this a rule rather
 than a sweep: the atlas's *"every reachable entry — 70,897"* was wrong because it
 was written as a fact, not because nobody re-ran the number.
 
@@ -371,4 +377,58 @@ DERIVED from `knownRawByCause`, so the two cannot disagree.
 
 **Mutation-checked.** Moving a cause count reddens the atlas doc-sync by name;
 disabling the stress-mark half of the classifier reddens the exemplars.
+
+### 2026-08-28 — close review round 2: seven findings, and BR-1 was the real one
+
+**BR-1: the totality assertion was DEAD, and I reported its passing as evidence.**
+Both branches of the first classifier were catch-alls — a stress mark that was
+not headword-shaped fell into *phrase*, a pipe that was not the literal case fell
+into *prose numeral* — so every oracle survivor landed in a named bucket BY
+CONSTRUCTION. `causeUnclassified` could not fire for any input the live run
+passes it, so `unclassified == 0` was vacuously true. A new shape would have been
+absorbed into whichever bucket it resembled, which is precisely the failure this
+classifier was written to end, implemented as its opposite. Probed and confirmed
+before fixing.
+
+Every cause is a POSITIVE test now — headword position, a trailing slash in the
+stress window, a sense-number-then-pipe regex, `the symbol |` — with
+`causeUnclassified` as the residue. Verified reachable for three novel shapes,
+including this issue's own dormant `| AmE brɛnt, BrE brɛnt |`: if a British
+dictionary is ever re-added, it surfaces as unclassified rather than being
+miscounted as a prose numeral.
+
+**The live population is unchanged and the breakdown is now earned:** 7 / 7 / 8 /
+4, unclassified 0, over 70,886 entries. Same numbers as before the fix — but
+before, the zero could not have been anything else.
+
+**BR-4 falsified a claim in the previous Log entry.** It said "moving a cause
+count reddens the atlas doc-sync by name". The reviewer swapped two causes,
+keeping the total at 26, and the whole suite stayed green while two atlas numbers
+were wrong. Only the total had a marker span. Every cause has one now and the
+doc-sync loops `rawCauses`; the reviewer's exact mutation reddens both.
+
+**BR-6 was a rule I had just written in `#23` and broke here.** The exemplar
+corpus had no path in `capture.sh` and no conformance check — a fake with no live
+check becomes a fossil, and a macOS update fixing one of these shapes upstream
+would have left the classifier green against text the tool no longer produces.
+`capture.sh` now captures them through the same curated books, and
+`TestRawNotationExemplarsMatchLiveDictionary` byte-compares each one and asserts
+it still trips the oracle.
+
+**BR-7: the oracle was written in three spellings** across `invariant_test.go`,
+`live_property_test.go` and `render_test.go`, and its body was copy-pasted into
+the classifier — three chances for the ratchet, the corpus test and the
+classifier to disagree about what they count. `strayStressAt` and
+`rawNotationNear` are the shared pair now.
+
+**BR-5: the resurrection condition sat only in this issue,** which archives to
+`workshop/history/`. It is a comment above `curated` now — the exact line someone
+edits when adding a dictionary — and it says what will happen (new entries report
+as unclassified) rather than only that a risk exists.
+
+**BR-2, BR-3: the DERIVED-or-DATED rule reached its named sites, not its class.**
+Four more undated standing measurements remained, including a third sweep width
+and a claim that both oracles "measure 0" twenty lines above the count that
+falsifies it. Swept, and the rule gained a third legitimate form — HISTORICAL,
+for past-tense narration — so the exception is stated rather than unexplained.
 

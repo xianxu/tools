@@ -62,6 +62,26 @@ func (m dictMeta) monolingualIn(l store.Lang) bool {
 // A short list, easy to extend, and deliberately not a fallback ordering: on a
 // machine whose installed set nobody has curated, chooseDictionary reports "not
 // found" and the caller degrades to today's behaviour rather than guessing.
+// ADDING A BOOK HERE HAS A COST BEYOND DEFINITIONS — read this first.
+//
+// Whatever you add gets swept by the live raw-notation ratchet, and dictionaries
+// differ in the notation they use. #26 is the worked example: a British
+// dictionary in the host's ACTIVE set produced `| AmE brɛnt, BrE brɛnt |`, a
+// dual-locale pronunciation block the renderer leaves in raw pipes. It stopped
+// arriving when #23 M2 replaced the search-everything NULL call with this list —
+// NOT because the renderer was fixed. The shape is DORMANT, not dead.
+//
+// So adding Oxford Dictionary of English is one line that brings a known defect
+// back. It is strictly monolingual `en` and passes every metadata filter, so
+// nothing else will stop you. What WILL happen is that the live ratchet reports
+// the new entries as `unclassified` — the designed outcome, and the reason
+// causeUnclassified is a reachable bucket rather than a decoration. Expect it,
+// then decide: fix the renderer, or drop the book.
+//
+// Same for a new language. fr.Multi, it.Devoto-Oli and de.DDDSI are installed
+// here and all strictly monolingual, so each is one line — and each brings its
+// own notation conventions with it.
+//
 // A LIST per language, in preference order, because "the English dictionary" is
 // not one book. NOAD answers ordinary words and is the one whose notation matches
 // Google's; Apple Dictionary answers iPhone, iPad and MacBook, which NOAD simply

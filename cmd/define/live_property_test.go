@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"github.com/xianxu/tools/internal/conformance"
 	"os"
-	"strings"
 	"testing"
 	"unicode"
 
@@ -89,17 +88,13 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 		// first cannot see example-separator pipes, which carry no stress mark —
 		// the atlas published "0%" on the strength of the narrower one while 2%
 		// of entries still showed raw delimiters.
-		if near, bar := strayStress(out), strings.IndexByte(out, '|'); near != "" || bar >= 0 {
-			if near == "" {
-				lo, hi := max(0, bar-50), min(len(out), bar+50)
-				near = out[lo:hi]
-			}
+		if near, tripped := rawNotationNear(out); tripped {
 			rawPipes++
 			// CLASSIFY, don't just count. The ratchet used to print one number
 			// and three samples, so a movement said nothing about WHICH shape
 			// moved and the other survivors had to be dug out by raising this
 			// cap by hand — a cost #26 paid once before mechanising it.
-			cause := classifyRawNotation(w, out)
+			cause := classifyRawNotation(out)
 			byCause[cause]++
 			if byCause[cause] <= 2 { // two exemplars per cause, not three overall
 				t.Logf("[%s] %s: unconverted NOAD notation survived, near %q", cause, w, near)

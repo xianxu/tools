@@ -17,6 +17,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -197,5 +199,58 @@ func TestSelectedDictionaryAnswersInItsOwnLanguage(t *testing.T) {
 	if _, err := es.Lookup("sycophantic"); !errors.Is(err, ErrNoEntry) {
 		t.Errorf("sycophantic through the Spanish dictionary = %v, want ErrNoEntry — "+
 			"answering it from English is exactly the bug the mode removes", err)
+	}
+}
+
+// The raw-notation exemplars must still BE exemplars against the live
+// dictionary (ARCH-MOCK).
+//
+// They are a fake — four captured entries standing in for shapes the renderer
+// mishandles — and a fake with no conformance check becomes a fossil. A macOS
+// dictionary update could fix any of these upstream, and then the classifier
+// would keep passing against text the tool no longer produces, while the live
+// ratchet quietly reported a lower count that nobody attributed.
+//
+// Same standard the language corpus is held to by TestFixturesMatchLiveDictionary:
+// read through the seam, byte-compare, and skip rather than fail when the
+// dictionary is unreachable.
+func TestRawNotationExemplarsMatchLiveDictionary(t *testing.T) {
+	live, name := systemDictionary(store.DefaultLang, nil)
+	if name == everyActiveDictionary {
+		conformance.SkipOrFail(t, "no curated English dictionary is installed",
+			errors.New("selection fell back to the NULL search"))
+		return
+	}
+	paths, err := filepath.Glob(filepath.Join("testdata", "rawnotation", "*.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("no raw-notation exemplars — run testdata/capture.sh (unsandboxed)")
+	}
+	for _, path := range paths {
+		word := strings.TrimSuffix(filepath.Base(path), ".txt")
+		t.Run(word, func(t *testing.T) {
+			want, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := live.Lookup(word)
+			if err != nil {
+				conformance.SkipOrFail(t, "dictionary unreachable for "+word, err)
+				return
+			}
+			if got != string(want) {
+				t.Errorf("%s drifted from its captured exemplar — re-run testdata/capture.sh, "+
+					"and check whether the SHAPE it exemplifies still exists\n live: %.120q\n fixt: %.120q",
+					word, got, string(want))
+			}
+			// And it must still trip the oracle, or it has stopped being an
+			// exemplar and the offline test passes vacuously.
+			if _, tripped := rawNotationNear(Render(ParseEntry(got), RenderOpts{Width: 0})); !tripped {
+				t.Errorf("%s no longer renders raw notation — the shape may be fixed upstream; "+
+					"retire the exemplar and lower knownRawByCause", word)
+			}
+		})
 	}
 }
