@@ -164,21 +164,21 @@ than inventing one. **`#29` depends on `#27`, not the reverse.**
 
 ## Done when
 
-- [ ] A borrowed word can be heard in its source language **without changing the
+- [x] A borrowed word can be heard in its source language **without changing the
       session's language** — the deck, dictionary and highlight set stay English.
-- [ ] A source-language recording that does not exist degrades to the English
+- [x] A source-language recording that does not exist degrades to the English
       one, audibly the same as any other miss — French coverage is partial and
       `hotel` and `debut` are the cases to test. **NOT `déjeuner`**, which this
       Done-when originally named: it has no NOAD entry at all, so the lookup
       fails before audio is ever reached and it cannot exercise this path. See
       the 2026-08-29 Log entry.
-- [ ] Italian's absence from the CDN is reported honestly rather than as silence.
-- [ ] Whether the language is declared or inferred is a DECISION with its reason
+- [x] Italian's absence from the CDN is reported honestly rather than as silence.
+- [x] Whether the language is declared or inferred is a DECISION with its reason
       recorded, reconciled against `#23`'s rejection of inference.
-- [ ] A word whose source spelling differs from its typed form is fetched
+- [x] A word whose source spelling differs from its typed form is fetched
       correctly — `jalapeno` typed must reach `jalapeño_es_es`, not
       `jalapeno_es_es`, which is a 404.
-- [ ] The locale for a source-language recording comes from `#27`'s policy rather
+- [x] The locale for a source-language recording comes from `#27`'s policy rather
       than a second one invented here.
 
 ## Estimate
@@ -302,15 +302,15 @@ Designed. The durable plan is `workshop/plans/000029-origin-pronunciation-plan.m
       pronunciation as a parameter rather than a literal. **Result: `#27` needs
       no coordination — `voiceFor`/`localeFor`/`defaultLocale` are reused
       UNCHANGED, so the locale is literally `#27`'s policy and not a second one.**
-- [ ] `differsOnlyByDiacritics` + `Entry.AlsoSpellings` — the `(also …)` filter.
-- [ ] `SourceSpellings` — headword, then diacritic-only alternatives, then typed.
-- [ ] `utterance` — the whole walk: source spellings first, session as fallback.
-- [ ] `speak`/`playAnnounced`/`reportVoice` — report the voice that ANSWERED.
-- [ ] `-pron fr`, refused when there is no word to apply it to.
-- [ ] `/pron fr` — one-shot replay, no mode left behind.
-- [ ] Docs derive (`pronHelp` + doc-sync); rewrite the atlas's now-false
+- [x] `differsOnlyByDiacritics` + `Entry.AlsoSpellings` — the `(also …)` filter.
+- [x] `SourceSpellings` — headword, then diacritic-only alternatives, then typed.
+- [x] `utterance` — the whole walk: source spellings first, session as fallback.
+- [x] `speak`/`playAnnounced`/`reportVoice` — report the voice that ANSWERED.
+- [x] `-pron fr`, refused when there is no word to apply it to.
+- [x] `/pron fr` — one-shot replay, no mode left behind.
+- [x] Docs derive (`pronHelp` + doc-sync); rewrite the atlas's now-false
       "One language, no fallback".
-- [ ] Live conformance rows for every measurement the design rests on.
+- [x] Live conformance rows for every measurement the design rests on.
 
 ## Log
 
@@ -391,3 +391,58 @@ operator's request in this session. It depends on this issue for the mechanism,
 and its first two targets are the `ORIGIN` language and the headword. Its Spec
 records why clicking dissolves the AMBIGUITY objection to ORIGIN inference
 (`piano` names two languages; a pointer picks one) but NOT the closed-table one.
+
+### 2026-08-29 — shipped
+
+Nine tasks, one review boundary. `-pron fr <word>` and `/pron fr` both land; the
+plan is `workshop/plans/000029-origin-pronunciation-plan.md`.
+
+**Two claims I wrote down were disproved by measurement before they shipped**,
+which is the part worth keeping:
+
+1. **`rôle` is not an `(also …)` case.** I recorded "headword-first is right 5/9,
+   non-ASCII-first 9/9" in three places after probing the CDN. Running the finished
+   chain against the LIVE dictionary showed `SourceSpellings("role", …)` returns
+   just `["role"]`: NOAD heads the entry `role`, offers no `(also rôle)`, and
+   spells the accented form only inside ORIGIN prose. The rule is 8/8, `role` is a
+   known limitation, and mining ORIGIN is a parsing problem — that one sentence
+   offers three candidate tokens. Corrected in `parse.go`, `audiourl.go`, the plan
+   and the gate ledger.
+2. **A test assertion encoded a false belief about the CDN.** "The walk ends at
+   the session's recording" was checked with `strings.Contains(last, "_en_us_")`,
+   and an English walk ends on the LEGACY `/sounds/oxford/…--_us_2.mp3` path,
+   which carries no such marker. Now a membership check, which is the rule
+   `spokeSource` follows one level down.
+
+**Two fakes were not modelling the dependency, and both blocked the end-to-end
+test rather than merely being imprecise** (ARCH-MOCK):
+
+- `fakeDictionary` was keyed by exact spelling while NOAD is accent-insensitive
+  (`define jalapeno` → the `jalapeño` entry). Without fixing it the test would
+  have had to type `jalapeño`, where typed and headword agree and the entire
+  mechanism goes unexercised. It now folds through the production predicate, and
+  `TestLiveDictionaryResolvesAnUnaccentedQuery` pins the behaviour across five
+  words.
+- `fakeCDN` keyed on `r.URL.Path`, which Go percent-DECODES, so every URL
+  carrying a non-ASCII character 404'd there while the real CDN serves it. No
+  test had used an accented word before an issue whose whole point is that the
+  source spelling carries one.
+- `rebasedSource` returned the REBASED url as the one that answered. Harmless
+  until `#29` made that value load-bearing, then it reported a source recording
+  that answered perfectly well as a fallback.
+
+**Two side-quests, both in `TestPlanTablesNameEntitiesThatExist`.** It exempts
+rows whose FILE does not exist, which assumed a plan creates its files — seven of
+this issue's entities are new symbols in files that already exist, so the package
+was red for the whole implementation phase. It now honours a `new` row while the
+plan has unticked steps, and re-checks every one once the boxes are ticked. And
+it could not express a METHOD (`Entry.AlsoSpellings`) or a struct FIELD: the
+qualified form failed while the vaguer bare form passed. Methods now match
+against the named receiver; the field row was changed to name `commandCtx`, the
+entity that actually lives in that file. Both mutation-verified.
+
+**`déjeuner` was the wrong Done-when test and is corrected above** — no NOAD
+entry, so it fails at the dictionary and never reaches audio. `hotel` and `debut`
+are the real cases.
+
+`#30` (clickable regions) is filed and depends on this issue's mechanism.
