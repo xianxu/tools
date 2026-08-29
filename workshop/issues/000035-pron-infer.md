@@ -127,7 +127,18 @@ one-word answer.
 
 ## Plan
 
-- [ ] Claim, then design via `sdlc start-plan`.
+Designed. Durable plan: `workshop/plans/000035-pron-infer-plan.md` (4 tasks,
+single pass, no `Mx`).
+
+- [x] Claim, then design via `sdlc start-plan`.
+- [ ] `OriginLanguage` — the pure inference, mask-then-search over two measured
+      tables.
+- [ ] `/pron` uses it: no argument infers, reports the choice, errors with the
+      reason.
+- [ ] Pin that #29's D1 is untouched — an ordinary lookup never infers.
+- [ ] Docs: `pronHelp` (which both docs already consume) plus the atlas record
+      of why bare Greek is ancient and why this table is accepted where
+      ParseLang refuses one.
 
 ## Log
 
