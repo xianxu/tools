@@ -532,8 +532,10 @@ func parseSenses(text string) []Sense {
 		// A continuing number is NOT exempt because the sequence proves it — it
 		// does not. Any prose numeral equal to the next expected value is
 		// accepted, which is a real defect: `charge` buries its real sense 2
-		// inside a quoted example. 27 of 70,897 live entries (0.04%) are affected
-		// and the live sweep pins that count.
+		// inside a quoted example. The live sweep pins how many entries this
+		// affects — see knownRawByCause's causeProseNumeral entry, which owns the
+		// number so a comment cannot restate it staler. (This one did: it read
+		// "27 of 70,897" while the measured values were 7 and 70,886.)
 		//
 		// The exemption stands because the alternative is worse: requiring
 		// structural placement for every number regresses senses NOAD genuinely

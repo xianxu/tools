@@ -78,15 +78,26 @@ reviews found bugs that each narrower check had shipped green:
 
 | check | scope | catches |
 |---|---|---|
-| `TestRenderLosesNothing` | the 29 captured fixtures | regressions on known shapes |
+| `TestRenderLosesNothing` | the captured fixtures under `testdata/entries/<lang>/` | regressions on known shapes |
 | `FuzzRenderLosesNothing` | arbitrary strings, corpus-seeded | parser crashes, boundary bugs |
-| `TestRenderLosesNothingOverLiveEntries` (conformance) | **every** reachable entry — 70,897 | shapes nobody thought to sample |
+| `TestRenderLosesNothingOverLiveEntries` (conformance) | **every** reachable entry | shapes nobody thought to sample |
+| `TestClassifyRawNotationOverRealEntries` | one captured exemplar per raw-notation cause | the taxonomy, without needing the live dictionary |
 
 The third is what earns the claim "safe against entries nobody sampled"; a corpus
 test alone covers only what someone already sampled. Content loss over the live
-sample went 7% → **0%**, measured over **all 70,897** reachable entries — not a
-sample. The 530 non-Latin entries from other active dictionaries are counted and
-excluded, not silently skipped. The sweep runs in ~38s.
+sweep is **0%**, over every reachable entry rather than a sample.
+
+**Measured 2026-08-28: 70,886 entries reachable, 0 non-Latin, ~116s.** Those are
+DATED rather than stated as standing facts, and the distinction is the point —
+each is a property of one host's installed dictionaries on one day, and every
+one of them was wrong in this file until `#26` re-ran them. A number that only a
+live run can produce is a record; a number the code owns is consumed instead (see
+the raw-notation count below). Anything written as neither drifts silently.
+
+The non-Latin count was 530 before `#23 M2` and is 0 after it: the sweep used to
+search every ACTIVE dictionary, and now asks the curated English books. The
+counting branch is kept anyway, because adding a book to the curated list can
+bring the shape back.
 
 Sampling is why this section had to be rewritten three times: at 2,749 entries
 (3.8%) the raw-notation count read 0, and at full width it was 27.
@@ -129,10 +140,29 @@ It guarantees **fidelity, not completeness** — see Limits.
 - **NOAD has gaps.** Recent coinages (`rizz`, `unalive`) are absent; `define`
   exits 1. Their audio is missing too — the gaps correlate, both tracing to Oxford.
 - **No second dictionary source**, by decision.
+- **Raw NOAD notation survives on a pinned handful of entries — FOUR causes, not
+  one.** The ratchet is `knownRawByCause` (`cmd/define/rawnotation_test.go`),
+  which pins the population per cause; `TestAtlasQuotesTheRawNotationCount` keeps
+  the number below in step with it, because this one has drifted three times.
+
+  <!-- raw-notation-count -->26<!-- /raw-notation-count --> entries, as:
+  *prose numeral* 7, *headword pronunciation* 7, *phrase pronunciation* 8,
+  *literal pipe* 4. A total alone is a weak ratchet — two causes can move
+  opposite ways and leave it unchanged — so the breakdown is what makes a
+  movement attributable.
+
+  Only the first is a parser defect in the sense below. The *literal pipe* four
+  (`pipe`, `piped`, `pipeful`, `pipeless`) are a false positive the oracle keeps
+  deliberately: those entries define the `|` character, so their content contains
+  one. Narrowing the oracle to exclude them is the move that already failed here
+  — see the sampling note above.
+
 - **A prose numeral that continues a sense sequence is taken as a sense number.**
-  27 of 70,897 entries (0.04%). `define charge` buries its real sense 2 inside a
-  quoted example, and two raw `|` reach the screen; `just`, `ratio`, `glop`,
-  `logarithmic`, `depth` and `shortness` are the same shape. A sequence-opening
+  7 of those entries. `define charge` buries its real sense 2 inside a
+  quoted example, and two raw `|` reach the screen; `just`, `depth` and
+  `shortness` are the same shape. (`ratio`, `glop` and `logarithmic` were named
+  here too and no longer are: they render CLEAN now, which is not the same as
+  being unreachable — all three still resolve.) A sequence-opening
   `1` must be structurally placed, but a continuing number is exempt — and that
   exemption is the defect. It stands because requiring placement for every number
   regresses senses NOAD genuinely writes unplaced (`bases`: "plural form of

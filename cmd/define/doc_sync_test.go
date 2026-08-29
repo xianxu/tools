@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -47,5 +48,32 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 					"intended one.", tc.line)
 			}
 		})
+	}
+}
+
+// The atlas's raw-notation count DERIVES from the ratchet rather than restating
+// it.
+//
+// Same move as the prompt test above, for the same reason and with a longer
+// record behind it: this number has drifted three times. `#26` found it stated
+// as 27 in the atlas and again in a parse.go comment while the measured value
+// was 26, and the atlas additionally attributed the whole population to one
+// cause when it is four.
+//
+// The marker comment is what makes it machine-checkable without pinning the
+// surrounding prose, which should stay free to be rewritten — the narrowness is
+// deliberate, exactly as it is for the play-loop prompts.
+func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
+	b, err := os.ReadFile("../../atlas/define.md")
+	if err != nil {
+		// NOT a skip: the atlas is in the repo, so an unreadable one is a broken
+		// checkout or a moved file, never an absent dependency.
+		t.Fatalf("atlas/define.md unreadable: %v", err)
+	}
+	want := fmt.Sprintf("<!-- raw-notation-count -->%d<!-- /raw-notation-count -->", knownRawNotationEntries)
+	if !strings.Contains(string(b), want) {
+		t.Errorf("atlas/define.md does not quote the pinned raw-notation count.\n"+
+			"want the marked span to read %q — the ratchet owns this number, the doc consumes it.\n"+
+			"If the count moved, knownRawByCause moved first and the atlas follows.", want)
 	}
 }
