@@ -5,7 +5,7 @@ deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
-estimate_hours: 1.77
+estimate_hours: 1.81
 started: 2026-08-29T11:29:22-07:00
 ---
 
@@ -95,17 +95,17 @@ model: estimate-logic-v3.1
 familiarity: 1.0
 item: issue-spec               design=0.50 impl=0.08
 item: smaller-go-module        design=0.02 impl=0.08
-item: smaller-go-module        design=0.02 impl=0.06
+item: smaller-go-module        design=0.02 impl=0.08
 item: smaller-go-module        design=0.02 impl=0.10
 item: atlas-docs               design=0.03 impl=0.07
 item: smaller-go-module        design=0.02 impl=0.10
-item: smaller-go-module        design=0.00 impl=0.06
+item: smaller-go-module        design=0.00 impl=0.08
 item: smaller-go-module        design=0.03 impl=0.12
 item: milestone-review         design=0.00 impl=0.16
 item: milestone-review         design=0.00 impl=0.08
-item: smaller-go-module        design=0.00 impl=0.12
+item: milestone-review         design=0.00 impl=0.12
 design-buffer: 0.15
-total: 1.77
+total: 1.81
 ```
 
 Derivation notes.
@@ -119,8 +119,14 @@ Derivation notes.
   measured longer and carried a genuinely open design question; here the design
   question was answered by a table.
 
-- **Seven `smaller-go-module`s, all ×0.2 on design**, and they are not equal.
-  Task 2 is 0.06 — one map row and a comment rewrite. Task 5's paired
+- **Six `smaller-go-module`s, all ×0.2 on design**, and they are not equal.
+  Task 2 is 0.08, the band floor, not the 0.06 first written: it is a full TDD
+  cycle — a two-case `chooseDictionary` test including the bilingual
+  `OxfordItalian` rejection, run red, the row, the comment rewrite, run green —
+  plus the joint commit with Task 1. The Italian no-IPA sibling is 0.08 for the
+  same reason. Both were below the scaled floor (0.08–0.20) in the first block,
+  which is the asymmetry the estimate gate caught: it named `atlas-docs`' ceiling
+  and then breached its own floor twice unremarked. Task 5's paired
   `curated`-derived guards are 0.12 because they are two tests plus their removal
   verification. Task 3 (0.10) is a rewrite rather than an addition: the
   own-language conformance check is Spanish-hardcoded and becomes a table, which
@@ -142,18 +148,31 @@ Derivation notes.
   `fakeDictionary` with a live half, and this issue probed them ~40 times during
   design; there is nothing left to discover.
 
-- **A remediation line, because `#29` proved the boundary review returns work.**
-  Four rounds there, and `#27` before it produced two follow-up commits. 0.12,
-  design-free. The second `milestone-review` at 0.08 is the manual verification
+- **Three `milestone-review` rows, because the boundary has three chunks.**
+  Running the review (0.16), the manual verification pass (0.08), and
+  REMEDIATING what the review returns (0.12). The last was first slugged
+  `smaller-go-module`; it is post-review process overhead, which is what this
+  primitive names, and mis-slugging it also made the block read as more code work
+  than the plan carries. `#29` had four review rounds and `#27` two follow-up
+  commits, so pricing remediation at zero is the one thing history rules out. The
+  verification row at 0.08 is the manual
   pass — five CLI invocations plus `go test ./...` and the unfiltered conformance
   suite, which `#29`'s round 3 showed is not optional and not free.
 
-- **Expect this to land near or above the estimate, not below.** `#29` came in at
-  0.8× (3.34 actual on 2.78) against a `tools` v3.1 median of 0.64 — so the
-  repo's under-bias did not hold for the most recent row, and four review rounds
-  were the reason. This plan is smaller but has the same gate ahead of it, which
-  is what the remediation line prices. No point forecast; the ledger row is the
-  measurement.
+- **Expect this to land near or above the estimate, not below**, and the reason
+  is not the one first written here. `#29` closed at 0.83× (3.34 actual on 2.78)
+  against a `tools` v3.1 median near 0.7. An earlier draft read that as "the
+  under-bias did not hold for the most recent row" — wrong: 0.83 is still an
+  UNDER-estimate, only a milder one, and the two most recent rows (`#27` 0.49,
+  `#29` 0.83) point the same way. The operational conclusion stands and the
+  framing did not. No point forecast; the ledger row is the measurement.
+
+- **The calibration source is flagged `[stale]`** — `sdlc estimate-source`
+  reports the ledger is newer than `estimate-logic-v3.1.md`, so the per-primitive
+  hours may have drifted (`#127`). That matters here because two of these items
+  sit exactly ON band edges which are themselves provisional. Derived against
+  them anyway, as the tool instructs, and noted so the ledger row is not read as
+  more precise than its bands.
 
 ## Plan
 
