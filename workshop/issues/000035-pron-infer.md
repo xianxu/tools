@@ -1,11 +1,12 @@
 ---
 id: 000035
-status: open
+status: working
 deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours:
+started: 2026-08-29T14:56:14-07:00
 ---
 
 # /pron with no language: infer the origin from ORIGIN, error only when it cannot be determined
