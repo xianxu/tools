@@ -1,6 +1,10 @@
 package main
 
-import "strings"
+import (
+	"fmt"
+	"io"
+	"strings"
+)
 
 // screen is the interactive loop's line buffer and viewport (#30).
 //
@@ -106,4 +110,72 @@ func (s *screen) Scroll(n int) {
 	if s.offset < 0 {
 		s.offset = 0
 	}
+}
+
+// The two sequences a whole-frame redraw needs, beside eraseLine (repl.go) which
+// is the partial-redraw model this replaces.
+const (
+	cursorHome = "\x1b[H" // row 1, column 1
+	eraseDown  = "\x1b[J" // clear from the cursor to the end of the screen
+)
+
+// Paint draws one whole frame: the buffer's visible tail, then the prompt, then
+// the command menu under it.
+//
+// The frame is redrawn WHOLE — home, clear, everything — rather than patched.
+// That is the change of model this milestone buys: the editor currently tracks
+// how many menu rows it drew so it can erase exactly that many, and carries a
+// documented known limit for when the count is wrong ("if the menu does not fit
+// below the cursor the terminal scrolls, and the cursor-up count then lands a
+// row off"). A whole-frame redraw cannot be off by a row, because it never
+// counts rows it drew earlier.
+//
+// The prompt and the menu are NOT buffer lines. They are the live edge of the
+// session and change on every keystroke; putting them in `lines` would append a
+// copy of the prompt per character typed.
+//
+// termRows is the terminal's height, passed in rather than stored, so a resize
+// is one call site's business (the loop's SIGWINCH case) and not a field that
+// can go stale.
+func (s *screen) Paint(w io.Writer, termRows int, prompt string, menu []string) {
+	// The buffer gets whatever the prompt and menu do not need. A terminal too
+	// short for even the prompt still gets the prompt: losing the line you are
+	// typing is worse than losing history you can scroll to.
+	s.rows = termRows - 1 - len(menu)
+	if s.rows < 0 {
+		s.rows = 0
+	}
+	var b strings.Builder
+	b.WriteString(cursorHome + eraseDown)
+	for _, line := range s.Frame() {
+		b.WriteString(line + "\r\n")
+	}
+	b.WriteString(prompt)
+	for _, m := range menu {
+		b.WriteString("\r\n" + m)
+	}
+	if len(menu) > 0 {
+		// Back to the prompt row, so the cursor sits where the user is typing.
+		fmt.Fprintf(&b, "\x1b[%dA\r", len(menu))
+		// And forward to the prompt's own cursor column, which the caller
+		// encoded into `prompt` — reprinting it is cheaper than tracking a
+		// column here and cannot disagree with what was drawn.
+		b.WriteString(prompt)
+	}
+	fmt.Fprint(w, b.String())
+}
+
+// Transcript is every line the session showed, for printing back into the normal
+// buffer on exit (#30 D3).
+//
+// The alternate screen is discarded when the tool quits, so without this a
+// session's entries vanish from the terminal's history — and today
+// `define arrondissement` leaves the entry where you can scroll back to it
+// tomorrow or copy from it. Losing that silently is a regression a user meets
+// immediately.
+func (s *screen) Transcript() string {
+	if len(s.lines) == 0 {
+		return ""
+	}
+	return strings.Join(s.lines, "\n") + "\n"
 }

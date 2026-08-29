@@ -106,3 +106,58 @@ func FuzzScreenWriteDoesNotPanic(f *testing.F) {
 		s.Scroll(-1)
 	})
 }
+
+// Paint is a WHOLE frame: home, clear, buffer tail, prompt, menu.
+//
+// The model it replaces counted the menu rows it drew so it could erase exactly
+// that many, and carried a documented known limit for when the count was wrong.
+// A whole-frame redraw cannot be off by a row, and these cases pin the split of
+// a fixed terminal height between buffer, prompt and menu.
+func TestScreenPaintSplitsTheHeight(t *testing.T) {
+	var s screen
+	for _, l := range []string{"a", "b", "c", "d", "e"} {
+		s.Write([]byte(l + "\n"))
+	}
+	for _, tc := range []struct {
+		name      string
+		termRows  int
+		menu      []string
+		wantLines []string
+	}{
+		{"no menu: rows-1 of buffer", 4, nil, []string{"c", "d", "e"}},
+		{"a menu takes from the buffer, not the prompt", 4, []string{"m1"}, []string{"d", "e"}},
+		{"a tall menu can leave no buffer at all", 3, []string{"m1", "m2"}, nil},
+		// Losing the line you are typing is worse than losing history you can
+		// scroll to, so the prompt survives a terminal too short for anything.
+		{"an impossibly short terminal still shows the prompt", 1, []string{"m1", "m2"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var b strings.Builder
+			s.Paint(&b, tc.termRows, "PROMPT", tc.menu)
+			out := b.String()
+			for _, want := range tc.wantLines {
+				if !strings.Contains(out, want+"\r\n") {
+					t.Errorf("frame is missing buffer line %q:\n%q", want, out)
+				}
+			}
+			if !strings.Contains(out, "PROMPT") {
+				t.Errorf("frame has no prompt:\n%q", out)
+			}
+			if !strings.HasPrefix(out, cursorHome+eraseDown) {
+				t.Errorf("frame does not start by clearing the screen: %q", out[:min(20, len(out))])
+			}
+		})
+	}
+}
+
+// The transcript is what survives the alternate screen being discarded.
+func TestScreenTranscript(t *testing.T) {
+	var s screen
+	if got := s.Transcript(); got != "" {
+		t.Errorf("an empty session has a transcript: %q", got)
+	}
+	s.Write([]byte("one\ntwo\n"))
+	if got, want := s.Transcript(), "one\ntwo\n"; got != want {
+		t.Errorf("Transcript() = %q, want %q", got, want)
+	}
+}
