@@ -99,9 +99,15 @@ func isASCIIOnly(s string) bool { return len(s) == utf8.RuneCountInString(s) }
 // defenestrate needs the _2 suffix on the legacy path), so one URL is not
 // enough and the fallback policy belongs here rather than in the fetch loop.
 //
-// ONE language, never a search across languages: #23 makes the language a
-// declared mode, so there is nothing to guess. That is what deleted #27's
-// planned voices() fallback — a mode does not need one.
+// ONE language, and that is still true OF THIS FUNCTION: it builds for the voice
+// it is handed and never searches across languages. #23 makes the session's
+// language a declared mode, so there is nothing to guess, which is what deleted
+// #27's planned voices() fallback.
+//
+// The cross-language walk lives one level up, in utterance.Candidates (#29), and
+// it is not a search either — it runs only when -pron or /pron named a language
+// outright, and it reports which voice actually answered. Guessing is still what
+// this package does not do; being TOLD is new.
 func AudioCandidates(word string, v voice) []string {
 	word = strings.ToLower(strings.TrimSpace(word))
 	if word == "" {

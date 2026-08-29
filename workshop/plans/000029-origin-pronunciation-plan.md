@@ -237,7 +237,7 @@ func (u utterance) spokeSource(from string) bool // membership in sourceCandidat
 - [ ] **Step 1:** three tests covering the whole truth table — (a) source asked for and MISSING: the English recording plays AND stderr names both languages (drive it with `it`/`ciao`, the measured-absent case); (b) source asked for and PRESENT: stderr is **empty**, so the report cannot become noise on every lookup; (c) no source asked for: stderr is empty even though the session's recording is what played.
 - [ ] **Step 2:** run — FAIL, `playAnnounced` does not take an `utterance`.
 - [ ] **Step 3:** implement, and thread `utteranceFor` through all five call sites.
-- [ ] **Step 4:** `go test ./cmd/define`. **`TestTheFetchLoopAsksOnlyForTheSessionsLanguage` must pass unchanged** — an ordinary lookup's request list is byte-identical to before. Its NAME is disposed of in Task 8.
+- [ ] **Step 4:** `go test ./cmd/define`. **`TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed` must pass unchanged** — an ordinary lookup's request list is byte-identical to before. Task 8 is where that name gained its qualifier.
 - [ ] **Step 5:** commit — `#29: report the voice that answered, not the one that was asked for`
 
 ---
@@ -317,7 +317,7 @@ if pending != "" { replayInPlace(ctx, d, opt, sess, pending, stdout, stderr) }
 | 2 | `atlas/define.md:1119-1123` — *"One language, no fallback (`#23`)"* | **REWRITE**, not append. State both halves: the session still asks for one language, and `-pron` adds an explicit second voice tried first — with D5's reason the two cases differ. |
 | 3 | `README.md:189` — *"Everything follows it — the deck a word files into, the words `--play` offers, and the recording that is fetched"* | **AMEND.** The last clause is now conditional: the recording follows the language unless `-pron`/`/pron` asked otherwise for one lookup. |
 | 4 | `audiourl_test.go:64` — *"One language, and the legacy path for English only"* | **KEEP.** It documents `TestAudioCandidatesSpanish`, which tests `AudioCandidates`, which really is still one language. Enumerated so the decision is recorded rather than the site merely missed. |
-| 5 | `audiourl_test.go:184` — `TestTheFetchLoopAsksOnlyForTheSessionsLanguage` | **NARROW THE NAME or its comment.** The test still passes (it passes no `-pron`), but the name now over-claims: with `-pron` the loop deliberately asks for another language first. A name that asserts a false invariant is the same defect as a comment that does. |
+| 5 | `audiourl_test.go:184` — the fetch-loop test's NAME | **NARROWED**, to `…WhenNoneWasNamed`, plus a `retiredSymbolNames` row so the rename sweeps itself. The test still passes (it passes no `-pron`), but the name now over-claims: with `-pron` the loop deliberately asks for another language first. A name that asserts a false invariant is the same defect as a comment that does. |
 
 Then the atlas gains, in the same section: the source-orthography constraint with the `jalapeño`/`jalapeno` measurement, the `(also …)` filter with the 400-entry survey behind it, and D1's `police_fr_fr` 200 — the row a future reader will want when they wonder why this is not automatic.
 

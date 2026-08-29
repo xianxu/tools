@@ -675,6 +675,12 @@ var retiredSymbolNames = map[string]string{
 	// it names. Adding the row is the whole discipline; everything after is
 	// mechanical.
 	"TestREADMEQuotesTheLocaleHelp": "TestDocsQuoteTheLocaleHelp",
+	// #29 narrowed this name: with -pron the loop deliberately asks for another
+	// language first, so "only" needed a "when none was named". atlas/define.md
+	// cited the old name, which is exactly the stale mention this map exists to
+	// catch — and the row is what turns "I should sweep the docs" into a build
+	// failure.
+	"TestTheFetchLoopAsksOnlyForTheSessionsLanguage": "TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed",
 }
 
 // No current-truth artifact names a symbol the tree has retired.

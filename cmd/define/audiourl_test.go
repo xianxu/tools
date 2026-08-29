@@ -63,6 +63,10 @@ func TestAudioCandidatesMultiWord(t *testing.T) {
 
 // One language, and the legacy path for English only.
 //
+// Still true after #29, and enumerated in that issue's sweep rather than left
+// unexamined: this documents AudioCandidates, which really does build for one
+// voice. The cross-language walk is utterance.Candidates, one level up.
+//
 // Measured 2026-08-28: madrugar--_us_1 and madrugar--_es_1 are BOTH 404 while
 // sycophantic--_us_1 is 200, so /sounds/oxford/ is an English-only generation.
 // A Spanish candidate there is a guaranteed miss at ~450ms, which is the whole
@@ -181,7 +185,14 @@ func TestVoiceForBuildsBothFieldsTogether(t *testing.T) {
 // 2026-08-28, a miss costs ~300-600ms against ~40ms for a hit, so the two legacy
 // URLs a language-blind version would try are most of a second per lookup, every
 // lookup, for a guaranteed 404.
-func TestTheFetchLoopAsksOnlyForTheSessionsLanguage(t *testing.T) {
+// The scope is "the session's language" — meaning NO -pron was given. With one,
+// the loop deliberately asks for another language first (#29,
+// TestAnUtteranceAsksTheSourceFirstAndFallsBackToTheSession). The name says
+// "only" and that remains true of every case below, all of which build their
+// candidates straight from AudioCandidates; it would be false of an utterance
+// that was handed a source. A name asserting an invariant the tree no longer
+// holds is the same defect as a comment doing it.
+func TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		v       voice

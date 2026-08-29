@@ -113,6 +113,27 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 //
 // Narrow on purpose, like the prompt test above: it pins the one line a reader
 // acts on, not the prose around it, which should stay free to be rewritten.
+// The same mechanism for -pron (#29), and for the same reason the -locale one
+// exists: this policy is stated in the flag, the README and the atlas, and
+// nothing but a test keeps three copies in step.
+//
+// It is a SEPARATE test rather than a row in the one below because the failure
+// messages differ — a reader who breaks this one needs to be told about -pron,
+// not about locales.
+func TestDocsQuoteThePronHelp(t *testing.T) {
+	want := "<!-- pron-help -->" + pronHelp + "<!-- /pron-help -->"
+	for _, doc := range []string{"../../README.md", "../../atlas/define.md"} {
+		b, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc, err)
+		}
+		if !strings.Contains(string(b), want) {
+			t.Errorf("%s does not quote the -pron help.\nwant the marked span to read:\n%s\n"+
+				"pronHelp owns this text; the docs consume it.", doc, want)
+		}
+	}
+}
+
 func TestDocsQuoteTheLocaleHelp(t *testing.T) {
 	// EVERY doc that states the policy, not just the first one wired up. Fixing
 	// the README alone left atlas/define.md as the next copy to go stale, which
