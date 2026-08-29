@@ -1,11 +1,12 @@
 ---
 id: 000029
-status: open
+status: working
 deps: [tools#27]
 github_issue:
 created: 2026-08-28
-updated: 2026-08-28
+updated: 2026-08-29
 estimate_hours:
+started: 2026-08-29T06:16:23-07:00
 ---
 
 # origin pronunciation for borrowed words: hear arrondissement as French, without switching language
