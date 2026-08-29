@@ -1,11 +1,12 @@
 ---
 id: 000031
-status: open
+status: working
 deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours:
+started: 2026-08-29T11:29:22-07:00
 ---
 
 # curate the French, Italian and German dictionaries so /lang fr|it|de is a real mode
