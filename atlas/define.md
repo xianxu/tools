@@ -1267,6 +1267,38 @@ entry. That is also why `usage/` has no language dimension: nothing writes it
 outside English. If `#10` or `#18` makes the feed language-aware, scoping the
 cache becomes required, and that is the moment to add it.
 
+
+**Three curated languages as of `#31`**, and the list is a judgement rather than
+a rule — nothing in the metadata separates a general dictionary from a
+thesaurus, so `chooseDictionary` NARROWS by metadata and `curated` DECIDES.
+
+| language | book | notation it writes |
+|---|---|---|
+| English | NOAD + Apple Dictionary | IPA, always: `\| ˈrekərd \|` |
+| Spanish | Larousse *Diccionario General* | **none** — phonemic orthography, so there is nothing to write |
+| Italian | *Devoto-Oli* | **not a transcription** — syllabification with stress, `(cià·o)`, `(pìz·za)`. `isPronunciation` declines it, correctly |
+
+`#31` measured French and German too, and did NOT curate them. The parser is
+NOAD-shaped in two closed vocabularies — `posWords` is English (`noun`, not `nom
+masculin` / `Substantiv`) and `sectionWords` is English (`ORIGIN`, not
+`ETIMOLOGIA` / `HERKUNFT`) — so over five common words each it finds 245 senses
+in Devoto-Oli against NOAD's 153, but **six** in `fr.Multi` and **five** in
+`de.DDDSI`, whose longest single undifferentiated blob runs 2,811 and 4,404
+runes. `Haus` puts its grammar table, synonym list and etymology in one example.
+That is `#34`. Two facts worth inheriting from it: `fr.Multi` is **Québécois**,
+not France French, and German's Duden field is real but LOSSY — `Wạsser` and
+`ˈkatsə, Kạtze` survive, while a long vowel's underline does not, so 9 of 15
+sampled entries render the bare headword.
+
+**A standing limitation: the raw-notation ratchet is ENGLISH-ONLY.**
+`TestNoRawPronunciationNotationSurvives` sweeps every captured language since
+`#31`, so `es` and `it` are checked at CORPUS width — six fixtures each. The live
+ratchet in `live_property_test.go` is the one that sweeps at DICTIONARY width,
+and it walks `/usr/share/dict/words` against `systemDictionary(DefaultLang)`.
+There is no Italian or Spanish word list on the host, so neither language has a
+ratchet at that width. This is stated rather than fixed: `#23 M2` added Spanish
+under exactly the same condition, and inventing a word list to close it would be
+a bigger decision than the gap warrants.
 ## Source pronunciation (`#29`)
 
 `define -pron fr arrondissement` plays the French recording while the deck, the

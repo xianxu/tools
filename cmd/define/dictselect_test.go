@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -409,5 +410,87 @@ func TestChooseDictionaryPicksTheCuratedItalian(t *testing.T) {
 	// means the NULL search, never a different-language dictionary.
 	if got, ok := chooseDictionary([]dictMeta{bilingual}, "it"); ok {
 		t.Errorf("chooseDictionary(it) accepted the bilingual Oxford: %v", got)
+	}
+}
+
+// Every curated language has a corpus, which is the direction nothing checked.
+//
+// `capturedLanguages` derives from the DIRECTORY and guards only `len(out) >= 2`
+// (dict_fake_test.go), so it answers "what did we capture" and can never answer
+// "did we capture what production selects". Concretely: deleting
+// testdata/entries/it/ outright leaves en+es, satisfies that guard, and reddens
+// nothing — while `curated` still points every Italian session at a book whose
+// fixtures are gone, and every conformance check that would have caught the
+// drift silently has nothing to read.
+//
+// This is the same row-vs-tree asymmetry #29 closed for plan tables: a claim in
+// one artifact is only checked in the direction someone thought to look.
+func TestEveryCuratedLanguageHasACorpus(t *testing.T) {
+	for lang := range curated {
+		t.Run(string(lang), func(t *testing.T) {
+			paths, err := filepath.Glob(filepath.Join("testdata", "entries", string(lang), "*.txt"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(paths) == 0 {
+				t.Errorf("production curates %v for %s, but testdata/entries/%s holds no "+
+					"fixtures — the seam has nothing to conformance-check, so a change in "+
+					"that dictionary would surface as a user complaint rather than a red test. "+
+					"Run testdata/capture.sh (unsandboxed).", curated[lang], lang, lang)
+			}
+		})
+	}
+}
+
+// The README names every curated language, or it goes stale the way the atlas
+// command table did — three of five commands listed, the two missing being the
+// two most recently added (#29).
+//
+// NOT a generated span, and that is a decision. `TestDocsQuoteTheCommandList`
+// can generate because `commands` owns the strings the doc prints; `curated`
+// owns bundle IDENTIFIERS while the README names book TITLES ("Larousse
+// Diccionario General"), and nothing maps one to the other. The three ways out
+// were: add a title field to `curated`, replace the prose with an identifier
+// table, or pin the LANGUAGES. The first puts a display string into production
+// data to serve a doc test and changes the shape every consumer of `curated`
+// reads; the second makes a friendly paragraph unfriendly. The drift actually
+// worth catching is a language curated but undocumented, and that is this.
+//
+// The code→name map lives HERE rather than in production because it is a fact
+// about English prose, not about the dictionaries.
+//
+// SCOPED TO A MARKED SPAN, not to the whole file. Free-text containment passed
+// the moment it was written, and for the wrong reason: #29 had left the sentence
+// "Italian and Japanese have no recordings in this CDN generation" in the -pron
+// section, so the README "named Italian" while its dictionary paragraph still
+// listed two languages. A check satisfied by an unrelated sentence certifies
+// nothing — the class internal/conformance/guard_test.go records four rounds of.
+func TestDocsNameEveryCuratedLanguage(t *testing.T) {
+	names := map[store.Lang]string{"en": "English", "es": "Spanish", "it": "Italian"}
+	b, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	_, rest, ok := strings.Cut(string(b), "<!-- curated-languages -->")
+	if !ok {
+		t.Fatal("README.md has no <!-- curated-languages --> span; the dictionary paragraph " +
+			"is what must name every curated language, and an unmarked one cannot be checked")
+	}
+	span, _, ok := strings.Cut(rest, "<!-- /curated-languages -->")
+	if !ok {
+		t.Fatal("README.md opens <!-- curated-languages --> and never closes it")
+	}
+	for lang := range curated {
+		name, ok := names[lang]
+		if !ok {
+			t.Errorf("curated has %s but this test has no English name for it — add the row "+
+				"here and the language to the README, which is the pair this test keeps together", lang)
+			continue
+		}
+		if !strings.Contains(span, name) {
+			t.Errorf("the README's dictionary paragraph never names %s (%s), which production "+
+				"curates %v for — a reader cannot discover a language the docs omit",
+				name, lang, curated[lang])
+		}
 	}
 }

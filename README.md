@@ -36,6 +36,7 @@ define -no-audio bank       # no fetch, no sound
 define -locale gb schedule  # British pronunciation
 define -lang es -locale us jalapeño   # Latin American, not Castilian
 define -lang es madrugar    # one lookup in Spanish, without switching
+define -lang it pizza       # and in Italian: the Devoto-Oli, not NOAD
 define -pron fr arrondissement  # the French recording, English everything else
 define -raw record          # the unparsed dictionary entry
 define -no-color bank       # never emit ANSI (also automatic when piped)
@@ -348,10 +349,22 @@ survive the session, because a one-shot lookup has no session to inherit one
 from. `-lang es` is the same choice for a single run, without writing it down.
 
 Lookup goes through macOS's CoreServices, and **the dictionary follows the
-language**. In English that is the New Oxford American Dictionary (hence the
-Google-matching notation) plus Apple Dictionary, which is where `iPhone` comes
-from; in Spanish it is the Larousse *Diccionario General*. `/lang` says which
-ones are answering.
+language**. `/lang` says which books are answering.
+
+<!-- curated-languages -->
+- **English** — the New Oxford American Dictionary (hence the Google-matching
+  notation), plus Apple Dictionary, which is where `iPhone` comes from.
+- **Spanish** — the Larousse *Diccionario General*.
+- **Italian** — the *Devoto-Oli*. Note that Italian has **no recordings** in the
+  pronunciation CDN, so an Italian session gives you definitions and silence;
+  and the Devoto-Oli writes syllabification with stress, `(cià·o)`, rather than
+  a phonetic transcription.
+<!-- /curated-languages -->
+
+Each must be **monolingual** — indexed in its own language *and* defined in it.
+That rules out books like the bilingual Oxford Spanish and Oxford Italian, which
+are installed on many machines and would put English glosses in front of a
+learner who asked for the other language.
 
 So `mesa` is an isolated flat-topped hill in English and *"un tablero
 horizontal, sostenido por uno o varios pies"* in Spanish, and `sycophantic` in a

@@ -227,8 +227,25 @@ func TestCorpusBlockStructure(t *testing.T) {
 //
 // Checked with strayStress, which does NOT consult isPronunciation — see the
 // oracle note there for why the obvious formulation of this test is circular.
+// EVERY captured language, not just English (#31). It took testDict(t) while two
+// committed comments — in capture.sh and rawnotation_test.go — described it as a
+// hard zero "over the committed corpus". That was harmless while the corpus was
+// English plus a Spanish corpus nobody claimed this covered; capturing Italian
+// is what would have made the phrasing actively misleading, so the check is
+// widened to match the claim rather than the claim narrowed to match the check.
+//
+// Measured before widening: 15 Devoto-Oli entries render 0 raw pipes and parse 0
+// IPA, so Italian passes the hard zero rather than needing an exemption.
 func TestNoRawPronunciationNotationSurvives(t *testing.T) {
-	d := testDict(t)
+	for _, lang := range capturedLanguages(t) {
+		t.Run(string(lang), func(t *testing.T) {
+			noRawNotationIn(t, testDictFor(t, lang))
+		})
+	}
+}
+
+func noRawNotationIn(t *testing.T, d *fakeDictionary) {
+	t.Helper()
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			out := Render(ParseEntry(raw), RenderOpts{Color: false})
@@ -327,6 +344,37 @@ func TestWrappedRenderStillLosesNothing(t *testing.T) {
 // Spanish word the audio is the ONLY place pronunciation information exists,
 // which is the argument behind #27's locale work.
 //
+// Italian entries carry no pronunciation notation either, and for a DIFFERENT
+// reason than Spanish — which is why this is its own test rather than a row (#31).
+//
+// Spanish orthography is phonemic, so the dictionary writes nothing at all.
+// Devoto-Oli DOES write something — `(cià·o)`, `(pìz·za)`, `(e·sprès·so)` — and
+// it is syllabification with stress, not a phonetic transcription.
+// isPronunciation declines it, correctly, and this pins that: if the parser ever
+// starts reading those parens as an IPA span, `#30`'s click target and the
+// renderer's `/…/` would both start showing syllable breaks as pronunciation.
+//
+// Measured 0 of 15 across the live dictionary before the corpus was captured.
+func TestItalianEntriesCarryNoPronunciationNotation(t *testing.T) {
+	d := testDictFor(t, "it")
+	if len(d.entries) == 0 {
+		t.Fatal("the Italian corpus is empty; this test would pass vacuously")
+	}
+	for word := range d.entries {
+		raw, err := d.Lookup(word)
+		if err != nil {
+			t.Errorf("%s: %v", word, err)
+			continue
+		}
+		if got := ParseEntry(raw).IPA; got != "" {
+			t.Errorf("%s: parsed a pronunciation %q from an Italian entry — Devoto-Oli "+
+				"writes syllabification, not transcription. If this starts passing, the "+
+				"Devoto-Oli changed or isPronunciation widened, and #30 reads this row",
+				word, got)
+		}
+	}
+}
+
 // SCOPED DELIBERATELY, because the unscoped claim is false. This is about a
 // Spanish word in a SPANISH dictionary. A Spanish word in an ENGLISH one is a
 // different case with real notation — NOAD gives `jalapeño` four anglicised
