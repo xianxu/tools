@@ -5,7 +5,7 @@ deps: [tools#27]
 github_issue:
 created: 2026-08-27
 updated: 2026-08-28
-estimate_hours:
+estimate_hours: 0.65
 started: 2026-08-28T17:57:39-07:00
 ---
 
@@ -41,30 +41,108 @@ raw pipe notation.
 
 ## Spec
 
-Not yet designed. The shape to handle is a pronunciation block carrying more than
-one locale (`AmE`/`BrE`), which the current pipe-notation conversion does not
-recognise. Two questions to settle before coding:
+**Triaged 2026-08-28, and the triage answered both questions by removing them.**
 
-1. Is the fix in the notation converter (recognise the multi-locale block) or in
-   the block splitter (this is a pronunciation field being mistaken for prose)?
-2. What does the rendered output *want* to be — both pronunciations, or the one
-   matching the deck's locale? **This is why the issue depends on [tools#27].**
-   The question is unanswerable while "locale" is a literal inside a URL builder
-   (`audiourl.go:41`); #27 makes language and locale parameters, and only then is
-   "render the one matching the deck's locale" a thing the code can express.
-   Triage AFTER #27 lands, not before.
+`#23 M2` made English select `com.apple.dictionary.NOAD` plus
+`com.apple.dictionary.AppleDictionary` **by identifier**, where before it passed
+NULL and searched every ACTIVE dictionary on the host. `Brent` was a
+British-dictionary entry reachable only through that search. Verified: `define
+brent` now reports **no dictionary entry** at all.
+
+So the dual-locale block is not fixed — **its input is gone**. Both Spec
+questions (converter vs splitter; render both pronunciations or the deck's) are
+moot, and so is `deps: [tools#27]`: they existed only to decide how to render a
+shape that no longer arrives.
+
+**It is DORMANT, not dead, and that is the thing to write down.** `curated["en"]`
+is `{NOAD, AppleDictionary}`. Adding Oxford Dictionary of English — a plausible
+future entry, it is strictly monolingual `en` and passes every metadata filter —
+brings `| AmE … , BrE … |` straight back, along with this defect. The resurrection
+condition belongs in the record so the next person adding a curated dictionary
+meets it.
+
+### What the re-measurement actually found
+
+Row 3 is the real work, and it was larger than "re-count". The ratchet samples
+only the first three survivors, so 23 of them had never been looked at. Enumerated
+in full against the live dictionary, 2026-08-28 — **26 entries, four causes, not
+one**:
+
+| cause | n | entries |
+|---|---|---|
+| a prose numeral continuing a sense sequence — *the documented cause* | 7 | `charge`, `chargee`, `charging`, `depth`, `just`, `justness`, `shortness` |
+| a pronunciation glued to the headword — `(aˈhəndrədzˈhəndrəd/)` | 7 | `hundred`, `hundredfold`, `million`, `millionfold`, `millions`, `thousand`, `thousandfold` |
+| a phrase-block pronunciation run into prose — `lick someoneˌoud əv ˈSHāp/` | 8 | `shape`, `shapable`, `Shape`, `shaper`, `shaping`, `short`, `shorter`, `shortish` |
+| **a literal `|` that IS the content** — *"• the symbol \|."* | 4 | `pipe`, `piped`, `pipeful`, `pipeless` |
+
+Only 7 of 26 are the cause the ratchet's own comment claims covers all of them,
+and `atlas/define.md` repeats that attribution.
+
+**The `pipe` family is a false positive, and the oracle stays broad anyway.** The
+check is `IndexByte(out, '|') >= 0`; those four entries define the pipe
+character, so their content legitimately contains one. Narrowing the oracle to
+exclude them is exactly the move `workshop/lessons.md` records as having already
+failed here — the narrow oracle read 0% while 2.2% of entries showed raw pipes,
+and that false 0% was published in the atlas. So the count stays 26 and the four
+are ATTRIBUTED rather than excluded, which is what "attributable rather than
+absorbed" asks for.
 
 ## Done when
 
-- [ ] `Brent` and `brent` render without raw `| … |` notation.
+- [ ] The `| AmE … , BrE … |` shape is DISPOSITIONED rather than ticked: recorded
+      as unreachable on the curated path, with the condition that resurrects it
+      (a British dictionary entering `curated["en"]`) written where the next
+      person adding one will meet it.
 - [ ] The ratchet is re-measured and `knownRawNotationEntries` lowered to the new
       true count — not raised to 32 to make the test pass.
-- [ ] The remaining raw-notation entries are re-enumerated, so the next drift is
-      attributable rather than absorbed.
+- [ ] The remaining raw-notation entries are re-enumerated BY CAUSE, so the next
+      drift is attributable rather than absorbed — and the ratchet's own comment
+      stops claiming they are all one cause.
+- [ ] `atlas/define.md`'s Limits entry stops attributing the whole count to the
+      prose numeral, and stops naming entries the sweep no longer reaches.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.15 impl=0.05
+item: smaller-go-module        design=0.05 impl=0.10
+item: atlas-docs               design=0.04 impl=0.06
+item: milestone-review         design=0.00 impl=0.16
+design-buffer: 0.15
+total: 0.65
+```
+
+Derivation notes.
+
+- **`issue-spec` at 0.15, well under the undiscounted band**, and deliberately:
+  the triage was already done while answering "what's left in #26" — the live
+  enumeration, the four causes and the `brent` check are spent, not forecast.
+  What remains under this row is writing them down.
+- **One `smaller-go-module`, not a one-liner.** The constant is one character;
+  the ratchet's comment is the deliverable, because "all of one known cause" is
+  the false claim this issue exists to retire.
+- **`atlas-docs` is not optional here** — the atlas repeats the same false
+  attribution and names three entries the narrowed sweep no longer reaches. A
+  Done-when row covers it.
+- **One `milestone-review`** for the close boundary. At the band ceiling would be
+  0.20; 0.16 because the diff is a constant, two comments and an issue — the
+  smallest surface this repo has reviewed.
+- Library-availability check: nothing external; no halving applies.
+
+Σdesign 0.24 × 1.15 = 0.276; Σimpl 0.37; total **0.65**.
 
 ## Plan
 
-- [ ] Design after triage — see the two Spec questions.
+- [ ] Lower `knownRawNotationEntries` to 26 and rewrite the ratchet comment with
+      the four causes, so a future movement names which group moved.
+- [ ] Correct `atlas/define.md`'s Limits entry: the count, the attribution, and
+      the entry list (`ratio`, `glop`, `logarithmic` are no longer reachable).
+- [ ] Record the dormant-not-dead resurrection condition beside the curated list.
+- [ ] Re-run the live ratchet unsandboxed to confirm green in both directions.
 
 ## Log
 
