@@ -89,17 +89,23 @@ Scope narrowed to Italian on 2026-08-29 — see `## Revisions`.
 ## Plan
 
 Designed. Durable plan: `workshop/plans/000031-curate-dictionaries-plan.md`
-(4 tasks, single pass, no `Mx`).
+(5 tasks, single pass, no `Mx`).
 
 - [x] Claim, then design via `sdlc start-plan`.
 - [ ] Capture the Italian corpus — words chosen for what they prove, not for
       vocabulary, following `capture.sh`'s own convention.
-- [ ] The `curated` row, plus rewriting the doc comment sentence that this
-      issue's measurement made half wrong.
+- [ ] The `curated` row, plus rewriting the doc comment sentence this issue's
+      measurement made half wrong. **Same commit as the capture**, because
+      `TestCaptureScriptUsesTheCuratedDictionaries` compares the script against
+      `curated` in both directions and either edit alone is red.
 - [ ] Generalise the own-language conformance check to a table rather than
       copying the Spanish one.
-- [ ] Docs: Italian, the English-only ratchet gap, and the notation table `#30`
-      reads.
+- [ ] Docs: Italian, the ratchet gap D3 leaves open, and the notation table
+      `#30` reads.
+- [ ] The four checks the captured directory does not give for free: sweep the
+      raw-notation assertion over every captured language, pin Italian's absence
+      of IPA, and make the README's language list and the corpus's coverage both
+      derive from `curated`.
 
 ## Log
 
