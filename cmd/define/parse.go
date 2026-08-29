@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // HeadKind classifies a token in an entry's head.
@@ -53,6 +54,56 @@ func (e Entry) headOf(k HeadKind) string {
 		}
 	}
 	return ""
+}
+
+// differsOnlyByDiacritics reports whether two strings are the same word wearing
+// different accents — café vs cafe, señor vs senor, cliche vs cliché.
+//
+// This is the filter that makes `(also …)` usable as a source-spelling source
+// (#29). Measured over 400 live NOAD entries (2026-08-29), `(also …)` holds
+// phrases ("(also good as gold)"), compounds ("(also jalapeño pepper)"),
+// derivatives ("(also naïveness)") and real English spelling variants ("(also
+// advisor)", "(also caldron)", "(also convertor)"). Admitting them all would
+// cost two wasted CDN requests each at ~300–600ms per miss; admitting only
+// these took every real gain in that sample and nothing else.
+//
+// NOT an NFD fold, deliberately. That would need golang.org/x/text, which this
+// module does not depend on, for a rule this states directly: same length, and
+// every difference sits where at least one side left ASCII. Two consequences
+// are accepted rather than overlooked — ß/ss and œ/oe expansions change the
+// length and are refused, so an entry spelling its alternative that way
+// degrades to the session recording and says so, which is what any other miss
+// already does.
+//
+// Case-insensitive because the CDN is not: Señor_es_es is a 404 where
+// señor_es_es is a 200, and AudioCandidates lowercases anyway.
+func differsOnlyByDiacritics(alt, head string) bool {
+	// Valid UTF-8 is a precondition of being a spelling, and checking it is not
+	// paranoia: []rune turns a stray byte into U+FFFD, which is outside ASCII and
+	// so reads to the loop below as a diacritic. Without this, "caf\xff" is
+	// admitted against "cafe" and spends two CDN requests on an escaped
+	// replacement character.
+	if !utf8.ValidString(alt) || !utf8.ValidString(head) {
+		return false
+	}
+	a, h := []rune(strings.ToLower(alt)), []rune(strings.ToLower(head))
+	if len(a) == 0 || len(a) != len(h) {
+		return false
+	}
+	diff := false
+	for i := range a {
+		if a[i] == h[i] {
+			continue
+		}
+		// A difference is only allowed to BE a diacritic, which in a precomposed
+		// string means one of the two runes is outside ASCII. Two ASCII runes
+		// differing is a different word (adviser/advisor), not a different dress.
+		if a[i] < utf8.RuneSelf && h[i] < utf8.RuneSelf {
+			return false
+		}
+		diff = true
+	}
+	return diff
 }
 
 func (e Entry) Headword() string  { return e.headOf(HeadWord) }
