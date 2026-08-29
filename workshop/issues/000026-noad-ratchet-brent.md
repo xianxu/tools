@@ -95,3 +95,39 @@ recognise. Two questions to settle before coding:
 - The ratchet stays red until then, which is correct — it is reporting a true
   regression, and the number must not be raised to 32 to silence it.
 
+### 2026-08-28 — re-measured after `#23 M2`; the cause is gone and the pin is now too high
+
+`#23 M2` made English select `com.apple.dictionary.NOAD` plus
+`com.apple.dictionary.AppleDictionary` **by identifier**, instead of passing NULL
+to `DCSCopyTextDefinition` and searching every ACTIVE dictionary on the host.
+
+That removes this bug's cause rather than fixing its symptom. `Brent`'s
+`| AmE brɛnt, BrE brɛnt |` is a British-dictionary shape — it was reachable only
+because the NULL search consulted whatever the host had enabled. Re-measured
+against the live dictionary, 2026-08-28:
+
+```
+checked 70886 live entries: 0 lost content, 26 kept raw notation;
+0 non-Latin (other active dictionaries), 165090 absent
+```
+
+- **26, not 32** — and below the pinned 27, so the ratchet now fails in the GOOD
+  direction: *"only 26 … below the pinned 27 — lower knownRawNotationEntries to
+  lock the improvement in"*.
+- **`0 non-Latin`**, where the previous run had a class of them. The three sampled
+  survivors are now all `charge`/`chargee`/`charging` — the prose-numeral cause
+  the ratchet's own comment already documents, not a new shape.
+- **The sweep narrowed**, and that qualification belongs here rather than being
+  discovered later: 70,886 entries checked against 73,502, with 165,090 absent,
+  because two dictionaries are asked rather than all of them. Some of the drop is
+  "we stopped looking at entries we never serve." It is still better
+  proportionally — 0.037% against 0.044% — so the improvement is real, but it is
+  not purely a parsing gain.
+
+**What is left of this issue:** lower `knownRawNotationEntries` from 27 to 26 and
+close it. The uncovered-shape half of the Problem no longer reproduces.
+
+**Its `deps: [tools#27]` is now moot** — the dependency was on `#27` owning
+locale as a parameter, and the British-English entry that motivated it is
+unreachable on the curated path.
+

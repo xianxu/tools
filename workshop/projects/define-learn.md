@@ -242,6 +242,11 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
 - [x] news seam — Google News RSS (not the SERP) [tools#9]
 - [x] scheduling engine — Leitner, pure [tools#5]
 - [x] `--play` loop + form 2.1 [tools#6]
+- [ ] Spanish — pronunciation locale (independently shippable) [tools#27] —
+      **moved up 2026-08-28**: its only dependency was `#23`, now done, and
+      `#23 M1` wrote D2's interim locale rule specifically for it to inherit.
+      Small, and it finishes the language thread rather than leaving Spanish
+      half-delivered.
 - [ ] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
 - [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
 - [ ] `--stats` — all derived from the event log [tools#8]
@@ -252,7 +257,6 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       error kind. Not delivered; not separately tracked.
 - [x] deck grouped by language; one language per `--play` [tools#23 M1]
 - [x] the dictionary follows the mode — private DictionaryServices seam [tools#23 M2]
-- [ ] Spanish — pronunciation locale (independently shippable) [tools#27]
 - [ ] Spanish — language-aware deck + agreement-safe distractors [tools#18 M2]
 
 <a id="tools-11-m1"></a>
@@ -756,6 +760,40 @@ built by ordinary lookup (`#4`), and these two put the deck back on screen durin
 ordinary lookup. #21 also lands a `Vocabulary` predicate seam that
 **tools#22** (words graduating out of highlighting) will narrow; #22 is filed,
 out of MVP, and blocked on the review signal from `#5`/`#6`.
+
+### 2026-08-28 — `#23 M2` resolved `#26` as a side effect, and unblocked `#27`
+
+Not a scope change; a change in what is LEFT, recorded because two open issues
+moved without anyone touching them.
+
+**`#26` (the NOAD ratchet regression) is resolved by `#23 M2`.** The bug reported
+`TestRenderLosesNothingOverLiveEntries` rising from a pinned 27 to 32, and named
+`Brent` — `| AmE brɛnt, BrE brɛnt |` — as an uncovered shape. That entry comes
+from a British dictionary in the host's ACTIVE set, and `#23 M2` stopped
+consulting the active set: English now selects NOAD plus Apple Dictionary by
+identifier. Re-measured 2026-08-28 against the live dictionary: **26**, and
+`0 non-Latin (other active dictionaries)` where there used to be a class of them.
+
+Two honest qualifications, so the improvement is not read as larger than it is:
+
+- The sweep NARROWED. 70,886 entries checked against 73,502 before, with 165,090
+  absent — we now ask two dictionaries rather than all of them. Part of the drop
+  is "we stopped looking at entries we never serve." That is the correct thing to
+  measure, since the test should reflect what the tool actually uses, but it is
+  not the same as parsing improving.
+- It is still better proportionally — 0.037% against 0.044% — so the improvement
+  survives the narrowing.
+
+The ratchet is BIDIRECTIONAL, so the suite is currently red *demanding the gain
+be locked in*: `only 26 … below the pinned 27 — lower knownRawNotationEntries`.
+That is one constant and `#26`'s close, not new work.
+
+**`#27` is startable.** Its `deps: [tools#23]` is satisfied. No status flip: the
+lifecycle models `blocked` as an ACTIVE state and its only unblock edge is
+`blocked → working`, so the transition belongs to whoever claims it rather than
+to bookkeeping now. Worth noting the model mismatch — `#27` was parked as
+`blocked` having never been started, which is a different sense of the word than
+"started, then hit a dependency".
 
 ### 2026-08-26 — scope event: retention loop before the authoring loop
 
