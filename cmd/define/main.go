@@ -406,7 +406,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// documented and in people's shell history. One of them wins, and asking for
 	// both is a mistyped command, not a preference to guess at.
 	times := fs.Int("times", 3, "how many times to play the pronunciation (older name for -sound)")
-	locale := fs.String("locale", "us", "pronunciation locale: us or gb")
+	locale := fs.String("locale", "", localeHelp)
 	// -lang exists so a script can ask a question without mutating state: it
 	// applies to THIS invocation and does not persist. /lang is the other half —
 	// it persists and does not need re-typing.
@@ -582,7 +582,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// derived here rather than at flag parse. Through applyVoice, the same
 	// function /lang re-derives it with — one derivation, two callers, which is
 	// what stops the two from disagreeing after a switch.
-	applyVoice(&opt, d.lang, stderr)
+	applyVoice(&opt, d.lang)
 	// The dictionary follows the mode too (#23 M2). Only when a test did not
 	// supply one — same nil-merge rule withStore uses for the store-backed deps.
 	if d.dict == nil && d.newDict != nil {

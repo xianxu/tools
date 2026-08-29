@@ -93,33 +93,70 @@ func TestAudioCandidatesEnglishUnchanged(t *testing.T) {
 	}
 }
 
-// The interim locale rule #27 inherits, stated as a table so #27 can change it
-// in one place.
+// The locale policy: -locale is honoured for EVERY language, and nothing here
+// whitelists which pairs exist.
+//
+// It was English-only for one milestone — #23 M1's D2, an explicit interim rule
+// written to be replaced here. #27 replaced it, and deliberately did NOT replace
+// it with a table of valid pairs: that would restate a fact the CDN owns and go
+// stale when Google adds a variant, which is the same argument ParseLang makes
+// for not enumerating languages. Using a different philosophy for the adjacent
+// field would be the inconsistency.
+//
+// Measured 2026-08-28: es_es and es_us both serve (including the phonemic pair
+// cazar/casar), es_419 and es_mx do not, and en_gb serves on both the 2022 and
+// legacy paths. The rows below encode the POLICY, not that measurement — the
+// conformance tests own the measurement.
 func TestLocaleFor(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		lang      store.Lang
-		flag      string
-		flagSet   bool
-		want      string
-		wantSaySo bool
+		name    string
+		lang    store.Lang
+		flag    string
+		flagSet bool
+		want    string
 	}{
 		{name: "English defaults to us", lang: "en", want: "us"},
 		{name: "English honours the flag", lang: "en", flag: "gb", flagSet: true, want: "gb"},
 		{name: "Spanish defaults to es", lang: "es", want: "es"},
-		// Not silently dropped: a flag that is ignored without a word is worse
-		// than one that is refused, and madrugar_es_gb_1.mp3 is a URL nothing
-		// has measured.
-		{name: "Spanish refuses an English variant, out loud", lang: "es", flag: "gb", flagSet: true, want: "es", wantSaySo: true},
+		// THE change #27 makes. This was refused with a diagnostic before, and
+		// es_us is a real recording — the Latin American seseo, phonemically
+		// distinct from Castilian es_es, which is the whole point of the flag.
+		{name: "Spanish honours the flag: seseo", lang: "es", flag: "us", flagSet: true, want: "us"},
 		{name: "an unknown language is its own locale", lang: "de", want: "de"},
+		{name: "and honours the flag too", lang: "fr", flag: "ca", flagSet: true, want: "ca"},
+		// NOT rejected. es_gb 404s and degrades to the warning every missing
+		// recording produces; the CDN is the authority on what exists, not a
+		// table here.
+		{name: "an unserved pair is built, not refused", lang: "es", flag: "gb", flagSet: true, want: "gb"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, complaint := localeFor(tc.lang, tc.flag, tc.flagSet)
-			if got != tc.want {
+			if got := localeFor(tc.lang, tc.flag, tc.flagSet); got != tc.want {
 				t.Errorf("localeFor(%q, %q, %v) = %q, want %q", tc.lang, tc.flag, tc.flagSet, got, tc.want)
 			}
-			if (complaint != "") != tc.wantSaySo {
-				t.Errorf("complaint = %q, want said=%v", complaint, tc.wantSaySo)
+		})
+	}
+}
+
+// The Spanish locales build the URLs the CDN actually serves — the pair this
+// issue exists to make reachable.
+func TestAudioCandidatesSpanishLocales(t *testing.T) {
+	for _, tc := range []struct {
+		locale string
+		want   string
+	}{
+		{locale: "es", want: audioBase + "/pronunciation/2022-03-02/audio/ma/madrugar_es_es_1.mp3"},
+		{locale: "us", want: audioBase + "/pronunciation/2022-03-02/audio/ma/madrugar_es_us_1.mp3"},
+	} {
+		t.Run(tc.locale, func(t *testing.T) {
+			got := AudioCandidates("madrugar", voice{Lang: "es", Locale: tc.locale})
+			if len(got) == 0 || got[0] != tc.want {
+				t.Errorf("first candidate = %v, want %q", got, tc.want)
+			}
+			// Still no legacy pair for Spanish, whatever the locale.
+			for _, u := range got {
+				if strings.Contains(u, "/sounds/oxford/") {
+					t.Errorf("a Spanish candidate reached the English-only legacy path: %s", u)
+				}
 			}
 		})
 	}
@@ -128,7 +165,7 @@ func TestLocaleFor(t *testing.T) {
 // The mix-up the struct exists to prevent: "es" is a legal value of both fields,
 // so a transposed pair must not silently build a plausible URL.
 func TestVoiceForBuildsBothFieldsTogether(t *testing.T) {
-	v, _ := voiceFor("es", "", false)
+	v := voiceFor("es", "", false)
 	if v.Lang != "es" || v.Locale != "es" {
 		t.Errorf("voiceFor(es) = %+v", v)
 	}

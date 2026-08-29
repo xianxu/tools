@@ -380,7 +380,7 @@ func applyLang(d *deps, opt *options, l store.Lang, vocPtr *Vocabulary, warn io.
 	// NOT opt.lang: that field is the -lang FLAG, documented as "empty when it
 	// was not given", and a switch does not retroactively make the flag present.
 	// d.lang is the language in effect and the only thing that should answer it.
-	applyVoice(opt, l, warn)
+	applyVoice(opt, l)
 	if d.newLangDeps == nil {
 		return // no store here; the language still applies to everything else
 	}

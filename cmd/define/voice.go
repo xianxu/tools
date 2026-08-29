@@ -1,11 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"io"
-
-	"github.com/xianxu/tools/cmd/define/store"
-)
+import "github.com/xianxu/tools/cmd/define/store"
 
 // voice is language plus regional variant for a recording: the Spanish of Spain
 // is voice{Lang: "es", Locale: "es"}, American English is {"en", "us"}.
@@ -35,31 +30,35 @@ func defaultLocale(l store.Lang) string {
 	return string(l)
 }
 
-// localeFor applies -locale to a language, and returns any complaint rather than
-// printing one — the policy is pure, the writing is the caller's (ARCH-PURE).
+// localeFor applies -locale to a language. Pure — a language and a flag in, a
+// locale out, no io.Writer (ARCH-PURE).
 //
-// -locale is documented as "us or gb", which are ENGLISH variants. Honouring it
-// for another language would build madrugar_es_gb_1.mp3: a URL form nothing has
-// measured, and a ~450ms miss when it 404s. So it applies to English only, and
-// says so instead of being silently dropped — a flag that is quietly ignored is
-// worse than one that is refused.
-func localeFor(l store.Lang, flag string, flagSet bool) (locale string, complaint string) {
+// `-locale` is honoured for EVERY language. It was English-only for one
+// milestone: #23 M1's D2 shipped that as an explicit interim rule, written to be
+// replaced here, because #23 had measured `_en_us_` and `_es_es_` but had no
+// policy for the variant within a language.
+//
+// NO whitelist of valid language/locale pairs, and that is a decision rather
+// than an omission. A closed table would restate a fact the CDN owns and go
+// stale the moment Google adds a variant — the same argument ParseLang makes for
+// not enumerating languages, and using a different philosophy for the adjacent
+// field would be the inconsistency, not the safety. A table would also have no
+// answer for `fr`, which ParseLang admits and the CDN serves.
+//
+// So an unserved pair — `-lang es -locale gb` builds `madrugar_es_gb` — 404s and
+// degrades to the warning every missing recording already produces. The CDN
+// stays the authority on what exists.
+func localeFor(l store.Lang, flag string, flagSet bool) string {
 	if !flagSet || flag == "" {
-		return defaultLocale(l), ""
+		return defaultLocale(l)
 	}
-	if l == store.DefaultLang {
-		return flag, ""
-	}
-	return defaultLocale(l), fmt.Sprintf(
-		"-locale %s is an English variant; %s recordings use %s_%s. Locale variants for other "+
-			"languages are not supported yet", flag, l, l, defaultLocale(l))
+	return flag
 }
 
 // voiceFor is the one place a voice is built from the session's language and
 // flags, so the two fields cannot be assembled inconsistently at a call site.
-func voiceFor(l store.Lang, flag string, flagSet bool) (voice, string) {
-	locale, complaint := localeFor(l, flag, flagSet)
-	return voice{Lang: l, Locale: locale}, complaint
+func voiceFor(l store.Lang, flag string, flagSet bool) voice {
+	return voice{Lang: l, Locale: localeFor(l, flag, flagSet)}
 }
 
 // applyVoice derives the session's voice from a language.
@@ -70,12 +69,30 @@ func voiceFor(l store.Lang, flag string, flagSet bool) (voice, string) {
 // English URLs, including the legacy pair that had just been gated to English.
 // A derived value with one deriving function cannot drift like that.
 //
-// The complaint is printed HERE rather than returned, because both callers do
-// the same thing with it and the alternative is two chances to drop it.
-func applyVoice(opt *options, l store.Lang, warn io.Writer) {
-	v, complaint := voiceFor(l, opt.locale, opt.localeSet)
-	opt.voice = v
-	if complaint != "" && warn != nil {
-		fmt.Fprintf(warn, "define: %s\n", complaint)
-	}
+// It took an io.Writer while localeFor could complain about a locale it refused.
+// #27 removed the refusal — the CDN decides what exists — so there is nothing
+// left to say and the parameter went with it rather than being kept warm for a
+// hypothetical caller.
+func applyVoice(opt *options, l store.Lang) {
+	opt.voice = voiceFor(l, opt.locale, opt.localeSet)
 }
+
+// localeHelp is THE statement of what -locale means, and the one source for it.
+//
+// The policy was written in four places — this flag, localeFor, the README and
+// the atlas — with nothing keeping them in step, which is the family this repo
+// already mechanised for the play-loop prompts. TestREADMEQuotesTheLocaleHelp
+// makes the README a consumer of this string.
+//
+// It gives EXAMPLES rather than an enumeration, because localeFor does not
+// whitelist: the CDN decides what exists, so a help text claiming a closed set
+// would be the same restatement in prose.
+//
+// The Spanish pair is named with its PHONEMIC content rather than two country
+// codes, because that is the actual choice: es_es is Castilian, distinguishing
+// cazar /θ/ from casar /s/; es_us is Latin American seseo, where both are /s/.
+// Choosing one chooses which sound system a learner acquires. "us or gb" said
+// none of that, and omitted Spanish entirely.
+const localeHelp = "regional variant of the pronunciation, per language: " +
+	"en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). " +
+	"Others exist — the CDN decides, not a list here"

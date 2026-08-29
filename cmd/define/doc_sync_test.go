@@ -102,3 +102,25 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 		}
 	}
 }
+
+// The README quotes the -locale help VERBATIM.
+//
+// Fourth member of a family this repo keeps re-fixing by hand: a doc restating
+// something the code owns. #27 found the locale policy stated in four places —
+// the flag, localeFor, the README and the atlas — with nothing keeping them in
+// step, and the README's version was two milestones stale ("applies to English
+// only", which stopped being true when #23 M1's interim rule was replaced).
+//
+// Narrow on purpose, like the prompt test above: it pins the one line a reader
+// acts on, not the prose around it, which should stay free to be rewritten.
+func TestREADMEQuotesTheLocaleHelp(t *testing.T) {
+	b, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	want := "<!-- locale-help -->" + localeHelp + "<!-- /locale-help -->"
+	if !strings.Contains(string(b), want) {
+		t.Errorf("README.md does not quote the -locale help.\nwant the marked span to read:\n%s\n"+
+			"localeHelp owns this text; the README consumes it.", want)
+	}
+}

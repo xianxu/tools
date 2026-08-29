@@ -98,16 +98,16 @@ SPELLING is a third input — not a property that follows from the other two.
 
 ## Done when
 
-- [ ] `define madrugar` plays a recording; asserted against the fake, and a
+- [x] `define madrugar` plays a recording; asserted against the fake, and a
       conformance test measures the live CDN the way the English ordering is.
-- [ ] `-lang` selects the language and `-locale` still selects the variant;
+- [x] `-lang` selects the language and `-locale` still selects the variant;
       `es_es` and `es_us` both reachable, and the help text says what the
       difference *is* (θ vs seseo) rather than naming two country codes.
-- [ ] An English word with no recording still degrades to a warning, exit 0 — the
+- [x] An English word with no recording still degrades to a warning, exit 0 — the
       existing behaviour does not regress.
-- [ ] No pronunciation is rendered for a Spanish entry, and a test says that is
+- [x] No pronunciation is rendered for a Spanish entry, and a test says that is
       expected rather than a gap.
-- [ ] The new conformance assertions route their dependency probe through
+- [x] The new conformance assertions route their dependency probe through
       `conformance.SkipOrFail` (#25) — a CDN that cannot be reached SKIPS by
       default and FAILS under `CONFORMANCE_STRICT`.
 
@@ -155,7 +155,7 @@ Derivation notes.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+- [x] Design via `sdlc start-plan` before implementing.
 
 ## Log
 
@@ -196,4 +196,42 @@ Derivation notes.
   are load-bearing for `#23`'s audio task regardless of sequencing: languages are
   disjoint on the CDN, the legacy `/sounds/oxford/` path is English-only, and a
   404 costs ~10x a hit.
+
+### 2026-08-28 — implemented; the plan gate made the change smaller
+
+`#23 M1` had already shipped five of the original plan's seven tasks, so this
+issue reduced to the locale policy and its consequences.
+
+**The gate reversed my central design, and it was right.** I planned a closed
+table of valid language/locale pairs, refusing anything not in it. PQ-1 caught
+that contradicting this plan's own Risks section, and the Risks argument was
+better: a table restates a fact the CDN owns and goes stale when Google adds a
+variant — which is exactly why `ParseLang` does not enumerate languages. A table
+would also have had no answer for `fr`, which `ParseLang` admits and the CDN
+serves.
+
+So the change is a DELETION: `localeFor` loses the `l == store.DefaultLang`
+guard, and `-locale` is honoured for every language. An unserved pair 404s into
+the warning every missing recording already produces.
+
+**A dead guard went with it.** With no refusal, `localeFor` could only ever
+return an empty complaint, so the complaint return value and `applyVoice`'s
+`io.Writer` were removed rather than kept warm for a hypothetical caller.
+
+**Two scope corrections that came out of the work:**
+
+The "Spanish entries carry no phonetic notation" claim in this Spec is true of a
+Spanish word in a SPANISH dictionary and false of one in an English dictionary —
+NOAD gives `jalapeño` four anglicised pronunciations. Both halves are now tests,
+and `jalapeño` was captured into the English corpus so the second is a real
+assertion rather than a skip.
+
+The conformance row covered `es_es` only — the locale this issue makes selectable
+was the one nothing checked. It covers both now, plus `cazar`/`casar`, so a
+coverage drift shows up on the words where the phonemic split is actually
+audible.
+
+**Verified against the real binary:** `-lang es -locale us` and `-locale es` both
+play; `-locale gb` with Spanish degrades to "no recorded pronunciation" rather
+than refusing; the help text states the θ/seseo distinction.
 

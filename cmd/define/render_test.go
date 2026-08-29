@@ -314,3 +314,57 @@ func TestWrappedRenderStillLosesNothing(t *testing.T) {
 		})
 	}
 }
+
+// A Spanish entry carries NO pronunciation notation, and that is correct rather
+// than a gap.
+//
+// Spanish orthography is phonemic — the spelling plus the written accent
+// determines the pronunciation exactly — so the Larousse writes none, unlike
+// NOAD's `lig·a·ment | ˈliɡəmənt |`. ParseEntry finding nothing is the right
+// answer, and this test exists so the next person to notice does not "fix" it.
+//
+// It also makes the recording load-bearing in a way it is not for English: for a
+// Spanish word the audio is the ONLY place pronunciation information exists,
+// which is the argument behind #27's locale work.
+//
+// SCOPED DELIBERATELY, because the unscoped claim is false. This is about a
+// Spanish word in a SPANISH dictionary. A Spanish word in an ENGLISH one is a
+// different case with real notation — NOAD gives `jalapeño` four anglicised
+// pronunciations — and conflating the two is how "Spanish has no notation"
+// becomes wrong. The English half is asserted below.
+func TestSpanishEntriesCarryNoPronunciationNotation(t *testing.T) {
+	d := testDictFor(t, "es")
+	if len(d.entries) == 0 {
+		t.Fatal("the Spanish corpus is empty; this test would pass vacuously")
+	}
+	for word := range d.entries {
+		raw, err := d.Lookup(word)
+		if err != nil {
+			t.Errorf("%s: %v", word, err)
+			continue
+		}
+		if got := ParseEntry(raw).IPA; got != "" {
+			t.Errorf("%s: parsed a pronunciation %q from a Spanish entry — Spanish orthography "+
+				"is phonemic, so the dictionary writes none. If this starts passing, the "+
+				"Larousse changed, not the parser", word, got)
+		}
+	}
+}
+
+// The other half of the scope, so the claim above cannot be over-read: a Spanish
+// word in an ENGLISH dictionary does carry notation, and it is anglicised.
+func TestASpanishWordInAnEnglishEntryDoesCarryNotation(t *testing.T) {
+	// NOT a skip: jalapeño is a committed fixture (capture.sh captures it for
+	// exactly this test), so its absence is a broken corpus, never a missing
+	// dependency. A skip here would let the test assert nothing and still read
+	// green.
+	raw, err := testDict(t).Lookup("jalapeño")
+	if err != nil {
+		t.Fatalf("jalapeño is committed under testdata/entries/en; %v", err)
+	}
+	if got := ParseEntry(raw).IPA; got == "" {
+		t.Error("no pronunciation parsed for jalapeño in the English dictionary — the " +
+			"'Spanish has no notation' rule is about the Spanish DICTIONARY, not about " +
+			"Spanish words, and this is the case that distinguishes them")
+	}
+}
