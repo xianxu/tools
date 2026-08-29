@@ -369,3 +369,39 @@ func TestPronFetchesTheSourceRecordingWithoutMovingTheSession(t *testing.T) {
 			"which is the mode #29 exists not to be", got.Lang, store.DefaultLang)
 	}
 }
+
+// Done-when 6 / D4: the locale for a source recording comes from #27's policy,
+// which means -locale keeps qualifying whatever language is IN EFFECT.
+//
+// `-pron es` alone is Castilian (es_es, where cazar /θ/ and casar /s/ differ);
+// `-pron es -locale us` is Latin American seseo, where both are /s/. Choosing
+// one chooses which sound system a learner hears, so it is not a flavour.
+//
+// This existed as an ARGUMENT — "voiceFor is unchanged, so the locale is
+// literally #27's" — and the close review showed the argument is not a pin:
+// utteranceFor's CALL SITE is new code, and rewriting it to voiceFor(pron, "")
+// left the entire suite green. A reused function cannot vouch for a new caller.
+func TestPronHonoursTheLocaleFlagForTheSourceLanguage(t *testing.T) {
+	seseo := voice{Lang: "es", Locale: "us"}
+	rig := newAudioRigServing(t, AudioCandidates("jalapeño", seseo)[0])
+	var out, errb bytes.Buffer
+
+	code := run(t.Context(), []string{"-pron", "es", "-locale", "us", "jalapeno"},
+		rig.deps, strings.NewReader(""), &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	asked := rig.cdn.Requested()
+	if len(asked) == 0 {
+		t.Fatal("nothing was requested from the CDN")
+	}
+	want := stripHost(t, AudioCandidates("jalapeño", seseo)[0], audioBase)
+	if asked[0] != want {
+		t.Errorf("first request = %q, want %q — -locale did not reach the SOURCE voice, "+
+			"so -pron es -locale us asked for Castilian when seseo was requested",
+			asked[0], want)
+	}
+	if errb.Len() != 0 {
+		t.Errorf("the es_us recording answered, so nothing should be reported: %q", errb.String())
+	}
+}

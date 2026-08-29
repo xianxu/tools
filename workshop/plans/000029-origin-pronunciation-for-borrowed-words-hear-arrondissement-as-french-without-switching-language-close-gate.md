@@ -114,6 +114,11 @@ rounds:
           family: split-out-not-filed
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-29T08:42:14-07:00"
+      agent: claude
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#29 (boundary-review)
@@ -181,6 +186,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   cheap win is not blocked on this design", but no issue exists; it survives only as
   prose in #30:92-97 ("nobody has taken yet"). Correctly deferred — it is not this
   issue's purpose — but a promised split with no tracker item evaporates.
+
+## Round 2 — 2026-08-29T08:42:14-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

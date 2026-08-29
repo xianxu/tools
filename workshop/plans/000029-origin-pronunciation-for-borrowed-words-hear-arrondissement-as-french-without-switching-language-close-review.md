@@ -187,3 +187,88 @@ findings:
       prose in #30:92-97 ("nobody has taken yet"). Correctly deferred — it is not this
       issue's purpose — but a promised split with no tracker item evaporates.
 ```
+
+---
+
+## Re-review — 2026-08-29T08:42:14-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 29 — origin pronunciation for borrowed words: hear arrondissement as French, without switching language |
+| repo | tools |
+| issue file | workshop/issues/000029-origin-pronunciation-for-borrowed-words-hear-arrondissement-as-french-without-switching-language.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a9ea60371a708172c0347261d2c110af8879200f..fd9a71c903e1f3117119355189586c7f8b625398 |
+| command | sdlc close --issue 29 |
+| reviewer | claude |
+| timestamp | 2026-08-29T08:42:14-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All four blocking findings from the prior round are genuinely fixed, and I verified the two that a commit message alone could have faked: reverting the fix reddens the test in both cases (`applyVoice(&opt, pron)` reddens `main_test.go:368`; moving the replay inside the cooked closure reddens `commandloop_test.go:486`). BR-3's atlas move is a pure reorder — 80 lines out, 80 in, identical multiset, no prose lost. The design itself is sound: `utterance` owns the walk, `spokeSource` answers by membership rather than by parsing a URL back, and the three test doubles were corrected to model the dependency instead of the assertions being loosened. `go build ./...`, `go vet ./...`, `go test ./...` and the live `go test -tags conformance ./cmd/define/` are all green here, and I independently re-probed the CDN facts the design rests on. What holds SHIP is one real coverage hole — Done-when 6 / D4 (`-locale` qualifies the source language) is asserted nowhere: I replaced `voiceFor(pron, opt.locale)` with `voiceFor(pron, "")` and the entire package stayed green — and a plan row that still claims `AudioCandidates` is "unchanged" after the diff changed it, which is BR-4's family surviving the round that closed it.
+
+### 1. Strengths
+
+- **`utterance.spokeSource` by membership, and the fake was fixed to match** — `cmd/define/audiourl.go:216` refuses to read a language back out of a path, and `rebasedSource` (`cmd/define/main_test.go:69-90`) was changed to translate the answer back rather than letting the rig's own rewriting leak into the value under assertion. That is the harder and correct direction.
+- **`differsOnlyByDiacritics` states its precondition and tests the class** — `cmd/define/parse.go:78-83` rejects invalid UTF-8 *because* `[]rune` turns a stray byte into U+FFFD, which reads to the loop as a diacritic. Pinned by `TestDiacriticsOnlyRefusesMalformedInput` and a fuzz target, not by more equality cases.
+- **BR-2's new test asserts the property, not the outcome** — counting CDN requests made *inside* the cooked callback (`commandloop_test.go:470-487`) pins the record-in-cooked / perform-in-raw split directly, which is the design's only real hazard.
+- **The retired-symbol row works despite a hostile shape** — the retired name is a strict prefix of its replacement; the `\b…\b` match still fires. I reverted the atlas mention to the old name and `TestNoArtifactNamesARetiredSymbol` went red (`repo_guard_test.go:755`).
+- **`langOrDefault` fixed the class, not the line** — BR-5 could have been a one-line format change; instead the defaulting rule became one accessor (`voice.go:24`) with both readers deriving from it (ARCH-DRY).
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-1 — Done-when 6 / D4 is unpinned; the whole suite is green with `-locale` dropped from the source voice** (`cmd/define/main.go:883`)
+
+> **This is the 2nd finding in family `done-when-unpinned`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+`utteranceFor` builds the source voice as `voiceFor(pron, opt.locale)`. I changed it to `voiceFor(pron, "")` and `go test ./cmd/define` passed. `utteranceFor` has **zero direct test call sites** (grep: only `main.go`, `repl.go`, `replraw.go`, `play_loop.go` reference it), and every test that reaches it runs with `opt.locale == ""`, where the two spellings are identical. So `-pron es -locale us` → `es_us` — the issue's sixth Done-when and the plan's D4 — is asserted nowhere.
+
+The rule, which is what should actually be fixed: **a Done-when is pinned only by a named test that goes red when the wiring is removed. A structural argument — "`voiceFor` is unchanged, so the locale is literally `#27`'s" — is not a pin, because the *call site* is new code and can be miswired without touching the reused function.** The plan's "Done-when coverage" line is where this is decidable: every cell must name a `Test…` symbol, and each named test must be shown red under removal of the wiring it claims to pin. Measured prevalence on this issue: of six Done-whens, the two whose coverage cell names a *task* or a *decision* rather than a test are exactly the two that turned out unpinned — Done-when 1 last round (BR-1, cell named "Tasks 5–7 + the `ls words/` check") and Done-when 6 this round (cell named "D4 — `voiceFor` unchanged"). 2 for 2. The sweep is the deliverable; the `-locale` test falls out of it.
+
+**I-2 — the plan's Core-concepts table still claims `AudioCandidates` is "unchanged" after the diff changed it** (`workshop/plans/000029-origin-pronunciation-plan.md:79`)
+
+> **This is the 2nd finding in family `plan-table-vs-tree`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+Row 8 of the Pure-entities table reads `| AudioCandidates | cmd/define/audiourl.go | unchanged — reused once per spelling |`. The diff rewrites ten lines of its doc comment — mandated by the plan's own Task 8, site 1 — and changes its body (`v.Lang = v.langOrDefault()`, from the BR-5 fix). Same shape as BR-4: a row asserting "unchanged" about a symbol the window modifies. BR-4 was disposed by hand-adding three rows; the fourth wrong row was in the table the whole time.
+
+The rule: **"unchanged"/"reused" in a Core-concepts table is a claim about the DIFF, not about behaviour, and it is mechanically checkable.** `TestPlanTablesNameEntitiesThatExist` already parses the status cell (`repo_guard_test.go:579`) — extend it so a row claiming `unchanged`/`reused` fails when the named symbol's *declaration region* appears in the plan's change window, and a row claiming `modified` fails when it does not. Declaration-level, not file-level: `voice.go` is modified while `voiceFor`/`localeFor`/`defaultLocale`/`applyVoice` genuinely are not, and that row is correct. Measured prevalence: 4 of the table's 20 rows have been wrong across two rounds (`fakeCDN`, `fakeDictionary`, `rebasedSource`, `AudioCandidates`), and the hand-fix round caught three of four. Include Task 7's `**Files:**` line in the sweep while you are there — it still names `cmd/define/repl_test.go`, which was never touched; the test landed in `commandloop_test.go` beside its `TestRawEditorDispatchesCommands` pair, which is the right place.
+
+### 4. Minor findings
+
+- **M-1 (`doc-sweep-incomplete`, 2nd in family)** — `atlas/define.md:737-741`'s command table lists `/help`, `/history`, `/sound`; the registry has five. `/pron` (this issue) and `/lang` (`#23`) are both absent, so the last two commands added both missed it — 2 of 2. **Do not add the row.** The rule: `commands` (`command.go:20-30`) is the single source and every doc that *enumerates* commands must be a derived consumer pinned by a doc-sync test — the exact mechanism `TestDocsQuoteTheLocaleHelp` / `TestDocsQuoteThePronHelp` already give `localeHelp`/`pronHelp`. One test closes `/lang` and `/pron` together and stops the next one. (The adjacent sentence at `:734` — "a command cannot reach the dictionary or the player" — is worth re-reading in the same pass now that `commandCtx.replay` exists; it is still literally true, since the closure records and the loop plays, but a reader would not learn `/pron` exists from it.)
+- **M-2 (`guard-heuristic-too-loose`, 2nd in family)** — `repo_guard_test.go:597` now exempts a row when `strings.Fields(status)[0] == "new"`. That fails the other way: a bolded `**new**` cell is not exempted, and bold status cells are this repo's live convention — the `#29` plan itself writes `**modified**` in three rows. **Do not tweak the match again.** The rule: the status column is a controlled vocabulary (`new`/`modified`/`unchanged`/`deleted`); normalise the cell (strip markdown emphasis and trailing prose) and match it against that vocabulary, failing loudly on an unrecognised status — rather than a substring, a first-word, or any other positional heuristic. That is also the hook I-2 needs.
+- **M-3 (new family `check-expects-the-wrong-outcome`)** — Task 8 Step 4 (`plan.md:332`) expects `grep -n "and the recording that is fetched" README.md # NOTHING`, but the same task's own table dispositions that site as **AMEND**, so the phrase must survive. It does, at `README.md:195`. The step is ticked `[x]` under a heading that says "verify the deletions, do not assert them… a commit message is not evidence". A check whose expected output contradicts the change it verifies either was not run or was run and waved through; correct the expectation to `# amended, still present`.
+- **M-4 (new family `probe-subset-of-the-walk`)** — the three new negative conformance rows (`fetch_conformance_test.go:135`, `:163`, `:180`) probe only `AudioCandidates(…)[0]`, while the claim they pin — "Italian is absent", "French coverage is still partial", "`jalapeno_es_es` is a 404" — is about the whole list production walks. A recording appearing only at the `_2` suffix would leave every row green while the fallback stopped firing. I re-probed both suffixes live: `hotel`, `debut`, `jalapeno`, `ciao`, `pizza`, `espresso` are 404 on `_1` and `_2` today, so nothing is currently false. Fix by asserting through `newHTTPAudioSource().Fetch(ctx, AudioCandidates(w, v))` returning `ErrNoAudio`, which is the production shape and what `TestCDNReturnsRealAudio` already does for the positive case.
+
+### 5. Test coverage notes
+
+- The live dictionary rows (`TestLiveDictionaryResolvesAnUnaccentedQuery`, `TestFixturesMatchLiveDictionary`) **SKIP** from this process context — NOAD is unreachable here, same as the prior round — so the plan's `## Verification before close` CLI script is not reproducible at this gate: every lookup returns `no dictionary entry`. The CDN half and the whole unit suite are reproducible and green. The refusal path is verifiable without a dictionary and I ran it: `define -pron fr` → `define: -pron applies to one lookup; at the prompt use /pron fr`, exit 2, and no `words/` directory created.
+- `TestPronWithNothingLookedUpSaysSo` (`pron_cmd_test.go:59`) discards `run`'s exit code. `runPron` returns 2 and the README documents 2 for a usage error; asserting it costs one line and pins the code path `fail()` exists for.
+- The three-cell truth table in `TestPlayAnnouncedReportsTheVoiceThatAnswered` is the right shape — it includes both silent cells, so the report cannot degrade into a line on every lookup.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** BR-6's fix is the right one: `sourceCandidates` now *calls* `askedForSource()` instead of spelling its negation, so the comment promising they agree became unnecessary. `nothingToReplay` (`repl.go:185`) and `replayInPlace` taking `pron` as a parameter rather than growing a second replay are both the same move. The one duplication I-2 and M-1 name is in the *documentation* layer, not the code.
+- **ARCH-PURE — pass.** `SourceSpellings`, `utterance`, `differsOnlyByDiacritics`, `Entry.AlsoSpellings` and `parsePronArgs` are all pure and tested with no IO; `utteranceFor`, `reportVoice` and `runPron` are thin glue. `reportVoice` taking an `io.Writer` rather than reaching for stderr is correct and is what made `TestTheVoiceReportNamesALanguageEvenWithAZeroVoice` a two-line test.
+- **ARCH-PURPOSE — flag, at I-1.** The shadow-sweep on `pronHelp` passes: `fs.String("pron", …, pronHelp)`, README and atlas all derive, pinned by `TestDocsQuoteThePronHelp`. The sweep on the `commands` registry does not (M-1). And the issue's purpose is delivered rather than the easy subset — both `-pron` and `/pron` ship, `#31` files the split-out curation, D6 disposes of the notation-labelling option — but Done-when 6 is delivered as an *argument* rather than as something the tree defends, which is the axis this principle is about.
+- **ARCH-MOCK — pass.** No new external dependency; the CDN keeps its stateful `fakeCDN` behind `AudioSource`, and the `EscapedPath` fix is a genuine correction to the fake's model of the dependency rather than a test accommodation. `fakeDictionary` now folds through the production predicate with sorted iteration, and `TestLiveDictionaryResolvesAnUnaccentedQuery` is its live conformance half. M-4 is the one place a conformance row models less than the production flow it stands in for.
+
+### 7. Plan revision recommendations
+
+Append one `## Revisions` entry, dated 2026-08-29, covering:
+
+- **`AudioCandidates` was marked `unchanged` and the window changed it** — its doc comment was rewritten by this plan's own Task 8 site 1, and its body gained `v.Lang = v.langOrDefault()` from the BR-5 fix. Record the row as `modified`, and record that the status column is now checked mechanically against the change window (I-2) so the next round's table cannot claim what the diff contradicts.
+- **Task 7's `**Files:**` line names `cmd/define/repl_test.go`, which was never touched** — the raw-editor `/pron` test landed in `cmd/define/commandloop_test.go` beside `TestRawEditorDispatchesCommands`, which is where it belongs. The prior Revisions entry says the test now exists but not that it lives elsewhere.
+- **`## Verification before close`'s "Done-when coverage" cells 4 and 6 name decisions, not tests** — replace each cell with the test symbol that goes red without the wiring, and record that cell 6 had no such test (`voiceFor(pron, "")` left the suite green) until I-1's sweep.
+- **Task 8 Step 4's third grep expects `NOTHING` for a site the task dispositions as AMEND** — correct the expectation so re-running the block verifies the change rather than contradicting it.
