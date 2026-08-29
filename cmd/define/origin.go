@@ -51,10 +51,18 @@ var originLanguages = map[string]store.Lang{
 // unhandled rather than special-cased, because it did not occur in the survey
 // and a rule written for a case nobody has seen is a guess.
 //
-// `Germanic` is a FAMILY, not a language, and masking it is load-bearing on its
-// own: `run` ("of Germanic origin, probably reinforced in Middle English by Old
-// Norse") carries no cognate marker at all, so the cut below never fires and
-// this mask is the only thing standing between it and inferring German.
+// `Germanic` is a FAMILY, not a language, and it is masked to say so — but NOT
+// because the search would otherwise match it. That claim was written here and
+// measured false: removing `Germanic` from this list leaves every fixture green,
+// including `run` ("of Germanic origin, probably reinforced in Middle English by
+// Old Norse"), which carries no cognate marker and would be the case to fail.
+// What actually protects `run` is the WORD BOUNDARY in the search below —
+// `\bGerman\b` does not match inside "Germanic" — and that is pinned by its own
+// case in TestOriginLanguageRules rather than left to this comment.
+//
+// The mask stays because a family name has no business being read as a source
+// language even if the matching rule later changes, and because it documents the
+// distinction. It is redundancy, and it is labelled as redundancy.
 var historicalStages = []string{
 	"Old English", "Middle English", "Old French", "Anglo-Norman French",
 	"Old Norse", "Middle Dutch", "Middle Low German", "Old High German",

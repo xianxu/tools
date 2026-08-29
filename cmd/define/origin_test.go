@@ -115,6 +115,11 @@ func TestOriginLanguageRules(t *testing.T) {
 		{"a stage is masked before the search", "via Old French from Latin natio(n-).", ""},
 		{"bare Greek is ancient", "from Greek ephemeros.", ""},
 		{"Germanic is a family, not a language", "Old English rinnan, of Germanic origin, reinforced by Old Norse.", ""},
+		// THE rule that actually protects the case above, pinned on its own so a
+		// change to the matching rule reddens here rather than silently making
+		// `run` infer German. The mask list is redundancy; this is the guard.
+		{"German does not match inside Germanic", "of Germanic origin.", ""},
+		{"and the boundary is not doing it by accident", "from German Schadenfreude.", "de"},
 		{"no ORIGIN content at all", "", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
