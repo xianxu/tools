@@ -75,3 +75,45 @@ Created as part of the `define-learn` project.
   it is met at the moment it is cheap instead of becoming a backlog item whose
   first design question is "wait for #7".
 
+
+## Revisions
+
+### 2026-08-28 — the same rule, and a tension this form has to settle
+
+**Reason.** The project's 2026-08-28 decision changes the distractor rule to
+**same domain (or general vocabulary), at the learner's CEFR band or one below**.
+This Spec says *"pick distractors that are far in meaning from the answer (see
+#12's selection rule)"*, so it inherits by reference.
+
+**Delta.**
+
+- **Inherits the new rule.** Domain and band replace semantic distance as the
+  primary filter. The pool for this form is unchanged — the learner's own deck —
+  so nothing here depends on `#10`'s harvest.
+- **This form stays no-LLM, and that is now a positive result rather than an
+  assumption.** `#12` can afford plausible distractors because it has a model
+  veto. This form has none by design. It is safe anyway, because the options here
+  are DEFINITIONS: two different words rarely share one, so a same-domain
+  distractor does not create a second correct answer the way it does in a cloze
+  blank. Domain-matching here only removes the giveaway where three options are
+  obviously medical and one is legal.
+
+**An OPEN TENSION this issue must settle when it is built — do not resolve it by
+inheriting.** Two claims in this Spec pull against each other, and the new rule
+sharpens the conflict rather than causing it:
+
+1. *"Pick distractors far in meaning"* — which the near-synonym guard requires.
+2. *"The distractor they picked IS the error kind"*, with the kinds named as
+   near-synonym collapse, connotation, register, domain.
+
+If every distractor is far in meaning, choosing one says only *"did not know
+it"*, never which KIND of confusion — so the error taxonomy `#17 M2` was folded
+into this issue for cannot be read off the choice. Making the option set
+diagnostic needs distractors that VARY along those axes, which means deliberately
+including a near-synonym — and a near-synonym's definition may plausibly define
+the target, which is the ambiguity the guard exists to prevent.
+
+Same-domain selection moves this form toward diagnosis and toward ambiguity at
+the same time. Whether the taxonomy survives, or `#17 M2` needs its own path
+after all, is a question for this issue's design — it should be answered
+deliberately rather than discovered at a review boundary.

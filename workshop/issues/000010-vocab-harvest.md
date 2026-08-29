@@ -95,3 +95,48 @@ bounded and pruning deterministic.
 
 **This is the project's material-quality checkpoint.** Stop here and read generated
 items before building the forms that consume them.
+
+### 2026-08-28 — the pool is a static asset; the feed becomes optional
+
+**Reason.** Operator, after `#23` shipped and the news feed turned out to be
+unconsumed plumbing:
+
+> we can for now use model to propose sentences, not constrained by google news
+
+and, on distractors:
+
+> distractor should just be selected randomly from ... vocabularies at same
+> "grade level" or "general domain" ... we select words at same or one level
+> below (to focus on learning those words, not the distractors)
+
+Recorded in full in the project's `## Decisions`, 2026-08-28.
+
+**Delta.**
+
+- **The candidate pool no longer comes from news.** It is a static
+  level-and-domain-tagged vocabulary plus the learner's own deck. That deletes
+  the harvest spine — the scheduled pull, the extraction, the provenance record
+  — from this issue's critical path.
+- **The Spec's frequency signal is dropped.** *"word frequency (a frequency list
+  is a static asset, no model needed)"* contradicted the project's own PRD, which
+  argued distractors should come from the learner's register *"not from a generic
+  frequency band"*. **CEFR** is the single scale; `#17` already assigns the
+  learner a band, so word bands make the two ends commensurable. Assigned by the
+  model, cached per word forever, which is what makes run-to-run fuzziness
+  acceptable.
+- **What this issue still owns:** assigning each word a CEFR band and a domain,
+  cached forever; and the authoring step, which is unchanged in kind but now
+  reads from the model's own knowledge rather than requiring a news pull.
+- **Authoring gains an explicit constraint:** name real people, places and
+  institutions. A model asked for a natural sentence drifts to the neutral and
+  unnamed, and an unnamed subject gives the learner no referent to attach the
+  word to. This is checkable — an LLM judge can score "would a person say this in
+  ordinary conversation", and the topic spread across a batch is measurable with
+  no model at all.
+- **`#9` is retained and OPTIONAL.** Its specificity is a stronger forcing
+  function for named, current sentences than an instruction alone, so it stays
+  available as enrichment rather than as the spine. Nothing is deleted.
+- **What is LOST, recorded rather than discovered:** provenance. This Spec wanted
+  source URL, fetch date and sentence *"because a bad pool is the failure mode"*.
+  A model-authored item has no external artifact to inspect when the pool goes
+  bad — the item itself is the only evidence.

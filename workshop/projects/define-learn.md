@@ -157,6 +157,62 @@ Not yet costed. Per ariadne #113/#187 the estimate is derived at `sdlc change-co
 per issue — after the plan clears the plan-quality gate, when scope is knowable —
 not guessed at project definition.
 
+**2026-08-28 — contemporary context, and one level scale**
+
+- **Sentences are model-proposed, not corpus-constrained.** The model authors
+  stems from its own knowledge; `#9`'s news seam is RETAINED but no longer
+  required. Three reasons, all from decisions already on this page: the
+  2026-08-22 broadening already made the stem model-written, so attestation was
+  discarded then; the feed was measured to collapse thematically (10 of the first
+  14 `sycophantic` headlines were about AI chatbots); and items are cached per
+  word forever, so currency was already abandoned by design. A model's data
+  being a couple of years stale is the same concession the cache already makes.
+- **The goal is contemporary, NAMED, civil-life language — not attestation.**
+  *"Trump likes to hire sycophants"* beats *"His sycophantic behaviour was noted
+  by all"*, and the reason is not recency: it has a concrete referent the learner
+  already holds. The second sentence cannot be pictured, so there is nothing to
+  attach the word to.
+  - **Consequence:** specificity must be an EXPLICIT authoring constraint — name
+    real people, places, institutions; no unnamed subjects — because a model
+    asked for a natural sentence drifts to the neutral and unnamed. The news feed
+    is a stronger forcing function for this, which is why it is kept rather than
+    deleted.
+- **This is advanced-level learning, by design.** The learner already holds the
+  concept in their first language; the item attaches a target-language LABEL to
+  context they possess. So the STEM may sit above the target word's band —
+  comprehension is not what is being graded — which is the opposite of a graded
+  reader.
+- **CEFR is the single level scale.** Already in the system: `#17` ships
+  assigning the LEARNER a band. Words get one from the model, cached per word
+  forever, which makes run-to-run fuzziness acceptable — assign once, stable
+  after. "The learner's band, or one below" is then arithmetic on one 6-point
+  scale rather than a mapping nothing reconciles.
+- **No frequency list, and the contradiction is retired.** `#10` named one as the
+  cheap level signal; nothing was ever built, and this page separately argued
+  distractors should come from the learner's register *"not from a generic
+  frequency band"*. The two disagreed. Register wins; frequency is dropped as an
+  axis. A downloadable CEFR or frequency asset is DEFERRED, not rejected — the
+  trigger is model-assigned bands proving too inconsistent to use.
+- **Distractors: same domain (or general vocabulary), at the learner's band or
+  one below.** Replaces *"filtered for substantial semantic difference"* as the
+  primary rule.
+  - **Why one band below:** a distractor the learner does not know is
+    unrejectable — they eliminate it by ignorance rather than by knowing it does
+    not fit. Known-and-wrong is the whole point of a distractor.
+  - **Why same domain:** do not mix legal with medical. A specialised word draws
+    from its own register or from general vocabulary at the same band; three
+    obviously-medical options beside one legal one give the answer away.
+  - **This makes distractors MORE plausible, which is the point and also the
+    risk** — same-domain, same-band words are likelier to also fit. See the
+    per-form split in `#12` and `#7`.
+- **Deck aging is accepted.** Items name current referents and are cached
+  forever, so a deck ages. No expiry, no re-authoring: the tool's horizon is a
+  few years of individual use, and a mechanism for that would cost more than it
+  returns.
+- **General web search is a possible sibling source**, not a variation of `#9` —
+  a different seam, fake and conformance check, so `#9`-sized work rather than a
+  config change. Not scheduled.
+
 ## Breakdown
 
 The ordered list is execution order. It **departs from the 2026-08-20 sequencing**,

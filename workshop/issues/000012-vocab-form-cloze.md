@@ -96,3 +96,32 @@ does not move.
 **Added.** Distractor *domain* now follows the learner (#17): for someone whose
 lookups are 34% judicial, the interesting confusion is `dicta` against `holding`,
 not `dicta` against `ephemeral`.
+
+### 2026-08-28 — same domain, band or below, and the veto becomes load-bearing
+
+**Reason.** The project's 2026-08-28 decision replaces *"filtered for
+substantial semantic difference"* with **same domain (or general vocabulary), at
+the learner's CEFR band or one below**. Rationale in the project's
+`## Decisions`.
+
+**Delta.**
+
+- **The pool changes source.** No longer *"words harvested from current news at
+  the learner's level (#10)"* — it is a static level-and-domain-tagged
+  vocabulary plus the learner's deck. *Selected, never invented* is unchanged and
+  still holds: the words are real, from a real list.
+- **The selection rule changes shape.** Semantic distance is no longer the
+  primary filter; domain and band are. Distance survives only as the
+  near-synonym guard below.
+- **The model veto is now LOAD-BEARING, not a nicety.** Same-domain, same-band
+  words are likelier to also fit the blank — that is exactly what makes the item
+  good and exactly what raises the "the wrong answer is also right" failure mode
+  the original rule was written to kill. This form can afford plausible
+  distractors *because* it has the veto; that is what earns it.
+  - The Done-when row *"the form works with the LLM seam unavailable (veto step
+    skipped)"* now carries a cost it did not before: without the veto, a
+    same-domain distractor may genuinely fit. Either the offline path widens the
+    domain filter, or it accepts a rarer ambiguous item. Decide it when building.
+- **`sycophantic`/`obsequious` stays the test case.** A near-synonym must still
+  be rejected, and under the new rule it is *more* likely to be selected, not
+  less — same domain, same band. The guard matters more.
