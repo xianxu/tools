@@ -139,18 +139,40 @@ negative probe is not a measurement; the five-word sweep is.
 Plain checkboxes, one `sdlc close`: a locale policy, its help text, one test and
 a conformance row is a single review boundary.
 
-- [ ] **Replace `localeFor`'s interim rule with the real policy.** The valid set
-      is per-language and closed — `en` → {`us`, `gb`}, `es` → {`es`, `us`} — so
-      an invalid pair is refused by NAME rather than silently defaulted. Keep the
-      default arm exactly as it is: language code, `en` → `us`, which measurement
-      still supports. Test as a table over accept/reject, including `es_419`
-      staying rejected, since the CDN says it does not exist.
-- [ ] **The help text says what the difference IS.** `"pronunciation locale: us
-      or gb"` names two country codes and explains nothing. Done-when asks for
-      the θ/seseo distinction to be stated, because it is a phonemic choice about
-      which sound system the learner acquires — `cazar` /θ/ ≠ `casar` /s/ in
-      `es_es`, both /s/ in `es_us`. The text must stay honest about being
-      language-dependent: `gb` is meaningless for Spanish and `es` for English.
+- [ ] **Replace `localeFor`'s interim rule: `-locale` is honoured for ANY
+      language.** The whole change is deleting the `l == store.DefaultLang`
+      guard that makes it English-only, so `-lang es -locale us` builds
+      `madrugar_es_us` instead of warning and falling back.
+
+      **NO whitelist of valid pairs**, and this is a decision reversed during
+      planning rather than a default. A first draft proposed a closed table
+      (`en` → {`us`,`gb`}, `es` → {`es`,`us`}) refusing anything else. That
+      contradicts this codebase's own precedent: `ParseLang` deliberately does
+      not whitelist languages, because *"the CDN and the installed dictionaries
+      decide what exists, and a hardcoded list here would be a restatement of a
+      fact they own"*. The same argument applies exactly. A table would also have
+      no answer for `fr`, which `ParseLang` admits and which the CDN serves —
+      `arrondissement_fr_fr` is a 200.
+
+      An unserved pair therefore 404s and degrades to the existing warning at
+      exit 0, which is what every missing recording already does. The default arm
+      is unchanged: locale = language code, `en` → `us`.
+- [ ] **The help text says what the difference IS, from ONE source.**
+      `"pronunciation locale: us or gb"` names two country codes, explains
+      nothing, and is now wrong twice over — it omits Spanish and implies the set
+      is closed, which the bullet above says it is not.
+
+      Done-when asks for the θ/seseo distinction because it is a phonemic choice
+      about which sound system the learner acquires: `cazar` /θ/ ≠ `casar` /s/ in
+      `es_es`, both /s/ in `es_us`. It must give examples without claiming to
+      enumerate.
+
+      **One source, because the policy is currently stated in four places** —
+      `localeFor`, the flag help, the README and the atlas — with nothing keeping
+      them in step. The help string becomes a const, and the README derives from
+      it through `doc_sync_test.go`, which already implements exactly this for
+      the play-loop prompts. Same family, same fix; it has recurred enough in
+      this repo to be mechanical rather than swept.
 - [ ] **A Spanish entry has no pronunciation, and a TEST says that is expected.**
       Spanish orthography is phonemic, so Larousse carries no notation at all —
       `ParseEntry` finding none is CORRECT and must not be "fixed" later by
@@ -169,23 +191,29 @@ a conformance row is a single review boundary.
 
 ## Risks
 
-**The unspecified-language path costs a Spanish learner ~1s per word.** With no
-`-lang`, a Spanish word pays two English 404s (~900ms) before its first Spanish
-candidate. That is the measured price of "reorders rather than restricts", and
-it is why `-lang` exists. It is acceptable *now* because the deck is
-English-dominant; it stops being acceptable when `#18 M2` gives the deck a
-language, at which point `voices` should read the word's own language instead of
-guessing. Recorded here so the next issue meets a decision rather than a mystery.
+**No whitelist means a wrong pair fails late and quietly.** `-lang es -locale gb`
+builds `madrugar_es_gb`, which 404s, and the learner gets the standard
+"no recording" warning rather than "that locale does not exist for Spanish". That
+is the deliberate trade — see the locale task — and it follows `ParseLang`'s
+precedent rather than inventing a second philosophy for the adjacent field. If it
+proves confusing in use, the fix is a warning that NAMES the pair, not a
+rejection: the CDN stays the authority on what exists.
 
-**`-locale gb` with `-lang es` produces `es_gb`, which 404s.** Deliberately not
-validated: a table of valid language/locale pairs is a restatement of a fact the
-CDN owns, and it goes stale the moment Google adds a variant. The failure is a
-warning and exit 0, which is the existing behaviour for any missing recording.
-If this proves confusing in use, the fix is a warning naming the pair, not a
-rejection.
+**The two-locale Spanish set is measured, not guaranteed.** `es_419` and `es_mx`
+are 404 today. Google could add them, and nothing here would need to change —
+which is the point of not encoding the set. The conformance row records what was
+true when measured.
 
-**The legacy path could grow a language segment.** `TestCDNServesSpanish`'s third
-fact is what would catch it, and its failure message says what to do.
+**A Spanish entry legitimately has no pronunciation, and the next reader may
+"fix" it.** That is why a test asserts it rather than a comment. The risk is the
+test being written too broadly: *a Spanish word in an English dictionary DOES
+carry notation* — NOAD gives `jalapeño` four anglicised pronunciations — so a
+test asserting "Spanish words have no notation" would be false. It must assert
+about the Spanish DICTIONARY's entries.
+
+**The legacy path could grow a language segment.**
+`TestCDNStillServesSpanishOnTheExpectedPaths` asserts the negative — that
+`/sounds/oxford/` does not serve Spanish — so it is what would catch the change.
 
 ## Done-when → task map
 
