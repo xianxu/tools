@@ -5,7 +5,7 @@ deps: [tools#29, tools#35]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
-estimate_hours:
+estimate_hours: 3.19
 started: 2026-08-29T16:24:35-07:00
 ---
 
@@ -212,6 +212,77 @@ back into a running `define`. Terminal.app does not support them at all.
 - [ ] A terminal without mouse support degrades to exactly today's behaviour.
 - [ ] The playback target is the HEADWORD, so it exists in every entry and every
       language — Spanish, which has no IPA, is not left with a dead affordance.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.50 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: greenfield-go-module     design=0.06 impl=0.24
+item: smaller-go-module        design=0.01 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.01 impl=0.08
+item: cross-cutting-refactor    design=0.03 impl=0.12
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.12
+item: cross-cutting-refactor    design=0.04 impl=0.18
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.01 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.01 impl=0.08
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.12
+item: milestone-review         design=0.00 impl=0.10
+design-buffer: 0.15
+total: 3.19
+```
+
+Derivation notes.
+
+- **`issue-spec` design 0.50 is the measured window**, `16:00`–`16:38`: the
+  scrollback analysis, rejecting colour-as-carrier and OSC 8 with reasons, the
+  `file:line` sweep PQ-10 demanded, and three plan-gate rounds. Larger than
+  `#35`'s 0.35 because the design question was open — the operator chose the TUI
+  in conversation but the consequences (cooked/raw, stderr, `#32`'s seam,
+  transcript-on-exit) were all decided here.
+
+- **`M1.3` is the only `greenfield-go-module`**, and it is the risk the milestone
+  split exists for: the editor's output path is rewritten and `cooked()` is
+  deleted, which removes a mechanism `#14` established and `#29` had to defer a
+  replay around. 0.24 impl is the top of the scaled band, not the middle.
+
+- **Two `cross-cutting-refactor`s, and they are genuinely different in kind from
+  the modules.** `M1.6` rewrites the atlas's raw-mode section, whose subject
+  D4 deletes. `M2.1` changes `Render`'s signature — `editorloop_test.go:29`
+  returns it and the suite calls it from dozens of sites, so the churn is
+  mechanical but wide, which the plan now says out loud so the boundary reviewer
+  is not surprised by the diff size.
+
+- **Two `milestone-review` pairs plus a close row**, because there are two
+  boundaries and each returns work. Every boundary review this session has: `#29`
+  four rounds, `#31` four, `#35` one with four findings. Pricing remediation at
+  zero is the one thing this session's history rules out, so each milestone
+  carries 0.16 to run and 0.12 to remediate, and the close carries 0.10 for the
+  manual pass on a real terminal — which is the only place clicking can be
+  verified at all.
+
+- **No `TUI screen + state machine` primitive**, despite this being a TUI. That
+  primitive is for a screen with its own input state machine; `M1` adds a
+  viewport and a paint to an editor loop that already owns keys, frames and raw
+  mode. `M1.3` is priced as greenfield precisely because it is the part that is
+  genuinely new.
+
+- **Expect this one to run long rather than short.** The three closed rows this
+  session are 0.83×, 0.90× and roughly 1.6× — no trend — but the two that ran
+  over were the two with the widest surface, and this has the widest of the four
+  by some way. The estimate is not padded for that; v3.1 is applied as written so
+  the ledger row means something.
 
 ## Plan
 

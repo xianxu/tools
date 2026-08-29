@@ -190,6 +190,32 @@ rounds:
           family: undefined-acceptance-criteria
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-29T16:38:35-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-7
+          disposition: not-addressed
+          note: M1.1 still enumerates the same four cases; the chunk-boundary property for Write is still unstated.
+          round: 3
+        - id: PQ-8
+          disposition: not-addressed
+          note: No cap on screen.lines and no deliberate statement that there is none.
+          round: 3
+        - id: PQ-9
+          disposition: not-addressed
+          note: Still "only the destination changes"; measured 28/26/21 cooked-bearing lines in commandloop/editorloop/askroute tests.
+          round: 3
+        - id: PQ-10
+          disposition: addressed
+          note: Rule stated as the deliverable, enumeration written, sweep done — all 11 rows verified true, and it caught the offset bug.
+          round: 3
+        - id: PQ-11
+          disposition: addressed
+          note: Row 4 now names TestScreenMarksClickableSpans at the screen layer; M2.5 reuses sgr.go's sgrState.
+          round: 3
+      blocked: false
+content_hash: ec41b86d54f80a2710b824becf96cfc858a0c25f8fa4f356bd7ed2753ba80f31
 ---
 
 # Gate ledger — tools#30 (plan-quality)
@@ -304,10 +330,18 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   sgr.go's sgrState/resume as the existing machinery for splicing an
   attribute into already-styled text (ARCH-DRY).
 
+## Round 3 — 2026-08-29T16:38:35-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-7 — not-addressed — M1.1 still enumerates the same four cases; the chunk-boundary property for Write is still unstated.
+- PQ-8 — not-addressed — No cap on screen.lines and no deliberate statement that there is none.
+- PQ-9 — not-addressed — Still "only the destination changes"; measured 28/26/21 cooked-bearing lines in commandloop/editorloop/askroute tests.
+- PQ-10 — addressed — Rule stated as the deliverable, enumeration written, sweep done — all 11 rows verified true, and it caught the offset bug.
+- PQ-11 — addressed — Row 4 now names TestScreenMarksClickableSpans at the screen layer; M2.5 reuses sgr.go's sgrState.
+
 ## Open findings
 
 - **PQ-7** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
 - **PQ-8** [Minor] `unbounded-buffer` screen.lines and D3's exit transcript are unbounded
 - **PQ-9** [Minor] `blast-radius-understated` M1.3's "only the destination changes" understates deleting cooked
-- **PQ-10** [Important] `unbacked-existing-behavior` Second appearance of this family: three unpinned claims about existing cmd/define behavior, all wrong — fix the rule, not the sites
-- **PQ-11** [Minor] `undefined-acceptance-criteria` M2 Done-when row 4 pins the underline to a Render test while M2.5 and D6 require it in the frame
