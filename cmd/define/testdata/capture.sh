@@ -16,7 +16,7 @@
 # Re-run after a macOS upgrade; dict_conformance_test.go detects the drift.
 set -euo pipefail
 cd "$(dirname "$0")"
-mkdir -p entries/en entries/es
+mkdir -p entries/en entries/es entries/it
 
 # The corpus is chosen for structural variety, not vocabulary:
 #   bank     homograph number, no syllabification, only sense 1 reachable;
@@ -89,6 +89,28 @@ words=(
 #   madrugar  a verb with a usage example, which is what monolingual buys
 es_words=(mesa bonito once real madrugar)
 ES_DICT=com.apple.dictionary.es.DGLEV
+# Italian, captured through the Devoto-Oli specifically (#31). NOT a name match,
+# for the reason stated above: OxfordItalian is installed here and is BILINGUAL,
+# so "Ital" would select it on some runs and monolingualIn would then reject the
+# corpus the fixtures came from.
+#
+# Chosen for what they prove structurally, not for vocabulary:
+#   pizza     the headline case -- it exists in NOAD *and* in Devoto-Oli, so the
+#             two entries differ and dictionary selection is visible. mesa is the
+#             Spanish counterpart of this row
+#   ciao      multi-block "A. inter. ... B. s.m.", a shape English never produces;
+#             also carries ETIMOLOGIA and DATA, section names the parser does not
+#             know, so it pins how an unknown trailing section is absorbed
+#   casa      ordinary numbered senses -- the common case, and the baseline the
+#             other four are read against
+#   parlare   a homograph-numbered headword ("parlare 1") whose number precedes
+#             the syllabification, the reverse of NOAD's "present 1 pres·ent"
+#   acqua     a domain label (chim.) between the part of speech and the gloss
+#   essere    the largest entry available: the blob ceiling, so a regression in
+#             sense splitting shows up as one giant example rather than as a
+#             number nobody reads
+it_words=(pizza ciao casa parlare acqua essere)
+IT_DICT=com.apple.dictionary.it.Devoto-Oli
 # English is two books, in the same preference order chooseDictionary uses: NOAD
 # answers ordinary words, Apple Dictionary answers iPhone/iPad/MacBook.
 EN_DICTS=(com.apple.dictionary.NOAD com.apple.dictionary.AppleDictionary)
@@ -144,6 +166,13 @@ done
 for w in "${es_words[@]}"; do
     capture "$w" entries/es "$ES_DICT"
 done
+for w in "${it_words[@]}"; do
+    capture "$w" entries/it "$IT_DICT"
+done
 
-echo "captured ${#words[@]} English, ${#es_words[@]} Spanish, ${#RAW_WORDS[@]} raw-notation entries:"
-wc -c entries/en/*.txt entries/es/*.txt rawnotation/*.txt
+# The summary counts EVERY corpus. It listed English and Spanish only while a
+# third was being captured, and a summary that under-reports is how a short
+# capture goes unnoticed -- the same failure MIN_BYTES exists to prevent, one
+# level up.
+echo "captured ${#words[@]} English, ${#es_words[@]} Spanish, ${#it_words[@]} Italian, ${#RAW_WORDS[@]} raw-notation entries:"
+wc -c entries/en/*.txt entries/es/*.txt entries/it/*.txt rawnotation/*.txt

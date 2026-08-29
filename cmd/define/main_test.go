@@ -405,3 +405,28 @@ func TestPronHonoursTheLocaleFlagForTheSourceLanguage(t *testing.T) {
 		t.Errorf("the es_us recording answered, so nothing should be reported: %q", errb.String())
 	}
 }
+
+// The -lang flag REGISTERS the derived help, not a literal (#31).
+//
+// langHelp is built from `curated`, but nothing pinned that run() actually
+// passes it: reverting `fs.String("lang", "", langHelp)` to the old
+// "language for this invocation: en, es" string was invisible to go test ./...,
+// because every other test reads the flag's VALUE and none reads its usage.
+// Derivation delivered but unwired is the shape #29 closed for doc-sync consts,
+// one artifact over.
+//
+// Read off the flagset the way a user reads -h, so this cannot be satisfied by
+// the const existing somewhere.
+func TestTheLangFlagRegistersTheDerivedHelp(t *testing.T) {
+	var out, errb bytes.Buffer
+	// -h exits 0 after printing usage to stderr, which is where fs.PrintDefaults
+	// writes.
+	if code := run(t.Context(), []string{"-h"}, testDeps(t), strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("-h exit = %d, want 0", code)
+	}
+	if !strings.Contains(errb.String(), langHelp) {
+		t.Errorf("the -lang flag does not register langHelp — its usage text is a literal "+
+			"again, so it will not follow `curated`. want to find:\n\t%s\nin:\n%s",
+			langHelp, errb.String())
+	}
+}

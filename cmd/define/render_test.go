@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // Render had no direct test at the M1 boundary review: the colour path,
@@ -227,8 +230,25 @@ func TestCorpusBlockStructure(t *testing.T) {
 //
 // Checked with strayStress, which does NOT consult isPronunciation — see the
 // oracle note there for why the obvious formulation of this test is circular.
+// EVERY captured language, not just English (#31). It took testDict(t) while two
+// committed comments — in capture.sh and rawnotation_test.go — described it as a
+// hard zero "over the committed corpus". That was harmless while the corpus was
+// English plus a Spanish corpus nobody claimed this covered; capturing Italian
+// is what would have made the phrasing actively misleading, so the check is
+// widened to match the claim rather than the claim narrowed to match the check.
+//
+// Measured before widening: 15 Devoto-Oli entries render 0 raw pipes and parse 0
+// IPA, so Italian passes the hard zero rather than needing an exemption.
 func TestNoRawPronunciationNotationSurvives(t *testing.T) {
-	d := testDict(t)
+	for _, lang := range capturedLanguages(t) {
+		t.Run(string(lang), func(t *testing.T) {
+			noRawNotationIn(t, testDictFor(t, lang))
+		})
+	}
+}
+
+func noRawNotationIn(t *testing.T, d *fakeDictionary) {
+	t.Helper()
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			out := Render(ParseEntry(raw), RenderOpts{Color: false})
@@ -299,8 +319,20 @@ func TestWrapTextDisabledAtZeroWidth(t *testing.T) {
 }
 
 // The no-data-loss property must survive wrapping — it only inserts whitespace.
+//
+// EVERY captured language (#31), for the same reason its unwrapped sibling was
+// widened: wrapping is not English-specific, and a corpus checked by neither
+// form of the invariant is a corpus nothing holds to it.
 func TestWrappedRenderStillLosesNothing(t *testing.T) {
-	d := testDict(t)
+	for _, lang := range capturedLanguages(t) {
+		t.Run(string(lang), func(t *testing.T) {
+			wrappedLosesNothingIn(t, testDictFor(t, lang))
+		})
+	}
+}
+
+func wrappedLosesNothingIn(t *testing.T, d *fakeDictionary) {
+	t.Helper()
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			out := Render(ParseEntry(raw), RenderOpts{Color: false, Width: 60})
@@ -315,39 +347,96 @@ func TestWrappedRenderStillLosesNothing(t *testing.T) {
 	}
 }
 
-// A Spanish entry carries NO pronunciation notation, and that is correct rather
-// than a gap.
+// A non-English entry carries NO pronunciation notation, and that is correct
+// rather than a gap — but the REASON differs per language, so the reason is the
+// row rather than a shared sentence.
 //
-// Spanish orthography is phonemic — the spelling plus the written accent
-// determines the pronunciation exactly — so the Larousse writes none, unlike
-// NOAD's `lig·a·ment | ˈliɡəmənt |`. ParseEntry finding nothing is the right
-// answer, and this test exists so the next person to notice does not "fix" it.
-//
-// It also makes the recording load-bearing in a way it is not for English: for a
-// Spanish word the audio is the ONLY place pronunciation information exists,
-// which is the argument behind #27's locale work.
+// ONE table, not one function per language. #31 first added Italian as a second
+// function whose doc comment was appended to this one's, leaving BOTH
+// misdocumented: the Spanish explanation ran into the Italian one and the
+// Spanish test lost its header. That is the one-predicate-two-spellings family
+// this repo keeps closing, and the boundary review caught a new instance being
+// created rather than an old one surviving.
 //
 // SCOPED DELIBERATELY, because the unscoped claim is false. This is about a
-// Spanish word in a SPANISH dictionary. A Spanish word in an ENGLISH one is a
+// non-English word in ITS OWN dictionary. The same word in an ENGLISH one is a
 // different case with real notation — NOAD gives `jalapeño` four anglicised
 // pronunciations — and conflating the two is how "Spanish has no notation"
 // becomes wrong. The English half is asserted below.
-func TestSpanishEntriesCarryNoPronunciationNotation(t *testing.T) {
-	d := testDictFor(t, "es")
-	if len(d.entries) == 0 {
-		t.Fatal("the Spanish corpus is empty; this test would pass vacuously")
+// notationExempt names languages whose dictionary DOES write pronunciation, so a
+// missing row below is distinguishable from a deliberate absence.
+//
+// Without it, "this language has no row" and "this language must not have a row"
+// look identical, and #34 would add German — whose Duden field is REAL
+// (`Wạsser`, `ˈkatsə, Kạtze`) — to a table asserting the opposite. The value is
+// the reason, because a bare set would answer "which" and not "why".
+var notationExempt = map[store.Lang]string{
+	"en": "NOAD writes IPA for every entry; English is the baseline the others are contrasted with",
+}
+
+func TestNonEnglishEntriesCarryNoPronunciationNotation(t *testing.T) {
+	rows := []struct {
+		lang store.Lang
+		// why says what a failure MEANS for this language. The two languages
+		// reach the same zero for different reasons, and a shared message would
+		// blur exactly the distinction #30 reads this pair for.
+		why string
+	}{
+		{
+			"es",
+			"Spanish orthography is phonemic — spelling plus the written accent determines " +
+				"the pronunciation exactly — so the Larousse writes none, unlike NOAD's " +
+				"`lig·a·ment | ˈliɡəmənt |`. If this starts passing, the Larousse changed, " +
+				"not the parser. It also makes the RECORDING load-bearing in a way it is not " +
+				"for English: for a Spanish word the audio is the only place pronunciation " +
+				"information exists, which is the argument behind #27's locale work",
+		},
+		{
+			"it",
+			"Devoto-Oli DOES write something — `(cià·o)`, `(pìz·za)`, `(e·sprès·so)` — and it " +
+				"is syllabification with stress, not a phonetic transcription. isPronunciation " +
+				"declines it, correctly. If the parser ever reads those parens as an IPA span, " +
+				"#30's click target and the renderer's `/…/` would both start showing syllable " +
+				"breaks as pronunciation. Measured 0 of 15 against the live dictionary before " +
+				"the corpus was captured",
+		},
 	}
-	for word := range d.entries {
-		raw, err := d.Lookup(word)
-		if err != nil {
-			t.Errorf("%s: %v", word, err)
+	// EVERY curated language is either a row or exempt, with its reason. Fifth
+	// instance of the family: a language-keyed table that does not range over
+	// `curated` silently gains no row when a language is curated.
+	for lang := range curated {
+		if _, exempt := notationExempt[lang]; exempt {
 			continue
 		}
-		if got := ParseEntry(raw).IPA; got != "" {
-			t.Errorf("%s: parsed a pronunciation %q from a Spanish entry — Spanish orthography "+
-				"is phonemic, so the dictionary writes none. If this starts passing, the "+
-				"Larousse changed, not the parser", word, got)
+		if !slices.ContainsFunc(rows, func(r struct {
+			lang store.Lang
+			why  string
+		}) bool {
+			return r.lang == lang
+		}) {
+			t.Errorf("production curates %v for %s, and it is neither a row here nor in "+
+				"notationExempt — so nothing states whether that dictionary writes "+
+				"pronunciation, which is the fact #30 reads", curated[lang], lang)
 		}
+	}
+	for _, tc := range rows {
+		t.Run(string(tc.lang), func(t *testing.T) {
+			d := testDictFor(t, tc.lang)
+			if len(d.entries) == 0 {
+				t.Fatalf("the %s corpus is empty; this test would pass vacuously", tc.lang)
+			}
+			for word := range d.entries {
+				raw, err := d.Lookup(word)
+				if err != nil {
+					t.Errorf("%s: %v", word, err)
+					continue
+				}
+				if got := ParseEntry(raw).IPA; got != "" {
+					t.Errorf("%s: parsed a pronunciation %q from a %s entry — %s",
+						word, got, tc.lang, tc.why)
+				}
+			}
+		})
 	}
 }
 

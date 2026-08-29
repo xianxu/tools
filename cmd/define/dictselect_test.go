@@ -11,8 +11,9 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-// installedOnThisMachine is the metadata actually measured on 2026-08-28, not an
-// invented fixture. The five that matter out of 87.
+// installedOnThisMachine is the metadata actually measured on this host — 2026-08-28
+// for English and Spanish, 2026-08-29 for Italian — not an invented fixture. The
+// ones that matter out of 87.
 //
 // It is the argument for the whole design: requiring every language entry to be
 // L->L gives exactly ONE candidate for es and SIX for en — and two of the six are
@@ -34,6 +35,37 @@ func installedOnThisMachine() []dictMeta {
 			{Index: "es", Description: "es"},
 			{Index: "en", Description: "es"}, // bilingual: this pair is what disqualifies it
 		}},
+		// Italian, measured 2026-08-29 (#31). Same shape as the Spanish pair and
+		// present for the same reason: the monolingual book plus the bilingual
+		// one that must NOT be chosen. Adding a language to `curated` without
+		// adding it here leaves the fixture modelling a machine the tool no
+		// longer targets, which is what forced the Italian case to re-declare
+		// these two records locally.
+		{ID: "com.apple.dictionary.it.Devoto-Oli", Langs: []langPair{{Index: "it", Description: "it"}}},
+		{ID: "com.apple.dictionary.OxfordItalian", Langs: []langPair{
+			{Index: "it", Description: "it"},
+			{Index: "en", Description: "it"},
+		}},
+	}
+}
+
+// EVERY curated language is modelled in the fixture above, in BOTH directions.
+//
+// This is the rule the close review named after four instances: no site states a
+// per-language fact by hand — every per-language enumeration ranges over
+// `curated`, and every language-keyed fixture is cross-checked against it. The
+// fixture is what the order test and the selection tests range over, so a
+// language curated but unmodelled silently drops out of all of them.
+func TestTheMeasuredSetModelsEveryCuratedLanguage(t *testing.T) {
+	installed := installedOnThisMachine()
+	for lang, ids := range curated {
+		for _, want := range ids {
+			if !slices.ContainsFunc(installed, func(m dictMeta) bool { return m.ID == want }) {
+				t.Errorf("production curates %q for %s, but installedOnThisMachine() does not "+
+					"model it — every test that ranges over the fixture silently skips %s",
+					want, lang, lang)
+			}
+		}
 	}
 }
 
@@ -153,7 +185,11 @@ func TestChooseDictionaryRequiresEVERYPairToBeMonolingual(t *testing.T) {
 // Wednesday with nothing changed.
 func TestChooseDictionaryDoesNotDependOnOrder(t *testing.T) {
 	base := installedOnThisMachine()
-	for _, lang := range []store.Lang{"en", "es"} {
+	// EVERY curated language, not a hand-written pair. It said {"en", "es"} and
+	// stayed that way when Italian was curated, so the order-independence
+	// requirement — a real one, since DCSCopyAvailableDictionaries returns a SET —
+	// went unchecked for the newest language.
+	for lang := range curated {
 		want, ok := chooseDictionary(base, lang)
 		if !ok {
 			t.Fatalf("%s: no choice from the measured set", lang)
@@ -352,7 +388,14 @@ func TestCaptureScriptUsesTheCuratedDictionaries(t *testing.T) {
 	script := string(b)
 
 	inScript := map[string]bool{}
-	for _, m := range regexp.MustCompile(`com\.apple\.[A-Za-z0-9._]+`).FindAllString(script, -1) {
+	// The HYPHEN is in the class because Apple's identifiers use it —
+	// it.Devoto-Oli, nl-en.oup, zh_TW-en.DrEye. Without it this regex truncated
+	// "com.apple.dictionary.it.Devoto-Oli" to "…it.Devoto" and then reported the
+	// pair as mismatched in BOTH directions: the curated id looked absent from
+	// the script, and the script's id looked uncurated. Every curated identifier
+	// happened to be hyphen-free until #31, so the defect was latent rather than
+	// absent.
+	for _, m := range regexp.MustCompile(`com\.apple\.[A-Za-z0-9._-]+`).FindAllString(script, -1) {
 		inScript[m] = true
 	}
 	if len(inScript) == 0 {
@@ -377,6 +420,239 @@ func TestCaptureScriptUsesTheCuratedDictionaries(t *testing.T) {
 		if !known {
 			t.Errorf("capture.sh captures through %q, which no curated list names — fixtures "+
 				"from a dictionary production never consults cannot be conformance-checked", id)
+		}
+	}
+}
+
+// Italian resolves to the Devoto-Oli, and the BILINGUAL Oxford is rejected (#31).
+//
+// The second half is the one worth having. `OxfordItalian` is installed on this
+// host and indexes `it>it` AND `en>it`, so a rule that accepted "indexes Italian"
+// would put English glosses in front of an Italian learner — the outcome #23's
+// mode exists to prevent, and the reason "just prefer the other Italian book" is
+// not available to #34 either.
+func TestChooseDictionaryPicksTheCuratedItalian(t *testing.T) {
+	// From the MEASURED set, not a local re-declaration: both books are modelled
+	// in installedOnThisMachine(), and declaring them twice is two statements of
+	// one fixture fact that can drift apart.
+	got, ok := chooseDictionary(installedOnThisMachine(), "it")
+	if !ok || len(got) != 1 || got[0].ID != "com.apple.dictionary.it.Devoto-Oli" {
+		t.Errorf("chooseDictionary(it) = %v, %v; want just the Devoto-Oli", ids(got), ok)
+	}
+	// The bilingual book ALONE is not a fallback: no curated monolingual book
+	// means the NULL search, never a different-language dictionary.
+	bilingual := dictMeta{ID: "com.apple.dictionary.OxfordItalian",
+		Langs: []langPair{{Index: "it", Description: "it"}, {Index: "en", Description: "it"}}}
+	if got, ok := chooseDictionary([]dictMeta{bilingual}, "it"); ok {
+		t.Errorf("chooseDictionary(it) accepted the bilingual Oxford: %v", ids(got))
+	}
+}
+
+// Every curated language has a corpus, which is the direction nothing checked.
+//
+// `capturedLanguages` derives from the DIRECTORY and guards only `len(out) >= 2`
+// (dict_fake_test.go), so it answers "what did we capture" and can never answer
+// "did we capture what production selects". Concretely: deleting
+// testdata/entries/it/ outright leaves en+es, satisfies that guard, and reddens
+// nothing — while `curated` still points every Italian session at a book whose
+// fixtures are gone, and every conformance check that would have caught the
+// drift silently has nothing to read.
+//
+// This is the same row-vs-tree asymmetry #29 closed for plan tables: a claim in
+// one artifact is only checked in the direction someone thought to look.
+func TestEveryCuratedLanguageHasACorpus(t *testing.T) {
+	for lang := range curated {
+		t.Run(string(lang), func(t *testing.T) {
+			// Through loadFakeDictionary, not a raw glob: it ALSO rejects a
+			// zero-byte fixture (dict_fake_test.go), which a glob counts as
+			// present. A short capture is exactly the failure capture.sh's
+			// MIN_BYTES floor exists for, and this guard would have called it
+			// coverage.
+			d, err := loadFakeDictionary("testdata/entries", lang)
+			if err != nil || len(d.entries) == 0 {
+				t.Errorf("production curates %v for %s, but testdata/entries/%s holds no "+
+					"usable fixtures (%v) — the seam has nothing to conformance-check, so a "+
+					"change in that dictionary would surface as a user complaint rather than "+
+					"a red test. Run testdata/capture.sh (unsandboxed).",
+					curated[lang], lang, lang, err)
+			}
+		})
+	}
+}
+
+// derivedDocs is the doc set that consumes code-owned strings, named ONCE.
+//
+// It was spelled three times — here and twice in doc_sync_test.go — so a third
+// document is covered only by whichever test its author happened to remember.
+var derivedDocs = []string{"../../README.md", "../../atlas/define.md"}
+
+// curatedSurface is one place obliged to name every curated language, plus how
+// that place SPELLS a language: the docs write "Italian", the flag help writes
+// "it".
+type curatedSurface struct {
+	what  string
+	text  func(t *testing.T) string
+	token func(store.Lang) string
+}
+
+// langCode and langName are the two spellings a surface can use.
+//
+// The name map lives in the TEST because it is a fact about English prose, not
+// about the dictionaries — `curated` holds identifiers and has no business
+// carrying display strings.
+func langCode(l store.Lang) string { return string(l) }
+
+func langName(l store.Lang) string {
+	switch l {
+	case "en":
+		return "English"
+	case "es":
+		return "Spanish"
+	case "it":
+		return "Italian"
+	}
+	return "" // unknown: reported as a missing name rather than silently passing
+}
+
+// curatedSurfaces is THE registry, and the only hand-written list left in this
+// family: "which surfaces exist". Everything else ranges over it.
+//
+// Five rounds of `curated-consumer-unpinned` findings got here. Each earlier
+// round fixed the sites it could see, and the next round found more — because
+// the enforcement was per-site, so a new surface was pinned only if its author
+// remembered to write a test. With a registry, a new surface is a row and the
+// assertion already exists.
+func curatedSurfaces() []curatedSurface {
+	out := []curatedSurface{
+		{
+			// This row is what pins langHelp's DERIVATION. The flagset test pins
+			// its DELIVERY — that run() passes it rather than a literal — and the
+			// two are different: replacing langHelp's body with a hardcoded
+			// "en, es" keeps delivery green and fails here.
+			what:  "the -lang flag help (langHelp)",
+			text:  func(*testing.T) string { return langHelp },
+			token: langCode,
+		},
+	}
+	// The derived docs are ROWS, generated from the one list — not two literals
+	// beside a var claiming to be that list. `derivedDocs` was introduced with a
+	// comment saying it existed so the doc set was "named ONCE" and then had zero
+	// callers: package-level vars are exempt from Go's unused check, so it passed
+	// every suite while consolidating nothing.
+	for _, doc := range derivedDocs {
+		out = append(out, curatedSurface{
+			what:  doc + "'s curated-languages span",
+			text:  func(t *testing.T) string { return markedSpan(t, doc, "curated-languages") },
+			token: langName,
+		})
+	}
+	return out
+}
+
+// markedSpan returns the text between <!-- name --> and <!-- /name -->.
+//
+// SCOPED, not whole-file: free-text containment over a README passes for the
+// wrong reason — #29 had left "Italian and Japanese have no recordings" in an
+// unrelated section, which satisfied an earlier version of this check while the
+// dictionary paragraph still listed two languages.
+func markedSpan(t *testing.T, doc, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatalf("%s unreadable: %v", doc, err)
+	}
+	_, rest, ok := strings.Cut(string(b), "<!-- "+name+" -->")
+	if !ok {
+		t.Fatalf("%s has no <!-- %s --> span; an unmarked paragraph cannot be checked", doc, name)
+	}
+	span, _, ok := strings.Cut(rest, "<!-- /"+name+" -->")
+	if !ok {
+		t.Fatalf("%s opens <!-- %s --> and never closes it", doc, name)
+	}
+	return span
+}
+
+// Every registered surface names every curated language.
+//
+// ONE assertion over the registry, replacing three per-site tests. Word-boundary
+// rather than Contains, because "Italiano" contains "Italian" and a renamed row
+// passed the substring version — a check a near-miss satisfies is the same
+// defect as one an unrelated sentence satisfies.
+func TestEverySurfaceNamesEveryCuratedLanguage(t *testing.T) {
+	for _, surface := range curatedSurfaces() {
+		t.Run(surface.what, func(t *testing.T) {
+			text := surface.text(t)
+			for lang := range curated {
+				token := surface.token(lang)
+				if token == "" {
+					t.Errorf("curated has %s but this test has no spelling for it — add it to "+
+						"langName, which is the pair that keeps the docs and the map together", lang)
+					continue
+				}
+				if !regexp.MustCompile(`\b` + regexp.QuoteMeta(token) + `\b`).MatchString(text) {
+					t.Errorf("%s never names %s (%s), which production curates %v for — a "+
+						"reader cannot discover a language the surface omits",
+						surface.what, token, lang, curated[lang])
+				}
+			}
+		})
+	}
+}
+
+// ownLanguageRow is one language's live own-language check, and ownLanguageRows
+// is the table.
+//
+// UNTAGGED on purpose, the same move rawnotation_test.go documents: the
+// conformance test that USES these rows is `//go:build darwin && conformance`,
+// so anything declared beside it is invisible to the default suite — and the
+// cross-check "every curated language has a row" is PURE, a fact about two Go
+// values. One producer, two consumers.
+//
+// Each row carries both halves, and the second is what #23 was built for:
+//
+//	shared   a word that exists in this language AND in English with an
+//	         unrelated meaning. If the two lookups return the same text,
+//	         dictionary selection has silently stopped working.
+//	marker   a string only a real entry in that language carries, so "different
+//	         from English" cannot be satisfied by an error page or an empty read.
+//	absent   an English word that must NOT resolve here.
+type ownLanguageRow struct{ lang, shared, marker, absent string }
+
+var ownLanguageRows = []ownLanguageRow{
+	// mesa: an isolated flat-topped hill in English, furniture in Spanish.
+	{"es", "mesa", "nombre femenino", "sycophantic"},
+	// pizza: NOAD has it as a loanword; Devoto-Oli has it as ordinary
+	// vocabulary. `s.f.` is sostantivo femminile, which NOAD never writes.
+	{"it", "pizza", "s.f.", "sycophantic"},
+}
+
+// Every curated language has a live own-language row — checked in the DEFAULT
+// gate, not behind a build tag.
+//
+// The cross-check first landed inside TestSelectedDictionaryAnswersInItsOwnLanguage,
+// which is `//go:build darwin && conformance`. That is right for the half that
+// talks to DictionaryServices and wrong for this half, which is pure: whether a
+// curated language has a row is a fact about two Go values. Behind the tag it
+// ran nowhere in CI and, as this issue's own reviews showed, nowhere in the
+// review environment either — DictionaryServices is unreachable there, so it
+// skipped at all four gates.
+//
+// ownLanguageRows is the shared source; the conformance test ranges over the
+// same slice.
+func TestEveryCuratedLanguageHasAnOwnLanguageRow(t *testing.T) {
+	for lang := range curated {
+		// English is the BASELINE every row is measured against ("this entry
+		// differs from the English one"), so a row for it would compare it with
+		// itself and assert nothing.
+		if lang == store.DefaultLang {
+			continue
+		}
+		if !slices.ContainsFunc(ownLanguageRows, func(r ownLanguageRow) bool {
+			return r.lang == string(lang)
+		}) {
+			t.Errorf("production curates %v for %s, but there is no own-language row for it — "+
+				"the language ships with nothing asserting it answers from its own dictionary",
+				curated[lang], lang)
 		}
 	}
 }

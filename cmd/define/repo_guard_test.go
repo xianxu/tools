@@ -734,6 +734,14 @@ var retiredSymbolNames = map[string]string{
 	// catch — and the row is what turns "I should sweep the docs" into a build
 	// failure.
 	"TestTheFetchLoopAsksOnlyForTheSessionsLanguage": "TestTheFetchLoopAsksOnlyForTheSessionsLanguageWhenNoneWasNamed",
+	// #31 merged the Spanish and Italian notation tests into one table and
+	// deleted a sweep the widened strong invariant subsumes. Neither row was
+	// added at the time, so the atlas and the plan named tests the tree does not
+	// declare and this guard stayed green over them — the SECOND time the human
+	// half of this mechanism failed (see the #27 note above), which is why
+	// TestARemovedDeclarationIsSweptOrRetired now checks it mechanically.
+	"TestSpanishEntriesCarryNoPronunciationNotation": "TestNonEnglishEntriesCarryNoPronunciationNotation",
+	"TestRenderLosesNothingInEveryCapturedLanguage":  "TestRenderLosesNothing (widened to every captured language)",
 }
 
 // No current-truth artifact names a symbol the tree has retired.
@@ -745,38 +753,11 @@ var retiredSymbolNames = map[string]string{
 // unrelated reasons.
 func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 	root := repoRoot(t)
-	// This file must name them to list them.
-	self := "cmd/define/repo_guard_test.go"
-
-	binds := func(p string) bool {
-		switch {
-		case strings.HasSuffix(p, "_test.go"):
-			return false
-		case strings.HasSuffix(p, ".go"):
-			return true
-		case p == "README.md", strings.HasPrefix(p, "atlas/"):
-			return true
-		case strings.HasPrefix(p, "workshop/plans/") && strings.HasSuffix(p, "-plan.md"):
-			return true
-		}
-		return false
-	}
-
-	seen := 0
-	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z")), "\x00") {
-		p := filepath.ToSlash(f)
-		if p == "" || p == self || !binds(p) {
-			continue
-		}
-		// git ls-files lists submodule gitlinks too, which are directories here.
-		if info, err := os.Stat(filepath.Join(root, f)); err != nil || info.IsDir() {
-			continue
-		}
+	for _, f := range currentTruthFiles(t, root) {
 		b, err := os.ReadFile(filepath.Join(root, f))
 		if err != nil {
 			t.Fatalf("reading %s: %v", f, err)
 		}
-		seen++
 		text := currentTruthOnly(string(b))
 		for old, now := range retiredSymbolNames {
 			// Word-boundaried: migrateFlatDeck must not match MigrateFlatDeck,
@@ -784,12 +765,9 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 			if regexp.MustCompile(`\b` + regexp.QuoteMeta(old) + `\b`).MatchString(text) {
 				t.Errorf("%s names the retired symbol %q; the tree declares %q. A rename "+
 					"sweeps every restatement in the SAME commit — nine findings in this "+
-					"family say the hand-sweep does not hold.", p, old, now)
+					"family say the hand-sweep does not hold.", f, old, now)
 			}
 		}
-	}
-	if seen == 0 {
-		t.Fatal("no current-truth artifacts were examined; this test would pass vacuously")
 	}
 }
 
@@ -1047,4 +1025,157 @@ func TestPlanStatusNormalisesToTheVocabulary(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A declaration this window REMOVED is either registered as retired or mentioned
+// nowhere that reads as current truth.
+//
+// `retiredSymbolNames` is the right mechanism and its own comment says why it
+// cannot be automatic: "only the person doing it knows the old name". True of
+// the MAPPING — but not of the trigger. Whether a declaration disappeared in
+// this window is a fact git holds, and the human half has now failed twice:
+// `#27` renamed a doc-sync test and left a stale mention in `voice.go`, and `#31`
+// merged two notation tests and deleted a sweep, leaving stale names in the
+// atlas, its own plan, and `#30` — the live consumer that issue exists to
+// unblock. Both times the guard stayed green over prose it was written to catch,
+// because nobody added the row.
+//
+// So this is the trigger, and it asks for one of two things rather than
+// guessing: register the rename, or leave no current-truth mention behind. A
+// symbol that was moved rather than removed is not reported — the tree still
+// declares it.
+func TestARemovedDeclarationIsSweptOrRetired(t *testing.T) {
+	root := repoRoot(t)
+	base, ok := changeWindowBase(t)
+	if !ok {
+		// conformance:inapplicable — on main there is no window, so no removal
+		// to sweep. git being broken is Fatal through git(), as everywhere here.
+		t.Skip("no change window: HEAD is the merge-base with main")
+	}
+
+	// Removed top-level declarations, from the OLD side of the diff.
+	removed := regexp.MustCompile(`(?m)^-func\s+(?:\([^)]*\)\s*)?([A-Za-z_][A-Za-z0-9_]*)`)
+	diff := string(git(t, "diff", base+"..HEAD", "--", ":/*.go"))
+	var gone []string
+	for _, m := range removed.FindAllStringSubmatch(diff, -1) {
+		name := m[1]
+		// Only names that cannot plausibly BE prose. `ids` is a real helper in
+		// this package, and searching artifacts for it hits "for-bids"; the
+		// failure message would then advise a retiredSymbolNames row that makes
+		// the SIBLING guard permanently red on every file containing the word.
+		// Exported and Test* names are the ones an artifact actually cites.
+		if !isCitableName(name) {
+			continue
+		}
+		// Still declared somewhere? Then it moved, which is not a removal.
+		//
+		// Scanned rather than `git grep`, which exits 1 for "no match" — a
+		// perfectly ordinary answer that git() would treat as a failure and
+		// Fatal on. Asking a tool a question whose negative answer is an error
+		// code is how a guard ends up unable to run.
+		if treeDeclares(t, root, name) {
+			continue
+		}
+		if _, registered := retiredSymbolNames[name]; registered {
+			continue // the sibling guard sweeps its mentions
+		}
+		if !slices.Contains(gone, name) {
+			gone = append(gone, name)
+		}
+	}
+	if len(gone) == 0 {
+		// conformance:inapplicable — a window that removes no declaration has
+		// nothing to sweep. Reachable on most windows, which is normal.
+		t.Skip("this window removed no top-level declaration")
+	}
+
+	for _, name := range gone {
+		for _, f := range currentTruthFiles(t, root) {
+			b, err := os.ReadFile(filepath.Join(root, f))
+			if err != nil {
+				t.Fatalf("reading %s: %v", f, err)
+			}
+			// WORD-BOUNDARY, the rule the sibling guard already uses. Contains
+			// was the first spelling and it is wrong the same way it was wrong
+			// for the doc check two commits earlier — a substring hit is not a
+			// mention, and this guard was written after that fix.
+			if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(currentTruthOnly(string(b))) {
+				t.Errorf("%s names %q, which this window REMOVED and which is not in "+
+					"retiredSymbolNames. Either add the row — the mapping is the part only "+
+					"you know — or sweep the mention. A guard that depends on someone "+
+					"remembering has now been remembered late twice.", f, name)
+			}
+		}
+	}
+}
+
+// currentTruthFiles is the artifact set a stale name misleads a reader in:
+// production Go, the README, the atlas, and active plans. Shared with
+// TestNoArtifactNamesARetiredSymbol so the two guards cannot disagree about
+// what "current truth" means.
+func currentTruthFiles(t *testing.T, root string) []string {
+	t.Helper()
+	self := "cmd/define/repo_guard_test.go"
+	binds := func(p string) bool {
+		switch {
+		case strings.HasSuffix(p, "_test.go"):
+			return false
+		case strings.HasSuffix(p, ".go"):
+			return true
+		case p == "README.md", strings.HasPrefix(p, "atlas/"):
+			return true
+		case strings.HasPrefix(p, "workshop/plans/") && strings.HasSuffix(p, "-plan.md"):
+			return true
+		}
+		return false
+	}
+	var out []string
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z")), "\x00") {
+		p := filepath.ToSlash(f)
+		if p == "" || p == self || !binds(p) {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(root, f)); err != nil || info.IsDir() {
+			continue
+		}
+		out = append(out, f)
+	}
+	// HERE, not in one caller. The inline copy this replaced carried the
+	// assertion and the extracted helper did not, so the newer guard would have
+	// passed over an empty file set if `binds` ever stopped matching. The two
+	// copies had diverged before the second one was a day old.
+	if len(out) == 0 {
+		t.Fatal("no current-truth artifacts were examined; every guard over this set " +
+			"would pass vacuously")
+	}
+	return out
+}
+
+// treeDeclares reports whether any Go file still declares name at top level.
+func treeDeclares(t *testing.T, root, name string) bool {
+	t.Helper()
+	decl := regexp.MustCompile(`(?m)^func\s+(?:\([^)]*\)\s*)?` + regexp.QuoteMeta(name) + `\b`)
+	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z", "*.go")), "\x00") {
+		if f == "" {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			continue // a deleted-but-tracked path during a rewrite; not a declaration
+		}
+		if decl.Match(b) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCitableName reports whether a removed declaration is one an artifact would
+// actually name: a Test, a Fuzz target, or an exported identifier.
+//
+// Unexported helpers like `ids` or `binds` are not cited in prose, and searching
+// artifacts for them produces substring noise rather than findings.
+func isCitableName(name string) bool {
+	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") ||
+		(name != "" && name[0] >= 'A' && name[0] <= 'Z')
 }

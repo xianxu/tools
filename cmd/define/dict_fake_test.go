@@ -288,28 +288,17 @@ func TestEveryCapturedLanguageLoads(t *testing.T) {
 	}
 }
 
-// The no-data-loss invariant, over EVERY captured language.
+// TestRenderLosesNothingInEveryCapturedLanguage lived here and was DELETED by
+// #31, not lost.
 //
-// TestRenderLosesNothing goes through testDict(t), which is English by
-// definition, so the Spanish captures — different script conventions, different
-// punctuation, inflection lists in parentheses — were never run through the
-// parser and renderer at all.
-func TestRenderLosesNothingInEveryCapturedLanguage(t *testing.T) {
-	for _, lang := range capturedLanguages(t) {
-		d, err := loadFakeDictionary("testdata/entries", lang)
-		if err != nil {
-			t.Fatalf("%s: %v", lang, err)
-		}
-		for word := range d.entries {
-			raw, err := d.Lookup(word)
-			if err != nil {
-				t.Errorf("%s/%s: %v", lang, word, err)
-				continue
-			}
-			out := Render(ParseEntry(raw), RenderOpts{Width: 0})
-			if strings.TrimSpace(out) == "" {
-				t.Errorf("%s/%s rendered to nothing from %d bytes of entry", lang, word, len(raw))
-			}
-		}
-	}
-}
+// It asserted only that a captured entry renders to something non-empty, and it
+// existed because it was the one sweep that ran every captured language through
+// the parser and renderer. #31 widened TestRenderLosesNothing (invariant_test.go)
+// to range over capturedLanguages, and that one asserts EXACT alnum counts —
+// which is strictly stronger: an entry with any alnum content cannot render to
+// "" without the counts differing.
+//
+// Proven rather than argued, per this repo's rule that deleting a test needs the
+// evidence writing one does: making Render return "" for the Italian `pizza`
+// fixture reddens TestRenderLosesNothing at two subtests. The weaker assertion
+// has no case left of its own.

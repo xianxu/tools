@@ -166,39 +166,56 @@ func TestPrivateDictionarySurfaceStillResolves(t *testing.T) {
 // The behaviour the whole milestone exists for, checked against the real
 // dictionaries rather than the fixtures they were captured from.
 //
-// mesa is the case: a word that exists in BOTH languages with unrelated
-// meanings. If this ever returns the same text twice, dictionary selection has
-// silently stopped working and every Spanish session is answering from English.
+// A TABLE, not one language with a copy per addition. #23 wrote this for Spanish
+// alone; #31 added Italian, and a second copy is how the two drift — the family
+// this repo has closed twice, most recently when one symbol locator was written
+// twice and the copies had already diverged. A fourth language is a row.
+//
+// Each row carries BOTH halves, and the second is the one #23 was built for:
+//
+//	shared   a word that exists in this language AND in English with an
+//	         unrelated meaning. If the two lookups return the same text,
+//	         dictionary selection has silently stopped working and every session
+//	         in this language is answering from English.
+//	marker   a string only a real entry in that language carries, so "different
+//	         from English" cannot be satisfied by an error page or an empty read.
+//	absent   an English word that must NOT resolve here. Answering it from
+//	         English is exactly the bug the mode removes.
 func TestSelectedDictionaryAnswersInItsOwnLanguage(t *testing.T) {
-	es, esName := systemDictionary(store.Lang("es"), nil)
-	if esName == everyActiveDictionary {
-		conformance.SkipOrFail(t, "no Spanish dictionary is installed",
-			errors.New("chooseDictionary fell back to the NULL search"))
-		return
-	}
 	en, _ := systemDictionary(store.DefaultLang, nil)
 
-	esEntry, err := es.Lookup("mesa")
-	if err != nil {
-		conformance.SkipOrFail(t, "Spanish dictionary unreachable", err)
-		return
-	}
-	enEntry, err := en.Lookup("mesa")
-	if err != nil {
-		t.Fatalf("mesa in English: %v", err)
-	}
-	if esEntry == enEntry {
-		t.Error("mesa returned the same entry in both languages — dictionary selection is not " +
-			"taking effect, and every Spanish session is answering from English")
-	}
-	if !strings.Contains(esEntry, "nombre femenino") {
-		t.Errorf("the Spanish mesa is not a Spanish entry: %.100q", esEntry)
-	}
-
-	// And the absence, which is the answer the tool could not give before #23.
-	if _, err := es.Lookup("sycophantic"); !errors.Is(err, ErrNoEntry) {
-		t.Errorf("sycophantic through the Spanish dictionary = %v, want ErrNoEntry — "+
-			"answering it from English is exactly the bug the mode removes", err)
+	rows := ownLanguageRows
+	for _, tc := range rows {
+		t.Run(tc.lang, func(t *testing.T) {
+			d, name := systemDictionary(store.Lang(tc.lang), nil)
+			if name == everyActiveDictionary {
+				conformance.SkipOrFail(t, "no "+tc.lang+" dictionary is installed",
+					errors.New("chooseDictionary fell back to the NULL search"))
+				return
+			}
+			own, err := d.Lookup(tc.shared)
+			if err != nil {
+				conformance.SkipOrFail(t, tc.lang+" dictionary unreachable", err)
+				return
+			}
+			english, err := en.Lookup(tc.shared)
+			if err != nil {
+				t.Fatalf("%s in English: %v", tc.shared, err)
+			}
+			if own == english {
+				t.Errorf("%s returned the same entry in both languages — dictionary selection "+
+					"is not taking effect, and every %s session is answering from English",
+					tc.shared, tc.lang)
+			}
+			if !strings.Contains(own, tc.marker) {
+				t.Errorf("the %s %s is not a %s entry (no %q): %.100q",
+					tc.lang, tc.shared, tc.lang, tc.marker, own)
+			}
+			if _, err := d.Lookup(tc.absent); !errors.Is(err, ErrNoEntry) {
+				t.Errorf("%s through the %s dictionary = %v, want ErrNoEntry — answering it "+
+					"from English is exactly the bug the mode removes", tc.absent, tc.lang, err)
+			}
+		})
 	}
 }
 
