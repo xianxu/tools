@@ -179,6 +179,11 @@ const maxLineBytes = 1 << 20
 
 const prompt = "› "
 
+// nothingToReplay is the ONE answer to a replay asked for with audio off. Both
+// loops said it, each with its own literal and its own line ending, which is how
+// the pair drifts — one const, and the caller owns the ending.
+const nothingToReplay = "define: nothing to replay: audio is off"
+
 // eraseLine clears the current line and returns the cursor to its start, so a
 // transient indicator can be removed once it has served its purpose.
 const eraseLine = "\r\x1b[K"
@@ -294,6 +299,23 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 			return ask(qctx, d, opt, &sess, stdout, stderr, q)
 		}))
 	}
+	// ONE replay for this loop, reached from two places: a bare return and
+	// /pron's recorded request. They differ only in the source language, so a
+	// second copy would be the two-loops-one-decision-table defect (#14) at a
+	// smaller scale — and the copy that forgets the audio-off guard plays
+	// nothing while claiming to.
+	//
+	// This loop does NOT own the terminal, so there is no transient UI to place:
+	// play and report. replayInPlace is the raw loop's counterpart, and the
+	// erase style is the whole difference between them.
+	replayPiped := func(pron store.Lang) {
+		if opt.noAudio || opt.times <= 0 {
+			fmt.Fprintln(stderr, nothingToReplay)
+			return
+		}
+		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),
+			indicator{}, stdout, stderr)
+	}
 
 	for {
 		if showPrompt {
@@ -325,14 +347,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 					fail(2)
 				}
 			case cmdReplay:
-				if opt.noAudio || opt.times <= 0 {
-					fmt.Fprintln(stderr, "define: nothing to replay: audio is off")
-					break
-				}
-				// This path is only reached when we do NOT own the terminal, so
-				// there is no transient UI to place: play and report.
-				playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, "", opt),
-					indicator{}, stdout, stderr)
+				replayPiped("")
 			case cmdCommand:
 				// The piped loop dispatches too. `echo /history | define` must
 				// not reach the dictionary, and a first draft of #15 put this
@@ -340,7 +355,18 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 				cc := newCommandCtx(d, opt, stdout, stderr)
 				cc.setTimes = func(n int) { opt.times = n }
 				cc.setLang = sessionSetLang(&d, &opt, cc.setLang, nil, stderr)
+				// /pron records a request rather than playing, so the language
+				// lands here and the replay happens after dispatch — the same
+				// two-step the raw loop needs, kept identical so the loops cannot
+				// disagree about what /pron does.
+				var pron store.Lang
+				if sess.hasCurrent() {
+					cc.replay = func(l store.Lang) { pron = l }
+				}
 				fail(dispatchCommand(cmd, commands, cc))
+				if pron != "" {
+					replayPiped(pron)
+				}
 			case cmdAsk:
 				askHere(question{text: cmd.question, forced: true})
 			case cmdDefine:

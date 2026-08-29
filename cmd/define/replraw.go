@@ -220,6 +220,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// feed with no carriage return.
 					fmt.Fprint(stdout, "\r\n")
 					hist.Add(cmd.recallLine()) // up-arrow recalls "/history" too
+					var pron store.Lang
 					if err := cooked(func() {
 						cc := newCommandCtx(d, opt, stdout, stderr)
 						// opt is this loop's own copy, so a command can change
@@ -231,9 +232,22 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 						// previous language's deck — the one thing a deps swap
 						// cannot reach.
 						cc.setLang = sessionSetLang(&d, &opt, cc.setLang, &voc, stderr)
+						// RECORDED here, PERFORMED below — outside the cooked
+						// block. Playing in cooked mode hands Ctrl-C to the line
+						// discipline, which swallows the byte and leaves the
+						// session looking frozen for the length of the recording
+						// (lessons.md, "render cooked, play raw").
+						if sess.hasCurrent() {
+							cc.replay = func(l store.Lang) { pron = l }
+						}
 						dispatchCommand(cmd, commands, cc)
 					}); err != nil {
 						return lostTerminal(err)
+					}
+					if pron != "" {
+						// The same replay a bare Enter takes, one parameter apart.
+						replayInPlace(ctx, d, opt, sess, pron, stdout, stderr)
+						pron = ""
 					}
 					fmt.Fprint(stdout, "\r\n")
 					draw()
@@ -309,7 +323,7 @@ func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron 
 		// written (BR-20).
 		fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, nothingSays(replCommand{}, true))
 	case opt.noAudio || opt.times <= 0:
-		fmt.Fprint(stderr, eraseLine+"define: nothing to replay: audio is off\r\n")
+		fmt.Fprint(stderr, eraseLine+nothingToReplay+"\r\n")
 	default:
 		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),
 			indicator{show: true, erase: eraseLine}, stdout, stderr)

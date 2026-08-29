@@ -26,6 +26,7 @@ var commands = []command{
 	{name: "history", summary: "words looked up recently", run: runHistory},
 	{name: "sound", summary: "how many times to play a pronunciation", run: runSound},
 	{name: "lang", summary: "the language this deck is in", run: runLang},
+	{name: "pron", summary: "replay this word in another language, once", run: runPron},
 }
 
 // completionsFor is the ONE place that decides which namespace a line is drawing
@@ -177,6 +178,15 @@ type commandCtx struct {
 	// nothing resolved one — a test's fake, or a run that never opened a
 	// dictionary at all.
 	dictName string
+	// replay asks the LOOP to play the current word once in another language
+	// (#29). A closure, like setTimes and setLang, rather than the Player: a
+	// command still cannot reach the dictionary or the player, it can only ask
+	// for the one thing /pron means.
+	//
+	// It RECORDS rather than plays — see runPron for why the raw editor cannot
+	// have a command play in place. nil where there is no current word to
+	// replay, which is what lets /pron say so instead of playing silence.
+	replay func(store.Lang)
 }
 
 // newCommandCtx is the single construction point. Built at two call sites (both
