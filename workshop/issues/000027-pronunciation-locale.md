@@ -1,6 +1,6 @@
 ---
 id: 000027
-status: blocked
+status: working
 deps: [tools#23]
 github_issue:
 created: 2026-08-28
