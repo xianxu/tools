@@ -237,8 +237,17 @@ func TestClassifyRawNotationIsTotal(t *testing.T) {
 	// outside a slash span is unambiguously leaked notation, while a pipe can be
 	// legitimate content — so an entry firing BOTH is a pronunciation leak that
 	// happens to contain a pipe, not a pipe case.
-	both := "someˌstress here and the symbol | too"
-	if got := classifyRawNotation(both); got == causeLiteralPipe {
-		t.Errorf("an entry firing both oracles classified as %q; stress-mark causes outrank pipe causes", got)
+	// The EXACT cause, not "anything but literal-pipe". An assertion by
+	// exclusion passes for the residue too, so it cannot tell "the precedence
+	// held" from "neither branch matched" — and the second is a real outcome
+	// here, since every branch is now a positive signature.
+	both := "hundred\n\n    (ˈhəndrəd/) and the symbol | too"
+	if _, tripped := rawNotationNear(both); !tripped {
+		t.Fatal("the fixture does not trip the oracle, so this proves nothing")
+	}
+	if got := classifyRawNotation(both); got != causeHeadwordPronunciation {
+		t.Errorf("an entry firing BOTH oracles classified as %q, want %q — a parenthesised "+
+			"stress mark outranks a pipe, because a pipe can be legitimate content",
+			got, causeHeadwordPronunciation)
 	}
 }

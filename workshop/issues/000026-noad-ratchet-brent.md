@@ -1,12 +1,13 @@
 ---
 id: 000026
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-27
 updated: 2026-08-28
 estimate_hours: 1.57
 started: 2026-08-28T17:57:39-07:00
+actual_hours: 1.67
 ---
 
 # NOAD ratchet regressed 27 to 32: a British-English pronunciation block renders raw
@@ -294,6 +295,21 @@ ATTRIBUTED instead, which is what "attributable rather than absorbed" asks for.
   Must run unsandboxed; takes ~51s over 73502 live entries.
 
 ### 2026-08-28
+- 2026-08-28: closed — Round-3 findings addressed. The classifier now has four positive signatures and none of them is a catch-all.; review verdict: FIX-THEN-SHIP
+
+BR-14 IS BR-1 AGAIN, in the one branch I left position-only. Three causes became positive signatures; headword-pronunciation stayed "i < headwordBlockBytes", which tests POSITION rather than shape and claims any stray stress in the first 128 bytes. The reviewer probed the consequence: "| AmE ˈhəndrəd, BrE ˈhʌndrəd |" and "| AmE ˈlabrəˌtôrē, BrE ləˈbɒrət(ə)ri |" both classified as headword-pronunciation.
+
+AND MY OWN TEST PASSED FOR THE WRONG REASON: it used brent, a MONOSYLLABLE carrying no stress mark, so it reached the residue through the pipe branch while every polysyllabic form of the same shape was absorbed. That also falsified the promise I had just written above curated for BR-5 — re-adding a British dictionary would NOT have surfaced as unclassified for any word longer than one syllable.
+
+FIXED WITH THE REAL SIGNATURE, read off the captured data rather than guessed: NOAD collapses a headword pronunciation into a PARENTHESISED group, (aˈhəndrədzˈhəndrəd/), while the dual-locale form is pipe-delimited with AmE/BrE labels. stressIsParenthesised scans outward in the stripped coordinate space so it cannot be satisfied by a parenthesis belonging to another span. Both probed cases are permanent test rows now, alongside the monosyllable.
+
+BR-4 RESIDUE: I marked the breakdown and missed a second statement of the same number in the Limits entry, which strings.Contains could not see. The doc-sync counts markers against values now, so an unmarked or stale second occurrence fails — mutation-verified by leaving one site stale.
+
+BR-7 RESIDUE: stressWindow was a fourth copy of the oracle windowing with a different radius, and the exemplar test still spelled the disjunction by hand. One strayStressWindow(out, i, radius), and rawNotationNear at every site.
+
+THE LIVE POPULATION IS UNCHANGED THROUGH ALL OF IT: 7 prose-numeral / 7 headword / 8 phrase / 4 literal-pipe, unclassified 0, over 70,886 entries. That is the point — the numbers were right before, and only now are they produced by predicates that could have said otherwise.
+
+TESTS: go build ./... && go vet ./... && GOOS=linux go vet ./cmd/define/ && go test ./... all green; gofmt -l ./cmd/ empty. Conformance green unsandboxed: the live ratchet, the exemplar byte-comparison, and the per-language fixture check.
 
 - **Blocked on [tools#27]** (pronunciation locale as a parameter), split out of
   #18 the same day for this reason among others. Deliberately NOT started: the

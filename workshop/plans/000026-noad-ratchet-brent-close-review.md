@@ -375,3 +375,146 @@ findings:
       not. Give the branch a shape tell (position AND the glued-gloss "(…/" run), extend the reachability table
       with the polysyllabic dual-locale case, and correct the dictselect.go promise.
 ```
+
+---
+
+## Re-review — 2026-08-28T20:59:57-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 26 — NOAD ratchet regressed 27 to 32: a British-English pronunciation block renders raw |
+| repo | tools |
+| issue file | workshop/issues/000026-noad-ratchet-brent.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 641f5aad97f8ed79de0fee3b84ec018b4fe3f3fa..54ebc063af737368dfe45ec742d0926eb6c72353 |
+| command | sdlc close --issue 26 |
+| reviewer | claude |
+| timestamp | 2026-08-28T20:59:57-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Both Important findings this round's commits claimed (BR-4's residue, BR-7's residue) and BR-14 are genuinely fixed and genuinely pinned — I verified each by reverting in a scratch worktree and watching the named test go red, which is the check the claimed-fixes protocol asks for. The offline suite is green (`go test ./cmd/define/` 94s) and `go vet -tags conformance` is clean. What stops SHIP is that BR-14's *rule* was applied to the branch BR-14 named and not to the class it enumerated: of the four cause predicates, two now key on tells that are **shared between causes** rather than distinguishing them, so novel input is still absorbed — I probed the verbatim `(aˈhəndrədzˈhəndrəd/)` headword shape at byte 303 landing in `phrase-pronunciation`, an invented leak carrying any leftover `/` landing in `phrase-pronunciation`, and an ODE-shaped dual-locale block inside an inflection paren landing in `headword-pronunciation` — which is the third consecutive round of `attribution-not-mechanized` and, at the last of those, still falsifies the promise at `dictselect.go:76`. Five Minors carried from round 2 remain untouched; none block. The live `7/7/8/4, unclassified 0` claim could not be reproduced here (`go run ./cmd/define charge` → "no known en dictionary is installed"), and it is the claim most exposed by narrowing the headword branch to one offline-pinned member.
+
+## 1. Strengths
+
+- **`stressIsParenthesised` (`cmd/define/invariant_test.go:65`) is the right shape of fix.** It scans outward in the *stripped* coordinate space with `\n` and `)` as hard stops, so it cannot be satisfied by a parenthesis belonging to another span — a window-match would have been. Reverting it to `case i < headwordBlockBytes` reddens both new reachability rows exactly as claimed.
+- **The BR-4 residue fix is a real mechanism, not a marked site.** `doc_sync_test.go:95-100` counts `<!-- raw:X -->` opens against fully-valued spans, so a *stale* second occurrence fails. Mutation-verified: setting `atlas/define.md:170` to `8` reddens with "marks prose-numeral 2 time(s) but only 1 carry the pinned value 7".
+- **The oracle consolidation landed properly (ARCH-DRY).** `rawNotationNear` is now the sole trip predicate at five call sites (`live_property_test.go:91`, `render_test.go:240`, `rawnotation_test.go:179,220`, `dict_conformance_test.go:250`), and `strayStressWindow` is the one windowing with radius as a parameter — the fourth copy BR-7 named is gone.
+- **`knownRawNotationEntries` derived from `knownRawByCause` (`rawnotation_test.go:41-49`)** makes the total and the breakdown structurally incapable of disagreeing, which is the correct answer to "a total is a weak ratchet".
+- **ARCH-MOCK is properly closed for provenance**: `capture.sh:89` captures the exemplars through the same `EN_DICTS` production selects, and `TestRawNotationExemplarsMatchLiveDictionary` byte-compares through the `Lookup` seam *and* re-asserts the oracle still trips, so a fixed-upstream shape fails loudly instead of fossilising.
+
+## 2. Critical findings
+
+None. Nothing in this window changes production behaviour — the diff is test files, comments and docs.
+
+## 3. Important findings
+
+**(a) `cmd/define/rawnotation_test.go:106,113` — two of the four cause predicates key on tells that are shared between causes, so the residue is still unreachable for a whole class of novel input.** This is the **3rd finding in family `attribution-not-mechanized`.** Do NOT fix the instance.
+
+The rule BR-14 stated was *"every cause branch's predicate must be a positive signature of the SHAPE it names."* The missing half is **disjointness**: a signature that also matches a sibling cause's shape is not a signature, it is a filter, and whichever branch runs second becomes the catch-all. Measured prevalence after this round's fix: **2 of 4 branches** fail it.
+
+- `phrase-pronunciation` (`:113`) tests `Contains(strayStressWindow(rendered,i,60), "/")`. The glued-headword shape carries that same trailing slash — `(aˈhəndrədzˈhəndrəd/)` — so the branch is separated from `headword-pronunciation` by **position alone**, which is what BR-14 rejected. Probed: `strings.Repeat("x",300) + " (aˈhəndrədzˈhəndrəd/) more"` → `phrase-pronunciation`, and `strings.Repeat("z",500) + " a brand new ˈshape/ nobody described"` → `phrase-pronunciation`. Any novel leak carrying a leftover slash is absorbed.
+- `headword-pronunciation` (`:106`) tests parenthesisation, which NOAD also applies to inflection lists. Probed: `"hundred (plural hundreds | AmE ˈhəndrədz, BrE ˈhʌndrədz |) cardinal"` → `headword-pronunciation`. That is the shape #26 is named after, in the form ODE would actually write it, absorbed — so `cmd/define/dictselect.go:76`'s "What WILL happen is that the live ratchet reports the new entries as `unclassified`" is still not true for that variant, and Done-when row 1 is still ticked against it.
+
+The enumeration to write is a **pairwise-disjointness table over the four tells** (paren-scan, leftover-slash, `^\s*\d+\.[^|\n]*\|`, `the symbol |`): for each captured exemplar assert it matches *exactly one* predicate independent of branch order, and for each tell add a residue row placing that tell in a context belonging to another cause. `TestUnclassifiedIsReachableForOracleTrippingInput` currently has no row carrying a stray slash, which is why the class was invisible.
+
+## 4. Minor findings
+
+- `cmd/define/testdata/capture.sh:89` (RAW_WORDS), `rawnotation_test.go:162-168` (the hand table) and `dict_conformance_test.go:224` (a `*.txt` glob) are three hand-maintained statements of the same corpus membership; a fifth exemplar added to the glob is silently uncovered by the offline classifier test. Have the offline test glob and require every fixture to declare a cause.
+- `strings.IndexByte(…, '|')` is spelled in both `rawNotationNear` (`invariant_test.go:126`) and `classifyRawNotation` (`rawnotation_test.go:118`) — the last un-shared half-oracle, and cheap to make a `pipeAt(out) int`.
+- The `dictselect.go` warning block is still spliced mid-paragraph, separating "A short list, easy to extend…" from "A LIST per language…".
+- `atlas/define.md:130-134` still describes the oracle as `strayStress` plus "a bare `strings.IndexByte(out, '|')`"; the code now presents one named `rawNotationNear`.
+
+## 5. Test coverage notes
+
+- Both claimed fixes I could mutate held: reverting `&& stressIsParenthesised(rendered, i)` reddens `dual-locale, polysyllabic` and `dual-locale, longer word`; the marker mutation reddens the doc-sync by cause name. Neither is a test written to agree with its fix.
+- **The live sweep is unverifiable in this environment.** `TestRawNotationExemplarsMatchLiveDictionary` skips with "no curated English dictionary is installed", and `go run ./cmd/define charge` reports the same, so DictionaryServices is unavailable to this process regardless of harness sandboxing. The Log's `7 / 7 / 8 / 4, unclassified 0` **after** the BR-14 narrowing is therefore taken on trust, and it is materially more exposed than it was last round: `headword-pronunciation` now demands a parenthesis, and exactly one of its seven live members (`hundred`) is pinned offline. If `million`, `thousand` or the `-fold` forms render their glued pronunciation unparenthesised they will silently move to `phrase-pronunciation` (a slash is in-window) and redden two assertions at once. Re-running the ratchet unsandboxed before the close is the cheap way to convert Plan row 6 from a claim into evidence.
+- The offline corpus pins 4 of 26 live members; the other 22 are constrained only by the conformance run.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** The three-spelling oracle and the fourth window copy are consolidated behind `rawNotationNear` / `strayStressAt` / `strayStressWindow`, and the comment at `invariant_test.go:97-109` records *why* the stripped coordinate space is load-bearing. Only the `IndexByte(…,'|')` half and the corpus-membership restatement remain (Minor above).
+- **ARCH-PURE — pass.** `classifyRawNotation` is `string → rawCause`, `slashSpan`/`proseNumeralPipe` are package-level compiled regexps, and the only IO in the offline path is `os.ReadFile` over committed fixtures. The live sweep is the thin shell; the classifier is injected into it rather than embedded.
+- **ARCH-PURPOSE — flag**, finding (a). The shadow-sweep on this round's own fix: BR-14 named its enumeration ("the four branches of classifyRawNotation") and the fix changed one of them. `attribution-not-mechanized` is now on its third instance at this gate, which is the ledger reporting that the enumeration was applied rather than written down — the disjointness table above is the form that would close it.
+- **ARCH-MOCK — pass with a note.** Provenance is fully closed (capture path + byte-compare + oracle re-assertion through the same seam). The residual is coverage, not seam design: the fake models 4 of the 26 shapes it stands in for, and the catch-all→positive→shape-tell progression has made each unpinned sibling's classification depend on a signature verified against one member (BR-12).
+
+## 7. Plan revision recommendations
+
+1. **Plan row 2's totality clause** still reads as though `causeUnclassified` is the residue of all four branches. It is not: any novel shape carrying a leftover `/` within 60 bytes lands in `phrase-pronunciation`. Append a `## Revisions` entry stating that the branches are exhaustive but **not pairwise disjoint by shape**, and that the residue is reachable only for input matching none of the four tells.
+2. **Done-when row 1** is ticked against the `dictselect.go:76` promise that a re-added British dictionary "reports the new entries as `unclassified`". True for the bare `| AmE …, BrE … |` block; false when it sits inside an inflection parenthesis. Either narrow the promise to the forms actually probed, or close finding (a) and leave the row as written.
+
+```findings
+dispose:
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Mutation-verified — setting the second marked occurrence at atlas/define.md:170 to 8 reddens the marker-count check by cause name.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      rawNotationNear is the sole trip predicate at five call sites and strayStressWindow is the one windowing; the fourth copy is gone.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      cmd/define/testdata/capture.sh:45 unchanged for a third round — still "there is no public API to select one" while :89 selects by identifier.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      Still asserts by exclusion, and the input now yields unclassified rather than a stress cause, so the comment's "a pronunciation leak that happens to contain a pipe" overstates what is demonstrated.
+  - id: BR-11
+    disposition: not-addressed
+    note: |
+      No boundary case, and aggravated this round — the justifying figures (27 of 1828, 2436 of 4116) were removed from the classifier comment, so rawnotation_test.go:139 "Measured, not guessed — see classifyRawNotation" now points at a measurement that is nowhere in the code.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Still 4 exemplars for 26 members, and narrowing headword-pronunciation to a parenthesis tell makes the six unpinned siblings depend on a signature verified against hundred alone.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      workshop/projects/define-learn.md:788 still quotes "lower knownRawNotationEntries"; live_property_test.go:149 says knownRawByCause.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      Verified by revert in a scratch worktree — restoring `case i < headwordBlockBytes` reddens both dual-locale reachability rows.
+findings:
+  - id: new
+    severity: Important
+    family: attribution-not-mechanized
+    title: |
+      Two of the four cause predicates key on tells shared with a sibling cause, so novel input is still absorbed
+    detail: |
+      This is the 3rd finding in family attribution-not-mechanized. Do NOT fix the instance. The rule BR-14 stated
+      needs its missing half: a cause predicate must be a signature that is DISJOINT from every sibling's shape,
+      not merely positive — a tell a sibling shape also carries makes whichever branch runs second the catch-all.
+      Measured prevalence: 2 of 4 branches fail it. rawnotation_test.go:113 keys phrase-pronunciation on a leftover
+      "/" within 60 bytes, which the glued-headword shape also carries, so the two causes are separated by POSITION
+      alone — the thing BR-14 rejected. Probed: the verbatim "(a-stress-hundred/)" string at byte 303 classifies
+      as phrase-pronunciation, and an invented leak carrying any leftover slash classifies as phrase-pronunciation
+      rather than reaching the residue. rawnotation_test.go:106 keys headword-pronunciation on parenthesisation,
+      which NOAD also applies to inflection lists: "hundred (plural hundreds | AmE ..., BrE ... |) cardinal"
+      classifies as headword-pronunciation, so the dual-locale shape this issue is named after is still absorbed in
+      the form ODE would write it, and dictselect.go:76 still promises "unclassified" for it. The enumeration to
+      write is a pairwise-disjointness table over the four tells: assert each captured exemplar matches exactly one
+      predicate independent of branch order, and add a residue row placing each tell in a context belonging to
+      another cause. TestUnclassifiedIsReachableForOracleTrippingInput has no row carrying a stray slash, which is
+      why this class was invisible.
+  - id: new
+    severity: Minor
+    family: restatement-not-consumer
+    title: |
+      Exemplar-corpus membership is stated three times by hand, so a fifth fixture is silently untested offline
+    detail: |
+      capture.sh:89 RAW_WORDS, the hand table at rawnotation_test.go:162-168, and the glob at
+      dict_conformance_test.go:224 are three independent statements of the same set. The rule the family already
+      carries applies unchanged: the corpus directory is the source and the tests derive from it — have the offline
+      classifier test glob testdata/rawnotation and require every fixture to declare a cause, so adding an exemplar
+      cannot leave the offline pin behind.
+```

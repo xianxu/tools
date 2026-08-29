@@ -41,10 +41,13 @@ mkdir -p entries/en entries/es
 #   pulp     opening straight after an editorial note's closing bracket
 #   bargainer PHRASES text carrying example-separator pipes
 #
-# NOTE: DCSCopyTextDefinition searches the host's ACTIVE dictionaries, not NOAD
-# specifically (there is no public API to select one). iPhone, iPad and MacBook
-# below are Apple Dictionary entries, not NOAD -- which is precisely why they
-# have no pronunciation and exercise that branch.
+# NOTE: these are captured through the CURATED identifiers in EN_DICTS, not
+# through the NULL search over the host's active dictionaries. An earlier version
+# of this note said there is no public API to select one -- true of the SDK
+# header, false of the framework, and false of this script, which selects by
+# identifier three lines below. iPhone, iPad and MacBook come from Apple
+# Dictionary rather than NOAD, which is why they have no pronunciation and
+# exercise that branch, and why EN_DICTS lists both books.
 #
 # The last three, plus content/even/desert/minute/use/subject/iPad/MacBook/Amazon,
 # were all rendering with dropped or reordered content at the M1 boundary review.

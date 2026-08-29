@@ -185,6 +185,76 @@ rounds:
           family: attribution-not-mechanized
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-28T20:59:57-07:00"
+      agent: claude
+      dispose:
+        - id: BR-4
+          disposition: addressed
+          note: Mutation-verified — setting the second marked occurrence at atlas/define.md:170 to 8 reddens the marker-count check by cause name.
+          round: 4
+        - id: BR-7
+          disposition: addressed
+          note: rawNotationNear is the sole trip predicate at five call sites and strayStressWindow is the one windowing; the fourth copy is gone.
+          round: 4
+        - id: BR-9
+          disposition: not-addressed
+          note: cmd/define/testdata/capture.sh:45 unchanged for a third round — still "there is no public API to select one" while :89 selects by identifier.
+          round: 4
+        - id: BR-10
+          disposition: not-addressed
+          note: Still asserts by exclusion, and the input now yields unclassified rather than a stress cause, so the comment's "a pronunciation leak that happens to contain a pipe" overstates what is demonstrated.
+          round: 4
+        - id: BR-11
+          disposition: not-addressed
+          note: No boundary case, and aggravated this round — the justifying figures (27 of 1828, 2436 of 4116) were removed from the classifier comment, so rawnotation_test.go:139 "Measured, not guessed — see classifyRawNotation" now points at a measurement that is nowhere in the code.
+          round: 4
+        - id: BR-12
+          disposition: not-addressed
+          note: Still 4 exemplars for 26 members, and narrowing headword-pronunciation to a parenthesis tell makes the six unpinned siblings depend on a signature verified against hundred alone.
+          round: 4
+        - id: BR-13
+          disposition: not-addressed
+          note: workshop/projects/define-learn.md:788 still quotes "lower knownRawNotationEntries"; live_property_test.go:149 says knownRawByCause.
+          round: 4
+        - id: BR-14
+          disposition: addressed
+          note: Verified by revert in a scratch worktree — restoring `case i < headwordBlockBytes` reddens both dual-locale reachability rows.
+          round: 4
+      findings:
+        - id: BR-15
+          severity: Important
+          title: Two of the four cause predicates key on tells shared with a sibling cause, so novel input is still absorbed
+          detail: |-
+            This is the 3rd finding in family attribution-not-mechanized. Do NOT fix the instance. The rule BR-14 stated
+            needs its missing half: a cause predicate must be a signature that is DISJOINT from every sibling's shape,
+            not merely positive — a tell a sibling shape also carries makes whichever branch runs second the catch-all.
+            Measured prevalence: 2 of 4 branches fail it. rawnotation_test.go:113 keys phrase-pronunciation on a leftover
+            "/" within 60 bytes, which the glued-headword shape also carries, so the two causes are separated by POSITION
+            alone — the thing BR-14 rejected. Probed: the verbatim "(a-stress-hundred/)" string at byte 303 classifies
+            as phrase-pronunciation, and an invented leak carrying any leftover slash classifies as phrase-pronunciation
+            rather than reaching the residue. rawnotation_test.go:106 keys headword-pronunciation on parenthesisation,
+            which NOAD also applies to inflection lists: "hundred (plural hundreds | AmE ..., BrE ... |) cardinal"
+            classifies as headword-pronunciation, so the dual-locale shape this issue is named after is still absorbed in
+            the form ODE would write it, and dictselect.go:76 still promises "unclassified" for it. The enumeration to
+            write is a pairwise-disjointness table over the four tells: assert each captured exemplar matches exactly one
+            predicate independent of branch order, and add a residue row placing each tell in a context belonging to
+            another cause. TestUnclassifiedIsReachableForOracleTrippingInput has no row carrying a stray slash, which is
+            why this class was invisible.
+          family: attribution-not-mechanized
+          round: 4
+        - id: BR-16
+          severity: Minor
+          title: Exemplar-corpus membership is stated three times by hand, so a fifth fixture is silently untested offline
+          detail: |-
+            capture.sh:89 RAW_WORDS, the hand table at rawnotation_test.go:162-168, and the glob at
+            dict_conformance_test.go:224 are three independent statements of the same set. The rule the family already
+            carries applies unchanged: the corpus directory is the source and the tests derive from it — have the offline
+            classifier test glob testdata/rawnotation and require every fixture to declare a cause, so adding an exemplar
+            cannot leave the offline pin behind.
+          family: restatement-not-consumer
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#26 (boundary-review)
@@ -272,13 +342,50 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   not. Give the branch a shape tell (position AND the glued-gloss "(…/" run), extend the reachability table
   with the polysyllabic dual-locale case, and correct the dictselect.go promise.
 
+## Round 4 — 2026-08-28T20:59:57-07:00 (claude) — passed
+
+### Disposed
+
+- BR-4 — addressed — Mutation-verified — setting the second marked occurrence at atlas/define.md:170 to 8 reddens the marker-count check by cause name.
+- BR-7 — addressed — rawNotationNear is the sole trip predicate at five call sites and strayStressWindow is the one windowing; the fourth copy is gone.
+- BR-9 — not-addressed — cmd/define/testdata/capture.sh:45 unchanged for a third round — still "there is no public API to select one" while :89 selects by identifier.
+- BR-10 — not-addressed — Still asserts by exclusion, and the input now yields unclassified rather than a stress cause, so the comment's "a pronunciation leak that happens to contain a pipe" overstates what is demonstrated.
+- BR-11 — not-addressed — No boundary case, and aggravated this round — the justifying figures (27 of 1828, 2436 of 4116) were removed from the classifier comment, so rawnotation_test.go:139 "Measured, not guessed — see classifyRawNotation" now points at a measurement that is nowhere in the code.
+- BR-12 — not-addressed — Still 4 exemplars for 26 members, and narrowing headword-pronunciation to a parenthesis tell makes the six unpinned siblings depend on a signature verified against hundred alone.
+- BR-13 — not-addressed — workshop/projects/define-learn.md:788 still quotes "lower knownRawNotationEntries"; live_property_test.go:149 says knownRawByCause.
+- BR-14 — addressed — Verified by revert in a scratch worktree — restoring `case i < headwordBlockBytes` reddens both dual-locale reachability rows.
+
+### Raised
+
+- **BR-15** [Important] `attribution-not-mechanized` Two of the four cause predicates key on tells shared with a sibling cause, so novel input is still absorbed
+  This is the 3rd finding in family attribution-not-mechanized. Do NOT fix the instance. The rule BR-14 stated
+  needs its missing half: a cause predicate must be a signature that is DISJOINT from every sibling's shape,
+  not merely positive — a tell a sibling shape also carries makes whichever branch runs second the catch-all.
+  Measured prevalence: 2 of 4 branches fail it. rawnotation_test.go:113 keys phrase-pronunciation on a leftover
+  "/" within 60 bytes, which the glued-headword shape also carries, so the two causes are separated by POSITION
+  alone — the thing BR-14 rejected. Probed: the verbatim "(a-stress-hundred/)" string at byte 303 classifies
+  as phrase-pronunciation, and an invented leak carrying any leftover slash classifies as phrase-pronunciation
+  rather than reaching the residue. rawnotation_test.go:106 keys headword-pronunciation on parenthesisation,
+  which NOAD also applies to inflection lists: "hundred (plural hundreds | AmE ..., BrE ... |) cardinal"
+  classifies as headword-pronunciation, so the dual-locale shape this issue is named after is still absorbed in
+  the form ODE would write it, and dictselect.go:76 still promises "unclassified" for it. The enumeration to
+  write is a pairwise-disjointness table over the four tells: assert each captured exemplar matches exactly one
+  predicate independent of branch order, and add a residue row placing each tell in a context belonging to
+  another cause. TestUnclassifiedIsReachableForOracleTrippingInput has no row carrying a stray slash, which is
+  why this class was invisible.
+- **BR-16** [Minor] `restatement-not-consumer` Exemplar-corpus membership is stated three times by hand, so a fifth fixture is silently untested offline
+  capture.sh:89 RAW_WORDS, the hand table at rawnotation_test.go:162-168, and the glob at
+  dict_conformance_test.go:224 are three independent statements of the same set. The rule the family already
+  carries applies unchanged: the corpus directory is the source and the tests derive from it — have the offline
+  classifier test glob testdata/rawnotation and require every fixture to declare a cause, so adding an exemplar
+  cannot leave the offline pin behind.
+
 ## Open findings
 
-- **BR-4** [Important] `restatement-not-consumer` The atlas per-cause breakdown is hand-restated, not derived — a compensating swap keeps the whole suite green
-- **BR-7** [Important] `oracle-restated-not-shared` The two-oracle disjunction is restated at four sites and strayStress's body is copy-pasted into the classifier (ARCH-DRY)
 - **BR-9** [Minor] `doc-sweep-incomplete` capture.sh:45 still claims "there is no public API to select one" while the same file selects by identifier
 - **BR-10** [Minor] `assertion-by-exclusion` TestClassifyRawNotationIsTotal asserts only "not literal-pipe" for the both-oracles case rather than the exact cause
 - **BR-11** [Minor] `constant-not-pinned` headwordBlockBytes = 128 has no boundary test; only exemplars at bytes 27 and 2436 constrain it
 - **BR-12** [Minor] `family-pinned-by-one-member` Three of the four literal-pipe entries rest entirely on the "the symbol |" substring, checked only by the conformance run
 - **BR-13** [Minor] `doc-sweep-incomplete` workshop/projects/define-learn.md:788 quotes the old failure text "lower knownRawNotationEntries"; the message now says knownRawByCause
-- **BR-14** [Important] `attribution-not-mechanized` The headword branch is still a position-only catch-all, so the stress-marked form of #26's own dormant shape is absorbed
+- **BR-15** [Important] `attribution-not-mechanized` Two of the four cause predicates key on tells shared with a sibling cause, so novel input is still absorbed
+- **BR-16** [Minor] `restatement-not-consumer` Exemplar-corpus membership is stated three times by hand, so a fifth fixture is silently untested offline

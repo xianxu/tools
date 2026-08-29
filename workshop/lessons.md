@@ -2267,3 +2267,46 @@ that never ran.
 Before trusting a new guard, mutate the thing it claims to catch and watch it
 fail — and check its own skips, its own scope, and whether a weaker match
 satisfies it.
+
+## A branch that tests position is a catch-all wearing a signature (#26 BR-1, BR-14)
+
+`classifyRawNotation` was written to make a drifting count attributable. Its
+first version had two catch-all branches, so every input the oracle passed it
+landed in a named bucket BY CONSTRUCTION — the live assertion
+`unclassified == 0` could not fail, and I reported its passing as evidence the
+taxonomy was total. A new shape would have been absorbed into whichever bucket
+it resembled: the exact failure the classifier existed to prevent, built as its
+opposite.
+
+Fixing three of four branches was not enough. The fourth tested `i < 128` —
+POSITION, not shape — and so absorbed every polysyllabic form of the very shape
+the issue was filed about. The test that was supposed to catch this passed
+because its fixture was a monosyllable with no stress mark, reaching the residue
+through a different branch entirely.
+
+**Rule:** every branch of a classifier needs a POSITIVE signature of the thing it
+names. A predicate testing position, length, or "everything else" is a catch-all,
+and a catch-all makes the residue unreachable — which makes any assertion about
+the residue vacuous. Ask of each branch: *what input would this refuse?* If the
+answer is "nothing that got this far", it is not a test.
+
+**Corollary — a residue bucket earns its keep only if it can fire.** Before
+trusting "unclassified is zero", construct an input that SHOULD be unclassified
+and watch it land there. That probe is the difference between a measurement and
+a coincidence.
+
+## Read the signature off the data, not off your memory of the data (#26)
+
+Two discriminators in this classifier were guessed and both were wrong: a
+position fraction (`idx < len/3`) that misclassified its own exemplar, and a
+lookup into the wrong coordinate space that silently returned -1 every time
+because `strayStress` windows the STRIPPED text.
+
+Dumping the real values took one throwaway test and settled both: byte 27 of
+1828 versus 2436 of 4116, and the actual shape `(aˈhəndrədzˈhəndrəd/)` versus
+`| AmE …, BrE … |`.
+
+**Rule:** when a predicate keys on the shape of real data, print the real data
+first. A guess that happens to pass its exemplar is indistinguishable from a
+correct rule until the population disagrees — and the population is where the
+cost lands.
