@@ -2408,8 +2408,12 @@ Both happened in one session, on top of the four already recorded:
 - **`git checkout <file>` to revert, on an UNCOMMITTED baseline.** This is
   already in this file, and it happened again anyway — twice more in the same
   session, the second time discarding ~150 lines of guard work written minutes
-  earlier. **Three occurrences in one session, with the rule already written
-  down**, so the rule needs an operational trigger rather than good intentions:
+  earlier, and a FOURTH an hour after that entry was rewritten — which is the
+  real finding: restating the rule did not change the behaviour. **Four
+  occurrences in one session, twice after writing the rule down.** So it needs a
+  mechanical trigger, not a sharper sentence: *before typing `git checkout
+  <file>`, run `git status --short <file>`; if it prints anything, do not.* The
+  underlying framing that keeps failing is:
   *`git checkout` is not a revert tool — it is a "discard everything since the
   last commit in this file" tool.* Before typing it, `git status --short` the
   file. Better: commit, THEN mutate, and treat "I want to mutate an uncommitted
