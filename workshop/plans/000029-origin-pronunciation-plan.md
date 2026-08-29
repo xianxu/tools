@@ -43,7 +43,7 @@ Argued from measurement taken 2026-08-28/29. Full evidence in `workshop/issues/0
 | `pronHelp` | `cmd/define/voice.go` | new |
 | `parsePronArgs` | `cmd/define/pron_cmd.go` | new |
 | `replCommand` | `cmd/define/repl.go` | modified — gains `pron store.Lang` |
-| `AudioCandidates` | `cmd/define/audiourl.go` | unchanged — reused once per spelling |
+| `AudioCandidates` | `cmd/define/audiourl.go` | modified — one line (`langOrDefault`) plus the doc sweep; still one voice per call |
 | `voiceFor` / `localeFor` / `defaultLocale` / `applyVoice` | `cmd/define/voice.go` | unchanged — D3 |
 
 - **`differsOnlyByDiacritics(alt, head string) bool`** — the same word wearing different accents.
@@ -77,9 +77,9 @@ Argued from measurement taken 2026-08-28/29. Full evidence in `workshop/issues/0
 | `replayInPlace` | `cmd/define/replraw.go` | modified | raw terminal + player |
 | `runPron` | `cmd/define/pron_cmd.go` | new | `commandCtx` |
 | `commandCtx` | `cmd/define/command.go` | modified | the player, via a `replay` closure |
-| `fakeCDN` | `cmd/define/fetch_fake_test.go` | **modified** — keys on `EscapedPath` | Google's CDN |
-| `fakeDictionary` | `cmd/define/dict_fake_test.go` | **modified** — accent-insensitive on a miss | NOAD |
-| `rebasedSource` | `cmd/define/main_test.go` | **modified** — translates the answer back | the fake CDN |
+| `newFakeCDN` | `cmd/define/fetch_fake_test.go` | modified — its handler keys on `EscapedPath` | Google's CDN |
+| `fakeDictionary.Lookup` | `cmd/define/dict_fake_test.go` | modified — accent-insensitive on a miss | NOAD |
+| `rebasedSource` | `cmd/define/main_test.go` | modified — translates the answer back | the fake CDN |
 
 - **`speak`** — takes an `utterance`; returns the URL that answered, which it currently fetches and discards. The reasoning it used to imply moves into `utterance.Candidates()`.
 - **`reportVoice`** — says what actually played, only when a source was asked for and the session answered. Written after the fetch, from the URL that answered.
@@ -278,7 +278,7 @@ case pron != "" && oneShot.kind != cmdDefine:
 
 ### Task 7: `/pron` — the in-session action
 
-**Files:** create `cmd/define/pron_cmd.go`; modify `cmd/define/command.go`, `cmd/define/repl.go`, `cmd/define/replraw.go`. Test `cmd/define/pron_cmd_test.go`, `cmd/define/repl_test.go`.
+**Files:** create `cmd/define/pron_cmd.go`; modify `cmd/define/command.go`, `cmd/define/repl.go`, `cmd/define/replraw.go`. Test `cmd/define/pron_cmd_test.go` and `cmd/define/commandloop_test.go` — the raw-editor test belongs beside its `TestRawEditorDispatchesCommands` pair, not in `repl_test.go` as first written.
 
 **Contract.**
 
@@ -331,7 +331,7 @@ Then the atlas gains, in the same section: the source-orthography constraint wit
 ```bash
 grep -rn "never a search across languages" cmd/define/     # NOTHING
 grep -n  "One language, no fallback"       atlas/define.md # NOTHING
-grep -n  "and the recording that is fetched" README.md     # NOTHING
+grep -n  "and the recording that is fetched" README.md     # AMENDED, still present
 grep -rn "AsksOnlyForTheSessionsLanguage"  cmd/define/     # narrowed, not bare
 grep -c  "pron-help" README.md atlas/define.md             # 1 each
 go test ./cmd/define
@@ -379,7 +379,27 @@ Then in the loop: `arrondissement`, `/pron fr`, `police` — `police` plays Engl
 
 And both opt-in suites, per `workshop/lessons.md` rule 2: `go test ./... && go test -tags conformance ./cmd/define/`.
 
-**Done-when coverage** (`#29`): (1) Tasks 5–7 + the `ls words/` check; (2) Task 4's fallback + Task 5's report, at `hotel`/`debut` — **not `déjeuner`**, which has no NOAD entry and never reaches audio; (3) Task 5's report + Task 9's Italian row; (4) D1, with Task 9 pinning its evidence; (5) Tasks 1–3, at `jalapeno`; (6) D4 — `voiceFor` unchanged, so the locale is literally `#27`'s. D6 disposes of the Spec's third option.
+**Done-when coverage** (`#29`). **A Done-when is pinned only by a NAMED TEST that
+goes red when its wiring is removed.** A structural argument is not a pin — the
+call site is new code and can be miswired without touching the reused function it
+calls. Every cell below names a `Test…` symbol, and each was observed red under
+removal of the wiring it claims to pin; a cell that can only name a task or a
+decision says so plainly rather than implying coverage it does not have.
+
+| # | Done-when | pinned by | observed red when |
+|---|---|---|---|
+| 1 | the session does not move | `TestPronFetchesTheSourceRecordingWithoutMovingTheSession` | `applyVoice(&opt, pron)` is added after the session's own → "filed under `es`, want `en`" |
+| 2 | a missing source recording degrades to the session's | `TestPlayAnnouncedReportsTheVoiceThatAnswered`, `TestAnUtteranceAsksTheSourceFirstAndFallsBackToTheSession` | `Candidates()` stops appending the session candidates |
+| 3 | Italian's absence is reported, not silent | `TestPlayAnnouncedReportsTheVoiceThatAnswered`, `TestCDNItalianIsStillAbsentFromThisGeneration` | the `reportVoice` call is dropped from `playAnnounced` |
+| 4 | declared-vs-inferred is a decision with its reason recorded | `TestCDNStillCannotTellALoanwordFromANaturalisedOne` pins the EVIDENCE (`police_fr_fr` = 200) | that row stops answering 200 |
+| 5 | a typed `jalapeno` reaches `jalapeño_es_es` | `TestSourceSpellingsPutsTheAccentedFormFirst`, `TestPronFetchesTheSourceRecordingWithoutMovingTheSession` | `SourceSpellings` is reduced to the typed word alone |
+| 6 | the locale comes from `#27`'s policy | `TestPronHonoursTheLocaleFlagForTheSourceLanguage` | `utteranceFor` builds `voiceFor(pron, "")` |
+
+Cell 4 is honest about its limit: the live row pins the MEASUREMENT the decision
+rests on, so the decision becomes reviewable again if the evidence moves. The
+prose record itself — D1 here, the `## Source pronunciation` section in the atlas
+— is not mechanically pinned, and claiming otherwise would be the same
+over-claim this table exists to stop. D6 disposes of the Spec's third option.
 
 **Close:** single pass, plain checkboxes, no `Mx` — one review boundary, one `sdlc close`.
 
@@ -436,3 +456,50 @@ superseded by a dated entry. The text is honest about the disproof, so nothing i
 lost — but AGENTS.md §1 asks for append, and appending is what makes a correction
 legible as a second measurement rather than a first one. Noted here rather than
 re-edited, which would repeat the mistake.
+
+### 2026-08-29 — close review round 2: three findings escalated to FAMILY level
+
+**Reason:** round 2 raised three findings as *second* instances of families round 1
+had fixed instance-by-instance, and each carried the same instruction — state the
+rule, fix the rule, do not fix the site.
+
+- **`done-when-unpinned` (2nd).** Done-when 6 was covered by an ARGUMENT —
+  "`voiceFor` is unchanged, so the locale is literally `#27`'s" — and rewriting
+  `utteranceFor`'s call site to `voiceFor(pron, "")` left the entire suite green.
+  Measured 2 for 2: the only two coverage cells naming a task or a decision
+  instead of a test were the only two that turned out unpinned. **The rule, now
+  stated in `## Verification before close`: a Done-when is pinned only by a NAMED
+  TEST observed red when its wiring is removed** — a reused function cannot vouch
+  for a new caller, because the call site is new code. All six cells were swept
+  into a table naming their test and the removal that reddens it;
+  `TestPronHonoursTheLocaleFlagForTheSourceLanguage` is what fell out for cell 6.
+  Cell 4 states its limit instead of claiming a pin it does not have.
+- **`plan-table-vs-tree` (2nd).** `AudioCandidates` was still marked `unchanged`
+  while this window rewrote ten lines of its doc comment and one of its body. 4
+  of 20 rows were wrong across two rounds, and the hand-fix round caught 3 of 4.
+  **The rule: `unchanged`/`modified` is a claim about the DIFF, and git already
+  knows.** `TestPlanTableStatusMatchesTheChangeWindow` now checks every such row
+  against `merge-base main HEAD`, at DECLARATION level including the doc comment
+  — file level would wrongly condemn the `voiceFor`/`localeFor`/`defaultLocale`/
+  `applyVoice` row, whose file changed while those functions did not. It caught
+  `AudioCandidates` **and two rows the previous round had added**, both of which
+  named a TYPE while what changed was its method.
+- **`guard-heuristic-too-loose` (2nd).** The status match failed in the other
+  direction: `Fields(...)[0] == "new"` misses `**new**`, and bold status cells are
+  this repo's convention. **The rule: the status column is a controlled
+  vocabulary** — normalise the cell and match `new`/`modified`/`unchanged`/
+  `deleted`, failing loudly on anything else, rather than reaching for a third
+  positional heuristic.
+- **`doc-sweep-incomplete` (2nd on the atlas command table).** It listed three of
+  five commands, and the two missing were the two most recently added — `/lang`
+  and `/pron`, 2 for 2. Generated from the `commands` registry and pinned by
+  `TestDocsQuoteTheCommandList`, the mechanism `localeHelp` already uses.
+- **`check-expects-the-wrong-outcome` (new).** Task 8 Step 4 expected `NOTHING`
+  from a grep for a site the same task dispositions as AMEND. The phrase survives
+  at `README.md:195`, so the check contradicted the change it verified and was
+  ticked anyway. Expectation corrected.
+- **`probe-subset-of-the-walk` (new).** The three negative conformance rows
+  probed `AudioCandidates(…)[0]` while pinning claims about the whole walk; a
+  recording appearing only at `_2` would leave them green while the fallback
+  stopped firing. They now assert `ErrNoAudio` through `newHTTPAudioSource().Fetch`,
+  which is the production shape.

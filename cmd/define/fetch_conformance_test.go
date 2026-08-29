@@ -21,12 +21,37 @@ package main
 // TestCDN*-prefixed anyway, so the filter bought nothing and cost that.
 
 import (
-	"github.com/xianxu/tools/internal/conformance"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/xianxu/tools/internal/conformance"
 )
+
+// missesEntirely asserts that NO candidate answers — through the production
+// fetch, not by probing one URL.
+//
+// The negative rows here pin claims about a WALK ("Italian is absent", "French
+// coverage is partial", "jalapeno_es_es is a 404"), and they were checking
+// AudioCandidates(...)[0] alone. A recording appearing only at the _2 suffix
+// would have left every row green while the fallback quietly stopped firing —
+// the row would be pinning a smaller claim than the one it is named for.
+// TestCDNReturnsRealAudio already uses this shape for the positive case.
+func missesEntirely(t *testing.T, word string, v voice) {
+	t.Helper()
+	_, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates(word, v))
+	if errors.Is(err, ErrNoAudio) {
+		return
+	}
+	if err != nil {
+		conformance.SkipOrFail(t, "network unavailable", err)
+		return
+	}
+	t.Errorf("%s now has a %s_%s recording (%s) — a claim this file pins has changed",
+		word, v.Lang, v.Locale, from)
+}
 
 func head(t *testing.T, url string) int {
 	t.Helper()
@@ -131,11 +156,9 @@ func TestCDNStillKeysSourceRecordingsOnTheSourceSpelling(t *testing.T) {
 	if got := head(t, AudioCandidates("jalapeño", es)[0]); got != http.StatusOK {
 		t.Errorf("jalapeño on es_es = %d, want 200 — the Spanish recording this issue fetches", got)
 	}
-	if got := head(t, AudioCandidates("jalapeno", es)[0]); got == http.StatusOK {
-		t.Error("jalapeno_es_es now answers — the CDN no longer keys source recordings on " +
-			"the source spelling, so SourceSpellings' headword and (also …) sources may be " +
-			"unnecessary. Re-run the survey before simplifying it away.")
-	}
+	// The whole walk, not one URL: if the unaccented spelling answered at ANY
+	// suffix, SourceSpellings' extra sources would be unnecessary.
+	missesEntirely(t, "jalapeno", es)
 }
 
 // D1's evidence, and the row that would justify REOPENING the decision.
@@ -165,10 +188,7 @@ func TestCDNStillCannotTellALoanwordFromANaturalisedOne(t *testing.T) {
 func TestCDNItalianIsStillAbsentFromThisGeneration(t *testing.T) {
 	it := voice{Lang: "it", Locale: "it"}
 	for _, w := range []string{"ciao", "pizza", "espresso"} {
-		if got := head(t, AudioCandidates(w, it)[0]); got == http.StatusOK {
-			t.Errorf("%s now has an it_it recording — Italian has arrived. Update "+
-				"atlas/define.md, which records its absence as a standing limitation", w)
-		}
+		missesEntirely(t, w, it)
 	}
 }
 
@@ -182,10 +202,7 @@ func TestCDNFrenchCoverageIsStillPartial(t *testing.T) {
 	// NOT déjeuner, which #29's Done-when originally named: it has no NOAD entry,
 	// so the lookup fails before audio is reached and it can never exercise this.
 	for _, w := range []string{"hotel", "debut"} {
-		if got := head(t, AudioCandidates(w, fr)[0]); got == http.StatusOK {
-			t.Errorf("%s now has a fr_fr recording — French coverage has widened, and "+
-				"the fallback this pins is exercised by fewer words than before", w)
-		}
+		missesEntirely(t, w, fr)
 		if got := head(t, AudioCandidates(w, en)[0]); got != http.StatusOK {
 			t.Errorf("%s on en_us = %d, want 200 — this word is the fallback's TARGET, "+
 				"so without it the pair proves nothing", w, got)

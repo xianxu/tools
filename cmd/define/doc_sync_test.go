@@ -150,3 +150,40 @@ func TestDocsQuoteTheLocaleHelp(t *testing.T) {
 		}
 	}
 }
+
+// The atlas's command list DERIVES from the registry, or it drifts.
+//
+// Third instance of the `doc-sweep-incomplete` family on this page, and the
+// measured shape is what makes a mechanism the right answer rather than a row:
+// the list held three of five commands, and the two missing were the two most
+// recently added — `/lang` (#23) and `/pron` (#29). Two for two. Every author
+// added a command, updated the registry, and did not know this table existed.
+//
+// So the table is generated here and the page consumes it, exactly as
+// TestDocsQuoteTheLocaleHelp does for localeHelp. The next command fails the
+// build until the page catches up, which is the only thing that has ever worked
+// for this family.
+//
+// The NAME and SUMMARY only, in registry order. Argument syntax is deliberately
+// out: the summary is what /help prints, so padding it with forms would make the
+// table stop matching the screen — and the screen is what a reader checks it
+// against.
+func TestDocsQuoteTheCommandList(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("<!-- command-list -->\n| command | does |\n|---|---|\n")
+	for _, c := range commands {
+		fmt.Fprintf(&b, "| `/%s` | %s |\n", c.name, c.summary)
+	}
+	b.WriteString("<!-- /command-list -->")
+
+	doc := "../../atlas/define.md"
+	raw, err := os.ReadFile(doc)
+	if err != nil {
+		t.Fatalf("%s unreadable: %v", doc, err)
+	}
+	if !strings.Contains(string(raw), b.String()) {
+		t.Errorf("%s does not quote the command list the registry produces.\nwant the "+
+			"marked span to read:\n%s\n`commands` owns this list; the page consumes it.",
+			doc, b.String())
+	}
+}

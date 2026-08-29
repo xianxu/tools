@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -597,12 +598,15 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 				continue
 			}
 			path := m[2]
-			// The FIRST WORD of the status cell, not a substring of it: "renewed"
-			// and "newly" both contain "new" and would have exempted a row that
-			// claims to describe the tree as it stands. Fields() also tolerates
-			// the trailing prose these cells carry ("modified — gains …").
-			if status := strings.Fields(strings.ToLower(m[3])); inProgress &&
-				len(status) > 0 && status[0] == "new" {
+			status, ok := planStatus(m[3])
+			if !ok {
+				t.Errorf("%s: row %q has status %q, which is not one of %v — the status "+
+					"column is a controlled vocabulary, and a cell outside it cannot be "+
+					"checked at all", filepath.Base(plan), strings.TrimSpace(m[1]),
+					strings.TrimSpace(m[3]), planStatuses)
+				continue
+			}
+			if inProgress && status == "new" {
 				continue
 			}
 			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
@@ -619,6 +623,28 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 }
 
 // checkPlanName asserts one Name cell resolves to a declaration at the stated path.
+// planStatuses is the Core-concepts status column's controlled vocabulary.
+var planStatuses = []string{"new", "modified", "unchanged", "deleted"}
+
+// planStatus normalises a status cell to that vocabulary, or reports that it is
+// outside it.
+//
+// TWO heuristics failed here before this existed, in opposite directions, which
+// is what a vocabulary is for. `Contains(lower(cell), "new")` also matched
+// "renewed" and "newly"; the first-word fix then missed `**modified**`, and bold
+// status cells are this repo's live convention — the #29 plan writes three of
+// them. So the cell is normalised (emphasis stripped, trailing prose dropped)
+// and matched against a closed set, and anything outside it FAILS LOUDLY rather
+// than falling into whichever branch the heuristic happened to pick.
+func planStatus(cell string) (string, bool) {
+	fields := strings.Fields(strings.ToLower(cell))
+	if len(fields) == 0 {
+		return "", false
+	}
+	word := strings.Trim(fields[0], "*_`")
+	return word, slices.Contains(planStatuses, word)
+}
+
 func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 	t.Helper()
 	{
@@ -761,4 +787,200 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 	if seen == 0 {
 		t.Fatal("no current-truth artifacts were examined; this test would pass vacuously")
 	}
+}
+
+// A plan's status column is a claim about the DIFF, and it is checkable.
+//
+// "unchanged" / "modified" are not opinions about behaviour — they say whether
+// this window touched the symbol, which git already knows. Four of the #29
+// plan's twenty rows were wrong across two review rounds (`fakeCDN`,
+// `fakeDictionary`, `rebasedSource`, `AudioCandidates`), and the round that
+// fixed them BY HAND caught three of four: the fourth had been sitting in the
+// table the whole time, claiming "unchanged" about a symbol the same plan's own
+// Task 8 rewrote. Hand-sweeping is what keeps failing, so this is the mechanism.
+//
+// DECLARATION-LEVEL, not file-level, and that distinction is the whole design:
+// voice.go is modified in this window while voiceFor / localeFor /
+// defaultLocale / applyVoice genuinely are not, and that row is correct. A
+// file-level check would call it a lie.
+//
+// The doc comment counts as part of the declaration. #29's AudioCandidates row
+// is the case: its body changed by one line, but ten lines of its comment were
+// rewritten by the plan's own doc sweep — and a plan that says "unchanged" about
+// a symbol whose documentation this window rewrote is misleading in exactly the
+// way that matters to a reader.
+func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
+	root := repoRoot(t)
+	base, ok := changeWindowBase(t, root)
+	if !ok {
+		// conformance:inapplicable — on a merged branch there is no window, and a
+		// plan describing no changes cannot contradict one.
+		t.Skip("no change window (not on a feature branch, or git unavailable)")
+	}
+	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) == 0 {
+		t.Skip("no active plans")
+	}
+
+	row := regexp.MustCompile("^\\|([^|]*)\\|\\s*`([^`]+\\.go)`\\s*\\|?([^|]*)")
+	nameCell := regexp.MustCompile("`([A-Za-z_][A-Za-z0-9_.]*)`")
+	checked := 0
+	for _, plan := range plans {
+		b, err := os.ReadFile(plan)
+		if err != nil {
+			t.Fatalf("reading %s: %v", plan, err)
+		}
+		for _, line := range strings.Split(currentTruthOnly(string(b)), "\n") {
+			m := row.FindStringSubmatch(line)
+			if m == nil {
+				continue
+			}
+			status, ok := planStatus(m[3])
+			if !ok || status == "new" || status == "deleted" {
+				// `new` is checked by the sibling test (does it exist yet);
+				// `deleted` has no declaration left to locate.
+				continue
+			}
+			touched := changedLines(t, root, base, m[2])
+			if touched == nil {
+				continue // the file itself is untouched by this window
+			}
+			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
+				checkPlanStatus(t, root, filepath.Base(plan), nm[1], m[2], status, touched, &checked)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Skip("no unchanged/modified rows pointed at files this window touched")
+	}
+}
+
+// changeWindowBase is the commit this branch diverged from main.
+func changeWindowBase(t *testing.T, root string) (string, bool) {
+	t.Helper()
+	out, err := exec.Command("git", "-C", root, "merge-base", "main", "HEAD").Output()
+	if err != nil {
+		return "", false
+	}
+	base := strings.TrimSpace(string(out))
+	head, err := exec.Command("git", "-C", root, "rev-parse", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(head)) == base {
+		return "", false // on main, or nothing to compare
+	}
+	return base, true
+}
+
+// changedLines returns the line numbers this window touched in path, or nil when
+// it touched none. Uses the NEW-side hunk headers, which is what maps onto the
+// file as it stands.
+func changedLines(t *testing.T, root, base, path string) map[int]bool {
+	t.Helper()
+	out, err := exec.Command("git", "-C", root, "diff", "--unified=0", base+"..HEAD", "--", path).Output()
+	if err != nil || len(out) == 0 {
+		return nil
+	}
+	hunk := regexp.MustCompile(`(?m)^@@ -\S+ \+(\d+)(?:,(\d+))? @@`)
+	touched := map[int]bool{}
+	for _, m := range hunk.FindAllStringSubmatch(string(out), -1) {
+		start := atoiTest(t, m[1])
+		n := 1
+		if m[2] != "" {
+			n = atoiTest(t, m[2])
+		}
+		for i := 0; i < n; i++ {
+			touched[start+i] = true
+		}
+	}
+	if len(touched) == 0 {
+		return nil
+	}
+	return touched
+}
+
+func atoiTest(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatalf("bad hunk number %q: %v", s, err)
+	}
+	return n
+}
+
+// checkPlanStatus holds one row's claim against the window.
+func checkPlanStatus(t *testing.T, root, plan, name, path, status string, touched map[int]bool, checked *int) {
+	t.Helper()
+	recv := ""
+	if qual, bare, ok := strings.Cut(name, "."); ok {
+		if filepath.Base(filepath.Dir(path)) == qual {
+			name = bare
+		} else {
+			recv, name = qual, bare
+		}
+	}
+	src, err := os.ReadFile(filepath.Join(root, path))
+	if err != nil {
+		return
+	}
+	lo, hi, ok := declarationRegion(string(src), name, recv)
+	if !ok {
+		return // the sibling test owns "this symbol does not exist"
+	}
+	*checked++
+	inWindow := false
+	for ln := lo; ln <= hi; ln++ {
+		if touched[ln] {
+			inWindow = true
+			break
+		}
+	}
+	switch {
+	case status == "unchanged" && inWindow:
+		t.Errorf("%s calls %q unchanged, but this window edits its declaration "+
+			"(%s:%d-%d). The status column is a claim about the DIFF, and a reader "+
+			"trusts the plan to describe what changed.", plan, name, path, lo, hi)
+	case status == "modified" && !inWindow:
+		t.Errorf("%s calls %q modified, but this window does not touch its "+
+			"declaration (%s:%d-%d) — the row describes work that did not happen.",
+			plan, name, path, lo, hi)
+	}
+}
+
+// declarationRegion locates a symbol's declaration INCLUDING its doc comment,
+// which is part of what a reader means by "unchanged".
+func declarationRegion(src, name, recv string) (lo, hi int, ok bool) {
+	decl := regexp.MustCompile(`^(func|type|var|const)\s+(\([^)]*\)\s*)?` + regexp.QuoteMeta(name) + `\b`)
+	if recv != "" {
+		decl = regexp.MustCompile(`^func\s+\(\w+\s+\*?` + regexp.QuoteMeta(recv) + `\)\s*` + regexp.QuoteMeta(name) + `\b`)
+	}
+	next := regexp.MustCompile(`^(func|type|var|const)\s`)
+	lines := strings.Split(src, "\n")
+	start := -1
+	for i, l := range lines {
+		if decl.MatchString(l) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return 0, 0, false
+	}
+	lo = start
+	for lo > 0 && strings.HasPrefix(strings.TrimSpace(lines[lo-1]), "//") {
+		lo-- // the doc comment belongs to the symbol
+	}
+	hi = len(lines) - 1
+	for i := start + 1; i < len(lines); i++ {
+		if next.MatchString(lines[i]) {
+			hi = i - 1
+			// back off over the NEXT symbol's doc comment
+			for hi > start && strings.HasPrefix(strings.TrimSpace(lines[hi]), "//") {
+				hi--
+			}
+			break
+		}
+	}
+	return lo + 1, hi + 1, true // 1-indexed, matching git
 }

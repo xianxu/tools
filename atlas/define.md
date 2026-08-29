@@ -731,14 +731,34 @@ switches on outcome (found / not found), never on which command it is, and
 `nearestCommands` REPORTS whether anything was close rather than leaving the
 caller to infer it from a count — inferring it was wrong for every near-miss
 while one command was registered (BR-9).
-`commandCtx` is deliberately narrower than `deps` — a command cannot reach the
-dictionary or the player.
+`commandCtx` is deliberately narrower than `deps` — a command still cannot reach
+the dictionary or the player. `#29`'s `/pron` did not widen that: `commandCtx`
+gained a `replay` CLOSURE, so the command records a language and the loop
+performs the playback, in raw mode, where Ctrl-C can still reach the key reader.
 
+**The registry is the single source, and this list derives from it.** It listed
+three of five commands for two releases — `/lang` (`#23`) and `/pron` (`#29`)
+were both added without it, 2 for 2 — so it is generated from `commands` and
+pinned by `TestDocsQuoteTheCommandList`, the mechanism `localeHelp` and
+`pronHelp` already use. Add a command and this page fails the build until it
+catches up.
+
+<!-- command-list -->
 | command | does |
 |---|---|
-| `/help` | lists the commands |
-| `/history [N]` | words looked up in the last N local days (default 2); `N`, `--days N` and `--days=N` are all accepted |
-| `/sound [N]` | how many times a pronunciation plays, for the rest of the session |
+| `/help` | list the commands |
+| `/history` | words looked up recently |
+| `/sound` | how many times to play a pronunciation |
+| `/lang` | the language this deck is in |
+| `/pron` | replay this word in another language, once |
+<!-- /command-list -->
+
+Argument forms are documented with each command rather than in the summary: the
+summary is what `/help` prints, and a table that padded it with syntax would stop
+matching the screen. `/history [N]` takes `N`, `--days N` or `--days=N`;
+`/sound [N]` reports when bare; `/lang` reports when bare and persists when
+given; `/pron` REQUIRES a language, because it is an action with nothing to
+report.
 
 **Opening a store does not read it.** `storeHistory` used to read the whole event
 log in its constructor, so `define /help` paid for a log it never consulted and
