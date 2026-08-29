@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -182,36 +181,10 @@ func TestPrivateDictionarySurfaceStillResolves(t *testing.T) {
 //	         from English" cannot be satisfied by an error page or an empty read.
 //	absent   an English word that must NOT resolve here. Answering it from
 //	         English is exactly the bug the mode removes.
-type ownLanguageRow struct{ lang, shared, marker, absent string }
-
 func TestSelectedDictionaryAnswersInItsOwnLanguage(t *testing.T) {
 	en, _ := systemDictionary(store.DefaultLang, nil)
 
-	rows := []ownLanguageRow{
-		// mesa: an isolated flat-topped hill in English, furniture in Spanish.
-		{"es", "mesa", "nombre femenino", "sycophantic"},
-		// pizza: NOAD has it as a loanword; Devoto-Oli has it as ordinary
-		// vocabulary. `s.f.` is sostantivo femminile, which NOAD never writes.
-		{"it", "pizza", "s.f.", "sycophantic"},
-	}
-	// EVERY curated language has a row, checked in both directions. Without this,
-	// #34 can add fr/de to `curated` and acquire no live own-language check at
-	// all — the language would ship with nothing asserting it answers in its own
-	// book. Fourth instance of the family; the rule is that every language-keyed
-	// table is cross-checked against `curated`, not that this table gets a row.
-	for lang := range curated {
-		// English is excluded, and not as an oversight: it is the BASELINE every
-		// row is measured against ("this entry differs from the English one"), so
-		// a row for English would compare it with itself and assert nothing.
-		if lang == store.DefaultLang {
-			continue
-		}
-		if !slices.ContainsFunc(rows, func(r ownLanguageRow) bool { return r.lang == string(lang) }) {
-			t.Errorf("production curates %v for %s, but this table has no row for it — the "+
-				"language ships with no live check that it answers in its own dictionary",
-				curated[lang], lang)
-		}
-	}
+	rows := ownLanguageRows
 	for _, tc := range rows {
 		t.Run(tc.lang, func(t *testing.T) {
 			d, name := systemDictionary(store.Lang(tc.lang), nil)

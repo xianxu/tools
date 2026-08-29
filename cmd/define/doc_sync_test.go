@@ -122,7 +122,7 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 // not about locales.
 func TestDocsQuoteThePronHelp(t *testing.T) {
 	want := "<!-- pron-help -->" + pronHelp + "<!-- /pron-help -->"
-	for _, doc := range []string{"../../README.md", "../../atlas/define.md"} {
+	for _, doc := range derivedDocs {
 		b, err := os.ReadFile(doc)
 		if err != nil {
 			t.Fatalf("%s unreadable: %v", doc, err)
@@ -139,7 +139,7 @@ func TestDocsQuoteTheLocaleHelp(t *testing.T) {
 	// the README alone left atlas/define.md as the next copy to go stale, which
 	// is the same half-fix this family keeps producing.
 	want := "<!-- locale-help -->" + localeHelp + "<!-- /locale-help -->"
-	for _, doc := range []string{"../../README.md", "../../atlas/define.md"} {
+	for _, doc := range derivedDocs {
 		b, err := os.ReadFile(doc)
 		if err != nil {
 			t.Fatalf("%s unreadable: %v", doc, err)

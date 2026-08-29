@@ -2410,10 +2410,16 @@ Both happened in one session, on top of the four already recorded:
   session, the second time discarding ~150 lines of guard work written minutes
   earlier, and a FOURTH an hour after that entry was rewritten — which is the
   real finding: restating the rule did not change the behaviour. **Four
-  occurrences in one session, twice after writing the rule down.** So it needs a
-  mechanical trigger, not a sharper sentence: *before typing `git checkout
-  <file>`, run `git status --short <file>`; if it prints anything, do not.* The
-  underlying framing that keeps failing is:
+  occurrences in one session, twice after writing the rule down** — and then a
+  FIFTH, after the "mechanical trigger" sentence was added. Five is enough to
+  say the trigger was still the wrong shape: it asked me to remember to run a
+  check, which is the same class of thing as remembering not to type the
+  command.
+  **What actually worked: stop using `git checkout` to revert a mutation at
+  all.** `cp f "$TMPDIR/f.bak"` before, `cp "$TMPDIR/f.bak" f` after. It restores
+  the file to what it was rather than to what was committed, which is the
+  property the task needs and the one `git checkout` does not have at any point.
+  The underlying framing that keeps failing is:
   *`git checkout` is not a revert tool — it is a "discard everything since the
   last commit in this file" tool.* Before typing it, `git status --short` the
   file. Better: commit, THEN mutate, and treat "I want to mutate an uncommitted

@@ -1,12 +1,13 @@
 ---
 id: 000031
-status: working
+status: codecomplete
 deps: [tools#29]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours: 1.81
 started: 2026-08-29T11:29:22-07:00
+actual_hours: 2.09
 ---
 
 # curate the Italian dictionary so /lang it is a real mode (French and German split to #34)
@@ -198,6 +199,7 @@ Designed. Durable plan: `workshop/plans/000031-curate-dictionaries-plan.md`
 ## Log
 
 ### 2026-08-29
+- 2026-08-29: closed — Both suites on the FINAL head dcbb683: go test ./... 0 failures; go test -tags conformance ./cmd/define/ green unfiltered (306s) UNSANDBOXED so the NOAD rows executed. ROUND 3 named why rounds 1 and 2 kept finding more sites: the class was enforced PER-SITE, so each round pinned the surfaces its author could see. curated now has ONE registry (curatedSurfaces) of the surfaces obliged to name every curated language, each row supplying its own text and its own spelling — docs write "Italian", the flag help writes "it" — and one assertion ranges over registry x curated, replacing three per-site tests. The only hand-written list left in the family is "which surfaces exist". That closed the gap BR-10 had kept open, and the distinction is worth naming: TestTheLangFlagRegistersTheDerivedHelp pins DELIVERY (run passes langHelp, not a literal) while nothing pinned DERIVATION — hardcoding langHelp to {en,es} keeps delivery green and fails the registry row, verified both ways. Row 9: the language-keyed notation table cross-checks curated with an explicit exempt list carrying reasons, because "no row" and "deliberately no row" were indistinguishable and #34 will add German, whose Duden field is real, to a table asserting the opposite. BR-12 was mine to have caught: merging two notation tests and deleting a subsumed sweep are renames in the sense retiredSymbolNames exists for, and I added no rows — so the atlas, this plan and #30 all named tests the tree does not declare. Rows added, all three swept, and since the human half has failed twice (#27 is in that same map) the TRIGGER is now mechanical: TestARemovedDeclarationIsSweptOrRetired reads removed declarations out of the change window and demands a row or zero current-truth mentions, verified to fire on exactly that state (no row plus a stale atlas mention) and to stay quiet when either half is satisfied. The mapping still needs a person; noticing a removal does not. Minors: the bare block flattened, atlas spacing and wrapping fixed.; review verdict: FIX-THEN-SHIP
 
 Filed from `#29`'s close review. The measurements above were taken during `#29`
 and are inherited rather than re-derived; the `-lang fr bonjour` fallback was

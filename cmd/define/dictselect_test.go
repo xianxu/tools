@@ -523,7 +523,7 @@ func langName(l store.Lang) string {
 // remembered to write a test. With a registry, a new surface is a row and the
 // assertion already exists.
 func curatedSurfaces() []curatedSurface {
-	return []curatedSurface{
+	out := []curatedSurface{
 		{
 			// This row is what pins langHelp's DERIVATION. The flagset test pins
 			// its DELIVERY — that run() passes it rather than a literal — and the
@@ -533,17 +533,20 @@ func curatedSurfaces() []curatedSurface {
 			text:  func(*testing.T) string { return langHelp },
 			token: langCode,
 		},
-		{
-			what:  "README.md's curated-languages span",
-			text:  func(t *testing.T) string { return markedSpan(t, "../../README.md", "curated-languages") },
-			token: langName,
-		},
-		{
-			what:  "atlas/define.md's curated-languages span",
-			text:  func(t *testing.T) string { return markedSpan(t, "../../atlas/define.md", "curated-languages") },
-			token: langName,
-		},
 	}
+	// The derived docs are ROWS, generated from the one list — not two literals
+	// beside a var claiming to be that list. `derivedDocs` was introduced with a
+	// comment saying it existed so the doc set was "named ONCE" and then had zero
+	// callers: package-level vars are exempt from Go's unused check, so it passed
+	// every suite while consolidating nothing.
+	for _, doc := range derivedDocs {
+		out = append(out, curatedSurface{
+			what:  doc + "'s curated-languages span",
+			text:  func(t *testing.T) string { return markedSpan(t, doc, "curated-languages") },
+			token: langName,
+		})
+	}
+	return out
 }
 
 // markedSpan returns the text between <!-- name --> and <!-- /name -->.
@@ -593,5 +596,63 @@ func TestEverySurfaceNamesEveryCuratedLanguage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ownLanguageRow is one language's live own-language check, and ownLanguageRows
+// is the table.
+//
+// UNTAGGED on purpose, the same move rawnotation_test.go documents: the
+// conformance test that USES these rows is `//go:build darwin && conformance`,
+// so anything declared beside it is invisible to the default suite — and the
+// cross-check "every curated language has a row" is PURE, a fact about two Go
+// values. One producer, two consumers.
+//
+// Each row carries both halves, and the second is what #23 was built for:
+//
+//	shared   a word that exists in this language AND in English with an
+//	         unrelated meaning. If the two lookups return the same text,
+//	         dictionary selection has silently stopped working.
+//	marker   a string only a real entry in that language carries, so "different
+//	         from English" cannot be satisfied by an error page or an empty read.
+//	absent   an English word that must NOT resolve here.
+type ownLanguageRow struct{ lang, shared, marker, absent string }
+
+var ownLanguageRows = []ownLanguageRow{
+	// mesa: an isolated flat-topped hill in English, furniture in Spanish.
+	{"es", "mesa", "nombre femenino", "sycophantic"},
+	// pizza: NOAD has it as a loanword; Devoto-Oli has it as ordinary
+	// vocabulary. `s.f.` is sostantivo femminile, which NOAD never writes.
+	{"it", "pizza", "s.f.", "sycophantic"},
+}
+
+// Every curated language has a live own-language row — checked in the DEFAULT
+// gate, not behind a build tag.
+//
+// The cross-check first landed inside TestSelectedDictionaryAnswersInItsOwnLanguage,
+// which is `//go:build darwin && conformance`. That is right for the half that
+// talks to DictionaryServices and wrong for this half, which is pure: whether a
+// curated language has a row is a fact about two Go values. Behind the tag it
+// ran nowhere in CI and, as this issue's own reviews showed, nowhere in the
+// review environment either — DictionaryServices is unreachable there, so it
+// skipped at all four gates.
+//
+// ownLanguageRows is the shared source; the conformance test ranges over the
+// same slice.
+func TestEveryCuratedLanguageHasAnOwnLanguageRow(t *testing.T) {
+	for lang := range curated {
+		// English is the BASELINE every row is measured against ("this entry
+		// differs from the English one"), so a row for it would compare it with
+		// itself and assert nothing.
+		if lang == store.DefaultLang {
+			continue
+		}
+		if !slices.ContainsFunc(ownLanguageRows, func(r ownLanguageRow) bool {
+			return r.lang == string(lang)
+		}) {
+			t.Errorf("production curates %v for %s, but there is no own-language row for it — "+
+				"the language ships with nothing asserting it answers from its own dictionary",
+				curated[lang], lang)
+		}
 	}
 }

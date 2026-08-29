@@ -753,38 +753,11 @@ var retiredSymbolNames = map[string]string{
 // unrelated reasons.
 func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 	root := repoRoot(t)
-	// This file must name them to list them.
-	self := "cmd/define/repo_guard_test.go"
-
-	binds := func(p string) bool {
-		switch {
-		case strings.HasSuffix(p, "_test.go"):
-			return false
-		case strings.HasSuffix(p, ".go"):
-			return true
-		case p == "README.md", strings.HasPrefix(p, "atlas/"):
-			return true
-		case strings.HasPrefix(p, "workshop/plans/") && strings.HasSuffix(p, "-plan.md"):
-			return true
-		}
-		return false
-	}
-
-	seen := 0
-	for _, f := range strings.Split(string(git(t, "-C", root, "ls-files", "-z")), "\x00") {
-		p := filepath.ToSlash(f)
-		if p == "" || p == self || !binds(p) {
-			continue
-		}
-		// git ls-files lists submodule gitlinks too, which are directories here.
-		if info, err := os.Stat(filepath.Join(root, f)); err != nil || info.IsDir() {
-			continue
-		}
+	for _, f := range currentTruthFiles(t, root) {
 		b, err := os.ReadFile(filepath.Join(root, f))
 		if err != nil {
 			t.Fatalf("reading %s: %v", f, err)
 		}
-		seen++
 		text := currentTruthOnly(string(b))
 		for old, now := range retiredSymbolNames {
 			// Word-boundaried: migrateFlatDeck must not match MigrateFlatDeck,
@@ -792,12 +765,9 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 			if regexp.MustCompile(`\b` + regexp.QuoteMeta(old) + `\b`).MatchString(text) {
 				t.Errorf("%s names the retired symbol %q; the tree declares %q. A rename "+
 					"sweeps every restatement in the SAME commit — nine findings in this "+
-					"family say the hand-sweep does not hold.", p, old, now)
+					"family say the hand-sweep does not hold.", f, old, now)
 			}
 		}
-	}
-	if seen == 0 {
-		t.Fatal("no current-truth artifacts were examined; this test would pass vacuously")
 	}
 }
 
@@ -1089,6 +1059,14 @@ func TestARemovedDeclarationIsSweptOrRetired(t *testing.T) {
 	var gone []string
 	for _, m := range removed.FindAllStringSubmatch(diff, -1) {
 		name := m[1]
+		// Only names that cannot plausibly BE prose. `ids` is a real helper in
+		// this package, and searching artifacts for it hits "for-bids"; the
+		// failure message would then advise a retiredSymbolNames row that makes
+		// the SIBLING guard permanently red on every file containing the word.
+		// Exported and Test* names are the ones an artifact actually cites.
+		if !isCitableName(name) {
+			continue
+		}
 		// Still declared somewhere? Then it moved, which is not a removal.
 		//
 		// Scanned rather than `git grep`, which exits 1 for "no match" — a
@@ -1117,7 +1095,11 @@ func TestARemovedDeclarationIsSweptOrRetired(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading %s: %v", f, err)
 			}
-			if strings.Contains(currentTruthOnly(string(b)), name) {
+			// WORD-BOUNDARY, the rule the sibling guard already uses. Contains
+			// was the first spelling and it is wrong the same way it was wrong
+			// for the doc check two commits earlier — a substring hit is not a
+			// mention, and this guard was written after that fix.
+			if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(currentTruthOnly(string(b))) {
 				t.Errorf("%s names %q, which this window REMOVED and which is not in "+
 					"retiredSymbolNames. Either add the row — the mapping is the part only "+
 					"you know — or sweep the mention. A guard that depends on someone "+
@@ -1158,6 +1140,14 @@ func currentTruthFiles(t *testing.T, root string) []string {
 		}
 		out = append(out, f)
 	}
+	// HERE, not in one caller. The inline copy this replaced carried the
+	// assertion and the extracted helper did not, so the newer guard would have
+	// passed over an empty file set if `binds` ever stopped matching. The two
+	// copies had diverged before the second one was a day old.
+	if len(out) == 0 {
+		t.Fatal("no current-truth artifacts were examined; every guard over this set " +
+			"would pass vacuously")
+	}
 	return out
 }
 
@@ -1178,4 +1168,14 @@ func treeDeclares(t *testing.T, root, name string) bool {
 		}
 	}
 	return false
+}
+
+// isCitableName reports whether a removed declaration is one an artifact would
+// actually name: a Test, a Fuzz target, or an exported identifier.
+//
+// Unexported helpers like `ids` or `binds` are not cited in prose, and searching
+// artifacts for them produces substring noise rather than findings.
+func isCitableName(name string) bool {
+	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") ||
+		(name != "" && name[0] >= 'A' && name[0] <= 'Z')
 }

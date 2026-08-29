@@ -301,3 +301,34 @@ recorded in that same map), the TRIGGER is mechanical:
 change window and requires a row or zero current-truth mentions. The MAPPING
 still needs a person — only the one renaming knows the old name — but noticing
 that something was removed does not.
+
+### 2026-08-29 — close review round 4 (FIX-THEN-SHIP, fixes bundled per `#174`)
+
+**I-1 — the guard I built in round 3 to enforce a rule broke the rule it
+enforces.** `TestARemovedDeclarationIsSweptOrRetired` matched removed names by
+`strings.Contains` while its sibling uses a word-boundary regex — and I had fixed
+exactly that substring-vs-boundary defect two commits earlier, for the doc check.
+The review measured the consequence: renaming the helper `ids` fails on seven
+files including `atlas/define.md`, whose only hit is "for**bids**", and the
+remedy the failure message advises would make the sibling permanently red. Fixed
+to word-boundary, plus `isCitableName` so only names an artifact would actually
+cite (Test/Fuzz/exported) are searched at all.
+
+**I-2 — two "consolidations" from round 3 consolidated nothing.** `derivedDocs`
+was introduced with a comment saying the doc set was now "named ONCE" and had
+**zero** callers; package-level vars are exempt from Go's unused check, so it
+passed every suite while doing nothing. `currentTruthFiles` had one caller, and
+its inline predecessor was still in the sibling guard — the two had already
+diverged, since only the old one carried the vacuity assertion. The rule the
+review states and this plan now records: **a consolidation is complete only when
+the new helper's call-site count equals the number of spellings it replaced —
+grep for callers before calling it done.** `derivedDocs` now has four callers and
+generates the registry's doc rows; the sibling calls `currentTruthFiles`; the
+vacuity assertion moved into the helper so both callers get it.
+
+**I-3 — the pure half of a check was behind `//go:build darwin && conformance`.**
+"Every curated language has an own-language row" is a fact about two Go values,
+and it sat in a file that DictionaryServices gates — so it ran in neither CI nor
+any of the four review environments, all of which skipped it. The rows moved to
+an untagged file (the move `rawnotation_test.go` documents: one producer, two
+consumers) and the cross-check now runs in the default gate.

@@ -271,6 +271,122 @@ rounds:
           family: redundant-syntax
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-29T13:54:07-07:00"
+      agent: claude
+      dispose:
+        - id: BR-6
+          disposition: not-addressed
+          note: 'Re-measured at HEAD: renaming the README bullet to "- **Itaian** —" leaves TestEverySurfaceNamesEveryCuratedLanguage green, because the same bullet''s next sentence says "Italian". Minor, non-blocking.'
+          round: 4
+        - id: BR-10
+          disposition: addressed
+          note: 'Site 6 closed by the registry row: replacing langHelp''s body with the literal "en, es" now reddens TestEverySurfaceNamesEveryCuratedLanguage/the -lang flag help (verified by revert in a scratch clone).'
+          round: 4
+        - id: BR-12
+          disposition: addressed
+          note: 'Rows added and all three artifacts swept (incl. workshop/issues/000030). Mechanism verified live: removing the two rows and re-injecting a stale mention turns TestARemovedDeclarationIsSweptOrRetired red. Its matching rule is defective — raised separately.'
+          round: 4
+        - id: BR-13
+          disposition: not-addressed
+          note: The registry (part a) is delivered and real; part (b) is not — derivedDocs at dictselect_test.go:487 has zero references while doc_sync_test.go:125 and :142 still spell the doc list literally.
+          round: 4
+        - id: BR-14
+          disposition: not-addressed
+          note: 'Bodies were extracted but the harness is still spelled three times verbatim: invariant_test.go:170, render_test.go:243, render_test.go:327. No forEachCapturedLanguage helper exists.'
+          round: 4
+        - id: BR-15
+          disposition: not-addressed
+          note: Instances mostly repaired (double blank gone), but no rule was stated and none accepted; atlas/define.md:1273 (94 cols) and :1303 (87) still break the file's ~80-col wrap.
+          round: 4
+        - id: BR-16
+          disposition: addressed
+          note: dictselect_test.go:472 now reads `if err != nil || len(d.entries) == 0 {`.
+          round: 4
+      findings:
+        - id: BR-17
+          severity: Important
+          title: the new removed-declaration guard matches by substring, so an ordinary rename fires seven false failures and its suggested remedy poisons the sibling guard
+          detail: |-
+            repo_guard_test.go:1120 uses strings.Contains, while TestNoArtifactNamesARetiredSymbol:791
+            uses a word-boundary regex for the same question — the two guards disagree on the matching
+            rule that currentTruthFiles' own comment says they cannot disagree about. Measured in a
+            scratch clone: renaming the helper `func ids` to `idsOfMetas` and committing turns the guard
+            red on seven paths including atlas/define.md, which has ZERO word-boundary occurrences of
+            "ids" (the hit is "forbids"). The message then tells the author to add a retiredSymbolNames
+            row for "ids", which would make TestNoArtifactNamesARetiredSymbol permanently red on every
+            file containing that word. Fix: share the word-boundary regex, and bound `gone` to names
+            unlikely to collide (Test*/exported, or a length floor).
+          family: retired-symbol-unswept
+          round: 4
+        - id: BR-18
+          severity: Important
+          title: both helpers introduced to collapse duplication have zero and one call site while the spellings they replace remain, under comments claiming the consolidation happened
+          detail: |-
+            This is the 5th finding in this family, so the fix is the rule, not the two sites: a
+            consolidation is complete only when the new helper's call-site count equals the number of
+            spellings it replaced — grep for callers before disposing the finding. Measured at HEAD:
+            (a) derivedDocs (dictselect_test.go:487, commented "named ONCE") has zero references
+            anywhere; doc_sync_test.go:125 and :142 still spell the two-doc list literally and
+            curatedSurfaces() spells each path separately at :538/:543 — package-level vars escape Go's
+            unused check, so it passes every suite while doing nothing. (b) currentTruthFiles
+            (repo_guard_test.go:1134, commented "Shared with TestNoArtifactNamesARetiredSymbol so the
+            two guards cannot disagree") has one caller; TestNoArtifactNamesARetiredSymbol:759-780
+            keeps a byte-identical binds closure and ls-files loop, and the two copies HAVE ALREADY
+            DIVERGED — the inline one Fatals on `seen == 0`, the extracted one has no vacuity
+            assertion, so the new guard would pass over an empty file set. ARCH-DRY.
+          family: one-predicate-two-spellings
+          round: 4
+        - id: BR-19
+          severity: Important
+          title: the own-language table's curated cross-check is pure data but sits behind the conformance build tag, so it never runs in go test ./... or CI
+          detail: |-
+            This is the 6th finding in this family, so state the rule rather than adding a row: the PURE
+            half of a cross-check belongs in an untagged file; only the live lookup half needs the tag.
+            dict_conformance_test.go:202's `for lang := range curated { … no row for it … }` compares two
+            in-memory tables and needs no dictionary, network or macOS, yet the file carries
+            `//go:build darwin && conformance` — which its own header says a CI runner does not satisfy,
+            and which .github/workflows/merge-check.yml does not pass. So the obligation "a curated
+            language has a live own-language check" is enforced only for whoever remembers to run the
+            tagged suite and read it, which is the per-site enforcement BR-13 set out to end. Fix: move
+            the rows table and the cross-check to an untagged file beside the registry, leaving the
+            t.Run lookup tagged. ARCH-PURPOSE.
+          family: curated-consumer-unpinned
+          round: 4
+        - id: BR-20
+          severity: Minor
+          title: capture.sh's mkdir line and closing summary enumerate languages by hand and no registry row covers them
+          detail: |-
+            capture.sh:11 (`mkdir -p entries/en entries/es entries/it`) and :177 (the echo/wc summary)
+            are per-language enumerations. TestCaptureScriptUsesTheCuratedDictionaries pins the
+            IDENTIFIERS in both directions but not these, so a fourth language yields a summary that
+            under-reports — the exact failure the comment added at :172 says the summary exists to
+            prevent. A whole-file token check cannot work ("it" is an English word throughout the
+            script), so this needs a marked span or an explicit exemption with its reason, the way
+            notationExempt makes "deliberately no row" legible.
+          family: curated-consumer-unpinned
+          round: 4
+        - id: BR-21
+          severity: Minor
+          title: dictselect_test.go:52 says the fixture is cross-checked "in BOTH directions" but only curated to fixture is implemented
+          detail: |-
+            TestTheMeasuredSetModelsEveryCuratedLanguage loops curated and asserts each id is modelled;
+            nothing checks the reverse. The reverse is deliberately absent — the fixture carries
+            bilingual and thesaurus decoys — so the comment should change, not the code. Same shape as
+            the two false structural claims in the Important finding above ("named ONCE", "Shared
+            with"), all three introduced by the rounds that were closing findings about exactly this.
+          family: comment-overclaims-code
+          round: 4
+        - id: BR-22
+          severity: Minor
+          title: the removed-declaration guard's skip message says "top-level declaration" but the regex matches only ^-func
+          detail: |-
+            repo_guard_test.go:1111 reports "this window removed no top-level declaration" while the
+            regex at :1093 matches `^-func` only, so a removed var/const/type is invisible. Narrow the
+            message or widen the regex.
+          family: retired-symbol-unswept
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#31 (boundary-review)
@@ -423,12 +539,82 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   `if err == nil && len(d.entries) > 0 { return }` followed by `{ t.Errorf(...) }` reads as
   `if err != nil || len(d.entries) == 0 { t.Errorf(...) }`.
 
+## Round 4 — 2026-08-29T13:54:07-07:00 (claude) — passed
+
+### Disposed
+
+- BR-6 — not-addressed — Re-measured at HEAD: renaming the README bullet to "- **Itaian** —" leaves TestEverySurfaceNamesEveryCuratedLanguage green, because the same bullet's next sentence says "Italian". Minor, non-blocking.
+- BR-10 — addressed — Site 6 closed by the registry row: replacing langHelp's body with the literal "en, es" now reddens TestEverySurfaceNamesEveryCuratedLanguage/the -lang flag help (verified by revert in a scratch clone).
+- BR-12 — addressed — Rows added and all three artifacts swept (incl. workshop/issues/000030). Mechanism verified live: removing the two rows and re-injecting a stale mention turns TestARemovedDeclarationIsSweptOrRetired red. Its matching rule is defective — raised separately.
+- BR-13 — not-addressed — The registry (part a) is delivered and real; part (b) is not — derivedDocs at dictselect_test.go:487 has zero references while doc_sync_test.go:125 and :142 still spell the doc list literally.
+- BR-14 — not-addressed — Bodies were extracted but the harness is still spelled three times verbatim: invariant_test.go:170, render_test.go:243, render_test.go:327. No forEachCapturedLanguage helper exists.
+- BR-15 — not-addressed — Instances mostly repaired (double blank gone), but no rule was stated and none accepted; atlas/define.md:1273 (94 cols) and :1303 (87) still break the file's ~80-col wrap.
+- BR-16 — addressed — dictselect_test.go:472 now reads `if err != nil || len(d.entries) == 0 {`.
+
+### Raised
+
+- **BR-17** [Important] `retired-symbol-unswept` the new removed-declaration guard matches by substring, so an ordinary rename fires seven false failures and its suggested remedy poisons the sibling guard
+  repo_guard_test.go:1120 uses strings.Contains, while TestNoArtifactNamesARetiredSymbol:791
+  uses a word-boundary regex for the same question — the two guards disagree on the matching
+  rule that currentTruthFiles' own comment says they cannot disagree about. Measured in a
+  scratch clone: renaming the helper `func ids` to `idsOfMetas` and committing turns the guard
+  red on seven paths including atlas/define.md, which has ZERO word-boundary occurrences of
+  "ids" (the hit is "forbids"). The message then tells the author to add a retiredSymbolNames
+  row for "ids", which would make TestNoArtifactNamesARetiredSymbol permanently red on every
+  file containing that word. Fix: share the word-boundary regex, and bound `gone` to names
+  unlikely to collide (Test*/exported, or a length floor).
+- **BR-18** [Important] `one-predicate-two-spellings` both helpers introduced to collapse duplication have zero and one call site while the spellings they replace remain, under comments claiming the consolidation happened
+  This is the 5th finding in this family, so the fix is the rule, not the two sites: a
+  consolidation is complete only when the new helper's call-site count equals the number of
+  spellings it replaced — grep for callers before disposing the finding. Measured at HEAD:
+  (a) derivedDocs (dictselect_test.go:487, commented "named ONCE") has zero references
+  anywhere; doc_sync_test.go:125 and :142 still spell the two-doc list literally and
+  curatedSurfaces() spells each path separately at :538/:543 — package-level vars escape Go's
+  unused check, so it passes every suite while doing nothing. (b) currentTruthFiles
+  (repo_guard_test.go:1134, commented "Shared with TestNoArtifactNamesARetiredSymbol so the
+  two guards cannot disagree") has one caller; TestNoArtifactNamesARetiredSymbol:759-780
+  keeps a byte-identical binds closure and ls-files loop, and the two copies HAVE ALREADY
+  DIVERGED — the inline one Fatals on `seen == 0`, the extracted one has no vacuity
+  assertion, so the new guard would pass over an empty file set. ARCH-DRY.
+- **BR-19** [Important] `curated-consumer-unpinned` the own-language table's curated cross-check is pure data but sits behind the conformance build tag, so it never runs in go test ./... or CI
+  This is the 6th finding in this family, so state the rule rather than adding a row: the PURE
+  half of a cross-check belongs in an untagged file; only the live lookup half needs the tag.
+  dict_conformance_test.go:202's `for lang := range curated { … no row for it … }` compares two
+  in-memory tables and needs no dictionary, network or macOS, yet the file carries
+  `//go:build darwin && conformance` — which its own header says a CI runner does not satisfy,
+  and which .github/workflows/merge-check.yml does not pass. So the obligation "a curated
+  language has a live own-language check" is enforced only for whoever remembers to run the
+  tagged suite and read it, which is the per-site enforcement BR-13 set out to end. Fix: move
+  the rows table and the cross-check to an untagged file beside the registry, leaving the
+  t.Run lookup tagged. ARCH-PURPOSE.
+- **BR-20** [Minor] `curated-consumer-unpinned` capture.sh's mkdir line and closing summary enumerate languages by hand and no registry row covers them
+  capture.sh:11 (`mkdir -p entries/en entries/es entries/it`) and :177 (the echo/wc summary)
+  are per-language enumerations. TestCaptureScriptUsesTheCuratedDictionaries pins the
+  IDENTIFIERS in both directions but not these, so a fourth language yields a summary that
+  under-reports — the exact failure the comment added at :172 says the summary exists to
+  prevent. A whole-file token check cannot work ("it" is an English word throughout the
+  script), so this needs a marked span or an explicit exemption with its reason, the way
+  notationExempt makes "deliberately no row" legible.
+- **BR-21** [Minor] `comment-overclaims-code` dictselect_test.go:52 says the fixture is cross-checked "in BOTH directions" but only curated to fixture is implemented
+  TestTheMeasuredSetModelsEveryCuratedLanguage loops curated and asserts each id is modelled;
+  nothing checks the reverse. The reverse is deliberately absent — the fixture carries
+  bilingual and thesaurus decoys — so the comment should change, not the code. Same shape as
+  the two false structural claims in the Important finding above ("named ONCE", "Shared
+  with"), all three introduced by the rounds that were closing findings about exactly this.
+- **BR-22** [Minor] `retired-symbol-unswept` the removed-declaration guard's skip message says "top-level declaration" but the regex matches only ^-func
+  repo_guard_test.go:1111 reports "this window removed no top-level declaration" while the
+  regex at :1093 matches `^-func` only, so a removed var/const/type is invisible. Narrow the
+  message or widen the regex.
+
 ## Open findings
 
 - **BR-6** [Minor] `curated-consumer-unpinned` the README guard is free-text containment inside the span, so a broken bullet label survives
-- **BR-10** [Important] `curated-consumer-unpinned` the class was declared closed in 19b5ea1 but the enumeration was never written; six sites remain, two wrong today
-- **BR-12** [Important] `retired-symbol-unswept` the rename/deletion this round performed never got its retiredSymbolNames row, so the atlas and the plan name tests the tree does not declare
 - **BR-13** [Important] `curated-consumer-unpinned` the class is still enforced per-site; two hand-written enumerations remain and the mechanism should be one surface registry
 - **BR-14** [Minor] `one-predicate-two-spellings` the per-captured-language sweep harness is now spelled three times, two of them new in this diff
 - **BR-15** [Minor] `doc-formatting` atlas/define.md:1269-1270 has a double blank line and a raggedly re-wrapped paragraph
-- **BR-16** [Minor] `redundant-syntax` dictselect_test.go:475 wraps a single t.Errorf in a bare block instead of inverting the guard
+- **BR-17** [Important] `retired-symbol-unswept` the new removed-declaration guard matches by substring, so an ordinary rename fires seven false failures and its suggested remedy poisons the sibling guard
+- **BR-18** [Important] `one-predicate-two-spellings` both helpers introduced to collapse duplication have zero and one call site while the spellings they replace remain, under comments claiming the consolidation happened
+- **BR-19** [Important] `curated-consumer-unpinned` the own-language table's curated cross-check is pure data but sits behind the conformance build tag, so it never runs in go test ./... or CI
+- **BR-20** [Minor] `curated-consumer-unpinned` capture.sh's mkdir line and closing summary enumerate languages by hand and no registry row covers them
+- **BR-21** [Minor] `comment-overclaims-code` dictselect_test.go:52 says the fixture is cross-checked "in BOTH directions" but only curated to fixture is implemented
+- **BR-22** [Minor] `retired-symbol-unswept` the removed-declaration guard's skip message says "top-level declaration" but the regex matches only ^-func
