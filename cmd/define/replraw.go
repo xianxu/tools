@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // replRaw is the interactive loop when we own the terminal: keystrokes in, a
@@ -258,7 +260,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 						draw()
 						continue
 					}
-					replayInPlace(ctx, d, opt, sess.current, stdout, stderr)
+					replayInPlace(ctx, d, opt, sess, "", stdout, stderr)
 					draw()
 					continue
 				}
@@ -292,9 +294,15 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 // replayInPlace speaks the current word again without moving the cursor off the
 // prompt line. Stays in RAW mode throughout: Ctrl-C must reach the key reader as
 // a byte while playback blocks.
-func replayInPlace(ctx context.Context, d deps, opt options, current string, stdout, stderr io.Writer) {
+//
+// `pron` is #29's source language, empty for an ordinary replay. A bare Enter
+// and `/pron fr` are therefore ONE replay path with one parameter rather than
+// two implementations — #14's "two loops, one decision table", applied before a
+// second one could be written. It takes the whole session because the source
+// spellings come from the entry, not just the word.
+func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron store.Lang, stdout, stderr io.Writer) {
 	switch {
-	case current == "":
+	case sess.current == "":
 		// Through nothingSays, not a copy of its sentence: this is the live path
 		// for a bare Enter with nothing current, and a byte-identical duplicate
 		// is what made "the one place that answers this" false the moment it was
@@ -303,7 +311,8 @@ func replayInPlace(ctx context.Context, d deps, opt options, current string, std
 	case opt.noAudio || opt.times <= 0:
 		fmt.Fprint(stderr, eraseLine+"define: nothing to replay: audio is off\r\n")
 	default:
-		playAnnounced(ctx, d, opt, current, indicator{show: true, erase: eraseLine}, stdout, stderr)
+		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),
+			indicator{show: true, erase: eraseLine}, stdout, stderr)
 	}
 }
 
@@ -321,7 +330,8 @@ func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt opti
 		return out, err
 	}
 	if out.play {
-		playAnnounced(ctx, d, opt, line, indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
+		playAnnounced(ctx, d, opt, utteranceFor(line, out.entry, cmd.pron, opt),
+			indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
 	}
 	// Recorded whatever it turned out to be — a typo you want to edit and retry,
 	// and a question you want to ask again, are both worth an Up-arrow. Stored

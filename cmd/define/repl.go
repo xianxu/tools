@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // replCommand is what one line of input means.
@@ -19,6 +21,21 @@ type replCommand struct {
 	// dictionary misses stays a miss. One of #16's two escape hatches — the
 	// other is "?", which reaches cmdAsk without a dictionary call at all.
 	literal bool
+	// pron is #29's -pron: hear THIS lookup in another language, leaving the
+	// deck, the dictionary and the highlight set where they are. Empty means
+	// the session's own voice.
+	//
+	// It lives on the LINE rather than on options, and that is load-bearing
+	// rather than tidy. opt.voice is a session value which applyLang re-derives
+	// on every /lang switch, so an override stored there would survive the
+	// switch and ask for fr_fr recordings in a Spanish session — the drift
+	// applyLang's enumeration exists to stop. A per-line modifier is what this
+	// is, which is why it sits beside `literal`.
+	//
+	// parseREPLLine never sets it: no typed line carries a language, so every
+	// line either loop parses has the zero value. run() sets it on the one-shot
+	// command after validating the flag.
+	pron store.Lang
 	// note is what to say about a cmdNothing that is not simply a blank line.
 	// A field rather than a fourth kind: the loops already do nothing here, and
 	// only the wording differs.
@@ -314,7 +331,8 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 				}
 				// This path is only reached when we do NOT own the terminal, so
 				// there is no transient UI to place: play and report.
-				playAnnounced(ctx, d, opt, sess.current, indicator{}, stdout, stderr)
+				playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, "", opt),
+					indicator{}, stdout, stderr)
 			case cmdCommand:
 				// The piped loop dispatches too. `echo /history | define` must
 				// not reach the dictionary, and a first draft of #15 put this

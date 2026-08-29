@@ -31,10 +31,25 @@ type audioRig struct {
 // exercises AudioCandidates' actual output rather than a hand-written URL.
 func newAudioRig(t *testing.T, word string, present bool) *audioRig {
 	t.Helper()
+	if !present {
+		return newAudioRigServing(t)
+	}
+	return newAudioRigServing(t, AudioCandidates(word, voice{Lang: "en", Locale: "us"})[0])
+}
+
+// newAudioRigServing is newAudioRig's general form: it serves EXACTLY the URLs
+// given and nothing else.
+//
+// #29 needs worlds newAudioRig cannot describe — one where the source-language
+// recording is missing and only the session's exists, which is what makes the
+// fallback and its report testable at all. Taking whole URLs from
+// AudioCandidates rather than paths keeps the production derivation in the loop,
+// which is the property newAudioRig was written for and this must not lose.
+func newAudioRigServing(t *testing.T, urls ...string) *audioRig {
+	t.Helper()
 	files := map[string][]byte{}
-	if present {
-		first := AudioCandidates(word, voice{Lang: "en", Locale: "us"})[0]
-		files[stripHost(t, first, audioBase)] = []byte("ID3fakeaudio")
+	for _, u := range urls {
+		files[stripHost(t, u, audioBase)] = []byte("ID3fakeaudio")
 	}
 	cdn := newFakeCDN(t, files)
 	p := &fakePlayer{}
@@ -49,14 +64,28 @@ func newAudioRig(t *testing.T, word string, present bool) *audioRig {
 // rebasedSource points the real fetch logic at the fake server while keeping the
 // production URL derivation intact — the path that reaches the CDN is exactly
 // what AudioCandidates produced.
+//
+// It TRANSLATES THE ANSWER BACK, and that is not tidiness. #29 made the returned
+// URL load-bearing: reportVoice decides which voice was heard by testing that
+// URL for membership in the candidate list. Handing back the rebased form leaks
+// the rig's own rewriting into the value under assertion, so a source recording
+// that answered perfectly well is reported as a fallback — a test failure with
+// no defect behind it. In production nothing rebases, so `from` is always one of
+// the URLs passed in; the double has to keep that true.
 type rebasedSource struct{ cdn *fakeCDN }
 
 func (r *rebasedSource) Fetch(ctx context.Context, urls []string) ([]byte, string, error) {
 	rebased := make([]string, len(urls))
+	origin := make(map[string]string, len(urls))
 	for i, u := range urls {
 		rebased[i] = r.cdn.URL + strings.TrimPrefix(u, audioBase)
+		origin[rebased[i]] = u
 	}
-	return r.cdn.source().Fetch(ctx, rebased)
+	data, from, err := r.cdn.source().Fetch(ctx, rebased)
+	if was, ok := origin[from]; ok {
+		from = was
+	}
+	return data, from, err
 }
 
 func TestRunPrintsDefinition(t *testing.T) {

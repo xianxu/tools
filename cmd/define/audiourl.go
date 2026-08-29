@@ -220,3 +220,10 @@ func (u utterance) Candidates() []string {
 func (u utterance) spokeSource(from string) bool {
 	return slices.Contains(u.sourceCandidates(), from)
 }
+
+// askedForSource reports whether this utterance requested another language at
+// all — and treats "the source IS the session" as not having asked, so the two
+// places that branch on it agree with sourceCandidates about what counts.
+func (u utterance) askedForSource() bool {
+	return u.Source.Lang != "" && u.Source != u.Session
+}
