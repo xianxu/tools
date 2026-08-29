@@ -111,6 +111,55 @@ func (e Entry) Homograph() string { return e.headOf(HeadHomograph) }
 func (e Entry) Syllables() string { return e.headOf(HeadSyllables) }
 func (e Entry) HeadPOS() string   { return e.headOf(HeadPOS) }
 
+// alsoPrefix opens the parenthetical NOAD uses for an alternative form.
+const alsoPrefix = "(also "
+
+// AlsoSpellings returns the `(also …)` alternatives that are the SOURCE
+// orthography of this headword — the same word up to diacritics, nothing else.
+//
+// It joins the Headword()/Homograph()/Syllables() family and derives from Blocks
+// for the same reason they derive from Head: one representation, so the accessor
+// and what Render shows cannot drift.
+//
+// Why it is needed at all (#29): NOAD files the accented form on EITHER side of
+// the headword. `define jalapeno` heads the entry `jalapeño`, but `define cafe`
+// heads it `cafe` and puts `café` here — and café_fr_fr is the 200 while
+// cafe_fr_fr is a 404. Headword alone would have taken jalapeño, piñata, señor,
+// cliché and fiancé and missed café, naïve, façade and rôle.
+//
+// EVERY occurrence in a gloss, not the first. Measured, not supposed: ParseEntry
+// returns one gloss reading "(also naïve) (also naïveness)". Stopping at the
+// first parenthetical happens to work when the spelling is written first and
+// silently drops it when it is not, which is a bug whose only symptom is a word
+// quietly degrading to the session's recording.
+func (e Entry) AlsoSpellings() []string {
+	head := e.Headword()
+	if head == "" {
+		return nil
+	}
+	var out []string
+	for _, b := range e.Blocks {
+		for _, s := range b.Senses {
+			rest := s.Gloss
+			for {
+				i := strings.Index(rest, alsoPrefix)
+				if i < 0 {
+					break
+				}
+				alt, after, ok := strings.Cut(rest[i+len(alsoPrefix):], ")")
+				if !ok {
+					break // an unclosed parenthetical is not an alternative
+				}
+				rest = after
+				if alt = strings.TrimSpace(alt); differsOnlyByDiacritics(alt, head) {
+					out = append(out, alt)
+				}
+			}
+		}
+	}
+	return out
+}
+
 // Block is one part-of-speech run within an entry.
 type Block struct {
 	POS string

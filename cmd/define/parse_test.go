@@ -264,3 +264,57 @@ func FuzzDiacriticsOnlyDoesNotPanic(f *testing.F) {
 		_ = differsOnlyByDiacritics(head, alt)
 	})
 }
+
+// `(also X)` lands as an UNNUMBERED sense in the POS-less first block — verified
+// against the live dictionary 2026-08-29, e.g. cafe parses to
+// Blocks[0]{POS:"", Senses:[{Number:"", Gloss:"(also café)"}]}. The accessor
+// derives from that shape rather than re-scanning Raw, so it cannot disagree
+// with what Render shows (#29).
+func TestAlsoSpellingsTakesOnlyTheSourceOrthographies(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		want      []string
+	}{
+		{
+			"the accented alternative NOAD files under an unaccented head",
+			"cafe ca·fe | kaˈfā | (also café) noun 1 a small restaurant.",
+			[]string{"café"},
+		},
+		{
+			"a compound is not a spelling",
+			"jalapeño ja·la·pe·ño | ˌhaləˈpān(y)ō | (also jalapeño pepper) noun a chili pepper.",
+			nil,
+		},
+		{
+			"an English spelling variant is not a source orthography",
+			"adviser ad·vis·er | ədˈvīzər | (also advisor) noun a person who advises.",
+			nil,
+		},
+		{
+			"no parenthetical at all",
+			"arrondissement ar·ron·disse·ment | əˈrändəsmənt | noun an administrative district.",
+			nil,
+		},
+		// ONE gloss, TWO parentheticals — measured, not supposed: ParseEntry
+		// returns Gloss == "(also naïve) (also naïveness)" for the first of these.
+		// A first-match read passes the first case and silently drops the source
+		// spelling in the second, so both orderings are here on purpose.
+		{
+			"two alternatives, the spelling written first",
+			"naive na·ive | näˈēv | (also naïve) (also naïveness) adjective of a person.",
+			[]string{"naïve"},
+		},
+		{
+			"two alternatives, the spelling written SECOND",
+			"naive na·ive | näˈēv | (also naïveness) (also naïve) adjective of a person.",
+			[]string{"naïve"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := ParseEntry(tc.raw).AlsoSpellings()
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("AlsoSpellings() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
