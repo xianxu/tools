@@ -150,3 +150,140 @@ findings:
       Done-when is fully ticked. Tick them or record delivery in `## Revisions`; also note there that the
       "one source" task wired the README only.
 ```
+
+---
+
+## Re-review — 2026-08-28T22:56:00-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 27 — pronunciation locale and language as parameters, not literals |
+| repo | tools |
+| issue file | workshop/issues/000027-pronunciation-locale.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 1e568519dd837fb5506110c3d24dfdb6f8869213..c17d1c802532b5eb1a6d240cf5fb903d4e49290c |
+| command | sdlc close --issue 27 |
+| reviewer | claude |
+| timestamp | 2026-08-28T22:56:00-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Both Important findings from round 1 are genuinely fixed, and I verified each by reverting rather than by reading the commit message: replacing the `<!-- locale-help -->` span in `atlas/define.md` with prose turns `TestDocsQuoteTheLocaleHelp` red naming the atlas, and setting `localeSet: false` at `main.go:522` turns two rows of `TestLocaleFlagReachesTheCDN` red while `TestLocaleFor`, `TestAudioCandidatesSpanishLocales` and `TestVoiceForBuildsBothFieldsTogether` all stay green — that asymmetry is exactly the property BR-2 asked for. The full package suite is green at HEAD (94.3s). What stops SHIP is one cheap Important: commit `c17d1c8` renamed `TestREADMEQuotesTheLocaleHelp` → `TestDocsQuoteTheLocaleHelp` and left `cmd/define/voice.go:84` naming the retired symbol — and this repo already mechanised that exact class in `retiredSymbolNames` / `TestNoArtifactNamesARetiredSymbol`, which the rename skipped. I proved the mechanism catches it: adding the one map row makes the guard fail on `voice.go` by name. The five Minor findings from round 1 (BR-3…BR-7) are all still present verbatim and are disposed `not-addressed` below; none blocks the gate.
+
+**1. Strengths**
+
+- `cmd/define/lang_scope_test.go:373` — `TestLocaleFlagReachesTheCDN` is a real failing-without-the-fix test, not a restatement. Mutation-verified: `localeSet: false` at `main.go:522` produces `the session never asked for _es_us_` / `never asked for _en_gb_` while every pure-layer test stays green. That is the `#23` C1 shape finally pinned at the layer the bug lives at.
+- `cmd/define/lang_scope_test.go:428` — the vacuity guard (`asked == ""` → `Fatalf`, with stderr attached) earns its place: the fixture bug it was written after reported "never asked for `_es_us_`", which reads like a wiring bug and was a corpus mismatch. The guard makes the two distinguishable.
+- `cmd/define/doc_sync_test.go:116` — the doc-sync loops **both** docs, and the failure message names which one drifted plus the exact span expected. Mutation-verified red.
+- `cmd/define/voice.go:32-55` — the change is a deletion with its reasoning attached, citing the right in-repo precedent (`ParseLang` deliberately does not enumerate, so the adjacent field should not either). Withdrawing the whitelist at the plan gate was correct.
+- `cmd/define/render_test.go:335` + `:356` — the Spanish half has a vacuity guard on an empty corpus, and the English half asserts against a committed `jalapeño` fixture rather than skipping, with `capture.sh:65-70` recording why the fixture exists and why the tilde matters.
+- `cmd/define/fetch_conformance_test.go:74-87` — both locales plus `cazar`/`casar`, all routed through `head()` → `conformance.SkipOrFail`, satisfying the `#25` Done-when row.
+
+**2. Critical findings**
+
+None.
+
+**3. Important findings**
+
+- **`cmd/define/voice.go:84` names `TestREADMEQuotesTheLocaleHelp`, a symbol this same commit retired.** `git show 3d0b750:cmd/define/doc_sync_test.go` declares it; `c17d1c8` renamed it to `TestDocsQuoteTheLocaleHelp` and updated `atlas/define.md:1163` but not the const's own doc comment. **This is the 2nd finding in family `stale-comment-at-changed-site`** — so per the escalation rule, do not fix this instance. State and fix the rule. The rule is already written down and already mechanised: `repo_guard_test.go:643` `retiredSymbolNames` + `TestNoArtifactNamesARetiredSymbol` (`:656`), whose own comment says the symbol half "recurred nine times" and that "a rename adds a row here". The rename in this window did not add the row, which is the 10th recurrence. Fix = add `"TestREADMEQuotesTheLocaleHelp": "TestDocsQuoteTheLocaleHelp"` to the map; I verified in a scratch worktree that the guard then fails with `cmd/define/voice.go names the retired symbol …`, so the row both catches this instance and re-arms the mechanism. BR-3's three sites are the *non-rename* half of the same family, which the map cannot express — that half stays a hand sweep, and its enumeration for this window is: every comment in `voice.go`, `main.go`, `command.go` mentioning the deleted `-locale` complaint or the removed `"us"` flag default.
+
+**4. Minor findings**
+
+- `cmd/define/command.go:383` / `main.go:585` — a mid-session `/lang` silently reinterprets `-locale`. Measured at HEAD: `define -locale gb` then `/lang es` requests `sycophantic_es_gb_1.mp3`, 404s, and prints only the generic `no recorded pronunciation` for the rest of the session; there is no `/locale` command to recover. The old code printed a diagnostic naming the pair and fell back to a working `es_es`. The plan's Risks already names the remedy ("a warning that NAMES the pair, not a rejection") for the explicit `-lang es -locale gb` case; the mid-session case is sharper because the flag was given under a different language.
+
+**5. Test coverage notes**
+
+- Full `./cmd/define` suite green at HEAD (94.3s). `go build ./...` clean.
+- Revert-checks performed (not inferred): BR-1 fix red without the atlas span; BR-2 fix red under `localeSet: false`, with the three pure-layer tests unaffected. Both claimed fixes are genuinely pinned.
+- Gap: no `run()`-level row for an **unserved** pair. `TestLocaleFlagReachesTheCDN` has four rows, all serving pairs. The Done-when row "`-locale gb` with Spanish degrades to a warning, exit 0" is hand-verified in the `## Log` only. One more row (`-lang es -locale gb`, want `_es_gb_`, assert exit 0 and the warning on stderr) would pin the documented trade *and* the mid-session behaviour above in the same table.
+- `TestLocaleFor`'s `flagSet` column still asserts nothing for any reachable input (BR-4, not-addressed): with the flag default `""`, `!flagSet || flag == ""` is decided by `flag == ""` alone.
+- `TestSpanishEntriesCarryNoPronunciationNotation` runs over 5 committed NFC entries; an NFD-accented entry could trip `hasPhoneticMarker`'s combining-diacritic branch and the corpus cannot see it. Noted, not blocking.
+
+**6. Architectural notes**
+
+- **ARCH-DRY — pass on the policy text, flag on the symbol.** `localeHelp` is one source and the flag help, README and atlas all derive from it, proven by mutation. The flag is the `voice.go:84` retired-symbol restatement above.
+- **ARCH-PURE — pass.** `localeFor` / `voiceFor` / `applyVoice` are now pure in signature, not just in comment; `opt.locale` is read at exactly one site (`voice.go:77`); `AudioCandidates` remains pure and offline. The new `run()`-level test drives the seam through injected fakes rather than mocking the pure layer.
+- **ARCH-PURPOSE — pass, with a durability note.** Shadow-sweep of the single-source change: a tree-wide grep for the locale policy finds exactly three consumers (`main.go:409` flag help, `README.md:199`, `atlas/define.md:1160`), and all three derive from `localeHelp` under assertion. `workshop/projects/define-learn.md` mentions the locale narratively, not the policy text — not a consumer. The class, not the instance, was fixed. Note for later: the doc list inside `TestDocsQuoteTheLocaleHelp` is hand-enumerated, so a fourth doc restating the policy is still invisible to the guard — the same structural limit the prompt doc-sync test has.
+- **ARCH-MOCK — pass.** `fakeCDN` is a stateful double with an ordered request log (`fetch_fake_test.go:18,44`), reached through the same `AudioSource` seam production uses via `rebasedSource`; the new wiring test asserts on requests rather than on internals. Live conformance covers both locales plus the phonemic pair and skips-or-fails through `conformance.SkipOrFail`. No external call escapes the seam.
+- For upcoming `#29`: the locale policy now has one home and one enforced statement, which is what that issue needed. The thing it will still have to decide for itself is the third input the Spec calls out — source orthography (`jalapeño` vs `jalapeno`) — which nothing in this window models.
+
+**7. Plan revision recommendations**
+
+- BR-7 is still open: `workshop/plans/000027-pronunciation-locale-plan.md:141-183` has all five `## Tasks` rows as `- [ ]` while the issue's Done-when is fully ticked. Tick them, or add a `## Revisions` entry recording delivery.
+- That same Revisions entry should record what the "one source" task actually landed as, since it changed under review: `localeHelp` plus `TestDocsQuoteTheLocaleHelp` asserting **README and atlas** (round 1 shipped the README alone), and that `localeFor`'s doc comment remains narrative prose by design rather than a fourth derived copy.
+- Core-concepts cross-check: no contradiction. `voice` (`cmd/define/voice.go`) exists; `voices` is marked deleted and is genuinely absent; `AudioCandidates` (`cmd/define/audiourl.go`) is modified as stated; `-lang` flag, `fakeCDN` (`fetch_fake_test.go`) and `TestCDNStillServesSpanishOnTheExpectedPaths` (`fetch_conformance_test.go`) all exist at the stated paths. No plan revision needed on that table.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Verified by reverting: replacing the atlas span with prose turns TestDocsQuoteTheLocaleHelp red, naming atlas/define.md.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Verified by reverting: localeSet:false at main.go:522 reds two rows of TestLocaleFlagReachesTheCDN while all pure-layer tests stay green.
+  - id: BR-3
+    disposition: not-addressed
+    note: |
+      All three comments intact verbatim at HEAD — voice.go:23-25, main.go:384, main.go:387-389.
+  - id: BR-4
+    disposition: not-addressed
+    note: |
+      localeFor still takes flagSet; flag default still ""; TestLocaleFor's flagSet column still asserts nothing.
+  - id: BR-5
+    disposition: not-addressed
+    note: |
+      audiourl.go still interpolates v.Locale raw while PathEscaping the word.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      README.md:37 unchanged; es corpus still 5 words without jalapeño, and no es dictionary is installed here to settle it either.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      All five "## Tasks" rows are still "- [ ]" and no Revisions entry records delivery.
+findings:
+  - id: new
+    severity: Important
+    family: stale-comment-at-changed-site
+    title: |
+      the rename in c17d1c8 skipped its retiredSymbolNames row, so voice.go:84 still names a symbol the tree retired
+    detail: |
+      c17d1c8 renamed TestREADMEQuotesTheLocaleHelp to TestDocsQuoteTheLocaleHelp, updated
+      atlas/define.md:1163, and left cmd/define/voice.go:84 naming the old symbol. 2nd finding
+      in this family, so do not fix the instance — fix the rule, which this repo already
+      wrote down and mechanised: repo_guard_test.go:643 retiredSymbolNames plus
+      TestNoArtifactNamesARetiredSymbol at :656, whose own comment records nine prior
+      recurrences and states "a rename adds a row here". This window is the tenth, and the
+      row was not added. Verified in a scratch worktree: adding
+      "TestREADMEQuotesTheLocaleHelp": "TestDocsQuoteTheLocaleHelp" makes the guard fail with
+      'cmd/define/voice.go names the retired symbol' — so the one row both clears this
+      instance and re-arms the mechanism. BR-3's three sites are the non-rename half of the
+      same family, which the map cannot express; its enumeration for this window is every
+      comment in voice.go, main.go and command.go mentioning the deleted -locale complaint or
+      the removed "us" flag default.
+  - id: new
+    severity: Minor
+    family: session-value-reinterpreted-by-a-mode-switch
+    title: |
+      a mid-session /lang silently reinterprets -locale, and the old code used to say so
+    detail: |
+      Measured at HEAD by driving run() with args {"-locale","gb"} and stdin "/lang es\nsycophantic\n":
+      the session requests sycophantic_es_gb_1.mp3 and _2, both 404, and stderr carries only the
+      generic "define: sycophantic: no recorded pronunciation". Every Spanish lookup stays silent
+      for the rest of the session, and there is no /locale command to recover. Before this window
+      localeFor refused the pair, printed a diagnostic naming it, and fell back to a working es_es.
+      The plan's Risks names the intended remedy for the explicit case ("a warning that NAMES the
+      pair, not a rejection"); the mid-session case is sharper because the flag was supplied under a
+      different language. Cheapest disposition is one more row in TestLocaleFlagReachesTheCDN
+      pinning the unserved pair (want _es_gb_, exit 0, warning present), so the trade is a recorded
+      decision rather than untested drift.
+```

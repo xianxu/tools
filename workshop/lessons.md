@@ -2310,3 +2310,21 @@ Dumping the real values took one throwaway test and settled both: byte 27 of
 first. A guess that happens to pass its exemplar is indistinguishable from a
 correct rule until the population disagrees — and the population is where the
 cost lands.
+
+## The human half of a mechanical guard is the half that fails (#27 BR-8)
+
+`#26` built `retiredSymbolNames` + `TestNoArtifactNamesARetiredSymbol` so a
+rename sweeps every prose restatement of the old symbol. Its own comment says why
+one step must stay manual: *a rename cannot be detected automatically, because
+only the person doing it knows the old name.*
+
+One issue later I renamed a test, skipped the row, and left a stale mention —
+**in the same commit that widened the test being renamed.** The guard could not
+fire, because the guard's input is the thing I did not supply.
+
+**Rule:** when a mechanism has one human step, that step is where it will fail,
+and "I built the guard" is not the same as "the guard is armed". Make the manual
+step part of the same edit as the thing that triggers it — rename and row in one
+commit — and treat a mechanism with an unsupplied input as unprotected rather
+than protected.
+

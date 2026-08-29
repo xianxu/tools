@@ -81,8 +81,8 @@ func applyVoice(opt *options, l store.Lang) {
 //
 // The policy was written in four places — this flag, localeFor, the README and
 // the atlas — with nothing keeping them in step, which is the family this repo
-// already mechanised for the play-loop prompts. TestREADMEQuotesTheLocaleHelp
-// makes the README a consumer of this string.
+// already mechanised for the play-loop prompts. TestDocsQuoteTheLocaleHelp
+// makes both the README and atlas/define.md consumers of this string.
 //
 // It gives EXAMPLES rather than an enumeration, because localeFor does not
 // whitelist: the CDN decides what exists, so a help text claiming a closed set
