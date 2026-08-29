@@ -1,11 +1,12 @@
 ---
 id: 000026
-status: open
+status: working
 deps: [tools#27]
 github_issue:
 created: 2026-08-27
-updated: 2026-08-27
+updated: 2026-08-28
 estimate_hours:
+started: 2026-08-28T17:57:39-07:00
 ---
 
 # NOAD ratchet regressed 27 to 32: a British-English pronunciation block renders raw
