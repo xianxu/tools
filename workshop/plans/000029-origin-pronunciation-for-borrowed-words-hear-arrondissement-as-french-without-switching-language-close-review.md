@@ -369,3 +369,177 @@ The plan now matches the tree on the Core-concepts tables (mechanically, per `Te
 
 - **`## Verification before close` was ticked on evidence measured before the last two commits.** `go test ./...` is red at HEAD; record that the suite must be re-run on the *final* HEAD, after the last fix commit, not after the round the fixes answered.
 - **Widen the "Done-when coverage" rule from Done-when cells to every finding-fix.** The plan already states "a Done-when is pinned only by a NAMED TEST observed red under removal of the wiring". Round 3 found the same rule broken one level up: `planStatus`'s emphasis stripping — the class-level fix for `guard-heuristic-too-loose` — is green when removed. Record that a finding disposed `addressed` names the test that reddens without it, or is not addressed.
+
+---
+
+## Re-review — 2026-08-29T09:48:45-07:00 (SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 29 — origin pronunciation for borrowed words: hear arrondissement as French, without switching language |
+| repo | tools |
+| issue file | workshop/issues/000029-origin-pronunciation-for-borrowed-words-hear-arrondissement-as-french-without-switching-language.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a9ea60371a708172c0347261d2c110af8879200f..1cd3911b31d5bf4276f6147ec56dd4faccbe127e |
+| command | sdlc close --issue 29 |
+| reviewer | claude |
+| timestamp | 2026-08-29T09:48:45-07:00 |
+| verdict | SHIP |
+
+## Review
+
+```verdict
+verdict: SHIP
+confidence: high
+```
+
+All ten open findings (BR-1…BR-10) are genuinely addressed, and I re-verified the ones a commit message could have faked by mutation rather than by reading: adding `applyVoice(&opt, pron)` after the session's derivation reddens `main_test.go:368` with the deck assertion; `voiceFor(pron, "")` reddens `main_test.go:400`; replacing `strings.Trim(fields[0], "*_\`")` with `fields[0]` reddens four `TestPlanStatusNormalisesToTheVocabulary` cells. Round 3's blocker is gone: `go test ./...` is green here (97.9s, whole tree), as are `go build`, `go vet`, and the unfiltered `go test -tags conformance ./cmd/define/` (105s), with all four new `TestCDN*` rows passing live against the real CDN. I re-ran the plan's own five doc-sweep greps and each gives its stated result. No correctness defect survived verification, and nothing here blocks the boundary — the three Minors below are notes, one of which is an ask about what goes in `--verified` rather than a code change.
+
+## 1. Strengths
+
+- **`utterance` is the right seam, and `spokeSource` by membership is what makes the report a record.** `cmd/define/audiourl.go:216-226` refuses to read a language back out of a URL, and `TestAnUtteranceAsksTheSourceFirstAndFallsBackToTheSession` (`audiourl_test.go:330`) pins the no-source walk as *byte-identical* to `AudioCandidates` — the no-regression assertion every pre-existing caller needed. The walk-end assertion uses membership rather than `Contains("_en_us_")`, which is correct: an English walk ends on the legacy `/sounds/oxford/…--_us_2.mp3` path that carries no such marker.
+- **The three test-double corrections remain the strongest part of the diff (ARCH-MOCK).** `fakeCDN`'s `EscapedPath` (`fetch_fake_test.go:29`), `fakeDictionary` folding through the *production* predicate with `slices.Sorted(maps.Keys(...))` (`dict_fake_test.go:85`), and `rebasedSource` translating the answering URL back are each load-bearing, not tidying — and the fake's model has a live half in `TestLiveDictionaryResolvesAnUnaccentedQuery`.
+- **BR-5 and BR-9 were both answered as the class, not the line.** `voice.langOrDefault` (`voice.go:24`) became one accessor with both readers deriving from it; `planStatus` became a controlled vocabulary that fails loudly outside it — and this time every branch, including the emphasis-stripping and the loud-failure one, is entered by a fixture. That is the round-3 rule applied to itself.
+- **The `#23` invariant sweep survives its own greps.** `never a search across languages` and `One language, no fallback` are both gone, `and the recording that is fetched` survives amended at `README.md:195`, the fetch-loop test name is narrowed with a `retiredSymbolNames` row behind it, and `pron-help` appears exactly once in each doc.
+- **`TestDocsQuoteTheCommandList` closed `/lang` and `/pron` together** by generating the atlas table from the `commands` registry rather than adding the two missing rows — the class-level answer, and it is the mechanism `pronHelp`/`localeHelp` already use.
+- **`TestRawEditorPronPlaysOutsideTheCookedBlock` asserts the property, not the outcome** (`commandloop_test.go:462-490`): it counts CDN requests made *inside* the cooked callback and requires zero, which pins the design's only real hazard directly.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+None.
+
+## 4. Minor findings
+
+**M-1 (`plan-table-vs-tree`, 3rd in family) — the status guard checks rows against the tree, but never the tree against the rows, and skips any row whose file the window did not touch.**
+
+> **This is the 3rd finding in family `plan-table-vs-tree`.** Earlier rounds fixed instances (BR-4 by hand, round 2 by mechanism). Do NOT fix these two instances — state the rule that covers them and fix that.
+
+Two measured holes in `TestPlanTableStatusMatchesTheChangeWindow`:
+
+- `cmd/define/repo_guard_test.go:855` — `touched := changedLines(...); if touched == nil { continue }`. A `modified` row pointing at a file this window never touched is silently unchecked. Verified: I added `| \`crlfWriter\` | \`cmd/define/crlf.go\` | modified |` to the `#29` plan in a scratch copy and both plan guards stayed green. That is precisely the "the row describes work that did not happen" case the guard's own error message names, and it is the *common* shape of a wrong row.
+- Nothing checks the table for **completeness**. `voice.langOrDefault` is a new production entity created by this window (the BR-5 class fix) and has no row — while the `AudioCandidates` row's own status text names it (`plan.md:44`: "modified — one line (`langOrDefault`)"). `isASCIIOnly` (`audiourl.go:90`) and `nothingToReplay` (`repl.go:185`) are likewise new and rowless, and this plan does put test infra in scope (`newFakeCDN`, `fakeDictionary.Lookup`, `rebasedSource` all have rows).
+
+The rule: **the Core-concepts table is a projection of the diff in BOTH directions.** Row→tree is now mechanical; tree→row is not, and row→tree fails open on untouched files. Concretely: move the `touched == nil` case *inside* `checkPlanStatus` so it reads as `inWindow = false` and the `modified` branch fires (if cross-milestone tolerance is wanted, say so and gate it, rather than skipping silently); and give `checkPlanStatus` a fixture table — its two `t.Errorf` branches are today entered only by mutating a real plan, which is the same "green when removed" state round 3 found in `planStatus`. Measured prevalence: 4 wrong rows across rounds 1–2, plus 2 holes and 3 missing rows now.
+
+**M-2 (new family `raw-mode-bare-newline`) — `reportVoice` writes a bare `\n` to a stderr that is a raw terminal.**
+
+`cmd/define/main.go:857` uses `fmt.Fprintf(w, "…\n")`, and the `/pron` path reaches it through `replayInPlace` (`replraw.go:330`) while the terminal is raw and `stderr` is *not* wrapped in `crlfWriter` — that wrapping exists only for the ask path (`replraw.go:172`) and the review loop (`play_loop.go:65`). Every sibling write in `replraw.go` spells `\r\n` explicitly (`:274`, `:325`, `:327`). Confirmed by scratch test: driving `runEditor` with `jalapeno\r/pron es\r` against a CDN serving only the English recording yields `stderr = "define: no es recording for jalapeno; played the en one\n"`. It is **masked today** because `runEditor` writes `\r\n` immediately after `replayInPlace` returns, so nothing is visibly staircased — hence Minor, not Important. Note the sibling defect pre-exists on `playAnnounced`'s error line (`main.go:824`), so the fix belongs at the seam (wrap stderr, or let the indicator carry the line ending) rather than on this one line. The `/pron` report is now the *common* case for Italian and Japanese, where the error line was rare.
+
+**M-3 (new family `conformance-row-never-runs`) — the NOAD-backed live rows SKIP in every review environment, fourth round running.**
+
+`TestLiveDictionaryResolvesAnUnaccentedQuery` and `TestFixturesMatchLiveDictionary` skip here with `NOAD unavailable: no dictionary entry` (all five subtests). So the chain the feature *is* — typed `jalapeno` → NOAD headword `jalapeño` → `jalapeño_es_es` — has never been executed against both real dependencies at any gate; the CDN half is verified live, the dictionary half only through the fake. The issue's Log records the implementor running `SourceSpellings` against the live dictionary during design, so this is an evidence-recording gap rather than an unmeasured claim. Ask: `sdlc close --verified` should name a run of `go test -tags conformance ./cmd/define/` **and** the plan's `## Verification before close` CLI script from somewhere NOAD answers, on this final HEAD — which is round 3's own "evidence has a timestamp" rule applied to the half that has never had one.
+
+## 5. Test coverage notes
+
+- Run by me, not taken on report, all on a clean tree at `1cd3911`: `go build ./...` and `go vet ./...` clean; `go test ./...` **green** (`cmd/define` 97.9s, all other packages ok); `go test -tags conformance ./cmd/define/` **green unfiltered** (105.3s), with `TestCDNStillKeysSourceRecordingsOnTheSourceSpelling`, `TestCDNStillCannotTellALoanwordFromANaturalisedOne`, `TestCDNItalianIsStillAbsentFromThisGeneration` and `TestCDNFrenchCoverageIsStillPartial` individually passing against the live CDN.
+- Mutation results, mine this round: BR-1 pinned (`applyVoice(&opt, pron)` → `main_test.go:368`, "the word was filed under \"es\", want \"en\""); Done-when 6 pinned (`voiceFor(pron, "")` → `main_test.go:400`); BR-9's emphasis stripping pinned (4 red cells); `checkPlanStatus`'s `modified` branch confirmed reachable (forcing `inWindow = false` reddens 7 real rows). Confirmed **not** pinned: a fabricated `modified` row on a file outside the window (M-1).
+- Deliberately uncovered and worth knowing: `/pron` with `opt.noAudio` in either loop (both route to `nothingToReplay`, nothing pins that either loop still reaches it), and the caching seam's key — `cachingAudioSource` keys on the whole joined candidate list (`fetch.go:109`), so a `/pron fr` walk correctly gets its own entry and correctly returns the URL that answered on a hit. I checked that specifically because `speak`'s new `from` return would report a false fallback if a cache hit returned `""`; it does not (`fetch.go:116`).
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `utteranceFor` as the single builder for all five play sites; `replayInPlace` parameterised rather than forked so a bare Enter and `/pron fr` are one path; `nothingToReplay` as one const with the caller owning the ending; `sourceCandidates` calling `askedForSource()` (BR-6) rather than spelling it negated; `langOrDefault` as one accessor (BR-5); `splitReceiver`/`declRegexp` shared by both plan guards after the two copies had already diverged on the assigned form. Docs derive from `pronHelp` and from the `commands` registry. No new duplication found in this window.
+- **ARCH-PURE — pass.** `differsOnlyByDiacritics`, `Entry.AlsoSpellings`, `SourceSpellings`, `utterance`, `parsePronArgs` and `planStatus` are deterministic and unit-tested with no IO and no mocks. `reportVoice` taking an `io.Writer` is what makes `TestTheVoiceReportNamesALanguageEvenWithAZeroVoice` a two-line test; `speak` returning the URL that answered moved the decision out of the IO layer rather than adding a second one inside it. The `utf8.ValidString` precondition in `differsOnlyByDiacritics` (`parse.go:78-83`) is a real one — `[]rune` turns a stray byte into U+FFFD, which reads to the loop as a diacritic — and it is pinned by a named test plus a fuzz target.
+- **ARCH-PURPOSE — pass on the feature, flag at M-1.** Shadow-sweep on the single-source changes: `pronHelp` has three consumers (flag registration, README, atlas) and all three derive, pinned by `TestDocsQuoteThePronHelp`; `commands` now has the atlas as a derived consumer pinned by `TestDocsQuoteTheCommandList`; the `#23` invariant's five sites are all disposed, two as explicit keeps, and I re-ran every grep. D6 disposes of the Spec's notation-labelling option rather than deferring it, and `#31` files the split-out curation. The one remaining hand-maintained restatement of the model is the plan's own Core-concepts table, in the part the guard does not reach — that is M-1.
+- **ARCH-MOCK — pass, with M-3.** No new external dependency; production and test flow share the `AudioSource` seam; the fake is stateful and records the walk in order, which is the only way the ordering assertions are possible; three divergences from the real dependency were found and corrected rather than worked around; `missesEntirely` asserts through `newHTTPAudioSource().Fetch` returning `ErrNoAudio`, which is the production shape. The gap is that the NOAD half of the conformance suite has never been observed green at a gate (M-3).
+- For `#30` (clickable regions): `Entry.AlsoSpellings` and `SourceSpellings` are the surfaces it will consume; both are pure and table-tested, so it inherits a clean seam, and `commandCtx.replay` is already the "record a request, let the loop perform it" shape a click will need. The `role`/ORIGIN-mining limitation is honestly recorded in three places and is the first thing a click dissolves.
+
+## 7. Plan revision recommendations
+
+The plan now matches the tree mechanically on statuses, and the four `## Revisions` entries cover rounds 1–3 honestly, including the PQ-4 edited-in-place confession. One entry is owed, dated 2026-08-29, reason "close review round 4":
+
+- **The Core-concepts table is incomplete, and the guard cannot see it.** Add rows for `voice.langOrDefault` (`cmd/define/voice.go`, new — the BR-5 class fix, and the symbol the `AudioCandidates` row already names in its status text), and record `isASCIIOnly` / `nothingToReplay` as new. Then state the rule the table is now under: it is a projection of the diff in both directions, and only one direction is mechanised.
+- **Record the two holes in `TestPlanTableStatusMatchesTheChangeWindow`** — a `modified` row whose file the window never touched is skipped, and `checkPlanStatus`'s two error branches have no fixture — so the next reader knows the guard's actual reach rather than the reach its doc comment claims.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Mutation-verified: applyVoice(&opt, pron) after the session's derivation reddens main_test.go:368 on the countingCapturer deck assertion.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      TestRawEditorPronPlaysOutsideTheCookedBlock counts CDN requests inside the cooked callback and requires zero.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      The H2 now sits at atlas/define.md:1270, after the #23 M2 H3 and before ## Conformance; nothing is re-parented.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Revisions entry plus three added rows, and the claim is now mechanically checked at declaration level. See M-1 for the family's remaining holes.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      voice.langOrDefault is one accessor with both readers deriving from it, pinned by TestTheVoiceReportNamesALanguageEvenWithAZeroVoice.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      sourceCandidates now calls askedForSource() rather than spelling its negation.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      dict_fake_test.go:85 iterates slices.Sorted(maps.Keys(d.entries)).
+  - id: BR-8
+    disposition: addressed
+    note: |
+      README.md:39 adds the -pron line to the define cheat-sheet.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      planStatus is a controlled vocabulary failing loudly outside it; mutation-verified — removing the emphasis Trim reddens four fixture cells.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      workshop/issues/000031-curate-dictionaries.md exists.
+findings:
+  - id: new
+    severity: Minor
+    family: plan-table-vs-tree
+    title: |
+      The status guard fails open on untouched files, and nothing checks the table is complete
+    detail: |
+      3rd in family — state the rule, do not fix the two instances. repo_guard_test.go:855
+      skips any row whose FILE this window did not touch, so a `modified` row over an
+      untouched file is unchecked: I added `| crlfWriter | cmd/define/crlf.go | modified |`
+      to the #29 plan in a scratch copy and both plan guards stayed green. And nothing
+      checks tree-to-row: voice.langOrDefault, isASCIIOnly and nothingToReplay are new in
+      this window with no row, while the AudioCandidates row names langOrDefault in its own
+      status text. The rule: the table is a projection of the diff in BOTH directions, and
+      the touched==nil skip belongs inside checkPlanStatus as inWindow=false. Its two
+      t.Errorf branches also have no fixture, which is the same green-when-removed state
+      round 3 found in planStatus.
+  - id: new
+    severity: Minor
+    family: raw-mode-bare-newline
+    title: |
+      reportVoice writes a bare \n to a stderr that is a raw terminal on the /pron path
+    detail: |
+      main.go:857 uses "\n" while every sibling write in replraw.go (:274, :325, :327)
+      spells "\r\n", and stderr is wrapped in crlfWriter only for the ask path (replraw.go:172)
+      and the review loop (play_loop.go:65) — not for replayInPlace. Confirmed by scratch
+      test: runEditor driven with "jalapeno\r/pron es\r" against an English-only CDN gives
+      stderr = "define: no es recording for jalapeno; played the en one\n". Masked today
+      because runEditor writes "\r\n" right after replayInPlace returns, hence Minor. The
+      sibling defect pre-exists on playAnnounced's error line (main.go:824), so the fix
+      belongs at the seam, not on this line.
+  - id: new
+    severity: Minor
+    family: conformance-row-never-runs
+    title: |
+      The NOAD-backed live rows SKIP in every review environment, fourth round running
+    detail: |
+      TestLiveDictionaryResolvesAnUnaccentedQuery skips all five subtests here with "NOAD
+      unavailable: no dictionary entry", as does TestFixturesMatchLiveDictionary. So the
+      chain the feature IS — typed jalapeno reaching jalapeño_es_es via NOAD's headword —
+      has never run against both real dependencies at a gate; only the fake models the
+      dictionary half. The issue's Log shows the implementor ran the chain against the live
+      dictionary during design, so this is an evidence-recording gap. Ask: --verified should
+      name a run of the unfiltered conformance suite AND the plan's CLI script from a
+      context where NOAD answers, on this final HEAD.
+```

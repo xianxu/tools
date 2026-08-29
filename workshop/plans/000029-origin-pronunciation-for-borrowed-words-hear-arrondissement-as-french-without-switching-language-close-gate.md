@@ -124,6 +124,96 @@ rounds:
       agent: claude
       blocked: true
       protocol_error: no valid findings block
+    - "n": 4
+      timestamp: "2026-08-29T09:48:45-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Mutation-verified: applyVoice(&opt, pron) after the session''s derivation reddens main_test.go:368 on the countingCapturer deck assertion.'
+          round: 4
+        - id: BR-2
+          disposition: addressed
+          note: TestRawEditorPronPlaysOutsideTheCookedBlock counts CDN requests inside the cooked callback and requires zero.
+          round: 4
+        - id: BR-3
+          disposition: addressed
+          note: 'The H2 now sits at atlas/define.md:1270, after the #23 M2 H3 and before ## Conformance; nothing is re-parented.'
+          round: 4
+        - id: BR-4
+          disposition: addressed
+          note: Revisions entry plus three added rows, and the claim is now mechanically checked at declaration level. See M-1 for the family's remaining holes.
+          round: 4
+        - id: BR-5
+          disposition: addressed
+          note: voice.langOrDefault is one accessor with both readers deriving from it, pinned by TestTheVoiceReportNamesALanguageEvenWithAZeroVoice.
+          round: 4
+        - id: BR-6
+          disposition: addressed
+          note: sourceCandidates now calls askedForSource() rather than spelling its negation.
+          round: 4
+        - id: BR-7
+          disposition: addressed
+          note: dict_fake_test.go:85 iterates slices.Sorted(maps.Keys(d.entries)).
+          round: 4
+        - id: BR-8
+          disposition: addressed
+          note: README.md:39 adds the -pron line to the define cheat-sheet.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: planStatus is a controlled vocabulary failing loudly outside it; mutation-verified — removing the emphasis Trim reddens four fixture cells.
+          round: 4
+        - id: BR-10
+          disposition: addressed
+          note: workshop/issues/000031-curate-dictionaries.md exists.
+          round: 4
+      findings:
+        - id: BR-11
+          severity: Minor
+          title: The status guard fails open on untouched files, and nothing checks the table is complete
+          detail: |-
+            3rd in family — state the rule, do not fix the two instances. repo_guard_test.go:855
+            skips any row whose FILE this window did not touch, so a `modified` row over an
+            untouched file is unchecked: I added `| crlfWriter | cmd/define/crlf.go | modified |`
+            to the #29 plan in a scratch copy and both plan guards stayed green. And nothing
+            checks tree-to-row: voice.langOrDefault, isASCIIOnly and nothingToReplay are new in
+            this window with no row, while the AudioCandidates row names langOrDefault in its own
+            status text. The rule: the table is a projection of the diff in BOTH directions, and
+            the touched==nil skip belongs inside checkPlanStatus as inWindow=false. Its two
+            t.Errorf branches also have no fixture, which is the same green-when-removed state
+            round 3 found in planStatus.
+          family: plan-table-vs-tree
+          round: 4
+        - id: BR-12
+          severity: Minor
+          title: reportVoice writes a bare \n to a stderr that is a raw terminal on the /pron path
+          detail: |-
+            main.go:857 uses "\n" while every sibling write in replraw.go (:274, :325, :327)
+            spells "\r\n", and stderr is wrapped in crlfWriter only for the ask path (replraw.go:172)
+            and the review loop (play_loop.go:65) — not for replayInPlace. Confirmed by scratch
+            test: runEditor driven with "jalapeno\r/pron es\r" against an English-only CDN gives
+            stderr = "define: no es recording for jalapeno; played the en one\n". Masked today
+            because runEditor writes "\r\n" right after replayInPlace returns, hence Minor. The
+            sibling defect pre-exists on playAnnounced's error line (main.go:824), so the fix
+            belongs at the seam, not on this line.
+          family: raw-mode-bare-newline
+          round: 4
+        - id: BR-13
+          severity: Minor
+          title: The NOAD-backed live rows SKIP in every review environment, fourth round running
+          detail: |-
+            TestLiveDictionaryResolvesAnUnaccentedQuery skips all five subtests here with "NOAD
+            unavailable: no dictionary entry", as does TestFixturesMatchLiveDictionary. So the
+            chain the feature IS — typed jalapeno reaching jalapeño_es_es via NOAD's headword —
+            has never run against both real dependencies at a gate; only the fake models the
+            dictionary half. The issue's Log shows the implementor ran the chain against the live
+            dictionary during design, so this is an evidence-recording gap. Ask: --verified should
+            name a run of the unfiltered conformance suite AND the plan's CLI script from a
+            context where NOAD answers, on this final HEAD.
+          family: conformance-row-never-runs
+          round: 4
+      blocked: false
 ---
 
 # Gate ledger — tools#29 (boundary-review)
@@ -200,15 +290,55 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 
+## Round 4 — 2026-08-29T09:48:45-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — addressed — Mutation-verified: applyVoice(&opt, pron) after the session's derivation reddens main_test.go:368 on the countingCapturer deck assertion.
+- BR-2 — addressed — TestRawEditorPronPlaysOutsideTheCookedBlock counts CDN requests inside the cooked callback and requires zero.
+- BR-3 — addressed — The H2 now sits at atlas/define.md:1270, after the #23 M2 H3 and before ## Conformance; nothing is re-parented.
+- BR-4 — addressed — Revisions entry plus three added rows, and the claim is now mechanically checked at declaration level. See M-1 for the family's remaining holes.
+- BR-5 — addressed — voice.langOrDefault is one accessor with both readers deriving from it, pinned by TestTheVoiceReportNamesALanguageEvenWithAZeroVoice.
+- BR-6 — addressed — sourceCandidates now calls askedForSource() rather than spelling its negation.
+- BR-7 — addressed — dict_fake_test.go:85 iterates slices.Sorted(maps.Keys(d.entries)).
+- BR-8 — addressed — README.md:39 adds the -pron line to the define cheat-sheet.
+- BR-9 — addressed — planStatus is a controlled vocabulary failing loudly outside it; mutation-verified — removing the emphasis Trim reddens four fixture cells.
+- BR-10 — addressed — workshop/issues/000031-curate-dictionaries.md exists.
+
+### Raised
+
+- **BR-11** [Minor] `plan-table-vs-tree` The status guard fails open on untouched files, and nothing checks the table is complete
+  3rd in family — state the rule, do not fix the two instances. repo_guard_test.go:855
+  skips any row whose FILE this window did not touch, so a `modified` row over an
+  untouched file is unchecked: I added `| crlfWriter | cmd/define/crlf.go | modified |`
+  to the #29 plan in a scratch copy and both plan guards stayed green. And nothing
+  checks tree-to-row: voice.langOrDefault, isASCIIOnly and nothingToReplay are new in
+  this window with no row, while the AudioCandidates row names langOrDefault in its own
+  status text. The rule: the table is a projection of the diff in BOTH directions, and
+  the touched==nil skip belongs inside checkPlanStatus as inWindow=false. Its two
+  t.Errorf branches also have no fixture, which is the same green-when-removed state
+  round 3 found in planStatus.
+- **BR-12** [Minor] `raw-mode-bare-newline` reportVoice writes a bare \n to a stderr that is a raw terminal on the /pron path
+  main.go:857 uses "\n" while every sibling write in replraw.go (:274, :325, :327)
+  spells "\r\n", and stderr is wrapped in crlfWriter only for the ask path (replraw.go:172)
+  and the review loop (play_loop.go:65) — not for replayInPlace. Confirmed by scratch
+  test: runEditor driven with "jalapeno\r/pron es\r" against an English-only CDN gives
+  stderr = "define: no es recording for jalapeno; played the en one\n". Masked today
+  because runEditor writes "\r\n" right after replayInPlace returns, hence Minor. The
+  sibling defect pre-exists on playAnnounced's error line (main.go:824), so the fix
+  belongs at the seam, not on this line.
+- **BR-13** [Minor] `conformance-row-never-runs` The NOAD-backed live rows SKIP in every review environment, fourth round running
+  TestLiveDictionaryResolvesAnUnaccentedQuery skips all five subtests here with "NOAD
+  unavailable: no dictionary entry", as does TestFixturesMatchLiveDictionary. So the
+  chain the feature IS — typed jalapeno reaching jalapeño_es_es via NOAD's headword —
+  has never run against both real dependencies at a gate; only the fake models the
+  dictionary half. The issue's Log shows the implementor ran the chain against the live
+  dictionary during design, so this is an evidence-recording gap. Ask: --verified should
+  name a run of the unfiltered conformance suite AND the plan's CLI script from a
+  context where NOAD answers, on this final HEAD.
+
 ## Open findings
 
-- **BR-1** [Important] `done-when-unpinned` The issue's first Done-when — the session does not move — has no automated assertion, in the test named for it
-- **BR-2** [Important] `two-loops-one-test` The raw editor's /pron branch is untested, though it carries the design's only real hazard
-- **BR-3** [Important] `heading-reparents-prose` atlas/define.md:1170 — the new H2 was inserted mid-section and re-parented four paragraphs and an H3
-- **BR-4** [Important] `plan-table-vs-tree` The plan's Core-concepts table calls fakeCDN "unchanged — REUSED" after the diff changed it
-- **BR-5** [Minor] `report-must-use-the-normalised-value` reportVoice prints undefaulted Lang fields while AudioCandidates defaults them
-- **BR-6** [Minor] `one-predicate-two-spellings` utterance.sourceCandidates and utterance.askedForSource write the same predicate twice, negated
-- **BR-7** [Minor] `nondeterministic-fake` fakeDictionary's accent-insensitive fallback iterates a Go map
-- **BR-8** [Minor] `doc-sweep-incomplete` README's define cheat-sheet lists every other flag a reader types, but not -pron
-- **BR-9** [Minor] `guard-heuristic-too-loose` The plan-guard's new-row exemption matches any status cell containing "new"
-- **BR-10** [Minor] `split-out-not-filed` The Spec's split-out dictionary-curation win was never filed as an issue
+- **BR-11** [Minor] `plan-table-vs-tree` The status guard fails open on untouched files, and nothing checks the table is complete
+- **BR-12** [Minor] `raw-mode-bare-newline` reportVoice writes a bare \n to a stderr that is a raw terminal on the /pron path
+- **BR-13** [Minor] `conformance-row-never-runs` The NOAD-backed live rows SKIP in every review environment, fourth round running

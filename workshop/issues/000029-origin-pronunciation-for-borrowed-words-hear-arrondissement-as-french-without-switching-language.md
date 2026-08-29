@@ -1,12 +1,13 @@
 ---
 id: 000029
-status: working
+status: codecomplete
 deps: [tools#27]
 github_issue:
 created: 2026-08-28
 updated: 2026-08-29
 estimate_hours: 2.78
 started: 2026-08-29T06:16:23-07:00
+actual_hours: 3.34
 ---
 
 # origin pronunciation for borrowed words: hear arrondissement as French, without switching language
@@ -324,6 +325,7 @@ while measuring: that French coverage was general (it is partial), and that the
 `déjeuner` 404 was an accent-encoding problem (it is not).
 
 ### 2026-08-29
+- 2026-08-29: closed — Measured on the FINAL head 1cd3911, after the last fix commit (round 3 correctly caught that my evidence predated it). go test ./... GREEN, 0 failures — the run I had wrongly been substituting go test ./cmd/define for, and which was RED at round 3 on two unwaived t.Skip sites I added. go test -tags conformance ./cmd/define/ GREEN unfiltered (279s) run where NOAD answers, so TestLiveDictionaryResolvesAnUnaccentedQuery and TestFixturesMatchLiveDictionary actually EXECUTED rather than skipping as they did in the reviewer process context all three rounds. CLI on the final head: -pron fr arrondissement and -pron es jalapeno play source recordings silently; -pron es -locale us jalapeno silent too, which is D4/Done-when 6 live; -pron fr hotel and -pron it ciao report "no fr/it recording for X; played the en one"; -pron fr with no word exits 2 naming /pron; REPL arrondissement,/pron fr,police leaves no mode; words/ holds ONLY en/. ROUND 3 findings all addressed: C-1 both skips carry conformance:inapplicable within the three-line window the guard requires; I-1 planStatus has a 13-case table entering every branch including emphasis-stripping and the loud-failure one, verified 4 subtests red when the Trim is removed; I-2 changeWindowBase and changedLines route through the Fatal git() helper instead of swallowing errors into a skip, with a :/ pathspec because go test runs in the package dir; Minors: one shared splitReceiver/declRegexp locator (the two copies had diverged on the assigned form), the status guard scoped to the plan whose file this window touched, the dead pron reset removed, and the /pron usage exit code pinned. Rounds 1 and 2 remain addressed and round 3 re-verified four of them by mutation itself. lessons.md gained nine entries including the git-checkout trap that fired three times in this session despite already being written down.; review verdict: SHIP
 
 Claimed, `start-plan`ed, designed. Plan at
 `workshop/plans/000029-origin-pronunciation-plan.md`.
