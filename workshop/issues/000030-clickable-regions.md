@@ -1,11 +1,12 @@
 ---
 id: 000030
-status: open
+status: working
 deps: [tools#29, tools#35]
 github_issue:
 created: 2026-08-29
 updated: 2026-08-29
 estimate_hours:
+started: 2026-08-29T16:24:35-07:00
 ---
 
 # clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay
