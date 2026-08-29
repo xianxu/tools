@@ -140,7 +140,7 @@ to `#35`'s code and is where `M2.1` starts.
 | `Region` | `cmd/define/render.go` | new |
 | `Render` | `cmd/define/render.go` | modified — also returns regions |
 | `decodeMouse` | `cmd/define/key.go` | new |
-| `screen.RegionAt` | `cmd/define/screen.go` | modified |
+| `screen.RegionAt` | `cmd/define/screen.go` | new |
 
 - **`Region`** — `{Kind, Text, Lang, Line, Col, Width}`: what a span of rendered text OFFERS.
   - **The headword falls out of the existing walk; the ORIGIN language does NOT, and an earlier draft of this plan claimed it did.** `Render` colours `sec.Name` — the word "ORIGIN" — and passes `sec.Text` through `opt.prose(wrapText(...))`, which highlights DECK words. Nothing isolates "French" inside that text. So the language region needs a new pass over the section text, and that pass is the same matching `#35` already does.
