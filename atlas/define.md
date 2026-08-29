@@ -1272,11 +1272,13 @@ cache becomes required, and that is the moment to add it.
 a rule — nothing in the metadata separates a general dictionary from a
 thesaurus, so `chooseDictionary` NARROWS by metadata and `curated` DECIDES.
 
+<!-- curated-languages -->
 | language | book | notation it writes |
 |---|---|---|
 | English | NOAD + Apple Dictionary | IPA, always: `\| ˈrekərd \|` |
 | Spanish | Larousse *Diccionario General* | **none** — phonemic orthography, so there is nothing to write |
 | Italian | *Devoto-Oli* | **not a transcription** — syllabification with stress, `(cià·o)`, `(pìz·za)`. `isPronunciation` declines it, correctly |
+<!-- /curated-languages -->
 
 `#31` measured French and German too, and did NOT curate them. The parser is
 NOAD-shaped in two closed vocabularies — `posWords` is English (`noun`, not `nom

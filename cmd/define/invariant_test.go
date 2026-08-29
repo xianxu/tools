@@ -158,8 +158,24 @@ func subsequenceGap(want, got []rune) int {
 	return -1
 }
 
+// EVERY captured language (#31). This is the STRONG form — exact alnum counts,
+// which catches insertion as well as loss — and it took testDict(t) while its
+// weaker sibling TestRenderLosesNothingInEveryCapturedLanguage already swept
+// them all. So the corpus a new language contributed was checked by the test
+// that only detects DROPS and not by the one that also detects INSERTS, which is
+// the half that caught %q's escape sequences.
+//
+// Measured before widening: green for es and it as they stand.
 func TestRenderLosesNothing(t *testing.T) {
-	d := testDict(t)
+	for _, lang := range capturedLanguages(t) {
+		t.Run(string(lang), func(t *testing.T) {
+			renderLosesNothingIn(t, testDictFor(t, lang))
+		})
+	}
+}
+
+func renderLosesNothingIn(t *testing.T, d *fakeDictionary) {
+	t.Helper()
 	if len(d.entries) == 0 {
 		t.Fatal("empty corpus — this test would be vacuous")
 	}

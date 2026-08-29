@@ -467,30 +467,40 @@ func TestEveryCuratedLanguageHasACorpus(t *testing.T) {
 // nothing — the class internal/conformance/guard_test.go records four rounds of.
 func TestDocsNameEveryCuratedLanguage(t *testing.T) {
 	names := map[store.Lang]string{"en": "English", "es": "Spanish", "it": "Italian"}
-	b, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("README.md unreadable: %v", err)
-	}
-	_, rest, ok := strings.Cut(string(b), "<!-- curated-languages -->")
-	if !ok {
-		t.Fatal("README.md has no <!-- curated-languages --> span; the dictionary paragraph " +
-			"is what must name every curated language, and an unmarked one cannot be checked")
-	}
-	span, _, ok := strings.Cut(rest, "<!-- /curated-languages -->")
-	if !ok {
-		t.Fatal("README.md opens <!-- curated-languages --> and never closes it")
-	}
-	for lang := range curated {
-		name, ok := names[lang]
+	// EVERY doc that enumerates the languages, not the first one wired up. The
+	// atlas gained a dictionary table in the same diff as the README paragraph
+	// and it was unchecked — which is the half-fix this family keeps producing,
+	// and the reason TestDocsQuoteTheLocaleHelp covers two files rather than one.
+	for _, doc := range []string{"../../README.md", "../../atlas/define.md"} {
+		raw, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc, err)
+		}
+		_, rest, ok := strings.Cut(string(raw), "<!-- curated-languages -->")
 		if !ok {
-			t.Errorf("curated has %s but this test has no English name for it — add the row "+
-				"here and the language to the README, which is the pair this test keeps together", lang)
+			t.Errorf("%s has no <!-- curated-languages --> span; the paragraph that lists the "+
+				"books is what must name every curated language, and an unmarked one cannot "+
+				"be checked", doc)
 			continue
 		}
-		if !strings.Contains(span, name) {
-			t.Errorf("the README's dictionary paragraph never names %s (%s), which production "+
-				"curates %v for — a reader cannot discover a language the docs omit",
-				name, lang, curated[lang])
+		span, _, ok := strings.Cut(rest, "<!-- /curated-languages -->")
+		if !ok {
+			t.Errorf("%s opens <!-- curated-languages --> and never closes it", doc)
+			continue
+		}
+		for lang := range curated {
+			name, ok := names[lang]
+			if !ok {
+				t.Errorf("curated has %s but this test has no English name for it — add the "+
+					"row here and the language to the docs, which is the pair this test "+
+					"keeps together", lang)
+				continue
+			}
+			if !strings.Contains(span, name) {
+				t.Errorf("%s's marked span never names %s (%s), which production curates %v "+
+					"for — a reader cannot discover a language the docs omit",
+					doc, name, lang, curated[lang])
+			}
 		}
 	}
 }

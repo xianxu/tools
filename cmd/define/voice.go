@@ -1,6 +1,12 @@
 package main
 
-import "github.com/xianxu/tools/cmd/define/store"
+import (
+	"maps"
+	"slices"
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/store"
+)
 
 // voice is language plus regional variant for a recording: the Spanish of Spain
 // is voice{Lang: "es", Locale: "es"}, American English is {"en", "us"}.
@@ -133,3 +139,28 @@ const localeHelp = "regional variant of the pronunciation, per language: " +
 const pronHelp = "hear THIS lookup in another language without switching the " +
 	"session: -pron fr arrondissement. The entry's ORIGIN says which. Falls back " +
 	"to the session's recording, and says so, when the source has none"
+
+// langHelp is the -lang flag's text, DERIVED from curated rather than restating
+// it (#31).
+//
+// It read "en, es" and stayed that way when Italian was curated — the third
+// surface in this repo to enumerate something by hand and fall behind it, after
+// the atlas command table (three of five commands) and the README's dictionary
+// paragraph. The pattern is always the same: the enumeration and the thing it
+// enumerates are edited by different people at different times.
+//
+// Sorted, because a Go map iterates randomly and a flag whose help text
+// reshuffles between runs is worse than one that is merely stale.
+//
+// It names only what a DICTIONARY is curated for. ParseLang still accepts any
+// two-letter tag, and -lang fr remains legal — it degrades to the NULL search
+// with a complaint, which is #23 M2's stated behaviour rather than an error.
+var langHelp = func() string {
+	langs := slices.Sorted(maps.Keys(curated))
+	names := make([]string, len(langs))
+	for i, l := range langs {
+		names[i] = string(l)
+	}
+	return "language for this invocation: " + strings.Join(names, ", ") +
+		" (default: the directory's setting)"
+}()

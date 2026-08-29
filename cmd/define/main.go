@@ -405,7 +405,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 	// -lang exists so a script can ask a question without mutating state: it
 	// applies to THIS invocation and does not persist. /lang is the other half —
 	// it persists and does not need re-typing.
-	langFlag := fs.String("lang", "", "language for this invocation: en, es (default: the directory's setting)")
+	langFlag := fs.String("lang", "", langHelp)
 	// -pron is NOT -lang's sibling despite the shape. -lang moves the mode: the
 	// deck, the dictionary, the highlight set and the recording. -pron moves only
 	// the recording, for one lookup, which is the whole of #29.
