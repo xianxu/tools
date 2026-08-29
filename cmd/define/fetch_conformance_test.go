@@ -10,7 +10,15 @@ package main
 // Cadence is on-demand with the rest of the conformance suite — it needs network
 // access, which does not belong in merge-check.yml.
 //
-//	go test -tags conformance -run CDN ./cmd/define/
+//	go test -tags conformance ./cmd/define/
+//
+// UNFILTERED, deliberately. This line used to say `-run CDN`, and a filter is
+// exactly the mechanism that lets a row decay unnoticed: #29 wrote a row named
+// TestFrenchCoverageIsStillPartial, which that filter would have skipped while
+// the verification step reported success. workshop/lessons.md already has the
+// class — "A live conformance check that is never run is not a check", where
+// TestPTYSuggestionAndAcceptance sat red through two merges. Every row here is
+// TestCDN*-prefixed anyway, so the filter bought nothing and cost that.
 
 import (
 	"github.com/xianxu/tools/internal/conformance"
@@ -111,5 +119,76 @@ func TestCDNReturnsRealAudio(t *testing.T) {
 	// MPEG audio starts with an ID3 tag or a frame sync.
 	if !(strings.HasPrefix(string(data), "ID3") || (data[0] == 0xFF && data[1]&0xE0 == 0xE0)) {
 		t.Errorf("%s does not look like MPEG audio: % x", from, data[:4])
+	}
+}
+
+// The source-orthography constraint #29's SourceSpellings exists for.
+//
+// If jalapeno_es_es ever starts answering, that function is carrying weight it
+// no longer needs and its second and third sources could go.
+func TestCDNStillKeysSourceRecordingsOnTheSourceSpelling(t *testing.T) {
+	es := voice{Lang: "es", Locale: "es"}
+	if got := head(t, AudioCandidates("jalapeño", es)[0]); got != http.StatusOK {
+		t.Errorf("jalapeño on es_es = %d, want 200 — the Spanish recording this issue fetches", got)
+	}
+	if got := head(t, AudioCandidates("jalapeno", es)[0]); got == http.StatusOK {
+		t.Error("jalapeno_es_es now answers — the CDN no longer keys source recordings on " +
+			"the source spelling, so SourceSpellings' headword and (also …) sources may be " +
+			"unnecessary. Re-run the survey before simplifying it away.")
+	}
+}
+
+// D1's evidence, and the row that would justify REOPENING the decision.
+//
+// #29 rejected inferring the language from ORIGIN because neither NOAD nor the
+// CDN can tell a live loanword from a naturalised one: the dictionary writes
+// "from French" for police exactly as it does for arrondissement, and the CDN
+// serves French recordings for words nobody wants said in French. If that stops
+// being true the argument weakens and the decision deserves another look.
+func TestCDNStillCannotTellALoanwordFromANaturalisedOne(t *testing.T) {
+	fr := voice{Lang: "fr", Locale: "fr"}
+	for _, w := range []string{"police", "restaurant", "machine"} {
+		if got := head(t, AudioCandidates(w, fr)[0]); got != http.StatusOK {
+			t.Errorf("%s on fr_fr = %d, want 200 — #29 D1 rejected ORIGIN inference BECAUSE "+
+				"the CDN serves French for fully anglicised words. Re-run the survey; the "+
+				"decision may deserve reopening", w, got)
+		}
+	}
+}
+
+// Italian's absence is a Done-when: it must be REPORTED, not heard as silence.
+//
+// Nine probes across three locale forms found no Italian audio in this CDN
+// generation. If it arrives, reportVoice stops firing for Italian and the
+// atlas's limitation note goes stale — so this failing is good news that still
+// needs acting on.
+func TestCDNItalianIsStillAbsentFromThisGeneration(t *testing.T) {
+	it := voice{Lang: "it", Locale: "it"}
+	for _, w := range []string{"ciao", "pizza", "espresso"} {
+		if got := head(t, AudioCandidates(w, it)[0]); got == http.StatusOK {
+			t.Errorf("%s now has an it_it recording — Italian has arrived. Update "+
+				"atlas/define.md, which records its absence as a standing limitation", w)
+		}
+	}
+}
+
+// Why the fallback exists at all: French coverage is PARTIAL.
+//
+// Named TestCDN* like every row here, because the file's cadence used to filter
+// on that prefix and a row that does not match is a row that never runs.
+func TestCDNFrenchCoverageIsStillPartial(t *testing.T) {
+	fr := voice{Lang: "fr", Locale: "fr"}
+	en := voice{Lang: "en", Locale: "us"}
+	// NOT déjeuner, which #29's Done-when originally named: it has no NOAD entry,
+	// so the lookup fails before audio is reached and it can never exercise this.
+	for _, w := range []string{"hotel", "debut"} {
+		if got := head(t, AudioCandidates(w, fr)[0]); got == http.StatusOK {
+			t.Errorf("%s now has a fr_fr recording — French coverage has widened, and "+
+				"the fallback this pins is exercised by fewer words than before", w)
+		}
+		if got := head(t, AudioCandidates(w, en)[0]); got != http.StatusOK {
+			t.Errorf("%s on en_us = %d, want 200 — this word is the fallback's TARGET, "+
+				"so without it the pair proves nothing", w, got)
+		}
 	}
 }
