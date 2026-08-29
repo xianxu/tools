@@ -250,3 +250,61 @@ func TestAudioCandidatesEscapesTheLocale(t *testing.T) {
 		}
 	}
 }
+
+// The ORDER is the contract: each spelling costs two CDN requests before the
+// next is tried, at ~300–600ms per miss (#29).
+func TestSourceSpellingsPutsTheAccentedFormFirst(t *testing.T) {
+	for _, tc := range []struct {
+		name, typed, raw string
+		want             []string
+	}{
+		{
+			"the headword carries the accent the typist omitted",
+			// jalapeño_es_es is a 200; jalapeno_es_es is a 404 — measured
+			// 2026-08-28. The typed form stays as the last resort.
+			"jalapeno",
+			"jalapeño ja·la·pe·ño | ˌhaləˈpān(y)ō | noun a chili pepper.",
+			[]string{"jalapeño", "jalapeno"},
+		},
+		{
+			// This cell is the one a headword-first ordering gets wrong: NOAD
+			// heads this entry `cafe` and files `café` as the alternative, and it
+			// is `café` the CDN serves.
+			"the alternative carries it instead, so the alternative goes first",
+			"cafe",
+			"cafe ca·fe | kaˈfā | (also café) noun 1 a small restaurant.",
+			[]string{"café", "cafe"},
+		},
+		{
+			"nothing differs, so there is one spelling and no wasted request",
+			"arrondissement",
+			"arrondissement ar·ron·disse·ment | əˈrändəsmənt | noun a district.",
+			[]string{"arrondissement"},
+		},
+		{
+			"a capitalised headword is lowered — Señor_es_es is 404, señor_es_es is 200",
+			"senor",
+			"Señor Se·ñor | sānˈyôr | noun a title for a Spanish man.",
+			[]string{"señor", "senor"},
+		},
+		{
+			"an unparseable entry still leaves the typed word to try",
+			"ciao",
+			"",
+			[]string{"ciao"},
+		},
+		{
+			"among equals the source order stands — sorting is a partition, not a rank",
+			"cafe",
+			"café ca·fé | kaˈfā | (also cafè) noun 1 a small restaurant.",
+			[]string{"café", "cafè", "cafe"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SourceSpellings(tc.typed, ParseEntry(tc.raw))
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("SourceSpellings(%q) = %q, want %q", tc.typed, got, tc.want)
+			}
+		})
+	}
+}

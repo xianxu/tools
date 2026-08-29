@@ -161,16 +161,19 @@ jalapeño_es_es  200   ← the Spanish recording
 jalapeno_es_es  404   ← the same word, Spanish locale, unaccented
 ```
 
-Swapping the language field in the existing URL builder is therefore not enough. Same split measured for `piñata`/`pinata`, `señor`/`senor`, `café`/`cafe`, `naïve`/`naive`, `façade`/`facade`, `cliché`/`cliche`, `fiancé`/`fiance`, `rôle`/`role`.
+Swapping the language field in the existing URL builder is therefore not enough. Same split measured for `piñata`/`pinata`, `señor`/`senor`, `café`/`cafe`, `naïve`/`naive`, `façade`/`facade`, `cliché`/`cliche`, `fiancé`/`fiance`.
 
 **Why NON-ASCII FIRST rather than headword first.** NOAD files the accented form on either side of the headword, so "the dictionary's own form is best" is right only 5 times in 9:
 
 | typed | headword | `(also …)` | which spelling is the 200 |
 |---|---|---|---|
 | `jalapeno` `pinata` `senor` `cliche` `fiance` | accented | — | the headword |
-| `cafe` `naive` `facade` `role` | **unaccented** | `café` `naïve` `façade` `rôle` | **the alternative** |
+| `cafe` `naive` `facade` | **unaccented** | `café` `naïve` `façade` | **the alternative** |
+| `role` | **unaccented** | *none* | **unreachable** — see below |
 
-Ordering by "carries a non-ASCII rune" is right 9 times in 9, and saves the `café` class two 404s at the ~300–600 ms per miss that `atlas/define.md` prices. Where nothing carries an accent (`arrondissement`) the order is unchanged, so this costs nothing in the common case.
+Ordering by "carries a non-ASCII rune" is right 8 times in 8, and saves the `café` class two 404s at the ~300–600 ms per miss that `atlas/define.md` prices. Where nothing carries an accent (`arrondissement`) the order is unchanged, so this costs nothing in the common case.
+
+`role` is the ninth borrowing and no rule here reaches it — recorded so it is inherited rather than rediscovered. `rôle_fr_fr` is a 200 and `role_fr_fr` a 404, but NOAD heads the entry `role`, offers no `(also rôle)`, and spells the accented form only inside ORIGIN: *"from French rôle, from obsolete French roule 'roll'"*. That sentence offers three candidate tokens, so mining it is a parsing problem rather than a fourth lookup; `role` degrades to English and says so.
 
 **Why deduping matters more than it looks:** for `arrondissement` all three sources agree, and without it the walk asks the CDN the same question three times.
 
@@ -389,7 +392,7 @@ And both opt-in suites, per `workshop/lessons.md` rule 2: `go test ./... && go t
 - **PQ-1 (Important, `doc-sweep-incomplete`)** — Task 8 named only the atlas paragraph. Grepping the class found **five** sites, including `audiourl.go:24-26` in the very file Task 4 adds the cross-language walk to. Task 8 is now an enumeration table disposing of all five, two of them explicitly as "keep, and here is why", with a grep in Step 4 for each deletion.
 - **PQ-2 (Important, `conformance-row-never-runs`)** — `TestFrenchCoverageIsStillPartial` does not match the `-run CDN` filter the file documents, so it would have been skipped and its verification step would have passed vacuously. Renamed `TestCDNFrenchCoverageIsStillPartial`, every new row given the `TestCDN` prefix, **and the trap itself fixed**: the file's cadence comment now documents the unfiltered whole-file run, since a `-run` filter is the mechanism that lets a row decay.
 - **PQ-3 (Minor, `first-match-not-all-matches`)** — VERIFIED by running `ParseEntry`: one gloss really does carry `"(also naïve) (also naïveness)"`, and the reversed order parses too. A first-match read would silently drop the source spelling. `AlsoSpellings` now scans every occurrence, and Task 2 tests **both orderings**.
-- **PQ-4 (Minor, `candidate-order-by-measurement`)** — VERIFIED and extended: headword-first is right 5/9, non-ASCII-first 9/9. `rôle_fr_fr` 200 / `role_fr_fr` 404 was measured while checking and is a ninth instance. `SourceSpellings` now orders by non-ASCII first.
+- **PQ-4 (Minor, `candidate-order-by-measurement`)** — VERIFIED: headword-first is right 5/8, non-ASCII-first 8/8, so `SourceSpellings` now orders by non-ASCII first. `rôle_fr_fr` 200 / `role_fr_fr` 404 was measured while checking and was FIRST RECORDED HERE AS A NINTH INSTANCE OF THE ORDERING RULE, which running the chain against the live dictionary disproved: NOAD carries `rôle` only inside ORIGIN prose, so no ordering of the three sources reaches it. Corrected in Task 3's contract as a known limitation rather than left as a claim the code does not support.
 - **PQ-5 (Minor, `unstated-seam-threading`)** — resolved without an `options` field, which the finding correctly flagged as recreating what D3 refuses. `-pron` rides on `replCommand`, which `defineOnce` already receives and which already carries `literal`, a per-line modifier of the same kind. Task 6 states the four-line path.
 - **PQ-6 (Minor, `unstated-non-goal`)** — the Spec's third option (labelling which notation variant is which) is now **D6**, disposed of with its reason rather than left unanswered at close.
 - **PQ-7 (Minor, `plan-restates-the-diff`)** — the plan was 1131 lines, mostly pre-written bodies and doc comments that get rewritten within the hour. Rewritten to state each function's CONTRACT and the CLASS its tests must cover. The measured tables are kept — they are the evidence, and evidence does not regenerate. For `differsOnlyByDiacritics`, which runs over arbitrary gloss text, Task 1 Step 4 now names the malformed-input class (invalid UTF-8, decomposed combining marks, huge input) instead of fourteen hand-picked pairs.

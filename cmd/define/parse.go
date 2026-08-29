@@ -125,7 +125,7 @@ const alsoPrefix = "(also "
 // the headword. `define jalapeno` heads the entry `jalapeño`, but `define cafe`
 // heads it `cafe` and puts `café` here — and café_fr_fr is the 200 while
 // cafe_fr_fr is a 404. Headword alone would have taken jalapeño, piñata, señor,
-// cliché and fiancé and missed café, naïve, façade and rôle.
+// cliché and fiancé and missed café, naïve and façade.
 //
 // EVERY occurrence in a gloss, not the first. Measured, not supposed: ParseEntry
 // returns one gloss reading "(also naïve) (also naïveness)". Stopping at the
