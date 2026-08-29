@@ -103,7 +103,7 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 	}
 }
 
-// The README quotes the -locale help VERBATIM.
+// The docs quote the -locale help VERBATIM.
 //
 // Fourth member of a family this repo keeps re-fixing by hand: a doc restating
 // something the code owns. #27 found the locale policy stated in four places —
@@ -113,14 +113,19 @@ func TestAtlasQuotesTheRawNotationCount(t *testing.T) {
 //
 // Narrow on purpose, like the prompt test above: it pins the one line a reader
 // acts on, not the prose around it, which should stay free to be rewritten.
-func TestREADMEQuotesTheLocaleHelp(t *testing.T) {
-	b, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("README.md unreadable: %v", err)
-	}
+func TestDocsQuoteTheLocaleHelp(t *testing.T) {
+	// EVERY doc that states the policy, not just the first one wired up. Fixing
+	// the README alone left atlas/define.md as the next copy to go stale, which
+	// is the same half-fix this family keeps producing.
 	want := "<!-- locale-help -->" + localeHelp + "<!-- /locale-help -->"
-	if !strings.Contains(string(b), want) {
-		t.Errorf("README.md does not quote the -locale help.\nwant the marked span to read:\n%s\n"+
-			"localeHelp owns this text; the README consumes it.", want)
+	for _, doc := range []string{"../../README.md", "../../atlas/define.md"} {
+		b, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("%s unreadable: %v", doc, err)
+		}
+		if !strings.Contains(string(b), want) {
+			t.Errorf("%s does not quote the -locale help.\nwant the marked span to read:\n%s\n"+
+				"localeHelp owns this text; the docs consume it.", doc, want)
+		}
 	}
 }

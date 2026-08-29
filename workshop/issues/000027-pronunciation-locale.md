@@ -235,3 +235,35 @@ audible.
 play; `-locale gb` with Spanish degrades to "no recorded pronunciation" rather
 than refusing; the help text states the θ/seseo distinction.
 
+### 2026-08-28 — close review: two findings, both repeats of lessons written this session
+
+**BR-1: I wired the README to `localeHelp` and left the atlas restating the
+policy by hand.** The finding this issue was fixing is "the policy is stated in
+four places with nothing keeping them in step" — and the fix reached one of the
+two docs, leaving the other as the next copy to go stale. Same half-fix shape as
+`#26`'s BR-4, where I marked a total and missed a second statement of it. The
+doc-sync loops both docs now.
+
+**BR-2: no `run()`-level test drove `-locale`, so the flag→CDN wiring was
+unpinned.** `workshop/lessons.md` carries this rule from earlier today — *"test
+what the pure function's CALLER does"* — written after `#23`'s C1, where
+`voiceFor` was correct the whole time and nothing re-derived `opt.voice`. I
+shipped the same gap again.
+
+Proved the new test earns its place with a mutation that breaks the WIRING while
+leaving the pure function correct — `localeSet: false` in the flag parse:
+
+```
+-- unit test on the pure function --   ok      (green, unaffected)
+-- the wiring test --                  FAIL    the session never asked for _en_gb_
+```
+
+That asymmetry is the whole argument for the test: a unit test on `localeFor`
+cannot see a caller that stops consulting it.
+
+The four rows also carry a vacuity guard. A first version asserted on the Spanish
+locales while passing the ENGLISH fake corpus, so the lookup failed, no audio was
+fetched, and the rows asserted nothing — they reported "never asked for _es_us_"
+which reads like a wiring bug and was a fixture bug. The guard now fails loudly
+when a row requests nothing at all.
+

@@ -1155,10 +1155,14 @@ recording is the only place that information exists.
 a gap, and its sibling pins the scope: a Spanish word in an ENGLISH entry does
 carry notation, four anglicised pronunciations for `jalapeño`.
 
-**One source for the policy text.** `localeHelp` is the flag's help string and the
-README derives from it through `TestREADMEQuotesTheLocaleHelp` — the policy was
-stated in four places with nothing keeping them in step, and the README's copy
-was two milestones stale.
+**One source for the policy text, and this page consumes it too:**
+
+<!-- locale-help -->regional variant of the pronunciation, per language: en us|gb; es es (Castilian, cazar /θ/) or us (seseo, /s/). Others exist — the CDN decides, not a list here<!-- /locale-help -->
+
+`localeHelp` is that string, and both this page and the README derive from it
+through `TestDocsQuoteTheLocaleHelp`. The policy was stated in four places with
+nothing keeping them in step; wiring only the README would have left this page as
+the next copy to go stale, which is the half-fix the boundary review caught.
 
 For one milestone `-locale` was English-only: `#23 M1`'s D2 shipped that as an
 explicit interim rule, named `#27` as its successor, and printed a diagnostic
