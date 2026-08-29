@@ -41,6 +41,7 @@
 | `curated` | `cmd/define/dictselect.go` | modified — gains the `it` row |
 | `chooseDictionary` | `cmd/define/dictselect.go` | unchanged — the row is data it already consumes |
 | `monolingualIn` | `cmd/define/dictselect.go` | unchanged — and it is what rejects `OxfordItalian` |
+| `langHelp` | `cmd/define/voice.go` | new — the `-lang` help, derived from `curated` |
 
 - **`curated`** — the per-language preference list.
   - **Relationships:** 1:N language → identifiers, consumed only by `chooseDictionary`.
@@ -145,7 +146,7 @@ Both halves matter and the second is the one `#23` was built for: the shared wor
 
 ## Task 5: close what the corpus does not close by itself
 
-**Files:** `cmd/define/render_test.go`, `cmd/define/doc_sync_test.go`, `cmd/define/dict_fake_test.go`, `cmd/define/testdata/capture.sh`, `README.md`.
+**Files:** `cmd/define/render_test.go`, `cmd/define/invariant_test.go`, `cmd/define/dictselect_test.go`, `cmd/define/dict_conformance_test.go`, `cmd/define/dict_fake_test.go`, `cmd/define/voice.go`, `cmd/define/main.go`, `atlas/define.md`, `README.md`.
 
 Four checks the captured directory does NOT give for free. Each is a third instance of a family `#29` closed with a mechanism, so each gets a mechanism.
 
@@ -235,3 +236,36 @@ summary, which counts `en` and `es` only.
 - **Widening `TestNoRawPronunciationNotationSurvives` made two committed comments
   TRUE** rather than requiring their repair, which is why D3 chose to widen the
   check rather than narrow the claim.
+
+### 2026-08-29 — close review rounds 1 and 2
+
+**Round 1 (BR-1…BR-5).** Three were mine. I anchored the Italian notation test on
+a mid-comment line, so its doc block was appended to the Spanish test's and BOTH
+were misdocumented; the review also said the two should have been one table, so
+merging fixed both, with the REASON per row because Spanish writes nothing
+(phonemic orthography) while Devoto-Oli writes syllabification. The STRONG
+no-data-loss invariant — exact alnum counts, which catches insertion as well as
+loss — was English-only while its weaker sibling already swept every language, so
+a new corpus was checked only by the form that detects drops.
+
+**Round 2 named the real finding, and it was about a claim I made rather than a
+site I missed.** Commit `19b5ea1` said "every surface that enumerates the curated
+languages derives from `curated`" — a CLASS claim — while fixing the three sites
+I happened to know about. The review enumerated **six**, two wrong at HEAD:
+
+| # | site | was |
+|---|---|---|
+| 1 | the live own-language table | no cross-check, so `#34` could add `fr`/`de` and acquire no live check at all |
+| 2 | the order-independence test's `{"en","es"}` | Italian unchecked for a requirement that is real — the API returns a SET |
+| 3 | `installedOnThisMachine()` | never gained the Italian books, which is why the Italian case re-declared them locally |
+| 4 | "Three curated languages as of `#31`" | a COUNT four lines outside the guarded span |
+| 5 | "`es` and `it` … six fixtures each" | **wrong** — `entries/es/` holds five |
+| 6 | the `-lang` flag registration | derivation delivered but unpinned; reverting it to a literal was invisible to `go test ./...` |
+
+All six closed, 4 and 5 by naming the list instead of counting it — the lesson
+already on file as *"Give a count one producer, or delete the count"*, which is
+the second time this repo's own written rule did not stop the instance.
+
+**And the class fix's own mechanism had a hole:** the doc guard used
+`strings.Contains`, so renaming the atlas row to `Italiano` kept it green. It is
+word-boundary now, and the near-miss is reproduced as the removal check.

@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -12,8 +11,9 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-// installedOnThisMachine is the metadata actually measured on 2026-08-28, not an
-// invented fixture. The five that matter out of 87.
+// installedOnThisMachine is the metadata actually measured on this host — 2026-08-28
+// for English and Spanish, 2026-08-29 for Italian — not an invented fixture. The
+// ones that matter out of 87.
 //
 // It is the argument for the whole design: requiring every language entry to be
 // L->L gives exactly ONE candidate for es and SIX for en — and two of the six are
@@ -35,6 +35,37 @@ func installedOnThisMachine() []dictMeta {
 			{Index: "es", Description: "es"},
 			{Index: "en", Description: "es"}, // bilingual: this pair is what disqualifies it
 		}},
+		// Italian, measured 2026-08-29 (#31). Same shape as the Spanish pair and
+		// present for the same reason: the monolingual book plus the bilingual
+		// one that must NOT be chosen. Adding a language to `curated` without
+		// adding it here leaves the fixture modelling a machine the tool no
+		// longer targets, which is what forced the Italian case to re-declare
+		// these two records locally.
+		{ID: "com.apple.dictionary.it.Devoto-Oli", Langs: []langPair{{Index: "it", Description: "it"}}},
+		{ID: "com.apple.dictionary.OxfordItalian", Langs: []langPair{
+			{Index: "it", Description: "it"},
+			{Index: "en", Description: "it"},
+		}},
+	}
+}
+
+// EVERY curated language is modelled in the fixture above, in BOTH directions.
+//
+// This is the rule the close review named after four instances: no site states a
+// per-language fact by hand — every per-language enumeration ranges over
+// `curated`, and every language-keyed fixture is cross-checked against it. The
+// fixture is what the order test and the selection tests range over, so a
+// language curated but unmodelled silently drops out of all of them.
+func TestTheMeasuredSetModelsEveryCuratedLanguage(t *testing.T) {
+	installed := installedOnThisMachine()
+	for lang, ids := range curated {
+		for _, want := range ids {
+			if !slices.ContainsFunc(installed, func(m dictMeta) bool { return m.ID == want }) {
+				t.Errorf("production curates %q for %s, but installedOnThisMachine() does not "+
+					"model it — every test that ranges over the fixture silently skips %s",
+					want, lang, lang)
+			}
+		}
 	}
 }
 
@@ -154,7 +185,11 @@ func TestChooseDictionaryRequiresEVERYPairToBeMonolingual(t *testing.T) {
 // Wednesday with nothing changed.
 func TestChooseDictionaryDoesNotDependOnOrder(t *testing.T) {
 	base := installedOnThisMachine()
-	for _, lang := range []store.Lang{"en", "es"} {
+	// EVERY curated language, not a hand-written pair. It said {"en", "es"} and
+	// stayed that way when Italian was curated, so the order-independence
+	// requirement — a real one, since DCSCopyAvailableDictionaries returns a SET —
+	// went unchecked for the newest language.
+	for lang := range curated {
 		want, ok := chooseDictionary(base, lang)
 		if !ok {
 			t.Fatalf("%s: no choice from the measured set", lang)
@@ -397,19 +432,19 @@ func TestCaptureScriptUsesTheCuratedDictionaries(t *testing.T) {
 // mode exists to prevent, and the reason "just prefer the other Italian book" is
 // not available to #34 either.
 func TestChooseDictionaryPicksTheCuratedItalian(t *testing.T) {
-	devoto := dictMeta{ID: "com.apple.dictionary.it.Devoto-Oli",
-		Langs: []langPair{{Index: "it", Description: "it"}}}
-	bilingual := dictMeta{ID: "com.apple.dictionary.OxfordItalian",
-		Langs: []langPair{{Index: "it", Description: "it"}, {Index: "en", Description: "it"}}}
-
-	got, ok := chooseDictionary([]dictMeta{bilingual, devoto}, "it")
-	if !ok || len(got) != 1 || got[0].ID != devoto.ID {
-		t.Errorf("chooseDictionary(it) = %v, %v; want just the Devoto-Oli", got, ok)
+	// From the MEASURED set, not a local re-declaration: both books are modelled
+	// in installedOnThisMachine(), and declaring them twice is two statements of
+	// one fixture fact that can drift apart.
+	got, ok := chooseDictionary(installedOnThisMachine(), "it")
+	if !ok || len(got) != 1 || got[0].ID != "com.apple.dictionary.it.Devoto-Oli" {
+		t.Errorf("chooseDictionary(it) = %v, %v; want just the Devoto-Oli", ids(got), ok)
 	}
 	// The bilingual book ALONE is not a fallback: no curated monolingual book
 	// means the NULL search, never a different-language dictionary.
+	bilingual := dictMeta{ID: "com.apple.dictionary.OxfordItalian",
+		Langs: []langPair{{Index: "it", Description: "it"}, {Index: "en", Description: "it"}}}
 	if got, ok := chooseDictionary([]dictMeta{bilingual}, "it"); ok {
-		t.Errorf("chooseDictionary(it) accepted the bilingual Oxford: %v", got)
+		t.Errorf("chooseDictionary(it) accepted the bilingual Oxford: %v", ids(got))
 	}
 }
 
@@ -428,15 +463,21 @@ func TestChooseDictionaryPicksTheCuratedItalian(t *testing.T) {
 func TestEveryCuratedLanguageHasACorpus(t *testing.T) {
 	for lang := range curated {
 		t.Run(string(lang), func(t *testing.T) {
-			paths, err := filepath.Glob(filepath.Join("testdata", "entries", string(lang), "*.txt"))
-			if err != nil {
-				t.Fatal(err)
+			// Through loadFakeDictionary, not a raw glob: it ALSO rejects a
+			// zero-byte fixture (dict_fake_test.go), which a glob counts as
+			// present. A short capture is exactly the failure capture.sh's
+			// MIN_BYTES floor exists for, and this guard would have called it
+			// coverage.
+			d, err := loadFakeDictionary("testdata/entries", lang)
+			if err == nil && len(d.entries) > 0 {
+				return
 			}
-			if len(paths) == 0 {
+			{
 				t.Errorf("production curates %v for %s, but testdata/entries/%s holds no "+
-					"fixtures — the seam has nothing to conformance-check, so a change in "+
-					"that dictionary would surface as a user complaint rather than a red test. "+
-					"Run testdata/capture.sh (unsandboxed).", curated[lang], lang, lang)
+					"usable fixtures (%v) — the seam has nothing to conformance-check, so a "+
+					"change in that dictionary would surface as a user complaint rather than "+
+					"a red test. Run testdata/capture.sh (unsandboxed).",
+					curated[lang], lang, lang, err)
 			}
 		})
 	}
@@ -496,7 +537,12 @@ func TestDocsNameEveryCuratedLanguage(t *testing.T) {
 					"keeps together", lang)
 				continue
 			}
-			if !strings.Contains(span, name) {
+			// WORD-BOUNDARY, not Contains. "Italiano" contains "Italian", so a
+			// renamed or mistyped row passed — the close review reproduced it.
+			// A check a near-miss satisfies is the same defect as one an
+			// unrelated sentence satisfies, which is what scoped this test to a
+			// span in the first place.
+			if !regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(span) {
 				t.Errorf("%s's marked span never names %s (%s), which production curates %v "+
 					"for — a reader cannot discover a language the docs omit",
 					doc, name, lang, curated[lang])

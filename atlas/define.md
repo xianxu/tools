@@ -1268,8 +1268,10 @@ outside English. If `#10` or `#18` makes the feed language-aware, scoping the
 cache becomes required, and that is the moment to add it.
 
 
-**Three curated languages as of `#31`**, and the list is a judgement rather than
-a rule — nothing in the metadata separates a general dictionary from a
+**The curated languages are named below, not counted here** — a count is a
+restatement that goes stale silently, and this sentence said "three" from four
+lines outside the guarded span, where nothing could check it. The list is a
+judgement rather than a rule — nothing in the metadata separates a general dictionary from a
 thesaurus, so `chooseDictionary` NARROWS by metadata and `curated` DECIDES.
 
 <!-- curated-languages -->
@@ -1294,13 +1296,17 @@ sampled entries render the bare headword.
 
 **A standing limitation: the raw-notation ratchet is ENGLISH-ONLY.**
 `TestNoRawPronunciationNotationSurvives` sweeps every captured language since
-`#31`, so `es` and `it` are checked at CORPUS width — six fixtures each. The live
+`#31`, so `es` and `it` are checked at CORPUS width — over whatever
+`testdata/entries/<lang>/` holds, which `TestEveryCuratedLanguageHasACorpus`
+requires to be non-empty. Not a number here: this sentence read "six fixtures
+each" while `entries/es/` held five. The live
 ratchet in `live_property_test.go` is the one that sweeps at DICTIONARY width,
 and it walks `/usr/share/dict/words` against `systemDictionary(DefaultLang)`.
 There is no Italian or Spanish word list on the host, so neither language has a
 ratchet at that width. This is stated rather than fixed: `#23 M2` added Spanish
 under exactly the same condition, and inventing a word list to close it would be
 a bigger decision than the gap warrants.
+
 ## Source pronunciation (`#29`)
 
 `define -pron fr arrondissement` plays the French recording while the deck, the

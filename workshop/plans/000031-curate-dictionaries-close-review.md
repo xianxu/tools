@@ -179,3 +179,172 @@ findings:
       correctly not performed (widening made both comments true). The Core concepts table itself
       matches the code; only the per-task Files line and that bullet need a Revisions entry.
 ```
+
+---
+
+## Re-review — 2026-08-29T13:00:13-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 31 — curate the Italian dictionary so /lang it is a real mode (French and German split to #34) |
+| repo | tools |
+| issue file | workshop/issues/000031-curate-dictionaries.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 83134e464ba38dce607296341a01fa9cc5d343f7..3593ebb86b65d980929c3e9f27381776d49a998a |
+| command | sdlc close --issue 31 |
+| reviewer | claude |
+| timestamp | 2026-08-29T13:00:13-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Five of the nine prior findings are genuinely fixed, and I confirmed each by mutation rather than by reading: the widened strong invariant reddens only `TestRenderLosesNothing/it/*` when I made `Render` drop an Italian-only marker (`s.f.`), the consolidated no-notation table reddens on an injected IPA-bearing `it` fixture, the atlas half of the docs guard reddens on a mangled bullet, and the built binary now prints `-lang … en, es, it`. `go test ./...`, `go vet` and `gofmt -l` are clean. What blocks SHIP is the same thing that blocked it last round, one level up: commit `19b5ea1` states the class answer — *"every surface that enumerates the curated languages derives from `curated`"* — and delivers two of at least six sites. BR-2's own third named site is untouched, and I found three more the previous round did not name, one of which is factually wrong today (`atlas/define.md:1297` says the Spanish corpus is six fixtures; it is five) and one of which the previous round explicitly predicted would survive (`atlas/define.md:1271`'s "**Three curated languages**" sits four lines *above* the `<!-- curated-languages -->` span, so the new guard cannot see it). This is the 4th round of `curated-consumer-unpinned`, and per ARCH-PURPOSE the deliverable now is the written enumeration plus the sweep, not a sixth instance patch. Verification limit, unchanged from round 1: DictionaryServices resolves nothing for this process (`en` skips too), so `TestSelectedDictionaryAnswersInItsOwnLanguage/it` and `TestFixturesMatchLiveDictionary/it` could not be executed here.
+
+## 1. Strengths
+
+- **BR-5's widening is real and I proved it.** Making `Render` strip `s.f.` (an Italian-only string) reddens exactly `TestRenderLosesNothing/it/{casa,pizza,acqua}` with `alnum count 4915 rendered vs 4917 raw`, and leaves `en`/`es` green. The weak sibling would have stayed green through the same mutation. `invariant_test.go:169` and `render_test.go:326` now both sweep `capturedLanguages`, and six Italian word-subtests genuinely run.
+- **BR-3 and BR-4 answered as one change, correctly.** `render_test.go:364` is one table with a per-row `why`, and the `why` is not decorative — the failure message it produced under my injected fixture carries the full Devoto-Oli syllabification argument `#30` reads this pair for. Collapsing the two functions removed the misattached comment as a side effect rather than shuffling it.
+- **BR-2's atlas half is load-bearing.** Renaming the atlas row to `Itaian` fails with `../../atlas/define.md's marked span never names Italian (it)`. Note my first mutation (`Italiano`) passed — that is BR-6, still open, reproduced.
+- **`langHelp` (`voice.go:158`) is the right shape.** Derived from `slices.Sorted(maps.Keys(curated))`, and its comment explains both the sort (map iteration order) and the scope (it names what a *dictionary* is curated for; `ParseLang` still accepts `fr`, which degrades per `#23 M2`). Confirmed in the built binary's `-h`.
+- **The corpus matches its documented rationale.** `ciao.txt` really carries `A. inter. … B. s.m. … ACCRESCITIVO … ETIMOLOGIA … DATA 1905.`; `parlare.txt` really carries the homograph number before the syllabification (`parlare 1 (par·là·re)`); `essere.txt` is 11.6 KB. The words prove what `capture.sh` says they prove.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**BR-2 (not-addressed) — the third site it named is untouched.** `dict_conformance_test.go:184-227` is a hand-written `{lang, shared, marker, absent}` table with no cross-check against `curated`. `#34` can add `fr`/`de` rows to `curated` and acquire no live own-language check at all. The atlas half is fixed and verified; this half is not.
+
+**NEW (Important, `curated-consumer-unpinned`) — the enumeration was still never written.**
+
+> **This is the 4th finding in family `curated-consumer-unpinned`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+The rule is already written down twice in this repo — `workshop/lessons.md:2390` ("A doc that ENUMERATES something must derive from it") and `:2176` ("Give a count one producer, or delete the count") — and fired again anyway. That, not any single site, is the finding: **no site may state a per-language fact by hand; every per-language enumeration ranges over `curated`, and every language-keyed table is cross-checked against `curated` in both directions** — the mechanism `TestCaptureScriptUsesTheCuratedDictionaries` and `TestDocsNameEveryCuratedLanguage` already implement. Measured prevalence at HEAD, the enumeration the class fix owes:
+
+| # | site | state |
+|---|---|---|
+| 1 | `dict_conformance_test.go:184` own-language table | no `curated` cross-check (BR-2's third site) |
+| 2 | `dictselect_test.go:157` `[]store.Lang{"en", "es"}` | Italian not order-tested. **Measured:** changing it to `for lang := range curated` fails today — `it: no choice from the measured set` |
+| 3 | `dictselect_test.go:23` `installedOnThisMachine()` | the modelled installed set never gained the Italian books `#31` measured as installed, so `TestChooseDictionaryPicksTheCuratedItalian:399` re-declares `Devoto-Oli` and `OxfordItalian` locally instead (ARCH-MOCK: the fake diverges from the measured dependency; ARCH-DRY: two declarations of one fixture fact). This is what blocks site 2 |
+| 4 | `atlas/define.md:1271` "**Three curated languages as of `#31`**" | a hand-maintained COUNT sitting **four lines above** `<!-- curated-languages -->` (:1275), so the new guard cannot see it — round 1 predicted this exact sentence would survive `#34` |
+| 5 | `atlas/define.md:1297` "`es` and `it` … six fixtures each" | **wrong today**: `entries/es/` holds five |
+| 6 | `main.go:408` `fs.String("lang", "", langHelp)` | BR-1's derivation is delivered and observed at the binary, but nothing pins the *registration* — reverting it to a literal is invisible to `go test ./...` |
+
+Sites 4 and 5 are answered by naming the list rather than counting it, per the lesson already on file. Site 6 wants a flagset-usage assertion, not a restatement of `langHelp`.
+
+## 4. Minor findings
+
+- **BR-6 (not-addressed)** — `dictselect_test.go:497` is still `strings.Contains(span, name)`. Reproduced: renaming the atlas row to `Italiano` keeps it green, because the name is a substring.
+- **BR-7 (not-addressed)** — `dictselect_test.go:428` still re-globs instead of calling `loadFakeDictionary`, which additionally rejects zero-byte fixtures (`dict_fake_test.go:49`).
+- **BR-8 (not-addressed)** — `atlas/define.md:1303-1304`, still no blank line before `## Source pronunciation`; and the same insertion added a *double* blank line at `:1269-1270`.
+- **BR-9 (not-addressed)** — no `## Revisions` entry for this round landed in the plan; `plan:148`'s Files line still names `doc_sync_test.go` and `dict_fake_test.go` and still omits `dictselect_test.go` and `invariant_test.go`. Additionally `langHelp` is a new PURE entity in `cmd/define/voice.go` with no Core-concepts row — the "table catches stale rows but not absent ones" gap `#27` recorded.
+- **NEW (Minor, `one-predicate-two-spellings`)** — `TestRenderLosesNothingInEveryCapturedLanguage` (`dict_fake_test.go:297`) is now strictly subsumed by the widened `TestRenderLosesNothing`, and its doc comment at `:290` ("`TestRenderLosesNothing` goes through `testDict(t)`, which is English by definition, so the Spanish captures … were never run through the parser and renderer at all") is now false.
+
+  > **This is the 3rd finding in family `one-predicate-two-spellings`.** Do NOT fix this instance — the rule: **when a check is widened to the dimension its narrower sibling existed to cover, the sibling is deleted in the same commit.** A weaker duplicate left behind is a test that can never fail plus prose that is now wrong. Enumerated at HEAD: one site (`dict_fake_test.go:290-315`); the raw-notation widening created none and the no-notation change consolidated rather than duplicated.
+
+## 5. Test coverage notes
+
+- Mutation-verified this round: Italian content drop → strong invariant red (`it` only); injected IPA fixture → no-notation table red; atlas row mangled → docs guard red; `curated`-derived order loop → red for `it`. Green-on-mutation reproduced for BR-6 (`Italiano`).
+- `TestRenderLosesNothing/it` runs all six Italian words; `noRawNotationIn` and `renderLosesNothingIn` are both non-vacuous because `loadFakeDictionary` refuses an empty corpus.
+- Unrun here: the live half. `TestFixturesMatchLiveDictionary/{en,es,it}` and `TestSelectedDictionaryAnswersInItsOwnLanguage/{es,it}` all SKIP — `en` skips too, so it is the harness, not the change. `CONFORMANCE_STRICT=1 go test -tags conformance ./cmd/define/` from a real session is still the only place `s.f.` and `sycophantic → ErrNoEntry` are exercised.
+- `langHelp` has no test. I judged BR-1 addressed on the derivation plus the observed `-h` output rather than on a test, because a test asserting `langHelp` contains every `curated` key restates the implementation; the pin worth having is on the *registration* (site 6 above).
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** Site 3 (`installedOnThisMachine()` vs the locally re-declared Italian `dictMeta` literals) and the subsumed weak sibling. The conformance table, `noRawNotationIn`, `renderLosesNothingIn` and the two-row no-notation table are all correct consolidations.
+- **ARCH-PURE — pass.** `chooseDictionary` / `monolingualIn` remain pure over `dictMeta`; `langHelp` is a pure init-time computation over a package var (Go's initialization-order analysis makes the `curated` dependency safe). Test-side file reads are the correct seam, not business logic in IO.
+- **ARCH-PURPOSE — flag, and this is the blocking axis.** The shadow-sweep of `curated`'s consumers now passes on `chooseDictionary`, `capture.sh`, README, the corpus, and the flag help; it fails on the six sites tabulated above. A commit message that names the class and a diff that closes two sites is the instance-not-class shape this principle describes, and the ledger's repeated `curated-consumer-unpinned` slug is the signal. `workshop/lessons.md` gained the checkout-trap sharpening this round but nothing about the rule that fired here despite being written down twice — per AGENTS.md §4 that entry is owed.
+- **ARCH-MOCK — pass on the seam, flag on the model.** Italian enters through the existing `Dictionary` seam with `fakeDictionary` behind it and `TestFixturesMatchLiveDictionary` as the live half; `capture.sh` captures through the identifier `chooseDictionary` selects and says why. The gap is site 3: `installedOnThisMachine()` is the *fake of the host's dictionary set*, `#31` measured six more books installed (`it.Devoto-Oli`, `OxfordItalian`, `fr.Multi`, `de.DDDSI`, `OxfordFrench`, `OxfordGerman`), and none reached the fixture — so `TestChooseDictionaryIgnoresDictionariesThatDoNotIndexTheLanguage:178`'s rationale ("nothing installed indexes French") is now measurably false about this machine.
+- **For `#34`:** closing sites 1-5 is what makes adding `fr`/`de` one row plus a red build that lists everything owing an update. Leaving them means `#34` repeats this sweep a fifth time.
+
+## 7. Plan revision recommendations
+
+Still owed in full — round 1's four recommendations are all unlanded — plus two new ones. One `## Revisions` entry in `workshop/plans/000031-curate-dictionaries-plan.md` covering:
+
+1. **Task 5's `**Files:**` line (`plan:148`)** names `doc_sync_test.go` and `dict_fake_test.go`, neither modified; the guards landed in `cmd/define/dictselect_test.go`, and this round also touched `cmd/define/invariant_test.go` and `cmd/define/voice.go`.
+2. **Task 5's first bullet is ticked but its "fix both comments" instruction was correctly not followed** — widening made both `capture.sh:174` and `rawnotation_test.go` true. Amend the task text so no reader hunts for an edit that should not exist.
+3. **D5 needs a scope correction.** It reasons about "the README's book list" and concluded with a README-only guard; the boundary also added an atlas table (now covered) and the `-lang` flag help (a consumer D5 did not consider at all, since fixed as `langHelp`).
+4. **The Done-when coverage table's row 3** should now cite `TestRenderLosesNothing` (widened this round, `invariant_test.go:169`) as the strong pin, and drop the claim that `TestRenderLosesNothingInEveryCapturedLanguage` is what covers no-data-loss.
+5. **New — add a Core-concepts row for `langHelp`** (`cmd/define/voice.go`, PURE, new). The table guard catches stale rows, not absent ones.
+6. **New — record the class that remains open**, with the six-site enumeration above, so `#34` inherits the list rather than rediscovering it.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      langHelp derives from slices.Sorted(maps.Keys(curated)); built binary prints "en, es, it". No test pins the registration — folded into the new enumeration as site 6.
+  - id: BR-2
+    disposition: not-addressed
+    note: |
+      Atlas half fixed and verified red on mutation; the third site it named (dict_conformance_test.go:184 own-language table, no curated cross-check) is untouched.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Consolidated into one table at render_test.go:364; both comments now describe what they sit above.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      One predicate, two rows, per-language why preserved; verified red on an injected IPA-bearing it fixture.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      Verified by mutation — dropping an Italian-only marker in Render reddens only TestRenderLosesNothing/it/*.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      Still strings.Contains(span, name); reproduced green with the atlas row renamed to "Italiano".
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      dictselect_test.go:428 still re-globs rather than calling loadFakeDictionary.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      atlas/define.md:1303 still has no blank line before the heading; the same insertion also left a double blank line at :1269.
+  - id: BR-9
+    disposition: not-addressed
+    note: |
+      No Revisions entry landed; plan:148 Files line unchanged; langHelp also has no Core-concepts row.
+findings:
+  - id: new
+    severity: Important
+    family: curated-consumer-unpinned
+    title: |
+      the class was declared closed in 19b5ea1 but the enumeration was never written; six sites remain, two wrong today
+    detail: |
+      4th round of this family. Do NOT patch a sixth instance — the rule is already in
+      workshop/lessons.md:2390 and :2176 and fired anyway. Rule to enforce: every per-language
+      enumeration ranges over curated, and every language-keyed table is cross-checked against
+      curated in both directions. Measured enumeration at HEAD: (1) dict_conformance_test.go:184
+      own-language table, no cross-check; (2) dictselect_test.go:157 hardcodes {"en","es"} —
+      changing it to range over curated fails today with "it: no choice from the measured set";
+      (3) dictselect_test.go:23 installedOnThisMachine() never gained the Italian books #31
+      measured as installed, so dictselect_test.go:399 re-declares them locally (ARCH-MOCK,
+      ARCH-DRY) — this is what blocks site 2; (4) atlas/define.md:1271 "Three curated languages"
+      sits four lines ABOVE the guarded span, exactly as round 1 predicted; (5) atlas/define.md:1297
+      says es and it are "six fixtures each" — entries/es holds FIVE, wrong today; (6) main.go:408's
+      flag registration is unpinned, so reverting langHelp to a literal is invisible to go test.
+      Sites 4 and 5 are answered by naming the list rather than counting it. ARCH-PURPOSE.
+  - id: new
+    severity: Minor
+    family: one-predicate-two-spellings
+    title: |
+      the widened strong invariant subsumes TestRenderLosesNothingInEveryCapturedLanguage, whose comment is now false
+    detail: |
+      3rd in family. Do NOT just delete this one — the rule: when a check is widened to the
+      dimension its narrower sibling existed to cover, the sibling is deleted in the SAME commit.
+      dict_fake_test.go:297 asserts only a non-empty render over capturedLanguages, which
+      TestRenderLosesNothing (invariant_test.go:169) now covers with exact alnum counts over the
+      same set, so it can no longer fail first; and its doc comment at :290 still claims
+      TestRenderLosesNothing "goes through testDict(t), which is English by definition, so the
+      Spanish captures were never run through the parser and renderer at all", which this round
+      made false. Enumerated at HEAD: this is the only site.
+```
