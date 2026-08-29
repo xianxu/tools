@@ -67,7 +67,7 @@ So "cannot determine" now means exactly one thing: **no modern language is named
 |------|----------|--------|-------|
 | `commandCtx` | `cmd/define/command.go` | modified — gains `entry` | — |
 | `runPron` | `cmd/define/pron_cmd.go` | modified | `commandCtx` |
-| `newCommandCtx` | `cmd/define/command.go` | modified | — |
+| `newCommandCtx` | `cmd/define/command.go` | unchanged — the loops set `entry` post-construction | — |
 
 - **`commandCtx.entry`** — the raw dictionary text of the current word.
   - **Why data and not a capability:** `commandCtx` is deliberately narrower than `deps` — a command may not reach the dictionary or the player. The entry is text the session already has (`session.entry`), the same kind of thing as `lang` and `dictName`. `runPron` must own the inference because it owns the user-facing message; putting it in the loop would split the decision from its explanation.
@@ -122,10 +122,10 @@ plausible simpler rule:
 | `quokka` | a real modern language absent from the map: decline, do not guess | decline |
 | `gaslighting` | an ORIGIN naming no language at all | decline |
 
-- [ ] **Step 1:** write the table; run it; watch it fail undefined.
-- [ ] **Step 2:** implement mask-then-search.
-- [ ] **Step 3:** a fuzz or property case over arbitrary section text — this reads dictionary prose, so it must not panic on empty, non-UTF-8, or a 10 KB `ORIGIN`.
-- [ ] **Step 4:** commit.
+- [x] **Step 1:** write the table; run it; watch it fail undefined.
+- [x] **Step 2:** implement mask-then-search.
+- [x] **Step 3:** a fuzz or property case over arbitrary section text — this reads dictionary prose, so it must not panic on empty, non-UTF-8, or a 10 KB `ORIGIN`.
+- [x] **Step 4:** commit.
 
 ---
 
@@ -141,10 +141,10 @@ plausible simpler rule:
 
 **The report is not decoration.** A silent inference cannot be audited, and this repo's rule is that a record has to be true. It is also what makes `piano`'s contested case visible instead of decided behind your back.
 
-- [ ] **Step 1:** tests, all on committed fixtures — bare `/pron` on `concrete` replays in French and says `ORIGIN says French`; bare `/pron` on `read` errors because its only languages are cognates; bare `/pron` on `gaslighting` errors because nothing is named; `/pron fr` still overrides; `/pron` with nothing looked up still says so.
-- [ ] **Step 2:** run; fail.
-- [ ] **Step 3:** implement.
-- [ ] **Step 4:** commit.
+- [x] **Step 1:** tests, all on committed fixtures — bare `/pron` on `concrete` replays in French and says `ORIGIN says French`; bare `/pron` on `read` errors because its only languages are cognates; bare `/pron` on `gaslighting` errors because nothing is named; `/pron fr` still overrides; `/pron` with nothing looked up still says so.
+- [x] **Step 2:** run; fail.
+- [x] **Step 3:** implement.
+- [x] **Step 4:** commit.
 
 ---
 
@@ -154,8 +154,8 @@ plausible simpler rule:
 
 **Contract.** An ordinary lookup — no `-pron`, no `/pron` — of a word whose `ORIGIN` names a modern language requests ONLY the session's language. `jalapeño` is the case, and it is already in the corpus: `ORIGIN from Mexican Spanish`, and `jalapeño_es_es` is a live 200 — so a regression toward automatic inference would be invisible to a test that only checks the word plays.
 
-- [ ] **Step 1:** write it; verify it reddens by making `defineOnce` infer.
-- [ ] **Step 2:** commit.
+- [x] **Step 1:** write it; verify it reddens by making `defineOnce` infer.
+- [x] **Step 2:** commit.
 
 ---
 
@@ -184,20 +184,20 @@ covers all three is how the last two doc-sweep findings happened:
 | `atlas/define.md:1145` | "The walk exists only when `-pron` or `/pron` **named** a language" | explanatory prose about behaviour |
 | `README.md:340-343` | describes only `/pron fr` | explanatory prose, incomplete rather than false |
 
-- [ ] **The argument rule becomes code-owned.** A `pronCommandHelp` const in
+- [x] **The argument rule becomes code-owned.** A `pronCommandHelp` const in
       `pron_cmd.go` states it once; the atlas's per-command paragraph consumes it
       through a marked span pinned by a doc-sync test, the mechanism `localeHelp`
       and `pronHelp` already use. That is the site `#31` said argument forms
       belong at, so this follows the existing decision rather than reversing it.
-- [ ] **`pronHelp` is left alone.** It documents the flag, the flag does not
+- [x] **`pronHelp` is left alone.** It documents the flag, the flag does not
       infer, and D6 is why.
-- [ ] **The `commands` summary is left alone**, per `#31`.
-- [ ] **The other two sites are swept BY HAND, and the plan says so** rather than
+- [x] **The `commands` summary is left alone**, per `#31`.
+- [x] **The other two sites are swept BY HAND, and the plan says so** rather than
       claiming a mechanism. They are prose about behaviour with no code-owned
       string to derive from; inventing one to make them checkable would be
       machinery for its own sake. The atlas walk sentence becomes "named or
       inferred one"; the README gains the bare form.
-- [ ] Verify every edit by grep rather than asserting it.
+- [x] Verify every edit by grep rather than asserting it.
 
 ---
 
@@ -269,3 +269,21 @@ paragraphs above it in this same plan, and `#31`'s recorded reason for keeping
 argument syntax out of the `commands` summary. Task 4 is rewritten to name which
 of the three false prose sites is mechanically derivable and which two are swept
 by hand, instead of implying one mechanism covers all three.
+
+### 2026-08-29 — implementation notes
+
+- **The plan-status guard `#31` built caught this plan.** The Core-concepts row
+  called `newCommandCtx` `modified`, left over from the pre-PQ-4 draft where the
+  field was to be threaded through the constructor. PQ-4 corrected the contract
+  and the row was not swept — exactly the row-versus-tree drift that guard
+  exists for, firing on the issue that came after it.
+- **A comment in `origin.go` claimed the `Germanic` mask protects `run`, and
+  measurement disproved it.** Removing `Germanic` from the mask list leaves every
+  fixture green: `\bGerman\b` does not match inside "Germanic", so the WORD
+  BOUNDARY is what does the work. The claim is corrected, the mask is kept and
+  labelled as redundancy, and the real guard is pinned by its own case — dropping
+  the boundary reddens five subtests.
+- **Two derived mechanisms caught their own changes**, which is the first time
+  this session they have fired on ordinary work rather than on a review finding:
+  the atlas command table reddened when `/pron`'s summary changed, and
+  `TestParsePronArgs` reddened when the argument contract changed.

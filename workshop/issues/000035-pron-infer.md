@@ -111,18 +111,18 @@ one-word answer.
 
 ## Done when
 
-- [ ] `/pron` with no argument plays the source recording for a word whose ORIGIN
+- [x] `/pron` with no argument plays the source recording for a word whose ORIGIN
       names exactly one modern language, and SAYS which language it chose.
-- [ ] `/pron` errors, naming what it found, when ORIGIN is absent, names only
+- [x] `/pron` errors, naming what it found, when ORIGIN is absent, names only
       historical stages, or names more than one modern language.
-- [ ] Historical stages are excluded BY CATEGORY with the reason recorded, not by
+- [x] Historical stages are excluded BY CATEGORY with the reason recorded, not by
       relying on the CDN to 404 them.
-- [ ] `/pron fr` still overrides, and is unchanged.
-- [ ] The language-name table is a DECISION with its reason recorded, reconciled
+- [x] `/pron fr` still overrides, and is unchanged.
+- [x] The language-name table is a DECISION with its reason recorded, reconciled
       against `ParseLang` and `localeFor` both refusing to enumerate.
-- [ ] `#29`'s D1 — no AUTOMATIC origin audio — is demonstrably untouched, pinned
+- [x] `#29`'s D1 — no AUTOMATIC origin audio — is demonstrably untouched, pinned
       by a test rather than by assertion.
-- [ ] The extraction is pure and table-tested over captured ORIGIN text, not only
+- [x] The extraction is pure and table-tested over captured ORIGIN text, not only
       exercised through the live dictionary.
 
 ## Estimate
@@ -195,12 +195,12 @@ Designed. Durable plan: `workshop/plans/000035-pron-infer-plan.md` (4 tasks,
 single pass, no `Mx`).
 
 - [x] Claim, then design via `sdlc start-plan`.
-- [ ] `OriginLanguage` — the pure inference, mask-then-search over two measured
+- [x] `OriginLanguage` — the pure inference, mask-then-search over two measured
       tables.
-- [ ] `/pron` uses it: no argument infers, reports the choice, errors with the
+- [x] `/pron` uses it: no argument infers, reports the choice, errors with the
       reason.
-- [ ] Pin that #29's D1 is untouched — an ordinary lookup never infers.
-- [ ] Docs: `pronHelp` (which both docs already consume) plus the atlas record
+- [x] Pin that #29's D1 is untouched — an ordinary lookup never infers.
+- [x] Docs: `pronHelp` (which both docs already consume) plus the atlas record
       of why bare Greek is ancient and why this table is accepted where
       ParseLang refuses one.
 
@@ -214,3 +214,45 @@ measured before filing. Sequenced BEFORE `#30` deliberately: it makes both of
 click is a replay, and a click on `ORIGIN French` is `/pron` with that language —
 so the inference question is settled before the screen work starts rather than
 tangled into it.
+
+### 2026-08-29 — shipped
+
+`/pron` reads the source language off `ORIGIN` and says which it chose. Four
+tasks, one boundary.
+
+**The plan gate reshaped the rule and then simplified it.** The first design
+searched the whole `ORIGIN` section, which infers from COGNATE clauses: `bring`
+is *"Old English bringan, of Germanic origin; related to Dutch brengen and
+German bringen"* — an Old English word with no source at all, from which the rule
+would have inferred German. That is `#29`'s D1 arriving by another road, and it
+was Critical.
+
+Measuring the fix removed a branch the plan had: `casque` (*"from French, from
+Spanish casco"*), `knout`, `ballet` and `mesa` are borrowing CHAINS, not
+ambiguities. NOAD's convention is that the first-named source is the immediate
+one, so first-named-wins is the correct reading rather than a tiebreak, and after
+cutting cognates nothing is left needing an ambiguity error. "Cannot determine"
+now means exactly one thing.
+
+**Two claims of mine were disproved by measurement rather than by argument:**
+
+1. A comment said masking `Germanic` is what stops `run` inferring German.
+   Removing the mask leaves every fixture green — `\bGerman\b` does not match
+   inside "Germanic", so the WORD BOUNDARY does the work. Corrected, and the real
+   guard is pinned by its own case rather than left to a comment.
+2. The estimate block declared 1.33 against arithmetic of 1.395. Caught by my own
+   reconciliation check, not the gate.
+
+**A plan-gate finding caught me contradicting myself twice in one fix.** Answering
+"the argument rule is unpinned" by putting it in `pronHelp` would have made it
+false — that const documents the `-pron` FLAG, and D6 says the flag does not
+infer — and putting it in the `commands` summary would have reversed `#31`'s
+recorded reason for keeping argument syntax out of it. It lives in its own const
+with a marked atlas span, and the two prose sites with no code-owned string are
+swept by hand and named as such.
+
+**Three mechanisms built in earlier issues fired on this one**, which is the
+first time this session they caught ordinary work rather than a review finding:
+`#31`'s plan-status guard flagged a stale `newCommandCtx` row, `#31`'s derived
+command table reddened when the summary changed, and the old contract test
+reddened when the contract did.
