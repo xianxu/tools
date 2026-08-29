@@ -143,3 +143,80 @@ func AudioCandidates(word string, v voice) []string {
 	}
 	return out
 }
+
+// utterance is one request for a recording: the word, the spellings its source
+// language might key it under, and the two voices to try in order (#29).
+//
+// A struct rather than positional arguments because Source and Session are BOTH
+// `voice` and therefore transposable at every call site — the same argument that
+// made `voice` itself a struct, one level up. The compiler cannot tell two
+// voices apart; a field name can.
+type utterance struct {
+	// Word is what the user typed. The SESSION's recording is keyed on it,
+	// exactly as it was before #29 — that path is deliberately unchanged.
+	Word string
+	// Spellings are the SOURCE orthographies, best first, from SourceSpellings.
+	Spellings []string
+	// Source is the voice -pron asked for. A zero Lang means nothing was asked
+	// for, and then this is exactly the pre-#29 single-voice request.
+	Source voice
+	// Session is the voice this session would have used anyway: the fallback,
+	// and the only voice when Source is zero.
+	Session voice
+}
+
+// sourceCandidates is every URL for the source voice: one AudioCandidates run
+// per spelling, in order.
+//
+// Empty when no source was asked for, and empty when the source voice IS the
+// session's — `/pron es` inside a Spanish session asks for the recording already
+// being fetched, and asking twice is two requests for one answer.
+func (u utterance) sourceCandidates() []string {
+	if u.Source.Lang == "" || u.Source == u.Session {
+		return nil
+	}
+	var out []string
+	for _, s := range u.Spellings {
+		out = append(out, AudioCandidates(s, u.Source)...)
+	}
+	return out
+}
+
+// Candidates is the whole walk: the source attempts, then the session's own
+// recording as the fallback.
+//
+// THIS IS A CROSS-LANGUAGE FALLBACK, which #23 removed and the atlas recorded as
+// "One language, no fallback". Reintroducing it is deliberate, and the two cases
+// are not the same one. #23's fallback would have been a GUESS about which
+// language a word belongs to, run on every lookup and paid for by every user —
+// and measurement says such a guess is often wrong: police_fr_fr,
+// restaurant_fr_fr and machine_fr_fr are all 200 for words nobody wants said in
+// French. This one runs ONLY when -pron or /pron was typed, and what actually
+// answered is reported (reportVoice) rather than left to sound like success. A
+// documented degradation from an explicit request, not a guess.
+//
+// It has to exist because source coverage is partial, measured 2026-08-28/29:
+// hotel_fr_fr and debut_fr_fr are 404 while their _en_us_ are 200, Italian is
+// absent from this CDN generation entirely (ciao, pizza, espresso, opera), and
+// so is Japanese (karaoke, tsunami). Without the fallback those words play
+// nothing at all.
+func (u utterance) Candidates() []string {
+	src := u.sourceCandidates()
+	ses := AudioCandidates(u.Word, u.Session)
+	// A fresh slice: appending onto what sourceCandidates returned would let a
+	// caller's retained result alias this one.
+	out := make([]string, 0, len(src)+len(ses))
+	out = append(out, src...)
+	return append(out, ses...)
+}
+
+// spokeSource reports whether the URL that answered was a source attempt.
+//
+// By MEMBERSHIP in the list actually built, never by parsing the URL. The report
+// this feeds is a RECORD — it survives on a pipe and cannot be taken back — and
+// a record has to be true. Reading a language back out of a path would be a
+// second, driftable statement of what a source URL looks like, and it would go
+// wrong the day the CDN generation moves.
+func (u utterance) spokeSource(from string) bool {
+	return slices.Contains(u.sourceCandidates(), from)
+}

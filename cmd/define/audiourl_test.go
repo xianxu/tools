@@ -308,3 +308,68 @@ func TestSourceSpellingsPutsTheAccentedFormFirst(t *testing.T) {
 		})
 	}
 }
+
+func TestAnUtteranceAsksTheSourceFirstAndFallsBackToTheSession(t *testing.T) {
+	en := voice{Lang: "en", Locale: "us"}
+	es := voice{Lang: "es", Locale: "es"}
+	it := voice{Lang: "it", Locale: "it"}
+
+	// The no-regression assertion for every caller that never asks for a source:
+	// the walk must be the SAME BYTES it was before #29, not merely equivalent.
+	t.Run("no source asked for leaves the ordinary walk untouched", func(t *testing.T) {
+		u := utterance{Word: "sycophantic", Session: en}
+		if got, want := u.Candidates(), AudioCandidates("sycophantic", en); !slices.Equal(got, want) {
+			t.Errorf("an utterance with no source changed the ordinary walk:\ngot  %q\nwant %q", got, want)
+		}
+	})
+
+	t.Run("every source spelling is tried before the session's own", func(t *testing.T) {
+		u := utterance{Word: "jalapeno", Spellings: []string{"jalapeño", "jalapeno"}, Source: es, Session: en}
+		var want []string
+		want = append(want, AudioCandidates("jalapeño", es)...)
+		want = append(want, AudioCandidates("jalapeno", es)...)
+		want = append(want, AudioCandidates("jalapeno", en)...)
+		if got := u.Candidates(); !slices.Equal(got, want) {
+			t.Errorf("walk order wrong:\ngot  %q\nwant %q", got, want)
+		}
+		// The walk ENDS at the session's recording, which is what makes a source
+		// miss degrade rather than go silent: fr coverage is partial (hotel and
+		// debut are 404 on fr_fr, 200 on en_us) and Italian is absent entirely.
+		// By MEMBERSHIP, not by matching "_en_us_" in the string. An English walk
+		// ends on the LEGACY path — /sounds/oxford/jalapeno--_us_2.mp3 — which
+		// carries no such marker, so a substring check calls the right answer
+		// wrong. Same rule spokeSource follows one level down.
+		got := u.Candidates()
+		if last := got[len(got)-1]; !slices.Contains(AudioCandidates(u.Word, u.Session), last) {
+			t.Errorf("the walk does not end at the session's recording: %q", last)
+		}
+	})
+
+	t.Run("a source equal to the session is not asked for twice", func(t *testing.T) {
+		u := utterance{Word: "madrugar", Spellings: []string{"madrugar"}, Source: es, Session: es}
+		if got, want := u.Candidates(), AudioCandidates("madrugar", es); !slices.Equal(got, want) {
+			t.Errorf("/pron es in a Spanish session doubled the walk:\ngot  %q\nwant %q", got, want)
+		}
+	})
+
+	// By MEMBERSHIP in the list actually built, never by reading the URL: the
+	// report this feeds is a record, and a record has to be true.
+	t.Run("spokeSource answers by membership, not by parsing", func(t *testing.T) {
+		u := utterance{Word: "ciao", Spellings: []string{"ciao"}, Source: it, Session: en}
+		if src := AudioCandidates("ciao", it)[0]; !u.spokeSource(src) {
+			t.Errorf("a source URL was not recognised as one: %q", src)
+		}
+		if ses := AudioCandidates("ciao", en)[0]; u.spokeSource(ses) {
+			t.Errorf("the session's URL was reported as a source one: %q", ses)
+		}
+		if u.spokeSource("https://example.invalid/nothing.mp3") {
+			t.Error("a URL in neither list was reported as a source one")
+		}
+		// And with no source asked for, nothing is a source — including the URL
+		// that will actually answer.
+		plain := utterance{Word: "ciao", Session: en}
+		if plain.spokeSource(AudioCandidates("ciao", en)[0]) {
+			t.Error("an utterance with no source claimed one spoke")
+		}
+	})
+}
