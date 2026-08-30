@@ -129,13 +129,16 @@ to `#35`'s code and is where `M2.1` starts.
 | # | claim | pinned by | red when |
 |---|---|---|---|
 | 1 | the viewport arithmetic is right | `TestScreenFrame` | `Frame` stops clamping the offset |
-| 2 | a streamed fragment lands as text, not a frame | `TestScreenWriteContinuesAPartialLine` | `Write` splits on every call boundary |
-| 3 | the terminal is restored on every exit | `TestPTYAltScreenIsLeftOnExit` | `leaveAlt` is dropped from the restore path |
+| 2 | a streamed fragment lands as text, not a frame | `TestScreenWriteBuildsLines/a partial line CONTINUES` | `Write` splits on every call boundary |
+| 3 | the terminal is restored on every exit | `TestRestoreLeavesTheAlternateScreen`, and on a real pty the Fatal in `TestPTYTranscriptIsPrintedOnExit` ("the alternate screen was never left") | `leaveAlt` is dropped from the restore path |
+| 3b | **mouse reporting is given back** (M1.4b) | `TestPTYMouseTrackingIsAskedForAndGivenBack` | the disable is dropped, and the next program run in that terminal gets escape sequences typed into it |
 | 4 | the viewport can be moved by a user | `TestEditorPageKeysScroll` | the key case is removed from the select |
 | 4b | **the keys it already had still work** | `TestCtrlDStillEndsTheSession`, `TestCtrlUStillKillsTheLine` | Ctrl-U or Ctrl-D is rebound to scrolling |
 | 5 | a resize repaints | `TestPTYResizeRepaints` | the SIGWINCH case is removed from the select |
 | 6 | the transcript survives exit | `TestPTYTranscriptIsPrintedOnExit` | D3's loop is removed |
 | 7 | the one-shot and piped paths are untouched | the existing suite, unchanged | any of them starts entering the alt screen |
+| 8 | **the wheel scrolls rather than walking history** (M1.4b) | `TestWheelScrollsRatherThanWalkingHistory`, `TestDecodeWheel`, `FuzzDecodeWheelIsBounded` | tracking is not enabled, so the terminal sends arrows and Up/Down recall words |
+| 9 | **a prompt is only shown when the loop is waiting** (M1.3b) | `TestNothingIsWrittenWhileAPromptIsShown` | the live edge is left standing through a lookup, and the submitted line is repainted under its own definition |
 
 ---
 
@@ -319,3 +322,21 @@ What follows from it:
   that lists what the console understands.
 - **A notch is three lines**, matching what the terminal itself means by one:
   left alone it sends three arrow keys per notch.
+
+### 2026-08-29 — M1 done-when: two rows named tests that do not exist
+
+Caught before the boundary review, and it is the same class the plan spent PQ-10
+on: a claim about the tree written from intent rather than checked. Both claims
+ARE pinned; the names were invented at planning time and the code chose others.
+
+- Row 2's `TestScreenWriteContinuesAPartialLine` is a SUBTEST of
+  `TestScreenWriteBuildsLines`.
+- Row 3's `TestPTYAltScreenIsLeftOnExit` was never written. In-process the claim
+  is `TestRestoreLeavesTheAlternateScreen`; on a real terminal it is the Fatal
+  inside `TestPTYTranscriptIsPrintedOnExit`, which cannot find the transcript
+  without first finding the teardown. A dedicated row would assert the same
+  bytes twice.
+
+Rows 3b, 8 and 9 are new: M1.4b's mouse tracking and wheel, and M1.3b's rule that
+a prompt means the loop is waiting. All three are behaviour M1 ships that the
+table did not cover, because two of them are answers to operator reports.
