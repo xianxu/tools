@@ -68,6 +68,8 @@ type recordDisplay struct {
 	lines   []int
 	rows    []int
 	cols    []int
+	regions []Region
+	at      map[[2]int]Region
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
@@ -85,8 +87,19 @@ func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
 // names its own recorder: `view.lastPrompt()` says what it means, and a literal
 // with named fields cannot be swapped by position either.
 func editorConsole(out, errb io.Writer, finish func()) console {
-	return console{view: paintInto(out), finish: finish, stdout: out, stderr: errb}
+	view := paintInto(out)
+	// view AND stdout, one object — production's shape, where both are the same
+	// liveScreen (#30 D5b). stderr stays its own buffer here, which is the one
+	// deliberate departure: a test that wants to tell a diagnostic from the
+	// session's output needs them apart, and the loop cannot tell.
+	return console{view: view, finish: finish, stdout: view, stderr: errb}
 }
+
+// Write makes the recorder the console's STDOUT as well as its display, which
+// is production's shape: there, both are one liveScreen. A double that split
+// them would never be handed a click map, because the map travels with the text
+// through the writer.
+func (d *recordDisplay) Write(p []byte) (int, error) { return d.w.Write(p) }
 
 func (d *recordDisplay) Draw(prompt string, menu []string) {
 	d.mu.Lock()
@@ -112,6 +125,43 @@ func (d *recordDisplay) Scroll(n int) {
 	d.mu.Lock()
 	d.lines = append(d.lines, n)
 	d.mu.Unlock()
+}
+
+// WriteRegions records the click map a render offered, and writes the text where
+// the loop's own output goes — so a test still reads one session as one stream.
+func (d *recordDisplay) WriteRegions(text string, rs []Region) {
+	d.mu.Lock()
+	d.regions = append(d.regions, rs...)
+	d.mu.Unlock()
+	fmt.Fprint(d.w, text)
+}
+
+// RegionAtRow answers a click. A test SCRIPTS the answer — `at` maps a
+// (row, col) to whatever should be found there — because what the loop's tests
+// pin is what it DOES with a region, and where regions actually live is pinned
+// on the real screen in screen_test.go.
+func (d *recordDisplay) RegionAtRow(row, col int) (Region, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	r, ok := d.at[[2]int{row, col}]
+	return r, ok
+}
+
+func (d *recordDisplay) offer(row, col int, r Region) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.at == nil {
+		d.at = map[[2]int]Region{}
+	}
+	d.at[[2]int{row, col}] = r
+}
+
+// collected is every region the loop was handed, for a test that asserts the
+// entry really did carry a click map.
+func (d *recordDisplay) collected() []Region {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]Region(nil), d.regions...)
 }
 
 func (d *recordDisplay) Resize(rows, cols int) {
@@ -676,5 +726,156 @@ func TestWatchResizeWithoutASignalTransport(t *testing.T) {
 	case sz := <-out:
 		t.Errorf("a shape arrived from nowhere: %v", sz)
 	default:
+	}
+}
+
+// Clicking the headword plays it (#30 M2.4, Done-when 1).
+//
+// The click goes through replayInPlace — the same path a bare Enter takes — so
+// it cannot drift from the gesture it is a shortcut for. Asserted on the CDN
+// request, which is the observable a user gets: what was actually asked for.
+func TestClickOnHeadwordReplays(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	view.offer(3, 5, Region{Kind: RegionHeadword, Text: "sycophantic", Word: "sycophantic"})
+
+	// Look the word up, then click its headword.
+	ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 3, Col: 5})...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+	// Three for the lookup, three for the click, and NO second fetch: the click
+	// replays rather than looking the word up again.
+	if got := rig.player.count(); got != 6 {
+		t.Errorf("played %d times, want 6 — the lookup and the click", got)
+	}
+	if got := rig.cdn.Requested(); len(got) != 1 {
+		t.Errorf("made %d CDN requests, want 1 — the click refetched: %v", len(got), got)
+	}
+}
+
+// Clicking `ORIGIN French` plays it in French (#30 M2.4, Done-when 2).
+//
+// This is the click the issue was filed for. It reaches #29's mechanism through
+// the same replay a `/pron fr` takes — one parameter apart — rather than a
+// second path that could disagree about what a source language means.
+func TestClickOnOriginLanguagePlaysIt(t *testing.T) {
+	// `concrete` is the corpus's French-origin entry: "from French concret or
+	// Latin concretus" — a stage before the language, which is also the shape
+	// the offset mask has to survive.
+	en := voice{Lang: "en", Locale: "us"}
+	fr := voice{Lang: "fr", Locale: "fr"}
+	english := AudioCandidates("concrete", en)[0]
+	french := AudioCandidates("concrete", fr)[0]
+
+	rig := newAudioRigServing(t, english, french)
+	rig.deps.stdinIsTerminal = func() bool { return true }
+	opt := options{times: 1, tty: true, color: true}
+
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	view.offer(9, 4, Region{Kind: RegionOriginLang, Text: "French", Word: "concrete", Lang: "fr"})
+
+	ks := keySeq(append(runes("concrete"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 9, Col: 4})...)
+	code := runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: func() {}, stdout: &out, stderr: &errb})
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+
+	// The lookup asked in the session's language; the click asked in French.
+	want := []string{stripHost(t, english, audioBase), stripHost(t, french, audioBase)}
+	if got := rig.cdn.Requested(); !slices.Equal(got, want) {
+		t.Errorf("the CDN was asked for:\n  %q\nwant:\n  %q", got, want)
+	}
+}
+
+// A click on ordinary text is NOTHING — not a beep, not a message.
+//
+// Pointing at a word that offers nothing is not an error, and a program that
+// answered one would make the whole screen feel like a minefield.
+func TestClickOnNothingIsNothing(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	// No regions offered anywhere.
+
+	ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 4, Col: 2})...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+	if got := rig.player.count(); got != 3 {
+		t.Errorf("played %d times, want 3 — the click on empty text acted", got)
+	}
+	if s := errb.String(); strings.Contains(s, "define:") {
+		t.Errorf("a click on ordinary text produced a message: %q", s)
+	}
+}
+
+// A click never reaches the editor: it is a gesture on the SCREEN, so the line
+// being typed is untouched — the same rule the viewport keys follow.
+func TestClickDoesNotTouchTheLine(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	view.offer(1, 1, Region{Kind: RegionHeadword, Text: "sycophantic", Word: "sycophantic"})
+
+	ks := keySeq(append(runes("syc"), Key{Kind: KeyClick, Row: 1, Col: 1})...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+	if last := view.lastPrompt(); !strings.Contains(last, "syc") {
+		t.Errorf("a click disturbed the line being typed: %q", last)
+	}
+}
+
+// An ENTRY carries its click map to the screen, which is the wiring between
+// Render's regions and the hit test — and the half that a scripted display
+// double cannot check for itself.
+func TestALookupHandsItsRegionsToTheScreen(t *testing.T) {
+	rig, opt, finish := editorRig(t, "concrete", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	runEditor(t.Context(), scriptKeys("concrete\r"), nil, rig.deps, opt,
+		console{view: view, finish: finish, stdout: view, stderr: &errb})
+
+	got := view.collected()
+	if len(got) == 0 {
+		t.Fatal("the entry reached the screen with no click map at all")
+	}
+	var kinds []RegionKind
+	for _, r := range got {
+		kinds = append(kinds, r.Kind)
+		if r.Word != "concrete" {
+			t.Errorf("region %q belongs to %q, want the entry's headword", r.Text, r.Word)
+		}
+	}
+	if !slices.Contains(kinds, RegionHeadword) {
+		t.Errorf("no headword region: the primary target is missing (%v)", got)
+	}
+	if !slices.Contains(kinds, RegionOriginLang) {
+		t.Errorf("no ORIGIN language region for `concrete`, whose etymology names French (%v)", got)
+	}
+}
+
+// Regions are ONE REGISTRY, not two special cases (#30 Done-when 7).
+//
+// The issue is filed as "the affordance is one mechanism, so a third consumer is
+// a row rather than a new feature". A Kind with no action is that promise
+// quietly breaking: the region draws, invites a click, and does nothing.
+func TestEveryRegionKindIsActionable(t *testing.T) {
+	for kind := RegionHeadword; kind <= RegionOriginLang; kind++ {
+		// A fresh rig per kind, so each count starts from zero rather than from
+		// whatever the previous kind left behind.
+		rig, opt, finish := editorRig(t, "sycophantic", true)
+		var out, errb bytes.Buffer
+		view := paintInto(&out)
+		view.offer(2, 0, Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"})
+
+		ks := keySeq(append(runes("sycophantic"), Key{Kind: KeyEnter}, Key{Kind: KeyClick, Row: 2, Col: 0})...)
+		runEditor(t.Context(), ks, nil, rig.deps, opt, console{view: view, finish: finish, stdout: &out, stderr: &errb})
+
+		// Every kind must DO something: the lookup plays 3, so a kind that acted
+		// plays more. A kind added with no case in `clicked` reddens here.
+		if got := rig.player.count(); got <= 3 {
+			t.Errorf("RegionKind %d played nothing when clicked — it draws, invites a click, and does nothing", kind)
+		}
 	}
 }

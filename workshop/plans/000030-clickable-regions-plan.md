@@ -183,6 +183,8 @@ to `#35`'s code and is where `M2.1` starts.
 | `clickAt` / `isClickButton` / `parseParams` | `cmd/define/key.go` | new | PURE — one owner for the wire→screen conversion and its guard, across both encodings |
 | `screen.RegionAt` / `screen.LineAt` / `screen.addRegions` | `cmd/define/screen.go` | new | PURE — the hit test, and the viewport-row → buffer-line mapping the alt screen makes exact |
 | `liveScreen.WriteRegions` / `liveScreen.RegionAtRow` | `cmd/define/screen.go` | new | the click map's IO side: one call, so text and regions cannot disagree about which line a render landed on |
+| `regionWriter` / `writeRendered` | `cmd/define/main.go` | new | the seam fills itself — a writer that can hold a click map gets one, a pipe gets bytes (D6) |
+| `Region.Word` | `cmd/define/render.go` | new | the entry a region belongs to, because a click can land on one the session has scrolled past |
 
 - **`Region`** — `{Kind, Text, Lang, Line, Col, Width}`: what a span of rendered text OFFERS.
   - **The headword falls out of the existing walk; the ORIGIN language does NOT, and an earlier draft of this plan claimed it did.** `Render` colours `sec.Name` — the word "ORIGIN" — and passes `sec.Text` through `opt.prose(wrapText(...))`, which highlights DECK words. Nothing isolates "French" inside that text. So the language region needs a new pass over the section text, and that pass is the same matching `#35` already does.
@@ -201,7 +203,7 @@ to `#35`'s code and is where `M2.1` starts.
       **Positions carry across by OCCURRENCE INDEX.** The mentions producer says which occurrences are sources — it cuts cognate clauses and masks stages, so a "Dutch" that is on screen may not be one — and rendering preserves the text's characters in order, so the *n*th "French" in the section is the *n*th on screen. The ORIGIN search is bounded to that section's lines, because `arrondissement`'s own gloss says "a French department" and that is not an etymology.
 - [x] **M2.2 — `decodeMouse` for BUTTONS.** The tracking enable/disable and the wheel half of the decoder landed in `M1.4b`, paired with the alt screen on `rawSession` so a crash cannot leave tracking on, with the bounded-consumption fuzz target this row called for. What is left is the press: its coordinates, which are inert today because nothing can look them up yet.
 - [x] **M2.3 — hit test**: `screen.RegionAt(row, col)`, which is a lookup in the per-line region list. Pure.
-- [ ] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
+- [x] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
 - [ ] **M2.5 — discoverability, STATIC rather than on hover** — and the tracking mode is the reason. Hover needs `1003` (any-event tracking), which streams an event for every cell the pointer crosses, so the loop would wake constantly to redraw an underline. `1000` (button press only) is what this issue enables, and with it the app never learns where the pointer is. So a clickable span is marked in the FRAME: the palette (`newPalette`) already spends `head`, `ipa`, `pos`, `num`, `ex`, `sect` and bold-green for deck words, so the mark is an ATTRIBUTE — underline — added to the span's existing colour rather than a seventh colour competing with them.
       It is spliced by the SCREEN, not by `Render`, because D6 promises the one-shot and `-raw` bytes are unchanged. `sgr.go`'s `sgrState.observe`/`resume` (`sgr.go:27,57`) is the existing machinery for reopening styles around an inserted attribute; this uses it rather than a second one.
 - [ ] **M2.6 — degrade**, and the case is NOT only "a terminal that reports no mouse". The exposure that actually bit was a terminal that reports the mouse in an encoding we did not ask for: mode `1000` falls back to X10 (`ESC[M` + three raw bytes), which the CSI scan delimited at `M` and left three payload bytes to be typed into the line. Fixed in M1's rework (`decodeX10Mouse`); this row keeps the rule that produced it — **for every mode we enable, the decoder answers every encoding that mode can reply in** — and applies it to whatever M2 turns on.
@@ -567,3 +569,33 @@ the buffer's last line. The target is the END of the prompt, which for a wrappin
 prompt is not its first row; deriving that from the terminal model rather than
 from Paint's formula is what makes it an assertion rather than a restatement. All
 four mutations now redden it.
+
+### 2026-08-30 — M2.2–M2.4 as built
+
+- **The fuzzer found two real defects**, both in the class it was written for — a
+  decoder inventing a gesture out of bytes nobody made. An X10 coordinate byte of
+  `0x20` decodes to wire coordinate 0, and `0-1` is row −1, which indexes
+  backwards through the region map; and `ESC O <0;1;1M` was accepted as a mouse
+  report because `decodeEscape` handles CSI and SS3 in one branch for the arrow
+  keys. Neither is a sequence any terminal sends, which is exactly why nothing
+  else would have caught them. `clickAt` now owns the wire→screen conversion and
+  its guard for both encodings, as `wheelFromButton` owns the button byte.
+- **A press acts; a release does not.** Both arrive, and acting on both would
+  play every recording twice.
+- **Left button only.** Middle pastes and right opens a menu in every terminal a
+  user knows; taking either would break a gesture this program did not invent.
+- **`Region.Word` was not in the plan and is load-bearing.** A reader can scroll
+  back and click a word from earlier in the session, and the session keeps only
+  the CURRENT entry's raw text — which is what supplies the source spellings for
+  a foreign replay. So a region carries its own entry's headword, and an older
+  entry replays through `#29`'s fallback on the headword itself: the degraded
+  answer rather than a wrong one.
+- **`writeRendered` fills the seam rather than the caller branching.** A writer
+  that can hold a click map gets one; a one-shot, a pipe or `> out.txt` gets
+  exactly the bytes it always did (D6). One call either way, so the text and the
+  regions cannot be written at different moments and disagree by a line.
+- **The test double became ONE object for view and stdout**, which is
+  production's shape (both are the same `liveScreen`). The split version was
+  never handed a click map, because the map travels with the text through the
+  writer — a test reading a session the loop never produced, which is the exact
+  failure `editorConsole`'s comment already warned about.

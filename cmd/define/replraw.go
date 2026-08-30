@@ -125,6 +125,14 @@ type display interface {
 	// Resize sets the terminal's SHAPE. The caller redraws, because the live
 	// edge is rendered against the new width too.
 	Resize(rows, cols int)
+	// WriteRegions writes rendered text AND the click map for it. One call,
+	// because the regions are relative to that render and only the screen knows
+	// which buffer line it lands on — two calls could disagree by a line, which
+	// is a click that plays the word above the one you pointed at.
+	WriteRegions(text string, rs []Region)
+	// RegionAtRow answers what is offered at a VIEWPORT row and display column,
+	// which is what a terminal reports for a click.
+	RegionAtRow(row, col int) (Region, bool)
 }
 
 // onceHandBack is handBack, exactly once. Named so the loop's exit paths — three
@@ -245,6 +253,34 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	}
 	draw()
 
+	// The click actions, as a REGISTRY rather than two special cases — which is
+	// what #30 is filed as: "the affordance is ONE mechanism, so a third
+	// consumer is a row rather than a new feature".
+	//
+	// Every action is a replay with one parameter, because that is what these
+	// regions offer: the headword in the session's language, the ORIGIN language
+	// in its own. `replayInPlace` is the same path a bare Enter and `/pron`
+	// take, so a click cannot drift from the gestures it is a shortcut for.
+	clicked := func(r Region) {
+		// The clicked entry, which is not always the current one: a reader can
+		// scroll back and click a word from earlier in the session. The session
+		// keeps only the CURRENT entry's raw text, and that text is what supplies
+		// the source spellings for a foreign replay — so an older entry replays
+		// through #29's fallback on the headword itself, which is the degraded
+		// answer rather than a wrong one.
+		clicked := session{current: r.Word}
+		if r.Word == sess.current {
+			clicked.entry = sess.entry
+		}
+		switch r.Kind {
+		case RegionHeadword:
+			replayInPlace(ctx, d, opt, clicked, "", stdout, stderr)
+		case RegionOriginLang:
+			replayInPlace(ctx, d, opt, clicked, r.Lang, stdout, stderr)
+		}
+		draw()
+	}
+
 	// ONE entry into the ask path for this loop, reached from two places: a
 	// forced question ("?…") and a dictionary miss that reads as one. It used to
 	// hang the streaming writers too, because a raw terminal was what made them
@@ -338,6 +374,16 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				continue
 			case KeyWheelDown:
 				view.Scroll(-wheelLines)
+				continue
+			case KeyClick:
+				// A click is a gesture on the SCREEN, so like the viewport keys
+				// it never reaches Apply — the editor does not learn that a
+				// screen exists. What it can do is act on the region under the
+				// pointer, and a click on nothing is nothing: no beep, no
+				// message. Pointing at ordinary text is not an error.
+				if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
+					clicked(r)
+				}
 				continue
 			}
 			cands := candidatesFor(e.WalkBase(), hist, commands)

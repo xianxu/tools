@@ -246,8 +246,16 @@ const (
 // adding its own scroll offset — exact by construction, because nothing but the
 // screen can move the view (#30 D1).
 type Region struct {
-	Kind  RegionKind
-	Text  string
+	Kind RegionKind
+	// Text is the span as it appears on screen — the headword, or the language
+	// name in the ORIGIN.
+	Text string
+	// Word is the ENTRY this region belongs to, which is not always Text: an
+	// ORIGIN language names the source, and the word to play is still the
+	// headword. It travels on the region because a click can land on an entry
+	// the session has long since scrolled past, and the session keeps only the
+	// current one.
+	Word  string
 	Lang  store.Lang // RegionOriginLang only
 	Line  int
 	Col   int
@@ -270,6 +278,7 @@ func regionsIn(e Entry, rendered string) []Region {
 		return nil
 	}
 	var out []Region
+	word := e.Headword()
 
 	// The headword, and the syllabified form beside it where one exists — the
 	// operator asked for both ("click on the word itself, e.g. `potassium`, or
@@ -280,7 +289,7 @@ func regionsIn(e Entry, rendered string) []Region {
 			continue
 		}
 		if col, w, ok := findVisible(lines[0], t.Text, 0); ok {
-			out = append(out, Region{Kind: RegionHeadword, Text: t.Text, Line: 0, Col: col, Width: w})
+			out = append(out, Region{Kind: RegionHeadword, Text: t.Text, Word: word, Line: 0, Col: col, Width: w})
 		}
 	}
 
@@ -308,7 +317,7 @@ func regionsIn(e Entry, rendered string) []Region {
 				continue
 			}
 			out = append(out, Region{
-				Kind: RegionOriginLang, Text: m.Name, Lang: m.Lang,
+				Kind: RegionOriginLang, Text: m.Name, Word: word, Lang: m.Lang,
 				Line: ln, Col: col, Width: w,
 			})
 			break

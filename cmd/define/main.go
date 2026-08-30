@@ -771,15 +771,35 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		d.capture.Capture(word, true, opt)
 		return lookupOutcome{entry: text}
 	}
-	// The regions are DISCARDED here and that is correct for this path: they are
-	// coordinates into a frame, and only the interactive loop owns one. A
-	// one-shot, a pipe or `> out.txt` has nowhere to click (#30 D6).
-	rendered, _ := Render(ParseEntry(text), RenderOpts{
+	rendered, regions := Render(ParseEntry(text), RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 	})
-	fmt.Fprint(stdout, rendered)
+	writeRendered(stdout, rendered, regions)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
+}
+
+// regionWriter is a writer that can also hold a CLICK MAP for what it is given.
+// The interactive screen is the only one; everything else takes bytes.
+type regionWriter interface {
+	io.Writer
+	WriteRegions(text string, rs []Region)
+}
+
+// writeRendered gives an entry to a writer, with its regions if the writer has
+// somewhere to put them.
+//
+// The seam fills itself rather than the caller branching: a one-shot, a pipe or
+// `> out.txt` has nowhere to click and gets exactly the bytes it always did
+// (#30 D6), while the interactive screen gets the map. One call either way, so
+// the text and the regions cannot be written at different moments and disagree
+// about which line they landed on.
+func writeRendered(w io.Writer, text string, rs []Region) {
+	if rw, ok := w.(regionWriter); ok {
+		rw.WriteRegions(text, rs)
+		return
+	}
+	fmt.Fprint(w, text)
 }
 
 // defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.
