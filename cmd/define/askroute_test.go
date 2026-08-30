@@ -35,9 +35,9 @@ func TestLineLoopRoutesAQuestion(t *testing.T) {
 }
 
 func TestEditorLoopRoutesAQuestion(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
 }
@@ -59,9 +59,9 @@ func TestLineLoopRoutesAForcedQuestion(t *testing.T) {
 }
 
 func TestEditorLoopRoutesAForcedQuestion(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
 	if rig.player.count() != 0 {
@@ -110,10 +110,10 @@ func assertAskedAndUnanswered(t *testing.T, stderr, stdout string) {
 // deleted — which is the only reason to write them separately.
 
 func TestAQuestionDoesNotBecomeTheCurrentWord(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	// Look up a word, ask a question, then press Enter: the REPLAY is the word.
-	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	// 3 plays for the lookup, 3 more for the replay. If the question had become
 	// the current word the replay would have found no audio for it.
@@ -124,7 +124,7 @@ func TestAQuestionDoesNotBecomeTheCurrentWord(t *testing.T) {
 
 func TestAQuestionIsNotCaptured(t *testing.T) {
 	cap := &countingCapturer{}
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.capture = cap
 	// A WIRED seam, so the question actually reaches a model: nothing is
 	// recorded for a question that never reached one, which is the rule the
@@ -135,7 +135,7 @@ func TestAQuestionIsNotCaptured(t *testing.T) {
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
 	rig.deps.getenv, rig.deps.newLLM = envFor(fake.URL), llm.New
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if len(cap.calls) != 1 || cap.calls[0] != "sycophantic" {
 		t.Errorf("captured %v, want just the lookup — a question is not a lookup", cap.calls)
@@ -167,11 +167,11 @@ func TestAQuestionIsRecalledByUpArrow(t *testing.T) {
 		{"unforced", aQuestion + "\r", aQuestion},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+			rig, opt, finish := editorRig(t, "sycophantic", true)
 			hist := &memHistory{}
 			rig.deps.history = hist
 			var out, errb bytes.Buffer
-			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, cooked, finish, &out, &errb)
+			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 			if len(hist.lines) != 1 || hist.lines[0] != tc.want {
 				t.Fatalf("history = %q, want [%q] — the question was not recorded for recall", hist.lines, tc.want)
@@ -277,19 +277,19 @@ func TestRawNeverAsks(t *testing.T) {
 		assertDidNotAsk(t, code, 2, errb.String(), wantRefusal)
 	})
 	t.Run("editor/unforced", func(t *testing.T) {
-		rig, _, cooked, finish := editorRig(t, "sycophantic", true)
+		rig, _, finish := editorRig(t, "sycophantic", true)
 		opt := rawOpt
 		opt.tty = true
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 		assertDidNotAsk(t, 0, 0, errb.String(), wantMiss)
 	})
 	t.Run("editor/forced", func(t *testing.T) {
-		rig, _, cooked, finish := editorRig(t, "sycophantic", true)
+		rig, _, finish := editorRig(t, "sycophantic", true)
 		opt := rawOpt
 		opt.tty = true
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 		assertDidNotAsk(t, 0, 0, errb.String(), wantRefusal)
 	})
 }
@@ -344,10 +344,16 @@ func TestRecallPreservesWhatALineMeant(t *testing.T) {
 	}
 }
 
-// The raw loop writes three classes of message of its own, and a bare "\n" in
-// raw mode starts the next line at the current column. Every class gets an
-// assertion on the EMITTED BYTES, because two placement fixes shipped unpinned
-// and the family recurred three times.
+// The raw loop writes three classes of message of its own, and each must land as
+// a LINE OF ITS OWN. Every class gets an assertion, because two placement fixes
+// shipped unpinned and the family recurred three times.
+//
+// The observable moved with #30 D5. It used to be the bytes — a "\r\n" per
+// message, because a bare "\n" in raw mode starts the next line at the current
+// column — and the loop now writes into the screen, which places lines itself.
+// So the same three classes are asserted where they land: a message that failed
+// to terminate its line leaves the buffer OPEN, and the next thing written
+// continues it, which is the same bug one layer up.
 func TestRawLoopMessagePlacement(t *testing.T) {
 	for _, tc := range []struct {
 		name, keys string
@@ -358,38 +364,34 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 		{"an unforced ask", aQuestion + "\r", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rig, opt, _, finish := editorRig(t, "sycophantic", true)
-			var out, errb bytes.Buffer
-			// A RECORDING cooked. The rig's is a no-op closure, so the two ask
-			// rows previously asserted only on stdout while `ask` writes to
-			// stderr — and deleting `cooked(...)` from askInSession, which in
-			// production is the thing that makes the message's "\n" translate
-			// at all, left the suite green (BR-13).
-			var duringCooked strings.Builder
-			cooked := func(run func()) error {
-				before := errb.Len()
-				run()
-				duringCooked.WriteString(errb.String()[before:])
-				return nil
-			}
-			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, cooked, finish, &out, &errb)
+			rig, opt, finish := editorRig(t, "sycophantic", true)
+			var out bytes.Buffer
+			// stderr is a SCREEN, which is what this loop writes to in
+			// production (D5b) — a diagnostic that went past it would land
+			// wherever the cursor happened to be and corrupt the frame. A plain
+			// buffer here would assert bytes nothing reads any more; the two ask
+			// rows once did exactly that and stayed green through a real bug
+			// (BR-13).
+			errs := &screen{}
+			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, paintInto(&out), finish, &out, errs)
 
-			// EVERY message this loop writes is written in RAW mode, so every
-			// one carries its own carriage returns — asserted as the POSITIVE
-			// observable, the terminator itself. The predecessor checked for the
-			// ABSENCE of a bare "\n" while excusing a trailing one, which made
-			// it unfalsifiable for a single-line message: all three rows passed
-			// with the terminator removed (I8).
-			//
-			// The ask path is raw for a reason Task 11 depends on: staying raw
-			// is what keeps the key reader decoding bytes, so Ctrl-C can cancel
-			// a stream rather than the session (#16 D6).
-			assertCRLFTerminated(t, errb.String(), "stderr")
-			if duringCooked.Len() != 0 {
-				t.Errorf("a message was written inside cooked mode; the stream must stay raw: %q", duringCooked.String())
+			lines := errs.Lines()
+			if len(lines) == 0 {
+				t.Fatal("stderr wrote nothing at all, so nothing is asserted")
 			}
-			if tc.wantErase && !strings.Contains(errb.String(), eraseLine) {
-				t.Errorf("no eraseLine: the message is appended to the line the user typed: %q", errb.String())
+			// The POSITIVE observable, and the successor of "every message
+			// carries its own terminator": a message that did not end its line
+			// leaves the buffer open, and whatever is written next continues it.
+			if errs.partial {
+				t.Errorf("a message left its line open; the next write would continue it: %q", lines[len(lines)-1])
+			}
+			if tc.wantErase {
+				// eraseLine's whole job: the note REPLACES the line it is
+				// written over instead of being appended to it, which is what
+				// made it read as `› ?define: type a question after "?"`.
+				if last := lines[len(lines)-1]; !strings.HasPrefix(last, "define: ") {
+					t.Errorf("the note is not a line of its own: %q", last)
+				}
 			}
 		})
 	}
@@ -400,9 +402,9 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 // second "\r\n" that only the unforced route had already written.
 func TestForcedAndUnforcedAsksRenderAtTheSameHeight(t *testing.T) {
 	framing := func(keys string) int {
-		rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+		rig, opt, finish := editorRig(t, "sycophantic", true)
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys(keys), nil, rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys(keys), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 		return strings.Count(out.String(), "\r\n")
 	}
 	if forced, unforced := framing("?why\r"), framing(aQuestion+"\r"); forced != unforced {

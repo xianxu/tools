@@ -378,7 +378,7 @@ func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) {
 			done := make(chan int, 1)
 			go func() {
 				done <- runEditor(t.Context(), keys, interrupts, d, opt,
-					func(run func()) error { run(); return nil }, func() {}, &out, &errb)
+					paintInto(&out), func() {}, &out, &errb)
 			}()
 
 			io.WriteString(pw, "?why\r")
@@ -416,13 +416,17 @@ func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) {
 	}
 }
 
-// Both routes into the ask reach the SAME wiring, so the interrupt scoping and
-// the CRLF writer exist once. A second copy would pass the tests above while
-// diverging on everything they do not assert.
+// Both routes into the ask reach the SAME wiring, so the interrupt scoping
+// exists once. A second copy would pass the tests above while diverging on
+// everything they do not assert.
+//
+// The wiring used to have a second half, the CRLF writer, and #30 D5 deleted it:
+// the screen owns where a line goes, and two owners of line endings is how they
+// drift. What the answer's placement now depends on is screen.Write, pinned in
+// screen_test.go with no terminal at all.
 func TestForcedAndUnforcedAsksShareOneWiring(t *testing.T) {
-	// The wiring the two routes share is the interrupt SCOPING as much as the
-	// CRLF writer, so this asserts both — and with a real sink, because passing
-	// nil could only ever pin the writer half (I7).
+	// Asserted with a REAL sink, because passing nil could only ever pin the
+	// writer half (I7).
 	for _, tc := range []struct{ name, keys string }{
 		{"forced", "?why\r"},
 		{"unforced", "what's the difference to obsequious?\r"},
@@ -445,63 +449,23 @@ func TestForcedAndUnforcedAsksShareOneWiring(t *testing.T) {
 			done := make(chan int, 1)
 			go func() {
 				done <- runEditor(t.Context(), keys, interrupts, d, opt,
-					func(run func()) error { run(); return nil }, func() {}, &out, &errb)
+					paintInto(&out), func() {}, &out, &errb)
 			}()
 
 			io.WriteString(pw, tc.keys)
 			waitFor(t, func() bool { return strings.Contains(out.String(), "Obsequious") })
 			io.WriteString(pw, "\x03")
 
-			// Both routes must survive it, and both must have written through
-			// crlfWriter.
+			// Both routes must survive it: the session takes another lookup
+			// after the cancelled answer.
 			io.WriteString(pw, "sycophantic\r")
 			waitFor(t, func() bool { return strings.Contains(out.String(), "sikəˈfan(t)ik") })
 			pw.Close()
 			<-done
-
-			assertCRLFTerminated(t, streamedAnswer(out.String()), tc.name+" answer")
 		})
 	}
 }
 
-// streamedAnswer isolates what the ASK wrote from the rest of the session.
-//
-// Scoping matters: a definition is rendered under cooked(), where a bare "\n" is
-// correct and the terminal translates it. Only the streamed answer is written
-// while the terminal is raw, so only it must carry its own carriage returns —
-// asserting over the whole session would fail on output that is already right.
-func streamedAnswer(s string) string {
-	i := strings.Index(s, "**Obsequious.**")
-	if i < 0 {
-		return ""
-	}
-	rest := s[i:]
-	if j := strings.Index(rest, eraseLine); j >= 0 {
-		rest = rest[:j] // stops at the next prompt redraw
-	}
-	return rest
-}
-
-// assertCRLFTerminated asserts the POSITIVE observable: every line break in
-// raw-mode output is "\r\n".
-//
-// Its predecessor asserted the ABSENCE of a bare "\n" while excusing a trailing
-// one, which made it unfalsifiable for any single-line message — vacuous for 3
-// of the 3 rows that used it (I8). Absence of the wrong thing is not evidence of
-// the right thing; this counts the terminator itself.
-func assertCRLFTerminated(t *testing.T, s, where string) {
-	t.Helper()
-	breaks := strings.Count(s, "\n")
-	crlf := strings.Count(s, "\r\n")
-	if breaks == 0 {
-		t.Errorf("%s: no line breaks at all — nothing was placed, so nothing is asserted: %q", where, s)
-		return
-	}
-	if crlf != breaks {
-		t.Errorf("%s: %d of %d line breaks carry their carriage return; the rest start the next line at the current column: %q",
-			where, crlf, breaks, s)
-	}
-}
 
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
@@ -555,7 +519,7 @@ func TestAKeyTypedBeforeCtrlCDoesNotBlockTheReader(t *testing.T) {
 	done := make(chan int, 1)
 	go func() {
 		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true},
-			func(run func()) error { run(); return nil }, func() {}, &out, &errb)
+			paintInto(&out), func() {}, &out, &errb)
 	}()
 
 	io.WriteString(pw, "?why\r")
@@ -759,7 +723,7 @@ func askModes() []askMode {
 				d.stdinIsTerminal = func() bool { return true }
 				runEditor(t.Context(), scriptKeys(strings.Join(lines, "\r")+"\r"), ints, d,
 					options{noAudio: true, locale: "us", tty: true},
-					func(r func()) error { r(); return nil }, func() {}, out, errOut)
+					paintInto(out), func() {}, out, errOut)
 			},
 		},
 	}
@@ -898,7 +862,7 @@ func TestCtrlCQuitsAgainOnceTheAnswerIsOver(t *testing.T) {
 	done := make(chan int, 1)
 	go func() {
 		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true},
-			func(r func()) error { r(); return nil }, func() {}, &out, &errb)
+			paintInto(&out), func() {}, &out, &errb)
 	}()
 
 	io.WriteString(pw, "?why\r")

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -81,11 +80,11 @@ func TestLineLoopDispatchesCommands(t *testing.T) {
 }
 
 func TestRawEditorDispatchesCommands(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("/help\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	code := runEditor(t.Context(), scriptKeys("/help\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if code != 0 {
 		t.Errorf("exit = %d, stderr = %s", code, errb.String())
@@ -96,11 +95,11 @@ func TestRawEditorDispatchesCommands(t *testing.T) {
 }
 
 func TestUnknownCommandSuggestsWithoutDefining(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/histry\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/histry\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if !strings.Contains(errb.String(), "/histry") {
 		t.Errorf("the unknown command was not named: %q", errb.String())
@@ -152,7 +151,7 @@ func TestDispatchCommand(t *testing.T) {
 // asking it. This pins the wiring — type "/his" and the grey tail must be
 // offered from the COMMAND set, which history could never produce.
 func TestEditorSuggestsFromCommands(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.dict = refusingDict{t}
 	// History that would suggest something else entirely if it were consulted.
 	h := &memHistory{}
@@ -160,7 +159,7 @@ func TestEditorSuggestsFromCommands(t *testing.T) {
 	rig.deps.history = h
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/hel\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/hel\x03"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if !strings.Contains(out.String(), greyOn+"p") {
 		t.Errorf("no grey completion from the command set: %q", out.String())
@@ -173,11 +172,11 @@ func TestEditorSuggestsFromCommands(t *testing.T) {
 // The menu has to actually reach the screen, not merely be computable.
 // menuLines being right is a different claim from the editor painting it.
 func TestEditorShowsTheCommandMenu(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/\x03"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if !strings.Contains(out.String(), "list the commands") {
 		t.Errorf("typing / did not show the menu: %q", out.String())
@@ -185,12 +184,12 @@ func TestEditorShowsTheCommandMenu(t *testing.T) {
 }
 
 func TestTypingNarrowsTheMenuAndAWordHidesIt(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
 	// A word, not a command: the screen must not sprout a menu under it.
-	runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 	if strings.Contains(out.String(), "list the commands") {
 		t.Errorf("a word drew the command menu: %q", out.String())
 	}
@@ -198,7 +197,7 @@ func TestTypingNarrowsTheMenuAndAWordHidesIt(t *testing.T) {
 	// A prefix that matches nothing: the menu must disappear rather than
 	// leaving a stale set on screen.
 	out.Reset()
-	runEditor(t.Context(), scriptKeys("/zzz\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/zzz\x03"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 	last := out.String()[strings.LastIndex(out.String(), "/zzz"):]
 	if strings.Contains(last, "list the commands") {
 		t.Errorf("a non-matching prefix left the menu on screen: %q", last)
@@ -216,7 +215,7 @@ func TestTypingNarrowsTheMenuAndAWordHidesIt(t *testing.T) {
 // while the next keystroke resolved Tab against the command set and accepted
 // "/help". Reported from the terminal: grey said history, Tab gave help.
 func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.dict = refusingDict{t}
 	// A history that has seen commands, which is what any real session has.
 	h := &memHistory{}
@@ -224,7 +223,7 @@ func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
 	rig.deps.history = h
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("/\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/\x03"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if strings.Contains(out.String(), greyOn+"history") {
 		t.Errorf("typing / suggested from HISTORY; the menu below it lists commands: %q", out.String())
@@ -235,7 +234,7 @@ func TestSuggestionMatchesWhatTabAccepts(t *testing.T) {
 
 	// And the acceptance agrees: Tab commits the tail that was shown.
 	out.Reset()
-	runEditor(t.Context(), scriptKeys("/\t\x03"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("/\t\x03"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 	if !strings.Contains(out.String(), "/help") {
 		t.Errorf("Tab did not accept the suggestion that was displayed: %q", out.String())
 	}
@@ -261,13 +260,13 @@ func keySeq(ks ...Key) <-chan Key {
 // deleting the raw loop's wiring left /sound silently broken at the actual TUI
 // prompt, which is the only place the operator asked for it.
 func TestRawEditorSoundChangesTheSession(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 
 	ks := append(runes("/sound 1"), Key{Kind: KeyEnter})
 	ks = append(ks, runes("sycophantic")...)
 	ks = append(ks, Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
-	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if got := rig.player.count(); got != 1 {
 		t.Errorf("played %d times after /sound 1 at the raw prompt, want 1", got)
@@ -276,12 +275,12 @@ func TestRawEditorSoundChangesTheSession(t *testing.T) {
 
 // runEditor's hist.Add for commands: a submitted command must be recallable.
 func TestRawEditorRecallsSubmittedCommands(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.history = &memHistory{}
 	var out, errb bytes.Buffer
 
 	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyUp}, Key{Kind: KeyInterrupt})
-	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	// Asserted only on what came AFTER the command ran. The submitted line is
 	// ECHOED through RenderLine, which uses the same inputOn sequence, so
@@ -394,56 +393,67 @@ func TestCommandThatReadsNothingDoesNotOpenTheLog(t *testing.T) {
 	}
 }
 
-// BR-19 again: clearMenu was shipped in the same commit as the rule and is
-// itself unpinned. The dropdown must be erased before a command's output is
-// written under it.
-func TestSubmitClearsTheMenuBeforeOutput(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+// BR-19's successor, and the one claim D4 leaves to pin.
+//
+// The dropdown used to be erased before a command's output was written under it,
+// by counting the rows drawn and walking the cursor back over exactly that many
+// — arithmetic that carried a documented known limit for when the count was
+// wrong, and whose clearMenu shipped in the same commit as the rule, itself
+// unpinned. #30 deletes it: the menu is an ARGUMENT to a whole-frame redraw,
+// recomputed from the line as it stands, so a stale row cannot survive a submit.
+// There is nothing left to erase and nothing left to miscount.
+func TestSubmitLeavesNoMenuInTheFrame(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	// /sound, deliberately: its OUTPUT ("playing 3×") shares no text with its
-	// menu row, so the marker below cannot match the menu instead of the output.
-	// /help's output is nearly identical to its own menu row, which is exactly
-	// the kind of coincidence that makes a marker match the wrong thing.
-	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
-	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, cooked, finish, &out, &errb)
-
-	s := out.String()
-	i := strings.Index(s, "playing")
-	if i < 0 {
-		t.Fatalf("the command never ran: %q", s)
+	var menus [][]string
+	paint := func(prompt string, menu []string) {
+		menus = append(menus, menu)
+		paintInto(&out)(prompt, menu)
 	}
-	// clearMenu has an exact signature: one EMPTY erased row per drawn row —
-	// "\r\n" + eraseLine with no text between — then the cursor walked back up
-	// by that count. A menu PAINT writes text after each erase, so the empty run
-	// belongs to the clear and nothing else.
-	//
-	// Counting erases would not work: RenderLine emits one on every redraw, so
-	// the count says nothing about who wrote them.
-	rows := len(menuLines("/sound", commands, 0))
-	want := strings.Repeat("\r\n"+eraseLine, rows) + fmt.Sprintf("\x1b[%dA\r", rows)
-	if !strings.Contains(s[:i], want) {
-		t.Errorf("the menu was not cleared before the output was written under it: %q", s[:i])
+	// /sound, deliberately: its OUTPUT ("playing 3×") shares no text with its
+	// menu row, so a marker cannot match the menu instead of the output.
+	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
+	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, paint, finish, &out, &errb)
+
+	if !strings.Contains(out.String(), "playing") {
+		t.Fatalf("the command never ran: %q", out.String())
+	}
+	// The dropdown really was on screen while the command was being typed —
+	// without this the assertion below would hold for a menu that never drew.
+	drawn := false
+	for _, m := range menus {
+		if len(m) > 0 {
+			drawn = true
+		}
+	}
+	if !drawn {
+		t.Fatal("the dropdown never appeared, so its absence afterwards proves nothing")
+	}
+	if last := menus[len(menus)-1]; len(last) != 0 {
+		t.Errorf("the frame drawn after the command still lists the dropdown: %v", last)
 	}
 }
 
-// The raw editor's /pron branch, and specifically the property that makes it
-// safe: playback happens OUTSIDE the cooked block (#29).
+// The raw editor's /pron branch: a command RECORDS a language and the loop
+// replays it (#29).
 //
-// This is the design's only real hazard. Commands are dispatched inside
-// cooked(), and playing there hands Ctrl-C to the line discipline, which
-// swallows the byte — the key reader sees nothing and the session looks frozen
-// for the length of the recording. workshop/lessons.md records that as "render
-// cooked, play raw", and the whole reason runPron RECORDS a language rather than
-// playing one is to obey it.
+// The hazard that shape was built for is gone. Commands used to be dispatched
+// inside cooked(), and playing there handed Ctrl-C to the line discipline, which
+// swallowed the byte — the key reader saw nothing and the session looked frozen
+// for the length of the recording. #30 D4 deletes the cooked block: raw mode is
+// continuous now, so there is no mode for playback to happen in the wrong one
+// of, and workshop/lessons.md's "render cooked, play raw" is answered by there
+// being nothing left to flap. With the hazard went the instrument this test used
+// to carry — CDN requests counted inside the cooked callback.
 //
-// The property is directly assertable: count CDN requests made while the cooked
-// callback is running. The lookup's own playback is already outside it, so the
-// correct answer is zero, and a runPron that played in place would make it two.
-// The repo pairs TestLineLoopDispatchesCommands with TestRawEditorDispatchesCommands
-// for exactly this two-loops reason; this is /pron's half of that pair.
-func TestRawEditorPronPlaysOutsideTheCookedBlock(t *testing.T) {
+// What is left is still worth pinning, and is the reason the shape survives D4:
+// /pron and a bare Enter are ONE replay path, so the SOURCE spelling is fetched
+// and played by the loop rather than by a second implementation inside the
+// command. The repo pairs TestLineLoopDispatchesCommands with
+// TestRawEditorDispatchesCommands for the two-loops reason; this is /pron's half.
+func TestRawEditorPronReplaysThroughTheLoop(t *testing.T) {
 	en := voice{Lang: "en", Locale: "us"}
 	es := voice{Lang: "es", Locale: "es"}
 	english := AudioCandidates("jalapeno", en)[0]
@@ -458,17 +468,9 @@ func TestRawEditorPronPlaysOutsideTheCookedBlock(t *testing.T) {
 	// bug. An unqualified session is what a reader of this test should picture.
 	opt := options{times: 1, tty: true, color: true}
 
-	duringCooked := 0
-	cooked := func(run func()) error {
-		before := len(rig.cdn.Requested())
-		run()
-		duringCooked += len(rig.cdn.Requested()) - before
-		return nil
-	}
-
 	var out, errb bytes.Buffer
 	code := runEditor(t.Context(), scriptKeys("jalapeno\r/pron es\r"), nil,
-		rig.deps, opt, cooked, func() {}, &out, &errb)
+		rig.deps, opt, paintInto(&out), func() {}, &out, &errb)
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
 	}
@@ -480,12 +482,5 @@ func TestRawEditorPronPlaysOutsideTheCookedBlock(t *testing.T) {
 	}
 	if got := rig.player.count(); got != 2 {
 		t.Errorf("played %d times, want 2 — the lookup and the /pron replay", got)
-	}
-	// And it played where it must: not while the terminal was cooked.
-	if duringCooked != 0 {
-		t.Errorf("%d CDN requests happened INSIDE the cooked block; want 0. "+
-			"Playing there hands Ctrl-C to the line discipline, which swallows it — "+
-			"runPron must record the language and let the loop replay in raw mode",
-			duringCooked)
 	}
 }

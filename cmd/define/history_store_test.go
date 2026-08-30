@@ -95,20 +95,20 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	// Both halves are wired, because they are now different objects: the capturer
 	// writes, storeHistory reads. Setting only history would persist nothing —
 	// which is exactly the behaviour #4 moved.
-	first, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	first, opt, finish := editorRig(t, "sycophantic", true)
 	st1 := store.NewYAML(dir, store.DefaultLang, nil)
 	first.deps.history = newStoreHistory(st1, nil)
 	first.deps.capture = newStoreCapturer(st1, fixedClock(1), nil, nil)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, first.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, first.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	// A second editor over the same directory: the restart case.
-	second, opt2, cooked2, finish2 := editorRig(t, "sycophantic", true)
+	second, opt2, finish2 := editorRig(t, "sycophantic", true)
 	st2 := store.NewYAML(dir, store.DefaultLang, nil)
 	second.deps.history = newStoreHistory(st2, nil)
 	second.deps.capture = newStoreCapturer(st2, fixedClock(2), nil, nil)
 	var out2 bytes.Buffer
-	runEditor(t.Context(), scriptKeys("syc"), nil, second.deps, opt2, cooked2, finish2, &out2, &bytes.Buffer{})
+	runEditor(t.Context(), scriptKeys("syc"), nil, second.deps, opt2, paintInto(&out2), finish2, &out2, &bytes.Buffer{})
 
 	if !strings.Contains(out2.String(), greyOn+"ophantic") {
 		t.Errorf("the previous session's word was not suggested: %q", tailOf(out2.String()))

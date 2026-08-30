@@ -44,11 +44,52 @@ type screen struct {
 // ("a reply split as \"one\\r\" then \"\\ntwo\" must not become \"one\\r\\r\\ntwo\"").
 // Here there is no terminal to position, so the CR carries no information at
 // all — a line's placement is Paint's business.
+//
+// eraseLine ("\r\x1b[K") is the ONE exception, and M1.1's "a CR carries no
+// information" was too broad: this pair is the ephemeral indicator's own
+// gesture, "take that line back". It is how `♫ playing 3×` disappears once it
+// has served its purpose, and how a `define: …` note replaces the line it is
+// written over. A buffer that ignored it would keep the indicator, and the exit
+// transcript (D3) would then file a claim that playback happened — which is the
+// "ephemeral UI vs record" doctrine failing in the one direction it exists to
+// prevent. So the erase is HONOURED here rather than stripped: the open line is
+// taken back whole.
 func (s *screen) Write(p []byte) (int, error) {
 	text := strings.ReplaceAll(string(p), "\r\n", "\n")
+	// Split on the erase gesture BEFORE bare CRs are dropped — dropping first
+	// would leave a lone "\x1b[K" that means nothing to a line buffer.
+	if segments := strings.Split(text, eraseLine); len(segments) > 1 {
+		for i, seg := range segments {
+			if i > 0 {
+				s.eraseOpenLine()
+			}
+			s.write(seg)
+		}
+		return len(p), nil
+	}
+	s.write(text)
+	return len(p), nil
+}
+
+// eraseOpenLine takes back the line currently being written.
+//
+// Only an OPEN line: a completed line is scrollback, and eraseLine addresses
+// the row the cursor sits on, which after a newline is a row nothing has been
+// written to yet. Dropping the line rather than blanking it is what keeps an
+// erased indicator out of the transcript entirely instead of leaving a blank
+// row where it used to be.
+func (s *screen) eraseOpenLine() {
+	if !s.partial || len(s.lines) == 0 {
+		return
+	}
+	s.lines = s.lines[:len(s.lines)-1]
+	s.partial = false
+}
+
+func (s *screen) write(text string) {
 	text = strings.ReplaceAll(text, "\r", "")
 	if text == "" {
-		return len(p), nil
+		return
 	}
 	parts := strings.Split(text, "\n")
 	for i, part := range parts {
@@ -65,7 +106,6 @@ func (s *screen) Write(p []byte) (int, error) {
 		// every completed write would add a blank line.
 		s.lines = s.lines[:len(s.lines)-1]
 	}
-	return len(p), nil
 }
 
 // Lines is the whole buffer. Present for tests and for the exit transcript
@@ -163,6 +203,72 @@ func (s *screen) Paint(w io.Writer, termRows int, prompt string, menu []string) 
 		b.WriteString(prompt)
 	}
 	fmt.Fprint(w, b.String())
+}
+
+// liveScreen is the screen wired to a terminal: an io.Writer that SHOWS what is
+// written to it, which is what stdout was before the alternate screen.
+//
+// It exists because the buffer alone is invisible. A definition, a streamed
+// answer arriving token by token, a `♫ playing 3×` that must appear while
+// playback blocks for seconds — every one of them reached the terminal today by
+// being written to it, and under a buffer they would appear only at the loop's
+// next redraw. So a write repaints, and the callers D5 promised would not change
+// genuinely do not.
+//
+// The split is the ARCH-MOCK line: `screen` is pure and its arithmetic is
+// unit-tested with no terminal; this type is the only part that does IO, and it
+// holds the live edge (the prompt and menu) that Paint needs and the buffer does
+// not own.
+type liveScreen struct {
+	s   *screen
+	tty io.Writer
+	// rows is the terminal's height. Owned here rather than in `screen` because
+	// it is a fact about the terminal, not about the text — and M1.4's SIGWINCH
+	// has exactly one field to update.
+	rows   int
+	prompt string
+	menu   []string
+	// stopped is set when the terminal has been handed back. Writes still reach
+	// the buffer — the exit transcript needs them — but painting must stop dead,
+	// or a farewell newline written after restore would draw a frame onto the
+	// NORMAL screen, over whatever the user was looking at before define ran.
+	stopped bool
+}
+
+func newLiveScreen(tty io.Writer, rows int) *liveScreen {
+	return &liveScreen{s: &screen{}, tty: tty, rows: rows}
+}
+
+func (l *liveScreen) Write(p []byte) (int, error) {
+	n, err := l.s.Write(p)
+	l.repaint()
+	return n, err
+}
+
+// Draw records the live edge and repaints. It is the editor loop's draw().
+func (l *liveScreen) Draw(prompt string, menu []string) {
+	l.prompt, l.menu = prompt, menu
+	l.repaint()
+}
+
+// Resize is SIGWINCH's one field (M1.4).
+func (l *liveScreen) Resize(rows int) {
+	l.rows = rows
+	l.repaint()
+}
+
+// Stop ends painting. Called as the terminal is handed back, and idempotent for
+// the same reason restore is: it runs from more than one exit path.
+func (l *liveScreen) Stop() { l.stopped = true }
+
+// Transcript is the buffer, for printing back into the normal buffer on exit.
+func (l *liveScreen) Transcript() string { return l.s.Transcript() }
+
+func (l *liveScreen) repaint() {
+	if l.stopped || l.tty == nil {
+		return
+	}
+	l.s.Paint(l.tty, l.rows, l.prompt, l.menu)
 }
 
 // Transcript is every line the session showed, for printing back into the normal

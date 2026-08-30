@@ -272,7 +272,7 @@ func TestRenderLineWithoutAVocabularyIsUnchanged(t *testing.T) {
 // reaches around the production wiring cannot see the wiring break — the same
 // class as #20's typeKeys.
 func TestEditorLoopHighlightsADeckWordOnScreen(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	st := store.NewMem()
 	if err := st.Upsert(store.Word{Text: "sycophantic"}); err != nil {
 		t.Fatal(err)
@@ -282,7 +282,7 @@ func TestEditorLoopHighlightsADeckWordOnScreen(t *testing.T) {
 	rig.deps.vocab = newStoreVocabulary(st, nil)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if !strings.Contains(out.String(), "\x1b[1;32msycophantic") {
 		t.Errorf("the deck word was not highlighted on screen: %q", out.String())
@@ -293,14 +293,14 @@ func TestEditorLoopHighlightsADeckWordOnScreen(t *testing.T) {
 // the lookup records anything, so the highlight can only appear on the retype —
 // which is exactly the behaviour worth pinning.
 func TestEditorLoopHighlightsAWordLookedUpThisSession(t *testing.T) {
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	st := store.NewMem()
 	voc := newStoreVocabulary(st, nil)
 	rig.deps.vocab = voc
 	rig.deps.capture = newStoreCapturer(st, store.FixedClock(aDay), nil, voc)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rsycophantic"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rsycophantic"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
 
 	if !strings.Contains(out.String(), "\x1b[1;32msycophantic") {
 		t.Errorf("a word looked up this session did not highlight on retype: %q", out.String())

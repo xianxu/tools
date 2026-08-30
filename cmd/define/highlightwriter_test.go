@@ -289,7 +289,7 @@ func TestHighlightWriterByteAtATimeMatchesOneCall(t *testing.T) {
 // the helper directly begins after the wiring hop, which is how M1's set-to-screen
 // link stayed unpinned.
 func TestDefinitionBodyHighlightsADeckWord(t *testing.T) {
-	rig, opt, _, _ := editorRig(t, "sycophantic", true)
+	rig, opt, _ := editorRig(t, "sycophantic", true)
 	rig.deps.vocab = vocab("obsequious")
 	var out, errb bytes.Buffer
 
@@ -301,7 +301,7 @@ func TestDefinitionBodyHighlightsADeckWord(t *testing.T) {
 }
 
 func TestDefinitionHighlightingIsOffWithoutColour(t *testing.T) {
-	rig, opt, _, _ := editorRig(t, "sycophantic", true)
+	rig, opt, _ := editorRig(t, "sycophantic", true)
 	rig.deps.vocab = vocab("obsequious")
 	opt.color = false
 	var out, errb bytes.Buffer

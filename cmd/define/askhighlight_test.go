@@ -302,7 +302,7 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 		}},
 		{"raw editor", func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer) {
 			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt,
-				func(run func()) error { run(); return nil }, func() {}, out, errOut)
+				paintInto(out), func() {}, out, errOut)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

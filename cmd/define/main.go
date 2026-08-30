@@ -713,8 +713,10 @@ func defineOnce(ctx context.Context, d deps, opt options, cmd replCommand, stdou
 // lookupOutcome is what one line turned out to be, once the dictionary has
 // answered. It carries a third possibility the define path did not used to have:
 // the line was a question. That has to travel as DATA rather than be acted on
-// here, because the raw loop renders a definition cooked and streams an answer
-// raw — one function cannot do both (#16 D6).
+// here, because a definition and a streamed answer are different jobs with
+// different cancellation — one function cannot do both (#16 D6). The reason used
+// to be sharper still: they ran in different terminal modes, until #30 D4 left
+// only one mode.
 type lookupOutcome struct {
 	code  int    // exit semantics, unchanged
 	play  bool   // audio should follow
@@ -729,9 +731,11 @@ type lookupOutcome struct {
 // would leave the interactive path, the only one capturing today, silent.
 //
 // lookupAndRender is the part of the define path that only WRITES — look up,
-// render, print. Split out because the raw-mode loop must run it in cooked mode
-// (so newlines translate) while playing in RAW mode (so Ctrl-C arrives as a byte
-// the key reader can see). Returns whether audio should follow.
+// render, print. The split outlives its original reason: #14 needed the render
+// to happen in cooked mode and the playback in raw, and #30 D4 removed the modes
+// altogether. It stays because the two halves still differ in kind — this one is
+// pure output, and the caller owns the playback that can be interrupted.
+// Returns whether audio should follow.
 func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Writer) lookupOutcome {
 	word := cmd.word
 	text, err := d.dict.Lookup(word)
@@ -969,6 +973,28 @@ func terminalWidth(w io.Writer) int {
 	}
 	return cols
 }
+
+// terminalRows reports the height of w, or a conventional 24 when it cannot be
+// measured.
+//
+// A height is only needed by the full-screen loop (#30), which runs solely when
+// stdout is a terminal — so the fallback covers a probe that fails rather than a
+// pipe. It has to be a plausible number rather than 0: a screen told it has no
+// rows shows the prompt and nothing else, which would hide the very definition
+// the user asked for.
+func terminalRows(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return defaultRows
+	}
+	_, rows, err := term.GetSize(int(f.Fd()))
+	if err != nil || rows < 2 { // one row cannot hold both a definition and a prompt
+		return defaultRows
+	}
+	return rows
+}
+
+const defaultRows = 24
 
 // isTerminal keeps the TTY probe out of Render, so rendering stays pure and
 // piping `define x | less` yields clean text.

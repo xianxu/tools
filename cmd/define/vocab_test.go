@@ -264,11 +264,11 @@ func TestEveryEntryPathHighlightsDefinitions(t *testing.T) {
 		}},
 		{"raw editor", func(t *testing.T, d deps, opt options, out, errb *bytes.Buffer) {
 			runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, d, opt,
-				func(run func()) error { run(); return nil }, func() {}, out, errb)
+				paintInto(out), func() {}, out, errb)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rig, opt, _, _ := editorRig(t, "sycophantic", true)
+			rig, opt, _ := editorRig(t, "sycophantic", true)
 			rig.deps.vocab = deck(t)
 			opt.noAudio = true
 			var out, errb bytes.Buffer

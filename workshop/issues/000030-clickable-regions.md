@@ -333,6 +333,35 @@ The insight worth keeping: clicking removes the AMBIGUITY objection to
 ORIGIN-inference (`piano` names two languages; a pointer picks one) but not the
 CLOSED-TABLE objection. `#29` recorded both; only one is dissolved here.
 
+### 2026-08-29 — M1.3: the cooked/raw dance is gone
+
+`cooked()` is deleted (D4) and the editor's output goes through the screen. The
+loop's writers are unchanged; `runEditor` swapped one closure for another —
+`cooked func(func()) error` became `paint func(prompt string, menu []string)` —
+and stdout/stderr are the screen in production, plain buffers in tests.
+
+Three things fell out that were not in the plan:
+
+- **`liveScreen`**, because a buffer is invisible: a streamed answer arrives per
+  token and the `♫ playing 3×` has to appear while playback blocks. A write
+  repaints; `screen` stays pure. It also owns `Stop()`, so nothing paints after
+  the terminal is handed back — a frame drawn then lands on the NORMAL screen.
+- **The buffer honours `eraseLine`.** Otherwise the indicator survives into the
+  exit transcript and the record claims playback that may not have happened.
+- **`lostTerminal` is gone**, and with it "raw mode could not be re-entered" —
+  there is no re-entry. Same for the three farewell newlines: leaving the
+  alternate screen restores the shell's own last line.
+
+Deleted along with the mechanism they pinned: the cooked-block instruments in
+two tests and `assertCRLFTerminated`/`streamedAnswer`. Each was rewritten to its
+successor property rather than dropped — detail in the plan's Revisions.
+
+Verified: `go test ./...` green; `go test -tags conformance -run PTY` green (8/8,
+including the menu and terminal-restore rows, through a real pty and the alt
+screen). A pty smoke run rendered `arrondissement` as one frame with the
+committed line above the entry and the prompt below it, alt screen entered once
+and left once.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"slices"
 	"strings"
 	"testing"
@@ -159,5 +160,87 @@ func TestScreenTranscript(t *testing.T) {
 	s.Write([]byte("one\ntwo\n"))
 	if got, want := s.Transcript(), "one\ntwo\n"; got != want {
 		t.Errorf("Transcript() = %q, want %q", got, want)
+	}
+}
+
+// eraseLine is the ephemeral indicator's own gesture — "take that line back" —
+// and the buffer honours it rather than stripping it (#30 M1.3).
+//
+// Without this the `♫ playing 3×` that a terminal shows and then removes would
+// stay in the buffer, and the exit transcript (D3) would file a claim that
+// playback happened. That is the "ephemeral UI vs record" doctrine failing in
+// the one direction it exists to prevent.
+func TestScreenTakesBackAnErasedLine(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		write []string
+		want  []string
+	}{
+		{
+			"the indicator is drawn and taken back",
+			[]string{"entry\r\n", "  ♫ playing 3×", eraseLine},
+			[]string{"entry"},
+		},
+		{
+			"a note replaces the line it is written over",
+			[]string{"  ♫ playing 3×", eraseLine + "define: nothing to replay\r\n"},
+			[]string{"define: nothing to replay"},
+		},
+		{
+			// The gesture addresses the row the cursor sits on, and after a
+			// newline that row has nothing written to it yet. A committed line
+			// is scrollback and must survive.
+			"an erase with no open line leaves scrollback alone",
+			[]string{"entry\r\n", eraseLine},
+			[]string{"entry"},
+		},
+		{
+			"text after an erase starts a fresh line",
+			[]string{"half", eraseLine, "whole\r\n"},
+			[]string{"whole"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s screen
+			for _, w := range tc.write {
+				s.Write([]byte(w))
+			}
+			if got := s.Lines(); !slices.Equal(got, tc.want) {
+				t.Errorf("lines = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// liveScreen is an io.Writer that SHOWS what is written to it, which is what
+// stdout was before the alternate screen. A streamed answer arrives token by
+// token and a `♫ playing 3×` has to appear while playback blocks for seconds:
+// both reach the terminal by being written, so a write has to repaint.
+func TestLiveScreenShowsWhatIsWrittenToIt(t *testing.T) {
+	var tty bytes.Buffer
+	l := newLiveScreen(&tty, 10)
+
+	l.Draw("› ", nil)
+	tty.Reset()
+	l.Write([]byte("a definition\n"))
+	if !strings.Contains(tty.String(), "a definition") {
+		t.Errorf("a write did not reach the terminal: %q", tty.String())
+	}
+	if !strings.Contains(tty.String(), "› ") {
+		t.Errorf("the repaint dropped the live edge: %q", tty.String())
+	}
+
+	// After the terminal is handed back, painting must stop dead: a frame drawn
+	// then lands on the NORMAL screen, over whatever was there before define
+	// ran. The buffer keeps accepting writes, because the exit transcript is
+	// read from it.
+	l.Stop()
+	tty.Reset()
+	l.Write([]byte("after the end\n"))
+	if tty.Len() != 0 {
+		t.Errorf("painted after Stop: %q", tty.String())
+	}
+	if !strings.Contains(l.Transcript(), "after the end") {
+		t.Errorf("Stop dropped the write instead of just the paint: %q", l.Transcript())
 	}
 }

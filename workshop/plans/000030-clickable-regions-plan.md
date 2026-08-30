@@ -106,9 +106,9 @@ to `#35`'s code and is where `M2.1` starts.
 
 ### Tasks
 
-- [ ] **M1.1 — `screen` as a pure model.** `Write`, `Frame`, `Scroll`, plus rows/cols. Table tests: a partial write continues the last line; a write containing `\n\n` appends an empty line; `Frame` clamps the offset at both ends; a viewport taller than the buffer pads rather than repeating. No terminal.
-- [ ] **M1.2 — `Paint` and the alt screen.** `enterAlt`/`leaveAlt` on `rawSession`, so a Ctrl-C or a panic leaves the terminal restored — the same obligation `enterRaw` already carries and the reason this belongs there rather than in `screen`.
-- [ ] **M1.3 — the editor draws through the screen**, `cooked` deleted (D4). Every current writer keeps writing; only the destination changes.
+- [x] **M1.1 — `screen` as a pure model.** `Write`, `Frame`, `Scroll`, plus rows/cols. Table tests: a partial write continues the last line; a write containing `\n\n` appends an empty line; `Frame` clamps the offset at both ends; a viewport taller than the buffer pads rather than repeating. No terminal.
+- [x] **M1.2 — `Paint` and the alt screen.** `enterAlt`/`leaveAlt` on `rawSession`, so a Ctrl-C or a panic leaves the terminal restored — the same obligation `enterRaw` already carries and the reason this belongs there rather than in `screen`.
+- [x] **M1.3 — the editor draws through the screen**, `cooked` deleted (D4). Every current writer keeps writing; only the destination changes.
 - [ ] **M1.4a — KEYS that move the viewport.** Without this `M1` ships a scroll model nothing exercises and a user cannot reach: the wheel is `M2`, and no key scrolls today.
       **PageUp/PageDown ONLY. NOT Ctrl-U/Ctrl-D**, which an earlier draft proposed and which are already bound: `0x04` is `KeyEOF` and ends the session on an empty line (`key.go:48`, `editor.go:107`), `0x15` is `KeyKillLine` (`key.go:50`, `editor.go:100`). Taking either is a silent regression in an editor people already use.
       The CSI scanner DELIMITS `ESC[5~`/`ESC[6~` correctly (`key.go:102-116`) and then returns `KeyUnknown`, so this adds two `KeyKind`s — not "already decoded", as the same draft said.
@@ -245,3 +245,34 @@ usually right, which is what makes the wrong ones expensive.
 `Render` would leak into both and contradict the row asserting rendering is
 byte-identical. `sgr.go`'s `sgrState` is named as the existing machinery for
 splicing an attribute into already-styled text.
+
+### 2026-08-29 — M1.3 as built: three deltas worth recording
+
+- **The buffer HONOURS `eraseLine`, and M1.1's "a bare CR carries no
+  information" was too broad.** D5 promises the indicator feeds the buffer
+  unchanged; `♫ playing 3×` is written and then taken back with `\r\x1b[K`, so a
+  buffer that stripped the gesture would keep the indicator — and the exit
+  transcript (D3) would then file a claim that playback happened, which is
+  exactly the "ephemeral UI vs record" doctrine failing in the direction it
+  exists to prevent. `screen.Write` therefore drops the OPEN line on an erase.
+  Pinned by `TestScreenTakesBackAnErasedLine` and, end to end, by
+  `TestEditorLoopWritesThroughAScreen`.
+
+- **`liveScreen` is the type the plan did not name.** The buffer alone is
+  invisible: a streamed answer arrives token by token and the indicator must
+  appear while playback blocks for seconds, so a write has to repaint. `screen`
+  stays pure and unit-tested with no terminal; `liveScreen` holds the tty, the
+  row count (M1.4's one field) and the live edge, and is the only part that does
+  IO. It also owns `Stop()`, because a frame painted after `restore` lands on the
+  NORMAL screen over whatever was there before.
+
+- **Three tests lost their subject with `cooked()` and were rewritten, not
+  deleted.** `TestRawEditorPronPlaysOutsideTheCookedBlock` →
+  `…PronReplaysThroughTheLoop` (the CDN order and play count survive; the
+  cooked-block instrument does not). `TestSubmitClearsTheMenuBeforeOutput` →
+  `TestSubmitLeavesNoMenuInTheFrame`, asserting the frame's menu argument rather
+  than erase arithmetic that no longer exists. `TestRawLoopMessagePlacement` now
+  drives a `screen` as stderr and asserts each message lands as its own line,
+  which is the successor of "every message carries its own `\r\n`" — the CRLF
+  writer left this path with D5, taking `assertCRLFTerminated` and
+  `streamedAnswer` with it.

@@ -33,13 +33,17 @@ func parsePronArgs(args []string) (store.Lang, error) {
 
 // runPron is /pron: hear the current word in another language, once.
 //
-// It does NOT play, and that is the whole shape of it. Commands are dispatched
-// inside the raw editor's cooked block, where playing would hand Ctrl-C back to
-// the line discipline — the discipline swallows the byte, the key reader sees
-// nothing, and the session looks frozen for the length of the recording.
-// workshop/lessons.md has this as "Raw mode: render cooked, play raw". So this
-// records the request and the LOOP performs it, in raw mode, through the very
-// same replay a bare Enter uses.
+// It does NOT play, and that is the whole shape of it. It records the request
+// and the LOOP performs it, through the very same replay a bare Enter uses — so
+// /pron is one parameter of an existing path rather than a second player.
+//
+// The shape was forced by a hazard that is now gone: commands were dispatched
+// inside the raw editor's cooked block, where playing would have handed Ctrl-C
+// back to the line discipline — the discipline swallows the byte, the key reader
+// sees nothing, and the session looks frozen for the length of the recording
+// (workshop/lessons.md, "Raw mode: render cooked, play raw"). #30 D4 deleted the
+// cooked block, so there is no wrong mode left to play in. The separation stays
+// on its own merits.
 //
 // A nil c.replay means there is nothing to replay — the one-shot path, or a loop
 // before its first lookup. Saying so beats playing silence, which is the call
