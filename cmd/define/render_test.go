@@ -792,3 +792,57 @@ func TestASpanNotOnTheLineFallsBackToTheHeadword(t *testing.T) {
 	}
 	t.Error("no headword region at all")
 }
+
+// A degenerate entry renders rather than crashing (#30 M2, BR-51).
+//
+// A blank entry, or one that is a single space, parses to an EMPTY headword.
+// `regionsIn` then asked `findVisible` for an empty span, `strings.Index`
+// answered 0 for it, and the column lookup indexed an empty line — a panic on
+// input a dictionary can genuinely return.
+//
+// The rule the fix states: an empty needle is not a span. Enforced in
+// `findVisible`, the one owner of finding one, so no caller can produce a
+// zero-width region a click could land inside.
+func TestRenderSurvivesADegenerateEntry(t *testing.T) {
+	for _, raw := range []string{"", " ", "\n", "  \n", "\t", "\n\n\n", "   ORIGIN from French."} {
+		t.Run(fmt.Sprintf("%q", raw), func(t *testing.T) {
+			rendered, regions := Render(ParseEntry(raw), RenderOpts{Width: 80, Word: ""})
+			for _, r := range regions {
+				if r.Width == 0 || r.Text == "" {
+					t.Errorf("a zero-width region %+v — a click could land inside something that covers nothing", r)
+				}
+			}
+			_ = rendered
+		})
+	}
+}
+
+// Render must survive whatever a dictionary returns. It is the one function
+// every entry path goes through, so a panic here takes down a lookup, a pipe
+// and the interactive loop alike.
+func FuzzRenderDoesNotPanic(f *testing.F) {
+	for _, seed := range []string{
+		"", " ", "\n", "hot dog\nORIGIN from French.",
+		"a·b | c |\nORIGIN early 17th century: from Old French, from Italian.",
+		"\xff\xfe not utf8",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		for _, opt := range []RenderOpts{{Width: 80, Color: true}, {Width: 0}, {Width: 3, Word: "x"}} {
+			rendered, regions := Render(ParseEntry(raw), opt)
+			lines := strings.Split(rendered, "\n")
+			for _, r := range regions {
+				// Every region must ADDRESS the output: a click resolves against
+				// these coordinates, so one that points outside is worse than
+				// none.
+				if r.Line < 0 || r.Line >= len(lines) {
+					t.Fatalf("region %+v points at line %d of %d", r, r.Line, len(lines))
+				}
+				if r.Col < 0 || r.Width <= 0 {
+					t.Fatalf("region %+v has no extent", r)
+				}
+			}
+		}
+	})
+}

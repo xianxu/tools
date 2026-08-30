@@ -380,7 +380,7 @@ it in that language.**
 
 ```
 Region        {Kind, Text, Word, Lang, Line, Col, Width}   what a span OFFERS
-regionsIn     (Entry, rendered) -> []Region               PURE, reads the OUTPUT
+regionsIn     (Entry, rendered, key) -> []Region          PURE, reads the OUTPUT
 screen        addRegions / RegionAt / LineAt              the click map
 markClickable underline spliced at paint time             the mark
 ```
@@ -389,6 +389,16 @@ markClickable underline spliced at paint time             the mark
 third consumer is a row rather than a new feature. `numRegionKinds` is the
 registry's extent and every guard derives from it — `TestEveryRegionKindIsActionable`
 fails for a kind that draws, invites a click and does nothing.
+
+**`RenderOpts` is what a caller decides**, and one of its four fields is not
+about how the entry looks:
+
+| field | what it decides |
+|---|---|
+| `RenderOpts.Color` | whether the palette is emitted at all — `-no-color` makes the output a RECORD, and a record carries no escapes |
+| `RenderOpts.Width` | where prose wraps, in display cells. `0` means "do not wrap", which a pipe wants and a terminal under 20 columns also gets |
+| `RenderOpts.Vocab` | the deck words to highlight, resolved by `vocabularyFor` so no path can render against an empty set by forgetting to ask |
+| `RenderOpts.Word` | the LOOKUP KEY — identity, not presentation. See "a shortcut must not re-derive its target" below; empty means "no click map wanted" |
 
 **A region is read out of the FINISHED output.** A position recorded while
 writing describes what `Render` intended; a click map has to be right about what
@@ -406,11 +416,34 @@ just the first — `/pron` takes the first by NOAD's convention, while a click h
 nothing to disambiguate: `piano` names French and Italian and the user points at
 one. That is the insight the whole issue rests on.
 
-**A region carries the entry it belongs to** (`Region.Word`), because a reader can
-scroll back and click a word from earlier in the session while the session keeps
-only the CURRENT entry's raw text — which is what supplies the source spellings
-for a foreign replay. An older entry replays through `#29`'s fallback on the
-headword itself: the degraded answer rather than a wrong one.
+**A SHORTCUT MUST NOT RE-DERIVE ITS TARGET**, and this is where that rule is
+paid. A click on the headword is a shortcut for the bare Enter beside it, which
+replays the session's current word — the LOOKUP KEY. Deriving the target from the
+entry instead made the two disagree: `Entry.Headword()` is `fields[0]` alone, so
+`hot dog` underlined only "hot" and played it, `a priori` reduced to the letter
+"a", and `bargainer` — an inflected form finding its base entry, the common case
+— played "bargain".
+
+So the key belongs to the CALLER and travels on `RenderOpts.Word`, which is the
+one field there that is identity rather than presentation. The clickable span is
+that key where the head line shows it, falling back to the headword token when it
+does not (`define jalapeno` finds "jalapeño"): always something on screen, always
+the word Enter would play. No rule over the parsed tokens can find the phrase —
+`a priori` parses as `[a, priori, a, pri·o·ri]`, the phrase and then the phrase
+again syllabified.
+
+`Region.Word` then carries that key onward, because a reader can scroll back and
+click a word from earlier in the session while the session keeps only the CURRENT
+entry's raw text — which is what supplies the source spellings for a foreign
+replay. An older entry replays through `#29`'s fallback on the headword itself:
+the degraded answer rather than a wrong one.
+
+**A span with no visible extent is not a span.** An entry that is blank or a
+single space parses to an empty headword; asking for that span answered "found,
+at column zero" and indexed an empty line, so `define` PANICKED on input a
+dictionary can return. `findVisible` refuses it, measured in CELLS rather than
+bytes — the fuzzer found a NUL headword, whose width is zero for the same reason
+a combining mark's is.
 
 **The actions are `replayInPlace` with one parameter** — the same path a bare
 Enter and `/pron` take, so a click cannot drift from the gesture it shortcuts. A

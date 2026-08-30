@@ -187,6 +187,7 @@ to `#35`'s code and is where `M2.1` starts.
 | `liveScreen.WriteRegions` / `liveScreen.RegionAtRow` | `cmd/define/screen.go` | new | the click map's IO side: one call, so text and regions cannot disagree about which line a render landed on |
 | `regionWriter` / `writeRendered` | `cmd/define/main.go` | new | the seam fills itself — a writer that can hold a click map gets one, a pipe gets bytes (D6) |
 | `Region.Word` / `RenderOpts.Word` | `cmd/define/render.go` | new | the LOOKUP KEY a region plays. Identity, not presentation, and the caller owns it: a shortcut must not re-derive its target |
+| `RegionKind.String` / `numRegionKinds` | `cmd/define/render.go` | new | the registry's extent and its names, which three guards derive from rather than restate |
 
 - **`Region`** — `{Kind, Text, Lang, Line, Col, Width}`: what a span of rendered text OFFERS.
   - **The headword falls out of the existing walk; the ORIGIN language does NOT, and an earlier draft of this plan claimed it did.** `Render` colours `sec.Name` — the word "ORIGIN" — and passes `sec.Text` through `opt.prose(wrapText(...))`, which highlights DECK words. Nothing isolates "French" inside that text. So the language region needs a new pass over the section text, and that pass is the same matching `#35` already does.
@@ -761,3 +762,27 @@ each shifts the buffer. Neither a frame count nor an atomic read of the screen
 fixes that — only ordering does. A marker keystroke, whose echo cannot reach the
 live edge until everything the Enter set in motion has finished, is the
 deterministic signal.
+
+### 2026-08-30 — M2 boundary round 11: a panic, and the fourth docs-lag
+
+**BR-51 (Critical) — a span with no VISIBLE EXTENT is not a span.** An entry that
+is blank or a single space parses to an empty headword; `regionsIn` asked
+`findVisible` for that span, `strings.Index` answered "found, at 0", and the
+column lookup indexed an empty line. `Render` PANICKED — on input a dictionary
+can genuinely return, and `Render` is the one function every entry path goes
+through, so a lookup, a pipe and the interactive loop all crash together.
+
+Fixed in `findVisible`, the one owner of finding a span, so no caller can produce
+a zero-width region. And measured in CELLS rather than bytes, which is the half
+the report did not reach: `FuzzRenderDoesNotPanic` — written for this fix — then
+found a NUL headword, whose width is zero for the same reason a combining mark's
+is. Emptiness is not the only way to cover nothing.
+
+**BR-52 — the fourth docs-lag, so the deliverable is a guard.** The Critical fix
+gave `RenderOpts` a new field, `Word`, carrying a click's target — and the atlas
+went on describing the old shape. `TestAtlasDescribesEveryRenderOpt` derives from
+the struct itself, the same move as `TestAtlasDescribesEveryRegionKind` and
+`TestEveryEnabledMouseModeIsDecoded`: the set has one owner and the check reads
+it. It fired immediately on two MORE fields nobody had ever documented (`Color`,
+`Width`), which is the argument for the guard over the sweep — a doc task covers
+the surface someone remembered, and this covers the surface that exists.

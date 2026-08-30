@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -233,6 +234,46 @@ func TestAtlasDescribesEveryRegionKind(t *testing.T) {
 			t.Errorf("the atlas does not mention the %q region. A clickable span the "+
 				"docs never describe is surface a reader can only find by clicking at "+
 				"random.", k)
+		}
+	}
+}
+
+// Every RenderOpts field is described in the atlas, derived from the struct
+// (#30 M2, BR-52).
+//
+// Fourth finding in the docs-lag family, and the deliverable is the rule rather
+// than the two lines it named: `RenderOpts` gained `Word` — the field that
+// carries a click's target, and the fix for a Critical — while the atlas went on
+// describing the old shape. A doc sweep as a TASK cannot cover a field added by
+// a later fix; a guard derived from the declared set can.
+//
+// Same move as `TestAtlasDescribesEveryRegionKind` and
+// `TestEveryEnabledMouseModeIsDecoded`: the SET has one owner, and the check
+// reads it rather than restating it. Adding a field reddens this until the atlas
+// says what it is for.
+//
+// Deliberately narrow: it asks only that the NAME appears. Prose cannot be
+// checked mechanically, and a guard that pretended to would be theatre — what it
+// prevents is a field nobody wrote a sentence about at all.
+func TestAtlasDescribesEveryRenderOpt(t *testing.T) {
+	b, err := os.ReadFile("../../atlas/define.md")
+	if err != nil {
+		t.Fatalf("atlas/define.md unreadable: %v", err)
+	}
+	atlas := string(b)
+	rt := reflect.TypeOf(RenderOpts{})
+	if rt.NumField() == 0 {
+		t.Fatal("RenderOpts has no fields; this guard would certify nothing")
+	}
+	for i := 0; i < rt.NumField(); i++ {
+		name := rt.Field(i).Name
+		if !rt.Field(i).IsExported() {
+			continue
+		}
+		if !strings.Contains(atlas, "RenderOpts."+name) && !strings.Contains(atlas, "`"+name+"`") {
+			t.Errorf("the atlas never mentions RenderOpts.%s. A rendering input nobody "+
+				"documented is one the next reader has to infer from the code — and this "+
+				"one carried a Critical's fix.", name)
 		}
 	}
 }

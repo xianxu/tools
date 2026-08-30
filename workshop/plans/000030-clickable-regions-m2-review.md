@@ -561,3 +561,224 @@ findings:
       while Region.Word, the writeRendered seam, the 24-not-0 decision and the
       degrade-by-routing rule are recorded only in the plan.
 ```
+
+---
+
+## Re-review — 2026-08-30T14:35:48-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | a6584e243f2a032d209f8f4f1f44c50ed801f0ad..eb85b10e3cec8f10bc4aa6ba71c2533eaed9d4e4 |
+| command | sdlc milestone-close --issue 30 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-30T14:35:48-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The BR-46 and BR-47 fixes are real and I verified both by mutation rather than by reading the commit message: reverting `regionsIn` to `e.Headword()` reddens `TestAClickAsksForExactlyWhatEnterAsksFor`, `TestTheClickableSpanIsTheWholeHeadword` and `TestASpanNotOnTheLineFallsBackToTheHeadword` with the exact messages the plan records (`hot dog`, `a priori`, `bargainer`), and the new joint test reddens for an off-by-one on *either* side of the boundary (`clickAt`'s 1-based conversion, and `visible()`'s top line) — it is the first test in this issue that crosses from terminal bytes to a played word through real objects, and it is stable at `-count=25 -race`. What blocks SHIP is that the same commit introduced a **panic**: `regionsIn` now hands the lookup key (and, on the `--play` path, an empty headword) to `findVisible`, which indexes `cols[0]` without checking, so `Render(ParseEntry(" "), …)` crashes. This is not a hypothetical — the repo's own `FuzzRenderLosesNothing` finds it in 0.18 s and minimizes the crasher to a single space, while `go test ./...` stays green because it only runs the seed corpus. Everything else in the window is green here (`go test ./...`, `go test -race ./cmd/define/ ./internal/...`, `go vet ./...`); the 12 PTY rows skip (`no pty available: operation not permitted`).
+
+## 1. Strengths
+
+- **`cmd/define/render.go:332` — the fix is the class, not the site.** Taking the target from `RenderOpts.Word` also corrected `RegionOriginLang` (which carried the same wrong word) and the *mark's* extent in the same move, and the fallback to the headword token when the key is not on the line (`define jalapeno` → `jalapeño`) keeps the span honest without letting the played word drift. I probed the whole corpus at three widths: every region's `Word` is the key, no zero-width region, no two regions on one line overlap.
+- **`cmd/define/editorloop_test.go:906` — `TestAClickAtAPaintedCellPlaysWhatIsUnderIt` is the joint test the family kept asking for.** No coordinate is invented by the test; it reads the frame the screen is *currently* showing under the screen's own lock, builds the SGR bytes a terminal would send, and decodes them through `decodeKey`. Both recorded mutations redden it. The marker-keystroke idle signal is the right answer to the flake — a frame count would not have been.
+- **`cmd/define/screen.go:289` — `markClickable`'s rewrite is a genuine improvement beyond BR-40.** Stepping escapes first also fixed a second latent bug: a span whose `Col` lies past the line's width used to emit a stray `\x1b[24m` at end of line (`next < len(spans)`); the `open` flag makes the close conditional on an open span. Measured at HEAD: `"\x1b[1;36m\x1b[4mpotassium\x1b[24m\x1b[0m is a metal"`.
+- **`internal/llm/config_test.go:170` — the side-quest's negative cases are the interesting ones and they are all there.** "another local port" and "a remote provider" both decline, an explicit key wins in both directions, and the same endpoint spelled explicitly still handshakes. `TestResolveIsPureOverTheLookup` was rewritten to assert the property rather than the instrument it had been using, which is the right response to a test whose observable disappeared.
+- **`cmd/define/repo_guard_test.go:86` — `declaredInBlock`/`declaredAsField` widen the plan guard without loosening it.** The comments explain exactly why an unqualified field match was refused; a guard a struct field of the wrong type could satisfy would be the class of lie the guard exists to catch.
+
+## 2. Critical findings
+
+### C-1 · `Render` panics on a one-space entry — `cmd/define/render.go:445`, reached from `:333` and `:340`
+
+`regionsIn` now passes a *span string* to `findVisible`, and two of them can be empty: `e.Headword()` when the key is not on the head line (`:334`), and `word` itself on the `--play` path, which passes no `Word` (`play_loop.go:262`). `findVisible` does `strings.Index(plain[from:], needle)`, which returns `0` for an empty needle, then `return cols[i]` — and `cols` is empty when the first rendered line is empty. Measured at HEAD:
+
+```
+Render(ParseEntry(""),   RenderOpts{Width: 80, Word: "somekey"})  → panic: index out of range [0] with length 0
+Render(ParseEntry(" "),  RenderOpts{})                            → same
+Render(ParseEntry("| notation |"), RenderOpts{})                  → same
+```
+
+The pre-fix `regionsIn` (walking `e.Head` tokens) returned zero regions for all three — I ran the same probe against `9469474:render.go` and it passes — so this is introduced by `3b60e1a`, the commit that closed the previous Critical. It is reachable on the ordinary lookup path: `selectedDictionary.Lookup` (`dict_darwin.go:230`) returns `(C.GoString(res), nil)` and does not require non-empty text, so a dictionary that answers with whitespace crashes `define <word>` rather than printing it.
+
+The repo's own fuzz target already covers this surface and finds it immediately:
+
+```
+$ go test ./cmd/define/ -fuzz FuzzRenderLosesNothing -fuzztime 45s
+--- FAIL: FuzzRenderLosesNothing (0.18s)   panic: index out of range [0] with length 0
+    findVisible → regionsIn:333 → Render:236
+crasher, minimized:  string(" ")
+```
+
+Fix sketch, at the owner rather than the caller: `findVisible` should refuse an empty needle (`if needle == "" { return 0, 0, false }`) — an empty span is not a thing on screen, which is the same argument that makes `Width` a display-cell count. That also removes the bogus zero-width `RegionHeadword` a non-empty first line currently produces on the `--play` path. Then commit the minimized crasher to `cmd/define/testdata/fuzz/FuzzRenderLosesNothing/`, which is the convention the target's own doc comment states and which this window already followed twice for `FuzzDecodeMouseIsBounded`.
+
+The rule the family names: **a fix that gives an existing helper a new class of input inherits that helper's unstated preconditions, so the fix's own commit re-runs the property tests that cover it — not just the ones the finding named.** `go test ./...` cannot see this class; the fuzz target can, and it was not run.
+
+## 3. Important findings
+
+### I-1 · The atlas's "Clickable regions" section was not swept when the Critical fix changed what a region carries — `atlas/define.md:383`, `:409`
+
+**This is the 4th finding in family `docs-lag-new-surface`** (after BR-25's M1 atlas lag, BR-39's whole-feature absence, and BR-50's missing issue Log). Earlier rounds fixed instances, and one produced a guard. Do **not** fix this instance alone.
+
+Two concrete gaps, both introduced by `3b60e1a`, which touched no `atlas/` file:
+
+- `atlas/define.md:383` still reads `regionsIn     (Entry, rendered) -> []Region`. The signature is `regionsIn(e Entry, rendered, key string)`.
+- `:409` still explains `Region.Word` as "the entry it belongs to". The round's durable decision — *the click's target is the LOOKUP KEY, carried on `RenderOpts.Word`, owned by the caller, because a shortcut must not re-derive its target* — is recorded in the plan's Revisions and the issue Log and appears nowhere in the atlas, though `RenderOpts` gained a field and `Region.Word` changed meaning.
+
+The interesting part is *why the guard did not catch it*. `TestAtlasDescribesEveryRegionKind` (added last round for BR-39) derives from `numRegionKinds` and therefore defends exactly one axis: the set of kinds. This boundary changed a different axis — a field's meaning and a function's signature — and no guard covers that, so the obligation fell back to a human sweep and was missed. The rule: **a derived docs guard defends only the axis it derives from; every other axis a boundary changes is still an owed sweep, and the enumerable form of that sweep is "for every Core-concepts row whose cell this window edited, re-read the atlas line that names the same entity."** Two rows changed in this window (`regionsIn`, `Region.Word`/`RenderOpts.Word`) and both have a stale atlas line — a 2/2 hit rate, which is why the enumeration is cheap and worth writing rather than repeating the sweep by memory. `README.md` is fine: the user-visible sentence ("Click the headword to hear it again") survives the change.
+
+## 4. Minor findings
+
+- **Stale comments, enumerated — 3rd in `stale-rationale`, and the enumeration is the deliverable.** BR-44 named two sites and is still open; this window added three more, so the class is measurable at five: `key.go:186` ("answers only the WHEEL") and `:198` ("a click therefore stays `KeyUnknown`") and `:344` ("Only the wheel is answered") all describe a decoder that now returns `KeyClick`, and `decodeWheel` is a misnomer; `render.go:287` says `Region.Word` is "the ENTRY this region belongs to … the word to play is still the headword", which is what `3b60e1a` stopped being true; `internal/llm/config.go:153` says "the parley proxy's key is four characters, so it is the common case here" in the commit that made that key `"parley-local"` (12 characters, so it takes the *other* branch). The rule: **a comment that states a fact about a value, or about what a function does not do, is part of that fact's blast radius — the commit that changes the fact sweeps every site stating it, and the sweep is a grep, not a recollection.**
+- `cmd/define/editorloop_test.go:1004` — `keysOf` is added in this window and called from nowhere (`grep` finds only its own declaration). Dead scaffolding from an earlier draft of the joint test; Go will not complain about an unused function, so nothing else will catch it.
+- `cmd/define/editorloop_test.go:982` — `frameCell`'s doc comment sits above `livePromptOf`, so both helpers are documented by the wrong paragraph.
+- `cmd/define/editorloop_test.go:971` — when the joint test fails it says "timed out waiting for the stream", which names the instrument rather than the claim. Both mutations I applied produced that message; a reader would not learn that the click resolved to the wrong line. Worth reporting what was clicked and what it resolved to.
+
+## 5. Test coverage notes
+
+- Ran here at `eb85b10`: `go build ./...` and `go vet ./...` clean; `go test ./...` green; `go test -race ./cmd/define/ ./internal/...` green (118 s + 27 s); `go test -race -count=25` over the three click tests green, so `3b60e1a`'s flake fix holds. All 12 PTY rows skip in this environment.
+- Mutations I ran, with results: `regionsIn`'s `word := key` → `e.Headword()` reddens three tests with the recorded messages ✓; `clickAt`'s `wireRow - 1` → `wireRow` reddens the joint test and `TestClickCarriesItsPosition` ✓; `visible()`'s `end - s.rows` → `+1` reddens the joint test ✓; **`screen.go` reverted to `9469474` (undoing the `markClickable` rewrite) leaves `go test ./cmd/define/` green** — the existing assertions all use `underlineOn+text`, which the doubled-emission form also satisfied, so the corrected placement is undefended.
+- The gap C-1 fell through is the one the previous round already named in a different shape: the corpus property tests assert over *entries that exist*, and every new input class this milestone introduced (an empty key, an empty headword, an empty first line) is outside that corpus. `FuzzRenderLosesNothing` is the instrument that covers it and is not part of the close's verification recipe — `## Verification before close` lists `go test ./...` and the conformance tag only.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag, carried.** BR-49 is unchanged: `visibleCells` (`render.go:466`), `visibleIndex` (`render.go:454`), `clipVisible` (`screen.go`) and `markClickable` (`screen.go:289`) still each re-spell the "step escapes, measure cells" traversal, and `markClickable`'s rewrite in this window re-spelled it a fourth time rather than consuming a shared iterator. Separately, `defaultLocalKey` is a constant duplicated across two repos (tools and parley) with no single source and no conformance check; the commit reasons about that explicitly and accepts a 401 as the failure mode, and `askrun_test.go:606` does pin that a 401 reaches the user carrying its cause — so this is a recorded trade, not a gap.
+- **ARCH-PURE — flag, via C-1.** `regionsIn` and `findVisible` are pure and take exactly what they read, which is right; a pure function that panics on an input class is still a defect, and this one is now reachable from the production lookup path. BR-41's smaller wrinkle stands: `LineAt` → `visible()` → `clamp()` writes back `s.offset` under a table row that says PURE.
+- **ARCH-PURPOSE — flag.** BR-46 was answered as a class rather than an instance (the ORIGIN region and the mark's extent were swept with the headword), which is the right shape. BR-47 was not: the rule "the enumeration must be of JOINTS, not entities" is now written in the plan's Revisions and *one* joint row was added, but the table is still organised by entity and BR-45 names a joint — `addRegions`' base/`Col` exchange across the partial-line boundary — that is still both unpinned and unenumerated. That is the instance fixed and the enumeration deferred, one more time.
+- **ARCH-MOCK — pass with a note.** The terminal's stateful double gained `TestPTYWithoutMouseBehavesAsBefore`, and the in-process joint test now runs the click through production objects, which is the better of the two asks. Still no pty row sends a real mouse report and asserts playback, so the *encoding* half of the click is confirmed only in process.
+- **ARCH-CONSTRAINTS — pass.** `regionsIn` adds at most two extra `findVisible` scans of line 0 per lookup, not per keystroke; `markClickable` still early-returns on a region-free line; the 16 ms throttle and trailing flush are untouched. The side-quest adds no work to any path — `Resolve` is still a pure function over a lookup and still does no startup probe, which the atlas re-states.
+
+## 7. Plan revision recommendations
+
+1. **`## Revisions` — "the empty span the key made possible."** Record that carrying the lookup key into `regionsIn` gave `findVisible` a caller that can supply an empty needle, that `Render` therefore panicked on a one-space entry, and that the guard belongs to `findVisible` (an empty span is not a thing on screen). Add a row to *M2 — what runs each row*: `findVisible`'s empty needle | `FuzzRenderLosesNothing` + the committed crasher | "revert the guard → `go test -fuzz` red in under a second on `\" \"`". Add `go test -fuzz FuzzRenderLosesNothing` to `## Verification before close`, since `go test ./...` cannot reach this class.
+2. **`## Revisions` — the atlas axis the kind-guard does not cover** (I-1). Record that `TestAtlasDescribesEveryRegionKind` defends the set of kinds only, that `regionsIn`'s signature and `Region.Word`'s meaning changed in this window with no atlas edit, and the enumerable sweep that replaces the memory-based one.
+3. **M2 Done-when row 1** still stops one layer short — it names `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor` but not `TestAClickAtAPaintedCellPlaysWhatIsUnderIt`, which is now the row's strongest pin. (Round 10 recommended this and it landed in the enumeration table instead.)
+4. **The `Region` bullet** under M2's Core concepts still describes the struct as `{Kind, Text, Lang, Line, Col, Width}`, omitting `Word` — the field the whole round turned on.
+5. **`markClickable`'s enumeration row** records only "drop `underlineOff` → the headword is not marked as clickable". That mutation does not cover the placement property the code now claims; add the one that does, or record that the placement is currently unpinned (measured: reverting `screen.go` to `9469474` leaves the suite green).
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      M1.1 still enumerates the four cases verbatim and screen_test.go still has only FuzzScreenWriteDoesNotPanic — no chunk-boundary property over screen.Write.
+  - id: BR-40
+    disposition: not-addressed
+    note: |
+      Behaviour is corrected (measured at HEAD: one \x1b[4m, placed after the palette escape) but reverting screen.go to 9469474 leaves go test ./cmd/define/ green, so nothing defends it.
+  - id: BR-41
+    disposition: not-addressed
+    note: |
+      LineAt still reaches clamp through visible(), which writes back s.offset, while the plan's M2 table still labels the group PURE.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      key.go:186, :198 and :344 unchanged, decodeWheel still the name; three more sites of the same class arrived in this window (see the stale-rationale finding).
+  - id: BR-45
+    disposition: not-addressed
+    note: |
+      addRegions still decrements base for a partial line and leaves Col relative to the render; screen_test.go:738 still supplies Col pre-offset by hand.
+  - id: BR-46
+    disposition: addressed
+    note: |
+      Verified by mutation: word := e.Headword() reddens three tests with the recorded hot dog / a priori / bargainer messages. Corpus probe at three widths shows every region's Word is the key, none zero-width, none overlapping.
+  - id: BR-47
+    disposition: addressed
+    note: |
+      Verified by two mutations on opposite sides of the joint (clickAt's 1-based conversion; visible()'s top line) — both redden the new test, which drives a real liveScreen as view and stdout. The by-joint regeneration of the table is only partial: BR-45's joint is still unenumerated.
+  - id: BR-48
+    disposition: not-addressed
+    note: |
+      The "the command menu closing" subtest is unchanged at screen_test.go:906.
+  - id: BR-49
+    disposition: not-addressed
+    note: |
+      No forEachCell exists; markClickable's rewrite in this window re-spelled the traversal a fourth time rather than consuming a shared iterator.
+  - id: BR-50
+    disposition: addressed
+    note: |
+      The issue now carries "2026-08-30 — M2: the clicks, and what the boundary found" with Region.Word, the writeRendered seam, the 24-not-0 decision and degrade-by-routing.
+findings:
+  - id: new
+    severity: Critical
+    family: helper-precondition-unguarded
+    title: |
+      Render panics on a one-space entry — regionsIn hands findVisible an empty needle and it indexes cols[0]
+    detail: |
+      Introduced by 3b60e1a. regionsIn now passes span STRINGS to findVisible, and
+      two can be empty: e.Headword() when the key is not on the head line
+      (render.go:334) and word itself on the --play path, which passes no Word
+      (play_loop.go:262). strings.Index returns 0 for an empty needle, so
+      findVisible (render.go:445) returns cols[0] on an empty cols slice.
+      Measured: Render(ParseEntry(" "), RenderOpts{}) and
+      Render(ParseEntry(""), RenderOpts{Word: "somekey"}) both panic; the same
+      probe against 9469474:render.go passes, so it is new in this window. The
+      repo's own FuzzRenderLosesNothing finds it in 0.18s and minimizes the
+      crasher to a single space, while go test ./... stays green because it runs
+      only the seed corpus. Reachable on the ordinary lookup path:
+      selectedDictionary.Lookup returns (text, nil) without requiring non-empty
+      text. Fix at the owner — findVisible refuses an empty needle, since an
+      empty span is not a thing on screen — and commit the minimized crasher to
+      testdata/fuzz/FuzzRenderLosesNothing/ per the target's own convention. The
+      rule: a fix that gives an existing helper a new class of input inherits
+      that helper's unstated preconditions, so its own commit re-runs the
+      property tests covering it, not only the ones the finding named.
+  - id: new
+    severity: Important
+    family: docs-lag-new-surface
+    title: |
+      The atlas's clickable-regions section was not swept when the Critical fix changed what a region carries
+    detail: |
+      4th in this family, so the deliverable is the rule, not the two lines.
+      3b60e1a touched no atlas file: atlas/define.md:383 still prints
+      "regionsIn (Entry, rendered) -> []Region" against a function that now takes
+      the key, and :409 still explains Region.Word as "the entry it belongs to"
+      while the round's durable decision — the target is the LOOKUP KEY carried
+      on RenderOpts.Word, because a shortcut must not re-derive its target — lives
+      only in the plan and the issue Log though RenderOpts gained a field. Last
+      round's guard did not fire because TestAtlasDescribesEveryRegionKind derives
+      from numRegionKinds and therefore defends the set of KINDS only; this
+      boundary changed a different axis. The rule: a derived docs guard defends
+      only the axis it derives from, and every other axis a boundary changes is
+      still an owed sweep whose enumerable form is "for every Core-concepts row
+      this window edited, re-read the atlas line naming the same entity". Two rows
+      changed here and both have a stale atlas line.
+  - id: new
+    severity: Minor
+    family: stale-rationale
+    title: |
+      Five comments now state facts their own commits made false, and the enumeration is the fix
+    detail: |
+      3rd in this family; BR-44 named two sites and this window added three, so
+      prevalence is measurable at five. key.go:186 ("answers only the WHEEL"),
+      :198 ("a click therefore stays KeyUnknown") and :344 ("Only the wheel is
+      answered") describe a decoder that returns KeyClick, and decodeWheel is a
+      misnomer. render.go:287 says Region.Word is "the ENTRY this region belongs
+      to … the word to play is still the headword", which 3b60e1a stopped being
+      true. internal/llm/config.go:153 says "the parley proxy's key is four
+      characters, so it is the common case here" in the very commit that made
+      that key "parley-local" — twelve characters, which takes the other branch.
+      The rule: a comment stating a fact about a value, or about what a function
+      does NOT do, is part of that fact's blast radius; the commit that changes
+      the fact sweeps every site stating it, by grep rather than by recollection.
+  - id: new
+    severity: Minor
+    family: dead-test-scaffolding
+    title: |
+      keysOf is added in this window and called from nowhere, and frameCell's doc comment sits above livePromptOf
+    detail: |
+      editorloop_test.go:1004 declares keysOf(map[int][]Region) []int; grep finds
+      no caller. Left over from an earlier draft of the joint test — Go does not
+      complain about an unused function, so nothing else will catch it. At :982
+      the paragraph describing frameCell sits above livePromptOf, so both helpers
+      are documented by the wrong comment.
+```

@@ -433,6 +433,23 @@ func headingLine(lines []string, name string) int {
 // so a highlighted deck word inside the span does not move the column, and a
 // coloured line is measured by what a reader sees.
 func findVisible(line, needle string, skip int) (col, width int, ok bool) {
+	if visibleCells(needle) == 0 {
+		// A span with no VISIBLE EXTENT is not a span, and saying so here is the
+		// whole fix for a crash: strings.Index answers 0 for an empty needle, so
+		// a zero-width "match" was reported at column cols[0] — which panics on
+		// an empty line.
+		//
+		// Reachable from real input: an entry that is blank, or a single space,
+		// parses to an empty headword, and `define` crashed rather than
+		// rendering nothing. A dictionary returning junk must degrade, never
+		// panic.
+		//
+		// Measured in CELLS rather than bytes, because emptiness is not the only
+		// way to cover nothing — the fuzzer found a headword of NUL, whose width
+		// is zero for the same reason a combining mark's is. Either way the
+		// region is one no click can land in and no reader can see.
+		return 0, 0, false
+	}
 	plain, cols := visibleIndex(line)
 	from := 0
 	for {

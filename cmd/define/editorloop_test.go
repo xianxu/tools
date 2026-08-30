@@ -979,9 +979,6 @@ func TestAClickAtAPaintedCellPlaysWhatIsUnderIt(t *testing.T) {
 	}
 }
 
-// frameCell is where the screen is showing text right now: its viewport row and
-// display column, read under the screen's own lock so the answer cannot be a
-// frame the loop has already moved past.
 // livePromptOf reads the prompt the screen is currently showing, under its lock.
 func livePromptOf(l *liveScreen) string {
 	l.mu.Lock()
@@ -989,6 +986,9 @@ func livePromptOf(l *liveScreen) string {
 	return l.prompt
 }
 
+// frameCell is where the screen is showing text right now: its viewport row and
+// display column, read under the screen's own lock so the answer cannot be a
+// frame the loop has already moved past.
 func frameCell(l *liveScreen, text string) (row, col int, ok bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -999,13 +999,4 @@ func frameCell(l *liveScreen, text string) (row, col int, ok bool) {
 		}
 	}
 	return 0, 0, false
-}
-
-func keysOf(m map[int][]Region) []int {
-	var out []int
-	for k := range m {
-		out = append(out, k)
-	}
-	slices.Sort(out)
-	return out
 }
