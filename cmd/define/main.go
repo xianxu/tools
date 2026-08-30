@@ -771,9 +771,13 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		d.capture.Capture(word, true, opt)
 		return lookupOutcome{entry: text}
 	}
-	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{
+	// The regions are DISCARDED here and that is correct for this path: they are
+	// coordinates into a frame, and only the interactive loop owns one. A
+	// one-shot, a pipe or `> out.txt` has nowhere to click (#30 D6).
+	rendered, _ := Render(ParseEntry(text), RenderOpts{
 		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
-	}))
+	})
+	fmt.Fprint(stdout, rendered)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
 }

@@ -258,7 +258,8 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
 			continue
 		}
-		rendered := Render(ParseEntry(text), RenderOpts{
+		// No regions: `--play` draws its own frames and has no click map (D5a).
+		rendered, _ := Render(ParseEntry(text), RenderOpts{
 			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 		})
 		qs = append(qs, play.NewRecall(key, rendered))

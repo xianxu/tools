@@ -79,7 +79,7 @@ func TestRenderLosesNothingOverLiveEntries(t *testing.T) {
 			continue
 		}
 		checked++
-		out := Render(ParseEntry(raw), RenderOpts{Color: false})
+		out, _ := Render(ParseEntry(raw), RenderOpts{Color: false})
 		// Independent oracle — see strayStress. The previous formulation asked
 		// isPronunciation to grade its own output and therefore reported 0%
 		// while 2.2% of these same entries were showing raw notation.

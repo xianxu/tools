@@ -173,8 +173,12 @@ to `#35`'s code and is where `M2.1` starts.
 
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
-| `Region` | `cmd/define/render.go` | new | PURE |
-| `Render` | `cmd/define/render.go` | modified | its BODY was swept by M1's `visibleLen`→`visibleCells` rename; the SIGNATURE change — the second return value — is still M2.1's, and this row says `modified` because the status column describes this window's diff, not the milestone's intent |
+| `Region` / `RegionKind` | `cmd/define/render.go` | new | PURE — one registry, so a third consumer is a row |
+| `Render` | `cmd/define/render.go` | modified | now returns `(string, []Region)`. The string is byte-identical, pinned by a golden generated from the commit BEFORE the change |
+| `regionsIn` | `cmd/define/render.go` | new | PURE — reads the FINISHED output, so a region describes what a terminal will show rather than what Render intended |
+| `originLineRange` / `findVisible` / `visibleIndex` / `stripEscapes` | `cmd/define/render.go` | new | PURE |
+| `Mention` / `OriginLanguageMentions` / `originText` / `maskOut` | `cmd/define/origin.go` | new | PURE (M2.1a) — every language an ORIGIN names as a source, in source order, at offsets that survive the stage mask |
+| `OriginLanguage` | `cmd/define/origin.go` | modified | now "the first mention", so the two consumers cannot drift |
 | `decodeMouse` | `cmd/define/key.go` | new | PURE — extends M1's `decodeWheel`/`decodeX10Mouse` to buttons |
 | `screen.RegionAt` | `cmd/define/screen.go` | new | PURE |
 
@@ -190,7 +194,9 @@ to `#35`'s code and is where `M2.1` starts.
 
 ### Tasks
 
-- [ ] **M2.1 — `Render` emits regions.** The signature change is the risk: every caller and every golden test touches it. Keep the string identical — assert byte-equality against the current output over the whole corpus, so a regions change cannot silently alter what is drawn.
+- [x] **M2.1 — `Render` emits regions.** The signature change is the risk: every caller and every golden test touches it. Keep the string identical — asserted by `TestRenderOutputMatchesTheCorpusGolden`, whose golden was generated from the commit BEFORE the change, since comparing `Render` to itself proves nothing.
+      **Regions are read out of the FINISHED output, not recorded while writing**, and that is a decision rather than an economy: a position recorded during the walk describes what `Render` intended, while a click map has to be right about what a terminal shows. It also leaves `Render`'s body untouched, so byte-identity is a property of the shape.
+      **Positions carry across by OCCURRENCE INDEX.** The mentions producer says which occurrences are sources — it cuts cognate clauses and masks stages, so a "Dutch" that is on screen may not be one — and rendering preserves the text's characters in order, so the *n*th "French" in the section is the *n*th on screen. The ORIGIN search is bounded to that section's lines, because `arrondissement`'s own gloss says "a French department" and that is not an etymology.
 - [ ] **M2.2 — `decodeMouse` for BUTTONS.** The tracking enable/disable and the wheel half of the decoder landed in `M1.4b`, paired with the alt screen on `rawSession` so a crash cannot leave tracking on, with the bounded-consumption fuzz target this row called for. What is left is the press: its coordinates, which are inert today because nothing can look them up yet.
 - [ ] **M2.3 — hit test**: `screen.RegionAt(row, col)`, which is a lookup in the per-line region list. Pure.
 - [ ] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.

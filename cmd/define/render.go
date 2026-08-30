@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // RenderOpts controls presentation only. Render is pure: it never probes the
@@ -101,7 +103,7 @@ func (o RenderOpts) prose(s, base string) string {
 // abbreviate, truncate, or reorder. The no-data-loss invariant
 // (invariant_test.go) holds the rendered letters and digits against the raw
 // entry as an ordered subsequence, and any of those would break it.
-func Render(e Entry, opt RenderOpts) string {
+func Render(e Entry, opt RenderOpts) (string, []Region) {
 	p := newPalette(opt.Color)
 	var b strings.Builder
 
@@ -218,7 +220,175 @@ func Render(e Entry, opt RenderOpts) string {
 			}
 		}
 	}
-	return b.String()
+	out := b.String()
+	return out, regionsIn(e, out)
+}
+
+// RegionKind is what a span OFFERS. One registry, so a third consumer is a row
+// rather than a new feature — which is the shape #30 is filed as.
+type RegionKind int
+
+const (
+	// RegionHeadword — play this word's recording. The primary target, because
+	// every entry has a headword in every language: the IPA is English-only
+	// (#31 measured it — Spanish writes none, Italian writes syllabification),
+	// so "click the notation" would leave most languages with a dead affordance.
+	RegionHeadword RegionKind = iota
+	// RegionOriginLang — play the word in the language its ORIGIN names.
+	RegionOriginLang
+)
+
+// Region is a span of RENDERED text that offers an action.
+//
+// Line and Col address the output of this very Render call: Line counts "\n",
+// Col and Width are DISPLAY CELLS, matching everything else that measures width
+// in this program (visibleCells). The screen turns them into a click map by
+// adding its own scroll offset — exact by construction, because nothing but the
+// screen can move the view (#30 D1).
+type Region struct {
+	Kind  RegionKind
+	Text  string
+	Lang  store.Lang // RegionOriginLang only
+	Line  int
+	Col   int
+	Width int
+}
+
+// regionsIn finds the actionable spans IN THE RENDERED OUTPUT, rather than
+// recording where Render meant to put them.
+//
+// That distinction is the design. A position recorded while writing describes an
+// intention; a position found in the output describes what a terminal will show
+// — and a click map has to be right about the second. It also keeps Render's
+// body untouched, so "the bytes are identical" is a property of the shape rather
+// than a promise a test has to re-check for every future edit.
+//
+// It is PURE and takes exactly what it reads.
+func regionsIn(e Entry, rendered string) []Region {
+	lines := strings.Split(rendered, "\n")
+	if len(lines) == 0 {
+		return nil
+	}
+	var out []Region
+
+	// The headword, and the syllabified form beside it where one exists — the
+	// operator asked for both ("click on the word itself, e.g. `potassium`, or
+	// `po·tas·si·um`"), and they are one Kind because they offer one action.
+	// Both live on the first line, which is where Render writes the head tokens.
+	for _, t := range e.Head {
+		if t.Kind != HeadWord && t.Kind != HeadSyllables {
+			continue
+		}
+		if col, w, ok := findVisible(lines[0], t.Text, 0); ok {
+			out = append(out, Region{Kind: RegionHeadword, Text: t.Text, Line: 0, Col: col, Width: w})
+		}
+	}
+
+	// Every modern language the ORIGIN names as a SOURCE — not the first, which
+	// is `/pron`'s answer. A click has nothing to disambiguate: `piano` names
+	// French and Italian, and the user points at one (#30's founding insight).
+	//
+	// Which occurrences are sources is the mentions producer's job — it cuts
+	// cognate clauses and masks historical stages, and "Dutch" in a cognate
+	// clause is present in the rendered text but is not a source. So a mention
+	// is carried across by its OCCURRENCE INDEX: the second "French" in the
+	// section text is the second "French" on screen, because rendering preserves
+	// the text's characters and their order.
+	mentions, _ := OriginLanguageMentions(e)
+	if len(mentions) == 0 {
+		return out
+	}
+	first, last := originLineRange(lines)
+	for _, m := range mentions {
+		nth := strings.Count(originText(e)[:m.Offset], m.Name)
+		for ln := first; ln <= last && ln < len(lines); ln++ {
+			col, w, ok := findVisible(lines[ln], m.Name, nth)
+			if !ok {
+				nth -= strings.Count(stripEscapes(lines[ln]), m.Name)
+				continue
+			}
+			out = append(out, Region{
+				Kind: RegionOriginLang, Text: m.Name, Lang: m.Lang,
+				Line: ln, Col: col, Width: w,
+			})
+			break
+		}
+	}
+	return out
+}
+
+// originLineRange is the span of rendered lines belonging to the ORIGIN section:
+// from its heading to the next section heading or the end.
+//
+// Bounded rather than searched whole, because a language name can occur in a
+// definition ("a French department" is in `arrondissement`'s own gloss) and that
+// occurrence is not an etymology.
+func originLineRange(lines []string) (int, int) {
+	first := -1
+	for i, l := range lines {
+		name := strings.TrimSpace(stripEscapes(l))
+		switch {
+		case first < 0 && name == "ORIGIN":
+			first = i
+		case first >= 0 && name != "" && name == strings.ToUpper(name) && !strings.ContainsAny(name, " .,‘’") && i > first:
+			return first, i - 1 // the next section's heading
+		}
+	}
+	if first < 0 {
+		return 0, -1 // no ORIGIN section: an empty range
+	}
+	return first, len(lines) - 1
+}
+
+// findVisible locates the (skip+1)th occurrence of needle in a rendered line and
+// reports its DISPLAY COLUMN and width, ignoring escape sequences.
+//
+// Escapes are stepped over through escapeLen — the one owner of that grammar —
+// so a highlighted deck word inside the span does not move the column, and a
+// coloured line is measured by what a reader sees.
+func findVisible(line, needle string, skip int) (col, width int, ok bool) {
+	plain, cols := visibleIndex(line)
+	from := 0
+	for {
+		i := strings.Index(plain[from:], needle)
+		if i < 0 {
+			return 0, 0, false
+		}
+		i += from
+		if skip == 0 {
+			return cols[i], visibleCells(needle), true
+		}
+		skip--
+		from = i + len(needle)
+	}
+}
+
+// visibleIndex strips escape sequences and reports, for each byte of what is
+// left, the display column it occupies.
+func visibleIndex(line string) (string, []int) {
+	var plain strings.Builder
+	var cols []int
+	col := 0
+	for i := 0; i < len(line); {
+		if skip := escapeLen(line[i:]); skip > 0 {
+			i += skip
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		for j := 0; j < size; j++ {
+			cols = append(cols, col)
+		}
+		plain.WriteString(line[i : i+size])
+		col += cellWidth(r)
+		i += size
+	}
+	return plain.String(), cols
+}
+
+// stripEscapes is visibleIndex's text half, for callers that need only that.
+func stripEscapes(s string) string {
+	plain, _ := visibleIndex(s)
+	return plain
 }
 
 // prettyPronunciations is the coloured face of rewritePronunciations.

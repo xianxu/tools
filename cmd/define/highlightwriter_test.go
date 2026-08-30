@@ -338,14 +338,14 @@ func TestHighlightingLosesNothing(t *testing.T) {
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
 			e := ParseEntry(raw)
-			plain := Render(e, RenderOpts{Color: false})
+			plain, _ := Render(e, RenderOpts{Color: false})
 			if strings.Contains(plain, "\x1b") {
 				t.Fatal("the colour-off baseline carries escapes; this comparison would be vacuous")
 			}
 			// Color:true, not false — sgrState.resume is the whole reason
 			// definitions and answers share a mechanism, and it only runs when
 			// there is a style to resume. Production always passes opt.color.
-			out := Render(e, RenderOpts{Color: true, Vocab: v})
+			out, _ := Render(e, RenderOpts{Color: true, Vocab: v})
 			if strings.Contains(out, knownOn) {
 				highlighted++
 			}
@@ -371,7 +371,7 @@ func TestHighlightingLosesNothing(t *testing.T) {
 func TestTheHeadwordLineIsNotHighlighted(t *testing.T) {
 	raw := fixture(t, "sycophantic")
 
-	out := Render(ParseEntry(raw), RenderOpts{Color: true, Vocab: vocab("sycophantic")})
+	out, _ := Render(ParseEntry(raw), RenderOpts{Color: true, Vocab: vocab("sycophantic")})
 
 	head := strings.SplitN(out, "\n", 2)[0]
 	if strings.Contains(head, knownOn) {
@@ -407,7 +407,7 @@ func TestHighlightWriterHoldsAWordInitialMultiByteRune(t *testing.T) {
 // row, not an extra.
 func TestExampleTextResumesItsStyleAfterAHighlight(t *testing.T) {
 	// bank's example is "willows lined the bank."
-	out := Render(ParseEntry(fixture(t, "bank")), RenderOpts{Color: true, Vocab: vocab("willows")})
+	out, _ := Render(ParseEntry(fixture(t, "bank")), RenderOpts{Color: true, Vocab: vocab("willows")})
 
 	const want = "\x1b[3;32m“\x1b[1;32mwillows\x1b[0m\x1b[3;32m lined the bank”\x1b[0m"
 	if !strings.Contains(out, want) {
@@ -488,7 +488,7 @@ func TestHighlightsAppearOnlyInAdmittedRegions(t *testing.T) {
 
 		for _, w := range withheldOnly {
 			checked++
-			out := Render(e, RenderOpts{Color: true, Vocab: vocab(w)})
+			out, _ := Render(e, RenderOpts{Color: true, Vocab: vocab(w)})
 			if strings.Contains(out, knownOn) {
 				t.Errorf("%s: %q appears only in a withheld region but was highlighted", word, w)
 			}
