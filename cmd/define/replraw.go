@@ -48,11 +48,33 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	resizes := watchResize(ctx, d.notifySignals, func() winSize {
 		return winSize{rows: terminalRows(stdout), cols: terminalWidth(stdout)}
 	})
+	// handedBack makes finish once-only, and the transcript is why it has to be.
+	// restore() and Stop() are both idempotent because they run from more than
+	// one exit path; printing a session twice is not the kind of thing an
+	// idempotent call fixes.
+	handedBack := false
 	finish := func() {
+		if handedBack {
+			return
+		}
+		handedBack = true
 		// Painting stops BEFORE the terminal is handed back: a frame drawn after
 		// restore lands on the normal screen, over whatever was there before.
 		live.Stop()
 		sess.restore()
+		// THE SESSION, printed back into the normal buffer (#30 D3).
+		//
+		// The alternate screen is discarded on the way out, so without this
+		// everything the session showed is simply gone — and `define
+		// arrondissement` used to leave the entry where you could scroll back to
+		// it tomorrow, or copy from it. Losing that silently is a regression a
+		// user meets immediately, which is why it is a decision in the plan and
+		// not a nicety.
+		//
+		// AFTER restore, deliberately: the terminal is cooked again, so the
+		// transcript's bare newlines are newlines, and this is the one write in
+		// the whole loop that goes to the real stdout rather than the screen.
+		fmt.Fprint(stdout, live.Transcript())
 	}
 	// BOTH streams are the screen, stderr included (D5b). A diagnostic written
 	// straight to the terminal while the alternate screen is up lands wherever

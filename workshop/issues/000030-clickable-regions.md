@@ -454,6 +454,29 @@ SIGWINCH → measure → redraw. `watchResize` turns signals into a measured
 new window — verified falsifiable: cutting the signal transport reddens it with
 "nothing was repainted".
 
+### 2026-08-29 — M1.5: the session survives the alternate screen
+
+D3, and the last thing that made this milestone a net loss to live with: the alt
+buffer is discarded on the way out, so until now quitting threw the session away.
+
+Printed from `finish`, AFTER `restore` — the terminal is cooked again by then, so
+the transcript's bare newlines are newlines, and this is the ONE write in the
+whole loop that goes to the real stdout rather than through the screen. `finish`
+became once-only for it: `restore()` and `Stop()` are idempotent because they run
+from several exit paths, and printing a session twice is not something an
+idempotent call fixes.
+
+What comes back is everything the screen held, which is more than the terminal
+used to keep: D5b routed stderr through the buffer, so `define: zzznotaword: no
+dictionary entry` is now part of the record instead of scrolling past. Verified on
+a real pty — a three-lookup session leaves the committed lines, the entries, the
+command output and that diagnostic in the shell's scrollback.
+
+`TestPTYTranscriptIsPrintedOnExit` anchors its assertion AFTER the teardown
+sequence, because the entry appearing anywhere in the stream would only prove it
+was drawn on the screen about to be thrown away. Falsifiable: dropping the print
+reddens it with nothing after `\x1b[?1049l`.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

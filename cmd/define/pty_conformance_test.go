@@ -580,3 +580,43 @@ func TestPTYResizeRepaints(t *testing.T) {
 		t.Errorf("the frame is %d rows in a 10-row window: %q", rows, frame)
 	}
 }
+
+// The session survives the alternate screen (#30 D3, M1.5).
+//
+// The alt buffer is discarded on the way out, so without the transcript
+// everything a session showed is gone the moment it ends — and `define
+// arrondissement` used to leave the entry where you could scroll back to it
+// tomorrow, or copy from it.
+//
+// The assertion is deliberately anchored AFTER the teardown sequence: the entry
+// appearing anywhere in the stream proves only that it was drawn on the screen
+// that is about to be thrown away.
+func TestPTYTranscriptIsPrintedOnExit(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	out.take(time.Second)
+
+	f.Write([]byte("sycophantic\r"))
+	if drawn := out.take(3 * time.Second); !strings.Contains(drawn, "sikəˈfan(t)ik") {
+		t.Fatalf("the word was never defined, so its survival proves nothing: %q", drawn)
+	}
+
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	rest := out.take(time.Second)
+	i := strings.Index(rest, altScreenOff)
+	if i < 0 {
+		t.Fatalf("the alternate screen was never left: %q", rest)
+	}
+	after := rest[i:]
+	if !strings.Contains(after, "sikəˈfan(t)ik") {
+		t.Errorf("the session vanished with the alternate screen — nothing to scroll back to: %q", after)
+	}
+	// The line the user typed comes back too: an entry with no word above it
+	// reads as scrollback from nowhere.
+	if !strings.Contains(after, "sycophantic") {
+		t.Errorf("the committed line is not in the transcript: %q", after)
+	}
+}
