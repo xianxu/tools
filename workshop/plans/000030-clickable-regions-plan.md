@@ -162,7 +162,7 @@ to `#35`'s code and is where `M2.1` starts.
 | 5 | a resize repaints | `TestPTYResizeRepaints` | the SIGWINCH case is removed from the select |
 | 6 | the transcript survives exit | `TestPTYTranscriptIsPrintedOnExit` | D3's loop is removed |
 | 7 | the one-shot and piped paths are untouched | the existing suite, unchanged | any of them starts entering the alt screen |
-| 8 | **the wheel scrolls rather than walking history** (M1.4b) | `TestWheelScrollsRatherThanWalkingHistory`, `TestDecodeWheel`, `FuzzDecodeWheelIsBounded` | tracking is not enabled, so the terminal sends arrows and Up/Down recall words |
+| 8 | **the wheel scrolls rather than walking history** (M1.4b) | `TestWheelScrollsRatherThanWalkingHistory`, `TestDecodeWheel`, `FuzzDecodeMouseIsBounded` (widened from the wheel-only target when M2.2 taught the decoder buttons) | tracking is not enabled, so the terminal sends arrows and Up/Down recall words |
 | 9 | **a prompt is only shown when the loop is waiting** (M1.3b) | `TestNothingIsWrittenWhileAPromptIsShown` | the live edge is left standing through a lookup, and the submitted line is repainted under its own definition |
 
 ---
@@ -179,8 +179,10 @@ to `#35`'s code and is where `M2.1` starts.
 | `originLineRange` / `findVisible` / `visibleIndex` / `stripEscapes` | `cmd/define/render.go` | new | PURE |
 | `Mention` / `OriginLanguageMentions` / `originText` / `maskOut` | `cmd/define/origin.go` | new | PURE (M2.1a) — every language an ORIGIN names as a source, in source order, at offsets that survive the stage mask |
 | `OriginLanguage` | `cmd/define/origin.go` | modified | now "the first mention", so the two consumers cannot drift |
-| `decodeMouse` | `cmd/define/key.go` | new | PURE — extends M1's `decodeWheel`/`decodeX10Mouse` to buttons |
-| `screen.RegionAt` | `cmd/define/screen.go` | new | PURE |
+| `KeyClick` / `Key.Row` / `Key.Col` | `cmd/define/key.go` | new | PURE — the one Key that carries a position |
+| `clickAt` / `isClickButton` / `parseParams` | `cmd/define/key.go` | new | PURE — one owner for the wire→screen conversion and its guard, across both encodings |
+| `screen.RegionAt` / `screen.LineAt` / `screen.addRegions` | `cmd/define/screen.go` | new | PURE — the hit test, and the viewport-row → buffer-line mapping the alt screen makes exact |
+| `liveScreen.WriteRegions` / `liveScreen.RegionAtRow` | `cmd/define/screen.go` | new | the click map's IO side: one call, so text and regions cannot disagree about which line a render landed on |
 
 - **`Region`** — `{Kind, Text, Lang, Line, Col, Width}`: what a span of rendered text OFFERS.
   - **The headword falls out of the existing walk; the ORIGIN language does NOT, and an earlier draft of this plan claimed it did.** `Render` colours `sec.Name` — the word "ORIGIN" — and passes `sec.Text` through `opt.prose(wrapText(...))`, which highlights DECK words. Nothing isolates "French" inside that text. So the language region needs a new pass over the section text, and that pass is the same matching `#35` already does.
@@ -197,8 +199,8 @@ to `#35`'s code and is where `M2.1` starts.
 - [x] **M2.1 — `Render` emits regions.** The signature change is the risk: every caller and every golden test touches it. Keep the string identical — asserted by `TestRenderOutputMatchesTheCorpusGolden`, whose golden was generated from the commit BEFORE the change, since comparing `Render` to itself proves nothing.
       **Regions are read out of the FINISHED output, not recorded while writing**, and that is a decision rather than an economy: a position recorded during the walk describes what `Render` intended, while a click map has to be right about what a terminal shows. It also leaves `Render`'s body untouched, so byte-identity is a property of the shape.
       **Positions carry across by OCCURRENCE INDEX.** The mentions producer says which occurrences are sources — it cuts cognate clauses and masks stages, so a "Dutch" that is on screen may not be one — and rendering preserves the text's characters in order, so the *n*th "French" in the section is the *n*th on screen. The ORIGIN search is bounded to that section's lines, because `arrondissement`'s own gloss says "a French department" and that is not an etymology.
-- [ ] **M2.2 — `decodeMouse` for BUTTONS.** The tracking enable/disable and the wheel half of the decoder landed in `M1.4b`, paired with the alt screen on `rawSession` so a crash cannot leave tracking on, with the bounded-consumption fuzz target this row called for. What is left is the press: its coordinates, which are inert today because nothing can look them up yet.
-- [ ] **M2.3 — hit test**: `screen.RegionAt(row, col)`, which is a lookup in the per-line region list. Pure.
+- [x] **M2.2 — `decodeMouse` for BUTTONS.** The tracking enable/disable and the wheel half of the decoder landed in `M1.4b`, paired with the alt screen on `rawSession` so a crash cannot leave tracking on, with the bounded-consumption fuzz target this row called for. What is left is the press: its coordinates, which are inert today because nothing can look them up yet.
+- [x] **M2.3 — hit test**: `screen.RegionAt(row, col)`, which is a lookup in the per-line region list. Pure.
 - [ ] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
 - [ ] **M2.5 — discoverability, STATIC rather than on hover** — and the tracking mode is the reason. Hover needs `1003` (any-event tracking), which streams an event for every cell the pointer crosses, so the loop would wake constantly to redraw an underline. `1000` (button press only) is what this issue enables, and with it the app never learns where the pointer is. So a clickable span is marked in the FRAME: the palette (`newPalette`) already spends `head`, `ipa`, `pos`, `num`, `ex`, `sect` and bold-green for deck words, so the mark is an ATTRIBUTE — underline — added to the span's existing colour rather than a seventh colour competing with them.
       It is spliced by the SCREEN, not by `Render`, because D6 promises the one-shot and `-raw` bytes are unchanged. `sgr.go`'s `sgrState.observe`/`resume` (`sgr.go:27,57`) is the existing machinery for reopening styles around an inserted attribute; this uses it rather than a second one.
@@ -208,11 +210,11 @@ to `#35`'s code and is where `M2.1` starts.
 
 | # | claim | pinned by | red when |
 |---|---|---|---|
-| 1 | clicking the headword plays it | `TestClickOnHeadwordReplays` | `RegionAt` stops matching the headword span |
+| 1 | clicking the headword plays it | `TestClickOnHeadwordReplays`; the hit test itself by `TestScreenResolvesAClickToWhatWasRenderedThere`, `TestClicksFollowTheTextWhenScrolled`, `TestRegionsLandOnTheLinesTheirRenderWroteTo` | `RegionAt` stops matching the headword span |
 | 2 | clicking `ORIGIN French` plays French | `TestClickOnOriginLanguagePlaysIt` | the region's language is dropped |
 | 3 | rendering is byte-identical | `TestRenderOutputUnchangedByRegions` | `Render` alters a byte while collecting |
 | 4 | a clickable span is visibly clickable before it is clicked | `TestScreenMarksClickableSpans` — the SCREEN, not `Render`: D6 promises `define <word>` and `-raw` keep today's bytes, so an underline emitted by `Render` would leak to them and redden row 3 | the underline attribute is dropped from the frame |
-| 5 | the mouse decoder is bounded and correct | `TestDecodeMouse` + `FuzzDecodeMouseIsBounded` | it consumes past the final byte |
+| 5 | the mouse decoder is bounded and correct, and invents nothing | `TestDecodeWheel`, `TestDecodeX10Mouse`, `TestClickCarriesItsPosition`, `TestMouseDecoderRejectsWhatNoTerminalSends`, `FuzzDecodeMouseIsBounded` | it consumes past the final byte, or reports a coordinate it did not read |
 | 6 | a mouse-less terminal is unaffected | `TestPTYWithoutMouseBehavesAsBefore` | the enable is emitted unconditionally |
 | 7 | regions are one registry, not two special cases | `TestEveryRegionKindIsActionable` | a kind is added with no action |
 | 8 | tracking is disabled on exit | `TestPTYMouseTrackingIsLeftOnExit` | the disable is dropped |
