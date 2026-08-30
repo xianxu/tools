@@ -188,7 +188,7 @@ Derivation notes.
       screen, and chose to mark a revealed definition too.
 - [x] Design: `workshop/plans/000038-play-clickable-plan.md` (single-pass, one
       boundary; four plan-quality rounds).
-- [ ] T0 — one audio-off predicate, applied inside `playAnnounced`.
+- [x] T0 — one audio-off predicate, applied inside `playAnnounced`.
 - [ ] T1 — lift the click registry into `playRegion`, shared by both loops.
 - [ ] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands.
 - [ ] T3 — `--play` writes into a `liveScreen`.
