@@ -782,3 +782,180 @@ findings:
       the paragraph describing frameCell sits above livePromptOf, so both helpers
       are documented by the wrong comment.
 ```
+
+---
+
+## Re-review — 2026-08-30T15:00:49-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | a6584e243f2a032d209f8f4f1f44c50ed801f0ad..b3ca133f94fce04d1b8e95bd11007828a0337967 |
+| command | sdlc milestone-close --issue 30 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-30T15:00:49-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 11's Critical is genuinely fixed and I verified it the hard way: reverting the `findVisible` guard in a scratch copy of `b3ca133` reddens `TestRenderSurvivesADegenerateEntry` with the exact original panic (`index out of range [0] with length 0` at `render.go:445`). I also re-verified round 10's two fixes by mutation (deriving `Word` from `e.Headword()` reddens `TestAClickAsksForExactlyWhatEnterAsksFor` on `hot dog`/`bargainer`/`a priori`; shifting `clickAt`'s 1-based conversion reddens both `TestClickCarriesItsPosition` and the joint test). Full suite green (107s), `-race` green over 3 runs of the four concurrent click tests, and 45s of fresh `FuzzRenderDoesNotPanic` found nothing. What holds SHIP back is that **round 11's *other* deliverable does not work**: `TestAtlasDescribesEveryRenderOpt` — the guard written specifically because `RenderOpts.Word` went undocumented — is measurably unable to fire for `RenderOpts.Word`, because its `` `Name` `` fallback disjunct is satisfied by an unrelated sentence about `Question` at `atlas/define.md:1916`. I deleted the atlas row, then the entire `## Clickable regions` section, and the guard stayed green for that field both times. That is the fourth `vacuous-pin` on this issue. Separately: eight prior Minors are still open and untouched, and the mechanism that would have caught BR-51 before a reviewer did (fuzzing) is not wired into anything the suite runs.
+
+## 1. Strengths
+
+- **`findVisible` is the right owner for the fix, and measuring in cells rather than bytes was the half the report missed.** `render.go:436` catches the NUL headword (width 0 for the same reason a combining mark's is) that a `needle == ""` check would have let through — and the committed crasher `testdata/fuzz/FuzzRenderDoesNotPanic/390ca22614d4ce1a` is that input.
+- **The occurrence-index carry-across is correct on a case nothing explicitly tests.** I probed `ORIGIN … from Old French concret, later from French concret`: counting `nth` in the *unmasked* text (`render.go:361`) is what makes the region land on column 61 — the modern "French" — rather than on the one inside "Old French" at column 34. Subtle, and right.
+- **`clipVisible` closes a clipped style with `sgrOff` (`screen.go:689`)**, so a `markClickable` underline cut by the width budget cannot bleed into the rows painted after it. The mark/clip ordering in `Paint` (`screen.go:399`) is safe because of it.
+- **`visible()` returning frame and top line as one answer** (`screen.go:205`) is a structural fix rather than a hoisted call, and `Paint` and `RegionAtRow` provably cannot answer from different states.
+- **`TestAClickAtAPaintedCellPlaysWhatIsUnderIt`** (`editorloop_test.go:901`) drives real objects end to end and reddens on either side of the joint — verified.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**(a) `TestAtlasDescribesEveryRenderOpt` cannot fire for the one field it was written for** — `cmd/define/doc_sync_test.go:273`.
+
+The condition is `!strings.Contains(atlas, "RenderOpts."+name) && !strings.Contains(atlas, "`"+name+"`")`. Measured twice: delete `atlas/define.md:401` (the `RenderOpts.Word` row) → green; delete the whole `## Clickable regions` section → still green for `Word` (and for `Vocab`), failing only on `Color` and `Width`. The satisfying match is `atlas/define.md:1916`, a sentence about `Question`. `TestAtlasDescribesEveryRegionKind` (`:224`) has the same defect from the other direction: it searches for `k.String()`, and "headword" occurs 10+ times elsewhere in the atlas, so deleting the section left that kind green too.
+
+**This is the 4th finding in family `vacuous-pin`.** Do not patch the two disjuncts. The rule: *a derived docs guard must search for a token that exists ONLY in the documentation it defends* — a qualified anchor (`RenderOpts.Word`, or a per-kind marker), never a bare name that ordinary prose can supply. Applied here that means dropping the `` `Name` `` fallback outright (all four fields already carry `RenderOpts.X`, so the suite stays green) and giving `RegionKind` a qualified anchor rather than its `String()`. Prevalence is now 3 derived docs guards, 2 of which I measured as unable to fire for their motivating case.
+
+**(b) 15 fuzz targets and 12 pty rows execute in no automated run, and that is why BR-51 shipped.**
+
+`go test ./...` runs fuzz targets against the seed corpus only; `grep -rn fuzz` finds nothing in `Makefile`, `Makefile.local`, `Makefile.workflow`, `scripts/`, or `.github/workflows/merge-check.yml`, and `scripts/merge-checks.d/` does not exist. BR-51 was found by a reviewer typing `-fuzz`, in 0.18s — and round 11's answer was to add a 15th target with the same property. The pty rows are the same rule from another angle: all 12 report `no pty available: operation not permitted` here, so `TestPTYWithoutMouseBehavesAsBefore` and `TestPTYMouseTrackingIsAskedForAndGivenBack` (Done-when 6 and 8) certified nothing in this review; only their in-process counterparts did, and those pass.
+
+Family `unrun-test-surface`, new: *a target that runs only when a human remembers to invoke it is not part of the suite*. M1's review already applied half this rule (`handBack`/`onceHandBack` got in-process pins beside the pty rows) — the other half, a `make fuzz` with a bounded `-fuzztime` that CI or the close gate invokes, was never written. Cheapest honest disposition at this gate is a follow-up issue rather than work inside `#30`; say so explicitly rather than letting it sit.
+
+## 4. Minor findings
+
+- `atlas/define.md:401` claims `RenderOpts.Word` empty means *"no click map wanted"* — measured false: `Render(…, RenderOpts{Width: 80})` returns 2 regions with `Word` falling back to `e.Headword()`, which is exactly the shape BR-46 was filed against. `play_loop.go:262` is the only caller that relies on discarding them. Family `doc-overclaim` (2nd): the rule is that a doc stating a *guarantee* about a field names the code that enforces it, or states the actual behaviour.
+- `editorloop_test.go:930–950` carries two successive drafts of the same "one run in five" paragraph — the frame-vs-stream explanation and the marker-keystroke explanation, both live. Folded into the BR-53 disposition below rather than raised separately.
+- `regionsIn` calls `originText(e)` once per mention (`render.go:361`), and `OriginLanguageMentions`/`anyLanguageIn` each `regexp.MustCompile` per language per call (`origin.go:202`, `:250`). Per-lookup, not per-keystroke, so ARCH-CONSTRAINTS is unaffected — noting it only because `anyLanguageIn`'s comment claims the two "cannot disagree" while spelling the pattern twice.
+
+## 5. Test coverage notes
+
+- Mutation-verified this round: BR-51 (revert → panic returns), BR-46 (both `Word` and span mutations), BR-47 (`clickAt` off-by-one → joint test and unit test both red), BR-48 (pre-fix `screen.go` → `a resize taller` red, `the command menu closing` **green**).
+- `screen.Write` still has no chunk-independence property — only the three hand-picked splits at `screen_test.go:32`. The repo already owns the shape (`FuzzHighlightWriterIsChunkIndependent`), which is what makes BR-1's suggestion concrete rather than stylistic.
+- `TestAClickAsksForExactlyWhatEnterAsksFor`'s second assertion uses `strings.HasPrefix`, so it stayed green when I mutated the span to `e.Headword()` ("hot" is a prefix of "hot dog"). The word-identity half of that test is strong; the span half is not, and `TestTheClickableSpanIsTheWholeHeadword` is what actually catches it.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** BR-49 stands: `visibleCells`, `visibleIndex`, `clipVisible`, `markClickable` are four spellings of one cell walk, and M2.5's splice made a fifth reading of it. Nothing was consolidated this window.
+- **ARCH-PURE — flag.** BR-41 stands and I measured it: `s.offset = 999` survives `RegionAt` but becomes 15 after `Frame()` or `LineAt()`. Three sites label this PURE (`screen.go:186`, `:158`, and the plan's Core-concepts row). The mutation is deliberate post-BR-42; the label is what is wrong.
+- **ARCH-PURPOSE — pass on the issue, flag on the round.** Every Done-when has a delivered mechanism and both consumers route through `#29`'s `replayInPlace`. The flag is the class axis: BR-52's guard is the instance-shaped answer wearing a rule's clothes.
+- **ARCH-MOCK — pass.** Stateful fakes for the CDN, dictionary and player; the production `liveScreen` is driven in-process by the joint test; `dict_conformance_test.go` is the live drift check. The pty rows are the right seam, merely unreachable here.
+- **ARCH-CONSTRAINTS — pass.** 16ms throttle with trailing flush, every frame component budgeted, click resolution is a map lookup, buffer uncapped with the reason recorded. Nothing in M2 adds fan-out or blocks the keystroke path.
+
+## 7. Plan revision recommendations
+
+1. **The Core-concepts table lists `numRegionKinds` / `RegionKind.String` twice** — plan lines 183 and 189, same entities, same file, two prose descriptions. Collapse to one row.
+2. **The `screen.RegionAt / LineAt / visible / addRegions` row is labeled `PURE`** (plan line 185) while `visible` clamps and writes back `s.offset`. Re-label it, or split `visible` from the genuinely pure three, and record why the mutation is correct.
+3. **`liveScreen.WriteRegions / RegionAtRow` and `regionWriter / writeRendered`** carry no PURE/INTEGRATION marker at all, only prose. Give them `INTEGRATION` so the table reads uniformly.
+4. **Add a `## Revisions` entry for round 12** recording (a) that `TestAtlasDescribesEveryRenderOpt` was measured unable to fire for `RenderOpts.Word` and what replaced it, and (b) the disposition of the eight carried Minors — swept in the close commit, or moved to a follow-up issue by number. Eleven rounds with a growing untouched Minor tail is the ledger saying the enumeration is being deferred rather than written.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      Plan line 132 still enumerates the four cases verbatim, and screen.Write still has no chunk-independence property (only three hand-picked splits at screen_test.go:32).
+  - id: BR-40
+    disposition: addressed
+    note: |
+      Measured: markClickable now emits "\x1b[1;36m\x1b[4mpotassium\x1b[24m…" — one underline, escapes stepped before the column trigger.
+  - id: BR-41
+    disposition: not-addressed
+    note: |
+      Measured: offset 999 becomes 15 after Frame() and after LineAt(); screen.go:186, :158 and the plan row all still say PURE.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      key.go untouched since 251a85a; :186, :198 and :344 all still stale. Subsumed by BR-53.
+  - id: BR-45
+    disposition: not-addressed
+    note: |
+      screen.go:143 still decrements base without shifting Col; screen_test.go:739 still supplies Col: 12 pre-offset by hand.
+  - id: BR-48
+    disposition: not-addressed
+    note: |
+      Re-measured against 8f6a458:screen.go — "a resize taller" fails, "the command menu closing" passes. The row still does not earn its place.
+  - id: BR-49
+    disposition: not-addressed
+    note: |
+      No forEachCell exists; visibleCells, visibleIndex, clipVisible and markClickable still each spell the traversal.
+  - id: BR-51
+    disposition: addressed
+    note: |
+      Verified by revert: removing the findVisible guard reddens TestRenderSurvivesADegenerateEntry with the original panic at render.go:445. Cell-based rather than byte-based, and the NUL crasher is committed.
+  - id: BR-52
+    disposition: addressed
+    note: |
+      atlas:383 and :401 both swept and a derived guard added — but the guard cannot fire for RenderOpts.Word; raised separately as a vacuous-pin finding rather than re-raised here.
+  - id: BR-53
+    disposition: not-addressed
+    note: |
+      All five sites still stale (key.go:186/:198/:344, render.go:287, internal/llm/config.go:153), and a sixth: editorloop_test.go:930-950 carries two successive drafts of the same paragraph.
+  - id: BR-54
+    disposition: addressed
+    note: |
+      keysOf removed and the frameCell comment moved above frameCell.
+findings:
+  - id: new
+    severity: Important
+    family: vacuous-pin
+    title: |
+      TestAtlasDescribesEveryRenderOpt cannot fire for RenderOpts.Word, the field it was written for
+    detail: |
+      doc_sync_test.go:273 accepts a bare "`Word`" anywhere in the atlas, which
+      atlas/define.md:1916 supplies in a sentence about Question. Measured twice:
+      deleting the RenderOpts.Word row leaves it green, and deleting the whole
+      "## Clickable regions" section leaves it green for Word and Vocab, failing
+      only on Color and Width. TestAtlasDescribesEveryRegionKind (:224) has the
+      same defect for "headword", which occurs 10+ times elsewhere in the atlas.
+      4th in this family, so the deliverable is the rule: a derived docs guard
+      must search for a token that exists ONLY in the documentation it defends —
+      a qualified anchor, never a bare name ordinary prose can supply. Dropping
+      the backtick fallback keeps the suite green, since all four fields already
+      carry a qualified RenderOpts.X line.
+  - id: new
+    severity: Important
+    family: unrun-test-surface
+    title: |
+      15 fuzz targets and 12 pty rows run in nothing automated, which is why BR-51 shipped
+    detail: |
+      go test ./... exercises fuzz targets against the seed corpus only, and
+      there is no -fuzz invocation in Makefile, Makefile.local, Makefile.workflow,
+      scripts/, or .github/workflows/merge-check.yml (scripts/merge-checks.d/
+      does not exist). BR-51 was a reachable Critical panic that the repo's own
+      fuzzer finds in under a second, found instead by a reviewer typing the
+      flag — and round 11's answer added a 15th target with the same property.
+      The 12 pty rows are the same rule from another angle: all report "no pty
+      available: operation not permitted" here, so Done-when 6 and 8 were
+      certified this round only by their in-process counterparts. The rule: a
+      target that runs only when a human remembers to invoke it is not part of
+      the suite. M1 already applied half of it by pinning handBack in process;
+      the other half is a bounded `make fuzz` the close gate or CI invokes.
+      Reasonably disposed as a follow-up issue rather than work inside #30 — but
+      say which, rather than leaving it implicit.
+  - id: new
+    severity: Minor
+    family: doc-overclaim
+    title: |
+      The atlas says an empty RenderOpts.Word means "no click map wanted"; measured false
+    detail: |
+      atlas/define.md:401. Render(ParseEntry(entry), RenderOpts{Width: 80}) returns
+      2 regions, with Word falling back to e.Headword() at render.go:314 — which
+      is precisely the shape BR-46 was filed against. Nothing enforces the stated
+      guarantee; play_loop.go:262 is the only caller and it happens to discard the
+      regions. Either enforce it (empty key => no regions) or state the actual
+      fallback behaviour.
+```

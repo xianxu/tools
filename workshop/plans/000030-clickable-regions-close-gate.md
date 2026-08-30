@@ -1012,6 +1012,106 @@ rounds:
           round: 12
       boundary: M2
       blocked: true
+    - "n": 13
+      timestamp: "2026-08-30T15:00:49-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: Plan line 132 still enumerates the four cases verbatim, and screen.Write still has no chunk-independence property (only three hand-picked splits at screen_test.go:32).
+          round: 13
+        - id: BR-40
+          disposition: addressed
+          note: 'Measured: markClickable now emits "\x1b[1;36m\x1b[4mpotassium\x1b[24m…" — one underline, escapes stepped before the column trigger.'
+          round: 13
+        - id: BR-41
+          disposition: not-addressed
+          note: 'Measured: offset 999 becomes 15 after Frame() and after LineAt(); screen.go:186, :158 and the plan row all still say PURE.'
+          round: 13
+        - id: BR-44
+          disposition: not-addressed
+          note: key.go untouched since 251a85a; :186, :198 and :344 all still stale. Subsumed by BR-53.
+          round: 13
+        - id: BR-45
+          disposition: not-addressed
+          note: 'screen.go:143 still decrements base without shifting Col; screen_test.go:739 still supplies Col: 12 pre-offset by hand.'
+          round: 13
+        - id: BR-48
+          disposition: not-addressed
+          note: Re-measured against 8f6a458:screen.go — "a resize taller" fails, "the command menu closing" passes. The row still does not earn its place.
+          round: 13
+        - id: BR-49
+          disposition: not-addressed
+          note: No forEachCell exists; visibleCells, visibleIndex, clipVisible and markClickable still each spell the traversal.
+          round: 13
+        - id: BR-51
+          disposition: addressed
+          note: 'Verified by revert: removing the findVisible guard reddens TestRenderSurvivesADegenerateEntry with the original panic at render.go:445. Cell-based rather than byte-based, and the NUL crasher is committed.'
+          round: 13
+        - id: BR-52
+          disposition: addressed
+          note: atlas:383 and :401 both swept and a derived guard added — but the guard cannot fire for RenderOpts.Word; raised separately as a vacuous-pin finding rather than re-raised here.
+          round: 13
+        - id: BR-53
+          disposition: not-addressed
+          note: 'All five sites still stale (key.go:186/:198/:344, render.go:287, internal/llm/config.go:153), and a sixth: editorloop_test.go:930-950 carries two successive drafts of the same paragraph.'
+          round: 13
+        - id: BR-54
+          disposition: addressed
+          note: keysOf removed and the frameCell comment moved above frameCell.
+          round: 13
+      findings:
+        - id: BR-55
+          severity: Important
+          title: TestAtlasDescribesEveryRenderOpt cannot fire for RenderOpts.Word, the field it was written for
+          detail: |-
+            doc_sync_test.go:273 accepts a bare "`Word`" anywhere in the atlas, which
+            atlas/define.md:1916 supplies in a sentence about Question. Measured twice:
+            deleting the RenderOpts.Word row leaves it green, and deleting the whole
+            "## Clickable regions" section leaves it green for Word and Vocab, failing
+            only on Color and Width. TestAtlasDescribesEveryRegionKind (:224) has the
+            same defect for "headword", which occurs 10+ times elsewhere in the atlas.
+            4th in this family, so the deliverable is the rule: a derived docs guard
+            must search for a token that exists ONLY in the documentation it defends —
+            a qualified anchor, never a bare name ordinary prose can supply. Dropping
+            the backtick fallback keeps the suite green, since all four fields already
+            carry a qualified RenderOpts.X line.
+          family: vacuous-pin
+          round: 13
+        - id: BR-56
+          severity: Important
+          title: 15 fuzz targets and 12 pty rows run in nothing automated, which is why BR-51 shipped
+          detail: |-
+            go test ./... exercises fuzz targets against the seed corpus only, and
+            there is no -fuzz invocation in Makefile, Makefile.local, Makefile.workflow,
+            scripts/, or .github/workflows/merge-check.yml (scripts/merge-checks.d/
+            does not exist). BR-51 was a reachable Critical panic that the repo's own
+            fuzzer finds in under a second, found instead by a reviewer typing the
+            flag — and round 11's answer added a 15th target with the same property.
+            The 12 pty rows are the same rule from another angle: all report "no pty
+            available: operation not permitted" here, so Done-when 6 and 8 were
+            certified this round only by their in-process counterparts. The rule: a
+            target that runs only when a human remembers to invoke it is not part of
+            the suite. M1 already applied half of it by pinning handBack in process;
+            the other half is a bounded `make fuzz` the close gate or CI invokes.
+            Reasonably disposed as a follow-up issue rather than work inside #30 — but
+            say which, rather than leaving it implicit.
+          family: unrun-test-surface
+          round: 13
+        - id: BR-57
+          severity: Minor
+          title: The atlas says an empty RenderOpts.Word means "no click map wanted"; measured false
+          detail: |-
+            atlas/define.md:401. Render(ParseEntry(entry), RenderOpts{Width: 80}) returns
+            2 regions, with Word falling back to e.Headword() at render.go:314 — which
+            is precisely the shape BR-46 was filed against. Nothing enforces the stated
+            guarantee; play_loop.go:262 is the only caller and it happens to discard the
+            regions. Either enforce it (empty key => no regions) or state the actual
+            fallback behaviour.
+          family: doc-overclaim
+          round: 13
+      boundary: M2
+      blocked: false
 ---
 
 # Gate ledger — tools#30 (boundary-review)
@@ -1565,6 +1665,59 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   the paragraph describing frameCell sits above livePromptOf, so both helpers
   are documented by the wrong comment.
 
+## Round 13 — 2026-08-30T15:00:49-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — not-addressed — Plan line 132 still enumerates the four cases verbatim, and screen.Write still has no chunk-independence property (only three hand-picked splits at screen_test.go:32).
+- BR-40 — addressed — Measured: markClickable now emits "\x1b[1;36m\x1b[4mpotassium\x1b[24m…" — one underline, escapes stepped before the column trigger.
+- BR-41 — not-addressed — Measured: offset 999 becomes 15 after Frame() and after LineAt(); screen.go:186, :158 and the plan row all still say PURE.
+- BR-44 — not-addressed — key.go untouched since 251a85a; :186, :198 and :344 all still stale. Subsumed by BR-53.
+- BR-45 — not-addressed — screen.go:143 still decrements base without shifting Col; screen_test.go:739 still supplies Col: 12 pre-offset by hand.
+- BR-48 — not-addressed — Re-measured against 8f6a458:screen.go — "a resize taller" fails, "the command menu closing" passes. The row still does not earn its place.
+- BR-49 — not-addressed — No forEachCell exists; visibleCells, visibleIndex, clipVisible and markClickable still each spell the traversal.
+- BR-51 — addressed — Verified by revert: removing the findVisible guard reddens TestRenderSurvivesADegenerateEntry with the original panic at render.go:445. Cell-based rather than byte-based, and the NUL crasher is committed.
+- BR-52 — addressed — atlas:383 and :401 both swept and a derived guard added — but the guard cannot fire for RenderOpts.Word; raised separately as a vacuous-pin finding rather than re-raised here.
+- BR-53 — not-addressed — All five sites still stale (key.go:186/:198/:344, render.go:287, internal/llm/config.go:153), and a sixth: editorloop_test.go:930-950 carries two successive drafts of the same paragraph.
+- BR-54 — addressed — keysOf removed and the frameCell comment moved above frameCell.
+
+### Raised
+
+- **BR-55** [Important] `vacuous-pin` TestAtlasDescribesEveryRenderOpt cannot fire for RenderOpts.Word, the field it was written for
+  doc_sync_test.go:273 accepts a bare "`Word`" anywhere in the atlas, which
+  atlas/define.md:1916 supplies in a sentence about Question. Measured twice:
+  deleting the RenderOpts.Word row leaves it green, and deleting the whole
+  "## Clickable regions" section leaves it green for Word and Vocab, failing
+  only on Color and Width. TestAtlasDescribesEveryRegionKind (:224) has the
+  same defect for "headword", which occurs 10+ times elsewhere in the atlas.
+  4th in this family, so the deliverable is the rule: a derived docs guard
+  must search for a token that exists ONLY in the documentation it defends —
+  a qualified anchor, never a bare name ordinary prose can supply. Dropping
+  the backtick fallback keeps the suite green, since all four fields already
+  carry a qualified RenderOpts.X line.
+- **BR-56** [Important] `unrun-test-surface` 15 fuzz targets and 12 pty rows run in nothing automated, which is why BR-51 shipped
+  go test ./... exercises fuzz targets against the seed corpus only, and
+  there is no -fuzz invocation in Makefile, Makefile.local, Makefile.workflow,
+  scripts/, or .github/workflows/merge-check.yml (scripts/merge-checks.d/
+  does not exist). BR-51 was a reachable Critical panic that the repo's own
+  fuzzer finds in under a second, found instead by a reviewer typing the
+  flag — and round 11's answer added a 15th target with the same property.
+  The 12 pty rows are the same rule from another angle: all report "no pty
+  available: operation not permitted" here, so Done-when 6 and 8 were
+  certified this round only by their in-process counterparts. The rule: a
+  target that runs only when a human remembers to invoke it is not part of
+  the suite. M1 already applied half of it by pinning handBack in process;
+  the other half is a bounded `make fuzz` the close gate or CI invokes.
+  Reasonably disposed as a follow-up issue rather than work inside #30 — but
+  say which, rather than leaving it implicit.
+- **BR-57** [Minor] `doc-overclaim` The atlas says an empty RenderOpts.Word means "no click map wanted"; measured false
+  atlas/define.md:401. Render(ParseEntry(entry), RenderOpts{Width: 80}) returns
+  2 regions, with Word falling back to e.Headword() at render.go:314 — which
+  is precisely the shape BR-46 was filed against. Nothing enforces the stated
+  guarantee; play_loop.go:262 is the only caller and it happens to discard the
+  regions. Either enforce it (empty key => no regions) or state the actual
+  fallback behaviour.
+
 ## Open findings
 
 - **BR-1** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
@@ -1573,13 +1726,12 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-34** [Important] `plan-table-incomplete` Done-when row 1b names TestScreenFrameFitsTheTerminalInDisplayRows, which this window's own commit renamed away
 - **BR-35** [Important] `one-owner-per-invariant` visibleCells and clipVisible each hand-roll the CSI grammar that scanEscape already owns
 - **BR-36** [Minor] `unfalsifiable-test-pin` The new placement test asserts the cursor column exactly but the row only as "not the last one"
-- **BR-40** [Minor] `column-trigger-fires-per-byte` markClickable emits the underline twice when a span begins at an escape
 - **BR-41** [Minor] `pure-label-hides-mutation` screen.LineAt is tabled PURE but clamps and writes back s.offset via Frame()
 - **BR-44** [Minor] `stale-rationale` decodeWheel's and decodeX10Mouse's comments still say a click stays KeyUnknown, which stopped being true in this window
 - **BR-45** [Minor] `vacuous-pin` addRegions shifts base for a partial line but not Col, and the test that looks like it covers this passes Col pre-offset
 - **BR-48** [Minor] `vacuous-pin` TestClickMapSurvivesTheViewportGrowing's "the command menu closing" subtest is green against the pre-fix code
 - **BR-49** [Minor] `one-owner-per-invariant` Four hand-rolled walks of styled text by display cell
-- **BR-51** [Critical] `helper-precondition-unguarded` Render panics on a one-space entry — regionsIn hands findVisible an empty needle and it indexes cols[0]
-- **BR-52** [Important] `docs-lag-new-surface` The atlas's clickable-regions section was not swept when the Critical fix changed what a region carries
 - **BR-53** [Minor] `stale-rationale` Five comments now state facts their own commits made false, and the enumeration is the fix
-- **BR-54** [Minor] `dead-test-scaffolding` keysOf is added in this window and called from nowhere, and frameCell's doc comment sits above livePromptOf
+- **BR-55** [Important] `vacuous-pin` TestAtlasDescribesEveryRenderOpt cannot fire for RenderOpts.Word, the field it was written for
+- **BR-56** [Important] `unrun-test-surface` 15 fuzz targets and 12 pty rows run in nothing automated, which is why BR-51 shipped
+- **BR-57** [Minor] `doc-overclaim` The atlas says an empty RenderOpts.Word means "no click map wanted"; measured false

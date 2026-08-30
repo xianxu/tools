@@ -786,3 +786,26 @@ the struct itself, the same move as `TestAtlasDescribesEveryRegionKind` and
 it. It fired immediately on two MORE fields nobody had ever documented (`Color`,
 `Width`), which is the argument for the guard over the sweep — a doc task covers
 the surface someone remembered, and this covers the surface that exists.
+
+### 2026-08-30 — M2 CLOSED (FIX-THEN-SHIP), and the two findings it leaves
+
+**BR-55 — the guard written LAST round could not fire for the field it was
+written for.** `TestAtlasDescribesEveryRenderOpt` accepted a bare `` `Word` ``
+as well as the qualified `RenderOpts.Word`, and "Word" occurs in the atlas for a
+dozen unrelated reasons — so it passed no matter what the atlas said about
+`RenderOpts`. Vacuous for its motivating case, one round after being added as the
+answer to a docs-lag finding. It requires the qualified name now, and reddens
+when only that mention is removed.
+
+That is the `unfalsifiable-test-pin` family reaching its own author's fix, which
+is the honest note to end M2 on: writing a guard is not the same as checking the
+guard can fail.
+
+**BR-56 is filed as `#37`** rather than fixed here, because it is repo-wide test
+SCHEDULING and not clickable regions. The evidence is this milestone's own
+Critical: `BR-51` was a panic the repo's fuzzer finds in under a second, and it
+survived eleven rounds because `go test ./...` runs a fuzz target against its
+seed corpus only and nothing anywhere passes `-fuzz`. The fix for it added a
+fifteenth target with the same property. The 12 pty rows are the same gap from
+another angle — correctly written to `SkipOrFail`, and therefore silently
+uncertified wherever no pty exists, including inside a boundary review.

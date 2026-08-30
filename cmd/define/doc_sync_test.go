@@ -270,7 +270,13 @@ func TestAtlasDescribesEveryRenderOpt(t *testing.T) {
 		if !rt.Field(i).IsExported() {
 			continue
 		}
-		if !strings.Contains(atlas, "RenderOpts."+name) && !strings.Contains(atlas, "`"+name+"`") {
+		// The QUALIFIED name only. The first version also accepted a bare
+		// `Field`, which made it vacuous for the very field it was written for:
+		// "Word" occurs in the atlas for a dozen unrelated reasons — the word to
+		// play, Region.Word — so the guard passed no matter what RenderOpts said.
+		// A guard that any prose can satisfy is not checking the tree, which is
+		// the rule this file already states one test above.
+		if !strings.Contains(atlas, "RenderOpts."+name) {
 			t.Errorf("the atlas never mentions RenderOpts.%s. A rendering input nobody "+
 				"documented is one the next reader has to infer from the code — and this "+
 				"one carried a Critical's fix.", name)

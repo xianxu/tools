@@ -322,7 +322,7 @@ Derivation notes.
 - [x] M1 — the screen owns the terminal: alternate screen, a line buffer and a
       viewport, whole-frame paint, `cooked()` deleted, keys and wheel that scroll,
       SIGWINCH, and the session printed back on exit. Tasks M1.1–M1.6 in the plan.
-- [ ] M2 — the clicks: `Render` emits a region map, the hit test, the two actions,
+- [x] M2 — the clicks: `Render` emits a region map, the hit test, the two actions,
       and a clickable span that looks clickable. Tasks M2.1–M2.6 in the plan.
 
 ## Log
@@ -588,6 +588,7 @@ Verdict FIX-THEN-SHIP; fixes bundled into the close commit per #174. Three
 findings were demoted past the round cap and all three are addressed here.
 
 ### 2026-08-30 — M2: the clicks, and what the boundary found
+- 2026-08-30: closed M2 — Clicking works, confirmed by the operator on their own terminal. Round-11 Critical BR-51 fixed: Render panicked on a blank or single-space entry because an empty headword asked findVisible for a span, strings.Index answered found-at-0, and the column lookup indexed an empty line. Fixed in findVisible (the one owner of finding a span) and measured in CELLS not bytes — FuzzRenderDoesNotPanic, written for the fix, then found a NUL headword whose width is zero for the same reason a combining mark is; 588K execs clean after. BR-52 fixed as a guard rather than a sweep: TestAtlasDescribesEveryRenderOpt derives from the struct and fired immediately on two more never-documented fields. Earlier rounds: the click now asks for exactly what a bare Enter asks for over the whole corpus (BR-46), and the terminal-bytes-to-replay joint is driven end to end on real objects (BR-47). go test ./... exit 0 verified AFTER the commit, -race exit 0, 12 PTY conformance rows exit 0.; review verdict: FIX-THEN-SHIP
 
 Shipped: `Render` emits a region map, the screen resolves a click to what was
 rendered there, the two actions replay through `#29`'s mechanism, a clickable
@@ -618,6 +619,34 @@ detaching from the text when the viewport grew, and the click playing a
 different word than Enter. Ten rounds; the durable output is guards — the
 registry's extent has one owner and every check derives from it, and the whole
 path now has one test on real objects rather than a double at every layer.
+
+### 2026-08-30 — M2 closed: FIX-THEN-SHIP after five boundary rounds
+
+Two Criticals came out of this boundary and both were real user-visible defects,
+which is the argument for the rounds:
+
+- **the click played a different word.** `Entry.Headword()` is `fields[0]` alone,
+  so `hot dog` played "hot" and `bargainer` — an inflected form finding its base
+  entry, the common case — played "bargain". The rule: a shortcut must not
+  re-derive its target. The lookup key is the caller's, carried on
+  `RenderOpts.Word`.
+- **`Render` panicked on a blank entry.** An empty headword asked for a span,
+  `strings.Index` answered "found, at 0", and the column lookup indexed an empty
+  line. The rule: a span with no visible extent is not a span — measured in
+  cells, since the fuzz target written for the fix then found a NUL headword.
+
+The durable output is guards that derive from a declared set rather than restate
+it: `numRegionKinds` (action, naming, atlas), `mouseOn` (every enabled mode has a
+decoded reply), and `RenderOpts` (every field is documented). Each fired on
+something real the moment it existed — the last one on two fields nobody had ever
+documented.
+
+Two findings leave this boundary. `BR-55`: the atlas guard added in round 11
+could not fire for the field it was written for, because it accepted a bare
+`` `Word` `` that the atlas contains for other reasons — fixed, and worth
+recording as the family reaching its own author. `BR-56` is filed as `#37`: the
+repo's fifteen fuzz targets and twelve pty rows run in nothing automated, which
+is why a one-second-findable Critical survived eleven rounds.
 
 ## Revisions
 
