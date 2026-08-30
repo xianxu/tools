@@ -83,6 +83,61 @@ func declRegexp(name, recv string) *regexp.Regexp {
 		regexp.QuoteMeta(name) + `\b`)
 }
 
+// declaredInBlock reports whether name is declared as a member of a grouped
+// `const (` or `var (` block — the form an iota enum takes, where the member
+// carries no keyword and often no value.
+//
+// Scoped to the block rather than matched anywhere, because a bare identifier at
+// the start of a line is also what a STRUCT FIELD looks like: `Kind KeyKind`
+// inside `type Key struct` would otherwise satisfy a plan row naming `Kind`, and
+// a guard a struct field can satisfy is not checking what the row claims.
+func declaredInBlock(src, name string) bool {
+	member := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(name) + `\b`)
+	depth := 0
+	for _, line := range strings.Split(src, "\n") {
+		switch {
+		case strings.HasPrefix(line, "const (") || strings.HasPrefix(line, "var ("):
+			depth = 1
+			continue
+		case depth > 0 && strings.HasPrefix(line, ")"):
+			depth = 0
+			continue
+		}
+		if depth > 0 && member.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// declaredAsField reports whether `recv.name` is a FIELD of that struct.
+//
+// Only for a QUALIFIED row — `Region.Word`, `Key.Row` — because the type is what
+// makes the check exact. An unqualified `Word` matched against every struct in
+// the file would let a row name a field of something else entirely, which is the
+// looseness declaredInBlock's comment refuses for the same reason.
+//
+// A field is a declaration, and plans name them: `Region.Word` carries the entry
+// a click belongs to, which is a design fact a reader needs. A guard that could
+// not see one was forcing rows to be vaguer than the design.
+func declaredAsField(src, recv, name string) bool {
+	if recv == "" {
+		return false
+	}
+	open := regexp.MustCompile(`(?m)^type\s+` + regexp.QuoteMeta(recv) + `\s+struct\s*\{`)
+	loc := open.FindStringIndex(src)
+	if loc == nil {
+		return false
+	}
+	body := src[loc[1]:]
+	if end := strings.Index(body, "\n}"); end >= 0 {
+		body = body[:end]
+	}
+	// A field line may declare several: `Row, Col int`.
+	field := regexp.MustCompile(`(?m)^\s*(\w+\s*,\s*)*` + regexp.QuoteMeta(name) + `\b`)
+	return field.MatchString(body)
+}
+
 // `go test` runs with cwd set to the PACKAGE directory, so a bare `git ls-files`
 // yields paths relative to it. Resolve the root explicitly; the first version of
 // this test skipped the very artifact it was written for because of that.
@@ -792,12 +847,18 @@ func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 		*checked++
 		declared := declRegexp(name, recv)
 		assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
+		// A bare member of a grouped const or var block — `KeyPageUp` under an
+		// iota — is a declaration with no keyword and no `=` of its own, so
+		// neither pattern above can see it. Without this the guard calls a
+		// perfectly real enum member missing, which is a guard telling a lie
+		// about the tree it exists to check.
 		// DECLARED or ASSIGNED only. A first version also accepted any
 		// occurrence anywhere in the file, which admitted COMMENTS — and a
 		// stale `newDeck` row stayed green solely because one comment still
 		// mentioned the old name. A guard that a comment can satisfy is not
 		// checking the tree.
-		if !declared.Match(src) && !assigned.Match(src) {
+		if !declared.Match(src) && !assigned.Match(src) &&
+			!declaredInBlock(string(src), name) && !declaredAsField(string(src), recv, name) {
 			t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
 				"artifact a reader trusts to describe the design, so a stale entity name "+
 				"there is worse than none. Update the row when the code renames.",
