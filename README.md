@@ -94,8 +94,9 @@ you resize the window.
 
 Because `define` owns the screen while it runs, the mouse belongs to it too —
 **hold Option to select text** (Shift in some terminals). Everything the session
-showed is printed back into your terminal when you quit, so it is in your
-scrollback exactly as it was before.
+showed is printed back into your terminal when you quit, so the words you looked
+up are in your scrollback to return to. The frame itself is not: the prompt you
+were typing at and the `♫ playing` indicator were ephemeral, and stay that way.
 
 **Words you have looked up show in green** — in the line you type, in definitions,
 and in answers — so the vocabulary you are building is visible rather than

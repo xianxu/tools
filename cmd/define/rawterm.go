@@ -18,20 +18,33 @@ import (
 type rawSession struct {
 	fd    int
 	state *term.State
-	// f is the terminal itself, kept so restore can also leave the alternate
-	// screen. Without it the two guarantees would live in different places and
-	// a Ctrl-C would honour one of them.
-	f     *os.File
-	alt   bool
-	mouse bool
+	// control is where the terminal's MODE sequences go — the alternate screen
+	// and mouse reporting. An io.Writer rather than the *os.File, for two
+	// reasons. It is the seam that makes the restore protocol assertable in
+	// process: the test that named itself the pin for this could not fail,
+	// because with a nil file every enter and every leave returned at the same
+	// guard and the assertion checked a field nothing had set.
+	//
+	// And it is where the sequences BELONG: they change the screen the frames
+	// are drawn on, so they go to the stream the frames go to. Writing them to
+	// the stdin handle worked only because interactive means both are the same
+	// tty — an assumption this type had never made before.
+	control io.Writer
+	alt     bool
+	mouse   bool
 }
 
-func enterRaw(f *os.File) (*rawSession, error) {
+// enterRaw puts f into raw mode and sends mode sequences to control.
+//
+// The two are separate because they are separate facts: raw mode is a property
+// of the input FD, while the alternate screen and mouse reporting are output the
+// user sees. They coincide on a terminal and must not be assumed to.
+func enterRaw(f *os.File, control io.Writer) (*rawSession, error) {
 	st, err := term.MakeRaw(int(f.Fd()))
 	if err != nil {
 		return nil, err
 	}
-	return &rawSession{fd: int(f.Fd()), state: st, f: f}, nil
+	return &rawSession{fd: int(f.Fd()), state: st, control: control}, nil
 }
 
 func (r *rawSession) restore() {
@@ -132,10 +145,15 @@ const (
 // defer AND on the cancellation path, so folding this in means the guarantee
 // covers both rather than two mechanisms each covering half.
 func (r *rawSession) enterAlt() {
-	if r == nil || r.f == nil || r.alt {
+	if r == nil || r.control == nil || r.alt {
 		return
 	}
-	fmt.Fprint(r.f, altScreenOn)
+	if _, err := fmt.Fprint(r.control, altScreenOn); err != nil {
+		// Not recorded as entered, so restore does not send a leave for a screen
+		// the terminal never showed. A dropped error here would make the flag a
+		// claim about a write rather than about the terminal.
+		return
+	}
 	r.alt = true
 }
 
@@ -143,10 +161,10 @@ func (r *rawSession) enterAlt() {
 // restore is: it runs from more than one path and claiming a second call is an
 // error would make the paths care about each other.
 func (r *rawSession) leaveAlt() {
-	if r == nil || r.f == nil || !r.alt {
+	if r == nil || r.control == nil || !r.alt {
 		return
 	}
-	fmt.Fprint(r.f, altScreenOff)
+	fmt.Fprint(r.control, altScreenOff)
 	r.alt = false
 }
 
@@ -176,19 +194,21 @@ const (
 // On rawSession for the same reason enterAlt is: restoration has to be one
 // guarantee rather than three that each cover part of the exit paths.
 func (r *rawSession) enterMouse() {
-	if r == nil || r.f == nil || r.mouse {
+	if r == nil || r.control == nil || r.mouse {
 		return
 	}
-	fmt.Fprint(r.f, mouseOn)
+	if _, err := fmt.Fprint(r.control, mouseOn); err != nil {
+		return // as enterAlt: the flag records the terminal's state, not the attempt
+	}
 	r.mouse = true
 }
 
 // leaveMouse stops it. Idempotent, like the rest of restore.
 func (r *rawSession) leaveMouse() {
-	if r == nil || r.f == nil || !r.mouse {
+	if r == nil || r.control == nil || !r.mouse {
 		return
 	}
-	fmt.Fprint(r.f, mouseOff)
+	fmt.Fprint(r.control, mouseOff)
 	r.mouse = false
 }
 
@@ -213,6 +233,12 @@ func watchResize(ctx context.Context, notify func(...os.Signal) <-chan os.Signal
 		return out // no signal transport: the shape is whatever it was at startup
 	}
 	sigs := notify(syscall.SIGWINCH)
+	// NOT signal.Stop'd on the way out, and that is a consequence of the seam
+	// rather than an oversight: notify hands back a RECEIVE-only channel so a
+	// test can supply any source at all, and signal.Stop needs the bidirectional
+	// one. Widening the seam to reclaim a registration that lives as long as the
+	// process buys nothing here; the day a watcher outlives its program, the
+	// seam is what changes.
 	go func() {
 		for {
 			select {
@@ -227,19 +253,14 @@ func watchResize(ctx context.Context, notify func(...os.Signal) <-chan os.Signal
 				// the newest is true. So an unread shape is replaced rather than
 				// waited on, which also means this goroutine can never block on
 				// a loop that is busy playing a recording.
-				sz := measure()
+				// Drop whatever is waiting, then offer the new shape. Two
+				// steps, not four: this is the only producer, so nothing can
+				// fill the slot between them.
 				select {
-				case out <- sz:
+				case <-out:
 				default:
-					select {
-					case <-out:
-					default:
-					}
-					select {
-					case out <- sz:
-					default:
-					}
 				}
+				out <- measure()
 			}
 		}
 	}()

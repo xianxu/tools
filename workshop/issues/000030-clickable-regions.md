@@ -510,6 +510,37 @@ README: the key table gains scrolling, and the two things a user meets
 immediately are stated — hold Option to select text, and the session is printed
 back to the terminal on exit.
 
+### 2026-08-29 — M1 boundary review: REWORK, addressed
+
+Two rounds, twelve findings, nine blocking, one Critical. All fixed in the
+window; the plan's Revisions carry the classes. In short:
+
+- **A click typed characters into the line** on any terminal that honours mouse
+  mode `1000` and ignores `1006` — it answers in X10 (`ESC[M` + three raw bytes)
+  and the CSI scan stopped at `M`, leaving the payload to be typed. `#14`'s
+  family, in the commit that enabled the mode. The rule it leaves: for every mode
+  we enable, the decoder answers every encoding that mode can reply in.
+- **The frame was budgeted in lines, not display rows**, so a line wider than the
+  terminal made it scroll — destroying the exact-placement property the whole
+  screen exists for. `cols` is real now: the live edge is charged its true
+  height, buffer lines are clipped at paint time, and the transcript keeps the
+  full text.
+- **The restore pin could not fail.** `rawSession` writes its mode sequences to
+  an `io.Writer` — which is also where they belong — so the protocol (mouse off,
+  alt screen, raw) is asserted in process, bytes and order, and falsifiable.
+- **Five sites still described the deleted `crlfWriter` nesting**, including a
+  test pinning a composition nothing builds. M1.6 had swept by site; the sweep is
+  now by class.
+- **The envelope is stated** (ARCH-CONSTRAINTS): a 16 ms repaint throttle with a
+  trailing flush — without the trailing half the indicator would be hidden for a
+  whole recording — and a deliberately uncapped buffer, because a cap silently
+  truncates the record D3 exists to keep.
+- **Two tests raced**; `go test -race ./cmd/define/` is green now.
+
+Re-verified: `go test ./...` and `-race` green; 11 PTY rows green; on a real pty
+narrowed to 40 columns every painted row fits while the transcript keeps the full
+text, and an X10 click types nothing.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

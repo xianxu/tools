@@ -75,13 +75,22 @@ to `#35`'s code and is where `M2.1` starts.
 
 #### Pure entities
 
-| Name | Lives in | Status |
-|------|----------|--------|
-| `screen` | `cmd/define/screen.go` | new |
-| `screen.Write` | `cmd/define/screen.go` | new |
-| `screen.Frame` | `cmd/define/screen.go` | new |
-| `screen.Scroll` | `cmd/define/screen.go` | new |
-| `crlfWriter` | `cmd/define/crlf.go` | unchanged — still used by `--play`, which keeps its own drawing |
+| Name | Lives in | Kind | Status |
+|------|----------|------|--------|
+| `screen` | `cmd/define/screen.go` | PURE | new |
+| `screen.Write` | `cmd/define/screen.go` | PURE | new |
+| `screen.Frame` | `cmd/define/screen.go` | PURE | new |
+| `screen.Scroll` / `screen.clamp` | `cmd/define/screen.go` | PURE | new — one place spells the viewport's limits |
+| `screen.Page` | `cmd/define/screen.go` | PURE | new (M1.4a) — a screenful less one line of overlap |
+| `screen.Paint` | `cmd/define/screen.go` | PURE (takes the writer) | new |
+| `screen.Transcript` | `cmd/define/screen.go` | PURE | new (M1.5) |
+| `displayRows` / `clipVisible` | `cmd/define/screen.go` | PURE | new (rework) — the frame is budgeted in DISPLAY ROWS |
+| `visibleLen` | `cmd/define/render.go` | PURE | modified (rework) — any CSI final byte ends a sequence, not only `m` |
+| `decodeWheel` / `atoiPrefix` | `cmd/define/key.go` | PURE | new (M1.4b) |
+| `decodeX10Mouse` | `cmd/define/key.go` | PURE | new (rework) — the encoding mode 1000 falls back to |
+| `KeyPageUp` / `KeyPageDown` / `KeyWheelUp` / `KeyWheelDown` | `cmd/define/key.go` | PURE | new |
+| `winSize` | `cmd/define/rawterm.go` | PURE | new (M1.4) |
+| `crlfWriter` | `cmd/define/crlf.go` | — | unchanged — still used by `--play`, which keeps its own drawing |
 
 - **`screen`** — a line buffer plus a viewport: `lines []string`, `offset int`, `rows, cols int`.
   - **Relationships:** 1:1 with an interactive session; owns every line it displays.
@@ -94,9 +103,13 @@ to `#35`'s code and is where `M2.1` starts.
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `screen.Paint` | `cmd/define/screen.go` | new | the terminal |
+| `liveScreen` | `cmd/define/screen.go` | new | the terminal — the ONLY part of the screen that does IO |
+| `display` | `cmd/define/replraw.go` | new | the loop's whole view of the terminal: `Draw`, `Page`, `Scroll`, `Resize` |
 | `enterAlt` / `leaveAlt` | `cmd/define/rawterm.go` | new | `\x1b[?1049h/l` |
+| `enterMouse` / `leaveMouse` | `cmd/define/rawterm.go` | new (M1.4b) | `\x1b[?1000h` + `\x1b[?1006h` |
+| `rawSession.control` | `cmd/define/rawterm.go` | new (rework) | where mode sequences go — an `io.Writer`, so the restore protocol is assertable with no terminal |
 | `watchResize` | `cmd/define/rawterm.go` | new | SIGWINCH |
+| `terminalRows` | `cmd/define/main.go` | new | `term.GetSize`, beside `terminalWidth` |
 | `replRaw` / `runEditor` | `cmd/define/replraw.go` | modified — `cooked` deleted (D4) | the terminal |
 
 - **`watchResize`** — there is NO resize handling today; width is read once at flag parse (`main.go`). A full-screen program must handle it or the frame is wrong after the first drag.
@@ -129,8 +142,10 @@ to `#35`'s code and is where `M2.1` starts.
 | # | claim | pinned by | red when |
 |---|---|---|---|
 | 1 | the viewport arithmetic is right | `TestScreenFrame` | `Frame` stops clamping the offset |
+| 1b | **the frame FITS the terminal, in display rows** | `TestScreenFrameFitsTheTerminalInDisplayRows`, `TestScreenClipsTheViewNotTheBuffer` | a line wider than the terminal is counted as one row, so the frame overflows and the terminal scrolls |
+| 1c | **a click types nothing, in either mouse encoding** | `TestDecodeX10Mouse`, `TestX10ClickTypesNothing`, `TestDecodeWheel` | a report is delimited but its payload is not consumed |
 | 2 | a streamed fragment lands as text, not a frame | `TestScreenWriteBuildsLines/a partial line CONTINUES` | `Write` splits on every call boundary |
-| 3 | the terminal is restored on every exit | `TestRestoreLeavesTheAlternateScreen`, and on a real pty the Fatal in `TestPTYTranscriptIsPrintedOnExit` ("the alternate screen was never left") | `leaveAlt` is dropped from the restore path |
+| 3 | the terminal is restored on every exit — raw mode, the alt screen and mouse reporting, in that order | `TestRestoreHandsBackEveryTerminalState` (asserts the bytes AND the order, verified falsifiable), `TestRestoreSendsNothingItDidNotTake`, `TestEnterDoesNotClaimAStateItCouldNotWrite`; on a real pty the Fatal in `TestPTYTranscriptIsPrintedOnExit` | any leave is dropped from the restore path |
 | 3b | **mouse reporting is given back** (M1.4b) | `TestPTYMouseTrackingIsAskedForAndGivenBack` | the disable is dropped, and the next program run in that terminal gets escape sequences typed into it |
 | 4 | the viewport can be moved by a user | `TestEditorPageKeysScroll` | the key case is removed from the select |
 | 4b | **the keys it already had still work** | `TestCtrlDStillEndsTheSession`, `TestCtrlUStillKillsTheLine` | Ctrl-U or Ctrl-D is rebound to scrolling |
@@ -171,7 +186,7 @@ to `#35`'s code and is where `M2.1` starts.
 - [ ] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
 - [ ] **M2.5 — discoverability, STATIC rather than on hover** — and the tracking mode is the reason. Hover needs `1003` (any-event tracking), which streams an event for every cell the pointer crosses, so the loop would wake constantly to redraw an underline. `1000` (button press only) is what this issue enables, and with it the app never learns where the pointer is. So a clickable span is marked in the FRAME: the palette (`newPalette`) already spends `head`, `ipa`, `pos`, `num`, `ex`, `sect` and bold-green for deck words, so the mark is an ATTRIBUTE — underline — added to the span's existing colour rather than a seventh colour competing with them.
       It is spliced by the SCREEN, not by `Render`, because D6 promises the one-shot and `-raw` bytes are unchanged. `sgr.go`'s `sgrState.observe`/`resume` (`sgr.go:27,57`) is the existing machinery for reopening styles around an inserted attribute; this uses it rather than a second one.
-- [ ] **M2.6 — degrade.** A terminal that reports no mouse must behave exactly as `M1` does.
+- [ ] **M2.6 — degrade**, and the case is NOT only "a terminal that reports no mouse". The exposure that actually bit was a terminal that reports the mouse in an encoding we did not ask for: mode `1000` falls back to X10 (`ESC[M` + three raw bytes), which the CSI scan delimited at `M` and left three payload bytes to be typed into the line. Fixed in M1's rework (`decodeX10Mouse`); this row keeps the rule that produced it — **for every mode we enable, the decoder answers every encoding that mode can reply in** — and applies it to whatever M2 turns on.
 
 ### M2 Done-when
 
@@ -340,3 +355,69 @@ ARE pinned; the names were invented at planning time and the code chose others.
 Rows 3b, 8 and 9 are new: M1.4b's mouse tracking and wheel, and M1.3b's rule that
 a prompt means the loop is waiting. All three are behaviour M1 ships that the
 table did not cover, because two of them are answers to operator reports.
+
+### 2026-08-29 — M1 boundary review: REWORK, and what the findings had in common
+
+Two rounds, twelve findings, nine blocking. Fixed in this window; the classes
+matter more than the sites, so they are recorded as classes.
+
+**1. A mode enabled is a grammar accepted (BR-11 Critical, BR-5).** `M1.4b` turned
+on mouse reporting with `1000`+`1006` and taught the decoder only the `1006`
+form. A terminal that honours `1000` and ignores `1006` answers in X10 — `ESC[M`
+plus three RAW bytes — and the CSI scan stopped at `M` as a final byte, leaving
+the payload to be typed into the word being looked up: a left click typed `" !!"`.
+This is `#14`'s family one encoding over, in the commit that enabled the mode.
+`decodeX10Mouse` consumes six bytes or none, and `M2.6` now carries the rule:
+**for every mode we enable, the decoder answers every encoding that mode can
+reply in.**
+
+**2. A frame is budgeted in DISPLAY ROWS, not lines (BR-12, BR-6).** `Paint`
+charged one row per buffer line. A line wider than the terminal wraps, so the
+frame was too tall, so the terminal scrolled — moving every row the app believes
+it placed, which is the exact property the alternate screen was taken for and
+`M2`'s `RegionAt` depends on. Two routine ways in: narrow the window (buffer lines
+keep their wrapping, by decision) or type a line longer than the terminal is
+wide. `screen.cols` was declared in this plan and inert in the code; it is real
+now. The prompt and each menu row are charged their true height, buffer lines are
+CLIPPED to the width at paint time — so the transcript and `M2`'s click map keep
+the whole text. Measured on a real pty at 40 columns: every row fits, the
+transcript does not.
+
+**3. A pin that cannot fail is worse than no pin (BR-13, BR-4, and the `eraseLine`
+Minor).** `TestRestoreLeavesTheAlternateScreen` built a session with a nil file,
+so every enter and every leave returned at the same guard and the assertion
+checked a field nothing had set — deleting BOTH leaves from `restore()` left the
+suite green. The fix is structural: `rawSession` writes its mode sequences to an
+`io.Writer`, which is also where they belong (they change the screen the frames
+are drawn on, not the stdin handle they were going to). The restore protocol —
+mouse off, then alt screen, then raw — is now asserted in process, bytes and
+order, and verified falsifiable.
+
+**4. Prose is swept by CLASS or not at all (BR-14).** `M1.6` rewrote the atlas
+sections it was looking at; five other sites still said the raw loop wraps stdout
+in `crlfWriter`, including a TEST — `TestHighlightingNestsInsideCRLFTranslation`
+— that built a composition no production path builds any more. A test asserting a
+dead composition reads as coverage. It is now
+`TestHighlightingSeesLogicalTextAndTheScreenPlacesIt`, over the screen.
+
+**5. ARCH-CONSTRAINTS: the envelope, stated (BR-16, and the buffer-growth Minor).**
+A full-screen program needs one and this plan declared none.
+
+- **Repaint:** a write paints at most every 16 ms (`paintInterval`), with a
+  TRAILING flush so a held frame goes out whether or not another write follows.
+  That trailing half is not an optimisation — the `♫ playing 3×` indicator is
+  written and then playback blocks for seconds, so a throttle waiting for the
+  next write would hide it for the whole recording. Draw, Page, Scroll and Stop
+  paint unconditionally. Bound: unpainted text is never more than one interval's
+  worth.
+- **Buffer:** `screen.lines` holds the whole session and is printed at exit, by
+  design (D3). No cap, deliberately: a cap would silently truncate the record the
+  transcript exists to be, and the envelope is a human session — a very long one
+  is a few thousand lines, ~1 MB. If a session ever needs to outlive that, it
+  needs a file, not a smaller buffer.
+
+**6. Tests observe across goroutines with a lock (BR-15).** Two new tests polled
+fields written by another goroutine; `-race` failed where the base commit was
+clean. `recordDisplay` is mutex-guarded with reader methods, and the resize
+watcher's measurements are reported over a channel. `go test -race ./cmd/define/`
+is green.

@@ -45,7 +45,7 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		fmt.Fprintln(stderr, "define: --play needs a terminal")
 		return 1
 	}
-	sess, err := enterRaw(f)
+	sess, err := enterRaw(f, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: could not enter raw mode: %v\n", err)
 		return 1
@@ -179,7 +179,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 					playAnnounced(ctx, d, opt, utteranceFor(word, "", "", opt),
 						defaultIndicator(opt), stdout, stderr)
 					if raw.sess != nil {
-						again, err := enterRaw(raw.f)
+						again, err := enterRaw(raw.f, stdout)
 						if err != nil {
 							// REPORTED, not dropped. Without raw mode readKeys is
 							// line-buffered, so every keystroke appears to do nothing

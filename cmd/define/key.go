@@ -116,6 +116,21 @@ func decodeEscape(buf []byte) (Key, int) {
 			return Key{Kind: KeyHome}, 3
 		case 'F':
 			return Key{Kind: KeyEnd}, 3
+		case 'M':
+			if buf[1] == '[' {
+				// The X10 mouse report, and the reason this case exists at all:
+				// enabling mode 1000 asks for the mouse, and a terminal that
+				// honours 1000 but ignores 1006 answers in X10 — ESC[M plus
+				// THREE RAW BYTES that are not part of any CSI grammar. The scan
+				// below would stop at "M" as a final byte and hand the payload to
+				// the line as text: a left click at (1,1) typed " !!" into the
+				// word being looked up, and a wheel notch typed "`!!".
+				//
+				// This is #14's family, one encoding over. The rule it leaves
+				// behind: for every mode we ENABLE, the decoder answers every
+				// encoding that mode can reply in.
+				return decodeX10Mouse(buf)
+			}
 		}
 		// Every other CSI sequence: find its REAL final byte rather than assuming
 		// a length. ESC[3~ is Delete, but ESC[3;5~ is Ctrl-Delete — assuming four
@@ -214,4 +229,31 @@ func atoiPrefix(b []byte) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// decodeX10Mouse reads the legacy mouse report: ESC[M followed by three bytes,
+// each a value offset by 32.
+//
+// It consumes SIX bytes or none. None means "wait" — the partial-sequence
+// protocol decodeKey already has — because a report split across two reads must
+// not be half-decoded, and the payload bytes are otherwise indistinguishable
+// from typed characters.
+//
+// Only the wheel is answered, matching decodeWheel: a button carries coordinates
+// that mean nothing until M2 can look them up. The rest is inert, which for this
+// encoding means CONSUMED rather than ignored.
+func decodeX10Mouse(buf []byte) (Key, int) {
+	if len(buf) < 6 {
+		return Key{}, 0
+	}
+	b := int(buf[3]) - 32
+	if b&64 != 0 {
+		switch b & 3 {
+		case 0:
+			return Key{Kind: KeyWheelUp}, 6
+		case 1:
+			return Key{Kind: KeyWheelDown}, 6
+		}
+	}
+	return Key{Kind: KeyUnknown, Raw: buf[:6]}, 6
 }

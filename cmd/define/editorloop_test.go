@@ -8,8 +8,10 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // scriptKeys turns a string into keypresses, with "\r" meaning Enter — the
@@ -50,7 +52,11 @@ func editorRig(t *testing.T, word string, audioPresent bool) (*audioRig, options
 // up, what it replays, and which keys reach the viewport. The screen's own
 // arithmetic is pinned in screen_test.go, with no terminal either.
 type recordDisplay struct {
-	w io.Writer
+	// mu, because a test that drives the loop on another goroutine reads these
+	// while the loop writes them — `go test -race` reports it, and `waitFor`
+	// spinning on an unsynchronised field can spin to its own timeout.
+	mu sync.Mutex
+	w  io.Writer
 	// prompt and menu are the CURRENT live edge; prompts and menus are every one
 	// the loop drew, in order. Both, because "what is on screen now" and "what
 	// was on screen while X happened" are different questions.
@@ -61,14 +67,17 @@ type recordDisplay struct {
 	pages   []int
 	lines   []int
 	rows    []int
+	cols    []int
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
 
 func (d *recordDisplay) Draw(prompt string, menu []string) {
+	d.mu.Lock()
 	d.prompt, d.menu = prompt, menu
 	d.prompts = append(d.prompts, prompt)
 	d.menus = append(d.menus, menu)
+	d.mu.Unlock()
 	// Menu first, prompt last, in the order Paint puts them on a screen: the
 	// dropdown hangs below the line you are typing.
 	for _, m := range menu {
@@ -77,9 +86,53 @@ func (d *recordDisplay) Draw(prompt string, menu []string) {
 	fmt.Fprint(d.w, prompt)
 }
 
-func (d *recordDisplay) Page(n int)   { d.pages = append(d.pages, n) }
-func (d *recordDisplay) Scroll(n int) { d.lines = append(d.lines, n) }
-func (d *recordDisplay) Resize(n int) { d.rows = append(d.rows, n) }
+func (d *recordDisplay) Page(n int) {
+	d.mu.Lock()
+	d.pages = append(d.pages, n)
+	d.mu.Unlock()
+}
+
+func (d *recordDisplay) Scroll(n int) {
+	d.mu.Lock()
+	d.lines = append(d.lines, n)
+	d.mu.Unlock()
+}
+
+func (d *recordDisplay) Resize(rows, cols int) {
+	d.mu.Lock()
+	d.rows = append(d.rows, rows)
+	d.cols = append(d.cols, cols)
+	d.mu.Unlock()
+}
+
+// The readers a test uses, so nothing reaches a field without the lock.
+
+func (d *recordDisplay) livePrompt() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.prompt
+}
+
+func (d *recordDisplay) lastPrompt() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if len(d.prompts) == 0 {
+		return ""
+	}
+	return d.prompts[len(d.prompts)-1]
+}
+
+func (d *recordDisplay) drawnMenus() [][]string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([][]string(nil), d.menus...)
+}
+
+func (d *recordDisplay) scrolls() (pages, lines, rows []int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]int(nil), d.pages...), append([]int(nil), d.lines...), append([]int(nil), d.rows...)
+}
 
 func TestEditorLoopDefinesTypedWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
@@ -184,9 +237,13 @@ func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
 	}
 }
 
-// In RAW mode "\n" is a line feed with no carriage return, so anything written
-// before dropping back to cooked mode must use "\r\n" — otherwise the next line
-// starts at the current column and the definition renders indented.
+// The loop's own writes still carry "\r\n".
+//
+// The original reason — a bare "\n" in raw mode moves down without returning to
+// column 0 — is gone with the mode it named: the screen strips the carriage
+// return and places lines itself (#30 D4/D5). What the bytes still buy is that
+// this loop's output is correct on ANY writer, including the plain buffer these
+// tests give it and the real stdout the fallback path uses.
 func TestEditorLoopUsesCarriageReturnsInRawMode(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
@@ -360,7 +417,7 @@ func TestNothingIsWrittenWhileAPromptIsShown(t *testing.T) {
 	view := paintInto(io.Discard)
 	var whenWritten []string
 	w := writerFunc(func(p []byte) (int, error) {
-		whenWritten = append(whenWritten, view.prompt)
+		whenWritten = append(whenWritten, view.livePrompt())
 		return len(p), nil
 	})
 	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, view, nil, finish, w, w)
@@ -376,7 +433,7 @@ func TestNothingIsWrittenWhileAPromptIsShown(t *testing.T) {
 	}
 	// And it comes BACK: blanking the live edge for the whole session would
 	// satisfy the loop above and leave a session with no prompt at all.
-	if view.prompt == "" {
+	if view.livePrompt() == "" {
 		t.Error("the prompt never returned after the work finished")
 	}
 }
@@ -394,8 +451,9 @@ func TestEditorPageKeysScroll(t *testing.T) {
 	ks := keySeq(Key{Kind: KeyPageUp}, Key{Kind: KeyPageUp}, Key{Kind: KeyPageDown})
 	runEditor(t.Context(), ks, nil, rig.deps, opt, view, nil, finish, &out, &errb)
 
-	if want := []int{1, 1, -1}; !slices.Equal(view.pages, want) {
-		t.Errorf("the viewport moved %v, want %v — positive is backward, toward older text", view.pages, want)
+	pages, _, _ := view.scrolls()
+	if want := []int{1, 1, -1}; !slices.Equal(pages, want) {
+		t.Errorf("the viewport moved %v, want %v — positive is backward, toward older text", pages, want)
 	}
 }
 
@@ -410,7 +468,7 @@ func TestPageKeysDoNotTouchTheLine(t *testing.T) {
 
 	// The last frame drawn still holds what was typed — a page key that reached
 	// Apply would have redrawn something else, or nothing.
-	if last := view.prompts[len(view.prompts)-1]; !strings.Contains(last, "syc") {
+	if last := view.lastPrompt(); !strings.Contains(last, "syc") {
 		t.Errorf("a page key disturbed the line being typed: %q", last)
 	}
 }
@@ -455,7 +513,7 @@ func TestCtrlUStillKillsTheLine(t *testing.T) {
 	ks := keySeq(append(runes("syco"), Key{Kind: KeyKillLine})...)
 	runEditor(t.Context(), ks, nil, rig.deps, opt, view, nil, finish, &out, &errb)
 
-	if last := view.prompts[len(view.prompts)-1]; strings.Contains(last, "syco") {
+	if last := view.lastPrompt(); strings.Contains(last, "syco") {
 		t.Errorf("Ctrl-U did not clear the line — it was rebound: %q", last)
 	}
 }
@@ -477,10 +535,11 @@ func TestWheelScrollsRatherThanWalkingHistory(t *testing.T) {
 		Key{Kind: KeyEnter}, Key{Kind: KeyWheelUp}, Key{Kind: KeyWheelDown})...)
 	runEditor(t.Context(), ks, nil, rig.deps, opt, view, nil, finish, &out, &errb)
 
-	if want := []int{wheelLines, -wheelLines}; !slices.Equal(view.lines, want) {
-		t.Errorf("the wheel moved the viewport %v, want %v lines", view.lines, want)
+	_, lines, _ := view.scrolls()
+	if want := []int{wheelLines, -wheelLines}; !slices.Equal(lines, want) {
+		t.Errorf("the wheel moved the viewport %v, want %v lines", lines, want)
 	}
-	if last := view.prompts[len(view.prompts)-1]; strings.Contains(last, "sycophantic") {
+	if last := view.lastPrompt(); strings.Contains(last, "sycophantic") {
 		t.Errorf("the wheel recalled a word from history into the line: %q", last)
 	}
 }
@@ -507,16 +566,18 @@ func TestEditorResizeRedrawsForTheNewShape(t *testing.T) {
 	// A key AFTER the resize, so the assertion runs on a loop that has certainly
 	// processed it — the alternative is sleeping and hoping.
 	keys <- Key{Kind: KeyRune, Rune: '/'}
-	waitFor(t, func() bool { return len(view.rows) > 0 })
+	waitFor(t, func() bool { _, _, rows := view.scrolls(); return len(rows) > 0 })
 	close(keys)
 	<-done
 
-	if got := view.rows; !slices.Equal(got, []int{10}) {
-		t.Errorf("the screen was told %v rows, want [10]", got)
+	_, _, rows := view.scrolls()
+	if !slices.Equal(rows, []int{10}) {
+		t.Errorf("the screen was told %v rows, want [10]", rows)
 	}
 	// The WIDTH half, observed where it is actually used: the command menu is
 	// truncated to it, so a 40-column terminal must not be handed 80-column rows.
-	for _, m := range view.menus[len(view.menus)-1] {
+	menus := view.drawnMenus()
+	for _, m := range menus[len(menus)-1] {
 		if len([]rune(m)) > 40 {
 			t.Errorf("a menu row is %d columns wide in a 40-column terminal: %q", len([]rune(m)), m)
 		}
@@ -529,18 +590,30 @@ func TestEditorResizeRedrawsForTheNewShape(t *testing.T) {
 // recording for five seconds.
 func TestWatchResizeCoalesces(t *testing.T) {
 	sigs := make(chan os.Signal, 8)
-	var measured int
 	shapes := []winSize{{rows: 10, cols: 40}, {rows: 20, cols: 80}, {rows: 30, cols: 120}}
+	// The measurements are reported over a CHANNEL rather than counted in a
+	// variable the watcher's goroutine writes and this one reads: an
+	// unsynchronised counter is a data race, and `waitFor` spinning on one can
+	// spin to its own timeout.
+	measured := make(chan int, len(shapes))
+	n := 0
 	out := watchResize(t.Context(), func(...os.Signal) <-chan os.Signal { return sigs },
 		func() winSize {
-			sz := shapes[measured]
-			measured++
+			sz := shapes[n]
+			n++
+			measured <- n
 			return sz
 		})
 	for range shapes {
 		sigs <- syscall.SIGWINCH
 	}
-	waitFor(t, func() bool { return measured == len(shapes) })
+	for range shapes {
+		select {
+		case <-measured:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the watcher stopped measuring")
+		}
+	}
 
 	// One shape waiting, and it is the LAST one.
 	if got := <-out; got != shapes[len(shapes)-1] {

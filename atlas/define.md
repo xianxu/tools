@@ -705,8 +705,9 @@ Its contract, in the order the rules matter:
    drags it back to that span's start. Plain text may be cut freely.
 4. **Downstream errors poison the writer.** The first failure is remembered and
    nothing is emitted after it, so no byte is written twice. A short write with a
-   nil error is a failure — `crlfWriter`, which the raw loop nests this inside,
-   produces exactly that.
+   nil error is a failure — `crlfWriter`, which `--play` nests this inside,
+   produces exactly that. (The raw loop did too, until `#30` replaced it with the
+   screen.)
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
 `sgrState` is the pure half: it watches escapes go past and answers "what style
@@ -743,11 +744,12 @@ surface without widening the first table, and a mutant dropping the `Load` passe
 the whole suite — the same Critical one surface over. A new surface needs its own
 rows.
 
-**The answer stream is the writer's other caller**, and the nesting order is
-fixed by what each writer needs. The raw loop has already wrapped stdout in
-`crlfWriter` before `ask` is called, so `runAsk` wraps THAT — highlighting sees
-logical text and CRLF translation applies to the final bytes, including the
-escapes highlighting inserted. Inverted, the highlighter would meet `\r\n` where
+**The answer stream is the writer's other caller**, and it is the OUTERMOST
+writer on the answer — over the screen in the raw loop, over the real stdout when
+piped. So highlighting sees the answer's own logical text and the screen places
+the highlighted bytes as lines afterwards. It used to wrap the raw loop's
+`crlfWriter` instead, which `#30` D5 removed. Inverted, the highlighter would
+meet `\r\n` where
 it expects `\n`.
 
 The `Flush` is DEFERRED rather than written at each return, and that is

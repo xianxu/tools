@@ -357,7 +357,7 @@ func TestRecallPreservesWhatALineMeant(t *testing.T) {
 func TestRawLoopMessagePlacement(t *testing.T) {
 	for _, tc := range []struct {
 		name, keys string
-		wantErase  bool
+		wantNote   bool
 	}{
 		{"the bare-? note", "?\r", true},
 		{"a forced ask", "?why\r", false},
@@ -385,10 +385,12 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 			if errs.partial {
 				t.Errorf("a message left its line open; the next write would continue it: %q", lines[len(lines)-1])
 			}
-			if tc.wantErase {
-				// eraseLine's whole job: the note REPLACES the line it is
-				// written over instead of being appended to it, which is what
-				// made it read as `› ?define: type a question after "?"`.
+			if tc.wantNote {
+				// The note is a line of ITS OWN — it used to be prefixed with
+				// eraseLine to take back the line the user had typed, and the
+				// screen took that job: the prompt is the live edge, not a
+				// buffer line, so there is nothing left for the note to be
+				// appended to (#30).
 				if last := lines[len(lines)-1]; !strings.HasPrefix(last, "define: ") {
 					t.Errorf("the note is not a line of its own: %q", last)
 				}

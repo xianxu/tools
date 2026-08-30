@@ -228,13 +228,22 @@ func prettyPronunciations(s string, p palette) string {
 // on raw byte length would break early on any coloured line, and these lines are
 // coloured.
 func visibleLen(s string) int {
-	n, inEsc := 0, false
+	n, inEsc, inCSI := 0, false, false
 	for _, r := range s {
 		switch {
-		case inEsc:
-			if r == 'm' {
-				inEsc = false
+		case inCSI:
+			// ANY final byte ends a CSI, not just "m". Render emits only SGR, so
+			// "m" was enough while this only measured rendered text — but #30's
+			// screen measures lines that also carry cursor moves (`\x1b[4D`
+			// parks the cursor after a suggestion), and a machine that waits for
+			// "m" counts the whole rest of such a line as invisible. A frame
+			// budgeted from that measurement is a frame that does not fit.
+			if r >= 0x40 && r <= 0x7e {
+				inCSI = false
 			}
+		case inEsc:
+			inEsc = false
+			inCSI = r == '['
 		case r == '\x1b':
 			inEsc = true
 		default:

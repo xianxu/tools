@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // Write is the seam every caller feeds (#30 D5), so it has to behave like a
@@ -134,7 +136,7 @@ func TestScreenPaintSplitsTheHeight(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var b strings.Builder
-			s.Paint(&b, tc.termRows, "PROMPT", tc.menu)
+			s.Paint(&b, tc.termRows, 80, "PROMPT", tc.menu)
 			out := b.String()
 			for _, want := range tc.wantLines {
 				if !strings.Contains(out, want+"\r\n") {
@@ -218,10 +220,13 @@ func TestScreenTakesBackAnErasedLine(t *testing.T) {
 // both reach the terminal by being written, so a write has to repaint.
 func TestLiveScreenShowsWhatIsWrittenToIt(t *testing.T) {
 	var tty bytes.Buffer
-	l := newLiveScreen(&tty, 10)
+	l := newLiveScreen(&tty, 10, 80)
 
 	l.Draw("› ", nil)
 	tty.Reset()
+	// Far enough past the last frame that the throttle does not hold this one —
+	// what is under test here is that a write SHOWS, not how soon.
+	l.painted = time.Now().Add(-paintInterval)
 	l.Write([]byte("a definition\n"))
 	if !strings.Contains(tty.String(), "a definition") {
 		t.Errorf("a write did not reach the terminal: %q", tty.String())
@@ -301,4 +306,182 @@ func TestScreenWriteReturnsToTheTail(t *testing.T) {
 	if got := s.Frame(); got[len(got)-1] != "the answer" {
 		t.Errorf("the last visible line is %q, want the line just written", got[len(got)-1])
 	}
+}
+
+// A frame fits the terminal in DISPLAY ROWS, not in lines.
+//
+// A line wider than the terminal wraps onto a second row, so a frame that
+// counted it as one is a frame one row too tall — and the terminal then SCROLLS
+// to fit it, which moves every row the app believes it placed. That is the exact
+// property the alternate screen was taken for: a click at viewport row R is
+// buffer line R+offset only while nothing but this program can move the view.
+//
+// Two routine ways in, and both are reachable today: narrowing the window (buffer
+// lines keep the wrapping they were rendered with, by decision) and typing a line
+// longer than the terminal is wide, since the committed line goes to the buffer.
+func TestScreenFrameFitsTheTerminalInDisplayRows(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		lines          []string
+		termRows       int
+		termCols       int
+		prompt         string
+		menu           []string
+		wantRowsAtMost int
+	}{
+		{
+			// The reviewer's measurement: ten 200-column lines in an 80-column
+			// terminal need 28 display rows when each is counted as one.
+			name:     "lines wider than the terminal",
+			lines:    repeated(10, strings.Repeat("x", 200)),
+			termRows: 10, termCols: 80, prompt: "› ",
+			wantRowsAtMost: 10,
+		},
+		{
+			name:     "a prompt longer than the terminal is charged its real height",
+			lines:    []string{"a", "b", "c", "d", "e", "f"},
+			termRows: 6, termCols: 20, prompt: "› " + strings.Repeat("z", 55),
+			wantRowsAtMost: 6,
+		},
+		{
+			name:     "a menu row that wraps is charged too",
+			lines:    []string{"a", "b", "c", "d", "e", "f"},
+			termRows: 8, termCols: 20, prompt: "› ",
+			menu:           []string{strings.Repeat("m", 45)},
+			wantRowsAtMost: 8,
+		},
+		{
+			name:     "coloured text is measured by what is VISIBLE",
+			lines:    []string{"\x1b[1;36m" + strings.Repeat("c", 100) + "\x1b[0m"},
+			termRows: 4, termCols: 40, prompt: "› ",
+			wantRowsAtMost: 4,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var s screen
+			for _, l := range tc.lines {
+				s.Write([]byte(l + "\n"))
+			}
+			var b strings.Builder
+			s.Paint(&b, tc.termRows, tc.termCols, tc.prompt, tc.menu)
+
+			// Count what the TERMINAL would count: every row a line occupies
+			// once it has wrapped, plus the row each explicit break starts.
+			rows := 0
+			for _, painted := range strings.Split(b.String(), "\r\n") {
+				rows += displayRows(strings.TrimPrefix(painted, cursorHome+eraseDown), tc.termCols)
+			}
+			if rows > tc.wantRowsAtMost {
+				t.Errorf("the frame needs %d display rows in a %d-row terminal — it scrolls, and every placed row moves",
+					rows, tc.wantRowsAtMost)
+			}
+		})
+	}
+}
+
+// Clipping happens at PAINT time, so the buffer — and with it the exit
+// transcript and M2's click map — keeps the whole text.
+func TestScreenClipsTheViewNotTheBuffer(t *testing.T) {
+	var s screen
+	long := strings.Repeat("x", 200)
+	s.Write([]byte(long + "\n"))
+	var b strings.Builder
+	s.Paint(&b, 10, 80, "› ", nil)
+
+	if strings.Contains(b.String(), long) {
+		t.Error("the frame carried the whole over-wide line")
+	}
+	if got := s.Transcript(); !strings.Contains(got, long) {
+		t.Error("clipping reached the buffer: the transcript lost text the session showed")
+	}
+}
+
+// A cut inside a colour hands the style back, or the terminal keeps painting
+// with it to the end of the row and into the next line.
+func TestClipVisibleClosesAnOpenStyle(t *testing.T) {
+	got := clipVisible("\x1b[1;36m"+strings.Repeat("c", 40)+"\x1b[0m", 10)
+	if visibleLen(got) != 10 {
+		t.Errorf("clipped to %d visible columns, want 10: %q", visibleLen(got), got)
+	}
+	if !strings.HasSuffix(got, sgrOff) {
+		t.Errorf("a cut inside a style did not close it: %q", got)
+	}
+	// A line that fits is returned untouched, escapes and all.
+	if in := "\x1b[1mshort\x1b[0m"; clipVisible(in, 40) != in {
+		t.Errorf("a line that fits was rewritten: %q", clipVisible(in, 40))
+	}
+}
+
+func repeated(n int, line string) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = line
+	}
+	return out
+}
+
+// A frame per streamed delta is a full-screen erase-and-redraw per token —
+// hundreds of them, megabytes to the tty, for one answer. So writes are
+// throttled, and what that buys is a bound on STALENESS rather than a change of
+// behaviour: the unpainted text is never more than one interval's worth, and
+// every gesture that ends a burst paints unconditionally.
+func TestLiveScreenThrottlesTheRepaintButNeverLosesTheLastWord(t *testing.T) {
+	var tty countingWriter
+	l := newLiveScreen(&tty, 24, 80)
+	l.Draw("› ", nil) // the first frame
+	before := tty.painted()
+
+	// A burst, as the ask path delivers it.
+	for i := 0; i < 200; i++ {
+		l.Write([]byte("token "))
+	}
+	if got := tty.painted() - before; got > 5 {
+		t.Errorf("200 deltas painted %d frames — the throttle is not holding", got)
+	}
+	// The burst is still ALL in the buffer; only the painting was skipped.
+	if n := strings.Count(l.Transcript(), "token"); n != 200 {
+		t.Errorf("the buffer holds %d tokens, want 200 — the throttle dropped text", n)
+	}
+	// And the loop's own redraw settles what the throttle held back.
+	frames := tty.painted()
+	l.Draw("› ", nil)
+	if tty.painted() != frames+1 {
+		t.Error("Draw did not paint: a burst could end with text the user never sees")
+	}
+
+	// The TRAILING half, and it is what makes the throttle safe rather than
+	// merely cheap: a held frame goes out whether or not another write follows.
+	// The indicator is written and then playback blocks for seconds — a throttle
+	// waiting for the next write would hide it for the whole recording.
+	l.Write([]byte("  ♫ playing 3×"))
+	frames = tty.frames
+	waitFor(t, func() bool { return tty.painted() > frames })
+
+	// Stop flushes too, for the exit path.
+	l.Write([]byte("the last word\n"))
+	frames = tty.painted()
+	l.Stop()
+	if tty.painted() == frames && l.pending {
+		t.Error("Stop left a pending frame unpainted")
+	}
+}
+
+// countingWriter counts frames. Locked, because the trailing timer paints from
+// its own goroutine.
+type countingWriter struct {
+	mu     sync.Mutex
+	frames int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.frames++
+	return len(p), nil
+}
+
+func (c *countingWriter) painted() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.frames
 }

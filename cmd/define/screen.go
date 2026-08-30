@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
+	"time"
 )
 
 // screen is the interactive loop's line buffer and viewport (#30).
@@ -119,10 +121,6 @@ func (s *screen) write(text string) {
 func (s *screen) Lines() []string { return s.lines }
 
 // Frame is the rows to paint, oldest first. PURE.
-//
-// The offset is CLAMPED here rather than at the call sites, because a wheel
-// event arrives per notch and a held PageUp repeats — both overshoot routinely,
-// and clamping in one place is what stops an overshoot from indexing backwards.
 func (s *screen) Frame() []string {
 	if s.rows <= 0 {
 		return nil
@@ -130,15 +128,11 @@ func (s *screen) Frame() []string {
 	if len(s.lines) <= s.rows {
 		return s.lines
 	}
-	max := len(s.lines) - s.rows
-	off := s.offset
-	if off > max {
-		off = max
-	}
-	if off < 0 {
-		off = 0
-	}
-	end := len(s.lines) - off
+	// Clamped and WRITTEN BACK, so the offset a later Scroll adds to is the one
+	// the reader is actually looking at. Spelling the arithmetic here as well as
+	// in Scroll was two chances to disagree.
+	s.clamp()
+	end := len(s.lines) - s.offset
 	return s.lines[end-s.rows : end]
 }
 
@@ -146,6 +140,12 @@ func (s *screen) Frame() []string {
 // text, which is the direction "scroll up" means to a reader.
 func (s *screen) Scroll(n int) {
 	s.offset += n
+	s.clamp()
+}
+
+// clamp is the ONE place the viewport's limits are spelled. A wheel event
+// arrives per notch and a held PageUp repeats, so both overshoot routinely.
+func (s *screen) clamp() {
 	max := len(s.lines) - s.rows
 	if max < 0 {
 		max = 0
@@ -194,21 +194,37 @@ const (
 // session and change on every keystroke; putting them in `lines` would append a
 // copy of the prompt per character typed.
 //
-// termRows is the terminal's height, passed in rather than stored, so a resize
-// is one call site's business (the loop's SIGWINCH case) and not a field that
-// can go stale.
-func (s *screen) Paint(w io.Writer, termRows int, prompt string, menu []string) {
-	// The buffer gets whatever the prompt and menu do not need. A terminal too
-	// short for even the prompt still gets the prompt: losing the line you are
-	// typing is worse than losing history you can scroll to.
-	s.rows = termRows - 1 - len(menu)
+// A frame is budgeted in DISPLAY ROWS, not in lines, and that distinction is the
+// whole guarantee. A line wider than the terminal wraps onto a second row; a
+// frame that counted it as one is a frame one row too tall, and the terminal
+// then SCROLLS to fit it — which moves every row the app believes it placed, and
+// a click at viewport row R stops meaning buffer line R+offset. Two routine ways
+// in: narrow the window (buffer lines keep the wrapping they were rendered with,
+// by decision) or type a line longer than the terminal is wide.
+//
+// So the prompt and menu are charged their REAL height, and buffer lines are
+// clipped to the width — clipped at PAINT time, so the transcript and the click
+// map keep the whole text.
+//
+// termRows and termCols are passed in rather than stored, so a resize is one
+// call site's business (the loop's SIGWINCH case) and not fields that go stale.
+func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu []string) {
+	s.cols = termCols
+	// The buffer gets whatever the live edge does not need. A terminal too short
+	// for even the prompt still gets the prompt: losing the line you are typing
+	// is worse than losing history you can scroll to.
+	used := displayRows(prompt, s.cols)
+	for _, m := range menu {
+		used += displayRows(m, s.cols)
+	}
+	s.rows = termRows - used
 	if s.rows < 0 {
 		s.rows = 0
 	}
 	var b strings.Builder
 	b.WriteString(cursorHome + eraseDown)
 	for _, line := range s.Frame() {
-		b.WriteString(line + "\r\n")
+		b.WriteString(clipVisible(line, s.cols) + "\r\n")
 	}
 	b.WriteString(prompt)
 	for _, m := range menu {
@@ -242,10 +258,11 @@ func (s *screen) Paint(w io.Writer, termRows int, prompt string, menu []string) 
 type liveScreen struct {
 	s   *screen
 	tty io.Writer
-	// rows is the terminal's height. Owned here rather than in `screen` because
-	// it is a fact about the terminal, not about the text — and M1.4's SIGWINCH
-	// has exactly one field to update.
+	// rows and cols are the terminal's SHAPE. Owned here rather than in `screen`
+	// because they are facts about the terminal, not about the text — and
+	// M1.4's SIGWINCH has exactly one place to update.
 	rows   int
+	cols   int
 	prompt string
 	menu   []string
 	// stopped is set when the terminal has been handed back. Writes still reach
@@ -253,20 +270,73 @@ type liveScreen struct {
 	// or a farewell newline written after restore would draw a frame onto the
 	// NORMAL screen, over whatever the user was looking at before define ran.
 	stopped bool
+	// painted is when the last frame went out, and pending says a write has
+	// happened since. Together they THROTTLE the repaint (#30 M1.4/BR-16): the
+	// ask path writes once per streamed delta, and a frame per delta is a
+	// full-screen erase-and-redraw per token — hundreds of them, megabytes to
+	// the tty, for one answer.
+	//
+	// The bound this buys is on STALENESS, not on correctness: at any moment the
+	// unpainted text is only what arrived since the last frame, at most one
+	// interval's worth, and every gesture that ends a burst — Draw, Page,
+	// Scroll, Resize, Stop — paints unconditionally. A stalled stream therefore
+	// shows everything up to the stall.
+	painted time.Time
+	pending bool
+	// timer is the TRAILING half, and it is what makes the throttle safe rather
+	// than merely cheap. A held frame must go out whether or not another write
+	// follows: the `♫ playing 3×` indicator is written and then playback blocks
+	// for seconds, so a throttle that waited for the next write would hide it for
+	// the whole recording — a worse bug than the one being fixed.
+	//
+	// mu guards everything above, because this timer paints from its own
+	// goroutine while the loop is blocked inside speak.
+	mu    sync.Mutex
+	timer *time.Timer
 }
 
-func newLiveScreen(tty io.Writer, rows int) *liveScreen {
-	return &liveScreen{s: &screen{}, tty: tty, rows: rows}
+// paintInterval is the shortest gap between frames driven by writes. 60fps: fast
+// enough that a stream reads as continuous, slow enough that a 300-delta answer
+// costs tens of frames instead of hundreds.
+const paintInterval = 16 * time.Millisecond
+
+func newLiveScreen(tty io.Writer, rows, cols int) *liveScreen {
+	return &liveScreen{s: &screen{}, tty: tty, rows: rows, cols: cols}
 }
 
+// Write feeds the buffer and shows the result, at most paintInterval apart.
 func (l *liveScreen) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	n, err := l.s.Write(p)
+	if since := time.Since(l.painted); since < paintInterval {
+		l.pending = true
+		if l.timer == nil {
+			l.timer = time.AfterFunc(paintInterval-since, l.flush)
+		}
+		return n, err
+	}
 	l.repaint()
 	return n, err
 }
 
-// Draw records the live edge and repaints. It is the editor loop's draw().
+// flush paints what the throttle held. Runs on the timer's goroutine, which is
+// why every field is behind mu.
+func (l *liveScreen) flush() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.timer = nil
+	if l.pending {
+		l.repaint()
+	}
+}
+
+// Draw records the live edge and repaints. It is the editor loop's draw(), and
+// it paints UNCONDITIONALLY: the loop draws when it has stopped writing, so this
+// is the frame that settles whatever a burst left pending.
 func (l *liveScreen) Draw(prompt string, menu []string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.prompt, l.menu = prompt, menu
 	l.repaint()
 }
@@ -274,32 +344,119 @@ func (l *liveScreen) Draw(prompt string, menu []string) {
 // Page and Scroll move the viewport and show the result. The paint is the point:
 // a scroll nobody can see is not a scroll.
 func (l *liveScreen) Page(n int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.s.Page(n)
 	l.repaint()
 }
 
 func (l *liveScreen) Scroll(lines int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	l.s.Scroll(lines)
 	l.repaint()
 }
 
-// Resize is SIGWINCH's one field (M1.4). It does NOT paint: the caller has just
-// learned the terminal's new WIDTH too, and a frame drawn before the live edge
-// is recomputed for that width is a frame drawn twice.
-func (l *liveScreen) Resize(rows int) { l.rows = rows }
+// Resize takes SIGWINCH's whole answer (M1.4). It does NOT paint: the caller
+// redraws, because the live edge is rendered against the new width too and a
+// frame drawn before that is a frame drawn twice.
+func (l *liveScreen) Resize(rows, cols int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.rows, l.cols = rows, cols
+}
 
 // Stop ends painting. Called as the terminal is handed back, and idempotent for
 // the same reason restore is: it runs from more than one exit path.
-func (l *liveScreen) Stop() { l.stopped = true }
+//
+// It FLUSHES first: a throttled write may be waiting, and the last thing a
+// session showed must not be the thing the throttle held back.
+func (l *liveScreen) Stop() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.pending {
+		l.repaint() // the last thing shown must not be what the throttle held
+	}
+	if l.timer != nil {
+		l.timer.Stop()
+		l.timer = nil
+	}
+	l.stopped = true
+}
 
 // Transcript is the buffer, for printing back into the normal buffer on exit.
-func (l *liveScreen) Transcript() string { return l.s.Transcript() }
+func (l *liveScreen) Transcript() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.s.Transcript()
+}
 
 func (l *liveScreen) repaint() {
 	if l.stopped || l.tty == nil {
 		return
 	}
-	l.s.Paint(l.tty, l.rows, l.prompt, l.menu)
+	l.s.Paint(l.tty, l.rows, l.cols, l.prompt, l.menu)
+	l.painted, l.pending = time.Now(), false
+}
+
+// displayRows is how many terminal rows a line occupies once the terminal has
+// wrapped it. Always at least one: an empty line is still a row.
+func displayRows(line string, cols int) int {
+	if cols <= 0 {
+		return 1 // an unmeasurable terminal: charge one row and let it wrap
+	}
+	w := visibleLen(line)
+	if w <= cols {
+		return 1
+	}
+	return (w + cols - 1) / cols
+}
+
+// clipVisible cuts a line to width VISIBLE columns, keeping the escape sequences
+// that fall inside the cut and closing any style left open.
+//
+// Cutting rather than wrapping, because a frame row is a row: the alternative is
+// letting the terminal wrap and losing the placement the whole screen exists to
+// guarantee. The buffer keeps the full text, so nothing is lost from the
+// transcript — only from the view, which is what a viewport is.
+func clipVisible(s string, width int) string {
+	if width <= 0 || visibleLen(s) <= width {
+		return s
+	}
+	var b strings.Builder
+	n, styled := 0, false
+	inEsc, inCSI := false, false
+	for _, r := range s {
+		switch {
+		case inCSI:
+			b.WriteRune(r)
+			if r >= 0x40 && r <= 0x7e {
+				inCSI = false
+				styled = true
+			}
+			continue
+		case inEsc:
+			b.WriteRune(r)
+			inEsc = false
+			inCSI = r == '['
+			continue
+		case r == '\x1b':
+			b.WriteRune(r)
+			inEsc = true
+			continue
+		}
+		if n == width {
+			// Cut here, and hand the style back: without this the terminal keeps
+			// whatever colour was open when the cut landed.
+			if styled {
+				b.WriteString(sgrOff)
+			}
+			return b.String()
+		}
+		b.WriteRune(r)
+		n++
+	}
+	return b.String()
 }
 
 // Transcript is every line the session showed, for printing back into the normal

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -21,7 +22,7 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 		// line path rather than pretending raw mode succeeded.
 		return replLines(ctx, interrupts, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
 	}
-	sess, err := enterRaw(f)
+	sess, err := enterRaw(f, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: cannot enter raw mode (%v); falling back to line input\n", err)
 		return replLines(ctx, interrupts, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
@@ -41,23 +42,19 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	// The bytes are identical, so nothing could tell them apart; the report is
 	// the only way to be handed the gesture the user actually made.
 	sess.enterMouse()
-	live := newLiveScreen(stdout, terminalRows(stdout))
+	live := newLiveScreen(stdout, terminalRows(stdout), terminalWidth(stdout))
 	// The shape is MEASURED here, where the terminal is, and delivered to the
 	// loop as a value — so the loop's new select case knows nothing about
 	// os/signal and everything about what it has to redraw.
 	resizes := watchResize(ctx, d.notifySignals, func() winSize {
 		return winSize{rows: terminalRows(stdout), cols: terminalWidth(stdout)}
 	})
-	// handedBack makes finish once-only, and the transcript is why it has to be.
-	// restore() and Stop() are both idempotent because they run from more than
-	// one exit path; printing a session twice is not the kind of thing an
-	// idempotent call fixes.
-	handedBack := false
-	finish := func() {
-		if handedBack {
-			return
-		}
-		handedBack = true
+	// ONCE, and the transcript is why it has to be: restore() and Stop() are both
+	// idempotent because they run from more than one exit path, and printing a
+	// session twice is not the kind of thing an idempotent call fixes. sync's
+	// primitive rather than a hand-rolled flag, so the guarantee needs no test of
+	// its own to be trustworthy.
+	finish := sync.OnceFunc(func() {
 		// Painting stops BEFORE the terminal is handed back: a frame drawn after
 		// restore lands on the normal screen, over whatever was there before.
 		live.Stop()
@@ -75,7 +72,7 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 		// transcript's bare newlines are newlines, and this is the one write in
 		// the whole loop that goes to the real stdout rather than the screen.
 		fmt.Fprint(stdout, live.Transcript())
-	}
+	})
 	// BOTH streams are the screen, stderr included (D5b). A diagnostic written
 	// straight to the terminal while the alternate screen is up lands wherever
 	// the cursor happens to be and corrupts the frame; through the screen it is a
@@ -111,9 +108,9 @@ type display interface {
 	// Scroll moves it by LINES, in the same direction. The wheel is a finer
 	// gesture than the page keys and a screenful per notch would be unusable.
 	Scroll(lines int)
-	// Resize sets the terminal's height. The caller redraws — it has just
-	// learned the new WIDTH as well, and the live edge is rendered against that.
-	Resize(rows int)
+	// Resize sets the terminal's SHAPE. The caller redraws, because the live
+	// edge is rendered against the new width too.
+	Resize(rows, cols int)
 }
 
 // runEditor is the editor loop with the terminal factored out: keys arrive on a
@@ -254,7 +251,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			// frame is briefly stale rather than concurrently painted by two
 			// goroutines.
 			opt.width = sz.cols
-			view.Resize(sz.rows)
+			view.Resize(sz.rows, sz.cols)
 			draw()
 			continue
 		case k, open := <-keys:
@@ -299,6 +296,12 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.
 				submitted := e
+				// The cursor goes to the END before the line is echoed. A
+				// committed line has no cursor, and RenderLine parks one by
+				// emitting `ESC[<n>D` — which would land in the BUFFER, and from
+				// there in the exit transcript, as a control sequence stored as
+				// text.
+				submitted.Cursor = len(submitted.Line)
 				e = NewEditor()
 				// THE PROMPT BELONGS TO A LOOP THAT IS WAITING. From here until
 				// the next draw() this one is working — looking up, streaming,
@@ -366,10 +369,14 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// cmdReplay and cmdNothing both stay on this line: the
 					// indicator is drawn over the prompt, then the prompt back.
 					if cmd.note != "" {
-						// eraseLine like replayInPlace's siblings: without it the
-						// note is appended to the line the user typed and reads
-						// as `› ?define: type a question after "?"`.
-						fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, nothingSays(cmd, true))
+						// No eraseLine. It was here because the note was written
+						// over the line the user had typed, which would otherwise
+						// read as `› ?define: type a question after "?"`. The
+						// screen took that job: the prompt is the live edge, not
+						// a buffer line, so a note simply starts its own line.
+						// The INDICATOR keeps its erase, because the line it
+						// takes back is a real one it wrote itself.
+						fmt.Fprintf(stderr, "define: %s\r\n", nothingSays(cmd, true))
 						draw()
 						continue
 					}
@@ -416,9 +423,9 @@ func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron 
 		// for a bare Enter with nothing current, and a byte-identical duplicate
 		// is what made "the one place that answers this" false the moment it was
 		// written (BR-20).
-		fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, nothingSays(replCommand{}, true))
+		fmt.Fprintf(stderr, "define: %s\r\n", nothingSays(replCommand{}, true))
 	case opt.noAudio || opt.times <= 0:
-		fmt.Fprint(stderr, eraseLine+nothingToReplay+"\r\n")
+		fmt.Fprint(stderr, nothingToReplay+"\r\n")
 	default:
 		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),
 			indicator{show: true, erase: eraseLine}, stdout, stderr)

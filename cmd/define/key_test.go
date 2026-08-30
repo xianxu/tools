@@ -224,3 +224,60 @@ func FuzzDecodeWheelIsBounded(f *testing.F) {
 		}
 	})
 }
+
+// The X10 mouse report, which mode 1000 answers in when a terminal ignores 1006.
+//
+// ESC[M is followed by THREE RAW BYTES that belong to no CSI grammar. Before
+// #30's rework the scan stopped at "M" as a final byte and handed the payload to
+// the line as text — a left click typed " !!" into the word being looked up.
+// This is #14's family one encoding over, and the rule it leaves behind is that
+// for every mode we enable, the decoder answers every encoding that mode can
+// reply in.
+func TestDecodeX10Mouse(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want KeyKind
+		n    int
+	}{
+		// Button 0 at (1,1): 32+0, 32+1, 32+1.
+		{"a left click is consumed WHOLE, payload and all", "\x1b[M \x21\x21", KeyUnknown, 6},
+		{"an X10 wheel up scrolls", "\x1b[M\x60\x21\x21", KeyWheelUp, 6},
+		{"an X10 wheel down scrolls", "\x1b[M\x61\x21\x21", KeyWheelDown, 6},
+		// Coordinates are raw bytes and may be anything ≥ 32, including bytes
+		// that look like the start of a UTF-8 rune.
+		{"a click at a high column", "\x1b[M \xc3\xa9", KeyUnknown, 6},
+		{"a partial report waits rather than half-decoding", "\x1b[M ", 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k, n := decodeKey([]byte(tc.in))
+			if n != tc.n {
+				t.Fatalf("decodeKey(%q) consumed %d, want %d — the payload would reach the line as text", tc.in, n, tc.n)
+			}
+			if n > 0 && k.Kind != tc.want {
+				t.Errorf("decodeKey(%q) = kind %v, want %v", tc.in, k.Kind, tc.want)
+			}
+		})
+	}
+}
+
+// The whole point, asserted end to end: a click leaves NOTHING for the editor to
+// type. This is the observable the operator would meet — characters appearing in
+// the word being looked up — rather than a byte count.
+func TestX10ClickTypesNothing(t *testing.T) {
+	buf := []byte("\x1b[M \x21\x21")
+	var typed []rune
+	for len(buf) > 0 {
+		k, n := decodeKey(buf)
+		if n == 0 {
+			t.Fatalf("decoder stalled with %q left", buf)
+		}
+		buf = buf[n:]
+		if k.Kind == KeyRune {
+			typed = append(typed, k.Rune)
+		}
+	}
+	if len(typed) != 0 {
+		t.Errorf("a click typed %q into the line", string(typed))
+	}
+}
