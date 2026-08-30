@@ -38,6 +38,9 @@ type screen struct {
 	offset int
 	rows   int
 	cols   int
+	// regions is what each buffer line OFFERS, keyed by line. Sparse: most lines
+	// have none, and a session's worth of empty slices would be the bulk of it.
+	regions map[int][]Region
 }
 
 // Write appends bytes to the buffer, splitting on newlines.
@@ -115,6 +118,65 @@ func (s *screen) write(text string) {
 		// every completed write would add a blank line.
 		s.lines = s.lines[:len(s.lines)-1]
 	}
+}
+
+// regionsAt records the regions belonging to a run of buffer lines, so a click
+// can be resolved back to what was rendered there (#30 M2.3).
+//
+// A per-LINE map rather than a list scanned linearly: a session is thousands of
+// lines and a click has to answer at once, but more importantly the line is the
+// only thing that stays true. Regions are collected against a Render's own
+// coordinates; the screen knows where that render landed in the buffer, and
+// nothing afterwards can move a line that is already written.
+func (s *screen) addRegions(rs []Region) {
+	if len(rs) == 0 {
+		return
+	}
+	if s.regions == nil {
+		s.regions = map[int][]Region{}
+	}
+	// base is the buffer line the render STARTED at. Render's line 0 is the line
+	// the writer was on when it began, which is the last line written — the
+	// caller ends the prompt line before writing an entry, so that line is
+	// complete and the entry begins on the next one.
+	base := len(s.lines)
+	if s.partial {
+		base--
+	}
+	for _, r := range rs {
+		ln := base + r.Line
+		s.regions[ln] = append(s.regions[ln], r)
+	}
+}
+
+// RegionAt is the hit test: what, if anything, is offered at this BUFFER line
+// and display column. PURE.
+//
+// The column is the region's own — display cells, as everything else in this
+// program measures width — so a caller passes what the terminal reported and
+// nothing has to agree about a second unit.
+func (s *screen) RegionAt(line, col int) (Region, bool) {
+	for _, r := range s.regions[line] {
+		if col >= r.Col && col < r.Col+r.Width {
+			return r, true
+		}
+	}
+	return Region{}, false
+}
+
+// LineAt maps a VIEWPORT row to the buffer line showing there, which is the
+// mapping the alternate screen exists to make exact: nothing but this type can
+// move the view, so it is arithmetic rather than a guess (#30 D1).
+//
+// The second return value is false for a row below the buffer's tail — the
+// prompt, the menu, or blank space — where there is nothing to click.
+func (s *screen) LineAt(row int) (int, bool) {
+	frame := s.Frame()
+	if row < 0 || row >= len(frame) {
+		return 0, false
+	}
+	end := len(s.lines) - s.offset
+	return end - len(frame) + row, true
 }
 
 // Lines is the whole buffer. Present for tests and for the exit transcript
@@ -350,15 +412,21 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	n, err := l.s.Write(p)
+	l.throttledPaint()
+	return n, err
+}
+
+// throttledPaint paints unless a frame went out too recently, in which case it
+// arms the trailing timer. Callers hold mu.
+func (l *liveScreen) throttledPaint() {
 	if since := time.Since(l.painted); since < l.window() {
 		l.pending = true
 		if l.timer == nil {
 			l.timer = time.AfterFunc(l.window()-since, l.flush)
 		}
-		return n, err
+		return
 	}
 	l.repaint()
-	return n, err
 }
 
 // flush paints what the throttle held. Runs on the timer's goroutine, which is
@@ -380,6 +448,30 @@ func (l *liveScreen) Draw(prompt string, menu []string) {
 	defer l.mu.Unlock()
 	l.prompt, l.menu = prompt, menu
 	l.repaint()
+}
+
+// WriteRegions is Write plus the click map for what is being written. The two
+// are one call because they must not be able to disagree about which buffer line
+// the render landed on — the regions are relative to the render, and only the
+// screen knows where that render begins.
+func (l *liveScreen) WriteRegions(text string, rs []Region) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.s.addRegions(rs)
+	l.s.Write([]byte(text))
+	l.throttledPaint()
+}
+
+// RegionAtRow resolves a click: a VIEWPORT row and display column to whatever is
+// offered there.
+func (l *liveScreen) RegionAtRow(row, col int) (Region, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	line, ok := l.s.LineAt(row)
+	if !ok {
+		return Region{}, false
+	}
+	return l.s.RegionAt(line, col)
 }
 
 // Page and Scroll move the viewport and show the result. The paint is the point:

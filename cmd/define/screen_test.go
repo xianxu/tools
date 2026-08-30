@@ -610,3 +610,137 @@ func menuHeight(menu []string, cols int) int {
 	}
 	return n
 }
+
+// The hit test, and the mapping the alternate screen exists to make exact.
+//
+// A click arrives as a VIEWPORT row; a region was collected against a Render's
+// own line numbers. What joins them is that nothing but this type can move the
+// view (#30 D1), so the arithmetic is exact rather than a guess about what the
+// terminal did.
+func TestScreenResolvesAClickToWhatWasRenderedThere(t *testing.T) {
+	var s screen
+	s.rows = 10
+	// A session: a committed line, then an entry with regions, then another.
+	s.Write([]byte("› arrondissement\n"))
+	s.addRegions([]Region{
+		{Kind: RegionHeadword, Text: "arrondissement", Line: 0, Col: 0, Width: 14},
+		{Kind: RegionOriginLang, Text: "French", Lang: "fr", Line: 3, Col: 4, Width: 6},
+	})
+	s.Write([]byte("arrondissement\nnoun\n\n    French, from arrondir.\n"))
+
+	for _, tc := range []struct {
+		name     string
+		row, col int
+		want     string // "" means nothing is offered there
+		lang     string
+	}{
+		{"the headword", 1, 0, "arrondissement", ""},
+		{"the last cell of the headword", 1, 13, "arrondissement", ""},
+		{"one past its end offers nothing", 1, 14, "", ""},
+		{"the ORIGIN language", 4, 4, "French", "fr"},
+		{"before it on the same line", 4, 3, "", ""},
+		{"a line with no regions", 2, 0, "", ""},
+		{"a row past the buffer is not a click target", 9, 0, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			line, ok := s.LineAt(tc.row)
+			if !ok {
+				if tc.want != "" {
+					t.Fatalf("viewport row %d maps to no buffer line", tc.row)
+				}
+				return
+			}
+			r, hit := s.RegionAt(line, tc.col)
+			if tc.want == "" {
+				if hit {
+					t.Errorf("row %d col %d offered %q, want nothing", tc.row, tc.col, r.Text)
+				}
+				return
+			}
+			if !hit {
+				t.Fatalf("row %d col %d offered nothing, want %q", tc.row, tc.col, tc.want)
+			}
+			if r.Text != tc.want {
+				t.Errorf("row %d col %d offered %q, want %q", tc.row, tc.col, r.Text, tc.want)
+			}
+			if string(r.Lang) != tc.lang {
+				t.Errorf("region %q carries language %q, want %q", r.Text, r.Lang, tc.lang)
+			}
+		})
+	}
+}
+
+// SCROLLING MOVES THE MAP WITH THE TEXT, which is the property the whole screen
+// was built for: a click at viewport row R is buffer line R+offset, exactly,
+// because nothing else can scroll.
+func TestClicksFollowTheTextWhenScrolled(t *testing.T) {
+	var s screen
+	s.rows = 5
+	for i := 0; i < 20; i++ {
+		s.Write([]byte("filler\n"))
+	}
+	s.addRegions([]Region{{Kind: RegionHeadword, Text: "potassium", Line: 0, Col: 0, Width: 9}})
+	s.Write([]byte("potassium\n"))
+	for i := 0; i < 10; i++ {
+		s.Write([]byte("more\n"))
+	}
+
+	// Scroll until the word is on screen, then click it wherever it landed.
+	found := false
+	for back := 0; back < 20 && !found; back++ {
+		s.offset = back
+		for row := 0; row < s.rows; row++ {
+			line, ok := s.LineAt(row)
+			if !ok {
+				continue
+			}
+			if r, hit := s.RegionAt(line, 0); hit && r.Text == "potassium" {
+				// And the text really is on that row of the frame.
+				if got := s.Frame()[row]; got != "potassium" {
+					t.Errorf("the region resolves at row %d, where the screen shows %q", row, got)
+				}
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("the region was unreachable at every offset — the click map does not move with the text")
+	}
+}
+
+// A region belongs to the line the render landed on, not to the render's own
+// line 0. The caller ends the prompt line before writing an entry, so the entry
+// begins on the next buffer line — an off-by-one here puts every click one line
+// above what it points at.
+func TestRegionsLandOnTheLinesTheirRenderWroteTo(t *testing.T) {
+	var s screen
+	s.rows = 20
+	s.Write([]byte("first\nsecond\n"))
+	s.addRegions([]Region{{Kind: RegionHeadword, Text: "third", Line: 0, Col: 0, Width: 5}})
+	s.Write([]byte("third\n"))
+
+	if _, hit := s.RegionAt(2, 0); !hit {
+		t.Error("the region is not on line 2, where its render wrote")
+	}
+	for _, ln := range []int{0, 1, 3} {
+		if r, hit := s.RegionAt(ln, 0); hit {
+			t.Errorf("line %d offers %q, which was rendered elsewhere", ln, r.Text)
+		}
+	}
+
+	// And when the writer is MID-LINE, a render's line 0 continues that open
+	// line rather than starting a new one. Untested, this branch is arithmetic
+	// nobody has checked — and it is one line off in the direction that puts
+	// every click above what it points at.
+	var open screen
+	open.rows = 20
+	open.Write([]byte("done\n"))
+	open.Write([]byte("still open: ")) // no newline
+	open.addRegions([]Region{{Kind: RegionHeadword, Text: "here", Line: 0, Col: 12, Width: 4}})
+	open.Write([]byte("here\n"))
+
+	if r, hit := open.RegionAt(1, 12); !hit || r.Text != "here" {
+		t.Errorf("a render starting mid-line put its region elsewhere: line 1 offers %q (hit=%v), and the buffer is %q",
+			r.Text, hit, open.Lines())
+	}
+}

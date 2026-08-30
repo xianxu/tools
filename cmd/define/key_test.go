@@ -186,11 +186,29 @@ func TestDecodeWheel(t *testing.T) {
 		// Coordinates past 223, where the LEGACY encoding wrapped — which is the
 		// whole reason 1006 is enabled alongside 1000.
 		{"a wide terminal", "\x1b[<64;480;300M", KeyWheelUp, 14},
-		// Not the wheel: a click carries coordinates that mean nothing until M2
-		// has a region map, so it stays inert — consumed whole.
-		{"a left click is inert", "\x1b[<0;10;5M", KeyUnknown, 10},
+		// The click, which M2.2 gave a meaning. It was KeyUnknown through M1,
+		// deliberately: coordinates mean nothing until something can look them
+		// up, and a Key kind nothing reads is a kind that drifts.
+		{"a left press is a click", "\x1b[<0;10;5M", KeyClick, 10},
+		// A press and a release BOTH arrive. Acting on both would play every
+		// recording twice, so the release is consumed and dropped.
+		{"the release is not a second click", "\x1b[<0;10;5m", KeyUnknown, 10},
+		// Middle pastes and right opens a menu, in every terminal a user knows;
+		// taking either would break a gesture this program did not invent.
+		{"the middle button is not ours", "\x1b[<1;10;5M", KeyUnknown, 10},
+		{"the right button is not ours", "\x1b[<2;10;5M", KeyUnknown, 10},
+		{"a shift-click is still a click", "\x1b[<4;10;5M", KeyClick, 10},
 		{"a horizontal wheel is inert", "\x1b[<66;10;5M", KeyUnknown, 11},
 		{"a malformed report is inert, not partial", "\x1b[<;;M", KeyUnknown, 6},
+		// A field this program could not read WHOLE must not become a
+		// coordinate: acting on half a number is worse than not acting. Note
+		// the length — "x" is itself a valid CSI final byte (0x40–0x7E), so the
+		// scanner ends the sequence there and this is 7 bytes, not 11. A real
+		// terminal never sends it; the row exists so a hand-rolled parameter
+		// reader cannot start guessing.
+		{"a field with trailing junk is inert", "\x1b[<0;1x;5M", KeyUnknown, 7},
+		{"too few parameters is inert", "\x1b[<0;5M", KeyUnknown, 7},
+		{"a fourth parameter is inert", "\x1b[<0;5;5;5M", KeyUnknown, 11},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			k, n := decodeKey([]byte(tc.in))
@@ -205,8 +223,17 @@ func TestDecodeWheel(t *testing.T) {
 // A mouse report must never consume past its final byte, whatever is in it: a
 // decoder that over-consumes eats the next keystroke, and one that under-consumes
 // types the tail into the line.
-func FuzzDecodeWheelIsBounded(f *testing.F) {
-	for _, seed := range []string{"\x1b[<64;10;5M", "\x1b[<0;1;1m", "\x1b[<999999999;0;0M", "\x1b[<", "\x1b[<;;;;M"} {
+//
+// It also must never report a coordinate it did not read. That is the failure a
+// MOUSE decoder has and a key decoder does not: a key that decodes wrongly is a
+// wrong character, while a click that decodes wrongly plays the recording for
+// something the user never pointed at — silently, because the click looked
+// exactly like a click.
+func FuzzDecodeMouseIsBounded(f *testing.F) {
+	for _, seed := range []string{
+		"\x1b[<64;10;5M", "\x1b[<0;1;1m", "\x1b[<0;1;1M", "\x1b[<999999999;0;0M",
+		"\x1b[<", "\x1b[<;;;;M", "\x1b[M \x21\x21", "\x1b[M", "\x1b[<0;1x;5M",
+	} {
 		f.Add(seed)
 	}
 	f.Fuzz(func(t *testing.T, in string) {
@@ -214,13 +241,28 @@ func FuzzDecodeWheelIsBounded(f *testing.F) {
 		if n < 0 || n > len(in) {
 			t.Fatalf("decodeKey(%q) consumed %d of %d bytes", in, n, len(in))
 		}
-		// A wheel answer may only come from a sequence that actually ended in a
-		// mouse report's final byte.
-		if k.Kind == KeyWheelUp || k.Kind == KeyWheelDown {
+		switch k.Kind {
+		case KeyWheelUp, KeyWheelDown, KeyClick:
 			seq := in[:n]
-			if !strings.HasPrefix(seq, "\x1b[<") || (seq[n-1] != 'M' && seq[n-1] != 'm') {
-				t.Fatalf("decodeKey(%q) called %q a wheel event", in, seq)
+			// It came from something that really was a mouse report: either the
+			// SGR form, which ends in its own final byte, or the six-byte X10
+			// form. Anything else answering "click" is the decoder inventing a
+			// gesture out of typed text.
+			sgr := strings.HasPrefix(seq, "\x1b[<") && (seq[n-1] == 'M' || seq[n-1] == 'm')
+			x10 := strings.HasPrefix(seq, "\x1b[M") && n == 6
+			if !sgr && !x10 {
+				t.Fatalf("decodeKey(%q) called %q a mouse event", in, seq)
 			}
+		}
+		// A click's coordinates are always inside the screen. Negative ones
+		// would index backwards through the region map.
+		if k.Kind == KeyClick && (k.Row < 0 || k.Col < 0) {
+			t.Fatalf("decodeKey(%q) reported a click at row %d col %d", in, k.Row, k.Col)
+		}
+		// And nothing but a click carries a position, so a consumer cannot read
+		// one off a key that never had it.
+		if k.Kind != KeyClick && (k.Row != 0 || k.Col != 0) {
+			t.Fatalf("decodeKey(%q) put a position on a %v", in, k.Kind)
 		}
 	})
 }
@@ -241,12 +283,14 @@ func TestDecodeX10Mouse(t *testing.T) {
 		n    int
 	}{
 		// Button 0 at (1,1): 32+0, 32+1, 32+1.
-		{"a left click is consumed WHOLE, payload and all", "\x1b[M \x21\x21", KeyUnknown, 6},
+		{"a left click is consumed WHOLE, payload and all", "\x1b[M \x21\x21", KeyClick, 6},
 		{"an X10 wheel up scrolls", "\x1b[M\x60\x21\x21", KeyWheelUp, 6},
 		{"an X10 wheel down scrolls", "\x1b[M\x61\x21\x21", KeyWheelDown, 6},
 		// Coordinates are raw bytes and may be anything ≥ 32, including bytes
 		// that look like the start of a UTF-8 rune.
-		{"a click at a high column", "\x1b[M \xc3\xa9", KeyUnknown, 6},
+		// The payload is raw BYTES, not text: a coordinate byte may look like the
+		// start of a UTF-8 rune and must never be decoded as one.
+		{"a click at a high column", "\x1b[M \xc3\xa9", KeyClick, 6},
 		{"a partial report waits rather than half-decoding", "\x1b[M ", 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -279,5 +323,66 @@ func TestX10ClickTypesNothing(t *testing.T) {
 	}
 	if len(typed) != 0 {
 		t.Errorf("a click typed %q into the line", string(typed))
+	}
+}
+
+// A click carries WHERE, and the conversion to 0-based happens once — here, at
+// the boundary — rather than at whichever consumer remembers (#30 M2.2).
+//
+// Terminals report 1-based columns and rows. An off-by-one here is a click that
+// lands on the wrong word, which is the whole failure this issue exists to
+// avoid, and it is silent: every region is one cell to the left of where the
+// pointer was.
+func TestClickCarriesItsPosition(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		in       string
+		row, col int
+	}{
+		{"the top-left cell is 0,0", "\x1b[<0;1;1M", 0, 0},
+		{"column and row, in that order on the wire", "\x1b[<0;10;5M", 4, 9},
+		// Past 223, where the X10 encoding wraps — which is why 1006 is asked
+		// for alongside 1000.
+		{"a wide terminal", "\x1b[<0;300;120M", 119, 299},
+		// The legacy encoding, offset by 32 and then by the 1-based convention.
+		{"X10 reports the same cell", "\x1b[M \x21\x21", 0, 0},
+		{"X10, a few cells in", "\x1b[M \x2b\x26", 5, 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k, n := decodeKey([]byte(tc.in))
+			if k.Kind != KeyClick {
+				t.Fatalf("decodeKey(%q) = kind %v consumed %d, want a click", tc.in, k.Kind, n)
+			}
+			if k.Row != tc.row || k.Col != tc.col {
+				t.Errorf("click at row %d col %d, want row %d col %d — every region would be off by that much",
+					k.Row, k.Col, tc.row, tc.col)
+			}
+		})
+	}
+}
+
+// Both fuzz findings, kept as rows so a rewrite of the decoder meets them
+// directly rather than waiting for the corpus to rediscover them.
+func TestMouseDecoderRejectsWhatNoTerminalSends(t *testing.T) {
+	for _, tc := range []struct{ name, in string }{
+		// SS3 rather than CSI. decodeEscape handles both in one branch because
+		// the arrow keys arrive both ways; a mouse report is always CSI.
+		{"an SS3 sequence is not a mouse report", "\x1bO<0;1;1M"},
+		// X10 spends one byte per coordinate, offset by 32, and 1-based — so a
+		// byte of 0x20 is wire coordinate 0, and 0-1 is row -1, which would
+		// index backwards through the region map.
+		{"an X10 coordinate below the origin", "\x1b[M00 "},
+		{"an SGR coordinate of zero", "\x1b[<0;0;1M"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k, n := decodeKey([]byte(tc.in))
+			if k.Kind == KeyClick || k.Kind == KeyWheelUp || k.Kind == KeyWheelDown {
+				t.Errorf("decodeKey(%q) = %v at row %d col %d — a gesture invented from bytes no terminal sends",
+					tc.in, k.Kind, k.Row, k.Col)
+			}
+			if n == 0 || n > len(tc.in) {
+				t.Errorf("decodeKey(%q) consumed %d of %d — the tail would reach the line as text", tc.in, n, len(tc.in))
+			}
+		})
 	}
 }

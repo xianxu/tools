@@ -1,6 +1,9 @@
 package main
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // KeyKind is the vocabulary of keypresses this editor understands.
 type KeyKind int
@@ -40,6 +43,9 @@ const (
 	// is enabled here rather than waiting for the clicks in M2.
 	KeyWheelUp
 	KeyWheelDown
+	// KeyClick is a mouse PRESS, and the one Key that carries a position — see
+	// Key.Row/Col below (#30 M2.2).
+	KeyClick
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
@@ -49,6 +55,15 @@ type Key struct {
 	Kind KeyKind
 	Rune rune
 	Raw  []byte
+	// Row and Col are where a KeyClick landed, 0-based, in the TERMINAL's
+	// coordinates — the loop adds the screen's scroll offset to reach a buffer
+	// line. Terminals report 1-based, and the conversion happens once, here,
+	// rather than at whichever consumer remembers.
+	//
+	// Meaningless for every other Kind, which is why they are on the Key rather
+	// than in a second channel: a click is a keypress that happens to have a
+	// place, and the loop's select already delivers keypresses.
+	Row, Col int
 }
 
 // decodeKey converts the front of buf into a Key.
@@ -183,19 +198,96 @@ func decodeEscape(buf []byte) (Key, int) {
 // reads is a kind that drifts. A click therefore stays KeyUnknown — consumed
 // whole and inert, which is exactly what it should be for now.
 func decodeWheel(seq []byte) (Key, bool) {
-	if len(seq) < 4 || seq[2] != '<' {
+	// CSI, not SS3. decodeEscape handles `ESC [` and `ESC O` in one branch
+	// because the arrow keys arrive both ways, and without this check a
+	// hand-typed `ESC O <0;1;1M` would be read as a click — a decoder inventing
+	// a gesture out of text nobody made. Found by the fuzzer; no terminal sends
+	// it, which is exactly why nothing else would have caught it.
+	if len(seq) < 4 || seq[1] != '[' || seq[2] != '<' {
 		return Key{}, false
 	}
 	final := seq[len(seq)-1]
 	if final != 'M' && final != 'm' {
 		return Key{}, false
 	}
-	// Cb only. Cx and Cy are parsed by M2, which has somewhere to put them.
-	b, ok := atoiPrefix(seq[3 : len(seq)-1])
-	if !ok {
+	params := parseParams(seq[3 : len(seq)-1])
+	if len(params) != 3 {
 		return Key{}, false // malformed: inert, and the caller has still consumed it
 	}
-	return wheelFromButton(b)
+	if k, ok := wheelFromButton(params[0]); ok {
+		return k, true
+	}
+	// A PRESS, and only a press: "M" is the press and "m" the release, and
+	// acting on both would play every recording twice. The release is consumed
+	// and dropped, which is what an inert key means for a sequence that must not
+	// reach the line.
+	if final != 'M' || !isClickButton(params[0]) {
+		return Key{}, false
+	}
+	return clickAt(params[1], params[2])
+}
+
+// clickAt builds a click from WIRE coordinates — 1-based, as every terminal
+// reports them — and refuses anything that is not a cell on the screen.
+//
+// One owner for the conversion and the guard, because there are two encodings
+// and they are wrong in different ways. Found by the fuzzer: X10 spends one byte
+// per coordinate offset by 32, so a byte of 0x20 decodes to wire coordinate 0,
+// and 0 - 1 is row -1 — which would index backwards through the region map. SGR
+// can report a literal 0 for the same result.
+//
+// A refusal is inert, and inert is the right answer: the sequence has still been
+// consumed whole, so nothing reaches the line either way.
+func clickAt(wireCol, wireRow int) (Key, bool) {
+	if wireCol < 1 || wireRow < 1 {
+		return Key{}, false
+	}
+	// 1-based on the wire, 0-based here — converted once, at the boundary,
+	// rather than at whichever consumer remembers.
+	return Key{Kind: KeyClick, Col: wireCol - 1, Row: wireRow - 1}, true
+}
+
+// isClickButton reports whether a button byte is a plain press we act on.
+//
+// The low two bits are the button (left, middle, right) and bit 5 marks MOTION —
+// a drag, which mode 1000 does not report but 1002 would, and which is a
+// selection gesture rather than a click. Modifier bits ride along and are
+// ignored, as they are for the wheel: a Shift-click is still a click.
+func isClickButton(b int) bool {
+	if b&64 != 0 || b&32 != 0 { // a wheel event, or motion
+		return false
+	}
+	return b&3 == 0 // LEFT only: middle pastes and right opens a menu, elsewhere
+}
+
+// parseParams splits a mouse report's `1;2;3` parameter list.
+//
+// Returns nil on anything malformed rather than a partial list, so a caller
+// cannot act on coordinates it did not actually read — which is the failure mode
+// a mouse decoder has that a key decoder does not.
+func parseParams(b []byte) []int {
+	var out []int
+	for _, field := range strings.Split(string(b), ";") {
+		n, ok := atoiPrefix([]byte(field))
+		if !ok || len(field) != digits(n) {
+			return nil
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// digits is how many characters n was written with, so a field carrying trailing
+// junk ("12x") is rejected rather than silently read as 12.
+func digits(n int) int {
+	if n == 0 {
+		return 1
+	}
+	d := 0
+	for ; n > 0; n /= 10 {
+		d++
+	}
+	return d
 }
 
 // wheelFromButton reads a mouse report's BUTTON byte, which means the same thing
@@ -256,8 +348,19 @@ func decodeX10Mouse(buf []byte) (Key, int) {
 	if len(buf) < 6 {
 		return Key{}, 0
 	}
-	if k, ok := wheelFromButton(int(buf[3]) - 32); ok {
+	b := int(buf[3]) - 32
+	if k, ok := wheelFromButton(b); ok {
 		return k, 6
+	}
+	if isClickButton(b) {
+		// Coordinates are offset by 32, same as the button, and still 1-based —
+		// so clickAt does the subtracting and the checking. X10 cannot express a
+		// column past 223 (the byte wraps), which is why 1006 is asked for
+		// alongside 1000; a click out there lands wrong in a terminal that gave
+		// us no better encoding to ask for.
+		if k, ok := clickAt(int(buf[4])-32, int(buf[5])-32); ok {
+			return k, 6
+		}
 	}
 	return Key{Kind: KeyUnknown, Raw: buf[:6]}, 6
 }
