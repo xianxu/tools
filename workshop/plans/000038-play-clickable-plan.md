@@ -122,7 +122,9 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 - [ ] **T2 — delete the playback dance** (D2), AND re-home the invariant that dies with it.
       `play_loop.go:174-198` loses `restore`/`enterRaw` and the `lost the terminal after playback` path. A new row asserts the alternate screen is STILL up after a reveal, which is the regression the deletion prevents.
       **`TestLosingTheTerminalAfterPlaybackExitsOne` (`play_loop_test.go:529`) goes with it, and it is the ONLY pin for the outcome-ORDER obligation** — `play_loop.go:126-141` enumerates three consumer obligations and names that test for `order`, recording that reversing the iteration once left the whole suite green (BR-13). Its premise is a `rawTerm` on `/dev/null` so re-entry fails, which this deletion makes unreachable.
-      The replacement keeps the same shape — an outcome pair where the reveal arm BLOCKS, so a reversed order loses the record: drive a miss with a player that fails (or a cancelled context) and assert the review was captured anyway. **The rule: a task that deletes code re-homes every invariant whose only pin lives there, in the same task.**
+      The replacement must OBSERVE THE ORDER, not a consequence of it. A first draft asserted "the record survives a failed playback", and the gate measured it green under a reversed iteration — correctly: once the early `return 1` is gone, both orders write the record, so the consequence stops discriminating. The old test worked only because the reveal arm could abort the loop.
+      So the fake records a SEQUENCE: `capture.CaptureReview` and the player each append to one ordered log, and the assertion is that the record's entry precedes the playback's. That is falsifiable by reversing the `outs` iteration and by nothing else — which is what BR-13 needed and what a consequence-based test could not give once the abort was deleted.
+      **The rule: a task that deletes code re-homes every invariant whose only pin lives there, in the same task — and re-homing means finding an observable that still discriminates, not porting the old assertion.**
 - [ ] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9).
 - [ ] **T4 — the prompt word is a region.** `draw` is append-only, so the word lands on the line about to be written: one `RegionHeadword` at column 0, width `visibleCells(word)`.
 - [ ] **T5 — the revealed definition carries its regions** (D7, operator's choice), through `writeRendered` (D3).
@@ -142,7 +144,7 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 | 3 | a revealed definition is clickable like anywhere else | `TestPlayClickOnARevealedHeadword` | the reveal is written without its regions |
 | 4 | one registry, both loops | `TestEveryRegionKindIsActionable` extended to drive `playRegion` directly | a kind acts in one loop and not the other |
 | 4b | **`-no-audio` fetches nothing, from any caller** | `TestPlayAnnouncedFetchesNothingWithAudioOff` — on `playAnnounced` itself, since that is where the guard now lives | the predicate is left in the callers, so a fifth one sits below it |
-| 4c | **the outcome ORDER survives its pin's deletion** | `TestAMissIsRecordedEvenWhenPlaybackFails` (replaces `TestLosingTheTerminalAfterPlaybackExitsOne`) | the record is performed after something that can block |
+| 4c | **the outcome ORDER survives its pin's deletion** | `TestAMissRecordsBeforeItPlays` — one ordered log written by both the capturer and the player, replacing `TestLosingTheTerminalAfterPlaybackExitsOne` | the `outs` iteration is reversed |
 | 6b | **a resize repaints mid-sitting** | `TestPTYPlayResizeRepaints` | `watchResize` is not wired into the loop's select |
 | 5 | **playback does not tear the screen down** | `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` | the restore/re-enter dance comes back |
 | 6 | a sitting can be scrolled | `TestPlayPageKeysScroll` | the viewport cases are dropped, leaving no scrollback at all |
@@ -208,3 +210,17 @@ Then, on a real terminal: `define --play`, click the word, hear it; press `n`, c
   outcome-ORDER obligation, recording that reversing the iteration once left the
   whole suite green. A deletion that quietly removes a pin is a regression with a
   green suite, which is the same shape as the vacuous guards `#30` kept finding.
+
+### 2026-08-30 — plan-quality round 4: the replacement pin did not discriminate
+
+PQ-11's first replacement — "the record survives a failed playback" — was
+measured GREEN under a reversed `outs` iteration, and the gate was right. The
+old test discriminated only because the reveal arm could abort the loop with
+`return 1`; with that abort deleted (T2), both orders write the record and the
+consequence stops separating them.
+
+So the replacement observes the ORDER DIRECTLY: one ordered log that both the
+capturer and the player append to, asserting the record's entry comes first.
+The wider rule, which is the part worth keeping: **re-homing an invariant means
+finding an observable that still discriminates, not porting the old assertion to
+a world where its mechanism is gone.**

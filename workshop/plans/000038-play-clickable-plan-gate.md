@@ -192,6 +192,24 @@ rounds:
           family: deletion-drops-an-invariants-only-pin
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-30T16:42:15-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-6
+          disposition: not-addressed
+          note: 'the issue''s ## Plan on disk still reads "Decide Option A vs B" / "Design if it is Option A"'
+          round: 4
+        - id: PQ-8
+          disposition: addressed
+          note: D11 + T0 move the guard inside playAnnounced as options.playsAudio(); the class of four is confirmed
+          round: 4
+        - id: PQ-11
+          disposition: not-addressed
+          note: the named replacement is green under a reversed outs iteration, so order is still unpinned
+          round: 4
+      blocked: false
+content_hash: 1465c680fda8156a618d257d0902897bd2c0d6e9d08e7c70b96635f12c3ba45e
 ---
 
 # Gate ledger — tools#38 (plan-quality)
@@ -303,8 +321,15 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   Here the replacement is cheap — playAnnounced still blocks on speak, so a miss driven
   with a cancelled context or a failing player asserts the record was written first.
 
+## Round 4 — 2026-08-30T16:42:15-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-6 — not-addressed — the issue's ## Plan on disk still reads "Decide Option A vs B" / "Design if it is Option A"
+- PQ-8 — addressed — D11 + T0 move the guard inside playAnnounced as options.playsAudio(); the class of four is confirmed
+- PQ-11 — not-addressed — the named replacement is green under a reversed outs iteration, so order is still unpinned
+
 ## Open findings
 
 - **PQ-6** [Minor] `issue-plan-not-synced` the issue's ## Plan still says "decide Option A vs B / design it", which this plan file completes
-- **PQ-8** [Important] `two-callers-one-behavior` playAnnounced sits below the audio-off guard, so playRegion converging there silently drops it
 - **PQ-11** [Important] `deletion-drops-an-invariants-only-pin` T2 deletes the re-entry path and with it the only test pinning the outcome-ORDER obligation

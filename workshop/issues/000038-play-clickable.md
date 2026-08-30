@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-30
 updated: 2026-08-30
-estimate_hours:
+estimate_hours: 2.18
 started: 2026-08-30T16:08:11-07:00
 ---
 
@@ -96,10 +96,79 @@ take — a click here should reach it rather than growing a third caller.
 - [ ] Whatever happens to `--play`'s scrollback is a DECISION with its reason
       recorded, not a side effect of adopting the screen.
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.45 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.10
+item: cross-cutting-refactor   design=0.05 impl=0.12
+item: smaller-go-module        design=0.05 impl=0.12
+item: smaller-go-module        design=0.03 impl=0.16
+item: smaller-go-module        design=0.01 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.02 impl=0.14
+item: smaller-go-module        design=0.01 impl=0.08
+item: atlas-docs               design=0.02 impl=0.06
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.20
+design-buffer: 0.15
+total: 2.18
+```
+
+Derivation notes.
+
+- **`issue-spec` design 0.45 is mostly already spent**: the issue, the operator's
+  two decisions, and FOUR plan-quality rounds. Lower than `#30`'s 0.50 because
+  the architecture was decided there — this issue adopts it rather than choosing
+  it. The rounds were not cheap, though, and three of them found real defects:
+  a Critical the first draft would have shipped, a guard that scoped wrong, and a
+  replacement pin that did not discriminate.
+
+- **Only ONE `cross-cutting-refactor`**, T1, and it is the one task that touches
+  a working loop: lifting the click registry out of `runEditor`'s closure changes
+  code `#30` just closed. The rest are `smaller-go-module` — extend or mirror,
+  against a design that is settled and a machine that exists.
+
+- **No `greenfield-go-module` and no `TUI screen` primitive**, which is the whole
+  shape of this issue: `#30` built the screen, the click map, the region
+  registry, the viewport keys, `watchResize`, `onceHandBack` and `console`. This
+  is a second consumer adopting them (D10). If any row here is optimistic it is
+  T3, where `--play`'s five return paths meet `onceHandBack`.
+
+- **Two `milestone-review`s for ONE boundary**, priced 0.16 to run and 0.20 to
+  remediate. That is not a hedge, it is this session's measured rate: `#30`'s M1
+  took six rounds, M2 five, its close two — and EVERY one returned at least an
+  Important. Pricing remediation at zero is the single thing the record rules out.
+
+- **THE PREDICTION, on the record so the close can tell a miss from a
+  confirmation.** `#30` estimated 3.19 and measured 10.91 — **3.4×** — and the
+  overrun was almost entirely boundary rounds rather than building. This issue is
+  smaller and its design is already through four rounds, so the same multiplier
+  should not apply; but if the boundary behaves as `#30`'s did, the actual lands
+  near **4–5h** rather than 2.18.
+  **The estimate is NOT padded toward that.** v3.1 is applied as written, or the
+  calibration row means nothing — which is exactly what `#30`'s own estimate note
+  said before being wrong in the same direction.
+
 ## Plan
 
-- [ ] Decide Option A vs B, and the two questions above.
-- [ ] Design if it is Option A — it is more than wiring, and it touches `#32`.
+- [x] Decide Option A vs B, and the two questions above — the operator chose the
+      screen, and chose to mark a revealed definition too.
+- [x] Design: `workshop/plans/000038-play-clickable-plan.md` (single-pass, one
+      boundary; four plan-quality rounds).
+- [ ] T0 — one audio-off predicate, applied inside `playAnnounced`.
+- [ ] T1 — lift the click registry into `playRegion`, shared by both loops.
+- [ ] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands.
+- [ ] T3 — `--play` writes into a `liveScreen`.
+- [ ] T4 — the prompt word is a region.
+- [ ] T5 — the revealed definition carries its regions.
+- [ ] T6 — the viewport: scroll, wheel and resize.
+- [ ] T7 — a click acts and never answers.
+- [ ] T8 — docs: the README's review-loop section and the atlas's.
 
 ## Log
 
