@@ -41,7 +41,18 @@ Deleting it removes the `lost the terminal after playback` path (`play_loop.go:1
 
 The rule: a second loop adopting the first loop's shape adopts its carriers, or the divergence this issue exists to close reopens one field at a time.
 
-**D11 — `playRegion` carries the audio-off guard, because `playAnnounced` does not.** `replayInPlace` guards above it (`replraw.go:534`, `opt.noAudio || opt.times <= 0` → "nothing to replay") and `--play` guards above it too (`play_loop.go:161`, `if !opt.noAudio && opt.times > 0`). Converging on `playAnnounced` alone would drop BOTH guards, so `-no-audio` would make a click attempt playback and say nothing. The guard moves INTO `playRegion` — one place, both callers — which is the same consolidation the switch itself is.
+**D11 — the audio-off guard becomes ONE NAMED PREDICATE, applied inside `playAnnounced`.** An earlier draft put it in `playRegion`, which was a fifth hand-copy of a class of four — the instance again, not the rule. Measured, in two spellings:
+
+```
+main.go:783        !opt.noAudio && opt.times > 0     decides lookupOutcome.play
+play_loop.go:161   !opt.noAudio && opt.times > 0     skips the reveal's playback
+repl.go:312         opt.noAudio || opt.times <= 0    says "nothing to replay"
+replraw.go:534      opt.noAudio || opt.times <= 0    says "nothing to replay"
+```
+
+And `playAnnounced`'s own doc comment (`main.go:827-830`) already lists this as a divergence it was built to end: *"Both entry paths ran their own copy and had diverged three ways — which terminal they gated on, **whether the audio-off guard applied**, and the duplicated literal."* It ended two of the three; the guard stayed ABOVE it in every caller, which is why a fifth caller could silently sit below it.
+
+So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself — being below it becomes impossible — and the four sites ask the predicate rather than re-deriving it. Callers keep their own MESSAGES; only the condition is shared.
 
 **D9 — `--play`'s `crlfWriter` goes, which is `#32`'s remaining half.** `#30` D5a: *"`#32` keeps its `--play` half, which continues to draw its own frames through `crlfWriter`."* Once `--play` writes into the screen, the screen owns line placement and the second writer is a second owner. Re-read `#32` when this lands.
 
@@ -106,8 +117,12 @@ The rule: a second loop adopting the first loop's shape adopts its carriers, or 
 
 Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and AGENTS.md §3 says an `Mx` tag commits to its own `milestone-close`.
 
-- [ ] **T1 — lift the click registry.** `playRegion(ctx, d, opt, r Region, entry string, ind indicator, stdout, stderr)`: the audio-off guard (D11), then the switch on `RegionKind`, building the utterance and calling `playAnnounced`. The editor's `clicked` (`replraw.go:264`) becomes a call to it. NO behaviour change — `TestEveryRegionKindIsActionable`, `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` pass untouched, which is what proves the lift was a lift.
-- [ ] **T2 — delete the playback dance** (D2). `play_loop.go:174-198` loses `restore`/`enterRaw` and the `lost the terminal after playback` path. Pinned by the existing `TestPTYCtrlCDuringPlaybackExitsPromptly` and `TestRawEditorPronReplaysThroughTheLoop`'s sibling for `--play`; a new row asserts the alternate screen is STILL up after a reveal, which is the regression this deletion prevents.
+- [ ] **T0 — one audio-off predicate** (D11). `options.playsAudio()`, applied inside `playAnnounced` so no caller can be below it, and the four hand-copies replaced by a call. Behaviour-preserving: every existing audio test passes untouched, and a new row asserts `playAnnounced` fetches NOTHING when audio is off — which none of them do today, since the callers never let it get that far.
+- [ ] **T1 — lift the click registry.** `playRegion(ctx, d, opt, r Region, entry string, ind indicator, stdout, stderr)`: the switch on `RegionKind`, building the utterance and calling `playAnnounced` — which now carries the guard itself (T0). The editor's `clicked` (`replraw.go:264`) becomes a call to it. NO behaviour change — `TestEveryRegionKindIsActionable`, `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` pass untouched, which is what proves the lift was a lift.
+- [ ] **T2 — delete the playback dance** (D2), AND re-home the invariant that dies with it.
+      `play_loop.go:174-198` loses `restore`/`enterRaw` and the `lost the terminal after playback` path. A new row asserts the alternate screen is STILL up after a reveal, which is the regression the deletion prevents.
+      **`TestLosingTheTerminalAfterPlaybackExitsOne` (`play_loop_test.go:529`) goes with it, and it is the ONLY pin for the outcome-ORDER obligation** — `play_loop.go:126-141` enumerates three consumer obligations and names that test for `order`, recording that reversing the iteration once left the whole suite green (BR-13). Its premise is a `rawTerm` on `/dev/null` so re-entry fails, which this deletion makes unreachable.
+      The replacement keeps the same shape — an outcome pair where the reveal arm BLOCKS, so a reversed order loses the record: drive a miss with a player that fails (or a cancelled context) and assert the review was captured anyway. **The rule: a task that deletes code re-homes every invariant whose only pin lives there, in the same task.**
 - [ ] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9).
 - [ ] **T4 — the prompt word is a region.** `draw` is append-only, so the word lands on the line about to be written: one `RegionHeadword` at column 0, width `visibleCells(word)`.
 - [ ] **T5 — the revealed definition carries its regions** (D7, operator's choice), through `writeRendered` (D3).
@@ -126,7 +141,8 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 | 2 | a click NEVER answers | `TestPlayClickIsNotAnAnswer` — no review recorded, `Right`/`Wrong` unchanged, the question still current | the click reaches `play.Apply` |
 | 3 | a revealed definition is clickable like anywhere else | `TestPlayClickOnARevealedHeadword` | the reveal is written without its regions |
 | 4 | one registry, both loops | `TestEveryRegionKindIsActionable` extended to drive `playRegion` directly | a kind acts in one loop and not the other |
-| 4b | **`-no-audio` says so rather than playing silence** | `TestPlayRegionRespectsAudioOff` | the guard is left in the callers, so converging on `playAnnounced` drops it |
+| 4b | **`-no-audio` fetches nothing, from any caller** | `TestPlayAnnouncedFetchesNothingWithAudioOff` — on `playAnnounced` itself, since that is where the guard now lives | the predicate is left in the callers, so a fifth one sits below it |
+| 4c | **the outcome ORDER survives its pin's deletion** | `TestAMissIsRecordedEvenWhenPlaybackFails` (replaces `TestLosingTheTerminalAfterPlaybackExitsOne`) | the record is performed after something that can block |
 | 6b | **a resize repaints mid-sitting** | `TestPTYPlayResizeRepaints` | `watchResize` is not wired into the loop's select |
 | 5 | **playback does not tear the screen down** | `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` | the restore/re-enter dance comes back |
 | 6 | a sitting can be scrolled | `TestPlayPageKeysScroll` | the viewport cases are dropped, leaving no scrollback at all |
@@ -176,3 +192,19 @@ Then, on a real terminal: `define --play`, click the word, hear it; press `n`, c
   substantively true, which is exactly why it matters — a table that exists to be
   audited sends the auditor to code that does not say what the row claims. All
   re-measured.
+
+### 2026-08-30 — plan-quality round 3 (PQ-8 again, PQ-11)
+
+- **PQ-8 came back because round 2 fixed the instance.** Putting the audio-off
+  guard in `playRegion` made a FIFTH hand-copy of a class of four. The class is
+  enumerable and `playAnnounced`'s own doc comment already names it as a
+  divergence it was built to end — and ended two of three, leaving this one above
+  it in every caller. One named predicate, applied INSIDE `playAnnounced`, is the
+  rule; D11 rewritten.
+- **PQ-11 — a task that deletes code must re-home every invariant whose ONLY pin
+  lives there, in the same task.** T2's deletion strands
+  `TestLosingTheTerminalAfterPlaybackExitsOne`, whose premise is a re-entry that
+  can fail — and `play_loop.go:126-141` names it as the sole pin for the
+  outcome-ORDER obligation, recording that reversing the iteration once left the
+  whole suite green. A deletion that quietly removes a pin is a regression with a
+  green suite, which is the same shape as the vacuous guards `#30` kept finding.

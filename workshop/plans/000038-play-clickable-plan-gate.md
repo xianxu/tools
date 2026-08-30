@@ -151,6 +151,47 @@ rounds:
           family: citation-does-not-point-at-the-claim
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-30T16:38:25-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-3
+          disposition: addressed
+          note: T6 names scroll, wheel and watchResize (rawterm.go:230); Done-when rows 6 and 6b pin each half.
+          round: 3
+        - id: PQ-6
+          disposition: not-addressed
+          note: 'The issue''s ## Plan on disk still reads "Decide Option A vs B"; the round-1 Revisions entry claims otherwise.'
+          round: 3
+        - id: PQ-8
+          disposition: not-addressed
+          note: D11 guards playRegion — a 5th hand-copy — leaving the enumerable class of 4 unswept.
+          round: 3
+        - id: PQ-9
+          disposition: addressed
+          note: D10 states the carriers rule and names console, onceHandBack and watchResize with verified anchors.
+          round: 3
+        - id: PQ-10
+          disposition: addressed
+          note: All twelve table anchors re-measured against the tree; every one lands on the cited code.
+          round: 3
+      findings:
+        - id: PQ-11
+          severity: Important
+          title: T2 deletes the re-entry path and with it the only test pinning the outcome-ORDER obligation
+          detail: |-
+            play_loop.go:126-141 enumerates three consumer obligations and names
+            TestLosingTheTerminalAfterPlaybackExitsOne (play_loop_test.go:529) as the pin for
+            `order`, recording that reversing the iteration once left the whole suite green
+            (BR-13). That test works by handing playSession a rawTerm whose file is /dev/null so
+            the post-playback enterRaw fails — a premise T2's deletion makes unreachable. T2 lists
+            three other pins, none of which observe the order. The rule: a task that deletes code
+            must re-home every invariant whose ONLY pin lives in that code, in the same task.
+            Here the replacement is cheap — playAnnounced still blocks on speak, so a miss driven
+            with a cancelled context or a failing player asserts the record was written first.
+          family: deletion-drops-an-invariants-only-pin
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#38 (plan-quality)
@@ -239,10 +280,31 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   writeRendered cited main.go:806, actual 801. Every claim is substantively true, but
   the table exists to be audited and the anchors send the auditor to the wrong lines.
 
+## Round 3 — 2026-08-30T16:38:25-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-3 — addressed — T6 names scroll, wheel and watchResize (rawterm.go:230); Done-when rows 6 and 6b pin each half.
+- PQ-6 — not-addressed — The issue's ## Plan on disk still reads "Decide Option A vs B"; the round-1 Revisions entry claims otherwise.
+- PQ-8 — not-addressed — D11 guards playRegion — a 5th hand-copy — leaving the enumerable class of 4 unswept.
+- PQ-9 — addressed — D10 states the carriers rule and names console, onceHandBack and watchResize with verified anchors.
+- PQ-10 — addressed — All twelve table anchors re-measured against the tree; every one lands on the cited code.
+
+### Raised
+
+- **PQ-11** [Important] `deletion-drops-an-invariants-only-pin` T2 deletes the re-entry path and with it the only test pinning the outcome-ORDER obligation
+  play_loop.go:126-141 enumerates three consumer obligations and names
+  TestLosingTheTerminalAfterPlaybackExitsOne (play_loop_test.go:529) as the pin for
+  `order`, recording that reversing the iteration once left the whole suite green
+  (BR-13). That test works by handing playSession a rawTerm whose file is /dev/null so
+  the post-playback enterRaw fails — a premise T2's deletion makes unreachable. T2 lists
+  three other pins, none of which observe the order. The rule: a task that deletes code
+  must re-home every invariant whose ONLY pin lives in that code, in the same task.
+  Here the replacement is cheap — playAnnounced still blocks on speak, so a miss driven
+  with a cancelled context or a failing player asserts the record was written first.
+
 ## Open findings
 
-- **PQ-3** [Important] `mechanism-adopted-without-its-obligations` no task wires scroll, page or resize, which the alternate screen makes the loop's job
 - **PQ-6** [Minor] `issue-plan-not-synced` the issue's ## Plan still says "decide Option A vs B / design it", which this plan file completes
 - **PQ-8** [Important] `two-callers-one-behavior` playAnnounced sits below the audio-off guard, so playRegion converging there silently drops it
-- **PQ-9** [Important] `existing-seam-not-reused` console, onceHandBack and watchResize are the carriers #30 built for this loop shape
-- **PQ-10** [Minor] `citation-does-not-point-at-the-claim` several line anchors in the verified-claims table do not point at the code they cite
+- **PQ-11** [Important] `deletion-drops-an-invariants-only-pin` T2 deletes the re-entry path and with it the only test pinning the outcome-ORDER obligation
