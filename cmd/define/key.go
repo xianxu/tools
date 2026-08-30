@@ -257,6 +257,16 @@ func isClickButton(b int) bool {
 	if b&64 != 0 || b&32 != 0 { // a wheel event, or motion
 		return false
 	}
+	if b&128 != 0 {
+		// Buttons 8-11 (back, forward, and two more) set bit 7, and their low
+		// two bits are zero — so a mask of `b&3 == 0` called every one of them a
+		// left press while the comment promised "LEFT only". Measured:
+		// ESC[<128;5;3M decoded to a click. A browser-back button should not
+		// play a recording.
+		return false
+	}
+	// The remaining modifier bits — shift 4, meta 8, ctrl 16 — ride along and are
+	// ignored: a Shift-click is still a click.
 	return b&3 == 0 // LEFT only: middle pastes and right opens a menu, elsewhere
 }
 

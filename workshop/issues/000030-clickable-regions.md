@@ -1,12 +1,13 @@
 ---
 id: 000030
-status: working
+status: codecomplete
 deps: [tools#29, tools#35]
 github_issue:
 created: 2026-08-29
-updated: 2026-08-29
+updated: 2026-08-30
 estimate_hours: 3.19
 started: 2026-08-29T16:24:35-07:00
+actual_hours: 10.91
 ---
 
 # clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay
@@ -588,6 +589,7 @@ Verdict FIX-THEN-SHIP; fixes bundled into the close commit per #174. Three
 findings were demoted past the round cap and all three are addressed here.
 
 ### 2026-08-30 — M2: the clicks, and what the boundary found
+- 2026-08-30: closed — Clicking works, confirmed by the operator on their own terminal: click the headword to hear it, click ORIGIN French to hear it in French. Close-review findings fixed in this window. BR-55 as the CLASS: a docs guard must look for something only the documentation of that thing would contain, so TestAtlasDescribesEveryRegionKind now searches RegionKind.identifier() (the Go name) rather than String() — "headword" occurs in the atlas 19 times for unrelated reasons, and deleting the whole Clickable-regions section previously left it green; verified falsifiable now. Two measured Minors with it: isClickButton accepted extended buttons 8-11 as a left press (bit 7 set, low two bits zero) so a browser-back button would have played a recording; and LineAt/visible were labelled PURE while visible writes back offset, which is BR-42 fix rather than an accident. BR-29 is DEFERRED EXPLICITLY to #33, whose whole subject is the tree-to-table direction — six declarations from this window are its first evidence (newLiveScreen, throttledPaint, wheelLines, digits, submitLine, headingLine). Verified: go test ./... exit 0 AFTER the commit, -race exit 0, 12 PTY conformance rows exit 0 on a real pty, FuzzRenderDoesNotPanic 588K and FuzzDecodeMouseIsBounded 3.2M execs clean.; review verdict: FIX-THEN-SHIP
 - 2026-08-30: closed M2 — Clicking works, confirmed by the operator on their own terminal. Round-11 Critical BR-51 fixed: Render panicked on a blank or single-space entry because an empty headword asked findVisible for a span, strings.Index answered found-at-0, and the column lookup indexed an empty line. Fixed in findVisible (the one owner of finding a span) and measured in CELLS not bytes — FuzzRenderDoesNotPanic, written for the fix, then found a NUL headword whose width is zero for the same reason a combining mark is; 588K execs clean after. BR-52 fixed as a guard rather than a sweep: TestAtlasDescribesEveryRenderOpt derives from the struct and fired immediately on two more never-documented fields. Earlier rounds: the click now asks for exactly what a bare Enter asks for over the whole corpus (BR-46), and the terminal-bytes-to-replay joint is driven end to end on real objects (BR-47). go test ./... exit 0 verified AFTER the commit, -race exit 0, 12 PTY conformance rows exit 0.; review verdict: FIX-THEN-SHIP
 
 Shipped: `Render` emits a region map, the screen resolves a click to what was

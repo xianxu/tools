@@ -1112,6 +1112,217 @@ rounds:
           round: 13
       boundary: M2
       blocked: false
+    - "n": 14
+      timestamp: "2026-08-30T15:31:21-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: Plan line 132 still enumerates the four cases verbatim; screen_test.go has only FuzzScreenWriteDoesNotPanic, which asserts no panic, not chunk-independence.
+          round: 14
+        - id: BR-26
+          disposition: addressed
+          note: All six enumerated sites measure cells at HEAD — editor.go:232 visibleCells, command.go:308 truncate delegates to clipVisible — and the combining-mark case is pinned at render_test.go:482.
+          round: 14
+        - id: BR-29
+          disposition: not-addressed
+          note: No tree-to-table guard exists; measured six new decls with no row — newLiveScreen, liveScreen.throttledPaint, wheelLines, digits, submitLine, headingLine.
+          round: 14
+        - id: BR-34
+          disposition: addressed
+          note: Verified by mutation — renaming TestPaintFitsTheTerminalAndParksTheCursor in the plan reddens TestPlanNamedTestsExist with the intended message.
+          round: 14
+        - id: BR-35
+          disposition: addressed
+          note: escapeLen (render.go:527) wraps scanEscape and visibleCells, clipVisible, visibleIndex and markClickable all skip through it.
+          round: 14
+        - id: BR-36
+          disposition: addressed
+          note: screen_test.go:465 asserts the cursor row exactly, derived by replaying the prompt through readFrame rather than restating Paint's formula.
+          round: 14
+        - id: BR-41
+          disposition: not-addressed
+          note: LineAt (screen.go:174) reaches clamp through visible(), which writes s.offset; screen.go:186 and the plan's M2 row both still say PURE.
+          round: 14
+        - id: BR-44
+          disposition: not-addressed
+          note: key.go:186, :198 and :344 unchanged and decodeWheel is still the name; subsumed by BR-53.
+          round: 14
+        - id: BR-45
+          disposition: not-addressed
+          note: screen.go:143 still decrements base without shifting Col, and screen_test.go:739 still supplies Col 12 pre-offset by hand.
+          round: 14
+        - id: BR-48
+          disposition: not-addressed
+          note: The "the command menu closing" subtest at screen_test.go:906 is unchanged.
+          round: 14
+        - id: BR-49
+          disposition: not-addressed
+          note: No forEachCell exists; visibleCells (render.go:510), visibleIndex (render.go:471), clipVisible (screen.go:667) and markClickable (screen.go:282) each still spell the traversal.
+          round: 14
+        - id: BR-53
+          disposition: not-addressed
+          note: All five sites unchanged; internal/llm/config.go:153 still claims a four-character key against defaultLocalKey = "parley-local", twelve characters.
+          round: 14
+        - id: BR-55
+          disposition: not-addressed
+          note: The RenderOpts half is fixed and fires; the sibling the same finding named, doc_sync_test.go:233, still searches the bare k.String() and stays green with the whole atlas section deleted.
+          round: 14
+        - id: BR-56
+          disposition: addressed
+          note: Filed as tools#37 and stated explicitly in the close commit and the issue Log; re-measured, all 12 pty rows still skip here.
+          round: 14
+        - id: BR-57
+          disposition: not-addressed
+          note: atlas/define.md:401 still says an empty RenderOpts.Word means no click map; render.go:316 still falls back to e.Headword() and returns regions.
+          round: 14
+      findings:
+        - id: BR-58
+          severity: Minor
+          title: isClickButton accepts extended mouse buttons 8-11 as a left press, against its own "LEFT only" comment
+          detail: |-
+            key.go:256 rejects only bits 64 (wheel) and 32 (motion) before testing
+            b&3 == 0, so button 8 (b=128) satisfies both. Measured: decodeKey("\x1b[<128;5;3M")
+            returns KeyClick at row 2 col 4, identical to a left press, and the X10
+            form {0x1b,'[','M',160,33,33} does the same. A five-button mouse's back
+            button over an underlined headword therefore plays it. The rule: a
+            predicate over an external wire encoding is written against the
+            encoding's whole defined range, not the values the fixtures happen to
+            carry — the same shape as M2.6's mode rule, one level down from the mode
+            to the button field.
+          family: predicate-narrower-than-its-encoding
+          round: 14
+        - id: BR-59
+          severity: Minor
+          title: markClickable abandons every later span on a line when one span's Col is unreachable or overlapping
+          detail: |-
+            This is the 2nd finding in family helper-precondition-unguarded (BR-51 is
+            its sibling). Do NOT just guard the one call — state the rule: a helper
+            consuming a region list either enforces its preconditions at the owner
+            (regionsIn) or degrades PER REGION, never by abandoning the rest of the
+            line. screen.go:306 advances `next` only on an exact `col == spans[next].Col`
+            match, so a Col that no cell boundary can equal parks the cursor forever.
+            Measured on "日本語 abc": regions at {Col 1, W 2} and {Col 7, W 3} produce
+            NO marks at all, and the overlapping triple {0,6},{2,2},{7,3} marks only
+            the first. Unreachable from regionsIn today — findVisible returns real
+            boundaries and the corpus was probed for overlap at M2 close — which is
+            exactly why it is worth stating now: the registry's whole premise is that
+            "a third consumer is a row", and a third kind whose span overlaps the
+            headword would silently unmark the rest of the line with a green suite.
+          family: helper-precondition-unguarded
+          round: 14
+        - id: BR-60
+          severity: Minor
+          title: The issue's Done-when checklist is entirely unticked at the boundary that closes it
+          detail: |-
+            workshop/issues/000030-clickable-regions.md:202-214 — all seven acceptance
+            rows are still "- [ ]" while the ## Plan rows above them are all ticked
+            and the close commit is next. Every closed issue in workshop/history/issues/
+            ticks them (checked #29 and #35). The rows are substantively delivered —
+            I verified the ORIGIN click, the multi-language case on piano/ballet, the
+            underline mark, and the Option/scrollback documentation in README — so
+            this is a bookkeeping gap, not a delivery one. The rule: the boundary that
+            closes a claim settles it in writing, either ticked or explicitly recorded
+            as not delivered with the reason.
+          family: unsettled-claim-at-boundary
+          round: 14
+      blocked: true
+    - "n": 15
+      timestamp: "2026-08-30T15:48:07-07:00"
+      agent: claude
+      dispose:
+        - id: BR-55
+          disposition: addressed
+          note: 'Mutation-verified: deleting the atlas''s RegionHeadword/RegionOriginLang bullets reddens TestAtlasDescribesEveryRegionKind for both, where the old k.String() form stayed green with the whole section deleted.'
+          round: 15
+        - id: BR-58
+          disposition: addressed
+          note: 'Mutation-verified: reverting the b&128 guard reddens two of three subtests; accepted Cb over 0..255 is now exactly {0,4,8,12,16,20,24,28}. Residue, not re-raised — Cb 256/512/1024 still decode to KeyClick because the guard is a blacklist; b&^28 == 0 would close it in one line.'
+          round: 15
+        - id: BR-41
+          disposition: addressed
+          note: LineAt's comment and the plan's LineAt/visible row now say NOT pure with the BR-42 reason. The class it belongs to is raised separately this round.
+          round: 15
+        - id: BR-29
+          disposition: addressed
+          note: 'Deferred to tools#33 explicitly, in the plan''s Revisions, with the class named and six declarations recorded as evidence; #33 exists, predates this issue, and owns the tree-to-table direction as its whole subject. Seventh piece of evidence for it — RegionKind.identifier, added this round, is named in the Revisions prose and has no Core-concepts row.'
+          round: 15
+        - id: BR-1
+          disposition: not-addressed
+          note: Plan line 132 still enumerates the four cases verbatim; no chunk-boundary property test for Write exists.
+          round: 15
+        - id: BR-44
+          disposition: not-addressed
+          note: key.go:186, :198 and :344 unchanged, decodeWheel still the name; subsumed by BR-53.
+          round: 15
+        - id: BR-45
+          disposition: not-addressed
+          note: screen.go:143 still decrements base without shifting Col; screen_test.go still supplies Col pre-offset by hand.
+          round: 15
+        - id: BR-48
+          disposition: not-addressed
+          note: screen_test.go:906 unchanged.
+          round: 15
+        - id: BR-49
+          disposition: not-addressed
+          note: No forEachCell; render.go:488, render.go:527, screen.go:288 and screen.go:673 each still spell the traversal.
+          round: 15
+        - id: BR-53
+          disposition: not-addressed
+          note: All five sites verified unchanged, including internal/llm/config.go:153 claiming a four-character key against defaultLocalKey "parley-local".
+          round: 15
+        - id: BR-57
+          disposition: not-addressed
+          note: atlas/define.md:407 still says empty RenderOpts.Word means no click map; render.go:333 still falls back to e.Headword() and returns regions.
+          round: 15
+        - id: BR-59
+          disposition: not-addressed
+          note: screen.go:313 still advances next only on an exact col == spans[next].Col match.
+          round: 15
+        - id: BR-60
+          disposition: not-addressed
+          note: workshop/issues/000030-clickable-regions.md:202-213 all still "- [ ]" while every Plan row is ticked.
+          round: 15
+      findings:
+        - id: BR-61
+          severity: Minor
+          title: The PURE relabel swept the one site BR-41 named; six siblings in the same table and the same file still claim PURE while writing the receiver
+          detail: |-
+            This is the 2nd finding in family pure-label-hides-mutation. Do NOT relabel
+            the six sites one at a time — state the rule. Measured prevalence: seven
+            sites, one fixed. screen.go:192 says "Frame is the rows to paint, oldest
+            first. PURE" two lines above LineAt's new "NOT pure" comment, and both
+            reach the same visible() call; measured, Frame moved s.offset from 2 to 0
+            on a 5-line buffer scrolled back 2 with rows grown to 10. The plan's table
+            likewise still says PURE for screen.Write (81), screen.Frame (82),
+            screen.Scroll/clamp (83), screen.Page (84) and screen.Paint (85, "PURE,
+            given the writer" — it writes s.cols, s.rows and s.offset), plus the prose
+            at line 104. The rule: the status column carries ONE definition of PURE.
+            Under ARCH-PURE's sense (no IO, unit-testable with no terminal) all seven
+            are PURE and LineAt/visible should go back; under "does not mutate the
+            receiver" none of them are. Relabelling one row of seven leaves a reader
+            with two meanings of the same word in one table, which is worse than the
+            label BR-41 objected to.
+          family: pure-label-hides-mutation
+          round: 15
+        - id: BR-62
+          severity: Minor
+          title: This round's three fixes are uncommitted, so the gate's evidence is not reproducible from the commit the window names
+          detail: |-
+            This is the 2nd finding in family verification-claim-unreproduced (BR-23 is
+            its sibling — a suite recorded green that was red at HEAD). Do NOT just
+            commit these three. The rule: a gate round's evidence must be reproducible
+            from the commit the round names. The window is 168b1c9..92e490d, and the
+            fixes for BR-55, BR-58 and BR-41 exist only in the working tree — at
+            92e490d, TestAtlasDescribesEveryRegionKind still searches k.String() and
+            isClickButton still accepts Cb 128. I verified the fixes against the
+            working tree by mutation and they hold, so the ledger's "addressed" is
+            substantively true and procedurally unreproducible. Satisfy it by
+            committing before re-running the gate, or by having the round record the
+            tree it measured.
+          family: verification-claim-unreproduced
+          round: 15
+      blocked: false
 ---
 
 # Gate ledger — tools#30 (boundary-review)
@@ -1718,20 +1929,122 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   regions. Either enforce it (empty key => no regions) or state the actual
   fallback behaviour.
 
+## Round 14 — 2026-08-30T15:31:21-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — Plan line 132 still enumerates the four cases verbatim; screen_test.go has only FuzzScreenWriteDoesNotPanic, which asserts no panic, not chunk-independence.
+- BR-26 — addressed — All six enumerated sites measure cells at HEAD — editor.go:232 visibleCells, command.go:308 truncate delegates to clipVisible — and the combining-mark case is pinned at render_test.go:482.
+- BR-29 — not-addressed — No tree-to-table guard exists; measured six new decls with no row — newLiveScreen, liveScreen.throttledPaint, wheelLines, digits, submitLine, headingLine.
+- BR-34 — addressed — Verified by mutation — renaming TestPaintFitsTheTerminalAndParksTheCursor in the plan reddens TestPlanNamedTestsExist with the intended message.
+- BR-35 — addressed — escapeLen (render.go:527) wraps scanEscape and visibleCells, clipVisible, visibleIndex and markClickable all skip through it.
+- BR-36 — addressed — screen_test.go:465 asserts the cursor row exactly, derived by replaying the prompt through readFrame rather than restating Paint's formula.
+- BR-41 — not-addressed — LineAt (screen.go:174) reaches clamp through visible(), which writes s.offset; screen.go:186 and the plan's M2 row both still say PURE.
+- BR-44 — not-addressed — key.go:186, :198 and :344 unchanged and decodeWheel is still the name; subsumed by BR-53.
+- BR-45 — not-addressed — screen.go:143 still decrements base without shifting Col, and screen_test.go:739 still supplies Col 12 pre-offset by hand.
+- BR-48 — not-addressed — The "the command menu closing" subtest at screen_test.go:906 is unchanged.
+- BR-49 — not-addressed — No forEachCell exists; visibleCells (render.go:510), visibleIndex (render.go:471), clipVisible (screen.go:667) and markClickable (screen.go:282) each still spell the traversal.
+- BR-53 — not-addressed — All five sites unchanged; internal/llm/config.go:153 still claims a four-character key against defaultLocalKey = "parley-local", twelve characters.
+- BR-55 — not-addressed — The RenderOpts half is fixed and fires; the sibling the same finding named, doc_sync_test.go:233, still searches the bare k.String() and stays green with the whole atlas section deleted.
+- BR-56 — addressed — Filed as tools#37 and stated explicitly in the close commit and the issue Log; re-measured, all 12 pty rows still skip here.
+- BR-57 — not-addressed — atlas/define.md:401 still says an empty RenderOpts.Word means no click map; render.go:316 still falls back to e.Headword() and returns regions.
+
+### Raised
+
+- **BR-58** [Minor] `predicate-narrower-than-its-encoding` isClickButton accepts extended mouse buttons 8-11 as a left press, against its own "LEFT only" comment
+  key.go:256 rejects only bits 64 (wheel) and 32 (motion) before testing
+  b&3 == 0, so button 8 (b=128) satisfies both. Measured: decodeKey("\x1b[<128;5;3M")
+  returns KeyClick at row 2 col 4, identical to a left press, and the X10
+  form {0x1b,'[','M',160,33,33} does the same. A five-button mouse's back
+  button over an underlined headword therefore plays it. The rule: a
+  predicate over an external wire encoding is written against the
+  encoding's whole defined range, not the values the fixtures happen to
+  carry — the same shape as M2.6's mode rule, one level down from the mode
+  to the button field.
+- **BR-59** [Minor] `helper-precondition-unguarded` markClickable abandons every later span on a line when one span's Col is unreachable or overlapping
+  This is the 2nd finding in family helper-precondition-unguarded (BR-51 is
+  its sibling). Do NOT just guard the one call — state the rule: a helper
+  consuming a region list either enforces its preconditions at the owner
+  (regionsIn) or degrades PER REGION, never by abandoning the rest of the
+  line. screen.go:306 advances `next` only on an exact `col == spans[next].Col`
+  match, so a Col that no cell boundary can equal parks the cursor forever.
+  Measured on "日本語 abc": regions at {Col 1, W 2} and {Col 7, W 3} produce
+  NO marks at all, and the overlapping triple {0,6},{2,2},{7,3} marks only
+  the first. Unreachable from regionsIn today — findVisible returns real
+  boundaries and the corpus was probed for overlap at M2 close — which is
+  exactly why it is worth stating now: the registry's whole premise is that
+  "a third consumer is a row", and a third kind whose span overlaps the
+  headword would silently unmark the rest of the line with a green suite.
+- **BR-60** [Minor] `unsettled-claim-at-boundary` The issue's Done-when checklist is entirely unticked at the boundary that closes it
+  workshop/issues/000030-clickable-regions.md:202-214 — all seven acceptance
+  rows are still "- [ ]" while the ## Plan rows above them are all ticked
+  and the close commit is next. Every closed issue in workshop/history/issues/
+  ticks them (checked #29 and #35). The rows are substantively delivered —
+  I verified the ORIGIN click, the multi-language case on piano/ballet, the
+  underline mark, and the Option/scrollback documentation in README — so
+  this is a bookkeeping gap, not a delivery one. The rule: the boundary that
+  closes a claim settles it in writing, either ticked or explicitly recorded
+  as not delivered with the reason.
+
+## Round 15 — 2026-08-30T15:48:07-07:00 (claude) — passed
+
+### Disposed
+
+- BR-55 — addressed — Mutation-verified: deleting the atlas's RegionHeadword/RegionOriginLang bullets reddens TestAtlasDescribesEveryRegionKind for both, where the old k.String() form stayed green with the whole section deleted.
+- BR-58 — addressed — Mutation-verified: reverting the b&128 guard reddens two of three subtests; accepted Cb over 0..255 is now exactly {0,4,8,12,16,20,24,28}. Residue, not re-raised — Cb 256/512/1024 still decode to KeyClick because the guard is a blacklist; b&^28 == 0 would close it in one line.
+- BR-41 — addressed — LineAt's comment and the plan's LineAt/visible row now say NOT pure with the BR-42 reason. The class it belongs to is raised separately this round.
+- BR-29 — addressed — Deferred to tools#33 explicitly, in the plan's Revisions, with the class named and six declarations recorded as evidence; #33 exists, predates this issue, and owns the tree-to-table direction as its whole subject. Seventh piece of evidence for it — RegionKind.identifier, added this round, is named in the Revisions prose and has no Core-concepts row.
+- BR-1 — not-addressed — Plan line 132 still enumerates the four cases verbatim; no chunk-boundary property test for Write exists.
+- BR-44 — not-addressed — key.go:186, :198 and :344 unchanged, decodeWheel still the name; subsumed by BR-53.
+- BR-45 — not-addressed — screen.go:143 still decrements base without shifting Col; screen_test.go still supplies Col pre-offset by hand.
+- BR-48 — not-addressed — screen_test.go:906 unchanged.
+- BR-49 — not-addressed — No forEachCell; render.go:488, render.go:527, screen.go:288 and screen.go:673 each still spell the traversal.
+- BR-53 — not-addressed — All five sites verified unchanged, including internal/llm/config.go:153 claiming a four-character key against defaultLocalKey "parley-local".
+- BR-57 — not-addressed — atlas/define.md:407 still says empty RenderOpts.Word means no click map; render.go:333 still falls back to e.Headword() and returns regions.
+- BR-59 — not-addressed — screen.go:313 still advances next only on an exact col == spans[next].Col match.
+- BR-60 — not-addressed — workshop/issues/000030-clickable-regions.md:202-213 all still "- [ ]" while every Plan row is ticked.
+
+### Raised
+
+- **BR-61** [Minor] `pure-label-hides-mutation` The PURE relabel swept the one site BR-41 named; six siblings in the same table and the same file still claim PURE while writing the receiver
+  This is the 2nd finding in family pure-label-hides-mutation. Do NOT relabel
+  the six sites one at a time — state the rule. Measured prevalence: seven
+  sites, one fixed. screen.go:192 says "Frame is the rows to paint, oldest
+  first. PURE" two lines above LineAt's new "NOT pure" comment, and both
+  reach the same visible() call; measured, Frame moved s.offset from 2 to 0
+  on a 5-line buffer scrolled back 2 with rows grown to 10. The plan's table
+  likewise still says PURE for screen.Write (81), screen.Frame (82),
+  screen.Scroll/clamp (83), screen.Page (84) and screen.Paint (85, "PURE,
+  given the writer" — it writes s.cols, s.rows and s.offset), plus the prose
+  at line 104. The rule: the status column carries ONE definition of PURE.
+  Under ARCH-PURE's sense (no IO, unit-testable with no terminal) all seven
+  are PURE and LineAt/visible should go back; under "does not mutate the
+  receiver" none of them are. Relabelling one row of seven leaves a reader
+  with two meanings of the same word in one table, which is worse than the
+  label BR-41 objected to.
+- **BR-62** [Minor] `verification-claim-unreproduced` This round's three fixes are uncommitted, so the gate's evidence is not reproducible from the commit the window names
+  This is the 2nd finding in family verification-claim-unreproduced (BR-23 is
+  its sibling — a suite recorded green that was red at HEAD). Do NOT just
+  commit these three. The rule: a gate round's evidence must be reproducible
+  from the commit the round names. The window is 168b1c9..92e490d, and the
+  fixes for BR-55, BR-58 and BR-41 exist only in the working tree — at
+  92e490d, TestAtlasDescribesEveryRegionKind still searches k.String() and
+  isClickButton still accepts Cb 128. I verified the fixes against the
+  working tree by mutation and they hold, so the ledger's "addressed" is
+  substantively true and procedurally unreproducible. Satisfy it by
+  committing before re-running the gate, or by having the round record the
+  tree it measured.
+
 ## Open findings
 
 - **BR-1** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
-- **BR-26** [Minor] `frame-fits-the-terminal` Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows
-- **BR-29** [Important] `plan-table-incomplete` handBack, onceHandBack and wheelFromButton are absent from M1's Core-concepts tables
-- **BR-34** [Important] `plan-table-incomplete` Done-when row 1b names TestScreenFrameFitsTheTerminalInDisplayRows, which this window's own commit renamed away
-- **BR-35** [Important] `one-owner-per-invariant` visibleCells and clipVisible each hand-roll the CSI grammar that scanEscape already owns
-- **BR-36** [Minor] `unfalsifiable-test-pin` The new placement test asserts the cursor column exactly but the row only as "not the last one"
-- **BR-41** [Minor] `pure-label-hides-mutation` screen.LineAt is tabled PURE but clamps and writes back s.offset via Frame()
 - **BR-44** [Minor] `stale-rationale` decodeWheel's and decodeX10Mouse's comments still say a click stays KeyUnknown, which stopped being true in this window
 - **BR-45** [Minor] `vacuous-pin` addRegions shifts base for a partial line but not Col, and the test that looks like it covers this passes Col pre-offset
 - **BR-48** [Minor] `vacuous-pin` TestClickMapSurvivesTheViewportGrowing's "the command menu closing" subtest is green against the pre-fix code
 - **BR-49** [Minor] `one-owner-per-invariant` Four hand-rolled walks of styled text by display cell
 - **BR-53** [Minor] `stale-rationale` Five comments now state facts their own commits made false, and the enumeration is the fix
-- **BR-55** [Important] `vacuous-pin` TestAtlasDescribesEveryRenderOpt cannot fire for RenderOpts.Word, the field it was written for
-- **BR-56** [Important] `unrun-test-surface` 15 fuzz targets and 12 pty rows run in nothing automated, which is why BR-51 shipped
 - **BR-57** [Minor] `doc-overclaim` The atlas says an empty RenderOpts.Word means "no click map wanted"; measured false
+- **BR-59** [Minor] `helper-precondition-unguarded` markClickable abandons every later span on a line when one span's Col is unreachable or overlapping
+- **BR-60** [Minor] `unsettled-claim-at-boundary` The issue's Done-when checklist is entirely unticked at the boundary that closes it
+- **BR-61** [Minor] `pure-label-hides-mutation` The PURE relabel swept the one site BR-41 named; six siblings in the same table and the same file still claim PURE while writing the receiver
+- **BR-62** [Minor] `verification-claim-unreproduced` This round's three fixes are uncommitted, so the gate's evidence is not reproducible from the commit the window names

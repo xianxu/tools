@@ -2543,3 +2543,55 @@ one commit too early.
 The rule: after editing a plan's tables, commit, then run the suite; amend if it
 reddens. More generally, a guard that reads git history has to be run against the
 history, not the tree.
+
+## A docs guard must look for what only THAT documentation would contain (define #30)
+
+Two guards were written to stop the atlas lagging new surface, and both were
+vacuous for the exact thing they were written for. `TestAtlasDescribesEveryRenderOpt`
+accepted a bare `` `Word` ``; `TestAtlasDescribesEveryRegionKind` searched for
+`k.String()`, and "headword" occurs in that atlas nineteen times for unrelated
+reasons. Deleting the whole section they defended left both green.
+
+A prose word is not evidence that something was documented — it is evidence that
+English was used. A **qualified Go identifier** is: `RegionHeadword` appears
+where someone meant that kind. Where the two differ, keep both and say why —
+`String()` names a thing for a reader, `identifier()` is what a check can look
+for.
+
+The wider rule this issue kept re-learning: **writing a guard is not the same as
+checking the guard can fail.** Delete the thing it defends and watch it go red,
+in the same sitting you write it.
+
+## Verify by exit status, not by grepping output (define #30)
+
+`go test ./... 2>&1 | grep -v "^ok" | head -3 && git commit` commits on a RED
+suite: the pipeline's status is `head`'s, which is 0. This shipped a commit with
+five failing tests, twice in one session.
+
+`go test ./... >/dev/null 2>&1; echo $?` — or just let the command fail. A check
+whose result you read with your eyes is a check that passes whenever you are
+tired.
+
+## A shortcut must not RE-DERIVE its target (define #30)
+
+Clicking a headword is a shortcut for the bare Enter beside it. Enter replays the
+session's current word — the lookup key — while the click derived its target from
+the entry, `Entry.Headword()`, which is `fields[0]` alone. So `hot dog` played
+"hot", `a priori` reduced to the letter "a", and `bargainer` — an inflected form
+finding its base entry, the COMMON case — played "bargain".
+
+Two gestures that mean one thing must read one source. When the shortcut cannot
+reach that source, pass it: the key belongs to the caller, so it travels on
+`RenderOpts.Word` rather than being guessed from what the callee happens to hold.
+
+## Tests that only run when someone types a flag defend nothing (define #30)
+
+The repo has fifteen fuzz targets written with real care — one found two genuine
+decoder defects the day it was run by hand. A Critical panic that the fuzzer
+finds in **under a second** still shipped through eleven review rounds, because
+`go test ./...` exercises a fuzz target against its seed corpus only and nothing
+anywhere passes `-fuzz`. The twelve pty rows have the same shape: correctly
+written to skip when no pty exists, and therefore silently uncertified wherever
+that is true — including inside a boundary review.
+
+The tests were not missing. The schedule was. Filed as `#37`.

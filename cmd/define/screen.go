@@ -169,6 +169,12 @@ func (s *screen) RegionAt(line, col int) (Region, bool) {
 // mapping the alternate screen exists to make exact: nothing but this type can
 // move the view, so it is arithmetic rather than a guess (#30 D1).
 //
+// NOT pure, and the plan's table used to call it so: it reaches `visible`, which
+// re-establishes the clamp and WRITES BACK `s.offset`. That write is the fix for
+// BR-42 rather than an accident — the invariant has to be re-established on
+// every path that reads it — but a comment claiming purity about a function that
+// mutates is the kind of false label a reader plans around.
+//
 // The second return value is false for a row below the buffer's tail — the
 // prompt, the menu, or blank space — where there is nothing to click.
 func (s *screen) LineAt(row int) (int, bool) {

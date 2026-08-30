@@ -272,6 +272,23 @@ func (k RegionKind) String() string {
 	return fmt.Sprintf("RegionKind(%d)", int(k))
 }
 
+// identifier is the kind's Go NAME, which is what documentation should cite and
+// what a guard can look for without matching prose.
+//
+// Separate from String because they answer different questions: String names the
+// thing for a reader ("headword"), and that word occurs in the atlas nineteen
+// times for unrelated reasons — so a docs guard built on it passed with the
+// whole section deleted. An identifier occurs where someone meant this kind.
+func (k RegionKind) identifier() string {
+	switch k {
+	case RegionHeadword:
+		return "RegionHeadword"
+	case RegionOriginLang:
+		return "RegionOriginLang"
+	}
+	return fmt.Sprintf("RegionKind(%d)", int(k))
+}
+
 // Region is a span of RENDERED text that offers an action.
 //
 // Line and Col address the output of this very Render call: Line counts "\n",

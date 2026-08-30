@@ -441,3 +441,29 @@ func TestEveryEnabledMouseModeIsDecoded(t *testing.T) {
 		}
 	}
 }
+
+// An extended mouse button is not the left one.
+//
+// Buttons 8-11 (back, forward, and two more) set bit 7 while their low two bits
+// stay zero, so a bare `b&3 == 0` called every one of them a left press — and
+// the comment beside it promised "LEFT only". A browser-back button should not
+// play a recording.
+func TestExtendedMouseButtonsAreNotClicks(t *testing.T) {
+	for _, tc := range []struct{ name, in string }{
+		{"button 8 (back), SGR", "\x1b[<128;5;3M"},
+		{"button 9 (forward), SGR", "\x1b[<129;5;3M"},
+		// The same bit in the legacy encoding: 32 + 128 = 160 = 0xa0.
+		{"button 8, X10", "\x1b[M\xa0\x25\x23"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k, n := decodeKey([]byte(tc.in))
+			if k.Kind == KeyClick {
+				t.Errorf("decodeKey(%q) = a click at row %d col %d — an extended button is not the left one",
+					tc.in, k.Row, k.Col)
+			}
+			if n == 0 || n > len(tc.in) {
+				t.Errorf("decodeKey(%q) consumed %d of %d", tc.in, n, len(tc.in))
+			}
+		})
+	}
+}

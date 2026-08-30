@@ -390,6 +390,11 @@ third consumer is a row rather than a new feature. `numRegionKinds` is the
 registry's extent and every guard derives from it — `TestEveryRegionKindIsActionable`
 fails for a kind that draws, invites a click and does nothing.
 
+- **`RegionHeadword`** — play this word's recording. The primary target, because
+  every entry has a headword in every language, whereas the IPA is English-only
+  (`#31` measured it: Spanish writes none, Italian writes syllabification).
+- **`RegionOriginLang`** — play the word in the language its ORIGIN names.
+
 **`RenderOpts` is what a caller decides**, and one of its four fields is not
 about how the entry looks:
 

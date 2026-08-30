@@ -229,11 +229,16 @@ func TestAtlasDescribesEveryRegionKind(t *testing.T) {
 		t.Fatalf("atlas/define.md unreadable: %v", err)
 	}
 	atlas := string(b)
+	// The qualified GO IDENTIFIER, not the prose name. Searching for k.String()
+	// was the same defect this file's RenderOpts guard had: "headword" occurs in
+	// the atlas nineteen times for unrelated reasons, so deleting the whole
+	// "## Clickable regions" section left this green. One finding named two
+	// sites and only one was swept — the instance rather than the class.
 	for k := RegionKind(0); k < numRegionKinds; k++ {
-		if !strings.Contains(atlas, k.String()) {
-			t.Errorf("the atlas does not mention the %q region. A clickable span the "+
+		if !strings.Contains(atlas, k.identifier()) {
+			t.Errorf("the atlas does not mention %s, the %q region. A clickable span the "+
 				"docs never describe is surface a reader can only find by clicking at "+
-				"random.", k)
+				"random.", k.identifier(), k)
 		}
 	}
 }

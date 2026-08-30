@@ -182,7 +182,8 @@ to `#35`'s code and is where `M2.1` starts.
 | `KeyClick` / `Key.Row` / `Key.Col` | `cmd/define/key.go` | new | PURE — the one Key that carries a position |
 | `clickAt` / `isClickButton` / `parseParams` | `cmd/define/key.go` | new | PURE — one owner for the wire→screen conversion and its guard, across both encodings |
 | `numRegionKinds` / `RegionKind.String` | `cmd/define/render.go` | new | PURE — the registry's EXTENT, so every guard derives the set rather than restating it |
-| `screen.RegionAt` / `screen.LineAt` / `screen.visible` / `screen.addRegions` | `cmd/define/screen.go` | new | PURE — the hit test, and the viewport-row → buffer-line mapping the alt screen makes exact. `visible` returns the frame AND its top line as ONE answer, because they are one fact: computed separately they came apart, and the click map detached from the text (BR-42) |
+| `screen.RegionAt` / `screen.addRegions` | `cmd/define/screen.go` | new | PURE — the hit test |
+| `screen.LineAt` / `screen.visible` | `cmd/define/screen.go` | new | NOT pure, deliberately: `visible` re-establishes the viewport clamp and WRITES BACK `offset`, because a derived invariant has to be re-established on every path that READS it (BR-42). It returns the frame AND its top line as one answer, since computed separately they came apart and the click map detached from the text |
 | `markClickable` / `underlineOn` / `underlineOff` | `cmd/define/screen.go` | new | PURE (M2.5) — the mark, spliced by the SCREEN so it cannot reach a pipe |
 | `liveScreen.WriteRegions` / `liveScreen.RegionAtRow` | `cmd/define/screen.go` | new | the click map's IO side: one call, so text and regions cannot disagree about which line a render landed on |
 | `regionWriter` / `writeRendered` | `cmd/define/main.go` | new | the seam fills itself — a writer that can hold a click map gets one, a pipe gets bytes (D6) |
@@ -809,3 +810,34 @@ seed corpus only and nothing anywhere passes `-fuzz`. The fix for it added a
 fifteenth target with the same property. The 12 pty rows are the same gap from
 another angle — correctly written to `SkipOrFail`, and therefore silently
 uncertified wherever no pty exists, including inside a boundary review.
+
+### 2026-08-30 — close review: a finding named two sites and I swept one
+
+**BR-55, and it is the honest last word on this issue.** Round 13 fixed
+`TestAtlasDescribesEveryRenderOpt`'s loose match and left the identical defect in
+the sibling guard beside it: `TestAtlasDescribesEveryRegionKind` searched for
+`k.String()`, and "headword" occurs in the atlas nineteen times for unrelated
+reasons — so deleting the WHOLE `## Clickable regions` section left it green. The
+reviewer measured that.
+
+The class both share: **a docs guard must look for something only the
+documentation of THAT thing would contain.** A prose word is not that; a
+qualified Go identifier is. `RegionKind.identifier()` exists beside `String()`
+for exactly this reason — they answer different questions, one for a reader and
+one for a check — and the atlas now cites `RegionHeadword` and `RegionOriginLang`
+by name.
+
+**BR-29 is DEFERRED to `#33`, explicitly.** The tree→table direction — every new
+top-level declaration in a file the tables name must have a row — is that issue's
+whole subject, and it was filed before this one closed. Six declarations from
+this window are its first evidence: `newLiveScreen`, `liveScreen.throttledPaint`,
+`wheelLines`, `digits`, `submitLine`, `headingLine`. Saying so here rather than
+leaving it implicit, which is what the reviewer asked for.
+
+**Two Minors fixed with them**, both measured by the reviewer rather than
+guessed. `isClickButton` accepted extended buttons 8–11 as a left press — they
+set bit 7 while their low two bits stay zero, so `b&3 == 0` was true and a
+browser-back button would have played a recording, against a comment promising
+"LEFT only". And `LineAt`/`visible` were labelled PURE while `visible` writes
+back `s.offset`; that write is BR-42's fix rather than an accident, but a false
+purity label is something a reader plans around.
