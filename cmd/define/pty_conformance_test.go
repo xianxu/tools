@@ -545,3 +545,38 @@ func TestPTYMouseTrackingIsAskedForAndGivenBack(t *testing.T) {
 		t.Errorf("mouse reporting was left ON: the next program run in this terminal gets escape sequences typed into it: %q", rest)
 	}
 }
+
+// A resize repaints, driven by a REAL SIGWINCH (#30 M1.4).
+//
+// This is the one part of the resize path no in-process test can reach: the
+// signal itself. TestWatchResizeCoalesces drives the channel, and
+// TestEditorResizeRedrawsForTheNewShape drives the loop — but whether a window
+// change actually delivers SIGWINCH to this program, and whether the frame that
+// follows fits the new window, is a question only a terminal answers.
+func TestPTYResizeRepaints(t *testing.T) {
+	_, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+		conformance.SkipOrFail(t, "cannot size the pty on this platform", err)
+	}
+	out.take(time.Second)
+
+	// A long entry, so the buffer is taller than the window it is about to get.
+	f.Write([]byte("run\r"))
+	out.take(3 * time.Second)
+
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 10, Cols: 80}); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	after := out.take(2 * time.Second)
+	if !strings.Contains(after, cursorHome) {
+		t.Fatalf("nothing was repainted after the window changed — SIGWINCH never reached the select: %q", after)
+	}
+	// And the frame FITS: a frame drawn for the old height is too tall, the
+	// terminal scrolls to fit it, and every row the app believes it placed has
+	// moved — which is exactly what makes a click land on the wrong line.
+	frame := after[strings.LastIndex(after, cursorHome):]
+	if rows := strings.Count(frame, "\r\n") + 1; rows > 10 {
+		t.Errorf("the frame is %d rows in a 10-row window: %q", rows, frame)
+	}
+}

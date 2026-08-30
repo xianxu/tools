@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"syscall"
 
 	"golang.org/x/term"
 )
@@ -189,4 +190,58 @@ func (r *rawSession) leaveMouse() {
 	}
 	fmt.Fprint(r.f, mouseOff)
 	r.mouse = false
+}
+
+// winSize is the terminal's shape, measured where the signal arrives so the
+// editor loop never needs a terminal handle of its own.
+type winSize struct{ rows, cols int }
+
+// watchResize reports the terminal's new shape on every SIGWINCH (#30 M1.4).
+//
+// There was NO resize handling before the screen: the width was read once at
+// flag parse and a definition kept the wrapping it was rendered with. A
+// full-screen program cannot get away with that — it draws a frame for a height,
+// and a frame one row too tall makes the terminal scroll, which moves every row
+// the app believes it placed.
+//
+// Signals in, a measured SHAPE out: the loop's select grows one case and learns
+// nothing about os/signal. The channel is the same shape as `keys` for the same
+// reason.
+func watchResize(ctx context.Context, notify func(...os.Signal) <-chan os.Signal, measure func() winSize) <-chan winSize {
+	out := make(chan winSize, 1)
+	if notify == nil {
+		return out // no signal transport: the shape is whatever it was at startup
+	}
+	sigs := notify(syscall.SIGWINCH)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case _, open := <-sigs:
+				if !open {
+					return
+				}
+				// COALESCED. Dragging a window corner fires dozens of signals,
+				// and a queue of stale shapes is a queue of wrong frames — only
+				// the newest is true. So an unread shape is replaced rather than
+				// waited on, which also means this goroutine can never block on
+				// a loop that is busy playing a recording.
+				sz := measure()
+				select {
+				case out <- sz:
+				default:
+					select {
+					case <-out:
+					default:
+					}
+					select {
+					case out <- sz:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	return out
 }

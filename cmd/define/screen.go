@@ -283,11 +283,10 @@ func (l *liveScreen) Scroll(lines int) {
 	l.repaint()
 }
 
-// Resize is SIGWINCH's one field (M1.4).
-func (l *liveScreen) Resize(rows int) {
-	l.rows = rows
-	l.repaint()
-}
+// Resize is SIGWINCH's one field (M1.4). It does NOT paint: the caller has just
+// learned the terminal's new WIDTH too, and a frame drawn before the live edge
+// is recomputed for that width is a frame drawn twice.
+func (l *liveScreen) Resize(rows int) { l.rows = rows }
 
 // Stop ends painting. Called as the terminal is handed back, and idempotent for
 // the same reason restore is: it runs from more than one exit path.

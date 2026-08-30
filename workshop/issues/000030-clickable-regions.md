@@ -430,6 +430,30 @@ Verified on a real pty by writing the exact bytes a terminal sends: two wheel-up
 moved 6 lines back, a wheel-down 3 forward, a click was inert, and tracking was
 enabled once and disabled once. Plus `FuzzDecodeWheelIsBounded` at 1M execs.
 
+### 2026-08-29 — M1.4: the shape, both halves of it
+
+SIGWINCH → measure → redraw. `watchResize` turns signals into a measured
+`winSize`, so the loop's select grows one case and learns nothing about
+`os/signal`; the measurement happens where the terminal is.
+
+- **Both halves change.** Rows were the obvious one — a frame one row too tall
+  makes the terminal scroll, which moves every row the app believes it placed,
+  and that is exactly what would make a click land on the wrong line. Columns
+  matter too: `opt.width` was read ONCE at flag parse, so a resized window kept
+  wrapping new entries to the old width.
+- **Lines already in the buffer keep their wrapping.** Re-wrapping means
+  re-rendering from entries this program does not keep, and scrollback going
+  fluid on every drag is not obviously better than a record of what was shown.
+- **Shapes are COALESCED**, newest wins: a drag fires dozens of signals, a queue
+  of stale shapes is a queue of wrong frames, and a non-blocking hand-off is what
+  keeps the watcher from stalling on a loop that is playing a recording.
+- A resize arriving DURING playback waits until the loop is idle. The select is
+  the only writer, so the alternative is two goroutines painting at once.
+
+`TestPTYResizeRepaints` drives a real `TIOCSWINSZ` and asserts the frame FITS the
+new window — verified falsifiable: cutting the signal transport reddens it with
+"nothing was repainted".
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

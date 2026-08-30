@@ -282,7 +282,7 @@ func TestEditorLoopHighlightsADeckWordOnScreen(t *testing.T) {
 	rig.deps.vocab = newStoreVocabulary(st, nil)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	if !strings.Contains(out.String(), "\x1b[1;32msycophantic") {
 		t.Errorf("the deck word was not highlighted on screen: %q", out.String())
@@ -300,7 +300,7 @@ func TestEditorLoopHighlightsAWordLookedUpThisSession(t *testing.T) {
 	rig.deps.capture = newStoreCapturer(st, store.FixedClock(aDay), nil, voc)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rsycophantic"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rsycophantic"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	if !strings.Contains(out.String(), "\x1b[1;32msycophantic") {
 		t.Errorf("a word looked up this session did not highlight on retype: %q", out.String())

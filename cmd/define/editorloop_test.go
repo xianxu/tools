@@ -5,8 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -58,6 +60,7 @@ type recordDisplay struct {
 	menus   [][]string
 	pages   []int
 	lines   []int
+	rows    []int
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
@@ -76,11 +79,12 @@ func (d *recordDisplay) Draw(prompt string, menu []string) {
 
 func (d *recordDisplay) Page(n int)   { d.pages = append(d.pages, n) }
 func (d *recordDisplay) Scroll(n int) { d.lines = append(d.lines, n) }
+func (d *recordDisplay) Resize(n int) { d.rows = append(d.rows, n) }
 
 func TestEditorLoopDefinesTypedWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	code := runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
@@ -97,7 +101,7 @@ func TestEditorLoopDefinesTypedWord(t *testing.T) {
 func TestEditorLoopBareEnterReplays(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r\r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	if got := rig.player.count(); got != 6 {
 		t.Errorf("played %d times, want 6", got)
@@ -114,7 +118,7 @@ func TestEditorLoopBareEnterReplays(t *testing.T) {
 func TestEditorLoopFeedsHistory(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rsyc"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rsyc"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	// The final frame should carry the grey remainder of the earlier word.
 	if !strings.Contains(out.String(), greyOn+"ophantic"+greyOff) {
@@ -126,7 +130,7 @@ func TestEditorLoopCtrlCExitsZero(t *testing.T) {
 	rig, opt, _ := editorRig(t, "sycophantic", true)
 	restored := false
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, paintInto(&out),
+	code := runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, paintInto(&out), nil,
 		func() { restored = true }, &out, &errb)
 
 	if code != 0 {
@@ -146,7 +150,7 @@ func TestEditorLoopCancellationRestoresTerminal(t *testing.T) {
 	restored := false
 	var out, errb bytes.Buffer
 
-	runEditor(ctx, make(chan Key), nil, rig.deps, opt, paintInto(&out), func() { restored = true }, &out, &errb)
+	runEditor(ctx, make(chan Key), nil, rig.deps, opt, paintInto(&out), nil, func() { restored = true }, &out, &errb)
 	if !restored {
 		t.Error("cancellation exited without restoring the terminal")
 	}
@@ -164,12 +168,12 @@ func tailOf(s string) string {
 func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 	baseline := strings.Count(out.String(), "\n")
 
 	rig2, opt2, finish2 := editorRig(t, "sycophantic", true)
 	var out2 bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r\r\r\r"), nil, rig2.deps, opt2, paintInto(&out2), finish2, &out2, &bytes.Buffer{})
+	runEditor(t.Context(), scriptKeys("sycophantic\r\r\r\r"), nil, rig2.deps, opt2, paintInto(&out2), nil, finish2, &out2, &bytes.Buffer{})
 
 	// Three extra replays, zero extra lines.
 	if got := strings.Count(out2.String(), "\n"); got != baseline {
@@ -186,7 +190,7 @@ func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
 func TestEditorLoopUsesCarriageReturnsInRawMode(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	s := out.String()
 	// Find the newline the loop writes to commit the input line.
@@ -235,7 +239,7 @@ func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	// Define the long word, then type a prefix of it and submit.
-	runEditor(t.Context(), scriptKeys("sycophantic\rsyc\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rsyc\r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	s := out.String()
 	// The last frame written before the second submit must carry no grey.
@@ -259,7 +263,7 @@ func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
 func TestEditorLoopNormalisesTheSubmittedLine(t *testing.T) {
 	rig, opt, finish := editorRig(t, "hot dog", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("  hot   dog  \r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("  hot   dog  \r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	if strings.Contains(errb.String(), "no dictionary entry") {
 		t.Errorf("the line was not normalised before lookup: %q", errb.String())
@@ -273,7 +277,7 @@ func TestEditorLoopNormalisesTheSubmittedLine(t *testing.T) {
 func TestEditorLoopBareEnterWithNoCurrentWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("\r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	if !strings.Contains(errb.String(), "press return to replay") {
 		t.Errorf("want the hint, got %q", errb.String())
@@ -288,7 +292,7 @@ func TestEditorLoopBareEnterWithNoCurrentWord(t *testing.T) {
 func TestEditorLoopFailedLookupKeepsPreviousWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rrizz\r\r"), nil, rig.deps, opt, paintInto(&out), finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\rrizz\r\r"), nil, rig.deps, opt, paintInto(&out), nil, finish, &out, &errb)
 
 	if !strings.Contains(errb.String(), "rizz") {
 		t.Error("the failed lookup was not reported")
@@ -310,7 +314,7 @@ func TestEditorLoopWritesThroughAScreen(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	sc := &screen{}
 	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt,
-		paintInto(io.Discard), finish, sc, sc)
+		paintInto(io.Discard), nil, finish, sc, sc)
 
 	got := sc.Transcript()
 	if !strings.Contains(got, "/ˌsikəˈfan(t)ik/") {
@@ -359,7 +363,7 @@ func TestNothingIsWrittenWhileAPromptIsShown(t *testing.T) {
 		whenWritten = append(whenWritten, view.prompt)
 		return len(p), nil
 	})
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, view, finish, w, w)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, view, nil, finish, w, w)
 
 	if len(whenWritten) == 0 {
 		t.Fatal("the session wrote nothing at all, so nothing is asserted")
@@ -388,7 +392,7 @@ func TestEditorPageKeysScroll(t *testing.T) {
 	var out, errb bytes.Buffer
 	view := paintInto(&out)
 	ks := keySeq(Key{Kind: KeyPageUp}, Key{Kind: KeyPageUp}, Key{Kind: KeyPageDown})
-	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, nil, finish, &out, &errb)
 
 	if want := []int{1, 1, -1}; !slices.Equal(view.pages, want) {
 		t.Errorf("the viewport moved %v, want %v — positive is backward, toward older text", view.pages, want)
@@ -402,7 +406,7 @@ func TestPageKeysDoNotTouchTheLine(t *testing.T) {
 	var out, errb bytes.Buffer
 	view := paintInto(&out)
 	ks := keySeq(append(runes("syc"), Key{Kind: KeyPageUp}, Key{Kind: KeyPageDown})...)
-	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, nil, finish, &out, &errb)
 
 	// The last frame drawn still holds what was typed — a page key that reached
 	// Apply would have redrawn something else, or nothing.
@@ -430,7 +434,7 @@ func TestCtrlDStillEndsTheSession(t *testing.T) {
 	keys <- Key{Kind: KeyEOF}
 	keys <- Key{Kind: KeyRune, Rune: 'x'}
 	close(keys)
-	code := runEditor(t.Context(), keys, nil, rig.deps, opt, paintInto(&out),
+	code := runEditor(t.Context(), keys, nil, rig.deps, opt, paintInto(&out), nil,
 		func() { ended = true }, &out, &errb)
 
 	if code != 0 {
@@ -449,7 +453,7 @@ func TestCtrlUStillKillsTheLine(t *testing.T) {
 	var out, errb bytes.Buffer
 	view := paintInto(&out)
 	ks := keySeq(append(runes("syco"), Key{Kind: KeyKillLine})...)
-	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, nil, finish, &out, &errb)
 
 	if last := view.prompts[len(view.prompts)-1]; strings.Contains(last, "syco") {
 		t.Errorf("Ctrl-U did not clear the line — it was rebound: %q", last)
@@ -471,12 +475,92 @@ func TestWheelScrollsRatherThanWalkingHistory(t *testing.T) {
 	// for the wrong reason.
 	ks := keySeq(append(runes("sycophantic"),
 		Key{Kind: KeyEnter}, Key{Kind: KeyWheelUp}, Key{Kind: KeyWheelDown})...)
-	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, nil, finish, &out, &errb)
 
 	if want := []int{wheelLines, -wheelLines}; !slices.Equal(view.lines, want) {
 		t.Errorf("the wheel moved the viewport %v, want %v lines", view.lines, want)
 	}
 	if last := view.prompts[len(view.prompts)-1]; strings.Contains(last, "sycophantic") {
 		t.Errorf("the wheel recalled a word from history into the line: %q", last)
+	}
+}
+
+// A resize repaints, and it changes BOTH halves of the shape (#30 M1.4).
+//
+// There was no resize handling before the screen: the width was read once at
+// flag parse. A full-screen program cannot get away with that — it draws a frame
+// for a height, and a frame one row too tall makes the terminal scroll, which
+// moves every row the app believes it placed.
+func TestEditorResizeRedrawsForTheNewShape(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	opt.width = 80
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	resizes := make(chan winSize, 1)
+	keys := make(chan Key, 4)
+
+	done := make(chan int, 1)
+	go func() {
+		done <- runEditor(t.Context(), keys, nil, rig.deps, opt, view, resizes, finish, &out, &errb)
+	}()
+	resizes <- winSize{rows: 10, cols: 40}
+	// A key AFTER the resize, so the assertion runs on a loop that has certainly
+	// processed it — the alternative is sleeping and hoping.
+	keys <- Key{Kind: KeyRune, Rune: '/'}
+	waitFor(t, func() bool { return len(view.rows) > 0 })
+	close(keys)
+	<-done
+
+	if got := view.rows; !slices.Equal(got, []int{10}) {
+		t.Errorf("the screen was told %v rows, want [10]", got)
+	}
+	// The WIDTH half, observed where it is actually used: the command menu is
+	// truncated to it, so a 40-column terminal must not be handed 80-column rows.
+	for _, m := range view.menus[len(view.menus)-1] {
+		if len([]rune(m)) > 40 {
+			t.Errorf("a menu row is %d columns wide in a 40-column terminal: %q", len([]rune(m)), m)
+		}
+	}
+}
+
+// Dragging a window corner fires dozens of SIGWINCHes, and a queue of stale
+// shapes is a queue of wrong frames — only the newest is true. Coalescing is
+// also what keeps this goroutine from blocking on a loop that is busy playing a
+// recording for five seconds.
+func TestWatchResizeCoalesces(t *testing.T) {
+	sigs := make(chan os.Signal, 8)
+	var measured int
+	shapes := []winSize{{rows: 10, cols: 40}, {rows: 20, cols: 80}, {rows: 30, cols: 120}}
+	out := watchResize(t.Context(), func(...os.Signal) <-chan os.Signal { return sigs },
+		func() winSize {
+			sz := shapes[measured]
+			measured++
+			return sz
+		})
+	for range shapes {
+		sigs <- syscall.SIGWINCH
+	}
+	waitFor(t, func() bool { return measured == len(shapes) })
+
+	// One shape waiting, and it is the LAST one.
+	if got := <-out; got != shapes[len(shapes)-1] {
+		t.Errorf("the loop would have redrawn for %v, want the newest shape %v", got, shapes[len(shapes)-1])
+	}
+	select {
+	case extra := <-out:
+		t.Errorf("a stale shape was left queued: %v", extra)
+	default:
+	}
+}
+
+// No signal transport, no crash: a channel that never fires leaves the shape as
+// it was measured at startup, which is what a test harness and a terminal-less
+// caller both get.
+func TestWatchResizeWithoutASignalTransport(t *testing.T) {
+	out := watchResize(t.Context(), nil, func() winSize { t.Fatal("measured with no transport"); return winSize{} })
+	select {
+	case sz := <-out:
+		t.Errorf("a shape arrived from nowhere: %v", sz)
+	default:
 	}
 }

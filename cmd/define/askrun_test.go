@@ -378,7 +378,7 @@ func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) {
 			done := make(chan int, 1)
 			go func() {
 				done <- runEditor(t.Context(), keys, interrupts, d, opt,
-					paintInto(&out), func() {}, &out, &errb)
+					paintInto(&out), nil, func() {}, &out, &errb)
 			}()
 
 			io.WriteString(pw, "?why\r")
@@ -449,7 +449,7 @@ func TestForcedAndUnforcedAsksShareOneWiring(t *testing.T) {
 			done := make(chan int, 1)
 			go func() {
 				done <- runEditor(t.Context(), keys, interrupts, d, opt,
-					paintInto(&out), func() {}, &out, &errb)
+					paintInto(&out), nil, func() {}, &out, &errb)
 			}()
 
 			io.WriteString(pw, tc.keys)
@@ -465,7 +465,6 @@ func TestForcedAndUnforcedAsksShareOneWiring(t *testing.T) {
 		})
 	}
 }
-
 
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
@@ -519,7 +518,7 @@ func TestAKeyTypedBeforeCtrlCDoesNotBlockTheReader(t *testing.T) {
 	done := make(chan int, 1)
 	go func() {
 		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true},
-			paintInto(&out), func() {}, &out, &errb)
+			paintInto(&out), nil, func() {}, &out, &errb)
 	}()
 
 	io.WriteString(pw, "?why\r")
@@ -723,7 +722,7 @@ func askModes() []askMode {
 				d.stdinIsTerminal = func() bool { return true }
 				runEditor(t.Context(), scriptKeys(strings.Join(lines, "\r")+"\r"), ints, d,
 					options{noAudio: true, locale: "us", tty: true},
-					paintInto(out), func() {}, out, errOut)
+					paintInto(out), nil, func() {}, out, errOut)
 			},
 		},
 	}
@@ -862,7 +861,7 @@ func TestCtrlCQuitsAgainOnceTheAnswerIsOver(t *testing.T) {
 	done := make(chan int, 1)
 	go func() {
 		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true},
-			paintInto(&out), func() {}, &out, &errb)
+			paintInto(&out), nil, func() {}, &out, &errb)
 	}()
 
 	io.WriteString(pw, "?why\r")

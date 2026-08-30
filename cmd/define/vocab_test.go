@@ -264,7 +264,7 @@ func TestEveryEntryPathHighlightsDefinitions(t *testing.T) {
 		}},
 		{"raw editor", func(t *testing.T, d deps, opt options, out, errb *bytes.Buffer) {
 			runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, d, opt,
-				paintInto(out), func() {}, out, errb)
+				paintInto(out), nil, func() {}, out, errb)
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

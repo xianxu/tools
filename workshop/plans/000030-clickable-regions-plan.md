@@ -120,7 +120,7 @@ to `#35`'s code and is where `M2.1` starts.
       `rawSession` beside the alt screen, `decodeWheel` in the CSI scanner, and
       the drag-select cost of D7 paid now — stated in `/help`, where a user meets
       it. Clicks stay inert: coordinates mean nothing until `M2` has a region map.
-- [ ] **M1.4 — resize.** SIGWINCH → re-measure → repaint. The one thing that cannot be unit-tested is the signal, so the pty row drives a real `TIOCSWINSZ`.
+- [x] **M1.4 — resize.** SIGWINCH → re-measure → repaint. The one thing that cannot be unit-tested is the signal, so the pty row drives a real `TIOCSWINSZ`.
 - [ ] **M1.5 — the transcript on exit** (D3), and the pty row that it survives.
 - [ ] **M1.6 — docs**: the atlas's raw-mode section, which currently explains the cooked/raw dance that D4 removes. That prose goes false, so it is rewritten rather than appended to.
 

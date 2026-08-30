@@ -42,6 +42,12 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	// the only way to be handed the gesture the user actually made.
 	sess.enterMouse()
 	live := newLiveScreen(stdout, terminalRows(stdout))
+	// The shape is MEASURED here, where the terminal is, and delivered to the
+	// loop as a value — so the loop's new select case knows nothing about
+	// os/signal and everything about what it has to redraw.
+	resizes := watchResize(ctx, d.notifySignals, func() winSize {
+		return winSize{rows: terminalRows(stdout), cols: terminalWidth(stdout)}
+	})
 	finish := func() {
 		// Painting stops BEFORE the terminal is handed back: a frame drawn after
 		// restore lands on the normal screen, over whatever was there before.
@@ -54,7 +60,7 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	// buffer line like any other, and survives to the exit transcript, where
 	// today it is simply gone. The one-shot and piped paths keep the real stderr
 	// (D6), so a script's `2>` is untouched.
-	return runEditor(ctx, keys, interrupts, d, opt, live, finish, live, live)
+	return runEditor(ctx, keys, interrupts, d, opt, live, resizes, finish, live, live)
 }
 
 // wheelLines is how far one wheel event moves the viewport.
@@ -83,6 +89,9 @@ type display interface {
 	// Scroll moves it by LINES, in the same direction. The wheel is a finer
 	// gesture than the page keys and a screenful per notch would be unusable.
 	Scroll(lines int)
+	// Resize sets the terminal's height. The caller redraws — it has just
+	// learned the new WIDTH as well, and the live edge is rendered against that.
+	Resize(rows int)
 }
 
 // runEditor is the editor loop with the terminal factored out: keys arrive on a
@@ -97,7 +106,7 @@ type display interface {
 // tests. The loop cannot tell the difference, which is the point: every writer
 // it had keeps writing, and only the destination changed.
 func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d deps, opt options,
-	view display, finish func(), stdout, stderr io.Writer) int {
+	view display, resizes <-chan winSize, finish func(), stdout, stderr io.Writer) int {
 	if interrupts == nil {
 		// A loop with no sink still runs; nothing can scope an interrupt, which
 		// is the honest behaviour for a caller that supplied no cancellation.
@@ -206,6 +215,26 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		case <-ctx.Done():
 			finish() // before anything else can write: never exit leaving raw mode on
 			return 0
+		case sz := <-resizes:
+			// A frame is drawn for a SHAPE, and both halves of it go wrong. Too
+			// tall and the terminal scrolls, which moves every row the app
+			// believes it placed; too narrow and the width the next entry wraps
+			// to is not the width it is read at.
+			//
+			// Lines already in the buffer keep the wrapping they were rendered
+			// with. Re-wrapping them would mean re-rendering from entries this
+			// program does not keep, and a session's scrollback going fluid on
+			// every drag is not obviously better than one that reads as a record
+			// of what was shown.
+			//
+			// A resize that arrives while a recording plays waits here until the
+			// loop is idle: this case is only reached between keystrokes, so the
+			// frame is briefly stale rather than concurrently painted by two
+			// goroutines.
+			opt.width = sz.cols
+			view.Resize(sz.rows)
+			draw()
+			continue
 		case k, open := <-keys:
 			if !open {
 				finish()
