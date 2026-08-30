@@ -83,6 +83,74 @@ rounds:
           family: milestone-tag-without-a-boundary
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-30T16:33:43-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: D2 and T2 delete the dance outright; verified restore/enterRaw at rawterm.go:50 and :42 behave as D2 describes.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: D3 names writeRendered as the seam and keeps draw on io.Writer; the residual playSession shape moves to the family finding below.
+          round: 2
+        - id: PQ-3
+          disposition: not-addressed
+          note: T6 wires page and wheel; watchResize and the stale-shape case named in the finding are still unmentioned.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: D4 moves the shared action to playAnnounced; the guard that sits above it is the family finding below.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          round: 2
+        - id: PQ-6
+          disposition: not-addressed
+          note: Revisions claims the issue's Plan was updated; the issue file still has the two decide/design rows.
+          round: 2
+        - id: PQ-7
+          disposition: addressed
+          round: 2
+      findings:
+        - id: PQ-8
+          severity: Important
+          title: playAnnounced sits below the audio-off guard, so playRegion converging there silently drops it
+          detail: |-
+            2nd in family. replayInPlace guards on opt.noAudio || opt.times <= 0 and prints
+            nothingToReplay (replraw.go:534); playAnnounced (main.go:835) does not, and speak
+            fetches unconditionally. So T1's "NO behaviour change" is false under --no-audio.
+            Fix the rule, not playRegion - the predicate is hand-copied at repl.go:312,
+            replraw.go:534, play_loop.go:161 and main.go:783 (prevalence 4), and playAnnounced's
+            own comment at main.go:829 names this guard as a divergence it was meant to end.
+            Make it one named predicate applied inside playAnnounced so no caller can be below it.
+          family: two-callers-one-behavior
+          round: 2
+        - id: PQ-9
+          severity: Important
+          title: 'console, onceHandBack and watchResize are the carriers #30 built for this loop shape'
+          detail: |-
+            2nd in family. Round 2 reused writeRendered; the class has three members and two are
+            still re-derived. playSession is planned to take "a display and the region map" where
+            console (replraw.go:94) already bundles view/resizes/finish/stdout/stderr for exactly
+            this reason, and T3 names handBack where onceHandBack (replraw.go:140) is the
+            once-wrapper - playSession has five return paths (four after T2) plus runPlay's
+            defer sess.restore() at :53, so a bare handBack can print the transcript twice.
+            State the rule: adopting #30's loop shape means adopting its carriers.
+          family: existing-seam-not-reused
+          round: 2
+        - id: PQ-10
+          severity: Minor
+          title: several line anchors in the verified-claims table do not point at the code they cite
+          detail: |-
+            restore leaving mouse/alt is cited rawterm.go:40-47, actual 50-61; enterRaw cited
+            :28-34, actual 42-48; the viewport keys cited replraw.go:330, actual 366-380;
+            writeRendered cited main.go:806, actual 801. Every claim is substantively true, but
+            the table exists to be audited and the anchors send the auditor to the wrong lines.
+          family: citation-does-not-point-at-the-claim
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#38 (plan-quality)
@@ -135,12 +203,46 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   milestone-close. Single-pass work takes plain checkboxes; M1.1-M1.6 can stay as the
   task list without the milestone framing.
 
+## Round 2 — 2026-08-30T16:33:43-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — D2 and T2 delete the dance outright; verified restore/enterRaw at rawterm.go:50 and :42 behave as D2 describes.
+- PQ-2 — addressed — D3 names writeRendered as the seam and keeps draw on io.Writer; the residual playSession shape moves to the family finding below.
+- PQ-3 — not-addressed — T6 wires page and wheel; watchResize and the stale-shape case named in the finding are still unmentioned.
+- PQ-4 — addressed — D4 moves the shared action to playAnnounced; the guard that sits above it is the family finding below.
+- PQ-5 — addressed
+- PQ-6 — not-addressed — Revisions claims the issue's Plan was updated; the issue file still has the two decide/design rows.
+- PQ-7 — addressed
+
+### Raised
+
+- **PQ-8** [Important] `two-callers-one-behavior` playAnnounced sits below the audio-off guard, so playRegion converging there silently drops it
+  2nd in family. replayInPlace guards on opt.noAudio || opt.times <= 0 and prints
+  nothingToReplay (replraw.go:534); playAnnounced (main.go:835) does not, and speak
+  fetches unconditionally. So T1's "NO behaviour change" is false under --no-audio.
+  Fix the rule, not playRegion - the predicate is hand-copied at repl.go:312,
+  replraw.go:534, play_loop.go:161 and main.go:783 (prevalence 4), and playAnnounced's
+  own comment at main.go:829 names this guard as a divergence it was meant to end.
+  Make it one named predicate applied inside playAnnounced so no caller can be below it.
+- **PQ-9** [Important] `existing-seam-not-reused` console, onceHandBack and watchResize are the carriers #30 built for this loop shape
+  2nd in family. Round 2 reused writeRendered; the class has three members and two are
+  still re-derived. playSession is planned to take "a display and the region map" where
+  console (replraw.go:94) already bundles view/resizes/finish/stdout/stderr for exactly
+  this reason, and T3 names handBack where onceHandBack (replraw.go:140) is the
+  once-wrapper - playSession has five return paths (four after T2) plus runPlay's
+  defer sess.restore() at :53, so a bare handBack can print the transcript twice.
+  State the rule: adopting #30's loop shape means adopting its carriers.
+- **PQ-10** [Minor] `citation-does-not-point-at-the-claim` several line anchors in the verified-claims table do not point at the code they cite
+  restore leaving mouse/alt is cited rawterm.go:40-47, actual 50-61; enterRaw cited
+  :28-34, actual 42-48; the viewport keys cited replraw.go:330, actual 366-380;
+  writeRendered cited main.go:806, actual 801. Every claim is substantively true, but
+  the table exists to be audited and the anchors send the auditor to the wrong lines.
+
 ## Open findings
 
-- **PQ-1** [Critical] `mechanism-adopted-without-its-obligations` the reveal-playback restore/re-enter dance tears down the alternate screen and mouse reporting
-- **PQ-2** [Important] `existing-seam-not-reused` writeRendered is already the region seam, and D2's claim that draw does not change is false
 - **PQ-3** [Important] `mechanism-adopted-without-its-obligations` no task wires scroll, page or resize, which the alternate screen makes the loop's job
-- **PQ-4** [Important] `two-callers-one-behavior` --play's y/n/Enter playback is playAnnounced, not replayInPlace, so the click becomes a second caller
-- **PQ-5** [Minor] `entity-table-mislabels-purity` replayRegion is listed as a PURE entity but performs audio playback and writes to stdout/stderr
 - **PQ-6** [Minor] `issue-plan-not-synced` the issue's ## Plan still says "decide Option A vs B / design it", which this plan file completes
-- **PQ-7** [Minor] `milestone-tag-without-a-boundary` M1 is the only milestone and the plan says one sdlc close, so the Mx tag buys a redundant boundary
+- **PQ-8** [Important] `two-callers-one-behavior` playAnnounced sits below the audio-off guard, so playRegion converging there silently drops it
+- **PQ-9** [Important] `existing-seam-not-reused` console, onceHandBack and watchResize are the carriers #30 built for this loop shape
+- **PQ-10** [Minor] `citation-does-not-point-at-the-claim` several line anchors in the verified-claims table do not point at the code they cite
