@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -205,5 +206,85 @@ func TestDocsQuoteThePronCommandHelp(t *testing.T) {
 	if !strings.Contains(string(b), want) {
 		t.Errorf("%s does not quote the /pron argument rule.\nwant the marked span to read:\n%s\n"+
 			"pronCommandHelp owns this text; the page consumes it.", doc, want)
+	}
+}
+
+// The atlas describes EVERY region kind, derived from the registry (#30 BR-39).
+//
+// The docs-lag family reached two findings before this existed, and the cause
+// was structural rather than forgetfulness: `M1.6` made the doc sweep a TASK in
+// one milestone, so the next milestone shipped surface with no row to remind
+// anyone. A task cannot cover work that has not been planned yet; a guard can.
+//
+// Same shape as `TestEveryEnabledMouseModeIsDecoded`: the SET has one owner
+// (`numRegionKinds`), and the check derives from it rather than restating it. A
+// third kind added to the registry reddens this until the atlas says what it
+// offers — which is the only version of "keep the docs current" that survives
+// the next person to add one.
+func TestAtlasDescribesEveryRegionKind(t *testing.T) {
+	b, err := os.ReadFile("../../atlas/define.md")
+	if err != nil {
+		// NOT a skip: the atlas is in the repo, so an unreadable one is a broken
+		// checkout or a moved file, never an absent dependency.
+		t.Fatalf("atlas/define.md unreadable: %v", err)
+	}
+	atlas := string(b)
+	// The qualified GO IDENTIFIER, not the prose name. Searching for k.String()
+	// was the same defect this file's RenderOpts guard had: "headword" occurs in
+	// the atlas nineteen times for unrelated reasons, so deleting the whole
+	// "## Clickable regions" section left this green. One finding named two
+	// sites and only one was swept — the instance rather than the class.
+	for k := RegionKind(0); k < numRegionKinds; k++ {
+		if !strings.Contains(atlas, k.identifier()) {
+			t.Errorf("the atlas does not mention %s, the %q region. A clickable span the "+
+				"docs never describe is surface a reader can only find by clicking at "+
+				"random.", k.identifier(), k)
+		}
+	}
+}
+
+// Every RenderOpts field is described in the atlas, derived from the struct
+// (#30 M2, BR-52).
+//
+// Fourth finding in the docs-lag family, and the deliverable is the rule rather
+// than the two lines it named: `RenderOpts` gained `Word` — the field that
+// carries a click's target, and the fix for a Critical — while the atlas went on
+// describing the old shape. A doc sweep as a TASK cannot cover a field added by
+// a later fix; a guard derived from the declared set can.
+//
+// Same move as `TestAtlasDescribesEveryRegionKind` and
+// `TestEveryEnabledMouseModeIsDecoded`: the SET has one owner, and the check
+// reads it rather than restating it. Adding a field reddens this until the atlas
+// says what it is for.
+//
+// Deliberately narrow: it asks only that the NAME appears. Prose cannot be
+// checked mechanically, and a guard that pretended to would be theatre — what it
+// prevents is a field nobody wrote a sentence about at all.
+func TestAtlasDescribesEveryRenderOpt(t *testing.T) {
+	b, err := os.ReadFile("../../atlas/define.md")
+	if err != nil {
+		t.Fatalf("atlas/define.md unreadable: %v", err)
+	}
+	atlas := string(b)
+	rt := reflect.TypeOf(RenderOpts{})
+	if rt.NumField() == 0 {
+		t.Fatal("RenderOpts has no fields; this guard would certify nothing")
+	}
+	for i := 0; i < rt.NumField(); i++ {
+		name := rt.Field(i).Name
+		if !rt.Field(i).IsExported() {
+			continue
+		}
+		// The QUALIFIED name only. The first version also accepted a bare
+		// `Field`, which made it vacuous for the very field it was written for:
+		// "Word" occurs in the atlas for a dozen unrelated reasons — the word to
+		// play, Region.Word — so the guard passed no matter what RenderOpts said.
+		// A guard that any prose can satisfy is not checking the tree, which is
+		// the rule this file already states one test above.
+		if !strings.Contains(atlas, "RenderOpts."+name) {
+			t.Errorf("the atlas never mentions RenderOpts.%s. A rendering input nobody "+
+				"documented is one the next reader has to infer from the code — and this "+
+				"one carried a Critical's fix.", name)
+		}
 	}
 }

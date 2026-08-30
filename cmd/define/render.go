@@ -3,11 +3,27 @@ package main
 import (
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // RenderOpts controls presentation only. Render is pure: it never probes the
 // terminal — the caller decides Color.
 type RenderOpts struct {
+	// Word is the KEY this entry was looked up by, and it is identity rather
+	// than presentation — the one field here that is not about how the entry
+	// looks. Regions address a word, and which word that is belongs to the
+	// caller: a click on the headword is a shortcut for the bare Enter beside
+	// it, which replays the session's current word. Deriving it here instead let
+	// the two disagree — `define jalapeno` replays "jalapeno" while the entry's
+	// headword is "jalapeño", and the CDN answers different URLs for the two.
+	//
+	// Empty is legitimate and means "no click map wanted": `--play` draws its
+	// own frames, and a pipe has nothing to click.
+	Word string
+
 	Color bool
 	// Vocab highlights the words the learner knows. Nil means no highlighting.
 	//
@@ -99,7 +115,7 @@ func (o RenderOpts) prose(s, base string) string {
 // abbreviate, truncate, or reorder. The no-data-loss invariant
 // (invariant_test.go) holds the rendered letters and digits against the raw
 // entry as an ordered subsequence, and any of those would break it.
-func Render(e Entry, opt RenderOpts) string {
+func Render(e Entry, opt RenderOpts) (string, []Region) {
 	p := newPalette(opt.Color)
 	var b strings.Builder
 
@@ -168,7 +184,7 @@ func Render(e Entry, opt RenderOpts) string {
 			}
 			if s.Gloss != "" {
 				body := prettyPronunciations(s.Gloss, p)
-				lead := len(indent) + visibleLen(marker)
+				lead := len(indent) + visibleCells(marker)
 				// Highlight AFTER wrapping: wrapText measures visible columns and
 				// breaks at spaces, so a highlight inserted first would widen the
 				// text it measures. Wrapping first also means a phrase cannot span
@@ -216,7 +232,283 @@ func Render(e Entry, opt RenderOpts) string {
 			}
 		}
 	}
-	return b.String()
+	out := b.String()
+	return out, regionsIn(e, out, opt.Word)
+}
+
+// RegionKind is what a span OFFERS. One registry, so a third consumer is a row
+// rather than a new feature — which is the shape #30 is filed as.
+type RegionKind int
+
+const (
+	// RegionHeadword — play this word's recording. The primary target, because
+	// every entry has a headword in every language: the IPA is English-only
+	// (#31 measured it — Spanish writes none, Italian writes syllabification),
+	// so "click the notation" would leave most languages with a dead affordance.
+	RegionHeadword RegionKind = iota
+	// RegionOriginLang — play the word in the language its ORIGIN names.
+	RegionOriginLang
+	// numRegionKinds is NOT a kind: it is the registry's extent, so every guard
+	// DERIVES the set rather than restating it. A test that loops to
+	// RegionOriginLang by name is a second copy of "these are all the kinds",
+	// and a third kind added above this line would simply never be exercised —
+	// which is Done-when 7 ("one registry, not two special cases") quietly
+	// failing. Same move TestEveryEnabledMouseModeIsDecoded makes with mouseOn.
+	numRegionKinds
+)
+
+// String names a kind for a reader — a test message, and the atlas, which has to
+// describe every one of them.
+//
+// The default is deliberately UGLY rather than a guess: a kind with no case here
+// is a kind nobody has described, and TestEveryRegionKindIsNamed says so.
+func (k RegionKind) String() string {
+	switch k {
+	case RegionHeadword:
+		return "headword"
+	case RegionOriginLang:
+		return "ORIGIN language"
+	}
+	return fmt.Sprintf("RegionKind(%d)", int(k))
+}
+
+// identifier is the kind's Go NAME, which is what documentation should cite and
+// what a guard can look for without matching prose.
+//
+// Separate from String because they answer different questions: String names the
+// thing for a reader ("headword"), and that word occurs in the atlas nineteen
+// times for unrelated reasons — so a docs guard built on it passed with the
+// whole section deleted. An identifier occurs where someone meant this kind.
+func (k RegionKind) identifier() string {
+	switch k {
+	case RegionHeadword:
+		return "RegionHeadword"
+	case RegionOriginLang:
+		return "RegionOriginLang"
+	}
+	return fmt.Sprintf("RegionKind(%d)", int(k))
+}
+
+// Region is a span of RENDERED text that offers an action.
+//
+// Line and Col address the output of this very Render call: Line counts "\n",
+// Col and Width are DISPLAY CELLS, matching everything else that measures width
+// in this program (visibleCells). The screen turns them into a click map by
+// adding its own scroll offset — exact by construction, because nothing but the
+// screen can move the view (#30 D1).
+type Region struct {
+	Kind RegionKind
+	// Text is the span as it appears on screen — the headword, or the language
+	// name in the ORIGIN.
+	Text string
+	// Word is the ENTRY this region belongs to, which is not always Text: an
+	// ORIGIN language names the source, and the word to play is still the
+	// headword. It travels on the region because a click can land on an entry
+	// the session has long since scrolled past, and the session keeps only the
+	// current one.
+	Word  string
+	Lang  store.Lang // RegionOriginLang only
+	Line  int
+	Col   int
+	Width int
+}
+
+// regionsIn finds the actionable spans IN THE RENDERED OUTPUT, rather than
+// recording where Render meant to put them.
+//
+// That distinction is the design. A position recorded while writing describes an
+// intention; a position found in the output describes what a terminal will show
+// — and a click map has to be right about the second. It also keeps Render's
+// body untouched, so "the bytes are identical" is a property of the shape rather
+// than a promise a test has to re-check for every future edit.
+//
+// It is PURE and takes exactly what it reads.
+func regionsIn(e Entry, rendered, key string) []Region {
+	lines := strings.Split(rendered, "\n")
+	if len(lines) == 0 {
+		return nil
+	}
+	var out []Region
+	word := key
+	if word == "" {
+		word = e.Headword()
+	}
+
+	// The headword, and the syllabified form beside it where one exists — the
+	// operator asked for both ("click on the word itself, e.g. `potassium`, or
+	// `po·tas·si·um`"), and they are one Kind because they offer one action.
+	// Both live on the first line, which is where Render writes the head tokens.
+	//
+	// The span is the KEY where the head line shows it — which is what makes a
+	// multi-word entry work: `hot dog` renders a head line reading "hot dog"
+	// while `Entry.Headword()` is "hot" alone, so marking the headword TOKEN
+	// underlined half the phrase and played half the word. The key is not always
+	// on the line (`define jalapeno` finds the entry for "jalapeño"), and then
+	// the headword token is the honest span: narrower than the phrase, still the
+	// right word to play, because Word carries the key regardless.
+	spans := []string{word}
+	if _, _, ok := findVisible(lines[0], word, 0); !ok {
+		spans[0] = e.Headword()
+	}
+	if syl := e.Syllables(); syl != "" {
+		spans = append(spans, syl)
+	}
+	for _, text := range spans {
+		if col, w, ok := findVisible(lines[0], text, 0); ok {
+			out = append(out, Region{Kind: RegionHeadword, Text: text, Word: word, Line: 0, Col: col, Width: w})
+		}
+	}
+
+	// Every modern language the ORIGIN names as a SOURCE — not the first, which
+	// is `/pron`'s answer. A click has nothing to disambiguate: `piano` names
+	// French and Italian, and the user points at one (#30's founding insight).
+	//
+	// Which occurrences are sources is the mentions producer's job — it cuts
+	// cognate clauses and masks historical stages, and "Dutch" in a cognate
+	// clause is present in the rendered text but is not a source. So a mention
+	// is carried across by its OCCURRENCE INDEX: the second "French" in the
+	// section text is the second "French" on screen, because rendering preserves
+	// the text's characters and their order.
+	mentions, _ := OriginLanguageMentions(e)
+	if len(mentions) == 0 {
+		return out
+	}
+	first, last := originLineRange(lines, e)
+	for _, m := range mentions {
+		nth := strings.Count(originText(e)[:m.Offset], m.Name)
+		for ln := first; ln <= last && ln < len(lines); ln++ {
+			col, w, ok := findVisible(lines[ln], m.Name, nth)
+			if !ok {
+				nth -= strings.Count(stripEscapes(lines[ln]), m.Name)
+				continue
+			}
+			out = append(out, Region{
+				Kind: RegionOriginLang, Text: m.Name, Word: word, Lang: m.Lang,
+				Line: ln, Col: col, Width: w,
+			})
+			break
+		}
+	}
+	return out
+}
+
+// originLineRange is the span of rendered lines belonging to the ORIGIN section:
+// from its heading to the next section heading or the end.
+//
+// Bounded rather than searched whole, because a language name can occur in a
+// definition ("a French department" is in `arrondissement`'s own gloss) and that
+// occurrence is not an etymology.
+//
+// The boundary comes from `e.Sections`, which OWNS what the sections are — the
+// first version guessed at it with an all-caps heuristic, re-deriving structure
+// the entry already carried. A heuristic can only ever agree with the parser by
+// coincidence; a section named "SEE ALSO" or a shouted line inside prose would
+// have parted them.
+func originLineRange(lines []string, e Entry) (int, int) {
+	var next string
+	origin := -1
+	for i, sec := range e.Sections {
+		if sec.Name == "ORIGIN" {
+			origin = i
+			if i+1 < len(e.Sections) {
+				next = e.Sections[i+1].Name
+			}
+			break
+		}
+	}
+	if origin < 0 {
+		return 0, -1 // no ORIGIN section: an empty range
+	}
+	first := headingLine(lines, "ORIGIN")
+	if first < 0 {
+		return 0, -1
+	}
+	if next == "" {
+		return first, len(lines) - 1
+	}
+	if end := headingLine(lines[first+1:], next); end >= 0 {
+		return first, first + end // up to, not including, the next heading
+	}
+	return first, len(lines) - 1
+}
+
+// headingLine finds the rendered line that IS a section heading, which Render
+// writes as the name alone on its own line.
+func headingLine(lines []string, name string) int {
+	for i, l := range lines {
+		if strings.TrimSpace(stripEscapes(l)) == name {
+			return i
+		}
+	}
+	return -1
+}
+
+// findVisible locates the (skip+1)th occurrence of needle in a rendered line and
+// reports its DISPLAY COLUMN and width, ignoring escape sequences.
+//
+// Escapes are stepped over through escapeLen — the one owner of that grammar —
+// so a highlighted deck word inside the span does not move the column, and a
+// coloured line is measured by what a reader sees.
+func findVisible(line, needle string, skip int) (col, width int, ok bool) {
+	if visibleCells(needle) == 0 {
+		// A span with no VISIBLE EXTENT is not a span, and saying so here is the
+		// whole fix for a crash: strings.Index answers 0 for an empty needle, so
+		// a zero-width "match" was reported at column cols[0] — which panics on
+		// an empty line.
+		//
+		// Reachable from real input: an entry that is blank, or a single space,
+		// parses to an empty headword, and `define` crashed rather than
+		// rendering nothing. A dictionary returning junk must degrade, never
+		// panic.
+		//
+		// Measured in CELLS rather than bytes, because emptiness is not the only
+		// way to cover nothing — the fuzzer found a headword of NUL, whose width
+		// is zero for the same reason a combining mark's is. Either way the
+		// region is one no click can land in and no reader can see.
+		return 0, 0, false
+	}
+	plain, cols := visibleIndex(line)
+	from := 0
+	for {
+		i := strings.Index(plain[from:], needle)
+		if i < 0 {
+			return 0, 0, false
+		}
+		i += from
+		if skip == 0 {
+			return cols[i], visibleCells(needle), true
+		}
+		skip--
+		from = i + len(needle)
+	}
+}
+
+// visibleIndex strips escape sequences and reports, for each byte of what is
+// left, the display column it occupies.
+func visibleIndex(line string) (string, []int) {
+	var plain strings.Builder
+	var cols []int
+	col := 0
+	for i := 0; i < len(line); {
+		if skip := escapeLen(line[i:]); skip > 0 {
+			i += skip
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		for j := 0; j < size; j++ {
+			cols = append(cols, col)
+		}
+		plain.WriteString(line[i : i+size])
+		col += cellWidth(r)
+		i += size
+	}
+	return plain.String(), cols
+}
+
+// stripEscapes is visibleIndex's text half, for callers that need only that.
+func stripEscapes(s string) string {
+	plain, _ := visibleIndex(s)
+	return plain
 }
 
 // prettyPronunciations is the coloured face of rewritePronunciations.
@@ -224,24 +516,95 @@ func prettyPronunciations(s string, p palette) string {
 	return rewritePronunciations(s, p.ipa, p.off)
 }
 
-// visibleLen is the display width of s, ignoring ANSI escape sequences. Wrapping
-// on raw byte length would break early on any coloured line, and these lines are
-// coloured.
-func visibleLen(s string) int {
-	n, inEsc := 0, false
-	for _, r := range s {
-		switch {
-		case inEsc:
-			if r == 'm' {
-				inEsc = false
-			}
-		case r == '\x1b':
-			inEsc = true
-		default:
-			n++
+// visibleCells is the width of s in TERMINAL COLUMNS, ignoring ANSI escape
+// sequences. Wrapping on raw byte length would break early on any coloured line,
+// and these lines are coloured; counting runes instead is wrong in both
+// directions for a dictionary — see cellWidth.
+//
+// It is the ONE owner of "how wide is this" in this program. Every wrap, every
+// frame budget and every clip reads it, so a line cannot be measured one way
+// where it is written and another where it is placed.
+func visibleCells(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		if skip := escapeLen(s[i:]); skip > 0 {
+			i += skip
+			continue
 		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		n += cellWidth(r)
+		i += size
 	}
 	return n
+}
+
+// escapeLen is how many bytes of an escape sequence begin s, 0 if none.
+//
+// The ONE reading of the escape grammar in this program, wrapping sgr.go's
+// scanEscape so its "-1 means incomplete" convention — which exists for a
+// STREAM, where more bytes may still arrive — becomes "consume the rest" for the
+// whole strings measured here. Every site that walks styled text goes through
+// this rather than re-deriving "ESC, then optional [, then parameters, then a
+// final byte in 0x40-0x7E": four spellings of one grammar agree right up until
+// they do not, and M2.5 splices an underline through this same text.
+func escapeLen(s string) int {
+	n := scanEscape(s)
+	if n < 0 {
+		return len(s) // an unterminated sequence: nothing after it is visible
+	}
+	return n
+}
+
+// cellWidth is how many terminal columns one rune occupies: 0, 1 or 2.
+//
+// It exists because this program is a DICTIONARY, and both exceptions are its
+// daily traffic. NOAD writes `bänˈZHo͝or` — the o͝o carries a combining double
+// breve, a rune that occupies no column of its own — so counting runes reports
+// ten columns for nine and cuts text that fits. And a Japanese or Chinese entry
+// is full-width: ten runes are twenty columns, so counting runes builds a frame
+// twice as tall as it measured, the terminal scrolls, and every row the app
+// believes it placed has moved.
+//
+// Hand-rolled against unicode's own tables rather than taking a dependency for
+// it: the ranges below are the East Asian Wide and Fullwidth blocks, and the
+// zero-width cases are exactly the categories unicode already names.
+func cellWidth(r rune) int {
+	switch {
+	case r == 0:
+		return 0
+	case unicode.Is(unicode.Mn, r), unicode.Is(unicode.Me, r), unicode.Is(unicode.Cf, r):
+		// Non-spacing and enclosing marks compose with the rune before them, and
+		// format characters (ZWJ, the bidi controls) are not drawn at all.
+		return 0
+	case r == '\u200b': // zero-width space, which is Zs rather than Cf
+		return 0
+	case isWide(r):
+		return 2
+	}
+	return 1
+}
+
+// isWide reports the East Asian Wide and Fullwidth ranges — the ones a terminal
+// draws in two cells.
+func isWide(r rune) bool {
+	switch {
+	case r >= 0x1100 && r <= 0x115f, // Hangul Jamo
+		r >= 0x2e80 && r <= 0x303e, // CJK radicals, Kangxi, CJK symbols
+		r >= 0x3041 && r <= 0x33ff, // Hiragana, Katakana, Hangul compat, CJK compat
+		r >= 0x3400 && r <= 0x4dbf, // CJK Ext A
+		r >= 0x4e00 && r <= 0x9fff, // CJK Unified
+		r >= 0xa000 && r <= 0xa4cf, // Yi
+		r >= 0xac00 && r <= 0xd7a3, // Hangul syllables
+		r >= 0xf900 && r <= 0xfaff, // CJK compatibility ideographs
+		r >= 0xfe30 && r <= 0xfe6f, // CJK compatibility forms
+		r >= 0xff00 && r <= 0xff60, // fullwidth forms
+		r >= 0xffe0 && r <= 0xffe6,
+		r >= 0x1f300 && r <= 0x1f64f, // emoji, which terminals draw double-wide
+		r >= 0x1f900 && r <= 0x1f9ff,
+		r >= 0x20000 && r <= 0x3fffd: // CJK Ext B and beyond
+		return true
+	}
+	return false
 }
 
 // wrapText breaks s at spaces to fit width, continuing on subsequent lines with
@@ -251,14 +614,14 @@ func visibleLen(s string) int {
 // splitting words mid-syllable ("fing/ers"), which is exactly what a dictionary
 // entry must not do.
 func wrapText(s string, width, indent int) string {
-	if width <= 0 || visibleLen(s)+indent <= width {
+	if width <= 0 || visibleCells(s)+indent <= width {
 		return s
 	}
 	pad := strings.Repeat(" ", indent)
 	var b strings.Builder
 	col := indent
 	for i, word := range strings.Fields(s) {
-		w := visibleLen(word)
+		w := visibleCells(word)
 		switch {
 		case i == 0:
 			b.WriteString(word)

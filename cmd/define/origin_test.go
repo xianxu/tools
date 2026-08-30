@@ -165,3 +165,107 @@ func FuzzOriginLanguageDoesNotPanic(f *testing.F) {
 		_, _, _ = OriginLanguage(Entry{Sections: []Section{{Name: "ORIGIN", Text: origin}}})
 	})
 }
+
+// Offsets index the SOURCE text, which is what makes a mention addressable on
+// screen (#30 M2.1).
+//
+// It was nearly wrong in a way no existing test could see. The stage mask used
+// to be `strings.ReplaceAll(text, stage, " ")` — a length CHANGE — so every
+// offset after a masked stage pointed at the wrong column.
+//
+// MEASURED, because the plan named the wrong entry for it: `concrete` does not
+// shift at all. "Middle English" is not a masked stage — there is no `English`
+// row to derive one from — and its only masked stage, "Latin", comes AFTER the
+// language. `ballet` is the real shape: "from Old French ballet, from Italian
+// balletto", where masking the 10-character "Old French" to a single space moves
+// "Italian" 9 columns left, onto "et, fro". A region drawn there lands on the
+// wrong word, and clicking it plays something the user did not point at.
+func TestOriginMentionOffsetsIndexTheSourceText(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin string
+		want         []string // the languages, in source order
+	}{
+		{
+			// The measured case: a masked stage BEFORE the language, which is the
+			// only arrangement the shift can show up in.
+			"a stage before the language", "early 17th century: from Old French ballet, from Italian balletto.",
+			[]string{"Italian"},
+		},
+		{
+			// Two masked stages, so a length change compounds.
+			"two stages before the language", "mid 16th century: from Old Norse and Old French, from Italian arsenale.",
+			[]string{"Italian"},
+		},
+		{
+			// And the arrangement that does NOT shift, so each case says which half
+			// of the rule it exercises.
+			"a stage after the language", "late Middle English: from French concret or Latin concretus.",
+			[]string{"French"},
+		},
+		{
+			// The reason this producer exists: a click has nothing to pick, so
+			// both must be addressable.
+			"two languages, both clickable", "either from French, or an abbreviation of pianoforte; Italian piano is not attested until later.",
+			[]string{"French", "Italian"},
+		},
+		{"cognates are cut", "Old English bringan, of Germanic origin; related to Dutch brengen and German bringen.", nil},
+		{"a stage is not its modern language", "from Old French concret.", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := Entry{Sections: []Section{{Name: "ORIGIN", Text: tc.origin}}}
+			got, _ := OriginLanguageMentions(e)
+
+			if len(got) != len(tc.want) {
+				t.Fatalf("found %v, want %v", names(got), tc.want)
+			}
+			for i, m := range got {
+				if m.Name != tc.want[i] {
+					t.Errorf("mention %d is %q, want %q — source order is what a reader clicks", i, m.Name, tc.want[i])
+				}
+				// THE ASSERTION THAT MATTERS: the offset points at the language
+				// in the text a region will be drawn over.
+				if end := m.Offset + len(m.Name); m.Offset < 0 || end > len(tc.origin) || tc.origin[m.Offset:end] != m.Name {
+					at := ""
+					if m.Offset >= 0 && m.Offset < len(tc.origin) {
+						at = tc.origin[m.Offset:min(m.Offset+20, len(tc.origin))]
+					}
+					t.Errorf("%q is reported at offset %d, where the source reads %q — a region drawn there lands on the wrong word",
+						m.Name, m.Offset, at)
+				}
+			}
+		})
+	}
+}
+
+func names(ms []Mention) []string {
+	var out []string
+	for _, m := range ms {
+		out = append(out, m.Name)
+	}
+	return out
+}
+
+// The producer and its first-named consumer cannot disagree: OriginLanguage IS
+// the first mention, so a rule that changes one changes both.
+func TestOriginLanguageIsTheFirstMention(t *testing.T) {
+	for _, origin := range []string{
+		"either from French, or an abbreviation of pianoforte; Italian piano is not attested until later.",
+		"early 17th century: from French, from Italian balletto.",
+		"late Middle English: from French concret or Latin concretus.",
+		"mid 17th century: from Italian, from Latin opera.",
+	} {
+		e := Entry{Sections: []Section{{Name: "ORIGIN", Text: origin}}}
+		mentions, _ := OriginLanguageMentions(e)
+		lang, named, err := OriginLanguage(e)
+		if err != nil {
+			t.Fatalf("%q: %v", origin, err)
+		}
+		if len(mentions) == 0 {
+			t.Fatalf("%q: the producer found nothing while the consumer found %q", origin, named)
+		}
+		if named != mentions[0].Name || lang != mentions[0].Lang {
+			t.Errorf("%q: OriginLanguage says %q/%q, the first mention is %q/%q",
+				origin, named, lang, mentions[0].Name, mentions[0].Lang)
+		}
+	}
+}

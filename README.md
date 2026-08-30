@@ -76,7 +76,8 @@ loop never reaches for the model. Pronunciation audio is fetched over the networ
 only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
 network call at all; `--no-audio` makes one fully offline either way.
 
-On a terminal, `define` with no word opens a line editor:
+On a terminal, `define` with no word opens a line editor and draws the session
+itself:
 
 | key | does |
 |---|---|
@@ -85,9 +86,27 @@ On a terminal, `define` with no word opens a line editor:
 | Enter | define what you typed (never the suggestion) |
 | Enter on an empty line | replay the pronunciation, without moving the screen |
 | Cmd+Delete (Ctrl-U) | clear the line |
+| PageUp / PageDown, wheel | scroll back through the session |
 | Ctrl-C | quit, including mid-playback |
 
-Definitions wrap to your terminal width at word boundaries.
+Definitions wrap to your terminal width at word boundaries, and follow it when
+you resize the window.
+
+Because `define` owns the screen while it runs, the mouse belongs to it too —
+**hold Option to select text** (Shift in some terminals). Everything the session
+showed is printed back into your terminal when you quit, so the words you looked
+up are in your scrollback to return to. The frame itself is not: the prompt you
+were typing at and the `♫ playing` indicator were ephemeral, and stay that way.
+
+**Underlined words are clickable.** Click the headword to hear it again; click
+the language after `ORIGIN` to hear the word in *that* language — `concrete` in
+French, `jalapeño` in Spanish — without typing a command. Every language an
+etymology names as a source is its own target, so `piano`'s "either from French,
+or … Italian" gives you both: you point at the one you meant. Cognates and dead
+stages are not offered, because they are not something a speaker says today.
+
+It works on words you have scrolled back to, not just the last one. A click on
+ordinary text does nothing.
 
 **Words you have looked up show in green** — in the line you type, in definitions,
 and in answers — so the vocabulary you are building is visible rather than
@@ -290,8 +309,14 @@ define --llm-check
 It is the one surface where an unusable configuration is **loud**: it exits
 non-zero and names the reason. Configure it with `DEFINE_LLM_API_KEY` (or `ANTHROPIC_API_KEY`),
 `DEFINE_LLM_BASE_URL`, `DEFINE_LLM_MODEL`, `DEFINE_LLM_EFFORT` and
-`DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) — all five the tool reads. The
-default base URL is a local proxy on `127.0.0.1:8317`.
+`DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) — all five the tool reads.
+
+**You usually need none of them.** The default is a local proxy on
+`127.0.0.1:8317` — the parley-managed cliproxyapi — and `define` supplies that
+proxy's loopback handshake token itself, so questions work with nothing set at
+all. Point `DEFINE_LLM_BASE_URL` anywhere else and a key becomes required, since
+a token invented for a local proxy has no business being sent to a real
+provider.
 
 Exit codes: `0` success; `1` the request failed; `2` usage error. What produces
 each is enumerated rather than sampled, because a list of examples goes stale the

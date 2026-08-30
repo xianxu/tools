@@ -15,8 +15,24 @@ const (
 	// The instance is parley-managed (~/.local/share/nvim/parley/cliproxy/),
 	// which carries auto-healing a standalone install does not.
 	defaultBaseURL = "http://127.0.0.1:8317"
-	defaultModel   = "claude-opus-5"
-	defaultEffort  = "high"
+	// The handshake token that proxy expects, and it is the OTHER HALF of the
+	// line above rather than a second decision. cliproxyapi's `api-keys` is an
+	// inbound allowlist — it authenticates its callers and 401s without a match
+	// — so this is a loopback handshake, not a credential: parley renders the
+	// same constant into the proxy's config and sends it as the bearer, and its
+	// own comment is the argument for doing so ("a fixed local default works
+	// out-of-the-box over loopback").
+	//
+	// Hardcoding a peer's constant is exactly what ParseLang and -locale refuse,
+	// and the difference is whose fact it is at what cost. The ENDPOINT above is
+	// already parley's fact, hardcoded deliberately; without the token that
+	// default is inert, so every operator whose parley works still met "no model
+	// configured" and had to export a secret a program on the same machine
+	// already knew. If parley ever changes it the failure is a 401 naming the
+	// key — the same shape as today's missing-key path, not a worse one.
+	defaultLocalKey = "parley-local"
+	defaultModel    = "claude-opus-5"
+	defaultEffort   = "high"
 	// Generous on purpose, and not arbitrary: with adaptive thinking on,
 	// max_tokens must cover the THINKING AND the answer. A 512-token budget
 	// during this issue's probes let thinking consume the lot and returned an
@@ -109,9 +125,20 @@ func Resolve(getenv func(string) string) (Config, error) {
 		Timeout:    timeout,
 		StallAfter: defaultStallAfter,
 	}
+	if c.APIKey == "" && c.BaseURL == defaultBaseURL {
+		// Talking to the managed local proxy, where the key is a handshake this
+		// program can supply for itself. Only for THAT endpoint: a key invented
+		// for someone else's proxy would be sent as a credential to a host we
+		// know nothing about.
+		c.APIKey = defaultLocalKey
+	}
 	if c.APIKey == "" {
 		// Names what to do, not just what is wrong. The parley pointer is a hint
 		// in a message, not a dependency: nothing here reads parley's files.
+		//
+		// Reachable only with a base URL that is NOT the local proxy, since that
+		// one now defaults its own key — so the message can assume a real
+		// provider is meant.
 		return c, fmt.Errorf("%w: no API key — set DEFINE_LLM_API_KEY or ANTHROPIC_API_KEY "+
 			"(the parley-managed proxy keeps one in ~/.local/share/nvim/parley/cliproxy/config.yaml)",
 			ErrUnavailable)

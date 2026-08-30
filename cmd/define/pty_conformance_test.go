@@ -521,3 +521,139 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 		t.Errorf("%d bare newline(s) — the CRLF cascade is back", bad)
 	}
 }
+
+// Mouse reporting is asked for, and given back (#30 M1.4b).
+//
+// Giving it back matters more than turning it on: a terminal left reporting the
+// mouse writes escape sequences into whatever the user runs next, and unlike raw
+// mode there is no `reset` reflex for it, because the shell still looks fine. It
+// rides rawSession's restore for exactly that reason, and this is the row that
+// says the guarantee reaches a real terminal.
+func TestPTYMouseTrackingIsAskedForAndGivenBack(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	started := out.take(time.Second)
+
+	if !strings.Contains(started, mouseOn) {
+		t.Errorf("the session never enabled mouse reporting, so the wheel arrives as arrow keys: %q", started)
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	if rest := out.take(time.Second); !strings.Contains(started+rest, mouseOff) {
+		t.Errorf("mouse reporting was left ON: the next program run in this terminal gets escape sequences typed into it: %q", rest)
+	}
+}
+
+// A resize repaints, driven by a REAL SIGWINCH (#30 M1.4).
+//
+// This is the one part of the resize path no in-process test can reach: the
+// signal itself. TestWatchResizeCoalesces drives the channel, and
+// TestEditorResizeRedrawsForTheNewShape drives the loop — but whether a window
+// change actually delivers SIGWINCH to this program, and whether the frame that
+// follows fits the new window, is a question only a terminal answers.
+func TestPTYResizeRepaints(t *testing.T) {
+	_, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+		conformance.SkipOrFail(t, "cannot size the pty on this platform", err)
+	}
+	out.take(time.Second)
+
+	// A long entry, so the buffer is taller than the window it is about to get.
+	f.Write([]byte("run\r"))
+	out.take(3 * time.Second)
+
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 10, Cols: 80}); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	after := out.take(2 * time.Second)
+	if !strings.Contains(after, cursorHome) {
+		t.Fatalf("nothing was repainted after the window changed — SIGWINCH never reached the select: %q", after)
+	}
+	// And the frame FITS: a frame drawn for the old height is too tall, the
+	// terminal scrolls to fit it, and every row the app believes it placed has
+	// moved — which is exactly what makes a click land on the wrong line.
+	frame := after[strings.LastIndex(after, cursorHome):]
+	if rows := strings.Count(frame, "\r\n") + 1; rows > 10 {
+		t.Errorf("the frame is %d rows in a 10-row window: %q", rows, frame)
+	}
+}
+
+// The session survives the alternate screen (#30 D3, M1.5).
+//
+// The alt buffer is discarded on the way out, so without the transcript
+// everything a session showed is gone the moment it ends — and `define
+// arrondissement` used to leave the entry where you could scroll back to it
+// tomorrow, or copy from it.
+//
+// The assertion is deliberately anchored AFTER the teardown sequence: the entry
+// appearing anywhere in the stream proves only that it was drawn on the screen
+// that is about to be thrown away.
+func TestPTYTranscriptIsPrintedOnExit(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	out.take(time.Second)
+
+	f.Write([]byte("sycophantic\r"))
+	if drawn := out.take(3 * time.Second); !strings.Contains(drawn, "sikəˈfan(t)ik") {
+		t.Fatalf("the word was never defined, so its survival proves nothing: %q", drawn)
+	}
+
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	rest := out.take(time.Second)
+	i := strings.Index(rest, altScreenOff)
+	if i < 0 {
+		t.Fatalf("the alternate screen was never left: %q", rest)
+	}
+	after := rest[i:]
+	if !strings.Contains(after, "sikəˈfan(t)ik") {
+		t.Errorf("the session vanished with the alternate screen — nothing to scroll back to: %q", after)
+	}
+	// The line the user typed comes back too: an entry with no word above it
+	// reads as scrollback from nowhere.
+	if !strings.Contains(after, "sycophantic") {
+		t.Errorf("the committed line is not in the transcript: %q", after)
+	}
+}
+
+// A terminal that never reports a mouse behaves exactly as M1 did (#30 M2.6).
+//
+// The enable is emitted unconditionally, because there is no reliable way to ask
+// a terminal whether it will honour it — DECRQM is a round trip terminals answer
+// inconsistently, and a private mode nobody implements is ignored rather than
+// echoed. So the degrade is not a code path: it is the absence of input. What
+// this row asserts is that the absence costs nothing — the session still looks
+// words up, still scrolls by key, and still leaves the terminal sane.
+func TestPTYWithoutMouseBehavesAsBefore(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	out.take(time.Second)
+
+	// A whole session, and not one mouse report in it.
+	f.Write([]byte("sycophantic\r"))
+	if got := out.take(3 * time.Second); !strings.Contains(got, "sikəˈfan(t)ik") {
+		t.Fatalf("the lookup did not answer: %q", got)
+	}
+	f.Write([]byte("\x1b[5~")) // PageUp still scrolls
+	if got := out.take(time.Second); !strings.Contains(got, cursorHome) {
+		t.Errorf("the viewport did not move without a mouse: %q", got)
+	}
+	f.Write([]byte("syc"))
+	if got := out.take(time.Second); !strings.Contains(got, greyOn) {
+		t.Errorf("suggestions stopped working without a mouse: %q", got)
+	}
+
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	rest := out.take(time.Second)
+	if !strings.Contains(rest, mouseOff) {
+		t.Errorf("tracking was left on by a session that never saw a mouse: %q", rest)
+	}
+}

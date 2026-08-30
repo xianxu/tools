@@ -126,21 +126,21 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 	})
 
 	t.Run("raw editor", func(t *testing.T) {
-		rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+		rig, opt, finish := editorRig(t, "sycophantic", true)
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
 	// A bare Enter replays; it is not a new lookup and must capture nothing.
 	t.Run("replay captures nothing", func(t *testing.T) {
-		rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+		rig, opt, finish := editorRig(t, "sycophantic", true)
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
@@ -284,12 +284,12 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 	dir := t.TempDir()
 	st := store.NewYAML(dir, store.DefaultLang, nil)
 
-	rig, opt, cooked, finish := editorRig(t, "sycophantic", true)
+	rig, opt, finish := editorRig(t, "sycophantic", true)
 	rig.deps.history = newStoreHistory(st, nil)
 	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil, nil)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, cooked, finish, &out, &errb)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
 
 	deck, err := st.Deck()
 	if err != nil {

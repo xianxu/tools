@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -21,7 +22,7 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 		// line path rather than pretending raw mode succeeded.
 		return replLines(ctx, interrupts, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
 	}
-	sess, err := enterRaw(f)
+	sess, err := enterRaw(f, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: cannot enter raw mode (%v); falling back to line input\n", err)
 		return replLines(ctx, interrupts, d, opt, stdin, stdout, stderr, false /*stdin is a tty*/, true /*we own it*/)
@@ -29,33 +30,164 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	defer sess.restore()
 
 	keys := readKeys(ctx, f, interrupts)
-	// cooked drops raw mode around a lookup so the definition scrolls normally,
-	// then re-enters for the next frame.
-	// Dropping and re-entering raw mode around a lookup. If re-entry fails the
-	// editor would keep drawing frames a cooked terminal echoes over — silently
-	// unusable — so say so and stop rather than swallow it.
-	cooked := func(run func()) error {
-		sess.restore()
-		run()
-		s, err := enterRaw(f)
-		if err != nil {
-			return err
-		}
-		*sess = *s
-		return nil
-	}
-	return runEditor(ctx, keys, interrupts, d, opt, cooked, sess.restore, stdout, stderr)
+	// The alternate screen, and with it the END of the cooked/raw dance (#30 D4).
+	// `cooked()` existed so a definition's bare "\n"s translated while it was
+	// printed; here the screen places every line itself, so nothing depends on
+	// the line discipline and raw mode is continuous — which is what "render
+	// cooked, play raw" wanted all along.
+	sess.enterAlt()
+	// And the mouse, whose wheel this loop needs (M1.4b): inside the alternate
+	// screen a terminal sends the wheel as ARROW KEYS unless asked to report the
+	// mouse, and Up/Down here are the history walk — so a scroll walked history.
+	// The bytes are identical, so nothing could tell them apart; the report is
+	// the only way to be handed the gesture the user actually made.
+	sess.enterMouse()
+	live := newLiveScreen(stdout, terminalRows(stdout), terminalCols(stdout))
+	// The shape is MEASURED here, where the terminal is, and delivered to the
+	// loop as a value — so the loop's new select case knows nothing about
+	// os/signal and everything about what it has to redraw.
+	resizes := watchResize(ctx, d.notifySignals, func() winSize {
+		// The TRUE shape. The wrap policy is derived from it below, where the
+		// loop sets opt.width — the two questions have different answers for a
+		// very narrow terminal, and only one of them may be zero.
+		return winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
+	})
+	// ONCE, and the transcript is why it has to be: restore() and Stop() are both
+	// idempotent because they run from more than one exit path, and printing a
+	// session twice is not the kind of thing an idempotent call fixes. sync's
+	// primitive rather than a hand-rolled flag, so the guarantee needs no test of
+	// its own to be trustworthy.
+	finish := onceHandBack(live, sess, stdout)
+	// BOTH streams are the screen, stderr included (D5b). A diagnostic written
+	// straight to the terminal while the alternate screen is up lands wherever
+	// the cursor happens to be and corrupts the frame; through the screen it is a
+	// buffer line like any other, and survives to the exit transcript, where
+	// today it is simply gone. The one-shot and piped paths keep the real stderr
+	// (D6), so a script's `2>` is untouched.
+	return runEditor(ctx, keys, interrupts, d, opt, console{
+		view: live, resizes: resizes, finish: finish,
+		// BOTH streams are the screen (D5b) — see above.
+		stdout: live, stderr: live,
+	})
 }
 
-// runEditor is the editor loop with the terminal factored out: keys arrive on a
-// channel, `cooked` runs a lookup outside raw mode, and `finish` restores the
-// terminal. Tests drive it with a scripted channel and no terminal at all —
-// which is the whole point of keeping Apply and RenderLine pure.
-// interrupts sits beside keys because they are two halves of one story: the
-// channel carries the byte transport, and the sink decides what an interrupt
-// from EITHER transport means while this loop owns the foreground.
-func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d deps, opt options,
-	cooked func(func()) error, finish func(), stdout, stderr io.Writer) int {
+// wheelLines is how far one wheel event moves the viewport.
+//
+// Three, which is what the terminal itself means by a notch: left to its own
+// devices in the alternate screen it translates one notch into THREE arrow keys.
+// Matching that keeps the gesture feeling like the terminal's own scroll rather
+// than like this program's idea of one.
+const wheelLines = 3
+
+// console is THE TERMINAL, factored out — the thing runEditor's own doc comment
+// has always named without there being a type for it.
+//
+// It exists because five of that function's ten parameters were this one
+// concept, and two of them were adjacent `io.Writer`s: a call that swapped
+// stdout and stderr compiled, ran, and put diagnostics where the definition
+// goes. Named fields cannot be swapped by position.
+//
+// In production every field is the same liveScreen (stdout AND stderr, #30 D5b);
+// in a test the display is a recorder and the writers are buffers, and the loop
+// cannot tell the difference. M2's click arrives as a method on `display`, not
+// as an eleventh parameter.
+type console struct {
+	// view is what the loop draws on and scrolls.
+	view display
+	// resizes carries the terminal's new shape. nil is legitimate: a test has no
+	// terminal, and a nil channel simply never fires.
+	resizes <-chan winSize
+	// finish hands the terminal back — see handBack for the order and why.
+	finish func()
+	// stdout and stderr are where the session's bytes go.
+	stdout io.Writer
+	stderr io.Writer
+}
+
+// display is the loop's whole view of the terminal: one frame out, and a
+// viewport it can move.
+//
+// An interface rather than the concrete screen, for the reason runEditor takes a
+// key CHANNEL rather than a file: the loop is drivable with no terminal at all,
+// which is what keeps Apply and RenderLine testable as pure functions.
+// liveScreen is the production implementation.
+type display interface {
+	// Draw puts one frame on the screen: the buffer's visible tail, the prompt,
+	// and the command menu under it.
+	Draw(prompt string, menu []string)
+	// Page moves the viewport by whole screenfuls — positive is BACKWARD, toward
+	// older text, which is the direction "page up" means to a reader. How tall a
+	// page is belongs to the screen; the loop only knows a key was pressed.
+	Page(n int)
+	// Scroll moves it by LINES, in the same direction. The wheel is a finer
+	// gesture than the page keys and a screenful per notch would be unusable.
+	Scroll(lines int)
+	// Resize sets the terminal's SHAPE. The caller redraws, because the live
+	// edge is rendered against the new width too.
+	Resize(rows, cols int)
+	// WriteRegions writes rendered text AND the click map for it. One call,
+	// because the regions are relative to that render and only the screen knows
+	// which buffer line it lands on — two calls could disagree by a line, which
+	// is a click that plays the word above the one you pointed at.
+	WriteRegions(text string, rs []Region)
+	// RegionAtRow answers what is offered at a VIEWPORT row and display column,
+	// which is what a terminal reports for a click.
+	RegionAtRow(row, col int) (Region, bool)
+}
+
+// onceHandBack is handBack, exactly once. Named so the loop's exit paths — three
+// of them — share one guarantee rather than each carrying a flag.
+func onceHandBack(live interface {
+	Stop()
+	Transcript() string
+}, sess interface{ restore() }, stdout io.Writer) func() {
+	return sync.OnceFunc(func() { handBack(live, sess, stdout) })
+}
+
+// handBack returns the terminal to whoever had it, in the order that makes each
+// step safe, and leaves the session where the user can scroll to it.
+//
+// A named function over two interfaces rather than a closure inside replRaw,
+// because replRaw itself has no in-process caller — it demands a real *os.File
+// it can put into raw mode — and every claim this sequence makes was therefore
+// pinned only by pty rows, which skip wherever no pty is available. A boundary
+// review that cannot run them is a review that cannot check the most dangerous
+// thing this program does.
+//
+// The ORDER is the content:
+//
+//  1. stop painting, so no frame is drawn onto the normal screen after the
+//     alternate one is gone;
+//  2. restore the terminal — mouse reporting, then the alt screen, then the line
+//     discipline (rawSession owns why);
+//  3. print the session, LAST, because the terminal is cooked again by then, so
+//     the transcript's bare newlines are newlines. This is the one write in the
+//     whole loop that goes to the real stdout rather than through the screen.
+//
+// Without step 3 the alternate screen takes the session with it, and `define
+// arrondissement` no longer leaves the entry where you can scroll back to it
+// tomorrow (#30 D3).
+func handBack(live interface {
+	Stop()
+	Transcript() string
+}, sess interface{ restore() }, stdout io.Writer) {
+	live.Stop()
+	sess.restore()
+	fmt.Fprint(stdout, live.Transcript())
+}
+
+// runEditor is the editor loop with the terminal factored out — into `console`,
+// which is now a type rather than five parameters in a row. Keys arrive on a
+// channel; tests drive it with a scripted one and no terminal at all, which is
+// the whole point of keeping Apply and RenderLine pure.
+//
+// interrupts sits beside keys rather than in the console because they are two
+// halves of one story: the channel carries the byte transport, and the sink
+// decides what an interrupt from EITHER transport means while this loop owns the
+// foreground. A SIGINT never touches the terminal, so it is not the console's.
+func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d deps, opt options, con console) int {
+	view, finish := con.view, con.finish
+	stdout, stderr := con.stdout, con.stderr
 	if interrupts == nil {
 		// A loop with no sink still runs; nothing can scope an interrupt, which
 		// is the honest behaviour for a caller that supplied no cancellation.
@@ -86,35 +218,16 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// it stands, and a history walk anchors on it. draw() computes its own from
 	// the line AFTER — passing it this one is what made the grey tail disagree
 	// with what Tab accepted.
-	// The command menu is a dropdown, not scrollback: drawn BELOW the prompt
-	// line and erased on every redraw. menuDrawn is how many rows are currently
-	// on screen under the cursor.
 	//
-	// Known limit, shared with the erase arithmetic elsewhere in this file: if
-	// the menu does not fit below the cursor the terminal scrolls, and the
-	// cursor-up count then lands a row off. It self-corrects on the next
-	// keystroke, because the prompt line is fully rewritten each time.
-	menuDrawn := 0
-	paintMenu := func(lines []string) {
-		// Erase max(previous, new) rows, so a list that SHRINKS as you type
-		// leaves nothing of the longer one behind.
-		n := menuDrawn
-		if len(lines) > n {
-			n = len(lines)
-		}
-		if n == 0 {
-			return
-		}
-		for i := 0; i < n; i++ {
-			fmt.Fprint(stdout, "\r\n"+eraseLine)
-			if i < len(lines) {
-				fmt.Fprint(stdout, lines[i])
-			}
-		}
-		fmt.Fprintf(stdout, "\x1b[%dA\r", n) // back up to the prompt line
-		menuDrawn = len(lines)
-	}
-	clearMenu := func() { paintMenu(nil) }
+	// The menu is a DROPDOWN drawn under the prompt, and it is now an argument to
+	// one frame rather than rows this loop tracks. paintMenu counted the rows it
+	// had drawn so it could erase exactly that many, and carried a documented
+	// known limit for when the count was wrong ("if the menu does not fit below
+	// the cursor the terminal scrolls, and the cursor-up count then lands a row
+	// off"). A whole frame cannot be off by a row, because it never counts rows
+	// it drew earlier — so the arithmetic, its limit, and clearMenu with them,
+	// are deleted rather than ported.
+	//
 	// draw takes NO match list on purpose. It used to accept one, and one caller
 	// passed the list computed BEFORE the keystroke was applied — so the grey
 	// tail was rendered against the previous line. Both lists were history until
@@ -131,27 +244,50 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// keystroke that nothing reads. Same function that fills .complete, so
 		// the two paths cannot disagree.
 		//
-		// The menu is painted FIRST and the prompt line last, so RenderLine
-		// leaves the cursor where the user is typing.
-		paintMenu(menuLines(e.String(), commands, opt.width))
-		fmt.Fprint(stdout, RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color))
+		// The prompt and the menu go to the FRAME rather than to stdout, and
+		// that is the whole of this loop's change: they are the live edge,
+		// rewritten on every keystroke, so buffering them would file a copy of
+		// the prompt per character typed.
+		view.Draw(RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color),
+			menuLines(e.String(), commands, opt.width))
 	}
 	draw()
 
-	// One report for "raw mode could not be re-entered", because the editor would
-	// then keep drawing frames a cooked terminal echoes over — silently unusable.
-	// #16 took this from two copies to four, and M2's streaming adds a fifth.
-	lostTerminal := func(err error) int {
-		finish()
-		fmt.Fprintf(stderr, "define: lost the terminal: %v\n", err)
-		return 1
+	// The click actions, as a REGISTRY rather than two special cases — which is
+	// what #30 is filed as: "the affordance is ONE mechanism, so a third
+	// consumer is a row rather than a new feature".
+	//
+	// Every action is a replay with one parameter, because that is what these
+	// regions offer: the headword in the session's language, the ORIGIN language
+	// in its own. `replayInPlace` is the same path a bare Enter and `/pron`
+	// take, so a click cannot drift from the gestures it is a shortcut for.
+	clicked := func(r Region) {
+		// The clicked entry, which is not always the current one: a reader can
+		// scroll back and click a word from earlier in the session. The session
+		// keeps only the CURRENT entry's raw text, and that text is what supplies
+		// the source spellings for a foreign replay — so an older entry replays
+		// through #29's fallback on the headword itself, which is the degraded
+		// answer rather than a wrong one.
+		clicked := session{current: r.Word}
+		if r.Word == sess.current {
+			clicked.entry = sess.entry
+		}
+		switch r.Kind {
+		case RegionHeadword:
+			replayInPlace(ctx, d, opt, clicked, "", stdout, stderr)
+		case RegionOriginLang:
+			replayInPlace(ctx, d, opt, clicked, r.Lang, stdout, stderr)
+		}
+		draw()
 	}
 
 	// ONE entry into the ask path for this loop, reached from two places: a
-	// forced question ("?…") and a dictionary miss that reads as one. The
-	// streaming writers hang here because a raw terminal is what makes them
-	// differ; the interrupt SCOPE does not hang here — askScoped owns that, so
-	// both loops cannot drift on an ordering that is silent when wrong.
+	// forced question ("?…") and a dictionary miss that reads as one. It used to
+	// hang the streaming writers too, because a raw terminal was what made them
+	// differ from the line loop's; the screen took that job (D5), and what is
+	// left here is the pair of routes. The interrupt SCOPE does not hang here
+	// either — askScoped owns that, so both loops cannot drift on an ordering
+	// that is silent when wrong.
 	//
 	// The caller supplies the leading "\r\n", because the unforced route has
 	// already written one before submitLine — emitting a second here put the two
@@ -164,38 +300,98 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// consumed rather than also handing it to this loop, where it would quit
 		// the session the moment the answer ended (#16 D5).
 		//
-		// Streamed in RAW mode through crlfWriter rather than under cooked():
-		// deltas arrive continuously and flapping the terminal per delta is not
-		// a thing, and staying raw is also what keeps the key reader decoding
-		// bytes — which is what makes the scoping reachable at all (D6).
+		// Streamed straight into the screen, with NO crlfWriter (#30 D5). It
+		// wrapped this path because a raw terminal needs the carriage half of
+		// every line break and a stream cannot be flapped cooked per delta; the
+		// screen now owns where a line goes, and two owners of line endings is
+		// how they drift. `--play` keeps its own crlfWriter, because it keeps
+		// drawing its own frames (D5a).
 		askScoped(ctx, interrupts, func(qctx context.Context) int {
-			return ask(qctx, d, opt, &sess, &crlfWriter{w: stdout}, &crlfWriter{w: stderr}, q)
+			return ask(qctx, d, opt, &sess, stdout, stderr, q)
 		})
 
 		fmt.Fprint(stdout, "\r\n")
 		draw()
 	}
 
+	// Every exit is finish() and nothing else. The farewell newline the three of
+	// them used to write is gone with the alternate screen: leaving it restores
+	// the normal buffer exactly as the shell left it, so there is no half-drawn
+	// line for a newline to finish — and a write after finish would land in a
+	// buffer nobody paints again (#30 D3 prints the transcript there instead).
 	for {
 		select {
 		case <-ctx.Done():
 			finish() // before anything else can write: never exit leaving raw mode on
-			fmt.Fprintln(stdout)
 			return 0
+		case sz := <-con.resizes:
+			// A frame is drawn for a SHAPE, and both halves of it go wrong. Too
+			// tall and the terminal scrolls, which moves every row the app
+			// believes it placed; too narrow and the width the next entry wraps
+			// to is not the width it is read at.
+			//
+			// Lines already in the buffer keep the wrapping they were rendered
+			// with. Re-wrapping them would mean re-rendering from entries this
+			// program does not keep, and a session's scrollback going fluid on
+			// every drag is not obviously better than one that reads as a record
+			// of what was shown.
+			//
+			// A resize that arrives while a recording plays waits here until the
+			// loop is idle: this case is only reached between keystrokes, so the
+			// frame is briefly stale rather than concurrently painted by two
+			// goroutines.
+			// The POLICY width for wrapping new entries, and the TRUE width for
+			// placing rows. Below 20 columns wrapping is turned off — a
+			// dictionary entry cannot be broken that narrowly and stay readable
+			// — while the frame still has to fit the columns that exist.
+			opt.width = sz.cols
+			if sz.cols < 20 {
+				opt.width = 0
+			}
+			view.Resize(sz.rows, sz.cols)
+			draw()
+			continue
 		case k, open := <-keys:
 			if !open {
 				finish()
-				fmt.Fprintln(stdout)
 				return 0
+			}
+			// A VIEWPORT gesture never reaches Apply: it changes what you are
+			// looking at, not the line you are typing, so the editor does not
+			// have to learn that a screen exists. PageUp/PageDown and the wheel
+			// only — the obvious half-page bindings Ctrl-U and Ctrl-D are already
+			// the kill and the EOF (key.go), and taking either would be a silent
+			// regression in an editor people already use.
+			switch k.Kind {
+			case KeyPageUp:
+				view.Page(1)
+				continue
+			case KeyPageDown:
+				view.Page(-1)
+				continue
+			case KeyWheelUp:
+				view.Scroll(wheelLines)
+				continue
+			case KeyWheelDown:
+				view.Scroll(-wheelLines)
+				continue
+			case KeyClick:
+				// A click is a gesture on the SCREEN, so like the viewport keys
+				// it never reaches Apply — the editor does not learn that a
+				// screen exists. What it can do is act on the region under the
+				// pointer, and a click on nothing is nothing: no beep, no
+				// message. Pointing at ordinary text is not an error.
+				if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
+					clicked(r)
+				}
+				continue
 			}
 			cands := candidatesFor(e.WalkBase(), hist, commands)
 			var act Action
 			e, act = Apply(e, k, cands)
 			switch act {
 			case ActInterrupt, ActEOF:
-				clearMenu()
 				finish()
-				fmt.Fprintln(stdout)
 				return 0
 			case ActSubmit:
 				// Route through the SAME decision table the line loop uses.
@@ -203,48 +399,59 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// what a line means — no trimming, and "hot  dog" not collapsed to
 				// the multi-word headword the dictionary actually has (ARCH-DRY).
 				cmd := parseREPLLine(e.String(), sess.hasCurrent())
-				// Whatever happens next writes below this line, so the dropdown
-				// has to go before any of it.
-				clearMenu()
 				// Redraw the committed line with NO suggestion before advancing:
 				// the grey tail was never accepted, so leaving it in scrollback
 				// claims the user typed something they did not.
 				submitted := e
+				// The cursor goes to the END before the line is echoed. A
+				// committed line has no cursor, and RenderLine parks one by
+				// emitting `ESC[<n>D` — which would land in the BUFFER, and from
+				// there in the exit transcript, as a control sequence stored as
+				// text.
+				submitted.Cursor = len(submitted.Line)
 				e = NewEditor()
+				// THE PROMPT BELONGS TO A LOOP THAT IS WAITING. From here until
+				// the next draw() this one is working — looking up, streaming,
+				// playing — and every write repaints the frame around whatever
+				// live edge was last recorded. Left alone that is the line just
+				// submitted, so `arrondissement` appeared a second time under
+				// its own definition while the recording played
+				// (operator-reported). Blanking it is not a patch on that
+				// instance: a prompt drawn while nothing is reading keys invites
+				// typing at a line that does not exist.
+				view.Draw("", nil)
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
 					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color))
 				}
 				if cmd.kind == cmdCommand {
-					// Commands print multiple lines, so they run COOKED for the
-					// same reason a definition does — in raw mode "\n" is a line
-					// feed with no carriage return.
+					// Commands print multiple lines, and the screen places every
+					// one of them — which is why there is no mode to drop into
+					// here any more (D4).
 					fmt.Fprint(stdout, "\r\n")
 					hist.Add(cmd.recallLine()) // up-arrow recalls "/history" too
 					var pron store.Lang
-					if err := cooked(func() {
-						cc := newCommandCtx(d, opt, stdout, stderr)
-						// opt is this loop's own copy, so a command can change
-						// the session by writing through here.
-						cc.setTimes = func(n int) { opt.times = n }
-						// And &voc, because THIS loop caches the highlight set in
-						// a local before the loop starts (see above). Reassigning
-						// d alone would leave the editor highlighting from the
-						// previous language's deck — the one thing a deps swap
-						// cannot reach.
-						cc.setLang = sessionSetLang(&d, &opt, cc.setLang, &voc, stderr)
-						cc.entry = sess.entry
-						// RECORDED here, PERFORMED below — outside the cooked
-						// block. Playing in cooked mode hands Ctrl-C to the line
-						// discipline, which swallows the byte and leaves the
-						// session looking frozen for the length of the recording
-						// (lessons.md, "render cooked, play raw").
-						if sess.hasCurrent() {
-							cc.replay = func(l store.Lang) { pron = l }
-						}
-						dispatchCommand(cmd, commands, cc)
-					}); err != nil {
-						return lostTerminal(err)
+					cc := newCommandCtx(d, opt, stdout, stderr)
+					// opt is this loop's own copy, so a command can change
+					// the session by writing through here.
+					cc.setTimes = func(n int) { opt.times = n }
+					// And &voc, because THIS loop caches the highlight set in
+					// a local before the loop starts (see above). Reassigning
+					// d alone would leave the editor highlighting from the
+					// previous language's deck — the one thing a deps swap
+					// cannot reach.
+					cc.setLang = sessionSetLang(&d, &opt, cc.setLang, &voc, stderr)
+					cc.entry = sess.entry
+					// RECORDED here, PERFORMED below. The hazard this separation
+					// was built for is gone — raw mode no longer flaps, so
+					// playing where the command runs could not hand Ctrl-C to a
+					// line discipline any more (lessons.md, "render cooked, play
+					// raw", is answered by D4). It stays because it is also the
+					// right shape: a command decides WHAT to replay and the loop
+					// owns replaying, so /pron and a bare Enter remain one path.
+					if sess.hasCurrent() {
+						cc.replay = func(l store.Lang) { pron = l }
 					}
+					dispatchCommand(cmd, commands, cc)
 					if pron != "" {
 						// The same replay a bare Enter takes, one parameter apart.
 						// No reset: pron is declared inside this block and
@@ -269,10 +476,14 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					// cmdReplay and cmdNothing both stay on this line: the
 					// indicator is drawn over the prompt, then the prompt back.
 					if cmd.note != "" {
-						// eraseLine like replayInPlace's siblings: without it the
-						// note is appended to the line the user typed and reads
-						// as `› ?define: type a question after "?"`.
-						fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, nothingSays(cmd, true))
+						// No eraseLine. It was here because the note was written
+						// over the line the user had typed, which would otherwise
+						// read as `› ?define: type a question after "?"`. The
+						// screen took that job: the prompt is the live edge, not
+						// a buffer line, so a note simply starts its own line.
+						// The INDICATOR keeps its erase, because the line it
+						// takes back is a real one it wrote itself.
+						fmt.Fprintf(stderr, "define: %s\r\n", nothingSays(cmd, true))
 						draw()
 						continue
 					}
@@ -280,14 +491,10 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 					draw()
 					continue
 				}
-				// In RAW mode "\n" is a line feed only — no carriage return — so
-				// the next line would start at the current column. Everything
-				// written before we drop back to cooked mode needs "\r\n".
+				// End the committed prompt line before the entry is written
+				// under it.
 				fmt.Fprint(stdout, "\r\n")
-				out, err := submitLine(ctx, cooked, d, opt, cmd, hist, &sess, stdout, stderr)
-				if err != nil {
-					return lostTerminal(err)
-				}
+				out := submitLine(ctx, d, opt, cmd, hist, &sess, stdout, stderr)
 				if out.ask != "" {
 					// The unforced route into the SAME closure the forced one
 					// uses. submitLine has already recorded the line for recall
@@ -323,9 +530,9 @@ func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron 
 		// for a bare Enter with nothing current, and a byte-identical duplicate
 		// is what made "the one place that answers this" false the moment it was
 		// written (BR-20).
-		fmt.Fprintf(stderr, "%sdefine: %s\r\n", eraseLine, nothingSays(replCommand{}, true))
+		fmt.Fprintf(stderr, "define: %s\r\n", nothingSays(replCommand{}, true))
 	case opt.noAudio || opt.times <= 0:
-		fmt.Fprint(stderr, eraseLine+nothingToReplay+"\r\n")
+		fmt.Fprint(stderr, nothingToReplay+"\r\n")
 	default:
 		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),
 			indicator{show: true, erase: eraseLine}, stdout, stderr)
@@ -333,18 +540,17 @@ func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron 
 }
 
 // submitLine handles one submitted word.
-func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt options, cmd replCommand,
-	hist History, sess *session, stdout, stderr io.Writer) (lookupOutcome, error) {
+func submitLine(ctx context.Context, d deps, opt options, cmd replCommand,
+	hist History, sess *session, stdout, stderr io.Writer) lookupOutcome {
 	line := cmd.word
 
-	// Render in COOKED mode so newlines translate, but play in RAW mode so
-	// Ctrl-C arrives as a byte the key reader can act on. Playback is the part
-	// that blocks for seconds; doing it cooked made cancellation depend on a
-	// signal that raw mode exists to replace.
-	var out lookupOutcome
-	if err := cooked(func() { out = lookupAndRender(d, opt, cmd, stdout, stderr) }); err != nil {
-		return out, err
-	}
+	// One mode throughout (#30 D4). This used to render under cooked() so a
+	// definition's bare "\n"s translated, and play outside it so Ctrl-C reached
+	// the key reader as a byte — the pair that lessons.md records as "render
+	// cooked, play raw". The screen places lines itself, so nothing here depends
+	// on the line discipline and raw mode never drops: the rule is satisfied by
+	// there being nothing left to flap.
+	out := lookupAndRender(d, opt, cmd, stdout, stderr)
 	if out.play {
 		playAnnounced(ctx, d, opt, utteranceFor(line, out.entry, cmd.pron, opt),
 			indicator{show: true, before: "\r\n", erase: eraseLine}, stdout, stderr)
@@ -359,5 +565,5 @@ func submitLine(ctx context.Context, cooked func(func()) error, d deps, opt opti
 	if out.ask == "" && out.code == 0 {
 		sess.sawLookup(line, out)
 	}
-	return out, nil
+	return out
 }

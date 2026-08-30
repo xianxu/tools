@@ -199,7 +199,8 @@ It guarantees **fidelity, not completeness** — see Limits.
 ## The line editor (raw mode)
 
 When `define` owns the terminal (**stdin and stdout both a tty, and not
-`-no-color`**) it enters raw mode and runs its own editor:
+`-no-color`**) it enters raw mode, takes the alternate screen (see "The screen"
+below) and runs its own editor:
 
 - Up/Down walk history newest-first; with text typed they walk only entries with
   that prefix (zsh's `history-beginning-search-backward`).
@@ -237,15 +238,293 @@ longer relies on `NotifyContext` at all (`repl` detaches with
 the reader fires an **interrupt sink** rather than a cancel. See "Free-form
 input" below for what the sink is and why both transports feed it.
 
-That forced a second decision: **render cooked, play raw.** Printing a definition
-needs cooked mode so newlines translate; playback must stay raw so the key reader
-keeps seeing bytes. Doing the whole lookup cooked made Ctrl-C during playback
-hang — verified, then fixed, then pinned by `TestPTYCtrlCDuringPlaybackExitsPromptly`.
+That forced a second decision — **render cooked, play raw** — which `#30` then
+DISSOLVED, and this paragraph is the history rather than the current design.
+Printing a definition needed cooked mode so its newlines translated, while
+playback had to stay raw so the key reader kept seeing bytes; doing the whole
+lookup cooked made Ctrl-C during playback hang, verified, fixed, and pinned by
+`TestPTYCtrlCDuringPlaybackExitsPromptly`. That test still stands. What is gone
+is the flapping: inside a screen the app places every line itself, so no output
+depends on the line discipline and raw mode is simply continuous. The rule was
+satisfied by removing the thing it constrained. `workshop/lessons.md` keeps it,
+because it is still true of any program that flaps modes around a blocking call.
 
 `#2`'s `eraseLineAndStepBack` and `skipPrompt` are **deleted, not ported**: they
 existed to step back over the terminal's echo of Enter, and raw mode does not
 echo. That also removes `#2`'s documented limitation that typing during playback
 stranded the indicator — the arithmetic has nothing left to correct for.
+
+## The screen
+
+`#30` made the interactive loop a full-screen program, and the reason is
+COORDINATES: clicking a rendered token means knowing which line a screen row is,
+and that is only knowable if nothing but this program can move the view.
+
+**The alternate screen answers it by construction.** It has no scrollback, so
+there is nothing above the viewport for the terminal to show and no offset the
+app does not own. Terminals that offer to scroll it do so by SENDING KEYS, which
+is still the application's own scroll.
+
+```
+screen        lines []string + offset      PURE: Write, Frame, Scroll, Page, Paint
+liveScreen    screen + tty + rows,cols     the only part that does terminal IO
+display       Draw(prompt, menu), Page,    what the editor loop draws on
+              Scroll, Resize
+console       display + resizes + finish   THE TERMINAL, as one parameter
+              + stdout + stderr
+handBack      Stop → restore → transcript  the exit sequence, as one function
+```
+
+`runEditor`'s doc comment always said "the editor loop with the terminal factored
+out"; `console` is that concept given a type, and it arrived when five of the
+function's ten parameters turned out to be the same one. Two of those five were
+adjacent `io.Writer`s, so a call that swapped stdout and stderr compiled and put
+diagnostics where the definition goes. In production every field is the same
+`liveScreen`; a click is a method on `display`, not an eleventh parameter.
+
+- **`screen` is an `io.Writer`, and that is what kept this from being a rewrite.**
+  `Render` returns a string, the ask path streams, commands and the indicator
+  print — every one of them feeds the buffer unchanged. It REPLACED `crlfWriter`
+  on this path, because two owners of line endings is how they drift. (`--play`
+  keeps its own; see "All session output goes through `crlfWriter`" below.)
+- **A write REPAINTS.** The buffer alone is invisible, and a streamed answer
+  arrives token by token while `♫ playing 3×` has to show during playback that
+  blocks for seconds. So `liveScreen.Write` paints, and `screen` stays pure and
+  unit-tested with no pty anywhere.
+- **The prompt and the command menu are NOT buffer lines.** They are the live
+  edge, rewritten per keystroke; buffering them would file a copy of the prompt
+  per character typed. They are arguments to a frame — which is also what deleted
+  the menu's erase arithmetic and its documented off-by-a-row limit, since a
+  whole-frame redraw never counts rows it drew earlier.
+- **The prompt belongs to a loop that is WAITING.** Between a submit and the next
+  frame the loop is looking up, streaming or playing, and a prompt drawn then
+  invites typing at a line nothing is reading — it also repainted the line just
+  submitted, so the word appeared twice under its own definition.
+- **`eraseLine` (`\r\x1b[K`) is honoured by the buffer**, not stripped: it is the
+  ephemeral indicator's own "take that line back". A buffer that ignored it would
+  carry `♫ playing 3×` into the exit transcript, which is the "ephemeral UI vs
+  record" doctrine failing in the direction it exists to prevent.
+- **STDERR routes through the screen too.** A diagnostic written past it would
+  land wherever the cursor happens to be and corrupt the frame. It also means
+  `define: … no dictionary entry` is part of the record now instead of scrolling
+  past. The one-shot and piped paths keep the real stderr.
+- **The session is printed back into the normal buffer on exit.** The alt buffer
+  is discarded, so without it quitting throws the session away — and `define
+  arrondissement` used to leave the entry where you could scroll back to it
+  tomorrow. Printed from `finish` AFTER `restore`, when the terminal is cooked
+  again, and `finish` is once-only for exactly that reason.
+
+**A frame is budgeted in DISPLAY ROWS, and that is the guarantee — not a
+detail.** A line wider than the terminal wraps onto a second row, so a frame that
+counted it as one is a frame one row too tall; the terminal scrolls to fit it,
+and every row the app believes it placed has moved. Two routine ways in: narrow
+the window (buffer lines keep the wrapping they were rendered with, by decision)
+or type a line longer than the terminal is wide. So the prompt and each menu row
+are charged their real height, the cursor walks back by the rows the terminal
+actually moved rather than by menu entries, and buffer lines are CLIPPED to the
+width at paint time — the buffer keeps the whole text, so the transcript and
+the click map lose nothing.
+
+**Every component is budgeted, and the order of sacrifice is the order of
+value.** Charging the live edge its height and then writing it unclipped is not a
+budget: a menu taller than the space left overflows exactly as a wide buffer line
+did. The prompt survives first — it is the line you are typing, and it is clipped
+only when it alone is taller than the terminal, where the alternative is a frame
+nobody owns. The menu gives up whole rows next (`fitMenu`, from the end, because
+the list is sorted and the first matches are the likely ones). The buffer takes
+what is left, because it is the part you can scroll.
+
+**A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
+way: `readFrame` interprets what `Paint` emits the way a terminal would —
+including the deferred wrap that lets a line clipped to exactly the width still
+cost one row — and asserts two properties over shapes. That the frame fits, and
+that it leaves the cursor at the end of the prompt. Both were breakable while the
+suite was green, which is how the cursor came to walk back over menu ENTRIES
+rather than the rows the terminal moved.
+
+**One owner answers "where does this escape sequence end", too.** `scanEscape`
+(`sgr.go`) has always known; `escapeLen` wraps it for whole strings, and every
+site that walks styled text — measuring, clipping, highlighting — skips through
+that rather than re-deriving "ESC, then optional `[`, then parameters, then a
+final byte in `0x40`–`0x7E`". Four spellings of one grammar agree right up until
+they do not, and `M2.5` splices an underline through the same text that
+`clipVisible` cuts.
+
+**One owner answers "how wide is this", and it counts CELLS.** `visibleCells`
+(`render.go`) skips escape sequences and reads `cellWidth` per rune: a combining
+mark is 0 columns and a CJK or fullwidth rune is 2. Both are this program's daily
+traffic — NOAD writes `bänˈZHo͝or` with a combining double breve, and a Japanese
+entry is full-width — so counting runes is wrong in both directions, cutting text
+that fits and building frames twice as tall as measured. Every wrap, every frame
+budget and every clip reads that one function, so a line cannot be measured one
+way where it is written and another where it is placed. `terminalSize` is its
+counterpart for the terminal: `terminalWidth` answers a POLICY question ("how
+wide should text wrap", 0 meaning "do not") while the screen needs a true column
+count that cannot be a sentinel.
+
+**Writes are throttled; the trailing flush is not an optimisation.** The ask path
+writes once per streamed delta, and a frame per delta is a full-screen redraw per
+token. `liveScreen` paints at most every 16 ms, with a timer that flushes a held
+frame whether or not another write follows — because `♫ playing 3×` is written
+and then playback blocks for seconds, so a throttle that waited for the next
+write would hide it for the whole recording. Draw, Page, Scroll and Stop paint
+unconditionally. The buffer itself is uncapped, deliberately: a cap would
+silently truncate the record the exit transcript exists to be.
+
+## Clickable regions
+
+A rendered entry contains tokens that MEAN something the tool can act on, and
+until `#30` they were inert text — the action had to be retyped as a command.
+Now: **click the headword to hear it; click the language after `ORIGIN` to hear
+it in that language.**
+
+```
+Region        {Kind, Text, Word, Lang, Line, Col, Width}   what a span OFFERS
+regionsIn     (Entry, rendered, key) -> []Region          PURE, reads the OUTPUT
+screen        addRegions / RegionAt / LineAt              the click map
+markClickable underline spliced at paint time             the mark
+```
+
+**One registry, not two special cases**, which is how the issue was filed: a
+third consumer is a row rather than a new feature. `numRegionKinds` is the
+registry's extent and every guard derives from it — `TestEveryRegionKindIsActionable`
+fails for a kind that draws, invites a click and does nothing.
+
+- **`RegionHeadword`** — play this word's recording. The primary target, because
+  every entry has a headword in every language, whereas the IPA is English-only
+  (`#31` measured it: Spanish writes none, Italian writes syllabification).
+- **`RegionOriginLang`** — play the word in the language its ORIGIN names.
+
+**`RenderOpts` is what a caller decides**, and one of its four fields is not
+about how the entry looks:
+
+| field | what it decides |
+|---|---|
+| `RenderOpts.Color` | whether the palette is emitted at all — `-no-color` makes the output a RECORD, and a record carries no escapes |
+| `RenderOpts.Width` | where prose wraps, in display cells. `0` means "do not wrap", which a pipe wants and a terminal under 20 columns also gets |
+| `RenderOpts.Vocab` | the deck words to highlight, resolved by `vocabularyFor` so no path can render against an empty set by forgetting to ask |
+| `RenderOpts.Word` | the LOOKUP KEY — identity, not presentation. See "a shortcut must not re-derive its target" below; empty means "no click map wanted" |
+
+**A region is read out of the FINISHED output.** A position recorded while
+writing describes what `Render` intended; a click map has to be right about what
+the terminal shows. It also leaves `Render`'s body untouched, so "the bytes are
+identical" is a property of the shape rather than a promise every edit re-earns —
+`TestRenderOutputMatchesTheCorpusGolden` holds it, against a golden generated
+from the commit BEFORE the signature change.
+
+**Which ORIGIN languages are clickable is the mentions producer's answer**, not a
+search of the rendered text. `OriginLanguageMentions` cuts cognate clauses and
+masks historical stages, so the "Dutch" in `read`'s etymology is on screen and is
+not a source; positions carry across by OCCURRENCE INDEX, because rendering
+preserves the text's characters in order. EVERY language named is clickable, not
+just the first — `/pron` takes the first by NOAD's convention, while a click has
+nothing to disambiguate: `piano` names French and Italian and the user points at
+one. That is the insight the whole issue rests on.
+
+**A SHORTCUT MUST NOT RE-DERIVE ITS TARGET**, and this is where that rule is
+paid. A click on the headword is a shortcut for the bare Enter beside it, which
+replays the session's current word — the LOOKUP KEY. Deriving the target from the
+entry instead made the two disagree: `Entry.Headword()` is `fields[0]` alone, so
+`hot dog` underlined only "hot" and played it, `a priori` reduced to the letter
+"a", and `bargainer` — an inflected form finding its base entry, the common case
+— played "bargain".
+
+So the key belongs to the CALLER and travels on `RenderOpts.Word`, which is the
+one field there that is identity rather than presentation. The clickable span is
+that key where the head line shows it, falling back to the headword token when it
+does not (`define jalapeno` finds "jalapeño"): always something on screen, always
+the word Enter would play. No rule over the parsed tokens can find the phrase —
+`a priori` parses as `[a, priori, a, pri·o·ri]`, the phrase and then the phrase
+again syllabified.
+
+`Region.Word` then carries that key onward, because a reader can scroll back and
+click a word from earlier in the session while the session keeps only the CURRENT
+entry's raw text — which is what supplies the source spellings for a foreign
+replay. An older entry replays through `#29`'s fallback on the headword itself:
+the degraded answer rather than a wrong one.
+
+**A span with no visible extent is not a span.** An entry that is blank or a
+single space parses to an empty headword; asking for that span answered "found,
+at column zero" and indexed an empty line, so `define` PANICKED on input a
+dictionary can return. `findVisible` refuses it, measured in CELLS rather than
+bytes — the fuzzer found a NUL headword, whose width is zero for the same reason
+a combining mark's is.
+
+**The actions are `replayInPlace` with one parameter** — the same path a bare
+Enter and `/pron` take, so a click cannot drift from the gesture it shortcuts. A
+click on ordinary text is NOTHING: no beep, no message. Pointing at a word that
+offers nothing is not an error.
+
+**The mark is an attribute, spliced by the SCREEN.** `markClickable` underlines a
+clickable span at paint time, turned off with `24` rather than `0` so the
+palette's colour survives. Static rather than on hover, because hover needs mode
+`1003` — an event per cell the pointer crosses — while `1000` reports presses
+only and never says where the pointer is. Emitted by `Render` it would leak into
+`define <word>`, a pipe, `-raw` and `> out.txt`: decoration claiming an
+affordance a file does not have. `writeRendered` is the seam — a writer that can
+hold a click map gets one, everything else gets bytes.
+
+**Degrading is the absence of input, not a code path.** There is no reliable way
+to ask a terminal whether it will honour mouse reporting, so the enable is
+unconditional and a terminal that ignores it simply never sends a report;
+everything else still works. `-no-color` degrades by ROUTING — it clears
+`opt.tty`, so the session takes the line loop and no mark can reach output the
+user asked to keep plain.
+
+**Scrolling, and why the mouse had to be reported.** PageUp/PageDown move the
+viewport by a screenful less one line of overlap; the wheel moves three lines. The
+wheel took mouse reporting (`1000` + `1006`) to arrange at all: in the alternate
+screen a terminal translates the wheel into ARROW KEYS — the convention that lets
+`less` scroll with no mouse support — and this editor binds Up/Down to the history
+walk, so scrolling recalled words. The bytes are identical, so nothing can
+separate them; asking the terminal to report the mouse is the only way to be
+handed the gesture the user made.
+
+**Enabling a mode means accepting its whole grammar.** `1000` is answered in
+X10 — `ESC[M` plus three RAW bytes — by any terminal that ignores `1006`, and
+those bytes belong to no CSI grammar: the scan stops at `M` as a final byte and
+the payload reaches the line as text, so a click typed `" !!"` into the word
+being looked up. That is `#14`'s family one encoding over, shipped by the commit
+that enabled the mode. `decodeX10Mouse` consumes six bytes or none, `decodeWheel`
+handles the SGR form, and both read one `wheelFromButton`. The rule to carry into
+`M2`: **for every mode we enable, the decoder answers every encoding that mode
+can reply in.**
+
+**The cost, decided rather than discovered:** with tracking on, drag-select
+belongs to this program, so copying text needs Option (iTerm2, Terminal.app,
+Ghostty) or Shift. `/help` says so, which is where a user meets it. Text
+selection of our own is a NON-GOAL — a whole model of anchors, extents and
+clipboard integration.
+
+**Terminal state is one guarantee, not three.** Raw mode, the alternate screen
+and mouse reporting all hang off `rawSession`, which restores from a defer AND on
+the cancellation path. Unwound in reverse: mouse first (a terminal left reporting
+it types escape sequences into the next program while the shell still looks
+fine), then the alt screen, then the line discipline. `rawSession` writes those
+mode sequences to an `io.Writer` rather than to the stdin handle — they change
+the screen the frames are drawn on, and it is also what makes the protocol
+assertable with no terminal, which the first version of that test was not.
+
+**The exit sequence is one function, `handBack`.** Stop painting, restore, print
+the session — in that order, because a frame drawn after the alternate screen is
+gone lands on the normal one, and a transcript printed before the line discipline
+is back has bare newlines. `replRaw` has no in-process caller (it demands a real
+`*os.File` it can put into raw mode), so a sequence left inline there could only
+ever be pinned by pty rows that skip where no pty exists.
+
+**Resize is SIGWINCH → measure → redraw, and both halves of the shape matter.**
+Rows because a frame one row too tall makes the terminal scroll, which moves every
+row the app believes it placed; columns because `opt.width` was read ONCE at flag
+parse, so a resized window kept wrapping new entries to the old width. Shapes
+coalesce, newest wins — a drag fires dozens of signals and a queue of stale shapes
+is a queue of wrong frames. Lines already in the buffer keep the wrapping they
+were rendered with: re-wrapping means re-rendering from entries this program does
+not keep.
+
+**Only the interactive loop.** `define <word>`, `echo w | define`, `-raw` and
+`> out.txt` are untouched — same bytes, same "ephemeral UI vs record" doctrine.
+Inside the alternate screen that doctrine reads differently, because the frame is
+ephemeral by construction and the transcript is the record.
 
 ## The store
 
@@ -378,8 +657,10 @@ submitLine   ← raw editor → lookupAndRender      [skips defineOnce]
 
 An earlier design captured in `defineOnce`, which would have left the interactive
 path — the only one that captured at all before `#4` — silent. `#14` extracted
-`lookupAndRender` so the raw path could render cooked and play raw, and that is
-what makes it the one function every path shares.
+`lookupAndRender` so the raw path could render cooked and play raw — a split that
+outlived its reason when `#30` removed the modes, and stayed because the halves
+still differ in kind: this one only writes, and the caller owns the playback that
+can be interrupted. Either way it is the one function every path shares.
 
 `decideCapture(found, opt)` is the only answer to "does this lookup count":
 found → event + word; not found → event only; `--raw` or `DEFINE_NO_CAPTURE` →
@@ -611,8 +892,9 @@ Its contract, in the order the rules matter:
    drags it back to that span's start. Plain text may be cut freely.
 4. **Downstream errors poison the writer.** The first failure is remembered and
    nothing is emitted after it, so no byte is written twice. A short write with a
-   nil error is a failure — `crlfWriter`, which the raw loop nests this inside,
-   produces exactly that.
+   nil error is a failure — `crlfWriter`, which `--play` nests this inside,
+   produces exactly that. (The raw loop did too, until `#30` replaced it with the
+   screen.)
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
 `sgrState` is the pure half: it watches escapes go past and answers "what style
@@ -649,11 +931,12 @@ surface without widening the first table, and a mutant dropping the `Load` passe
 the whole suite — the same Critical one surface over. A new surface needs its own
 rows.
 
-**The answer stream is the writer's other caller**, and the nesting order is
-fixed by what each writer needs. The raw loop has already wrapped stdout in
-`crlfWriter` before `ask` is called, so `runAsk` wraps THAT — highlighting sees
-logical text and CRLF translation applies to the final bytes, including the
-escapes highlighting inserted. Inverted, the highlighter would meet `\r\n` where
+**The answer stream is the writer's other caller**, and it is the OUTERMOST
+writer on the answer — over the screen in the raw loop, over the real stdout when
+piped. So highlighting sees the answer's own logical text and the screen places
+the highlighted bytes as lines afterwards. It used to wrap the raw loop's
+`crlfWriter` instead, which `#30` D5 removed. Inverted, the highlighter would
+meet `\r\n` where
 it expects `\n`.
 
 The `Flush` is DEFERRED rather than written at each return, and that is
@@ -1675,7 +1958,9 @@ an `Input` kind and every future form gets it free — the same reasoning that p
 and the EVENTS stay: `--forget`'s contract, since history is what happened and
 cannot be untrue while the deck is the working set the learner curates.
 
-**All session output goes through `crlfWriter`.** In raw mode a bare `\n` moves
+**All session output goes through `crlfWriter`.** (The `--play` loop's, which
+still draws its own frames; the interactive loop's screen replaced it there —
+see "The screen".) In raw mode a bare `\n` moves
 down WITHOUT returning to column 0, so a multi-line definition cascades
 diagonally across the screen. `#16` built that writer for exactly this; `--play`
 shipped without it and the operator's first real session found it immediately.

@@ -713,8 +713,10 @@ func defineOnce(ctx context.Context, d deps, opt options, cmd replCommand, stdou
 // lookupOutcome is what one line turned out to be, once the dictionary has
 // answered. It carries a third possibility the define path did not used to have:
 // the line was a question. That has to travel as DATA rather than be acted on
-// here, because the raw loop renders a definition cooked and streams an answer
-// raw — one function cannot do both (#16 D6).
+// here, because a definition and a streamed answer are different jobs with
+// different cancellation — one function cannot do both (#16 D6). The reason used
+// to be sharper still: they ran in different terminal modes, until #30 D4 left
+// only one mode.
 type lookupOutcome struct {
 	code  int    // exit semantics, unchanged
 	play  bool   // audio should follow
@@ -729,9 +731,11 @@ type lookupOutcome struct {
 // would leave the interactive path, the only one capturing today, silent.
 //
 // lookupAndRender is the part of the define path that only WRITES — look up,
-// render, print. Split out because the raw-mode loop must run it in cooked mode
-// (so newlines translate) while playing in RAW mode (so Ctrl-C arrives as a byte
-// the key reader can see). Returns whether audio should follow.
+// render, print. The split outlives its original reason: #14 needed the render
+// to happen in cooked mode and the playback in raw, and #30 D4 removed the modes
+// altogether. It stays because the two halves still differ in kind — this one is
+// pure output, and the caller owns the playback that can be interrupted.
+// Returns whether audio should follow.
 func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Writer) lookupOutcome {
 	word := cmd.word
 	text, err := d.dict.Lookup(word)
@@ -767,11 +771,39 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		d.capture.Capture(word, true, opt)
 		return lookupOutcome{entry: text}
 	}
-	fmt.Fprint(stdout, Render(ParseEntry(text), RenderOpts{
-		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
-	}))
+	// Word is the LOOKUP KEY, and passing it is what makes a click a shortcut
+	// rather than a second opinion: it is exactly what `sess.current` becomes,
+	// so a click on the headword and the bare Enter beside it ask for the same
+	// recording by construction.
+	rendered, regions := Render(ParseEntry(text), RenderOpts{
+		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt), Word: word,
+	})
+	writeRendered(stdout, rendered, regions)
 	d.capture.Capture(word, true, opt)
 	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
+}
+
+// regionWriter is a writer that can also hold a CLICK MAP for what it is given.
+// The interactive screen is the only one; everything else takes bytes.
+type regionWriter interface {
+	io.Writer
+	WriteRegions(text string, rs []Region)
+}
+
+// writeRendered gives an entry to a writer, with its regions if the writer has
+// somewhere to put them.
+//
+// The seam fills itself rather than the caller branching: a one-shot, a pipe or
+// `> out.txt` has nowhere to click and gets exactly the bytes it always did
+// (#30 D6), while the interactive screen gets the map. One call either way, so
+// the text and the regions cannot be written at different moments and disagree
+// about which line they landed on.
+func writeRendered(w io.Writer, text string, rs []Region) {
+	if rw, ok := w.(regionWriter); ok {
+		rw.WriteRegions(text, rs)
+		return
+	}
+	fmt.Fprint(w, text)
 }
 
 // defaultIndicator is the ephemeral form on a terminal, the record form on a pipe.
@@ -959,16 +991,66 @@ func noDeckMessage(noCapture bool) string {
 // terminal. Wrapping is a presentation decision, so it stays at the boundary and
 // Render receives a number.
 func terminalWidth(w io.Writer) int {
+	sz, ok := terminalSize(w)
+	if !ok || sz.cols < 20 { // not a terminal, or implausibly narrow: do not wrap
+		return 0
+	}
+	return sz.cols
+}
+
+// terminalSize is the terminal's true SHAPE, and the distinction from
+// terminalWidth is the point: this one cannot return a sentinel.
+//
+// terminalWidth answers a POLICY question — "how wide should text be wrapped",
+// where 0 means "do not wrap" and a 15-column terminal gets that answer. The
+// screen asks a different question — "how many columns does this terminal have"
+// — and an answer of 0 there means a frame budgeted with no width at all, which
+// is the sentinel leaking into arithmetic that has no use for it.
+//
+// ok is false when w is not a terminal. The caller decides what to do about it;
+// the full-screen loop runs only when it is one.
+func terminalSize(w io.Writer) (winSize, bool) {
 	f, ok := w.(*os.File)
 	if !ok {
-		return 0
+		return winSize{}, false
 	}
-	cols, _, err := term.GetSize(int(f.Fd()))
-	if err != nil || cols < 20 { // an implausibly narrow terminal: do not wrap
-		return 0
+	cols, rows, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return winSize{}, false
 	}
-	return cols
+	return winSize{rows: rows, cols: cols}, true
 }
+
+// terminalRows reports the height of w, or a conventional 24 when it cannot be
+// measured.
+//
+// A height is only needed by the full-screen loop (#30), which runs solely when
+// stdout is a terminal — so the fallback covers a probe that fails rather than a
+// pipe. It has to be a plausible number rather than 0: a screen told it has no
+// rows shows the prompt and nothing else, which would hide the very definition
+// the user asked for.
+func terminalRows(w io.Writer) int {
+	sz, ok := terminalSize(w)
+	if !ok || sz.rows < 2 { // one row cannot hold both a definition and a prompt
+		return defaultRows
+	}
+	return sz.rows
+}
+
+// terminalCols is the width the SCREEN paints to — never 0, because a frame
+// budgeted with no width is a frame with no budget.
+func terminalCols(w io.Writer) int {
+	sz, ok := terminalSize(w)
+	if !ok || sz.cols < 1 {
+		return defaultCols
+	}
+	return sz.cols
+}
+
+const (
+	defaultRows = 24
+	defaultCols = 80
+)
 
 // isTerminal keeps the TTY probe out of Render, so rendering stays pure and
 // piping `define x | less` yields clean text.

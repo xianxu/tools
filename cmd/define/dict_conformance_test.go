@@ -264,7 +264,8 @@ func TestRawNotationExemplarsMatchLiveDictionary(t *testing.T) {
 			}
 			// And it must still trip the oracle, or it has stopped being an
 			// exemplar and the offline test passes vacuously.
-			if _, tripped := rawNotationNear(Render(ParseEntry(got), RenderOpts{Width: 0})); !tripped {
+			rendered, _ := Render(ParseEntry(got), RenderOpts{Width: 0})
+			if _, tripped := rawNotationNear(rendered); !tripped {
 				t.Errorf("%s no longer renders raw notation — the shape may be fixed upstream; "+
 					"retire the exemplar and lower knownRawByCause", word)
 			}

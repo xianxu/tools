@@ -28,8 +28,9 @@ type question struct {
 // because the ORDER is load-bearing in a way that is silent when wrong, and a
 // second copy carrying no rationale is a copy that will be reordered by someone
 // tidying it. Both loops call this; the writers and the post-answer redraw stay
-// in each loop's closure, since those are what legitimately differ (a raw
-// terminal needs crlfWriter and a prompt redrawn; a piped run needs neither).
+// in each loop's closure, since those are what legitimately differ (the raw loop
+// writes into its screen and redraws the prompt afterwards; a piped run does
+// neither).
 //
 // Four things can go wrong here, and the enumeration is the deliverable — an
 // earlier round probed only the reordering, found it unobservable, and concluded
@@ -164,10 +165,15 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// four chances to forget and one silently dropped last word per miss. The
 	// defer covers a path added later too.
 	//
-	// Nesting order matters and is fixed by what each writer needs: the raw loop
-	// has already wrapped stdout in crlfWriter (replraw.go), so this sits INSIDE
-	// it — highlighting sees logical text and CRLF translation applies to the
-	// final bytes, including the ones highlighting inserted.
+	// This is the OUTERMOST writer on the answer, and what it wraps is whatever
+	// the caller passed: the screen in the raw loop, the real stdout when piped.
+	// Highlighting therefore sees the answer's own logical text — no line-ending
+	// translation happens before it, so a match ending at a line break is decided
+	// against the same bytes every other analysis in this program sees.
+	//
+	// It used to sit INSIDE the raw loop's crlfWriter, which #30 D5 removed: the
+	// screen owns line placement now, and two owners of line endings is how they
+	// drift. `--play` still wraps its own.
 	hw := newHighlightWriter(out, vocabularyFor(d, opt), knownOn)
 	defer func() {
 		// REPORTED, not discarded. The writer poisons on its first downstream

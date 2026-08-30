@@ -83,6 +83,61 @@ func declRegexp(name, recv string) *regexp.Regexp {
 		regexp.QuoteMeta(name) + `\b`)
 }
 
+// declaredInBlock reports whether name is declared as a member of a grouped
+// `const (` or `var (` block — the form an iota enum takes, where the member
+// carries no keyword and often no value.
+//
+// Scoped to the block rather than matched anywhere, because a bare identifier at
+// the start of a line is also what a STRUCT FIELD looks like: `Kind KeyKind`
+// inside `type Key struct` would otherwise satisfy a plan row naming `Kind`, and
+// a guard a struct field can satisfy is not checking what the row claims.
+func declaredInBlock(src, name string) bool {
+	member := regexp.MustCompile(`^\s*` + regexp.QuoteMeta(name) + `\b`)
+	depth := 0
+	for _, line := range strings.Split(src, "\n") {
+		switch {
+		case strings.HasPrefix(line, "const (") || strings.HasPrefix(line, "var ("):
+			depth = 1
+			continue
+		case depth > 0 && strings.HasPrefix(line, ")"):
+			depth = 0
+			continue
+		}
+		if depth > 0 && member.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
+
+// declaredAsField reports whether `recv.name` is a FIELD of that struct.
+//
+// Only for a QUALIFIED row — `Region.Word`, `Key.Row` — because the type is what
+// makes the check exact. An unqualified `Word` matched against every struct in
+// the file would let a row name a field of something else entirely, which is the
+// looseness declaredInBlock's comment refuses for the same reason.
+//
+// A field is a declaration, and plans name them: `Region.Word` carries the entry
+// a click belongs to, which is a design fact a reader needs. A guard that could
+// not see one was forcing rows to be vaguer than the design.
+func declaredAsField(src, recv, name string) bool {
+	if recv == "" {
+		return false
+	}
+	open := regexp.MustCompile(`(?m)^type\s+` + regexp.QuoteMeta(recv) + `\s+struct\s*\{`)
+	loc := open.FindStringIndex(src)
+	if loc == nil {
+		return false
+	}
+	body := src[loc[1]:]
+	if end := strings.Index(body, "\n}"); end >= 0 {
+		body = body[:end]
+	}
+	// A field line may declare several: `Row, Col int`.
+	field := regexp.MustCompile(`(?m)^\s*(\w+\s*,\s*)*` + regexp.QuoteMeta(name) + `\b`)
+	return field.MatchString(body)
+}
+
 // `go test` runs with cwd set to the PACKAGE directory, so a bare `git ls-files`
 // yields paths relative to it. Resolve the root explicitly; the first version of
 // this test skipped the very artifact it was written for because of that.
@@ -676,6 +731,109 @@ func planStatus(cell string) (string, bool) {
 	return word, slices.Contains(planStatuses, word)
 }
 
+// Every TEST a plan names must exist too, wherever in the plan it is named.
+//
+// Third recurrence of `plan-table-incomplete`, and the previous two fixes were
+// hand-edits of the rows, which is why it came back: the sibling guard above
+// reads only the Core-concepts tables' first two cells, so a Done-when row's
+// "pinned by" column — where a plan makes its most load-bearing claim, "this
+// behaviour is defended by this test" — was unchecked. `aa4fe94` renamed
+// `TestScreenFrameFitsTheTerminalInDisplayRows` and left row 1b naming it, with
+// a green suite.
+//
+// A test name is self-identifying (`Test…`/`Fuzz…`/`Benchmark…` at the start of
+// a backticked cell), so this needs no path column and no table shape — it reads
+// the whole document, which is exactly the generality the family was missing.
+// Subtests are addressed as `Parent/case name`; only the parent is checked,
+// since the case name is prose by design.
+func TestPlanNamedTestsExist(t *testing.T) {
+	root := repoRoot(t)
+	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) == 0 {
+		// conformance:inapplicable — every plan is archived to workshop/history/
+		// at close, a legitimate state between issues rather than a missing file.
+		t.Skip("no active plans")
+	}
+	// Test names as they appear in Go source, anywhere in the package.
+	declared := map[string]bool{}
+	files, err := filepath.Glob(filepath.Join(root, "cmd", "define", "*_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decl := regexp.MustCompile(`(?m)^func ((?:Test|Fuzz|Benchmark)[A-Za-z0-9_]*)\(`)
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		for _, m := range decl.FindAllStringSubmatch(string(b), -1) {
+			declared[m[1]] = true
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("no test declarations found: the guard would certify nothing")
+	}
+
+	named := regexp.MustCompile("`((?:Test|Fuzz|Benchmark)[A-Za-z0-9_]*)(?:/[^`]*)?`")
+	checked := 0
+	for _, plan := range plans {
+		b, err := os.ReadFile(plan)
+		if err != nil {
+			t.Fatalf("reading %s: %v", plan, err)
+		}
+		// Scoped PER MILESTONE, which is the granularity that makes this both
+		// safe and useful. A milestone with unticked tasks is still being built,
+		// so the tests its Done-when names are promises — the same exemption the
+		// sibling guard gives a `new` row. A milestone whose tasks are all
+		// ticked claims to be finished, and a finished milestone naming a test
+		// nobody wrote is the lie this guard is for. Checking the DOCUMENT
+		// instead would have exempted M1 for exactly as long as M1 was being
+		// built, which is when the miss happened.
+		for _, section := range planSections(currentTruthOnly(string(b))) {
+			if strings.Contains(section, "- [ ] ") {
+				continue
+			}
+			for _, m := range named.FindAllStringSubmatch(section, -1) {
+				checked++
+				if !declared[m[1]] {
+					t.Errorf("%s names the test %q, which no *_test.go declares. A plan's "+
+						"\"pinned by\" column is its most load-bearing claim — that a behaviour "+
+						"is DEFENDED — so a name that resolves to nothing claims coverage that "+
+						"does not exist. Update the row when the test renames.",
+						filepath.Base(plan), m[1])
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		// conformance:inapplicable — a plan whose milestones are all still in
+		// progress is a design being built, the same state the sibling guard's
+		// `new`-row exemption honours.
+		t.Skip("no completed milestone names a test")
+	}
+}
+
+// planSections splits a plan at its `## …` headings, so a claim can be judged
+// against the progress of the milestone that makes it rather than the document's.
+func planSections(body string) []string {
+	var out []string
+	var cur strings.Builder
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(line, "## ") && cur.Len() > 0 {
+			out = append(out, cur.String())
+			cur.Reset()
+		}
+		cur.WriteString(line + "\n")
+	}
+	if cur.Len() > 0 {
+		out = append(out, cur.String())
+	}
+	return out
+}
+
 func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 	t.Helper()
 	{
@@ -689,12 +847,18 @@ func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 		*checked++
 		declared := declRegexp(name, recv)
 		assigned := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(name) + `\s*:?=`)
+		// A bare member of a grouped const or var block — `KeyPageUp` under an
+		// iota — is a declaration with no keyword and no `=` of its own, so
+		// neither pattern above can see it. Without this the guard calls a
+		// perfectly real enum member missing, which is a guard telling a lie
+		// about the tree it exists to check.
 		// DECLARED or ASSIGNED only. A first version also accepted any
 		// occurrence anywhere in the file, which admitted COMMENTS — and a
 		// stale `newDeck` row stayed green solely because one comment still
 		// mentioned the old name. A guard that a comment can satisfy is not
 		// checking the tree.
-		if !declared.Match(src) && !assigned.Match(src) {
+		if !declared.Match(src) && !assigned.Match(src) &&
+			!declaredInBlock(string(src), name) && !declaredAsField(string(src), recv, name) {
 			t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
 				"artifact a reader trusts to describe the design, so a stale entity name "+
 				"there is worse than none. Update the row when the code renames.",

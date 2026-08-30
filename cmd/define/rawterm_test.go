@@ -101,3 +101,90 @@ func TestRawSessionRestoreIsIdempotent(t *testing.T) {
 	r.restore()
 	r.restore()
 }
+
+// restore hands back EVERY terminal state this program takes, in the order that
+// makes each one safe (#30).
+//
+// The predecessor of this test could not fail. It built a session with a nil
+// file, so every enter and every leave returned at the same nil guard and the
+// assertion checked a field nothing had set: deleting `leaveAlt()` and
+// `leaveMouse()` from restore() left the whole suite green. That is why
+// rawSession now writes its mode sequences to an io.Writer — the seam exists so
+// this protocol is assertable without a terminal.
+func TestRestoreHandsBackEveryTerminalState(t *testing.T) {
+	var b strings.Builder
+	// state is nil, so term.Restore is a no-op and what is under test is the
+	// escape sequences and their ORDER.
+	r := &rawSession{control: &b}
+
+	r.enterAlt()
+	r.enterMouse()
+	if got := b.String(); got != altScreenOn+mouseOn {
+		t.Fatalf("entering wrote %q, want %q", got, altScreenOn+mouseOn)
+	}
+	b.Reset()
+
+	r.restore()
+	got := b.String()
+	if !strings.Contains(got, altScreenOff) {
+		t.Error("restore left the terminal on the alternate screen: everything the user had scrolled back to stays hidden")
+	}
+	if !strings.Contains(got, mouseOff) {
+		t.Error("restore left mouse reporting on: the next program run in this terminal gets escape sequences typed into it")
+	}
+	// ORDER, and it is not cosmetic. Mouse reporting goes first because it is
+	// the state with no `reset` reflex behind it — the shell looks fine while
+	// every click types garbage. The alternate screen goes before raw mode ends,
+	// so a cooked terminal is never briefly drawing into a buffer about to be
+	// discarded.
+	if strings.Index(got, mouseOff) > strings.Index(got, altScreenOff) {
+		t.Errorf("restore gave the terminal back in the wrong order: %q", got)
+	}
+	if r.alt || r.mouse {
+		t.Error("restore returned with state still claimed")
+	}
+}
+
+// A session that never took a state must not hand one back: a stray
+// ESC[?1049l on a terminal that was never switched clears the user's screen.
+func TestRestoreSendsNothingItDidNotTake(t *testing.T) {
+	var b strings.Builder
+	r := &rawSession{control: &b}
+	r.restore()
+	if got := b.String(); got != "" {
+		t.Errorf("restore wrote %q for states it never entered", got)
+	}
+}
+
+// A control stream that fails must not leave the session CLAIMING the state: a
+// leave would then be sent for a screen the terminal never showed.
+func TestEnterDoesNotClaimAStateItCouldNotWrite(t *testing.T) {
+	r := &rawSession{control: failingWriter{}}
+	r.enterAlt()
+	r.enterMouse()
+	if r.alt || r.mouse {
+		t.Error("a failed write still claimed the terminal state")
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, io.ErrClosedPipe }
+
+// Idempotence, for the same reason restore has it: both run from more than one
+// path, and making a second call an error would make the paths care about each
+// other.
+func TestLeaveAltIsIdempotent(t *testing.T) {
+	var b strings.Builder
+	r := &rawSession{control: &b}
+	r.enterAlt()
+	b.Reset()
+	r.leaveAlt()
+	r.leaveAlt()
+	if r.alt {
+		t.Error("leaveAlt set alt")
+	}
+	if got := b.String(); got != altScreenOff {
+		t.Errorf("two leaves wrote %q, want one %q", got, altScreenOff)
+	}
+}

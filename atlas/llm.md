@@ -36,10 +36,29 @@ Precedence, all resolved by a pure `Resolve(getenv)`:
 | setting | env | default |
 |---|---|---|
 | base URL | `DEFINE_LLM_BASE_URL` | `http://127.0.0.1:8317` |
-| key | `DEFINE_LLM_API_KEY` → `ANTHROPIC_API_KEY` | none → `ErrUnavailable` |
+| key | `DEFINE_LLM_API_KEY` → `ANTHROPIC_API_KEY` | `parley-local` **for the local proxy only**; anywhere else, none → `ErrUnavailable` |
 | model | `DEFINE_LLM_MODEL` | `claude-opus-5` |
 | effort | `DEFINE_LLM_EFFORT` | `high` |
 | timeout | `DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) | 5m |
+
+**The local proxy supplies its own key**, so `define` answers questions with no
+environment at all on a machine where the parley-managed cliproxyapi runs. That
+token is a loopback HANDSHAKE rather than a credential: cliproxyapi's `api-keys`
+is an inbound allowlist — it authenticates its callers and 401s without a match —
+and parley renders the same constant into the proxy's config and sends it as the
+bearer.
+
+Hardcoding a peer's constant is what `ParseLang` and `-locale` refuse, and the
+difference is whose fact it is at what cost. The ENDPOINT was already parley's
+fact, hardcoded deliberately; without the token that default was inert, so every
+operator whose parley worked still met "no model configured" and had to export a
+secret a program on the same machine already knew. If parley changes it, the
+failure is a 401 naming the key — the same shape as the missing-key path, not a
+worse one.
+
+**Only for that endpoint.** A remote provider, or another local port, still
+declines: a token invented here would be a credential sent to a host we know
+nothing about. An explicit key always wins.
 
 **No startup probe.** Reachability is never checked when `define` starts — that
 would put a network round trip on the definition path, which must stay instant

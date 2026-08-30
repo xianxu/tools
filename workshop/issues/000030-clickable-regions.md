@@ -1,12 +1,13 @@
 ---
 id: 000030
-status: working
+status: codecomplete
 deps: [tools#29, tools#35]
 github_issue:
 created: 2026-08-29
-updated: 2026-08-29
-estimate_hours:
+updated: 2026-08-30
+estimate_hours: 3.19
 started: 2026-08-29T16:24:35-07:00
+actual_hours: 10.91
 ---
 
 # clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay
@@ -213,6 +214,97 @@ back into a running `define`. Terminal.app does not support them at all.
 - [ ] The playback target is the HEADWORD, so it exists in every entry and every
       language — Spanish, which has no IPA, is not left with a dead affordance.
 
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against `baseline-v3.1.md`. Method A only.*
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.50 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: greenfield-go-module     design=0.06 impl=0.24
+item: smaller-go-module        design=0.01 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.01 impl=0.08
+item: cross-cutting-refactor    design=0.03 impl=0.12
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.12
+item: cross-cutting-refactor    design=0.04 impl=0.18
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.01 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.01 impl=0.08
+item: milestone-review         design=0.00 impl=0.16
+item: milestone-review         design=0.00 impl=0.12
+item: milestone-review         design=0.00 impl=0.10
+design-buffer: 0.15
+total: 3.19
+```
+
+Derivation notes.
+
+- **`issue-spec` design 0.50 is the measured window**, `16:00`–`16:38`: the
+  scrollback analysis, rejecting colour-as-carrier and OSC 8 with reasons, the
+  `file:line` sweep PQ-10 demanded, and three plan-gate rounds. Larger than
+  `#35`'s 0.35 because the design question was open — the operator chose the TUI
+  in conversation but the consequences (cooked/raw, stderr, `#32`'s seam,
+  transcript-on-exit) were all decided here.
+
+- **`M1.3` is the only `greenfield-go-module`**, and it is the risk the milestone
+  split exists for: the editor's output path is rewritten and `cooked()` is
+  deleted, which removes a mechanism `#14` established and `#29` had to defer a
+  replay around. 0.24 impl is the top of the scaled band, not the middle.
+
+- **Two `cross-cutting-refactor`s, and they are genuinely different in kind from
+  the modules.** `M1.6` rewrites the atlas's raw-mode section, whose subject
+  D4 deletes. `M2.1` changes `Render`'s signature — `editorloop_test.go:29`
+  returns it and the suite calls it from dozens of sites, so the churn is
+  mechanical but wide, which the plan now says out loud so the boundary reviewer
+  is not surprised by the diff size.
+
+- **Two `milestone-review` pairs plus a close row**, because there are two
+  boundaries and each returns work. Every boundary review this session has: `#29`
+  four rounds, `#31` four, `#35` one with four findings. Pricing remediation at
+  zero is the one thing this session's history rules out, so each milestone
+  carries 0.16 to run and 0.12 to remediate, and the close carries 0.10 for the
+  manual pass on a real terminal — which is the only place clicking can be
+  verified at all.
+
+- **No `TUI screen + state machine` primitive**, despite this being a TUI. That
+  primitive is for a screen with its own input state machine; `M1` adds a
+  viewport and a paint to an editor loop that already owns keys, frames and raw
+  mode. `M1.3` is priced as greenfield precisely because it is the part that is
+  genuinely new.
+
+- **Step 2.5, the library-availability check, which the first draft SKIPPED.**
+  v2.1 makes it a required step and its own examples read *"Cross-platform
+  terminal UIs → bubbletea/lipgloss/bubbles"* — and `M1`'s four missing pieces
+  (alt screen, viewport/scroll, SIGWINCH, SGR-1006 decoding) are all primitives
+  those libraries ship. Skipping it is what drove v2's worst outlier, so:
+
+  **Checked, and hand-rolled deliberately.** Step 2.5 exempts "choosing to do it
+  from scratch for control or footprint reasons", and both apply. This is not a
+  greenfield terminal layer with gaps to fill — it is an EXISTING one with four
+  pieces missing: raw mode (`rawterm.go`), a CSI scanner that survived `#14`'s
+  length bug (`key.go`), a pure `Editor`/`RenderLine` pair, and a `puretest`
+  package that mechanically enforces the pure/IO split. Adopting bubbletea means
+  replacing all of that with its Model/Update/View, discarding four issues' worth
+  of measured decisions and the purity guard with them, for a CLI that today has
+  four direct dependencies. The design hours are NOT halved.
+
+  Recorded because the step's value is the visibility, not the arithmetic — it
+  moves ~0.03 either way.
+
+- **Expect this one to run long rather than short**, and here is the number so
+  the close can tell a calibration miss from a confirmed prediction. 3.19 is only
+  **1.15×** `#29`'s estimate (2.78) and **below** `#29`'s measured actual (3.34),
+  while carrying 13 tasks across two boundaries. At this session's own over-run
+  rate the actual lands near **3.7–3.9h**. The estimate is NOT padded toward
+  that — v3.1 is applied as written, or the ledger row means nothing.
+
 ## Plan
 
 - [x] Blocked on `#29` for the pronunciation-language mechanism — shipped.
@@ -220,13 +312,24 @@ back into a running `define`. Terminal.app does not support them at all.
       none, Italian syllabification-not-transcription, French none, German real
       but lossy. Curating fr/de turned out NOT to be a precondition, and is
       `#34`.
-- [ ] Blocked on `#35`, so the click is a wrapper over an existing gesture.
-- [ ] MEASURE the wheel-capture fact above before sizing the scroll model.
-- [ ] Design via `sdlc start-plan`.
+- [x] Blocked on `#35`, so the click is a wrapper over an existing gesture —
+      shipped (`workshop/history/issues/000035-pron-infer.md`).
+- [x] MEASURE the wheel-capture fact — NOT NEEDED, and the plan records why: the
+      alternate screen has no scrollback, so there is no offset define does not
+      own. The wheel survives as a UX question, not a correctness one.
+- [x] Design via `sdlc start-plan`. Plan:
+      `workshop/plans/000030-clickable-regions-plan.md` (M1 the screen layer,
+      M2 the clicks; two boundaries, one publish).
+- [x] M1 — the screen owns the terminal: alternate screen, a line buffer and a
+      viewport, whole-frame paint, `cooked()` deleted, keys and wheel that scroll,
+      SIGWINCH, and the session printed back on exit. Tasks M1.1–M1.6 in the plan.
+- [x] M2 — the clicks: `Render` emits a region map, the hit test, the two actions,
+      and a clickable span that looks clickable. Tasks M2.1–M2.6 in the plan.
 
 ## Log
 
 ### 2026-08-29
+- 2026-08-29: closed M1 — go test ./... green VERIFIED AFTER the commit; -race green; 11 PTY conformance rows green. The frame is asserted as a PLACEMENT: readFrame interprets emitted bytes as a terminal does (deferred wrap included) and TestPaintFitsTheTerminalAndParksTheCursor checks over ten shapes that the frame fits termRows and parks the cursor at the prompt — all three mutations the review named (cursor-up by menu entries, deleting the cursor-up block, dropping fitMenu) redden it. Every frame component is budgeted, prompt then menu then buffer. Width is measured in cells everywhere, measure and cut sharing one owner. Also pinned in process: hand-back order and once-only, restore protocol bytes and order, both mouse encodings consumed whole, committed line carries no cursor escape, trailing paint flush. On a real pty: narrowed to 40 columns every row fits while the transcript keeps the full text, an X10 click types nothing, scrolling, SIGWINCH, tracking given back, transcript on exit.; review verdict: FIX-THEN-SHIP
 
 Filed from the operator's request during `#29`'s design. Measurements taken
 before filing: the absence of any mouse code in `cmd/define`, the notation table
@@ -237,6 +340,315 @@ rather than a number.
 The insight worth keeping: clicking removes the AMBIGUITY objection to
 ORIGIN-inference (`piano` names two languages; a pointer picks one) but not the
 CLOSED-TABLE objection. `#29` recorded both; only one is dissolved here.
+
+### 2026-08-29 — M1.3: the cooked/raw dance is gone
+
+`cooked()` is deleted (D4) and the editor's output goes through the screen. The
+loop's writers are unchanged; `runEditor` swapped one closure for another —
+`cooked func(func()) error` became `paint func(prompt string, menu []string)` —
+and stdout/stderr are the screen in production, plain buffers in tests.
+
+Three things fell out that were not in the plan:
+
+- **`liveScreen`**, because a buffer is invisible: a streamed answer arrives per
+  token and the `♫ playing 3×` has to appear while playback blocks. A write
+  repaints; `screen` stays pure. It also owns `Stop()`, so nothing paints after
+  the terminal is handed back — a frame drawn then lands on the NORMAL screen.
+- **The buffer honours `eraseLine`.** Otherwise the indicator survives into the
+  exit transcript and the record claims playback that may not have happened.
+- **`lostTerminal` is gone**, and with it "raw mode could not be re-entered" —
+  there is no re-entry. Same for the three farewell newlines: leaving the
+  alternate screen restores the shell's own last line.
+
+Deleted along with the mechanism they pinned: the cooked-block instruments in
+two tests and `assertCRLFTerminated`/`streamedAnswer`. Each was rewritten to its
+successor property rather than dropped — detail in the plan's Revisions.
+
+Verified: `go test ./...` green; `go test -tags conformance -run PTY` green (8/8,
+including the menu and terminal-restore rows, through a real pty and the alt
+screen). A pty smoke run rendered `arrondissement` as one frame with the
+committed line above the entry and the prompt below it, alt screen entered once
+and left once.
+
+### 2026-08-29 — M1.3b: the prompt belongs to a loop that is waiting
+
+Operator-reported against M1.3, with a screenshot: while the recording played,
+`arrondissement` appeared twice — once as the entry's headword, once as a prompt
+still holding the line just submitted.
+
+The cause is the repaint-on-write that makes streaming visible: every write
+redraws the frame around the LIVE EDGE last recorded, and between the submit and
+the next `draw()` that edge was stale. Blanking it on submit is not a patch on
+the duplicate: a prompt drawn while nothing is reading keys invites typing at a
+line that does not exist, so the loop now shows one only when it is waiting.
+
+Pinned by `TestNothingIsWrittenWhileAPromptIsShown` — nothing is written while a
+prompt is on the frame, plus the guard that it comes back, so blanking the edge
+for the whole session cannot pass. Falsifiable: removing the blank reddens it
+with the exact stale prompt from the screenshot. Confirmed on a real pty — mid
+playback the indicator is the last line with no prompt under it; after playback
+the indicator is gone and an empty prompt is back.
+
+### 2026-08-29 — M1.4a: the viewport is reachable
+
+PageUp/PageDown, and nothing else. The CSI scanner already delimited `ESC[5~`
+and `ESC[6~` correctly and then threw them away as `KeyUnknown`; naming them is
+all the decoder needed. `ESC[5;5~` (Ctrl-PageUp) must NOT match — a prefix match
+would scroll AND leave `5~` in the line, which is the bug `#14` shipped once.
+
+Three things the plan did not spell out, decided here:
+
+- **The loop grew a `display` seam** rather than a second closure parameter.
+  It was `paint func(prompt, menu)`; scrolling needs the same dependency, so the
+  loop's view of the terminal is now one interface — `Draw` + `Page` — with
+  `liveScreen` as the production implementation and a recording double in tests.
+- **A page is a screenful minus one line of overlap**, computed by the SCREEN:
+  the loop knows a key was pressed, not how tall the viewport is. Confirmed on a
+  real pty — the overlap line is visibly the anchor across a PageUp/PageDown
+  pair.
+- **A write snaps the viewport back to the tail.** Everything this program
+  writes answers something the user just typed. Holding the offset would not even
+  hold the view still: it is measured from the tail, so the text under the eye
+  slides up a line per line written.
+
+A viewport key never reaches `Apply`, so the editor does not learn that a screen
+exists. Row 4b of M1's done-when is covered by `TestCtrlDStillEndsTheSession`
+(with a key BEHIND the Ctrl-D, since `finish()` runs on both exits — what
+discriminates is whether the loop read on past it) and `TestCtrlUStillKillsTheLine`.
+
+### 2026-08-29 — M1.4b: the wheel walked history, and only the mouse report could fix it
+
+Operator-reported against M1.4a. In the alternate screen a terminal translates
+the wheel into arrow keys — which is how `less` scrolls with no mouse support at
+all — and this editor binds Up/Down to the history walk. The bytes are
+IDENTICAL, so nothing could tell a wheel from a keypress; asking the terminal to
+report the mouse is the only way to be handed the gesture that was actually made.
+
+That pulls `M2.2`'s tracking enable/disable into M1, which is where it belongs
+anyway: the wheel is a viewport gesture and the viewport is M1's. `1000`+`1006`
+ride `rawSession`'s restore beside the alt screen, disabled first on the way out
+— a terminal left reporting the mouse types escape sequences into the next
+program run, and nothing about the shell looks wrong, so there is no `reset`
+reflex to save the user.
+
+D7's drag-select cost therefore lands a milestone early. Said out loud in
+`/help`, which is the one screen listing what the console understands.
+
+Verified on a real pty by writing the exact bytes a terminal sends: two wheel-ups
+moved 6 lines back, a wheel-down 3 forward, a click was inert, and tracking was
+enabled once and disabled once. Plus `FuzzDecodeWheelIsBounded` at 1M execs.
+
+### 2026-08-29 — M1.4: the shape, both halves of it
+
+SIGWINCH → measure → redraw. `watchResize` turns signals into a measured
+`winSize`, so the loop's select grows one case and learns nothing about
+`os/signal`; the measurement happens where the terminal is.
+
+- **Both halves change.** Rows were the obvious one — a frame one row too tall
+  makes the terminal scroll, which moves every row the app believes it placed,
+  and that is exactly what would make a click land on the wrong line. Columns
+  matter too: `opt.width` was read ONCE at flag parse, so a resized window kept
+  wrapping new entries to the old width.
+- **Lines already in the buffer keep their wrapping.** Re-wrapping means
+  re-rendering from entries this program does not keep, and scrollback going
+  fluid on every drag is not obviously better than a record of what was shown.
+- **Shapes are COALESCED**, newest wins: a drag fires dozens of signals, a queue
+  of stale shapes is a queue of wrong frames, and a non-blocking hand-off is what
+  keeps the watcher from stalling on a loop that is playing a recording.
+- A resize arriving DURING playback waits until the loop is idle. The select is
+  the only writer, so the alternative is two goroutines painting at once.
+
+`TestPTYResizeRepaints` drives a real `TIOCSWINSZ` and asserts the frame FITS the
+new window — verified falsifiable: cutting the signal transport reddens it with
+"nothing was repainted".
+
+### 2026-08-29 — M1.5: the session survives the alternate screen
+
+D3, and the last thing that made this milestone a net loss to live with: the alt
+buffer is discarded on the way out, so until now quitting threw the session away.
+
+Printed from `finish`, AFTER `restore` — the terminal is cooked again by then, so
+the transcript's bare newlines are newlines, and this is the ONE write in the
+whole loop that goes to the real stdout rather than through the screen. `finish`
+became once-only for it: `restore()` and `Stop()` are idempotent because they run
+from several exit paths, and printing a session twice is not something an
+idempotent call fixes.
+
+What comes back is everything the screen held, which is more than the terminal
+used to keep: D5b routed stderr through the buffer, so `define: zzznotaword: no
+dictionary entry` is now part of the record instead of scrolling past. Verified on
+a real pty — a three-lookup session leaves the committed lines, the entries, the
+command output and that diagnostic in the shell's scrollback.
+
+`TestPTYTranscriptIsPrintedOnExit` anchors its assertion AFTER the teardown
+sequence, because the entry appearing anywhere in the stream would only prove it
+was drawn on the screen about to be thrown away. Falsifiable: dropping the print
+reddens it with nothing after `\x1b[?1049l`.
+
+### 2026-08-29 — M1.6: the prose D4 made false, rewritten
+
+The atlas's raw-mode section explained the cooked/raw dance as the design. It is
+now the HISTORY of one, said so explicitly rather than deleted: the rule was
+real, the hang it prevented was measured, and
+`TestPTYCtrlCDuringPlaybackExitsPromptly` still stands — what went is the
+flapping, because the app now places every line itself.
+
+Added `## The screen`, the layer M1 built: alternate screen, the pure
+`screen`/`liveScreen`/`display` split, the live edge, the honoured `eraseLine`,
+stderr routing, the exit transcript, scrolling and why the wheel needed mouse
+reporting at all, the drag-select cost, one restore guarantee for three terminal
+states, and resize.
+
+Two smaller corrections where the same prose had propagated: `lookupAndRender`'s
+"so the raw path could render cooked and play raw" now says the split outlived
+its reason, and `--play`'s "all session output goes through `crlfWriter`" is
+scoped to `--play`, which still draws its own frames (D5a).
+
+`workshop/lessons.md` KEEPS "render cooked, play raw" — it is still true of any
+program that drops a mode around a blocking call — with a note that the better
+move, where affordable, is to stop needing the other mode.
+
+README: the key table gains scrolling, and the two things a user meets
+immediately are stated — hold Option to select text, and the session is printed
+back to the terminal on exit.
+
+### 2026-08-29 — M1 boundary review: REWORK, addressed
+
+Two rounds, twelve findings, nine blocking, one Critical. All fixed in the
+window; the plan's Revisions carry the classes. In short:
+
+- **A click typed characters into the line** on any terminal that honours mouse
+  mode `1000` and ignores `1006` — it answers in X10 (`ESC[M` + three raw bytes)
+  and the CSI scan stopped at `M`, leaving the payload to be typed. `#14`'s
+  family, in the commit that enabled the mode. The rule it leaves: for every mode
+  we enable, the decoder answers every encoding that mode can reply in.
+- **The frame was budgeted in lines, not display rows**, so a line wider than the
+  terminal made it scroll — destroying the exact-placement property the whole
+  screen exists for. `cols` is real now: the live edge is charged its true
+  height, buffer lines are clipped at paint time, and the transcript keeps the
+  full text.
+- **The restore pin could not fail.** `rawSession` writes its mode sequences to
+  an `io.Writer` — which is also where they belong — so the protocol (mouse off,
+  alt screen, raw) is asserted in process, bytes and order, and falsifiable.
+- **Five sites still described the deleted `crlfWriter` nesting**, including a
+  test pinning a composition nothing builds. M1.6 had swept by site; the sweep is
+  now by class.
+- **The envelope is stated** (ARCH-CONSTRAINTS): a 16 ms repaint throttle with a
+  trailing flush — without the trailing half the indicator would be hidden for a
+  whole recording — and a deliberately uncapped buffer, because a cap silently
+  truncates the record D3 exists to keep.
+- **Two tests raced**; `go test -race ./cmd/define/` is green now.
+
+Re-verified: `go test ./...` and `-race` green; 11 PTY rows green; on a real pty
+narrowed to 40 columns every painted row fits while the transcript keeps the full
+text, and an X10 click types nothing.
+
+### 2026-08-29 — M1 review round 3: four findings, and the Critical was mine
+
+- **`go test ./...` was RED at HEAD while the Log said green.** I ran the suite,
+  then edited the plan's tables, then committed. Two repo guards parse those
+  tables — status is a controlled vocabulary in the third cell — so a "Kind"
+  column inserted before it broke every row, and a `Render` row calling itself
+  `modified` claimed work M2 has not done. The rule this leaves: **prose here is
+  code to a guard; re-run the suite after editing a plan, not before.**
+- **A sentinel leaked into arithmetic.** `terminalWidth` returns 0 for a terminal
+  under 20 columns — a POLICY answer meaning "do not wrap" — and the screen read
+  it as a column count. `terminalSize`/`terminalCols` answer the other question
+  and cannot return a sentinel.
+- **Width is measured in CELLS now, by one owner.** Runes are wrong in both
+  directions for a dictionary: `bänˈZHo͝or`'s combining breve is 0 columns (text
+  that fits was being cut) and CJK is 2 (frames twice as tall as measured, so the
+  terminal scrolls). `visibleCells` + `cellWidth`, read by every wrap, budget and
+  clip; the menu's cursor-up counts the rows the terminal moved.
+- **A pty row is a conformance check, not a pin.** The exit sequence lived inside
+  `replRaw`, which has no in-process caller, so it rested on rows that skip
+  wherever no pty exists — including inside the review itself. `handBack` and
+  `onceHandBack` are named, take two small interfaces, and are pinned in process.
+- **The atlas lagged its own milestone** and now carries the budget, the clip,
+  the cell-width owner, the throttle, the X10 fallback and `handBack`.
+
+### 2026-08-29 — M1 closed: FIX-THEN-SHIP, seven rounds
+
+The boundary took seven rounds, and the durable output is three guards and three
+rules rather than a list of fixes.
+
+- **A plan's claims are checked in every column** — `TestPlanNamedTestsExist`
+  reads the whole document for test names and scopes per milestone, so a
+  finished milestone cannot name a test nobody wrote while an in-progress one
+  keeps its promises. Third recurrence of the family; the first two fixes were
+  hand-edits, which is why it returned.
+- **One owner per invariant, applied twice more**: the escape grammar
+  (`escapeLen` over `sgr.go`'s `scanEscape`, because M2.5 splices through the
+  same text `clipVisible` cuts) and the last rune-counted cursor move.
+- **A frame is a placement.** `readFrame` interprets emitted bytes as a terminal
+  does — deferred wrap included — and the test asserts over ten shapes that the
+  frame fits and the cursor rests at the end of the prompt. Four mutations redden
+  it, including the off-by-one-upward the previous assertion could not see.
+
+Verdict FIX-THEN-SHIP; fixes bundled into the close commit per #174. Three
+findings were demoted past the round cap and all three are addressed here.
+
+### 2026-08-30 — M2: the clicks, and what the boundary found
+- 2026-08-30: closed — Clicking works, confirmed by the operator on their own terminal: click the headword to hear it, click ORIGIN French to hear it in French. Close-review findings fixed in this window. BR-55 as the CLASS: a docs guard must look for something only the documentation of that thing would contain, so TestAtlasDescribesEveryRegionKind now searches RegionKind.identifier() (the Go name) rather than String() — "headword" occurs in the atlas 19 times for unrelated reasons, and deleting the whole Clickable-regions section previously left it green; verified falsifiable now. Two measured Minors with it: isClickButton accepted extended buttons 8-11 as a left press (bit 7 set, low two bits zero) so a browser-back button would have played a recording; and LineAt/visible were labelled PURE while visible writes back offset, which is BR-42 fix rather than an accident. BR-29 is DEFERRED EXPLICITLY to #33, whose whole subject is the tree-to-table direction — six declarations from this window are its first evidence (newLiveScreen, throttledPaint, wheelLines, digits, submitLine, headingLine). Verified: go test ./... exit 0 AFTER the commit, -race exit 0, 12 PTY conformance rows exit 0 on a real pty, FuzzRenderDoesNotPanic 588K and FuzzDecodeMouseIsBounded 3.2M execs clean.; review verdict: FIX-THEN-SHIP
+- 2026-08-30: closed M2 — Clicking works, confirmed by the operator on their own terminal. Round-11 Critical BR-51 fixed: Render panicked on a blank or single-space entry because an empty headword asked findVisible for a span, strings.Index answered found-at-0, and the column lookup indexed an empty line. Fixed in findVisible (the one owner of finding a span) and measured in CELLS not bytes — FuzzRenderDoesNotPanic, written for the fix, then found a NUL headword whose width is zero for the same reason a combining mark is; 588K execs clean after. BR-52 fixed as a guard rather than a sweep: TestAtlasDescribesEveryRenderOpt derives from the struct and fired immediately on two more never-documented fields. Earlier rounds: the click now asks for exactly what a bare Enter asks for over the whole corpus (BR-46), and the terminal-bytes-to-replay joint is driven end to end on real objects (BR-47). go test ./... exit 0 verified AFTER the commit, -race exit 0, 12 PTY conformance rows exit 0.; review verdict: FIX-THEN-SHIP
+
+Shipped: `Render` emits a region map, the screen resolves a click to what was
+rendered there, the two actions replay through `#29`'s mechanism, a clickable
+span is underlined, and a mouse-less terminal is unaffected. The operator
+confirmed it working on their own terminal.
+
+Decisions worth having here rather than only in the plan:
+
+- **The click's target is the LOOKUP KEY**, carried on `RenderOpts.Word` and
+  owned by the caller. A shortcut must not re-derive its target: the boundary
+  found that deriving it from `Entry.Headword()` made `hot dog` play "hot" and
+  `bargainer` play "bargain" — an inflected form finding its base entry is the
+  common case, not an exotic one.
+- **`Region.Word` travels with the region** because a reader can scroll back and
+  click a word from earlier in the session, while the session keeps only the
+  current entry's raw text.
+- **`writeRendered` fills the seam**: a writer that can hold a click map gets
+  one, a pipe gets bytes. `define <word>`, `-raw` and `> out.txt` keep today's
+  bytes exactly, pinned by a golden generated from the commit before the change.
+- **The mark is spliced by the SCREEN and turned off with `24`, not `0`** —
+  `0` would end the palette's colour and take the rest of the line plain.
+- **`-no-color` degrades by ROUTING**, not by a flag the screen consults: it
+  clears `opt.tty`, so the session takes the line loop and no mark can reach
+  output the user asked to keep plain.
+
+Two Criticals came out of the boundary and both were real: the click map
+detaching from the text when the viewport grew, and the click playing a
+different word than Enter. Ten rounds; the durable output is guards — the
+registry's extent has one owner and every check derives from it, and the whole
+path now has one test on real objects rather than a double at every layer.
+
+### 2026-08-30 — M2 closed: FIX-THEN-SHIP after five boundary rounds
+
+Two Criticals came out of this boundary and both were real user-visible defects,
+which is the argument for the rounds:
+
+- **the click played a different word.** `Entry.Headword()` is `fields[0]` alone,
+  so `hot dog` played "hot" and `bargainer` — an inflected form finding its base
+  entry, the common case — played "bargain". The rule: a shortcut must not
+  re-derive its target. The lookup key is the caller's, carried on
+  `RenderOpts.Word`.
+- **`Render` panicked on a blank entry.** An empty headword asked for a span,
+  `strings.Index` answered "found, at 0", and the column lookup indexed an empty
+  line. The rule: a span with no visible extent is not a span — measured in
+  cells, since the fuzz target written for the fix then found a NUL headword.
+
+The durable output is guards that derive from a declared set rather than restate
+it: `numRegionKinds` (action, naming, atlas), `mouseOn` (every enabled mode has a
+decoded reply), and `RenderOpts` (every field is documented). Each fired on
+something real the moment it existed — the last one on two fields nobody had ever
+documented.
+
+Two findings leave this boundary. `BR-55`: the atlas guard added in round 11
+could not fire for the field it was written for, because it accepted a bare
+`` `Word` `` that the atlas contains for other reasons — fixed, and worth
+recording as the family reaching its own author. `BR-56` is filed as `#37`: the
+repo's fifteen fuzz targets and twelve pty rows run in nothing automated, which
+is why a one-second-findable Critical survived eleven rounds.
 
 ## Revisions
 

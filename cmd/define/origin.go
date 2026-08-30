@@ -131,50 +131,116 @@ var ErrNoOriginLanguage = fmt.Errorf("no source language named")
 // Order: cut cognates, mask stages, then search. Each step is measured; see the
 // table comments above.
 func OriginLanguage(e Entry) (store.Lang, string, error) {
-	text := ""
-	for _, s := range e.Sections {
-		if s.Name == "ORIGIN" {
-			text = s.Text
-			break
+	mentions, mentionsAny := OriginLanguageMentions(e)
+	if mentions == nil && !mentionsAny {
+		if originText(e) == "" {
+			return "", "", fmt.Errorf("%w: this entry has no ORIGIN", ErrNoOriginLanguage)
 		}
+		return "", "", fmt.Errorf("%w: its ORIGIN names no language", ErrNoOriginLanguage)
 	}
-	if strings.TrimSpace(text) == "" {
-		return "", "", fmt.Errorf("%w: this entry has no ORIGIN", ErrNoOriginLanguage)
+	if len(mentions) == 0 {
+		return "", "", fmt.Errorf("%w: its ORIGIN names languages only as historical stages or cognates", ErrNoOriginLanguage)
 	}
-	// Whether the RAW section mentions any mapped language at all decides which
-	// of two declines the user gets, and they are genuinely different facts:
-	// "gaslighting" reads "1960s: see gaslight (verb)" and names no language,
-	// while "read" names Dutch and German as cognates. Telling the first user
-	// their entry names only stages or cognates is a record that is not true.
+	// THE FIRST of them, which is the whole of the difference between this and
+	// its producer — see the comment above.
+	return mentions[0].Lang, mentions[0].Name, nil
+}
+
+// Mention is one modern language named as a SOURCE in an ORIGIN section, with
+// where it sits in that section's text.
+//
+// Offset indexes `sec.Text` — the raw section, exactly as `Render` receives it —
+// which is what makes it addressable on screen. That is load-bearing and was
+// nearly wrong: the stage mask used to be `strings.ReplaceAll(text, stage, " ")`,
+// which CHANGES LENGTH, so every offset after a masked stage pointed at the
+// wrong column. Measured on the `concrete` fixture: a 13-character shift before
+// "French". The mask preserves length now, and `TestOriginMentionOffsetsIndexTheSourceText`
+// is what keeps it that way.
+type Mention struct {
+	Name   string
+	Lang   store.Lang
+	Offset int // bytes into the ORIGIN section's text
+}
+
+// OriginLanguageMentions reports EVERY modern language an ORIGIN names as a
+// source, in the order they appear, plus whether the raw section mentioned any
+// mapped language at all.
+//
+// Every one, not the first, and that is the whole reason this exists beside
+// OriginLanguage. `/pron` with no argument wants the first — NOAD's convention
+// is that the first source named is the immediate one. A CLICK wants them all:
+// `piano` is "either from French, or … Italian", and the insight #30 is founded
+// on is that a click has nothing to disambiguate, because the user points at the
+// one they meant. Two consumers, one cut-and-mask — rather than a second
+// spelling of a rule #35's close review spent four findings getting right.
+//
+// The second return value answers "was there a language to reject", which is
+// what separates OriginLanguage's two declines: "gaslighting" reads "1960s: see
+// gaslight (verb)" and names none, while "read" names Dutch and German as
+// cognates. Telling the first user their entry names only cognates is a record
+// that is not true.
+func OriginLanguageMentions(e Entry) ([]Mention, bool) {
+	text := originText(e)
+	if text == "" {
+		return nil, false
+	}
 	mentionsAny := anyLanguageIn(text)
+
+	// Cognate clauses are CUT, which keeps every surviving offset valid because
+	// what survives is a prefix. Stages are MASKED IN PLACE for the same reason.
+	searchable := text
 	for _, marker := range cognateMarkers {
-		if i := strings.Index(text, marker); i >= 0 {
-			text = text[:i]
+		if i := strings.Index(searchable, marker); i >= 0 {
+			searchable = searchable[:i]
 		}
 	}
 	for _, stage := range historicalStages {
-		text = strings.ReplaceAll(text, stage, " ")
+		searchable = maskOut(searchable, stage)
 	}
 
-	best, bestName := -1, ""
-	for name := range originLanguages {
+	var out []Mention
+	for name, lang := range originLanguages {
 		// Word-boundaried: "German" must not match inside a longer word, and a
 		// language name embedded in a proper noun is not a source.
-		loc := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).FindStringIndex(text)
-		if loc == nil {
-			continue
-		}
-		if best < 0 || loc[0] < best {
-			best, bestName = loc[0], name
+		re := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`)
+		for _, loc := range re.FindAllStringIndex(searchable, -1) {
+			out = append(out, Mention{Name: name, Lang: lang, Offset: loc[0]})
 		}
 	}
-	if bestName == "" {
-		if !mentionsAny {
-			return "", "", fmt.Errorf("%w: its ORIGIN names no language", ErrNoOriginLanguage)
+	// SOURCE ORDER. The map is iterated in Go's random order, and both consumers
+	// depend on position: OriginLanguage takes the first, and a reader clicks the
+	// one they can see.
+	slices.SortFunc(out, func(a, b Mention) int { return a.Offset - b.Offset })
+	return out, mentionsAny
+}
+
+// originText is the ORIGIN section's text, or "" when the entry has none.
+func originText(e Entry) string {
+	for _, s := range e.Sections {
+		if s.Name == "ORIGIN" && strings.TrimSpace(s.Text) != "" {
+			return s.Text
 		}
-		return "", "", fmt.Errorf("%w: its ORIGIN names languages only as historical stages or cognates", ErrNoOriginLanguage)
 	}
-	return originLanguages[bestName], bestName, nil
+	return ""
+}
+
+// maskOut blanks every occurrence of a stage name, PRESERVING LENGTH so the
+// offsets of everything after it stay true.
+//
+// Spaces rather than deletion, and it is the difference between a region drawn
+// on the right word and one drawn 13 columns to its left.
+func maskOut(text, stage string) string {
+	var b strings.Builder
+	for {
+		i := strings.Index(text, stage)
+		if i < 0 {
+			b.WriteString(text)
+			return b.String()
+		}
+		b.WriteString(text[:i])
+		b.WriteString(strings.Repeat(" ", len(stage)))
+		text = text[i+len(stage):]
+	}
 }
 
 // anyLanguageIn reports whether the text mentions a mapped language ANYWHERE,

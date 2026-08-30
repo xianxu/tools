@@ -173,7 +173,7 @@ func TestClassifyRawNotationOverRealEntries(t *testing.T) {
 			if err != nil {
 				t.Fatalf("reading exemplar: %v", err)
 			}
-			out := Render(ParseEntry(string(raw)), RenderOpts{Width: 0})
+			out, _ := Render(ParseEntry(string(raw)), RenderOpts{Width: 0})
 			// The exemplar must actually still trip the live oracle, or it has
 			// stopped being an exemplar and this test passes vacuously.
 			if _, tripped := rawNotationNear(out); !tripped {

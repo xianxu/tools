@@ -91,8 +91,12 @@ func TestLLMCheckIsNonZeroAndSpecificWhenUnavailable(t *testing.T) {
 		wantIn string
 	}{
 		{
+			// A REMOTE provider with no key. An empty environment stopped being
+			// an unusable configuration when the local proxy learned to supply
+			// its own handshake token — so the case that still needs naming is
+			// the one where a real credential is genuinely missing.
 			name:   "no key names both variables and where to find one",
-			env:    nil,
+			env:    map[string]string{"DEFINE_LLM_BASE_URL": "https://api.anthropic.com"},
 			wantIn: "DEFINE_LLM_API_KEY",
 		},
 		{
@@ -129,10 +133,13 @@ func TestLLMCheckIsNonZeroAndSpecificWhenUnavailable(t *testing.T) {
 // Deleting the dispatch in main.go leaves the tests above green.
 func TestLLMCheckIsReachableFromTheFlag(t *testing.T) {
 	var out, errOut bytes.Buffer
-	// No key in the process env for this test, so the check reports unavailable —
-	// which is enough to prove the flag REACHED runLLMCheck, and needs no network.
+	// A REMOTE provider with no key, so the check reports unavailable — which is
+	// enough to prove the flag REACHED runLLMCheck, and needs no network. Not an
+	// empty environment: that now resolves against the local proxy, which
+	// supplies its own handshake token and would send this test to the network.
 	t.Setenv("DEFINE_LLM_API_KEY", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("DEFINE_LLM_BASE_URL", "https://api.anthropic.com")
 
 	code := run(context.Background(), []string{"-llm-check"}, deps{}, strings.NewReader(""), &out, &errOut)
 	if code == 0 {

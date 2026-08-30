@@ -1,6 +1,9 @@
 package main
 
-import "unicode/utf8"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // KeyKind is the vocabulary of keypresses this editor understands.
 type KeyKind int
@@ -21,6 +24,28 @@ const (
 	KeyInterrupt // Ctrl-C: a BYTE in raw mode, not a signal
 	KeyEOF       // Ctrl-D
 	KeyKillLine  // Ctrl-U — and Cmd+Delete, which terminals send as \x15
+	// The VIEWPORT keys, a category of their own: they change what you are
+	// looking at rather than the line you are typing, so the editor ignores them
+	// and the loop hands them to the screen (#30 M1.4a).
+	//
+	// PageUp/PageDown and nothing else. Ctrl-U and Ctrl-D are the obvious
+	// half-page bindings and both are ALREADY TAKEN above — 0x15 kills the line
+	// and 0x04 ends the session on an empty one — so rebinding either would be a
+	// silent regression in an editor people already use.
+	KeyPageUp
+	KeyPageDown
+	// The WHEEL, which is a viewport gesture like the page keys and not a mouse
+	// feature (#30 M1.4b). In the alternate screen a terminal translates the
+	// wheel into ARROW KEYS by default, and this program binds Up/Down to the
+	// history walk — so a scroll walked history instead. Nothing can tell the
+	// two apart, because they are the same bytes; the only way to get the wheel
+	// itself is to ask the terminal to report the mouse, which is why tracking
+	// is enabled here rather than waiting for the clicks in M2.
+	KeyWheelUp
+	KeyWheelDown
+	// KeyClick is a mouse PRESS, and the one Key that carries a position — see
+	// Key.Row/Col below (#30 M2.2).
+	KeyClick
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
@@ -30,6 +55,15 @@ type Key struct {
 	Kind KeyKind
 	Rune rune
 	Raw  []byte
+	// Row and Col are where a KeyClick landed, 0-based, in the TERMINAL's
+	// coordinates — the loop adds the screen's scroll offset to reach a buffer
+	// line. Terminals report 1-based, and the conversion happens once, here,
+	// rather than at whichever consumer remembers.
+	//
+	// Meaningless for every other Kind, which is why they are on the Key rather
+	// than in a second channel: a click is a keypress that happens to have a
+	// place, and the loop's select already delivers keypresses.
+	Row, Col int
 }
 
 // decodeKey converts the front of buf into a Key.
@@ -97,6 +131,21 @@ func decodeEscape(buf []byte) (Key, int) {
 			return Key{Kind: KeyHome}, 3
 		case 'F':
 			return Key{Kind: KeyEnd}, 3
+		case 'M':
+			if buf[1] == '[' {
+				// The X10 mouse report, and the reason this case exists at all:
+				// enabling mode 1000 asks for the mouse, and a terminal that
+				// honours 1000 but ignores 1006 answers in X10 — ESC[M plus
+				// THREE RAW BYTES that are not part of any CSI grammar. The scan
+				// below would stop at "M" as a final byte and hand the payload to
+				// the line as text: a left click at (1,1) typed " !!" into the
+				// word being looked up, and a wheel notch typed "`!!".
+				//
+				// This is #14's family, one encoding over. The rule it leaves
+				// behind: for every mode we ENABLE, the decoder answers every
+				// encoding that mode can reply in.
+				return decodeX10Mouse(buf)
+			}
 		}
 		// Every other CSI sequence: find its REAL final byte rather than assuming
 		// a length. ESC[3~ is Delete, but ESC[3;5~ is Ctrl-Delete — assuming four
@@ -110,8 +159,20 @@ func decodeEscape(buf []byte) (Key, int) {
 			}
 			if c >= 0x40 && c <= 0x7E {
 				seq := buf[:i+1]
-				if string(seq) == "\x1b[3~" {
+				// The tilde family, delimited by the scan above rather than by a
+				// guessed length. ESC[5~/ESC[6~ were already delimited correctly
+				// and then discarded as KeyUnknown; naming them is all M1.4a
+				// needed from this decoder.
+				switch string(seq) {
+				case "\x1b[3~":
 					return Key{Kind: KeyDelete}, i + 1
+				case "\x1b[5~":
+					return Key{Kind: KeyPageUp}, i + 1
+				case "\x1b[6~":
+					return Key{Kind: KeyPageDown}, i + 1
+				}
+				if k, ok := decodeWheel(seq); ok {
+					return k, i + 1
 				}
 				return Key{Kind: KeyUnknown, Raw: seq}, i + 1
 			}
@@ -120,4 +181,196 @@ func decodeEscape(buf []byte) (Key, int) {
 		return Key{}, 0 // still incomplete
 	}
 	return Key{Kind: KeyUnknown, Raw: buf[:2]}, 2
+}
+
+// decodeWheel reads an SGR 1006 mouse report and answers only the WHEEL.
+//
+//	ESC [ < Cb ; Cx ; Cy M     press      (m for release)
+//
+// The sequence is already DELIMITED by the caller's scan — "<" is a parameter
+// byte and "M"/"m" are final bytes — so this only interprets what is inside, and
+// cannot consume past the end. That is the guarantee that matters here: #14
+// shipped a decoder that assumed a length, ate four bytes of a six-byte
+// sequence, and typed the remainder into the word being looked up.
+//
+// Only the wheel, deliberately. Buttons carry COORDINATES that mean nothing
+// until there is a region map to look them up in (M2), and a Key kind nothing
+// reads is a kind that drifts. A click therefore stays KeyUnknown — consumed
+// whole and inert, which is exactly what it should be for now.
+func decodeWheel(seq []byte) (Key, bool) {
+	// CSI, not SS3. decodeEscape handles `ESC [` and `ESC O` in one branch
+	// because the arrow keys arrive both ways, and without this check a
+	// hand-typed `ESC O <0;1;1M` would be read as a click — a decoder inventing
+	// a gesture out of text nobody made. Found by the fuzzer; no terminal sends
+	// it, which is exactly why nothing else would have caught it.
+	if len(seq) < 4 || seq[1] != '[' || seq[2] != '<' {
+		return Key{}, false
+	}
+	final := seq[len(seq)-1]
+	if final != 'M' && final != 'm' {
+		return Key{}, false
+	}
+	params := parseParams(seq[3 : len(seq)-1])
+	if len(params) != 3 {
+		return Key{}, false // malformed: inert, and the caller has still consumed it
+	}
+	if k, ok := wheelFromButton(params[0]); ok {
+		return k, true
+	}
+	// A PRESS, and only a press: "M" is the press and "m" the release, and
+	// acting on both would play every recording twice. The release is consumed
+	// and dropped, which is what an inert key means for a sequence that must not
+	// reach the line.
+	if final != 'M' || !isClickButton(params[0]) {
+		return Key{}, false
+	}
+	return clickAt(params[1], params[2])
+}
+
+// clickAt builds a click from WIRE coordinates — 1-based, as every terminal
+// reports them — and refuses anything that is not a cell on the screen.
+//
+// One owner for the conversion and the guard, because there are two encodings
+// and they are wrong in different ways. Found by the fuzzer: X10 spends one byte
+// per coordinate offset by 32, so a byte of 0x20 decodes to wire coordinate 0,
+// and 0 - 1 is row -1 — which would index backwards through the region map. SGR
+// can report a literal 0 for the same result.
+//
+// A refusal is inert, and inert is the right answer: the sequence has still been
+// consumed whole, so nothing reaches the line either way.
+func clickAt(wireCol, wireRow int) (Key, bool) {
+	if wireCol < 1 || wireRow < 1 {
+		return Key{}, false
+	}
+	// 1-based on the wire, 0-based here — converted once, at the boundary,
+	// rather than at whichever consumer remembers.
+	return Key{Kind: KeyClick, Col: wireCol - 1, Row: wireRow - 1}, true
+}
+
+// isClickButton reports whether a button byte is a plain press we act on.
+//
+// The low two bits are the button (left, middle, right) and bit 5 marks MOTION —
+// a drag, which mode 1000 does not report but 1002 would, and which is a
+// selection gesture rather than a click. Modifier bits ride along and are
+// ignored, as they are for the wheel: a Shift-click is still a click.
+func isClickButton(b int) bool {
+	if b&64 != 0 || b&32 != 0 { // a wheel event, or motion
+		return false
+	}
+	if b&128 != 0 {
+		// Buttons 8-11 (back, forward, and two more) set bit 7, and their low
+		// two bits are zero — so a mask of `b&3 == 0` called every one of them a
+		// left press while the comment promised "LEFT only". Measured:
+		// ESC[<128;5;3M decoded to a click. A browser-back button should not
+		// play a recording.
+		return false
+	}
+	// The remaining modifier bits — shift 4, meta 8, ctrl 16 — ride along and are
+	// ignored: a Shift-click is still a click.
+	return b&3 == 0 // LEFT only: middle pastes and right opens a menu, elsewhere
+}
+
+// parseParams splits a mouse report's `1;2;3` parameter list.
+//
+// Returns nil on anything malformed rather than a partial list, so a caller
+// cannot act on coordinates it did not actually read — which is the failure mode
+// a mouse decoder has that a key decoder does not.
+func parseParams(b []byte) []int {
+	var out []int
+	for _, field := range strings.Split(string(b), ";") {
+		n, ok := atoiPrefix([]byte(field))
+		if !ok || len(field) != digits(n) {
+			return nil
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// digits is how many characters n was written with, so a field carrying trailing
+// junk ("12x") is rejected rather than silently read as 12.
+func digits(n int) int {
+	if n == 0 {
+		return 1
+	}
+	d := 0
+	for ; n > 0; n /= 10 {
+		d++
+	}
+	return d
+}
+
+// wheelFromButton reads a mouse report's BUTTON byte, which means the same thing
+// in every encoding the terminal might answer in.
+//
+// One owner, because there are already two encodings and M2 adds buttons to
+// both: three spellings of "bit 6 is the wheel, the low two bits are the
+// direction" across two decoders is how they come to disagree.
+//
+// The modifier bits (shift 4, meta 8, ctrl 16) ride along and are IGNORED rather
+// than matched exactly — Shift-wheel is still a wheel.
+func wheelFromButton(b int) (Key, bool) {
+	if b&64 == 0 {
+		return Key{}, false
+	}
+	switch b & 3 {
+	case 0:
+		return Key{Kind: KeyWheelUp}, true
+	case 1:
+		return Key{Kind: KeyWheelDown}, true
+	}
+	return Key{}, false // horizontal wheel: nothing to scroll sideways
+}
+
+// atoiPrefix reads the leading decimal number of a parameter list. Returns false
+// on anything else, including an empty field or a number long enough to be a
+// denial-of-sense rather than a coordinate.
+func atoiPrefix(b []byte) (int, bool) {
+	n, digits := 0, 0
+	for _, c := range b {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+		digits++
+		if digits > 6 {
+			return 0, false
+		}
+	}
+	if digits == 0 {
+		return 0, false
+	}
+	return n, true
+}
+
+// decodeX10Mouse reads the legacy mouse report: ESC[M followed by three bytes,
+// each a value offset by 32.
+//
+// It consumes SIX bytes or none. None means "wait" — the partial-sequence
+// protocol decodeKey already has — because a report split across two reads must
+// not be half-decoded, and the payload bytes are otherwise indistinguishable
+// from typed characters.
+//
+// Only the wheel is answered, matching decodeWheel: a button carries coordinates
+// that mean nothing until M2 can look them up. The rest is inert, which for this
+// encoding means CONSUMED rather than ignored.
+func decodeX10Mouse(buf []byte) (Key, int) {
+	if len(buf) < 6 {
+		return Key{}, 0
+	}
+	b := int(buf[3]) - 32
+	if k, ok := wheelFromButton(b); ok {
+		return k, 6
+	}
+	if isClickButton(b) {
+		// Coordinates are offset by 32, same as the button, and still 1-based —
+		// so clickAt does the subtracting and the checking. X10 cannot express a
+		// column past 223 (the byte wraps), which is why 1006 is asked for
+		// alongside 1000; a click out there lands wrong in a terminal that gave
+		// us no better encoding to ask for.
+		if k, ok := clickAt(int(buf[4])-32, int(buf[5])-32); ok {
+			return k, 6
+		}
+	}
+	return Key{Kind: KeyUnknown, Raw: buf[:6]}, 6
 }

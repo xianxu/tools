@@ -237,32 +237,41 @@ func TestStreamedAnswerCarriesNoEscapesWithoutColour(t *testing.T) {
 	}
 }
 
-// The nesting order, pinned. The raw loop wraps stdout in crlfWriter before
-// calling ask, and runAsk wraps that in a highlightWriter — so highlighting sees
-// LOGICAL text and CRLF translation applies to the final bytes, including the
-// escape sequences highlighting inserted.
+// The composition, pinned — and it CHANGED with #30 D5, which is why this test
+// no longer builds the one it used to.
 //
-// Inverting the order would translate before highlighting: the highlighter would
-// then see "\r\n" where it expects "\n", and a match ending at a line break
-// would be decided against different bytes than production analyses elsewhere.
-func TestHighlightingNestsInsideCRLFTranslation(t *testing.T) {
+// It wrapped a crlfWriter and asserted highlighting ran inside it. No production
+// path composes those any more: the raw loop writes into the screen, which owns
+// line placement, and `--play` keeps its own crlfWriter but never asks. A test
+// that keeps asserting a composition nothing builds is worse than no test — it
+// reads as coverage.
+//
+// What is true now, and what this asserts: the highlight writer is the
+// OUTERMOST writer on the answer, over whatever the caller passed — so
+// highlighting sees the answer's own logical text, and the screen splits the
+// highlighted bytes into lines afterwards. A match ending at a line break is
+// decided against the same bytes every other analysis in this program sees.
+func TestHighlightingSeesLogicalTextAndTheScreenPlacesIt(t *testing.T) {
 	d, fake, _, _ := askRig(t)
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
 	d.vocab = vocab("obsequious")
 
-	var raw bytes.Buffer
+	// The production shape: the screen is what the raw loop hands ask.
+	sc := &screen{}
 	var errOut bytes.Buffer
-	runAsk(t.Context(), d, options{color: true}, &session{}, question{text: "q?"},
-		&crlfWriter{w: &raw}, &errOut)
+	runAsk(t.Context(), d, options{color: true}, &session{}, question{text: "q?"}, sc, &errOut)
 
-	got := raw.String()
+	got := sc.Transcript()
 	if !strings.Contains(got, knownOn+"Obsequious") {
-		t.Errorf("the highlight did not survive CRLF translation: %q", got)
+		t.Errorf("the deck word was not highlighted in the answer: %q", got)
 	}
-	// Every newline is a full CRLF: the translation ran OUTSIDE, over the
-	// highlighted bytes rather than before them.
-	if strings.Count(got, "\n") != strings.Count(got, "\r\n") {
-		t.Errorf("a bare newline escaped CRLF translation: %q", got)
+	// The screen placed it: the answer is LINES, not one run of text with
+	// newlines in it, and no carriage return survived into the record.
+	if len(sc.Lines()) < 2 {
+		t.Errorf("the answer landed as %d line(s): the screen did not place it: %q", len(sc.Lines()), got)
+	}
+	if strings.Contains(got, "\r") {
+		t.Errorf("a carriage return reached the buffer as text: %q", got)
 	}
 }
 
@@ -301,8 +310,7 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 			replLines(t.Context(), nil, d, opt, strings.NewReader("?what is obsequious\n"), out, errOut, true, false)
 		}},
 		{"raw editor", func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer) {
-			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt,
-				func(run func()) error { run(); return nil }, func() {}, out, errOut)
+			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt, editorConsole(out, errOut, func() {}))
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

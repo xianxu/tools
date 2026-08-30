@@ -45,7 +45,7 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		fmt.Fprintln(stderr, "define: --play needs a terminal")
 		return 1
 	}
-	sess, err := enterRaw(f)
+	sess, err := enterRaw(f, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: could not enter raw mode: %v\n", err)
 		return 1
@@ -179,7 +179,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 					playAnnounced(ctx, d, opt, utteranceFor(word, "", "", opt),
 						defaultIndicator(opt), stdout, stderr)
 					if raw.sess != nil {
-						again, err := enterRaw(raw.f)
+						again, err := enterRaw(raw.f, stdout)
 						if err != nil {
 							// REPORTED, not dropped. Without raw mode readKeys is
 							// line-buffered, so every keystroke appears to do nothing
@@ -258,7 +258,8 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
 			continue
 		}
-		rendered := Render(ParseEntry(text), RenderOpts{
+		// No regions: `--play` draws its own frames and has no click map (D5a).
+		rendered, _ := Render(ParseEntry(text), RenderOpts{
 			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 		})
 		qs = append(qs, play.NewRecall(key, rendered))

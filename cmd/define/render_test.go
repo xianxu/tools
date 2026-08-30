@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -18,7 +20,7 @@ func TestRenderHomographIsVisible(t *testing.T) {
 	// Only one homograph is reachable through this API (see Non-goals), so the
 	// number must be shown — it is the user's only signal that "bank" here means
 	// the riverbank and the financial sense was never returned.
-	out := Render(ParseEntry(fixture(t, "bank")), RenderOpts{Color: false})
+	out, _ := Render(ParseEntry(fixture(t, "bank")), RenderOpts{Color: false})
 	first := strings.SplitN(out, "\n", 2)[0]
 	if !strings.Contains(first, "bank") || !strings.Contains(first, "1") {
 		t.Errorf("header %q should show the homograph number", first)
@@ -28,7 +30,7 @@ func TestRenderHomographIsVisible(t *testing.T) {
 func TestRenderHeadKeepsSourceOrder(t *testing.T) {
 	// present is "present 1 pres·ent" — homograph BEFORE syllabification, the
 	// opposite of record. A renderer with a fixed field order reorders one of them.
-	out := Render(ParseEntry(fixture(t, "present")), RenderOpts{Color: false})
+	out, _ := Render(ParseEntry(fixture(t, "present")), RenderOpts{Color: false})
 	first := strings.SplitN(out, "\n", 2)[0]
 	iHomo, iSyl := strings.Index(first, "1"), strings.Index(first, "pres·ent")
 	if iHomo < 0 || iSyl < 0 || iHomo > iSyl {
@@ -37,7 +39,7 @@ func TestRenderHeadKeepsSourceOrder(t *testing.T) {
 }
 
 func TestRenderGluedPOSNotPrintedTwice(t *testing.T) {
-	out := Render(ParseEntry(fixture(t, "record")), RenderOpts{Color: false})
+	out, _ := Render(ParseEntry(fixture(t, "record")), RenderOpts{Color: false})
 	lines := strings.Split(out, "\n")
 
 	// The head line carries the glued POS...
@@ -62,16 +64,17 @@ func TestRenderGluedPOSNotPrintedTwice(t *testing.T) {
 
 func TestRenderColorOnlyWhenAsked(t *testing.T) {
 	e := ParseEntry(fixture(t, "sycophantic"))
-	if plain := Render(e, RenderOpts{Color: false}); strings.Contains(plain, "\x1b[") {
+	if plain, _ := Render(e, RenderOpts{Color: false}); strings.Contains(plain, "\x1b[") {
 		t.Error("ANSI escapes present with Color:false")
 	}
-	colored := Render(e, RenderOpts{Color: true})
+	colored, _ := Render(e, RenderOpts{Color: true})
 	if !strings.Contains(colored, "\x1b[") {
 		t.Error("no ANSI escapes with Color:true")
 	}
 	// Colour must be presentation-only: stripping the escapes reproduces the
 	// plain rendering exactly.
-	if stripANSI(colored) != Render(e, RenderOpts{Color: false}) {
+	plain, _ := Render(e, RenderOpts{Color: false})
+	if stripANSI(colored) != plain {
 		t.Error("colour changed more than presentation")
 	}
 }
@@ -251,7 +254,7 @@ func noRawNotationIn(t *testing.T, d *fakeDictionary) {
 	t.Helper()
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
-			out := Render(ParseEntry(raw), RenderOpts{Color: false})
+			out, _ := Render(ParseEntry(raw), RenderOpts{Color: false})
 			// THE trip predicate, shared with the live ratchet and the
 			// classifier — it was written in three spellings across three files,
 			// which is three chances for them to disagree about what they count.
@@ -270,13 +273,13 @@ func noRawNotationIn(t *testing.T, d *fakeDictionary) {
 func TestWrapTextBreaksAtSpaces(t *testing.T) {
 	got := wrapText("mid 16th century from French sycophante or via Latin", 24, 4)
 	for _, line := range strings.Split(got, "\n") {
-		if visibleLen(strings.TrimSpace(line)) == 0 {
+		if visibleCells(strings.TrimSpace(line)) == 0 {
 			t.Error("blank line produced")
 		}
 	}
 	// No line may exceed the width once its indent is counted.
 	for i, line := range strings.Split(got, "\n") {
-		w := visibleLen(line)
+		w := visibleCells(line)
 		if i == 0 {
 			w += 4
 		}
@@ -335,7 +338,7 @@ func wrappedLosesNothingIn(t *testing.T, d *fakeDictionary) {
 	t.Helper()
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
-			out := Render(ParseEntry(raw), RenderOpts{Color: false, Width: 60})
+			out, _ := Render(ParseEntry(raw), RenderOpts{Color: false, Width: 60})
 			want, got := alnum(raw), alnum(out)
 			if len(want) != len(got) {
 				t.Errorf("alnum count raw=%d wrapped=%d", len(want), len(got))
@@ -456,4 +459,390 @@ func TestASpanishWordInAnEnglishEntryDoesCarryNotation(t *testing.T) {
 			"'Spanish has no notation' rule is about the Spanish DICTIONARY, not about " +
 			"Spanish words, and this is the case that distinguishes them")
 	}
+}
+
+// Width is measured in COLUMNS, not runes, and both exceptions are this
+// program's daily traffic.
+//
+// NOAD writes `bänˈZHo͝or` — the o͝o carries a combining double breve, a rune
+// that occupies no column of its own — so counting runes reports more width than
+// the terminal uses and cuts text that fits. A Japanese entry is full-width: ten
+// runes are twenty columns, so counting runes builds a frame twice as tall as it
+// measured, the terminal scrolls, and every row the screen placed has moved.
+func TestVisibleCellsCountsColumns(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"plain ascii", "hello", 5},
+		{"a colour costs nothing", "\x1b[1;36mhello\x1b[0m", 5},
+		{"a cursor move costs nothing either", "hello\x1b[3D", 5},
+		// NOAD's own anglicisation of `bonjour`, combining breve and all.
+		{"a combining mark rides on the rune before it", "bänˈZHo͡or", 9},
+		{"CJK is two columns a rune", "日本語", 6},
+		{"fullwidth latin is two as well", "ＡＢ", 4},
+		{"mixed", "a日b", 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := visibleCells(tc.in); got != tc.want {
+				t.Errorf("visibleCells(%q) = %d columns, want %d", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// The rendered bytes ARE the product, and this golden is the only thing that
+// says so (#30 M2.1, Done-when 3).
+//
+// M2.1 changed Render's signature to also return regions, and the risk is that
+// collecting them alters a single byte — which would change what `define <word>`,
+// `-raw` and `> out.txt` print, paths D6 promises are untouched. The other tests
+// here assert STRUCTURE (a line exists, a colour appears, wrapping holds); none
+// of them would notice a stray space.
+//
+// GENERATED FROM THE COMMIT BEFORE the signature change, which is what makes it
+// evidence rather than a restatement: comparing Render to itself proves nothing,
+// and a golden regenerated by the change it exists to catch is worse. Three
+// option sets, because colour and width take different paths through the walk.
+//
+// When a rendering change is INTENDED, regenerate this file deliberately and say
+// so in the commit — the diff is then the description of what a reader will see.
+func TestRenderOutputMatchesTheCorpusGolden(t *testing.T) {
+	want, err := os.ReadFile("testdata/golden/render-corpus.golden")
+	if err != nil {
+		// NOT a skip: the golden is committed, so an unreadable one is a broken
+		// checkout, never an absent dependency.
+		t.Fatalf("golden unreadable: %v", err)
+	}
+	d := testDict(t)
+	if len(d.entries) == 0 {
+		t.Fatal("empty corpus; this test would be vacuous")
+	}
+	var words []string
+	for w := range d.entries {
+		words = append(words, w)
+	}
+	sort.Strings(words)
+
+	var b strings.Builder
+	for _, w := range words {
+		e := ParseEntry(d.entries[w])
+		for _, opt := range []RenderOpts{{Color: true, Width: 80}, {Color: false, Width: 0}, {Color: true, Width: 40}} {
+			b.WriteString("\x00" + w + "\x00")
+			rendered, _ := Render(e, opt)
+			b.WriteString(rendered)
+		}
+	}
+	if got := b.String(); got != string(want) {
+		t.Errorf("the rendered corpus changed. %s", firstDifference(got, string(want)))
+	}
+}
+
+// firstDifference reports WHERE two renderings diverge, since the corpus is
+// 300KB and a diff of the whole thing says nothing.
+func firstDifference(got, want string) string {
+	n := min(len(got), len(want))
+	for i := 0; i < n; i++ {
+		if got[i] != want[i] {
+			lo := max(0, i-40)
+			return fmt.Sprintf("first difference at byte %d:\n got %q\nwant %q", i,
+				got[lo:min(i+40, len(got))], want[lo:min(i+40, len(want))])
+		}
+	}
+	return fmt.Sprintf("one is a prefix of the other: %d bytes vs %d", len(got), len(want))
+}
+
+// Regions ADDRESS the output they were collected from: every span is where it
+// says it is, in the line and the display column it claims.
+//
+// A region that is merely present is worthless — the whole point is that a click
+// at (row, col) finds the thing under the pointer. Checked over the whole corpus
+// so an entry shape nobody thought of is checked too.
+func TestRegionsAddressTheRenderedOutput(t *testing.T) {
+	d := testDict(t)
+	found := 0
+	for word, raw := range d.entries {
+		e := ParseEntry(raw)
+		for _, opt := range []RenderOpts{{Color: true, Width: 80}, {Color: false, Width: 0}} {
+			rendered, regions := Render(e, opt)
+			lines := strings.Split(rendered, "\n")
+			for _, r := range regions {
+				found++
+				if r.Line < 0 || r.Line >= len(lines) {
+					t.Errorf("%s: region %q claims line %d of %d", word, r.Text, r.Line, len(lines))
+					continue
+				}
+				// The span is at the column it claims, measured in the cells a
+				// terminal will use — escapes stepped over, so a highlighted
+				// deck word inside the line does not shift it.
+				plain, cols := visibleIndex(lines[r.Line])
+				at := -1
+				for i := range cols {
+					if cols[i] == r.Col {
+						at = i
+						break
+					}
+				}
+				if at < 0 || !strings.HasPrefix(plain[at:], r.Text) {
+					t.Errorf("%s: region %q claims line %d column %d, where the screen shows %q",
+						word, r.Text, r.Line, r.Col, plainAround(plain, r.Col, cols))
+					continue
+				}
+				if r.Width != visibleCells(r.Text) {
+					t.Errorf("%s: region %q is %d cells wide, want %d", word, r.Text, r.Width, visibleCells(r.Text))
+				}
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("no regions over the whole corpus — the walk found nothing, so nothing is asserted")
+	}
+}
+
+func plainAround(plain string, col int, cols []int) string {
+	for i := range cols {
+		if cols[i] >= col {
+			return plain[i:min(i+20, len(plain))]
+		}
+	}
+	return ""
+}
+
+// The underline NEVER reaches Render's output (#30 D6, Done-when 4).
+//
+// The mark is spliced by the SCREEN, and that placement is a promise rather than
+// an implementation detail: `define <word>`, `echo w | define`, `-raw` and
+// `> out.txt` keep today's bytes exactly. An underline emitted here would leak
+// into all four — and a file or a pipe cannot be clicked, so the mark would be
+// decoration claiming an affordance that does not exist there.
+//
+// The corpus golden already fails if any byte moves; this says WHICH byte and
+// why, so the next reader meets the reason rather than a diff.
+func TestRenderNeverMarksSpansItself(t *testing.T) {
+	d := testDict(t)
+	marked := 0
+	for word, raw := range d.entries {
+		e := ParseEntry(raw)
+		for _, opt := range []RenderOpts{{Color: true, Width: 80}, {Color: false, Width: 0}} {
+			rendered, regions := Render(e, opt)
+			if strings.Contains(rendered, underlineOn) || strings.Contains(rendered, underlineOff) {
+				t.Errorf("%s: Render emitted the clickable underline, which would reach a pipe and a file", word)
+			}
+			marked += len(regions)
+		}
+	}
+	if marked == 0 {
+		t.Fatal("no regions over the corpus, so the absence of marks proves nothing")
+	}
+}
+
+// Every kind is NAMED, which is what lets a guard — and the atlas — describe the
+// registry without restating it (#30 M2, BR-38).
+func TestEveryRegionKindIsNamed(t *testing.T) {
+	for k := RegionKind(0); k < numRegionKinds; k++ {
+		if strings.HasPrefix(k.String(), "RegionKind(") {
+			t.Errorf("RegionKind %d has no name: a kind nobody has described is a kind "+
+				"no reader and no document knows about", int(k))
+		}
+	}
+}
+
+// The ORIGIN section's boundary comes from `e.Sections`, which OWNS it — not
+// from a heuristic that guesses at headings (#30 M2, BR-38/BR-43).
+//
+// The first version looked for a line that was all-caps, single-word and free of
+// punctuation. A heuristic can only agree with the parser by coincidence: an
+// acronym alone on a line — which a narrow terminal produces routinely — reads
+// as a heading, so the range stops early and everything after it in the same
+// section stops being clickable.
+//
+// Driven at the FUNCTION rather than through Render, because the difference is
+// about which lines belong to a section, and reaching it through prose would
+// mean contriving text that wraps a particular way — a test about wrapping
+// pretending to be a test about sections. Every committed entry has ORIGIN LAST,
+// so the two implementations agree on all of them, which is why reverting the
+// fix left the whole suite green.
+func TestOriginLineRangeComesFromTheParsedSections(t *testing.T) {
+	lines := []string{
+		"radar",               // 0
+		"",                    // 1
+		"  ORIGIN",            // 2
+		"    an acronym from", // 3
+		"    NASA",            // 4  ← all-caps and alone: NOT a heading
+		"    usage, from Italian radiotelemetro.", // 5
+		"",                                  // 6
+		"  USAGE",                           // 7  ← the real next heading
+		"    the French spelling is older.", // 8
+	}
+	e := Entry{Sections: []Section{
+		{Name: "ORIGIN", Text: "an acronym from NASA usage, from Italian radiotelemetro."},
+		{Name: "USAGE", Text: "the French spelling is older."},
+	}}
+
+	first, last := originLineRange(lines, e)
+	if first != 2 {
+		t.Errorf("the section starts at line %d, want 2", first)
+	}
+	// Through the language, and NOT into USAGE — where "French" is prose about
+	// spelling rather than an etymology.
+	if last != 6 {
+		t.Errorf("the section ends at line %d, want 6: the range must cover the whole "+
+			"etymology (an all-caps line inside it is not a heading) and stop before the "+
+			"next section (whose prose is not an etymology)", last)
+	}
+}
+
+// A SHORTCUT MUST NOT RE-DERIVE ITS TARGET (#30 M2, BR-46).
+//
+// A click on the headword is a shortcut for the bare Enter beside it. Enter
+// replays the session's current word — the LOOKUP KEY — while the region used to
+// carry `Entry.Headword()`, which is `fields[0]` alone: `hot dog` underlined only
+// "hot" and asked the CDN for hot_en_us_1.mp3, and `a priori` reduced to the
+// letter "a". Two gestures for one action, answering differently.
+//
+// The property, over the whole corpus: for every headword region, the first
+// audio candidate for what the click plays is the first candidate the bare-Enter
+// replay produces. Anything less is a click that plays a different word.
+func TestAClickAsksForExactlyWhatEnterAsksFor(t *testing.T) {
+	d := testDict(t)
+	opt := options{locale: "us"}
+	checked := 0
+	for key, raw := range d.entries {
+		e := ParseEntry(raw)
+		// The key the user's line resolved to, which is also what sess.current
+		// becomes — passed exactly as lookupAndRender passes it.
+		rendered, regions := Render(e, RenderOpts{Width: 80, Word: key})
+		// What a bare Enter would ask for.
+		want := AudioCandidates(utteranceFor(key, raw, "", opt).Word, opt.voice)[0]
+
+		for _, r := range regions {
+			if r.Kind != RegionHeadword {
+				continue
+			}
+			checked++
+			got := AudioCandidates(utteranceFor(r.Word, raw, "", opt).Word, opt.voice)[0]
+			if got != want {
+				t.Errorf("%s: a click asks for %s, a bare Enter asks for %s", key, got, want)
+			}
+			// And the MARK is right with it: the span a reader sees underlined
+			// is the whole head phrase, not its first field.
+			if !strings.HasPrefix(stripEscapes(strings.Split(rendered, "\n")[0]), r.Text) && r.Text != e.Syllables() {
+				t.Errorf("%s: the clickable span is %q, which does not open the head line %q",
+					key, r.Text, stripEscapes(strings.Split(rendered, "\n")[0]))
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no headword regions over the corpus, so nothing is asserted")
+	}
+}
+
+// The clickable span is the WHOLE headword as the line shows it — the half of
+// BR-46 a reader sees (#30 M2).
+//
+// `hot dog` renders a head line reading "hot dog" while `Entry.Headword()` is
+// "hot" alone, so marking the headword TOKEN underlined half the phrase. No rule
+// over the parsed tokens can find the boundary either: `a priori` parses as
+// [a, priori, a, pri·o·ri] — the phrase, then the phrase again syllabified — and
+// a run of tokens swallows both. The key the entry was looked up BY is the
+// answer, and it belongs to the caller.
+func TestTheClickableSpanIsTheWholeHeadword(t *testing.T) {
+	d := testDict(t)
+	for _, tc := range []struct{ key, want string }{
+		{"hot dog", "hot dog"},
+		{"a priori", "a priori"},
+		{"sycophantic", "sycophantic"},
+		{"jalapeño", "jalapeño"},
+	} {
+		raw, ok := d.entries[tc.key]
+		if !ok {
+			t.Fatalf("%s is not in the corpus", tc.key)
+		}
+		_, regions := Render(ParseEntry(raw), RenderOpts{Width: 80, Word: tc.key})
+		var got string
+		for _, r := range regions {
+			if r.Kind == RegionHeadword {
+				got = r.Text
+				break
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%s: the first clickable span is %q, want %q", tc.key, got, tc.want)
+		}
+	}
+}
+
+// A key the head line does not show — `define jalapeno` finds the entry for
+// "jalapeño" — still marks something honest, and still plays the right word.
+func TestASpanNotOnTheLineFallsBackToTheHeadword(t *testing.T) {
+	d := testDict(t)
+	_, regions := Render(ParseEntry(d.entries["jalapeño"]), RenderOpts{Width: 80, Word: "jalapeno"})
+	for _, r := range regions {
+		if r.Kind != RegionHeadword {
+			continue
+		}
+		if r.Text == "jalapeno" {
+			t.Error("the span claims text the head line does not show")
+		}
+		if r.Word != "jalapeno" {
+			t.Errorf("the region plays %q, but the session replays the key %q", r.Word, "jalapeno")
+		}
+		return
+	}
+	t.Error("no headword region at all")
+}
+
+// A degenerate entry renders rather than crashing (#30 M2, BR-51).
+//
+// A blank entry, or one that is a single space, parses to an EMPTY headword.
+// `regionsIn` then asked `findVisible` for an empty span, `strings.Index`
+// answered 0 for it, and the column lookup indexed an empty line — a panic on
+// input a dictionary can genuinely return.
+//
+// The rule the fix states: an empty needle is not a span. Enforced in
+// `findVisible`, the one owner of finding one, so no caller can produce a
+// zero-width region a click could land inside.
+func TestRenderSurvivesADegenerateEntry(t *testing.T) {
+	for _, raw := range []string{"", " ", "\n", "  \n", "\t", "\n\n\n", "   ORIGIN from French."} {
+		t.Run(fmt.Sprintf("%q", raw), func(t *testing.T) {
+			rendered, regions := Render(ParseEntry(raw), RenderOpts{Width: 80, Word: ""})
+			for _, r := range regions {
+				if r.Width == 0 || r.Text == "" {
+					t.Errorf("a zero-width region %+v — a click could land inside something that covers nothing", r)
+				}
+			}
+			_ = rendered
+		})
+	}
+}
+
+// Render must survive whatever a dictionary returns. It is the one function
+// every entry path goes through, so a panic here takes down a lookup, a pipe
+// and the interactive loop alike.
+func FuzzRenderDoesNotPanic(f *testing.F) {
+	for _, seed := range []string{
+		"", " ", "\n", "hot dog\nORIGIN from French.",
+		"a·b | c |\nORIGIN early 17th century: from Old French, from Italian.",
+		"\xff\xfe not utf8",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, raw string) {
+		for _, opt := range []RenderOpts{{Width: 80, Color: true}, {Width: 0}, {Width: 3, Word: "x"}} {
+			rendered, regions := Render(ParseEntry(raw), opt)
+			lines := strings.Split(rendered, "\n")
+			for _, r := range regions {
+				// Every region must ADDRESS the output: a click resolves against
+				// these coordinates, so one that points outside is worse than
+				// none.
+				if r.Line < 0 || r.Line >= len(lines) {
+					t.Fatalf("region %+v points at line %d of %d", r, r.Line, len(lines))
+				}
+				if r.Col < 0 || r.Width <= 0 {
+					t.Fatalf("region %+v has no extent", r)
+				}
+			}
+		}
+	})
 }

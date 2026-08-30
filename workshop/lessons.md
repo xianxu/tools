@@ -86,6 +86,12 @@ operation hands Ctrl-C back to the line discipline, which swallows the byte, and
 the reader sees nothing. Printing needs cooked (newline translation); blocking
 work must stay raw. Split the two.
 
+**`#30` dissolved this in `define` rather than obeying it better.** Once the app
+owns the screen it places every line itself, so no output depends on the line
+discipline and raw mode is continuous — there is nothing left to flap. The lesson
+stands for any program that drops a terminal mode around a blocking call; the
+better move, where you can afford it, is to stop needing the other mode.
+
 Also: a pty master does not honour `SetReadDeadline`, so a foreground read loop
 in a pty test hangs rather than times out. Use a background reader plus a
 snapshot.
@@ -2521,3 +2527,71 @@ When a rule says "category", derive the members from whatever defines the
 category. Here every mapped language generates its own stages by prefix, and the
 hand list shrinks to the stages with no modern member to generate from — which is
 also the only part a reader has to check.
+
+## The plan-table guards are answered by the COMMIT (define #30)
+
+`TestPlanTableStatusMatchesTheChangeWindow` compares a plan's `modified` /
+`unchanged` claims against `git diff <base>..HEAD` — **committed** changes. So a
+plan row and a code edit that are both in the working tree pass, and the same
+tree fails the moment it becomes a commit. Running the suite before committing
+proves nothing about these guards.
+
+Twice in one issue this produced a Critical review finding: "`go test ./...` is
+red at HEAD and the Log records it green." Both times the suite HAD been run —
+one commit too early.
+
+The rule: after editing a plan's tables, commit, then run the suite; amend if it
+reddens. More generally, a guard that reads git history has to be run against the
+history, not the tree.
+
+## A docs guard must look for what only THAT documentation would contain (define #30)
+
+Two guards were written to stop the atlas lagging new surface, and both were
+vacuous for the exact thing they were written for. `TestAtlasDescribesEveryRenderOpt`
+accepted a bare `` `Word` ``; `TestAtlasDescribesEveryRegionKind` searched for
+`k.String()`, and "headword" occurs in that atlas nineteen times for unrelated
+reasons. Deleting the whole section they defended left both green.
+
+A prose word is not evidence that something was documented — it is evidence that
+English was used. A **qualified Go identifier** is: `RegionHeadword` appears
+where someone meant that kind. Where the two differ, keep both and say why —
+`String()` names a thing for a reader, `identifier()` is what a check can look
+for.
+
+The wider rule this issue kept re-learning: **writing a guard is not the same as
+checking the guard can fail.** Delete the thing it defends and watch it go red,
+in the same sitting you write it.
+
+## Verify by exit status, not by grepping output (define #30)
+
+`go test ./... 2>&1 | grep -v "^ok" | head -3 && git commit` commits on a RED
+suite: the pipeline's status is `head`'s, which is 0. This shipped a commit with
+five failing tests, twice in one session.
+
+`go test ./... >/dev/null 2>&1; echo $?` — or just let the command fail. A check
+whose result you read with your eyes is a check that passes whenever you are
+tired.
+
+## A shortcut must not RE-DERIVE its target (define #30)
+
+Clicking a headword is a shortcut for the bare Enter beside it. Enter replays the
+session's current word — the lookup key — while the click derived its target from
+the entry, `Entry.Headword()`, which is `fields[0]` alone. So `hot dog` played
+"hot", `a priori` reduced to the letter "a", and `bargainer` — an inflected form
+finding its base entry, the COMMON case — played "bargain".
+
+Two gestures that mean one thing must read one source. When the shortcut cannot
+reach that source, pass it: the key belongs to the caller, so it travels on
+`RenderOpts.Word` rather than being guessed from what the callee happens to hold.
+
+## Tests that only run when someone types a flag defend nothing (define #30)
+
+The repo has fifteen fuzz targets written with real care — one found two genuine
+decoder defects the day it was run by hand. A Critical panic that the fuzzer
+finds in **under a second** still shipped through eleven review rounds, because
+`go test ./...` exercises a fuzz target against its seed corpus only and nothing
+anywhere passes `-fuzz`. The twelve pty rows have the same shape: correctly
+written to skip when no pty exists, and therefore silently uncertified wherever
+that is true — including inside a boundary review.
+
+The tests were not missing. The schedule was. Filed as `#37`.

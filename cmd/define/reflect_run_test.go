@@ -168,7 +168,15 @@ func TestReflectRefusesATinyDeck(t *testing.T) {
 
 func TestReflectDegradesWithNoModel(t *testing.T) {
 	d, _, st, _ := reflectRig(t, 14)
-	d.getenv = func(string) string { return "" }
+	// A REMOTE provider with no key: the genuinely unconfigured case. An empty
+	// environment resolves against the local proxy now, which supplies its own
+	// handshake token, so it is no longer "no model".
+	d.getenv = func(k string) string {
+		if k == "DEFINE_LLM_BASE_URL" {
+			return "https://api.anthropic.com"
+		}
+		return ""
+	}
 
 	var out, errb bytes.Buffer
 	code := runReflect(t.Context(), d, options{}, &out, &errb)

@@ -181,7 +181,7 @@ func renderLosesNothingIn(t *testing.T, d *fakeDictionary) {
 	}
 	for word, raw := range d.entries {
 		t.Run(word, func(t *testing.T) {
-			out := Render(ParseEntry(raw), RenderOpts{Color: false})
+			out, _ := Render(ParseEntry(raw), RenderOpts{Color: false})
 			want, got := alnum(raw), alnum(out)
 			// The subsequence check is one-directional: it detects LOSS only.
 			// Render inserting content passes it silently — which is how %q's
@@ -230,7 +230,7 @@ func FuzzRenderLosesNothing(f *testing.F) {
 	f.Add("iPhone\nA combination mobile phone and media player.")
 
 	f.Fuzz(func(t *testing.T, raw string) {
-		out := Render(ParseEntry(raw), RenderOpts{Color: false})
+		out, _ := Render(ParseEntry(raw), RenderOpts{Color: false})
 		want, got := alnum(raw), alnum(out)
 		if len(want) != len(got) {
 			t.Fatalf("alnum count raw=%d rendered=%d for %q -> %q", len(want), len(got), raw, out)
