@@ -12,6 +12,18 @@ import (
 // RenderOpts controls presentation only. Render is pure: it never probes the
 // terminal — the caller decides Color.
 type RenderOpts struct {
+	// Word is the KEY this entry was looked up by, and it is identity rather
+	// than presentation — the one field here that is not about how the entry
+	// looks. Regions address a word, and which word that is belongs to the
+	// caller: a click on the headword is a shortcut for the bare Enter beside
+	// it, which replays the session's current word. Deriving it here instead let
+	// the two disagree — `define jalapeno` replays "jalapeno" while the entry's
+	// headword is "jalapeño", and the CDN answers different URLs for the two.
+	//
+	// Empty is legitimate and means "no click map wanted": `--play` draws its
+	// own frames, and a pipe has nothing to click.
+	Word string
+
 	Color bool
 	// Vocab highlights the words the learner knows. Nil means no highlighting.
 	//
@@ -221,7 +233,7 @@ func Render(e Entry, opt RenderOpts) (string, []Region) {
 		}
 	}
 	out := b.String()
-	return out, regionsIn(e, out)
+	return out, regionsIn(e, out, opt.Word)
 }
 
 // RegionKind is what a span OFFERS. One registry, so a third consumer is a row
@@ -294,24 +306,39 @@ type Region struct {
 // than a promise a test has to re-check for every future edit.
 //
 // It is PURE and takes exactly what it reads.
-func regionsIn(e Entry, rendered string) []Region {
+func regionsIn(e Entry, rendered, key string) []Region {
 	lines := strings.Split(rendered, "\n")
 	if len(lines) == 0 {
 		return nil
 	}
 	var out []Region
-	word := e.Headword()
+	word := key
+	if word == "" {
+		word = e.Headword()
+	}
 
 	// The headword, and the syllabified form beside it where one exists — the
 	// operator asked for both ("click on the word itself, e.g. `potassium`, or
 	// `po·tas·si·um`"), and they are one Kind because they offer one action.
 	// Both live on the first line, which is where Render writes the head tokens.
-	for _, t := range e.Head {
-		if t.Kind != HeadWord && t.Kind != HeadSyllables {
-			continue
-		}
-		if col, w, ok := findVisible(lines[0], t.Text, 0); ok {
-			out = append(out, Region{Kind: RegionHeadword, Text: t.Text, Word: word, Line: 0, Col: col, Width: w})
+	//
+	// The span is the KEY where the head line shows it — which is what makes a
+	// multi-word entry work: `hot dog` renders a head line reading "hot dog"
+	// while `Entry.Headword()` is "hot" alone, so marking the headword TOKEN
+	// underlined half the phrase and played half the word. The key is not always
+	// on the line (`define jalapeno` finds the entry for "jalapeño"), and then
+	// the headword token is the honest span: narrower than the phrase, still the
+	// right word to play, because Word carries the key regardless.
+	spans := []string{word}
+	if _, _, ok := findVisible(lines[0], word, 0); !ok {
+		spans[0] = e.Headword()
+	}
+	if syl := e.Syllables(); syl != "" {
+		spans = append(spans, syl)
+	}
+	for _, text := range spans {
+		if col, w, ok := findVisible(lines[0], text, 0); ok {
+			out = append(out, Region{Kind: RegionHeadword, Text: text, Word: word, Line: 0, Col: col, Width: w})
 		}
 	}
 

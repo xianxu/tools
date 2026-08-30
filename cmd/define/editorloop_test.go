@@ -883,3 +883,129 @@ func TestEveryRegionKindIsActionable(t *testing.T) {
 		}
 	}
 }
+
+// THE WHOLE PATH, on real objects: a terminal's click coordinates reach the word
+// they point at (#30 M2, BR-47).
+//
+// Every other test in this file scripts the display's answer, so the row and
+// column are the test's own invention and nothing checks that `Key.Row` is the
+// row `screen.LineAt` indexes. The layers were each pinned and the JOINT between
+// them was not — the eighth time this issue has produced that finding, and the
+// rule it leaves is that the enumeration must be of JOINTS: every place two
+// separately-pinned layers exchange a value across a coordinate or unit boundary
+// earns a row, and a row is earned only when a test drives both real objects.
+//
+// So this drives runEditor with a real liveScreen as BOTH view and stdout, reads
+// the underlined span out of the painted frame the way a user's eye would, and
+// clicks the cell the terminal would report — no coordinate chosen by the test.
+func TestAClickAtAPaintedCellPlaysWhatIsUnderIt(t *testing.T) {
+	en := voice{Lang: "en", Locale: "us"}
+	fr := voice{Lang: "fr", Locale: "fr"}
+	english := AudioCandidates("concrete", en)[0]
+	french := AudioCandidates("concrete", fr)[0]
+
+	rig := newAudioRigServing(t, english, french)
+	rig.deps.stdinIsTerminal = func() bool { return true }
+	opt := options{times: 1, tty: true, color: true, width: 76}
+
+	// syncBuf, not bytes.Buffer: the loop paints from its own goroutine while
+	// this one reads the frame to find the cell to click. `go test -race` reports
+	// the unguarded version, and a test that races is a test that can fail for a
+	// reason it is not about.
+	var tty syncBuf
+	live := newLiveScreen(&tty, 24, 76)
+	live.interval = -1 // paint every write, so the frame under test is the real one
+
+	keys := make(chan Key, 32)
+	for _, r := range "concrete" {
+		keys <- Key{Kind: KeyRune, Rune: r}
+	}
+	keys <- Key{Kind: KeyEnter}
+
+	done := make(chan int, 1)
+	var errb bytes.Buffer
+	go func() {
+		done <- runEditor(t.Context(), keys, nil, rig.deps, opt,
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	// The cell to click is read from the frame the screen is CURRENTLY showing,
+	// atomically — not from the terminal stream. Reading the stream is what a
+	// user's eye does, but a stream is a history: the last frame in it while the
+	// loop is still writing sits a line behind the state a click resolves
+	// against, and this test read row 12 for a span the screen answered at row
+	// 11 about one run in five. Frame counts do not fix it either, since a frame
+	// from a write still in flight satisfies them.
+	//
+	// The coordinate is still the SCREEN's and not the test's: it is where the
+	// painted frame shows the word. That the frame carries the underline is
+	// pinned separately, in screen_test.go.
+	// IDLE FIRST. Waiting for the underline to appear is not enough: the loop is
+	// still writing after it — the playback indicator, the blank line, the
+	// redraw — and each write shifts the buffer, so a frame read mid-sequence is
+	// a line behind the state the click will resolve against. That was one run
+	// in five, whether the frame came from the stream or from the screen.
+	//
+	// A marker keystroke is the deterministic signal. Keys are consumed in
+	// order, so when its echo reaches the live edge, everything the Enter set in
+	// motion has finished and the loop is blocked waiting for the next key.
+	keys <- Key{Kind: KeyRune, Rune: 'z'}
+	waitFor(t, func() bool { return strings.Contains(livePromptOf(live), "z") })
+
+	row, col, ok := frameCell(live, "French")
+	if !ok {
+		t.Fatalf("the frame does not show French:\n%s", tty.String())
+	}
+
+	// The BYTES a terminal sends for a click on that cell, decoded the way the
+	// key reader decodes them — so the 1-based wire convention is part of what
+	// this test crosses rather than something it assumes. Constructing the Key
+	// directly left that conversion to a different test, which is the seam this
+	// row exists to close.
+	report := fmt.Sprintf("\x1b[<0;%d;%dM", col+1, row+1)
+	click, n := decodeKey([]byte(report))
+	if n != len(report) || click.Kind != KeyClick {
+		t.Fatalf("decodeKey(%q) = kind %v consumed %d; the report is not a click", report, click.Kind, n)
+	}
+	keys <- click
+	waitFor(t, func() bool { return len(rig.cdn.Requested()) >= 2 })
+	close(keys)
+	<-done
+
+	want := []string{stripHost(t, english, audioBase), stripHost(t, french, audioBase)}
+	if got := rig.cdn.Requested(); !slices.Equal(got, want) {
+		t.Errorf("clicking the cell at row %d col %d asked the CDN for:\n  %q\nwant:\n  %q",
+			row, col, got, want)
+	}
+}
+
+// frameCell is where the screen is showing text right now: its viewport row and
+// display column, read under the screen's own lock so the answer cannot be a
+// frame the loop has already moved past.
+// livePromptOf reads the prompt the screen is currently showing, under its lock.
+func livePromptOf(l *liveScreen) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.prompt
+}
+
+func frameCell(l *liveScreen, text string) (row, col int, ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	frame, _ := l.s.visible()
+	for r, line := range frame {
+		if i := strings.Index(stripEscapes(line), text); i >= 0 {
+			return r, visibleCells(stripEscapes(line)[:i]), true
+		}
+	}
+	return 0, 0, false
+}
+
+func keysOf(m map[int][]Region) []int {
+	var out []int
+	for k := range m {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}

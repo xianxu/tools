@@ -175,7 +175,7 @@ to `#35`'s code and is where `M2.1` starts.
 |------|----------|--------|------|
 | `Region` / `RegionKind` | `cmd/define/render.go` | new | PURE — one registry, so a third consumer is a row |
 | `Render` | `cmd/define/render.go` | modified | now returns `(string, []Region)`. The string is byte-identical, pinned by a golden generated from the commit BEFORE the change |
-| `regionsIn` | `cmd/define/render.go` | new | PURE — reads the FINISHED output, so a region describes what a terminal will show rather than what Render intended |
+| `regionsIn` | `cmd/define/render.go` | new | PURE — reads the FINISHED output, so a region describes what a terminal will show rather than what Render intended; the span is the key where the head line shows it |
 | `originLineRange` / `findVisible` / `visibleIndex` / `stripEscapes` | `cmd/define/render.go` | new | PURE |
 | `Mention` / `OriginLanguageMentions` / `originText` / `maskOut` | `cmd/define/origin.go` | new | PURE (M2.1a) — every language an ORIGIN names as a source, in source order, at offsets that survive the stage mask |
 | `OriginLanguage` | `cmd/define/origin.go` | modified | now "the first mention", so the two consumers cannot drift |
@@ -186,7 +186,7 @@ to `#35`'s code and is where `M2.1` starts.
 | `markClickable` / `underlineOn` / `underlineOff` | `cmd/define/screen.go` | new | PURE (M2.5) — the mark, spliced by the SCREEN so it cannot reach a pipe |
 | `liveScreen.WriteRegions` / `liveScreen.RegionAtRow` | `cmd/define/screen.go` | new | the click map's IO side: one call, so text and regions cannot disagree about which line a render landed on |
 | `regionWriter` / `writeRendered` | `cmd/define/main.go` | new | the seam fills itself — a writer that can hold a click map gets one, a pipe gets bytes (D6) |
-| `Region.Word` | `cmd/define/render.go` | new | the entry a region belongs to, because a click can land on one the session has scrolled past |
+| `Region.Word` / `RenderOpts.Word` | `cmd/define/render.go` | new | the LOOKUP KEY a region plays. Identity, not presentation, and the caller owns it: a shortcut must not re-derive its target |
 
 - **`Region`** — `{Kind, Text, Lang, Line, Col, Width}`: what a span of rendered text OFFERS.
   - **The headword falls out of the existing walk; the ORIGIN language does NOT, and an earlier draft of this plan claimed it did.** `Render` colours `sec.Name` — the word "ORIGIN" — and passes `sec.Text` through `opt.prose(wrapText(...))`, which highlights DECK words. Nothing isolates "French" inside that text. So the language region needs a new pass over the section text, and that pass is the same matching `#35` already does.
@@ -238,6 +238,8 @@ it down rather than asserting it.
 | the mark's absence from `Render` | `TestRenderNeverMarksSpansItself` + the corpus golden | mark inside `Render` → both redden |
 | `decodeKey` clicks | `TestClickCarriesItsPosition`, `FuzzDecodeMouseIsBounded` | the two the fuzzer already found: X10 row −1, and SS3 read as a report |
 | `clicked`'s actions | `TestClickOnHeadwordReplays`, `TestClickOnOriginLanguagePlaysIt` | ignore the click → "played 3 times, want 6"; drop `r.Lang` → the CDN is asked in English |
+| **the whole path on real objects** — terminal BYTES → `decodeKey` → `Key.Row` → `LineAt` → region → replay | `TestAClickAtAPaintedCellPlaysWhatIsUnderIt` | shift the 1-based conversion, or the screen's top line, by one → both redden (checked; the first did NOT until the test was changed to decode a real SGR report rather than construct the Key) |
+| `RenderOpts.Word` as the click's target | `TestAClickAsksForExactlyWhatEnterAsksFor` (whole corpus), `TestTheClickableSpanIsTheWholeHeadword` | derive from `e.Headword()` → "bargainer: a click asks for bargain…, a bare Enter asks for bargainer…" |
 
 ### M2 Done-when
 
@@ -717,3 +719,45 @@ supplied directly, it reddens exactly. And the clamp test could not be falsified
 by mutating the NEW code, because the refactor is what fixes it — so it was run
 against the pre-fix `screen.go` from the previous commit, which is the honest
 form of "verified falsifiable" when a fix changes a shape rather than a line.
+
+### 2026-08-30 — M2 boundary round 10: the click played a different word
+
+**BR-46 (Critical) — a shortcut must not RE-DERIVE its target.** A click on the
+headword is a shortcut for the bare Enter beside it, which replays the session's
+current word — the LOOKUP KEY. The region carried `Entry.Headword()` instead,
+which is `fields[0]` alone. Measured on the committed corpus: `hot dog`
+underlined only "hot" and asked the CDN for `hot_en_us_1.mp3`; `a priori` reduced
+to the letter "a"; and `bargainer` — an inflected form finding its base entry,
+which is the COMMON case rather than an exotic one — would have played
+"bargain". `RegionOriginLang` carried the same wrong word, so a French replay was
+wrong with it.
+
+No rule over the parsed tokens can find the phrase, and trying two of them is how
+this got long: `a priori` parses as `[a, priori, a, pri·o·ri]` — the phrase, then
+the phrase again syllabified — so a run of head tokens swallows both. The key
+the entry was looked up BY is the answer, and it belongs to the caller.
+`RenderOpts.Word` carries it; `regionsIn` marks the key where the head line shows
+it and falls back to the headword token when it does not (`define jalapeno` finds
+"jalapeño"), so the span is always something on screen while the word played is
+always what Enter would play.
+
+**BR-47 — the enumeration must be of JOINTS, not entities.** Eighth in the
+family. Every layer was pinned and no test crossed the boundary between them:
+`runEditor` had never run against a real `liveScreen`, both click-action tests
+scripted the display's answer at coordinates of the test's own choosing, and
+nothing asserted that `Key.Row` is the row `screen.LineAt` indexes.
+`TestAClickAtAPaintedCellPlaysWhatIsUnderIt` drives the real screen as both view
+and stdout, reads the underlined cell out of the painted frame the way an eye
+would, and clicks it — no coordinate invented by the test. It reddens for an
+off-by-one on either side of the joint, and it would have caught BR-46 too.
+
+Two things about writing it are worth keeping. It first CONSTRUCTED the click
+Key, which left the wire's 1-based convention to a different test — so the row
+claimed a mutation it did not actually catch, which is BR-43's own failure mode
+one level down. It decodes a real SGR report now. And it was flaky one run in
+five: waiting for the underline to appear is not waiting for the loop to be
+IDLE, since the indicator, the blank line and the redraw all still follow, and
+each shifts the buffer. Neither a frame count nor an atomic read of the screen
+fixes that — only ordering does. A marker keystroke, whose echo cannot reach the
+live edge until everything the Enter set in motion has finished, is the
+deterministic signal.

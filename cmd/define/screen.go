@@ -289,29 +289,38 @@ func markClickable(line string, rs []Region) string {
 	slices.SortFunc(spans, func(a, b Region) int { return a.Col - b.Col })
 
 	var b strings.Builder
-	col, next := 0, 0
+	col, next, open := 0, 0, false
 	for i := 0; i < len(line); {
-		if next < len(spans) && col == spans[next].Col {
-			b.WriteString(underlineOn)
-		}
-		if next < len(spans) && col == spans[next].Col+spans[next].Width {
-			b.WriteString(underlineOff)
-			next++
-			continue // re-test this column: two spans can meet
-		}
+		// Escapes are stepped over FIRST, so the mark lands immediately before
+		// the span's first visible character rather than before whatever colour
+		// the palette opens there. The predecessor tested the column on every
+		// iteration — escape steps included — so it emitted the attribute once
+		// per byte at that column, with the palette's escape spliced between:
+		// harmless to a terminal, and it made `underlineOn+text` stop being a
+		// thing a reader (or a test) could look for.
 		if skip := escapeLen(line[i:]); skip > 0 {
 			b.WriteString(line[i : i+skip])
 			i += skip
 			continue
 		}
+		if !open && next < len(spans) && col == spans[next].Col {
+			b.WriteString(underlineOn)
+			open = true
+		}
 		r, size := utf8.DecodeRuneInString(line[i:])
 		b.WriteString(line[i : i+size])
 		col += cellWidth(r)
 		i += size
+		// Closed the moment the span's last cell is written, so the attribute
+		// covers the span and nothing after it.
+		if open && col >= spans[next].Col+spans[next].Width {
+			b.WriteString(underlineOff)
+			open, next = false, next+1
+		}
 	}
 	// A span reaching the end of the line still closes: an unterminated
 	// underline runs on through everything painted after it.
-	if next < len(spans) {
+	if open {
 		b.WriteString(underlineOff)
 	}
 	return b.String()

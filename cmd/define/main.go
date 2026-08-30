@@ -771,8 +771,12 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 		d.capture.Capture(word, true, opt)
 		return lookupOutcome{entry: text}
 	}
+	// Word is the LOOKUP KEY, and passing it is what makes a click a shortcut
+	// rather than a second opinion: it is exactly what `sess.current` becomes,
+	// so a click on the headword and the bare Enter beside it ask for the same
+	// recording by construction.
 	rendered, regions := Render(ParseEntry(text), RenderOpts{
-		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
+		Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt), Word: word,
 	})
 	writeRendered(stdout, rendered, regions)
 	d.capture.Capture(word, true, opt)

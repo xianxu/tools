@@ -587,6 +587,38 @@ rules rather than a list of fixes.
 Verdict FIX-THEN-SHIP; fixes bundled into the close commit per #174. Three
 findings were demoted past the round cap and all three are addressed here.
 
+### 2026-08-30 — M2: the clicks, and what the boundary found
+
+Shipped: `Render` emits a region map, the screen resolves a click to what was
+rendered there, the two actions replay through `#29`'s mechanism, a clickable
+span is underlined, and a mouse-less terminal is unaffected. The operator
+confirmed it working on their own terminal.
+
+Decisions worth having here rather than only in the plan:
+
+- **The click's target is the LOOKUP KEY**, carried on `RenderOpts.Word` and
+  owned by the caller. A shortcut must not re-derive its target: the boundary
+  found that deriving it from `Entry.Headword()` made `hot dog` play "hot" and
+  `bargainer` play "bargain" — an inflected form finding its base entry is the
+  common case, not an exotic one.
+- **`Region.Word` travels with the region** because a reader can scroll back and
+  click a word from earlier in the session, while the session keeps only the
+  current entry's raw text.
+- **`writeRendered` fills the seam**: a writer that can hold a click map gets
+  one, a pipe gets bytes. `define <word>`, `-raw` and `> out.txt` keep today's
+  bytes exactly, pinned by a golden generated from the commit before the change.
+- **The mark is spliced by the SCREEN and turned off with `24`, not `0`** —
+  `0` would end the palette's colour and take the rest of the line plain.
+- **`-no-color` degrades by ROUTING**, not by a flag the screen consults: it
+  clears `opt.tty`, so the session takes the line loop and no mark can reach
+  output the user asked to keep plain.
+
+Two Criticals came out of the boundary and both were real: the click map
+detaching from the text when the viewport grew, and the click playing a
+different word than Enter. Ten rounds; the durable output is guards — the
+registry's extent has one owner and every check derives from it, and the whole
+path now has one test on real objects rather than a double at every layer.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

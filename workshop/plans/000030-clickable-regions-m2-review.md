@@ -364,3 +364,200 @@ findings:
       before an entry), but the comment documents one contract and the test another.
       Either enforce the precondition or shift Col by visibleCells of the open line.
 ```
+
+---
+
+## Re-review — 2026-08-30T12:49:38-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | a6584e243f2a032d209f8f4f1f44c50ed801f0ad..946947452090ea93f52c9007991c685d5e7e8ab6 |
+| command | sdlc milestone-close --issue 30 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-30T12:49:38-07:00 |
+| verdict | REWORK |
+
+## Review
+
+I've completed the review. Full mutation-based verification of the prior round's claims, plus independent regeneration of the corpus golden, plus end-to-end probes of the click path against the real `liveScreen`.
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+M2 delivers the shape the issue was filed for — one registry, guards that derive from `numRegionKinds`, regions read out of the finished output so `Render`'s bytes are provably unmoved, and a hit test whose two ends I confirmed agree in production. The prior round's two open blockers are genuinely fixed and genuinely pinned: I reverted `screen.go` to `8f6a458` and `TestClickMapSurvivesTheViewportGrowing` fails with the exact message the plan records, and seven of the enumeration table's "mutation that reddens it" rows redden with their recorded messages when I apply the named mutation. What blocks SHIP is a correctness defect the corpus property test is structurally blind to: **on a multi-word entry the clickable headword is only the first field, and clicking it plays a different word.** Measured on the committed `hot dog` fixture — a bare Enter asks the CDN for `hot_dog_en_us_1.mp3`, the click on the same entry's underlined headword asks for `hot_en_us_1.mp3`, `hot_en_us_2.mp3` and the `hot--` fallbacks. `a priori` is the same: the region is the single letter `a`.
+
+## 1. Strengths
+
+- **`cmd/define/testdata/golden/render-corpus.golden` — the byte-identity claim survives an adversarial check I ran myself.** I exported `a6584e2` to a scratch tree, wrote a generator using the *pre-change* single-return `Render`, and `cmp` reports the output identical to the committed 315,434-byte golden. Done-when 3 is real evidence, not a self-comparison.
+- **`cmd/define/screen.go:205` — BR-42's fix is structural and falsifiable.** `visible()` returning frame-and-top as one answer is the right shape, and reverting `screen.go` to the previous commit reddens `TestClickMapSurvivesTheViewportGrowing` with "the word shows on row 20 and offers nothing". Note that hoisting *only* the clamp (leaving the old `topLine`) leaves it green — the one-fact refactor is what earns the pin, which is exactly the argument the comment makes.
+- **`workshop/plans/000030-clickable-regions-plan.md:230` — the BR-43 enumeration holds up under sampling.** I mutated seven rows (`addRegions` partial decrement, `markClickable`'s `underlineOff`, `findVisible`'s column +1, `writeRendered`'s `regionWriter` branch, `clicked`'s `r.Lang`, `WriteRegions`' statement order, `maskOut` → length-changing `ReplaceAll`) and every one reddened with the message the table records.
+- **`cmd/define/editorloop_test.go:863` — `TestEveryRegionKindIsActionable` is derived *and* end-to-end.** It loops to `numRegionKinds` and drives a real `runEditor` with a `KeyClick` per kind, asserting on play count. That is the registry promise checked rather than restated.
+- **`cmd/define/repo_guard_test.go:92` — `declaredInBlock`/`declaredAsField` fix the guard without loosening it.** The comments explain precisely why an unqualified field match was refused; a guard that a struct field of the wrong type could satisfy would be the same class of lie it exists to catch.
+
+## 2. Critical findings
+
+### C-1 · A multi-word headword's click plays a different word — `cmd/define/render.go:307`
+
+`regionsIn` builds the headword region from individual `HeadWord`/`HeadSyllables` tokens and stamps `Word: e.Headword()`. `parseHead` (`parse.go:436`) makes only `fields[0]` a `HeadWord`; the rest of a multi-word head is `HeadOther`. So for `hot dog` the entry produces exactly one region — `{Text:"hot", Word:"hot", Col:0, Width:3}` — and `clicked` (`replraw.go:262`) builds `session{current:"hot"}`, which `utteranceFor` turns into `hot_*` URLs.
+
+Measured, both gestures on the same entry:
+
+```
+bare-Enter CDN: [.../hot_dog_en_us_1.mp3]
+click CDN:      [.../hot_dog_en_us_1.mp3   ← the lookup
+                 .../hot_en_us_1.mp3 .../hot_en_us_2.mp3
+                 /sounds/oxford/hot--_us_1.mp3 /sounds/oxford/hot--_us_2.mp3]
+```
+
+`a priori` is the same shape: the only region is `{Text:"a", Word:"a", Width:1}`, so the underline marks a single letter in `a priori  a pri·o·ri` and the click asks for `a_*`. Both fixtures are committed, and multi-word heads are ordinary NOAD (`ad hoc`, `de facto`, `ice cream`). `RegionOriginLang` inherits it — `Word` is the same `e.Headword()`, so an ORIGIN click on `hot dog` would replay `hot` in French.
+
+The mark is wrong in the same breath: a reader sees `hot dog` with only `hot` underlined, which claims the wrong extent (Done-when 4).
+
+Fix sketch: derive the region's playable identity from the same source the gesture it shortcuts uses. `lookupAndRender` already holds the lookup key — the thing a bare Enter replays — so stamp it onto the regions at the `writeRendered` seam (or pass it into `regionsIn`), rather than re-deriving from `Headword()`, whose "first field" contract exists for a different purpose. Separately, widen the span so the underline covers the whole head phrase, and add the corpus property that is missing: for every headword region, the first audio candidate for `r.Word` must equal the first candidate a bare-Enter replay of that entry produces. `hot dog` and `a priori` make it red today.
+
+Family: `shortcut-rederives-its-target` (new — a gesture advertised as a shortcut must resolve its target from the same source as the gesture it shortcuts, not re-derive it).
+
+## 3. Important findings
+
+### I-1 · The click's coordinate joint — terminal row → viewport row — is pinned by nothing
+
+**This is the 8th finding in family `unfalsifiable-test-pin`.** Earlier rounds fixed instances (BR-37 pinned `liveScreen.WriteRegions`; BR-43 wrote the enumeration). Do not fix this instance in isolation — the rule the family keeps producing is: **the enumeration must be of JOINTS, not of entities.** Every row in the M2 table names a *function*; what has now failed three times is the place where two separately-pinned layers exchange a value across a boundary (render coordinates ↔ buffer lines, wire coordinates ↔ screen cells, terminal rows ↔ viewport rows). A joint gets a row only if a test drives *both real objects*, and the enumeration should be regenerated with that as its unit.
+
+The concrete gap: `runEditor` is never driven against a real `liveScreen` (grep — `newLiveScreen` appears only in `screen_test.go` and `replraw_test.go`). `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` script `RegionAtRow`'s answer on `recordDisplay`, choosing row/col on both sides; `TestLiveScreenJoins…` calls `RegionAtRow` directly with hand-written regions. Nothing asserts that the row `decodeKey` reports is the row `screen.LineAt` indexes — an invariant that holds only because `Paint` starts at `cursorHome` and `clipVisible` guarantees one terminal row per frame line. I verified by probe that it *is* correct today (real `liveScreen` as view and stdout, real `concrete` lookup, click at the frame cell where `French` actually renders → `concrete_fr_*` requested), so this is coverage, not a defect. The cheap pin is that probe, promoted to a test.
+
+Note also there is no pty row that sends a real mouse report and asserts playback (ARCH-MOCK): `TestPTYWithoutMouseBehavesAsBefore` covers only the mouse-*less* case. The in-process end-to-end is the better ask — pty rows skip wherever no pty exists, including in this review (all 12 rows `SKIP: no pty available: operation not permitted`).
+
+## 4. Minor findings
+
+- **`TestClickMapSurvivesTheViewportGrowing/the command menu closing` passes against the pre-fix code.** 3rd in `vacuous-pin` — state the rule rather than patching the case: a subtest earns its row only if it reddens under the mutation the table names. Measured: with `screen.go` reverted to `8f6a458`, `a resize taller` fails and `the command menu closing` passes, because at 21 lines / 11 rows it never reaches the un-clamped early return.
+- **ARCH-DRY: four hand-rolled "walk styled text by cell" loops** — `visibleCells` (render.go:466), `visibleIndex` (render.go:~700), `clipVisible` (screen.go:658), `markClickable` (screen.go:288). They correctly share `escapeLen` and `cellWidth`, but each re-spells the traversal skeleton. 6th in `one-owner-per-invariant`: the rule is already written, so the durable fix is structural — one `forEachCell(line, func(byteRange, col))` iterator the four callers consume — not a fifth careful copy when the next site arrives.
+- **The issue's `## Log` carries no M2 entry at all.** M1 logged eight; every M2 discovery (`Region.Word`, `writeRendered`'s seam, the `24`-not-`0` decision, the degrade-by-routing rule) lives only in the plan's Revisions. AGENTS.md §2 puts discoveries in the issue Log, and a reader of the tracker currently sees M1 finish and nothing after.
+
+## 5. Test coverage notes
+
+`go test ./...`, `go test -race ./cmd/define/` and `go vet ./cmd/define/` are green at HEAD (107s / 118s). The 12 PTY conformance rows all SKIP here (`no pty available: operation not permitted`), so I could not confirm the pty claims — `conformance.SkipOrFail` means CI still enforces them.
+
+The corpus-wide tests are the right shape and I checked their reach: `TestRegionsAddressTheRenderedOutput` asserts a region's *address* over 34 entries × 2 widths and reddens on a one-column shift; `TestRenderNeverMarksSpansItself` guards the mark's absence with a non-vacuous count. Neither asserts a region's *meaning* — that the span covers the headword and that `Word` is what the entry replays as — which is exactly the hole C-1 fell through. I also probed for overlapping regions across the corpus at three widths: none, so `markClickable`'s monotonic `next` walk is safe today.
+
+## 6. Architectural notes
+
+- **ARCH-DRY** — flag, Minor above (the four cell-walks).
+- **ARCH-PURE** — pass. `screen` stays free of IO, `liveScreen` is the only part touching a terminal, `regionsIn`/`markClickable`/`clickAt` are pure and unit-tested with no pty. The `visible()` clamp still writes back `s.offset` under a PURE table row (BR-41, open) — harmless, but the label is doing less work than it claims.
+- **ARCH-PURPOSE** — flag, via C-1. The shadow-sweep on the registry passes: `numRegionKinds` is the extent and all three guards (`Actionable`, `Named`, `AtlasDescribes`) derive from it, so a third kind is a row. But the issue's stated purpose is "the playback target is the HEADWORD, so it exists in every entry and every language" — and for a multi-word headword the target delivered is the first field, which is a different word. That is the purpose, not a follow-up.
+- **ARCH-MOCK** — pass with a note. The terminal's stateful double (the `creack/pty` harness) gained a row for the mouse-less case; the click gesture itself has no conformance row, noted in I-1.
+- **ARCH-CONSTRAINTS** — pass. `markClickable` early-returns on a region-free line, so the added per-paint cost is bounded by the ≤2 lines that carry regions; the 16 ms throttle and trailing flush are unchanged. `s.regions` grows with the session under the deliberately-uncapped buffer decision, which is consistent with D3.
+
+## 7. Plan revision recommendations
+
+- **A `## Revisions` entry for C-1**, recording that `Region.Word` and the headword span were derived from `e.Headword()` / individual `HeadWord` tokens, that this is only the first field of a multi-word head, and what they derive from instead. Add a row to the *M2 — what runs each row* table: `Region.Word` | *the new property test* | "look up `hot dog` and click the headword → asks for `hot_*` rather than `hot_dog_*`".
+- **Regenerate the enumeration table by JOINT rather than by entity** (I-1). At minimum add the row `Key.Row → screen.LineAt` | *the promoted end-to-end test* | "offset the frame by a header row → the click resolves one line off", and mark the `screen.visible clamp` row's second subtest as not falsifiable.
+- **Done-when row 1** should name the object that joins the loop to the real screen, the same way it now names `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor` — the current entry stops one layer short.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      Still open: no chunk-boundary property over screen.Write exists — TestScreenWriteBuildsLines is still the four enumerated cases.
+  - id: BR-40
+    disposition: not-addressed
+    note: |
+      Reproduced at HEAD: markClickable("\x1b[1;36mpotassium\x1b[0m is a metal", {Col:0,Width:9}) = "\x1b[4m\x1b[1;36m\x1b[4mpotassium\x1b[24m\x1b[0m is a metal".
+  - id: BR-41
+    disposition: not-addressed
+    note: |
+      LineAt now reaches clamp through visible() rather than Frame(), so the write-back under a PURE table row remains.
+  - id: BR-42
+    disposition: addressed
+    note: |
+      Verified by revert: screen.go at 8f6a458 reddens TestClickMapSurvivesTheViewportGrowing with the exact recorded message.
+  - id: BR-43
+    disposition: addressed
+    note: |
+      Enumeration exists and holds: seven sampled rows each reddened under the mutation the table names.
+  - id: BR-44
+    disposition: not-addressed
+    note: |
+      key.go:186/196 still say the decoder answers only the wheel and a click stays KeyUnknown; key.go:344 repeats it; decodeWheel is still the name.
+  - id: BR-45
+    disposition: not-addressed
+    note: |
+      Reproduced: a mid-line render with Col relative to the render resolves at buffer column 0, not at the open line's width.
+findings:
+  - id: new
+    severity: Critical
+    family: shortcut-rederives-its-target
+    title: |
+      A multi-word entry's clickable headword is only its first field, so the click plays a different word
+    detail: |
+      regionsIn (render.go:307) builds the headword region from individual HeadWord
+      tokens and stamps Word: e.Headword(), which parseHead (parse.go:436) fills
+      from fields[0] alone. Measured on the committed `hot dog` fixture: a bare
+      Enter asks the CDN for hot_dog_en_us_1.mp3, while a click on the same
+      entry's underlined headword asks for hot_en_us_1.mp3, hot_en_us_2.mp3 and
+      the hot-- fallbacks. `a priori` produces a single region for the letter "a".
+      RegionOriginLang carries the same Word, so a French replay on such an entry
+      is also the wrong word. The mark is wrong with it: only "hot" is underlined
+      in a head line reading "hot dog". Derive the target from the same source the
+      gesture it shortcuts uses — lookupAndRender holds the lookup key — and widen
+      the span to the whole head phrase. The missing property: for every headword
+      region, the first audio candidate for r.Word equals the first candidate a
+      bare-Enter replay of that entry produces.
+  - id: new
+    severity: Important
+    family: unfalsifiable-test-pin
+    title: |
+      The terminal-row to viewport-row joint is pinned by nothing, and runEditor never runs against a real liveScreen
+    detail: |
+      8th in this family. Do NOT fix only this instance — the rule the family keeps
+      producing is that the enumeration must be of JOINTS, not entities: every place
+      two separately-pinned layers exchange a value across a coordinate or unit
+      boundary gets a row, and a row earns it only when a test drives both real
+      objects. Concretely: newLiveScreen appears in no editor-loop test, both click
+      action tests script recordDisplay.RegionAtRow's answer with row/col of the
+      test's own choosing, and TestLiveScreenJoins… calls RegionAtRow directly with
+      hand-written regions. Nothing asserts Key.Row is the row screen.LineAt indexes.
+      I verified it is correct today by probe (real liveScreen as view and stdout, real
+      `concrete` lookup, click at the frame cell where French renders → concrete_fr_*),
+      so this is coverage, not a defect. Also no pty row sends a real mouse report.
+  - id: new
+    severity: Minor
+    family: vacuous-pin
+    title: |
+      TestClickMapSurvivesTheViewportGrowing's "the command menu closing" subtest is green against the pre-fix code
+    detail: |
+      3rd in this family, so the deliverable is the rule: a subtest earns its row in
+      the mutation table only if it reddens under the mutation that row names.
+      Measured — with screen.go reverted to 8f6a458, "a resize taller" fails and
+      "the command menu closing" passes, because at 21 lines into 11 rows the
+      un-clamped early return is never taken.
+  - id: new
+    severity: Minor
+    family: one-owner-per-invariant
+    title: |
+      Four hand-rolled walks of styled text by display cell
+    detail: |
+      6th in this family, so state the rule rather than patch a site: visibleCells
+      (render.go:466), visibleIndex (render.go), clipVisible (screen.go:658) and
+      markClickable (screen.go:288) correctly share escapeLen and cellWidth but each
+      re-spells the traversal. The structural fix is one forEachCell(line, fn)
+      iterator the four consume, before M2.5's splice adds a fifth reading.
+  - id: new
+    severity: Minor
+    family: docs-lag-new-surface
+    title: |
+      The issue's Log carries no M2 entry; every M2 discovery lives only in the plan's Revisions
+    detail: |
+      3rd in this family, so the rule: the issue Log is one of the sites a fact has
+      to reach, not a follow-up. M1 logged eight entries; M2 logged none, so a reader
+      of workshop/issues/000030-clickable-regions.md sees M1 close and nothing after,
+      while Region.Word, the writeRendered seam, the 24-not-0 decision and the
+      degrade-by-routing rule are recorded only in the plan.
+```

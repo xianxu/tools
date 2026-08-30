@@ -692,3 +692,103 @@ func TestOriginLineRangeComesFromTheParsedSections(t *testing.T) {
 			"next section (whose prose is not an etymology)", last)
 	}
 }
+
+// A SHORTCUT MUST NOT RE-DERIVE ITS TARGET (#30 M2, BR-46).
+//
+// A click on the headword is a shortcut for the bare Enter beside it. Enter
+// replays the session's current word — the LOOKUP KEY — while the region used to
+// carry `Entry.Headword()`, which is `fields[0]` alone: `hot dog` underlined only
+// "hot" and asked the CDN for hot_en_us_1.mp3, and `a priori` reduced to the
+// letter "a". Two gestures for one action, answering differently.
+//
+// The property, over the whole corpus: for every headword region, the first
+// audio candidate for what the click plays is the first candidate the bare-Enter
+// replay produces. Anything less is a click that plays a different word.
+func TestAClickAsksForExactlyWhatEnterAsksFor(t *testing.T) {
+	d := testDict(t)
+	opt := options{locale: "us"}
+	checked := 0
+	for key, raw := range d.entries {
+		e := ParseEntry(raw)
+		// The key the user's line resolved to, which is also what sess.current
+		// becomes — passed exactly as lookupAndRender passes it.
+		rendered, regions := Render(e, RenderOpts{Width: 80, Word: key})
+		// What a bare Enter would ask for.
+		want := AudioCandidates(utteranceFor(key, raw, "", opt).Word, opt.voice)[0]
+
+		for _, r := range regions {
+			if r.Kind != RegionHeadword {
+				continue
+			}
+			checked++
+			got := AudioCandidates(utteranceFor(r.Word, raw, "", opt).Word, opt.voice)[0]
+			if got != want {
+				t.Errorf("%s: a click asks for %s, a bare Enter asks for %s", key, got, want)
+			}
+			// And the MARK is right with it: the span a reader sees underlined
+			// is the whole head phrase, not its first field.
+			if !strings.HasPrefix(stripEscapes(strings.Split(rendered, "\n")[0]), r.Text) && r.Text != e.Syllables() {
+				t.Errorf("%s: the clickable span is %q, which does not open the head line %q",
+					key, r.Text, stripEscapes(strings.Split(rendered, "\n")[0]))
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no headword regions over the corpus, so nothing is asserted")
+	}
+}
+
+// The clickable span is the WHOLE headword as the line shows it — the half of
+// BR-46 a reader sees (#30 M2).
+//
+// `hot dog` renders a head line reading "hot dog" while `Entry.Headword()` is
+// "hot" alone, so marking the headword TOKEN underlined half the phrase. No rule
+// over the parsed tokens can find the boundary either: `a priori` parses as
+// [a, priori, a, pri·o·ri] — the phrase, then the phrase again syllabified — and
+// a run of tokens swallows both. The key the entry was looked up BY is the
+// answer, and it belongs to the caller.
+func TestTheClickableSpanIsTheWholeHeadword(t *testing.T) {
+	d := testDict(t)
+	for _, tc := range []struct{ key, want string }{
+		{"hot dog", "hot dog"},
+		{"a priori", "a priori"},
+		{"sycophantic", "sycophantic"},
+		{"jalapeño", "jalapeño"},
+	} {
+		raw, ok := d.entries[tc.key]
+		if !ok {
+			t.Fatalf("%s is not in the corpus", tc.key)
+		}
+		_, regions := Render(ParseEntry(raw), RenderOpts{Width: 80, Word: tc.key})
+		var got string
+		for _, r := range regions {
+			if r.Kind == RegionHeadword {
+				got = r.Text
+				break
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%s: the first clickable span is %q, want %q", tc.key, got, tc.want)
+		}
+	}
+}
+
+// A key the head line does not show — `define jalapeno` finds the entry for
+// "jalapeño" — still marks something honest, and still plays the right word.
+func TestASpanNotOnTheLineFallsBackToTheHeadword(t *testing.T) {
+	d := testDict(t)
+	_, regions := Render(ParseEntry(d.entries["jalapeño"]), RenderOpts{Width: 80, Word: "jalapeno"})
+	for _, r := range regions {
+		if r.Kind != RegionHeadword {
+			continue
+		}
+		if r.Text == "jalapeno" {
+			t.Error("the span claims text the head line does not show")
+		}
+		if r.Word != "jalapeno" {
+			t.Errorf("the region plays %q, but the session replays the key %q", r.Word, "jalapeno")
+		}
+		return
+	}
+	t.Error("no headword region at all")
+}
