@@ -172,21 +172,11 @@ func (s *screen) RegionAt(line, col int) (Region, bool) {
 // The second return value is false for a row below the buffer's tail — the
 // prompt, the menu, or blank space — where there is nothing to click.
 func (s *screen) LineAt(row int) (int, bool) {
-	frame := s.Frame()
+	frame, top := s.visible()
 	if row < 0 || row >= len(frame) {
 		return 0, false
 	}
-	return s.topLine(frame) + row, true
-}
-
-// topLine is the buffer line showing at viewport row 0.
-//
-// ONE owner, because Paint needs the same answer to find each row's regions and
-// two spellings of it would be two chances to disagree by a line — which is a
-// click that plays the word above the one you pointed at. Takes the frame it was
-// computed against, since Frame clamps the offset as it runs.
-func (s *screen) topLine(frame []string) int {
-	return len(s.lines) - s.offset - len(frame)
+	return top + row, true
 }
 
 // Lines is the whole buffer. Present for tests and for the exit transcript
@@ -195,18 +185,33 @@ func (s *screen) Lines() []string { return s.lines }
 
 // Frame is the rows to paint, oldest first. PURE.
 func (s *screen) Frame() []string {
+	frame, _ := s.visible()
+	return frame
+}
+
+// visible is the frame AND the buffer line it starts at, as ONE answer.
+//
+// Together, because they are one fact about the viewport and computing them
+// separately is how they came apart: `Frame` used to return early — for an empty
+// viewport, and for a buffer that fits — WITHOUT clamping, so a stale offset
+// survived. Growing the viewport while scrolled back (a resize taller, the
+// command menu closing, a wrapped prompt cleared with Ctrl-U) then left `offset`
+// pointing past the end, `topLine` negative, and the click map detached from the
+// text: the underline painted on one row while the region answered on another.
+//
+// The rule it leaves: a DERIVED invariant is re-established on every path that
+// reads it, not only on the path that calls its owner. So the clamp happens
+// once, here, above every return.
+func (s *screen) visible() ([]string, int) {
+	s.clamp()
 	if s.rows <= 0 {
-		return nil
+		return nil, len(s.lines)
 	}
 	if len(s.lines) <= s.rows {
-		return s.lines
+		return s.lines, 0
 	}
-	// Clamped and WRITTEN BACK, so the offset a later Scroll adds to is the one
-	// the reader is actually looking at. Spelling the arithmetic here as well as
-	// in Scroll was two chances to disagree.
-	s.clamp()
 	end := len(s.lines) - s.offset
-	return s.lines[end-s.rows : end]
+	return s.lines[end-s.rows : end], end - s.rows
 }
 
 // Scroll moves the viewport by n lines — positive is BACKWARD, toward older
@@ -379,9 +384,9 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu 
 	var b strings.Builder
 	b.WriteString(cursorHome + eraseDown)
 	// Each painted row carries the marks for the BUFFER line it is showing, found
-	// through the same mapping a click uses to go the other way.
-	frame := s.Frame()
-	top := s.topLine(frame)
+	// through the same mapping a click uses to go the other way — the same call,
+	// so the paint and the hit test cannot be answering from different states.
+	frame, top := s.visible()
 	for i, line := range frame {
 		b.WriteString(clipVisible(markClickable(line, s.regions[top+i]), s.cols) + "\r\n")
 	}

@@ -647,3 +647,48 @@ func TestEveryRegionKindIsNamed(t *testing.T) {
 		}
 	}
 }
+
+// The ORIGIN section's boundary comes from `e.Sections`, which OWNS it — not
+// from a heuristic that guesses at headings (#30 M2, BR-38/BR-43).
+//
+// The first version looked for a line that was all-caps, single-word and free of
+// punctuation. A heuristic can only agree with the parser by coincidence: an
+// acronym alone on a line — which a narrow terminal produces routinely — reads
+// as a heading, so the range stops early and everything after it in the same
+// section stops being clickable.
+//
+// Driven at the FUNCTION rather than through Render, because the difference is
+// about which lines belong to a section, and reaching it through prose would
+// mean contriving text that wraps a particular way — a test about wrapping
+// pretending to be a test about sections. Every committed entry has ORIGIN LAST,
+// so the two implementations agree on all of them, which is why reverting the
+// fix left the whole suite green.
+func TestOriginLineRangeComesFromTheParsedSections(t *testing.T) {
+	lines := []string{
+		"radar",               // 0
+		"",                    // 1
+		"  ORIGIN",            // 2
+		"    an acronym from", // 3
+		"    NASA",            // 4  ← all-caps and alone: NOT a heading
+		"    usage, from Italian radiotelemetro.", // 5
+		"",                                  // 6
+		"  USAGE",                           // 7  ← the real next heading
+		"    the French spelling is older.", // 8
+	}
+	e := Entry{Sections: []Section{
+		{Name: "ORIGIN", Text: "an acronym from NASA usage, from Italian radiotelemetro."},
+		{Name: "USAGE", Text: "the French spelling is older."},
+	}}
+
+	first, last := originLineRange(lines, e)
+	if first != 2 {
+		t.Errorf("the section starts at line %d, want 2", first)
+	}
+	// Through the language, and NOT into USAGE — where "French" is prose about
+	// spelling rather than an etymology.
+	if last != 6 {
+		t.Errorf("the section ends at line %d, want 6: the range must cover the whole "+
+			"etymology (an all-caps line inside it is not a heading) and stop before the "+
+			"next section (whose prose is not an etymology)", last)
+	}
+}

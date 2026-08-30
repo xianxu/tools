@@ -182,7 +182,7 @@ to `#35`'s code and is where `M2.1` starts.
 | `KeyClick` / `Key.Row` / `Key.Col` | `cmd/define/key.go` | new | PURE — the one Key that carries a position |
 | `clickAt` / `isClickButton` / `parseParams` | `cmd/define/key.go` | new | PURE — one owner for the wire→screen conversion and its guard, across both encodings |
 | `numRegionKinds` / `RegionKind.String` | `cmd/define/render.go` | new | PURE — the registry's EXTENT, so every guard derives the set rather than restating it |
-| `screen.RegionAt` / `screen.LineAt` / `screen.topLine` / `screen.addRegions` | `cmd/define/screen.go` | new | PURE — the hit test, and the viewport-row → buffer-line mapping the alt screen makes exact. `topLine` is its one owner: Paint needs the same answer to find each row's marks, and two spellings would be two chances to disagree by a line |
+| `screen.RegionAt` / `screen.LineAt` / `screen.visible` / `screen.addRegions` | `cmd/define/screen.go` | new | PURE — the hit test, and the viewport-row → buffer-line mapping the alt screen makes exact. `visible` returns the frame AND its top line as ONE answer, because they are one fact: computed separately they came apart, and the click map detached from the text (BR-42) |
 | `markClickable` / `underlineOn` / `underlineOff` | `cmd/define/screen.go` | new | PURE (M2.5) — the mark, spliced by the SCREEN so it cannot reach a pipe |
 | `liveScreen.WriteRegions` / `liveScreen.RegionAtRow` | `cmd/define/screen.go` | new | the click map's IO side: one call, so text and regions cannot disagree about which line a render landed on |
 | `regionWriter` / `writeRendered` | `cmd/define/main.go` | new | the seam fills itself — a writer that can hold a click map gets one, a pipe gets bytes (D6) |
@@ -216,11 +216,34 @@ to `#35`'s code and is where `M2.1` starts.
       A task cannot cover work that has not been planned yet; a guard can.
 - [x] **M2.6 — degrade**, and the case is NOT only "a terminal that reports no mouse". The exposure that actually bit was a terminal that reports the mouse in an encoding we did not ask for: mode `1000` falls back to X10 (`ESC[M` + three raw bytes), which the CSI scan delimited at `M` and left three payload bytes to be typed into the line. Fixed in M1's rework (`decodeX10Mouse`); this row keeps the rule that produced it — **for every mode we enable, the decoder answers every encoding that mode can reply in** — and applies it to whatever M2 turns on.
 
+### M2 — what runs each row, and the mutation that reddens it
+
+**The enumeration BR-43 asked for, and the rule it enforces: a "pinned by" claim
+holds only when mutating the IMPLEMENTING code reddens a named test.** Three rows
+were filled in and found empty when this was written — the whole point of writing
+it down rather than asserting it.
+
+| entity | pinned by | mutation that reddens it |
+|---|---|---|
+| `Region` / `regionsIn` | `TestRegionsAddressTheRenderedOutput` | shift a region's `Col` by one → "claims column N, where the screen shows …" |
+| `Render`'s byte identity | `TestRenderOutputMatchesTheCorpusGolden` | append one space to the output → "first difference at byte 757" |
+| `numRegionKinds` | `TestEveryRegionKindIsActionable`, `TestEveryRegionKindIsNamed`, `TestAtlasDescribesEveryRegionKind` | add a third kind → all three redden, each for its own reason |
+| `originLineRange` | `TestOriginLineRangeComesFromTheParsedSections` | revert to the all-caps heuristic → "ends at line 3, want 6" |
+| `OriginLanguageMentions` offsets | `TestOriginMentionOffsetsIndexTheSourceText` | make the stage mask length-changing → "Italian is reported at offset 40, where the source reads \"et, fro\"" |
+| `screen.addRegions` base | `TestRegionsLandOnTheLinesTheirRenderWroteTo` | drop the `partial` decrement → "a render starting mid-line put its region elsewhere" |
+| `screen.visible` clamp | `TestClickMapSurvivesTheViewportGrowing` | restore the pre-fix `Frame`/`topLine` pair → "the word shows on row 20 and offers nothing" |
+| `liveScreen.WriteRegions` | `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor` | swap `addRegions` and `Write` → "row 1 col 0 offers nothing" |
+| `writeRendered` | `TestALookupHandsItsRegionsToTheScreen` | disable the `regionWriter` branch → "the entry reached the screen with no click map at all" |
+| `markClickable` | `TestScreenMarksClickableSpans`, `TestMarkingKeepsTheSpansOwnColour` | drop `underlineOff` → "the headword is not marked as clickable" |
+| the mark's absence from `Render` | `TestRenderNeverMarksSpansItself` + the corpus golden | mark inside `Render` → both redden |
+| `decodeKey` clicks | `TestClickCarriesItsPosition`, `FuzzDecodeMouseIsBounded` | the two the fuzzer already found: X10 row −1, and SS3 read as a report |
+| `clicked`'s actions | `TestClickOnHeadwordReplays`, `TestClickOnOriginLanguagePlaysIt` | ignore the click → "played 3 times, want 6"; drop `r.Lang` → the CDN is asked in English |
+
 ### M2 Done-when
 
 | # | claim | pinned by | red when |
 |---|---|---|---|
-| 1 | clicking the headword plays it | `TestClickOnHeadwordReplays`; the hit test itself by `TestScreenResolvesAClickToWhatWasRenderedThere`, `TestClicksFollowTheTextWhenScrolled`, `TestRegionsLandOnTheLinesTheirRenderWroteTo` | `RegionAt` stops matching the headword span |
+| 1 | clicking the headword plays it | `TestClickOnHeadwordReplays`; the hit test by `TestScreenResolvesAClickToWhatWasRenderedThere`, `TestClicksFollowTheTextWhenScrolled`, `TestRegionsLandOnTheLinesTheirRenderWroteTo`, `TestClickMapSurvivesTheViewportGrowing`; and the PRODUCTION join — the object between them, which a double cannot stand in for — by `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor` | `RegionAt` stops matching the headword span, or the map detaches from the text |
 | 2 | clicking `ORIGIN French` plays French | `TestClickOnOriginLanguagePlaysIt` | the region's language is dropped |
 | 3 | rendering is byte-identical | `TestRenderOutputMatchesTheCorpusGolden`, whose golden was generated from the commit BEFORE the signature change; and `TestRenderNeverMarksSpansItself` for the mark specifically | `Render` alters a byte while collecting, or starts emitting the clickable underline |
 | 4 | a clickable span is visibly clickable before it is clicked | `TestScreenMarksClickableSpans`, `TestMarkingKeepsTheSpansOwnColour`, `TestMarkingIsPlacedByColumnNotByByte`; and the other half — that the mark never leaks — by `TestRenderNeverMarksSpansItself` plus the corpus golden | the underline attribute is dropped from the frame, or `Render` starts emitting it |
@@ -663,3 +686,34 @@ spoke of clicks in the future tense. The instance is fixed (atlas gains
 "## Clickable regions", README gains what a user meets), and so is the cause:
 `TestAtlasDescribesEveryRegionKind` derives from the same registry extent, so the
 docs cannot silently lag a kind again.
+
+### 2026-08-30 — M2 boundary round 9: a Critical, and an enumeration that was owed
+
+**BR-42 (Critical) — a derived invariant is re-established on every path that
+READS it, not only on the path that calls its owner.** `Frame` returned early —
+for an empty viewport, and for a buffer that fits — without clamping, so a stale
+offset survived. Growing the viewport while scrolled back (a resize taller, the
+command menu closing, a wrapped prompt cleared) then left the top line negative
+and the click map detached from the text: the underline painted on one row while
+the region answered on another. That is the exact-placement property the
+alternate screen exists to give, so it is the right severity.
+
+Fixed structurally rather than by hoisting a call: `visible()` returns the frame
+AND its top line as one answer, because they are one fact and computing them
+separately is how they came apart. `Frame`, `LineAt` and `Paint` all go through
+it, so the paint and the hit test cannot answer from different states.
+
+**BR-43 — the enumeration above, and it found three empty rows while being
+written.** The rule had been STATED and its named instance pinned; what was
+missing was the sweep. Reverting `originLineRange` to the heuristic left the
+suite green, the clamp was green either way, and Done-when row 1 never named the
+production-join test. Each now has a test and a recorded mutation.
+
+Two of those tests took a second attempt, which is worth recording. The
+`originLineRange` test first went through `Render` and could not be made to fail:
+it needed prose that wrapped a particular way, so it was a test about wrapping
+pretending to be a test about sections. Driven at the function, with the lines
+supplied directly, it reddens exactly. And the clamp test could not be falsified
+by mutating the NEW code, because the refactor is what fixes it — so it was run
+against the pre-fix `screen.go` from the previous commit, which is the honest
+form of "verified falsifiable" when a fix changes a shape rather than a line.

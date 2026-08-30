@@ -163,3 +163,204 @@ findings:
     title: |
       screen.LineAt is tabled PURE but clamps and writes back s.offset via Frame()
 ```
+
+---
+
+## Re-review — 2026-08-30T12:15:57-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M2 |
+| milestone | M2 |
+| window | a6584e243f2a032d209f8f4f1f44c50ed801f0ad..8f6a458a06ec9efe0ef93c8eeb1e16abdf751c97 |
+| command | sdlc milestone-close --issue 30 --milestone M2 |
+| reviewer | claude |
+| timestamp | 2026-08-30T12:15:57-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+M2 delivers both click consumers, the registry, the mark and the docs, and the three findings from round 6 are genuinely fixed — I confirmed each by mutation rather than by the commit message (the `addRegions`/`Write` swap now reddens `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor`; a third `RegionKind` reddens all three registry guards; the atlas and README carry the surface). I also re-verified byte-identity independently: regenerating the corpus dump from `a6584e2` in a scratch worktree produces a file `cmp`-identical to the committed golden. `go test ./...`, `-race`, `go vet` and a 1.7M-exec fuzz run are green here. What blocks the boundary is one Critical I found on the production object: `screen.Frame`'s fast path returns without clamping, so whenever the viewport grows while the reader is scrolled back — maximise the window, close the suggestion menu, un-wrap a long prompt — `topLine` goes negative and the click map silently detaches from the text. Reproduced end to end on a real `liveScreen`: after a resize, `RegionAtRow(0,0)` on the row that actually shows the headword answers *nothing*, and the underline is painted nine rows below the word it belongs to. That is the exact property D1 and the whole alternate-screen decision exist to guarantee.
+
+## 1. Strengths
+
+- **`cmd/define/screen_test.go:832` — the BR-37 fix is falsifiable, and I checked rather than assumed.** Swapping `l.s.addRegions(rs)` / `l.s.Write(...)` in `screen.go:545` now reddens both subtests *and* the frame-mark assertion. The test drives the real object end to end (write → viewport row → region), which is the shape the family kept asking for.
+- **`cmd/define/render.go:239` — `numRegionKinds` is a real owner, verified.** Adding a third kind reddens `TestEveryRegionKindIsActionable`, `TestEveryRegionKindIsNamed` and `TestAtlasDescribesEveryRegionKind` simultaneously. Deriving the *docs* guard from the same sentinel is the strongest part of the round: it converts BR-39's structural cause into a mechanism rather than a promise.
+- **`cmd/define/render.go:363` — `originLineRange` now reads `e.Sections`.** The all-caps heuristic is gone and the section boundary comes from the parser that owns it. Right fix, right reason.
+- **Byte-identity survives an adversarial check.** Independently regenerated from the base commit: identical to the 315,434-byte golden. The shape that makes it cheap (`regionsIn` reads the finished string; `Render`'s body untouched) is what earns it.
+- **`cmd/define/screen.go:305` — `clipVisible` closes what `markClickable` opened.** I probed the interaction: a clip that cuts mid-span emits `\x1b[0m`, so a marked span truncated at the right edge cannot leak its underline into the rows below. Confirmed-good ground.
+
+## 2. Critical findings
+
+### C-1 · `Frame`'s fast path skips `clamp`, so the click map detaches from the text after the viewport grows — `cmd/define/screen.go:197-206`
+
+**This is the 5th finding in family `one-owner-per-invariant`.** Earlier rounds fixed instances (`escapeLen`, the rune-counted cursor move, `topLine`, `numRegionKinds`). Do **not** fix only this instance — state the rule and sweep it.
+
+```go
+func (s *screen) Frame() []string {
+	if s.rows <= 0 { return nil }
+	if len(s.lines) <= s.rows { return s.lines }   // ← returns WITHOUT clamping
+	s.clamp()
+	...
+}
+```
+
+`clamp` is documented as "the ONE place the viewport's limits are spelled" (`screen.go:221`). The early return is a second, implicit answer to the same question — "it all fits, so the offset does not matter" — and it is wrong, because `topLine` reads the offset unconditionally (`topLine = len(lines) - offset - len(frame)`).
+
+Measured on the production object:
+
+```
+newLiveScreen(&tty, 12, 80); WriteRegions(20 lines, headword region on line 0)
+Page(10)                       → offset 9   (correct while rows = 11)
+Resize(30, 80); Draw("> ", nil) → rows 29, len(lines) 20 → fast path, offset STILL 9
+                                 topLine = -9
+RegionAtRow(0,0) → nothing      (row 0 is where the headword is painted)
+```
+
+Every mark is painted `offset` rows away from its own text (`Paint` looks up `s.regions[top+i]` with a negative `top`), and a click on the word itself is dead. Three routine triggers, none of them exotic: resize taller while scrolled back; close the suggestion menu while scrolled back (`s.rows` grows by `menuRows`); kill a wrapped prompt with Ctrl-U (`s.rows` grows by `promptRows-1`). `screen.write` resets `offset` to 0, so the state only survives until the next write — but a click *is* the next input in exactly this scenario.
+
+**Fix (verified):** hoist `s.clamp()` above the early return. I applied it, the repro resolves (`offset 0`, `topLine 0`, row 0 → `"potassium"`), and `go test ./cmd/define/` stays green.
+
+**The rule the family keeps asking for, stated to cover all five:** *a derived invariant is re-established on every path that reads it, not only on the path that happens to call its owner.* The enumeration that implies, to be swept in this round: every early return and every fast path in `screen.go` that returns before `clamp`, and every reader of `s.offset`/`s.rows` outside `Paint`. Cite **ARCH-PURE** as well — `Frame` is tabled PURE while writing back `s.offset`, and that unstated write-on-read is precisely what makes the missing clamp invisible at the call site (`LineAt` looks like a query).
+
+## 3. Important findings
+
+### I-1 · The enumeration BR-37 demanded was not written, and two fixes in this same commit shipped unpinned — `workshop/plans/000030-clickable-regions-plan.md:223`
+
+**This is the 7th finding in family `unfalsifiable-test-pin`.** Do **not** fix this instance — the rule is the deliverable.
+
+The rule was *stated* (commit body, plan Revisions) and the named instance was *fixed and pinned*. The enumeration was not:
+
+- **Done-when row 1's `pinned by` cell is unchanged.** It still names `TestClickOnHeadwordReplays`, `TestScreenResolvesAClickToWhatWasRenderedThere`, `TestClicksFollowTheTextWhenScrolled`, `TestRegionsLandOnTheLinesTheirRenderWroteTo` — the exact four that the `addRegions`/`Write` swap left green last round. The test that actually defends the claim, `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor`, is named nowhere in the plan. Round 6's own plan-revision recommendation #3 asked for this and it was not done.
+- **`originLineRange`'s fix is unpinned.** I reverted it to the exact all-caps heuristic BR-38 named and ran the full package: `ok github.com/xianxu/tools/cmd/define 106.9s`. A structural fix nothing can fail is the same shape as the finding that produced it.
+- **C-1 above is green with and without its fix**, which is the third empty row.
+
+For the record, one row of the enumeration *is* filled and I verified it rather than assuming: disabling `writeRendered`'s `w.(regionWriter)` branch reddens `TestALookupHandsItsRegionsToTheScreen`. Family prevalence: 7 findings across 7 rounds on this issue.
+
+**The enumeration to write, this round:** for every M2 Core-concepts row and every M2 Done-when `pinned by` cell, name the test that reddens when the *implementing* code is mutated, and record the mutation used. Currently empty: `originLineRange`'s section derivation, `Frame`'s clamp, and Done-when 1's production join.
+
+## 4. Minor findings
+
+- `cmd/define/key.go:186,196,344` — `decodeWheel`'s doc says it "answers only the WHEEL" and that "a click therefore stays `KeyUnknown` — consumed whole and inert"; `decodeX10Mouse`'s says "Only the wheel is answered, matching `decodeWheel`". Both are false at HEAD — the function returns `KeyClick` — and the name `decodeWheel` is now a misnomer. 2nd in `stale-rationale`: the rule is that a comment stating what a function does *not* do is swept in the commit that makes it do it; both sites, plus the name.
+- `cmd/define/screen.go:143` — `addRegions` decrements `base` for a partial line but leaves `Col` untouched, so a render starting mid-line lands its regions in the wrong columns. `screen_test.go:738` looks like it covers the branch but passes `Col: 12` already offset by hand, so it asserts the caller's arithmetic rather than the code's. Either enforce the documented precondition or shift `Col` by the open line's `visibleCells`.
+- `cmd/define/render.go:396` (`headingLine`) is a new declaration absent from the plan's M2 Core-concepts table, alongside `digits` and `throttledPaint` noted last round.
+- M2's Core-concepts table declares no PURE/INTEGRATION kind for four rows (`liveScreen.WriteRegions`/`RegionAtRow`, `regionWriter`/`writeRendered`, `Region.Word`), unlike M1's split tables — so the cross-check has nothing to read for exactly the IO rows.
+
+## 5. Test coverage notes
+
+- Ran here: `go build ./...`; `go test ./...` green (`cmd/define` 107s); `go test -race ./cmd/define/` green (118s); `go vet ./cmd/define/` clean; `FuzzDecodeMouseIsBounded` 30s → 1,709,828 execs, 0 new interesting, PASS.
+- Mutations run: `addRegions`/`Write` swap → **red** (BR-37 confirmed); third `RegionKind` → **red** ×3 (BR-38 confirmed); `writeRendered` seam disabled → **red**; `originLineRange` reverted to the heuristic → **green** (I-1); `Frame` clamp hoisted → **green** either way (C-1).
+- **All 12 PTY conformance rows SKIP here** (`no pty available: operation not permitted`), including `TestPTYWithoutMouseBehavesAsBefore`, the named pin for Done-when 6. Unchanged from last round; row 6 does not rest on it alone.
+- Gap: nothing exercises the hit test with a *stale non-zero offset over a buffer that fits* — the state C-1 lives in. `TestScreenResolvesAClickToWhatWasRenderedThere` uses `rows 10 / 5 lines / offset 0`, and `TestClicksFollowTheTextWhenScrolled` uses `31 lines / rows 5`, so both sit on opposite sides of the untested case.
+- Still unpinned from round 6's note: no case exercises a language name occurring in a cognate clause *before* a source mention.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `escapeLen` remains the one escape grammar (`visibleIndex`, `markClickable`, `clipVisible`); `clickAt`/`wheelFromButton` own the wire conversion for both encodings; `OriginLanguage` derives from the mentions producer. No new duplication in this round's diff.
+- **ARCH-PURE — flag.** `regionsIn`, `markClickable` and `RegionAt` are genuinely pure. `Frame`/`LineAt` are tabled PURE and write back `s.offset` (BR-41, still open) — and C-1 is that label's cost, not a cosmetic mislabel: a reader of `LineAt` has no signal that a viewport-limit invariant depends on it having been called.
+- **ARCH-PURPOSE — flag.** Both consumers, the registry, degrade and docs ship; the shadow-sweep on the single-source change (one cut-and-mask, two consumers) passes. The flag is the class-vs-instance axis again: three instances fixed, the enumeration BR-37 asked for not written, and two of this commit's own fixes landing with nothing that could fail without them (I-1).
+- **ARCH-MOCK — flag.** The `creack/pty` double gained `TestPTYWithoutMouseBehavesAsBefore`, and the in-process `liveScreen` test closes the worst of last round's "production flow and test flow do not share the boundary". But no click is exercised through a real pty anywhere, and every pty row skips in this environment, so the terminal double is again unexecuted at the gate.
+- **ARCH-CONSTRAINTS — pass, with a note.** `markClickable` is O(cells) per painted row inside the 16 ms throttle and returns immediately for an unmarked line; the regions map is sparse. `Render` now runs `regionsIn` (22 regex compiles via `OriginLanguageMentions`, plus `anyLanguageIn`) on *every* path including those that discard the map — `--play`'s `todaysQuestions` loop, the one-shot, pipes. Bounded and once-per-entry, not a keystroke path, so not a finding; compiling the 22 patterns once at package scope would be the free win if it ever shows up.
+
+## 7. Plan revision recommendations
+
+1. **`## Revisions` — "the viewport's limits had a second owner, and it was an early return."** Record C-1: `Frame`'s fast path returned without `clamp`, so a viewport that grows while scrolled back left `topLine` negative and detached the click map from the text; record the three triggers (resize taller, menu closes, wrapped prompt killed), the measured repro on `liveScreen`, and the rule as the 5th entry in `one-owner-per-invariant`.
+2. **Done-when row 1 (`plan.md:223`) — add the test that actually defends it.** Name `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor` in the `pinned by` cell with its `red when` (the `addRegions`/`Write` swap), and add a row for the clamp property once C-1 is pinned. Record that the four tests currently named all stayed green under the swap.
+3. **`## Revisions` — the enumeration, written rather than promised.** For each M2 Core-concepts row, the test that runs it and the mutation that reddens it; explicitly mark `originLineRange` as fixed-but-unpinned (reverting to the heuristic → suite green, measured) so the gap is on the record rather than in a reviewer's head.
+4. **M2 Core-concepts table — declare a Kind for the four IO rows** (`liveScreen.WriteRegions`/`RegionAtRow`, `regionWriter`/`writeRendered`, `Region.Word`), add `headingLine`, and correct `screen.LineAt`'s `PURE` to note the write-back (BR-41).
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      M1.1's row still enumerates the four cases and no chunk-boundary property exists for screen.Write; M1 is closed, so this stays a carried Minor.
+  - id: BR-37
+    disposition: addressed
+    note: |
+      Verified by mutation: swapping addRegions/Write reddens TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor; writeRendered's seam also reddens when disabled. The class enumeration it demanded is raised separately as the 7th in the family.
+  - id: BR-38
+    disposition: addressed
+    note: |
+      numRegionKinds verified by mutation (a third kind reddens all three guards); originLineRange now derives from e.Sections, though reverting it leaves the suite green.
+  - id: BR-39
+    disposition: addressed
+    note: |
+      README gains the clickable section, atlas gains "## Clickable regions", and TestAtlasDescribesEveryRegionKind derives from numRegionKinds - verified red for an undescribed third kind.
+  - id: BR-40
+    disposition: not-addressed
+    note: |
+      Re-measured at HEAD: markClickable("\x1b[1;36mpotassium\x1b[0m is a metal", {Col:0,Width:9}) still yields "\x1b[4m\x1b[1;36m\x1b[4mpotassium...".
+  - id: BR-41
+    disposition: not-addressed
+    note: |
+      The plan's M2 row still tables screen.LineAt as PURE; Frame still clamps and writes back s.offset. C-1 is the cost of that unstated write.
+findings:
+  - id: new
+    severity: Critical
+    family: one-owner-per-invariant
+    title: |
+      screen.Frame's fast path returns without clamping, so the click map detaches from the text when the viewport grows
+    detail: |
+      5th in the family, so the rule is the deliverable: a derived invariant is
+      re-established on every path that reads it, not only on the path that calls
+      its owner. Measured on the real liveScreen — 20 lines at 12 rows, Page(10)
+      then Resize(30,80): offset stays 9, topLine = -9, and RegionAtRow(0,0) on
+      the row that actually shows the headword answers nothing while its underline
+      is painted 9 rows lower. Three routine triggers: resize taller while scrolled
+      back, the suggestion menu closing, a wrapped prompt killed with Ctrl-U.
+      Hoisting s.clamp() above the early return fixes the repro and keeps the suite
+      green — which is also the second half of the finding, since nothing pins it.
+      Sweep: every early return in screen.go that precedes clamp, and every reader
+      of s.offset/s.rows outside Paint. ARCH-PURE: Frame/LineAt are tabled PURE
+      while writing back s.offset, which is what hides the missing clamp.
+  - id: new
+    severity: Important
+    family: unfalsifiable-test-pin
+    title: |
+      BR-37's enumeration was never written, and two fixes in the same commit ship with nothing that fails without them
+    detail: |
+      7th in the family, across 7 rounds on this issue. The rule was stated and the
+      named instance pinned, but: Done-when row 1 still names only the four tests
+      that stayed green under last round's mutation, and never names
+      TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor; reverting
+      originLineRange to the exact all-caps heuristic BR-38 named leaves
+      `go test ./cmd/define/` green (measured, 107s); and C-1's clamp is green with
+      and without its fix. One row IS filled and I checked it: disabling
+      writeRendered's regionWriter branch reddens TestALookupHandsItsRegionsToTheScreen.
+      Deliverable: for every M2 Core-concepts row and every Done-when "pinned by"
+      cell, name the test and record the mutation that reddens it.
+  - id: new
+    severity: Minor
+    family: stale-rationale
+    title: |
+      decodeWheel's and decodeX10Mouse's comments still say a click stays KeyUnknown, which stopped being true in this window
+    detail: |
+      key.go:186 and :196 say the decoder "answers only the WHEEL" and that "a click
+      therefore stays KeyUnknown — consumed whole and inert"; key.go:344 repeats it
+      for the X10 path. Both functions now return KeyClick, and the name decodeWheel
+      is a misnomer for a decoder that also decodes presses. 2nd in the family: the
+      rule is that a comment stating what a function does NOT do is swept in the
+      commit that makes it do it — sweep both sites and the name.
+  - id: new
+    severity: Minor
+    family: vacuous-pin
+    title: |
+      addRegions shifts base for a partial line but not Col, and the test that looks like it covers this passes Col pre-offset
+    detail: |
+      screen.go:143 decrements base when s.partial, so a render starting mid-line
+      lands on the right LINE — but Col is left relative to the render, not to the
+      buffer line, so the regions sit in the wrong columns. screen_test.go:738 seems
+      to cover the branch and instead supplies Col: 12 already offset by hand, so it
+      asserts the caller's arithmetic. Not reachable today (the loop writes "\r\n"
+      before an entry), but the comment documents one contract and the test another.
+      Either enforce the precondition or shift Col by visibleCells of the open line.
+```

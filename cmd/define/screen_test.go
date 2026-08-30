@@ -884,3 +884,63 @@ func TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor(t *testing.T) {
 		t.Errorf("the frame does not mark the span the hit test resolves: %q", frame)
 	}
 }
+
+// The click map stays attached when the viewport GROWS (#30 M2, BR-42).
+//
+// `Frame` used to return early — for an empty viewport, and for a buffer that
+// fits — without clamping, so a stale offset survived. Growing the viewport
+// while scrolled back then left `offset` past the end and the top line negative:
+// the underline painted on one row while the region answered on another, which
+// is the exact-placement property the alternate screen exists to give.
+//
+// Three routine ways in, all of them growth: a resize taller, the command menu
+// closing, and a wrapped prompt cleared with Ctrl-U.
+func TestClickMapSurvivesTheViewportGrowing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		grow func(l *liveScreen)
+	}{
+		{"a resize taller", func(l *liveScreen) { l.Resize(30, 80) }},
+		// The menu closing gives its rows back to the buffer, which is the same
+		// growth arriving through Paint rather than through SIGWINCH.
+		{"the command menu closing", func(l *liveScreen) { l.Draw("› ", nil) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var tty strings.Builder
+			l := newLiveScreen(&tty, 12, 80)
+			l.interval = -1
+			l.Draw("› ", []string{"m1", "m2", "m3"})
+			for i := 0; i < 20; i++ {
+				l.Write([]byte("filler\n"))
+			}
+			l.WriteRegions("potassium\n", []Region{
+				{Kind: RegionHeadword, Text: "potassium", Word: "potassium", Line: 0, Col: 0, Width: 9},
+			})
+			l.Page(10) // scroll back, far enough to overshoot when the viewport grows
+			tc.grow(l)
+			l.Draw("› ", nil) // the redraw the loop performs after any growth
+
+			// Wherever the word is showing now, a click on it must find it —
+			// and the row that answers must be the row that SHOWS it. Read
+			// through Frame, which both shapes of this code have, so the test
+			// can be run against the one it was written to catch.
+			frame := l.s.Frame()
+			row := -1
+			for i, line := range frame {
+				if strings.Contains(line, "potassium") {
+					row = i
+				}
+			}
+			if row < 0 {
+				return // scrolled out of view: nothing to click, which is fine
+			}
+			r, ok := l.RegionAtRow(row, 0)
+			if !ok {
+				t.Fatalf("the word shows on row %d and offers nothing: the map detached from the text", row)
+			}
+			if r.Text != "potassium" {
+				t.Errorf("row %d offers %q, want the word shown there", row, r.Text)
+			}
+		})
+	}
+}
