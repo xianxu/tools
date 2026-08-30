@@ -4,101 +4,119 @@
 
 **Goal:** Click the word `--play` is asking about to hear it, and click anything in a revealed definition exactly as the interactive loop already allows.
 
-**Architecture:** `--play` stops drawing its own frames and writes into `#30`'s `liveScreen`, which is an `io.Writer` — so `draw` does not change. It gains the alternate screen, a click map, scrolling and the exit transcript from the same machinery the interactive loop uses, and the click actions become rows in the registry that already exists rather than a second path.
+**Architecture:** `--play` stops drawing its own frames and writes into `#30`'s `liveScreen`. It gains the alternate screen, a click map, scrolling and the exit transcript from the machinery that already exists, and the click action becomes a shared function rather than a second switch. The cooked/raw dance around playback is DELETED, exactly as `#30` D4 deleted it from the editor — which is also what stops it tearing the new screen down.
 
-**Tech Stack:** Go 1.26. Everything this needs was built by `#30`; no new dependency, and no new mechanism.
+**Tech Stack:** Go 1.26. Everything this needs was built by `#30`; no new dependency and no new mechanism.
 
 ---
 
 ## Decisions
 
-**D1 — `--play` joins the screen rather than tracking a cursor, and the operator chose this.** The alternative was mouse reporting with a remembered cursor position, which `#30` D1 rejected on measurement: the terminal scrolls whenever the loop writes, so the app tracks an offset it never observes. A click after any scroll lands wrong. Adopting the screen makes the mapping exact by construction, which is the property the whole affordance rests on.
+**D1 — `--play` joins the screen rather than tracking a cursor, and the operator chose this.** The alternative was mouse reporting with a remembered cursor position, which `#30` D1 rejected on measurement: the terminal scrolls whenever the loop writes, so the app tracks an offset it never observes and a click after any scroll lands wrong. The screen makes the mapping exact by construction.
 
-**D2 — the visual result stays close, and that is why this is affordable.** `draw` (`play_loop.go:283-291`) is APPEND-ONLY: it writes `"\n%s\n"` per question and never clears, so the terminal scrolls and a sitting stacks up. `liveScreen` has the same shape — `Write` appends to a line buffer and `Paint` shows its tail — so a sitting looks as it does today, gains scrolling, and gains the exit transcript. **`draw` does not change at all**: it takes an `io.Writer` already.
+**D2 — the cooked/raw dance around playback is DELETED, and that is the milestone's largest simplification.** `play_loop.go:174-198` calls `raw.sess.restore()` before playback and `enterRaw` after, so the indicator prints in cooked mode (`#16`). Two facts make that fatal here and unnecessary anyway:
 
-**D3 — the scrollback trade is inherited deliberately, not by accident.** The alternate screen means a sitting is not in the terminal's scrollback WHILE it runs; it is printed back on exit (`#30` D3, `handBack`). For `--play` this is a smaller loss than for lookups — a review sitting is a transaction you finish, not a reference you scroll back to mid-flight — and the transcript still lands. Stated because the operator was asked and chose it, so a later reader does not re-open it.
+- **Fatal:** since `#30`, `restore()` also leaves the alternate screen and mouse reporting (`rawterm.go:40-47`), and `enterRaw` returns a session with `alt=false, mouse=false` (`rawterm.go:28-34`). So the first reveal would tear the screen down and never restore it — the sitting would fall back to the normal buffer and clicks would stop, permanently, with nothing said.
+- **Unnecessary:** with the screen owning line placement, no output depends on the line discipline. This is `#30` D4 verbatim, applied to the other loop: *"Inside an app-owned screen there is nothing to flap."* Staying raw is also what lets Ctrl-C reach the key reader during playback rather than the line discipline swallowing it.
 
-**D4 — `--play` has NO live edge, and that is a difference from the interactive loop worth naming.** `liveScreen.Draw(prompt, menu)` exists because the editor's prompt is rewritten per keystroke. `--play` has no editable line: its `y = got it…` line is printed once per question and is as much a part of the record as the word above it. So `--play` writes everything as BUFFER lines and never calls `Draw` — which also means nothing here can hit `#30`'s "the prompt belongs to a loop that is waiting" rule, because there is no prompt to leave stale.
+Deleting it removes the `lost the terminal after playback` path (`play_loop.go:182-197`) with it, as D4 removed `lostTerminal` from the editor.
 
-**D5 — the reveal's regions come from `Render`, and `play` must never see them.** `play` is a pure package that does not import `main`; `Region` lives in `main` (`render.go`). `play.NewRecall(key, rendered)` (`play_loop.go:265`) stores only the rendered string. So the loop keeps its own `word -> []Region` map built where the entries are rendered (`play_loop.go:262`, which already discards the regions), and looks it up when a reveal is drawn. `play`'s purity is the reason, not an accident of layering.
+**D3 — `draw` DOES change, and the seam already exists.** An earlier draft claimed `draw` was untouched because it takes an `io.Writer`. False: writing a region map is not a plain write. `writeRendered` (`main.go`) is the seam — a writer that can hold a click map gets one, everything else gets bytes — so `draw` calls it for the reveal and writes the prompt word's own region. The `io.Writer` signature still means a test drives `draw` with no terminal.
 
-**D6 — a click is a REPLAY and never an answer.** Hearing the word is what `y`/`n` are answering *about*. A click that recorded a review would corrupt the schedule silently — the worst kind of bug this program can have, since the damage is to data the learner cannot see. The click performs playback and returns to the same state.
+**D4 — the ACTION is shared, and it is `playAnnounced` rather than `replayInPlace`.** The editor's click reaches `replayInPlace`, which reads a `session` `--play` does not have; `--play`'s own playback is `playAnnounced` with `defaultIndicator(opt)` (`play_loop.go:178-181`). The shared thing beneath both is `playAnnounced`, so `playRegion` builds the utterance from a region and calls it, taking the INDICATOR as a parameter — the editor's erasable one, `--play`'s record-shaped one. One switch on `RegionKind`, two callers, which is what `#30` Done-when 7 requires.
 
-**D7 — `--play` keeps `crlfWriter` for nothing, and that is the `#32` half falling due.** `#30` D5a said: "`#32` keeps its `--play` half, which continues to draw its own frames through `crlfWriter`". Once `--play` writes into the screen, the screen owns line placement and the second `crlfWriter` goes — one line-ending owner, which is what `#32` is filed about. This issue closes that half; `#32` should be re-read when it does.
+**D5 — the visual result stays close.** `draw` (`play_loop.go:283-291`) is APPEND-ONLY: it writes `"\n%s\n"` per question and never clears, so a sitting stacks up and the terminal scrolls. `liveScreen` has the same shape — `Write` appends to a line buffer, `Paint` shows its tail — so a sitting reads as it does today and gains scrolling.
+
+**D6 — the scrollback trade is inherited deliberately.** The alternate screen means a sitting is not in the terminal's scrollback while it runs; it is printed back on exit (`#30` D3, `handBack`). Smaller loss here than for lookups — a review sitting is a transaction you finish, not a reference you scroll back to mid-flight. The operator was asked and chose it.
+
+**D7 — the reveal's regions come from `Render`, and `play` must never see them.** `play` is pure and does not import `main`; `Region` lives in `main`. `play.NewRecall(key, rendered)` (`play_loop.go:265`) stores only the rendered string, so the loop keeps its own `word -> []Region` map built where the entries are rendered (`play_loop.go:262`, which already discards the regions).
+
+**D8 — a click is a REPLAY and never an answer.** Hearing the word is what `y`/`n` are answering *about*. A click that recorded a review would corrupt the schedule silently, which is the worst kind of bug here: the damage is to data the learner cannot see.
+
+**D9 — `--play`'s `crlfWriter` goes, which is `#32`'s remaining half.** `#30` D5a: *"`#32` keeps its `--play` half, which continues to draw its own frames through `crlfWriter`."* Once `--play` writes into the screen, the screen owns line placement and the second writer is a second owner. Re-read `#32` when this lands.
 
 ---
 
 ## What this plan asserts about the existing tree, verified
 
-`#30` spent a finding on unchecked claims about the tree (PQ-10), so every claim below carries a `file:line` and was read.
+`#30` spent a finding on unchecked claims about the tree (PQ-10), so every claim carries a `file:line` and was read.
 
 | claim | verified at | status |
 |---|---|---|
 | `draw` is append-only and never clears | `play_loop.go:283-291` | true — `fmt.Fprintf(w, "\n%s\n", q.Prompt())` |
-| `draw` already takes an `io.Writer` | `play_loop.go:283` | true — so it needs no change |
 | a recall form's prompt IS the word | `play/recall.go:29` | true — `Prompt() string { return r.word }` |
 | `--play` wraps stdout/stderr in `crlfWriter` | `play_loop.go:64-65` | true |
-| the entries are pre-rendered and their regions discarded | `play_loop.go:262-265` | true — `rendered, _ := Render(...)`, then `play.NewRecall(key, rendered)` |
-| `enterRaw` takes the control writer | `play_loop.go:48` | true — `enterRaw(f, stdout)`, so `enterAlt`/`enterMouse` are available on the session |
-| playback borrows and returns raw mode | `play_loop.go:174-198` | true — `raw.sess.restore()` then `enterRaw` again |
-| `handBack` is the exit sequence, over two interfaces | `replraw.go:170` | true — `Stop`, `restore`, print transcript |
-| `liveScreen` is an `io.Writer` with `WriteRegions` / `RegionAtRow` | `screen.go:558,568` | true |
-| the click actions are a registry keyed by `RegionKind` | `replraw.go:264` | true — but `clicked` closes over the editor loop's `sess`, so it is not reusable as-is (see M1.1) |
-
-**The one thing that is NOT reusable, stated up front:** the interactive loop's `clicked` closure is defined inside `runEditor` and captures `sess`, `d`, `opt`, `stdout`, `stderr`. `--play` has no `session`. So the ACTION has to be lifted to a function both loops call, or the registry is spelled twice — which is exactly what `#30`'s Done-when 7 forbids.
+| entries are pre-rendered and their regions discarded | `play_loop.go:262-265` | true |
+| the playback dance restores and re-enters raw mode | `play_loop.go:174-198` | true — and `restore` now also leaves alt + mouse (D2) |
+| `restore` leaves mouse and the alt screen | `rawterm.go:40-47` | true |
+| `enterRaw` returns a session with `alt`/`mouse` false | `rawterm.go:28-34` | true — so the dance cannot be patched, only removed |
+| `--play` plays through `playAnnounced` + `defaultIndicator` | `play_loop.go:178-181` | true — NOT `replayInPlace` (D4) |
+| the editor's click registry closes over its `session` | `replraw.go:264` | true — so sharing it means lifting it |
+| `writeRendered` is the region seam | `main.go:806` | true |
+| `handBack` is the exit sequence | `replraw.go:170` | true |
+| the loop's viewport keys are `KeyPageUp`/`KeyPageDown`/wheel | `replraw.go:330` | true — `--play` needs its own cases (T6) |
 
 ---
 
-## Milestone M1 — the review loop draws on the screen
+## Core concepts
 
-### Core concepts
-
-#### Pure entities
+### Pure entities
 
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
-| `playRegions` | `cmd/define/play_loop.go` | new | PURE — the `word -> []Region` map the loop keeps because `play` cannot hold them (D5) |
-| `promptRegion` | `cmd/define/play_loop.go` | new | PURE — the region for the word `draw` is about to write |
-| `replayRegion` | `cmd/define/replraw.go` | new | PURE dispatch — the click registry, lifted out of `runEditor`'s closure so both loops share one |
+| `playRegions` | `cmd/define/play_loop.go` | new | PURE — the `word -> []Region` map, because `play` cannot hold a `main` type (D7) |
+| `promptRegionFor` | `cmd/define/play_loop.go` | new | PURE — the region for the word `draw` is about to write |
 
 - **`playRegions`** — questions are pre-rendered before the sitting starts, so their regions are known then and needed later.
-  - **Relationships:** 1:1 with the question queue; keyed by the deck word, which is `play.Question.Word()`.
-  - **DRY rationale:** avoids re-rendering an entry to recover its regions, and avoids teaching `play` about a `main` type.
-  - **Future extensions:** a second form (`#7`, `#12`, `#13`) renders differently; the map is keyed by word, not by form, so it widens without changing shape.
+  - **Relationships:** 1:1 with the question queue, keyed by `play.Question.Word()`.
+  - **DRY rationale:** avoids re-rendering an entry to recover its regions, and avoids teaching `play` about `main`.
+  - **Future extensions:** a second review form (`#7`, `#12`, `#13`) renders differently; keyed by word rather than by form, so it widens without changing shape.
 
-- **`replayRegion`** — given a region and what to play it against, perform the replay.
-  - **DRY rationale:** THE point of the milestone. `#30` Done-when 7 says regions are "one registry, not two special cases"; a second loop with its own switch would break that the day a third `RegionKind` is added. `TestEveryRegionKindIsActionable` must cover both callers after this.
-
-#### Integration points
+### Integration points
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `runPlay`'s screen | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces the two `crlfWriter`s (D7) |
-| `playSession` | `cmd/define/play_loop.go` | modified | takes a `display` and a click map instead of raw writers |
+| `playRegion` | `cmd/define/replraw.go` | new | `playAnnounced` — the one switch on `RegionKind`, shared by both loops (D4) |
+| `runPlay` | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces both `crlfWriter`s (D9) |
+| `playSession` | `cmd/define/play_loop.go` | modified | takes a `display` and the region map |
+| `draw` | `cmd/define/play_loop.go` | modified | `writeRendered` for the reveal (D3) |
 
-**ARCH-MOCK.** The external dependency is the terminal and its double already exists: `playSession` is split from `runPlay` precisely so a test can drive it with a scripted key channel and no terminal (`play_loop.go:83-85`). That seam is why this milestone is testable in process; the pty rows cover what only a terminal can answer.
+- **`playRegion`** — given a region, what to play it against and an indicator, perform the playback.
+  - **NOT pure**, and the label matters: it reaches `playAnnounced`, which fetches audio and writes. Its test uses the player and CDN fakes the repo already has, not a colocated unit test.
+  - **Injected into:** both loops. The editor passes its erasable indicator; `--play` passes `defaultIndicator(opt)`.
+  - **DRY rationale:** `#30` Done-when 7 — "one registry, not two special cases". A second switch breaks that the day a third `RegionKind` lands.
 
-**ARCH-CONSTRAINTS.** The envelope is `#30`'s, inherited unchanged: paint at most every 16 ms with a trailing flush, and an uncapped line buffer. A sitting is bounded by `-count` (default 20) and each question writes a word plus at most one definition, so the buffer is thousands of lines at worst — the same order as an interactive session, which the envelope already covers. No new budget is claimed.
+**ARCH-MOCK.** The terminal's double already exists: `playSession` is split from `runPlay` precisely so a test can drive it with a scripted key channel and no terminal (`play_loop.go:83-85`). The pty rows cover what only a terminal answers.
 
-### Tasks
+**ARCH-CONSTRAINTS.** `#30`'s envelope, inherited unchanged: paint at most every 16 ms with a trailing flush, uncapped line buffer. A sitting is bounded by `-count` (default 20) and writes a word plus at most one definition each, so the buffer stays the same order as an interactive session, which that envelope already covers. No new budget claimed.
 
-- [ ] **M1.1 — lift the click registry out of `runEditor`.** `replayRegion(ctx, d, opt, r Region, entry string, stdout, stderr)` — the switch on `RegionKind`, with the entry text passed rather than a `session` captured. `runEditor`'s `clicked` becomes a call to it. NO behaviour change: `TestEveryRegionKindIsActionable`, `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` must pass untouched, which is what proves the lift was a lift.
-- [ ] **M1.2 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, and `handBack` on exit — replacing both `crlfWriter`s (D7). `draw` and `finish` are untouched (D2). The pty row: a sitting still shows its word, still grades, and the terminal is restored.
-- [ ] **M1.3 — the prompt word is a region.** `draw` is append-only, so the loop knows the word lands on the line it is about to write: `WriteRegions` with one `RegionHeadword` at column 0, width `visibleCells(word)`. Pinned in process by resolving a click at that cell back to the word.
-- [ ] **M1.4 — the revealed definition carries its regions** (operator's choice). The map from D5, built at `play_loop.go:262` where the regions are currently discarded, written with the reveal.
-- [ ] **M1.5 — the click acts, and does not answer** (D6). `KeyClick` reaches `replayRegion` and never `play.Apply`, so no verdict is recorded and the sitting does not advance.
-- [ ] **M1.6 — docs**: `cmd/define/README.md`'s review-loop section, and `atlas/define.md`'s — the clickable-regions section names the interactive loop as the only consumer, which this makes false.
+---
 
-### M1 Done-when
+## Tasks
+
+Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and AGENTS.md §3 says an `Mx` tag commits to its own `milestone-close`.
+
+- [ ] **T1 — lift the click registry.** `playRegion(ctx, d, opt, r Region, entry string, ind indicator, stdout, stderr)`: the switch on `RegionKind`, building the utterance and calling `playAnnounced`. The editor's `clicked` (`replraw.go:264`) becomes a call to it. NO behaviour change — `TestEveryRegionKindIsActionable`, `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` pass untouched, which is what proves the lift was a lift.
+- [ ] **T2 — delete the playback dance** (D2). `play_loop.go:174-198` loses `restore`/`enterRaw` and the `lost the terminal after playback` path. Pinned by the existing `TestPTYCtrlCDuringPlaybackExitsPromptly` and `TestRawEditorPronReplaysThroughTheLoop`'s sibling for `--play`; a new row asserts the alternate screen is STILL up after a reveal, which is the regression this deletion prevents.
+- [ ] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9).
+- [ ] **T4 — the prompt word is a region.** `draw` is append-only, so the word lands on the line about to be written: one `RegionHeadword` at column 0, width `visibleCells(word)`.
+- [ ] **T5 — the revealed definition carries its regions** (D7, operator's choice), through `writeRendered` (D3).
+- [ ] **T6 — the viewport keys.** The alternate screen has NO scrollback, so without this a sitting cannot be scrolled at all — worse than today, where the terminal keeps it. PageUp/PageDown and the wheel, the same cases `replraw.go:330` already has; a click and a scroll must not reach `play.Apply`.
+- [ ] **T7 — the click acts and does not answer** (D8).
+- [ ] **T8 — docs**: `cmd/define/README.md`'s review-loop section, and `atlas/define.md`'s clickable-regions section, which names the interactive loop as the only consumer.
+
+## Done when
 
 | # | claim | pinned by | red when |
 |---|---|---|---|
 | 1 | the word being asked about is clickable | `TestPlayClickOnThePromptWordPlaysIt` | the region is not written with the word |
-| 2 | a click NEVER answers | `TestPlayClickIsNotAnAnswer` — asserts no review recorded, `Right`/`Wrong` unchanged, the question still current | the click reaches `play.Apply` |
-| 3 | a revealed definition is clickable like anywhere else | `TestPlayClickOnARevealedHeadword` | the region map is not written with the reveal |
-| 4 | one registry, both loops | `TestEveryRegionKindIsActionable` extended to cover `replayRegion` directly | a kind acts in one loop and not the other |
-| 5 | the terminal is handed back | `TestPTYPlayLeavesTheTerminalRestored` (existing rows still green) | `handBack` is dropped from an exit path |
-| 6 | a mouse-less terminal is unaffected | the existing `--play` pty rows, unchanged | the enable is emitted conditionally, or the loop needs a click |
+| 2 | a click NEVER answers | `TestPlayClickIsNotAnAnswer` — no review recorded, `Right`/`Wrong` unchanged, the question still current | the click reaches `play.Apply` |
+| 3 | a revealed definition is clickable like anywhere else | `TestPlayClickOnARevealedHeadword` | the reveal is written without its regions |
+| 4 | one registry, both loops | `TestEveryRegionKindIsActionable` extended to drive `playRegion` directly | a kind acts in one loop and not the other |
+| 5 | **playback does not tear the screen down** | `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` | the restore/re-enter dance comes back |
+| 6 | a sitting can be scrolled | `TestPlayPageKeysScroll` | the viewport cases are dropped, leaving no scrollback at all |
+| 7 | the terminal is handed back | the existing `--play` pty rows, unchanged | `handBack` is dropped from an exit path |
+| 8 | a mouse-less terminal is unaffected | the existing `--play` pty rows, unchanged | the loop needs a click to proceed |
 
 ---
 
@@ -109,6 +127,16 @@ go test ./... && go test ./cmd/define/ -race
 go test -tags conformance ./cmd/define/    # unsandboxed; the pty rows
 ```
 
-Then, on a real terminal: `define --play`, click the word, hear it; press `n`, click the headword and the `ORIGIN` language in the revealed entry; scroll back with PageUp and click a word from earlier in the sitting; quit and confirm the transcript is in the scrollback.
+Then, on a real terminal: `define --play`, click the word, hear it; press `n`, confirm the screen is STILL the alternate one, click the headword and the `ORIGIN` language in the revealed entry; PageUp to a word from earlier in the sitting and click it; quit and confirm the transcript is in the scrollback.
 
-**Close:** one milestone, one `sdlc close`, one publish.
+**Close:** one boundary, one `sdlc close`, one publish.
+
+## Revisions
+
+### 2026-08-30 — plan-quality round 1 (PQ-1…PQ-4 and three Minors)
+
+- **PQ-1 was a Critical the first draft would have shipped**, and it is the reason D2 is now the plan's largest task rather than absent. `--play` restores raw mode around playback; since `#30` folded the alternate screen and mouse reporting into `rawSession`, `restore` tears both down and `enterRaw` returns a session that has neither. The first reveal would have dropped the sitting back to the normal buffer and killed clicks for the rest of the run, silently. The fix is `#30` D4's own deletion applied to the other loop — which is smaller than the patch would have been.
+- **PQ-2** — the first draft claimed `draw` does not change because it takes an `io.Writer`. Writing a click map is not a plain write; `writeRendered` is the seam and `draw` calls it (D3).
+- **PQ-3** — no task wired scrolling. The alternate screen has no scrollback, so adopting it without the viewport keys makes a sitting LESS navigable than today, where the terminal keeps the history. T6.
+- **PQ-4** — `--play` plays through `playAnnounced`, not `replayInPlace`, so a shared action built on the latter would have been a second caller in a loop with no `session`. The shared thing is `playAnnounced`, and the indicator is the parameter that differs (D4).
+- **Minors:** `playRegion` is an INTEGRATION point, not a PURE entity — it plays audio, so its test needs the fakes; the issue's `## Plan` now carries the tickable steps rather than "decide A vs B"; and the `M1` tag is gone, since single-pass work with one boundary takes plain checkboxes (AGENTS.md §3).

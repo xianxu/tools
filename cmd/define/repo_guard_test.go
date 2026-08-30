@@ -791,15 +791,27 @@ func TestPlanNamedTestsExist(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", plan, err)
 		}
-		// Scoped PER MILESTONE, which is the granularity that makes this both
-		// safe and useful. A milestone with unticked tasks is still being built,
-		// so the tests its Done-when names are promises — the same exemption the
-		// sibling guard gives a `new` row. A milestone whose tasks are all
-		// ticked claims to be finished, and a finished milestone naming a test
-		// nobody wrote is the lie this guard is for. Checking the DOCUMENT
-		// instead would have exempted M1 for exactly as long as M1 was being
-		// built, which is when the miss happened.
-		for _, section := range planSections(currentTruthOnly(string(b))) {
+		// Scoped to the unit of work the plan actually declares, which is what
+		// makes this both safe and useful. Unticked tasks mean the unit is still
+		// being built, so the tests its Done-when names are promises — the same
+		// exemption the sibling guard gives a `new` row. A unit claiming to be
+		// finished while naming a test nobody wrote is the lie this guard exists
+		// for.
+		//
+		// The UNIT is the milestone where a plan has milestones, and the whole
+		// document where it does not. Per-milestone alone was the first version
+		// and it was wrong for single-pass plans (AGENTS.md §3: work with one
+		// boundary takes plain checkboxes, no `Mx`): there the tasks and the
+		// Done-when table are separate `##` sections, so the table looked
+		// finished from the moment the plan was written. Document-level alone is
+		// wrong the other way — it would exempt a milestone for exactly as long
+		// as that milestone was being built, which is when #30's miss happened.
+		body := currentTruthOnly(string(b))
+		units := planSections(body)
+		if !strings.Contains(body, "## Milestone ") {
+			units = []string{body}
+		}
+		for _, section := range units {
 			if strings.Contains(section, "- [ ] ") {
 				continue
 			}
@@ -819,7 +831,7 @@ func TestPlanNamedTestsExist(t *testing.T) {
 		// conformance:inapplicable — a plan whose milestones are all still in
 		// progress is a design being built, the same state the sibling guard's
 		// `new`-row exemption honours.
-		t.Skip("no completed milestone names a test")
+		t.Skip("no finished unit of work names a test")
 	}
 }
 
