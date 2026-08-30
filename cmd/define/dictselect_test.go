@@ -484,7 +484,11 @@ func TestEveryCuratedLanguageHasACorpus(t *testing.T) {
 //
 // It was spelled three times — here and twice in doc_sync_test.go — so a third
 // document is covered only by whichever test its author happened to remember.
-var derivedDocs = []string{"../../README.md", "../../atlas/define.md"}
+//
+// The user-facing doc is `cmd/define/README.md`, beside the binary it describes:
+// the repo README carries a pointer, not a copy, so there is one place a claim
+// about `define` can go stale.
+var derivedDocs = []string{"README.md", "../../atlas/define.md"}
 
 // curatedSurface is one place obliged to name every curated language, plus how
 // that place SPELLS a language: the docs write "Italian", the flag help writes

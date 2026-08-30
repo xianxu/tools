@@ -27,7 +27,7 @@ import (
 // screen and types against — not the surrounding prose, which is explanation and
 // should be free to be rewritten.
 func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
-	b, err := os.ReadFile("../../README.md")
+	b, err := os.ReadFile("README.md")
 	if err != nil {
 		// NOT a skip: the README is in the repo, so an unreadable one is a
 		// broken checkout or a moved file, never an absent dependency.

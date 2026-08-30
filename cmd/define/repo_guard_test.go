@@ -555,12 +555,19 @@ func TestProseDoesNotSpellStaleRuntimeArtifactNames(t *testing.T) {
 	// blocks, the migration's before/after, and repo-guards.md — whose SUBJECT
 	// is this very naming rule, so it cannot state it without naming names.
 	allowed := map[string]int{
-		"README.md":            3,
+		"cmd/define/README.md": 3,
 		"atlas/define.md":      2,
 		"atlas/repo-guards.md": 6,
 	}
+	// A tool's own README binds too, and by SUFFIX rather than by the one path
+	// this used to name. `define`'s user documentation moved from the repo
+	// README to `cmd/define/README.md` — beside the binary it describes — and a
+	// guard bound to a literal path silently stopped covering the very prose
+	// that names `words/`, `events/` and `user-model.en.md`. Moving a document
+	// out from under a check is a way of passing it that nobody notices.
 	binds := func(p string) bool {
 		return p == "README.md" ||
+			strings.HasSuffix(p, "/README.md") ||
 			strings.HasPrefix(p, "atlas/") ||
 			strings.HasPrefix(p, "workshop/projects/")
 	}
@@ -1286,7 +1293,7 @@ func currentTruthFiles(t *testing.T, root string) []string {
 			return false
 		case strings.HasSuffix(p, ".go"):
 			return true
-		case p == "README.md", strings.HasPrefix(p, "atlas/"):
+		case p == "README.md", strings.HasSuffix(p, "/README.md"), strings.HasPrefix(p, "atlas/"):
 			return true
 		case strings.HasPrefix(p, "workshop/plans/") && strings.HasSuffix(p, "-plan.md"):
 			return true
