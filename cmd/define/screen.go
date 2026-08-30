@@ -91,6 +91,12 @@ func (s *screen) write(text string) {
 	if text == "" {
 		return
 	}
+	// New output SNAPS the viewport back to the tail. Everything this program
+	// writes is an answer to something the user just typed, so the thing they
+	// asked for has to be the thing they see — and an offset held across an
+	// append does not even hold the view still: it is measured from the tail, so
+	// the text under the reader's eye slides up by a line per line written.
+	s.offset = 0
 	parts := strings.Split(text, "\n")
 	for i, part := range parts {
 		if i == 0 && s.partial && len(s.lines) > 0 {
@@ -150,6 +156,20 @@ func (s *screen) Scroll(n int) {
 	if s.offset < 0 {
 		s.offset = 0
 	}
+}
+
+// Page moves the viewport by whole screenfuls, keeping ONE line of overlap so
+// the eye has an anchor across the jump — the convention every pager follows.
+//
+// The step is computed here rather than passed in because the screen is the only
+// thing that knows how tall the viewport is: the loop knows a key was pressed,
+// not how much of the buffer that key is worth.
+func (s *screen) Page(n int) {
+	step := s.rows - 1
+	if step < 1 {
+		step = 1 // a viewport too short for overlap still moves
+	}
+	s.Scroll(n * step)
 }
 
 // The two sequences a whole-frame redraw needs, beside eraseLine (repl.go) which
@@ -248,6 +268,13 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 // Draw records the live edge and repaints. It is the editor loop's draw().
 func (l *liveScreen) Draw(prompt string, menu []string) {
 	l.prompt, l.menu = prompt, menu
+	l.repaint()
+}
+
+// Page moves the viewport and shows the result. The paint is the point: a scroll
+// nobody can see is not a scroll.
+func (l *liveScreen) Page(n int) {
+	l.s.Page(n)
 	l.repaint()
 }
 

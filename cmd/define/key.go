@@ -21,6 +21,16 @@ const (
 	KeyInterrupt // Ctrl-C: a BYTE in raw mode, not a signal
 	KeyEOF       // Ctrl-D
 	KeyKillLine  // Ctrl-U — and Cmd+Delete, which terminals send as \x15
+	// The VIEWPORT keys, a category of their own: they change what you are
+	// looking at rather than the line you are typing, so the editor ignores them
+	// and the loop hands them to the screen (#30 M1.4a).
+	//
+	// PageUp/PageDown and nothing else. Ctrl-U and Ctrl-D are the obvious
+	// half-page bindings and both are ALREADY TAKEN above — 0x15 kills the line
+	// and 0x04 ends the session on an empty one — so rebinding either would be a
+	// silent regression in an editor people already use.
+	KeyPageUp
+	KeyPageDown
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
@@ -110,8 +120,17 @@ func decodeEscape(buf []byte) (Key, int) {
 			}
 			if c >= 0x40 && c <= 0x7E {
 				seq := buf[:i+1]
-				if string(seq) == "\x1b[3~" {
+				// The tilde family, delimited by the scan above rather than by a
+				// guessed length. ESC[5~/ESC[6~ were already delimited correctly
+				// and then discarded as KeyUnknown; naming them is all M1.4a
+				// needed from this decoder.
+				switch string(seq) {
+				case "\x1b[3~":
 					return Key{Kind: KeyDelete}, i + 1
+				case "\x1b[5~":
+					return Key{Kind: KeyPageUp}, i + 1
+				case "\x1b[6~":
+					return Key{Kind: KeyPageDown}, i + 1
 				}
 				return Key{Kind: KeyUnknown, Raw: seq}, i + 1
 			}

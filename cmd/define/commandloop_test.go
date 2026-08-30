@@ -407,15 +407,11 @@ func TestSubmitLeavesNoMenuInTheFrame(t *testing.T) {
 	rig.deps.dict = refusingDict{t}
 
 	var out, errb bytes.Buffer
-	var menus [][]string
-	paint := func(prompt string, menu []string) {
-		menus = append(menus, menu)
-		paintInto(&out)(prompt, menu)
-	}
+	view := paintInto(&out)
 	// /sound, deliberately: its OUTPUT ("playing 3×") shares no text with its
 	// menu row, so a marker cannot match the menu instead of the output.
 	ks := append(runes("/sound"), Key{Kind: KeyEnter}, Key{Kind: KeyInterrupt})
-	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, paint, finish, &out, &errb)
+	runEditor(t.Context(), keySeq(ks...), nil, rig.deps, opt, view, finish, &out, &errb)
 
 	if !strings.Contains(out.String(), "playing") {
 		t.Fatalf("the command never ran: %q", out.String())
@@ -423,7 +419,7 @@ func TestSubmitLeavesNoMenuInTheFrame(t *testing.T) {
 	// The dropdown really was on screen while the command was being typed —
 	// without this the assertion below would hold for a menu that never drew.
 	drawn := false
-	for _, m := range menus {
+	for _, m := range view.menus {
 		if len(m) > 0 {
 			drawn = true
 		}
@@ -431,7 +427,7 @@ func TestSubmitLeavesNoMenuInTheFrame(t *testing.T) {
 	if !drawn {
 		t.Fatal("the dropdown never appeared, so its absence afterwards proves nothing")
 	}
-	if last := menus[len(menus)-1]; len(last) != 0 {
+	if last := view.menus[len(view.menus)-1]; len(last) != 0 {
 		t.Errorf("the frame drawn after the command still lists the dropdown: %v", last)
 	}
 }

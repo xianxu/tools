@@ -244,3 +244,61 @@ func TestLiveScreenShowsWhatIsWrittenToIt(t *testing.T) {
 		t.Errorf("Stop dropped the write instead of just the paint: %q", l.Transcript())
 	}
 }
+
+// A page is a SCREENFUL, minus one line of overlap so the eye has an anchor
+// across the jump — and the screen computes it, because the loop knows a key was
+// pressed and not how tall the viewport is (#30 M1.4a).
+func TestScreenPageIsAScreenful(t *testing.T) {
+	var s screen
+	for i := 0; i < 30; i++ {
+		s.Write([]byte("line\n"))
+	}
+	s.rows = 10
+
+	s.Page(1)
+	if s.offset != 9 {
+		t.Errorf("one page back = %d lines, want 9 — a screenful with one line of overlap", s.offset)
+	}
+	s.Page(1)
+	if s.offset != 18 {
+		t.Errorf("two pages back = %d, want 18", s.offset)
+	}
+	s.Page(-1)
+	if s.offset != 9 {
+		t.Errorf("a page forward left the offset at %d, want 9", s.offset)
+	}
+	// Held keys overshoot routinely, and Scroll clamps both ends.
+	s.Page(99)
+	if s.offset != len(s.lines)-s.rows {
+		t.Errorf("paging past the top left the offset at %d, want %d", s.offset, len(s.lines)-s.rows)
+	}
+	s.Page(-99)
+	if s.offset != 0 {
+		t.Errorf("paging past the bottom left the offset at %d, want 0", s.offset)
+	}
+}
+
+// New output SNAPS the viewport back to the tail.
+//
+// Everything this program writes answers something the user just typed, so the
+// thing they asked for must be the thing they see. Holding the offset would not
+// even hold the view still: it is measured from the tail, so the text under the
+// reader's eye slides up by a line for every line written.
+func TestScreenWriteReturnsToTheTail(t *testing.T) {
+	var s screen
+	for i := 0; i < 30; i++ {
+		s.Write([]byte("old\n"))
+	}
+	s.rows = 5
+	s.Page(2)
+	if s.offset == 0 {
+		t.Fatal("the viewport did not move, so its return proves nothing")
+	}
+	s.Write([]byte("the answer\n"))
+	if s.offset != 0 {
+		t.Errorf("offset = %d after a write, want 0 — the answer was written off-screen", s.offset)
+	}
+	if got := s.Frame(); got[len(got)-1] != "the answer" {
+		t.Errorf("the last visible line is %q, want the line just written", got[len(got)-1])
+	}
+}

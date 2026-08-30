@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -36,26 +37,43 @@ func editorRig(t *testing.T, word string, audioPresent bool) (*audioRig, options
 	return rig, options{times: 3, locale: "us", tty: true, color: true}, func() {}
 }
 
-// paintInto is the paint double: it writes the frame where the loop's own output
-// goes, so a test still reads one session as one stream.
+// recordDisplay is the display double, and it writes the frame where the loop's
+// own output goes so a test still reads one session as one stream.
 //
-// In production paint is liveScreen.Draw, which puts the live edge — the prompt
-// and the command menu — on a terminal rather than in the buffer (#30 D5). A
-// test has no terminal and no screen, so the two halves are folded back into one
-// writer, which is exactly what stdout was before the screen existed. What these
-// tests pin is the LOOP's decisions: what it writes, when it looks up, what it
-// replays. The screen's own arithmetic is pinned in screen_test.go, with no
-// terminal either.
-func paintInto(w io.Writer) func(prompt string, menu []string) {
-	return func(prompt string, menu []string) {
-		// Menu first, prompt last, in the order Paint puts them on a screen: the
-		// dropdown hangs below the line you are typing.
-		for _, m := range menu {
-			fmt.Fprint(w, "\r\n"+m)
-		}
-		fmt.Fprint(w, prompt)
-	}
+// In production the display is liveScreen, which puts the live edge — the prompt
+// and the command menu — on a terminal rather than in the buffer (#30 D5), and
+// moves a viewport nothing here has. A test has neither, so the halves fold back
+// into one writer, which is exactly what stdout was before the screen existed.
+// What these tests pin is the LOOP's decisions: what it writes, when it looks
+// up, what it replays, and which keys reach the viewport. The screen's own
+// arithmetic is pinned in screen_test.go, with no terminal either.
+type recordDisplay struct {
+	w io.Writer
+	// prompt and menu are the CURRENT live edge; prompts and menus are every one
+	// the loop drew, in order. Both, because "what is on screen now" and "what
+	// was on screen while X happened" are different questions.
+	prompt  string
+	menu    []string
+	prompts []string
+	menus   [][]string
+	pages   []int
 }
+
+func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
+
+func (d *recordDisplay) Draw(prompt string, menu []string) {
+	d.prompt, d.menu = prompt, menu
+	d.prompts = append(d.prompts, prompt)
+	d.menus = append(d.menus, menu)
+	// Menu first, prompt last, in the order Paint puts them on a screen: the
+	// dropdown hangs below the line you are typing.
+	for _, m := range menu {
+		fmt.Fprint(d.w, "\r\n"+m)
+	}
+	fmt.Fprint(d.w, prompt)
+}
+
+func (d *recordDisplay) Page(n int) { d.pages = append(d.pages, n) }
 
 func TestEditorLoopDefinesTypedWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
@@ -290,7 +308,7 @@ func TestEditorLoopWritesThroughAScreen(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	sc := &screen{}
 	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt,
-		func(string, []string) {}, finish, sc, sc)
+		paintInto(io.Discard), finish, sc, sc)
 
 	got := sc.Transcript()
 	if !strings.Contains(got, "/ˌsikəˈfan(t)ik/") {
@@ -333,14 +351,13 @@ func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 // not exist.
 func TestNothingIsWrittenWhileAPromptIsShown(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
-	var live string
+	view := paintInto(io.Discard)
 	var whenWritten []string
-	paint := func(p string, _ []string) { live = p }
 	w := writerFunc(func(p []byte) (int, error) {
-		whenWritten = append(whenWritten, live)
+		whenWritten = append(whenWritten, view.prompt)
 		return len(p), nil
 	})
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paint, finish, w, w)
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, view, finish, w, w)
 
 	if len(whenWritten) == 0 {
 		t.Fatal("the session wrote nothing at all, so nothing is asserted")
@@ -353,7 +370,86 @@ func TestNothingIsWrittenWhileAPromptIsShown(t *testing.T) {
 	}
 	// And it comes BACK: blanking the live edge for the whole session would
 	// satisfy the loop above and leave a session with no prompt at all.
-	if live == "" {
+	if view.prompt == "" {
 		t.Error("the prompt never returned after the work finished")
+	}
+}
+
+// The viewport can be MOVED by a user (#30 M1.4a).
+//
+// Without this M1 ships a scroll model nothing exercises and nobody can reach:
+// the alternate screen has no scrollback, so a definition taller than the
+// terminal has its head off-screen and the terminal's own scrollback cannot get
+// it back. The wheel is M2's; these keys are what make M1 usable on its own.
+func TestEditorPageKeysScroll(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	ks := keySeq(Key{Kind: KeyPageUp}, Key{Kind: KeyPageUp}, Key{Kind: KeyPageDown})
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+
+	if want := []int{1, 1, -1}; !slices.Equal(view.pages, want) {
+		t.Errorf("the viewport moved %v, want %v — positive is backward, toward older text", view.pages, want)
+	}
+}
+
+// A viewport key is not an EDITOR key: it changes what you are looking at, not
+// the line you are typing.
+func TestPageKeysDoNotTouchTheLine(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	ks := keySeq(append(runes("syc"), Key{Kind: KeyPageUp}, Key{Kind: KeyPageDown})...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+
+	// The last frame drawn still holds what was typed — a page key that reached
+	// Apply would have redrawn something else, or nothing.
+	if last := view.prompts[len(view.prompts)-1]; !strings.Contains(last, "syc") {
+		t.Errorf("a page key disturbed the line being typed: %q", last)
+	}
+}
+
+// Row 4b of M1's done-when, and the reason the plan says PageUp/PageDown ONLY.
+//
+// Ctrl-U and Ctrl-D are the obvious half-page bindings, and an earlier draft
+// proposed exactly that. Both are already bound — 0x15 kills the line, 0x04 ends
+// the session on an empty one — so taking either for scrolling would be a silent
+// regression in an editor people already use, and a suite that tested only the
+// page keys would ship it green.
+func TestCtrlDStillEndsTheSession(t *testing.T) {
+	rig, opt, _ := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	ended := false
+	// A key BEHIND the Ctrl-D, and the channel closed so a loop that ignored it
+	// still terminates. Ending the session is not observable through `ended`
+	// alone — the closed channel calls finish() too — so what discriminates is
+	// whether the key behind it was ever read.
+	keys := make(chan Key, 2)
+	keys <- Key{Kind: KeyEOF}
+	keys <- Key{Kind: KeyRune, Rune: 'x'}
+	close(keys)
+	code := runEditor(t.Context(), keys, nil, rig.deps, opt, paintInto(&out),
+		func() { ended = true }, &out, &errb)
+
+	if code != 0 {
+		t.Errorf("exit = %d, want 0", code)
+	}
+	if !ended {
+		t.Error("the terminal was not restored")
+	}
+	if len(keys) != 1 {
+		t.Error("Ctrl-D did not end the session — the loop read on past it, so it was rebound")
+	}
+}
+
+func TestCtrlUStillKillsTheLine(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	ks := keySeq(append(runes("syco"), Key{Kind: KeyKillLine})...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+
+	if last := view.prompts[len(view.prompts)-1]; strings.Contains(last, "syco") {
+		t.Errorf("Ctrl-U did not clear the line — it was rebound: %q", last)
 	}
 }

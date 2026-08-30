@@ -109,7 +109,7 @@ to `#35`'s code and is where `M2.1` starts.
 - [x] **M1.1 — `screen` as a pure model.** `Write`, `Frame`, `Scroll`, plus rows/cols. Table tests: a partial write continues the last line; a write containing `\n\n` appends an empty line; `Frame` clamps the offset at both ends; a viewport taller than the buffer pads rather than repeating. No terminal.
 - [x] **M1.2 — `Paint` and the alt screen.** `enterAlt`/`leaveAlt` on `rawSession`, so a Ctrl-C or a panic leaves the terminal restored — the same obligation `enterRaw` already carries and the reason this belongs there rather than in `screen`.
 - [x] **M1.3 — the editor draws through the screen**, `cooked` deleted (D4). Every current writer keeps writing; only the destination changes.
-- [ ] **M1.4a — KEYS that move the viewport.** Without this `M1` ships a scroll model nothing exercises and a user cannot reach: the wheel is `M2`, and no key scrolls today.
+- [x] **M1.4a — KEYS that move the viewport.** Without this `M1` ships a scroll model nothing exercises and a user cannot reach: the wheel is `M2`, and no key scrolls today.
       **PageUp/PageDown ONLY. NOT Ctrl-U/Ctrl-D**, which an earlier draft proposed and which are already bound: `0x04` is `KeyEOF` and ends the session on an empty line (`key.go:48`, `editor.go:107`), `0x15` is `KeyKillLine` (`key.go:50`, `editor.go:100`). Taking either is a silent regression in an editor people already use.
       The CSI scanner DELIMITS `ESC[5~`/`ESC[6~` correctly (`key.go:102-116`) and then returns `KeyUnknown`, so this adds two `KeyKind`s — not "already decoded", as the same draft said.
 - [ ] **M1.4 — resize.** SIGWINCH → re-measure → repaint. The one thing that cannot be unit-tested is the signal, so the pty row drives a real `TIOCSWINSZ`.

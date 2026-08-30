@@ -381,6 +381,33 @@ with the exact stale prompt from the screenshot. Confirmed on a real pty — mid
 playback the indicator is the last line with no prompt under it; after playback
 the indicator is gone and an empty prompt is back.
 
+### 2026-08-29 — M1.4a: the viewport is reachable
+
+PageUp/PageDown, and nothing else. The CSI scanner already delimited `ESC[5~`
+and `ESC[6~` correctly and then threw them away as `KeyUnknown`; naming them is
+all the decoder needed. `ESC[5;5~` (Ctrl-PageUp) must NOT match — a prefix match
+would scroll AND leave `5~` in the line, which is the bug `#14` shipped once.
+
+Three things the plan did not spell out, decided here:
+
+- **The loop grew a `display` seam** rather than a second closure parameter.
+  It was `paint func(prompt, menu)`; scrolling needs the same dependency, so the
+  loop's view of the terminal is now one interface — `Draw` + `Page` — with
+  `liveScreen` as the production implementation and a recording double in tests.
+- **A page is a screenful minus one line of overlap**, computed by the SCREEN:
+  the loop knows a key was pressed, not how tall the viewport is. Confirmed on a
+  real pty — the overlap line is visibly the anchor across a PageUp/PageDown
+  pair.
+- **A write snaps the viewport back to the tail.** Everything this program
+  writes answers something the user just typed. Holding the offset would not even
+  hold the view still: it is measured from the tail, so the text under the eye
+  slides up a line per line written.
+
+A viewport key never reaches `Apply`, so the editor does not learn that a screen
+exists. Row 4b of M1's done-when is covered by `TestCtrlDStillEndsTheSession`
+(with a key BEHIND the Ctrl-D, since `finish()` runs on both exits — what
+discriminates is whether the loop read on past it) and `TestCtrlUStillKillsTheLine`.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

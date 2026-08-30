@@ -62,7 +62,7 @@ func TestDecodeKeyUnknownSequencesAreInert(t *testing.T) {
 		in       string
 		consumed int
 	}{
-		{"\x1b[5~", 4},   // PageUp
+		{"\x1b[15~", 5},  // F5 — the tilde family's unmodelled half
 		{"\x1b[1;5C", 6}, // Ctrl-Right
 		{"\x1b[200~", 6}, // bracketed-paste start
 		{"\x1bZ", 2},     // unknown two-byte
@@ -72,6 +72,32 @@ func TestDecodeKeyUnknownSequencesAreInert(t *testing.T) {
 		if k.Kind != KeyUnknown || n != tc.consumed {
 			t.Errorf("decodeKey(%q) = kind %v consumed %d, want KeyUnknown consumed %d",
 				tc.in, k.Kind, n, tc.consumed)
+		}
+	}
+}
+
+// The viewport keys (#30 M1.4a). They were always DELIMITED correctly — the CSI
+// scan finds the real final byte — and then discarded as KeyUnknown; naming them
+// is what makes the buffer reachable by a user.
+//
+// Their modified forms must NOT become page keys: ESC[5;5~ is Ctrl-PageUp, and a
+// decoder that matched a prefix would both scroll and leave "5~" to be typed
+// into the line, which is the exact bug ESC[3;5~ shipped once already.
+func TestDecodeKeyPageKeys(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want KeyKind
+		n    int
+	}{
+		{"\x1b[5~", KeyPageUp, 4},
+		{"\x1b[6~", KeyPageDown, 4},
+		{"\x1b[5;5~", KeyUnknown, 6},
+		{"\x1b[6;5~", KeyUnknown, 6},
+	} {
+		k, n := decodeKey([]byte(tc.in))
+		if k.Kind != tc.want || n != tc.n {
+			t.Errorf("decodeKey(%q) = kind %v consumed %d, want kind %v consumed %d",
+				tc.in, k.Kind, n, tc.want, tc.n)
 		}
 	}
 }

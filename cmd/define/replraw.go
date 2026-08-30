@@ -48,12 +48,29 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	// buffer line like any other, and survives to the exit transcript, where
 	// today it is simply gone. The one-shot and piped paths keep the real stderr
 	// (D6), so a script's `2>` is untouched.
-	return runEditor(ctx, keys, interrupts, d, opt, live.Draw, finish, live, live)
+	return runEditor(ctx, keys, interrupts, d, opt, live, finish, live, live)
+}
+
+// display is the loop's whole view of the terminal: one frame out, and a
+// viewport it can move.
+//
+// An interface rather than the concrete screen, for the reason runEditor takes a
+// key CHANNEL rather than a file: the loop is drivable with no terminal at all,
+// which is what keeps Apply and RenderLine testable as pure functions.
+// liveScreen is the production implementation.
+type display interface {
+	// Draw puts one frame on the screen: the buffer's visible tail, the prompt,
+	// and the command menu under it.
+	Draw(prompt string, menu []string)
+	// Page moves the viewport by whole screenfuls — positive is BACKWARD, toward
+	// older text, which is the direction "page up" means to a reader. How tall a
+	// page is belongs to the screen; the loop only knows a key was pressed.
+	Page(n int)
 }
 
 // runEditor is the editor loop with the terminal factored out: keys arrive on a
-// channel, `paint` puts one frame on the screen, and `finish` restores the
-// terminal. Tests drive it with a scripted channel and no terminal at all —
+// channel, `view` is the screen it draws on and scrolls, and `finish` restores
+// the terminal. Tests drive it with a scripted channel and no terminal at all —
 // which is the whole point of keeping Apply and RenderLine pure.
 // interrupts sits beside keys because they are two halves of one story: the
 // channel carries the byte transport, and the sink decides what an interrupt
@@ -63,7 +80,7 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 // tests. The loop cannot tell the difference, which is the point: every writer
 // it had keeps writing, and only the destination changed.
 func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d deps, opt options,
-	paint func(prompt string, menu []string), finish func(), stdout, stderr io.Writer) int {
+	view display, finish func(), stdout, stderr io.Writer) int {
 	if interrupts == nil {
 		// A loop with no sink still runs; nothing can scope an interrupt, which
 		// is the honest behaviour for a caller that supplied no cancellation.
@@ -120,11 +137,11 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// keystroke that nothing reads. Same function that fills .complete, so
 		// the two paths cannot disagree.
 		//
-		// The prompt and the menu go to paint rather than to stdout, and that is
-		// the whole of this loop's change: they are the LIVE EDGE, rewritten on
-		// every keystroke, so buffering them would file a copy of the prompt per
-		// character typed.
-		paint(RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color),
+		// The prompt and the menu go to the FRAME rather than to stdout, and
+		// that is the whole of this loop's change: they are the live edge,
+		// rewritten on every keystroke, so buffering them would file a copy of
+		// the prompt per character typed.
+		view.Draw(RenderLine(e, Suggestion(e, completionsFor(e.WalkBase(), hist, commands)), voc, opt.color),
 			menuLines(e.String(), commands, opt.width))
 	}
 	draw()
@@ -177,6 +194,20 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				finish()
 				return 0
 			}
+			// A VIEWPORT key never reaches Apply: it changes what you are
+			// looking at, not the line you are typing, so the editor does not
+			// have to learn that a screen exists. PageUp/PageDown only — the
+			// obvious half-page bindings Ctrl-U and Ctrl-D are already the kill
+			// and the EOF (key.go), and taking either would be a silent
+			// regression in an editor people already use.
+			if k.Kind == KeyPageUp || k.Kind == KeyPageDown {
+				n := 1
+				if k.Kind == KeyPageDown {
+					n = -1
+				}
+				view.Page(n)
+				continue
+			}
 			cands := candidatesFor(e.WalkBase(), hist, commands)
 			var act Action
 			e, act = Apply(e, k, cands)
@@ -204,7 +235,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// (operator-reported). Blanking it is not a patch on that
 				// instance: a prompt drawn while nothing is reading keys invites
 				// typing at a line that does not exist.
-				paint("", nil)
+				view.Draw("", nil)
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
 					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color))
 				}
