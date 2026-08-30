@@ -608,3 +608,31 @@ func plainAround(plain string, col int, cols []int) string {
 	}
 	return ""
 }
+
+// The underline NEVER reaches Render's output (#30 D6, Done-when 4).
+//
+// The mark is spliced by the SCREEN, and that placement is a promise rather than
+// an implementation detail: `define <word>`, `echo w | define`, `-raw` and
+// `> out.txt` keep today's bytes exactly. An underline emitted here would leak
+// into all four — and a file or a pipe cannot be clicked, so the mark would be
+// decoration claiming an affordance that does not exist there.
+//
+// The corpus golden already fails if any byte moves; this says WHICH byte and
+// why, so the next reader meets the reason rather than a diff.
+func TestRenderNeverMarksSpansItself(t *testing.T) {
+	d := testDict(t)
+	marked := 0
+	for word, raw := range d.entries {
+		e := ParseEntry(raw)
+		for _, opt := range []RenderOpts{{Color: true, Width: 80}, {Color: false, Width: 0}} {
+			rendered, regions := Render(e, opt)
+			if strings.Contains(rendered, underlineOn) || strings.Contains(rendered, underlineOff) {
+				t.Errorf("%s: Render emitted the clickable underline, which would reach a pipe and a file", word)
+			}
+			marked += len(regions)
+		}
+	}
+	if marked == 0 {
+		t.Fatal("no regions over the corpus, so the absence of marks proves nothing")
+	}
+}

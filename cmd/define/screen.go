@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -175,8 +176,17 @@ func (s *screen) LineAt(row int) (int, bool) {
 	if row < 0 || row >= len(frame) {
 		return 0, false
 	}
-	end := len(s.lines) - s.offset
-	return end - len(frame) + row, true
+	return s.topLine(frame) + row, true
+}
+
+// topLine is the buffer line showing at viewport row 0.
+//
+// ONE owner, because Paint needs the same answer to find each row's regions and
+// two spellings of it would be two chances to disagree by a line — which is a
+// click that plays the word above the one you pointed at. Takes the frame it was
+// computed against, since Frame clamps the offset as it runs.
+func (s *screen) topLine(frame []string) int {
+	return len(s.lines) - s.offset - len(frame)
 }
 
 // Lines is the whole buffer. Present for tests and for the exit transcript
@@ -233,6 +243,73 @@ func (s *screen) Page(n int) {
 		step = 1 // a viewport too short for overlap still moves
 	}
 	s.Scroll(n * step)
+}
+
+// underlineOn/Off mark a span as CLICKABLE (#30 M2.5).
+//
+// An ATTRIBUTE, not a seventh colour. `newPalette` already spends six on MEANING
+// — head, ipa, pos, num, ex, sect — plus bold-green for deck words, so another
+// colour would compete with a scheme that is already saying something. Underline
+// composes with whatever colour a span already carries, which is exactly what
+// "this text is also clickable" should do.
+//
+// STATIC, not on hover, and the tracking mode is the reason: hover needs mode
+// 1003, which streams an event for every cell the pointer crosses, so the loop
+// would wake constantly to redraw. Mode 1000 reports presses only, and with it
+// the app never learns where the pointer is.
+const (
+	underlineOn  = "\x1b[4m"
+	underlineOff = "\x1b[24m"
+)
+
+// markClickable splices the underline attribute into the spans a line offers.
+//
+// SPLICED BY THE SCREEN, never by Render, and that placement is a promise: D6
+// says `define <word>`, `-raw` and `> out.txt` keep today's bytes exactly, and
+// an underline emitted by Render would leak into all three — and redden the
+// corpus golden that says so.
+//
+// Attributes only. 24 turns the underline off without touching colour, which is
+// why the span's existing style survives untouched and no state has to be
+// remembered across the splice. Applying `0` here would be the bug this comment
+// exists to prevent: it would end the colour the palette opened, and the rest of
+// the line would go plain.
+func markClickable(line string, rs []Region) string {
+	if len(rs) == 0 {
+		return line
+	}
+	// By column, so the splices are applied left to right and the offsets stay
+	// meaningful as we walk.
+	spans := append([]Region(nil), rs...)
+	slices.SortFunc(spans, func(a, b Region) int { return a.Col - b.Col })
+
+	var b strings.Builder
+	col, next := 0, 0
+	for i := 0; i < len(line); {
+		if next < len(spans) && col == spans[next].Col {
+			b.WriteString(underlineOn)
+		}
+		if next < len(spans) && col == spans[next].Col+spans[next].Width {
+			b.WriteString(underlineOff)
+			next++
+			continue // re-test this column: two spans can meet
+		}
+		if skip := escapeLen(line[i:]); skip > 0 {
+			b.WriteString(line[i : i+skip])
+			i += skip
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		b.WriteString(line[i : i+size])
+		col += cellWidth(r)
+		i += size
+	}
+	// A span reaching the end of the line still closes: an unterminated
+	// underline runs on through everything painted after it.
+	if next < len(spans) {
+		b.WriteString(underlineOff)
+	}
+	return b.String()
 }
 
 // The two sequences a whole-frame redraw needs, beside eraseLine (repl.go) which
@@ -301,8 +378,12 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu 
 	}
 	var b strings.Builder
 	b.WriteString(cursorHome + eraseDown)
-	for _, line := range s.Frame() {
-		b.WriteString(clipVisible(line, s.cols) + "\r\n")
+	// Each painted row carries the marks for the BUFFER line it is showing, found
+	// through the same mapping a click uses to go the other way.
+	frame := s.Frame()
+	top := s.topLine(frame)
+	for i, line := range frame {
+		b.WriteString(clipVisible(markClickable(line, s.regions[top+i]), s.cols) + "\r\n")
 	}
 	b.WriteString(prompt)
 	for _, m := range menu {

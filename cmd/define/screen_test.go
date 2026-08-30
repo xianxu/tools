@@ -744,3 +744,88 @@ func TestRegionsLandOnTheLinesTheirRenderWroteTo(t *testing.T) {
 			r.Text, hit, open.Lines())
 	}
 }
+
+// A clickable span is visibly clickable BEFORE it is clicked (#30 Done-when 4).
+//
+// Without a mark the affordance is invisible: a reader who never moves the mouse
+// cannot tell the token is live, and the feature may as well not exist. Static
+// rather than on hover, because hover needs mode 1003 — an event per cell the
+// pointer crosses — while mode 1000 reports presses only and never tells the app
+// where the pointer is.
+func TestScreenMarksClickableSpans(t *testing.T) {
+	var s screen
+	s.rows = 10
+	s.addRegions([]Region{
+		{Kind: RegionHeadword, Text: "potassium", Word: "potassium", Line: 0, Col: 0, Width: 9},
+		{Kind: RegionOriginLang, Text: "French", Word: "x", Lang: "fr", Line: 1, Col: 9, Width: 6},
+	})
+	s.Write([]byte("potassium is a metal\nfrom the French potasse\n"))
+
+	var b strings.Builder
+	s.Paint(&b, 10, 80, "› ", nil)
+	frame := b.String()
+
+	// The span is underlined, and the underline ENDS with it: an unterminated
+	// attribute runs on through everything painted after it.
+	if !strings.Contains(frame, underlineOn+"potassium"+underlineOff) {
+		t.Errorf("the headword is not marked as clickable:\n%q", frame)
+	}
+	if !strings.Contains(frame, underlineOn+"French"+underlineOff) {
+		t.Errorf("the ORIGIN language is not marked as clickable:\n%q", frame)
+	}
+	// And the mark does not move the text: a reader's columns are unchanged, and
+	// so is the click map that was built against them.
+	for i, line := range strings.Split(strings.TrimSuffix(frame, "\r\n"), "\r\n") {
+		if i == 0 {
+			line = strings.TrimPrefix(line, cursorHome+eraseDown)
+		}
+		if got := visibleCells(line); got > 80 {
+			t.Errorf("marking widened a line to %d cells", got)
+		}
+	}
+	if plain := stripEscapes(frame); !strings.Contains(plain, "potassium is a metal") {
+		t.Errorf("marking altered the text: %q", plain)
+	}
+}
+
+// The mark is an ATTRIBUTE, so the span keeps the colour the palette gave it.
+//
+// Turning the underline off with `0` instead of `24` would end that colour too,
+// and the rest of the line would go plain — the bug this test exists to prevent.
+func TestMarkingKeepsTheSpansOwnColour(t *testing.T) {
+	line := "\x1b[1;36mpotassium\x1b[0m is a metal"
+	got := markClickable(line, []Region{{Text: "potassium", Col: 0, Width: 9}})
+
+	if !strings.Contains(got, "\x1b[1;36m") {
+		t.Errorf("the span lost its colour: %q", got)
+	}
+	if strings.Contains(got, underlineOff) && strings.Contains(got, underlineOn+"\x1b[0m") {
+		t.Errorf("the mark reset the style rather than just the attribute: %q", got)
+	}
+	if stripEscapes(got) != stripEscapes(line) {
+		t.Errorf("marking changed the text: %q", stripEscapes(got))
+	}
+}
+
+// Marks are placed by COLUMN, so a coloured line — where the bytes before a span
+// are not its column — is marked in the right place.
+func TestMarkingIsPlacedByColumnNotByByte(t *testing.T) {
+	for _, tc := range []struct {
+		name, line string
+		col, width int
+		want       string
+	}{
+		{"plain", "abc def", 4, 3, "abc " + underlineOn + "def" + underlineOff},
+		{"after an escape", "\x1b[1mabc\x1b[0m def", 4, 3, "\x1b[1mabc\x1b[0m " + underlineOn + "def" + underlineOff},
+		{"a span at the end closes", "abc def", 4, 3, "def" + underlineOff},
+		// Two cells a rune: a mark placed by byte would land three cells early.
+		{"after CJK", "日本 def", 5, 3, "日本 " + underlineOn + "def" + underlineOff},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := markClickable(tc.line, []Region{{Text: "def", Col: tc.col, Width: tc.width}})
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("markClickable(%q) = %q, want it to contain %q", tc.line, got, tc.want)
+			}
+		})
+	}
+}
