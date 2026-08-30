@@ -316,6 +316,23 @@ actually moved rather than by menu entries, and buffer lines are CLIPPED to the
 width at paint time — the buffer keeps the whole text, so the transcript and
 `M2`'s click map lose nothing.
 
+**Every component is budgeted, and the order of sacrifice is the order of
+value.** Charging the live edge its height and then writing it unclipped is not a
+budget: a menu taller than the space left overflows exactly as a wide buffer line
+did. The prompt survives first — it is the line you are typing, and it is clipped
+only when it alone is taller than the terminal, where the alternative is a frame
+nobody owns. The menu gives up whole rows next (`fitMenu`, from the end, because
+the list is sorted and the first matches are the likely ones). The buffer takes
+what is left, because it is the part you can scroll.
+
+**A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
+way: `readFrame` interprets what `Paint` emits the way a terminal would —
+including the deferred wrap that lets a line clipped to exactly the width still
+cost one row — and asserts two properties over shapes. That the frame fits, and
+that it leaves the cursor at the end of the prompt. Both were breakable while the
+suite was green, which is how the cursor came to walk back over menu ENTRIES
+rather than the rows the terminal moved.
+
 **One owner answers "how wide is this", and it counts CELLS.** `visibleCells`
 (`render.go`) skips escape sequences and reads `cellWidth` per rune: a combining
 mark is 0 columns and a CJK or fullwidth rune is 2. Both are this program's daily

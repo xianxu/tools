@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // Write is the seam every caller feeds (#30 D5), so it has to behave like a
@@ -308,72 +310,150 @@ func TestScreenWriteReturnsToTheTail(t *testing.T) {
 	}
 }
 
-// A frame fits the terminal in DISPLAY ROWS, not in lines.
+// A frame is a PLACEMENT, not a set of substrings — so these tests interpret the
+// bytes Paint emits the way a terminal would, and assert two properties over
+// shapes rather than checking that named lines appear somewhere.
 //
-// A line wider than the terminal wraps onto a second row, so a frame that
-// counted it as one is a frame one row too tall — and the terminal then SCROLLS
-// to fit it, which moves every row the app believes it placed. That is the exact
-// property the alternate screen was taken for: a click at viewport row R is
-// buffer line R+offset only while nothing but this program can move the view.
+//  1. the frame never needs more display rows than the terminal has
+//  2. it leaves the cursor where the user is typing
 //
-// Two routine ways in, and both are reachable today: narrowing the window (buffer
-// lines keep the wrapping they were rendered with, by decision) and typing a line
-// longer than the terminal is wide, since the committed line goes to the buffer.
-func TestScreenFrameFitsTheTerminalInDisplayRows(t *testing.T) {
+// Both were breakable while the suite was green: a line wider than the terminal
+// wrapped and scrolled the screen away, a menu row taller than the space left
+// did the same, the cursor walked back by menu ENTRIES rather than rows, and the
+// whole cursor-up-and-reprint block could be deleted without a single failure.
+// A frame that scrolls moves every row the app believes it placed, which is the
+// one property the alternate screen was taken for and M2's hit test needs.
+type frameGeometry struct {
+	rows      int // display rows the frame occupies
+	cursorRow int
+	cursorCol int
+}
+
+// readFrame interprets a painted frame as a terminal would: home, erase, text
+// with wrapping, and the cursor moves Paint emits.
+func readFrame(t *testing.T, frame string, cols int) frameGeometry {
+	t.Helper()
+	row, col, maxRow := 0, 0, 0
+	pending := false // the deferred wrap: the cursor sits in the last column
+	rest := frame
+	for len(rest) > 0 {
+		if strings.HasPrefix(rest, "\x1b[") {
+			end := strings.IndexFunc(rest[2:], func(r rune) bool { return r >= 0x40 && r <= 0x7e })
+			if end < 0 {
+				t.Fatalf("unterminated escape in frame: %q", rest)
+			}
+			seq, final := rest[2:2+end], rest[2+end]
+			rest = rest[3+end:]
+			n := 1
+			if seq != "" {
+				if v, err := strconv.Atoi(seq); err == nil {
+					n = v
+				}
+			}
+			switch final {
+			case 'H':
+				row, col, pending = 0, 0, false
+			case 'A':
+				row -= n
+			case 'B':
+				row += n
+			case 'D':
+				col -= n
+			case 'C':
+				col += n
+			}
+			if row < 0 {
+				t.Fatalf("the frame moved the cursor above the screen: %q", frame)
+			}
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(rest)
+		rest = rest[size:]
+		switch r {
+		case '\r':
+			col, pending = 0, false
+		case '\n':
+			row++
+			pending = false
+		default:
+			// DEFERRED WRAP, which is what a VT100-family terminal actually
+			// does: filling the last column leaves the cursor there and the wrap
+			// happens only if another character arrives. Modelling it as an
+			// immediate wrap would count a line clipped to exactly the width as
+			// two rows, and would have this test demand a wasted column.
+			if pending {
+				row++
+				col, pending = 0, false
+			}
+			w := cellWidth(r)
+			if cols > 0 && col+w > cols {
+				row++
+				col = 0
+			}
+			col += w
+			if cols > 0 && col == cols {
+				pending = true
+			}
+		}
+		if row > maxRow {
+			maxRow = row
+		}
+	}
+	return frameGeometry{rows: maxRow + 1, cursorRow: row, cursorCol: col}
+}
+
+func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {
+	const prompt = "› syc"
 	for _, tc := range []struct {
-		name           string
-		lines          []string
-		termRows       int
-		termCols       int
-		prompt         string
-		menu           []string
-		wantRowsAtMost int
+		name     string
+		lines    []string
+		termRows int
+		termCols int
+		prompt   string
+		menu     []string
 	}{
-		{
-			// The reviewer's measurement: ten 200-column lines in an 80-column
-			// terminal need 28 display rows when each is counted as one.
-			name:     "lines wider than the terminal",
-			lines:    repeated(10, strings.Repeat("x", 200)),
-			termRows: 10, termCols: 80, prompt: "› ",
-			wantRowsAtMost: 10,
-		},
-		{
-			name:     "a prompt longer than the terminal is charged its real height",
-			lines:    []string{"a", "b", "c", "d", "e", "f"},
-			termRows: 6, termCols: 20, prompt: "› " + strings.Repeat("z", 55),
-			wantRowsAtMost: 6,
-		},
-		{
-			name:     "a menu row that wraps is charged too",
-			lines:    []string{"a", "b", "c", "d", "e", "f"},
-			termRows: 8, termCols: 20, prompt: "› ",
-			menu:           []string{strings.Repeat("m", 45)},
-			wantRowsAtMost: 8,
-		},
-		{
-			name:     "coloured text is measured by what is VISIBLE",
-			lines:    []string{"\x1b[1;36m" + strings.Repeat("c", 100) + "\x1b[0m"},
-			termRows: 4, termCols: 40, prompt: "› ",
-			wantRowsAtMost: 4,
-		},
+		{"a short session", []string{"one", "two"}, 10, 80, prompt, nil},
+		{"the buffer overflows", repeated(40, "a line"), 10, 80, prompt, nil},
+		// The measurement from BR-6/BR-12: ten 200-column lines in 80 columns
+		// need 28 rows if a line is counted as one.
+		{"lines wider than the terminal", repeated(10, strings.Repeat("x", 200)), 10, 80, prompt, nil},
+		{"coloured lines are measured by what is visible", repeated(6, "\x1b[1;36m"+strings.Repeat("c", 100)+"\x1b[0m"), 8, 40, prompt, nil},
+		{"CJK is two columns a rune", repeated(10, strings.Repeat("日", 100)), 10, 80, prompt, nil},
+		{"a menu under the prompt", []string{"one", "two"}, 10, 80, prompt, []string{"  /help", "  /history"}},
+		// BR-32's measurements: the live edge alone taller than the terminal.
+		{"a menu row that wraps three ways", []string{"one"}, 12, 15, "› /", []string{strings.Repeat("m", 36), strings.Repeat("n", 36), strings.Repeat("o", 36)}},
+		{"more menu than terminal", []string{"one"}, 5, 80, prompt, []string{"a", "b", "c", "d", "e", "f", "g"}},
+		{"a prompt longer than the terminal is wide", nil, 6, 20, "› " + strings.Repeat("z", 55), []string{"m1"}},
+		{"a terminal too short for anything", []string{"one"}, 2, 20, prompt, []string{"m1", "m2"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var s screen
+			var sc screen
 			for _, l := range tc.lines {
-				s.Write([]byte(l + "\n"))
+				sc.Write([]byte(l + "\n"))
 			}
 			var b strings.Builder
-			s.Paint(&b, tc.termRows, tc.termCols, tc.prompt, tc.menu)
+			sc.Paint(&b, tc.termRows, tc.termCols, tc.prompt, tc.menu)
+			got := readFrame(t, b.String(), tc.termCols)
 
-			// Count what the TERMINAL would count: every row a line occupies
-			// once it has wrapped, plus the row each explicit break starts.
-			rows := 0
-			for _, painted := range strings.Split(b.String(), "\r\n") {
-				rows += displayRows(strings.TrimPrefix(painted, cursorHome+eraseDown), tc.termCols)
+			// 1. It FITS. A taller frame makes the terminal scroll, and every row
+			// the app believes it placed moves with it.
+			if got.rows > tc.termRows {
+				t.Errorf("the frame needs %d display rows in a %d-row terminal", got.rows, tc.termRows)
 			}
-			if rows > tc.wantRowsAtMost {
-				t.Errorf("the frame needs %d display rows in a %d-row terminal — it scrolls, and every placed row moves",
-					rows, tc.wantRowsAtMost)
+			// 2. It leaves the cursor at the end of the prompt — where the user
+			// is typing. Deleting the cursor-up-and-reprint block, or walking
+			// back by menu entries rather than rows, lands it somewhere else.
+			wantCol := visibleCells(clipVisible(tc.prompt, tc.termRows*tc.termCols))
+			if wantCol >= tc.termCols {
+				wantCol %= tc.termCols
+			}
+			if got.cursorCol != wantCol {
+				t.Errorf("the cursor rests at column %d, want %d — the next keystroke redraws in the wrong place",
+					got.cursorCol, wantCol)
+			}
+			if len(tc.menu) > 0 && got.cursorRow >= got.rows-1 && got.rows > 1 {
+				t.Errorf("the cursor rests on row %d of a %d-row frame: it never came back up over the menu",
+					got.cursorRow, got.rows)
 			}
 		})
 	}

@@ -209,6 +209,7 @@ const (
 // termRows and termCols are passed in rather than stored, so a resize is one
 // call site's business (the loop's SIGWINCH case) and not fields that go stale.
 func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu []string) {
+	var menuRows int
 	s.cols = termCols
 	// ONE row accounting, used twice: it budgets the buffer's share of the frame
 	// AND says where the cursor has to walk back to. Two summations of the same
@@ -218,11 +219,19 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu 
 	// The buffer gets whatever the live edge does not need. A terminal too short
 	// for even the prompt still gets the prompt: losing the line you are typing
 	// is worse than losing history you can scroll to.
+	// EVERY component is budgeted, not just the buffer's share. Charging the live
+	// edge its height and then writing it unclipped is not a budget: a prompt or
+	// a menu taller than the terminal overflows exactly as a wide buffer line
+	// did, and the terminal scrolls, and every placed row moves.
+	//
+	// The order of sacrifice is the order of value. The prompt is the line you
+	// are typing and survives first — clipped only if it alone is taller than the
+	// terminal, where the alternative is a frame nobody owns. The menu is a
+	// dropdown and gives up whole rows next. The buffer is scrollable, so it
+	// takes what is left.
+	prompt = clipVisible(prompt, termRows*max(s.cols, 1))
 	promptRows := displayRows(prompt, s.cols)
-	menuRows := 0
-	for _, m := range menu {
-		menuRows += displayRows(m, s.cols)
-	}
+	menu, menuRows = fitMenu(menu, termRows-promptRows, s.cols)
 	s.rows = termRows - promptRows - menuRows
 	if s.rows < 0 {
 		s.rows = 0
@@ -428,6 +437,23 @@ func (l *liveScreen) repaint() {
 	}
 	l.s.Paint(l.tty, l.rows, l.cols, l.prompt, l.menu)
 	l.painted, l.pending = time.Now(), false
+}
+
+// fitMenu drops whole menu rows from the END until the dropdown fits the space
+// the prompt left, and reports what it costs.
+//
+// Whole rows, because half a command name is not a menu entry — and from the
+// end, because the list is sorted and the first matches are the likely ones.
+func fitMenu(menu []string, avail, cols int) ([]string, int) {
+	used := 0
+	for i, m := range menu {
+		h := displayRows(m, cols)
+		if used+h > avail {
+			return menu[:i], used
+		}
+		used += h
+	}
+	return menu, used
 }
 
 // displayRows is how many terminal rows a line occupies once the terminal has

@@ -536,6 +536,53 @@ rounds:
           round: 5
       boundary: M1
       blocked: true
+    - "n": 6
+      timestamp: "2026-08-29T21:50:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: M1.1's prose still enumerates the four cases and the chunk-boundary property still has no test — FuzzScreenWriteDoesNotPanic checks only for panics. Minor, non-blocking.
+          round: 6
+        - id: BR-12
+          disposition: addressed
+          note: 'Verified at HEAD: clipVisible cuts by cells (100 CJK runes -> 80 cells/40 runes) and a 10-line CJK buffer needs exactly 10 rows in a 10-row terminal; the remaining overflow route is the live edge, raised separately.'
+          round: 6
+        - id: BR-23
+          disposition: addressed
+          note: 'Reproduced green at HEAD: go test ./... (102s) and go test -race ./cmd/define/ (109s); both plan-table guards pass, and the "guards read the commit" lesson is in workshop/lessons.md.'
+          round: 6
+        - id: BR-26
+          disposition: not-addressed
+          note: Site 5 of its own enumeration survives — editor.go:227 counts runes for a column move (NFD "cafe" cursor=2 emits ESC[3D for a 2-column move; "日本語" cursor=1 emits ESC[2D for 4) — and the wide-rune/combining-mark rows it asked for were not added to TestScreenFrameFitsTheTerminalInDisplayRows, whose four fixtures are still ASCII.
+          round: 6
+        - id: BR-29
+          disposition: not-addressed
+          note: 'The three named rows were added; the class was not. repo_guard_test.go is untouched in this window so the tree-to-table guard does not exist, and four symbols the finding itself enumerated still have no row: screen.Lines, screen.eraseOpenLine, paintInterval, defaultRows/defaultCols.'
+          round: 6
+        - id: BR-30
+          disposition: addressed
+          note: 'Verified at HEAD: Paint(&b,10,20,"> "+30xz,["m1","m2"]) now emits ESC[3A, the prompt''s first row, from one summation that also budgets the buffer. No test fails without it — raised as a separate finding.'
+          round: 6
+        - id: BR-31
+          disposition: addressed
+          note: interval is a field set to time.Hour in the throttle test, so the Stop-flush case no longer races the real 16 ms window.
+          round: 6
+      findings:
+        - id: BR-32
+          severity: Important
+          title: The live edge is charged display rows but never budgeted by them, so the frame still overflows the terminal
+          detail: 'This is the 3rd finding in family frame-fits-the-terminal. Earlier rounds fixed instances (BR-6 taught Paint display rows, BR-12 made cols real, BR-26 made the clip count cells). Do NOT fix this instance. The rule: the frame''s TOTAL display height is asserted against termRows before it is written — every component, buffer AND live edge — or it is not a budget. Today screen.go:226 clamps only the buffer''s share while prompt and menu are written unclipped and unlimited. Measured at HEAD: a 12-row/15-column terminal with "/" typed needs 17 display rows (opt.width is 0 below 20 columns, so truncate leaves 36-column menu rows to wrap three ways), and a 5-row/80-column terminal needs 6. The terminal then scrolls, every placed row moves, and M2''s RegionAt maps a click to the wrong buffer line — the exact property M1 exists to establish. Fix: clip the live edge by height in Paint, and make TestScreenFrameFitsTheTerminalInDisplayRows a property over shapes rather than four ASCII fixtures.'
+          family: frame-fits-the-terminal
+          round: 6
+        - id: BR-33
+          severity: Important
+          title: Nothing asserts where Paint leaves the cursor; the whole cursor-up-and-reprint block is deletable with a green suite
+          detail: 'This is the 4th finding in family unfalsifiable-test-pin. Earlier rounds fixed instances (BR-13, BR-7, BR-24). Do NOT just add a test for the cursor-up count. The rule: every byte Paint emits that POSITIONS the cursor is asserted in process — a frame is a placement, not a set of substrings. Verified by reversion in a scratch copy of HEAD: replacing menuRows+promptRows-1 with len(menu) at screen.go:244 (the exact BR-30 regression) leaves go test ./cmd/define/ green, and deleting the entire `if len(menu) > 0` block at screen.go:239-249 — which would leave the cursor at the end of the last menu row so every keystroke redraws in the wrong place — also leaves it green. TestScreenPaintSplitsTheHeight only checks that named lines and "PROMPT" appear and that the frame starts with home+erase. Decode the emitted frame into (row, col) and assert the final cursor position; that one assertion covers BR-30, the prompt reprint, and M2.5''s underline splice.'
+          family: unfalsifiable-test-pin
+          round: 6
+      boundary: M1
+      blocked: false
 ---
 
 # Gate ledger — tools#30 (boundary-review)
@@ -826,12 +873,29 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-31** [Minor] `timing-dependent-assertion` The throttle test's Stop-flush assertion depends on wall-clock ordering it does not control
   screen_test.go:465-470 writes "the last word", snapshots the frame count, then requires l.Stop() to paint. That only holds while the write lands inside paintInterval of the trailing flush waitFor just observed; if the goroutine is descheduled past 16 ms the write paints itself, pending is false, and Stop correctly does nothing while the test reports "Stop left a pending frame unpainted". Set l.painted deliberately (as TestLiveScreenShowsWhatIsWrittenToIt already does) rather than racing the interval.
 
+## Round 6 — 2026-08-29T21:50:28-07:00 (claude) — passed
+
+### Disposed
+
+- BR-1 — not-addressed — M1.1's prose still enumerates the four cases and the chunk-boundary property still has no test — FuzzScreenWriteDoesNotPanic checks only for panics. Minor, non-blocking.
+- BR-12 — addressed — Verified at HEAD: clipVisible cuts by cells (100 CJK runes -> 80 cells/40 runes) and a 10-line CJK buffer needs exactly 10 rows in a 10-row terminal; the remaining overflow route is the live edge, raised separately.
+- BR-23 — addressed — Reproduced green at HEAD: go test ./... (102s) and go test -race ./cmd/define/ (109s); both plan-table guards pass, and the "guards read the commit" lesson is in workshop/lessons.md.
+- BR-26 — not-addressed — Site 5 of its own enumeration survives — editor.go:227 counts runes for a column move (NFD "cafe" cursor=2 emits ESC[3D for a 2-column move; "日本語" cursor=1 emits ESC[2D for 4) — and the wide-rune/combining-mark rows it asked for were not added to TestScreenFrameFitsTheTerminalInDisplayRows, whose four fixtures are still ASCII.
+- BR-29 — not-addressed — The three named rows were added; the class was not. repo_guard_test.go is untouched in this window so the tree-to-table guard does not exist, and four symbols the finding itself enumerated still have no row: screen.Lines, screen.eraseOpenLine, paintInterval, defaultRows/defaultCols.
+- BR-30 — addressed — Verified at HEAD: Paint(&b,10,20,"> "+30xz,["m1","m2"]) now emits ESC[3A, the prompt's first row, from one summation that also budgets the buffer. No test fails without it — raised as a separate finding.
+- BR-31 — addressed — interval is a field set to time.Hour in the throttle test, so the Stop-flush case no longer races the real 16 ms window.
+
+### Raised
+
+- **BR-32** [Important] `frame-fits-the-terminal` The live edge is charged display rows but never budgeted by them, so the frame still overflows the terminal
+  This is the 3rd finding in family frame-fits-the-terminal. Earlier rounds fixed instances (BR-6 taught Paint display rows, BR-12 made cols real, BR-26 made the clip count cells). Do NOT fix this instance. The rule: the frame's TOTAL display height is asserted against termRows before it is written — every component, buffer AND live edge — or it is not a budget. Today screen.go:226 clamps only the buffer's share while prompt and menu are written unclipped and unlimited. Measured at HEAD: a 12-row/15-column terminal with "/" typed needs 17 display rows (opt.width is 0 below 20 columns, so truncate leaves 36-column menu rows to wrap three ways), and a 5-row/80-column terminal needs 6. The terminal then scrolls, every placed row moves, and M2's RegionAt maps a click to the wrong buffer line — the exact property M1 exists to establish. Fix: clip the live edge by height in Paint, and make TestScreenFrameFitsTheTerminalInDisplayRows a property over shapes rather than four ASCII fixtures.
+- **BR-33** [Important] `unfalsifiable-test-pin` Nothing asserts where Paint leaves the cursor; the whole cursor-up-and-reprint block is deletable with a green suite
+  This is the 4th finding in family unfalsifiable-test-pin. Earlier rounds fixed instances (BR-13, BR-7, BR-24). Do NOT just add a test for the cursor-up count. The rule: every byte Paint emits that POSITIONS the cursor is asserted in process — a frame is a placement, not a set of substrings. Verified by reversion in a scratch copy of HEAD: replacing menuRows+promptRows-1 with len(menu) at screen.go:244 (the exact BR-30 regression) leaves go test ./cmd/define/ green, and deleting the entire `if len(menu) > 0` block at screen.go:239-249 — which would leave the cursor at the end of the last menu row so every keystroke redraws in the wrong place — also leaves it green. TestScreenPaintSplitsTheHeight only checks that named lines and "PROMPT" appear and that the frame starts with home+erase. Decode the emitted frame into (row, col) and assert the final cursor position; that one assertion covers BR-30, the prompt reprint, and M2.5's underline splice.
+
 ## Open findings
 
 - **BR-1** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
-- **BR-12** [Important] `app-owns-every-row` Paint budgets the frame in logical lines and never consults a column width
-- **BR-23** [Critical] `verification-claim-unreproduced` go test ./... is red at HEAD on two plan-table guards, and the Log records it green
 - **BR-26** [Minor] `frame-fits-the-terminal` Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows
 - **BR-29** [Important] `plan-table-incomplete` handBack, onceHandBack and wheelFromButton are absent from M1's Core-concepts tables
-- **BR-30** [Minor] `app-owns-every-row` Paint's cursor-up omits the prompt's own display height, so a wrapping prompt is reprinted over the menu
-- **BR-31** [Minor] `timing-dependent-assertion` The throttle test's Stop-flush assertion depends on wall-clock ordering it does not control
+- **BR-32** [Important] `frame-fits-the-terminal` The live edge is charged display rows but never budgeted by them, so the frame still overflows the terminal
+- **BR-33** [Important] `unfalsifiable-test-pin` Nothing asserts where Paint leaves the cursor; the whole cursor-up-and-reprint block is deletable with a green suite

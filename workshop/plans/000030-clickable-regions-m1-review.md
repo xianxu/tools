@@ -829,3 +829,138 @@ findings:
     detail: |
       screen_test.go:465-470 writes "the last word", snapshots the frame count, then requires l.Stop() to paint. That only holds while the write lands inside paintInterval of the trailing flush waitFor just observed; if the goroutine is descheduled past 16 ms the write paints itself, pending is false, and Stop correctly does nothing while the test reports "Stop left a pending frame unpainted". Set l.painted deliberately (as TestLiveScreenShowsWhatIsWrittenToIt already does) rather than racing the interval.
 ```
+
+---
+
+## Re-review — 2026-08-29T21:50:28-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 168b1c9f3ed7367f122af4795002ad336fd41e02..b88accf0fde0cccbe1a1ed7c344c61e0283c1128 |
+| command | sdlc milestone-close --issue 30 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-29T21:50:28-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The milestone's substance is in good shape: `go test ./...` is green at HEAD (verified, 102s) and `go test -race ./cmd/define/` is green (109s), so the round-3 Critical (BR-23) is genuinely cleared and the lesson behind it is recorded. The pure/IO split (`screen` vs `liveScreen`), the `rawSession.control` seam, `handBack` over two tiny interfaces, and `wheelFromButton` as the one button decoder are all the right shapes, and every M1 done-when row names a test that exists. What blocks SHIP is that M1's *central* invariant — the frame fits the terminal, which is the property the alternate screen was taken for and which M2's `RegionAt` rests on — is still violable through a route no fix has covered: the live edge (prompt + menu) is charged rows but never *budgeted* by them, so a 15×12 terminal with `/` typed emits a 17-row frame into a 12-row window (measured at HEAD). That is the third round this same invariant has been broken by a different route. Alongside it, `Paint`'s cursor geometry has no in-process assertion at all — deleting the whole cursor-up-and-reprint block leaves `go test ./cmd/define/` green — and two prior findings (BR-26, BR-29) were answered at the instance they named rather than at the class they explicitly asked for.
+
+## 1. Strengths
+
+- **`screen` / `liveScreen` is a textbook ARCH-PURE split.** `screen.go:27-255` is a pure line buffer + viewport with `Paint` taking an `io.Writer`; `liveScreen` (`screen.go:271`) is the only thing that holds a tty. Every scroll, clamp, budget and clip case in `screen_test.go` runs with a `strings.Builder` and no pty — which is exactly why the review could measure the failures above without a terminal.
+- **The BR-13/BR-4 fix is structural, not a patched assertion.** Moving mode sequences to `rawSession.control io.Writer` (`rawterm.go:31`) makes the restore protocol assertable in-process, bytes *and* order (`rawterm_test.go:114`), and `TestEnterDoesNotClaimAStateItCouldNotWrite` closes the "flag records the attempt, not the terminal" hole. This is the right answer to "the pin could not fail."
+- **`handBack` / `onceHandBack` (`replraw.go:110-140`) is the correct extraction.** `replRaw` has no in-process caller, so the exit ordering used to rest entirely on pty rows — and every pty row skipped in this review environment (`no pty available: operation not permitted`). The two in-process tests in `replraw_test.go` ran here.
+- **One width owner, and it is measured in cells.** `visibleCells` + `cellWidth` (`render.go:228-311`) with `TestVisibleCellsCountsColumns` covering the combining breve and CJK; `clipVisible` now cuts by cells and never splits a two-cell rune — verified: `clipVisible(strings.Repeat("日",100), 80)` returns 80 cells / 40 runes, and a 10-line CJK buffer needs exactly 10 rows in a 10-row terminal.
+- **The decoder answers both mouse encodings whole.** `TestX10ClickTypesNothing` (`key_test.go`) asserts the observable the operator would meet — characters in the word — rather than a byte count, and `FuzzDecodeWheelIsBounded` pins the consumption bound `#14` shipped wrong once.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — `cmd/define/screen.go:221-229`: the live edge is charged rows but never budgeted by them, so the frame still overflows the terminal.**
+*(3rd finding in family `frame-fits-the-terminal`.)* Earlier rounds fixed instances: BR-6 taught `Paint` about display rows, BR-12 made `cols` real, BR-26 made the clip count cells. Do **not** fix this instance either. The rule that covers all of them: **the frame's total display height is asserted against `termRows` before it is written — every component, buffer *and* live edge, or it is not a budget.** Today only the buffer's share is clamped (`s.rows = termRows - promptRows - menuRows`, floored at 0); `prompt` and `menu` are written unclipped and unlimited. Measured at HEAD:
+
+| terminal | `opt.width` | menu rows | frame needs |
+|---|---|---|---|
+| 12×15 | 0 (the "do not wrap" policy answer below 20 cols) | 5 logical → 15 display | **17 rows in a 12-row budget** |
+| 5×80 | 80 | 5 | **6 rows in a 5-row budget** |
+
+Reachable with one keystroke (`/` enters command mode; `menuLines` returns all five commands) in a narrow tmux pane, and the narrow case is *caused* by the correct decision that `opt.width` goes to 0 below 20 columns — `truncate` then leaves 36-column menu rows to wrap three ways. The consequence is the one M1 exists to prevent: the terminal scrolls, every row the app believes it placed moves, and `M2`'s `RegionAt(row, col)` maps a click to the wrong buffer line. Fix at the rule level: have `Paint` compute the whole frame's height and clip the live edge (drop menu rows from the bottom, clip the prompt) until it fits, and assert `total ≤ termRows` as a property in `TestScreenFrameFitsTheTerminalInDisplayRows` rather than per-fixture.
+
+**I-2 — `cmd/define/screen.go:239-249`: nothing asserts where `Paint` leaves the cursor; the whole block is deletable with a green suite.**
+*(4th finding in family `unfalsifiable-test-pin`.)* Earlier rounds fixed instances (BR-13's restore pin, BR-7's erase row, BR-24's pty-only exit sequence). Do **not** just add a test for the cursor-up count. The rule: **every byte `Paint` emits that positions the cursor is asserted in-process — the frame is a placement, not a set of substrings.** Verified by reversion in a scratch copy: (a) replacing `menuRows+promptRows-1` with `len(menu)` — the exact BR-30 regression — leaves `go test ./cmd/define/` green; (b) deleting the entire `if len(menu) > 0 { … }` block, which would leave the cursor parked at the end of the last menu row so every keystroke redraws at the wrong place, also leaves it green. `TestScreenPaintSplitsTheHeight` (`screen_test.go:119`) checks only that named buffer lines and `"PROMPT"` appear somewhere and that the frame starts with home+erase. Add a geometry assertion that decodes the emitted frame into (row, col) and checks the final cursor position, and it covers BR-30, the reprint, and M2's underline splice at once.
+
+**I-3 — BR-29 re-raised as `not-addressed`: the class fix was specified and not built.**
+See dispositions below. `repo_guard_test.go` is untouched in this window, so the tree→table guard the finding named (using the `changedLines()` / `repoRoot()` helpers it pointed at) does not exist, and four of the symbols BR-29 itself enumerated still have no row.
+
+## 4. Minor findings
+
+- `cmd/define/editor.go:227` — `RenderLine`'s cursor park counts runes for a move the terminal makes in columns. Carried on BR-26 below; measured NFD `café` @cursor=2 → `ESC[3D` for a 2-column move, `日本語` @cursor=1 → `ESC[2D` for a 4-column move.
+- `screen.go:453-493` and `render.go:236-250` each hand-roll a CSI-skipping scanner. The *measurement* has one owner (BR-27/BR-26 fixed that); the *scan* does not. Not worth a change now, but `M2.5` splices an SGR attribute into already-styled text and will want a third — extract one `forEachVisibleRune` seam when `M2.5` lands (ARCH-DRY).
+- `screen_test.go:481` — `countingWriter` counts `Write` calls as "frames"; `Paint` happens to emit one `Write` per frame, so the count is right only by construction. A comment or a sentinel-prefix count would make it robust.
+- `editorloop_test.go` — `TestEditorResizeRedrawsForTheNewShape` asserts menu width with `len([]rune(m)) > 40`, i.e. runes, in the same window that established cells as the one owner. Cosmetic in a test, but it is the measurement the milestone just retired.
+- `liveScreen.Write` after `Stop()` still arms a `time.AfterFunc` that can only no-op (`screen.go:343-348`, `repaint` returns early on `stopped`). Harmless; a `stopped` check before arming would be tidier.
+
+## 5. Test coverage notes
+
+- **Green and reproduced:** `go test ./...` 102s, all packages ok; `go test -race ./cmd/define/` 109s ok. The round-3/round-4 Log claims check out.
+- **Every pty row skipped here** (`no pty available: operation not permitted`) — all 11, including the two M1 rows that are the *sole* pin for done-when 3b and 5. BR-24's stated residue stands: `replRaw`'s own `enterAlt`/`enterMouse` on entry (`replraw.go:38,44`) are still pinned only by rows that skip. Per ARCH-MOCK a live conformance check that silently skips in every non-pty environment is not yet a conformance check; consider making the skip loud in CI, or asserting entry through the same `control` writer that made restore assertable.
+- **`TestScreenFrameFitsTheTerminalInDisplayRows` fixtures are all ASCII** (`"x"×200`, `"z"×55`, `"m"×45`, coloured `"c"×100`). BR-26's round-5 note asked for one wide-rune and one combining-mark row precisely so the class could not come back; they are not there. The cell-width behaviour is pinned only by `TestVisibleCellsCountsColumns`, which does not exercise the frame.
+- **No chunk-boundary property for `Write`** (BR-1). `FuzzScreenWriteDoesNotPanic` checks only for panics; `TestScreenWriteBuildsLines` uses fixed splits. The property — any split of the same byte stream yields the same lines — is one `f.Fuzz` over `(stream, splitPoints)` and would subsume four of the table rows.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass, with one open site.** `wheelFromButton`, `visibleCells`, `clamp`, `terminalSize` and the single row accounting are all one-owner now. The remaining violation is `editor.go:227` computing a column offset outside the owner (BR-26).
+- **ARCH-PURE — pass.** Best feature of the diff. Keep it for M2: `RegionAt` belongs on `screen` (pure), and the underline splice belongs in `Paint`/`clipVisible` — note that `clipVisible` will need to *not* cut a region span in half, which the current per-rune loop makes easy to add.
+- **ARCH-PURPOSE — flagged.** Two findings (BR-26, BR-29) were answered at the named instance while the enumeration each finding supplied was left partly unswept and the mechanism each asked for was not written. This is the "instance, not the class" pattern the principle names, and it is why both families are now three rounds deep.
+- **ARCH-MOCK — pass, with the skip caveat above.** The `rawSession.control` seam is exactly the right boundary; production and test flow now share it.
+- **ARCH-CONSTRAINTS — flagged.** The repaint envelope (16 ms + trailing flush), the uncapped buffer and the column half are all stated *and* enforced. The **row** half is stated and not enforced (I-1). Before M2, also decide the synchronized-output question: `Paint` emits `ESC[H ESC[J` + a full redraw up to 60×/s with no `ESC[?2026h` guard and no cursor hide, so a streamed answer tears and the cursor strobes. Not a correctness bug and BR-8's coalescing half is done — but M2 adds an underline attribute to that same frame, which makes the flicker more visible.
+
+## 7. Plan revision recommendations
+
+Add one `## Revisions` entry, `2026-08-29 — M1 review round 5`, carrying:
+
+1. **The frame-fits rule, restated as a budget rather than a charge**, with the two measured overflow shapes (12×15 → 17 rows; 5×80 → 6 rows) and the design change: `Paint` clips the live edge by height, and `TestScreenFrameFitsTheTerminalInDisplayRows` becomes a property over shapes rather than four fixtures.
+2. **BR-26's six-site enumeration, written into the plan** as the finding asked, with each site's current state (`visibleCells` ✓, `wrapText` ✓, `displayRows` ✓, `clipVisible` ✓, `truncate` ✓, `RenderLine`'s `ESC[nD` park ✗) — plus the two test rows (wide rune, combining mark) as an explicit deliverable, not prose.
+3. **BR-29's tree→table direction as a guard, not a sweep**, and the M1 Core-concepts tables completed from the diff: `screen.Lines`, `screen.eraseOpenLine`, `paintInterval`, `defaultRows` / `defaultCols` (`main.go:1023-1024`) all currently have no row. Note the escape valve if the guard is judged too noisy — say so explicitly and say which declarations it would exempt, rather than leaving the direction unmechanised for a fourth round.
+4. **M1.1's task line compressed** to the chunk-boundary property (BR-1), so the plan names the strategy rather than four cases the code has long since chosen.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      M1.1's prose still enumerates the four cases and the chunk-boundary property still has no test — FuzzScreenWriteDoesNotPanic checks only for panics. Minor, non-blocking.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Verified at HEAD: clipVisible cuts by cells (100 CJK runes -> 80 cells/40 runes) and a 10-line CJK buffer needs exactly 10 rows in a 10-row terminal; the remaining overflow route is the live edge, raised separately.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      Reproduced green at HEAD: go test ./... (102s) and go test -race ./cmd/define/ (109s); both plan-table guards pass, and the "guards read the commit" lesson is in workshop/lessons.md.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      Site 5 of its own enumeration survives — editor.go:227 counts runes for a column move (NFD "cafe" cursor=2 emits ESC[3D for a 2-column move; "日本語" cursor=1 emits ESC[2D for 4) — and the wide-rune/combining-mark rows it asked for were not added to TestScreenFrameFitsTheTerminalInDisplayRows, whose four fixtures are still ASCII.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      The three named rows were added; the class was not. repo_guard_test.go is untouched in this window so the tree-to-table guard does not exist, and four symbols the finding itself enumerated still have no row: screen.Lines, screen.eraseOpenLine, paintInterval, defaultRows/defaultCols.
+  - id: BR-30
+    disposition: addressed
+    note: |
+      Verified at HEAD: Paint(&b,10,20,"> "+30xz,["m1","m2"]) now emits ESC[3A, the prompt's first row, from one summation that also budgets the buffer. No test fails without it — raised as a separate finding.
+  - id: BR-31
+    disposition: addressed
+    note: |
+      interval is a field set to time.Hour in the throttle test, so the Stop-flush case no longer races the real 16 ms window.
+findings:
+  - id: new
+    severity: Important
+    family: frame-fits-the-terminal
+    title: |
+      The live edge is charged display rows but never budgeted by them, so the frame still overflows the terminal
+    detail: |
+      This is the 3rd finding in family frame-fits-the-terminal. Earlier rounds fixed instances (BR-6 taught Paint display rows, BR-12 made cols real, BR-26 made the clip count cells). Do NOT fix this instance. The rule: the frame's TOTAL display height is asserted against termRows before it is written — every component, buffer AND live edge — or it is not a budget. Today screen.go:226 clamps only the buffer's share while prompt and menu are written unclipped and unlimited. Measured at HEAD: a 12-row/15-column terminal with "/" typed needs 17 display rows (opt.width is 0 below 20 columns, so truncate leaves 36-column menu rows to wrap three ways), and a 5-row/80-column terminal needs 6. The terminal then scrolls, every placed row moves, and M2's RegionAt maps a click to the wrong buffer line — the exact property M1 exists to establish. Fix: clip the live edge by height in Paint, and make TestScreenFrameFitsTheTerminalInDisplayRows a property over shapes rather than four ASCII fixtures.
+  - id: new
+    severity: Important
+    family: unfalsifiable-test-pin
+    title: |
+      Nothing asserts where Paint leaves the cursor; the whole cursor-up-and-reprint block is deletable with a green suite
+    detail: |
+      This is the 4th finding in family unfalsifiable-test-pin. Earlier rounds fixed instances (BR-13, BR-7, BR-24). Do NOT just add a test for the cursor-up count. The rule: every byte Paint emits that POSITIONS the cursor is asserted in process — a frame is a placement, not a set of substrings. Verified by reversion in a scratch copy of HEAD: replacing menuRows+promptRows-1 with len(menu) at screen.go:244 (the exact BR-30 regression) leaves go test ./cmd/define/ green, and deleting the entire `if len(menu) > 0` block at screen.go:239-249 — which would leave the cursor at the end of the last menu row so every keystroke redraws in the wrong place — also leaves it green. TestScreenPaintSplitsTheHeight only checks that named lines and "PROMPT" appear and that the frame starts with home+erase. Decode the emitted frame into (row, col) and assert the final cursor position; that one assertion covers BR-30, the prompt reprint, and M2.5's underline splice.
+```

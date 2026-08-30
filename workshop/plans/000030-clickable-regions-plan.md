@@ -84,7 +84,7 @@ to `#35`'s code and is where `M2.1` starts.
 | `screen.Page` | `cmd/define/screen.go` | new | PURE (M1.4a) — a screenful less one line of overlap |
 | `screen.Paint` | `cmd/define/screen.go` | new | PURE, given the writer |
 | `screen.Transcript` | `cmd/define/screen.go` | new | PURE (M1.5) |
-| `displayRows` / `clipVisible` | `cmd/define/screen.go` | new | PURE (rework) — the frame is budgeted in DISPLAY ROWS |
+| `displayRows` / `clipVisible` / `fitMenu` | `cmd/define/screen.go` | new | PURE (rework) — the frame is budgeted in DISPLAY ROWS, every component of it |
 | `visibleCells` | `cmd/define/render.go` | modified | PURE (rework) — was `visibleLen`; the ONE owner of "how wide is this", now measured in terminal COLUMNS |
 | `cellWidth` / `isWide` | `cmd/define/render.go` | new | PURE (rework) — a combining mark is 0 columns and a CJK rune is 2, both daily traffic for a dictionary |
 | `decodeWheel` / `atoiPrefix` | `cmd/define/key.go` | new | PURE (M1.4b) |
@@ -494,3 +494,28 @@ summation had omitted the prompt's own height, which reprinted it over the menu.
 wrapping OFF (an entry cannot be broken that narrowly and stay readable) while
 the screen keeps the true column count from `terminalCols` and still fits the
 frame. The two answers differ on purpose, and only the policy one may be zero.
+
+### 2026-08-29 — M1 review round 5: a budget that budgets, and a frame read as a placement
+
+Two Importants, both third or fourth in their family, both fixed as the rule the
+finding named rather than the instance it pointed at.
+
+**A budget budgets EVERY component.** `Paint` charged the live edge its display
+height and then wrote it unclipped, so a prompt or a menu taller than the
+terminal overflowed exactly as a wide buffer line used to — measured at 12×15
+with `/` typed: 17 rows into 12. The order of sacrifice is now explicit and is
+the order of value: the prompt survives first (clipped only when it alone is
+taller than the terminal), the menu gives up whole rows via `fitMenu`, the buffer
+takes what is left because it is the part you can scroll.
+
+**A frame is a placement, not a set of substrings.** Nothing asserted where the
+cursor ended up, so the entire cursor-up-and-reprint block was deletable with a
+green suite — and so was the fix for the previous round's off-by-a-row.
+`readFrame` interprets an emitted frame the way a terminal does, deferred wrap
+included, and `TestPaintFitsTheTerminalAndParksTheCursor` asserts two properties
+over ten shapes: the frame fits, and the cursor rests at the end of the prompt.
+All three mutations the review named now redden it — walking back by menu
+entries, deleting the block, and dropping `fitMenu`.
+
+That instrument is the one M2.5 needs too: an underline spliced into a span is a
+placement claim, and this is how a placement claim gets asserted here.
