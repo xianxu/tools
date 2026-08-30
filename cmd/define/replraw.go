@@ -531,7 +531,7 @@ func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron 
 		// is what made "the one place that answers this" false the moment it was
 		// written (BR-20).
 		fmt.Fprintf(stderr, "define: %s\r\n", nothingSays(replCommand{}, true))
-	case opt.noAudio || opt.times <= 0:
+	case !opt.playsAudio():
 		fmt.Fprint(stderr, nothingToReplay+"\r\n")
 	default:
 		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),

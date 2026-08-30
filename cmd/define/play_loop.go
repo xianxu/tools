@@ -158,7 +158,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				}
 
 			case play.OutcomeReveal:
-				if !opt.noAudio && opt.times > 0 {
+				if opt.playsAudio() {
 					// Cooked for playback, as #16 established: the indicator and any
 					// warning are written for a human to read.
 					//
