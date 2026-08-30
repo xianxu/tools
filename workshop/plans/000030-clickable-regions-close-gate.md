@@ -634,6 +634,70 @@ rounds:
           round: 8
       boundary: M1
       blocked: false
+    - "n": 9
+      timestamp: "2026-08-30T11:42:28-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: M1.1's row still enumerates the four cases verbatim and no chunk-boundary property test for screen.Write exists (screen_test.go has only FuzzScreenWriteDoesNotPanic); M1 is closed, so this is now a carried Minor.
+          round: 9
+      findings:
+        - id: BR-37
+          severity: Important
+          title: liveScreen.WriteRegions/RegionAtRow — the production click join is pinned by nothing (verified by mutation)
+          detail: |-
+            Swapping `l.s.addRegions(rs)` and `l.s.Write([]byte(text))` in screen.go:551
+            leaves `go test ./cmd/define/` green, though in production it shifts every
+            region forward by the entry's line count. 6th in the family: state the rule
+            — a "pinned by" claim holds only when mutating the implementing code reddens
+            a named test, and a double may not stand in for the object joining two
+            separately-pinned halves — then write the enumeration (every Integration-points
+            row names the test that runs it) and sweep it this round.
+          family: unfalsifiable-test-pin
+          round: 9
+        - id: BR-38
+          severity: Important
+          title: The region-registry guard restates RegionKind's extent, so Done-when 7 cannot fire
+          detail: |-
+            editorloop_test.go:851 loops `kind <= RegionOriginLang`; RegionKind has no
+            count sentinel, so a third kind is never exercised and `clicked`'s switch has
+            no default. Second instance in the same window: originLineRange (render.go:377)
+            re-derives the section boundary by an all-caps heuristic that `e.Sections`
+            already owns. 4th/5th in the family: state the rule — the extent and structure
+            of a declared set have one owner and every guard derives from it, as
+            TestEveryEnabledMouseModeIsDecoded already does with mouseOn — and sweep both.
+          family: one-owner-per-invariant
+          round: 9
+        - id: BR-39
+          severity: Important
+          title: README.md and atlas/define.md document none of M2's delivered surface
+          detail: |-
+            README.md is untouched in the window; atlas/define.md changed 11 lines, all
+            the console side-quest, and still refers to clicks in the future tense
+            (:283, :326, :350). Missing: click-to-play, ORIGIN-language click, the
+            underline mark, the scrolled-past degrade, the region registry, writeRendered's
+            seam. 2nd in the family: the cause is that M1.6 made the sweep a TASK and
+            M2.1-M2.6 carries no docs row — fix that, ideally as a repo_guard_test.go
+            window guard, not this instance.
+          family: docs-lag-new-surface
+          round: 9
+        - id: BR-40
+          severity: Minor
+          title: markClickable emits the underline twice when a span begins at an escape
+          detail: |-
+            Measured: markClickable("\x1b[1;36mpotassium\x1b[0m is a metal", {Col:0,Width:9})
+            yields "\x1b[4m\x1b[1;36m\x1b[4mpotassium...". The column trigger is re-tested
+            after each byte step. Idempotent, so cosmetic; fire it once per column.
+          family: column-trigger-fires-per-byte
+          round: 9
+        - id: BR-41
+          severity: Minor
+          title: screen.LineAt is tabled PURE but clamps and writes back s.offset via Frame()
+          family: pure-label-hides-mutation
+          round: 9
+      boundary: M2
+      blocked: true
 ---
 
 # Gate ledger — tools#30 (boundary-review)
@@ -966,6 +1030,44 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-36** [Minor] `unfalsifiable-test-pin` The new placement test asserts the cursor column exactly but the row only as "not the last one"
   screen_test.go:453 checks got.cursorRow >= got.rows-1. An off-by-one UPWARD in the walk-back is caught only where the buffer is empty, by readFrame's "moved the cursor above the screen" guard; I confirmed the "a menu under the prompt" fixture passes with menuRows+promptRows. Asserting the cursor is on the prompt's first row (rows - promptRows - menuRows) closes it. Separately, screen_test.go:449's wantCol %= termCols disagrees with readFrame's deferred wrap for a prompt exactly a multiple of the width — a false failure waiting for a fixture, not a false pass.
 
+## Round 9 — 2026-08-30T11:42:28-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — M1.1's row still enumerates the four cases verbatim and no chunk-boundary property test for screen.Write exists (screen_test.go has only FuzzScreenWriteDoesNotPanic); M1 is closed, so this is now a carried Minor.
+
+### Raised
+
+- **BR-37** [Important] `unfalsifiable-test-pin` liveScreen.WriteRegions/RegionAtRow — the production click join is pinned by nothing (verified by mutation)
+  Swapping `l.s.addRegions(rs)` and `l.s.Write([]byte(text))` in screen.go:551
+  leaves `go test ./cmd/define/` green, though in production it shifts every
+  region forward by the entry's line count. 6th in the family: state the rule
+  — a "pinned by" claim holds only when mutating the implementing code reddens
+  a named test, and a double may not stand in for the object joining two
+  separately-pinned halves — then write the enumeration (every Integration-points
+  row names the test that runs it) and sweep it this round.
+- **BR-38** [Important] `one-owner-per-invariant` The region-registry guard restates RegionKind's extent, so Done-when 7 cannot fire
+  editorloop_test.go:851 loops `kind <= RegionOriginLang`; RegionKind has no
+  count sentinel, so a third kind is never exercised and `clicked`'s switch has
+  no default. Second instance in the same window: originLineRange (render.go:377)
+  re-derives the section boundary by an all-caps heuristic that `e.Sections`
+  already owns. 4th/5th in the family: state the rule — the extent and structure
+  of a declared set have one owner and every guard derives from it, as
+  TestEveryEnabledMouseModeIsDecoded already does with mouseOn — and sweep both.
+- **BR-39** [Important] `docs-lag-new-surface` README.md and atlas/define.md document none of M2's delivered surface
+  README.md is untouched in the window; atlas/define.md changed 11 lines, all
+  the console side-quest, and still refers to clicks in the future tense
+  (:283, :326, :350). Missing: click-to-play, ORIGIN-language click, the
+  underline mark, the scrolled-past degrade, the region registry, writeRendered's
+  seam. 2nd in the family: the cause is that M1.6 made the sweep a TASK and
+  M2.1-M2.6 carries no docs row — fix that, ideally as a repo_guard_test.go
+  window guard, not this instance.
+- **BR-40** [Minor] `column-trigger-fires-per-byte` markClickable emits the underline twice when a span begins at an escape
+  Measured: markClickable("\x1b[1;36mpotassium\x1b[0m is a metal", {Col:0,Width:9})
+  yields "\x1b[4m\x1b[1;36m\x1b[4mpotassium...". The column trigger is re-tested
+  after each byte step. Idempotent, so cosmetic; fire it once per column.
+- **BR-41** [Minor] `pure-label-hides-mutation` screen.LineAt is tabled PURE but clamps and writes back s.offset via Frame()
+
 ## Open findings
 
 - **BR-1** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
@@ -974,3 +1076,8 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-34** [Important] `plan-table-incomplete` Done-when row 1b names TestScreenFrameFitsTheTerminalInDisplayRows, which this window's own commit renamed away
 - **BR-35** [Important] `one-owner-per-invariant` visibleCells and clipVisible each hand-roll the CSI grammar that scanEscape already owns
 - **BR-36** [Minor] `unfalsifiable-test-pin` The new placement test asserts the cursor column exactly but the row only as "not the last one"
+- **BR-37** [Important] `unfalsifiable-test-pin` liveScreen.WriteRegions/RegionAtRow — the production click join is pinned by nothing (verified by mutation)
+- **BR-38** [Important] `one-owner-per-invariant` The region-registry guard restates RegionKind's extent, so Done-when 7 cannot fire
+- **BR-39** [Important] `docs-lag-new-surface` README.md and atlas/define.md document none of M2's delivered surface
+- **BR-40** [Minor] `column-trigger-fires-per-byte` markClickable emits the underline twice when a span begins at an escape
+- **BR-41** [Minor] `pure-label-hides-mutation` screen.LineAt is tabled PURE but clamps and writes back s.offset via Frame()

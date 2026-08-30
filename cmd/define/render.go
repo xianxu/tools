@@ -236,7 +236,29 @@ const (
 	RegionHeadword RegionKind = iota
 	// RegionOriginLang — play the word in the language its ORIGIN names.
 	RegionOriginLang
+	// numRegionKinds is NOT a kind: it is the registry's extent, so every guard
+	// DERIVES the set rather than restating it. A test that loops to
+	// RegionOriginLang by name is a second copy of "these are all the kinds",
+	// and a third kind added above this line would simply never be exercised —
+	// which is Done-when 7 ("one registry, not two special cases") quietly
+	// failing. Same move TestEveryEnabledMouseModeIsDecoded makes with mouseOn.
+	numRegionKinds
 )
+
+// String names a kind for a reader — a test message, and the atlas, which has to
+// describe every one of them.
+//
+// The default is deliberately UGLY rather than a guess: a kind with no case here
+// is a kind nobody has described, and TestEveryRegionKindIsNamed says so.
+func (k RegionKind) String() string {
+	switch k {
+	case RegionHeadword:
+		return "headword"
+	case RegionOriginLang:
+		return "ORIGIN language"
+	}
+	return fmt.Sprintf("RegionKind(%d)", int(k))
+}
 
 // Region is a span of RENDERED text that offers an action.
 //
@@ -307,7 +329,7 @@ func regionsIn(e Entry, rendered string) []Region {
 	if len(mentions) == 0 {
 		return out
 	}
-	first, last := originLineRange(lines)
+	first, last := originLineRange(lines, e)
 	for _, m := range mentions {
 		nth := strings.Count(originText(e)[:m.Offset], m.Name)
 		for ln := first; ln <= last && ln < len(lines); ln++ {
@@ -332,21 +354,49 @@ func regionsIn(e Entry, rendered string) []Region {
 // Bounded rather than searched whole, because a language name can occur in a
 // definition ("a French department" is in `arrondissement`'s own gloss) and that
 // occurrence is not an etymology.
-func originLineRange(lines []string) (int, int) {
-	first := -1
-	for i, l := range lines {
-		name := strings.TrimSpace(stripEscapes(l))
-		switch {
-		case first < 0 && name == "ORIGIN":
-			first = i
-		case first >= 0 && name != "" && name == strings.ToUpper(name) && !strings.ContainsAny(name, " .,‘’") && i > first:
-			return first, i - 1 // the next section's heading
+//
+// The boundary comes from `e.Sections`, which OWNS what the sections are — the
+// first version guessed at it with an all-caps heuristic, re-deriving structure
+// the entry already carried. A heuristic can only ever agree with the parser by
+// coincidence; a section named "SEE ALSO" or a shouted line inside prose would
+// have parted them.
+func originLineRange(lines []string, e Entry) (int, int) {
+	var next string
+	origin := -1
+	for i, sec := range e.Sections {
+		if sec.Name == "ORIGIN" {
+			origin = i
+			if i+1 < len(e.Sections) {
+				next = e.Sections[i+1].Name
+			}
+			break
 		}
 	}
-	if first < 0 {
+	if origin < 0 {
 		return 0, -1 // no ORIGIN section: an empty range
 	}
+	first := headingLine(lines, "ORIGIN")
+	if first < 0 {
+		return 0, -1
+	}
+	if next == "" {
+		return first, len(lines) - 1
+	}
+	if end := headingLine(lines[first+1:], next); end >= 0 {
+		return first, first + end // up to, not including, the next heading
+	}
 	return first, len(lines) - 1
+}
+
+// headingLine finds the rendered line that IS a section heading, which Render
+// writes as the name alone on its own line.
+func headingLine(lines []string, name string) int {
+	for i, l := range lines {
+		if strings.TrimSpace(stripEscapes(l)) == name {
+			return i
+		}
+	}
+	return -1
 }
 
 // findVisible locates the (skip+1)th occurrence of needle in a rendered line and

@@ -861,7 +861,11 @@ func TestALookupHandsItsRegionsToTheScreen(t *testing.T) {
 // a row rather than a new feature". A Kind with no action is that promise
 // quietly breaking: the region draws, invites a click, and does nothing.
 func TestEveryRegionKindIsActionable(t *testing.T) {
-	for kind := RegionHeadword; kind <= RegionOriginLang; kind++ {
+	// DERIVED from the registry's own extent, not from a kind named by hand. The
+	// predecessor looped `kind <= RegionOriginLang`, which is a second copy of
+	// "these are all the kinds" — so a third kind was never exercised and this
+	// guard could not fire for the case it exists to catch.
+	for kind := RegionKind(0); kind < numRegionKinds; kind++ {
 		// A fresh rig per kind, so each count starts from zero rather than from
 		// whatever the previous kind left behind.
 		rig, opt, finish := editorRig(t, "sycophantic", true)

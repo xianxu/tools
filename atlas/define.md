@@ -280,7 +280,7 @@ out"; `console` is that concept given a type, and it arrived when five of the
 function's ten parameters turned out to be the same one. Two of those five were
 adjacent `io.Writer`s, so a call that swapped stdout and stderr compiled and put
 diagnostics where the definition goes. In production every field is the same
-`liveScreen`; `M2`'s click is a method on `display`, not an eleventh parameter.
+`liveScreen`; a click is a method on `display`, not an eleventh parameter.
 
 - **`screen` is an `io.Writer`, and that is what kept this from being a rewrite.**
   `Render` returns a string, the ask path streams, commands and the indicator
@@ -323,7 +323,7 @@ or type a line longer than the terminal is wide. So the prompt and each menu row
 are charged their real height, the cursor walks back by the rows the terminal
 actually moved rather than by menu entries, and buffer lines are CLIPPED to the
 width at paint time — the buffer keeps the whole text, so the transcript and
-`M2`'s click map lose nothing.
+the click map lose nothing.
 
 **Every component is budgeted, and the order of sacrifice is the order of
 value.** Charging the live edge its height and then writing it unclipped is not a
@@ -370,6 +370,68 @@ and then playback blocks for seconds, so a throttle that waited for the next
 write would hide it for the whole recording. Draw, Page, Scroll and Stop paint
 unconditionally. The buffer itself is uncapped, deliberately: a cap would
 silently truncate the record the exit transcript exists to be.
+
+## Clickable regions
+
+A rendered entry contains tokens that MEAN something the tool can act on, and
+until `#30` they were inert text — the action had to be retyped as a command.
+Now: **click the headword to hear it; click the language after `ORIGIN` to hear
+it in that language.**
+
+```
+Region        {Kind, Text, Word, Lang, Line, Col, Width}   what a span OFFERS
+regionsIn     (Entry, rendered) -> []Region               PURE, reads the OUTPUT
+screen        addRegions / RegionAt / LineAt              the click map
+markClickable underline spliced at paint time             the mark
+```
+
+**One registry, not two special cases**, which is how the issue was filed: a
+third consumer is a row rather than a new feature. `numRegionKinds` is the
+registry's extent and every guard derives from it — `TestEveryRegionKindIsActionable`
+fails for a kind that draws, invites a click and does nothing.
+
+**A region is read out of the FINISHED output.** A position recorded while
+writing describes what `Render` intended; a click map has to be right about what
+the terminal shows. It also leaves `Render`'s body untouched, so "the bytes are
+identical" is a property of the shape rather than a promise every edit re-earns —
+`TestRenderOutputMatchesTheCorpusGolden` holds it, against a golden generated
+from the commit BEFORE the signature change.
+
+**Which ORIGIN languages are clickable is the mentions producer's answer**, not a
+search of the rendered text. `OriginLanguageMentions` cuts cognate clauses and
+masks historical stages, so the "Dutch" in `read`'s etymology is on screen and is
+not a source; positions carry across by OCCURRENCE INDEX, because rendering
+preserves the text's characters in order. EVERY language named is clickable, not
+just the first — `/pron` takes the first by NOAD's convention, while a click has
+nothing to disambiguate: `piano` names French and Italian and the user points at
+one. That is the insight the whole issue rests on.
+
+**A region carries the entry it belongs to** (`Region.Word`), because a reader can
+scroll back and click a word from earlier in the session while the session keeps
+only the CURRENT entry's raw text — which is what supplies the source spellings
+for a foreign replay. An older entry replays through `#29`'s fallback on the
+headword itself: the degraded answer rather than a wrong one.
+
+**The actions are `replayInPlace` with one parameter** — the same path a bare
+Enter and `/pron` take, so a click cannot drift from the gesture it shortcuts. A
+click on ordinary text is NOTHING: no beep, no message. Pointing at a word that
+offers nothing is not an error.
+
+**The mark is an attribute, spliced by the SCREEN.** `markClickable` underlines a
+clickable span at paint time, turned off with `24` rather than `0` so the
+palette's colour survives. Static rather than on hover, because hover needs mode
+`1003` — an event per cell the pointer crosses — while `1000` reports presses
+only and never says where the pointer is. Emitted by `Render` it would leak into
+`define <word>`, a pipe, `-raw` and `> out.txt`: decoration claiming an
+affordance a file does not have. `writeRendered` is the seam — a writer that can
+hold a click map gets one, everything else gets bytes.
+
+**Degrading is the absence of input, not a code path.** There is no reliable way
+to ask a terminal whether it will honour mouse reporting, so the enable is
+unconditional and a terminal that ignores it simply never sends a report;
+everything else still works. `-no-color` degrades by ROUTING — it clears
+`opt.tty`, so the session takes the line loop and no mark can reach output the
+user asked to keep plain.
 
 **Scrolling, and why the mouse had to be reported.** PageUp/PageDown move the
 viewport by a screenful less one line of overlap; the wheel moves three lines. The

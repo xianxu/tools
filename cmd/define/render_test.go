@@ -636,3 +636,14 @@ func TestRenderNeverMarksSpansItself(t *testing.T) {
 		t.Fatal("no regions over the corpus, so the absence of marks proves nothing")
 	}
 }
+
+// Every kind is NAMED, which is what lets a guard — and the atlas — describe the
+// registry without restating it (#30 M2, BR-38).
+func TestEveryRegionKindIsNamed(t *testing.T) {
+	for k := RegionKind(0); k < numRegionKinds; k++ {
+		if strings.HasPrefix(k.String(), "RegionKind(") {
+			t.Errorf("RegionKind %d has no name: a kind nobody has described is a kind "+
+				"no reader and no document knows about", int(k))
+		}
+	}
+}

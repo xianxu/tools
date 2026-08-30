@@ -98,6 +98,16 @@ showed is printed back into your terminal when you quit, so the words you looked
 up are in your scrollback to return to. The frame itself is not: the prompt you
 were typing at and the `♫ playing` indicator were ephemeral, and stay that way.
 
+**Underlined words are clickable.** Click the headword to hear it again; click
+the language after `ORIGIN` to hear the word in *that* language — `concrete` in
+French, `jalapeño` in Spanish — without typing a command. Every language an
+etymology names as a source is its own target, so `piano`'s "either from French,
+or … Italian" gives you both: you point at the one you meant. Cognates and dead
+stages are not offered, because they are not something a speaker says today.
+
+It works on words you have scrolled back to, not just the last one. A click on
+ordinary text does nothing.
+
 **Words you have looked up show in green** — in the line you type, in definitions,
 and in answers — so the vocabulary you are building is visible rather than
 something you have to remember having met. Looking up `sycophantic` when you

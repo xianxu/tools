@@ -181,6 +181,7 @@ to `#35`'s code and is where `M2.1` starts.
 | `OriginLanguage` | `cmd/define/origin.go` | modified | now "the first mention", so the two consumers cannot drift |
 | `KeyClick` / `Key.Row` / `Key.Col` | `cmd/define/key.go` | new | PURE — the one Key that carries a position |
 | `clickAt` / `isClickButton` / `parseParams` | `cmd/define/key.go` | new | PURE — one owner for the wire→screen conversion and its guard, across both encodings |
+| `numRegionKinds` / `RegionKind.String` | `cmd/define/render.go` | new | PURE — the registry's EXTENT, so every guard derives the set rather than restating it |
 | `screen.RegionAt` / `screen.LineAt` / `screen.topLine` / `screen.addRegions` | `cmd/define/screen.go` | new | PURE — the hit test, and the viewport-row → buffer-line mapping the alt screen makes exact. `topLine` is its one owner: Paint needs the same answer to find each row's marks, and two spellings would be two chances to disagree by a line |
 | `markClickable` / `underlineOn` / `underlineOff` | `cmd/define/screen.go` | new | PURE (M2.5) — the mark, spliced by the SCREEN so it cannot reach a pipe |
 | `liveScreen.WriteRegions` / `liveScreen.RegionAtRow` | `cmd/define/screen.go` | new | the click map's IO side: one call, so text and regions cannot disagree about which line a render landed on |
@@ -207,6 +208,12 @@ to `#35`'s code and is where `M2.1` starts.
 - [x] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
 - [x] **M2.5 — discoverability, STATIC rather than on hover** — and the tracking mode is the reason. Hover needs `1003` (any-event tracking), which streams an event for every cell the pointer crosses, so the loop would wake constantly to redraw an underline. `1000` (button press only) is what this issue enables, and with it the app never learns where the pointer is. So a clickable span is marked in the FRAME: the palette (`newPalette`) already spends `head`, `ipa`, `pos`, `num`, `ex`, `sect` and bold-green for deck words, so the mark is an ATTRIBUTE — underline — added to the span's existing colour rather than a seventh colour competing with them.
       It is spliced by the SCREEN, not by `Render`, because D6 promises the one-shot and `-raw` bytes are unchanged. `sgr.go`'s `sgrState.observe`/`resume` (`sgr.go:27,57`) is the existing machinery for reopening styles around an inserted attribute; this uses it rather than a second one.
+- [x] **M2.7 — docs, and the ROW is the point.** `M1.6` made the doc sweep a task
+      in one milestone, so `M2` shipped its whole surface with nothing to remind
+      anyone — which is the cause the boundary review named, not the instance. The
+      durable fix is the guard: `TestAtlasDescribesEveryRegionKind` derives from
+      `numRegionKinds`, so a kind added without a description reddens the suite.
+      A task cannot cover work that has not been planned yet; a guard can.
 - [x] **M2.6 — degrade**, and the case is NOT only "a terminal that reports no mouse". The exposure that actually bit was a terminal that reports the mouse in an encoding we did not ask for: mode `1000` falls back to X10 (`ESC[M` + three raw bytes), which the CSI scan delimited at `M` and left three payload bytes to be typed into the line. Fixed in M1's rework (`decodeX10Mouse`); this row keeps the rule that produced it — **for every mode we enable, the decoder answers every encoding that mode can reply in** — and applies it to whatever M2 turns on.
 
 ### M2 Done-when
@@ -219,7 +226,7 @@ to `#35`'s code and is where `M2.1` starts.
 | 4 | a clickable span is visibly clickable before it is clicked | `TestScreenMarksClickableSpans`, `TestMarkingKeepsTheSpansOwnColour`, `TestMarkingIsPlacedByColumnNotByByte`; and the other half — that the mark never leaks — by `TestRenderNeverMarksSpansItself` plus the corpus golden | the underline attribute is dropped from the frame, or `Render` starts emitting it |
 | 5 | the mouse decoder is bounded and correct, and invents nothing | `TestDecodeWheel`, `TestDecodeX10Mouse`, `TestClickCarriesItsPosition`, `TestMouseDecoderRejectsWhatNoTerminalSends`, `FuzzDecodeMouseIsBounded` | it consumes past the final byte, or reports a coordinate it did not read |
 | 6 | a mouse-less terminal is unaffected, and `-no-color` never sees a mark | `TestPTYWithoutMouseBehavesAsBefore`, `TestNoColorTakesTheLineLoopAndEmitsNoEscapes`, `TestEveryEnabledMouseModeIsDecoded` | a mode is enabled whose reply nothing decodes, or the screen becomes unconditional |
-| 7 | regions are one registry, not two special cases | `TestEveryRegionKindIsActionable` | a kind is added with no action |
+| 7 | regions are one registry, not two special cases | `TestEveryRegionKindIsActionable`, `TestEveryRegionKindIsNamed`, `TestAtlasDescribesEveryRegionKind` — all three DERIVED from `numRegionKinds` | a kind is added with no action, no name, or no description |
 | 8 | tracking is disabled on exit | `TestPTYMouseTrackingIsAskedForAndGivenBack` (M1.4b), `TestRestoreHandsBackEveryTerminalState` | the disable is dropped |
 
 ---
@@ -628,3 +635,31 @@ four mutations now redden it.
   Adding `1005` to that constant reddens the suite — which is the only version of
   "for every mode we enable, the decoder answers every encoding" that survives
   the next person to enable something.
+
+### 2026-08-30 — M2 boundary (FIX-THEN-SHIP): three findings, three rules
+
+**A double may not stand in for the object that JOINS two pinned halves
+(BR-37).** The screen's hit test was pinned here, the loop's use of it was pinned
+against a scripted double, and `liveScreen.WriteRegions` sat between them
+untested — so swapping its two statements left the whole suite green while
+shifting every region forward by an entry's line count in production. Sixth in
+the `unfalsifiable-test-pin` family. `TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor`
+drives the real object and reddens on that exact swap.
+
+**The extent of a declared set has ONE owner, and every guard derives from it
+(BR-38).** `TestEveryRegionKindIsActionable` looped to `RegionOriginLang` by
+name — a second copy of "these are all the kinds" — so a third kind would never
+have been exercised, and Done-when 7 could not fire for the case it exists to
+catch. `numRegionKinds` is that owner now. Second instance in the same window:
+`originLineRange` re-derived the ORIGIN section's boundary with an all-caps
+heuristic while `e.Sections` already owned the structure; a heuristic can only
+agree with the parser by coincidence, and a section named "SEE ALSO" would have
+parted them.
+
+**A docs TASK cannot cover the next milestone (BR-39).** `M1.6` made the sweep a
+row in `M1`, so `M2` shipped click-to-play, the ORIGIN click, the mark, the
+registry and `writeRendered` with nothing to remind anyone — and the atlas still
+spoke of clicks in the future tense. The instance is fixed (atlas gains
+"## Clickable regions", README gains what a user meets), and so is the cause:
+`TestAtlasDescribesEveryRegionKind` derives from the same registry extent, so the
+docs cannot silently lag a kind again.

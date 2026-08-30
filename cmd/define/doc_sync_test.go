@@ -207,3 +207,32 @@ func TestDocsQuoteThePronCommandHelp(t *testing.T) {
 			"pronCommandHelp owns this text; the page consumes it.", doc, want)
 	}
 }
+
+// The atlas describes EVERY region kind, derived from the registry (#30 BR-39).
+//
+// The docs-lag family reached two findings before this existed, and the cause
+// was structural rather than forgetfulness: `M1.6` made the doc sweep a TASK in
+// one milestone, so the next milestone shipped surface with no row to remind
+// anyone. A task cannot cover work that has not been planned yet; a guard can.
+//
+// Same shape as `TestEveryEnabledMouseModeIsDecoded`: the SET has one owner
+// (`numRegionKinds`), and the check derives from it rather than restating it. A
+// third kind added to the registry reddens this until the atlas says what it
+// offers — which is the only version of "keep the docs current" that survives
+// the next person to add one.
+func TestAtlasDescribesEveryRegionKind(t *testing.T) {
+	b, err := os.ReadFile("../../atlas/define.md")
+	if err != nil {
+		// NOT a skip: the atlas is in the repo, so an unreadable one is a broken
+		// checkout or a moved file, never an absent dependency.
+		t.Fatalf("atlas/define.md unreadable: %v", err)
+	}
+	atlas := string(b)
+	for k := RegionKind(0); k < numRegionKinds; k++ {
+		if !strings.Contains(atlas, k.String()) {
+			t.Errorf("the atlas does not mention the %q region. A clickable span the "+
+				"docs never describe is surface a reader can only find by clicking at "+
+				"random.", k)
+		}
+	}
+}

@@ -829,3 +829,58 @@ func TestMarkingIsPlacedByColumnNotByByte(t *testing.T) {
 		})
 	}
 }
+
+// The PRODUCTION join, on the real liveScreen (#30 M2, BR-37).
+//
+// The two halves were each pinned and the object that joins them was not: the
+// screen's own hit test is checked in this file, the loop's use of it is checked
+// against a scripted double, and `liveScreen.WriteRegions` sat between them
+// untested. Swapping its two statements — recording the regions AFTER writing
+// the text rather than before — left the whole suite green while shifting every
+// region forward by the entry's line count in production.
+//
+// The rule that leaves: a double may not stand in for the object joining two
+// separately-pinned halves. A "pinned by" claim holds only when mutating the
+// IMPLEMENTING code reddens a named test.
+func TestLiveScreenJoinsRegionsToTheLinesTheyWereRenderedFor(t *testing.T) {
+	var tty strings.Builder
+	l := newLiveScreen(&tty, 24, 80)
+	l.interval = -1 // paint every write, so the frame is never a throttled one
+
+	// A session as the loop produces it: a committed line, then an entry whose
+	// regions are relative to its OWN first line.
+	l.Write([]byte("› concrete\r\n"))
+	l.WriteRegions("concrete  con·crete\nnoun a building material.\n\n  ORIGIN\n    from French concret.\n",
+		[]Region{
+			{Kind: RegionHeadword, Text: "concrete", Word: "concrete", Line: 0, Col: 0, Width: 8},
+			{Kind: RegionOriginLang, Text: "French", Word: "concrete", Lang: "fr", Line: 4, Col: 9, Width: 6},
+		})
+
+	// Resolve through the VIEWPORT, which is what a click gives us.
+	for _, tc := range []struct {
+		name     string
+		row, col int
+		want     string
+	}{
+		{"the headword, one line below the committed line", 1, 0, "concrete"},
+		{"the ORIGIN language, four lines further on", 5, 9, "French"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, ok := l.RegionAtRow(tc.row, tc.col)
+			if !ok {
+				t.Fatalf("row %d col %d offers nothing; the buffer is %q", tc.row, tc.col, l.s.Lines())
+			}
+			if r.Text != tc.want {
+				t.Errorf("row %d col %d offers %q, want %q", tc.row, tc.col, r.Text, tc.want)
+			}
+		})
+	}
+
+	// And the text really is where the click map says it is — the frame shows
+	// the marked span on that row, so the two cannot agree with each other while
+	// both being wrong about the screen.
+	frame := tty.String()
+	if !strings.Contains(frame, underlineOn+"French"+underlineOff) {
+		t.Errorf("the frame does not mark the span the hit test resolves: %q", frame)
+	}
+}
