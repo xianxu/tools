@@ -51,8 +51,12 @@ func TestResolvePrecedence(t *testing.T) {
 
 // No key is not an error to shout about — it is the ordinary offline state, and
 // it must be recognisable with errors.Is so callers degrade uniformly.
+//
+// Reachable only with a base URL that is NOT the managed local proxy, since that
+// one supplies its own handshake token. A key invented for someone else's proxy
+// would be a credential sent to a host we know nothing about.
 func TestResolveWithNoKeyIsUnavailable(t *testing.T) {
-	_, err := Resolve(envOf(nil))
+	_, err := Resolve(envOf(map[string]string{"DEFINE_LLM_BASE_URL": "https://api.anthropic.com"}))
 	if !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("err = %v, want ErrUnavailable", err)
 	}
@@ -89,11 +93,20 @@ func TestRedactShortAndEmpty(t *testing.T) {
 
 // Resolve must not consult the real environment. If it did, this test would
 // depend on the developer's shell.
+//
+// It used to prove that through the no-key ERROR, which stopped being reachable
+// when the local proxy learned to default its own key — an instrument, not the
+// property. The property is the same and now asserted directly: a value only the
+// real environment carries must not appear in the resolved config.
 func TestResolveIsPureOverTheLookup(t *testing.T) {
+	t.Setenv("DEFINE_LLM_MODEL", "model-from-the-real-environment")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-from-the-real-environment")
-	_, err := Resolve(envOf(nil))
-	if !errors.Is(err, ErrUnavailable) {
-		t.Fatalf("Resolve read the process environment instead of the lookup: %v", err)
+	c, err := Resolve(envOf(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Model == "model-from-the-real-environment" || c.APIKey == "sk-from-the-real-environment" {
+		t.Fatalf("Resolve read the process environment instead of the lookup: %+v", c)
 	}
 }
 
@@ -126,6 +139,64 @@ func TestResolveTimeout(t *testing.T) {
 			}
 			if got.Timeout != c.want {
 				t.Errorf("Timeout = %v, want %v", got.Timeout, c.want)
+			}
+		})
+	}
+}
+
+// The local proxy supplies its own key, so `define` works out of the box on any
+// machine where the parley-managed cliproxyapi is running.
+//
+// The token is a loopback HANDSHAKE, not a credential: cliproxyapi's `api-keys`
+// is an inbound allowlist, and parley renders this same constant into the
+// proxy's config and sends it as the bearer. Without this, the endpoint default
+// above was inert — every operator whose parley worked still met "no model
+// configured" and had to export a secret a program on the same machine already
+// knew.
+func TestTheLocalProxySuppliesItsOwnKey(t *testing.T) {
+	c, err := Resolve(envOf(nil))
+	if err != nil {
+		t.Fatalf("the default configuration is unusable with no environment at all: %v", err)
+	}
+	if c.BaseURL != defaultBaseURL {
+		t.Fatalf("BaseURL = %q, want the local proxy", c.BaseURL)
+	}
+	if c.APIKey != defaultLocalKey {
+		t.Errorf("APIKey = %q, want the local handshake token", c.APIKey)
+	}
+}
+
+// It is for THAT endpoint only, and an explicit key still wins everywhere.
+func TestTheLocalKeyIsNotSentElsewhereAndNeverOverrides(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		want string // "" means Resolve must decline
+	}{
+		{"a remote provider gets no invented key", map[string]string{"DEFINE_LLM_BASE_URL": "https://api.anthropic.com"}, ""},
+		{"nor does another local port", map[string]string{"DEFINE_LLM_BASE_URL": "http://127.0.0.1:9999"}, ""},
+		{"an explicit key wins over the default", map[string]string{"DEFINE_LLM_API_KEY": "sk-mine"}, "sk-mine"},
+		{"including for a remote provider", map[string]string{
+			"DEFINE_LLM_BASE_URL": "https://api.anthropic.com", "ANTHROPIC_API_KEY": "sk-real",
+		}, "sk-real"},
+		// Pointing DEFINE_LLM_BASE_URL at the managed proxy's own address is
+		// still the managed proxy: same endpoint, same handshake.
+		{"the same endpoint spelled explicitly", map[string]string{"DEFINE_LLM_BASE_URL": defaultBaseURL}, defaultLocalKey},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Resolve(envOf(tc.env))
+			if tc.want == "" {
+				if err == nil {
+					t.Errorf("resolved a key %q for %q — a token invented here would be sent as a credential to a host we know nothing about",
+						c.APIKey, c.BaseURL)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.APIKey != tc.want {
+				t.Errorf("APIKey = %q, want %q", c.APIKey, tc.want)
 			}
 		})
 	}

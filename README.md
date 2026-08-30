@@ -309,8 +309,14 @@ define --llm-check
 It is the one surface where an unusable configuration is **loud**: it exits
 non-zero and names the reason. Configure it with `DEFINE_LLM_API_KEY` (or `ANTHROPIC_API_KEY`),
 `DEFINE_LLM_BASE_URL`, `DEFINE_LLM_MODEL`, `DEFINE_LLM_EFFORT` and
-`DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) — all five the tool reads. The
-default base URL is a local proxy on `127.0.0.1:8317`.
+`DEFINE_LLM_TIMEOUT` (a duration, e.g. `90s`) — all five the tool reads.
+
+**You usually need none of them.** The default is a local proxy on
+`127.0.0.1:8317` — the parley-managed cliproxyapi — and `define` supplies that
+proxy's loopback handshake token itself, so questions work with nothing set at
+all. Point `DEFINE_LLM_BASE_URL` anywhere else and a key becomes required, since
+a token invented for a local proxy has no business being sent to a real
+provider.
 
 Exit codes: `0` success; `1` the request failed; `2` usage error. What produces
 each is enumerated rather than sampled, because a list of examples goes stale the

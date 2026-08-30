@@ -272,7 +272,16 @@ func TestAskSaysNothingWhenTheUserCancels(t *testing.T) {
 func TestAskDegradesWhenTheSeamIsUnavailable(t *testing.T) {
 	d := testDeps(t)
 	d.newLLM = llm.New
-	d.getenv = func(string) string { return "" } // no key at all
+	// A REMOTE provider with no key. "No environment at all" stopped being an
+	// unavailable configuration when the local proxy learned to supply its own
+	// handshake token, so this names the case that is still genuinely
+	// unconfigured — which is also the only one the message it asserts fits.
+	d.getenv = func(k string) string {
+		if k == "DEFINE_LLM_BASE_URL" {
+			return "https://api.anthropic.com"
+		}
+		return ""
+	}
 
 	var out, errb bytes.Buffer
 	code := runAsk(t.Context(), d, options{}, &session{}, question{text: "how so"}, &out, &errb)
