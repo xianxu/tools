@@ -314,3 +314,46 @@ func TestEditorLoopWritesThroughAScreen(t *testing.T) {
 		t.Errorf("a terminal control sequence was buffered as text: %q", got)
 	}
 }
+
+// writerFunc adapts a function to io.Writer, so a test can observe WHEN a write
+// happens rather than only what it said.
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// The prompt belongs to a loop that is WAITING for a keystroke.
+//
+// Every write repaints the frame around the live edge last recorded, so a prompt
+// left standing through a lookup is redrawn under the definition it produced:
+// `arrondissement` appeared twice, once as the entry's headword and once as a
+// prompt still holding the line just submitted, while the recording played
+// (operator-reported). What is pinned here is the general property rather than
+// that instance — nothing is written while a prompt is on the frame, because a
+// prompt drawn when nothing is reading keys invites typing at a line that does
+// not exist.
+func TestNothingIsWrittenWhileAPromptIsShown(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var live string
+	var whenWritten []string
+	paint := func(p string, _ []string) { live = p }
+	w := writerFunc(func(p []byte) (int, error) {
+		whenWritten = append(whenWritten, live)
+		return len(p), nil
+	})
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, paint, finish, w, w)
+
+	if len(whenWritten) == 0 {
+		t.Fatal("the session wrote nothing at all, so nothing is asserted")
+	}
+	for i, p := range whenWritten {
+		if p != "" {
+			t.Fatalf("write %d of %d landed with a prompt on the frame: %q",
+				i+1, len(whenWritten), p)
+		}
+	}
+	// And it comes BACK: blanking the live edge for the whole session would
+	// satisfy the loop above and leave a session with no prompt at all.
+	if live == "" {
+		t.Error("the prompt never returned after the work finished")
+	}
+}

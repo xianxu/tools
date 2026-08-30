@@ -362,6 +362,25 @@ screen). A pty smoke run rendered `arrondissement` as one frame with the
 committed line above the entry and the prompt below it, alt screen entered once
 and left once.
 
+### 2026-08-29 — M1.3b: the prompt belongs to a loop that is waiting
+
+Operator-reported against M1.3, with a screenshot: while the recording played,
+`arrondissement` appeared twice — once as the entry's headword, once as a prompt
+still holding the line just submitted.
+
+The cause is the repaint-on-write that makes streaming visible: every write
+redraws the frame around the LIVE EDGE last recorded, and between the submit and
+the next `draw()` that edge was stale. Blanking it on submit is not a patch on
+the duplicate: a prompt drawn while nothing is reading keys invites typing at a
+line that does not exist, so the loop now shows one only when it is waiting.
+
+Pinned by `TestNothingIsWrittenWhileAPromptIsShown` — nothing is written while a
+prompt is on the frame, plus the guard that it comes back, so blanking the edge
+for the whole session cannot pass. Falsifiable: removing the blank reddens it
+with the exact stale prompt from the screenshot. Confirmed on a real pty — mid
+playback the indicator is the last line with no prompt under it; after playback
+the indicator is gone and an empty prompt is back.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

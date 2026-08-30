@@ -195,6 +195,16 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				// claims the user typed something they did not.
 				submitted := e
 				e = NewEditor()
+				// THE PROMPT BELONGS TO A LOOP THAT IS WAITING. From here until
+				// the next draw() this one is working — looking up, streaming,
+				// playing — and every write repaints the frame around whatever
+				// live edge was last recorded. Left alone that is the line just
+				// submitted, so `arrondissement` appeared a second time under
+				// its own definition while the recording played
+				// (operator-reported). Blanking it is not a patch on that
+				// instance: a prompt drawn while nothing is reading keys invites
+				// typing at a line that does not exist.
+				paint("", nil)
 				if cmd.kind == cmdDefine || cmd.kind == cmdCommand || cmd.kind == cmdAsk {
 					fmt.Fprint(stdout, RenderLine(submitted, "", voc, opt.color))
 				}
