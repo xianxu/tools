@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDecodeKey(t *testing.T) {
 	tests := []struct {
@@ -151,6 +154,73 @@ func FuzzDecodeKey(f *testing.F) {
 		}
 		if n == 0 && k.Kind != KeyUnknown && k.Kind != 0 {
 			t.Fatalf("consumed 0 but returned kind %v", k.Kind)
+		}
+	})
+}
+
+// The WHEEL, reported by the terminal only because #30 M1.4b asks it to.
+//
+// In the alternate screen a terminal translates the wheel into arrow keys by
+// default, and this editor binds Up/Down to the history walk — so a scroll
+// walked history, and nothing could tell the two apart because they are the same
+// bytes (operator-reported).
+//
+// The sequence is delimited by the CSI scan, not by a length: "<" is a parameter
+// byte and "M"/"m" are final bytes. A malformed report must therefore still be
+// CONSUMED WHOLE — the failure #14 shipped was a decoder that ate part of a
+// sequence and typed the remainder into the word being looked up.
+func TestDecodeWheel(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want KeyKind
+		n    int
+	}{
+		{"wheel up", "\x1b[<64;10;5M", KeyWheelUp, 11},
+		{"wheel down", "\x1b[<65;10;5M", KeyWheelDown, 11},
+		{"the release form is still the gesture", "\x1b[<64;10;5m", KeyWheelUp, 11},
+		// Modifier bits ride along: shift 4, meta 8, ctrl 16. Shift-wheel is a
+		// wheel, so they are ignored rather than matched exactly.
+		{"shift-wheel down", "\x1b[<69;10;5M", KeyWheelDown, 11},
+		{"ctrl-wheel up", "\x1b[<80;10;5M", KeyWheelUp, 11},
+		// Coordinates past 223, where the LEGACY encoding wrapped — which is the
+		// whole reason 1006 is enabled alongside 1000.
+		{"a wide terminal", "\x1b[<64;480;300M", KeyWheelUp, 14},
+		// Not the wheel: a click carries coordinates that mean nothing until M2
+		// has a region map, so it stays inert — consumed whole.
+		{"a left click is inert", "\x1b[<0;10;5M", KeyUnknown, 10},
+		{"a horizontal wheel is inert", "\x1b[<66;10;5M", KeyUnknown, 11},
+		{"a malformed report is inert, not partial", "\x1b[<;;M", KeyUnknown, 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			k, n := decodeKey([]byte(tc.in))
+			if k.Kind != tc.want || n != tc.n {
+				t.Errorf("decodeKey(%q) = kind %v consumed %d, want kind %v consumed %d",
+					tc.in, k.Kind, n, tc.want, tc.n)
+			}
+		})
+	}
+}
+
+// A mouse report must never consume past its final byte, whatever is in it: a
+// decoder that over-consumes eats the next keystroke, and one that under-consumes
+// types the tail into the line.
+func FuzzDecodeWheelIsBounded(f *testing.F) {
+	for _, seed := range []string{"\x1b[<64;10;5M", "\x1b[<0;1;1m", "\x1b[<999999999;0;0M", "\x1b[<", "\x1b[<;;;;M"} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, in string) {
+		k, n := decodeKey([]byte(in))
+		if n < 0 || n > len(in) {
+			t.Fatalf("decodeKey(%q) consumed %d of %d bytes", in, n, len(in))
+		}
+		// A wheel answer may only come from a sequence that actually ended in a
+		// mouse report's final byte.
+		if k.Kind == KeyWheelUp || k.Kind == KeyWheelDown {
+			seq := in[:n]
+			if !strings.HasPrefix(seq, "\x1b[<") || (seq[n-1] != 'M' && seq[n-1] != 'm') {
+				t.Fatalf("decodeKey(%q) called %q a wheel event", in, seq)
+			}
 		}
 	})
 }

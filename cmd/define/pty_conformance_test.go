@@ -521,3 +521,27 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 		t.Errorf("%d bare newline(s) — the CRLF cascade is back", bad)
 	}
 }
+
+// Mouse reporting is asked for, and given back (#30 M1.4b).
+//
+// Giving it back matters more than turning it on: a terminal left reporting the
+// mouse writes escape sequences into whatever the user runs next, and unlike raw
+// mode there is no `reset` reflex for it, because the shell still looks fine. It
+// rides rawSession's restore for exactly that reason, and this is the row that
+// says the guarantee reaches a real terminal.
+func TestPTYMouseTrackingIsAskedForAndGivenBack(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	started := out.take(time.Second)
+
+	if !strings.Contains(started, mouseOn) {
+		t.Errorf("the session never enabled mouse reporting, so the wheel arrives as arrow keys: %q", started)
+	}
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	if rest := out.take(time.Second); !strings.Contains(started+rest, mouseOff) {
+		t.Errorf("mouse reporting was left ON: the next program run in this terminal gets escape sequences typed into it: %q", rest)
+	}
+}

@@ -271,10 +271,15 @@ func (l *liveScreen) Draw(prompt string, menu []string) {
 	l.repaint()
 }
 
-// Page moves the viewport and shows the result. The paint is the point: a scroll
-// nobody can see is not a scroll.
+// Page and Scroll move the viewport and show the result. The paint is the point:
+// a scroll nobody can see is not a scroll.
 func (l *liveScreen) Page(n int) {
 	l.s.Page(n)
+	l.repaint()
+}
+
+func (l *liveScreen) Scroll(lines int) {
+	l.s.Scroll(lines)
 	l.repaint()
 }
 

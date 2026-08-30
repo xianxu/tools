@@ -35,6 +35,12 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	// the line discipline and raw mode is continuous — which is what "render
 	// cooked, play raw" wanted all along.
 	sess.enterAlt()
+	// And the mouse, whose wheel this loop needs (M1.4b): inside the alternate
+	// screen a terminal sends the wheel as ARROW KEYS unless asked to report the
+	// mouse, and Up/Down here are the history walk — so a scroll walked history.
+	// The bytes are identical, so nothing could tell them apart; the report is
+	// the only way to be handed the gesture the user actually made.
+	sess.enterMouse()
 	live := newLiveScreen(stdout, terminalRows(stdout))
 	finish := func() {
 		// Painting stops BEFORE the terminal is handed back: a frame drawn after
@@ -51,6 +57,14 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	return runEditor(ctx, keys, interrupts, d, opt, live, finish, live, live)
 }
 
+// wheelLines is how far one wheel event moves the viewport.
+//
+// Three, which is what the terminal itself means by a notch: left to its own
+// devices in the alternate screen it translates one notch into THREE arrow keys.
+// Matching that keeps the gesture feeling like the terminal's own scroll rather
+// than like this program's idea of one.
+const wheelLines = 3
+
 // display is the loop's whole view of the terminal: one frame out, and a
 // viewport it can move.
 //
@@ -66,6 +80,9 @@ type display interface {
 	// older text, which is the direction "page up" means to a reader. How tall a
 	// page is belongs to the screen; the loop only knows a key was pressed.
 	Page(n int)
+	// Scroll moves it by LINES, in the same direction. The wheel is a finer
+	// gesture than the page keys and a screenful per notch would be unusable.
+	Scroll(lines int)
 }
 
 // runEditor is the editor loop with the terminal factored out: keys arrive on a
@@ -194,18 +211,24 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				finish()
 				return 0
 			}
-			// A VIEWPORT key never reaches Apply: it changes what you are
+			// A VIEWPORT gesture never reaches Apply: it changes what you are
 			// looking at, not the line you are typing, so the editor does not
-			// have to learn that a screen exists. PageUp/PageDown only — the
-			// obvious half-page bindings Ctrl-U and Ctrl-D are already the kill
-			// and the EOF (key.go), and taking either would be a silent
+			// have to learn that a screen exists. PageUp/PageDown and the wheel
+			// only — the obvious half-page bindings Ctrl-U and Ctrl-D are already
+			// the kill and the EOF (key.go), and taking either would be a silent
 			// regression in an editor people already use.
-			if k.Kind == KeyPageUp || k.Kind == KeyPageDown {
-				n := 1
-				if k.Kind == KeyPageDown {
-					n = -1
-				}
-				view.Page(n)
+			switch k.Kind {
+			case KeyPageUp:
+				view.Page(1)
+				continue
+			case KeyPageDown:
+				view.Page(-1)
+				continue
+			case KeyWheelUp:
+				view.Scroll(wheelLines)
+				continue
+			case KeyWheelDown:
+				view.Scroll(-wheelLines)
 				continue
 			}
 			cands := candidatesFor(e.WalkBase(), hist, commands)

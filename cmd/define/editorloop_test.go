@@ -57,6 +57,7 @@ type recordDisplay struct {
 	prompts []string
 	menus   [][]string
 	pages   []int
+	lines   []int
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
@@ -73,7 +74,8 @@ func (d *recordDisplay) Draw(prompt string, menu []string) {
 	fmt.Fprint(d.w, prompt)
 }
 
-func (d *recordDisplay) Page(n int) { d.pages = append(d.pages, n) }
+func (d *recordDisplay) Page(n int)   { d.pages = append(d.pages, n) }
+func (d *recordDisplay) Scroll(n int) { d.lines = append(d.lines, n) }
 
 func TestEditorLoopDefinesTypedWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
@@ -451,5 +453,30 @@ func TestCtrlUStillKillsTheLine(t *testing.T) {
 
 	if last := view.prompts[len(view.prompts)-1]; strings.Contains(last, "syco") {
 		t.Errorf("Ctrl-U did not clear the line — it was rebound: %q", last)
+	}
+}
+
+// The wheel scrolls the buffer. It must NOT walk history (operator-reported).
+//
+// In the alternate screen a terminal sends the wheel as ARROW KEYS unless asked
+// to report the mouse, and Up/Down here are the history walk — so scrolling
+// recalled words. Nothing could tell the two apart, because they are the same
+// bytes; #30 M1.4b turns mouse reporting on so the gesture arrives as itself.
+func TestWheelScrollsRatherThanWalkingHistory(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	// A lookup FIRST, so history has something to walk. With an empty history a
+	// wheel that reached the walk would change nothing, and this test would pass
+	// for the wrong reason.
+	ks := keySeq(append(runes("sycophantic"),
+		Key{Kind: KeyEnter}, Key{Kind: KeyWheelUp}, Key{Kind: KeyWheelDown})...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, view, finish, &out, &errb)
+
+	if want := []int{wheelLines, -wheelLines}; !slices.Equal(view.lines, want) {
+		t.Errorf("the wheel moved the viewport %v, want %v lines", view.lines, want)
+	}
+	if last := view.prompts[len(view.prompts)-1]; strings.Contains(last, "sycophantic") {
+		t.Errorf("the wheel recalled a word from history into the line: %q", last)
 	}
 }

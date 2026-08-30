@@ -20,8 +20,9 @@ type rawSession struct {
 	// f is the terminal itself, kept so restore can also leave the alternate
 	// screen. Without it the two guarantees would live in different places and
 	// a Ctrl-C would honour one of them.
-	f   *os.File
-	alt bool
+	f     *os.File
+	alt   bool
+	mouse bool
 }
 
 func enterRaw(f *os.File) (*rawSession, error) {
@@ -36,7 +37,11 @@ func (r *rawSession) restore() {
 	if r == nil {
 		return
 	}
-	// The alternate screen goes FIRST, so the terminal is back on the normal
+	// Mouse reporting goes first of all: a terminal left reporting the mouse
+	// sends escape sequences into whatever the user runs next, and unlike raw
+	// mode there is no `reset` reflex for it because the shell still looks fine.
+	r.leaveMouse()
+	// The alternate screen goes next, so the terminal is back on the normal
 	// buffer before raw mode ends — the reverse order leaves a cooked terminal
 	// briefly drawing into a buffer that is about to be discarded.
 	r.leaveAlt()
@@ -142,4 +147,46 @@ func (r *rawSession) leaveAlt() {
 	}
 	fmt.Fprint(r.f, altScreenOff)
 	r.alt = false
+}
+
+// Mouse reporting, SGR 1006 encoding (#30 M1.4b).
+//
+// 1000 is BUTTON-PRESS tracking: presses, releases and the wheel, and nothing
+// while the pointer merely moves. 1002 and 1003 would stream an event per cell
+// crossed, which is what a hover effect needs and this program does not have.
+// 1006 is the encoding rather than a mode — without it coordinates past column
+// 223 wrap, because the legacy encoding spends one byte on each.
+//
+// Enabled for the WHEEL, which the alternate screen otherwise delivers as arrow
+// keys — indistinguishable from the history walk. The clicks it also turns on
+// are inert until M2 has a region map to look their coordinates up in.
+//
+// THE COST, decided in the issue and paid here: with tracking on, drag-select
+// belongs to this program rather than the terminal, so copying text needs Option
+// (iTerm2, Terminal.app, Ghostty) or Shift. /help says so, because that is where
+// a user meets it.
+const (
+	mouseOn  = "\x1b[?1000h\x1b[?1006h"
+	mouseOff = "\x1b[?1006l\x1b[?1000l"
+)
+
+// enterMouse asks the terminal to report the mouse.
+//
+// On rawSession for the same reason enterAlt is: restoration has to be one
+// guarantee rather than three that each cover part of the exit paths.
+func (r *rawSession) enterMouse() {
+	if r == nil || r.f == nil || r.mouse {
+		return
+	}
+	fmt.Fprint(r.f, mouseOn)
+	r.mouse = true
+}
+
+// leaveMouse stops it. Idempotent, like the rest of restore.
+func (r *rawSession) leaveMouse() {
+	if r == nil || r.f == nil || !r.mouse {
+		return
+	}
+	fmt.Fprint(r.f, mouseOff)
+	r.mouse = false
 }

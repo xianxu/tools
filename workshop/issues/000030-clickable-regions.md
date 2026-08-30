@@ -408,6 +408,28 @@ exists. Row 4b of M1's done-when is covered by `TestCtrlDStillEndsTheSession`
 (with a key BEHIND the Ctrl-D, since `finish()` runs on both exits — what
 discriminates is whether the loop read on past it) and `TestCtrlUStillKillsTheLine`.
 
+### 2026-08-29 — M1.4b: the wheel walked history, and only the mouse report could fix it
+
+Operator-reported against M1.4a. In the alternate screen a terminal translates
+the wheel into arrow keys — which is how `less` scrolls with no mouse support at
+all — and this editor binds Up/Down to the history walk. The bytes are
+IDENTICAL, so nothing could tell a wheel from a keypress; asking the terminal to
+report the mouse is the only way to be handed the gesture that was actually made.
+
+That pulls `M2.2`'s tracking enable/disable into M1, which is where it belongs
+anyway: the wheel is a viewport gesture and the viewport is M1's. `1000`+`1006`
+ride `rawSession`'s restore beside the alt screen, disabled first on the way out
+— a terminal left reporting the mouse types escape sequences into the next
+program run, and nothing about the shell looks wrong, so there is no `reset`
+reflex to save the user.
+
+D7's drag-select cost therefore lands a milestone early. Said out loud in
+`/help`, which is the one screen listing what the console understands.
+
+Verified on a real pty by writing the exact bytes a terminal sends: two wheel-ups
+moved 6 lines back, a wheel-down 3 forward, a click was inert, and tracking was
+enabled once and disabled once. Plus `FuzzDecodeWheelIsBounded` at 1M execs.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

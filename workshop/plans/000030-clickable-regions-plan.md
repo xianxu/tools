@@ -112,6 +112,14 @@ to `#35`'s code and is where `M2.1` starts.
 - [x] **M1.4a — KEYS that move the viewport.** Without this `M1` ships a scroll model nothing exercises and a user cannot reach: the wheel is `M2`, and no key scrolls today.
       **PageUp/PageDown ONLY. NOT Ctrl-U/Ctrl-D**, which an earlier draft proposed and which are already bound: `0x04` is `KeyEOF` and ends the session on an empty line (`key.go:48`, `editor.go:107`), `0x15` is `KeyKillLine` (`key.go:50`, `editor.go:100`). Taking either is a silent regression in an editor people already use.
       The CSI scanner DELIMITS `ESC[5~`/`ESC[6~` correctly (`key.go:102-116`) and then returns `KeyUnknown`, so this adds two `KeyKind`s — not "already decoded", as the same draft said.
+- [x] **M1.4b — the WHEEL scrolls** (added mid-stream, see Revisions). Mouse
+      tracking moves from `M2.2` to here, because the wheel is a viewport gesture
+      and the viewport is `M1`'s: in the alternate screen a terminal delivers the
+      wheel as ARROW KEYS, which this editor binds to the history walk, and the
+      bytes are identical so nothing can tell them apart. `1000`+`1006` on
+      `rawSession` beside the alt screen, `decodeWheel` in the CSI scanner, and
+      the drag-select cost of D7 paid now — stated in `/help`, where a user meets
+      it. Clicks stay inert: coordinates mean nothing until `M2` has a region map.
 - [ ] **M1.4 — resize.** SIGWINCH → re-measure → repaint. The one thing that cannot be unit-tested is the signal, so the pty row drives a real `TIOCSWINSZ`.
 - [ ] **M1.5 — the transcript on exit** (D3), and the pty row that it survives.
 - [ ] **M1.6 — docs**: the atlas's raw-mode section, which currently explains the cooked/raw dance that D4 removes. That prose goes false, so it is rewritten rather than appended to.
@@ -155,7 +163,7 @@ to `#35`'s code and is where `M2.1` starts.
 ### Tasks
 
 - [ ] **M2.1 — `Render` emits regions.** The signature change is the risk: every caller and every golden test touches it. Keep the string identical — assert byte-equality against the current output over the whole corpus, so a regions change cannot silently alter what is drawn.
-- [ ] **M2.2 — `decodeMouse` + tracking enable/disable**, paired with the alt screen so a crash cannot leave tracking on.
+- [ ] **M2.2 — `decodeMouse` for BUTTONS.** The tracking enable/disable and the wheel half of the decoder landed in `M1.4b`, paired with the alt screen on `rawSession` so a crash cannot leave tracking on, with the bounded-consumption fuzz target this row called for. What is left is the press: its coordinates, which are inert today because nothing can look them up yet.
 - [ ] **M2.3 — hit test**: `screen.RegionAt(row, col)`, which is a lookup in the per-line region list. Pure.
 - [ ] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
 - [ ] **M2.5 — discoverability, STATIC rather than on hover** — and the tracking mode is the reason. Hover needs `1003` (any-event tracking), which streams an event for every cell the pointer crosses, so the loop would wake constantly to redraw an underline. `1000` (button press only) is what this issue enables, and with it the app never learns where the pointer is. So a clickable span is marked in the FRAME: the palette (`newPalette`) already spends `head`, `ipa`, `pos`, `num`, `ex`, `sect` and bold-green for deck words, so the mark is an ATTRIBUTE — underline — added to the span's existing colour rather than a seventh colour competing with them.
@@ -276,3 +284,38 @@ splicing an attribute into already-styled text.
   which is the successor of "every message carries its own `\r\n`" — the CRLF
   writer left this path with D5, taking `assertCRLFTerminated` and
   `streamedAnswer` with it.
+
+### 2026-08-29 — M1.4b: the wheel forced mouse tracking into M1
+
+**Operator-reported after M1.4a: the wheel did not scroll — it walked history.**
+
+The cause is a terminal convention this plan did not account for. In the
+alternate screen a terminal translates the wheel into ARROW KEYS, which is what
+makes `less` scroll without any mouse support at all. This program binds Up/Down
+to the history walk, so every scroll recalled a word. The two are the SAME BYTES,
+so no decoder, heuristic or timing rule can separate them: the only way to be
+handed the gesture the user actually made is to ask the terminal to report the
+mouse.
+
+So `M2.2`'s enable/disable moves into `M1`, and the milestone boundary still
+means what it did — `M1` is the screen layer, and scrolling is the screen's.
+What follows from it:
+
+- **`1000` + `1006`, on `rawSession` beside the alternate screen**, so one
+  restore guarantee covers raw mode, the alt screen and tracking rather than
+  three that each cover part of the exit paths. Disabled FIRST on the way out: a
+  terminal left reporting the mouse types escape sequences into the next program
+  the user runs, and unlike raw mode nothing about the shell looks wrong, so
+  there is no `reset` reflex to save them.
+- **The decoder answers only the WHEEL.** A press carries coordinates that mean
+  nothing until `M2` has a region map, and a Key kind nothing reads is a kind
+  that drifts — so a click stays `KeyUnknown`: consumed whole, inert, verified
+  inert on a real pty. `M2.2`'s bounded-consumption fuzz target is written now,
+  because the decoder is.
+- **D7's cost is paid a milestone early.** Drag-select now belongs to the
+  program, so copying needs Option or Shift. The plan already said this would
+  happen; what changed is only that it happens in `M1`. It is stated in `/help`,
+  which D7 asked for ("documented where a user meets it") and is the one screen
+  that lists what the console understands.
+- **A notch is three lines**, matching what the terminal itself means by one:
+  left alone it sends three arrow keys per notch.

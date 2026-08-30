@@ -31,6 +31,15 @@ const (
 	// silent regression in an editor people already use.
 	KeyPageUp
 	KeyPageDown
+	// The WHEEL, which is a viewport gesture like the page keys and not a mouse
+	// feature (#30 M1.4b). In the alternate screen a terminal translates the
+	// wheel into ARROW KEYS by default, and this program binds Up/Down to the
+	// history walk — so a scroll walked history instead. Nothing can tell the
+	// two apart, because they are the same bytes; the only way to get the wheel
+	// itself is to ask the terminal to report the mouse, which is why tracking
+	// is enabled here rather than waiting for the clicks in M2.
+	KeyWheelUp
+	KeyWheelDown
 )
 
 // Key is one decoded keypress. Raw carries the bytes of an unmodelled sequence
@@ -132,6 +141,9 @@ func decodeEscape(buf []byte) (Key, int) {
 				case "\x1b[6~":
 					return Key{Kind: KeyPageDown}, i + 1
 				}
+				if k, ok := decodeWheel(seq); ok {
+					return k, i + 1
+				}
 				return Key{Kind: KeyUnknown, Raw: seq}, i + 1
 			}
 			return Key{Kind: KeyUnknown, Raw: buf[:i+1]}, i + 1 // malformed
@@ -139,4 +151,67 @@ func decodeEscape(buf []byte) (Key, int) {
 		return Key{}, 0 // still incomplete
 	}
 	return Key{Kind: KeyUnknown, Raw: buf[:2]}, 2
+}
+
+// decodeWheel reads an SGR 1006 mouse report and answers only the WHEEL.
+//
+//	ESC [ < Cb ; Cx ; Cy M     press      (m for release)
+//
+// The sequence is already DELIMITED by the caller's scan — "<" is a parameter
+// byte and "M"/"m" are final bytes — so this only interprets what is inside, and
+// cannot consume past the end. That is the guarantee that matters here: #14
+// shipped a decoder that assumed a length, ate four bytes of a six-byte
+// sequence, and typed the remainder into the word being looked up.
+//
+// Only the wheel, deliberately. Buttons carry COORDINATES that mean nothing
+// until there is a region map to look them up in (M2), and a Key kind nothing
+// reads is a kind that drifts. A click therefore stays KeyUnknown — consumed
+// whole and inert, which is exactly what it should be for now.
+func decodeWheel(seq []byte) (Key, bool) {
+	if len(seq) < 4 || seq[2] != '<' {
+		return Key{}, false
+	}
+	final := seq[len(seq)-1]
+	if final != 'M' && final != 'm' {
+		return Key{}, false
+	}
+	// Cb only. Cx and Cy are parsed by M2, which has somewhere to put them.
+	b, ok := atoiPrefix(seq[3 : len(seq)-1])
+	if !ok {
+		return Key{}, false // malformed: inert, and the caller has still consumed it
+	}
+	// Bit 6 marks a wheel event; the low two bits pick the direction. The
+	// modifier bits (shift 4, meta 8, ctrl 16) ride along and are IGNORED rather
+	// than matched exactly — Shift-wheel is still a wheel.
+	if b&64 == 0 {
+		return Key{}, false
+	}
+	switch b & 3 {
+	case 0:
+		return Key{Kind: KeyWheelUp}, true
+	case 1:
+		return Key{Kind: KeyWheelDown}, true
+	}
+	return Key{}, false // horizontal wheel: nothing to scroll sideways
+}
+
+// atoiPrefix reads the leading decimal number of a parameter list. Returns false
+// on anything else, including an empty field or a number long enough to be a
+// denial-of-sense rather than a coordinate.
+func atoiPrefix(b []byte) (int, bool) {
+	n, digits := 0, 0
+	for _, c := range b {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + int(c-'0')
+		digits++
+		if digits > 6 {
+			return 0, false
+		}
+	}
+	if digits == 0 {
+		return 0, false
+	}
+	return n, true
 }
