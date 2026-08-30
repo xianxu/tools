@@ -433,3 +433,37 @@ func TestREPLPromptRequiresBothStreams(t *testing.T) {
 		t.Errorf("ANSI leaked into a redirected stdout: %q", out.String())
 	}
 }
+
+// `-no-color` means NO ANSI, and that includes the clickable mark (#30 M2.6).
+//
+// It degrades by ROUTING rather than by a flag the screen consults: -no-color
+// clears opt.tty, terminalUI goes false, and the whole session takes the line
+// loop — no alternate screen, no mouse tracking, no marks. So there is no path
+// on which an underline could reach output the user asked to keep plain, and no
+// second place that has to remember the rule.
+//
+// Pinned because the routing is the WHOLE mechanism: someone making the screen
+// unconditional would break this with every other test still green.
+func TestNoColorTakesTheLineLoopAndEmitsNoEscapes(t *testing.T) {
+	rig := newAudioRig(t, "concrete", true)
+	rig.deps.stdinIsTerminal = func() bool { return true }
+	// What flag parsing produces for -no-color: colour off, and tty with it,
+	// because "emit no ANSI" has to disable cursor control too.
+	opt := options{times: 0, noAudio: true, color: false, tty: false}
+
+	var out, errb bytes.Buffer
+	repl(t.Context(), rig.deps, opt, strings.NewReader("concrete\n"), &out, &errb)
+
+	got := out.String()
+	if !strings.Contains(got, "concrete") {
+		t.Fatalf("the word was never defined: %q", got)
+	}
+	for _, seq := range []string{underlineOn, underlineOff, altScreenOn, mouseOn, cursorHome} {
+		if strings.Contains(got, seq) {
+			t.Errorf("-no-color emitted %q — a record the user asked to keep plain", seq)
+		}
+	}
+	if strings.Contains(got, "\x1b") {
+		t.Errorf("-no-color emitted an escape sequence: %q", got)
+	}
+}

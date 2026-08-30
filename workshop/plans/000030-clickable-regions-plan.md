@@ -207,7 +207,7 @@ to `#35`'s code and is where `M2.1` starts.
 - [x] **M2.4 — the two actions.** Headword → replay. `ORIGIN` language → `/pron <that language>`, which after `#35` is a call into `OriginLanguage`'s map rather than new inference.
 - [x] **M2.5 — discoverability, STATIC rather than on hover** — and the tracking mode is the reason. Hover needs `1003` (any-event tracking), which streams an event for every cell the pointer crosses, so the loop would wake constantly to redraw an underline. `1000` (button press only) is what this issue enables, and with it the app never learns where the pointer is. So a clickable span is marked in the FRAME: the palette (`newPalette`) already spends `head`, `ipa`, `pos`, `num`, `ex`, `sect` and bold-green for deck words, so the mark is an ATTRIBUTE — underline — added to the span's existing colour rather than a seventh colour competing with them.
       It is spliced by the SCREEN, not by `Render`, because D6 promises the one-shot and `-raw` bytes are unchanged. `sgr.go`'s `sgrState.observe`/`resume` (`sgr.go:27,57`) is the existing machinery for reopening styles around an inserted attribute; this uses it rather than a second one.
-- [ ] **M2.6 — degrade**, and the case is NOT only "a terminal that reports no mouse". The exposure that actually bit was a terminal that reports the mouse in an encoding we did not ask for: mode `1000` falls back to X10 (`ESC[M` + three raw bytes), which the CSI scan delimited at `M` and left three payload bytes to be typed into the line. Fixed in M1's rework (`decodeX10Mouse`); this row keeps the rule that produced it — **for every mode we enable, the decoder answers every encoding that mode can reply in** — and applies it to whatever M2 turns on.
+- [x] **M2.6 — degrade**, and the case is NOT only "a terminal that reports no mouse". The exposure that actually bit was a terminal that reports the mouse in an encoding we did not ask for: mode `1000` falls back to X10 (`ESC[M` + three raw bytes), which the CSI scan delimited at `M` and left three payload bytes to be typed into the line. Fixed in M1's rework (`decodeX10Mouse`); this row keeps the rule that produced it — **for every mode we enable, the decoder answers every encoding that mode can reply in** — and applies it to whatever M2 turns on.
 
 ### M2 Done-when
 
@@ -218,9 +218,9 @@ to `#35`'s code and is where `M2.1` starts.
 | 3 | rendering is byte-identical | `TestRenderOutputUnchangedByRegions` | `Render` alters a byte while collecting |
 | 4 | a clickable span is visibly clickable before it is clicked | `TestScreenMarksClickableSpans`, `TestMarkingKeepsTheSpansOwnColour`, `TestMarkingIsPlacedByColumnNotByByte`; and the other half — that the mark never leaks — by `TestRenderNeverMarksSpansItself` plus the corpus golden | the underline attribute is dropped from the frame, or `Render` starts emitting it |
 | 5 | the mouse decoder is bounded and correct, and invents nothing | `TestDecodeWheel`, `TestDecodeX10Mouse`, `TestClickCarriesItsPosition`, `TestMouseDecoderRejectsWhatNoTerminalSends`, `FuzzDecodeMouseIsBounded` | it consumes past the final byte, or reports a coordinate it did not read |
-| 6 | a mouse-less terminal is unaffected | `TestPTYWithoutMouseBehavesAsBefore` | the enable is emitted unconditionally |
+| 6 | a mouse-less terminal is unaffected, and `-no-color` never sees a mark | `TestPTYWithoutMouseBehavesAsBefore`, `TestNoColorTakesTheLineLoopAndEmitsNoEscapes`, `TestEveryEnabledMouseModeIsDecoded` | a mode is enabled whose reply nothing decodes, or the screen becomes unconditional |
 | 7 | regions are one registry, not two special cases | `TestEveryRegionKindIsActionable` | a kind is added with no action |
-| 8 | tracking is disabled on exit | `TestPTYMouseTrackingIsLeftOnExit` | the disable is dropped |
+| 8 | tracking is disabled on exit | `TestPTYMouseTrackingIsAskedForAndGivenBack` (M1.4b), `TestRestoreHandsBackEveryTerminalState` | the disable is dropped |
 
 ---
 
@@ -600,3 +600,31 @@ four mutations now redden it.
   never handed a click map, because the map travels with the text through the
   writer — a test reading a session the loop never produced, which is the exact
   failure `editorConsole`'s comment already warned about.
+
+### 2026-08-30 — M2.5/M2.6 as built
+
+- **The mark is an ATTRIBUTE and the screen splices it**, both for the reasons
+  the task gave. What the task did not say, and the code now does: it is turned
+  off with `24` rather than `0`, because `0` would end the colour the palette
+  opened and take the rest of the line plain with it.
+- **`topLine` became the one owner of the viewport→buffer mapping.** Paint needs
+  the same answer a click does — which row is showing which line — and I had
+  spelled it twice. Two spellings are two chances to disagree by a line, which is
+  a click that plays the word above the one you pointed at. Third instance of
+  `one-owner-per-invariant` in this issue, caught before a review found it.
+- **M2.6's degrade is not a code path, it is the absence of input.** There is no
+  reliable way to ask a terminal whether it will honour mouse reporting: DECRQM
+  is a round trip answered inconsistently, and a private mode nobody implements
+  is ignored rather than refused. So the enable is unconditional and the pty row
+  asserts the ABSENCE costs nothing — lookups, key scrolling and suggestions all
+  work, and tracking is still handed back.
+- **`-no-color` degrades by ROUTING, which is stronger than a flag.** It clears
+  `opt.tty`, so `terminalUI` is false and the session takes the line loop: no
+  alternate screen, no tracking, no marks. There is no path on which an underline
+  could reach output the user asked to keep plain, and no second place that has
+  to remember the rule.
+- **The mode rule is mechanical now.** `TestEveryEnabledMouseModeIsDecoded` reads
+  the modes off `mouseOn` itself and demands a row naming what each can reply in.
+  Adding `1005` to that constant reddens the suite — which is the only version of
+  "for every mode we enable, the decoder answers every encoding" that survives
+  the next person to enable something.

@@ -620,3 +620,40 @@ func TestPTYTranscriptIsPrintedOnExit(t *testing.T) {
 		t.Errorf("the committed line is not in the transcript: %q", after)
 	}
 }
+
+// A terminal that never reports a mouse behaves exactly as M1 did (#30 M2.6).
+//
+// The enable is emitted unconditionally, because there is no reliable way to ask
+// a terminal whether it will honour it — DECRQM is a round trip terminals answer
+// inconsistently, and a private mode nobody implements is ignored rather than
+// echoed. So the degrade is not a code path: it is the absence of input. What
+// this row asserts is that the absence costs nothing — the session still looks
+// words up, still scrolls by key, and still leaves the terminal sane.
+func TestPTYWithoutMouseBehavesAsBefore(t *testing.T) {
+	cmd, f := startDefine(t, "--no-audio")
+	out := watch(f)
+	out.take(time.Second)
+
+	// A whole session, and not one mouse report in it.
+	f.Write([]byte("sycophantic\r"))
+	if got := out.take(3 * time.Second); !strings.Contains(got, "sikəˈfan(t)ik") {
+		t.Fatalf("the lookup did not answer: %q", got)
+	}
+	f.Write([]byte("\x1b[5~")) // PageUp still scrolls
+	if got := out.take(time.Second); !strings.Contains(got, cursorHome) {
+		t.Errorf("the viewport did not move without a mouse: %q", got)
+	}
+	f.Write([]byte("syc"))
+	if got := out.take(time.Second); !strings.Contains(got, greyOn) {
+		t.Errorf("suggestions stopped working without a mouse: %q", got)
+	}
+
+	f.Write([]byte("\x03"))
+	if err := cmd.Wait(); err != nil {
+		t.Errorf("exit: %v, want 0", err)
+	}
+	rest := out.take(time.Second)
+	if !strings.Contains(rest, mouseOff) {
+		t.Errorf("tracking was left on by a session that never saw a mouse: %q", rest)
+	}
+}

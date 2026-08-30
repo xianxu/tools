@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -384,5 +385,59 @@ func TestMouseDecoderRejectsWhatNoTerminalSends(t *testing.T) {
 				t.Errorf("decodeKey(%q) consumed %d of %d — the tail would reach the line as text", tc.in, n, len(tc.in))
 			}
 		})
+	}
+}
+
+// EVERY ENCODING THE MODES WE ENABLE CAN REPLY IN IS DECODED (#30 M2.6).
+//
+// This is the rule M1's shipped Critical left behind, made mechanical. Enabling
+// mode 1000 without decoding its native X10 form let a click type " !!" into the
+// word being looked up: the mode was asked for, and its answer was not read.
+//
+// So the modes are read OFF THE CONSTANT the program actually sends. Adding a
+// mode to mouseOn without adding a row here reddens the suite, which is the only
+// version of this rule that survives the next person to enable something.
+func TestEveryEnabledMouseModeIsDecoded(t *testing.T) {
+	// What each mode can answer in, and one well-formed sample of it.
+	//
+	// 1005 (UTF-8) and 1015 (urxvt) are deliberately absent: a terminal uses
+	// them only when ASKED, and this program never asks. That is why the table
+	// is keyed on what we enable rather than on what exists.
+	replies := map[string][]struct{ encoding, sample string }{
+		"1000": {
+			{"X10, the default reply to 1000", "\x1b[M \x21\x21"},
+			{"SGR, once 1006 is also on", "\x1b[<0;1;1M"},
+		},
+		"1006": {
+			{"SGR extended coordinates", "\x1b[<0;300;120M"},
+		},
+	}
+
+	modes := regexp.MustCompile(`\x1b\[\?(\d+)h`).FindAllStringSubmatch(mouseOn, -1)
+	if len(modes) == 0 {
+		t.Fatal("no modes found in mouseOn; this test would be vacuous")
+	}
+	for _, m := range modes {
+		mode := m[1]
+		rows, listed := replies[mode]
+		if !listed {
+			t.Errorf("mode %s is enabled but no row here says what it can REPLY in. "+
+				"Enabling a mode without decoding its answer is how a click came to type "+
+				"characters into the line (#30 M1.4b); add the encoding and a sample.", mode)
+			continue
+		}
+		for _, r := range rows {
+			t.Run(mode+" — "+r.encoding, func(t *testing.T) {
+				k, n := decodeKey([]byte(r.sample))
+				if n != len(r.sample) {
+					t.Errorf("decodeKey(%q) consumed %d of %d — the tail reaches the line as text",
+						r.sample, n, len(r.sample))
+				}
+				if k.Kind == KeyRune {
+					t.Errorf("decodeKey(%q) produced the rune %q — the report was typed rather than read",
+						r.sample, k.Rune)
+				}
+			})
+		}
 	}
 }
