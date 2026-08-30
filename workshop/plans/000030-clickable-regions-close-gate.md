@@ -294,6 +294,183 @@ rounds:
           round: 3
       boundary: M1
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-29T20:48:44-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: M1.1's prose is unchanged and no chunk-boundary property test for Write was written; Minor, non-blocking.
+          round: 4
+        - id: BR-2
+          disposition: addressed
+          note: The plan now states the uncapped buffer deliberately, with the reason and a size estimate.
+          round: 4
+        - id: BR-3
+          disposition: withdrawn
+          note: 'Overtaken: M1.3 is built and its diff is in front of the reviewer, so the size warning is moot.'
+          round: 4
+        - id: BR-4
+          disposition: addressed
+          note: Verified by mutation — deleting both leaves from restore() now reddens three assertions.
+          round: 4
+        - id: BR-5
+          disposition: addressed
+          note: Verified by mutation — removing the decodeX10Mouse dispatch reddens TestDecodeX10Mouse and TestX10ClickTypesNothing.
+          round: 4
+        - id: BR-6
+          disposition: addressed
+          note: Both routes it named are fixed and mutation-verified; the cols==0 residual is carried on BR-12.
+          round: 4
+        - id: BR-7
+          disposition: addressed
+          note: Both eraseLine prefixes are gone and the comments now explain why the screen took that job.
+          round: 4
+        - id: BR-8
+          disposition: addressed
+          note: Throttle plus trailing flush, mutation-verified; the uncapped buffer is now a stated decision.
+          round: 4
+        - id: BR-9
+          disposition: addressed
+          note: Rows added — but the added Kind column broke the guard that reads the table; see the new Critical.
+          round: 4
+        - id: BR-10
+          disposition: not-addressed
+          note: 'Two of five remain: Paint still discards the tty write error, and pty_conformance_test.go:216 still states "render cooked, play raw" as the current fix.'
+          round: 4
+        - id: BR-11
+          disposition: addressed
+          note: Mutation-verified; the X10 payload is consumed whole or not at all.
+          round: 4
+        - id: BR-12
+          disposition: not-addressed
+          note: The third route it named survives — terminalWidth returns 0 below 20 columns or on probe failure, and with cols==0 displayRows charges one row per line and clipVisible returns the line unclipped; measured, a 10-row/80-column frame then needs 28 display rows.
+          round: 4
+        - id: BR-13
+          disposition: addressed
+          note: rawSession.control is an io.Writer and the restore protocol is asserted in process, bytes and order.
+          round: 4
+        - id: BR-14
+          disposition: addressed
+          note: All five sites fixed and the test now pins the production composition; issue 32's Spec still describes the old nesting, which D5a deliberately deferred.
+          round: 4
+        - id: BR-15
+          disposition: addressed
+          note: go test -race ./cmd/define/ is green; one remaining unsynchronised read is raised separately as the family rule.
+          round: 4
+        - id: BR-16
+          disposition: addressed
+          note: Mutation-verified — removing the throttle reddens the frame-count assertion.
+          round: 4
+        - id: BR-17
+          disposition: addressed
+          note: One clamp owner, and Frame writes back; the behavioural half has no pin (reverting to a local clamp leaves TestScreen green).
+          round: 4
+        - id: BR-18
+          disposition: addressed
+          note: sync.OnceFunc with the transcript stated as its reason; still unreachable today, which the comment now owns.
+          round: 4
+        - id: BR-19
+          disposition: addressed
+          note: Mode sequences go to the same stream as the frames, and a failed write no longer claims the state.
+          round: 4
+        - id: BR-20
+          disposition: not-addressed
+          note: The fix is present at replraw.go:304 but no test pins it — deleting the line leaves the whole suite green.
+          round: 4
+        - id: BR-21
+          disposition: addressed
+          note: README now says what the transcript keeps and what it deliberately drops.
+          round: 4
+        - id: BR-22
+          disposition: addressed
+          note: Rows added; the resulting guard breakage is the new Critical.
+          round: 4
+      findings:
+        - id: BR-23
+          severity: Critical
+          title: go test ./... is red at HEAD on two plan-table guards, and the Log records it green
+          detail: |-
+            TestPlanTablesNameEntitiesThatExist fails on all fourteen M1 Pure-entities rows:
+            plan.md:78 added a Kind column, which lands in the guard's third-cell Status slot,
+            so every row is rejected as an out-of-vocabulary status AND skipped unchecked — the
+            Core-concepts cross-check is blind to M1's whole table. TestPlanTableStatusMatchesTheChangeWindow
+            fails on plan.md:167, the M2 Render row, because this window touched render.go
+            without touching Render's declaration. Base 168b1c9 passes the first guard and
+            skips the second. Fix the table shape (Status third, as the Integration table at
+            plan.md:104 already is), decide how a not-yet-started milestone's modified rows
+            should read, then re-run and re-record.
+          family: verification-claim-unreproduced
+          round: 4
+        - id: BR-24
+          severity: Important
+          title: replRaw's exit sequence is pinned only by pty rows that skip, and the BR-20 fix is pinned by nothing
+          detail: |-
+            Third in this family. The rule: every behavioural claim M1 makes needs a pin that
+            runs under plain go test ./cmd/define/; a conformance-tagged pty row is a live
+            conformance check, not the pin. replRaw has no in-process caller, so enterAlt +
+            enterMouse on entry and finish's Stop -> restore -> print-transcript ordering and
+            once-only property rest solely on TestPTYTranscriptIsPrintedOnExit and
+            TestPTYMouseTrackingIsAskedForAndGivenBack, both of which skipped here ("no pty
+            available: operation not permitted"). Separately replraw.go:304's
+            submitted.Cursor = len(submitted.Line) can be deleted with the suite still green.
+            Extract finish's body over an interface and assert the order in process.
+          family: unfalsifiable-test-pin
+          round: 4
+        - id: BR-25
+          severity: Important
+          title: atlas/ was not updated for the display-row budget, the paint clip, the repaint throttle or the X10 fallback
+          detail: |-
+            The rework commit touched atlas/define.md only for the two crlfWriter prose sites.
+            "The screen" (atlas/define.md:265-340) does not say that the frame is budgeted in
+            display rows, that buffer lines are CLIPPED to the terminal width at paint time
+            while the transcript keeps the full text, or that a write now repaints at most
+            once per 16 ms — it still asserts "A write REPAINTS" flatly. The X10 fallback and
+            the rule it leaves behind are also absent, though 1000 and 1006 are named. All
+            three are surface a reader of the atlas would be wrong about.
+          family: docs-lag-new-surface
+          round: 4
+        - id: BR-26
+          severity: Minor
+          title: 'Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows'
+          detail: |-
+            Fourth in this family. Do not fix these instances — the rule is that every row and
+            column count in the paint path comes from one owner measuring display cells that
+            cannot return a sentinel. Measured: visibleLen (render.go:230) counts runes, so
+            "日本語のテキストです" reports 10 for 20 columns (frame too tall, the BR-6/BR-12
+            failure) and "bänˈZHo͝or" reports 10 for 9 (clipVisible cuts text that fits);
+            Paint's cursor-up (screen.go:235) uses len(menu) while the terminal moved
+            sum(displayRows(menu)) rows, so a 45-column menu row in a 20-column terminal
+            leaves the cursor two rows low and the prompt is reprinted over the menu — the
+            same off-by-a-row limit the whole-frame redraw claims in its own comment to have
+            deleted. Latent today only because menuLines truncates to opt.width, which
+            happens to equal termCols.
+          family: frame-fits-the-terminal
+          round: 4
+        - id: BR-27
+          severity: Minor
+          title: The wheel button-byte decode is spelled twice, in decodeWheel and decodeX10Mouse
+          detail: |-
+            Second in this family. The rule: one function owns "what does this mouse button
+            byte mean" and every encoding calls it. key.go:201-207 and key.go:250-254 both
+            spell b&64 for the wheel bit and b&3 for the direction. M2.2 adds button decoding,
+            which would make it three spellings of one fact across two encodings. Extract
+            wheelFromButton(b int) (Key, bool) now.
+          family: one-owner-per-invariant
+          round: 4
+        - id: BR-28
+          severity: Minor
+          title: screen_test.go:457 reads tty.frames without the lock, and :464 reads l.pending without l.mu
+          detail: |-
+            Second in this family. The rule: a field written by a timer or loop goroutine is
+            read only through its accessor. Every other site in the same test uses the locked
+            tty.painted(); line 457 reaches the field directly while the trailing paint timer
+            may be running. -race does not report it because the timer reliably fires after
+            the read, which is exactly why the guarantee has to be structural.
+          family: unsynchronised-test-observation
+          round: 4
+      boundary: M1
+      blocked: true
 ---
 
 # Gate ledger — tools#30 (boundary-review)
@@ -478,27 +655,97 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   greppable tables a reader and the plan-table guards check. Add them with
   kind/location/status in a "## Revisions" entry.
 
+## Round 4 — 2026-08-29T20:48:44-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — M1.1's prose is unchanged and no chunk-boundary property test for Write was written; Minor, non-blocking.
+- BR-2 — addressed — The plan now states the uncapped buffer deliberately, with the reason and a size estimate.
+- BR-3 — withdrawn — Overtaken: M1.3 is built and its diff is in front of the reviewer, so the size warning is moot.
+- BR-4 — addressed — Verified by mutation — deleting both leaves from restore() now reddens three assertions.
+- BR-5 — addressed — Verified by mutation — removing the decodeX10Mouse dispatch reddens TestDecodeX10Mouse and TestX10ClickTypesNothing.
+- BR-6 — addressed — Both routes it named are fixed and mutation-verified; the cols==0 residual is carried on BR-12.
+- BR-7 — addressed — Both eraseLine prefixes are gone and the comments now explain why the screen took that job.
+- BR-8 — addressed — Throttle plus trailing flush, mutation-verified; the uncapped buffer is now a stated decision.
+- BR-9 — addressed — Rows added — but the added Kind column broke the guard that reads the table; see the new Critical.
+- BR-10 — not-addressed — Two of five remain: Paint still discards the tty write error, and pty_conformance_test.go:216 still states "render cooked, play raw" as the current fix.
+- BR-11 — addressed — Mutation-verified; the X10 payload is consumed whole or not at all.
+- BR-12 — not-addressed — The third route it named survives — terminalWidth returns 0 below 20 columns or on probe failure, and with cols==0 displayRows charges one row per line and clipVisible returns the line unclipped; measured, a 10-row/80-column frame then needs 28 display rows.
+- BR-13 — addressed — rawSession.control is an io.Writer and the restore protocol is asserted in process, bytes and order.
+- BR-14 — addressed — All five sites fixed and the test now pins the production composition; issue 32's Spec still describes the old nesting, which D5a deliberately deferred.
+- BR-15 — addressed — go test -race ./cmd/define/ is green; one remaining unsynchronised read is raised separately as the family rule.
+- BR-16 — addressed — Mutation-verified — removing the throttle reddens the frame-count assertion.
+- BR-17 — addressed — One clamp owner, and Frame writes back; the behavioural half has no pin (reverting to a local clamp leaves TestScreen green).
+- BR-18 — addressed — sync.OnceFunc with the transcript stated as its reason; still unreachable today, which the comment now owns.
+- BR-19 — addressed — Mode sequences go to the same stream as the frames, and a failed write no longer claims the state.
+- BR-20 — not-addressed — The fix is present at replraw.go:304 but no test pins it — deleting the line leaves the whole suite green.
+- BR-21 — addressed — README now says what the transcript keeps and what it deliberately drops.
+- BR-22 — addressed — Rows added; the resulting guard breakage is the new Critical.
+
+### Raised
+
+- **BR-23** [Critical] `verification-claim-unreproduced` go test ./... is red at HEAD on two plan-table guards, and the Log records it green
+  TestPlanTablesNameEntitiesThatExist fails on all fourteen M1 Pure-entities rows:
+  plan.md:78 added a Kind column, which lands in the guard's third-cell Status slot,
+  so every row is rejected as an out-of-vocabulary status AND skipped unchecked — the
+  Core-concepts cross-check is blind to M1's whole table. TestPlanTableStatusMatchesTheChangeWindow
+  fails on plan.md:167, the M2 Render row, because this window touched render.go
+  without touching Render's declaration. Base 168b1c9 passes the first guard and
+  skips the second. Fix the table shape (Status third, as the Integration table at
+  plan.md:104 already is), decide how a not-yet-started milestone's modified rows
+  should read, then re-run and re-record.
+- **BR-24** [Important] `unfalsifiable-test-pin` replRaw's exit sequence is pinned only by pty rows that skip, and the BR-20 fix is pinned by nothing
+  Third in this family. The rule: every behavioural claim M1 makes needs a pin that
+  runs under plain go test ./cmd/define/; a conformance-tagged pty row is a live
+  conformance check, not the pin. replRaw has no in-process caller, so enterAlt +
+  enterMouse on entry and finish's Stop -> restore -> print-transcript ordering and
+  once-only property rest solely on TestPTYTranscriptIsPrintedOnExit and
+  TestPTYMouseTrackingIsAskedForAndGivenBack, both of which skipped here ("no pty
+  available: operation not permitted"). Separately replraw.go:304's
+  submitted.Cursor = len(submitted.Line) can be deleted with the suite still green.
+  Extract finish's body over an interface and assert the order in process.
+- **BR-25** [Important] `docs-lag-new-surface` atlas/ was not updated for the display-row budget, the paint clip, the repaint throttle or the X10 fallback
+  The rework commit touched atlas/define.md only for the two crlfWriter prose sites.
+  "The screen" (atlas/define.md:265-340) does not say that the frame is budgeted in
+  display rows, that buffer lines are CLIPPED to the terminal width at paint time
+  while the transcript keeps the full text, or that a write now repaints at most
+  once per 16 ms — it still asserts "A write REPAINTS" flatly. The X10 fallback and
+  the rule it leaves behind are also absent, though 1000 and 1006 are named. All
+  three are surface a reader of the atlas would be wrong about.
+- **BR-26** [Minor] `frame-fits-the-terminal` Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows
+  Fourth in this family. Do not fix these instances — the rule is that every row and
+  column count in the paint path comes from one owner measuring display cells that
+  cannot return a sentinel. Measured: visibleLen (render.go:230) counts runes, so
+  "日本語のテキストです" reports 10 for 20 columns (frame too tall, the BR-6/BR-12
+  failure) and "bänˈZHo͝or" reports 10 for 9 (clipVisible cuts text that fits);
+  Paint's cursor-up (screen.go:235) uses len(menu) while the terminal moved
+  sum(displayRows(menu)) rows, so a 45-column menu row in a 20-column terminal
+  leaves the cursor two rows low and the prompt is reprinted over the menu — the
+  same off-by-a-row limit the whole-frame redraw claims in its own comment to have
+  deleted. Latent today only because menuLines truncates to opt.width, which
+  happens to equal termCols.
+- **BR-27** [Minor] `one-owner-per-invariant` The wheel button-byte decode is spelled twice, in decodeWheel and decodeX10Mouse
+  Second in this family. The rule: one function owns "what does this mouse button
+  byte mean" and every encoding calls it. key.go:201-207 and key.go:250-254 both
+  spell b&64 for the wheel bit and b&3 for the direction. M2.2 adds button decoding,
+  which would make it three spellings of one fact across two encodings. Extract
+  wheelFromButton(b int) (Key, bool) now.
+- **BR-28** [Minor] `unsynchronised-test-observation` screen_test.go:457 reads tty.frames without the lock, and :464 reads l.pending without l.mu
+  Second in this family. The rule: a field written by a timer or loop goroutine is
+  read only through its accessor. Every other site in the same test uses the locked
+  tty.painted(); line 457 reaches the field directly while the trailing paint timer
+  may be running. -race does not report it because the timer reliably fires after
+  the read, which is exactly why the guarantee has to be structural.
+
 ## Open findings
 
 - **BR-1** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
-- **BR-2** [Minor] `unbounded-buffer` screen.lines and D3's exit transcript are unbounded
-- **BR-3** [Minor] `blast-radius-understated` M1.3's "only the destination changes" understates deleting cooked
-- **BR-4** [Important] `unfalsifiable-test-pin` TestRestoreLeavesTheAlternateScreen passes with leaveAlt and leaveMouse deleted from restore()
-- **BR-5** [Important] `decoder-consumes-whole-sequence` Mode 1000 is enabled but its native X10 encoding is undecoded, so a click types characters into the line
-- **BR-6** [Important] `frame-fits-the-terminal` Paint counts the frame in logical lines, not display rows, so a wide buffer line scrolls the terminal
-- **BR-7** [Minor] `unfalsifiable-test-pin` TestRawLoopMessagePlacement's wantErase row passes with eraseLine removed from both define: sites
-- **BR-8** [Minor] `coalesce-ui-work` A whole-frame repaint per streamed delta, with no coalescing and no synchronized-output guard
-- **BR-9** [Minor] `plan-table-under-declares` M1's Core-concepts table omits liveScreen, display, enterMouse/leaveMouse, decodeWheel, screen.Page
 - **BR-10** [Minor] `stale-rationale` Stale cooked-mode prose and small residue left by D4
-- **BR-11** [Critical] `escape-sequence-underconsumption` a legacy X10 mouse report injects three characters into the line being typed
 - **BR-12** [Important] `app-owns-every-row` Paint budgets the frame in logical lines and never consults a column width
-- **BR-13** [Important] `vacuous-pin` TestRestoreLeavesTheAlternateScreen asserts nothing; deleting leaveAlt from restore stays green
-- **BR-14** [Important] `stale-prose-after-removal` five sites still claim the raw loop wraps stdout in crlfWriter, which D5 removed
-- **BR-15** [Important] `unsynchronised-test-observation` two new tests race; go test -race fails where the base commit is clean
-- **BR-16** [Important] `unbounded-ui-repaint` every streamed delta triggers a full-screen clear and redraw, with no coalescing
-- **BR-17** [Minor] `one-owner-per-invariant` the offset clamp is spelled twice and Frame does not write its clamp back
-- **BR-18** [Minor] `unreachable-guard` the handedBack once-only guard in finish cannot fire today
-- **BR-19** [Minor] `terminal-writes-off-seam` terminal-control sequences go to the stdin handle while frames go to stdout, errors discarded
 - **BR-20** [Minor] `control-sequence-buffered-as-text` RenderLine's trailing cursor-back escape is stored in the buffer and the transcript
-- **BR-21** [Minor] `doc-overclaim` README says the transcript is your scrollback "exactly as it was before"
-- **BR-22** [Minor] `plan-table-incomplete` M1's Core concepts tables omit liveScreen, display, enterMouse/leaveMouse, terminalRows, decodeWheel and the four new KeyKinds
+- **BR-23** [Critical] `verification-claim-unreproduced` go test ./... is red at HEAD on two plan-table guards, and the Log records it green
+- **BR-24** [Important] `unfalsifiable-test-pin` replRaw's exit sequence is pinned only by pty rows that skip, and the BR-20 fix is pinned by nothing
+- **BR-25** [Important] `docs-lag-new-surface` atlas/ was not updated for the display-row budget, the paint clip, the repaint throttle or the X10 fallback
+- **BR-26** [Minor] `frame-fits-the-terminal` Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows
+- **BR-27** [Minor] `one-owner-per-invariant` The wheel button-byte decode is spelled twice, in decodeWheel and decodeX10Mouse
+- **BR-28** [Minor] `unsynchronised-test-observation` screen_test.go:457 reads tty.frames without the lock, and :464 reads l.pending without l.mu

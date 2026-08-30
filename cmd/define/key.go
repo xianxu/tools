@@ -195,9 +195,19 @@ func decodeWheel(seq []byte) (Key, bool) {
 	if !ok {
 		return Key{}, false // malformed: inert, and the caller has still consumed it
 	}
-	// Bit 6 marks a wheel event; the low two bits pick the direction. The
-	// modifier bits (shift 4, meta 8, ctrl 16) ride along and are IGNORED rather
-	// than matched exactly — Shift-wheel is still a wheel.
+	return wheelFromButton(b)
+}
+
+// wheelFromButton reads a mouse report's BUTTON byte, which means the same thing
+// in every encoding the terminal might answer in.
+//
+// One owner, because there are already two encodings and M2 adds buttons to
+// both: three spellings of "bit 6 is the wheel, the low two bits are the
+// direction" across two decoders is how they come to disagree.
+//
+// The modifier bits (shift 4, meta 8, ctrl 16) ride along and are IGNORED rather
+// than matched exactly — Shift-wheel is still a wheel.
+func wheelFromButton(b int) (Key, bool) {
 	if b&64 == 0 {
 		return Key{}, false
 	}
@@ -246,14 +256,8 @@ func decodeX10Mouse(buf []byte) (Key, int) {
 	if len(buf) < 6 {
 		return Key{}, 0
 	}
-	b := int(buf[3]) - 32
-	if b&64 != 0 {
-		switch b & 3 {
-		case 0:
-			return Key{Kind: KeyWheelUp}, 6
-		case 1:
-			return Key{Kind: KeyWheelDown}, 6
-		}
+	if k, ok := wheelFromButton(int(buf[3]) - 32); ok {
+		return k, 6
 	}
 	return Key{Kind: KeyUnknown, Raw: buf[:6]}, 6
 }

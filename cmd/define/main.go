@@ -963,15 +963,34 @@ func noDeckMessage(noCapture bool) string {
 // terminal. Wrapping is a presentation decision, so it stays at the boundary and
 // Render receives a number.
 func terminalWidth(w io.Writer) int {
+	sz, ok := terminalSize(w)
+	if !ok || sz.cols < 20 { // not a terminal, or implausibly narrow: do not wrap
+		return 0
+	}
+	return sz.cols
+}
+
+// terminalSize is the terminal's true SHAPE, and the distinction from
+// terminalWidth is the point: this one cannot return a sentinel.
+//
+// terminalWidth answers a POLICY question — "how wide should text be wrapped",
+// where 0 means "do not wrap" and a 15-column terminal gets that answer. The
+// screen asks a different question — "how many columns does this terminal have"
+// — and an answer of 0 there means a frame budgeted with no width at all, which
+// is the sentinel leaking into arithmetic that has no use for it.
+//
+// ok is false when w is not a terminal. The caller decides what to do about it;
+// the full-screen loop runs only when it is one.
+func terminalSize(w io.Writer) (winSize, bool) {
 	f, ok := w.(*os.File)
 	if !ok {
-		return 0
+		return winSize{}, false
 	}
-	cols, _, err := term.GetSize(int(f.Fd()))
-	if err != nil || cols < 20 { // an implausibly narrow terminal: do not wrap
-		return 0
+	cols, rows, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return winSize{}, false
 	}
-	return cols
+	return winSize{rows: rows, cols: cols}, true
 }
 
 // terminalRows reports the height of w, or a conventional 24 when it cannot be
@@ -983,18 +1002,27 @@ func terminalWidth(w io.Writer) int {
 // rows shows the prompt and nothing else, which would hide the very definition
 // the user asked for.
 func terminalRows(w io.Writer) int {
-	f, ok := w.(*os.File)
-	if !ok {
+	sz, ok := terminalSize(w)
+	if !ok || sz.rows < 2 { // one row cannot hold both a definition and a prompt
 		return defaultRows
 	}
-	_, rows, err := term.GetSize(int(f.Fd()))
-	if err != nil || rows < 2 { // one row cannot hold both a definition and a prompt
-		return defaultRows
-	}
-	return rows
+	return sz.rows
 }
 
-const defaultRows = 24
+// terminalCols is the width the SCREEN paints to — never 0, because a frame
+// budgeted with no width is a frame with no budget.
+func terminalCols(w io.Writer) int {
+	sz, ok := terminalSize(w)
+	if !ok || sz.cols < 1 {
+		return defaultCols
+	}
+	return sz.cols
+}
+
+const (
+	defaultRows = 24
+	defaultCols = 80
+)
 
 // isTerminal keeps the TTY probe out of Render, so rendering stays pure and
 // piping `define x | less` yields clean text.

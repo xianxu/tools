@@ -231,8 +231,16 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu 
 		b.WriteString("\r\n" + m)
 	}
 	if len(menu) > 0 {
-		// Back to the prompt row, so the cursor sits where the user is typing.
-		fmt.Fprintf(&b, "\x1b[%dA\r", len(menu))
+		// Back to the prompt row, so the cursor sits where the user is typing —
+		// counted in the rows the TERMINAL moved, not in menu entries. A menu row
+		// wider than the terminal wraps onto two, and walking up by the entry
+		// count would leave the cursor low and reprint the prompt over the menu:
+		// the same off-by-a-row limit this whole-frame redraw exists to delete.
+		up := 0
+		for _, m := range menu {
+			up += displayRows(m, s.cols)
+		}
+		fmt.Fprintf(&b, "\x1b[%dA\r", up)
 		// And forward to the prompt's own cursor column, which the caller
 		// encoded into `prompt` — reprinting it is cheaper than tracking a
 		// column here and cannot disagree with what was drawn.
@@ -405,7 +413,7 @@ func displayRows(line string, cols int) int {
 	if cols <= 0 {
 		return 1 // an unmeasurable terminal: charge one row and let it wrap
 	}
-	w := visibleLen(line)
+	w := visibleCells(line)
 	if w <= cols {
 		return 1
 	}
@@ -420,7 +428,7 @@ func displayRows(line string, cols int) int {
 // guarantee. The buffer keeps the full text, so nothing is lost from the
 // transcript — only from the view, which is what a viewport is.
 func clipVisible(s string, width int) string {
-	if width <= 0 || visibleLen(s) <= width {
+	if width <= 0 || visibleCells(s) <= width {
 		return s
 	}
 	var b strings.Builder

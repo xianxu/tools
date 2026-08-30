@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // RenderOpts controls presentation only. Render is pure: it never probes the
@@ -168,7 +169,7 @@ func Render(e Entry, opt RenderOpts) string {
 			}
 			if s.Gloss != "" {
 				body := prettyPronunciations(s.Gloss, p)
-				lead := len(indent) + visibleLen(marker)
+				lead := len(indent) + visibleCells(marker)
 				// Highlight AFTER wrapping: wrapText measures visible columns and
 				// breaks at spaces, so a highlight inserted first would widen the
 				// text it measures. Wrapping first also means a phrase cannot span
@@ -224,10 +225,15 @@ func prettyPronunciations(s string, p palette) string {
 	return rewritePronunciations(s, p.ipa, p.off)
 }
 
-// visibleLen is the display width of s, ignoring ANSI escape sequences. Wrapping
-// on raw byte length would break early on any coloured line, and these lines are
-// coloured.
-func visibleLen(s string) int {
+// visibleCells is the width of s in TERMINAL COLUMNS, ignoring ANSI escape
+// sequences. Wrapping on raw byte length would break early on any coloured line,
+// and these lines are coloured; counting runes instead is wrong in both
+// directions for a dictionary — see cellWidth.
+//
+// It is the ONE owner of "how wide is this" in this program. Every wrap, every
+// frame budget and every clip reads it, so a line cannot be measured one way
+// where it is written and another where it is placed.
+func visibleCells(s string) int {
 	n, inEsc, inCSI := 0, false, false
 	for _, r := range s {
 		switch {
@@ -247,10 +253,62 @@ func visibleLen(s string) int {
 		case r == '\x1b':
 			inEsc = true
 		default:
-			n++
+			n += cellWidth(r)
 		}
 	}
 	return n
+}
+
+// cellWidth is how many terminal columns one rune occupies: 0, 1 or 2.
+//
+// It exists because this program is a DICTIONARY, and both exceptions are its
+// daily traffic. NOAD writes `bänˈZHo͝or` — the o͝o carries a combining double
+// breve, a rune that occupies no column of its own — so counting runes reports
+// ten columns for nine and cuts text that fits. And a Japanese or Chinese entry
+// is full-width: ten runes are twenty columns, so counting runes builds a frame
+// twice as tall as it measured, the terminal scrolls, and every row the app
+// believes it placed has moved.
+//
+// Hand-rolled against unicode's own tables rather than taking a dependency for
+// it: the ranges below are the East Asian Wide and Fullwidth blocks, and the
+// zero-width cases are exactly the categories unicode already names.
+func cellWidth(r rune) int {
+	switch {
+	case r == 0:
+		return 0
+	case unicode.Is(unicode.Mn, r), unicode.Is(unicode.Me, r), unicode.Is(unicode.Cf, r):
+		// Non-spacing and enclosing marks compose with the rune before them, and
+		// format characters (ZWJ, the bidi controls) are not drawn at all.
+		return 0
+	case r == '\u200b': // zero-width space, which is Zs rather than Cf
+		return 0
+	case isWide(r):
+		return 2
+	}
+	return 1
+}
+
+// isWide reports the East Asian Wide and Fullwidth ranges — the ones a terminal
+// draws in two cells.
+func isWide(r rune) bool {
+	switch {
+	case r >= 0x1100 && r <= 0x115f, // Hangul Jamo
+		r >= 0x2e80 && r <= 0x303e, // CJK radicals, Kangxi, CJK symbols
+		r >= 0x3041 && r <= 0x33ff, // Hiragana, Katakana, Hangul compat, CJK compat
+		r >= 0x3400 && r <= 0x4dbf, // CJK Ext A
+		r >= 0x4e00 && r <= 0x9fff, // CJK Unified
+		r >= 0xa000 && r <= 0xa4cf, // Yi
+		r >= 0xac00 && r <= 0xd7a3, // Hangul syllables
+		r >= 0xf900 && r <= 0xfaff, // CJK compatibility ideographs
+		r >= 0xfe30 && r <= 0xfe6f, // CJK compatibility forms
+		r >= 0xff00 && r <= 0xff60, // fullwidth forms
+		r >= 0xffe0 && r <= 0xffe6,
+		r >= 0x1f300 && r <= 0x1f64f, // emoji, which terminals draw double-wide
+		r >= 0x1f900 && r <= 0x1f9ff,
+		r >= 0x20000 && r <= 0x3fffd: // CJK Ext B and beyond
+		return true
+	}
+	return false
 }
 
 // wrapText breaks s at spaces to fit width, continuing on subsequent lines with
@@ -260,14 +318,14 @@ func visibleLen(s string) int {
 // splitting words mid-syllable ("fing/ers"), which is exactly what a dictionary
 // entry must not do.
 func wrapText(s string, width, indent int) string {
-	if width <= 0 || visibleLen(s)+indent <= width {
+	if width <= 0 || visibleCells(s)+indent <= width {
 		return s
 	}
 	pad := strings.Repeat(" ", indent)
 	var b strings.Builder
 	col := indent
 	for i, word := range strings.Fields(s) {
-		w := visibleLen(word)
+		w := visibleCells(word)
 		switch {
 		case i == 0:
 			b.WriteString(word)

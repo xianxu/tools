@@ -396,6 +396,34 @@ func TestEditorLoopWritesThroughAScreen(t *testing.T) {
 	}
 }
 
+// A committed line carries no CURSOR, and the buffer is where that shows.
+//
+// RenderLine parks the cursor by emitting `ESC[<n>D`, which is right for a line
+// being typed and wrong for one being filed: submitted mid-line, that escape
+// landed in the buffer and from there in the exit transcript — a control
+// sequence stored as text. The earlier version of this test guarded only against
+// `ESC[K`, so the fix was deletable with the suite still green.
+func TestACommittedLineCarriesNoCursorEscape(t *testing.T) {
+	rig, opt, finish := editorRig(t, "sycophantic", true)
+	sc := &screen{}
+	// Type the word, walk the cursor back into it, THEN submit.
+	ks := keySeq(append(runes("sycophantic"),
+		Key{Kind: KeyLeft}, Key{Kind: KeyLeft}, Key{Kind: KeyLeft}, Key{Kind: KeyEnter})...)
+	runEditor(t.Context(), ks, nil, rig.deps, opt, paintInto(io.Discard), nil, finish, sc, sc)
+
+	first := sc.Lines()[0]
+	if !strings.Contains(first, "sycophantic") {
+		t.Fatalf("the committed line is not the head of the transcript: %q", first)
+	}
+	// Any CSI that is not a colour: the cut is at the final byte, and only "m"
+	// belongs in a record of what was shown.
+	for _, seq := range []string{"\x1b[3D", "\x1b[K", "\x1b[A"} {
+		if strings.Contains(first, seq) {
+			t.Errorf("the committed line carries %q, a control sequence stored as text: %q", seq, first)
+		}
+	}
+}
+
 // writerFunc adapts a function to io.Writer, so a test can observe WHEN a write
 // happens rather than only what it said.
 type writerFunc func(p []byte) (int, error)

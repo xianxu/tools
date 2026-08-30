@@ -541,6 +541,30 @@ Re-verified: `go test ./...` and `-race` green; 11 PTY rows green; on a real pty
 narrowed to 40 columns every painted row fits while the transcript keeps the full
 text, and an X10 click types nothing.
 
+### 2026-08-29 — M1 review round 3: four findings, and the Critical was mine
+
+- **`go test ./...` was RED at HEAD while the Log said green.** I ran the suite,
+  then edited the plan's tables, then committed. Two repo guards parse those
+  tables — status is a controlled vocabulary in the third cell — so a "Kind"
+  column inserted before it broke every row, and a `Render` row calling itself
+  `modified` claimed work M2 has not done. The rule this leaves: **prose here is
+  code to a guard; re-run the suite after editing a plan, not before.**
+- **A sentinel leaked into arithmetic.** `terminalWidth` returns 0 for a terminal
+  under 20 columns — a POLICY answer meaning "do not wrap" — and the screen read
+  it as a column count. `terminalSize`/`terminalCols` answer the other question
+  and cannot return a sentinel.
+- **Width is measured in CELLS now, by one owner.** Runes are wrong in both
+  directions for a dictionary: `bänˈZHo͝or`'s combining breve is 0 columns (text
+  that fits was being cut) and CJK is 2 (frames twice as tall as measured, so the
+  terminal scrolls). `visibleCells` + `cellWidth`, read by every wrap, budget and
+  clip; the menu's cursor-up counts the rows the terminal moved.
+- **A pty row is a conformance check, not a pin.** The exit sequence lived inside
+  `replRaw`, which has no in-process caller, so it rested on rows that skip
+  wherever no pty exists — including inside the review itself. `handBack` and
+  `onceHandBack` are named, take two small interfaces, and are pinned in process.
+- **The atlas lagged its own milestone** and now carries the budget, the clip,
+  the cell-width owner, the throttle, the X10 fallback and `handBack`.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed

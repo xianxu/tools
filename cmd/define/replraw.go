@@ -42,37 +42,22 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	// The bytes are identical, so nothing could tell them apart; the report is
 	// the only way to be handed the gesture the user actually made.
 	sess.enterMouse()
-	live := newLiveScreen(stdout, terminalRows(stdout), terminalWidth(stdout))
+	live := newLiveScreen(stdout, terminalRows(stdout), terminalCols(stdout))
 	// The shape is MEASURED here, where the terminal is, and delivered to the
 	// loop as a value — so the loop's new select case knows nothing about
 	// os/signal and everything about what it has to redraw.
 	resizes := watchResize(ctx, d.notifySignals, func() winSize {
-		return winSize{rows: terminalRows(stdout), cols: terminalWidth(stdout)}
+		// The TRUE shape. The wrap policy is derived from it below, where the
+		// loop sets opt.width — the two questions have different answers for a
+		// very narrow terminal, and only one of them may be zero.
+		return winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
 	})
 	// ONCE, and the transcript is why it has to be: restore() and Stop() are both
 	// idempotent because they run from more than one exit path, and printing a
 	// session twice is not the kind of thing an idempotent call fixes. sync's
 	// primitive rather than a hand-rolled flag, so the guarantee needs no test of
 	// its own to be trustworthy.
-	finish := sync.OnceFunc(func() {
-		// Painting stops BEFORE the terminal is handed back: a frame drawn after
-		// restore lands on the normal screen, over whatever was there before.
-		live.Stop()
-		sess.restore()
-		// THE SESSION, printed back into the normal buffer (#30 D3).
-		//
-		// The alternate screen is discarded on the way out, so without this
-		// everything the session showed is simply gone — and `define
-		// arrondissement` used to leave the entry where you could scroll back to
-		// it tomorrow, or copy from it. Losing that silently is a regression a
-		// user meets immediately, which is why it is a decision in the plan and
-		// not a nicety.
-		//
-		// AFTER restore, deliberately: the terminal is cooked again, so the
-		// transcript's bare newlines are newlines, and this is the one write in
-		// the whole loop that goes to the real stdout rather than the screen.
-		fmt.Fprint(stdout, live.Transcript())
-	})
+	finish := onceHandBack(live, sess, stdout)
 	// BOTH streams are the screen, stderr included (D5b). A diagnostic written
 	// straight to the terminal while the alternate screen is up lands wherever
 	// the cursor happens to be and corrupts the frame; through the screen it is a
@@ -111,6 +96,47 @@ type display interface {
 	// Resize sets the terminal's SHAPE. The caller redraws, because the live
 	// edge is rendered against the new width too.
 	Resize(rows, cols int)
+}
+
+// onceHandBack is handBack, exactly once. Named so the loop's exit paths — three
+// of them — share one guarantee rather than each carrying a flag.
+func onceHandBack(live interface {
+	Stop()
+	Transcript() string
+}, sess interface{ restore() }, stdout io.Writer) func() {
+	return sync.OnceFunc(func() { handBack(live, sess, stdout) })
+}
+
+// handBack returns the terminal to whoever had it, in the order that makes each
+// step safe, and leaves the session where the user can scroll to it.
+//
+// A named function over two interfaces rather than a closure inside replRaw,
+// because replRaw itself has no in-process caller — it demands a real *os.File
+// it can put into raw mode — and every claim this sequence makes was therefore
+// pinned only by pty rows, which skip wherever no pty is available. A boundary
+// review that cannot run them is a review that cannot check the most dangerous
+// thing this program does.
+//
+// The ORDER is the content:
+//
+//  1. stop painting, so no frame is drawn onto the normal screen after the
+//     alternate one is gone;
+//  2. restore the terminal — mouse reporting, then the alt screen, then the line
+//     discipline (rawSession owns why);
+//  3. print the session, LAST, because the terminal is cooked again by then, so
+//     the transcript's bare newlines are newlines. This is the one write in the
+//     whole loop that goes to the real stdout rather than through the screen.
+//
+// Without step 3 the alternate screen takes the session with it, and `define
+// arrondissement` no longer leaves the entry where you can scroll back to it
+// tomorrow (#30 D3).
+func handBack(live interface {
+	Stop()
+	Transcript() string
+}, sess interface{ restore() }, stdout io.Writer) {
+	live.Stop()
+	sess.restore()
+	fmt.Fprint(stdout, live.Transcript())
 }
 
 // runEditor is the editor loop with the terminal factored out: keys arrive on a
@@ -250,7 +276,14 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			// loop is idle: this case is only reached between keystrokes, so the
 			// frame is briefly stale rather than concurrently painted by two
 			// goroutines.
+			// The POLICY width for wrapping new entries, and the TRUE width for
+			// placing rows. Below 20 columns wrapping is turned off — a
+			// dictionary entry cannot be broken that narrowly and stay readable
+			// — while the frame still has to fit the columns that exist.
 			opt.width = sz.cols
+			if sz.cols < 20 {
+				opt.width = 0
+			}
 			view.Resize(sz.rows, sz.cols)
 			draw()
 			continue

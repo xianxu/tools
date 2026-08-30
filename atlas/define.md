@@ -266,10 +266,11 @@ app does not own. Terminals that offer to scroll it do so by SENDING KEYS, which
 is still the application's own scroll.
 
 ```
-screen        lines []string + offset      PURE: Write, Frame, Scroll, Page
-liveScreen    screen + tty + rows          the only part that does terminal IO
+screen        lines []string + offset      PURE: Write, Frame, Scroll, Page, Paint
+liveScreen    screen + tty + rows,cols     the only part that does terminal IO
 display       Draw(prompt, menu), Page,    what the editor loop is handed
               Scroll, Resize
+handBack      Stop → restore → transcript  the exit sequence, as one function
 ```
 
 - **`screen` is an `io.Writer`, and that is what kept this from being a rewrite.**
@@ -304,6 +305,38 @@ display       Draw(prompt, menu), Page,    what the editor loop is handed
   tomorrow. Printed from `finish` AFTER `restore`, when the terminal is cooked
   again, and `finish` is once-only for exactly that reason.
 
+**A frame is budgeted in DISPLAY ROWS, and that is the guarantee — not a
+detail.** A line wider than the terminal wraps onto a second row, so a frame that
+counted it as one is a frame one row too tall; the terminal scrolls to fit it,
+and every row the app believes it placed has moved. Two routine ways in: narrow
+the window (buffer lines keep the wrapping they were rendered with, by decision)
+or type a line longer than the terminal is wide. So the prompt and each menu row
+are charged their real height, the cursor walks back by the rows the terminal
+actually moved rather than by menu entries, and buffer lines are CLIPPED to the
+width at paint time — the buffer keeps the whole text, so the transcript and
+`M2`'s click map lose nothing.
+
+**One owner answers "how wide is this", and it counts CELLS.** `visibleCells`
+(`render.go`) skips escape sequences and reads `cellWidth` per rune: a combining
+mark is 0 columns and a CJK or fullwidth rune is 2. Both are this program's daily
+traffic — NOAD writes `bänˈZHo͝or` with a combining double breve, and a Japanese
+entry is full-width — so counting runes is wrong in both directions, cutting text
+that fits and building frames twice as tall as measured. Every wrap, every frame
+budget and every clip reads that one function, so a line cannot be measured one
+way where it is written and another where it is placed. `terminalSize` is its
+counterpart for the terminal: `terminalWidth` answers a POLICY question ("how
+wide should text wrap", 0 meaning "do not") while the screen needs a true column
+count that cannot be a sentinel.
+
+**Writes are throttled; the trailing flush is not an optimisation.** The ask path
+writes once per streamed delta, and a frame per delta is a full-screen redraw per
+token. `liveScreen` paints at most every 16 ms, with a timer that flushes a held
+frame whether or not another write follows — because `♫ playing 3×` is written
+and then playback blocks for seconds, so a throttle that waited for the next
+write would hide it for the whole recording. Draw, Page, Scroll and Stop paint
+unconditionally. The buffer itself is uncapped, deliberately: a cap would
+silently truncate the record the exit transcript exists to be.
+
 **Scrolling, and why the mouse had to be reported.** PageUp/PageDown move the
 viewport by a screenful less one line of overlap; the wheel moves three lines. The
 wheel took mouse reporting (`1000` + `1006`) to arrange at all: in the alternate
@@ -312,6 +345,16 @@ screen a terminal translates the wheel into ARROW KEYS — the convention that l
 walk, so scrolling recalled words. The bytes are identical, so nothing can
 separate them; asking the terminal to report the mouse is the only way to be
 handed the gesture the user made.
+
+**Enabling a mode means accepting its whole grammar.** `1000` is answered in
+X10 — `ESC[M` plus three RAW bytes — by any terminal that ignores `1006`, and
+those bytes belong to no CSI grammar: the scan stops at `M` as a final byte and
+the payload reaches the line as text, so a click typed `" !!"` into the word
+being looked up. That is `#14`'s family one encoding over, shipped by the commit
+that enabled the mode. `decodeX10Mouse` consumes six bytes or none, `decodeWheel`
+handles the SGR form, and both read one `wheelFromButton`. The rule to carry into
+`M2`: **for every mode we enable, the decoder answers every encoding that mode
+can reply in.**
 
 **The cost, decided rather than discovered:** with tracking on, drag-select
 belongs to this program, so copying text needs Option (iTerm2, Terminal.app,
@@ -323,7 +366,17 @@ clipboard integration.
 and mouse reporting all hang off `rawSession`, which restores from a defer AND on
 the cancellation path. Unwound in reverse: mouse first (a terminal left reporting
 it types escape sequences into the next program while the shell still looks
-fine), then the alt screen, then the line discipline.
+fine), then the alt screen, then the line discipline. `rawSession` writes those
+mode sequences to an `io.Writer` rather than to the stdin handle — they change
+the screen the frames are drawn on, and it is also what makes the protocol
+assertable with no terminal, which the first version of that test was not.
+
+**The exit sequence is one function, `handBack`.** Stop painting, restore, print
+the session — in that order, because a frame drawn after the alternate screen is
+gone lands on the normal one, and a transcript printed before the line discipline
+is back has bare newlines. `replRaw` has no in-process caller (it demands a real
+`*os.File` it can put into raw mode), so a sequence left inline there could only
+ever be pinned by pty rows that skip where no pty exists.
 
 **Resize is SIGWINCH → measure → redraw, and both halves of the shape matter.**
 Rows because a frame one row too tall makes the terminal scroll, which moves every

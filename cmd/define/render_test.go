@@ -270,13 +270,13 @@ func noRawNotationIn(t *testing.T, d *fakeDictionary) {
 func TestWrapTextBreaksAtSpaces(t *testing.T) {
 	got := wrapText("mid 16th century from French sycophante or via Latin", 24, 4)
 	for _, line := range strings.Split(got, "\n") {
-		if visibleLen(strings.TrimSpace(line)) == 0 {
+		if visibleCells(strings.TrimSpace(line)) == 0 {
 			t.Error("blank line produced")
 		}
 	}
 	// No line may exceed the width once its indent is counted.
 	for i, line := range strings.Split(got, "\n") {
-		w := visibleLen(line)
+		w := visibleCells(line)
 		if i == 0 {
 			w += 4
 		}
@@ -455,5 +455,36 @@ func TestASpanishWordInAnEnglishEntryDoesCarryNotation(t *testing.T) {
 		t.Error("no pronunciation parsed for jalapeño in the English dictionary — the " +
 			"'Spanish has no notation' rule is about the Spanish DICTIONARY, not about " +
 			"Spanish words, and this is the case that distinguishes them")
+	}
+}
+
+// Width is measured in COLUMNS, not runes, and both exceptions are this
+// program's daily traffic.
+//
+// NOAD writes `bänˈZHo͝or` — the o͝o carries a combining double breve, a rune
+// that occupies no column of its own — so counting runes reports more width than
+// the terminal uses and cuts text that fits. A Japanese entry is full-width: ten
+// runes are twenty columns, so counting runes builds a frame twice as tall as it
+// measured, the terminal scrolls, and every row the screen placed has moved.
+func TestVisibleCellsCountsColumns(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want int
+	}{
+		{"plain ascii", "hello", 5},
+		{"a colour costs nothing", "\x1b[1;36mhello\x1b[0m", 5},
+		{"a cursor move costs nothing either", "hello\x1b[3D", 5},
+		// NOAD's own anglicisation of `bonjour`, combining breve and all.
+		{"a combining mark rides on the rune before it", "bänˈZHo͡or", 9},
+		{"CJK is two columns a rune", "日本語", 6},
+		{"fullwidth latin is two as well", "ＡＢ", 4},
+		{"mixed", "a日b", 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := visibleCells(tc.in); got != tc.want {
+				t.Errorf("visibleCells(%q) = %d columns, want %d", tc.in, got, tc.want)
+			}
+		})
 	}
 }

@@ -428,3 +428,268 @@ findings:
       greppable tables a reader and the plan-table guards check. Add them with
       kind/location/status in a "## Revisions" entry.
 ```
+
+---
+
+## Re-review — 2026-08-29T20:48:44-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 168b1c9f3ed7367f122af4795002ad336fd41e02..72ad3a17e2ad2eb89fe2744d08817c90416008d7 |
+| command | sdlc milestone-close --issue 30 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-29T20:48:44-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+`go test ./...` is **red at HEAD** — two repo guards fail (`TestPlanTablesNameEntitiesThatExist`, `TestPlanTableStatusMatchesTheChangeWindow`), and base `168b1c9` is green on the one that runs there. The issue's `## Log` records "Re-verified: `go test ./...` and `-race` green" for this window, which does not reproduce. That alone blocks the boundary, and the cause matters more than the symptom: the fix for BR-9/BR-22 added a `Kind` column to M1's Pure-entities table, which lands in the guard's Status slot, so all fourteen M1 rows are rejected as out-of-vocabulary *and* go unchecked — the plan-table cross-check that this very gate reads is currently blind to M1's entire table. Everything else is in good shape. I mutation-verified the four blocking fixes this round claims: deleting the X10 dispatch, deleting `leaveAlt`/`leaveMouse` from `restore`, reverting `Paint` to a logical-line budget, and removing the repaint throttle each redden a named test. `-race` is clean and `go vet` is silent. Three residuals remain from prior findings (`terminalWidth`'s `0` sentinel still defeats the display-row budget below 20 columns, `Paint`'s discarded write error plus one stale "render cooked, play raw" comment, and the BR-20 cursor fix which no test pins), and the rework commit added architectural surface — the display-row budget, paint-time clipping, the 16 ms throttle, the X10 fallback — without touching `atlas/` for any of it.
+
+## 1. Strengths
+
+- **`cmd/define/key.go:245` `decodeX10Mouse` is the right shape for the Critical it answers.** Six bytes or none, with `Key{}, 0` reusing `decodeKey`'s existing partial-sequence protocol rather than inventing a second one. `TestX10ClickTypesNothing` (`key_test.go:267`) asserts the *observable* — nothing reaches the line — instead of a byte count, and reverting the dispatch reddens it with the exact `" !!"` the operator would have seen.
+- **`cmd/define/rawterm.go:32` `rawSession.control` is a structural fix, not a test patch.** Typing the mode-sequence target as `io.Writer` makes the restore protocol assertable in process; `TestRestoreHandsBackEveryTerminalState` (`rawterm_test.go:114`) pins the bytes *and* the order, and `TestRestoreSendsNothingItDidNotTake` / `TestEnterDoesNotClaimAStateItCouldNotWrite` close the two adjacent holes. Deleting both leaves from `restore()` now reddens three assertions.
+- **`screen.go:211` `Paint` charges the live edge its real height and clips buffer lines at paint time**, keeping the full text in the buffer — so the transcript and M2's future click map are unaffected by the view's truncation. `TestScreenClipsTheViewNotTheBuffer` pins both halves of that split.
+- **`liveScreen`'s throttle has the trailing flush** (`screen.go:340`), and the test names why it matters: `TestLiveScreenThrottlesTheRepaintButNeverLosesTheLastWord` fails on *both* mutations — remove the throttle and the frame count blows up; the indicator case would hang without the trailing timer.
+- **The `crlfWriter` sweep replaced a dead test with a live one.** `TestHighlightingSeesLogicalTextAndTheScreenPlacesIt` (`askhighlight_test.go:255`) drives `runAsk` into a real `screen`, which is the composition production actually builds — a genuine improvement over the composition it used to assert.
+
+## 2. Critical findings
+
+**`go test ./...` fails at HEAD; the recorded verification does not reproduce** — `workshop/plans/000030-clickable-regions-plan.md:78`, `:93`, `:167`
+
+Two failures, both introduced by this window (base `168b1c9` passes `TestPlanTablesNameEntitiesThatExist`; the window guard skips there because HEAD == merge-base):
+
+1. `plan.md:78` — the Pure-entities table is now `| Name | Lives in | Kind | Status |`. `repo_guard_test.go`'s row regex reads the **third** cell as Status, so it sees `"PURE"` and fails closed on all fourteen rows, including `crlfWriter`'s `"—"` (`plan.md:93`). The rows are then `continue`d past, so *no M1 name is checked against the tree at all*. The Integration table at `plan.md:104` (`| Name | Lives in | Status | Wraps |`) keeps Status third and passes — that is the shape the guard expects.
+2. `plan.md:167` — `| Render | cmd/define/render.go | modified — also returns regions |` is an **M2** row. This window touched `render.go` (`visibleLen`), so the guard now evaluates it and reports "the row describes work that did not happen."
+
+Fix sketch: for (1), either move `Kind` after `Status` or fold it into the Status prose so the third cell stays in the controlled vocabulary — and re-run to confirm the fourteen rows now actually get *checked*, not merely stop erroring. For (2), the M2 row should read `new`/`unchanged` until M2 lands, or the guard needs a milestone-scoped exemption (`workshop/issues/000033-plan-table-both-directions.md` is the natural home for that design). Then re-run `go test ./...` and `-race` and re-record the Log line. I manually cross-checked every M1 Core-concepts row against the tree while the guard was down — all entities exist at their stated paths — but that is a one-off, not the mechanism.
+
+## 3. Important findings
+
+**`replRaw`'s exit sequence has no pin that runs in the default build, and the BR-20 fix has none at all** — `cmd/define/replraw.go:56`, `:304`
+
+> **This is the 3rd finding in family `unfalsifiable-test-pin`.** Earlier rounds fixed instances. Do NOT fix this instance — state the rule that covers all of them, and fix that.
+
+The rule: **every behavioural claim M1 makes must be pinned by a test that runs under plain `go test ./cmd/define/`; a `conformance`-tagged pty row is a live conformance check, not the pin.** BR-4/BR-13 established exactly this for `restore`, and the same gap remains one level up. `replRaw` has zero in-process callers (`grep replRaw(` → `repl.go:233` and the definition), so everything it uniquely owns — `enterAlt`+`enterMouse` on entry, and `finish`'s ordering `Stop() → restore() → Fprint(transcript)` plus its once-only property — is asserted only by `TestPTYTranscriptIsPrintedOnExit` and `TestPTYMouseTrackingIsAskedForAndGivenBack`, both of which skip when no pty is available (`pty_conformance_test.go:59: no pty available: operation not permitted` in this environment). M1 done-when rows 3b and 6 therefore have no runnable pin here. Separately, `replraw.go:304`'s `submitted.Cursor = len(submitted.Line)` — this round's fix for BR-20 — is unpinned: I deleted it in a scratch copy and the whole suite stayed green. Fix sketch: extract `finish`'s body into a small function over `(display-with-Transcript, restorer, io.Writer)` and assert the three-step order and once-only in process; add a `[D` assertion to `TestEditorLoopWritesThroughAScreen` driven by a submit with the cursor mid-line.
+
+**`atlas/` was not updated for the surface the rework commit introduced** — `atlas/define.md:265-340`
+
+`git show 72ad3a1 -- atlas/define.md` touches only the two `crlfWriter` prose sites. Three genuinely new architectural facts from the same commit are absent from "The screen":
+
+- **The frame is budgeted in display rows and buffer lines are clipped to the terminal width at paint time.** This is user-visible (an over-wide line is *cut*, not wrapped, in the view while the transcript keeps it) and it is the invariant M2's `RegionAt` rests on. The section documents resize's row/column reasoning but never says the view clips.
+- **The 16 ms repaint throttle with its trailing flush.** The atlas currently states "**A write REPAINTS**" without qualification, which is now incomplete — a write repaints at most once per `paintInterval`. This is the declared ARCH-CONSTRAINTS envelope and it lives only in a plan Revisions bullet.
+- **The X10 fallback and the rule it leaves** ("for every mode we enable, the decoder answers every encoding that mode can reply in"). The atlas names `1000` + `1006` and stops there.
+
+## 4. Minor findings
+
+- **One display-cell measurement, not three.** > **This is the 4th finding in family `frame-fits-the-terminal`.** Do NOT fix these instances — state the rule and fix that. The rule: *every row and column count in the paint path comes from one owner that measures display cells and cannot return a sentinel.* Three counters currently disagree. (a) `visibleLen` (`render.go:230`) counts **runes**: measured, `"日本語のテキストです"` is 20 columns and reports 10 — a frame budgeted from that is too tall, which is the BR-6/BR-12 failure exactly; `"bänˈZHo͝or"` is 9 columns and reports 10, so `clipVisible` cuts a line that fits. No wide characters exist in the `en`/`es`/`it` fixture corpus, so today's vector is the free-form `?` ask stream and typed input, not the dictionary. (b) `Paint`'s `\x1b[%dA` (`screen.go:235`) counts **logical** menu rows: measured with a 45-column menu row in a 20-column terminal, the menu occupied 3 display rows and the cursor moved up 1, reprinting the prompt over the menu — the same off-by-a-row limit the whole-frame redraw was supposed to delete, and its comment claims it "never counts rows it drew earlier." Latent only because `menuLines` truncates to `opt.width`, which happens to equal `termCols` today.
+- **The wheel bit-decode is spelled twice** — `key.go:201-207` and `key.go:250-254`. > **This is the 2nd finding in family `one-owner-per-invariant`.** The rule: *one function owns "what does this mouse button byte mean", and every encoding calls it.* `b&64` / `b&3` is the same fact in two places, and M2.2 adds button decoding to both. Extract `wheelFromButton(b int) (Key, bool)` before M2 makes it three.
+- **One unsynchronised test observation remains** — `screen_test.go:457` reads `tty.frames` directly while every other site uses the locked `tty.painted()`; `:464` reads `l.pending` outside `l.mu`. > **This is the 2nd finding in family `unsynchronised-test-observation`.** The rule: *a field written by a timer or loop goroutine is read only through its accessor.* `-race` does not report it (the timer reliably fires after the read), which is precisely why the rule has to be structural rather than detected.
+
+## 5. Test coverage notes
+
+- Mutation-verified this round: X10 dispatch, `restore`'s two leaves, the display-row budget + clip, and the repaint throttle all redden named tests. Those four fixes are real.
+- Mutation-verified as **unpinned**: `submitted.Cursor = len(submitted.Line)` (raised above) and `Frame`'s clamp write-back — reverting `screen.go:132` to a local clamp leaves `TestScreen*` green. The DRY half of BR-17 is structurally verifiable by reading; the behavioural half ("after a widening resize the first wheel-down is a visual no-op") has no assertion.
+- BR-1's chunk-boundary property for `Write` — any split of the same byte stream yields the same lines — still does not exist. `TestScreenWriteBuildsLines` has a token-stream row and a CRLF-split row; a property test over arbitrary split points would subsume both and is cheap next to `FuzzScreenWriteDoesNotPanic`, which only asserts no panic.
+- `pty_conformance_test.go` rows all SKIP in this environment (`operation not permitted`), so I could not verify the 11 green PTY rows the Log records; I am reporting that as unverified, not as failing.
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-PURE — pass.** `screen` is a pure model, `liveScreen` is the only IO, `display` (`replraw.go:100`) is the injected seam, and `screen_test.go` runs the whole arithmetic with a `strings.Builder`. `Paint` taking its writer is the right call.
+- **ARCH-MOCK — pass with a caveat.** The terminal's double is the `creack/pty` harness plus the new in-process `io.Writer` seams; production and test share `rawSession.control` and `display`. The caveat is the coverage gap above: `replRaw` sits outside both seams.
+- **ARCH-DRY — flagged** (wheel bit-decode, above). Otherwise good: one `clamp()` owner, one `visibleLen`, one `playAnnounced`.
+- **ARCH-PURPOSE — flagged.** The round's headline was "prose is swept by CLASS or not at all", and the enumeration still stopped at `cmd/define` + `atlas`. Two siblings of the same class survive: `workshop/issues/000032-crlf-seam.md:36,49` still describes `replraw.go` wrapping stderr in `crlfWriter` and proposes extending it (D5a deliberately deferred `#32`, so this is a documented deferral rather than a miss), and `pty_conformance_test.go:216-217` still states "the fix is to render cooked and play raw" in the present tense for a design D4 deleted. When writing the enumeration, include other issues' Spec sections and the conformance tests.
+- **ARCH-CONSTRAINTS — flagged.** The envelope is declared (16 ms + trailing flush, uncapped buffer with a stated reason) and enforced, which answers BR-16 and BR-8. What is not declared is the *column* envelope: `terminalWidth` returning `0` below 20 columns silently drops the frame out of its budget, and no test covers a terminal narrower than 20.
+- **For M2:** `RegionAt(row, col)` needs the same column arithmetic as the clip, so fixing the display-cell measurement first is cheaper than fixing it twice. Also note that `screen.rows`/`cols` are set as a side effect of `Paint`, so a hit test that runs before the first paint sees zeroes — worth an explicit invariant when the region map lands.
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — "the Core-concepts table's Kind column broke the guard that reads it."** Record why the table shape matters (the third cell is the controlled-vocabulary Status slot), what the fix was, and that the fourteen M1 rows were unchecked for the length of the boundary review. This is the second time in this issue that a fix for a plan-table finding produced a new plan-table defect.
+- **`## Revisions` — the M2 `Render` row's status.** State how a not-yet-started milestone's `modified` rows are meant to read while the window is open, so the window guard and the plan agree.
+- **`## Revisions` — the operating envelope gains its column half.** The envelope bullet declares a repaint budget and a buffer policy but no minimum measurable width; `terminalWidth`'s `0` sentinel needs a stated behaviour ("below 20 columns the screen does X"), since the current answer is "silently revert to the pre-rework budget."
+- **`M1.6` — widen the docs row.** It currently reads as the atlas's raw-mode rewrite. The rework added surface after M1.6 was ticked, and the row should say that a docs sweep follows any post-review code change, not just the one it was written for.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      M1.1's prose is unchanged and no chunk-boundary property test for Write was written; Minor, non-blocking.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      The plan now states the uncapped buffer deliberately, with the reason and a size estimate.
+  - id: BR-3
+    disposition: withdrawn
+    note: |
+      Overtaken: M1.3 is built and its diff is in front of the reviewer, so the size warning is moot.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Verified by mutation — deleting both leaves from restore() now reddens three assertions.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      Verified by mutation — removing the decodeX10Mouse dispatch reddens TestDecodeX10Mouse and TestX10ClickTypesNothing.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Both routes it named are fixed and mutation-verified; the cols==0 residual is carried on BR-12.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      Both eraseLine prefixes are gone and the comments now explain why the screen took that job.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Throttle plus trailing flush, mutation-verified; the uncapped buffer is now a stated decision.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      Rows added — but the added Kind column broke the guard that reads the table; see the new Critical.
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      Two of five remain: Paint still discards the tty write error, and pty_conformance_test.go:216 still states "render cooked, play raw" as the current fix.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Mutation-verified; the X10 payload is consumed whole or not at all.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      The third route it named survives — terminalWidth returns 0 below 20 columns or on probe failure, and with cols==0 displayRows charges one row per line and clipVisible returns the line unclipped; measured, a 10-row/80-column frame then needs 28 display rows.
+  - id: BR-13
+    disposition: addressed
+    note: |
+      rawSession.control is an io.Writer and the restore protocol is asserted in process, bytes and order.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      All five sites fixed and the test now pins the production composition; issue 32's Spec still describes the old nesting, which D5a deliberately deferred.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      go test -race ./cmd/define/ is green; one remaining unsynchronised read is raised separately as the family rule.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      Mutation-verified — removing the throttle reddens the frame-count assertion.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      One clamp owner, and Frame writes back; the behavioural half has no pin (reverting to a local clamp leaves TestScreen green).
+  - id: BR-18
+    disposition: addressed
+    note: |
+      sync.OnceFunc with the transcript stated as its reason; still unreachable today, which the comment now owns.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      Mode sequences go to the same stream as the frames, and a failed write no longer claims the state.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      The fix is present at replraw.go:304 but no test pins it — deleting the line leaves the whole suite green.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      README now says what the transcript keeps and what it deliberately drops.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      Rows added; the resulting guard breakage is the new Critical.
+findings:
+  - id: new
+    severity: Critical
+    family: verification-claim-unreproduced
+    title: |
+      go test ./... is red at HEAD on two plan-table guards, and the Log records it green
+    detail: |
+      TestPlanTablesNameEntitiesThatExist fails on all fourteen M1 Pure-entities rows:
+      plan.md:78 added a Kind column, which lands in the guard's third-cell Status slot,
+      so every row is rejected as an out-of-vocabulary status AND skipped unchecked — the
+      Core-concepts cross-check is blind to M1's whole table. TestPlanTableStatusMatchesTheChangeWindow
+      fails on plan.md:167, the M2 Render row, because this window touched render.go
+      without touching Render's declaration. Base 168b1c9 passes the first guard and
+      skips the second. Fix the table shape (Status third, as the Integration table at
+      plan.md:104 already is), decide how a not-yet-started milestone's modified rows
+      should read, then re-run and re-record.
+  - id: new
+    severity: Important
+    family: unfalsifiable-test-pin
+    title: |
+      replRaw's exit sequence is pinned only by pty rows that skip, and the BR-20 fix is pinned by nothing
+    detail: |
+      Third in this family. The rule: every behavioural claim M1 makes needs a pin that
+      runs under plain go test ./cmd/define/; a conformance-tagged pty row is a live
+      conformance check, not the pin. replRaw has no in-process caller, so enterAlt +
+      enterMouse on entry and finish's Stop -> restore -> print-transcript ordering and
+      once-only property rest solely on TestPTYTranscriptIsPrintedOnExit and
+      TestPTYMouseTrackingIsAskedForAndGivenBack, both of which skipped here ("no pty
+      available: operation not permitted"). Separately replraw.go:304's
+      submitted.Cursor = len(submitted.Line) can be deleted with the suite still green.
+      Extract finish's body over an interface and assert the order in process.
+  - id: new
+    severity: Important
+    family: docs-lag-new-surface
+    title: |
+      atlas/ was not updated for the display-row budget, the paint clip, the repaint throttle or the X10 fallback
+    detail: |
+      The rework commit touched atlas/define.md only for the two crlfWriter prose sites.
+      "The screen" (atlas/define.md:265-340) does not say that the frame is budgeted in
+      display rows, that buffer lines are CLIPPED to the terminal width at paint time
+      while the transcript keeps the full text, or that a write now repaints at most
+      once per 16 ms — it still asserts "A write REPAINTS" flatly. The X10 fallback and
+      the rule it leaves behind are also absent, though 1000 and 1006 are named. All
+      three are surface a reader of the atlas would be wrong about.
+  - id: new
+    severity: Minor
+    family: frame-fits-the-terminal
+    title: |
+      Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows
+    detail: |
+      Fourth in this family. Do not fix these instances — the rule is that every row and
+      column count in the paint path comes from one owner measuring display cells that
+      cannot return a sentinel. Measured: visibleLen (render.go:230) counts runes, so
+      "日本語のテキストです" reports 10 for 20 columns (frame too tall, the BR-6/BR-12
+      failure) and "bänˈZHo͝or" reports 10 for 9 (clipVisible cuts text that fits);
+      Paint's cursor-up (screen.go:235) uses len(menu) while the terminal moved
+      sum(displayRows(menu)) rows, so a 45-column menu row in a 20-column terminal
+      leaves the cursor two rows low and the prompt is reprinted over the menu — the
+      same off-by-a-row limit the whole-frame redraw claims in its own comment to have
+      deleted. Latent today only because menuLines truncates to opt.width, which
+      happens to equal termCols.
+  - id: new
+    severity: Minor
+    family: one-owner-per-invariant
+    title: |
+      The wheel button-byte decode is spelled twice, in decodeWheel and decodeX10Mouse
+    detail: |
+      Second in this family. The rule: one function owns "what does this mouse button
+      byte mean" and every encoding calls it. key.go:201-207 and key.go:250-254 both
+      spell b&64 for the wheel bit and b&3 for the direction. M2.2 adds button decoding,
+      which would make it three spellings of one fact across two encodings. Extract
+      wheelFromButton(b int) (Key, bool) now.
+  - id: new
+    severity: Minor
+    family: unsynchronised-test-observation
+    title: |
+      screen_test.go:457 reads tty.frames without the lock, and :464 reads l.pending without l.mu
+    detail: |
+      Second in this family. The rule: a field written by a timer or loop goroutine is
+      read only through its accessor. Every other site in the same test uses the locked
+      tty.painted(); line 457 reaches the field directly while the trailing paint timer
+      may be running. -race does not report it because the timer reliably fires after
+      the read, which is exactly why the guarantee has to be structural.
+```

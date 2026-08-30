@@ -400,8 +400,8 @@ func TestScreenClipsTheViewNotTheBuffer(t *testing.T) {
 // with it to the end of the row and into the next line.
 func TestClipVisibleClosesAnOpenStyle(t *testing.T) {
 	got := clipVisible("\x1b[1;36m"+strings.Repeat("c", 40)+"\x1b[0m", 10)
-	if visibleLen(got) != 10 {
-		t.Errorf("clipped to %d visible columns, want 10: %q", visibleLen(got), got)
+	if visibleCells(got) != 10 {
+		t.Errorf("clipped to %d visible columns, want 10: %q", visibleCells(got), got)
 	}
 	if !strings.HasSuffix(got, sgrOff) {
 		t.Errorf("a cut inside a style did not close it: %q", got)
@@ -454,15 +454,22 @@ func TestLiveScreenThrottlesTheRepaintButNeverLosesTheLastWord(t *testing.T) {
 	// The indicator is written and then playback blocks for seconds — a throttle
 	// waiting for the next write would hide it for the whole recording.
 	l.Write([]byte("  ♫ playing 3×"))
-	frames = tty.frames
+	frames = tty.painted()
 	waitFor(t, func() bool { return tty.painted() > frames })
 
 	// Stop flushes too, for the exit path.
 	l.Write([]byte("the last word\n"))
 	frames = tty.painted()
 	l.Stop()
-	if tty.painted() == frames && l.pending {
+	// Only the frame count, and only through its accessor: liveScreen's own
+	// fields are written by the trailing timer's goroutine. -race happens not to
+	// report the direct read because the timer reliably fires after it, which is
+	// exactly why the discipline has to be structural rather than observed.
+	if tty.painted() == frames {
 		t.Error("Stop left a pending frame unpainted")
+	}
+	if !strings.Contains(l.Transcript(), "the last word") {
+		t.Error("the last write never reached the buffer")
 	}
 }
 

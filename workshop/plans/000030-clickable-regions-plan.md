@@ -75,22 +75,24 @@ to `#35`'s code and is where `M2.1` starts.
 
 #### Pure entities
 
-| Name | Lives in | Kind | Status |
-|------|----------|------|--------|
-| `screen` | `cmd/define/screen.go` | PURE | new |
-| `screen.Write` | `cmd/define/screen.go` | PURE | new |
-| `screen.Frame` | `cmd/define/screen.go` | PURE | new |
-| `screen.Scroll` / `screen.clamp` | `cmd/define/screen.go` | PURE | new — one place spells the viewport's limits |
-| `screen.Page` | `cmd/define/screen.go` | PURE | new (M1.4a) — a screenful less one line of overlap |
-| `screen.Paint` | `cmd/define/screen.go` | PURE (takes the writer) | new |
-| `screen.Transcript` | `cmd/define/screen.go` | PURE | new (M1.5) |
-| `displayRows` / `clipVisible` | `cmd/define/screen.go` | PURE | new (rework) — the frame is budgeted in DISPLAY ROWS |
-| `visibleLen` | `cmd/define/render.go` | PURE | modified (rework) — any CSI final byte ends a sequence, not only `m` |
-| `decodeWheel` / `atoiPrefix` | `cmd/define/key.go` | PURE | new (M1.4b) |
-| `decodeX10Mouse` | `cmd/define/key.go` | PURE | new (rework) — the encoding mode 1000 falls back to |
-| `KeyPageUp` / `KeyPageDown` / `KeyWheelUp` / `KeyWheelDown` | `cmd/define/key.go` | PURE | new |
-| `winSize` | `cmd/define/rawterm.go` | PURE | new (M1.4) |
-| `crlfWriter` | `cmd/define/crlf.go` | — | unchanged — still used by `--play`, which keeps its own drawing |
+| Name | Lives in | Status | Kind |
+|------|----------|--------|------|
+| `screen` | `cmd/define/screen.go` | new | PURE |
+| `screen.Write` | `cmd/define/screen.go` | new | PURE |
+| `screen.Frame` | `cmd/define/screen.go` | new | PURE |
+| `screen.Scroll` / `screen.clamp` | `cmd/define/screen.go` | new | PURE — one place spells the viewport's limits |
+| `screen.Page` | `cmd/define/screen.go` | new | PURE (M1.4a) — a screenful less one line of overlap |
+| `screen.Paint` | `cmd/define/screen.go` | new | PURE, given the writer |
+| `screen.Transcript` | `cmd/define/screen.go` | new | PURE (M1.5) |
+| `displayRows` / `clipVisible` | `cmd/define/screen.go` | new | PURE (rework) — the frame is budgeted in DISPLAY ROWS |
+| `visibleCells` | `cmd/define/render.go` | modified | PURE (rework) — was `visibleLen`; the ONE owner of "how wide is this", now measured in terminal COLUMNS |
+| `cellWidth` / `isWide` | `cmd/define/render.go` | new | PURE (rework) — a combining mark is 0 columns and a CJK rune is 2, both daily traffic for a dictionary |
+| `terminalSize` / `terminalCols` | `cmd/define/main.go` | new | INTEGRATION (rework) — the true shape, which cannot return the "do not wrap" sentinel |
+| `decodeWheel` / `atoiPrefix` | `cmd/define/key.go` | new | PURE (M1.4b) |
+| `decodeX10Mouse` | `cmd/define/key.go` | new | PURE (rework) — the encoding mode 1000 falls back to |
+| `KeyPageUp` / `KeyPageDown` / `KeyWheelUp` / `KeyWheelDown` | `cmd/define/key.go` | new | PURE |
+| `winSize` | `cmd/define/rawterm.go` | new | PURE (M1.4) |
+| `crlfWriter` | `cmd/define/crlf.go` | unchanged | still used by `--play`, which keeps its own drawing |
 
 - **`screen`** — a line buffer plus a viewport: `lines []string`, `offset int`, `rows, cols int`.
   - **Relationships:** 1:1 with an interactive session; owns every line it displays.
@@ -161,12 +163,12 @@ to `#35`'s code and is where `M2.1` starts.
 
 ### Core concepts
 
-| Name | Lives in | Status |
-|------|----------|--------|
-| `Region` | `cmd/define/render.go` | new |
-| `Render` | `cmd/define/render.go` | modified — also returns regions |
-| `decodeMouse` | `cmd/define/key.go` | new |
-| `screen.RegionAt` | `cmd/define/screen.go` | new |
+| Name | Lives in | Status | Kind |
+|------|----------|--------|------|
+| `Region` | `cmd/define/render.go` | new | PURE |
+| `Render` | `cmd/define/render.go` | unchanged | M2.1 adds a second return value; the status column is a claim about the tree AS IT STANDS, so it says so when M2.1 lands |
+| `decodeMouse` | `cmd/define/key.go` | new | PURE — extends M1's `decodeWheel`/`decodeX10Mouse` to buttons |
+| `screen.RegionAt` | `cmd/define/screen.go` | new | PURE |
 
 - **`Region`** — `{Kind, Text, Lang, Line, Col, Width}`: what a span of rendered text OFFERS.
   - **The headword falls out of the existing walk; the ORIGIN language does NOT, and an earlier draft of this plan claimed it did.** `Render` colours `sec.Name` — the word "ORIGIN" — and passes `sec.Text` through `opt.prose(wrapText(...))`, which highlights DECK words. Nothing isolates "French" inside that text. So the language region needs a new pass over the section text, and that pass is the same matching `#35` already does.
@@ -421,3 +423,43 @@ fields written by another goroutine; `-race` failed where the base commit was
 clean. `recordDisplay` is mutex-guarded with reader methods, and the resize
 watcher's measurements are reported over a channel. `go test -race ./cmd/define/`
 is green.
+
+### 2026-08-29 — M1 boundary review round 3: four more, and one of them was mine
+
+**The Critical was a verification claim, not a defect (BR-23).** `go test ./...`
+was red at HEAD on two plan-table guards and the Log said green — because I ran
+the suite, then edited this plan's tables, then committed. The guards parse the
+THIRD cell as status against a controlled vocabulary; a "Kind" column inserted
+before it made every row unparseable, and a `Render` row calling itself
+`modified` described work M2 has not done. Both are exactly what those guards
+exist to catch. **The rule: prose in this repo is CODE to a guard — re-run the
+suite after editing a plan, not before.**
+
+**The residual on BR-12: a sentinel leaked into arithmetic.** The display-row
+budget was right, but `terminalWidth` returns 0 for a terminal under 20 columns —
+that 0 means "do not wrap", a POLICY answer — and the screen was reading it as a
+column count. `terminalSize`/`terminalCols` answer the other question and cannot
+return a sentinel; the loop derives the wrap policy from the true shape.
+
+**BR-26 — one owner, measuring CELLS.** Three counters disagreed: `visibleLen`
+counted runes, the menu's cursor-up counted entries, and the width probe could
+answer 0. Runes are wrong in both directions for THIS program: `bänˈZHo͝or`
+carries a combining double breve (10 runes, 9 columns — text that fits gets cut)
+and a Japanese entry is full-width (10 runes, 20 columns — the frame is twice as
+tall as measured and the terminal scrolls). `visibleCells` + `cellWidth` are now
+the single owner, read by every wrap, budget and clip; the cursor walks back by
+the rows the terminal actually moved.
+
+**BR-24 — a pty row is a conformance check, not a pin.** `replRaw` has no
+in-process caller, so the exit sequence rested entirely on rows that skip
+wherever no pty exists — including inside the review. `handBack` is now a named
+function over two small interfaces: stop painting, restore, print the session,
+in that order, each step wrong in a different way alone. `onceHandBack` carries
+the once-only property. Both are pinned in process, and the cursor-escape fix
+(BR-20) with them — verified falsifiable.
+
+**BR-25 — the atlas lagged its own milestone.** The display-row budget, the clip,
+the cell-width owner, the throttle and its trailing flush, the X10 fallback and
+`handBack` are all in "The screen" now. The pattern across rounds 2 and 3 is one
+rule: **the sweep is by CLASS — every site that states the fact — and the atlas
+is one of the sites, not a follow-up.**
