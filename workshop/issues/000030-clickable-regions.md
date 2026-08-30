@@ -311,13 +311,19 @@ Derivation notes.
       none, Italian syllabification-not-transcription, French none, German real
       but lossy. Curating fr/de turned out NOT to be a precondition, and is
       `#34`.
-- [ ] Blocked on `#35`, so the click is a wrapper over an existing gesture.
+- [x] Blocked on `#35`, so the click is a wrapper over an existing gesture —
+      shipped (`workshop/history/issues/000035-pron-infer.md`).
 - [x] MEASURE the wheel-capture fact — NOT NEEDED, and the plan records why: the
       alternate screen has no scrollback, so there is no offset define does not
       own. The wheel survives as a UX question, not a correctness one.
 - [x] Design via `sdlc start-plan`. Plan:
       `workshop/plans/000030-clickable-regions-plan.md` (M1 the screen layer,
       M2 the clicks; two boundaries, one publish).
+- [ ] M1 — the screen owns the terminal: alternate screen, a line buffer and a
+      viewport, whole-frame paint, `cooked()` deleted, keys and wheel that scroll,
+      SIGWINCH, and the session printed back on exit. Tasks M1.1–M1.6 in the plan.
+- [ ] M2 — the clicks: `Render` emits a region map, the hit test, the two actions,
+      and a clickable span that looks clickable. Tasks M2.1–M2.6 in the plan.
 
 ## Log
 
