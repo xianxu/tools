@@ -224,7 +224,12 @@ func RenderLine(e Editor, sug string, v Vocabulary, color bool) string {
 	}
 	// Park the cursor after the typed text: the suggestion sits ahead of it, and
 	// typing must overwrite the suggestion rather than append to it.
-	if back := len([]rune(sug)) + (len(e.Line) - e.Cursor); back > 0 {
+	//
+	// Measured in COLUMNS, because `\x1b[nD` moves the terminal's cursor by
+	// cells: a rune count walks too far back over a combining mark (NOAD writes
+	// `bänˈZHo͝or`) and not far enough over CJK. Same owner as every other width
+	// in this program (visibleCells).
+	if back := visibleCells(sug) + visibleCells(string(e.Line[e.Cursor:])); back > 0 {
 		fmt.Fprintf(&b, "\x1b[%dD", back)
 	}
 	return b.String()

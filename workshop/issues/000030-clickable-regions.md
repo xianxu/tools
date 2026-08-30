@@ -319,7 +319,7 @@ Derivation notes.
 - [x] Design via `sdlc start-plan`. Plan:
       `workshop/plans/000030-clickable-regions-plan.md` (M1 the screen layer,
       M2 the clicks; two boundaries, one publish).
-- [ ] M1 — the screen owns the terminal: alternate screen, a line buffer and a
+- [x] M1 — the screen owns the terminal: alternate screen, a line buffer and a
       viewport, whole-frame paint, `cooked()` deleted, keys and wheel that scroll,
       SIGWINCH, and the session printed back on exit. Tasks M1.1–M1.6 in the plan.
 - [ ] M2 — the clicks: `Render` emits a region map, the hit test, the two actions,
@@ -328,6 +328,7 @@ Derivation notes.
 ## Log
 
 ### 2026-08-29
+- 2026-08-29: closed M1 — go test ./... green VERIFIED AFTER the commit; -race green; 11 PTY conformance rows green. The frame is asserted as a PLACEMENT: readFrame interprets emitted bytes as a terminal does (deferred wrap included) and TestPaintFitsTheTerminalAndParksTheCursor checks over ten shapes that the frame fits termRows and parks the cursor at the prompt — all three mutations the review named (cursor-up by menu entries, deleting the cursor-up block, dropping fitMenu) redden it. Every frame component is budgeted, prompt then menu then buffer. Width is measured in cells everywhere, measure and cut sharing one owner. Also pinned in process: hand-back order and once-only, restore protocol bytes and order, both mouse encodings consumed whole, committed line carries no cursor escape, trailing paint flush. On a real pty: narrowed to 40 columns every row fits while the transcript keeps the full text, an X10 click types nothing, scrolling, SIGWINCH, tracking given back, transcript on exit.; review verdict: FIX-THEN-SHIP
 
 Filed from the operator's request during `#29`'s design. Measurements taken
 before filing: the absence of any mouse code in `cmd/define`, the notation table
@@ -564,6 +565,27 @@ text, and an X10 click types nothing.
   `onceHandBack` are named, take two small interfaces, and are pinned in process.
 - **The atlas lagged its own milestone** and now carries the budget, the clip,
   the cell-width owner, the throttle, the X10 fallback and `handBack`.
+
+### 2026-08-29 — M1 closed: FIX-THEN-SHIP, seven rounds
+
+The boundary took seven rounds, and the durable output is three guards and three
+rules rather than a list of fixes.
+
+- **A plan's claims are checked in every column** — `TestPlanNamedTestsExist`
+  reads the whole document for test names and scopes per milestone, so a
+  finished milestone cannot name a test nobody wrote while an in-progress one
+  keeps its promises. Third recurrence of the family; the first two fixes were
+  hand-edits, which is why it returned.
+- **One owner per invariant, applied twice more**: the escape grammar
+  (`escapeLen` over `sgr.go`'s `scanEscape`, because M2.5 splices through the
+  same text `clipVisible` cuts) and the last rune-counted cursor move.
+- **A frame is a placement.** `readFrame` interprets emitted bytes as a terminal
+  does — deferred wrap included — and the test asserts over ten shapes that the
+  frame fits and the cursor rests at the end of the prompt. Four mutations redden
+  it, including the off-by-one-upward the previous assertion could not see.
+
+Verdict FIX-THEN-SHIP; fixes bundled into the close commit per #174. Three
+findings were demoted past the round cap and all three are addressed here.
 
 ## Revisions
 

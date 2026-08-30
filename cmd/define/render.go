@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // RenderOpts controls presentation only. Render is pure: it never probes the
@@ -234,27 +235,32 @@ func prettyPronunciations(s string, p palette) string {
 // frame budget and every clip reads it, so a line cannot be measured one way
 // where it is written and another where it is placed.
 func visibleCells(s string) int {
-	n, inEsc, inCSI := 0, false, false
-	for _, r := range s {
-		switch {
-		case inCSI:
-			// ANY final byte ends a CSI, not just "m". Render emits only SGR, so
-			// "m" was enough while this only measured rendered text — but #30's
-			// screen measures lines that also carry cursor moves (`\x1b[4D`
-			// parks the cursor after a suggestion), and a machine that waits for
-			// "m" counts the whole rest of such a line as invisible. A frame
-			// budgeted from that measurement is a frame that does not fit.
-			if r >= 0x40 && r <= 0x7e {
-				inCSI = false
-			}
-		case inEsc:
-			inEsc = false
-			inCSI = r == '['
-		case r == '\x1b':
-			inEsc = true
-		default:
-			n += cellWidth(r)
+	n := 0
+	for i := 0; i < len(s); {
+		if skip := escapeLen(s[i:]); skip > 0 {
+			i += skip
+			continue
 		}
+		r, size := utf8.DecodeRuneInString(s[i:])
+		n += cellWidth(r)
+		i += size
+	}
+	return n
+}
+
+// escapeLen is how many bytes of an escape sequence begin s, 0 if none.
+//
+// The ONE reading of the escape grammar in this program, wrapping sgr.go's
+// scanEscape so its "-1 means incomplete" convention — which exists for a
+// STREAM, where more bytes may still arrive — becomes "consume the rest" for the
+// whole strings measured here. Every site that walks styled text goes through
+// this rather than re-deriving "ESC, then optional [, then parameters, then a
+// final byte in 0x40-0x7E": four spellings of one grammar agree right up until
+// they do not, and M2.5 splices an underline through this same text.
+func escapeLen(s string) int {
+	n := scanEscape(s)
+	if n < 0 {
+		return len(s) // an unterminated sequence: nothing after it is visible
 	}
 	return n
 }

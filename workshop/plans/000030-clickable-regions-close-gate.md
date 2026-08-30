@@ -583,6 +583,57 @@ rounds:
           round: 6
       boundary: M1
       blocked: false
+    - "n": 7
+      timestamp: "2026-08-29T22:06:21-07:00"
+      agent: claude
+      boundary: M1
+      blocked: false
+      protocol_error: no valid findings block
+    - "n": 8
+      timestamp: "2026-08-29T22:28:12-07:00"
+      agent: claude
+      dispose:
+        - id: BR-32
+          disposition: addressed
+          note: 'Verified by reversion at HEAD: restoring the menuRows summation in place of fitMenu reddens "more menu than terminal" (8 rows in 5) and "a terminal too short for anything" (3 in 2). readFrame asserts total height, so the rule is now enforced rather than the instance.'
+          round: 8
+        - id: BR-33
+          disposition: addressed
+          note: 'Verified by three reversions at HEAD: len(menu) for menuRows+promptRows-1 reddens, deleting the whole "if len(menu) > 0" block reddens five subtests, and menuRows+promptRows reddens three. The frame is decoded into (row, col) as the finding asked.'
+          round: 8
+        - id: BR-29
+          disposition: not-addressed
+          note: Unchanged since round 4 — repo_guard_test.go is untouched across the whole window, so the tree-to-table guard still does not exist, and screen.Lines, screen.eraseOpenLine, paintInterval and defaultRows/defaultCols still have no rows.
+          round: 8
+        - id: BR-26
+          disposition: not-addressed
+          note: 'Site 5 of its own enumeration survives: editor.go:227 still computes the ESC[nD park as len([]rune(sug)) + (len(e.Line) - e.Cursor), a rune count for a move the terminal makes in columns. The CJK row was added to the frame test; the combining-mark row was not.'
+          round: 8
+        - id: BR-1
+          disposition: not-addressed
+          note: M1.1's prose still enumerates the four cases and no chunk-boundary property test for Write exists; FuzzScreenWriteDoesNotPanic checks only for panics. Minor, non-blocking.
+          round: 8
+      findings:
+        - id: BR-34
+          severity: Important
+          title: Done-when row 1b names TestScreenFrameFitsTheTerminalInDisplayRows, which this window's own commit renamed away
+          detail: 'This is the 3rd finding in family plan-table-incomplete. Earlier rounds fixed instances (BR-9 and BR-22 added missing rows, BR-29''s three rows were added). Do NOT just rename the cell. The rule that covers all of them: every symbol a plan names — in ANY column of ANY of its tables, including Done-when''s "pinned by" — must resolve to a declaration in the tree, and every top-level declaration the window adds to a file the tables name must have a row; one guard, both directions, all columns. Measured at HEAD: I checked all 19 test names across M1''s Done-when and exactly one is missing — plan.md:150 names TestScreenFrameFitsTheTerminalInDisplayRows, renamed to TestPaintFitsTheTerminalAndParksTheCursor by aa4fe94, the commit under review. TestPlanTablesNameEntitiesThatExist exists and reads only the Core-concepts table, so the suite stayed green; the plan''s own Revisions already records this class twice ("M1 done-when, two rows named tests that do not exist"), which is why the deliverable is the widened guard rather than the edit.'
+          family: plan-table-incomplete
+          round: 8
+        - id: BR-35
+          severity: Important
+          title: visibleCells and clipVisible each hand-roll the CSI grammar that scanEscape already owns
+          detail: 'This is the 3rd finding in family one-owner-per-invariant. Earlier rounds fixed instances (BR-17 the offset clamp spelled twice, BR-27 the wheel button byte spelled twice). Do NOT just rewrite the two functions. The rule: the escape-sequence grammar has exactly one owner — sgr.go:85 scanEscape — and any site that walks a styled string skips sequences through it rather than re-deriving "ESC, then optional [, then params, then a final byte in 0x40-0x7E". Enumeration measured at HEAD, 2 of 4 non-test sites wrong: highlightwriter.go:88 defers to scanEscape (ok); render_test.go:102 defers to it and its comment says why (ok); render.go:238 visibleCells hand-rolls inEsc/inCSI, and its inCSI branch is NEW in this window; screen.go:484 clipVisible hand-rolls the same state machine plus a `styled` flag. screen_test.go:334 readFrame is a third spelling but legitimately INTERPRETS rather than skips, so it is out of scope for the sweep. The three agree today, which is what makes this cheap now and expensive later: M2.5 splices an underline through sgrState into text clipVisible cuts, so a fourth reading of the same grammar lands exactly where a divergence becomes a rendering bug (ARCH-DRY).'
+          family: one-owner-per-invariant
+          round: 8
+        - id: BR-36
+          severity: Minor
+          title: The new placement test asserts the cursor column exactly but the row only as "not the last one"
+          detail: screen_test.go:453 checks got.cursorRow >= got.rows-1. An off-by-one UPWARD in the walk-back is caught only where the buffer is empty, by readFrame's "moved the cursor above the screen" guard; I confirmed the "a menu under the prompt" fixture passes with menuRows+promptRows. Asserting the cursor is on the prompt's first row (rows - promptRows - menuRows) closes it. Separately, screen_test.go:449's wantCol %= termCols disagrees with readFrame's deferred wrap for a prompt exactly a multiple of the width — a false failure waiting for a fixture, not a false pass.
+          family: unfalsifiable-test-pin
+          round: 8
+      boundary: M1
+      blocked: false
 ---
 
 # Gate ledger — tools#30 (boundary-review)
@@ -892,10 +943,34 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-33** [Important] `unfalsifiable-test-pin` Nothing asserts where Paint leaves the cursor; the whole cursor-up-and-reprint block is deletable with a green suite
   This is the 4th finding in family unfalsifiable-test-pin. Earlier rounds fixed instances (BR-13, BR-7, BR-24). Do NOT just add a test for the cursor-up count. The rule: every byte Paint emits that POSITIONS the cursor is asserted in process — a frame is a placement, not a set of substrings. Verified by reversion in a scratch copy of HEAD: replacing menuRows+promptRows-1 with len(menu) at screen.go:244 (the exact BR-30 regression) leaves go test ./cmd/define/ green, and deleting the entire `if len(menu) > 0` block at screen.go:239-249 — which would leave the cursor at the end of the last menu row so every keystroke redraws in the wrong place — also leaves it green. TestScreenPaintSplitsTheHeight only checks that named lines and "PROMPT" appear and that the frame starts with home+erase. Decode the emitted frame into (row, col) and assert the final cursor position; that one assertion covers BR-30, the prompt reprint, and M2.5's underline splice.
 
+## Round 7 — 2026-08-29T22:06:21-07:00 (claude) — passed
+
+**Protocol error:** no valid findings block — this round contributed no findings.
+
+## Round 8 — 2026-08-29T22:28:12-07:00 (claude) — passed
+
+### Disposed
+
+- BR-32 — addressed — Verified by reversion at HEAD: restoring the menuRows summation in place of fitMenu reddens "more menu than terminal" (8 rows in 5) and "a terminal too short for anything" (3 in 2). readFrame asserts total height, so the rule is now enforced rather than the instance.
+- BR-33 — addressed — Verified by three reversions at HEAD: len(menu) for menuRows+promptRows-1 reddens, deleting the whole "if len(menu) > 0" block reddens five subtests, and menuRows+promptRows reddens three. The frame is decoded into (row, col) as the finding asked.
+- BR-29 — not-addressed — Unchanged since round 4 — repo_guard_test.go is untouched across the whole window, so the tree-to-table guard still does not exist, and screen.Lines, screen.eraseOpenLine, paintInterval and defaultRows/defaultCols still have no rows.
+- BR-26 — not-addressed — Site 5 of its own enumeration survives: editor.go:227 still computes the ESC[nD park as len([]rune(sug)) + (len(e.Line) - e.Cursor), a rune count for a move the terminal makes in columns. The CJK row was added to the frame test; the combining-mark row was not.
+- BR-1 — not-addressed — M1.1's prose still enumerates the four cases and no chunk-boundary property test for Write exists; FuzzScreenWriteDoesNotPanic checks only for panics. Minor, non-blocking.
+
+### Raised
+
+- **BR-34** [Important] `plan-table-incomplete` Done-when row 1b names TestScreenFrameFitsTheTerminalInDisplayRows, which this window's own commit renamed away
+  This is the 3rd finding in family plan-table-incomplete. Earlier rounds fixed instances (BR-9 and BR-22 added missing rows, BR-29's three rows were added). Do NOT just rename the cell. The rule that covers all of them: every symbol a plan names — in ANY column of ANY of its tables, including Done-when's "pinned by" — must resolve to a declaration in the tree, and every top-level declaration the window adds to a file the tables name must have a row; one guard, both directions, all columns. Measured at HEAD: I checked all 19 test names across M1's Done-when and exactly one is missing — plan.md:150 names TestScreenFrameFitsTheTerminalInDisplayRows, renamed to TestPaintFitsTheTerminalAndParksTheCursor by aa4fe94, the commit under review. TestPlanTablesNameEntitiesThatExist exists and reads only the Core-concepts table, so the suite stayed green; the plan's own Revisions already records this class twice ("M1 done-when, two rows named tests that do not exist"), which is why the deliverable is the widened guard rather than the edit.
+- **BR-35** [Important] `one-owner-per-invariant` visibleCells and clipVisible each hand-roll the CSI grammar that scanEscape already owns
+  This is the 3rd finding in family one-owner-per-invariant. Earlier rounds fixed instances (BR-17 the offset clamp spelled twice, BR-27 the wheel button byte spelled twice). Do NOT just rewrite the two functions. The rule: the escape-sequence grammar has exactly one owner — sgr.go:85 scanEscape — and any site that walks a styled string skips sequences through it rather than re-deriving "ESC, then optional [, then params, then a final byte in 0x40-0x7E". Enumeration measured at HEAD, 2 of 4 non-test sites wrong: highlightwriter.go:88 defers to scanEscape (ok); render_test.go:102 defers to it and its comment says why (ok); render.go:238 visibleCells hand-rolls inEsc/inCSI, and its inCSI branch is NEW in this window; screen.go:484 clipVisible hand-rolls the same state machine plus a `styled` flag. screen_test.go:334 readFrame is a third spelling but legitimately INTERPRETS rather than skips, so it is out of scope for the sweep. The three agree today, which is what makes this cheap now and expensive later: M2.5 splices an underline through sgrState into text clipVisible cuts, so a fourth reading of the same grammar lands exactly where a divergence becomes a rendering bug (ARCH-DRY).
+- **BR-36** [Minor] `unfalsifiable-test-pin` The new placement test asserts the cursor column exactly but the row only as "not the last one"
+  screen_test.go:453 checks got.cursorRow >= got.rows-1. An off-by-one UPWARD in the walk-back is caught only where the buffer is empty, by readFrame's "moved the cursor above the screen" guard; I confirmed the "a menu under the prompt" fixture passes with menuRows+promptRows. Asserting the cursor is on the prompt's first row (rows - promptRows - menuRows) closes it. Separately, screen_test.go:449's wantCol %= termCols disagrees with readFrame's deferred wrap for a prompt exactly a multiple of the width — a false failure waiting for a fixture, not a false pass.
+
 ## Open findings
 
 - **BR-1** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
 - **BR-26** [Minor] `frame-fits-the-terminal` Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows
 - **BR-29** [Important] `plan-table-incomplete` handBack, onceHandBack and wheelFromButton are absent from M1's Core-concepts tables
-- **BR-32** [Important] `frame-fits-the-terminal` The live edge is charged display rows but never budgeted by them, so the frame still overflows the terminal
-- **BR-33** [Important] `unfalsifiable-test-pin` Nothing asserts where Paint leaves the cursor; the whole cursor-up-and-reprint block is deletable with a green suite
+- **BR-34** [Important] `plan-table-incomplete` Done-when row 1b names TestScreenFrameFitsTheTerminalInDisplayRows, which this window's own commit renamed away
+- **BR-35** [Important] `one-owner-per-invariant` visibleCells and clipVisible each hand-roll the CSI grammar that scanEscape already owns
+- **BR-36** [Minor] `unfalsifiable-test-pin` The new placement test asserts the cursor column exactly but the row only as "not the last one"

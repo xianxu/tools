@@ -333,6 +333,14 @@ that it leaves the cursor at the end of the prompt. Both were breakable while th
 suite was green, which is how the cursor came to walk back over menu ENTRIES
 rather than the rows the terminal moved.
 
+**One owner answers "where does this escape sequence end", too.** `scanEscape`
+(`sgr.go`) has always known; `escapeLen` wraps it for whole strings, and every
+site that walks styled text — measuring, clipping, highlighting — skips through
+that rather than re-deriving "ESC, then optional `[`, then parameters, then a
+final byte in `0x40`–`0x7E`". Four spellings of one grammar agree right up until
+they do not, and `M2.5` splices an underline through the same text that
+`clipVisible` cuts.
+
 **One owner answers "how wide is this", and it counts CELLS.** `visibleCells`
 (`render.go`) skips escape sequences and reads `cellWidth` per rune: a combining
 mark is 0 columns and a CJK or fullwidth rune is 2. Both are this program's daily

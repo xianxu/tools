@@ -964,3 +964,142 @@ findings:
     detail: |
       This is the 4th finding in family unfalsifiable-test-pin. Earlier rounds fixed instances (BR-13, BR-7, BR-24). Do NOT just add a test for the cursor-up count. The rule: every byte Paint emits that POSITIONS the cursor is asserted in process — a frame is a placement, not a set of substrings. Verified by reversion in a scratch copy of HEAD: replacing menuRows+promptRows-1 with len(menu) at screen.go:244 (the exact BR-30 regression) leaves go test ./cmd/define/ green, and deleting the entire `if len(menu) > 0` block at screen.go:239-249 — which would leave the cursor at the end of the last menu row so every keystroke redraws in the wrong place — also leaves it green. TestScreenPaintSplitsTheHeight only checks that named lines and "PROMPT" appear and that the frame starts with home+erase. Decode the emitted frame into (row, col) and assert the final cursor position; that one assertion covers BR-30, the prompt reprint, and M2.5's underline splice.
 ```
+
+---
+
+## Re-review — 2026-08-29T22:06:21-07:00 (unknown)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 168b1c9f3ed7367f122af4795002ad336fd41e02..aa4fe94ff41a928d7fc96501d8a24323ccf6e244 |
+| command | sdlc milestone-close --issue 30 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-29T22:06:21-07:00 |
+| verdict | unknown |
+
+## Review
+
+Failed to authenticate. API Error: 401 OAuth access token has been revoked.
+
+---
+
+## Re-review — 2026-08-29T22:28:12-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 30 — clickable regions in the terminal: click ORIGIN French to hear it, click the IPA to replay |
+| repo | tools |
+| issue file | workshop/issues/000030-clickable-regions.md |
+| boundary | milestone M1 |
+| milestone | M1 |
+| window | 168b1c9f3ed7367f122af4795002ad336fd41e02..aa4fe94ff41a928d7fc96501d8a24323ccf6e244 |
+| command | sdlc milestone-close --issue 30 --milestone M1 |
+| reviewer | claude |
+| timestamp | 2026-08-29T22:28:12-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+All inspections complete. Suite is green (`go test ./...`, `go test -race ./cmd/define/`); I verified the two prior Importants by reverting them in a scratch copy at HEAD.
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Round 5's two fixes are real and mutation-verified: dropping `fitMenu`, deleting the cursor-up block, walking back by `len(menu)`, and walking back one row too many each redden `TestPaintFitsTheTerminalAndParksTheCursor` in a scratch copy. `readFrame` is the right instrument — it decodes the emitted bytes into (row, col) with deferred wrap, which is what turns "a frame is a placement" from prose into an assertion, and it is exactly what M2.5's underline splice will need. What blocks a clean SHIP is not code: three plan-vs-tree findings, one of them (`BR-29`) now in its third unaddressed round, and the very commit under review introduced a fourth instance of the same class by renaming `TestScreenFrameFitsTheTerminalInDisplayRows` without updating the Done-when row that names it as the pin. Separately, `clipVisible` and the reworked `visibleCells` each hand-roll the CSI grammar that `sgr.go:85 scanEscape` already owns and that `highlightwriter.go:88` already defers to.
+
+**1. Strengths**
+
+- `screen.go:232-238` — the budget now has an explicit order of sacrifice (prompt → menu → buffer) and every component is charged *and* clipped. `fitMenu` dropping whole rows from the end is the right call for a sorted list.
+- `screen_test.go:334-397` `readFrame` models the **deferred wrap** correctly (`pending`), which is the detail that separates a real terminal model from a naive one — without it a line clipped to exactly the width would be miscounted as two rows and the test would demand a wasted column.
+- `key.go:167-263` — `wheelFromButton` as the single reading of the button byte across both encodings, with X10 consuming six bytes or none. The partial-sequence protocol (`return Key{}, 0` = wait) is honoured, so a report split across reads is not half-decoded.
+- `rawterm.go:230-267` `watchResize` — coalescing newest-wins with a single producer and a 1-slot buffer is provably non-blocking, and the comment says exactly why `signal.Stop` is absent rather than leaving it as an apparent oversight.
+- `replraw.go:133-140` `handBack` — the three-step order stated as content, over two tiny interfaces, pinnable without a pty. This is what let me verify the exit sequence in an environment where all 11 PTY rows skip.
+
+**2. Critical findings**
+
+None.
+
+**3. Important findings**
+
+- **`workshop/plans/000030-clickable-regions-plan.md:150` — Done-when row 1b names `TestScreenFrameFitsTheTerminalInDisplayRows`, which `aa4fe94` renamed to `TestPaintFitsTheTerminalAndParksTheCursor`.** Third time this issue has shipped a plan row naming a test that does not exist (the plan's own Revisions records the first two). I checked all 19 test names across M1's Done-when: this is the only miss — but it is the only *new* one, and it was introduced by the commit under review. `TestPlanTablesNameEntitiesThatExist` exists and would have caught it if it read the "pinned by" column; it only reads the Core-concepts table.
+- **`cmd/define/screen.go:484` and `cmd/define/render.go:238` — the CSI grammar is hand-rolled twice in this window while `sgr.go:85 scanEscape` already owns it** (ARCH-DRY). `highlightwriter.go:88` defers to it, and `render_test.go:94-102`'s helper carries a comment saying it defers to it "rather than scanning for 'm'" — so the convention is established and these two new sites break it. They happen to agree with `scanEscape` today; M2.5 splices an underline through `sgrState` into text `clipVisible` cuts, which is where a divergence stops being cosmetic.
+- **`BR-29` remains open** — see disposition below.
+
+**4. Minor findings**
+
+- `screen_test.go:449` — `wantCol %= tc.termCols` disagrees with `readFrame`'s deferred wrap when the prompt is an exact multiple of the width (`readFrame` leaves `col == cols`, the model says `0`). No fixture hits it; it would surface as a false failure, not a false pass.
+- `screen_test.go:453` — the cursor **row** is asserted only as "not the last row". An off-by-one *upward* is caught only where the buffer is empty (the "moved the cursor above the screen" guard); the `a menu under the prompt` fixture passes with `menuRows+promptRows`.
+- `screen.go:232` — `clipVisible` drops `RenderLine`'s trailing `\x1b[nD` park when the prompt is cut, so the caret lands at the end of the clipped text. Reachable only by typing more than a full screenful.
+- `screen.go:232` — `termRows*max(s.cols, 1)` clips the prompt to `termRows` cells when `cols <= 0`. Not reachable in production (`terminalCols` floors at 1, defaults 80); reachable from direct `Paint` calls.
+
+**5. Test coverage notes**
+
+- All 11 `-tags conformance` PTY rows **SKIP** here (`no pty available: operation not permitted`), so rows 3b/5/6 of the Done-when could not be executed in this review. That is the gap `BR-24` already closed structurally: `handBack`, the restore protocol and `watchResize` all have in-process pins, and I exercised those. Worth stating in the milestone-close evidence that the PTY rows were verified by the implementor, not by the gate.
+- `TestScreenPaintSplitsTheHeight` (screen_test.go:121) survives as the substring-shaped predecessor of the placement test. Not harmful, but it is the weaker instrument and now overlaps.
+- The chunk-boundary property for `Write` (BR-1) still has no test; `FuzzScreenWriteDoesNotPanic` only checks for panics.
+
+**6. Architectural notes**
+
+- **ARCH-DRY — flag.** Two new hand-rolled CSI scanners beside the existing `scanEscape` owner (finding above). Everything else in the window consolidates rather than duplicates: `truncate`→`clipVisible`, `wheelFromButton` across both encodings, one row accounting used for both the budget and the cursor walk-back.
+- **ARCH-PURE — pass.** `screen` is unit-tested with a `strings.Builder` and no terminal; `liveScreen` is the only IO holder; the loop takes a `display` interface. `Paint` mutates `s.rows`/`s.cols` and `Frame` writes the clamp back — receiver state, not IO, and both are documented as deliberate. Note `puretest`'s mechanical guard covers only `play`/`schedule`, not `cmd/define`, so this split rests on review rather than a guard.
+- **ARCH-PURPOSE — pass on code, flag on plan.** M1's stated purpose (the screen owns every row so a click's coordinates are exact) is delivered: alt screen, buffer+viewport, whole-frame paint, `cooked()` deleted, keys and wheel, SIGWINCH, transcript. The shadow-sweep on the plan tables is where the purpose is under-delivered — `BR-29`'s class was answered by adding the three rows it named, not by writing the enumeration.
+- **ARCH-MOCK — pass.** The terminal's stateful double is the `creack/pty` harness behind the same boundary production uses; the pure `Frame`/`Paint` arithmetic carries what the fake cannot.
+- **ARCH-CONSTRAINTS — pass.** The envelope is stated and enforced: 16 ms `paintInterval` with a trailing flush (so the blocking-playback indicator is not held), deliberately uncapped buffer with the reason, coalesced SIGWINCH, and now a total-height budget that no component escapes. No unbounded fan-out; the resize watcher cannot block on a busy loop.
+
+**7. Plan revision recommendations**
+
+- A `## Revisions` entry recording that Done-when row 1b's pin was renamed, and that the guard which should have caught it reads only the Core-concepts table — with the widened rule: *every symbol a plan names, in any column of any table, resolves to a declaration in the tree; and every top-level declaration the window adds to a file the tables name has a row. One guard, both directions.*
+- The enumeration `BR-29` asked for, written into the plan rather than reconstructed each round: the rows still missing are `screen.Lines`, `screen.eraseOpenLine`, `paintInterval`, `defaultRows`/`defaultCols`.
+
+```findings
+dispose:
+  - id: BR-32
+    disposition: addressed
+    note: |
+      Verified by reversion at HEAD: restoring the menuRows summation in place of fitMenu reddens "more menu than terminal" (8 rows in 5) and "a terminal too short for anything" (3 in 2). readFrame asserts total height, so the rule is now enforced rather than the instance.
+  - id: BR-33
+    disposition: addressed
+    note: |
+      Verified by three reversions at HEAD: len(menu) for menuRows+promptRows-1 reddens, deleting the whole "if len(menu) > 0" block reddens five subtests, and menuRows+promptRows reddens three. The frame is decoded into (row, col) as the finding asked.
+  - id: BR-29
+    disposition: not-addressed
+    note: |
+      Unchanged since round 4 — repo_guard_test.go is untouched across the whole window, so the tree-to-table guard still does not exist, and screen.Lines, screen.eraseOpenLine, paintInterval and defaultRows/defaultCols still have no rows.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      Site 5 of its own enumeration survives: editor.go:227 still computes the ESC[nD park as len([]rune(sug)) + (len(e.Line) - e.Cursor), a rune count for a move the terminal makes in columns. The CJK row was added to the frame test; the combining-mark row was not.
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      M1.1's prose still enumerates the four cases and no chunk-boundary property test for Write exists; FuzzScreenWriteDoesNotPanic checks only for panics. Minor, non-blocking.
+findings:
+  - id: new
+    severity: Important
+    family: plan-table-incomplete
+    title: |
+      Done-when row 1b names TestScreenFrameFitsTheTerminalInDisplayRows, which this window's own commit renamed away
+    detail: |
+      This is the 3rd finding in family plan-table-incomplete. Earlier rounds fixed instances (BR-9 and BR-22 added missing rows, BR-29's three rows were added). Do NOT just rename the cell. The rule that covers all of them: every symbol a plan names — in ANY column of ANY of its tables, including Done-when's "pinned by" — must resolve to a declaration in the tree, and every top-level declaration the window adds to a file the tables name must have a row; one guard, both directions, all columns. Measured at HEAD: I checked all 19 test names across M1's Done-when and exactly one is missing — plan.md:150 names TestScreenFrameFitsTheTerminalInDisplayRows, renamed to TestPaintFitsTheTerminalAndParksTheCursor by aa4fe94, the commit under review. TestPlanTablesNameEntitiesThatExist exists and reads only the Core-concepts table, so the suite stayed green; the plan's own Revisions already records this class twice ("M1 done-when, two rows named tests that do not exist"), which is why the deliverable is the widened guard rather than the edit.
+  - id: new
+    severity: Important
+    family: one-owner-per-invariant
+    title: |
+      visibleCells and clipVisible each hand-roll the CSI grammar that scanEscape already owns
+    detail: |
+      This is the 3rd finding in family one-owner-per-invariant. Earlier rounds fixed instances (BR-17 the offset clamp spelled twice, BR-27 the wheel button byte spelled twice). Do NOT just rewrite the two functions. The rule: the escape-sequence grammar has exactly one owner — sgr.go:85 scanEscape — and any site that walks a styled string skips sequences through it rather than re-deriving "ESC, then optional [, then params, then a final byte in 0x40-0x7E". Enumeration measured at HEAD, 2 of 4 non-test sites wrong: highlightwriter.go:88 defers to scanEscape (ok); render_test.go:102 defers to it and its comment says why (ok); render.go:238 visibleCells hand-rolls inEsc/inCSI, and its inCSI branch is NEW in this window; screen.go:484 clipVisible hand-rolls the same state machine plus a `styled` flag. screen_test.go:334 readFrame is a third spelling but legitimately INTERPRETS rather than skips, so it is out of scope for the sweep. The three agree today, which is what makes this cheap now and expensive later: M2.5 splices an underline through sgrState into text clipVisible cuts, so a fourth reading of the same grammar lands exactly where a divergence becomes a rendering bug (ARCH-DRY).
+  - id: new
+    severity: Minor
+    family: unfalsifiable-test-pin
+    title: |
+      The new placement test asserts the cursor column exactly but the row only as "not the last one"
+    detail: |
+      screen_test.go:453 checks got.cursorRow >= got.rows-1. An off-by-one UPWARD in the walk-back is caught only where the buffer is empty, by readFrame's "moved the cursor above the screen" guard; I confirmed the "a menu under the prompt" fixture passes with menuRows+promptRows. Asserting the cursor is on the prompt's first row (rows - promptRows - menuRows) closes it. Separately, screen_test.go:449's wantCol %= termCols disagrees with readFrame's deferred wrap for a prompt exactly a multiple of the width — a false failure waiting for a fixture, not a false pass.
+```

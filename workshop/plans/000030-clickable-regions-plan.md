@@ -83,7 +83,11 @@ to `#35`'s code and is where `M2.1` starts.
 | `screen.Scroll` / `screen.clamp` | `cmd/define/screen.go` | new | PURE — one place spells the viewport's limits |
 | `screen.Page` | `cmd/define/screen.go` | new | PURE (M1.4a) — a screenful less one line of overlap |
 | `screen.Paint` | `cmd/define/screen.go` | new | PURE, given the writer |
-| `screen.Transcript` | `cmd/define/screen.go` | new | PURE (M1.5) |
+| `screen.Transcript` / `screen.Lines` | `cmd/define/screen.go` | new | PURE (M1.5) |
+| `screen.eraseOpenLine` | `cmd/define/screen.go` | new | PURE — honours `eraseLine`, so the indicator stays out of the record |
+| `paintInterval` | `cmd/define/screen.go` | new | the repaint budget; a `liveScreen.interval` field so a test can hold the window open |
+| `defaultRows` / `defaultCols` | `cmd/define/main.go` | new | the shape assumed when the terminal cannot be measured |
+| `escapeLen` | `cmd/define/render.go` | new | PURE (rework) — the ONE reading of the escape grammar, wrapping `sgr.go`'s `scanEscape` |
 | `displayRows` / `clipVisible` / `fitMenu` | `cmd/define/screen.go` | new | PURE (rework) — the frame is budgeted in DISPLAY ROWS, every component of it |
 | `visibleCells` | `cmd/define/render.go` | modified | PURE (rework) — was `visibleLen`; the ONE owner of "how wide is this", now measured in terminal COLUMNS |
 | `cellWidth` / `isWide` | `cmd/define/render.go` | new | PURE (rework) — a combining mark is 0 columns and a CJK rune is 2, both daily traffic for a dictionary |
@@ -147,7 +151,7 @@ to `#35`'s code and is where `M2.1` starts.
 | # | claim | pinned by | red when |
 |---|---|---|---|
 | 1 | the viewport arithmetic is right | `TestScreenFrame` | `Frame` stops clamping the offset |
-| 1b | **the frame FITS the terminal, in display rows** | `TestScreenFrameFitsTheTerminalInDisplayRows`, `TestScreenClipsTheViewNotTheBuffer` | a line wider than the terminal is counted as one row, so the frame overflows and the terminal scrolls |
+| 1b | **the frame FITS the terminal, in display rows, and PARKS the cursor at the prompt** | `TestPaintFitsTheTerminalAndParksTheCursor` (ten shapes, read as a placement), `TestScreenClipsTheViewNotTheBuffer` | any component is counted in lines rather than rows, so the frame overflows and the terminal scrolls; or the cursor walk-back is wrong, so the next keystroke redraws in the wrong place |
 | 1c | **a click types nothing, in either mouse encoding** | `TestDecodeX10Mouse`, `TestX10ClickTypesNothing`, `TestDecodeWheel` | a report is delimited but its payload is not consumed |
 | 2 | a streamed fragment lands as text, not a frame | `TestScreenWriteBuildsLines/a partial line CONTINUES` | `Write` splits on every call boundary |
 | 3 | the terminal is restored on every exit — raw mode, the alt screen and mouse reporting, in that order | `TestRestoreHandsBackEveryTerminalState` (asserts the bytes AND the order, verified falsifiable), `TestRestoreSendsNothingItDidNotTake`, `TestEnterDoesNotClaimAStateItCouldNotWrite`; on a real pty the Fatal in `TestPTYTranscriptIsPrintedOnExit` | any leave is dropped from the restore path |
@@ -519,3 +523,38 @@ entries, deleting the block, and dropping `fitMenu`.
 
 That instrument is the one M2.5 needs too: an underline spliced into a span is a
 placement claim, and this is how a placement claim gets asserted here.
+
+### 2026-08-29 — M1 close (FIX-THEN-SHIP): three families, closed as guards where one could be
+
+**A plan's claims are checked in every column, not just the two the old guard
+read (BR-34).** Third recurrence of `plan-table-incomplete`, and the previous two
+fixes were hand-edits, which is why it came back: `TestPlanTablesNameEntitiesThatExist`
+reads the Core-concepts tables' Name and Lives-in cells, so Done-when's **pinned
+by** column — where a plan makes its most load-bearing claim, "this behaviour is
+DEFENDED by this test" — was unchecked. `aa4fe94` renamed a test and left row 1b
+naming the old one, with a green suite.
+
+`TestPlanNamedTestsExist` closes it: a test name is self-identifying, so the
+guard reads the WHOLE document rather than a table shape, and scopes per
+MILESTONE — a milestone with unticked tasks is still being built and its
+Done-when names are promises, exactly as a `new` row is; a milestone claiming to
+be finished must name tests that exist. Document-level scoping would have
+exempted M1 for precisely as long as M1 was being built, which is when the miss
+happened. It found the one real instance and no false ones.
+
+**The escape grammar has one owner (BR-35).** Third in `one-owner-per-invariant`.
+`scanEscape` (`sgr.go`) has always known where a sequence ends; `visibleCells` and
+`clipVisible` each hand-rolled the same state machine, and `M2.5` splices an
+underline through the text `clipVisible` cuts — a fourth reading is exactly where
+a divergence becomes a rendering bug. `escapeLen` wraps `scanEscape` for whole
+strings (its `-1` means "incomplete", which is a STREAM's answer) and both sites
+go through it. BR-26's last surviving site went with them: `RenderLine`'s cursor
+park was still `len([]rune(sug))` for a move the terminal makes in columns.
+
+**The placement assertion pins the ROW exactly (BR-36).** It checked
+`cursorRow >= rows-1`, which catches a walk-back that is too SHORT and misses one
+that is too long — and an off-by-one upward leaves the next redraw overwriting
+the buffer's last line. The target is the END of the prompt, which for a wrapping
+prompt is not its first row; deriving that from the terminal model rather than
+from Paint's formula is what makes it an assertion rather than a restatement. All
+four mutations now redden it.

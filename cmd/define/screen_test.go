@@ -443,17 +443,32 @@ func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {
 			// 2. It leaves the cursor at the end of the prompt — where the user
 			// is typing. Deleting the cursor-up-and-reprint block, or walking
 			// back by menu entries rather than rows, lands it somewhere else.
-			wantCol := visibleCells(clipVisible(tc.prompt, tc.termRows*tc.termCols))
-			if wantCol >= tc.termCols {
-				wantCol %= tc.termCols
-			}
-			if got.cursorCol != wantCol {
+			// Where the cursor SHOULD be: at the end of the prompt, which is
+			// the last cell the prompt occupies. Derived by replaying the
+			// prompt through the same terminal model, so this asserts a
+			// position rather than a formula copied out of Paint.
+			shown := clipVisible(tc.prompt, tc.termRows*tc.termCols)
+			want := readFrame(t, shown, tc.termCols)
+			if got.cursorCol != want.cursorCol {
 				t.Errorf("the cursor rests at column %d, want %d — the next keystroke redraws in the wrong place",
-					got.cursorCol, wantCol)
+					got.cursorCol, want.cursorCol)
 			}
-			if len(tc.menu) > 0 && got.cursorRow >= got.rows-1 && got.rows > 1 {
-				t.Errorf("the cursor rests on row %d of a %d-row frame: it never came back up over the menu",
-					got.cursorRow, got.rows)
+			// The ROW, exactly — not merely "not the last one". An off-by-one
+			// UPWARD in the walk-back leaves the cursor above the prompt, where
+			// the next redraw overwrites the buffer's last line, and that was
+			// caught only where the buffer happened to be empty.
+			//
+			// The target is the END of the prompt, which is where a person is
+			// typing — and for a prompt that wraps, that is its LAST row, not
+			// its first. Composed from where the prompt starts in the frame plus
+			// where the cursor lands within it.
+			wantRow := got.rows - menuHeight(tc.menu, tc.termCols) - want.rows + want.cursorRow
+			if wantRow < 0 {
+				wantRow = 0
+			}
+			if got.cursorRow != wantRow {
+				t.Errorf("the cursor rests on row %d of a %d-row frame, want %d — the end of the prompt",
+					got.cursorRow, got.rows, wantRow)
 			}
 		})
 	}
@@ -583,4 +598,15 @@ func TestLiveScreenFlushesAHeldFrameWithNoFurtherWrites(t *testing.T) {
 
 	l.Write([]byte("  ♫ playing 3×")) // inside the window: held
 	waitFor(t, func() bool { return tty.painted() > before })
+}
+
+// menuHeight is what the menu costs the frame, for the test's own arithmetic —
+// deliberately recomputed from the FITTED menu rather than read out of Paint, so
+// the assertion cannot agree with the code by construction.
+func menuHeight(menu []string, cols int) int {
+	n := 0
+	for _, m := range menu {
+		n += displayRows(m, cols)
+	}
+	return n
 }

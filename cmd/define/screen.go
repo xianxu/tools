@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // screen is the interactive loop's line buffer and viewport (#30).
@@ -482,26 +483,17 @@ func clipVisible(s string, width int) string {
 	}
 	var b strings.Builder
 	n, styled := 0, false
-	inEsc, inCSI := false, false
-	for _, r := range s {
-		switch {
-		case inCSI:
-			b.WriteRune(r)
-			if r >= 0x40 && r <= 0x7e {
-				inCSI = false
-				styled = true
-			}
-			continue
-		case inEsc:
-			b.WriteRune(r)
-			inEsc = false
-			inCSI = r == '['
-			continue
-		case r == '\x1b':
-			b.WriteRune(r)
-			inEsc = true
+	for i := 0; i < len(s); {
+		// Sequences are SKIPPED through the one owner of the escape grammar
+		// (escapeLen, render.go) and kept: they cost no columns, and dropping
+		// them would strip the colour from the text that survives the cut.
+		if skip := escapeLen(s[i:]); skip > 0 {
+			b.WriteString(s[i : i+skip])
+			styled = true
+			i += skip
 			continue
 		}
+		r, size := utf8.DecodeRuneInString(s[i:])
 		w := cellWidth(r)
 		if n+w > width {
 			// Cut here — BEFORE the rune, so a two-cell rune is never half
@@ -512,8 +504,9 @@ func clipVisible(s string, width int) string {
 			}
 			return b.String()
 		}
-		b.WriteRune(r)
+		b.WriteString(s[i : i+size])
 		n += w
+		i += size
 	}
 	return b.String()
 }
