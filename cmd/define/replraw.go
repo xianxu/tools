@@ -64,7 +64,11 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	// buffer line like any other, and survives to the exit transcript, where
 	// today it is simply gone. The one-shot and piped paths keep the real stderr
 	// (D6), so a script's `2>` is untouched.
-	return runEditor(ctx, keys, interrupts, d, opt, live, resizes, finish, live, live)
+	return runEditor(ctx, keys, interrupts, d, opt, console{
+		view: live, resizes: resizes, finish: finish,
+		// BOTH streams are the screen (D5b) — see above.
+		stdout: live, stderr: live,
+	})
 }
 
 // wheelLines is how far one wheel event moves the viewport.
@@ -74,6 +78,31 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 // Matching that keeps the gesture feeling like the terminal's own scroll rather
 // than like this program's idea of one.
 const wheelLines = 3
+
+// console is THE TERMINAL, factored out — the thing runEditor's own doc comment
+// has always named without there being a type for it.
+//
+// It exists because five of that function's ten parameters were this one
+// concept, and two of them were adjacent `io.Writer`s: a call that swapped
+// stdout and stderr compiled, ran, and put diagnostics where the definition
+// goes. Named fields cannot be swapped by position.
+//
+// In production every field is the same liveScreen (stdout AND stderr, #30 D5b);
+// in a test the display is a recorder and the writers are buffers, and the loop
+// cannot tell the difference. M2's click arrives as a method on `display`, not
+// as an eleventh parameter.
+type console struct {
+	// view is what the loop draws on and scrolls.
+	view display
+	// resizes carries the terminal's new shape. nil is legitimate: a test has no
+	// terminal, and a nil channel simply never fires.
+	resizes <-chan winSize
+	// finish hands the terminal back — see handBack for the order and why.
+	finish func()
+	// stdout and stderr are where the session's bytes go.
+	stdout io.Writer
+	stderr io.Writer
+}
 
 // display is the loop's whole view of the terminal: one frame out, and a
 // viewport it can move.
@@ -139,19 +168,18 @@ func handBack(live interface {
 	fmt.Fprint(stdout, live.Transcript())
 }
 
-// runEditor is the editor loop with the terminal factored out: keys arrive on a
-// channel, `view` is the screen it draws on and scrolls, and `finish` restores
-// the terminal. Tests drive it with a scripted channel and no terminal at all —
-// which is the whole point of keeping Apply and RenderLine pure.
-// interrupts sits beside keys because they are two halves of one story: the
-// channel carries the byte transport, and the sink decides what an interrupt
-// from EITHER transport means while this loop owns the foreground.
+// runEditor is the editor loop with the terminal factored out — into `console`,
+// which is now a type rather than five parameters in a row. Keys arrive on a
+// channel; tests drive it with a scripted one and no terminal at all, which is
+// the whole point of keeping Apply and RenderLine pure.
 //
-// stdout and stderr are the SCREEN in production (D5, D5b) and plain buffers in
-// tests. The loop cannot tell the difference, which is the point: every writer
-// it had keeps writing, and only the destination changed.
-func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d deps, opt options,
-	view display, resizes <-chan winSize, finish func(), stdout, stderr io.Writer) int {
+// interrupts sits beside keys rather than in the console because they are two
+// halves of one story: the channel carries the byte transport, and the sink
+// decides what an interrupt from EITHER transport means while this loop owns the
+// foreground. A SIGINT never touches the terminal, so it is not the console's.
+func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d deps, opt options, con console) int {
+	view, finish := con.view, con.finish
+	stdout, stderr := con.stdout, con.stderr
 	if interrupts == nil {
 		// A loop with no sink still runs; nothing can scope an interrupt, which
 		// is the honest behaviour for a caller that supplied no cancellation.
@@ -260,7 +288,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		case <-ctx.Done():
 			finish() // before anything else can write: never exit leaving raw mode on
 			return 0
-		case sz := <-resizes:
+		case sz := <-con.resizes:
 			// A frame is drawn for a SHAPE, and both halves of it go wrong. Too
 			// tall and the terminal scrolls, which moves every row the app
 			// believes it placed; too narrow and the width the next entry wraps

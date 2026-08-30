@@ -263,8 +263,7 @@ func TestEveryEntryPathHighlightsDefinitions(t *testing.T) {
 			replLines(t.Context(), nil, d, opt, strings.NewReader("sycophantic\n"), out, errb, true, false)
 		}},
 		{"raw editor", func(t *testing.T, d deps, opt options, out, errb *bytes.Buffer) {
-			runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, d, opt,
-				paintInto(out), nil, func() {}, out, errb)
+			runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, d, opt, editorConsole(out, errb, func() {}))
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

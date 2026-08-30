@@ -111,6 +111,7 @@ to `#35`'s code and is where `M2.1` starts.
 |------|----------|--------|-------|
 | `liveScreen` | `cmd/define/screen.go` | new | the terminal — the ONLY part of the screen that does IO |
 | `display` | `cmd/define/replraw.go` | new | the loop's whole view of the terminal: `Draw`, `Page`, `Scroll`, `Resize` |
+| `console` | `cmd/define/replraw.go` | new (side-quest) | THE TERMINAL as a type — the display, the resize channel, the hand-back and both streams, which were five of `runEditor`'s ten parameters |
 | `enterAlt` / `leaveAlt` | `cmd/define/rawterm.go` | new | `\x1b[?1049h/l` |
 | `enterMouse` / `leaveMouse` | `cmd/define/rawterm.go` | new (M1.4b) | `\x1b[?1000h` + `\x1b[?1006h` |
 | `rawSession.control` | `cmd/define/rawterm.go` | new (rework) | where mode sequences go — an `io.Writer`, so the restore protocol is assertable with no terminal |

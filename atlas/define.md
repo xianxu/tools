@@ -268,10 +268,19 @@ is still the application's own scroll.
 ```
 screen        lines []string + offset      PURE: Write, Frame, Scroll, Page, Paint
 liveScreen    screen + tty + rows,cols     the only part that does terminal IO
-display       Draw(prompt, menu), Page,    what the editor loop is handed
+display       Draw(prompt, menu), Page,    what the editor loop draws on
               Scroll, Resize
+console       display + resizes + finish   THE TERMINAL, as one parameter
+              + stdout + stderr
 handBack      Stop → restore → transcript  the exit sequence, as one function
 ```
+
+`runEditor`'s doc comment always said "the editor loop with the terminal factored
+out"; `console` is that concept given a type, and it arrived when five of the
+function's ten parameters turned out to be the same one. Two of those five were
+adjacent `io.Writer`s, so a call that swapped stdout and stderr compiled and put
+diagnostics where the definition goes. In production every field is the same
+`liveScreen`; `M2`'s click is a method on `display`, not an eleventh parameter.
 
 - **`screen` is an `io.Writer`, and that is what kept this from being a rewrite.**
   `Render` returns a string, the ask path streams, commands and the indicator

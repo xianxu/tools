@@ -310,8 +310,7 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 			replLines(t.Context(), nil, d, opt, strings.NewReader("?what is obsequious\n"), out, errOut, true, false)
 		}},
 		{"raw editor", func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer) {
-			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt,
-				paintInto(out), nil, func() {}, out, errOut)
+			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt, editorConsole(out, errOut, func() {}))
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

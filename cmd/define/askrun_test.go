@@ -377,8 +377,7 @@ func TestEditorCtrlCMidStreamReturnsToThePrompt(t *testing.T) {
 			var errb syncBuf
 			done := make(chan int, 1)
 			go func() {
-				done <- runEditor(t.Context(), keys, interrupts, d, opt,
-					paintInto(&out), nil, func() {}, &out, &errb)
+				done <- runEditor(t.Context(), keys, interrupts, d, opt, editorConsole(&out, &errb, func() {}))
 			}()
 
 			io.WriteString(pw, "?why\r")
@@ -448,8 +447,7 @@ func TestForcedAndUnforcedAsksShareOneWiring(t *testing.T) {
 			var errb syncBuf
 			done := make(chan int, 1)
 			go func() {
-				done <- runEditor(t.Context(), keys, interrupts, d, opt,
-					paintInto(&out), nil, func() {}, &out, &errb)
+				done <- runEditor(t.Context(), keys, interrupts, d, opt, editorConsole(&out, &errb, func() {}))
 			}()
 
 			io.WriteString(pw, tc.keys)
@@ -517,8 +515,7 @@ func TestAKeyTypedBeforeCtrlCDoesNotBlockTheReader(t *testing.T) {
 	var out, errb syncBuf
 	done := make(chan int, 1)
 	go func() {
-		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true},
-			paintInto(&out), nil, func() {}, &out, &errb)
+		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true}, editorConsole(&out, &errb, func() {}))
 	}()
 
 	io.WriteString(pw, "?why\r")
@@ -720,9 +717,7 @@ func askModes() []askMode {
 			name: "editor", carriesSession: true,
 			drive: func(t *testing.T, d deps, lines []string, ints *interrupter, out, errOut io.Writer) {
 				d.stdinIsTerminal = func() bool { return true }
-				runEditor(t.Context(), scriptKeys(strings.Join(lines, "\r")+"\r"), ints, d,
-					options{noAudio: true, locale: "us", tty: true},
-					paintInto(out), nil, func() {}, out, errOut)
+				runEditor(t.Context(), scriptKeys(strings.Join(lines, "\r")+"\r"), ints, d, options{noAudio: true, locale: "us", tty: true}, editorConsole(out, errOut, func() {}))
 			},
 		},
 	}
@@ -860,8 +855,7 @@ func TestCtrlCQuitsAgainOnceTheAnswerIsOver(t *testing.T) {
 	var out, errb syncBuf
 	done := make(chan int, 1)
 	go func() {
-		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true},
-			paintInto(&out), nil, func() {}, &out, &errb)
+		done <- runEditor(t.Context(), keys, interrupts, d, options{noAudio: true, locale: "us", tty: true}, editorConsole(&out, &errb, func() {}))
 	}()
 
 	io.WriteString(pw, "?why\r")
