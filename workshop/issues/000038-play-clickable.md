@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-30
 updated: 2026-08-30
-estimate_hours: 2.18
+estimate_hours: 2.83
 started: 2026-08-30T16:08:11-07:00
 ---
 
@@ -104,7 +104,7 @@ take — a click here should reach it rather than growing a third caller.
 model: estimate-logic-v3.1
 familiarity: 1.0
 item: issue-spec               design=0.45 impl=0.08
-item: smaller-go-module        design=0.02 impl=0.10
+item: cross-cutting-refactor   design=0.05 impl=0.12
 item: cross-cutting-refactor   design=0.05 impl=0.12
 item: smaller-go-module        design=0.05 impl=0.12
 item: smaller-go-module        design=0.03 impl=0.16
@@ -113,10 +113,11 @@ item: smaller-go-module        design=0.02 impl=0.10
 item: smaller-go-module        design=0.02 impl=0.14
 item: smaller-go-module        design=0.01 impl=0.08
 item: atlas-docs               design=0.02 impl=0.06
+item: ux-rename-iteration      design=0.30 impl=0.05
 item: milestone-review         design=0.00 impl=0.16
-item: milestone-review         design=0.00 impl=0.20
+item: milestone-review         design=0.00 impl=0.30
 design-buffer: 0.15
-total: 2.18
+total: 2.83
 ```
 
 Derivation notes.
@@ -128,10 +129,22 @@ Derivation notes.
   a Critical the first draft would have shipped, a guard that scoped wrong, and a
   replacement pin that did not discriminate.
 
-- **Only ONE `cross-cutting-refactor`**, T1, and it is the one task that touches
-  a working loop: lifting the click registry out of `runEditor`'s closure changes
-  code `#30` just closed. The rest are `smaller-go-module` — extend or mirror,
-  against a design that is settled and a machine that exists.
+- **TWO `cross-cutting-refactor`s, and the first draft mislabelled one.** T1
+  lifts the click registry out of `runEditor`'s closure; T0 replaces the
+  audio-off predicate at four sites in four files and changes `playAnnounced`
+  itself. The table's definition is literally "multi-file rename / language
+  pivot", and all four of T0's sites are in working loops — calling it a
+  `smaller-go-module` under-reported how much of this issue touches shipped code.
+  The hours barely move (the scaled bands overlap), which is the point: it was a
+  labelling defect, and a labelling defect is what makes a ledger row unreadable
+  later.
+
+- **A `ux-rename-iteration` round, which the first draft omitted.** This is a TUI
+  feature filed from an operator screenshot, and v2.1's own Known Limitations
+  flag that case: "UX iteration round count (3–5 typical for TUI features, not
+  1)". One round is budgeted, not three — the operator's request was specific and
+  the design is already settled — but zero was not defensible. `#30` took two
+  such rounds mid-flight (the duplicated prompt, the wheel).
 
 - **No `greenfield-go-module` and no `TUI screen` primitive**, which is the whole
   shape of this issue: `#30` built the screen, the click map, the region
@@ -139,17 +152,32 @@ Derivation notes.
   is a second consumer adopting them (D10). If any row here is optimistic it is
   T3, where `--play`'s five return paths meet `onceHandBack`.
 
-- **Two `milestone-review`s for ONE boundary**, priced 0.16 to run and 0.20 to
-  remediate. That is not a hedge, it is this session's measured rate: `#30`'s M1
-  took six rounds, M2 five, its close two — and EVERY one returned at least an
-  Important. Pricing remediation at zero is the single thing the record rules out.
+- **Two `milestone-review`s for ONE boundary**, priced 0.16 to run and 0.30 to
+  remediate. Not a hedge — this session's measured rate: `#30`'s M1 took six
+  rounds, M2 five, its close two, and EVERY one returned at least an Important.
+  Pricing remediation at zero is the single thing the record rules out.
+
+  **The remediation row also carries the MANUAL TERMINAL PASS**, which the first
+  draft dropped and `#30` priced separately at 0.10. It matters more here, not
+  less: `#37` measured today that every `TestPTY*` row reports "no pty available"
+  where the work runs, and FOUR of this issue's Done-when rows (5, 6b, 7, 8) rest
+  on pty tests. So the only place several of these claims can be checked at all
+  is an operator at a real terminal, clicking. There is no vocabulary slug for
+  that, so it rides here rather than being invented.
 
 - **THE PREDICTION, on the record so the close can tell a miss from a
   confirmation.** `#30` estimated 3.19 and measured 10.91 — **3.4×** — and the
   overrun was almost entirely boundary rounds rather than building. This issue is
   smaller and its design is already through four rounds, so the same multiplier
   should not apply; but if the boundary behaves as `#30`'s did, the actual lands
-  near **4–5h** rather than 2.18.
+  near **4–5h** rather than 2.83.
+
+- **The design column is already spent**, and the block should be read that way:
+  0.68 × 1.15 ≈ 0.78h of it went on the issue, the operator's decisions and four
+  plan-quality rounds before T0 begins. What 2.83 actually asserts is that nine
+  tasks, a boundary and a manual pass land in the remaining ~2h. The chain is
+  also strictly sequential — T4 through T7 have no screen to write into until T3
+  lands — so there is no fan-out for parallelism to compress.
   **The estimate is NOT padded toward that.** v3.1 is applied as written, or the
   calibration row means nothing — which is exactly what `#30`'s own estimate note
   said before being wrong in the same direction.

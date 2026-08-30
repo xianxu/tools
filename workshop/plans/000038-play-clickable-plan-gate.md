@@ -209,7 +209,20 @@ rounds:
           note: the named replacement is green under a reversed outs iteration, so order is still unpinned
           round: 4
       blocked: false
-content_hash: 1465c680fda8156a618d257d0902897bd2c0d6e9d08e7c70b96635f12c3ba45e
+    - "n": 5
+      timestamp: "2026-08-30T16:45:38-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-6
+          disposition: addressed
+          note: 'the issue''s ## Plan now carries T0-T8 as tickable rows, plain checkboxes, one boundary'
+          round: 5
+        - id: PQ-11
+          disposition: addressed
+          note: T2 re-homes order via one ordered log both the Capturer double and fakePlayer append to; verified both seams are injectable and playAnnounced blocks on speak, so reversing outs is the only thing that reddens it
+          round: 5
+      blocked: false
+content_hash: f04628d3e40c79fae55f9b8e5bd0abef71503729bf3c9ed9b18d24620ca07cbe
 ---
 
 # Gate ledger — tools#38 (plan-quality)
@@ -329,7 +342,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - PQ-8 — addressed — D11 + T0 move the guard inside playAnnounced as options.playsAudio(); the class of four is confirmed
 - PQ-11 — not-addressed — the named replacement is green under a reversed outs iteration, so order is still unpinned
 
+## Round 5 — 2026-08-30T16:45:38-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-6 — addressed — the issue's ## Plan now carries T0-T8 as tickable rows, plain checkboxes, one boundary
+- PQ-11 — addressed — T2 re-homes order via one ordered log both the Capturer double and fakePlayer append to; verified both seams are injectable and playAnnounced blocks on speak, so reversing outs is the only thing that reddens it
+
 ## Open findings
 
-- **PQ-6** [Minor] `issue-plan-not-synced` the issue's ## Plan still says "decide Option A vs B / design it", which this plan file completes
-- **PQ-11** [Important] `deletion-drops-an-invariants-only-pin` T2 deletes the re-entry path and with it the only test pinning the outcome-ORDER obligation
+(none — every finding has been disposed)
