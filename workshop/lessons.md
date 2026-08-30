@@ -86,6 +86,12 @@ operation hands Ctrl-C back to the line discipline, which swallows the byte, and
 the reader sees nothing. Printing needs cooked (newline translation); blocking
 work must stay raw. Split the two.
 
+**`#30` dissolved this in `define` rather than obeying it better.** Once the app
+owns the screen it places every line itself, so no output depends on the line
+discipline and raw mode is continuous — there is nothing left to flap. The lesson
+stands for any program that drops a terminal mode around a blocking call; the
+better move, where you can afford it, is to stop needing the other mode.
+
 Also: a pty master does not honour `SetReadDeadline`, so a foreground read loop
 in a pty test hangs rather than times out. Use a background reader plus a
 snapshot.

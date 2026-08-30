@@ -76,7 +76,8 @@ loop never reaches for the model. Pronunciation audio is fetched over the networ
 only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
 network call at all; `--no-audio` makes one fully offline either way.
 
-On a terminal, `define` with no word opens a line editor:
+On a terminal, `define` with no word opens a line editor and draws the session
+itself:
 
 | key | does |
 |---|---|
@@ -85,9 +86,16 @@ On a terminal, `define` with no word opens a line editor:
 | Enter | define what you typed (never the suggestion) |
 | Enter on an empty line | replay the pronunciation, without moving the screen |
 | Cmd+Delete (Ctrl-U) | clear the line |
+| PageUp / PageDown, wheel | scroll back through the session |
 | Ctrl-C | quit, including mid-playback |
 
-Definitions wrap to your terminal width at word boundaries.
+Definitions wrap to your terminal width at word boundaries, and follow it when
+you resize the window.
+
+Because `define` owns the screen while it runs, the mouse belongs to it too —
+**hold Option to select text** (Shift in some terminals). Everything the session
+showed is printed back into your terminal when you quit, so it is in your
+scrollback exactly as it was before.
 
 **Words you have looked up show in green** — in the line you type, in definitions,
 and in answers — so the vocabulary you are building is visible rather than

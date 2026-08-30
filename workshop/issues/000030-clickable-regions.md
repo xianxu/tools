@@ -477,6 +477,33 @@ sequence, because the entry appearing anywhere in the stream would only prove it
 was drawn on the screen about to be thrown away. Falsifiable: dropping the print
 reddens it with nothing after `\x1b[?1049l`.
 
+### 2026-08-29 — M1.6: the prose D4 made false, rewritten
+
+The atlas's raw-mode section explained the cooked/raw dance as the design. It is
+now the HISTORY of one, said so explicitly rather than deleted: the rule was
+real, the hang it prevented was measured, and
+`TestPTYCtrlCDuringPlaybackExitsPromptly` still stands — what went is the
+flapping, because the app now places every line itself.
+
+Added `## The screen`, the layer M1 built: alternate screen, the pure
+`screen`/`liveScreen`/`display` split, the live edge, the honoured `eraseLine`,
+stderr routing, the exit transcript, scrolling and why the wheel needed mouse
+reporting at all, the drag-select cost, one restore guarantee for three terminal
+states, and resize.
+
+Two smaller corrections where the same prose had propagated: `lookupAndRender`'s
+"so the raw path could render cooked and play raw" now says the split outlived
+its reason, and `--play`'s "all session output goes through `crlfWriter`" is
+scoped to `--play`, which still draws its own frames (D5a).
+
+`workshop/lessons.md` KEEPS "render cooked, play raw" — it is still true of any
+program that drops a mode around a blocking call — with a note that the better
+move, where affordable, is to stop needing the other mode.
+
+README: the key table gains scrolling, and the two things a user meets
+immediately are stated — hold Option to select text, and the session is printed
+back to the terminal on exit.
+
 ## Revisions
 
 ### 2026-08-29 — the scrollback question is answered, and the target changed
