@@ -297,20 +297,15 @@ func menuLines(base string, cmds []command, width int) []string {
 	return out
 }
 
-// truncate cuts a line to width, measuring in RUNES.
+// truncate cuts a line to width, measuring in terminal COLUMNS.
 //
-// Shared because the two renderers disagreed: the menu cut bytes while
-// /history cut runes, so one of them would have split a multi-byte character in
-// half on a narrow terminal. A width is a column count, and a column is a rune.
+// Shared because the two renderers disagreed: the menu cut bytes while /history
+// cut runes, so one of them would have split a multi-byte character in half on a
+// narrow terminal. A width is a column count — and a column is not a rune, which
+// is why this now delegates to the screen's one owner of that arithmetic: a
+// combining mark takes no column and a CJK rune takes two.
 func truncate(s string, width int) string {
-	if width <= 0 {
-		return s
-	}
-	r := []rune(s)
-	if len(r) <= width {
-		return s
-	}
-	return string(r[:width])
+	return clipVisible(s, width)
 }
 
 // menuNameWidth is the name field's width: the longest name plus a two-space

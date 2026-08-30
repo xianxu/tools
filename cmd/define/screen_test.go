@@ -224,9 +224,9 @@ func TestLiveScreenShowsWhatIsWrittenToIt(t *testing.T) {
 
 	l.Draw("› ", nil)
 	tty.Reset()
-	// Far enough past the last frame that the throttle does not hold this one —
+	// The throttle is out of the way: a zero window means every write paints, so
 	// what is under test here is that a write SHOWS, not how soon.
-	l.painted = time.Now().Add(-paintInterval)
+	l.interval = -1
 	l.Write([]byte("a definition\n"))
 	if !strings.Contains(tty.String(), "a definition") {
 		t.Errorf("a write did not reach the terminal: %q", tty.String())
@@ -427,7 +427,10 @@ func repeated(n int, line string) []string {
 // every gesture that ends a burst paints unconditionally.
 func TestLiveScreenThrottlesTheRepaintButNeverLosesTheLastWord(t *testing.T) {
 	var tty countingWriter
-	l := newLiveScreen(&tty, 24, 80)
+	// A long window, so "pending" is deterministic: no write paints itself and
+	// the trailing timer cannot fire during the test. Racing the real 16 ms is
+	// how a scheduling hiccup becomes a false failure.
+	l := &liveScreen{s: &screen{}, tty: &tty, rows: 24, cols: 80, interval: time.Hour}
 	l.Draw("› ", nil) // the first frame
 	before := tty.painted()
 
@@ -435,8 +438,8 @@ func TestLiveScreenThrottlesTheRepaintButNeverLosesTheLastWord(t *testing.T) {
 	for i := 0; i < 200; i++ {
 		l.Write([]byte("token "))
 	}
-	if got := tty.painted() - before; got > 5 {
-		t.Errorf("200 deltas painted %d frames — the throttle is not holding", got)
+	if got := tty.painted() - before; got != 0 {
+		t.Errorf("200 deltas painted %d frames inside one window — the throttle is not holding", got)
 	}
 	// The burst is still ALL in the buffer; only the painting was skipped.
 	if n := strings.Count(l.Transcript(), "token"); n != 200 {
@@ -449,15 +452,8 @@ func TestLiveScreenThrottlesTheRepaintButNeverLosesTheLastWord(t *testing.T) {
 		t.Error("Draw did not paint: a burst could end with text the user never sees")
 	}
 
-	// The TRAILING half, and it is what makes the throttle safe rather than
-	// merely cheap: a held frame goes out whether or not another write follows.
-	// The indicator is written and then playback blocks for seconds — a throttle
-	// waiting for the next write would hide it for the whole recording.
-	l.Write([]byte("  ♫ playing 3×"))
-	frames = tty.painted()
-	waitFor(t, func() bool { return tty.painted() > frames })
-
-	// Stop flushes too, for the exit path.
+	// Stop flushes what the window is still holding, which is the exit path: the
+	// last thing a session showed must not be the thing the throttle held back.
 	l.Write([]byte("the last word\n"))
 	frames = tty.painted()
 	l.Stop()
@@ -491,4 +487,20 @@ func (c *countingWriter) painted() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.frames
+}
+
+// The TRAILING half, on its own and on the real clock — it is what makes the
+// throttle safe rather than merely cheap.
+//
+// `♫ playing 3×` is written and then playback blocks for SECONDS. A throttle
+// that waited for the next write would hide the indicator for the whole
+// recording, which is worse than the redraw storm being fixed.
+func TestLiveScreenFlushesAHeldFrameWithNoFurtherWrites(t *testing.T) {
+	var tty countingWriter
+	l := newLiveScreen(&tty, 24, 80)
+	l.Draw("› ", nil)
+	before := tty.painted()
+
+	l.Write([]byte("  ♫ playing 3×")) // inside the window: held
+	waitFor(t, func() bool { return tty.painted() > before })
 }

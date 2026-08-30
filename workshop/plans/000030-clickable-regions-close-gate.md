@@ -471,6 +471,71 @@ rounds:
           round: 4
       boundary: M1
       blocked: true
+    - "n": 5
+      timestamp: "2026-08-29T21:18:49-07:00"
+      agent: claude
+      dispose:
+        - id: BR-23
+          disposition: not-addressed
+          note: 'go test ./... is still RED at HEAD: TestPlanTableStatusMatchesTheChangeWindow now fails on the M2 Render row for the OPPOSITE reason — it was flipped to "unchanged" while render.go:172 (inside Render, 97-222) changed visibleLen to visibleCells in this window. The Kind-column half is fixed and TestPlanTablesNameEntitiesThatExist passes; nothing else in ./... fails.'
+          round: 5
+        - id: BR-12
+          disposition: not-addressed
+          note: 'The budget half landed (cols is real, displayRows charges wrapped height, the clip runs at paint time) but the frame still overflows: clipVisible''s cut cursor counts RUNES, so clipVisible(strings.Repeat("日",100), 80) returns 200 cells and a 10-line buffer of those needs 19 display rows in a 10-row terminal. Measured at HEAD. TestScreenFrameFitsTheTerminalInDisplayRows would catch it — all four of its fixtures are ASCII.'
+          round: 5
+        - id: BR-26
+          disposition: not-addressed
+          note: 'Third in family one-owner-per-invariant, and the RULE is still the deliverable rather than the sites. Rule: every cursor that walks a string against a column budget advances by cellWidth(r) — no site in the paint path may increment a column counter per rune, per byte, or per index. Enumeration measured at HEAD, 3 of 6 wrong: render.go:256 visibleCells CELLS ok; render.go:332,335 wrapText CELLS ok; screen.go:412 displayRows CELLS ok; screen.go:465 clipVisible RUNES wrong (cuts a 20-cell/30-rune line to 8 cells at width 12, and lets a 200-cell line through a width-80 clip); editor.go:227 RenderLine''s ESC[nD park counts runes for a move the terminal makes in columns; command.go:305 truncate counts runes and its doc comment still asserts "a column is a rune". Write the enumeration into the plan and sweep it, and add one wide-rune and one combining-mark row to TestScreenFrameFitsTheTerminalInDisplayRows so the class cannot come back.'
+          round: 5
+        - id: BR-20
+          disposition: addressed
+          note: 'Verified by reversion: replacing submitted.Cursor = len(submitted.Line) with a no-op reddens TestACommittedLineCarriesNoCursorEscape with "…\x1b[3D".'
+          round: 5
+        - id: BR-24
+          disposition: addressed
+          note: 'handBack/onceHandBack are named, take two small interfaces, and are pinned in process by two tests that ran here while every pty row skipped. Residue: replRaw''s own enterAlt/enterMouse on ENTRY are still pinned only by pty rows.'
+          round: 5
+        - id: BR-25
+          disposition: addressed
+          note: atlas/define.md gains "The screen" with the display-row budget, the clip, the cell-width owner, the 16 ms throttle and its trailing flush, the X10 fallback and handBack. One sentence now overclaims — "every clip reads that one function" is false while clipVisible cuts by rune.
+          round: 5
+        - id: BR-27
+          disposition: addressed
+          note: wheelFromButton is the single owner; decodeWheel and decodeX10Mouse both call it.
+          round: 5
+        - id: BR-28
+          disposition: addressed
+          note: countingWriter.painted() is used at every read site, recordDisplay is mutex-guarded with reader methods, and the watcher reports measurements over a channel. go test -race is green on the M1 suites.
+          round: 5
+        - id: BR-10
+          disposition: addressed
+          note: 'Mode sequences go to rawSession.control rather than the stdin handle; the nested selects are a drain-then-send pair with the single-producer reasoning stated; the missing signal.Stop is now a recorded consequence of the seam; the stale cooked-mode prose is gone. Still open, and folded into the Minor list: Paint discards the tty write error.'
+          round: 5
+        - id: BR-1
+          disposition: not-addressed
+          note: M1.1 still enumerates the four cases in prose, and the chunk-boundary property the finding actually asked for (any split of the same byte stream yields the same lines) has no test — FuzzScreenWriteDoesNotPanic only checks for panics.
+          round: 5
+      findings:
+        - id: BR-29
+          severity: Important
+          title: handBack, onceHandBack and wheelFromButton are absent from M1's Core-concepts tables
+          detail: 'This is the 2nd finding in family plan-table-incomplete (BR-9 and BR-22 are its siblings under plan-table-under-declares — three rounds, same class). Do NOT just add the three rows. The rule: the Core-concepts table is populated FROM THE DIFF, not from memory — every top-level declaration this window adds to a file the tables name gets a row. TestPlanTablesNameEntitiesThatExist already checks table-to-tree; the direction that keeps failing is tree-to-table, and repo_guard_test.go already has changedLines() and repoRoot() to build the inverse guard with. Measured at HEAD, the omissions are handBack, onceHandBack (replraw.go), wheelFromButton (key.go), plus screen.Lines, screen.eraseOpenLine, paintInterval, defaultRows/defaultCols — and the first three are exactly the deliverables round 3''s own Log names as its fixes for BR-24 and BR-27.'
+          family: plan-table-incomplete
+          round: 5
+        - id: BR-30
+          severity: Minor
+          title: Paint's cursor-up omits the prompt's own display height, so a wrapping prompt is reprinted over the menu
+          detail: 'This is the 2nd finding in family app-owns-every-row. Do NOT fix the instance. The rule: the frame''s row accounting is ONE pass — the same enumeration that budgets rows derives where the cursor must return to. Today screen.go:216-222 and screen.go:239-243 are two separate summations of the same quantity, and the second omits the prompt. Measured: Paint(&b, 10, 20, "> "+strings.Repeat("z",30), []string{"m1","m2"}) emits ESC[2A, which lands on the prompt''s SECOND row; the reprint then covers menu row m1 and leaves the cursor a row low — the same off-by-a-row limit the whole-frame redraw claims in its own comment to have deleted. Reachable on a terminal narrow enough that a partial /command wraps; terminalCols has no 20-column floor.'
+          family: app-owns-every-row
+          round: 5
+        - id: BR-31
+          severity: Minor
+          title: The throttle test's Stop-flush assertion depends on wall-clock ordering it does not control
+          detail: screen_test.go:465-470 writes "the last word", snapshots the frame count, then requires l.Stop() to paint. That only holds while the write lands inside paintInterval of the trailing flush waitFor just observed; if the goroutine is descheduled past 16 ms the write paints itself, pending is false, and Stop correctly does nothing while the test reports "Stop left a pending frame unpainted". Set l.painted deliberately (as TestLiveScreenShowsWhatIsWrittenToIt already does) rather than racing the interval.
+          family: timing-dependent-assertion
+          round: 5
+      boundary: M1
+      blocked: true
 ---
 
 # Gate ledger — tools#30 (boundary-review)
@@ -737,15 +802,36 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   may be running. -race does not report it because the timer reliably fires after
   the read, which is exactly why the guarantee has to be structural.
 
+## Round 5 — 2026-08-29T21:18:49-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-23 — not-addressed — go test ./... is still RED at HEAD: TestPlanTableStatusMatchesTheChangeWindow now fails on the M2 Render row for the OPPOSITE reason — it was flipped to "unchanged" while render.go:172 (inside Render, 97-222) changed visibleLen to visibleCells in this window. The Kind-column half is fixed and TestPlanTablesNameEntitiesThatExist passes; nothing else in ./... fails.
+- BR-12 — not-addressed — The budget half landed (cols is real, displayRows charges wrapped height, the clip runs at paint time) but the frame still overflows: clipVisible's cut cursor counts RUNES, so clipVisible(strings.Repeat("日",100), 80) returns 200 cells and a 10-line buffer of those needs 19 display rows in a 10-row terminal. Measured at HEAD. TestScreenFrameFitsTheTerminalInDisplayRows would catch it — all four of its fixtures are ASCII.
+- BR-26 — not-addressed — Third in family one-owner-per-invariant, and the RULE is still the deliverable rather than the sites. Rule: every cursor that walks a string against a column budget advances by cellWidth(r) — no site in the paint path may increment a column counter per rune, per byte, or per index. Enumeration measured at HEAD, 3 of 6 wrong: render.go:256 visibleCells CELLS ok; render.go:332,335 wrapText CELLS ok; screen.go:412 displayRows CELLS ok; screen.go:465 clipVisible RUNES wrong (cuts a 20-cell/30-rune line to 8 cells at width 12, and lets a 200-cell line through a width-80 clip); editor.go:227 RenderLine's ESC[nD park counts runes for a move the terminal makes in columns; command.go:305 truncate counts runes and its doc comment still asserts "a column is a rune". Write the enumeration into the plan and sweep it, and add one wide-rune and one combining-mark row to TestScreenFrameFitsTheTerminalInDisplayRows so the class cannot come back.
+- BR-20 — addressed — Verified by reversion: replacing submitted.Cursor = len(submitted.Line) with a no-op reddens TestACommittedLineCarriesNoCursorEscape with "…\x1b[3D".
+- BR-24 — addressed — handBack/onceHandBack are named, take two small interfaces, and are pinned in process by two tests that ran here while every pty row skipped. Residue: replRaw's own enterAlt/enterMouse on ENTRY are still pinned only by pty rows.
+- BR-25 — addressed — atlas/define.md gains "The screen" with the display-row budget, the clip, the cell-width owner, the 16 ms throttle and its trailing flush, the X10 fallback and handBack. One sentence now overclaims — "every clip reads that one function" is false while clipVisible cuts by rune.
+- BR-27 — addressed — wheelFromButton is the single owner; decodeWheel and decodeX10Mouse both call it.
+- BR-28 — addressed — countingWriter.painted() is used at every read site, recordDisplay is mutex-guarded with reader methods, and the watcher reports measurements over a channel. go test -race is green on the M1 suites.
+- BR-10 — addressed — Mode sequences go to rawSession.control rather than the stdin handle; the nested selects are a drain-then-send pair with the single-producer reasoning stated; the missing signal.Stop is now a recorded consequence of the seam; the stale cooked-mode prose is gone. Still open, and folded into the Minor list: Paint discards the tty write error.
+- BR-1 — not-addressed — M1.1 still enumerates the four cases in prose, and the chunk-boundary property the finding actually asked for (any split of the same byte stream yields the same lines) has no test — FuzzScreenWriteDoesNotPanic only checks for panics.
+
+### Raised
+
+- **BR-29** [Important] `plan-table-incomplete` handBack, onceHandBack and wheelFromButton are absent from M1's Core-concepts tables
+  This is the 2nd finding in family plan-table-incomplete (BR-9 and BR-22 are its siblings under plan-table-under-declares — three rounds, same class). Do NOT just add the three rows. The rule: the Core-concepts table is populated FROM THE DIFF, not from memory — every top-level declaration this window adds to a file the tables name gets a row. TestPlanTablesNameEntitiesThatExist already checks table-to-tree; the direction that keeps failing is tree-to-table, and repo_guard_test.go already has changedLines() and repoRoot() to build the inverse guard with. Measured at HEAD, the omissions are handBack, onceHandBack (replraw.go), wheelFromButton (key.go), plus screen.Lines, screen.eraseOpenLine, paintInterval, defaultRows/defaultCols — and the first three are exactly the deliverables round 3's own Log names as its fixes for BR-24 and BR-27.
+- **BR-30** [Minor] `app-owns-every-row` Paint's cursor-up omits the prompt's own display height, so a wrapping prompt is reprinted over the menu
+  This is the 2nd finding in family app-owns-every-row. Do NOT fix the instance. The rule: the frame's row accounting is ONE pass — the same enumeration that budgets rows derives where the cursor must return to. Today screen.go:216-222 and screen.go:239-243 are two separate summations of the same quantity, and the second omits the prompt. Measured: Paint(&b, 10, 20, "> "+strings.Repeat("z",30), []string{"m1","m2"}) emits ESC[2A, which lands on the prompt's SECOND row; the reprint then covers menu row m1 and leaves the cursor a row low — the same off-by-a-row limit the whole-frame redraw claims in its own comment to have deleted. Reachable on a terminal narrow enough that a partial /command wraps; terminalCols has no 20-column floor.
+- **BR-31** [Minor] `timing-dependent-assertion` The throttle test's Stop-flush assertion depends on wall-clock ordering it does not control
+  screen_test.go:465-470 writes "the last word", snapshots the frame count, then requires l.Stop() to paint. That only holds while the write lands inside paintInterval of the trailing flush waitFor just observed; if the goroutine is descheduled past 16 ms the write paints itself, pending is false, and Stop correctly does nothing while the test reports "Stop left a pending frame unpainted". Set l.painted deliberately (as TestLiveScreenShowsWhatIsWrittenToIt already does) rather than racing the interval.
+
 ## Open findings
 
 - **BR-1** [Minor] `test-cases-enumerated-in-prose` M1.1 enumerates four table-test cases in prose; compress to one strategy line per risky function
-- **BR-10** [Minor] `stale-rationale` Stale cooked-mode prose and small residue left by D4
 - **BR-12** [Important] `app-owns-every-row` Paint budgets the frame in logical lines and never consults a column width
-- **BR-20** [Minor] `control-sequence-buffered-as-text` RenderLine's trailing cursor-back escape is stored in the buffer and the transcript
 - **BR-23** [Critical] `verification-claim-unreproduced` go test ./... is red at HEAD on two plan-table guards, and the Log records it green
-- **BR-24** [Important] `unfalsifiable-test-pin` replRaw's exit sequence is pinned only by pty rows that skip, and the BR-20 fix is pinned by nothing
-- **BR-25** [Important] `docs-lag-new-surface` atlas/ was not updated for the display-row budget, the paint clip, the repaint throttle or the X10 fallback
 - **BR-26** [Minor] `frame-fits-the-terminal` Three counters answer "how wide is this" differently: runes, a sentinel column count, and logical menu rows
-- **BR-27** [Minor] `one-owner-per-invariant` The wheel button-byte decode is spelled twice, in decodeWheel and decodeX10Mouse
-- **BR-28** [Minor] `unsynchronised-test-observation` screen_test.go:457 reads tty.frames without the lock, and :464 reads l.pending without l.mu
+- **BR-29** [Important] `plan-table-incomplete` handBack, onceHandBack and wheelFromButton are absent from M1's Core-concepts tables
+- **BR-30** [Minor] `app-owns-every-row` Paint's cursor-up omits the prompt's own display height, so a wrapping prompt is reprinted over the menu
+- **BR-31** [Minor] `timing-dependent-assertion` The throttle test's Stop-flush assertion depends on wall-clock ordering it does not control

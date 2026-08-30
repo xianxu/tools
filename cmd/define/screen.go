@@ -210,14 +210,20 @@ const (
 // call site's business (the loop's SIGWINCH case) and not fields that go stale.
 func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu []string) {
 	s.cols = termCols
+	// ONE row accounting, used twice: it budgets the buffer's share of the frame
+	// AND says where the cursor has to walk back to. Two summations of the same
+	// quantity is how the second one came to omit the prompt's own height, which
+	// is the off-by-a-row limit this whole-frame redraw exists to have deleted.
+	//
 	// The buffer gets whatever the live edge does not need. A terminal too short
 	// for even the prompt still gets the prompt: losing the line you are typing
 	// is worse than losing history you can scroll to.
-	used := displayRows(prompt, s.cols)
+	promptRows := displayRows(prompt, s.cols)
+	menuRows := 0
 	for _, m := range menu {
-		used += displayRows(m, s.cols)
+		menuRows += displayRows(m, s.cols)
 	}
-	s.rows = termRows - used
+	s.rows = termRows - promptRows - menuRows
 	if s.rows < 0 {
 		s.rows = 0
 	}
@@ -231,21 +237,20 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu 
 		b.WriteString("\r\n" + m)
 	}
 	if len(menu) > 0 {
-		// Back to the prompt row, so the cursor sits where the user is typing —
-		// counted in the rows the TERMINAL moved, not in menu entries. A menu row
-		// wider than the terminal wraps onto two, and walking up by the entry
-		// count would leave the cursor low and reprint the prompt over the menu:
-		// the same off-by-a-row limit this whole-frame redraw exists to delete.
-		up := 0
-		for _, m := range menu {
-			up += displayRows(m, s.cols)
-		}
-		fmt.Fprintf(&b, "\x1b[%dA\r", up)
+		// Back to the prompt's FIRST row, in the rows the terminal actually
+		// moved: the menu's own height, plus the prompt's beyond its first row.
+		// Counting menu ENTRIES leaves the cursor low when a row wraps; omitting
+		// the prompt's height reprints it over the menu.
+		fmt.Fprintf(&b, "\x1b[%dA\r", menuRows+promptRows-1)
 		// And forward to the prompt's own cursor column, which the caller
 		// encoded into `prompt` — reprinting it is cheaper than tracking a
 		// column here and cannot disagree with what was drawn.
 		b.WriteString(prompt)
 	}
+	// The error is DISCARDED, and deliberately: a terminal that cannot be written
+	// to is a session that is already over, and the key reader's EOF is what ends
+	// it. There is no recovery to attempt here and nowhere to report to — the
+	// report would go to the same terminal.
 	fmt.Fprint(w, b.String())
 }
 
@@ -290,7 +295,10 @@ type liveScreen struct {
 	// Scroll, Resize, Stop — paints unconditionally. A stalled stream therefore
 	// shows everything up to the stall.
 	painted time.Time
-	pending bool
+	// interval is the throttle's window. Zero means paintInterval; a test sets
+	// it long to make the pending state deterministic.
+	interval time.Duration
+	pending  bool
 	// timer is the TRAILING half, and it is what makes the throttle safe rather
 	// than merely cheap. A held frame must go out whether or not another write
 	// follows: the `♫ playing 3×` indicator is written and then playback blocks
@@ -306,10 +314,25 @@ type liveScreen struct {
 // paintInterval is the shortest gap between frames driven by writes. 60fps: fast
 // enough that a stream reads as continuous, slow enough that a 300-delta answer
 // costs tens of frames instead of hundreds.
+//
+// A FIELD on liveScreen rather than a bare constant, so a test can hold the
+// window open and observe "pending" deterministically instead of racing the
+// clock — which is the only way to assert the trailing flush without reaching
+// into fields the timer's goroutine writes.
 const paintInterval = 16 * time.Millisecond
 
 func newLiveScreen(tty io.Writer, rows, cols int) *liveScreen {
-	return &liveScreen{s: &screen{}, tty: tty, rows: rows, cols: cols}
+	return &liveScreen{s: &screen{}, tty: tty, rows: rows, cols: cols, interval: paintInterval}
+}
+
+// window is the throttle's gap. Zero means the default; NEGATIVE means none at
+// all, which is how a test asks for the unthrottled behaviour rather than
+// waiting out a real interval.
+func (l *liveScreen) window() time.Duration {
+	if l.interval == 0 {
+		return paintInterval
+	}
+	return l.interval
 }
 
 // Write feeds the buffer and shows the result, at most paintInterval apart.
@@ -317,10 +340,10 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	n, err := l.s.Write(p)
-	if since := time.Since(l.painted); since < paintInterval {
+	if since := time.Since(l.painted); since < l.window() {
 		l.pending = true
 		if l.timer == nil {
-			l.timer = time.AfterFunc(paintInterval-since, l.flush)
+			l.timer = time.AfterFunc(l.window()-since, l.flush)
 		}
 		return n, err
 	}
@@ -453,16 +476,18 @@ func clipVisible(s string, width int) string {
 			inEsc = true
 			continue
 		}
-		if n == width {
-			// Cut here, and hand the style back: without this the terminal keeps
-			// whatever colour was open when the cut landed.
+		w := cellWidth(r)
+		if n+w > width {
+			// Cut here — BEFORE the rune, so a two-cell rune is never half
+			// drawn — and hand the style back, or the terminal keeps whatever
+			// colour was open when the cut landed.
 			if styled {
 				b.WriteString(sgrOff)
 			}
 			return b.String()
 		}
 		b.WriteRune(r)
-		n++
+		n += w
 	}
 	return b.String()
 }

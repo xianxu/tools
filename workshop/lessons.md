@@ -2527,3 +2527,19 @@ When a rule says "category", derive the members from whatever defines the
 category. Here every mapped language generates its own stages by prefix, and the
 hand list shrinks to the stages with no modern member to generate from — which is
 also the only part a reader has to check.
+
+## The plan-table guards are answered by the COMMIT (define #30)
+
+`TestPlanTableStatusMatchesTheChangeWindow` compares a plan's `modified` /
+`unchanged` claims against `git diff <base>..HEAD` — **committed** changes. So a
+plan row and a code edit that are both in the working tree pass, and the same
+tree fails the moment it becomes a commit. Running the suite before committing
+proves nothing about these guards.
+
+Twice in one issue this produced a Critical review finding: "`go test ./...` is
+red at HEAD and the Log records it green." Both times the suite HAD been run —
+one commit too early.
+
+The rule: after editing a plan's tables, commit, then run the suite; amend if it
+reddens. More generally, a guard that reads git history has to be run against the
+history, not the tree.

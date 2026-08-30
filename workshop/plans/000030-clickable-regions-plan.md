@@ -87,12 +87,12 @@ to `#35`'s code and is where `M2.1` starts.
 | `displayRows` / `clipVisible` | `cmd/define/screen.go` | new | PURE (rework) — the frame is budgeted in DISPLAY ROWS |
 | `visibleCells` | `cmd/define/render.go` | modified | PURE (rework) — was `visibleLen`; the ONE owner of "how wide is this", now measured in terminal COLUMNS |
 | `cellWidth` / `isWide` | `cmd/define/render.go` | new | PURE (rework) — a combining mark is 0 columns and a CJK rune is 2, both daily traffic for a dictionary |
-| `terminalSize` / `terminalCols` | `cmd/define/main.go` | new | INTEGRATION (rework) — the true shape, which cannot return the "do not wrap" sentinel |
 | `decodeWheel` / `atoiPrefix` | `cmd/define/key.go` | new | PURE (M1.4b) |
 | `decodeX10Mouse` | `cmd/define/key.go` | new | PURE (rework) — the encoding mode 1000 falls back to |
 | `KeyPageUp` / `KeyPageDown` / `KeyWheelUp` / `KeyWheelDown` | `cmd/define/key.go` | new | PURE |
 | `winSize` | `cmd/define/rawterm.go` | new | PURE (M1.4) |
-| `crlfWriter` | `cmd/define/crlf.go` | unchanged | still used by `--play`, which keeps its own drawing |
+| `crlfWriter` | `cmd/define/crlf.go` | unchanged | INTEGRATION — still used by `--play`, which keeps its own drawing |
+| `truncate` | `cmd/define/command.go` | modified | PURE (rework) — delegates to `clipVisible`, so cutting and measuring have one owner |
 
 - **`screen`** — a line buffer plus a viewport: `lines []string`, `offset int`, `rows, cols int`.
   - **Relationships:** 1:1 with an interactive session; owns every line it displays.
@@ -112,6 +112,9 @@ to `#35`'s code and is where `M2.1` starts.
 | `rawSession.control` | `cmd/define/rawterm.go` | new (rework) | where mode sequences go — an `io.Writer`, so the restore protocol is assertable with no terminal |
 | `watchResize` | `cmd/define/rawterm.go` | new | SIGWINCH |
 | `terminalRows` | `cmd/define/main.go` | new | `term.GetSize`, beside `terminalWidth` |
+| `terminalSize` / `terminalCols` | `cmd/define/main.go` | new | `term.GetSize` — the TRUE shape, which cannot return `terminalWidth`'s "do not wrap" sentinel |
+| `handBack` / `onceHandBack` | `cmd/define/replraw.go` | new | the exit sequence: stop painting, restore, print the session — as a function, so it is pinnable without a pty |
+| `wheelFromButton` | `cmd/define/key.go` | new | the one reading of a mouse report's button byte, shared by both encodings |
 | `replRaw` / `runEditor` | `cmd/define/replraw.go` | modified — `cooked` deleted (D4) | the terminal |
 
 - **`watchResize`** — there is NO resize handling today; width is read once at flag parse (`main.go`). A full-screen program must handle it or the frame is wrong after the first drag.
@@ -137,7 +140,7 @@ to `#35`'s code and is where `M2.1` starts.
       it. Clicks stay inert: coordinates mean nothing until `M2` has a region map.
 - [x] **M1.4 — resize.** SIGWINCH → re-measure → repaint. The one thing that cannot be unit-tested is the signal, so the pty row drives a real `TIOCSWINSZ`.
 - [x] **M1.5 — the transcript on exit** (D3), and the pty row that it survives.
-- [x] **M1.6 — docs**: the atlas's raw-mode section, which currently explains the cooked/raw dance that D4 removes. That prose goes false, so it is rewritten rather than appended to.
+- [x] **M1.6 — docs**, and the row is wider than it was written: a docs sweep follows ANY change to this surface, including the ones a boundary review produces after the row is ticked. The rework added the display-row budget, the cell-width owner, the throttle, the X10 fallback and `handBack`, and each landed with the code rather than after it. Originally: the atlas's raw-mode section, which currently explains the cooked/raw dance that D4 removes. That prose goes false, so it is rewritten rather than appended to.
 
 ### M1 Done-when
 
@@ -166,7 +169,7 @@ to `#35`'s code and is where `M2.1` starts.
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
 | `Region` | `cmd/define/render.go` | new | PURE |
-| `Render` | `cmd/define/render.go` | unchanged | M2.1 adds a second return value; the status column is a claim about the tree AS IT STANDS, so it says so when M2.1 lands |
+| `Render` | `cmd/define/render.go` | modified | its BODY was swept by M1's `visibleLen`→`visibleCells` rename; the SIGNATURE change — the second return value — is still M2.1's, and this row says `modified` because the status column describes this window's diff, not the milestone's intent |
 | `decodeMouse` | `cmd/define/key.go` | new | PURE — extends M1's `decodeWheel`/`decodeX10Mouse` to buttons |
 | `screen.RegionAt` | `cmd/define/screen.go` | new | PURE |
 
@@ -463,3 +466,31 @@ the cell-width owner, the throttle and its trailing flush, the X10 fallback and
 `handBack` are all in "The screen" now. The pattern across rounds 2 and 3 is one
 rule: **the sweep is by CLASS — every site that states the fact — and the atlas
 is one of the sites, not a follow-up.**
+
+### 2026-08-29 — M1 review round 4: the guard reads GIT, and a rune is not a column
+
+**Why BR-23 recurred, and it is not "I forgot to re-run".** I did re-run
+`go test ./...` — before committing, and the plan-table guards compare the plan
+against `git diff base..HEAD`. An uncommitted `render.go` edit is not in that
+window, so the guard passed; the same tree one commit later fails. **The rule:
+the plan-table guards are answered by the COMMIT, so the suite runs after
+committing, not before.** Recorded in `workshop/lessons.md`, because nothing in
+the guard's own message says so.
+
+The M2 `Render` row now reads `modified`, and the reason is the convention the
+review asked for: the status column describes THIS WINDOW's diff, not the
+milestone's intent. M1's `visibleLen`→`visibleCells` rename swept `Render`'s
+body; M2.1's signature change is still ahead.
+
+**The one-owner rule was implemented at half its sites.** `visibleCells` counted
+cells while `clipVisible` cut by runes and `truncate` cut by runes, so a
+100-rune CJK line still painted 19 display rows into a 10-row terminal. Cutting
+is measuring: `clipVisible` counts cells and never splits a two-cell rune,
+`truncate` delegates to it, and the frame's row accounting is now ONE pass that
+both budgets the buffer and says where the cursor walks back to — the second
+summation had omitted the prompt's own height, which reprinted it over the menu.
+
+**The envelope's column half, stated:** below 20 columns `opt.width` turns
+wrapping OFF (an entry cannot be broken that narrowly and stay readable) while
+the screen keeps the true column count from `terminalCols` and still fits the
+frame. The two answers differ on purpose, and only the policy one may be zero.
