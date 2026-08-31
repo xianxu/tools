@@ -253,3 +253,25 @@ func advance(s Session, q Question, v Verdict) (Session, Outcome) {
 	}
 	return s, Outcome{Kind: OutcomeRecord, Word: q.Word(), Verdict: v, SessionDone: s.Done}
 }
+
+// Missed is implemented by forms whose WRONG answers carry a kind.
+//
+// Optional deliberately. Form 2.1 cannot say why a recall failed — the learner
+// simply did not remember — so requiring every form to answer would make the
+// interface lie for the one form that has no answer. Apply asks and takes
+// AxisNone when nobody answers, which is also what a correct answer reports.
+//
+// This is what keeps the session form-AGNOSTIC while still carrying #17 M2's
+// finding out: Apply names a CAPABILITY here, never a form. A type switch on
+// *Choice would be the thing Done-when 7 forbids.
+type Missed interface {
+	MissedAxis() Axis
+}
+
+// missedAxis asks a question for the axis it was missed on, if it can answer.
+func missedAxis(q Question) Axis {
+	if m, ok := q.(Missed); ok {
+		return m.MissedAxis()
+	}
+	return AxisNone
+}
