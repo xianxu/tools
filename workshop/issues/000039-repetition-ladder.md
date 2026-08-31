@@ -1,12 +1,13 @@
 ---
 id: 000039
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-31
 updated: 2026-08-31
 estimate_hours: 2.94
 started: 2026-08-31T11:01:05-07:00
+actual_hours: 1.59
 ---
 
 # spaced repetition: one unbounded ladder, confidence-driven promotion, and a visible daily budget
@@ -293,6 +294,17 @@ that a better one already exists.
 ## Log
 
 ### 2026-08-31 — built in one pass
+- 2026-08-31: closed — go test ./... green; -race green across cmd/define, play, store and schedule; full conformance suite green on real hardware unsandboxed (368s).; review verdict: FIX-THEN-SHIP
+
+MANUAL VERIFICATION on a real terminal with the real dictionary, two sittings on fresh decks: answered cold gave 8 reviewed / 4 correct / 4 unaided; revealed-first gave 6 reviewed / 2 correct / 0 unaided. Every cold correct answer earned the flag and no revealed one did — the D14 behaviour confirmed outside the test harness. The sitting summary reports the load line correctly ("~6 reviews/day at your current mix · 0.0 new words/day sustainable at 2 a sitting").
+
+The two headline risks are mutation-verified. D14: moving the unaided computation into advance() — which zeroes s.Revealed before building the outcome — turns TestARevealDisqualifiesUnaided red with exactly the predicted diagnostic, and would otherwise have marked every correct answer unaided and run the ladder at double speed. D5a: removing the express lane turns the recovery walk red at step 1, and demoting one box instead of halving fails 7 tests, so the pair is pinned as a pair.
+
+Also verified by mutation: DailyLoad summing the folded map instead of the deck (understates a mostly-unreviewed deck), the ladder's exact 21-row table, the at:-last field ordering with the new Unaided field, and the queue's relative-overdue ranking (which was red on the old code before implementing).
+
+Two repo guards fixed as side-quests, both mutation-verified. TestPlanTablesNameEntitiesThatExist demanded that a "deleted" row's entity still EXIST, so the only one of the four status words asserting an absence could never pass. And two tests the plan named did not exist under those names — the plan's names were better, so the tests were renamed to match rather than the plan edited to describe whatever I had typed.
+
+Migration: no migration runs, but Fold re-derives every box, so the first sitting after this ships is LARGE for a mature deck. TestReFoldingAnOldLogIsSafe pins the direction — below box 10 words become due sooner, never later — and the README warns about it.
 
 **The `advance` trap was the interesting part**, and the plan-quality gate found
 it before any code existed. `advance` zeroes `s.Revealed` before it builds the

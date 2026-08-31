@@ -198,3 +198,49 @@ go test -tags conformance ./cmd/define/    # unsandboxed
 Then on a real terminal with a deck of a dozen words: `define --play`, answer one cold and one after a reveal, and confirm the event log records `unaided` on the first and not the second; confirm the summary line reports a plausible load.
 
 **Close:** one boundary, one `sdlc close`, one publish.
+
+## Revisions
+
+### 2026-08-31 — close review: T7's data path, and what the measurement said
+
+**BR-1 (Minor) — the plan never said how the deck and the fold reach `finish()`.**
+`todaysQuestions` computes both (`play_loop.go:249`) and returns neither, and
+`runPlay` discards them, so T7 had two options and the plan named neither. The
+estimate's `0.02/0.08` "one line, one test" quietly assumed threading them
+through was free — it is not, since four test call sites move with the signature.
+
+**Decided, and the choice is the one the plan should have made explicitly:
+`finish` RE-READS.** Threading the values down from `todaysQuestions` would carry
+the numbers the sitting OPENED with, and every answer just given has changed a
+box. The figure a learner should see at the end of a sitting is the one that
+accounts for the sitting. Re-reading is therefore correctness rather than
+convenience, and the cost is one deck read and one log read per sitting — the
+same reads the sitting already did once, on a path that is not on the keystroke
+budget.
+
+It is also not a purity question: `finish` lives in `play_loop.go`, which owns
+the terminal and the store already. The pure half (`DailyLoad`,
+`SustainableNewWords`) takes plain values and is tested without IO.
+
+A failed read costs the LINE, not the sitting — the reviews are already recorded,
+and a summary that could fail the verb would trade something that matters for
+something that does not.
+
+### 2026-08-31 — the estimate was wrong in the OTHER direction
+
+Measured: **1.59h against a 2.94h estimate — 0.54×.** The block's prose predicted
+~4.5-5h on the strength of `#30` (3.4×) and `#7` (1.70×), and that prediction was
+further from the truth than the model was.
+
+Worth recording rather than quietly forgetting, because the prediction was
+argued for at length: two overrunning rows looked like a trend, and the third row
+went the other way. Three rows now read 3.4×, 1.70×, 0.54× — which is not a
+consistent bias to correct for but a wide spread, and a wide spread means the
+per-issue estimate is noisy rather than skewed. `#127` should read the variance,
+not the mean of two.
+
+The most likely mechanism for this row being fast: `schedule` is small, pure,
+and had thorough tests already, so the work was mostly writing new tests against
+an existing shape. The plan-quality gate also caught the `advance` trap BEFORE
+any code existed, which is the kind of finding that would otherwise have cost a
+whole review round to discover and a second to fix.
