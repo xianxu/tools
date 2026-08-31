@@ -2007,7 +2007,28 @@ torn-record rule leans on `at:` being the last key on disk.
 **Below two options it is not a question**, and the session falls back to form
 2.1. A learner three lookups in has a deck of three; that is the normal early
 state of the tool, not an edge case, and the fallback is invisible — the sitting
-stays the length the schedule asked for. `TestSessionIsFormAgnostic` drives the same table through a fake
+stays the length the schedule asked for.
+
+**The seed drives SELECTION, not just the order options appear in**, and the
+first version got that wrong in a way both Done-when rows were green on. The
+pool is built once per sitting, so scanning it in fixed order made every
+question take the same first-matching candidate: measured at 17 of 20 questions
+sharing one distractor set, after which a learner answers the rest by
+elimination. "Exactly one correct option" and "deterministic under a fixed seed"
+are both true of a sitting that asks the same question twenty times, which is
+why neither noticed. Both passes now walk a seed-shuffled index permutation —
+a permutation rather than a shuffled slice, since the pool is shared across
+questions and reordering it would make each selection depend on the ones before.
+
+**Revealing before answering shows the right option, and that is inherited
+rather than chosen.** Space and Enter are reserved by the session, and on form
+2.1 they show a definition the learner then self-rates against; on form 2.3 they
+show which option is correct, and nothing stops the learner pressing that digit
+for a `Correct`. It is a personal tool and the only person deceived is the one
+doing it, so the behaviour is left alone and named in the README instead of
+being special-cased per form — a form-specific reveal rule would put key
+semantics back inside the session, which is exactly what `Question` exists to
+prevent. `TestSessionIsFormAgnostic` drives the same table through a fake
 form using entirely different keys, and asserts that 2.1's own keys mean nothing
 to it — the only honest way to test that claim before a second form exists.
 

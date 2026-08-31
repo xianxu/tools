@@ -1,6 +1,12 @@
 package play
 
-import "testing"
+import (
+	// strings in a TEST is not a purity violation: puretest reads .Imports, not
+	// .TestImports, and the guard is about what the package ships. Hand-rolling
+	// Split and Contains here was ARCH-DRY for no gain.
+	"strings"
+	"testing"
+)
 
 // The word must be ALONE on the first line: #38's region math depends on it
 // (D1a), and #38 is parked, so nothing over there would notice if this changed.
@@ -11,7 +17,7 @@ func TestChoicePromptKeepsTheWordAloneOnLineOne(t *testing.T) {
 		{Gloss: "a fool or simpleton", Axis: AxisRegister},
 		{Gloss: "a light meal in the afternoon", Axis: AxisGeneral},
 	})
-	lines := linesOf(c.Prompt())
+	lines := strings.Split(c.Prompt(), "\n")
 	if lines[0] != "sycophantic" {
 		t.Errorf("line 0 = %q, want the word alone — #38 draws a region at (0,0) of width len(word)", lines[0])
 	}
@@ -84,31 +90,10 @@ func TestChoiceRevealNamesTheAnswerAndWhatTheyPicked(t *testing.T) {
 	c := NewChoice("w", "", opts)
 	c.Grade('2')
 	rev := c.Reveal()
-	if !contains(rev, "the right one") {
+	if !strings.Contains(rev, "the right one") {
 		t.Errorf("Reveal = %q, want it to name the correct gloss", rev)
 	}
-	if !contains(rev, "the wrong one") {
+	if !strings.Contains(rev, "the wrong one") {
 		t.Errorf("Reveal = %q, want it to show what they picked — that is the learning moment", rev)
 	}
-}
-
-func linesOf(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			out = append(out, s[start:i])
-			start = i + 1
-		}
-	}
-	return append(out, s[start:])
-}
-
-func contains(hay, needle string) bool {
-	for i := 0; i+len(needle) <= len(hay); i++ {
-		if hay[i:i+len(needle)] == needle {
-			return true
-		}
-	}
-	return false
 }

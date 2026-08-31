@@ -39,9 +39,11 @@ and which you get depends only on how big your deck is — you never choose.
 
 ### Multiple choice, once your deck can supply distractors
 
-The word appears with four definitions, one of them right. This is the main
-form, because recognising a meaning among plausible alternatives is a harder and
-more useful test than deciding for yourself whether you knew it.
+The word appears with up to four definitions, one of them right. This is the
+main form, because recognising a meaning among plausible alternatives is a
+harder and more useful test than deciding for yourself whether you knew it. A
+young deck gives two or three options rather than four — there is nothing to pad
+them with — and the prompt always names the digits that actually work.
 
 ```
 $ define --play
@@ -73,9 +75,10 @@ named above it.
 
 ### Recall, on a young deck
 
-With fewer than two other words to draw on there is nothing to choose between,
-so the word appears alone and you rate yourself. This is what a new deck gets,
-and it needs no explanation because it is what you would do with a paper card.
+With no other word to draw on there is nothing to choose between, so the word
+appears alone and you rate yourself. This is what the very first review gets — a
+one-word deck, or a word whose entry is nothing but cross-references ("another
+term for …"), which cannot be the answer to a recognition question.
 
 ```
 $ define --play
@@ -89,7 +92,7 @@ y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 | `1`–`4` | multiple choice: pick the definition |
 | `y` | recall: you had it — straight to the next word |
 | `n` | recall: you missed it — the definition appears |
-| space or Enter | see the answer first, before answering |
+| space or Enter | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
 | `d` | remove this word from the deck — its history is kept |
 | Ctrl-C | stop; everything you answered is already saved |
 

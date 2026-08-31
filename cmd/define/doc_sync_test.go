@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/xianxu/tools/cmd/define/play"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/play"
 )
 
 // The README's account of the play loop DERIVES from the loop, or it drifts.

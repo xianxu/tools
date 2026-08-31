@@ -135,9 +135,9 @@ the ten decisions and the eight Done-when rows live in
 `workshop/plans/000007-vocab-form-meaning-plan.md`.
 
 - [x] Design via `sdlc start-plan` — plan doc written, cleared plan-quality in 3 rounds.
-- [x] **T1** — `senseLabel`, `noadLabels`, `excludeCrossReferenced` in `cmd/define/glosslabel.go` (D2, D3, D3a).
+- [x] **T1** — `readGloss`, the three `noad*Labels` tables and `crossReferenced` in `cmd/define/glosslabel.go` (D2, D3, D3a). *Renamed from the plan's `senseLabel`/`noadLabels`/`excludeCrossReferenced`; see the plan's 2026-08-30 revisions.*
 - [x] **T2** — `Option`, `Axis`, `Choice` in `cmd/define/play/choice.go`, import-free (D4, D5a).
-- [x] **T3** — `pickOptions` + `shuffle`: axis priority, seeded determinism, small decks (D1, D2a, D4a).
+- [x] **T3** — `PickOptions` + `prng` + `SampleStrings` in `cmd/define/play/pick.go`: axis priority, SEEDED SELECTION (not only ordering — see BR-1), small decks (D1, D2a, D4a).
 - [x] **T4a** — `ReviewEvent` gains the axis field ABOVE `At`; torn-record test pins the order (D6).
 - [x] **T4b** — `Outcome`, `CaptureReview` and `Apply` carry the choice out (D7, D8).
 - [x] **T5a** — `todaysQuestions` builds the pool, sampled under the seed within the cap (ARCH-CONSTRAINTS).

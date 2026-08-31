@@ -712,6 +712,12 @@ func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
 	// Answer every question with `1`, which is wrong whenever the shuffle put
 	// the answer elsewhere — over five words at least one miss is essentially
 	// certain, and the assertion below only needs one.
+	//
+	// The D8 half needs a CORRECT answer too, and pressing 1 everywhere might by
+	// chance never produce one. Rather than gate the check on "if any correct
+	// answer happened" — which passes silently on the run where none did — the
+	// assertion below tolerates zero correct answers explicitly and the count
+	// comparison is exact either way.
 	for i := 0; i < 12; i++ {
 		f.WriteString("1")
 		time.Sleep(120 * time.Millisecond)
@@ -736,9 +742,14 @@ func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
 	// D8: nothing is written on a correct answer, so `missed:` must not appear
 	// on a record whose `correct:` is true. correct:true is omitempty-dropped
 	// as `correct: true`, so count instead: misses >= missed lines.
-	if n, m := strings.Count(log, "correct: true"), strings.Count(log, "missed:"); n > 0 && m > strings.Count(log, "kind: reviewed")-n {
-		t.Errorf("%d axes written for %d misses — a correct answer recorded one (D8):\n%s",
-			m, strings.Count(log, "kind: reviewed")-n, log)
+	// D8, stated as an exact identity rather than a conditional: the number of
+	// `missed:` lines must equal the number of MISSES, so a correct answer
+	// carrying an axis fails whether or not any correct answer occurred.
+	reviewed := strings.Count(log, "kind: reviewed")
+	right := strings.Count(log, "correct: true")
+	if misses, axes := reviewed-right, strings.Count(log, "missed:"); axes != misses {
+		t.Errorf("%d axes written for %d misses across %d reviews — an axis was recorded "+
+			"for a correct answer, or a miss recorded none (D8):\n%s", axes, misses, reviewed, log)
 	}
 }
 

@@ -89,7 +89,13 @@ var noadRegionalLabels = []string{
 var crossRefLeads = []string{
 	"another term for", "variant spelling of", "past participle of",
 	"abbreviation for", "plural form of", "short for", "see also", "past of",
-	"singular of", "see ",
+	"singular of",
+	// A BARE "see " is deliberately NOT here. It would catch NOAD's shortest
+	// cross-references and would also reject any real definition beginning
+	// "see the light" or "see something through", losing a usable candidate for
+	// a gain the whole-phrase rows above already mostly cover. Excluding a good
+	// candidate is cheap — it degrades to one fewer distractor — so the rows
+	// here are only the ones specific enough to earn the risk.
 }
 
 // minDefinitionLen: below this there is no definition left after the apparatus

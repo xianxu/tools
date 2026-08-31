@@ -45,6 +45,30 @@ const maxOptions = 4
 func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	used := map[string]bool{target.Word: true}
 	var distractors []Candidate
+	rng := newPRNG(seed)
+
+	// THE SEED DRIVES SELECTION, not just the order the options end up in.
+	//
+	// Both passes below walk this permutation rather than `pool` directly. The
+	// first version seeded only the final shuffle, and the effect was severe
+	// enough to defeat the form: `pool` is built ONCE per sitting, so scanning
+	// it in fixed order made every question take the same first-matching
+	// domain / register / general candidate. Measured over a 20-word deck, 17
+	// of 20 questions shared one distractor set — the only variation was which
+	// slot the answer landed in, so after question one the learner could answer
+	// the rest by elimination without knowing a word.
+	//
+	// A PERMUTATION rather than shuffling the slice: `choiceFor` reuses the
+	// sitting's pool across every question, and reordering the caller's slice
+	// under it would make each question's selection depend on the ones before.
+	order := make([]int, len(pool))
+	for i := range order {
+		order[i] = i
+	}
+	for i := len(order) - 1; i > 0; i-- {
+		j := rng.intn(i + 1)
+		order[i], order[j] = order[j], order[i]
+	}
 
 	take := func(c Candidate) {
 		used[c.Word] = true
@@ -56,19 +80,19 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 		if len(distractors) >= maxOptions-1 {
 			break
 		}
-		for _, c := range pool {
-			if c.Axis == want && !used[c.Word] {
+		for _, i := range order {
+			if c := pool[i]; c.Axis == want && !used[c.Word] {
 				take(c)
 				break
 			}
 		}
 	}
-	// Pass 2: fill what is left, in pool order.
-	for _, c := range pool {
+	// Pass 2: fill what is left.
+	for _, i := range order {
 		if len(distractors) >= maxOptions-1 {
 			break
 		}
-		if !used[c.Word] {
+		if c := pool[i]; !used[c.Word] {
 			take(c)
 		}
 	}
@@ -85,7 +109,7 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	for _, c := range distractors {
 		opts = append(opts, Option{Gloss: c.Gloss, Word: c.Word, Axis: c.Axis})
 	}
-	newPRNG(seed).shuffleOptions(opts)
+	rng.shuffleOptions(opts)
 	return opts
 }
 

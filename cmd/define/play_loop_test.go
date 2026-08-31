@@ -926,3 +926,36 @@ func typeName(v any) string {
 	}
 	return "unknown"
 }
+
+// An entry that is nothing but CROSS-REFERENCES cannot be a recognition
+// question, and the fallback must cover that as well as a young deck.
+//
+// `bases` in the committed corpus is exactly this shape — "plural form of base1"
+// and "/ˈbāsēz/ plural form of basis" — so the deck here is large enough that
+// every other word gets form 2.3, isolating the reason.
+func TestASittingFallsBackForAnEntryWithNoDefinition(t *testing.T) {
+	d, opt, _ := playRig(t, "bases", "sycophantic", "quokka", "mesa", "parrot", "concrete")
+	qs := questionsFor(t, d, opt)
+
+	var basesForm, otherForms string
+	for _, q := range qs {
+		if q.Word() == "bases" {
+			basesForm = typeName(q)
+		} else if otherForms == "" {
+			otherForms = typeName(q)
+		}
+	}
+	if basesForm == "" {
+		t.Fatalf("`bases` was dropped from the sitting entirely; %d questions", len(qs))
+	}
+	if basesForm != "*play.Recall" {
+		t.Errorf("`bases` got %s — its every sense is a cross-reference, so there is no "+
+			"definition to be the right answer", basesForm)
+	}
+	// And the deck IS big enough for 2.3, so the row above is isolating the
+	// entry rather than re-testing the young-deck case.
+	if otherForms != "*play.Choice" {
+		t.Errorf("the rest of the deck got %s, so this test is not distinguishing "+
+			"the entry from the deck size", otherForms)
+	}
+}

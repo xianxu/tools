@@ -163,9 +163,9 @@ func (c *Choice) Reveal() string {
 // four (D9). Telling a learner "1-4" beside a two-option question invites a
 // keystroke that does nothing.
 func (c *Choice) Keys() string {
-	if len(c.options) < 2 {
-		return "no options"
-	}
+	// No branch for fewer than two options: choiceFor refuses below two, so
+	// such a Choice is not constructible through production. One built by hand
+	// gets "1-1", which is honest about what this form would actually grade.
 	return "1-" + string(rune('0'+len(c.options))) + " = pick the definition"
 }
 

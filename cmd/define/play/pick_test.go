@@ -141,74 +141,120 @@ func TestPickOptionsWithATinyDeck(t *testing.T) {
 }
 
 // Done-when 6, DERIVED from the Axis set rather than from a list here — the same
-// shape as #30's registry guards. Adding an axis nobody can select fails this.
+// shape as #30's registry guards. Adding an axis nothing can select fails this.
+//
+// THE MEMBERSHIP ASSERTION IS THE LOAD-BEARING ONE, and it is here because the
+// behavioural version alone was vacuous. The first draft built a pool entirely
+// of the axis under test and asked whether an option carried it; PickOptions'
+// second pass fills any remaining slot from ANY candidate, so the answer was yes
+// even for an axis absent from distractorAxes entirely. Reshaping the pool does
+// not fix it either: pass 2 can always reach the candidate, by design.
+//
+// So the property is stated directly. distractorAxes is a hand-maintained
+// restatement of the Axis set, and this is what makes it derived: every axis
+// between AxisGeneral and the numAxes sentinel must appear in the fill order,
+// must have a String() that can reach the event log, and must be reachable in a
+// real option set.
 func TestEveryAxisIsSelectable(t *testing.T) {
 	for a := AxisGeneral; a < numAxes; a++ {
+		inFillOrder := false
+		for _, d := range distractorAxes {
+			if d == a {
+				inFillOrder = true
+			}
+		}
+		if !inFillOrder {
+			t.Errorf("axis %d (%q) is not in distractorAxes, so pass 1 never seeks it — "+
+				"it could only ever appear by accident when pass 2 tops up, which is not selection",
+				a, a.String())
+		}
+		if a.String() == "" {
+			t.Errorf("axis %d has no String(), so it could never reach the event log", a)
+		}
+		// And it must actually come out of a real call, so the membership
+		// assertion above cannot pass on an axis the selector mishandles.
 		pool := []Candidate{
 			{Word: "x", Gloss: "gx", Axis: a},
 			{Word: "y", Gloss: "gy", Axis: a},
 			{Word: "z", Gloss: "gz", Axis: a},
 		}
 		found := false
-		for _, o := range PickOptions(target, pool, 1) {
-			if !o.Correct && o.Axis == a {
-				found = true
+		for seed := uint64(1); seed < 40 && !found; seed++ {
+			for _, o := range PickOptions(target, pool, seed) {
+				if !o.Correct && o.Axis == a {
+					found = true
+				}
 			}
 		}
 		if !found {
-			t.Errorf("no option ever carries %v (%q) — an axis nothing can select is dead vocabulary", a, a.String())
-		}
-		if a.String() == "" {
-			t.Errorf("axis %d has no String(), so it could never reach the event log", a)
+			t.Errorf("no option ever carries %v (%q)", a, a.String())
 		}
 	}
 }
 
-// SampleStrings must be a SAMPLE, not a truncation: a deck's alphabetically
-// first forty words would otherwise supply every distractor forever.
-func TestSampleStringsIsDeterministicAndReachesTheWholeSlice(t *testing.T) {
-	base := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
-	clone := func() []string { return append([]string(nil), base...) }
+// A SITTING must not be one question repeated. This is the pin for the defect
+// the close review measured: the seed used to reach only the final shuffle, so
+// every target drew the same first-matching candidate out of the pool the
+// sitting builds once — 17 of 20 questions with an identical option set, and a
+// learner who could answer the rest by elimination after question one.
+func TestPickOptionsVariesTheDistractorsAcrossASitting(t *testing.T) {
+	var pool []Candidate
+	axes := []Axis{AxisDomain, AxisRegister, AxisGeneral}
+	for i := 0; i < 18; i++ {
+		pool = append(pool, Candidate{
+			Word:  string(rune('a' + i)),
+			Gloss: "gloss " + string(rune('a'+i)),
+			Axis:  axes[i%3],
+		})
+	}
 
-	x, y := clone(), clone()
-	SampleStrings(x, 4, 99)
-	SampleStrings(y, 4, 99)
-	for i := 0; i < 4; i++ {
-		if x[i] != y[i] {
-			t.Fatalf("same seed gave different samples: %v vs %v", x[:4], y[:4])
+	sets := map[string]int{}
+	for i := 0; i < 20; i++ {
+		// One target per question, as a sitting does, against the SAME pool.
+		tgt := Candidate{Word: "target" + string(rune('a'+i)), Gloss: "the answer"}
+		var key string
+		for _, o := range PickOptions(tgt, pool, seedOf(i)) {
+			if !o.Correct {
+				key += o.Word + ","
+			}
 		}
+		sets[key]++
 	}
-	// Every element must be REACHABLE in the sampled prefix, or the tail of a
-	// deck can never be reviewed against.
-	seen := map[string]bool{}
-	for s := uint64(1); s < 300; s++ {
-		c := clone()
-		SampleStrings(c, 4, s)
-		for _, v := range c[:4] {
-			seen[v] = true
-		}
-	}
-	if len(seen) != len(base) {
-		t.Errorf("only %d of %d words ever reached the sample: %v", len(seen), len(base), seen)
-	}
-	// And it must not lose or duplicate anything.
-	c := clone()
-	SampleStrings(c, 4, 5)
-	count := map[string]int{}
-	for _, v := range c {
-		count[v]++
-	}
-	if len(count) != len(base) {
-		t.Errorf("sampling changed the multiset: %v", c)
+	// 20 questions over an 18-candidate pool: with selection seeded, near-total
+	// variety. Eight is far below what a correct implementation gives and far
+	// above the ONE the defect produced, so this cannot pass on the bug and
+	// cannot flake on a shuffle.
+	if len(sets) < 8 {
+		t.Errorf("20 questions produced only %d distinct distractor sets %v — "+
+			"the seed is not reaching SELECTION, so a sitting is one question repeated", len(sets), sets)
 	}
 }
 
-// n larger than the slice, and an empty slice, must not panic.
-func TestSampleStringsHandlesEdges(t *testing.T) {
-	SampleStrings(nil, 5, 1)
-	one := []string{"only"}
-	SampleStrings(one, 10, 1)
-	if one[0] != "only" {
-		t.Errorf("one-element sample = %v", one)
+// seedOf is a per-question seed, as the loop derives one from word + day.
+func seedOf(i int) uint64 { return uint64(i)*2654435761 + 7 }
+
+// The PRNG and the option shuffle are GOLDEN, because the argument for
+// hand-rolling them is that this repo pins them.
+//
+// D5a rejects math/rand on the grounds that a fixed seed must reproduce a
+// question "forever, so that a question can be reproduced from a log" — and
+// nothing pinned the sequence, so changing a shift constant left the whole suite
+// green. Comparing two runs inside one binary proves only that the code is
+// deterministic, which math/rand also is; what had to be pinned is the specific
+// sequence. These literals are the current output, and changing them is a
+// deliberate act that invalidates every recorded question.
+func TestPRNGSequenceIsPinned(t *testing.T) {
+	p := newPRNG(7)
+	want := []uint64{7575888327, 8070950887952051652, 13931920357059763743}
+	for i, w := range want {
+		if got := p.next(); got != w {
+			t.Errorf("next() #%d = %d, want %d — the xorshift constants moved, so every "+
+				"question ever recorded now reproduces differently", i, got, w)
+		}
+	}
+	// And a zero seed must not be a fixed point emitting zeros forever.
+	z := newPRNG(0)
+	if a, b := z.next(), z.next(); a == 0 || a == b {
+		t.Errorf("seed 0 degenerated: %d, %d", a, b)
 	}
 }

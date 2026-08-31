@@ -108,16 +108,25 @@ So `pickOptions` receives candidates that are ALREADY filtered and labelled — 
 
 ### Pure entities
 
+*Corrected 2026-08-30 after the close review (BR-2): the rows below name what
+SHIPPED. The originals named five entities the tree does not have, because the
+2026-08-30 design revisions renamed them and the table was never updated.*
+
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
 | `Choice` | `cmd/define/play/choice.go` | new | PURE — form 2.3, implementing `Question` |
 | `Option` | `cmd/define/play/choice.go` | new | PURE — one answer line: its gloss and why it is in the set |
-| `Axis` | `cmd/define/play/choice.go` | new | PURE — the reduced taxonomy: `AxisDomain`, `AxisRegister`, `AxisGeneral` |
-| `senseLabel` | `cmd/define/glosslabel.go` | new | PURE — the leading NOAD label of a gloss, or none |
-| `noadLabels` | `cmd/define/glosslabel.go` | new | PURE — the closed table (D3) |
-| `pickOptions` | `cmd/define/play/choice.go` | new | PURE — LABELLED candidates + target + seed → options, deterministic. Takes no prose: import-free per D5a |
-| `shuffle` | `cmd/define/play/choice.go` | new | PURE — xorshift64 over a seed; the determinism Done-when 3 claims, owned here rather than by `math/rand` (D5a) |
-| `excludeCrossReferenced` | `cmd/define/glosslabel.go` | new | PURE — D3a's near-synonym guard. In `main` because it reads prose, which `play` may not (D5a) |
+| `Axis` | `cmd/define/play/choice.go` | new | PURE — the reduced taxonomy: `AxisDomain`, `AxisRegister`, `AxisGeneral`, with a `numAxes` sentinel the guard derives from |
+| `Candidate` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — one possible distractor (word, gloss, axis), pre-expanded by `main`. Not in the original table |
+| `PickOptions` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — target + candidates + seed → options. Was planned as unexported `pickOptions` in `choice.go`; `main` has to call it |
+| `prng` / `shuffleOptions` | `cmd/define/play/pick.go` | new | PURE — xorshift64. Was planned as a bare `shuffle` func; it became a type once the sampler needed the same stream (ARCH-DRY) |
+| `SampleStrings` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — partial Fisher-Yates so `main` samples the deck with `play`'s PRNG rather than growing a second one. Not in the original table, and the one row that is genuinely new downstream API |
+| `readGloss` / `glossFacts` | `cmd/define/glosslabel.go` | new | PURE — replaces the planned `senseLabel`. It WALKS the head of a gloss rather than matching a prefix, and returns axis, label, text and `Usable` from one pass — see the 2026-08-30 Revisions for the measurement that forced this |
+| `leadingLabel` / `hasLabelPrefix` | `cmd/define/glosslabel.go` | new | PURE — longest-match on a word boundary |
+| `noadDomainLabels`, `noadRegisterLabels`, `noadRegionalLabels` | `cmd/define/glosslabel.go` | new | PURE — the closed tables (D3). THREE, not the planned single `noadLabels`: regional had to be recognized in order to be scanned past without being an axis |
+| `crossReferenced` / `mentions` | `cmd/define/glosslabel.go` | new | PURE — D3a's near-synonym guard, planned as `excludeCrossReferenced` |
+| `optionCandidates` / `targetCandidate` / `choiceFor` | `cmd/define/optionpool.go` | new | PURE — D4a's sense selection and the per-question near-synonym filter. A file the plan did not anticipate |
+| `seedFor` | `cmd/define/optionpool.go` | new | PURE — FNV-1a over word + day |
 
 - **`Choice`** — shows a word and four glosses, and remembers which was picked.
   - **Relationships:** 1:1 with a due word; holds N `Option`s (4, or fewer per D9).
@@ -136,6 +145,8 @@ So `pickOptions` receives candidates that are ALREADY filtered and labelled — 
 | `ReviewEvent.Missed` | `cmd/define/store/event.go` | new | the field carrying the chosen axis, placed ABOVE `At` (D6) |
 | `Outcome` | `cmd/define/play/session.go` | modified | carries the chosen axis out of `Apply` |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | builds the option pool from the deck it already walks |
+| `buildPool` | `cmd/define/optionpool.go` | new | the dictionary — one lookup per sampled pool word, capped at `poolCap` |
+| `Question` | `cmd/define/play/question.go` | modified | gains `Keys()`, so a form describes its own answer keys. NOT anticipated by the plan: the loop's grading prompt was a const spelling form 2.1's `y`/`n`, and it was printed under form 2.3's numbered options |
 
 **ARCH-MOCK.** No new external dependency: the dictionary is the only one and its fake (`dict_fake_test.go`) plus the committed corpus already back every form test. The deck's fake store is likewise in place. This is the form that needs neither network nor key, so the whole thing is testable with what exists — which is also `#6`'s Done-when about a session with the model seam unavailable.
 
@@ -280,3 +291,59 @@ corpus is 34 files and dumping every gloss took one throwaway test. `lessons.md`
 already carries *"Enumerate the category, not the instances you happened to
 meet"* (#35); this is that lesson recurring in a plan's verified-claims table,
 which is the one place designed to stop it.
+
+### 2026-08-30 — close review round 1: four corrections, one of them a real defect
+
+**BR-1 (Critical) — selection was not seeded, only ORDERING was.** `PickOptions`
+took `seed` and spent it entirely on the final shuffle; both selection passes
+walked the pool in fixed order, and the pool is built once per sitting. Measured
+by the reviewer over a 20-word deck: **17 of 20 questions shared one distractor
+set**, every day sampled. The learner could answer everything after question one
+by elimination, and the recorded axis — the thing this issue was folded around —
+was a choice among the same three glosses each time.
+
+This is the same class the pool sampler was written to prevent. `SampleStrings`'
+own comment says *"a deck's alphabetically first forty words would otherwise
+supply every distractor forever"*; the fix removed that ACROSS sittings and I
+reproduced it WITHIN one. Fixed by walking a seed-shuffled index permutation in
+both passes — a permutation rather than shuffling the slice, because `choiceFor`
+reuses the sitting's pool and reordering it under each question would make every
+selection depend on the ones before.
+
+**Done-when 1 and 3 were both green on the defect**, which is the more useful
+finding. "Exactly one correct option" and "deterministic under a fixed seed" are
+each true of a sitting that asks the same question twenty times. A new pin,
+`TestPickOptionsVariesTheDistractorsAcrossASitting`, asserts the property the
+two of them together do not: 20 targets over one pool must yield ≥8 distinct
+distractor sets. Mutation-verified — reverting to fixed order gives 6 sets, all
+of them the same three words in different orders.
+
+**BR-2 — the Core concepts table named five entities the tree does not have.**
+Corrected above. The renames were all explained in the design revisions and none
+of them reached the table, so the plan asserted a surface the code never had —
+including two exported types (`Candidate`, `SampleStrings`) that no plan row ever
+reviewed, which is how new downstream API arrives unnoticed.
+
+**BR-3 — Done-when 6's guard was vacuous for the property it claimed.** The
+reviewer added an axis to the const block, left it out of `distractorAxes`, and
+`TestEveryAxisIsSelectable` stayed green: the test's pool held only the axis
+under test, and `PickOptions`' second pass fills any remaining slot from any
+candidate. Reshaping the pool does not fix it — pass 2 can always reach the
+candidate, by design — so the test now asserts MEMBERSHIP of `distractorAxes`
+directly, derived from the `numAxes` sentinel, and keeps the behavioural check
+beside it. Mutation-verified.
+
+**BR-4 — the argument for hand-rolling the PRNG and the hash was not backed.**
+D5a rejects `math/rand` because a fixed seed must reproduce a question *forever*,
+"pinned by this repo's tests" — and nothing pinned the sequence. The reviewer
+changed a shift constant and the FNV offset basis together and the suite stayed
+green. `TestPickOptionsIsDeterministic` compared two runs inside one binary,
+which `math/rand` also satisfies. Golden assertions now pin both.
+
+**BR-5 — every seam in `optionpool.go` was untested**, including the
+ARCH-CONSTRAINTS budget, which was declared and implemented and enforced by
+nothing. A counting dictionary now bounds a sitting at `poolCap + count`
+lookups, and asserts the pool is not silently empty either.
+
+**BR-6 — the README's fallback threshold was off by one.** Corrected, along with
+a note that a young deck gets two or three options rather than four.
