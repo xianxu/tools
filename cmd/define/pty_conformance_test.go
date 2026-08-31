@@ -709,22 +709,40 @@ func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
 		t.Errorf("the reveal leaked before an answer:\n%q", first)
 	}
 
-	// Answer every question with `1`, which is wrong whenever the shuffle put
-	// the answer elsewhere — over five words at least one miss is essentially
-	// certain, and the assertion below only needs one.
+	// EVERY ANSWER IS A DELIBERATE MISS, and deterministically so.
 	//
-	// The D8 half needs a CORRECT answer too, and pressing 1 everywhere might by
-	// chance never produce one. Rather than gate the check on "if any correct
-	// answer happened" — which passes silently on the run where none did — the
-	// assertion below tolerates zero correct answers explicitly and the count
-	// comparison is exact either way.
-	for i := 0; i < 12; i++ {
-		f.WriteString("1")
-		time.Sleep(120 * time.Millisecond)
+	// The first version pressed `1` for every question and then required a
+	// `missed:` line, which made the assertion depend on TODAY'S DATE: the
+	// answer's slot is a function of seedFor(word, day), so on roughly one day
+	// in a thousand all five words put the answer in slot 1 and the test failed
+	// for a reason having nothing to do with the code. A conformance test that
+	// fails by calendar teaches people to re-run it until it passes.
+	//
+	// So the answer is READ rather than guessed. Enter reveals, and an unanswered
+	// Choice's reveal prints the correct option's own line — so the option number
+	// that appears a SECOND time is the right one, and anything else is a
+	// guaranteed miss.
+	// Every chunk is kept: the loop consumes the output the final assertion
+	// needs, and take() drains rather than peeks.
+	transcript := first
+	for i := 0; i < 6; i++ {
+		f.WriteString("\r") // reveal
+		revealed := unstyled(out.take(700 * time.Millisecond))
+		transcript += revealed
+		correct := optionNumberIn(revealed)
+		if correct == 0 {
+			break // the sitting is over, or this word fell back to Recall
+		}
+		wrong := byte('1')
+		if correct == '1' {
+			wrong = '2'
+		}
+		f.WriteString(string(wrong))
+		transcript += unstyled(out.take(400 * time.Millisecond))
 	}
-	rest := unstyled(out.take(4 * time.Second))
-	if !strings.Contains(first+rest, "right,") {
-		t.Errorf("the sitting never finished:\n%q", rest)
+	transcript += unstyled(out.take(3 * time.Second))
+	if !strings.Contains(transcript, "right,") {
+		t.Errorf("the sitting never finished:\n%q", transcript)
 	}
 
 	// THE RECORD. A miss must carry an axis; a correct answer must not.
@@ -736,8 +754,10 @@ func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
 	if !strings.Contains(log, "kind: reviewed") {
 		t.Fatalf("no review events were written:\n%s", log)
 	}
+	// Guaranteed now, not probable: every answer above was chosen to be wrong.
 	if !strings.Contains(log, "missed:") {
-		t.Errorf("no miss recorded an axis — D7's finding never reached the log:\n%s", log)
+		t.Errorf("no miss recorded an axis, though every answer was a deliberate miss — "+
+			"D7's finding never reached the log:\n%s", log)
 	}
 	// D8, stated as an exact identity rather than a conditional: the number of
 	// `missed:` lines must equal the number of MISSES, so a correct answer
@@ -758,4 +778,21 @@ func latestEventFile(t *testing.T, deck string) string {
 		t.Fatalf("no events directory in %s: %v", deck, err)
 	}
 	return filepath.Join(deck, "events", entries[len(entries)-1].Name())
+}
+
+// optionNumberIn returns the digit of the option line that appears in a REVEAL
+// chunk, or 0.
+//
+// An unanswered Choice's Reveal prints the correct option's own line before the
+// full entry, so the first `N  ` line in the chunk the reveal produced is the
+// answer. Reading it is what makes the pty test's misses deliberate instead of
+// dependent on which slot today's seed happened to choose.
+func optionNumberIn(chunk string) byte {
+	for _, line := range strings.Split(chunk, "\n") {
+		l := strings.TrimLeft(line, " \t")
+		if len(l) > 3 && l[0] >= '1' && l[0] <= '9' && l[1] == ' ' && l[2] == ' ' {
+			return l[0]
+		}
+	}
+	return 0
 }

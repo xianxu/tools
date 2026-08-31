@@ -505,6 +505,11 @@ rounds:
           family: uncontrolled-test-input
           round: 6
       blocked: true
+    - "n": 7
+      timestamp: "2026-08-30T22:38:27-07:00"
+      agent: claude
+      blocked: true
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#7 (boundary-review)
@@ -809,6 +814,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   5th finding in this family, so the rule rather than the row. Round 2 recorded the derivation as `go doc -short` per touched package; that command returns nothing for package main, so the procedure could only ever have covered play/ — and both entities added since (entryDefines, fallbackReasons) live in cmd/define. entryDefines got a row only after a reviewer named it; fallbackReasons, which a doc guard now depends on, has none. BR-18's armed guard checks table-to-tree only. The mechanical form of the rule is a declaration scan of the named files (go/ast or a `^func|^var|^const|^type` grep) run against the Name column at close, in place of `go doc -short`.
 - **BR-26** [Minor] `uncontrolled-test-input` The pty form-2.3 test's "at least one miss" assertion depends on today's date
   pty_conformance_test.go:717 answers every question with `1` and then requires a `missed:` line. The answer's slot is a deterministic function of seedFor(key, day), so on roughly 1 day in 1000 all five words put the answer in slot 1 and the assertion fails for the wrong reason. The same block also assumes all five words get form 2.3 — a live-dictionary fallback to Recall would stall the sitting rather than fail legibly. Drive the keys from the rendered option lines, or seed the sitting through a fixed clock.
+
+## Round 7 — 2026-08-30T22:38:27-07:00 (claude) — BLOCKED
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

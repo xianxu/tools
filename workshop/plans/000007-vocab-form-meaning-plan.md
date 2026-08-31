@@ -128,6 +128,7 @@ SHIPPED. The originals named five entities the tree does not have, because the
 | `noadDomainLabels`, `noadRegisterLabels`, `noadRegionalLabels` | `cmd/define/glosslabel.go` | new | PURE — the closed tables (D3). THREE, not the planned single `noadLabels`: regional had to be recognized in order to be scanned past without being an axis |
 | `crossReferenced` / `mentions` | `cmd/define/glosslabel.go` | new | PURE — D3a's near-synonym guard, planned as `excludeCrossReferenced` |
 | `optionCandidates` / `targetCandidate` / `choiceFor` | `cmd/define/optionpool.go` | new | PURE — D4a's sense selection and the per-question near-synonym filter. A file the plan did not anticipate |
+| `fallbackReasons` | `cmd/define/optionpool.go` | new | PURE — the DECLARED list of every reason `choiceFor` refuses, which `TestREADMENamesEveryFallbackReason` checks the README against. Load-bearing: a doc guard depends on it, and it had no row until BR-25 |
 | `entryDefines` | `cmd/define/optionpool.go` | new | PURE — the guard both producers call: a gloss is only ever attributed to the word whose entry defines it (BR-15/BR-17). Not anticipated by any plan row |
 | `seedFor` | `cmd/define/optionpool.go` | new | PURE — FNV-1a over word + day |
 
@@ -557,3 +558,44 @@ symptom while the fact that explains it was already written down in the repo.
 `TestOneEntryMaySupplyOnlyOneOption` asserts all three keys as one property, and
 `TestNoQuestionDrawsTwoOptionsFromOneEntry` does it at the sitting level over the
 deck shape that produces it. Both mutation-verified.
+
+### 2026-08-30 — close review round 7: the derivation procedure could not see package main
+
+**BR-25 — the rule I recorded in round 2 was unrunnable for half the diff.** It
+said *derive the table with `go doc -short` per touched package*. `go doc -short
+./cmd/define` returns NOTHING: it is `package main`, and `go doc` reports only
+exported surface. So the procedure could only ever have covered `play/`, and both
+entities added since — `entryDefines` and `fallbackReasons` — live in
+`cmd/define`. `entryDefines` got a row only because a reviewer named it;
+`fallbackReasons`, which a doc guard now depends on, had none.
+
+Corrected procedure, and this one runs against everything:
+
+```
+grep -oE '^(func|var|const|type) [A-Za-z_]+' <each file in the Lives-in column>
+```
+
+Run over `optionpool.go` and `glosslabel.go` it names six declarations with no
+row — `closeParen`, `isWordByte`, `hasCrossRefLead`, `crossRefLeads`,
+`minCrossRefWord`, `minDefinitionLen` — and all six are correctly absent: the
+table holds ENTITIES, not every declaration. That is the distinction the check
+is for. `fallbackReasons` is different and now has a row, because a guard
+depends on it.
+
+**The pattern worth naming: a rule recorded in prose is a rule that has not been
+run.** Round 2 wrote the derivation instruction; round 5 found it had never been
+executed; round 7 found the instruction itself was impossible to execute on half
+the tree. Each round the artifact said the right thing and the tree disagreed.
+The armed guard (`TestPlanTablesNameEntitiesThatExist`, unblocked in round 4 by
+ticking this document's own tasks) is worth more than all three revisions,
+because it runs whether or not anyone remembers the rule.
+
+**BR-26 — the pty test's misses depended on the calendar.** It pressed `1` for
+every question and required a `missed:` line, but the answer's slot is a function
+of `seedFor(word, day)`, so roughly one day in a thousand every answer would land
+in slot 1 and the test would fail for a reason unrelated to the code. A
+conformance test that fails by calendar teaches people to re-run it until it
+passes. Now the answer is READ rather than guessed: Enter reveals, an unanswered
+`Choice`'s reveal prints the correct option's own line, and the test then presses
+anything else — so every miss is deliberate and the `missed:` assertion is
+guaranteed rather than probable.
