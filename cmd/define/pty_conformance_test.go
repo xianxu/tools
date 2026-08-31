@@ -657,3 +657,97 @@ func TestPTYWithoutMouseBehavesAsBefore(t *testing.T) {
 		t.Errorf("tracking was left on by a session that never saw a mouse: %q", rest)
 	}
 }
+
+// seedDeckN seeds several words, which is what form 2.3 needs to exist at all.
+//
+// seedDeck's one word can only ever produce form 2.1 — a word is never its own
+// distractor — so every --play pty check before this one was measuring the
+// fallback and none of them could see the multiple-choice form.
+func seedDeckN(t *testing.T, words ...string) string {
+	t.Helper()
+	deck := t.TempDir()
+	for _, w := range words {
+		_, seed := startDefineInDir(t, deck, nil, "--no-audio", w)
+		got := watch(seed).take(3 * time.Second)
+		if !strings.Contains(got, "adjective") && !strings.Contains(got, "noun") {
+			conformance.SkipOrFail(t, fmt.Sprintf("seeding %q did not resolve:\n%q", w, got), nil)
+		}
+		seed.WriteString("\x04")
+	}
+	return deck
+}
+
+// Form 2.3 ON A REAL TERMINAL, end to end: the options are offered, a deliberate
+// wrong answer is graded, and the event log records WHICH axis was picked.
+//
+// This is the manual verification the plan asked for, written as a test instead.
+// The in-process tests drive playSession with a hand-built Choice, so none of
+// them exercises the path that decides a real deck deserves form 2.3, renders
+// four real NOAD glosses into a prompt, and writes the axis to a real file.
+func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
+	deck := seedDeckN(t, "sycophantic", "quokka", "mesa", "parrot", "concrete")
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	first := unstyled(out.take(4 * time.Second))
+
+	// The prompt must offer digits, not y/n — the bug Question.Keys() exists to
+	// prevent, seen from the outside.
+	if !strings.Contains(first, "= pick the definition") {
+		t.Fatalf("form 2.3 was not offered, or its keys were not printed:\n%q", first)
+	}
+	if strings.Contains(first, "y = got it") {
+		t.Errorf("a multiple-choice question printed form 2.1's keys — a learner would press a dead key:\n%q", first)
+	}
+	for _, n := range []string{"1  ", "2  "} {
+		if !strings.Contains(first, n) {
+			t.Errorf("no option line %q on screen:\n%q", n, first)
+		}
+	}
+	// The answer must NOT already be identifiable: the reveal has not happened.
+	if strings.Contains(first, "you chose") {
+		t.Errorf("the reveal leaked before an answer:\n%q", first)
+	}
+
+	// Answer every question with `1`, which is wrong whenever the shuffle put
+	// the answer elsewhere — over five words at least one miss is essentially
+	// certain, and the assertion below only needs one.
+	for i := 0; i < 12; i++ {
+		f.WriteString("1")
+		time.Sleep(120 * time.Millisecond)
+	}
+	rest := unstyled(out.take(4 * time.Second))
+	if !strings.Contains(first+rest, "right,") {
+		t.Errorf("the sitting never finished:\n%q", rest)
+	}
+
+	// THE RECORD. A miss must carry an axis; a correct answer must not.
+	events, err := os.ReadFile(latestEventFile(t, deck))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(events)
+	if !strings.Contains(log, "kind: reviewed") {
+		t.Fatalf("no review events were written:\n%s", log)
+	}
+	if !strings.Contains(log, "missed:") {
+		t.Errorf("no miss recorded an axis — D7's finding never reached the log:\n%s", log)
+	}
+	// D8: nothing is written on a correct answer, so `missed:` must not appear
+	// on a record whose `correct:` is true. correct:true is omitempty-dropped
+	// as `correct: true`, so count instead: misses >= missed lines.
+	if n, m := strings.Count(log, "correct: true"), strings.Count(log, "missed:"); n > 0 && m > strings.Count(log, "kind: reviewed")-n {
+		t.Errorf("%d axes written for %d misses — a correct answer recorded one (D8):\n%s",
+			m, strings.Count(log, "kind: reviewed")-n, log)
+	}
+}
+
+// latestEventFile is the day file the sitting just wrote.
+func latestEventFile(t *testing.T, deck string) string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(deck, "events"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no events directory in %s: %v", deck, err)
+	}
+	return filepath.Join(deck, "events", entries[len(entries)-1].Name())
+}

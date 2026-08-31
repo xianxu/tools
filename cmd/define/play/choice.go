@@ -125,8 +125,16 @@ func (c *Choice) Prompt() string {
 // optionLine numbers one option. `byte('0'+n)` rather than fmt: this package
 // imports nothing, and one digit does not need a formatter (D5a).
 //
-// Two spaces after the digit, so a wrapped gloss stays visibly indented under
-// its own number rather than reading as the next option.
+// NO HANGING INDENT, and that is a known rough edge rather than a decision.
+// A long gloss — NOAD's `quokka` runs to a taxonomic name — wraps in the
+// terminal, and the continuation starts at column 0 where a reader's eye expects
+// the next option. Fixing it means knowing the terminal width, which this
+// package deliberately does not: it would have to arrive as another constructor
+// argument, and the caller would then own line-breaking for a form whose whole
+// point is that the caller owns no formatting. Measured on a real terminal
+// during #7's verification and left; if it becomes annoying the honest fix is to
+// wrap in main and pass pre-wrapped option text, the same way the definition
+// already arrives pre-rendered.
 func optionLine(i int, gloss string) string {
 	return string(rune('0'+i+1)) + "  " + gloss
 }
