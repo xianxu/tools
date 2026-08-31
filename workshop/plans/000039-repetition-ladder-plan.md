@@ -153,14 +153,14 @@ The direction is safe — most words become MORE frequent, not less, so nothing 
 
 Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
-- [ ] **T1 — the computed ladder** (D1, D2, D3). `IntervalDays` becomes `8^box / 5^box` in `int64`, clamped to `[0, 20]`. Delete `intervalDays` and `LastBox`; add `ladderLimit` as the arithmetic clamp with the 55-year comment. Table test pinning boxes 0–20 exactly, plus the properties: monotonic non-decreasing, boxes 0 and 1 both 1, and `IntervalDays(-5) == IntervalDays(0)`.
-- [ ] **T2 — `Grade` and the transitions** (D4, D5, D5a). `Answer(p, Grade, at)`. Wrong halves the box and erodes `MaxBox` to `max(newBox, MaxBox-1)`; correct climbs 2 while `Box < MaxBox` else 1; unaided climbs 2. Step is capped at 2 — unaided below `MaxBox` is not 4. Table test including the issue's worked recovery from box 10.
-- [ ] **T3 — `Mastered` and the removal of `Streak`** (D6). `Mastered(p) = p.Box >= MasteredBox` with `MasteredBox = 9`, and a comment carrying the number's reason: day 108, nine recalls, the last after a 42-day gap. Delete `Streak` and `masteryStreak`; the compiler finds every reader.
-- [ ] **T4 — `Queue` ranks relative overdue** (D7). Keep `overdue` and add `interval` to the candidate; compare by cross-multiplication in `int64`. Test where a low-box word beats a more-absolutely-overdue high-box one, which is red on today's code.
-- [ ] **T5 — the load functions** (D9). `DailyLoad`, `SustainableNewWords`, `reviewsInFirstYear` in a new `schedule/load.go`. `reviewsInFirstYear` is DERIVED by walking the ladder, never typed, so changing the ratio cannot leave it stale.
-- [ ] **T6 — "unaided" reaches the log** (D8, D10, D12, D14). `ReviewEvent.Unaided` above `At`; `Outcome.Unaided` set at grading; `CaptureReview` takes the `Outcome`; `Fold` reconstructs the `Grade`. The seam is the one `#7` built for the axis, extended rather than re-invented.
-- [ ] **T7 — the sitting reports its cost** (D9, D11). `finish()` gains a line: `"~14 reviews/day at your current mix · 3 new words/day sustainable"`. This is what gives T5 a reader.
-- [ ] **T8 — docs.** `atlas/define.md`'s scheduling section rewritten for the computed ladder; `cmd/define/README.md`'s "words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days" corrected; the project row ticked.
+- [x] **T1 — the computed ladder** (D1, D2, D3). `IntervalDays` becomes `8^box / 5^box` in `int64`, clamped to `[0, 20]`. Delete `intervalDays` and `LastBox`; add `ladderLimit` as the arithmetic clamp with the 55-year comment. Table test pinning boxes 0–20 exactly, plus the properties: monotonic non-decreasing, boxes 0 and 1 both 1, and `IntervalDays(-5) == IntervalDays(0)`.
+- [x] **T2 — `Grade` and the transitions** (D4, D5, D5a). `Answer(p, Grade, at)`. Wrong halves the box and erodes `MaxBox` to `max(newBox, MaxBox-1)`; correct climbs 2 while `Box < MaxBox` else 1; unaided climbs 2. Step is capped at 2 — unaided below `MaxBox` is not 4. Table test including the issue's worked recovery from box 10.
+- [x] **T3 — `Mastered` and the removal of `Streak`** (D6). `Mastered(p) = p.Box >= MasteredBox` with `MasteredBox = 9`, and a comment carrying the number's reason: day 108, nine recalls, the last after a 42-day gap. Delete `Streak` and `masteryStreak`; the compiler finds every reader.
+- [x] **T4 — `Queue` ranks relative overdue** (D7). Keep `overdue` and add `interval` to the candidate; compare by cross-multiplication in `int64`. Test where a low-box word beats a more-absolutely-overdue high-box one, which is red on today's code.
+- [x] **T5 — the load functions** (D9). `DailyLoad`, `SustainableNewWords`, `reviewsInFirstYear` in a new `schedule/load.go`. `reviewsInFirstYear` is DERIVED by walking the ladder, never typed, so changing the ratio cannot leave it stale.
+- [x] **T6 — "unaided" reaches the log** (D8, D10, D12, D14). `ReviewEvent.Unaided` above `At`; `Outcome.Unaided` set at grading; `CaptureReview` takes the `Outcome`; `Fold` reconstructs the `Grade`. The seam is the one `#7` built for the axis, extended rather than re-invented.
+- [x] **T7 — the sitting reports its cost** (D9, D11). `finish()` gains a line: `"~14 reviews/day at your current mix · 3 new words/day sustainable"`. This is what gives T5 a reader.
+- [x] **T8 — docs.** `atlas/define.md`'s scheduling section rewritten for the computed ladder; `cmd/define/README.md`'s "words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days" corrected; the project row ticked.
 
 ---
 
@@ -171,7 +171,7 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a p
 | # | claim | pinned by | red when |
 |---|---|---|---|
 | 1 | the ladder is `floor(1.6^box)`, exact and platform-independent | `TestIntervalDaysLadder` — boxes 0–20 as literals | the ratio, the arithmetic or the clamp moves |
-| 2 | boxes 0 and 1 are both 1 day | a row of the same test, with the acquisition reason in a comment | someone "fixes" the duplicate |
+| 2 | boxes 0 and 1 are both 1 day | `TestTheFirstTwoRungsAreBothOneDay` — its own test, because the duplicate reads like a bug cold | someone "fixes" the duplicate by indexing from `1.6^(box+1)` |
 | 3 | the clamp is arithmetic, not pedagogy | `TestIntervalDaysClampIsUnreachable` — cumulative days to box 20 exceeds 20,000 | the clamp drops low enough for a learner to hit |
 | 4 | wrong halves; correct climbs 1, or 2 below `MaxBox`; unaided climbs 2 | `TestAnswerTransitions` | any transition changes |
 | 5 | a lapsed word recovers in 3 reviews, not 5 | `TestRecoveryFromALapse` — the issue's box-10 walk, asserted step by step | the express lane or the halving is removed (D5a: either alone fails this) |

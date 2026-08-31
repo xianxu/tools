@@ -166,13 +166,13 @@ on, rather than being discovered as a growing backlog.
 
 ## Done when
 
-- [ ] `IntervalDays` is computed from the ratio, unbounded, with `1, 1, 2, 4, 6, 10, 16, 26…` pinned by a table test.
-- [ ] Correct promotes one rung, or two while below `MaxBox`; wrong halves the box and erodes `MaxBox`.
-- [ ] `MaxBox` is derived by `Fold` from the log, stored nowhere.
-- [ ] `Mastered` is `Box >= 9` and excludes nothing from the queue.
-- [ ] `Queue` ranks reviewed words by overdue RELATIVE to interval, pinned by a test where a low-box word beats a more-absolutely-overdue high-box one.
-- [ ] Daily-review load and the sustainable new-word rate are computable from `Progress` alone, and reported.
-- [ ] The recovery path is pinned end to end: a word at box 10 that lapses is back at box 10 in three reviews, not five.
+- [x] `IntervalDays` is computed from the ratio, unbounded, with `1, 1, 2, 4, 6, 10, 16, 26…` pinned by a table test.
+- [x] Correct promotes one rung, or two while below `MaxBox`; wrong halves the box and erodes `MaxBox`.
+- [x] `MaxBox` is derived by `Fold` from the log, stored nowhere.
+- [x] `Mastered` is `Box >= 9` and excludes nothing from the queue.
+- [x] `Queue` ranks reviewed words by overdue RELATIVE to interval, pinned by a test where a low-box word beats a more-absolutely-overdue high-box one.
+- [x] Daily-review load and the sustainable new-word rate are computable from `Progress` alone, and reported.
+- [x] The recovery path is pinned end to end: a word at box 10 that lapses is back at box 10 in three reviews, not five.
 
 ## Estimate
 
@@ -240,7 +240,7 @@ than each estimate quietly compensating.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+- [x] Design via `sdlc start-plan` before implementing.
 
 ## Log
 

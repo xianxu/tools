@@ -376,3 +376,49 @@ func TestDueDoesNotFireOnTheDayOfReview(t *testing.T) {
 		t.Error("not due the next calendar day")
 	}
 }
+
+// RE-FOLDING AN EXISTING LOG IS SAFE: no migration runs, so every learner's
+// boxes are silently re-derived the first time they open a sitting after this
+// ships. The direction of that change is what matters.
+//
+// Under the old ladder (1, 3, 7, 14, 30, 90, clamped at box 5) a word with N
+// correct answers sat at box min(N,5); under this one it sits at box N. Below
+// box 10 the new interval is SHORTER, so words become due sooner — more review,
+// never less, and nothing is silently deferred. A learner with a mature deck
+// will meet a large first sitting, which the README warns about; what they will
+// not meet is a word quietly disappearing for a year.
+func TestReFoldingAnOldLogIsSafe(t *testing.T) {
+	oldLadder := []int{1, 3, 7, 14, 30, 90}
+	oldInterval := func(n int) int {
+		if n > len(oldLadder)-1 {
+			n = len(oldLadder) - 1
+		}
+		return oldLadder[n]
+	}
+
+	for n := 1; n <= 9; n++ {
+		var events []store.ReviewEvent
+		for i := 0; i < n; i++ {
+			events = append(events, reviewed("w", true, at(i)))
+		}
+		p := Fold(events)[store.Key("w")]
+
+		if p.Box != n {
+			t.Fatalf("%d corrects gave box %d, want %d", n, p.Box, n)
+		}
+		now, was := IntervalDays(p.Box), oldInterval(n)
+		if now > was {
+			t.Errorf("%d correct answers: the interval moved from %d days to %d — re-folding "+
+				"an existing log DEFERRED this word, so a learner loses reviews they had "+
+				"already earned", n, was, now)
+		}
+	}
+
+	// And the direction reverses above box 10, which is the intended trade: a
+	// word recalled that many times has earned a longer wait than the old
+	// ladder's cap could express.
+	if IntervalDays(10) <= 90 {
+		t.Errorf("box 10 is %d days, want more than the old 90-day cap — the unbounded "+
+			"ladder buys nothing if it never exceeds the ceiling it replaced", IntervalDays(10))
+	}
+}

@@ -13,7 +13,7 @@ import "testing"
 // test that recomputes the implementation's formula asserts only that Go's
 // arithmetic is deterministic. The values were derived once, by hand, and are
 // the contract.
-func TestBoxIntervals(t *testing.T) {
+func TestIntervalDaysLadder(t *testing.T) {
 	want := []int{1, 1, 2, 4, 6, 10, 16, 26, 42, 68, 109, 175, 281, 450, 720, 1152, 1844, 2951, 4722, 7555, 12089}
 
 	if got := ladderLimit; got != len(want)-1 {
@@ -77,7 +77,7 @@ func TestIntervalsNeverShrink(t *testing.T) {
 // future ratio change that made the top rung reachable would turn an overflow
 // guard into a silent pedagogical ceiling, which is the thing this issue exists
 // to remove.
-func TestTheClampIsUnreachable(t *testing.T) {
+func TestIntervalDaysClampIsUnreachable(t *testing.T) {
 	const aLifetime = 20000 // days; ~55 years
 	cumulative := 0
 	for b := 0; b < ladderLimit; b++ {

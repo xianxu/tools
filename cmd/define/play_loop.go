@@ -94,15 +94,15 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 		// learner had stopped on. Caught as an intermittent test failure, which
 		// is the only way a random-choice bug ever shows up.
 		if ctx.Err() != nil {
-			return finish(stdout, s)
+			return finish(stdout, s, d, opt)
 		}
 		var k Key
 		select {
 		case <-ctx.Done():
-			return finish(stdout, s)
+			return finish(stdout, s, d, opt)
 		case got, ok := <-keys:
 			if !ok {
-				return finish(stdout, s)
+				return finish(stdout, s, d, opt)
 			}
 			k = got
 		}
@@ -194,7 +194,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 							// tells a script the session ended normally when it did
 							// not (BR-24).
 							fmt.Fprintf(stderr, "define: lost the terminal after playback: %v\n", err)
-							finish(stdout, s)
+							finish(stdout, s, d, opt)
 							return 1
 						}
 						*raw.sess = *again
@@ -204,7 +204,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 		}
 		draw(stdout, s)
 	}
-	return finish(stdout, s)
+	return finish(stdout, s, d, opt)
 }
 
 // toInput translates a decoded terminal Key into play's own Input.
@@ -362,8 +362,43 @@ func gradePrompt(q play.Question) string {
 	return q.Keys() + ", " + sessionKeys
 }
 
-func finish(w io.Writer, s play.Session) int {
+// finish prints the sitting's score AND what the deck now costs per day.
+//
+// The cost line is the number that should govern how many new words a learner
+// takes on, and before #39 it was computed nowhere and shown nowhere — a
+// growing backlog was the only way to discover it, which is the worst possible
+// feedback loop for a tool whose entire subject is spaced feedback.
+//
+// RECOMPUTED here rather than carried down from todaysQuestions, and that is
+// correctness rather than convenience: the answers just given have changed
+// every box involved, so the figure the learner should see is the one AFTER
+// today, not the one the sitting opened with.
+//
+// A failure to read the deck or the log costs the line, not the sitting. The
+// learner has just finished their reviews and those are already recorded; a
+// summary that could fail the whole verb would trade something that matters for
+// something that does not.
+func finish(w io.Writer, s play.Session, d deps, opt options) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)
+
+	deck, err := d.deck.Deck()
+	if err != nil {
+		return 0
+	}
+	events, err := d.deck.Events(anyTime)
+	if err != nil {
+		return 0
+	}
+	prog := schedule.Fold(events)
+	load := schedule.DailyLoad(deck, prog)
+	// The budget is -count: the number of questions a sitting asks, which is
+	// the DAILY budget for a learner who sits down once a day. That assumption
+	// is stated in the line rather than hidden, so someone who sits twice knows
+	// to double it. Inventing a second flag would give the tool two answers to
+	// "how much do I do per day".
+	fresh := schedule.SustainableNewWords(opt.count, deck, prog)
+	fmt.Fprintf(w, "~%.0f reviews/day at your current mix · %.1f new words/day sustainable at %d a sitting\n",
+		load, fresh, opt.count)
 	return 0
 }
 

@@ -1029,3 +1029,35 @@ func TestRecallNeverRecordsUnaided(t *testing.T) {
 			"they knew it, and nothing checked")
 	}
 }
+
+// Done-when 12: the sitting reports what the deck costs, and names the budget
+// it assumed.
+//
+// Without a reader, DailyLoad would be a function nobody calls — the same "no
+// reader" smell that got Progress.Streak deleted in this very issue.
+func TestFinishReportsTheLoad(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs[:1]),
+		keysFor("\r"+gradeKey(t, qs[0], play.Correct)), rawTerm{}, &out, &errb)
+
+	got := out.String()
+	if !strings.Contains(got, "reviews/day") {
+		t.Errorf("the summary does not report the deck's daily cost:\n%s", got)
+	}
+	if !strings.Contains(got, "new words/day sustainable") {
+		t.Errorf("the summary does not report the sustainable new-word rate:\n%s", got)
+	}
+	// The budget it assumed must be NAMED, or a learner who sits twice a day has
+	// no way to know the number is per-sitting.
+	if !strings.Contains(got, "a sitting") {
+		t.Errorf("the summary does not say which budget it assumed:\n%s", got)
+	}
+	// And the number must be real: a four-word deck of unreviewed words costs
+	// about four reviews a day, not zero.
+	if strings.Contains(got, "~0 reviews/day") {
+		t.Errorf("the load reports zero for a four-word deck — the deck is not being read:\n%s", got)
+	}
+}
