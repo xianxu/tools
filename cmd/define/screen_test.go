@@ -462,7 +462,7 @@ func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {
 			// typing — and for a prompt that wraps, that is its LAST row, not
 			// its first. Composed from where the prompt starts in the frame plus
 			// where the cursor lands within it.
-			wantRow := got.rows - menuHeight(tc.menu, tc.termCols) - want.rows + want.cursorRow
+			wantRow := got.rows - footerHeight(tc.menu, tc.termCols) - want.rows + want.cursorRow
 			if wantRow < 0 {
 				wantRow = 0
 			}
@@ -600,12 +600,12 @@ func TestLiveScreenFlushesAHeldFrameWithNoFurtherWrites(t *testing.T) {
 	waitFor(t, func() bool { return tty.painted() > before })
 }
 
-// menuHeight is what the menu costs the frame, for the test's own arithmetic —
-// deliberately recomputed from the FITTED menu rather than read out of Paint, so
-// the assertion cannot agree with the code by construction.
-func menuHeight(menu []string, cols int) int {
+// footerHeight is what the footer costs the frame, for the test's own
+// arithmetic — deliberately recomputed from the FITTED footer rather than read
+// out of Paint, so the assertion cannot agree with the code by construction.
+func footerHeight(footer []string, cols int) int {
 	n := 0
-	for _, m := range menu {
+	for _, m := range footer {
 		n += displayRows(m, cols)
 	}
 	return n

@@ -176,7 +176,7 @@ func (s *screen) RegionAt(line, col int) (Region, bool) {
 // mutates is the kind of false label a reader plans around.
 //
 // The second return value is false for a row below the buffer's tail — the
-// prompt, the menu, or blank space — where there is nothing to click.
+// prompt, the footer, or blank space — where there is nothing to click.
 func (s *screen) LineAt(row int) (int, bool) {
 	frame, top := s.visible()
 	if row < 0 || row >= len(frame) {
@@ -201,7 +201,7 @@ func (s *screen) Frame() []string {
 // separately is how they came apart: `Frame` used to return early — for an empty
 // viewport, and for a buffer that fits — WITHOUT clamping, so a stale offset
 // survived. Growing the viewport while scrolled back (a resize taller, the
-// command menu closing, a wrapped prompt cleared with Ctrl-U) then left `offset`
+// footer closing, a wrapped prompt cleared with Ctrl-U) then left `offset`
 // pointing past the end, `topLine` negative, and the click map detached from the
 // text: the underline painted on one row while the region answered on another.
 //
@@ -340,17 +340,23 @@ const (
 )
 
 // Paint draws one whole frame: the buffer's visible tail, then the prompt, then
-// the command menu under it.
+// the FOOTER under it.
+//
+// "Footer" and not "menu", because the concept is *rows below the prompt that
+// give up whole rows before the prompt does*, and there are two consumers of it:
+// the editor's command menu and `--play`'s status bar. Naming it for one of them
+// would make the other's call site read as something it is not, and would invite
+// a third consumer to add a third parameter for its own bottom rows.
 //
 // The frame is redrawn WHOLE — home, clear, everything — rather than patched.
 // That is the change of model this milestone buys: the editor currently tracks
-// how many menu rows it drew so it can erase exactly that many, and carries a
-// documented known limit for when the count is wrong ("if the menu does not fit
+// how many footer rows it drew so it can erase exactly that many, and carries a
+// documented known limit for when the count is wrong ("if the footer does not fit
 // below the cursor the terminal scrolls, and the cursor-up count then lands a
 // row off"). A whole-frame redraw cannot be off by a row, because it never
 // counts rows it drew earlier.
 //
-// The prompt and the menu are NOT buffer lines. They are the live edge of the
+// The prompt and the footer are NOT buffer lines. They are the live edge of the
 // session and change on every keystroke; putting them in `lines` would append a
 // copy of the prompt per character typed.
 //
@@ -362,14 +368,14 @@ const (
 // in: narrow the window (buffer lines keep the wrapping they were rendered with,
 // by decision) or type a line longer than the terminal is wide.
 //
-// So the prompt and menu are charged their REAL height, and buffer lines are
+// So the prompt and footer are charged their REAL height, and buffer lines are
 // clipped to the width — clipped at PAINT time, so the transcript and the click
 // map keep the whole text.
 //
 // termRows and termCols are passed in rather than stored, so a resize is one
 // call site's business (the loop's SIGWINCH case) and not fields that go stale.
-func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu []string) {
-	var menuRows int
+func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, footer []string) {
+	var footerRows int
 	s.cols = termCols
 	// ONE row accounting, used twice: it budgets the buffer's share of the frame
 	// AND says where the cursor has to walk back to. Two summations of the same
@@ -381,18 +387,19 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu 
 	// is worse than losing history you can scroll to.
 	// EVERY component is budgeted, not just the buffer's share. Charging the live
 	// edge its height and then writing it unclipped is not a budget: a prompt or
-	// a menu taller than the terminal overflows exactly as a wide buffer line
+	// a footer taller than the terminal overflows exactly as a wide buffer line
 	// did, and the terminal scrolls, and every placed row moves.
 	//
 	// The order of sacrifice is the order of value. The prompt is the line you
 	// are typing and survives first — clipped only if it alone is taller than the
-	// terminal, where the alternative is a frame nobody owns. The menu is a
-	// dropdown and gives up whole rows next. The buffer is scrollable, so it
+	// terminal, where the alternative is a frame nobody owns. The footer gives up
+	// whole rows next — a dropdown in the editor, a status bar in --play, and in
+	// both cases the thing a reader can lose for a moment without being stuck. The buffer is scrollable, so it
 	// takes what is left.
 	prompt = clipVisible(prompt, termRows*max(s.cols, 1))
 	promptRows := displayRows(prompt, s.cols)
-	menu, menuRows = fitMenu(menu, termRows-promptRows, s.cols)
-	s.rows = termRows - promptRows - menuRows
+	footer, footerRows = fitFooter(footer, termRows-promptRows, s.cols)
+	s.rows = termRows - promptRows - footerRows
 	if s.rows < 0 {
 		s.rows = 0
 	}
@@ -406,15 +413,15 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, menu 
 		b.WriteString(clipVisible(markClickable(line, s.regions[top+i]), s.cols) + "\r\n")
 	}
 	b.WriteString(prompt)
-	for _, m := range menu {
+	for _, m := range footer {
 		b.WriteString("\r\n" + m)
 	}
-	if len(menu) > 0 {
+	if len(footer) > 0 {
 		// Back to the prompt's FIRST row, in the rows the terminal actually
 		// moved: the menu's own height, plus the prompt's beyond its first row.
-		// Counting menu ENTRIES leaves the cursor low when a row wraps; omitting
+		// Counting footer ENTRIES leaves the cursor low when a row wraps; omitting
 		// the prompt's height reprints it over the menu.
-		fmt.Fprintf(&b, "\x1b[%dA\r", menuRows+promptRows-1)
+		fmt.Fprintf(&b, "\x1b[%dA\r", footerRows+promptRows-1)
 		// And forward to the prompt's own cursor column, which the caller
 		// encoded into `prompt` — reprinting it is cheaper than tracking a
 		// column here and cannot disagree with what was drawn.
@@ -450,7 +457,7 @@ type liveScreen struct {
 	rows   int
 	cols   int
 	prompt string
-	menu   []string
+	footer []string
 	// stopped is set when the terminal has been handed back. Writes still reach
 	// the buffer — the exit transcript needs them — but painting must stop dead,
 	// or a farewell newline written after restore would draw a frame onto the
@@ -544,10 +551,10 @@ func (l *liveScreen) flush() {
 // Draw records the live edge and repaints. It is the editor loop's draw(), and
 // it paints UNCONDITIONALLY: the loop draws when it has stopped writing, so this
 // is the frame that settles whatever a burst left pending.
-func (l *liveScreen) Draw(prompt string, menu []string) {
+func (l *liveScreen) Draw(prompt string, footer []string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.prompt, l.menu = prompt, menu
+	l.prompt, l.footer = prompt, footer
 	l.repaint()
 }
 
@@ -629,25 +636,27 @@ func (l *liveScreen) repaint() {
 	if l.stopped || l.tty == nil {
 		return
 	}
-	l.s.Paint(l.tty, l.rows, l.cols, l.prompt, l.menu)
+	l.s.Paint(l.tty, l.rows, l.cols, l.prompt, l.footer)
 	l.painted, l.pending = time.Now(), false
 }
 
-// fitMenu drops whole menu rows from the END until the dropdown fits the space
+// fitFooter drops whole menu rows from the END until the dropdown fits the space
 // the prompt left, and reports what it costs.
 //
-// Whole rows, because half a command name is not a menu entry — and from the
-// end, because the list is sorted and the first matches are the likely ones.
-func fitMenu(menu []string, avail, cols int) ([]string, int) {
+// Whole rows, because half a row is worse than no row — half a command name is
+// not a menu entry, and half a status bar is a number with no label. From the
+// END, because the editor's list is sorted and the first matches are the likely
+// ones; --play passes one row, for which the distinction does not arise.
+func fitFooter(footer []string, avail, cols int) ([]string, int) {
 	used := 0
-	for i, m := range menu {
+	for i, m := range footer {
 		h := displayRows(m, cols)
 		if used+h > avail {
-			return menu[:i], used
+			return footer[:i], used
 		}
 		used += h
 	}
-	return menu, used
+	return footer, used
 }
 
 // displayRows is how many terminal rows a line occupies once the terminal has

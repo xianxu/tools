@@ -114,7 +114,7 @@ type console struct {
 type display interface {
 	// Draw puts one frame on the screen: the buffer's visible tail, the prompt,
 	// and the command menu under it.
-	Draw(prompt string, menu []string)
+	Draw(prompt string, footer []string)
 	// Page moves the viewport by whole screenfuls — positive is BACKWARD, toward
 	// older text, which is the direction "page up" means to a reader. How tall a
 	// page is belongs to the screen; the loop only knows a key was pressed.
