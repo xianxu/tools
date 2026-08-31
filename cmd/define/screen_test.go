@@ -29,7 +29,7 @@ func TestScreenWriteBuildsLines(t *testing.T) {
 		{"no trailing newline still shows", []string{"a\nb"}, []string{"a", "b"}},
 		// The ask path streams token by token; this is that shape.
 		{"token stream", []string{"The", " quick", " brown\n", "fox"}, []string{"The quick brown", "fox"}},
-		// crlfWriter's case, which the screen replaces on this path: a reply
+		// The split-CRLF case the screen inherited: a reply
 		// split as "a\r" then "\nb" must not become two lines plus a stray CR.
 		{"a CRLF split across writes", []string{"a\r", "\nb\n"}, []string{"a", "b"}},
 	} {

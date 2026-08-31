@@ -147,21 +147,21 @@ func TestChoiceForRefusesWhenItMust(t *testing.T) {
 		{Word: "mesa", Gloss: "an isolated flat-topped hill", Axis: play.AxisGeneral},
 		{Word: "quokka", Gloss: "a small wallaby", Axis: play.AxisGeneral},
 	}
-	if choiceFor("sycophantic", "", entry, rich, 1, 0) == nil {
+	if choiceFor("sycophantic", "", entry, rich, 1) == nil {
 		t.Error("refused a word with a usable definition and two distractors")
 	}
-	if choiceFor("sycophantic", "", entry, nil, 1, 0) != nil {
+	if choiceFor("sycophantic", "", entry, nil, 1) != nil {
 		t.Error("built a question with an empty pool")
 	}
 	// A pool holding only the target itself: a word is never its own distractor.
 	self := []play.Candidate{{Word: "sycophantic", Gloss: "behaving obsequiously", Axis: play.AxisGeneral}}
-	if choiceFor("sycophantic", "", entry, self, 1, 0) != nil {
+	if choiceFor("sycophantic", "", entry, self, 1) != nil {
 		t.Error("the target was used as its own distractor")
 	}
 	// D3a at the seam: a near-synonym is excluded, and with nothing else in the
 	// pool that leaves no question.
 	near := []play.Candidate{{Word: "obsequious", Gloss: "obedient to excess", Axis: play.AxisGeneral}}
-	if choiceFor("sycophantic", "", entry, near, 1, 0) != nil {
+	if choiceFor("sycophantic", "", entry, near, 1) != nil {
 		t.Error("a candidate NOAD names inside the target's own gloss became an option")
 	}
 }
@@ -387,11 +387,10 @@ func TestEntryIdentityDistinguishesEntriesHeadwordConflates(t *testing.T) {
 
 // A LONG GLOSS WRAPS, and every line fits the terminal (#41).
 //
-// The operator's screenshot is the case: `ligament`'s gloss — "a short band of
-// tough, flexible fibrous connective tissue which connects two bones or
-// cartilages…" — ran off the right edge and was CUT, not wrapped. Before #41 the
-// terminal wrapped it, at the column and with no indent; a frame clips instead,
-// because a line that wraps makes the frame a row too tall and scrolls every row
+// The operator's screenshot is the case: `ligament`'s option line ran off the
+// right edge and was CUT, not wrapped. Before #41 the terminal wrapped it, at
+// the column and with no indent; a frame clips instead, because a line that
+// wraps makes the frame a row too tall and the terminal then scrolls every row
 // the sitting placed.
 //
 // Two claims, and the second is the one a fix that merely truncated would drop:
@@ -412,32 +411,30 @@ func TestALongOptionGlossWrapsRatherThanBeingCut(t *testing.T) {
 		t.Fatalf("the corpus gloss is only %d columns, so nothing would wrap and this test "+
 			"would assert nothing: %q", visibleCells(target.Gloss), target.Gloss)
 	}
-	pool := []play.Candidate{
+	q := choiceFor("quokka", "", entry, []play.Candidate{
 		{Word: "mesa", Gloss: "an isolated flat-topped hill with steep sides", Axis: play.AxisGeneral},
 		{Word: "parrot", Gloss: "a bird with a short hooked bill", Axis: play.AxisGeneral},
-	}
-
-	q := choiceFor("quokka", "", entry, pool, 1, width)
+	}, 1)
 	if q == nil {
 		t.Fatal("no choice built")
 	}
 
-	for _, line := range strings.Split(q.Prompt(), "\n") {
+	prompt := wrapOptionLines(q.Prompt(), width)
+	for _, line := range strings.Split(prompt, "\n") {
 		if n := visibleCells(line); n > width {
 			t.Errorf("a prompt line is %d columns wide in a %d-column terminal, so the frame "+
 				"clips it: %q", n, width, line)
 		}
 	}
 	// ...and every word survived. Truncation also "fits".
-	flat := strings.Join(strings.Fields(q.Prompt()), " ")
-	if !strings.Contains(flat, strings.Join(strings.Fields(target.Gloss), " ")) {
-		t.Errorf("the gloss did not survive wrapping — it fits because it was cut:\n%s", q.Prompt())
+	if !strings.Contains(collapseSpace(prompt), collapseSpace(target.Gloss)) {
+		t.Errorf("the gloss did not survive wrapping — it fits because it was cut:\n%s", prompt)
 	}
 	// The continuations are INDENTED under the gloss rather than starting at
 	// column 0, where the eye expects the next option. That is the half #7 left
 	// as a known rough edge and #41 had to close anyway.
 	indented := false
-	for _, line := range strings.Split(q.Prompt(), "\n") {
+	for _, line := range strings.Split(prompt, "\n") {
 		if strings.TrimSpace(line) != "" && strings.HasPrefix(line, strings.Repeat(" ", play.OptionIndent)) {
 			indented = true
 		}
@@ -447,8 +444,12 @@ func TestALongOptionGlossWrapsRatherThanBeingCut(t *testing.T) {
 	}
 }
 
-// A width of 0 means "do not wrap", which is the piped and non-terminal answer
-// (terminalWidth's sentinel). The gloss must arrive whole, not empty.
+// collapseSpace flattens a wrap so the assertion is about the WORDS surviving
+// rather than about where the breaks landed.
+func collapseSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// A width of 0 means "do not wrap", which is terminalWidth's sentinel for a
+// terminal too narrow to break a definition in. The gloss must arrive whole.
 func TestUnwrappedWidthLeavesTheGlossAlone(t *testing.T) {
 	d := testDict(t)
 	raw, _ := d.Lookup("quokka")
@@ -458,11 +459,38 @@ func TestUnwrappedWidthLeavesTheGlossAlone(t *testing.T) {
 	q := choiceFor("quokka", "", entry, []play.Candidate{
 		{Word: "mesa", Gloss: "an isolated flat-topped hill", Axis: play.AxisGeneral},
 		{Word: "parrot", Gloss: "a bird with a short hooked bill", Axis: play.AxisGeneral},
-	}, 1, 0)
+	}, 1)
 	if q == nil {
 		t.Fatal("no choice built")
 	}
-	if !strings.Contains(q.Prompt(), target.Gloss) {
-		t.Errorf("width 0 did not leave the gloss intact:\n%s", q.Prompt())
+	if got := wrapOptionLines(q.Prompt(), 0); !strings.Contains(got, target.Gloss) {
+		t.Errorf("width 0 did not leave the gloss intact:\n%s", got)
+	}
+}
+
+// wrapOptionLines touches OPTION lines and nothing else.
+//
+// The rest of a prompt is a headword, a blank, or a definition Render has
+// already wrapped — and re-wrapping an already-wrapped line re-indents it, which
+// is a cosmetic bug that would reach every full-width definition line.
+func TestWrapOptionLinesLeavesEverythingElseAlone(t *testing.T) {
+	const width = 20
+	for _, tc := range []struct{ name, in string }{
+		{"a headword", "internationalization"},
+		{"a blank line", ""},
+		{"a rendered definition line, already wrapped", "  a definition line"},
+		{"a numbered SENSE, which Render writes with a dot", "    1. cover an area with concrete and then some"},
+		{"a digit with one space is not an option line", "1 not an option"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := wrapOptionLines(tc.in, width); got != tc.in {
+				t.Errorf("wrapOptionLines rewrote a line it does not own:\n in  %q\n out %q", tc.in, got)
+			}
+		})
+	}
+	// ...and it DOES rewrite the one shape it owns, or the table above passes
+	// for a function that does nothing.
+	if got := wrapOptionLines("1  "+strings.Repeat("word ", 10), width); !strings.Contains(got, "\n") {
+		t.Errorf("an over-wide option line was not wrapped: %q", got)
 	}
 }

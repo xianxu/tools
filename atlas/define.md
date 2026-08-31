@@ -284,10 +284,12 @@ diagnostics where the definition goes. In production every field is the same
 
 - **`screen` is an `io.Writer`, and that is what kept this from being a rewrite.**
   `Render` returns a string, the ask path streams, commands and the indicator
-  print — every one of them feeds the buffer unchanged. It REPLACED `crlfWriter`
-  on this path, because two owners of line endings is how they drift. `#41` made
-  `--play` the second consumer, so `crlfWriter` is gone from both interactive
-  loops and survives only on the piped path.
+  print — every one of them feeds the buffer unchanged. It REPLACED the
+  translating writer this path used to wrap stdout in, because two owners of line
+  endings is how they drift. `#41` made `--play` the second consumer, which left
+  that writer with no caller at all — `crlf.go` is DELETED, not retained. The
+  piped path never needed it: `replLines` runs cooked, where the terminal
+  translates.
 - **A write REPAINTS.** The buffer alone is invisible, and a streamed answer
   arrives token by token while `♫ playing 3×` has to show during playback that
   blocks for seconds. So `liveScreen.Write` paints, and `screen` stays pure and
@@ -893,10 +895,11 @@ Its contract, in the order the rules matter:
    drags it back to that span's start. Plain text may be cut freely.
 4. **Downstream errors poison the writer.** The first failure is remembered and
    nothing is emitted after it, so no byte is written twice. A short write with a
-   nil error is a failure — `crlfWriter` produces exactly that, which is how this
-   rule was found. Both interactive loops have since replaced it with the screen
-   (`#30`, then `#41`), so the writer that motivated the rule is now only on the
-   piped path.
+   nil error is a failure — the line-ending writer produced exactly that, which
+   is how this rule was found. Both interactive loops replaced it with the screen
+   (`#30`, then `#41`), so the writer that motivated the rule is gone; the rule
+   outlives it because `screen.Write` and any future wrapper owe the same
+   contract.
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
 `sgrState` is the pure half: it watches escapes go past and answers "what style
@@ -937,7 +940,7 @@ rows.
 writer on the answer — over the screen in the raw loop, over the real stdout when
 piped. So highlighting sees the answer's own logical text and the screen places
 the highlighted bytes as lines afterwards. It used to wrap the raw loop's
-`crlfWriter` instead, which `#30` D5 removed. Inverted, the highlighter would
+the raw loop's line-ending writer instead, which `#30` D5 removed. Inverted, the highlighter would
 meet `\r\n` where
 it expects `\n`.
 
@@ -2212,7 +2215,7 @@ and the EVENTS stay: `--forget`'s contract, since history is what happened and
 cannot be untrue while the deck is the working set the learner curates.
 
 **A sitting draws WHOLE FRAMES, through the same seam the editor uses (`#41`).**
-It used to write lines through `crlfWriter` to a scrolling terminal, because in
+It used to write lines through a translating writer to a scrolling terminal, because in
 raw mode a bare `\n` moves down WITHOUT returning to column 0 and a multi-line
 definition cascades diagonally across the screen — `#16` built that writer for
 exactly this, `--play` shipped without it, and the operator's first real session

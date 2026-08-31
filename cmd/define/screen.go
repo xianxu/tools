@@ -20,9 +20,10 @@ import (
 //
 // It is an io.Writer, and that is what keeps this from being a rewrite: Render
 // returns a string, the ask path streams, commands and the indicator print, and
-// every one of them feeds the buffer unchanged. It REPLACES crlfWriter on this
-// path — both translate for a raw terminal, and two owners of line endings is
-// how they drift.
+// every one of them feeds the buffer unchanged. It REPLACED the translating
+// writer both raw loops used to wrap stdout in — both translate for a raw
+// terminal, and two owners of line endings is how they drift. With `#41`
+// converting `--play`, that writer had no caller left and is gone.
 //
 // Write and Frame do no terminal IO. Paint is the only part that touches a
 // terminal, so the arithmetic here is unit-testable with no pty.
@@ -62,7 +63,8 @@ type screen struct {
 // Write appends bytes to the buffer, splitting on newlines.
 //
 // A bare "\r" is dropped rather than kept: it is the carriage half of a CRLF
-// that arrived in a different chunk, which is the case crlfWriter documents
+// that arrived in a different chunk, which is the case the writer this replaced
+// documented
 // ("a reply split as \"one\\r\" then \"\\ntwo\" must not become \"one\\r\\r\\ntwo\"").
 // Here there is no terminal to position, so the CR carries no information at
 // all — a line's placement is Paint's business.

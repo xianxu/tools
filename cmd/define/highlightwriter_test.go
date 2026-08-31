@@ -126,7 +126,7 @@ func TestHighlightWriter(t *testing.T) {
 	}
 }
 
-// Contract rule 4. crlfWriter — which this will wrap — short-writes and is
+// Contract rule 4. The line-ending writer this used to wrap short-wrote and was
 // tested for it, and byte loss is this feature's worst failure mode.
 func TestHighlightWriterPropagatesDownstreamErrors(t *testing.T) {
 	boom := errors.New("pipe closed")
@@ -141,7 +141,7 @@ func TestHighlightWriterPropagatesDownstreamErrors(t *testing.T) {
 	}
 	// Poisoned: a later Write must not emit anything more, so nothing can be
 	// written twice. That is WHY (0, err) is the right answer here while
-	// crlfWriter — which can be written to again — returns caller-unit progress.
+	// A writer that can be written to again returns caller-unit progress.
 	// The two writers answer the same question differently on purpose.
 	before := written.Len()
 	if n, err := w.Write([]byte("more")); err == nil || n != 0 {
@@ -545,4 +545,20 @@ func TestHighlightAfterAnInnerResetDoesNotRestylePlainText(t *testing.T) {
 	if !strings.Contains(got, knownOn+"obsequious\x1b[0m baz") {
 		t.Errorf("want the highlight to close to plain: %q", got)
 	}
+}
+
+// shortWriter accepts `limit` bytes and reports that, with no error — the
+// io.Writer contract's other half, and the case a wrapping writer gets wrong by
+// returning 0.
+//
+// Re-homed here when `#41` deleted crlf.go: the writer that owned this double is
+// gone, and the CONTRACT it was proving is this file's subject. A double whose
+// only home is a deleted file is a rule with nowhere to live.
+type shortWriter struct{ limit int }
+
+func (s *shortWriter) Write(p []byte) (int, error) {
+	if len(p) > s.limit {
+		return s.limit, nil
+	}
+	return len(p), nil
 }

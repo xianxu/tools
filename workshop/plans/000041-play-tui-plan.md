@@ -122,7 +122,9 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `playConsole` | `cmd/define/play_loop.go` | new | the terminal — mirrors `replRaw`'s construction (D1) |
+| `newConsole` | `cmd/define/replraw.go` | new | the terminal, for BOTH loops — the screen constructor is its one parameter (D1, BR-7). The first cut of this was `playConsole`, a verbatim copy of `replRaw`'s six statements differing in one token; D1 had committed to the opposite |
+| `viewportGesture` | `cmd/define/replraw.go` | new | PURE dispatch — the paging keys, for both loops (D6, BR-1). A second copy of the policy is how the two loops come to disagree about which direction a page goes |
+| `wrapOptionLines` | `cmd/define/playbar.go` | new | wraps a form's OPTION lines at WRITE time, to the width in force then (BR-4) |
 | `draw` | `cmd/define/play_loop.go` | deleted | it wrote the question, the reveal AND the keys on every call; those three have different lifetimes and a scrolling terminal could not express the difference (D4) |
 | `livePrompt` | `cmd/define/play_loop.go` | new | what `draw`'s last two lines became: the frame's PROMPT for one state, returned rather than printed. The question and the reveal are buffer writes the LOOP owns, because it is the loop that knows they are transitions |
 | `finish` | `cmd/define/play_loop.go` | modified | shares `sittingBar`'s formatter, so the bar and the summary cannot word the `-count` assumption differently (D8) |
@@ -176,13 +178,15 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a p
 
 | # | claim | pinned by | red when |
 |---|---|---|---|
+| 0a | the full-screen surface is gated on STDOUT, not on stdin alone | `TestPlayRefusesWhenStdoutIsNotATerminal`, `TestPTYPlayRefusesWithNoColor` | `define --play > file` writes frames into it, or `-no-color` still takes the alternate screen |
+| 0b | an over-wide option line WRAPS, at the width in force when it is written | `TestALongOptionGlossWrapsRatherThanBeingCut`, `TestANarrowedSittingWrapsTheRestOfItself` | the wrap is baked at queue-build time, so narrowing the window clips the rest of the sitting |
 | 1 | `--play` paints whole frames; no path appends bare lines | `TestPlayDrawsThroughTheDisplay` | a `Fprintln` to the tty returns |
 | 2 | one question leaves ONE copy in the buffer however many keys are pressed | `TestRepeatedKeystrokesDoNotDuplicateTheQuestion` | the naive port (D4) |
 | 3 | the bar is pinned across question, reveal and resize | `TestTheBarSurvivesEveryState` | a state forgets to pass the footer |
 | 4 | a reveal taller than the viewport PAGES; the word stays on screen | `TestALongRevealPagesRatherThanScrollingTheWordAway` | paging is not wired |
 | 5 | the transcript survives exit | `TestPlayTranscriptSurvivesExit`, the shape `#30` used | `handBack` is skipped |
 | 6 | a whole sitting reads the deck ONCE and the log ONCE, whatever its length | `TestASittingReadsTheDeckOnce` — a counting store, N answers, exactly one `Deck()` and one `Events()` | any of the four sites in D7's enumeration reads again |
-| 7 | a failed log read degrades to empty progress and the sitting still runs | the existing behaviour at `play_loop.go:246`, unchanged | a read failure ends a sitting whose reviews are already recorded |
+| 7 | a failed log read degrades to empty progress and the sitting still runs | `TestAFailedLogReadStillRunsTheSitting` | a read failure ends a sitting whose reviews are already recorded, or the bar is drawn from a nil map |
 | 8 | the `-count` assumption is worded once | `TestTheBarAndTheSummaryAgree` — same formatter | the bar and `finish()` spell it differently |
 | 9 | SIGWINCH repaints mid-sitting | `TestPlayRepaintsOnResize` | the resize case is not wired |
 | 10 | the real terminal shows the bar and updates it | the `#7` pty test, extended | it works in-process and not on a tty |
@@ -390,3 +394,60 @@ line in one state is the worse trade.
 previous consumer never sent it.** `#30`'s clipping was correct for a REPL, whose
 lines are all pre-wrapped by `Render`. `--play` had one line that was not, and
 nothing in "adopt the editor's screen" prompted anyone to ask which.
+
+### 2026-08-31 — boundary review: FIX-THEN-SHIP, six Importants, and the one rule behind three of them
+
+The fresh-eyes review at `sdlc close` returned six blocking findings. Three of
+them are the same rule, and it is the rule this plan had already written down
+about itself one revision earlier and then not applied:
+
+> **Adopting an existing seam inherits its behaviour on inputs the previous
+> consumer never sent it.**
+
+- **BR-3 — the full-screen surface was gated on STDIN alone.** `repl` computes
+  `terminalUI := interactive && opt.tty` and falls back to the line loop, with a
+  comment recording that gating cursor control on the wrong stream has already
+  shipped three times here. `--play` checking only `stdinIsTerminal` was harmless
+  while it appended lines and emitted no escapes at all; the moment it took the
+  alternate screen, `define --play > file` wrote frames into the file at a
+  fabricated 80 columns and `-no-color` — a flag whose whole purpose is
+  terminals that mangle escapes — stopped meaning anything. It now REFUSES, with
+  the two causes told apart because their fixes differ.
+- **BR-4 — the wrap was fixed at the startup width, so the same defect was one
+  resize away.** The revision above closed the operator's instance and stated the
+  rule; the review measured the sibling. The wrap moved from `choiceFor` (queue
+  build) to `wrapOptionLines` at WRITE time, and the resize case keeps
+  `opt.width` current — which also retires the `opt.width == 0` sentinel
+  mismatch, since the loop now wraps against the width it is actually painting
+  at.
+- **BR-6 — `crlfWriter` had no production caller left, and this window added
+  three claims that it did.** Deleted, with `crlf.go`, `crlf_test.go` and eight
+  stale mentions swept; `shortWriter` re-homed to `highlightwriter_test.go`,
+  where the short-write contract it proves actually lives.
+
+The other three are structural:
+
+- **BR-7 / BR-1 — `playConsole` was a verbatim second copy of `replRaw`'s
+  construction, and the viewport switch a second copy of the editor's.** D1 said
+  *"the honest move is to widen the shared seam rather than grow a parallel
+  one"*, and the first cut did the opposite twice. Now `newConsole(…, newScreen)`
+  and `viewportGesture(view, k)`, both called by both loops. **A plan that names
+  the anti-pattern is not protection against writing it; the diff is.**
+- **BR-5 — a test passed on an aliasing artifact.** `sittingDeck` was passed by
+  value with pointer-receiver mutators, so `TestDropping…` saw the drop only
+  because `slices.DeleteFunc` compacts the shared backing array in place. It now
+  asserts on the DRAWN BAR, which is what the claim was about, and `sittingDeck`
+  travels by pointer so the question cannot arise for `#40`.
+- **BR-2 — Done-when row 7 was pinned by "the existing behaviour, unchanged"**,
+  which this section's own header forbids. Now `TestAFailedLogReadStillRunsTheSitting`,
+  and it needed to be: the degraded progress feeds the bar and the summary now,
+  where before `finish` re-read the log.
+
+**The enumeration BR-4 forced, recorded because the plan's own T9 rule says to
+enumerate rather than list what comes to mind.** An unwrapped line meets a
+clipping frame at three sites: (a) the startup width, (b) a narrowing resize,
+(c) `opt.width == 0`. All three are closed by wrapping at write time against the
+live width. What remains, stated rather than discovered later: **the question
+already on screen keeps the wrapping it was written with**, exactly as the
+editor's scrollback does (`#30`) — and nothing is lost by it, because clipping
+happens at PAINT and the whole text is still in the buffer if the window widens.

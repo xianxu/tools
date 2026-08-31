@@ -30,45 +30,96 @@ func replRaw(ctx context.Context, interrupts *interrupter, d deps, opt options, 
 	defer sess.restore()
 
 	keys := readKeys(ctx, f, interrupts)
+	return runEditor(ctx, keys, interrupts, d, opt, newConsole(ctx, d, sess, stdout, newLiveScreen))
+}
+
+// newConsole takes the terminal and builds what a full-screen loop draws on.
+//
+// ONE builder, TWO loops, and it exists because the second one arrived as a
+// copy. `#41` made `--play` the other consumer of `console` and reproduced these
+// six statements to do it; they differed in exactly one token. That is a second
+// way to draw growing back in the shape of a constructor, and `#41` D1 had
+// committed to the opposite: *"the honest move is to widen the shared seam
+// rather than grow a parallel one — a second way to draw is the thing this issue
+// exists to remove, not to add."* `#40`'s board is the third caller.
+//
+// The screen constructor is the parameter because it IS the whole difference:
+// the editor's footer follows its content, and a sitting's status bar sits on
+// the terminal's bottom row (`#41` D3a).
+func newConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer,
+	newScreen func(tty io.Writer, rows, cols int) *liveScreen) console {
 	// The alternate screen, and with it the END of the cooked/raw dance (#30 D4).
 	// `cooked()` existed so a definition's bare "\n"s translated while it was
 	// printed; here the screen places every line itself, so nothing depends on
 	// the line discipline and raw mode is continuous — which is what "render
 	// cooked, play raw" wanted all along.
 	sess.enterAlt()
-	// And the mouse, whose wheel this loop needs (M1.4b): inside the alternate
+	// And the mouse, whose wheel both loops need (M1.4b): inside the alternate
 	// screen a terminal sends the wheel as ARROW KEYS unless asked to report the
-	// mouse, and Up/Down here are the history walk — so a scroll walked history.
-	// The bytes are identical, so nothing could tell them apart; the report is
-	// the only way to be handed the gesture the user actually made.
+	// mouse, and Up/Down in the editor are the history walk — so a scroll walked
+	// history. The bytes are identical, so nothing could tell them apart; the
+	// report is the only way to be handed the gesture the user actually made.
+	//
+	// It has a COST both loops now pay, and `#41` inherited it without saying so:
+	// with the mouse reported, dragging no longer selects text and the terminal's
+	// own Option/Shift override is what a reader has to reach for (rawterm.go's
+	// mouse block, and `/help`).
 	sess.enterMouse()
-	live := newLiveScreen(stdout, terminalRows(stdout), terminalCols(stdout))
+	live := newScreen(stdout, terminalRows(stdout), terminalCols(stdout))
 	// The shape is MEASURED here, where the terminal is, and delivered to the
-	// loop as a value — so the loop's new select case knows nothing about
-	// os/signal and everything about what it has to redraw.
+	// loop as a value — so a loop's resize case knows nothing about os/signal
+	// and everything about what it has to redraw.
 	resizes := watchResize(ctx, d.notifySignals, func() winSize {
-		// The TRUE shape. The wrap policy is derived from it below, where the
-		// loop sets opt.width — the two questions have different answers for a
-		// very narrow terminal, and only one of them may be zero.
+		// The TRUE shape. The wrap policy is derived from it in the loop, where
+		// opt.width is set — the two questions have different answers for a very
+		// narrow terminal, and only one of them may be zero.
 		return winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
 	})
-	// ONCE, and the transcript is why it has to be: restore() and Stop() are both
-	// idempotent because they run from more than one exit path, and printing a
-	// session twice is not the kind of thing an idempotent call fixes. sync's
-	// primitive rather than a hand-rolled flag, so the guarantee needs no test of
-	// its own to be trustworthy.
-	finish := onceHandBack(live, sess, stdout)
-	// BOTH streams are the screen, stderr included (D5b). A diagnostic written
-	// straight to the terminal while the alternate screen is up lands wherever
-	// the cursor happens to be and corrupts the frame; through the screen it is a
-	// buffer line like any other, and survives to the exit transcript, where
-	// today it is simply gone. The one-shot and piped paths keep the real stderr
-	// (D6), so a script's `2>` is untouched.
-	return runEditor(ctx, keys, interrupts, d, opt, console{
-		view: live, resizes: resizes, finish: finish,
-		// BOTH streams are the screen (D5b) — see above.
+	return console{
+		view: live, resizes: resizes,
+		// ONCE, and the transcript is why it has to be: restore() and Stop() are
+		// both idempotent because they run from more than one exit path, and
+		// printing a session twice is not the kind of thing an idempotent call
+		// fixes. sync's primitive rather than a hand-rolled flag, so the
+		// guarantee needs no test of its own to be trustworthy.
+		finish: onceHandBack(live, sess, stdout),
+		// BOTH streams are the screen, stderr included (D5b). A diagnostic
+		// written straight to the terminal while the alternate screen is up lands
+		// wherever the cursor happens to be and corrupts the frame; through the
+		// screen it is a buffer line like any other, and survives to the exit
+		// transcript, where it would otherwise simply be gone. The one-shot and
+		// piped paths keep the real stderr (D6), so a script's `2>` is untouched.
 		stdout: live, stderr: live,
-	})
+	}
+}
+
+// viewportGesture moves the VIEW rather than the state, and reports whether it
+// consumed the key.
+//
+// ONE policy, both loops (`#41` BR-1). A viewport gesture must reach neither the
+// editor's `Apply` nor `play`'s: it changes what you are LOOKING at, not the
+// line you are typing or the answer you owe. For `play` that is structural
+// rather than tidy — the package is mechanically guarded pure, and a
+// `play.Input` kind for "page up" would put a display concept inside it that
+// every future form would inherit.
+//
+// PageUp/PageDown and the wheel only: the obvious half-page bindings Ctrl-U and
+// Ctrl-D are already the kill and the EOF (key.go), and taking either would be a
+// silent regression in an editor people already use.
+func viewportGesture(view display, k Key) bool {
+	switch k.Kind {
+	case KeyPageUp:
+		view.Page(1)
+	case KeyPageDown:
+		view.Page(-1)
+	case KeyWheelUp:
+		view.Scroll(wheelLines)
+	case KeyWheelDown:
+		view.Scroll(-wheelLines)
+	default:
+		return false
+	}
+	return true
 }
 
 // wheelLines is how far one wheel event moves the viewport.
@@ -300,12 +351,12 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 		// consumed rather than also handing it to this loop, where it would quit
 		// the session the moment the answer ended (#16 D5).
 		//
-		// Streamed straight into the screen, with NO crlfWriter (#30 D5). It
+		// Streamed straight into the screen, with NO line-ending writer (#30 D5). It
 		// wrapped this path because a raw terminal needs the carriage half of
 		// every line break and a stream cannot be flapped cooked per delta; the
 		// screen now owns where a line goes, and two owners of line endings is
-		// how they drift. `--play` keeps its own crlfWriter, because it keeps
-		// drawing its own frames (D5a).
+		// how they drift. `#41` made `--play` the second consumer of the screen,
+		// which retired that writer from this binary entirely.
 		askScoped(ctx, interrupts, func(qctx context.Context) int {
 			return ask(qctx, d, opt, &sess, stdout, stderr, q)
 		})
@@ -356,25 +407,13 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 				finish()
 				return 0
 			}
-			// A VIEWPORT gesture never reaches Apply: it changes what you are
-			// looking at, not the line you are typing, so the editor does not
-			// have to learn that a screen exists. PageUp/PageDown and the wheel
-			// only — the obvious half-page bindings Ctrl-U and Ctrl-D are already
-			// the kill and the EOF (key.go), and taking either would be a silent
-			// regression in an editor people already use.
+			// A VIEWPORT gesture never reaches Apply — shared with `--play`, so
+			// the two loops cannot disagree about which keys move the view or
+			// which direction a page goes.
+			if viewportGesture(view, k) {
+				continue
+			}
 			switch k.Kind {
-			case KeyPageUp:
-				view.Page(1)
-				continue
-			case KeyPageDown:
-				view.Page(-1)
-				continue
-			case KeyWheelUp:
-				view.Scroll(wheelLines)
-				continue
-			case KeyWheelDown:
-				view.Scroll(-wheelLines)
-				continue
 			case KeyClick:
 				// A click is a gesture on the SCREEN, so like the viewport keys
 				// it never reaches Apply — the editor does not learn that a

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -103,7 +105,7 @@ func playbackConsole(out, errb io.Writer) console {
 // because todaysQuestions computes both and a test that dropped the second would
 // drive every sitting against an empty deck, where the cost figures are zero and
 // the bar cannot be wrong (D7).
-func questionsFor(t *testing.T, d deps, opt options) ([]play.Question, sittingDeck) {
+func questionsFor(t *testing.T, d deps, opt options) ([]play.Question, *sittingDeck) {
 	t.Helper()
 	var out, errb bytes.Buffer
 	qs, held, code := todaysQuestions(d, opt, &out, &errb)
@@ -242,6 +244,41 @@ func TestEmptyQueueExitsZero(t *testing.T) {
 	}
 }
 
+// BR-3: the FULL-SCREEN surface is gated on stdout, not on stdin alone.
+//
+// `repl` computes `terminalUI := interactive && opt.tty` and falls back to the
+// line loop, with a comment recording that this family — gating cursor control
+// on the wrong stream — has already shipped three times. `--play` checked stdin
+// only, which was harmless while it appended lines and emitted no escapes at
+// all. Since #41 a sitting takes the alternate screen, reports the mouse and
+// paints `ESC[H ESC[J` frames, so `define --play > file` would write them into
+// the file at a fabricated 80 columns.
+//
+// The assertion is on the ESCAPES, not on the message: a guard that returned 1
+// after already sending the alt-screen sequence would pass a message check.
+func TestPlayRefusesWhenStdoutIsNotATerminal(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	tty, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tty.Close()
+	d.stdinIsTerminal = func() bool { return true }
+
+	var out, errb bytes.Buffer
+	code := runPlay(t.Context(), d, opt, tty, &out, &errb)
+
+	if code != 1 {
+		t.Errorf("exit = %d, want 1 — a sitting the learner cannot see is not a sitting", code)
+	}
+	if strings.Contains(out.String(), "\x1b") {
+		t.Errorf("escape sequences reached a non-terminal stdout: %q", out.String())
+	}
+	if !strings.Contains(errb.String(), "must be a terminal") {
+		t.Errorf("stderr = %q, want it to say why", errb.String())
+	}
+}
+
 // No deck, no session — guarded on the PRECONDITION, since DEFINE_NO_CAPTURE and
 // a Getwd failure both produce it and keying on the flag would panic on the other
 // path.
@@ -373,7 +410,7 @@ func TestOnlyDueWordsAreOffered(t *testing.T) {
 // and stays put — so the definition cascaded diagonally across the screen, each
 // line starting where the last one ended.
 //
-// The owner used to be crlfWriter wrapped around stdout. It is now Paint, which
+// The owner used to be a translating writer wrapped around stdout. It is now Paint, which
 // places every row itself — so the test drives a REAL liveScreen over a buffer
 // standing in for the tty, rather than a recorder that writes what it is given.
 // A double could not fail this: it has no rows to place.
@@ -408,7 +445,7 @@ func TestSessionOutputIsAllCRLF(t *testing.T) {
 //
 // Three of #41's Done-when rows are about WHICH of those three a thing lands in,
 // so the double that folds them into one writer cannot see any of them.
-func paintedSitting(t *testing.T, d deps, opt options, qs []play.Question, held sittingDeck,
+func paintedSitting(t *testing.T, d deps, opt options, qs []play.Question, held *sittingDeck,
 	script string, normal io.Writer) (*liveScreen, *bytes.Buffer) {
 	t.Helper()
 	tty := &bytes.Buffer{}
@@ -535,8 +572,15 @@ func TestTheBarCountsAnswersAsTheyLand(t *testing.T) {
 		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
 
 	var counters []string
-	for _, footer := range view.menus {
-		if n := footer[0][:strings.Index(footer[0], " ·")]; len(counters) == 0 || counters[len(counters)-1] != n {
+	for _, footer := range view.drawnMenus() {
+		// Cut at the separator, and FAIL rather than panic if it moves: a bar
+		// format change should read as a broken assertion, not as a slice
+		// bounds error in a test about counting.
+		i := strings.Index(footer[0], " ·")
+		if i < 0 {
+			t.Fatalf("no ` ·` separator in the bar, so its shape changed: %q", footer[0])
+		}
+		if n := footer[0][:i]; len(counters) == 0 || counters[len(counters)-1] != n {
 			counters = append(counters, n)
 		}
 	}
@@ -575,18 +619,48 @@ func TestASittingReadsTheDeckOnce(t *testing.T) {
 
 // A word dropped mid-sitting leaves the bar's deck too, or the figures charge
 // for a word the learner just curated away and disagree with the deck on disk.
+//
+// ASSERTED ON THE DRAWN FOOTER, which is the thing the claim is about (BR-5).
+// The first version of this read the caller's own `sittingDeck` after the loop
+// returned, and saw the drop only because `slices.DeleteFunc` compacts the
+// shared backing array in place — so rewriting `dropped` to build a new slice,
+// behaviour-identical for the loop, turned it red. A test that pins an
+// implementation detail of a helper is not pinning the behaviour it names.
 func TestDroppingAWordLowersTheCostTheBarShows(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
 	qs, held := questionsFor(t, d, opt)
-	before := held.figures(opt.count).load
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("d^"), playbackConsole(&out, &errb))
+	view := paintInto(&out)
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("d^"),
+		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
 
-	if after := held.figures(opt.count).load; after >= before {
-		t.Errorf("the deck cost %.3f before the drop and %.3f after — dropping a word must "+
-			"lower what the deck costs, or the bar is charging for a word that is gone", before, after)
+	bars := view.drawnMenus()
+	if len(bars) < 2 {
+		t.Fatalf("%d frames drawn, want the one before the drop and the one after", len(bars))
 	}
+	before, after := loadIn(t, bars[0][0]), loadIn(t, bars[len(bars)-1][0])
+	if after >= before {
+		t.Errorf("the bar said %.3f reviews/day before the drop and %.3f after — dropping a word "+
+			"must lower what the deck costs, or the bar is charging for a word that is gone",
+			before, after)
+	}
+}
+
+// loadIn reads the reviews/day figure out of a drawn bar, so the assertion is on
+// what the learner sees rather than on a field behind it.
+func loadIn(t *testing.T, bar string) float64 {
+	t.Helper()
+	i := strings.Index(bar, "~")
+	j := strings.Index(bar, " reviews/day")
+	if i < 0 || j < i {
+		t.Fatalf("no reviews/day figure in the bar: %q", bar)
+	}
+	n, err := strconv.ParseFloat(bar[i+1:j], 64)
+	if err != nil {
+		t.Fatalf("bar %q: %v", bar, err)
+	}
+	return n
 }
 
 // DONE-WHEN 4: a reveal taller than the terminal PAGES, and the word comes back.
@@ -662,6 +736,127 @@ func TestPagingIsNotAnAnswer(t *testing.T) {
 	if spy.reviews != 0 || len(reviewEvents(t, st)) != 0 {
 		t.Error("a viewport gesture graded an answer — looking at something is not answering it")
 	}
+}
+
+// BR-4: narrowing the window mid-sitting wraps the REST of the sitting to the
+// new width.
+//
+// The operator's finding was that a frame CLIPS an over-wide option line. The
+// first fix wrapped inside `choiceFor`, which bakes the sitting's STARTUP width
+// into every question — so the same defect was one resize away, and the review
+// measured it. The wrap is now applied where the question is WRITTEN, and the
+// resize case keeps opt.width current, which is the only place that can be true
+// for a question that has not been asked yet.
+//
+// The question already on screen keeps the wrapping it was written with, exactly
+// as the editor's scrollback does (#30) — and nothing is lost by that: clipping
+// happens at PAINT, so the whole text is in the buffer and returns if the window
+// widens again.
+func TestANarrowedSittingWrapsTheRestOfItself(t *testing.T) {
+	const wide, narrow = 100, 40
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	opt.width = wide
+	qs, held := questionsFor(t, d, opt)
+	if len(qs) < 2 {
+		t.Fatalf("got %d questions, need at least 2 to advance across a resize", len(qs))
+	}
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, wide)
+	live.interval = -1
+	var errb bytes.Buffer
+	resizes := make(chan winSize, 1)
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	waitFor(t, func() bool { return strings.Contains(live.Transcript(), qs[0].Word()) })
+	written := len(live.Transcript())
+	frames := strings.Count(tty.String(), cursorHome)
+
+	// The resize FIRST, and its frame observed — otherwise the select has two
+	// ready cases and picks between them at random.
+	resizes <- winSize{rows: 24, cols: narrow}
+	waitFor(t, func() bool { return strings.Count(tty.String(), cursorHome) > frames })
+
+	keys <- Key{Kind: KeyRune, Rune: []rune(gradeKey(t, qs[0], play.Correct))[0]}
+	waitFor(t, func() bool { return strings.Contains(live.Transcript()[written:], qs[1].Word()) })
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+
+	after := live.Transcript()[written:]
+	wrapped := false
+	for _, line := range strings.Split(after, "\n") {
+		if isOptionLine(line) {
+			if n := visibleCells(line); n > narrow {
+				t.Errorf("an option line written AFTER the window narrowed is %d columns wide in "+
+					"a %d-column terminal, so the frame clips it: %q", n, narrow, line)
+			}
+		}
+		if strings.HasPrefix(line, strings.Repeat(" ", play.OptionIndent)) && strings.TrimSpace(line) != "" {
+			wrapped = true
+		}
+	}
+	if !wrapped {
+		t.Fatalf("nothing wrapped after the resize, so this test asserts nothing:\n%s", after)
+	}
+}
+
+// DONE-WHEN 7: a failed LOG read degrades to empty progress and the sitting
+// still runs — with a test, not with "the existing behaviour, unchanged".
+//
+// The Done-when preamble requires every pin be a predicate over behaviour, and
+// this was the one row that broke its own rule (BR-2). The blast radius also
+// grew this window: the degraded progress now feeds the BAR and the summary,
+// where before `finish` re-read the log and would have shown the true figure.
+//
+// The reviews are recorded as they happen, so a sitting must not end because a
+// summary could not be computed — but it must also not lie about the deck.
+func TestAFailedLogReadStillRunsTheSitting(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral")
+	d.deck = &logRefusingStore{Store: st}
+
+	var out, errb bytes.Buffer
+	qs, held, code := todaysQuestions(d, opt, &out, &errb)
+	if code != 0 {
+		t.Fatalf("todaysQuestions = %d — an unreadable log must not end a sitting: %s", code, errb.String())
+	}
+	if len(qs) == 0 {
+		t.Fatal("no questions: every word should look new when there is no history")
+	}
+	if !strings.Contains(errb.String(), "could not read the review log") {
+		t.Errorf("stderr = %q, want it to say the log could not be read", errb.String())
+	}
+	if held.prog == nil {
+		t.Fatal("progress is nil, so the loop's first schedule.Answer would write into a nil map")
+	}
+	if len(held.prog) != 0 {
+		t.Errorf("progress has %d entries from an unreadable log", len(held.prog))
+	}
+
+	// ...and the sitting runs to its end, drawing a bar the whole way.
+	view := paintInto(&out)
+	playSession(t.Context(), d, opt, play.NewSession(qs), held,
+		keysFor(gradeKey(t, qs[0], play.Correct)+"^"),
+		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
+	bars := view.drawnMenus()
+	if len(bars) == 0 || !strings.Contains(bars[len(bars)-1][0], "reviews/day") {
+		t.Errorf("no bar drawn on the degraded path: %v", bars)
+	}
+}
+
+// logRefusingStore reads its deck and refuses its log — the partial failure
+// Done-when 7 is about. failingStore refuses everything, which takes the
+// earlier `return 1` and never reaches this branch.
+type logRefusingStore struct {
+	store.Store
+}
+
+func (logRefusingStore) Events(time.Time) ([]store.ReviewEvent, error) {
+	return nil, errFail
 }
 
 // DONE-WHEN 9: SIGWINCH repaints mid-sitting.
@@ -1165,7 +1360,7 @@ func TestAMissRecordsTheAxisItChose(t *testing.T) {
 			q := play.NewChoice("sycophantic", "", opts)
 
 			var out, errb bytes.Buffer
-			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), sittingDeck{}, keysFor(tc.key), playbackConsole(&out, &errb))
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), &sittingDeck{}, keysFor(tc.key), playbackConsole(&out, &errb))
 
 			if spy.reviews != 1 {
 				t.Fatalf("CaptureReview called %d times, want 1", spy.reviews)
@@ -1346,7 +1541,7 @@ func TestUnaidedAnswerReachesTheLog(t *testing.T) {
 			d, opt, st := playRig(t, "sycophantic")
 			var out, errb bytes.Buffer
 			q := play.NewChoice("sycophantic", "", opts)
-			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), sittingDeck{}, keysFor(tc.keys), playbackConsole(&out, &errb))
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), &sittingDeck{}, keysFor(tc.keys), playbackConsole(&out, &errb))
 
 			events := reviewEvents(t, st)
 			if len(events) != 1 {
@@ -1365,7 +1560,7 @@ func TestRecallNeverRecordsUnaided(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic")
 	var out, errb bytes.Buffer
 	q := play.NewRecall("sycophantic", "the definition")
-	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), sittingDeck{}, keysFor("y"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), &sittingDeck{}, keysFor("y"), playbackConsole(&out, &errb))
 
 	events := reviewEvents(t, st)
 	if len(events) != 1 {

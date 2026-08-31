@@ -567,6 +567,35 @@ func TestPTYPlayKeepsTheAlternateScreenAcrossAReveal(t *testing.T) {
 	}
 }
 
+// `-no-color` means "emit no ANSI", and a sitting has to honour it (BR-3).
+//
+// The other half of the stdout gate, and the half only a terminal can reach: on
+// a real tty `opt.tty` is false ONLY because the flag was given. main.go's own
+// comment is the contract — *"-no-color means 'emit no ANSI', so it disables
+// cursor control too — the flag exists for terminals that mangle escapes"* — and
+// a terminal that mangles escapes is exactly the one where a full-screen sitting
+// would be unusable rather than merely ugly.
+func TestPTYPlayRefusesWithNoColor(t *testing.T) {
+	deck := seedDeck(t)
+
+	cmd, f := startDefineInDir(t, deck, nil, "--play", "--no-audio", "-no-color")
+	out := watch(f)
+	shown := out.take(3 * time.Second)
+
+	if strings.Contains(shown, altScreenOn) || strings.Contains(shown, mouseOn) {
+		t.Errorf("-no-color still took the alternate screen or the mouse:\n%q", shown)
+	}
+	if strings.Contains(shown, cursorHome) {
+		t.Errorf("-no-color still painted a frame:\n%q", shown)
+	}
+	if !strings.Contains(shown, "-no-color") {
+		t.Errorf("nothing said why the sitting did not start:\n%q", shown)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Error("exit = 0, want 1 — a sitting that cannot draw did not happen")
+	}
+}
+
 // Mouse reporting is asked for, and given back (#30 M1.4b).
 //
 // Giving it back matters more than turning it on: a terminal left reporting the
@@ -909,8 +938,13 @@ func twiceNumberedOption(frame string) byte {
 			seen[l[0]]++
 		}
 	}
-	for d, n := range seen {
-		if n == 2 {
+	// The LOWEST matching digit, in order — not whatever a map range yields
+	// first. Two digits can tie (a frame holding part of an earlier question),
+	// and a "deliberate" miss chosen by map iteration order is deliberate on
+	// some runs and not on others, which is the calendar-dependence this
+	// function exists to remove wearing different clothes.
+	for d := byte('1'); d <= '9'; d++ {
+		if seen[d] == 2 {
 			return d
 		}
 	}

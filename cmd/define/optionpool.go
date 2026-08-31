@@ -225,17 +225,7 @@ var fallbackReasons = []string{
 // learner three lookups in). The caller falls back to form 2.1, which is
 // invisible to the learner and keeps the sitting the length the schedule asked
 // for.
-// width is the terminal's, and it is here because the OPTIONS have to arrive
-// pre-wrapped (#41).
-//
-// `play` deliberately knows no width — a form whose whole point is that the
-// caller owns formatting cannot own line-breaking — so main wraps, exactly as it
-// already pre-renders the definition. It became necessary rather than nice when
-// `--play` started drawing frames: a frame CLIPS a line too wide for the
-// terminal, because letting it wrap would make the frame a row too tall and
-// scroll every row the sitting placed. Before that the terminal wrapped it, at
-// the column and with no indent — ugly, and readable.
-func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint64, width int) *play.Choice {
+func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint64) *play.Choice {
 	// No entryDefines call here: targetCandidate guards itself, and so does
 	// optionCandidates. A check at this level is what let the distractor path
 	// through unguarded once already.
@@ -256,12 +246,6 @@ func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint6
 	opts := play.PickOptions(target, usable, seed)
 	if len(opts) < 2 {
 		return nil
-	}
-	// Wrapped AFTER the pick, so the wrap cannot change which options are chosen
-	// — the selection is a fact about meaning and the width is a fact about the
-	// window, and a sitting must ask the same question at any size.
-	for i := range opts {
-		opts[i].Gloss = wrapText(opts[i].Gloss, width, play.OptionIndent)
 	}
 	return play.NewChoice(word, rendered, opts)
 }

@@ -1,6 +1,11 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/xianxu/tools/cmd/define/play"
+)
 
 // What a sitting tells the learner about its own cost.
 //
@@ -56,4 +61,53 @@ func costPhrase(f sittingFigures) string {
 		return fmt.Sprintf("~%.0f reviews/day · no room for new words at %d a sitting", f.load, f.budget)
 	}
 	return fmt.Sprintf("~%.0f reviews/day · %.1f new words/day at %d a sitting", f.load, f.fresh, f.budget)
+}
+
+// wrapOptionLines wraps a form's OPTION lines to the terminal, and leaves
+// everything else exactly as it arrived.
+//
+// It exists because a frame CLIPS: `Paint` cuts a buffer line at the terminal's
+// width, since letting it wrap would make the frame a row too tall and the
+// terminal would then scroll every row the sitting believes it placed. The
+// terminal used to do the wrapping, at the column and with no indent, which `#7`
+// recorded as a known rough edge — so what was ugly became missing when `#41`
+// took the screen.
+//
+// AT WRITE TIME rather than when the queue is built, and that is the whole of
+// BR-4. The first fix wrapped inside `choiceFor`, which bakes the sitting's
+// STARTUP width into every question — so narrowing the window mid-sitting clipped
+// every option from there on, the same defect one resize later. Here the width is
+// whatever `opt.width` says at the moment the question is written, and the resize
+// case keeps that current.
+//
+// ONLY option lines, matched on the shape `optionLine` writes (a digit and
+// `play.OptionIndent-1` spaces). The rest of a prompt is a headword, a blank, or
+// a definition `Render` has already wrapped — and re-wrapping an already-wrapped
+// line would re-indent it.
+func wrapOptionLines(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if !isOptionLine(line) {
+			continue
+		}
+		lines[i] = line[:play.OptionIndent] +
+			wrapText(line[play.OptionIndent:], width, play.OptionIndent)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// isOptionLine reports whether a line is one `optionLine` wrote: a digit, then
+// the rest of `play.OptionIndent` in spaces, then the gloss.
+//
+// A shape test rather than a parser. The alternative — teaching `play` to hand
+// back its options separately for wrapping — would put line-breaking in the
+// package whose whole point is that the caller owns formatting.
+func isOptionLine(line string) bool {
+	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
+		return false
+	}
+	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
 }

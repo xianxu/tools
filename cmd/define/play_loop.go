@@ -47,6 +47,31 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		fmt.Fprintln(stderr, "define: --play needs a terminal")
 		return 1
 	}
+	// STDOUT HAS TO BE A FULL-SCREEN SURFACE TOO, and it is a separate question
+	// from stdin (BR-3).
+	//
+	// `repl` computes `terminalUI := interactive && opt.tty` and falls back to
+	// the line loop when it is false, with a comment recording that this exact
+	// family — gating cursor control on the wrong stream — has already shipped
+	// three times. `--play` gated on stdin alone, which was harmless while it
+	// appended lines and emitted no escapes at all; a sitting now takes the
+	// alternate screen, reports the mouse and paints `ESC[H ESC[J` frames.
+	//
+	// Two causes, and they are worth telling apart because the fix differs: a
+	// redirected stdout gets a fabricated 80 columns of escapes in a file, and
+	// `-no-color` means "emit no ANSI", which main.go's own comment says
+	// "disables cursor control too — the flag exists for terminals that mangle
+	// escapes". A sitting the learner cannot see is not a sitting, so this
+	// REFUSES rather than degrading: there is no line-mode fallback to fall to,
+	// and pretending otherwise would write the frames anyway.
+	if !isTerminal(stdout) {
+		fmt.Fprintln(stderr, "define: --play draws a full screen, so its output must be a terminal")
+		return 1
+	}
+	if !opt.tty {
+		fmt.Fprintln(stderr, "define: --play draws a full screen, which -no-color turns off; run it without -no-color")
+		return 1
+	}
 	sess, err := enterRaw(f, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: could not enter raw mode: %v\n", err)
@@ -54,54 +79,21 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	}
 	defer sess.restore()
 
-	// THE SCREEN, not crlfWriter (D1).
+	// THE SCREEN, and it is the LAST writer of line endings in this binary (D1).
 	//
-	// A sitting used to write lines to a scrolling terminal, which is why every
-	// byte went through crlfWriter: in raw mode a bare \n moves down WITHOUT
-	// returning to column 0, so a multi-line definition cascaded diagonally
-	// across the screen. The screen places every row itself, so nothing on this
-	// path depends on the line discipline any more — and two owners of line
-	// endings is how they drift (#30 D5).
+	// A sitting used to write lines to a scrolling terminal through a translating
+	// writer: in raw mode a bare \n moves down WITHOUT returning to column 0, so
+	// a multi-line definition cascaded diagonally across the screen. The screen
+	// places every row itself, so nothing on this path depends on the line
+	// discipline any more — and with the editor already converted (#30 D5), that
+	// writer had no caller left and is deleted rather than kept for a third.
+	// The SHARED builder, with the pinned screen as its one argument: a status
+	// bar belongs at the terminal's bottom edge, where the editor's dropdown
+	// belongs under the line being typed (D3a). Everything else about taking a
+	// terminal is the same question, and the first version of this file answered
+	// it a second time (BR-7).
 	return playSession(ctx, d, opt, play.NewSession(questions), held,
-		readKeys(ctx, f, interrupts), playConsole(ctx, d, sess, stdout))
-}
-
-// playConsole is the terminal a sitting draws on, built exactly as replRaw
-// builds the editor's (D1).
-//
-// Not a parallel construction: the same alternate screen, the same mouse
-// reporting, the same resize watch and the same hand-back. `--play` diverging
-// from this is precisely what #41 exists to end, so a difference here would have
-// to be argued for rather than merely written.
-func playConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer) console {
-	// The alternate screen, and with it the END of the cooked/raw dance (D5a):
-	// playback no longer hands the terminal back, so the alt screen is entered
-	// once and left once.
-	sess.enterAlt()
-	// The mouse, whose wheel pages a long reveal (D6). Inside the alternate
-	// screen a terminal sends the wheel as ARROW KEYS unless asked to report the
-	// mouse, and the bytes are identical — the report is the only way to be
-	// handed the gesture the reader actually made.
-	sess.enterMouse()
-	// PINNED, unlike the editor's: a status bar belongs at the terminal's bottom
-	// edge, where the editor's dropdown belongs under the line being typed (D3a).
-	live := newPinnedScreen(stdout, terminalRows(stdout), terminalCols(stdout))
-	// MEASURED here, where the terminal is, and delivered to the loop as a value
-	// — so the loop's resize case knows nothing about os/signal.
-	resizes := watchResize(ctx, d.notifySignals, func() winSize {
-		return winSize{rows: terminalRows(stdout), cols: terminalCols(stdout)}
-	})
-	return console{
-		view: live, resizes: resizes,
-		// ONCE, and the transcript is why: a sitting's words must still be on
-		// screen after quitting, and printing them twice is not something an
-		// idempotent restore fixes (D5).
-		finish: onceHandBack(live, sess, stdout),
-		// BOTH streams are the screen, stderr included: a diagnostic written
-		// straight to the terminal while the alternate screen is up lands
-		// wherever the cursor happens to be and corrupts the frame.
-		stdout: live, stderr: live,
-	}
+		readKeys(ctx, f, interrupts), newConsole(ctx, d, sess, stdout, newPinnedScreen))
 }
 
 // playSession drives the state machine and performs its outcomes.
@@ -113,7 +105,7 @@ func playConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer
 // It takes a `console` rather than a pair of writers and a borrowed terminal:
 // the same type the editor loop takes, which is the whole of #41's claim that
 // there is ONE way to draw in this binary.
-func playSession(ctx context.Context, d deps, opt options, s play.Session, held sittingDeck,
+func playSession(ctx context.Context, d deps, opt options, s play.Session, held *sittingDeck,
 	keys <-chan Key, con console) int {
 
 	view, stdout, stderr := con.view, con.stdout, con.stderr
@@ -128,8 +120,12 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	fig := held.figures(opt.count)
 	fig.total = len(s.Questions)
 	refresh := func() {
-		f := held.figures(opt.count)
-		fig.load, fig.fresh = f.load, f.fresh
+		// The WHOLE struct, then the two the deck does not know. Copying named
+		// fields out of a fresh figures() means a field added later goes
+		// silently stale in the bar, and a stale number on screen is worse than
+		// no number.
+		fig = held.figures(opt.count)
+		fig.total = len(s.Questions)
 		// ANSWERED, which is what the Spec's bar says. A dropped word is not an
 		// answer: the learner curated it away rather than being asked about it.
 		fig.done = s.Right + s.Wrong
@@ -155,7 +151,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			written = s.Index
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
-			fmt.Fprintf(stdout, "\n%s\n", q.Prompt())
+			fmt.Fprintf(stdout, "\n%s\n", wrapOptionLines(q.Prompt(), opt.width))
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -198,11 +194,22 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// believes it placed; too narrow and the bar and the keys are laid
 			// out against a width that is not there.
 			//
-			// The editor's case, mirrored — with one line missing on purpose.
-			// It also sets opt.width, the POLICY width new entries wrap to;
-			// here every question was rendered before the sitting started, so
-			// re-deriving it would change nothing and would claim a re-wrap
-			// this loop does not do.
+			// The editor's case, INCLUDING opt.width — which the first version
+			// of this omitted on the grounds that every question was rendered
+			// before the sitting started. That stopped being true the moment
+			// option glosses had to arrive wrapped (BR-4): the wrap width is a
+			// per-write fact now, so a narrowing sitting that did not update it
+			// would clip every option from here on, which is the operator's own
+			// finding at the other end of its class.
+			//
+			// Below 20 columns wrapping is turned off — a definition cannot be
+			// broken that narrowly and stay readable — while the frame still has
+			// to fit the columns that exist. Two questions, two answers, and only
+			// one of them may be zero.
+			opt.width = sz.cols
+			if sz.cols < 20 {
+				opt.width = 0
+			}
 			view.Resize(sz.rows, sz.cols)
 			show()
 			continue
@@ -313,7 +320,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// it is written, which is what keeps a reveal out of the buffer
 				// until it is earned and out of it twice however many keys follow.
 				if asked != nil {
-					fmt.Fprintf(stdout, "\n%s\n", asked.Reveal())
+					fmt.Fprintf(stdout, "\n%s\n", wrapOptionLines(asked.Reveal(), opt.width))
 				}
 				if !opt.noAudio && opt.times > 0 {
 					// RAW THROUGHOUT, and that is D5a's whole content.
@@ -384,11 +391,11 @@ func toInput(k Key) (play.Input, bool) {
 // would pay ~5,700 file reads per question on a 5,000-word deck with two years
 // of log — with a person waiting. These two reads are the sitting's only ones,
 // and everything after them happens in memory.
-func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Question, sittingDeck, int) {
+func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Question, *sittingDeck, int) {
 	deck, err := d.deck.Deck()
 	if err != nil {
 		fmt.Fprintf(stderr, "define: could not read the deck: %v\n", err)
-		return nil, sittingDeck{}, 1
+		return nil, &sittingDeck{}, 1
 	}
 	events, err := d.deck.Events(anyTime)
 	if err != nil {
@@ -398,7 +405,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// cost figures are computed against an empty history.
 		fmt.Fprintf(stderr, "define: could not read the review log (%v); treating every word as new\n", err)
 	}
-	held := sittingDeck{deck: deck, prog: schedule.Fold(events)}
+	held := &sittingDeck{deck: deck, prog: schedule.Fold(events)}
 	now := d.clock.Now()
 	keys := schedule.Queue(deck, held.prog, now, opt.count)
 	if len(keys) == 0 {
@@ -433,7 +440,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// cannot (D9). A young deck is a NORMAL state, not an error, and the
 		// fallback is invisible to the learner — the sitting stays the length
 		// the schedule asked for either way.
-		if q := choiceFor(key, rendered, entry, pool, seedFor(key, day), opt.width); q != nil {
+		if q := choiceFor(key, rendered, entry, pool, seedFor(key, day)); q != nil {
 			qs = append(qs, q)
 			continue
 		}
@@ -451,6 +458,12 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 
 // sittingDeck is the deck as ONE sitting sees it: read once at the start and
 // kept in memory for the rest of it (D7).
+//
+// Passed by POINTER everywhere. Its mutators have pointer receivers while the
+// value was being copied into the loop, so `prog` was shared and `deck` was
+// half-shared — a drop reached the caller only because slices.DeleteFunc
+// compacts the backing array in place. Nothing production depended on that, and
+// a test did (BR-5); `#40` would have been the second consumer to meet it.
 //
 // The point is not caching. It is that the same transition schedule.Fold applies
 // to a logged event is applied HERE the instant an answer lands — so the cost
