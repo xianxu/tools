@@ -686,7 +686,18 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 		// An unticked step means the plan is still a plan. Scanned per plan, not
 		// per row, because it is a property of the document.
 		inProgress := strings.Contains(body, "- [ ] ")
-		for _, line := range strings.Split(body, "\n") {
+		// SCOPED TO "## Core concepts", because the entity tables live there by
+		// the plan template's own contract and nothing else in a plan is one.
+		//
+		// Unscoped, this matched any table row whose second cell was a
+		// backticked `*.go` path — which is the shape of the "What this plan
+		// asserts about the existing tree, verified" table, whose third column
+		// is a verdict ("true — measured 2026-08-31") rather than a status word.
+		// Three plans in a row tripped on it, and the workaround each time was
+		// to bury a line number inside the backticks so the regex would stop
+		// matching. That is a guard training authors to obfuscate their own
+		// citations, which is worse than the false positive.
+		for _, line := range strings.Split(coreConceptsSection(body), "\n") {
 			m := row.FindStringSubmatch(line)
 			if m == nil {
 				continue
@@ -717,6 +728,24 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 }
 
 // checkPlanName asserts one Name cell resolves to a declaration at the stated path.
+// coreConceptsSection is the part of a plan the entity tables live in: from the
+// "## Core concepts" heading to the next "## " one.
+//
+// Returns the WHOLE body when the heading is absent, which fails toward
+// checking too much rather than too little: a plan that has renamed its section
+// should get noisy rows, not silent exemption.
+func coreConceptsSection(body string) string {
+	i := strings.Index(body, "## Core concepts")
+	if i < 0 {
+		return body
+	}
+	rest := body[i+len("## Core concepts"):]
+	if j := strings.Index(rest, "\n## "); j >= 0 {
+		return rest[:j]
+	}
+	return rest
+}
+
 // planStatuses is the Core-concepts status column's controlled vocabulary.
 var planStatuses = []string{"new", "modified", "unchanged", "deleted"}
 
