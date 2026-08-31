@@ -140,6 +140,24 @@ rounds:
           family: undeclared-inflight-dep
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-30T17:43:07-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-7
+          disposition: addressed
+          note: D5a keeps the empty allowlist and moves the prose work to main; verified go list returns no imports and purity_test.go:21 is still []string{}.
+          round: 3
+        - id: PQ-8
+          disposition: addressed
+          note: Rule stated above the table, all eight rows swept to behavioural predicates; TestSessionIsFormAgnostic confirmed at play/session_test.go:327.
+          round: 3
+        - id: PQ-9
+          disposition: addressed
+          note: Stray 000038-play-clickable-words.md deleted, note lives in 000038-play-clickable.md:182-201, and sdlc issue show 38 resolves to one file.
+          round: 3
+      blocked: false
+content_hash: fbdf83f929f6a33bb8ab5f371d6aadbeb84b2e9a99b3527af1ef0b77c1486ea8
 ---
 
 # Gate ledger — tools#7 (plan-quality)
@@ -223,8 +241,14 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   with "multiple issue files match", which takes every 38 lifecycle verb with it. D1a's claim that the note is
   recorded where a resumer meets it is not true of the tree.
 
+## Round 3 — 2026-08-30T17:43:07-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-7 — addressed — D5a keeps the empty allowlist and moves the prose work to main; verified go list returns no imports and purity_test.go:21 is still []string{}.
+- PQ-8 — addressed — Rule stated above the table, all eight rows swept to behavioural predicates; TestSessionIsFormAgnostic confirmed at play/session_test.go:327.
+- PQ-9 — addressed — Stray 000038-play-clickable-words.md deleted, note lives in 000038-play-clickable.md:182-201, and sdlc issue show 38 resolves to one file.
+
 ## Open findings
 
-- **PQ-7** [Important] `guard-allowlist-unstated` pickOptions and Choice move into play, whose purity guard allows ZERO imports, and the plan does not say which side of that the code lands on
-- **PQ-8** [Important] `unsatisfiable-donewhen-pin` Done-when 7's replacement pin says "play/* unchanged" while T2, T3 and T4 all write into play/
-- **PQ-9** [Important] `undeclared-inflight-dep` The coupling note claimed to be in 38's Log is a separate new issue file, and it breaks sdlc issue resolution for 38
+(none — every finding has been disposed)
