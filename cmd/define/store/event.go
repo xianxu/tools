@@ -42,6 +42,17 @@ type ReviewEvent struct {
 	// about one question whose option set no longer exists. It also keeps the
 	// event small and stable while the deck churns underneath it.
 	Missed string `yaml:"missed,omitempty"`
+	// Unaided marks a right answer given COLD — the form compared the learner's
+	// answer to one it already knew, and no reveal preceded it.
+	//
+	// An OBSERVATION, never a claim. Form 2.1's `y` means "I knew it" with
+	// nobody checking, so it never sets this; form 2.3's correct pick does.
+	// The distinction is what keeps the ladder's two-rung promotion honest —
+	// see schedule.GradeUnaided and play.SelfRated.
+	//
+	// Absent on every event written before this existed, which folds to
+	// GradeCorrect: one rung rather than two, the conservative reading.
+	Unaided bool `yaml:"unaided,omitempty"`
 	// At stays LAST, and a field added after it would break the torn-record rule
 	// silently. See complete(): the rule is termination PLUS completeness, and
 	// completeness leans on a cut record losing its timestamp. A field written

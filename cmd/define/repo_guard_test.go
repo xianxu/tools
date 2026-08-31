@@ -704,7 +704,7 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 				continue
 			}
 			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
-				checkPlanName(t, root, filepath.Base(plan), nm[1], path, &checked)
+				checkPlanName(t, root, filepath.Base(plan), nm[1], path, status, &checked)
 			}
 		}
 	}
@@ -869,7 +869,7 @@ func planSections(body string) []string {
 	return out
 }
 
-func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
+func checkPlanName(t *testing.T, root, plan, name, path, status string, checked *int) {
 	t.Helper()
 	{
 		recv, name := splitReceiver(name, path)
@@ -892,8 +892,26 @@ func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 		// stale `newDeck` row stayed green solely because one comment still
 		// mentioned the old name. A guard that a comment can satisfy is not
 		// checking the tree.
-		if !declared.Match(src) && !assigned.Match(src) &&
-			!declaredInBlock(string(src), name) && !declaredAsField(string(src), recv, name) {
+		present := declared.Match(src) || assigned.Match(src) ||
+			declaredInBlock(string(src), name) || declaredAsField(string(src), recv, name)
+
+		// A `deleted` row asserts the OPPOSITE, and until this it could never
+		// pass: the check demanded every named entity be declared, so the moment
+		// the deletion actually happened the row went red for doing what it
+		// said. That made `deleted` — one of the four words in the status
+		// vocabulary — unusable, and the only way to keep a plan green was to
+		// leave the row lying about the tree.
+		//
+		// Inverted, the row becomes a real pin: it fails if the entity is still
+		// there, which is exactly the claim "deleted" makes.
+		if status == "deleted" {
+			if present {
+				t.Errorf("%s marks %q at %s as deleted, but it is still declared there — "+
+					"either the deletion did not happen or the row is wrong.", plan, name, path)
+			}
+			return
+		}
+		if !present {
 			t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
 				"artifact a reader trusts to describe the design, so a stale entity name "+
 				"there is worse than none. Update the row when the code renames.",

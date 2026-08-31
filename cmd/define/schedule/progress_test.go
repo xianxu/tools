@@ -22,35 +22,97 @@ func reviewed(word string, correct bool, t time.Time) store.ReviewEvent {
 
 func TestAnswerTransitions(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		in         Progress
-		correct    bool
-		wantBox    int
-		wantStreak int
+		name             string
+		in               Progress
+		grade            Grade
+		wantBox, wantMax int
 	}{
-		{"correct promotes and counts", Progress{Box: 0, Streak: 0}, true, 1, 1},
-		{"correct again", Progress{Box: 1, Streak: 1}, true, 2, 2},
-		// One box down, not back to zero: a word at the 90-day interval that
-		// slips once is not a word you have never seen, and the interval is
-		// where Leitner keeps the information.
-		{"wrong demotes ONE box", Progress{Box: 4, Streak: 4}, false, 3, 0},
-		{"wrong resets the streak", Progress{Box: 2, Streak: 9}, false, 1, 0},
-		{"promotion clamps at the last box", Progress{Box: LastBox, Streak: 8}, true, LastBox, 9},
-		{"demotion clamps at zero", Progress{Box: 0, Streak: 0}, false, 0, 0},
+		{"correct promotes one rung", Progress{Box: 0}, GradeCorrect, 1, 1},
+		{"correct again", Progress{Box: 1, MaxBox: 1}, GradeCorrect, 2, 2},
+		{"unaided promotes TWO", Progress{Box: 2, MaxBox: 2}, GradeUnaided, 4, 4},
+
+		// The express lane: below the high-water mark, a correct answer climbs
+		// two. Relearning is faster than learning.
+		{"correct climbs two while below MaxBox", Progress{Box: 5, MaxBox: 9}, GradeCorrect, 7, 9},
+		{"and one on arrival at it", Progress{Box: 9, MaxBox: 9}, GradeCorrect, 10, 10},
+
+		// The step is CAPPED at two: unaided below MaxBox is not four. The two
+		// reasons to move faster are the same reason.
+		{"unaided below MaxBox still climbs only two", Progress{Box: 4, MaxBox: 12}, GradeUnaided, 6, 12},
+
+		// Halving scales: harsh where harshness is warranted, gentle where not.
+		{"wrong HALVES a high box", Progress{Box: 12, MaxBox: 12}, GradeWrong, 6, 11},
+		{"wrong barely moves a low box", Progress{Box: 2, MaxBox: 2}, GradeWrong, 1, 1},
+		{"wrong at box 1 lands at zero", Progress{Box: 1, MaxBox: 3}, GradeWrong, 0, 2},
+
+		{"promotion clamps at the ladder limit", Progress{Box: ladderLimit, MaxBox: ladderLimit}, GradeCorrect, ladderLimit, ladderLimit},
+		{"demotion clamps at zero", Progress{Box: 0}, GradeWrong, 0, 0},
+
+		// The zero Grade demotes. A caller that forgets to set one must not
+		// promote: a word wrongly demoted returns sooner, while one wrongly
+		// promoted disappears for months.
+		{"the zero Grade is wrong, not correct", Progress{Box: 8, MaxBox: 8}, Grade(0), 4, 7},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := Answer(tc.in, tc.correct, at(1))
+			got := Answer(tc.in, tc.grade, at(1))
 
 			if got.Box != tc.wantBox {
 				t.Errorf("Box = %d, want %d", got.Box, tc.wantBox)
 			}
-			if got.Streak != tc.wantStreak {
-				t.Errorf("Streak = %d, want %d", got.Streak, tc.wantStreak)
+			if got.MaxBox != tc.wantMax {
+				t.Errorf("MaxBox = %d, want %d", got.MaxBox, tc.wantMax)
 			}
 			if !got.LastReviewed.Equal(at(1)) {
 				t.Errorf("LastReviewed = %v, want the time of the answer", got.LastReviewed)
 			}
 		})
+	}
+}
+
+// THE RECOVERY WALK, step by step — the plan's worked example, and the pin that
+// makes the halving and the express lane a pair.
+//
+// Removing EITHER fails this: without the lane the walk takes five reviews, and
+// without the halving it never leaves the top. A test that asserted only the end
+// state would pass on the gentle-demotion design this replaces.
+func TestRecoveryFromALapse(t *testing.T) {
+	p := Progress{Box: 10, MaxBox: 10}
+
+	p = Answer(p, GradeWrong, at(0))
+	if p.Box != 5 || p.MaxBox != 9 {
+		t.Fatalf("after the lapse box=%d max=%d, want 5 and 9", p.Box, p.MaxBox)
+	}
+	// The first retest lands 10 days later, which is where relearning happens —
+	// not 175 days later, which is what a single-step demotion would have given.
+	if got := IntervalDays(p.Box); got != 10 {
+		t.Errorf("the retest interval is %d days, want 10", got)
+	}
+
+	for i, want := range []int{7, 9, 10} {
+		p = Answer(p, GradeCorrect, at(i+1))
+		if p.Box != want {
+			t.Fatalf("recovery step %d: box = %d, want %d", i+1, p.Box, want)
+		}
+	}
+	if p.Box != 10 {
+		t.Fatalf("recovered to box %d, want 10", p.Box)
+	}
+}
+
+// The express lane ERODES, so a word that keeps failing is eventually relearned
+// properly rather than being waved back up forever.
+func TestRepeatedLapsesEndTheExpressLane(t *testing.T) {
+	p := Progress{Box: 12, MaxBox: 12}
+	for i := 0; i < 6; i++ {
+		p = Answer(p, GradeWrong, at(i))
+		p = Answer(p, GradeCorrect, at(i))
+	}
+	if p.MaxBox > 8 {
+		t.Errorf("after six lapses MaxBox is still %d — the lane never closes, so a "+
+			"chronically failing word keeps skipping the ladder", p.MaxBox)
+	}
+	if p.Box > p.MaxBox {
+		t.Errorf("box %d exceeds MaxBox %d", p.Box, p.MaxBox)
 	}
 }
 
@@ -61,12 +123,15 @@ func TestDue(t *testing.T) {
 		t.Error("a never-reviewed word is not due; new words would never be offered")
 	}
 
-	p := Progress{Box: 1, LastReviewed: day0} // box 1 waits 3 days
-	if Due(p, at(2)) {
-		t.Error("due after 2 days at a 3-day interval")
+	// Box 3 waits 4 days. Deliberately not box 1, which waits ONE day and would
+	// make "not due yet" and "due" a single calendar day apart — a fixture too
+	// tight to distinguish an off-by-one from a working interval.
+	p := Progress{Box: 3, MaxBox: 3, LastReviewed: day0}
+	if Due(p, at(3)) {
+		t.Error("due after 3 days at a 4-day interval")
 	}
-	if !Due(p, at(3)) {
-		t.Error("not due after exactly 3 days")
+	if !Due(p, at(4)) {
+		t.Error("not due after exactly 4 days")
 	}
 	if !Due(p, at(30)) {
 		t.Error("not due long after the interval")
@@ -90,20 +155,21 @@ func TestDueCountsCalendarDaysNotHours(t *testing.T) {
 }
 
 func TestMastered(t *testing.T) {
-	if Mastered(Progress{Box: LastBox, Streak: masteryStreak - 1}) {
-		t.Error("mastered one short of the streak")
+	if Mastered(Progress{Box: MasteredBox - 1}) {
+		t.Error("mastered one box short")
 	}
-	if !Mastered(Progress{Box: LastBox, Streak: masteryStreak}) {
-		t.Error("not mastered at the last box with the full streak")
+	if !Mastered(Progress{Box: MasteredBox}) {
+		t.Error("not mastered at the mastery box")
 	}
-	// Reaching the last box takes LastBox consecutive correct answers, so a
-	// streak that merely got you there must NOT count as mastery — otherwise
-	// "mastered" means "arrived", which is not what the word means.
-	if Mastered(Progress{Box: LastBox, Streak: LastBox}) {
-		t.Error("mastered on arrival at the last box; masteryStreak adds nothing")
+	if !Mastered(Progress{Box: MasteredBox + 4}) {
+		t.Error("un-mastered by climbing higher")
 	}
-	if Mastered(Progress{Box: LastBox - 1, Streak: masteryStreak + 10}) {
-		t.Error("mastered below the last box")
+	// Reaching MasteredBox requires surviving the box-8 gap, which is what makes
+	// the bar mean something. If that gap ever shrank below a month, "mastered"
+	// would start certifying words the learner last saw three weeks ago.
+	if got := IntervalDays(MasteredBox - 1); got < 30 {
+		t.Errorf("the last gap before mastery is %d days, want at least 30 — mastery "+
+			"must require surviving a long gap, not merely arriving", got)
 	}
 }
 
@@ -125,8 +191,8 @@ func TestFoldOnlyCountsReviews(t *testing.T) {
 	got := Fold(events)
 
 	p := got[store.Key("obsequious")]
-	if p.Box != 2 || p.Streak != 2 {
-		t.Errorf("got box %d streak %d, want 2/2 — a lookup is not a wrong answer", p.Box, p.Streak)
+	if p.Box != 2 {
+		t.Errorf("got box %d, want 2 — a lookup is not a wrong answer", p.Box)
 	}
 	// LastReviewed must not move either: the learner did not review on day 3.
 	if !p.LastReviewed.Equal(at(1)) {
@@ -152,12 +218,24 @@ func TestFoldNormalisesKeys(t *testing.T) {
 // "correct promotes, wrong demotes and resets" would be two things to keep in
 // agreement, and the disagreement would be invisible.
 func TestFoldOfOneEventEqualsOneAnswer(t *testing.T) {
-	for _, correct := range []bool{true, false} {
-		got := Fold([]store.ReviewEvent{reviewed("w", correct, at(1))})[store.Key("w")]
-		want := Answer(Progress{}, correct, at(1))
+	for _, tc := range []struct {
+		correct, unaided bool
+		grade            Grade
+	}{
+		{true, false, GradeCorrect},
+		{true, true, GradeUnaided},
+		{false, false, GradeWrong},
+		// A wrong answer cannot be unaided; the log could still hold the pair,
+		// and `wrong` must win rather than the flag promoting a miss.
+		{false, true, GradeWrong},
+	} {
+		e := store.ReviewEvent{Word: "w", Kind: store.EventReviewed, Correct: tc.correct, Unaided: tc.unaided, At: at(1)}
+		got := Fold([]store.ReviewEvent{e})[store.Key("w")]
+		want := Answer(Progress{}, tc.grade, at(1))
 
 		if got != want {
-			t.Errorf("correct=%v: Fold gave %+v, Answer gave %+v", correct, got, want)
+			t.Errorf("correct=%v unaided=%v: Fold gave %+v, Answer(%v) gave %+v",
+				tc.correct, tc.unaided, got, tc.grade, want)
 		}
 	}
 }
@@ -169,8 +247,8 @@ func TestMultiWeekSchedule(t *testing.T) {
 	var events []store.ReviewEvent
 
 	// Six correct answers, each on the day the previous interval came due.
-	// Intervals are 1, 3, 7, 14, 30, 90 — so the review days are the running sum.
-	reviewDays := []int{0, 1, 4, 11, 25, 55}
+	// Intervals are 1, 1, 2, 4, 6, 10 — so the review days are the running sum.
+	reviewDays := []int{0, 1, 3, 7, 13, 23}
 	for _, d := range reviewDays {
 		events = append(events, reviewed(word, true, at(d)))
 	}
@@ -181,9 +259,6 @@ func TestMultiWeekSchedule(t *testing.T) {
 	for i := range reviewDays {
 		p := Fold(events[:i+1])[store.Key(word)]
 		wantBox := i + 1
-		if wantBox > LastBox {
-			wantBox = LastBox
-		}
 		if p.Box != wantBox {
 			t.Fatalf("after %d correct answers box = %d, want %d", i+1, p.Box, wantBox)
 		}
@@ -199,30 +274,28 @@ func TestMultiWeekSchedule(t *testing.T) {
 
 	p := Fold(events)[store.Key(word)]
 
-	if p.Box != LastBox {
-		t.Fatalf("after %d correct answers box = %d, want the last box %d", len(reviewDays), p.Box, LastBox)
+	if p.Box != len(reviewDays) {
+		t.Fatalf("after %d correct answers box = %d, want %d", len(reviewDays), p.Box, len(reviewDays))
 	}
-	if p.Streak != len(reviewDays) {
-		t.Errorf("streak = %d, want %d", p.Streak, len(reviewDays))
+	if p.MaxBox != p.Box {
+		t.Errorf("MaxBox = %d after a clean climb to box %d; they must agree", p.MaxBox, p.Box)
 	}
-	// At the 90-day interval it is not due the next day, and is on day 90.
-	if Due(p, at(56)) {
-		t.Error("due one day after reaching the 90-day interval")
+	// At box 6 the interval is 16 days: not due the next day, due on day 16.
+	if Due(p, at(24)) {
+		t.Error("due one day after reaching box 6")
 	}
-	if !Due(p, at(55+90)) {
-		t.Error("not due 90 days after the last review")
+	if !Due(p, at(23+16)) {
+		t.Error("not due 16 days after the last review")
 	}
 
-	// One miss: down one box, streak gone, and due sooner because the interval
+	// One miss: the box HALVES, and the word is due sooner because the interval
 	// shortened — which is the entire point of the demotion.
+	before := p.Box
 	events = append(events, reviewed(word, false, at(145)))
 	p = Fold(events)[store.Key(word)]
 
-	if p.Box != LastBox-1 {
-		t.Errorf("after a miss box = %d, want %d", p.Box, LastBox-1)
-	}
-	if p.Streak != 0 {
-		t.Errorf("after a miss streak = %d, want 0", p.Streak)
+	if p.Box != before/2 {
+		t.Errorf("after a miss box = %d, want %d (half of %d)", p.Box, before/2, before)
 	}
 	if Mastered(p) {
 		t.Error("still mastered after a miss")
@@ -254,11 +327,11 @@ func FuzzFold(f *testing.F) {
 		got := Fold(events)
 		p := got[store.Key("w")]
 
-		if p.Box < 0 || p.Box > LastBox {
+		if p.Box < 0 || p.Box > ladderLimit {
 			t.Fatalf("box %d outside the ladder after %d events", p.Box, n)
 		}
-		if p.Streak < 0 {
-			t.Fatalf("negative streak %d", p.Streak)
+		if p.MaxBox < p.Box {
+			t.Fatalf("MaxBox %d is below Box %d after %d events", p.MaxBox, p.Box, n)
 		}
 		// Idempotent over a re-fold of the same slice: folding is a pure
 		// function of its input, so calling it twice cannot differ.
