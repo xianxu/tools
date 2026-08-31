@@ -50,13 +50,13 @@ is downstream of that one decision.
 
 ## Done when
 
-- [ ] Four options, exactly one correct, drawn from the local deck.
-- [ ] The CHOSEN option is recorded, not just correctness — see the note above;
+- [x] Four options, exactly one correct, drawn from the local deck.
+- [x] The CHOSEN option is recorded, not just correctness — see the note above;
       collapsing it to a boolean is what makes the weakness taxonomy expensive
       later.
-- [ ] Deterministic under a fixed seed.
-- [ ] Degrades sensibly when the deck has fewer than four words.
-- [ ] Works with the network off.
+- [x] Deterministic under a fixed seed.
+- [x] Degrades sensibly when the deck has fewer than four words.
+- [x] Works with the network off.
 
 ## Estimate
 
@@ -135,14 +135,14 @@ the ten decisions and the eight Done-when rows live in
 `workshop/plans/000007-vocab-form-meaning-plan.md`.
 
 - [x] Design via `sdlc start-plan` — plan doc written, cleared plan-quality in 3 rounds.
-- [ ] **T1** — `senseLabel`, `noadLabels`, `excludeCrossReferenced` in `cmd/define/glosslabel.go` (D2, D3, D3a).
-- [ ] **T2** — `Option`, `Axis`, `Choice` in `cmd/define/play/choice.go`, import-free (D4, D5a).
-- [ ] **T3** — `pickOptions` + `shuffle`: axis priority, seeded determinism, small decks (D1, D2a, D4a).
-- [ ] **T4a** — `ReviewEvent` gains the axis field ABOVE `At`; torn-record test pins the order (D6).
-- [ ] **T4b** — `Outcome`, `CaptureReview` and `Apply` carry the choice out (D7, D8).
-- [ ] **T5a** — `todaysQuestions` builds the pool, sampled under the seed within the cap (ARCH-CONSTRAINTS).
-- [ ] **T5b** — sitting-level tests: fallback to `Recall` on a small deck, and a network-off sitting.
-- [ ] **T6** — `cmd/define/README.md`, `atlas/define.md`, the project row.
+- [x] **T1** — `senseLabel`, `noadLabels`, `excludeCrossReferenced` in `cmd/define/glosslabel.go` (D2, D3, D3a).
+- [x] **T2** — `Option`, `Axis`, `Choice` in `cmd/define/play/choice.go`, import-free (D4, D5a).
+- [x] **T3** — `pickOptions` + `shuffle`: axis priority, seeded determinism, small decks (D1, D2a, D4a).
+- [x] **T4a** — `ReviewEvent` gains the axis field ABOVE `At`; torn-record test pins the order (D6).
+- [x] **T4b** — `Outcome`, `CaptureReview` and `Apply` carry the choice out (D7, D8).
+- [x] **T5a** — `todaysQuestions` builds the pool, sampled under the seed within the cap (ARCH-CONSTRAINTS).
+- [x] **T5b** — sitting-level tests: fallback to `Recall` on a small deck, and a network-off sitting.
+- [x] **T6** — `cmd/define/README.md`, `atlas/define.md`, the project row.
 
 ## Log
 
@@ -243,3 +243,36 @@ rather than trading one horn for the other.
 - **Recording the chosen option is unchanged and still the load-bearing bit.**
   The reduced taxonomy is readable only because the event keeps which option was
   picked; collapsing to a boolean forecloses it exactly as `#17`'s close warned.
+
+## Log
+
+### 2026-08-30 — built and closed in one pass
+
+Two claims in the plan were disproved by MEASURING the corpus before writing
+code, and both would have shipped as bugs:
+
+- **D2 — "labels lead the gloss, so extraction is a prefix match."** A grammar
+  bracket or parenthetical often comes first (`[no object] Military (of a
+  soldier) …`), and NOAD stacks regional labels in front of real ones. A prefix
+  match would have called exactly the labelled senses the axes are built from
+  unlabelled.
+- **D4 — "`Sense.Gloss` is a single clean definition line", called verified.** It
+  was checked on three entries, and one of the three (`bank`) has a sense whose
+  gloss is literally `[with object]`. `readGloss` now returns `Usable`.
+
+**A UX bug the plan never contemplated, found by reading the screen.** The
+grading prompt was a CONST in the loop spelling form 2.1's `y`/`n`. Under form
+2.3's numbered options it told the learner to press a key that did nothing — and
+no test could see it, because every test typed the keys the const named.
+`Question.Keys()` moves it onto the form; the loop keeps the session's reserved
+half. The doc guard now derives from the shipped forms.
+
+**Every `--play` pty check seeded a ONE-word deck**, so all of them were
+measuring the form 2.1 fallback and none could see form 2.3. Fixed with
+`seedDeckN`, and the new pty test is the plan's manual verification written as a
+test: real deck, real NOAD glosses, real event file, axis read back out.
+
+**Known rough edge, left deliberately:** long option glosses wrap to column 0
+with no hanging indent. Fixing it means `play` knowing the terminal width, which
+would give the caller ownership of line-breaking for a form whose point is that
+it owns no formatting. Recorded at `optionLine`.
