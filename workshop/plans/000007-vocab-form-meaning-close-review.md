@@ -554,3 +554,163 @@ findings:
 4. **`cmd/define/README.md:70`** — "A word is never offered as a distractor against a word whose dictionary definition mentions it." `mentions` (`glosslabel.go:268`) returns `false` for any headword shorter than `minCrossRefWord` (6), so the guard never fires for short words. "Never" should be the measured claim.
 
 And the three from BR-13's own list that round 2 did not touch: `optionpool_test.go:56-59` (the lookup-count check does not establish a non-empty pool — measured above), `pty_conformance_test.go:743-745` (the superseded `misses >= missed lines` paragraph still sits above its replacement), and `README.md:252` (`kinds: looked-up, asked`, missing `reviewed` and the new `missed:` key this diff writes into that block).
+
+---
+
+## Re-review — 2026-08-30T21:00:40-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 7 — review form 2.3: meaning multiple choice from the local deck |
+| repo | tools |
+| issue file | workshop/issues/000007-vocab-form-meaning.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a8962469ff08154f5377a7572586c575c2d4610f..6e79cad0aa7c619822a0036d77f2441f58728bea |
+| command | sdlc close --issue 7 |
+| reviewer | claude |
+| timestamp | 2026-08-30T21:00:40-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Round 3's `entryDefines` gate is real, correctly reasoned, and pinned by a test that goes red when I disable it — I verified by reverting in a scratch worktree. But the gate was applied to **one of the two sites that turn a (word, entry) pair into option material**. `buildPool` → `optionCandidates` is ungated, so a deck word NOAD redirects still contributes its *base entry's* glosses under the derived word's name. Measured against the committed corpus: a deck of `{bargain, bargainer, mesa, quokka}` produces the question "bargain" with options 1 and 2 **byte-identical**, one marked Correct and one graded Wrong — the learner who picks the duplicate is recorded as a miss with a fabricated axis and the word is demoted. That is ARCH-PURPOSE's "the instance, not the class" clause, on the very finding that named the class. Everything else in the diff is strong: the seam widening is clean, the tests are properties rather than restatements, README and atlas are substantially updated. Full suite, `-race` and `go vet` are green (the pty conformance test skips here — no pty available in this environment, so I could not re-verify the terminal check).
+
+**1. Strengths**
+
+- `cmd/define/play/session.go:265` — `Missed` as an *optional capability* rather than a widened `Grade` is the right seam: `Apply` names a capability, never a form, so Done-when 7 stays a property. `missed_test.go:44` pins the form-agnostic half.
+- `cmd/define/capture.go:141` — D8 enforced by the type (`AxisNone.String() == ""` + `omitempty`) instead of a branch a caller could forget. That is the difference between an invariant and a convention.
+- `cmd/define/store/yaml_test.go:434` — the torn-record test rewritten to derive `at`-is-last from the record itself rather than comparing against one named field. The old form would have stayed green for this very diff's new field.
+- `cmd/define/optionpool_test.go:29` — `countingDict` makes the ARCH-CONSTRAINTS budget falsifiable, and round 3 correctly closed the "a bound is satisfied by zero" hole by also asserting a `*play.Choice` actually comes out.
+- `cmd/define/doc_sync_test.go:50` — the README prompt check now iterates *shipped forms* and composes the line the way `draw` does, so the y/n-under-digits bug cannot recur silently.
+
+**2. Critical findings**
+
+**`cmd/define/optionpool.go:52` — the pool is not gated by `entryDefines`, so a redirected entry's glosses enter questions under the wrong word.** *(2nd finding in family `answer-must-define-the-prompted-word` — do not fix only this call site; the rule below is the deliverable.)*
+
+The rule: **every gloss that enters a question — target *or* distractor — must come from an entry that defines the word it is attributed to, and no two options in one set may carry the same gloss.** The enumerable sites are exactly two: `targetCandidate` (gated at `optionpool.go:170`) and `optionCandidates` via `buildPool` (ungated). Three measured consequences:
+
+- *Two identical options, one graded wrong.* Deck `{bargain, bargainer, mesa, quokka}`, `bargain` served the same fixture NOAD returns for it (`bargainer.txt` **is** the `bargain` entry): options 1 and 2 are both "an agreement between two or more parties as to what each party will do for the other"; option 2 is `Correct:false`. Picking it writes `missed: general` and demotes the word.
+- *Two identical distractors.* Same run: the `mesa` and `quokka` questions each carry the `bargain` gloss twice, once as `bargain` and once as `bargainer`.
+- *The near-synonym guard is systematically blind for redirected candidates* — `crossReferenced(target.Word, target.Gloss, c.Word, c.Gloss)` at `optionpool.go:182` matches on the *attributed* word (`bargainer`), which by construction never appears in the gloss it is attached to. This one is always on, not coincidence-dependent, and the atlas already calls inflected-form redirects "the common case" (`atlas/define.md:429`).
+
+Fix (verified in a scratch worktree — it makes the collision disappear and the suite stays green):
+
+```go
+// buildPool
+pe := ParseEntry(text)
+if !entryDefines(k, pe) {
+        continue // the glosses belong to the base word, not to k
+}
+pool = append(pool, optionCandidates(k, pe)...)
+```
+
+plus a gloss-level dedup in `PickOptions` (`used` is keyed on `Word` only at `pick.go:60`), which also covers two genuinely distinct words that share a gloss. Pin both halves: a `play_loop_test.go` row with a base and its derived form in one deck asserting no two options share a gloss, and a `pick_test.go` row where a pool candidate's gloss equals the target's.
+
+**3. Important findings**
+
+**`workshop/plans/000007-vocab-form-meaning-plan.md:125` — the Core concepts table names entities the head commit deleted or never added.** *(3rd finding in family `plan-artifact-must-match-tree`.)* Measured, all three introduced by the round that recorded the derivation rule:
+
+- row `prng` / `shuffleOptions` → `cmd/define/play/pick.go` — `shuffleOptions` was **deleted by this commit** (BR-16's fix renamed it to the generic `shuffle`);
+- `entryDefines` (`optionpool.go:134`), added by this commit, has **no row** — it appears only in the Revisions prose;
+- the bullet at `plan.md:138` still calls the function `pickOptions`, which the round-3 sweep's own grep hit and did not fix, while the plan claims at `plan.md:442` that "re-running the sweep is now clean".
+
+The rule was already stated in round 2 ("entity tables are DERIVED from the tree at the close") and then not executed — the same meta-failure BR-13 diagnosed. A discipline that has now failed twice in consecutive rounds should be made mechanical: this repo already owns the pattern (`doc_sync_test.go`), and the check is cheap — every backticked identifier in the Name column of the plan's Core-concepts / Integration-points tables must resolve in the file its "Lives in" column names. (The review contract nominally grades a table/code contradiction Critical; I am ranking it Important because it has no runtime effect and the Critical slot belongs to the defect that breaks a sitting.)
+
+**4. Minor findings**
+
+- **BR-13 is disposed `not-addressed`** — the five named instances are fixed, the class is not. Survivors the literal-string sweep could not reach: `optionpool_test.go:79-80` states *"the general one is the FIRST usable sense of the first block"* — the exact claim BR-13 named, missed only because the grep was `first sense of the first block` and this one has "usable" in it, in the file added this round to pin D4a; `pick_test.go:238` says *"The PRNG and the option shuffle are GOLDEN"* when only the PRNG sequence has literals (no test pins `(target, pool, seed)` → option order); `choice.go:70` says `Word` "is here for the reveal, which names what they picked", but `Reveal()` prints `optionLine(i, gloss)` and `Option.Word` is read by nothing in production; and `README.md:83-85` plus the atlas's new form-2.3 section both enumerate the fallback reasons as *one-word deck / all cross-references* when round 3 added a third. The enforceable rule: a literal grep finds the phrasing the last reviewer used, not the claim — derive the claim (`doc_sync_test.go`) where it is mechanical, and **delete** it rather than restate it where it is not.
+- **`cmd/define/play_loop.go:355`** — `gradePrompt`'s `if q == nil` is unreachable: `draw` returns at `play_loop.go:306` when `Current()` is nil, and the only other caller is `doc_sync_test.go:60`, which always passes a form. *(2nd in family `unreachable-branch`; the rule: a guard whose precondition every caller already establishes is dead code that reads as protection.)*
+- `buildPool` takes the whole `deps` struct to use one field (`d.dict`); a `Dictionary` parameter would make its purity boundary obvious.
+- Due words that are also sampled into the pool are looked up and parsed twice. Inside the declared envelope, noted only because `poolCap` is tuned against it.
+
+**5. Test coverage notes**
+
+- The bug in §2 is invisible to the suite because no test asserts **option-set distinctness**. `TestPickOptionsHasOneAnswer` checks that the `Correct` option carries the target's gloss but never that no *distractor* does; `TestPickOptionsNeverRepeatsAWord` dedups on `Word`, which is exactly the key the defect slips past. One assertion — "no two options in a set share a gloss" — added to both would have caught it.
+- Everything else about the pool path is covered end to end: cost envelope with a counting seam, axis selection derived from the `Axis` set, sitting-level variety (≥8 distinct sets over 20 questions), offline sitting with a panicking model seam, and the axis reaching a real event file.
+- I could not exercise `TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis` — no pty available here, so it skips. The issue's Log claims a real-terminal run; that claim is unverified from this seat.
+
+**6. Architectural notes**
+
+- **ARCH-DRY — pass.** BR-16 is genuinely closed: `shuffle[T any]` at `pick.go:156` is called from both sites and `shuffleOptions` is gone from the tree. `SampleStrings` correctly reuses `play`'s PRNG rather than growing a second one in `main`.
+- **ARCH-PURE — pass.** `play` stays import-free; all prose parsing is in `main`; `choiceFor`/`PickOptions`/`readGloss` are pure and tested without IO. The dictionary is the only injected seam.
+- **ARCH-PURPOSE — flag.** See §2. The purpose is "four options, exactly one correct"; the shadow-sweep over consumers of "the entry must define the word" finds one derived (`targetCandidate`) and one hand-waved (`optionCandidates`). Done-when 1 is ticked in the issue while a reachable deck makes it false.
+- **ARCH-MOCK — pass.** The committed corpus + `fakeDictionary` back every form test through the same seam production uses; the accent-insensitive miss path reuses the production predicate.
+- **ARCH-CONSTRAINTS — pass.** `poolCap` is declared, implemented, and enforced by a counting seam that now also asserts the output is non-degenerate. Nothing new sits on the per-keystroke path.
+
+**7. Plan revision recommendations**
+
+Two `## Revisions` entries, both under a round-4 heading:
+
+1. *"The entry-defines gate belongs to every site that builds option material, not just the target."* Record that `buildPool`/`optionCandidates` was the second consumer, that the near-synonym guard is blind for redirected candidates because it matches the attributed word, and that the fix is a gate at pool-build plus a gloss-level dedup in `PickOptions`. Add a Done-when row: *"no two options in a set carry the same gloss"*, pinned by the new `play_loop_test.go` and `pick_test.go` rows.
+2. *"The Core concepts table drifted in the round that recorded the rule for keeping it current."* Correct the `shuffleOptions` row to `shuffle`, add an `entryDefines` row, rename the `pickOptions` bullet, and replace the derivation *discipline* with a derivation *check* — state the mechanism (every Name-column identifier must resolve in its Lives-in file) rather than restating the instruction that has now failed twice.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Named instances fixed; four survivors remain because the sweep grepped literal phrasings, not claims.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Verified by reverting the gate in a scratch worktree - the bargainer row goes red without it.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      shuffle[T any] is called from both sites; shuffleOptions is gone from the tree.
+findings:
+  - id: new
+    severity: Critical
+    family: answer-must-define-the-prompted-word
+    title: |
+      buildPool is not gated by entryDefines, so a redirect puts a base entry's gloss into questions under the derived word
+    detail: |
+      The round-3 fix gated targetCandidate/choiceFor and left optionCandidates via buildPool
+      ungated - the instance, not the class. The rule: every gloss entering a question,
+      target OR distractor, must come from an entry that defines the word it is attributed
+      to, and no two options in one set may share a gloss. Measured over the committed
+      corpus with deck {bargain, bargainer, mesa, quokka} (bargainer.txt IS the bargain
+      entry, which is what NOAD returns for both): the "bargain" question offers options 1
+      and 2 byte-identical, option 2 marked Correct:false, so picking it records a miss with
+      a fabricated axis and demotes the word; the mesa and quokka questions each carry the
+      same gloss twice. Separately and always-on, crossReferenced (optionpool.go:182)
+      matches on the attributed word, which by construction never appears in the gloss it is
+      attached to, so the near-synonym guard is blind for every redirected candidate.
+      Fix verified in a scratch worktree - skip a pool word when !entryDefines(k, pe), and
+      dedup PickOptions on gloss as well as Word (pick.go:60). Pin with a play_loop_test.go
+      row putting a base and its derived form in one deck, and a pick_test.go row where a
+      pool candidate's gloss equals the target's.
+  - id: new
+    severity: Important
+    family: plan-artifact-must-match-tree
+    title: |
+      The plan's Core concepts table names shuffleOptions, which this commit deleted, and omits entryDefines, which it added
+    detail: |
+      Third finding in this family, so the deliverable is the mechanism rather than the rows.
+      Measured drift, all introduced by the round that recorded the derivation rule -
+      plan.md:125 names `prng` / `shuffleOptions` at play/pick.go but BR-16's fix renamed it
+      to the generic `shuffle`; entryDefines (optionpool.go:134) has no row and appears only
+      in the Revisions prose; plan.md:138 still calls the function `pickOptions`, a hit the
+      round-3 sweep's own grep returned while plan.md:442 claims the sweep is clean. Round 2
+      recorded "entity tables are DERIVED from the tree at the close" and round 3 changed
+      the tree without re-running it. Make it mechanical, as doc_sync_test.go already does
+      for the README and atlas - every backticked identifier in the Name column must resolve
+      in the file its Lives-in column names.
+  - id: new
+    severity: Minor
+    family: unreachable-branch
+    title: |
+      gradePrompt's nil guard is dead - draw already returns when Current() is nil
+    detail: |
+      play_loop.go:355. draw returns at play_loop.go:306 when s.Current() is nil, and the
+      only other caller is doc_sync_test.go:60, which always passes a form. Second in this
+      family after BR-9's Choice.Keys() branch, so the rule is the deliverable: a nil/empty
+      guard whose precondition every caller already establishes is dead code that reads as
+      protection, and it hides which layer actually owns the invariant.
+```

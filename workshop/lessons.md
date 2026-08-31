@@ -2641,3 +2641,35 @@ not a bug at all; the bug was three feet to the left, and only surfaced because
 the first move was to probe a KNOWN-GOOD control rather than the reported word.
 When a miss is reported on a path where missing is normal, establish that the
 path works at all before investigating the input.
+
+## An unticked checkbox can silently DISABLE a repo guard (define #7, close round 4)
+
+`TestPlanTablesNameEntitiesThatExist` exempts rows whose status is `new` while
+the plan still has any `- [ ] ` line — reasonably, since a plan under
+construction names entities that do not exist yet. `#7` ticked the tasks in the
+ISSUE and not in the PLAN DOC, so `inProgress` stayed true through four close
+review rounds and every `new` row went unchecked. The table drifted three times
+— `shuffleOptions` deleted, `entryDefines` added, five renames — and a reviewer
+found it each round while the guard written for exactly that sat idle.
+
+Two things to carry:
+
+1. **A conditional exemption is a switch, and something has to turn it off.**
+   "Skip while in progress" is right, but nothing made "no longer in progress"
+   happen — closing ticks the issue, and the guard reads the plan. The moment
+   the plan's tasks were ticked the guard fired immediately and correctly.
+   **Tick the plan document's own task list at close, not just the issue's.**
+
+2. **Reviewers found what the guard would have.** Three rounds of
+   `plan-artifact-must-match-tree` findings were a human doing, by hand and
+   imperfectly, a job already automated and switched off. When a finding names a
+   class the repo already guards, the first question is not "how do I fix the
+   instances" but "why did the guard not fire" — the answer is worth more than
+   the fix.
+
+**And the sibling guard was simply broken.** `TestPlanNamedTestsExist` globbed
+`cmd/define/*_test.go` — flat — so a plan pinning a test in `play/` was told it
+does not exist. `#7` tripped it with six at once, because form 2.3's selection is
+pure and its tests live in `play/` BY DESIGN. A guard that fails on the
+arrangement the architecture asks for trains people to weaken the guard, so it
+was fixed to walk the tree rather than the plan being edited to appease it.

@@ -78,6 +78,16 @@ func buildPool(d deps, deck []store.Word, seed uint64) []play.Candidate {
 // `[with object]` or `(plural men /men/)` or `another term for menhaden`, and
 // any of those as an option would make the form look broken. See readGloss.
 func optionCandidates(word string, e Entry) []play.Candidate {
+	// GUARDED HERE, not in the caller. Round 3 put this check in choiceFor and
+	// caught only the TARGET; buildPool kept feeding `bargain`'s glosses into
+	// every question labelled `bargainer`, so a learner could pick a distractor
+	// whose word and meaning belonged to different entries. Both producers of a
+	// (word, gloss) pair now guard themselves, which is what makes the rule
+	// "a gloss is only ever attributed to the word its entry defines" true of
+	// every path rather than of the one path a finding named.
+	if !entryDefines(word, e) {
+		return nil
+	}
 	var out []play.Candidate
 	seen := map[play.Axis]bool{}
 	for _, b := range e.Blocks {
@@ -104,6 +114,9 @@ func optionCandidates(word string, e Entry) []play.Candidate {
 // or `Law` sense is still what NOAD leads with, and substituting a later
 // unlabelled one would ask about a meaning the entry does not put first.
 func targetCandidate(word string, e Entry) (play.Candidate, bool) {
+	if !entryDefines(word, e) {
+		return play.Candidate{}, false
+	}
 	for _, b := range e.Blocks {
 		for _, s := range b.Senses {
 			if f := readGloss(s.Gloss); f.Usable {
@@ -165,11 +178,9 @@ func entryDefines(word string, e Entry) bool {
 // invisible to the learner and keeps the sitting the length the schedule asked
 // for.
 func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint64) *play.Choice {
-	// A redirect to a base headword cannot be a recognition question: the gloss
-	// would be a different word's meaning, offered as this one's.
-	if !entryDefines(word, e) {
-		return nil
-	}
+	// No entryDefines call here: targetCandidate guards itself, and so does
+	// optionCandidates. A check at this level is what let the distractor path
+	// through unguarded once already.
 	target, ok := targetCandidate(word, e)
 	if !ok {
 		return nil

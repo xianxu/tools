@@ -286,6 +286,72 @@ rounds:
           family: duplicated-algorithm-should-be-one-helper
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-30T21:00:40-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: not-addressed
+          note: Named instances fixed; four survivors remain because the sweep grepped literal phrasings, not claims.
+          round: 4
+        - id: BR-15
+          disposition: addressed
+          note: Verified by reverting the gate in a scratch worktree - the bargainer row goes red without it.
+          round: 4
+        - id: BR-16
+          disposition: addressed
+          note: shuffle[T any] is called from both sites; shuffleOptions is gone from the tree.
+          round: 4
+      findings:
+        - id: BR-17
+          severity: Critical
+          title: buildPool is not gated by entryDefines, so a redirect puts a base entry's gloss into questions under the derived word
+          detail: |-
+            The round-3 fix gated targetCandidate/choiceFor and left optionCandidates via buildPool
+            ungated - the instance, not the class. The rule: every gloss entering a question,
+            target OR distractor, must come from an entry that defines the word it is attributed
+            to, and no two options in one set may share a gloss. Measured over the committed
+            corpus with deck {bargain, bargainer, mesa, quokka} (bargainer.txt IS the bargain
+            entry, which is what NOAD returns for both): the "bargain" question offers options 1
+            and 2 byte-identical, option 2 marked Correct:false, so picking it records a miss with
+            a fabricated axis and demotes the word; the mesa and quokka questions each carry the
+            same gloss twice. Separately and always-on, crossReferenced (optionpool.go:182)
+            matches on the attributed word, which by construction never appears in the gloss it is
+            attached to, so the near-synonym guard is blind for every redirected candidate.
+            Fix verified in a scratch worktree - skip a pool word when !entryDefines(k, pe), and
+            dedup PickOptions on gloss as well as Word (pick.go:60). Pin with a play_loop_test.go
+            row putting a base and its derived form in one deck, and a pick_test.go row where a
+            pool candidate's gloss equals the target's.
+          family: answer-must-define-the-prompted-word
+          round: 4
+        - id: BR-18
+          severity: Important
+          title: The plan's Core concepts table names shuffleOptions, which this commit deleted, and omits entryDefines, which it added
+          detail: |-
+            Third finding in this family, so the deliverable is the mechanism rather than the rows.
+            Measured drift, all introduced by the round that recorded the derivation rule -
+            plan.md:125 names `prng` / `shuffleOptions` at play/pick.go but BR-16's fix renamed it
+            to the generic `shuffle`; entryDefines (optionpool.go:134) has no row and appears only
+            in the Revisions prose; plan.md:138 still calls the function `pickOptions`, a hit the
+            round-3 sweep's own grep returned while plan.md:442 claims the sweep is clean. Round 2
+            recorded "entity tables are DERIVED from the tree at the close" and round 3 changed
+            the tree without re-running it. Make it mechanical, as doc_sync_test.go already does
+            for the README and atlas - every backticked identifier in the Name column must resolve
+            in the file its Lives-in column names.
+          family: plan-artifact-must-match-tree
+          round: 4
+        - id: BR-19
+          severity: Minor
+          title: gradePrompt's nil guard is dead - draw already returns when Current() is nil
+          detail: |-
+            play_loop.go:355. draw returns at play_loop.go:306 when s.Current() is nil, and the
+            only other caller is doc_sync_test.go:60, which always passes a form. Second in this
+            family after BR-9's Choice.Keys() branch, so the rule is the deliverable: a nil/empty
+            guard whose precondition every caller already establishes is dead code that reads as
+            protection, and it hides which layer actually owns the invariant.
+          family: unreachable-branch
+          round: 4
+      blocked: true
 ---
 
 # Gate ledger — tools#7 (boundary-review)
@@ -458,8 +524,53 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   `func shuffle[T any](p *prng, xs []T)` unifies them and needs no import, so the
   package's empty-allowlist guard is not the reason they are separate.
 
+## Round 4 — 2026-08-30T21:00:40-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-13 — not-addressed — Named instances fixed; four survivors remain because the sweep grepped literal phrasings, not claims.
+- BR-15 — addressed — Verified by reverting the gate in a scratch worktree - the bargainer row goes red without it.
+- BR-16 — addressed — shuffle[T any] is called from both sites; shuffleOptions is gone from the tree.
+
+### Raised
+
+- **BR-17** [Critical] `answer-must-define-the-prompted-word` buildPool is not gated by entryDefines, so a redirect puts a base entry's gloss into questions under the derived word
+  The round-3 fix gated targetCandidate/choiceFor and left optionCandidates via buildPool
+  ungated - the instance, not the class. The rule: every gloss entering a question,
+  target OR distractor, must come from an entry that defines the word it is attributed
+  to, and no two options in one set may share a gloss. Measured over the committed
+  corpus with deck {bargain, bargainer, mesa, quokka} (bargainer.txt IS the bargain
+  entry, which is what NOAD returns for both): the "bargain" question offers options 1
+  and 2 byte-identical, option 2 marked Correct:false, so picking it records a miss with
+  a fabricated axis and demotes the word; the mesa and quokka questions each carry the
+  same gloss twice. Separately and always-on, crossReferenced (optionpool.go:182)
+  matches on the attributed word, which by construction never appears in the gloss it is
+  attached to, so the near-synonym guard is blind for every redirected candidate.
+  Fix verified in a scratch worktree - skip a pool word when !entryDefines(k, pe), and
+  dedup PickOptions on gloss as well as Word (pick.go:60). Pin with a play_loop_test.go
+  row putting a base and its derived form in one deck, and a pick_test.go row where a
+  pool candidate's gloss equals the target's.
+- **BR-18** [Important] `plan-artifact-must-match-tree` The plan's Core concepts table names shuffleOptions, which this commit deleted, and omits entryDefines, which it added
+  Third finding in this family, so the deliverable is the mechanism rather than the rows.
+  Measured drift, all introduced by the round that recorded the derivation rule -
+  plan.md:125 names `prng` / `shuffleOptions` at play/pick.go but BR-16's fix renamed it
+  to the generic `shuffle`; entryDefines (optionpool.go:134) has no row and appears only
+  in the Revisions prose; plan.md:138 still calls the function `pickOptions`, a hit the
+  round-3 sweep's own grep returned while plan.md:442 claims the sweep is clean. Round 2
+  recorded "entity tables are DERIVED from the tree at the close" and round 3 changed
+  the tree without re-running it. Make it mechanical, as doc_sync_test.go already does
+  for the README and atlas - every backticked identifier in the Name column must resolve
+  in the file its Lives-in column names.
+- **BR-19** [Minor] `unreachable-branch` gradePrompt's nil guard is dead - draw already returns when Current() is nil
+  play_loop.go:355. draw returns at play_loop.go:306 when s.Current() is nil, and the
+  only other caller is doc_sync_test.go:60, which always passes a form. Second in this
+  family after BR-9's Choice.Keys() branch, so the rule is the deliverable: a nil/empty
+  guard whose precondition every caller already establishes is dead code that reads as
+  protection, and it hides which layer actually owns the invariant.
+
 ## Open findings
 
 - **BR-13** [Minor] `docs-restate-behaviour-inaccurately` Five doc comments state behaviour the code does not have
-- **BR-15** [Important] `answer-must-define-the-prompted-word` A derivative lookup makes form 2.3's "correct" option the definition of a different word
-- **BR-16** [Minor] `duplicated-algorithm-should-be-one-helper` The same reverse Fisher-Yates is written twice in pick.go
+- **BR-17** [Critical] `answer-must-define-the-prompted-word` buildPool is not gated by entryDefines, so a redirect puts a base entry's gloss into questions under the derived word
+- **BR-18** [Important] `plan-artifact-must-match-tree` The plan's Core concepts table names shuffleOptions, which this commit deleted, and omits entryDefines, which it added
+- **BR-19** [Minor] `unreachable-branch` gradePrompt's nil guard is dead - draw already returns when Current() is nil

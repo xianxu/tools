@@ -121,13 +121,14 @@ SHIPPED. The originals named five entities the tree does not have, because the
 | `Axis` | `cmd/define/play/choice.go` | new | PURE — the reduced taxonomy: `AxisDomain`, `AxisRegister`, `AxisGeneral`, with a `numAxes` sentinel the guard derives from |
 | `Candidate` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — one possible distractor (word, gloss, axis), pre-expanded by `main`. Not in the original table |
 | `PickOptions` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — target + candidates + seed → options. Was planned as unexported `pickOptions` in `choice.go`; `main` has to call it |
-| `prng` / `shuffleOptions` | `cmd/define/play/pick.go` | new | PURE — xorshift64. Was planned as a bare `shuffle` func; it became a type once the sampler needed the same stream (ARCH-DRY) |
+| `prng` / `shuffle` | `cmd/define/play/pick.go` | new | PURE — xorshift64, and one GENERIC Fisher-Yates over it. The planned bare `shuffle` became a type plus a generic helper once the sampler and the selector both needed the same stream (ARCH-DRY) |
 | `SampleStrings` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — partial Fisher-Yates so `main` samples the deck with `play`'s PRNG rather than growing a second one. Not in the original table, and the one row that is genuinely new downstream API |
 | `readGloss` / `glossFacts` | `cmd/define/glosslabel.go` | new | PURE — replaces the planned `senseLabel`. It WALKS the head of a gloss rather than matching a prefix, and returns axis, label, text and `Usable` from one pass — see the 2026-08-30 Revisions for the measurement that forced this |
 | `leadingLabel` / `hasLabelPrefix` | `cmd/define/glosslabel.go` | new | PURE — longest-match on a word boundary |
 | `noadDomainLabels`, `noadRegisterLabels`, `noadRegionalLabels` | `cmd/define/glosslabel.go` | new | PURE — the closed tables (D3). THREE, not the planned single `noadLabels`: regional had to be recognized in order to be scanned past without being an axis |
 | `crossReferenced` / `mentions` | `cmd/define/glosslabel.go` | new | PURE — D3a's near-synonym guard, planned as `excludeCrossReferenced` |
 | `optionCandidates` / `targetCandidate` / `choiceFor` | `cmd/define/optionpool.go` | new | PURE — D4a's sense selection and the per-question near-synonym filter. A file the plan did not anticipate |
+| `entryDefines` | `cmd/define/optionpool.go` | new | PURE — the guard both producers call: a gloss is only ever attributed to the word whose entry defines it (BR-15/BR-17). Not anticipated by any plan row |
 | `seedFor` | `cmd/define/optionpool.go` | new | PURE — FNV-1a over word + day |
 
 - **`Choice`** — shows a word and four glosses, and remembers which was picked.
@@ -161,12 +162,12 @@ SHIPPED. The originals named five entities the tree does not have, because the
 
 Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
-- [ ] **T1 — `senseLabel` and the closed table** (D2, D3). Prefix match at the head of a gloss; stacked labels (`"Law historical"`) take the first; `"informal, mainly North American English"` matches `informal`. Table tests over real corpus glosses, plus the negative: a gloss that merely CONTAINS a label word later on is unlabelled.
-- [ ] **T2 — `Option`, `Axis`, `Choice`** (D4, D5). `Prompt` renders the word and the numbered glosses; `Grade` maps `1`–`4` and nothing else — the reserved keys are the session's (`play/question.go:74-77`). `Reveal` names the right answer. The chosen index is remembered.
-- [ ] **T3 — `pickOptions`** (D1). Target + candidates + seed → the correct option plus up to three distractors varying by axis, never a near-synonym. Deterministic: same seed, same set, same order. Table tests including D9's small decks.
-- [ ] **T4 — the choice survives into the record.** `Outcome` carries the axis, `CaptureReview` takes it, `ReviewEvent` gains a field ABOVE `At` (D6), and a correct answer writes none (D8). The torn-record test is what pins the ordering.
-- [ ] **T5 — wire it into `--play`.** `todaysQuestions` (`play_loop.go:233`) builds the pool and constructs `Choice` where the deck allows and `Recall` where it does not (D9). Nothing in `playSession` changes, which is the claim `#6` made and this is the first chance to test.
-- [ ] **T6 — docs**: `cmd/define/README.md`'s review section gains the form; `atlas/define.md` gains the selection rule and the reduced taxonomy; the project file's breakdown row ticks.
+- [x] **T1 — `senseLabel` and the closed table** (D2, D3). Prefix match at the head of a gloss; stacked labels (`"Law historical"`) take the first; `"informal, mainly North American English"` matches `informal`. Table tests over real corpus glosses, plus the negative: a gloss that merely CONTAINS a label word later on is unlabelled.
+- [x] **T2 — `Option`, `Axis`, `Choice`** (D4, D5). `Prompt` renders the word and the numbered glosses; `Grade` maps `1`–`4` and nothing else — the reserved keys are the session's (`play/question.go:74-77`). `Reveal` names the right answer. The chosen index is remembered.
+- [x] **T3 — `pickOptions`** (D1). Target + candidates + seed → the correct option plus up to three distractors varying by axis, never a near-synonym. Deterministic: same seed, same set, same order. Table tests including D9's small decks.
+- [x] **T4 — the choice survives into the record.** `Outcome` carries the axis, `CaptureReview` takes it, `ReviewEvent` gains a field ABOVE `At` (D6), and a correct answer writes none (D8). The torn-record test is what pins the ordering.
+- [x] **T5 — wire it into `--play`.** `todaysQuestions` (`play_loop.go:233`) builds the pool and constructs `Choice` where the deck allows and `Recall` where it does not (D9). Nothing in `playSession` changes, which is the claim `#6` made and this is the first chance to test.
+- [x] **T6 — docs**: `cmd/define/README.md`'s review section gains the form; `atlas/define.md` gains the selection rule and the reduced taxonomy; the project file's breakdown row ticks.
 
 ## Done when
 
@@ -443,3 +444,41 @@ repeated the very reproducible-from-a-log claim it was written to replace;
 narrow and worth keeping: **recording a rule is not applying it** — the round
 that writes the rule must also run it, or the next round finds the instance the
 rule was written to catch.
+
+### 2026-08-30 — close review round 4: the guard was switched off the whole time
+
+**BR-17 (Critical) — the round-3 fix was applied to the caller, so it caught the
+target and not the distractors.** `choiceFor` checked `entryDefines`; `buildPool`
+did not. So `bargain`'s glosses kept flowing into every question labelled
+`bargainer`, and a learner picking that distractor recorded a choice whose word
+and meaning came from different entries.
+
+The class fix is not a third call site. **Both PRODUCERS of a (word, gloss) pair
+now guard themselves** — `optionCandidates` and `targetCandidate` — and
+`choiceFor`'s own check is deleted, because a check at the caller is precisely
+what let the second path through. The rule is now true of every path rather than
+of the paths a finding happened to name, and
+`TestNoCandidateEverCarriesAnotherWordsGloss` states it as a property over the
+whole corpus, so a fixture added later cannot reintroduce it.
+
+**BR-18 was the fourth `plan-artifact-must-match-tree` finding, and the cause was
+not carelessness — the guard for it was disabled.**
+`TestPlanTablesNameEntitiesThatExist` exempts `new` rows while the plan has any
+unticked `- [ ] `. The tasks were ticked in the ISSUE and not in THIS DOCUMENT,
+so the exemption held through four rounds and every `new` row went unchecked
+while reviewers found the drift by hand each time. Ticking the plan's own task
+list made the guard fire on `shuffleOptions` within seconds.
+
+That is the real deliverable of this round, and it supersedes round 2's rule.
+Round 2 said *derive the table from the tree at close*, done by hand. The tree
+already had a guard that does it. **The rule is: tick the PLAN's task list at
+close — that is what arms the check — and when a reviewer names a class the repo
+already guards, ask why the guard did not fire before fixing the instances.**
+
+**And its sibling was broken outright.** `TestPlanNamedTestsExist` globbed
+`cmd/define/*_test.go`, flat, so the six tests this plan pins in `play/` were
+reported as nonexistent. Form 2.3's selection is pure and its tests live there BY
+DESIGN — ARCH-PURE asks for exactly that arrangement — so the guard was fixed to
+walk the tree. A guard that fails on the structure the architecture requires
+teaches people to edit the plan until the guard shuts up, which is worse than no
+guard.

@@ -229,3 +229,60 @@ func TestEntryDefinesTheWordItWasLookedUpFor(t *testing.T) {
 		}
 	}
 }
+
+// A redirect must not supply DISTRACTORS either, which is the half round 3
+// missed: gating only the target left `bargain`'s glosses in every question,
+// labelled `bargainer`, so picking one recorded a choice whose word and meaning
+// came from different entries.
+func TestARedirectSuppliesNoOptionMaterialAtAll(t *testing.T) {
+	d := testDict(t)
+	raw, err := d.Lookup("bargainer")
+	if err != nil {
+		t.Fatalf("bargainer is not in the committed corpus: %v", err)
+	}
+	e := ParseEntry(raw)
+
+	if got := optionCandidates("bargainer", e); len(got) != 0 {
+		t.Errorf("a redirect produced %d distractor candidates: %+v — every one carries "+
+			"`bargain`'s meaning under the word `bargainer`", len(got), got)
+	}
+	if _, ok := targetCandidate("bargainer", e); ok {
+		t.Error("a redirect produced a target candidate")
+	}
+	// And the entry it redirects TO is still perfectly good material.
+	base, err := d.Lookup("bargain")
+	if err == nil {
+		if got := optionCandidates("bargain", ParseEntry(base)); len(got) == 0 {
+			t.Error("the base word supplies no candidates; the guard is too broad")
+		}
+	}
+}
+
+// The rule stated as a property over the WHOLE corpus, so a fixture added later
+// cannot reintroduce the class: no candidate may carry a gloss from an entry
+// that does not define its word.
+func TestNoCandidateEverCarriesAnotherWordsGloss(t *testing.T) {
+	d := testDict(t)
+	if len(d.entries) == 0 {
+		t.Fatal("empty corpus; this test would be vacuous")
+	}
+	checked := 0
+	for word, raw := range d.entries {
+		e := ParseEntry(raw)
+		defines := entryDefines(word, e)
+		cands := optionCandidates(word, e)
+		_, targetOK := targetCandidate(word, e)
+		if !defines && (len(cands) > 0 || targetOK) {
+			t.Errorf("%q: the entry defines %q, yet it produced %d candidates and target=%v",
+				word, e.Headword(), len(cands), targetOK)
+		}
+		if !defines {
+			checked++
+		}
+	}
+	// The corpus must actually CONTAIN the shape, or this test is ranging over
+	// nothing. `bargainer` is the measured instance, 1 of 34.
+	if checked == 0 {
+		t.Error("no redirect entry in the corpus — this test asserted nothing")
+	}
+}
