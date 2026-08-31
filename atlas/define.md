@@ -940,9 +940,8 @@ rows.
 writer on the answer — over the screen in the raw loop, over the real stdout when
 piped. So highlighting sees the answer's own logical text and the screen places
 the highlighted bytes as lines afterwards. It used to wrap the raw loop's
-the raw loop's line-ending writer instead, which `#30` D5 removed. Inverted, the highlighter would
-meet `\r\n` where
-it expects `\n`.
+line-ending writer instead, which `#30` D5 removed. Inverted, the highlighter
+would meet `\r\n` where it expects `\n`.
 
 The `Flush` is DEFERRED rather than written at each return, and that is
 structural: `runAsk` returns on five paths and held text is invisible until a
@@ -2003,7 +2002,9 @@ is asking and a form restating them would be two owners of one fact.
 ### The sitting is a frame (`#41`)
 
 `--play` draws through `console`/`display` exactly as the editor does, and the
-divergence `#30` D5a predicted is closed. `playConsole` is `replRaw`'s
+divergence `#30` D5a predicted is closed. `newConsole` is the shared builder
+both loops now call, with the screen constructor as its one parameter — the
+first cut of it was a verbatim copy of `replRaw`'s
 construction: alternate screen, mouse reporting, a screen, `watchResize`,
 `onceHandBack`. What that bought, in the order it matters:
 
@@ -2016,12 +2017,45 @@ construction: alternate screen, mouse reporting, a screen, `watchResize`,
 - **A status bar, pinned.** `sittingBar` formats it and `finish()` formats its
   summary through the same `costPhrase`, so the two cannot word the `-count`
   assumption differently.
+- **Three surfaces are SHARED with the editor rather than copied**, and each
+  was a copy first: `newConsole(ctx, d, sess, stdout, newScreen)` builds the
+  terminal for both loops with the screen constructor as its one difference,
+  `viewportGesture(view, k)` owns which keys move the view and which way a page
+  goes, and `wrapWritten` owns the wrap. `#40`'s board is the third caller of all
+  three.
 - **The question is a BUFFER LINE and the keys are the LIVE EDGE.** The old
   `draw()` wrote the question, the reveal and the keys on every call, which is
   right for a scrolling terminal and would file a copy of the question per
   keystroke against a line buffer. The loop tracks the written index and writes
   on transition; `livePrompt` returns the keys, which are painted and never
   filed.
+
+**A SITTING REFUSES rather than degrades, and it settles that before doing any
+work.** `--play` needs stdin to be a terminal (a review is a conversation, and
+piped input would answer questions it never saw), stdout to be a terminal (a
+redirected one would collect frames at a fabricated 80 columns), and `-no-color`
+to be off (that flag means "emit no ANSI", which main.go's own comment extends to
+cursor control, for terminals that mangle escapes). All three are checked before
+the deck is read — the same rule usage errors follow — and all three refuse,
+because there is no line-mode fallback for a sitting and pretending otherwise
+would write the frames anyway. The editor degrades instead, by ROUTING to
+`replLines`; that option does not exist here.
+
+**Everything the loop writes is wrapped at the moment of WRITING, not of
+rendering (`wrapWritten`).** This took three findings in one family to state.
+`Paint` CLIPS a buffer line at the terminal's width — letting it wrap would make
+the frame a row too tall and the terminal would scroll every row the sitting
+placed — while `--play` renders its text when the queue is built and writes it
+much later. So every pre-rendered artifact carries a width that may already be
+wrong: an option gloss at the startup width (the operator found this one), the
+same lines after a narrowing resize, and the rendered definition a reveal writes.
+Wrapping one line-kind at a time is what produced three findings; the loop routes
+the question, the reveal, the drop notice, the summary and its diagnostics
+through one function, and the resize case keeps `opt.width` current. A line that
+already fits is returned untouched, so `Render`'s own wrapping passes through.
+The question already on screen keeps the wrapping it was written with, exactly as
+the editor's scrollback does — and nothing is lost by it, because the clip
+happens at paint and the whole text is still in the buffer if the window widens.
 
 **`newPinnedScreen` versus `newLiveScreen`, and the difference is a decision.**
 `Paint` writes the visible frame, then the prompt, then the footer — so a

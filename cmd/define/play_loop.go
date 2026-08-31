@@ -30,6 +30,47 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		return 0
 	}
 
+	// EVERY PRECONDITION FOR OWNING THE TERMINAL IS SETTLED HERE, before the
+	// command does any WORK — the same rule main.go states for usage errors
+	// ("settled BEFORE a store is opened"). Above `todaysQuestions`, which reads
+	// a file per deck word and a file per day of log, and above anything that
+	// paints; below the deck-absent guard, which costs nothing and answers a
+	// question about the DIRECTORY that a reader in the wrong one needs more
+	// than they need to be told about their terminal.
+	//
+	// `repl` computes `terminalUI := interactive && opt.tty` and falls back to
+	// the line loop, with a comment recording that this family — gating cursor
+	// control on the wrong stream — has already shipped three times here.
+	// `--play` gated on stdin alone, which was harmless while it appended lines
+	// and emitted no escapes at all; a sitting now takes the alternate screen,
+	// reports the mouse and paints `ESC[H ESC[J` frames.
+	//
+	// Three causes, told apart because their fixes differ. A sitting the learner
+	// cannot see is not a sitting, so this REFUSES rather than degrading: there
+	// is no line-mode fallback to fall to, and pretending otherwise would write
+	// the frames anyway.
+	f, isFile := stdin.(*os.File)
+	if !isFile || d.stdinIsTerminal == nil || !d.stdinIsTerminal() {
+		// A review is a conversation with a person. Piped input would answer
+		// questions it never saw.
+		fmt.Fprintln(stderr, "define: --play needs a terminal")
+		return 1
+	}
+	if !isTerminal(stdout) {
+		// A redirected stdout would otherwise collect frames at a fabricated 80
+		// columns.
+		fmt.Fprintln(stderr, "define: --play draws a full screen, so its output must be a terminal")
+		return 1
+	}
+	if !opt.tty {
+		// -no-color means "emit no ANSI", which main.go's own comment says
+		// "disables cursor control too — the flag exists for terminals that
+		// mangle escapes". Such a terminal is exactly where a full-screen
+		// sitting would be unusable rather than merely ugly.
+		fmt.Fprintln(stderr, "define: --play draws a full screen, which -no-color turns off; run it without -no-color")
+		return 1
+	}
+
 	questions, held, code := todaysQuestions(d, opt, stdout, stderr)
 	if code != 0 || len(questions) == 0 {
 		return code
@@ -40,38 +81,6 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	ctx, interrupts, cancel := detachedInterrupts(ctx, d)
 	defer cancel()
 
-	f, isFile := stdin.(*os.File)
-	if !isFile || d.stdinIsTerminal == nil || !d.stdinIsTerminal() {
-		// A review is a conversation with a person. Piped input would answer
-		// questions it never saw.
-		fmt.Fprintln(stderr, "define: --play needs a terminal")
-		return 1
-	}
-	// STDOUT HAS TO BE A FULL-SCREEN SURFACE TOO, and it is a separate question
-	// from stdin (BR-3).
-	//
-	// `repl` computes `terminalUI := interactive && opt.tty` and falls back to
-	// the line loop when it is false, with a comment recording that this exact
-	// family — gating cursor control on the wrong stream — has already shipped
-	// three times. `--play` gated on stdin alone, which was harmless while it
-	// appended lines and emitted no escapes at all; a sitting now takes the
-	// alternate screen, reports the mouse and paints `ESC[H ESC[J` frames.
-	//
-	// Two causes, and they are worth telling apart because the fix differs: a
-	// redirected stdout gets a fabricated 80 columns of escapes in a file, and
-	// `-no-color` means "emit no ANSI", which main.go's own comment says
-	// "disables cursor control too — the flag exists for terminals that mangle
-	// escapes". A sitting the learner cannot see is not a sitting, so this
-	// REFUSES rather than degrading: there is no line-mode fallback to fall to,
-	// and pretending otherwise would write the frames anyway.
-	if !isTerminal(stdout) {
-		fmt.Fprintln(stderr, "define: --play draws a full screen, so its output must be a terminal")
-		return 1
-	}
-	if !opt.tty {
-		fmt.Fprintln(stderr, "define: --play draws a full screen, which -no-color turns off; run it without -no-color")
-		return 1
-	}
 	sess, err := enterRaw(f, stdout)
 	if err != nil {
 		fmt.Fprintf(stderr, "define: could not enter raw mode: %v\n", err)
@@ -151,7 +160,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			written = s.Index
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
-			fmt.Fprintf(stdout, "\n%s\n", wrapOptionLines(q.Prompt(), opt.width))
+			fmt.Fprintf(stdout, "\n%s\n", wrapWritten(q.Prompt(), opt.width))
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -167,7 +176,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// into a screen nobody paints again and would be missing from the transcript
 	// as well as from the terminal.
 	over := func() int {
-		code := finish(stdout, s, fig)
+		code := finish(stdout, s, fig, opt.width)
 		con.finish()
 		return code
 	}
@@ -220,7 +229,8 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			k = got
 		}
 
-		// A VIEWPORT GESTURE NEVER REACHES play (D6).
+		// A VIEWPORT GESTURE NEVER REACHES play (D6), through the SAME helper
+		// the editor uses.
 		//
 		// It changes what you are LOOKING AT, not what you are answering, and
 		// `play` is mechanically guarded pure — main owns the terminal and knows
@@ -231,19 +241,10 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		//
 		// This is what a long reveal needed: form 2.3 on a word like `run` is
 		// several screenfuls, and before frames the question simply scrolled off
-		// the top with no way back.
-		switch k.Kind {
-		case KeyPageUp:
-			view.Page(1)
-			continue
-		case KeyPageDown:
-			view.Page(-1)
-			continue
-		case KeyWheelUp:
-			view.Scroll(wheelLines)
-			continue
-		case KeyWheelDown:
-			view.Scroll(-wheelLines)
+		// the top with no way back. The first cut of it was a second copy of the
+		// editor's four-case switch, which is how the two loops would come to
+		// disagree about which direction a page goes (BR-1).
+		if viewportGesture(view, k) {
 			continue
 		}
 
@@ -275,7 +276,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		//	             makes a miss survive anything that goes wrong while the
 		//	             answer is being shown. Reversing this iteration also left
 		//	             the whole suite green (BR-13); the pin is now
-		//	             TestAMissIsRecordedBeforeItIsRevealed, which observes the
+		//	             TestAMissRecordsBeforeItPlays, which observes the
 		//	             store from INSIDE playback — #41 deleted the terminal
 		//	             hand-back that used to make the order observable by
 		//	             failing (D5a), and an order that is load-bearing needs a
@@ -308,11 +309,13 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// loses the word and the events keep it. Reported, because removing
 				// something on one keystroke should say so.
 				if removed, err := d.deck.Forget(out.Word); err != nil {
-					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
+					fmt.Fprintf(stderr, "%s\n", wrapWritten(
+						fmt.Sprintf("define: could not remove %q: %v", out.Word, err), opt.width))
 				} else if removed {
 					held.dropped(out.Word)
 					refresh()
-					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
+					fmt.Fprintf(stdout, "\n%s\n", wrapWritten(
+						fmt.Sprintf("removed %q from the deck", out.Word), opt.width))
 				}
 
 			case play.OutcomeReveal:
@@ -320,7 +323,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// it is written, which is what keeps a reveal out of the buffer
 				// until it is earned and out of it twice however many keys follow.
 				if asked != nil {
-					fmt.Fprintf(stdout, "\n%s\n", wrapOptionLines(asked.Reveal(), opt.width))
+					fmt.Fprintf(stdout, "\n%s\n", wrapWritten(asked.Reveal(), opt.width))
 				}
 				if !opt.noAudio && opt.times > 0 {
 					// RAW THROUGHOUT, and that is D5a's whole content.
@@ -598,14 +601,14 @@ func gradePrompt(q play.Question) string {
 //
 // The failure branches go with the reads. There is nothing left here that can
 // fail, so a summary can no longer cost a sitting whose reviews are recorded.
-func finish(w io.Writer, s play.Session, fig sittingFigures) int {
+func finish(w io.Writer, s play.Session, fig sittingFigures, width int) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)
 	// Through the SHARED formatter, so this line and the pinned bar cannot
 	// describe the same deck differently or word the -count assumption two ways.
 	// The budget is -count: the number of questions a sitting asks, which is the
 	// DAILY budget for a learner who sits down once a day, and it is NAMED in
 	// the line rather than hidden so someone who sits twice knows to double it.
-	fmt.Fprintln(w, sittingSummary(fig))
+	fmt.Fprintln(w, wrapWritten(sittingSummary(fig), width))
 	return 0
 }
 

@@ -2765,3 +2765,56 @@ corpus is 34 entries chosen for the shapes someone thought to collect. The fix
 reached for `delimiterDepths`, which was already in the same file doing exactly
 this job for `firstSenseNumber` — so the tool existed and the second site never
 got it. When adding a scanner for brackets, grep for the ones already there.
+
+## Adopting an existing seam inherits its behaviour on inputs the previous consumer never sent it (`#41`)
+
+`#41` made `--play` the second consumer of `#30`'s `screen`, and three of the
+boundary review's Importants were the same shape: a behaviour that was correct
+for the FIRST consumer, silently wrong for the second, and never examined because
+"adopt the editor's seam" reads as inheriting a solved problem.
+
+- `Paint` CLIPS a buffer line at the terminal width. Correct for a REPL, whose
+  lines are all pre-wrapped by `Render`. `--play` had one line-kind that was not,
+  and an unwrapped line stopped being ugly and started being missing.
+- The editor gates its full-screen surface on `interactive && opt.tty`. `--play`
+  gated on stdin alone, which was harmless while it emitted no escapes at all and
+  a regression the moment it took the alternate screen.
+- `enterMouse` costs drag-select, which the editor's `/help` documents. A review
+  sitting inherited that cost with nothing saying so.
+
+**Before adopting a seam, enumerate what its current consumer feeds it and what
+yours will feed it differently.** The answer is usually one or two things, and
+they are exactly the ones that will surface as findings.
+
+## Fix the class by ENUMERATING its sites, not by fixing the one you were shown (`#41`)
+
+The same family — `frame-clips-unwrapped-text` — produced three findings across
+an operator report and two review rounds, because each fix closed the instance in
+front of it: the option gloss at the startup width, then the same lines after a
+resize, then the rendered definition a reveal writes. The rule that covered all
+of them was available at the first fix: *anything written into a clipping frame
+must be wrapped at the moment of WRITING, not of rendering.*
+
+Two habits that would have caught it:
+
+- **When a finding names a class, write the enumeration down before fixing**, and
+  put the ENUMERATION in the test — one predicate over every line the loop
+  writes, rather than one assertion per line-kind. That test reddens for the
+  sixth site the day someone adds it.
+- **`grep -l` is the enumeration.** `#41`'s plan promised to "re-examine the
+  tests that assert over the surface this issue changes" and named three pty
+  rows from memory; `grep -l TestPTYPlay` has four, and the fourth was the one
+  frames broke.
+
+## A plan that names an anti-pattern is not protection against writing it (`#41`)
+
+`#41` D1 said: *"the honest move is to widen the shared seam rather than grow a
+parallel one — a second way to draw is the thing this issue exists to remove, not
+to add."* The first implementation then copied `replRaw`'s six-statement console
+construction verbatim (differing in one token) and the editor's four-case
+viewport switch. Both were caught by review, not by the plan that forbade them.
+
+**When a decision forbids duplication, the diff is where it is enforced.** After
+writing a block that mirrors an existing one, diff them literally before
+committing — if they differ in one token, that token is the parameter.
+

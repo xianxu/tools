@@ -63,38 +63,44 @@ func costPhrase(f sittingFigures) string {
 	return fmt.Sprintf("~%.0f reviews/day · %.1f new words/day at %d a sitting", f.load, f.fresh, f.budget)
 }
 
-// wrapOptionLines wraps a form's OPTION lines to the terminal, and leaves
-// everything else exactly as it arrived.
+// wrapWritten wraps ANYTHING the sitting writes into the buffer, to the width in
+// force at the moment of writing.
 //
-// It exists because a frame CLIPS: `Paint` cuts a buffer line at the terminal's
-// width, since letting it wrap would make the frame a row too tall and the
-// terminal would then scroll every row the sitting believes it placed. The
-// terminal used to do the wrapping, at the column and with no indent, which `#7`
-// recorded as a known rough edge — so what was ugly became missing when `#41`
-// took the screen.
+// THE RULE, and it is the rule rather than the three instances that reached it:
+// `--play` RENDERS its text when the queue is built and WRITES it much later, so
+// every pre-rendered artifact carries a width that may already be wrong by the
+// time the frame clips it. `Paint` cuts a buffer line at the terminal's width —
+// letting it wrap would make the frame a row too tall and the terminal would
+// scroll every row the sitting believes it placed — so a line that arrives too
+// wide loses its tail.
 //
-// AT WRITE TIME rather than when the queue is built, and that is the whole of
-// BR-4. The first fix wrapped inside `choiceFor`, which bakes the sitting's
-// STARTUP width into every question — so narrowing the window mid-sitting clipped
-// every option from there on, the same defect one resize later. Here the width is
-// whatever `opt.width` says at the moment the question is written, and the resize
-// case keeps that current.
+// The class took three findings to state. The operator saw it at the STARTUP
+// width on an option gloss; the boundary review measured it at a NARROWING
+// RESIZE on the same lines, then a third time on the rendered DEFINITION a
+// reveal writes. Wrapping one line-kind at a time is what produced three
+// findings, so this wraps every line the loop writes and the loop routes all of
+// them through here: the question, the reveal, the drop notice, the summary and
+// the diagnostics.
 //
-// ONLY option lines, matched on the shape `optionLine` writes (a digit and
-// `play.OptionIndent-1` spaces). The rest of a prompt is a headword, a blank, or
-// a definition `Render` has already wrapped — and re-wrapping an already-wrapped
-// line would re-indent it.
-func wrapOptionLines(text string, width int) string {
+// A line that already fits is returned untouched, so text `Render` has already
+// wrapped passes through — only what is too wide is broken, and it is broken at
+// spaces rather than at the column.
+func wrapWritten(text string, width int) string {
 	if width <= 0 {
+		// terminalWidth's sentinel: below 20 columns nothing can be broken and
+		// stay readable, and it is the same answer Render is given.
 		return text
 	}
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		if !isOptionLine(line) {
-			continue
+		// The columns before the content, which is what a continuation has to
+		// line up under: an option's number-and-gap, or the indentation Render
+		// gave a definition body, a quotation or a bullet.
+		prefix := len(line) - len(strings.TrimLeft(line, " "))
+		if isOptionLine(line) {
+			prefix = play.OptionIndent
 		}
-		lines[i] = line[:play.OptionIndent] +
-			wrapText(line[play.OptionIndent:], width, play.OptionIndent)
+		lines[i] = line[:prefix] + wrapText(line[prefix:], width, prefix)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -102,9 +108,12 @@ func wrapOptionLines(text string, width int) string {
 // isOptionLine reports whether a line is one `optionLine` wrote: a digit, then
 // the rest of `play.OptionIndent` in spaces, then the gloss.
 //
-// A shape test rather than a parser. The alternative — teaching `play` to hand
-// back its options separately for wrapping — would put line-breaking in the
-// package whose whole point is that the caller owns formatting.
+// A shape test rather than a parser, and it exists because an option line is the
+// one kind whose hanging indent is NOT its own leading whitespace — it has none,
+// and its continuation belongs under the gloss rather than under the number. The
+// alternative, teaching `play` to hand back its options separately, would put
+// line-breaking in the package whose whole point is that the caller owns
+// formatting.
 func isOptionLine(line string) bool {
 	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
 		return false

@@ -148,8 +148,14 @@ gets cheaper fast as words climb.
 
 A sitting takes the screen the same way the interactive session does: the bar
 stays at the bottom, a definition longer than the window is scrolled rather than
-lost, resizing the window redraws, and everything you reviewed is printed back
-into your terminal when you quit. No API key: the deck and the dictionary are
+lost, resizing the window redraws — and wraps what comes after it to the new
+width — and everything you reviewed is printed back into your terminal when you
+quit.
+
+Because it draws a whole screen, `--play` needs one. `define --play > file` and
+`define --play -no-color` both say so and stop rather than filling a file with
+escape sequences or painting control codes at a terminal that was asked not to
+receive any. No API key: the deck and the dictionary are
 enough, and the review loop never reaches for the model. Pronunciation audio is fetched over the network
 only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
 network call at all; `--no-audio` makes one fully offline either way.

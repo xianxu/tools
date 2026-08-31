@@ -220,3 +220,258 @@ findings:
       pass and it is a landmine for #40's second consumer. A *sittingDeck parameter
       removes the question.
 ```
+
+---
+
+## Re-review — 2026-08-31T16:42:01-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 41 — play mode paints frames through screen, and gains a status bar |
+| repo | tools |
+| issue file | workshop/issues/000041-play-tui.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 94f3ad077210c544fe60b8539e2a92def29333c1..b7acbdc1d0126b255505c5751694354e1e0a30d4 |
+| command | sdlc close --issue 41 |
+| reviewer | claude |
+| timestamp | 2026-08-31T16:42:01-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The window delivers the issue's Spec: `--play` really does draw whole frames through the same `console`/`display` seam the editor uses, the bar is pinned and counted, paging works, the transcript survives exit, and every Done-when row has a named test that exists. I verified four of the prior round's claimed fixes by mutation in a scratch copy (`dropped()` rewritten without aliasing stays green; a no-op `dropped()` goes red; deleting the resize's `opt.width` update reddens `TestANarrowedSittingWrapsTheRestOfItself`; deleting the stdout gate reddens `TestPlayRefusesWhenStdoutIsNotATerminal`), and `go test ./...` is green (107s). What blocks a clean SHIP is one claimed fix that did not land — **BR-1's shared `viewportGesture` has exactly one caller, and `play_loop.go:235-248` still holds the verbatim copy the finding was about**, while the commit message, the atlas and the plan all assert otherwise — plus one measured sibling of the operator's own clipping bug that BR-4's enumeration missed: after a narrowing resize the reveal's *definition body* is written at the startup width and clipped (7 over-wide lines measured on a 4-word deck at 100→40).
+
+### 1. Strengths
+
+- **`newConsole` is a genuine consolidation, not a rename.** `replraw.go:49-94` is called by both loops (`replraw.go:33`, `play_loop.go:96`) with the screen constructor as its one parameter — that is exactly what D1 committed to, and `#40` gets it free.
+- **`newPinnedScreen` is pinned in both directions.** `TestOnlyThePinnedConstructorPads` and `TestTheEditorsFooterFollowsItsContent` (screen_test.go:461, :443) mean the padding cannot leak into the REPL, and `TestPaddingNeverReachesTheTranscript` proves it is rows-at-paint rather than lines-in-buffer.
+- **`TestASittingReadsTheDeckOnce` (play_loop_test.go:600) is the right shape for the cost claim** — a counting store is the only observer that can see the difference D7 argues about, and `finish` genuinely stopped reading.
+- **BR-5's rewrite is the model answer.** The test moved from the caller's own struct to the *drawn footer* (`loadIn`, play_loop_test.go:652); I confirmed it survives an alias-free `dropped()` and dies on a no-op one. That is a test pinning behaviour rather than an implementation detail.
+- **`twiceNumberedOption` (pty_conformance_test.go:933) now scans digits in order** and the form-2.3 row uses this issue's own paging as the instrument — a nice use of the feature to fix the test the feature broke.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**(a) `viewportGesture` has one caller; `--play` still owns a second copy of the policy.** `cmd/define/play_loop.go:235-248`. `grep -n 'viewportGesture'` returns three hits, all in `replraw.go` (definition at :109, call at :413). The play loop's four-case switch plus `wheelLines` is unchanged from before the fix. *Fix:* replace lines 235-248 with `if viewportGesture(view, k) { continue }`. This is disposed as `BR-1: not-addressed` below rather than raised anew.
+
+**(b) The reveal's definition body is clipped after a narrowing resize** — `cmd/define/play_loop.go:323` / `todaysQuestions:436`. 3rd finding in `frame-clips-unwrapped-text`; see the rule statement in the findings block. Measured with a scratch probe: 4-word deck, `opt.width=100`, resize to 40, then reveal → 7 buffer lines exceed 40 columns (worst: `"    ephemerality /əˌfem(ə)ˈralədē/ noun ephemerally …"`, 88 cells). README now claims "a definition longer than the window is scrolled rather than lost", which this contradicts.
+
+**(c) The docs gate: the new refusal surface is undocumented, and five current-truth artifacts name symbols the tree does not have.** 2nd in `doc-sweep-incomplete`; rule and full enumeration in the findings block.
+
+**(d) The `#41` plan's Core concepts table describes two entities the tree does not have.** `workshop/plans/000041-play-tui-plan.md:118` (`choiceFor` — "takes the terminal width and wraps each gloss through `wrapText`"; it takes no width, `optionpool.go:228`) and `:126` (`viewportGesture` — "for both loops"; one loop). `TestPlanTableStatusMatchesTheChangeWindow` checks only the *status* column, so descriptions are unguarded.
+
+### 4. Minor findings
+
+- `runPlay` settles the terminal gates *after* `todaysQuestions` has read the deck and written to stdout — `define --play > file` on an empty deck writes "the deck is empty" into the file and exits 0, never reaching the refusal (`play_loop.go:33` vs `:67`). 2nd in `terminal-ui-gate`.
+- `--play -raw` / `DEFINE_NO_CAPTURE`: `decideCapture` returns `captureNothing` (capture.go:29, :135) while `held.answered` still advances the in-memory progress, so D7's "cannot drift from what the next sitting derives" does not hold on that path. (BR-12, still open.)
+- `sittingDeck.figures` walks the deck twice per answer — `DailyLoad` directly and again inside `SustainableNewWords` (`schedule/load.go:59`). Not hot enough to matter; noted for `#40`.
+- `playbar.go:38` says the bar is "ONE ROW, always"; below ~55 columns `displayRows` charges it two, or `fitFooter` drops it. The arithmetic is correct; the comment overstates.
+- `workshop/lessons.md` is untouched across the whole window, after two review rounds and 14 findings (AGENTS.md §4).
+
+### 5. Test coverage notes
+
+- Every Done-when row (0a, 0b, 1-12) resolves to a test that exists and runs; I spot-checked all fifteen names against the tree.
+- **The `-no-color` half of BR-3 has no runnable pin here.** `TestPTYPlayRefusesWithNoColor` is the only test for `!opt.tty`, and all `TestPTYPlay*` rows SKIP in this environment (`no pty available: operation not permitted`), as they did last round. The issue Log claims the conformance suite ran green in 124s; I could not reproduce that and am taking it on report. Extracting the two gates into a pure `func playSurfaceRefusal(stdoutIsTTY, tty bool) (string, bool)` would give both halves an in-process pin.
+- The `viewportGesture` extraction has no test that would have caught (a): `TestPagingIsNotAnAnswer` asserts on `view.pages`/`view.lines`, which the duplicate switch satisfies identically. A table test driving `viewportGesture` with both loops' dispatch would.
+- No test covers a definition (as opposed to an option line) written after a narrowing resize — that gap is finding (b).
+
+### 6. Architectural notes
+
+- **ARCH-DRY — flag.** `viewportGesture` (finding a). `newConsole` passes.
+- **ARCH-PURE — pass.** `sittingBar`/`costPhrase`/`wrapOptionLines`/`isOptionLine`/`livePrompt`/`schedule.GradeOf` are pure and unit-tested with no IO; `screen.Paint` stays pure and `liveScreen` is the only terminal toucher; `playSession` is a thin loop over injected `console`. No "pure" entity needs a mock to run.
+- **ARCH-PURPOSE — flag.** The `--play` half of the paging policy was the *class* BR-1 named, and only the editor half landed — the instance-not-the-class pattern. Finding (b) is the same shape one level down: BR-4 enumerated three sites for *option lines* when the enumerable class is "everything `--play` writes into the buffer at a width fixed earlier".
+- **ARCH-MOCK — pass.** No new external dependency; `display` is faked in-process, `store.Mem`/`countingStore`/`logRefusingStore` are stateful doubles behind the real seam, and the pty suite is the live conformance check (unrunnable here, not absent).
+- **ARCH-CONSTRAINTS — pass.** The declared envelope is enforced where it is checkable: the per-answer refresh is O(deck) in memory and the once-per-sitting IO claim is pinned by a counting store. The 16ms paint throttle is inherited unchanged.
+- For `#40`: `sittingDeck` travelling by pointer and `newConsole` taking the screen constructor are both the right shapes to build the board on. `wrapOptionLines`' shape-matching on `optionLine`'s output is the one seam that will not generalise — a grid form's lines will not look like `"1  gloss"`, which is another reason to move the wrap to a per-form concern rather than a regex over rendered text.
+
+### 7. Plan revision recommendations
+
+`workshop/plans/000041-play-tui-plan.md` needs a `## Revisions` entry recording:
+
+1. **The `choiceFor` Core-concepts row is stale.** BR-4 moved the wrap to `wrapOptionLines` at write time and `choiceFor` reverted to its old signature; the row still describes the reverted design. Restate it as `unchanged` or delete it.
+2. **The `viewportGesture` row's "for both loops" is not true of the tree.** Either land the `--play` call site or change the row to say the editor is the only caller and `--play` keeps a copy.
+3. **The BR-4 revision's "All three are closed" overclaims site (c).** At `cols < 20` the loop sets `opt.width = 0`, `wrapOptionLines` returns the text unchanged, and the frame still clips — that is a deliberate policy exception, not a closed site, and it should be written as one.
+4. **The enumeration BR-4 forced was scoped to option lines.** Record the widened enumeration — everything the loop writes to the buffer (`q.Prompt()`, `asked.Reveal()`, the drop notice, `finish`'s lines, stderr diagnostics) — and which of them derive their width at write time.
+
+`workshop/plans/000038-play-clickable-plan.md:101,128,237` name `playConsole`, which this window deleted; those rows should say `newConsole` before `#38` starts.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: not-addressed
+    note: |
+      viewportGesture exists (replraw.go:109) but has ONE caller (replraw.go:413); play_loop.go:235-248 still holds the verbatim four-case switch. The enterMouse-cost half IS addressed (replraw.go:63-66).
+  - id: BR-2
+    disposition: addressed
+    note: |
+      TestAFailedLogReadStillRunsTheSitting drives the degraded path through a real bar draw via logRefusingStore.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Both gates land before enterRaw; deleting them reddens TestPlayRefusesWhenStdoutIsNotATerminal. The -no-color half is pinned only by a pty row that skips here.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Verified by mutation: removing the resize's opt.width update reddens TestANarrowedSittingWrapsTheRestOfItself. Option lines only; see the new definition-body finding.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      Mutation-verified both ways: an alias-free dropped() stays green, a no-op dropped() goes red on the drawn bar.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      crlf.go and crlf_test.go deleted, shortWriter re-homed. Residual mentions of the deleted FILE names roll into the new doc-sweep finding.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      newConsole(ctx, d, sess, stdout, newScreen) is called from replraw.go:33 and play_loop.go:96.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      refresh() assigns the whole figures() struct then re-applies total and done (play_loop.go:122-132).
+  - id: BR-9
+    disposition: addressed
+    note: |
+      Same fix as BR-2.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      twiceNumberedOption now scans '1'..'9' in order rather than ranging the map (pty_conformance_test.go:944-949).
+  - id: BR-11
+    disposition: addressed
+    note: |
+      choiceFor no longer wraps; the write-time wrap uses the live opt.width, and the non-terminal case is now refused outright. The sub-20-column sentinel remains as an explicit policy — see plan revision 3.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      decideCapture still returns captureNothing under opt.raw while held.answered advances the in-memory progress. Minor; never blocks.
+  - id: BR-13
+    disposition: addressed
+    note: |
+      play_loop_test.go:558 now Fatalf's on a missing separator instead of slicing.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      sittingDeck travels by pointer from todaysQuestions through playSession; confirmed by the alias-free mutation staying green.
+findings:
+  - id: new
+    severity: Important
+    family: frame-clips-unwrapped-text
+    title: |
+      A reveal written after a narrowing resize carries a definition wrapped to the STARTUP width, and the frame clips it
+    detail: |
+      This is the 3rd finding in family `frame-clips-unwrapped-text`. Earlier rounds fixed
+      instances (the operator's startup-width option gloss, then BR-4's resize sibling). Do NOT
+      fix this instance alone.
+
+      THE RULE that covers all of them: `--play` RENDERS its text at queue-build time and WRITES
+      it much later, so every pre-rendered artifact carries a width that may already be wrong when
+      the frame clips it. Anything the loop writes into the buffer must be wrapped to the width in
+      force at the moment of WRITING, not at the moment of rendering. `wrapOptionLines` applies
+      that rule to exactly one line-kind; `todaysQuestions:436` calls `Render(..., Width: opt.width)`
+      once per sitting for every definition, and `play_loop.go:323` writes those lines after any
+      number of resizes.
+
+      MEASURED prevalence (scratch probe, `playRig` with sycophantic/ephemeral/quokka/mesa,
+      opt.width=100, resize 100->40, then one reveal): 7 buffer lines written AFTER the narrow
+      exceed 40 columns, worst 88 cells. README.md:148 now claims "a definition longer than the
+      window is scrolled rather than lost", which this contradicts.
+
+      The enumeration the rule implies, to be swept in ONE round: q.Prompt(), asked.Reveal()
+      (option lines AND the rendered definition body), the "removed %q from the deck" notice,
+      finish()'s summary lines, and con.stderr diagnostics. Two candidate mechanisms: render the
+      entry lazily at write time against the live opt.width, or keep the unwrapped source on the
+      Question so a re-wrap is possible.
+  - id: new
+    severity: Important
+    family: doc-sweep-incomplete
+    title: |
+      Five current-truth artifacts name symbols the tree does not have, and the new refusal surface reaches neither README nor atlas
+    detail: |
+      This is the 2nd finding in family `doc-sweep-incomplete`. Do NOT fix the instances one by
+      one — that is what failed in rounds 1 and 2.
+
+      THE RULE, and it is mechanisable because the repo already built most of it: every name a
+      current-truth artifact cites must be DECLARED in the tree. `TestARemovedDeclarationIsSweptOrRetired`
+      (repo_guard_test.go) only sees `-func` lines whose names pass `isCitableName` (exported or
+      Test*), so it structurally cannot see a removed TYPE (`crlfWriter`), a removed unexported
+      func (`playConsole`, `draw`, `fitMenu`), a deleted FILE path (`crlf_test.go`), or a name that
+      was never declared at all. Widening it to (a) removed type/const/unexported declarations,
+      (b) deleted file paths, and (c) a forward check that every `Test[A-Z]\w+` cited in a
+      current-truth artifact is declared, turns this whole family into a build failure.
+
+      MEASURED prevalence at HEAD, all introduced by this window:
+        - cmd/define/play_loop.go:278 cites `TestAMissIsRecordedBeforeItIsRevealed`; the tree
+          declares `TestAMissRecordsBeforeItPlays`. Introduced by 4d3b53a; never existed.
+        - cmd/define/highlightwriter.go:60 says "crlf_test.go defends that" — file deleted here.
+        - cmd/define/highlightwriter_test.go:158 cites "crlf_test.go's fixture", 400 lines above
+          the fixture's new home in the same file.
+        - atlas/define.md:2006 says "`playConsole` is `replRaw`'s construction"; the symbol was
+          renamed to `newConsole` in the final commit.
+        - workshop/plans/000038-play-clickable-plan.md:101, :128, :237 name `playConsole`.
+        - Two prose breaks left by the sweep: atlas/define.md:942-943 ("It used to wrap the raw
+          loop's / the raw loop's line-ending writer") and highlightwriter_test.go:142-144
+          ("...right answer here while / A writer that can be written to again...").
+
+      THE DOCS GATE, same rule at the behaviour level: this window added two user-facing refusals
+      (`define --play > file` and `define --play -no-color` now print a message and exit 1,
+      play_loop.go:67-74). Neither README.md nor atlas/define.md records them, and the atlas's
+      "Degrading is the absence of input" paragraph (:470-476) still describes only the editor's
+      degrade-by-routing. `newConsole`, `viewportGesture` and `wrapOptionLines` — three new shared
+      surfaces `#40` will consume — appear in neither.
+  - id: new
+    severity: Important
+    family: plan-table-vs-tree
+    title: |
+      The plan's Core concepts table describes two entities the tree does not have, and the guard checks only the status column
+    detail: |
+      `workshop/plans/000041-play-tui-plan.md:118` says `choiceFor` "takes the terminal width and
+      wraps each gloss through `wrapText`" — BR-4 reverted exactly that, and `optionpool.go:228`
+      declares `choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint64)`.
+      `:126` says `viewportGesture` is "PURE dispatch — the paging keys, for both loops"; it has
+      one caller. The plan's BR-4 revision also asserts "all three are closed" when site (c),
+      `opt.width == 0`, is a deliberate policy exception at cols < 20.
+
+      `TestPlanTableStatusMatchesTheChangeWindow` passes both rows because it only judges the
+      `modified`/`unchanged`/`new` column against `git diff` — the DESCRIPTION is unguarded. The
+      plan's own rounds 2 and 3 stated the rule ("a Revision that reverses a decision re-reads the
+      decision prose, the entity tables, AND the Done-when rows"); this is the fourth time a
+      reversal reached the prose and not the table. `#40` reads this table as the record of what
+      landed.
+  - id: new
+    severity: Minor
+    family: terminal-ui-gate
+    title: |
+      The surface gate runs after todaysQuestions has already read the deck and written to the non-terminal stdout
+    detail: |
+      This is the 2nd finding in family `terminal-ui-gate`. THE RULE: every precondition for
+      owning the terminal is settled in ONE place, before the command does any work or writes any
+      byte — the same rule main.go:542 states for usage errors ("settled BEFORE a store is
+      opened"). `runPlay` calls `todaysQuestions` at :33 and only checks `isTerminal(stdout)` and
+      `opt.tty` at :67-74, so `define --play > file` on an empty deck writes "the deck is empty"
+      into the file and exits 0 without ever reaching the refusal, and on a non-empty deck it pays
+      the deck+log reads first. Moving the two gates above the `todaysQuestions` call closes both.
+  - id: new
+    severity: Minor
+    family: lessons-not-recorded
+    title: |
+      workshop/lessons.md is untouched across a window that ran two review rounds and 14 findings
+    detail: |
+      AGENTS.md section 4: "When you run code review, add rules to workshop/lessons.md that
+      prevent the mistakes you found." Three families repeated across rounds
+      (`frame-clips-unwrapped-text`, `doc-sweep-incomplete`, `parallel-construction`) and the
+      rules the plan wrote for itself live only in that plan's Revisions, which is archived at
+      close. The two durable ones — "adopting an existing seam inherits its behaviour on inputs
+      the previous consumer never sent it" and "re-examine the tests that assert over the surface
+      this issue changes MEANS enumerating them" — belong in lessons.md, where the next issue
+      reads them.
+```

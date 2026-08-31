@@ -98,7 +98,7 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `playRegion` | `cmd/define/replraw.go` | new | `playAnnounced` — the one switch on `RegionKind`, shared by both loops (D4) |
-| `runPlay` | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces both `crlfWriter`s (D9). **Already landed, by `#41` T3** (`playConsole`), which needed the same seam for its status bar; nothing here is left for this issue to do |
+| `runPlay` | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces both `crlfWriter`s (D9). **Already landed, by `#41` T3** (`newConsole`, the builder both loops share), which needed the same seam for its status bar; nothing here is left for this issue to do |
 | `playSession` | `cmd/define/play_loop.go` | modified | takes `console` (**already, via `#41` T3**) and the region map — D10 |
 | `playSession`'s reveal write | `cmd/define/play_loop.go` | modified | `writeRendered` for the reveal (D3). This was a row for `draw`, which `#41` T4 **deleted**: the question, the reveal and the grading keys have three different lifetimes and a scrolling terminal could not express the difference, so the reveal is now written by the loop on `OutcomeReveal` and the keys are the frame's prompt (`livePrompt`). The seam D3 names is unchanged — it is the call that gains the click map |
 
@@ -125,7 +125,7 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
       The replacement must OBSERVE THE ORDER, not a consequence of it. A first draft asserted "the record survives a failed playback", and the gate measured it green under a reversed iteration — correctly: once the early `return 1` is gone, both orders write the record, so the consequence stops discriminating. The old test worked only because the reveal arm could abort the loop.
       So the fake records a SEQUENCE: `capture.CaptureReview` and the player each append to one ordered log, and the assertion is that the record's entry precedes the playback's. That is falsifiable by reversing the `outs` iteration and by nothing else — which is what BR-13 needed and what a consequence-based test could not give once the abort was deleted.
       **The rule: a task that deletes code re-homes every invariant whose only pin lives there, in the same task — and re-homing means finding an observable that still discriminates, not porting the old assertion.**
-- [x] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9). **LANDED BY `#41` T3** as `playConsole` — with `newPinnedScreen` rather than `newLiveScreen`, because a status bar belongs at the terminal's bottom edge.
+- [x] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9). **LANDED BY `#41` T3** as `newConsole(ctx, d, sess, stdout, newScreen)`, which both loops call — `--play` passes `newPinnedScreen` rather than `newLiveScreen`, because a status bar belongs at the terminal's bottom edge.
 - [ ] **T4 — the prompt word is a region.** `draw` is append-only, so the word lands on the line about to be written: one `RegionHeadword` at column 0, width `visibleCells(word)`.
 - [ ] **T5 — the revealed definition carries its regions** (D7, operator's choice), through `writeRendered` (D3).
 - [ ] **T6 — the viewport, all three parts.** The alternate screen has NO scrollback, so without this a sitting cannot be scrolled at all — worse than today, where the terminal keeps it.
@@ -234,7 +234,7 @@ T2 and T3 ahead of this issue rather than duplicating them.
 
 What is now IN THE TREE, and no longer this plan's to do:
 
-- **T3 / D9** — `playConsole` builds the console exactly as `replRaw` does, and
+- **T3 / D9** — `newConsole` builds the console for both loops, and
   both `crlfWriter`s are gone. One difference from what T3 wrote: the screen is
   `newPinnedScreen`, not `newLiveScreen`, so the buffer region fills and the
   footer sits on the bottom row (`#41` D3a).

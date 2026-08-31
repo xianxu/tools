@@ -57,7 +57,8 @@ func newHighlightWriter(out io.Writer, v Vocabulary, on string) *highlightWriter
 // The zero is deliberate and differs from the line-ending writer #41 deleted, which
 // returns caller-unit PROGRESS on a partial write. The difference is retry:
 // that one could be written to again, so a caller must know how far it got, and
-// crlf_test.go defends that. This writer POISONS on the first failure — every
+// TestHighlightWriterShortWriteContract in this file's neighbour defends that
+// with the same shortWriter double. This writer POISONS on the first failure — every
 // later Write returns the same error and emits nothing — so there is no retry to
 // inform, and no byte can be written twice. Reporting a partial count here would
 // invite a resume that the writer will never honour.

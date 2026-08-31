@@ -140,9 +140,9 @@ func TestHighlightWriterPropagatesDownstreamErrors(t *testing.T) {
 		t.Fatal("a downstream failure never reached the caller")
 	}
 	// Poisoned: a later Write must not emit anything more, so nothing can be
-	// written twice. That is WHY (0, err) is the right answer here while
-	// A writer that can be written to again returns caller-unit progress.
-	// The two writers answer the same question differently on purpose.
+	// written twice. That is WHY (0, err) is the right answer here, where a
+	// writer that CAN be written to again must report caller-unit progress
+	// instead: the two answer the same question differently on purpose.
 	before := written.Len()
 	if n, err := w.Write([]byte("more")); err == nil || n != 0 {
 		t.Errorf("Write after failure = (%d, %v), want (0, err)", n, err)
@@ -155,7 +155,8 @@ func TestHighlightWriterPropagatesDownstreamErrors(t *testing.T) {
 // A short write with a nil error is not a success; treating it as one loses
 // bytes silently.
 func TestHighlightWriterTreatsAShortWriteAsAnError(t *testing.T) {
-	// crlf_test.go's fixture, which is the writer this one will actually wrap.
+	// shortWriter: accepts two bytes and reports two, with no error — the
+	// io.Writer contract's other half.
 	w := newHighlightWriter(&shortWriter{limit: 2}, vocab("obsequious"), knownOn)
 
 	_, err := w.Write([]byte("his obsequious day"))

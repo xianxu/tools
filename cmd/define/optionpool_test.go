@@ -419,7 +419,7 @@ func TestALongOptionGlossWrapsRatherThanBeingCut(t *testing.T) {
 		t.Fatal("no choice built")
 	}
 
-	prompt := wrapOptionLines(q.Prompt(), width)
+	prompt := wrapWritten(q.Prompt(), width)
 	for _, line := range strings.Split(prompt, "\n") {
 		if n := visibleCells(line); n > width {
 			t.Errorf("a prompt line is %d columns wide in a %d-column terminal, so the frame "+
@@ -463,34 +463,55 @@ func TestUnwrappedWidthLeavesTheGlossAlone(t *testing.T) {
 	if q == nil {
 		t.Fatal("no choice built")
 	}
-	if got := wrapOptionLines(q.Prompt(), 0); !strings.Contains(got, target.Gloss) {
+	if got := wrapWritten(q.Prompt(), 0); !strings.Contains(got, target.Gloss) {
 		t.Errorf("width 0 did not leave the gloss intact:\n%s", got)
 	}
 }
 
-// wrapOptionLines touches OPTION lines and nothing else.
-//
-// The rest of a prompt is a headword, a blank, or a definition Render has
-// already wrapped — and re-wrapping an already-wrapped line re-indents it, which
-// is a cosmetic bug that would reach every full-width definition line.
-func TestWrapOptionLinesLeavesEverythingElseAlone(t *testing.T) {
-	const width = 20
+// wrapWritten leaves alone anything that already FITS, whatever kind of line it
+// is — so text Render has already wrapped passes through untouched and only what
+// is too wide is broken.
+func TestWrapWrittenLeavesFittingLinesAlone(t *testing.T) {
+	// WIDE ENOUGH for every row below to fit — the claim is "a line that fits is
+	// returned untouched", so a row that does not fit would be testing the other
+	// half and passing for the wrong reason.
+	const width = 60
 	for _, tc := range []struct{ name, in string }{
 		{"a headword", "internationalization"},
 		{"a blank line", ""},
 		{"a rendered definition line, already wrapped", "  a definition line"},
 		{"a numbered SENSE, which Render writes with a dot", "    1. cover an area with concrete and then some"},
 		{"a digit with one space is not an option line", "1 not an option"},
+		{"a definition body line Render already wrapped", "      a definition line"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := wrapOptionLines(tc.in, width); got != tc.in {
-				t.Errorf("wrapOptionLines rewrote a line it does not own:\n in  %q\n out %q", tc.in, got)
+			if got := wrapWritten(tc.in, width); got != tc.in {
+				t.Errorf("wrapWritten rewrote a line that already fits:\n in  %q\n out %q", tc.in, got)
 			}
 		})
 	}
-	// ...and it DOES rewrite the one shape it owns, or the table above passes
-	// for a function that does nothing.
-	if got := wrapOptionLines("1  "+strings.Repeat("word ", 10), width); !strings.Contains(got, "\n") {
-		t.Errorf("an over-wide option line was not wrapped: %q", got)
+	// ...and it DOES break what is too wide, at a width narrow enough to force
+	// it, or the table above passes for a function that does nothing. Both kinds, each under its own indent: an
+	// option line hangs under the gloss, a body line under its own indentation.
+	for _, tc := range []struct{ name, in, wantIndent string }{
+		{"an option line hangs under the gloss", "1  " + strings.Repeat("word ", 10), strings.Repeat(" ", play.OptionIndent)},
+		{"a body line hangs under its own indent", "      " + strings.Repeat("word ", 10), "      "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const narrow = 20
+			got := wrapWritten(tc.in, narrow)
+			lines := strings.Split(got, "\n")
+			if len(lines) < 2 {
+				t.Fatalf("an over-wide line was not wrapped: %q", got)
+			}
+			for _, l := range lines {
+				if visibleCells(l) > narrow {
+					t.Errorf("a wrapped line is still %d columns: %q", visibleCells(l), l)
+				}
+			}
+			if !strings.HasPrefix(lines[1], tc.wantIndent) {
+				t.Errorf("continuation %q does not hang under %q", lines[1], tc.wantIndent)
+			}
+		})
 	}
 }

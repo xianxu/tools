@@ -234,10 +234,19 @@ func TestEmptyQueueExitsZero(t *testing.T) {
 	d, opt, _ := playRig(t) // no words at all
 	var out, errb bytes.Buffer
 
-	code := runPlay(t.Context(), d, opt, strings.NewReader(""), &out, &errb)
+	// Driven at todaysQuestions rather than at runPlay, and the move is BR-3's
+	// doing: `--play` now settles its terminal preconditions before it reads
+	// anything, so runPlay in a test — which has no terminal — refuses before
+	// the queue is ever built. The CLAIM is unchanged and this is where it
+	// lives; that runPlay reaches this code at all is pinned separately, by the
+	// dispatch row in TestClaimsWithoutTestsUntilNow.
+	qs, _, code := todaysQuestions(d, opt, &out, &errb)
 
 	if code != 0 {
 		t.Errorf("exit = %d, want 0 — an empty sitting is not a failure", code)
+	}
+	if len(qs) != 0 {
+		t.Errorf("got %d questions from a deck with no words", len(qs))
 	}
 	if !strings.Contains(out.String(), "the deck is empty") {
 		t.Errorf("stdout = %q, want it to name the empty deck rather than the schedule", out.String())
@@ -784,17 +793,28 @@ func TestANarrowedSittingWrapsTheRestOfItself(t *testing.T) {
 
 	keys <- Key{Kind: KeyRune, Rune: []rune(gradeKey(t, qs[0], play.Correct))[0]}
 	waitFor(t, func() bool { return strings.Contains(live.Transcript()[written:], qs[1].Word()) })
+	// ...and REVEAL it, so the rendered definition — the third instance of this
+	// class, and the one wrapped by Render at queue-build time — is in the window
+	// the assertion below reads.
+	asked := len(live.Transcript())
+	keys <- Key{Kind: KeyEnter}
+	waitFor(t, func() bool { return len(live.Transcript()) > asked })
 	keys <- Key{Kind: KeyInterrupt}
 	<-done
 
+	// EVERY line, not just the option lines — which is the difference between
+	// fixing an instance and fixing the class. `--play` renders when the queue is
+	// built and writes much later, so the question, the reveal's option line, the
+	// reveal's rendered DEFINITION, the drop notice and the summary all carry a
+	// width that may already be wrong. Three findings reached that rule one
+	// line-kind at a time; this predicate covers a sixth site the day someone
+	// adds one.
 	after := live.Transcript()[written:]
 	wrapped := false
 	for _, line := range strings.Split(after, "\n") {
-		if isOptionLine(line) {
-			if n := visibleCells(line); n > narrow {
-				t.Errorf("an option line written AFTER the window narrowed is %d columns wide in "+
-					"a %d-column terminal, so the frame clips it: %q", n, narrow, line)
-			}
+		if n := visibleCells(line); n > narrow {
+			t.Errorf("a line written AFTER the window narrowed is %d columns wide in a "+
+				"%d-column terminal, so the frame clips it: %q", n, narrow, line)
 		}
 		if strings.HasPrefix(line, strings.Repeat(" ", play.OptionIndent)) && strings.TrimSpace(line) != "" {
 			wrapped = true
@@ -1235,15 +1255,20 @@ func TestClaimsWithoutTestsUntilNow(t *testing.T) {
 	// here and the dispatch stayed uncovered, so "define --play" reaching the
 	// review loop at all rested on nothing.
 	t.Run("--play reaches the review loop", func(t *testing.T) {
-		d, _, _ := playRig(t) // no words: the empty-deck message proves runPlay ran
+		d, _, _ := playRig(t, "sycophantic")
 		var out, errb bytes.Buffer
 		code := run(t.Context(), []string{"-no-audio", "--play"},
 			d, strings.NewReader(""), &out, &errb)
-		if code != 0 {
-			t.Fatalf("exit = %d, want 0; stderr=%q", code, errb.String())
+		// The TERMINAL REFUSAL is the observable, and it is a better one than
+		// the empty-deck message this used to read: that message is
+		// todaysQuestions', while only runPlay writes this. A test has no
+		// terminal, so a sitting that dispatched correctly says so and stops
+		// (BR-3) — and one that never dispatched says nothing at all.
+		if code != 1 {
+			t.Fatalf("exit = %d, want 1; stderr=%q", code, errb.String())
 		}
-		if !strings.Contains(out.String(), "the deck is empty") {
-			t.Errorf("stdout = %q — --play did not reach runPlay", out.String())
+		if !strings.Contains(errb.String(), "--play needs a terminal") {
+			t.Errorf("stderr = %q — --play did not reach runPlay", errb.String())
 		}
 	})
 }

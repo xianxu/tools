@@ -109,7 +109,7 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 | `newPinnedScreen` | `cmd/define/screen.go` | new | the `--play` constructor: buffer fills, footer at the bottom. A named constructor rather than a bool at a call site already taking two ints |
 | `fitFooter` | `cmd/define/screen.go` | modified | PURE — was `fitMenu`; renamed with `Paint`'s parameter so the pair cannot disagree about what it fits |
 | `OptionIndent` | `cmd/define/play/choice.go` | new | PURE — how many columns `optionLine` prepends. Exported because the caller pre-wraps the gloss and must know what goes in front of its first line |
-| `choiceFor` | `cmd/define/optionpool.go` | modified | takes the terminal width and wraps each gloss through `wrapText`, because a frame CLIPS an over-wide buffer line where the terminal used to wrap it |
+| `choiceFor` | `cmd/define/optionpool.go` | unchanged | listed because BR-4 REVERSED a first fix that gave it the terminal width: rendering-time is the wrong place to wrap, since the sitting writes what it rendered much later. The wrap lives in `wrapWritten`, at the moment of writing |
 | `sittingBar` | `cmd/define/playbar.go` | new | PURE — figures + progress → the bar's text. Takes numbers, never a deck |
 | `sittingDeck` | `cmd/define/play_loop.go` | new | the deck ONE sitting holds in memory, and the home of D7's claim: `answered` applies the same transition `Fold` does, `dropped` keeps it agreeing with the deck the learner just curated, `figures` walks it with no IO |
 | `GradeOf` | `cmd/define/schedule/progress.go` | new | PURE — the rule turning `(correct, unaided)` into a rung. Exported because D7 gave it a second caller, and two spellings of one rule is how the bar's figures would drift from the log's |
@@ -124,7 +124,7 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 |------|----------|--------|-------|
 | `newConsole` | `cmd/define/replraw.go` | new | the terminal, for BOTH loops — the screen constructor is its one parameter (D1, BR-7). The first cut of this was `playConsole`, a verbatim copy of `replRaw`'s six statements differing in one token; D1 had committed to the opposite |
 | `viewportGesture` | `cmd/define/replraw.go` | new | PURE dispatch — the paging keys, for both loops (D6, BR-1). A second copy of the policy is how the two loops come to disagree about which direction a page goes |
-| `wrapOptionLines` | `cmd/define/playbar.go` | new | wraps a form's OPTION lines at WRITE time, to the width in force then (BR-4) |
+| `wrapWritten` | `cmd/define/playbar.go` | new | wraps EVERYTHING the loop writes into the buffer, at the width in force then (BR-4, BR-15). One line-kind at a time is what produced three findings in one family |
 | `draw` | `cmd/define/play_loop.go` | deleted | it wrote the question, the reveal AND the keys on every call; those three have different lifetimes and a scrolling terminal could not express the difference (D4) |
 | `livePrompt` | `cmd/define/play_loop.go` | new | what `draw`'s last two lines became: the frame's PROMPT for one state, returned rather than printed. The question and the reveal are buffer writes the LOOP owns, because it is the loop that knows they are transitions |
 | `finish` | `cmd/define/play_loop.go` | modified | shares `sittingBar`'s formatter, so the bar and the summary cannot word the `-count` assumption differently (D8) |
@@ -446,8 +446,11 @@ The other three are structural:
 **The enumeration BR-4 forced, recorded because the plan's own T9 rule says to
 enumerate rather than list what comes to mind.** An unwrapped line meets a
 clipping frame at three sites: (a) the startup width, (b) a narrowing resize,
-(c) `opt.width == 0`. All three are closed by wrapping at write time against the
-live width. What remains, stated rather than discovered later: **the question
+(c) `opt.width == 0` — and, found a round later, (d) the rendered DEFINITION a
+reveal writes, which is not an option line at all. (a), (b) and (d) are closed by
+wrapping EVERYTHING the loop writes at the width in force then. (c) is not a bug
+to close: `terminalWidth` returns 0 below 20 columns because nothing can be
+broken that narrowly and stay readable, and `Render` is given the same answer. What remains, stated rather than discovered later: **the question
 already on screen keeps the wrapping it was written with**, exactly as the
 editor's scrollback does (`#30`) — and nothing is lost by it, because clipping
 happens at PAINT and the whole text is still in the buffer if the window widens.
