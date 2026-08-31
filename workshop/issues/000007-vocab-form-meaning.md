@@ -1,12 +1,13 @@
 ---
 id: 000007
-status: working
+status: codecomplete
 deps: ["tools#6"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-30
 estimate_hours: 2.81
 started: 2026-08-30T17:13:15-07:00
+actual_hours: 4.78
 ---
 
 # review form 2.3: meaning multiple choice from the local deck
@@ -160,6 +161,15 @@ Created as part of the `define-learn` project.
 
 
 ### 2026-08-30 — built and closed in one pass
+- 2026-08-30: closed — go test ./... green; -race green; conformance green on real hardware unsandboxed, including the pty form-2.3 test and the live derivative-redirect check.; review verdict: FIX-THEN-SHIP
+
+Seven review rounds. The three Criticals were real defects I shipped, and rounds 4-6 turned out to be ONE: Candidate.Word was a DECK KEY used as if it identified a meaning, while the key-to-entry mapping is many-to-one (jalapeño and jalapeno are two deck keys and one dictionary entry — the fact #29 exists for, modelled in dict_fake_test.go and pinned live by TestLiveDictionaryResolvesAnUnaccentedQuery). Round 4 deduped on Word, round 5 on Gloss — both attributes of the OPTION; round 6 added Source, the ENTRY, which is the unit of meaning. Selection dedups on all three because each closes a case the others structurally cannot see. Pinned by TestOneEntryMaySupplyOnlyOneOption as one property and TestNoQuestionDrawsTwoOptionsFromOneEntry at the sitting level over the deck shape that produces it; both mutation-verified, as were the seeded-selection (BR-1) and entryDefines (BR-15/17) fixes.
+
+Round 7 (BR-25): the derivation procedure recorded in round 2 was 'go doc -short per touched package', which returns nothing for package main — so it could only ever have covered play/, and both entities added since live in cmd/define. Corrected to a declaration scan of the files in the Lives-in column, run and recorded; fallbackReasons has the row it lacked while a doc guard already depended on it.
+
+Round 7 (BR-26): the pty test pressed 1 for every question and required a miss, but the answer's slot is a function of seedFor(word, day), so roughly one day in a thousand it would fail for reasons unrelated to the code. The answer is now READ — Enter reveals it — and the test presses something else, so every miss is deliberate and the assertion is guaranteed rather than probable. Verified green on real hardware.
+
+Two repo guards that were silently not running are fixed and mutation-verified: TestPlanTablesNameEntitiesThatExist exempts new rows while a plan has unticked boxes, and the tasks were ticked in the ISSUE not the PLAN DOC, so it sat idle four rounds; TestPlanNamedTestsExist globbed cmd/define/*_test.go flat and reported the six tests this plan pins in play/ as nonexistent. Two lessons recorded in workshop/lessons.md.
 
 Two claims in the plan were disproved by MEASURING the corpus before writing
 code, and both would have shipped as bugs:

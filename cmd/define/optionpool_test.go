@@ -304,14 +304,20 @@ func TestNoCandidateEverCarriesAnotherWordsGloss(t *testing.T) {
 // behaviour with its own live conformance check — so this deck is ordinary, not
 // contrived.
 func TestNoQuestionDrawsTwoOptionsFromOneEntry(t *testing.T) {
-	d, opt, _ := playRig(t, "jalapeño", "jalapeno", "sycophantic", "quokka", "mesa", "parrot", "concrete")
+	// THE FIXTURE IS THE TEST, and the first one could not produce the defect:
+	// jalapeño/jalapeno share an entry with ONE usable sense, which Gloss-dedup
+	// already covered, so this test passed with the Source fix removed entirely.
+	// `concrete` is the shape that matters — one entry, TWO differently-glossed
+	// usable senses ("existing in a material or physical form" and the archaic
+	// "form (something) into a mass") — under two deck keys.
+	d, opt, _ := playRig(t, "concrete", "cóncrete", "quokka", "mesa", "parrot")
 	qs := questionsFor(t, d, opt)
 	if len(qs) == 0 {
 		t.Fatal("no questions")
 	}
 	// Map every gloss the deck can produce back to the entry it came from.
 	glossSource := map[string]string{}
-	for _, w := range []string{"jalapeño", "jalapeno", "sycophantic", "quokka", "mesa", "parrot", "concrete"} {
+	for _, w := range []string{"concrete", "cóncrete", "quokka", "mesa", "parrot"} {
 		raw, err := d.dict.Lookup(w)
 		if err != nil {
 			continue
@@ -344,5 +350,37 @@ func TestNoQuestionDrawsTwoOptionsFromOneEntry(t *testing.T) {
 	}
 	if choices == 0 {
 		t.Fatal("no form 2.3 questions; this test asserted nothing")
+	}
+}
+
+// Entry identity is the HEAD RUN, not Headword().
+//
+// Headword() is fields[0] (parse.go), so it is "hot" for `hot dog` and "a" for
+// `a priori` — two genuinely different entries can share it, and using it as a
+// dedup key silently drops one of their options. A learner with both `hot dog`
+// and `hot` in the deck would lose a distractor, and on a small deck lose the
+// form entirely to Recall.
+func TestEntryIdentityDistinguishesEntriesHeadwordConflates(t *testing.T) {
+	d := testDict(t)
+	ids := map[string]string{}
+	for _, w := range []string{"hot dog", "a priori", "sycophantic", "mesa", "concrete"} {
+		raw, err := d.Lookup(w)
+		if err != nil {
+			t.Fatalf("%s is not in the committed corpus: %v", w, err)
+		}
+		e := ParseEntry(raw)
+		id := entryIdentity(e)
+		if id == "" {
+			t.Errorf("%q has no entry identity", w)
+		}
+		if prev, dup := ids[id]; dup {
+			t.Errorf("%q and %q share the identity %q — one of their options would be "+
+				"silently dropped", w, prev, id)
+		}
+		ids[id] = w
+		// The specific conflation this replaces.
+		if w == "hot dog" && e.Headword() == id {
+			t.Errorf("identity for %q is %q, the same as Headword() — the head run was not used", w, id)
+		}
 	}
 }

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
 )
@@ -97,7 +99,7 @@ func optionCandidates(word string, e Entry) []play.Candidate {
 				continue
 			}
 			seen[f.Axis] = true
-			out = append(out, play.Candidate{Word: word, Source: e.Headword(), Gloss: f.Text, Axis: f.Axis})
+			out = append(out, play.Candidate{Word: word, Source: entryIdentity(e), Gloss: f.Text, Axis: f.Axis})
 		}
 	}
 	return out
@@ -120,7 +122,7 @@ func targetCandidate(word string, e Entry) (play.Candidate, bool) {
 	for _, b := range e.Blocks {
 		for _, s := range b.Senses {
 			if f := readGloss(s.Gloss); f.Usable {
-				return play.Candidate{Word: word, Source: e.Headword(), Gloss: f.Text, Axis: play.AxisGeneral}, true
+				return play.Candidate{Word: word, Source: entryIdentity(e), Gloss: f.Text, Axis: play.AxisGeneral}, true
 			}
 		}
 	}
@@ -149,23 +151,55 @@ func entryDefines(word string, e Entry) bool {
 	if want == "" {
 		return false
 	}
+	// Compared at every PREFIX rather than at the end: the run keeps growing
+	// past the headword into NOAD's own repetitions ("a priori a pri·o·ri"), so
+	// only a prefix can be expected to match.
 	var run string
-	for _, h := range e.Head {
-		if h.Kind != HeadWord && h.Kind != HeadOther {
-			break
-		}
+	for _, tok := range headRun(e) {
 		if run != "" {
 			run += " "
 		}
-		run += h.Text
-		// Compared at every step rather than at the end: the run keeps growing
-		// past the headword into NOAD's own repetitions ("a priori a pri·o·ri"),
-		// so only a PREFIX can be expected to match.
+		run += tok
 		if got := store.Key(run); got == want || differsOnlyByDiacritics(got, want) {
 			return true
 		}
 	}
 	return false
+}
+
+// headRun is the entry's leading word tokens — the ONE place that decides what
+// the head of an entry is.
+//
+// `HeadWord` plus the `HeadOther` tokens that follow it, stopping at the first
+// token of any other kind (the syllable form, the part of speech). That
+// reconstructs "hot dog" and "a priori" from a head that `parse.go` builds out
+// of `fields[0]`, and it stops exactly where `bargainer` diverges from the
+// `bargain` entry it redirects to.
+func headRun(e Entry) []string {
+	var out []string
+	for _, h := range e.Head {
+		if h.Kind != HeadWord && h.Kind != HeadOther {
+			break
+		}
+		out = append(out, h.Text)
+	}
+	return out
+}
+
+// entryIdentity is which ENTRY this is, for deduplication.
+//
+// Derived from headRun, NOT from Headword(): `Headword()` is `fields[0]`
+// (parse.go:436), which is "hot" for `hot dog` and "a" for `a priori`, so two
+// genuinely different entries can share it. Using it as a dedup key silently
+// drops one of their options — a learner with both `hot dog` and `hot` in the
+// deck loses a distractor, and on a small deck loses the form entirely.
+//
+// The direction of that failure is over-dedup, never a wrong answer, which is
+// why it was Minor. It is fixed here rather than lived with because the file had
+// grown TWO answers to "which entry is this" — this one and Headword() — and
+// entryDefines already walked the right one.
+func entryIdentity(e Entry) string {
+	return store.Key(strings.Join(headRun(e), " "))
 }
 
 // fallbackReasons is every reason choiceFor refuses, as prose a doc must carry.

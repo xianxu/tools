@@ -1099,3 +1099,107 @@ None.
 - **A Done-when table amendment implementing BR-20's rule**, not another corrected cell: add the rule sentence above the table, and a reproduction column or note per row naming the mutation performed and the observed failure. Row 7's grep predicate should either become a test or be struck.
 - **A Core-concepts row for `fallbackReasons`** (`cmd/define/optionpool.go`, new, PURE), and a `## Revisions` note that the derivation procedure recorded in round 2 (`go doc -short`) returns nothing for package `main` and is replaced by a declaration scan of the named files.
 - **A Core-concepts amendment or `## Revisions` note for `Candidate.Source`** stating what it actually is — the entry's first head word, via `Headword()` — rather than "entry identity", or changing the key so the table's claim becomes true.
+
+---
+
+## Re-review — 2026-08-30T23:05:02-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 7 — review form 2.3: meaning multiple choice from the local deck |
+| repo | tools |
+| issue file | workshop/issues/000007-vocab-form-meaning.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a8962469ff08154f5377a7572586c575c2d4610f..af2d97347c6437b30466a495206b5045a7f2e332 |
+| command | sdlc close --issue 7 |
+| reviewer | claude |
+| timestamp | 2026-08-30T23:05:02-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The Critical from round 6 (BR-24) is genuinely closed: `Candidate.Source` is set by both producers, `PickOptions` dedups on it, and I mutation-verified it two ways — reverting the `usedSource` key in `free` (pick.go:128) reddens `TestOneEntryMaySupplyOnlyOneOption` at seed 0, and BR-24's own reproduction deck (`concrete` + `cóncrete`) is green at HEAD and red without the key, with the quokka and parrot questions each offering two senses of the `concrete` entry. The full suite is green (`go test ./cmd/define/...`, 107s), the two doc/plan guards are armed (I injected a bogus fallback reason and a bogus Name-cell identifier; both went red within a second), and the shipped behaviour is correct. What blocks a clean SHIP is entirely test-quality and doc-derivation: the round-7 fix for BR-26 does not do what it claims (`optionNumberIn` reads the redrawn prompt, not the reveal, so it returns `'1'` unconditionally), the sitting-level guard for BR-24 passes with the fix removed, and the enumerating atlas paragraph still restates `fallbackReasons` by hand. All are cheap.
+
+**1. Strengths**
+
+- `Candidate.Source` + `sourceOf` (`cmd/define/play/pick.go:40,50`) is the right root fix, not a third patch: it names *the entry* as the unit of meaning and subsumes the Word and Gloss keys rather than sitting beside them. The doc block at pick.go:25-42 explains why all three keys stay, which is the thing a future reader needs.
+- `TestOneEntryMaySupplyOnlyOneOption` (`cmd/define/play/pick_test.go:314`) asserts all three dedup keys as one property over 60 seeds — one assertion for one class, mutation-verified red.
+- `TestREADMENamesEveryFallbackReason` (`cmd/define/doc_sync_test.go:324`) and `TestPlanTablesNameEntitiesThatExist` (`cmd/define/repo_guard_test.go:659`) are both armed and produce genuinely actionable failure text. The `TestPlanNamedTestsExist` fix to walk subpackages (repo_guard_test.go:765) is the right call — a guard that failed on the ARCH-PURE arrangement was teaching people to weaken it.
+- `TestYAMLWritesAtLastWhateverFieldsAreSet` (`cmd/define/store/yaml_test.go:434`) replaces a file-state claim with the actual on-disk ordering property, derived from the record rather than from a hardcoded neighbour key.
+- `Missed` as an optional capability (`play/session.go:270`) keeps `Apply` form-agnostic while carrying #17 M2's finding out — no type switch on `*Choice` anywhere in the session.
+
+**2. Critical findings** — none.
+
+**3. Important findings**
+
+- `cmd/define/optionpool_test.go:306` — `TestNoQuestionDrawsTwoOptionsFromOneEntry` passes with the fix it exists to pin removed. Detail in the findings block.
+- BR-20 and BR-21 remain open (re-disposed `not-addressed` below).
+
+**4. Minor findings** — BR-13, BR-25, BR-26 re-disposed; plus `Source = Entry.Headword()` using a key the same file documents as insufficient.
+
+**5. Test coverage notes**
+
+`ARCH-MOCK` passes for the dictionary (fake + `TestLiveDictionaryRedirectsADerivedForm` in both directions) and for the terminal (pty suite behind `darwin && conformance`). Both conformance suites **skip** in this environment (NOAD returns no entry; no pty available), so the round-7 pty change is untested by any run — which is how a fix that returns the wrong digit on every call shipped green. `ARCH-CONSTRAINTS` passes: `poolCap` is enforced by `TestSittingCostIsBoundedByTheCap`, and that test now asserts the output too, not just the bound.
+
+**6. Architectural notes**
+
+- `ARCH-DRY` — pass, with one flag: `entryDefines` (optionpool.go:158) computes entry identity as a token run, and optionpool.go:100/123 compute it as `Headword()`. Two notions of one fact, in one file, one of them documented as wrong. `#12` reuses this pool machinery, so it inherits both.
+- `ARCH-PURE` — pass. `play` has an empty import allowlist; all dictionary prose stays in `main`; `PickOptions` is tested with no IO.
+- `ARCH-PURPOSE` — flag. The shadow-sweep over the `fallbackReasons` single-source change finds three consumers and one that derives: README (derived), `atlas/define.md:2007` (hand-maintained), and `choiceFor`'s own doc comment (optionpool.go:183, hand-maintained, directly above the declared list). That is the "one consumer wired, the rest left as documentation" shape.
+- `ARCH-MOCK` — pass, with the coverage caveat above.
+- `ARCH-CONSTRAINTS` — pass.
+
+**7. Plan revision recommendations**
+
+- The 2026-08-30 round-6 revision says of `TestOneEntryMaySupplyOnlyOneOption` and `TestNoQuestionDrawsTwoOptionsFromOneEntry`: "Both mutation-verified." Only the first is. Correct the claim and name the mutation performed for each.
+- The 2026-08-30 round-7 revision says the declaration scan "names six declarations with no row … and all six are correctly absent". Re-run over the same two files: it is seven, and the omitted one is `poolCap`. The scan was also not run over `choice.go` or `pick.go`, where `distractorAxes` and `maxOptions` have no row.
+- Done-when row 7 (plan.md:185) still asserts a grep no test performs; either mechanise it or weaken the cell.
+
+```findings
+dispose:
+  - id: BR-24
+    disposition: addressed
+    note: |
+      Mutation-verified twice: removing usedSource from free (pick.go:128) reddens TestOneEntryMaySupplyOnlyOneOption at seed 0, and BR-24's own deck (concrete + cóncrete) is green at HEAD and red without the key. See the new finding for the sitting-level guard.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      All three survivors round 6 named are still in the tree, untouched by rounds 6 and 7: recall.go:32-38 (Grade's doc comment above Keys, so `go doc Recall.Keys` prints Grade's contract), optionpool_test.go:80 ("the FIRST usable sense of the first block"), optionpool_test.go:141 ("choiceFor's two refusals" against three fallbackReasons). The ~20-line AST check round 6 specified was not written. README.md:260 and glosslabel.go's label-precedence comment ARE fixed.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      Row 8's second predicate is now genuinely pinned (TestYAMLWritesAtLastWhateverFieldsAreSet), but row 7's is not: plan.md:185 claims a grep for form names inside playSession and play.Apply that no test runs. It holds today by hand. The rule is still unstated above the table, and this round produced a fresh instance of exactly it — the round-6 revision's "Both mutation-verified" is false for one of the two tests it names.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      The atlas enumeration at atlas/define.md:2007-2018 now lists all three reasons but is still hand-maintained; TestREADMENamesEveryFallbackReason reads README.md only. A third hand-maintained restatement sits at optionpool.go:183, directly above the declared list. One of three consumers derives, so the rule's mechanism covers a third of the class. The fix is one loop over both doc paths in the existing test.
+  - id: BR-25
+    disposition: not-addressed
+    note: |
+      The row and the corrected procedure both landed, but the procedure is prose and its first execution already dropped an entity. Re-running the recorded scan over optionpool.go and glosslabel.go names SEVEN declarations without a row, not six; the omitted one is poolCap — the ARCH-CONSTRAINTS budget a test already pins, which is the same argument that earned fallbackReasons its row. The scan was never run over choice.go or pick.go, where distractorAxes and maxOptions also have no row.
+  - id: BR-26
+    disposition: not-addressed
+    note: |
+      The fix reads the prompt, not the reveal. draw (play_loop.go:308) writes q.Prompt() — which contains the numbered option lines — before q.Reveal(), so optionNumberIn returns '1' for every question; reproduced in a scratch copy with a Choice whose correct option is slot 3 (got '1'). So `wrong` is always '2' and the calendar dependency is shifted from slot 1 to slot 2, not removed; and `if correct == 0 { break }` (pty_conformance_test.go:733) is unreachable.
+findings:
+  - id: new
+    severity: Important
+    family: guard-passes-without-the-property
+    title: |
+      TestNoQuestionDrawsTwoOptionsFromOneEntry passes with BR-24's fix removed, and with Source never set at all
+    detail: |
+      4th finding in family guard-passes-without-the-property, so the deliverable is the rule: a test written to pin a fix must be mutation-verified against THAT fix — revert the fix, the test must go red — and a "mutation-verified" claim recorded in a plan must name the mutation so a later reader can re-run it. Measured in a scratch copy of HEAD: optionpool_test.go:306 stays PASS both when usedSource is dropped from free (pick.go:128) and when `Source: e.Headword()` is deleted from optionCandidates (optionpool.go:100). Its fixture cannot produce the defect — the shared-entry pair jalapeño/jalapeno has one usable sense, which Gloss-dedup already covers, and the multi-sense entry in the deck (concrete, 2 candidates) appears under a single key. BR-24's own reproduction deck does work: playRig with "concrete", "cóncrete", "quokka", "mesa", "parrot" is green at HEAD and, with usedSource removed, reports the quokka and parrot questions each drawing two senses of the concrete entry. Swap the fixture, and correct the plan's round-6 "Both mutation-verified" to what was actually run.
+  - id: new
+    severity: Minor
+    family: answer-must-define-the-prompted-word
+    title: |
+      Source is Entry.Headword(), which the same file documents as not being the entry's identity
+    detail: |
+      4th finding in this family, so the rule rather than the site: there is ONE entry identity, and it is the head token run entryDefines already walks (optionpool.go:158-168) — not Headword(). optionpool.go:100 and :123 set Source from Headword(), which parse.go builds from fields[0]; measured on the committed corpus, that is "hot" for `hot dog` and "a" for `a priori`. Two different entries can therefore share a Source, and PickOptions' usedSource key silently drops one of their options — a learner with both `hot dog` and `hot` in the deck loses a distractor, and on a small deck loses the form entirely to Recall. The direction of failure is over-dedup, never a wrong answer, which is why this is Minor and not a repeat of the Criticals. Fix: extract the token run as `entryIdentity(e Entry) string`, have entryDefines compare against it and both producers set Source from it, so the file stops carrying two answers to "which entry is this".
+```

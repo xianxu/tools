@@ -2706,3 +2706,27 @@ know about identity here?" was three rounds of Critical findings.
 options the same?" but "what makes two options the same?" — the first invites a
 key per symptom, the second forces you to name the unit of meaning. Ask the
 second one first when deduplicating anything.
+
+## Verify each pin against its own mutation, and name the mutation (define #7, BR-27)
+
+I wrote two tests for one fix, ran the mutation once, watched ONE of them go red,
+and recorded "both mutation-verified" in the plan. The other passed with the fix
+removed entirely — its fixture could not produce the defect — so a test that
+pinned nothing was on the record as a pin, which is worse than no test at all.
+
+Two rules, and the second is the one I keep needing:
+
+1. **A test written to pin a fix is verified against THAT fix, individually.**
+   Reverting the fix and watching "the suite" go red proves only that something
+   in the suite covers it.
+2. **A "mutation-verified" claim in a durable artifact must NAME the mutation.**
+   "Mutation-verified" is unfalsifiable prose; *"dropping `usedSource` from
+   `free`, and deleting `Source:` from `optionCandidates`, each turn it red"* is
+   a claim a later reader can re-run in a minute. Write the second one.
+
+The tell that should have caught it: the fixture was chosen to illustrate the
+BUG REPORT (`jalapeño`/`jalapeno`, the pair the finding named) rather than the
+DEFECT CLASS (one entry with two differently-glossed senses under two deck keys).
+Those coincided in the finding's prose and came apart in the corpus — the
+jalapeño entry has one usable sense, so gloss-dedup already covered it. **Pick a
+fixture from the class, then check the reported instance is an example of it.**

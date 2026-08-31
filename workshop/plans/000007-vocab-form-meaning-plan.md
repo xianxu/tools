@@ -556,8 +556,16 @@ both model it. Three rounds of Critical findings were the cost of patching a
 symptom while the fact that explains it was already written down in the repo.
 
 `TestOneEntryMaySupplyOnlyOneOption` asserts all three keys as one property, and
-`TestNoQuestionDrawsTwoOptionsFromOneEntry` does it at the sitting level over the
-deck shape that produces it. Both mutation-verified.
+`TestNoQuestionDrawsTwoOptionsFromOneEntry` does it at the sitting level.
+
+*Corrected in round 8 (BR-27): "Both mutation-verified" was false of the second
+one. Its fixture — `jalapeño`/`jalapeno` — shares an entry with ONE usable
+sense, which `Gloss`-dedup already covered, so it passed with the `Source` fix
+removed entirely. I ran the mutation and read the `play` test's failure as
+covering both. The fixture is now `concrete`/`cóncrete`: one entry, two
+differently-glossed usable senses, two deck keys. Mutations that now turn it red,
+named so a reader can re-run them: dropping `usedSource` from `free`
+(`play/pick.go`), and deleting `Source:` from `optionCandidates`.*
 
 ### 2026-08-30 — close review round 7: the derivation procedure could not see package main
 
@@ -599,3 +607,34 @@ passes. Now the answer is READ rather than guessed: Enter reveals, an unanswered
 `Choice`'s reveal prints the correct option's own line, and the test then presses
 anything else — so every miss is deliberate and the `missed:` assertion is
 guaranteed rather than probable.
+
+### 2026-08-30 — close round 8 (FIX-THEN-SHIP): a pin that pinned nothing, and two answers to one question
+
+**BR-27 — the test I wrote for BR-24 passed with BR-24's fix removed**, and I had
+recorded it as mutation-verified. What I actually did was run the mutation, watch
+`TestOneEntryMaySupplyOnlyOneOption` go red, and credit the pair. The sitting-level
+one never failed, because its fixture could not produce the defect: the
+`jalapeño`/`jalapeno` entry has a single usable sense, which `Gloss`-dedup
+already covers. Fixed by swapping the fixture to `concrete`/`cóncrete` — one
+entry, two differently-glossed senses, two deck keys — and re-running both
+mutations.
+
+**The rule, 4th in `guard-passes-without-the-property`: a test written to pin a
+fix must be mutation-verified against THAT fix, individually, and a
+"mutation-verified" claim in a plan must NAME the mutation so a later reader can
+re-run it.** Verifying a batch and reporting the batch is how a test that pins
+nothing gets recorded as a pin.
+
+**BR-28 — the file had grown two answers to "which entry is this".** `Source` was
+`Entry.Headword()`, which `parse.go` builds from `fields[0]` — "hot" for
+`hot dog`, "a" for `a priori` — while `entryDefines` walked the head TOKEN RUN
+three functions away. Two different entries could therefore share a `Source`, and
+the dedup would silently drop one of their options: a learner with both `hot dog`
+and `hot` in the deck loses a distractor, and on a small deck loses the form.
+
+The direction of failure is over-dedup rather than a wrong answer, which is why
+it was Minor — but it is the same root as the three Criticals wearing a different
+hat, so it is fixed at the root: `headRun` is now the one place that decides what
+an entry's head is, `entryDefines` walks its prefixes, and `entryIdentity` joins
+it. `TestEntryIdentityDistinguishesEntriesHeadwordConflates` pins the distinction
+`Headword()` cannot make.

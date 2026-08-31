@@ -510,6 +510,48 @@ rounds:
       agent: claude
       blocked: true
       protocol_error: no valid findings block
+    - "n": 8
+      timestamp: "2026-08-30T23:05:02-07:00"
+      agent: claude
+      dispose:
+        - id: BR-24
+          disposition: addressed
+          note: 'Mutation-verified twice: removing usedSource from free (pick.go:128) reddens TestOneEntryMaySupplyOnlyOneOption at seed 0, and BR-24''s own deck (concrete + cóncrete) is green at HEAD and red without the key. See the new finding for the sitting-level guard.'
+          round: 8
+        - id: BR-13
+          disposition: not-addressed
+          note: 'All three survivors round 6 named are still in the tree, untouched by rounds 6 and 7: recall.go:32-38 (Grade''s doc comment above Keys, so `go doc Recall.Keys` prints Grade''s contract), optionpool_test.go:80 ("the FIRST usable sense of the first block"), optionpool_test.go:141 ("choiceFor''s two refusals" against three fallbackReasons). The ~20-line AST check round 6 specified was not written. README.md:260 and glosslabel.go''s label-precedence comment ARE fixed.'
+          round: 8
+        - id: BR-20
+          disposition: not-addressed
+          note: 'Row 8''s second predicate is now genuinely pinned (TestYAMLWritesAtLastWhateverFieldsAreSet), but row 7''s is not: plan.md:185 claims a grep for form names inside playSession and play.Apply that no test runs. It holds today by hand. The rule is still unstated above the table, and this round produced a fresh instance of exactly it — the round-6 revision''s "Both mutation-verified" is false for one of the two tests it names.'
+          round: 8
+        - id: BR-21
+          disposition: not-addressed
+          note: The atlas enumeration at atlas/define.md:2007-2018 now lists all three reasons but is still hand-maintained; TestREADMENamesEveryFallbackReason reads README.md only. A third hand-maintained restatement sits at optionpool.go:183, directly above the declared list. One of three consumers derives, so the rule's mechanism covers a third of the class. The fix is one loop over both doc paths in the existing test.
+          round: 8
+        - id: BR-25
+          disposition: not-addressed
+          note: The row and the corrected procedure both landed, but the procedure is prose and its first execution already dropped an entity. Re-running the recorded scan over optionpool.go and glosslabel.go names SEVEN declarations without a row, not six; the omitted one is poolCap — the ARCH-CONSTRAINTS budget a test already pins, which is the same argument that earned fallbackReasons its row. The scan was never run over choice.go or pick.go, where distractorAxes and maxOptions also have no row.
+          round: 8
+        - id: BR-26
+          disposition: not-addressed
+          note: The fix reads the prompt, not the reveal. draw (play_loop.go:308) writes q.Prompt() — which contains the numbered option lines — before q.Reveal(), so optionNumberIn returns '1' for every question; reproduced in a scratch copy with a Choice whose correct option is slot 3 (got '1'). So `wrong` is always '2' and the calendar dependency is shifted from slot 1 to slot 2, not removed; and `if correct == 0 { break }` (pty_conformance_test.go:733) is unreachable.
+          round: 8
+      findings:
+        - id: BR-27
+          severity: Important
+          title: TestNoQuestionDrawsTwoOptionsFromOneEntry passes with BR-24's fix removed, and with Source never set at all
+          detail: '4th finding in family guard-passes-without-the-property, so the deliverable is the rule: a test written to pin a fix must be mutation-verified against THAT fix — revert the fix, the test must go red — and a "mutation-verified" claim recorded in a plan must name the mutation so a later reader can re-run it. Measured in a scratch copy of HEAD: optionpool_test.go:306 stays PASS both when usedSource is dropped from free (pick.go:128) and when `Source: e.Headword()` is deleted from optionCandidates (optionpool.go:100). Its fixture cannot produce the defect — the shared-entry pair jalapeño/jalapeno has one usable sense, which Gloss-dedup already covers, and the multi-sense entry in the deck (concrete, 2 candidates) appears under a single key. BR-24''s own reproduction deck does work: playRig with "concrete", "cóncrete", "quokka", "mesa", "parrot" is green at HEAD and, with usedSource removed, reports the quokka and parrot questions each drawing two senses of the concrete entry. Swap the fixture, and correct the plan''s round-6 "Both mutation-verified" to what was actually run.'
+          family: guard-passes-without-the-property
+          round: 8
+        - id: BR-28
+          severity: Minor
+          title: Source is Entry.Headword(), which the same file documents as not being the entry's identity
+          detail: '4th finding in this family, so the rule rather than the site: there is ONE entry identity, and it is the head token run entryDefines already walks (optionpool.go:158-168) — not Headword(). optionpool.go:100 and :123 set Source from Headword(), which parse.go builds from fields[0]; measured on the committed corpus, that is "hot" for `hot dog` and "a" for `a priori`. Two different entries can therefore share a Source, and PickOptions'' usedSource key silently drops one of their options — a learner with both `hot dog` and `hot` in the deck loses a distractor, and on a small deck loses the form entirely to Recall. The direction of failure is over-dedup, never a wrong answer, which is why this is Minor and not a repeat of the Criticals. Fix: extract the token run as `entryIdentity(e Entry) string`, have entryDefines compare against it and both producers set Source from it, so the file stops carrying two answers to "which entry is this".'
+          family: answer-must-define-the-prompted-word
+          round: 8
+      blocked: false
 ---
 
 # Gate ledger — tools#7 (boundary-review)
@@ -819,11 +861,30 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 
 **Protocol error:** no valid findings block — this round contributed no findings.
 
+## Round 8 — 2026-08-30T23:05:02-07:00 (claude) — passed
+
+### Disposed
+
+- BR-24 — addressed — Mutation-verified twice: removing usedSource from free (pick.go:128) reddens TestOneEntryMaySupplyOnlyOneOption at seed 0, and BR-24's own deck (concrete + cóncrete) is green at HEAD and red without the key. See the new finding for the sitting-level guard.
+- BR-13 — not-addressed — All three survivors round 6 named are still in the tree, untouched by rounds 6 and 7: recall.go:32-38 (Grade's doc comment above Keys, so `go doc Recall.Keys` prints Grade's contract), optionpool_test.go:80 ("the FIRST usable sense of the first block"), optionpool_test.go:141 ("choiceFor's two refusals" against three fallbackReasons). The ~20-line AST check round 6 specified was not written. README.md:260 and glosslabel.go's label-precedence comment ARE fixed.
+- BR-20 — not-addressed — Row 8's second predicate is now genuinely pinned (TestYAMLWritesAtLastWhateverFieldsAreSet), but row 7's is not: plan.md:185 claims a grep for form names inside playSession and play.Apply that no test runs. It holds today by hand. The rule is still unstated above the table, and this round produced a fresh instance of exactly it — the round-6 revision's "Both mutation-verified" is false for one of the two tests it names.
+- BR-21 — not-addressed — The atlas enumeration at atlas/define.md:2007-2018 now lists all three reasons but is still hand-maintained; TestREADMENamesEveryFallbackReason reads README.md only. A third hand-maintained restatement sits at optionpool.go:183, directly above the declared list. One of three consumers derives, so the rule's mechanism covers a third of the class. The fix is one loop over both doc paths in the existing test.
+- BR-25 — not-addressed — The row and the corrected procedure both landed, but the procedure is prose and its first execution already dropped an entity. Re-running the recorded scan over optionpool.go and glosslabel.go names SEVEN declarations without a row, not six; the omitted one is poolCap — the ARCH-CONSTRAINTS budget a test already pins, which is the same argument that earned fallbackReasons its row. The scan was never run over choice.go or pick.go, where distractorAxes and maxOptions also have no row.
+- BR-26 — not-addressed — The fix reads the prompt, not the reveal. draw (play_loop.go:308) writes q.Prompt() — which contains the numbered option lines — before q.Reveal(), so optionNumberIn returns '1' for every question; reproduced in a scratch copy with a Choice whose correct option is slot 3 (got '1'). So `wrong` is always '2' and the calendar dependency is shifted from slot 1 to slot 2, not removed; and `if correct == 0 { break }` (pty_conformance_test.go:733) is unreachable.
+
+### Raised
+
+- **BR-27** [Important] `guard-passes-without-the-property` TestNoQuestionDrawsTwoOptionsFromOneEntry passes with BR-24's fix removed, and with Source never set at all
+  4th finding in family guard-passes-without-the-property, so the deliverable is the rule: a test written to pin a fix must be mutation-verified against THAT fix — revert the fix, the test must go red — and a "mutation-verified" claim recorded in a plan must name the mutation so a later reader can re-run it. Measured in a scratch copy of HEAD: optionpool_test.go:306 stays PASS both when usedSource is dropped from free (pick.go:128) and when `Source: e.Headword()` is deleted from optionCandidates (optionpool.go:100). Its fixture cannot produce the defect — the shared-entry pair jalapeño/jalapeno has one usable sense, which Gloss-dedup already covers, and the multi-sense entry in the deck (concrete, 2 candidates) appears under a single key. BR-24's own reproduction deck does work: playRig with "concrete", "cóncrete", "quokka", "mesa", "parrot" is green at HEAD and, with usedSource removed, reports the quokka and parrot questions each drawing two senses of the concrete entry. Swap the fixture, and correct the plan's round-6 "Both mutation-verified" to what was actually run.
+- **BR-28** [Minor] `answer-must-define-the-prompted-word` Source is Entry.Headword(), which the same file documents as not being the entry's identity
+  4th finding in this family, so the rule rather than the site: there is ONE entry identity, and it is the head token run entryDefines already walks (optionpool.go:158-168) — not Headword(). optionpool.go:100 and :123 set Source from Headword(), which parse.go builds from fields[0]; measured on the committed corpus, that is "hot" for `hot dog` and "a" for `a priori`. Two different entries can therefore share a Source, and PickOptions' usedSource key silently drops one of their options — a learner with both `hot dog` and `hot` in the deck loses a distractor, and on a small deck loses the form entirely to Recall. The direction of failure is over-dedup, never a wrong answer, which is why this is Minor and not a repeat of the Criticals. Fix: extract the token run as `entryIdentity(e Entry) string`, have entryDefines compare against it and both producers set Source from it, so the file stops carrying two answers to "which entry is this".
+
 ## Open findings
 
 - **BR-13** [Minor] `docs-restate-behaviour-inaccurately` Five doc comments state behaviour the code does not have
 - **BR-20** [Important] `guard-passes-without-the-property` Done-when row 1 claims a red-when that TestPickOptionsHasOneAnswer cannot deliver
 - **BR-21** [Important] `docs-restate-behaviour-inaccurately` README and atlas enumerate the form-2.1 fallback causes and omit the derivative redirect
-- **BR-24** [Critical] `answer-must-define-the-prompted-word` Two options in one set can both define the prompted word, because dedup keys on Word and Gloss but not on the source ENTRY
 - **BR-25** [Minor] `plan-artifact-must-match-tree` fallbackReasons has no Core-concepts row, and the recorded derivation procedure cannot see package main
 - **BR-26** [Minor] `uncontrolled-test-input` The pty form-2.3 test's "at least one miss" assertion depends on today's date
+- **BR-27** [Important] `guard-passes-without-the-property` TestNoQuestionDrawsTwoOptionsFromOneEntry passes with BR-24's fix removed, and with Source never set at all
+- **BR-28** [Minor] `answer-must-define-the-prompted-word` Source is Entry.Headword(), which the same file documents as not being the entry's identity
