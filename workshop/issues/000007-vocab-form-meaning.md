@@ -130,7 +130,19 @@ than either row alone.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Single-pass: plain checkboxes, ONE boundary (AGENTS.md §3). The full task detail,
+the ten decisions and the eight Done-when rows live in
+`workshop/plans/000007-vocab-form-meaning-plan.md`.
+
+- [x] Design via `sdlc start-plan` — plan doc written, cleared plan-quality in 3 rounds.
+- [ ] **T1** — `senseLabel`, `noadLabels`, `excludeCrossReferenced` in `cmd/define/glosslabel.go` (D2, D3, D3a).
+- [ ] **T2** — `Option`, `Axis`, `Choice` in `cmd/define/play/choice.go`, import-free (D4, D5a).
+- [ ] **T3** — `pickOptions` + `shuffle`: axis priority, seeded determinism, small decks (D1, D2a, D4a).
+- [ ] **T4a** — `ReviewEvent` gains the axis field ABOVE `At`; torn-record test pins the order (D6).
+- [ ] **T4b** — `Outcome`, `CaptureReview` and `Apply` carry the choice out (D7, D8).
+- [ ] **T5a** — `todaysQuestions` builds the pool, sampled under the seed within the cap (ARCH-CONSTRAINTS).
+- [ ] **T5b** — sitting-level tests: fallback to `Recall` on a small deck, and a network-off sitting.
+- [ ] **T6** — `cmd/define/README.md`, `atlas/define.md`, the project row.
 
 ## Log
 
