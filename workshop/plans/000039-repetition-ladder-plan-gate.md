@@ -117,7 +117,34 @@ rounds:
           family: observe-before-state-reset
           round: 2
       blocked: false
-content_hash: 37b9e398a1a5a9086274b8d573ff48f51b4eed089dc0853d4e8d0a087f6ba945
+    - "n": 3
+      timestamp: "2026-08-31T11:20:46-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-7
+          disposition: addressed
+          note: |-
+            D14 now names the trap, the claim row cites session.go:251 correctly, and the
+            reveal-then-correct case is Done-when 13's TestARevealDisqualifiesUnaided.
+          round: 3
+      findings:
+        - id: PQ-8
+          severity: Minor
+          title: T7's load number has no named path from the deck and fold to finish()
+          detail: |-
+            2nd in family — the rule, not the instance: every number T7 prints must name
+            its full input path. D11 sourced the budget to opt.count; the load's inputs
+            are still unrouted. finish is finish(w io.Writer, s play.Session) int
+            (play_loop.go:365) with five callers in playSession; todaysQuestions computes
+            deck and Fold(events) at play_loop.go:249 and returns neither, and runPlay
+            discards them at :31. Say whether T7 widens todaysQuestions' return and
+            threads the values (four test call sites move too) or re-reads inside finish
+            (ARCH-PURE-wrong). The estimate's 0.02/0.08 "one line, one test" assumes the
+            former is free.
+          family: unsourced-input
+          round: 3
+      blocked: false
+content_hash: 64066ed9b0a43739ec43a26e869ad6f4671055a5e09d7c3d64d6be1b852b2713
 ---
 
 # Gate ledger — tools#39 (plan-quality)
@@ -188,6 +215,26 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   Capture the flag before the reset, and add the reveal-then-correct case to
   Done-when 13 rather than leaving it to the manual verification block.
 
+## Round 3 — 2026-08-31T11:20:46-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-7 — addressed — D14 now names the trap, the claim row cites session.go:251 correctly, and the
+reveal-then-correct case is Done-when 13's TestARevealDisqualifiesUnaided.
+
+### Raised
+
+- **PQ-8** [Minor] `unsourced-input` T7's load number has no named path from the deck and fold to finish()
+  2nd in family — the rule, not the instance: every number T7 prints must name
+  its full input path. D11 sourced the budget to opt.count; the load's inputs
+  are still unrouted. finish is finish(w io.Writer, s play.Session) int
+  (play_loop.go:365) with five callers in playSession; todaysQuestions computes
+  deck and Fold(events) at play_loop.go:249 and returns neither, and runPlay
+  discards them at :31. Say whether T7 widens todaysQuestions' return and
+  threads the values (four test call sites move too) or re-reads inside finish
+  (ARCH-PURE-wrong). The estimate's 0.02/0.08 "one line, one test" assumes the
+  former is free.
+
 ## Open findings
 
-- **PQ-7** [Minor] `observe-before-state-reset` Unaided is derived in advance(), which zeroes s.Revealed before it builds the outcome
+- **PQ-8** [Minor] `unsourced-input` T7's load number has no named path from the deck and fold to finish()

@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-31
 updated: 2026-08-31
-estimate_hours: 2.66
+estimate_hours: 2.94
 started: 2026-08-31T11:01:05-07:00
 ---
 
@@ -180,19 +180,18 @@ on, rather than being discovered as a growing backlog.
 model: estimate-logic-v3.1
 familiarity: 1.0
 item: issue-spec               design=0.40 impl=0.06
-item: smaller-go-module        design=0.05 impl=0.16
-item: greenfield-go-module     design=0.06 impl=0.24
-item: smaller-go-module        design=0.02 impl=0.10
-item: smaller-go-module        design=0.03 impl=0.12
-item: greenfield-go-module     design=0.05 impl=0.20
-item: cross-cutting-refactor   design=0.05 impl=0.20
+item: smaller-go-module        design=0.05 impl=0.20
+item: greenfield-go-module     design=0.06 impl=0.32
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.03 impl=0.14
+item: greenfield-go-module     design=0.05 impl=0.24
+item: cross-cutting-refactor   design=0.05 impl=0.28
 item: smaller-go-module        design=0.02 impl=0.08
 item: atlas-docs               design=0.03 impl=0.06
-item: milestone-review         design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.30
 item: milestone-review         design=0.0  impl=0.32
-item: milestone-review         design=0.0  impl=0.10
 design-buffer: 0.15
-total: 2.66
+total: 2.94
 ```
 
 *Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
@@ -201,36 +200,43 @@ total: 2.66
 
 | item | task | why this primitive |
 |---|---|---|
-| `issue-spec` 0.40/0.06 | the design carrier | the Spec, this plan, and two plan-quality rounds |
-| `smaller-go-module` 0.05/0.16 | T1 the computed ladder | replacing a six-entry table with a function in a package that already has the shape |
-| `greenfield-go-module` 0.06/0.24 | T2 `Grade`, transitions, `MaxBox` | the real algorithm: a new enum, three transitions and the express lane |
-| `smaller-go-module` 0.02/0.10 | T3 `Mastered`, delete `Streak` | the compiler finds every reader |
-| `smaller-go-module` 0.03/0.12 | T4 relative overdue | one comparator, cross-multiplied |
-| `greenfield-go-module` 0.05/0.20 | T5 the load functions | a new file, three functions, one of them derived from the ladder |
-| `cross-cutting-refactor` 0.05/0.20 | T6 `unaided` to the log | four files — `store`, `play`, `capture`, the loop — and the `advance` trap (D14) |
+| `issue-spec` 0.40/0.06 | the design carrier | the Spec, this plan, two plan-quality rounds |
+| `smaller-go-module` 0.05/0.20 | T1 the computed ladder | a table becomes a function, plus a 21-row exactness test and the clamp argument |
+| `greenfield-go-module` 0.06/0.32 | T2 `Grade`, transitions, `MaxBox` | the algorithmic heart: a new enum, three transitions, the express lane and its erosion — four Done-when rows |
+| `smaller-go-module` 0.02/0.12 | T3 `Mastered`, delete `Streak` | touches `Answer`, `Fold`, `Mastered` and their tests |
+| `smaller-go-module` 0.03/0.14 | T4 relative overdue | one comparator, plus a test that must be RED on today's code |
+| `greenfield-go-module` 0.05/0.24 | T5 the load functions | a new file, three functions, one derived from the ladder |
+| `cross-cutting-refactor` 0.05/0.28 | T6 `unaided` to the log | four files — `store`, `play`, `capture`, the loop — and the `advance` trap (D14) |
 | `smaller-go-module` 0.02/0.08 | T7 `finish` reports | one line, one test |
 | `atlas-docs` 0.03/0.06 | T8 | atlas, README, project row |
-| `milestone-review` 0.0/0.20 | the boundary, run | |
-| `milestone-review` 0.0/0.32 | the boundary, remediate | **priced against measured evidence, not the table's midpoint** — see below |
-| `milestone-review` 0.0/0.10 | manual verification | a real terminal, `-race`, `-tags conformance` |
+| `milestone-review` 0.0/0.30 | the boundary: run + the manual verification pass | folded into one line because this plan commits to ONE boundary; the manual pass is verification rather than review, and `#127` should read it as such |
+| `milestone-review` 0.0/0.32 | the boundary: remediation | priced at the TOP of the range on measured evidence — see below |
 
-**The remediation line is raised on evidence, and that is not the same as
-padding.** `#7` closed one day ago and took **eight review rounds**, surfacing
-three Criticals. Its estimate priced one boundary at 0.16 to run plus 0.12 to
-remediate; the rounds alone plainly cost more than 0.28h. So this issue prices
-remediation at the top of the `milestone-review` range rather than its middle.
-That is a per-primitive correction derived from a measured row in this repo,
-which is what the primitive table is for — it is not a private multiplier
-applied to the total, which is the thing `#7`'s estimate block refused to do and
-still refuses.
+**Two corrections were applied, both derived and both per-primitive.**
 
-**The standing calibration question.** Two closed rows now: `#30` at 3.4× and
-`#7` at 1.7×. Both overran, which points at the v3.1 impl scale being too
-aggressive for `define`-sized work (`#127`). This row does not correct for it
-beyond the review line above — a private factor would corrupt the ledger that
-exists to detect the bias. If this lands near 1.7× again, that is three
-consecutive rows and the scale itself should move rather than each estimate
-quietly compensating.
+*Remediation is priced at the top of its range.* `#7` closed one day ago and took
+**eight review rounds** surfacing three Criticals. Its estimate priced a boundary
+at 0.16 to run plus 0.12 to remediate; the rounds alone plainly cost more than
+0.28h. Correcting a primitive against a measured row in this repo is what the
+primitive table is for.
+
+*The task lines were raised after the first draft priced them BELOW `#7`'s.* The
+first version summed 1.16h of task implementation against `#7`'s 1.48h — for more
+scope (8 tasks to 6, 15 Done-when rows to 9, spanning `schedule`, `play`,
+`store`, `capture.go` and `play_loop.go`). Claiming a neutral hold while pricing
+lower than the measured neighbour is not neutral; it is a correction in the wrong
+direction. Each line was re-derived against what it actually does, not nudged
+toward a target.
+
+**The standing calibration question, unchanged.** Two closed rows: `#30` at 3.4×
+and `#7` at 1.70×. Both overran, which points at the v3.1 impl scale being too
+aggressive for `define`-sized work (`#127`). **A calibration-adjusted reading of
+this issue is therefore ~4.5-5h, and that number is recorded here deliberately
+while the block's own total stays 2.94.** The block reports what the model says;
+the paragraph reports what I expect. Folding the second into the first would
+corrupt the ledger that exists to measure the gap between them. If this lands
+near 1.7× again, that is three consecutive rows and the SCALE should move rather
+than each estimate quietly compensating.
 
 ## Plan
 
