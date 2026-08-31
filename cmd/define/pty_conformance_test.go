@@ -739,9 +739,6 @@ func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
 	if !strings.Contains(log, "missed:") {
 		t.Errorf("no miss recorded an axis — D7's finding never reached the log:\n%s", log)
 	}
-	// D8: nothing is written on a correct answer, so `missed:` must not appear
-	// on a record whose `correct:` is true. correct:true is omitempty-dropped
-	// as `correct: true`, so count instead: misses >= missed lines.
 	// D8, stated as an exact identity rather than a conditional: the number of
 	// `missed:` lines must equal the number of MISSES, so a correct answer
 	// carrying an axis fails whether or not any correct answer occurred.

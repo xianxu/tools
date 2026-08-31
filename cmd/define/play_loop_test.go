@@ -927,35 +927,43 @@ func typeName(v any) string {
 	return "unknown"
 }
 
-// An entry that is nothing but CROSS-REFERENCES cannot be a recognition
-// question, and the fallback must cover that as well as a young deck.
+// The two ways an ENTRY (rather than the deck) sends a word to form 2.1.
 //
-// `bases` in the committed corpus is exactly this shape — "plural form of base1"
-// and "/ˈbāsēz/ plural form of basis" — so the deck here is large enough that
-// every other word gets form 2.3, isolating the reason.
-func TestASittingFallsBackForAnEntryWithNoDefinition(t *testing.T) {
-	d, opt, _ := playRig(t, "bases", "sycophantic", "quokka", "mesa", "parrot", "concrete")
-	qs := questionsFor(t, d, opt)
+// Both are properties of what the dictionary returned, so the deck here is large
+// enough that every other word gets form 2.3 — which is what isolates the entry
+// as the cause rather than the deck size.
+func TestASittingFallsBackForAnEntryThatCannotBeAsked(t *testing.T) {
+	for _, tc := range []struct{ word, why string }{
+		// Every sense is a cross-reference: "plural form of base1",
+		// "/ˈbāsēz/ plural form of basis". No definition to be the answer.
+		{"bases", "every sense is a cross-reference"},
+		// NOAD redirects the derived form: looking this up returns the `bargain`
+		// entry, so the "correct" option would be a different word's meaning
+		// offered as this one's, recorded Correct, and promoted in the schedule.
+		{"bargainer", "the entry defines the base word, not this one"},
+	} {
+		t.Run(tc.word, func(t *testing.T) {
+			d, opt, _ := playRig(t, tc.word, "sycophantic", "quokka", "mesa", "parrot", "concrete")
+			qs := questionsFor(t, d, opt)
 
-	var basesForm, otherForms string
-	for _, q := range qs {
-		if q.Word() == "bases" {
-			basesForm = typeName(q)
-		} else if otherForms == "" {
-			otherForms = typeName(q)
-		}
-	}
-	if basesForm == "" {
-		t.Fatalf("`bases` was dropped from the sitting entirely; %d questions", len(qs))
-	}
-	if basesForm != "*play.Recall" {
-		t.Errorf("`bases` got %s — its every sense is a cross-reference, so there is no "+
-			"definition to be the right answer", basesForm)
-	}
-	// And the deck IS big enough for 2.3, so the row above is isolating the
-	// entry rather than re-testing the young-deck case.
-	if otherForms != "*play.Choice" {
-		t.Errorf("the rest of the deck got %s, so this test is not distinguishing "+
-			"the entry from the deck size", otherForms)
+			var form, otherForms string
+			for _, q := range qs {
+				if q.Word() == tc.word {
+					form = typeName(q)
+				} else if otherForms == "" {
+					otherForms = typeName(q)
+				}
+			}
+			if form == "" {
+				t.Fatalf("%q was dropped from the sitting entirely; %d questions", tc.word, len(qs))
+			}
+			if form != "*play.Recall" {
+				t.Errorf("%q got %s — %s, so it cannot be a recognition question", tc.word, form, tc.why)
+			}
+			if otherForms != "*play.Choice" {
+				t.Errorf("the rest of the deck got %s, so this test is not distinguishing "+
+					"the entry from the deck size", otherForms)
+			}
+		})
 	}
 }

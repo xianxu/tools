@@ -53,13 +53,26 @@ func TestSittingCostIsBoundedByTheCap(t *testing.T) {
 			"(poolCap %d + %d due) — the pool is being walked whole, or built per question",
 			len(words), counting.lookups, max, poolCap, opt.count)
 	}
-	// And it must not have collapsed to nothing: a pool of zero would satisfy
-	// the bound above while silently disabling form 2.3.
+	// A BOUND ALONE IS SATISFIED BY ZERO. Counting lookups proves the cost is
+	// capped and nothing else — a build that skipped the pool entirely would
+	// pass it while silently disabling form 2.3 for every learner. So the
+	// OUTPUT is asserted too: the sitting must actually contain a form 2.3
+	// question, which is only possible if the pool was populated.
 	if counting.lookups < poolCap {
 		t.Errorf("only %d lookups — the pool is not being built at all", counting.lookups)
 	}
 	if len(qs) == 0 {
 		t.Fatal("no questions")
+	}
+	choices := 0
+	for _, q := range qs {
+		if _, ok := q.(*play.Choice); ok {
+			choices++
+		}
+	}
+	if choices == 0 {
+		t.Errorf("%d questions and not one is form 2.3 — the pool was capped to nothing, "+
+			"which the lookup bound above cannot distinguish from working", len(qs))
 	}
 }
 
@@ -180,3 +193,39 @@ func TestSeedForIsPinned(t *testing.T) {
 }
 
 const goldenBankSeed uint64 = 16298003680678406606
+
+// NOAD redirects derived forms to their base headword, and form 2.3 must not
+// present the base's definition as the derived word's meaning.
+//
+// Measured: `bargainer` returns the `bargain` entry, so without this gate the
+// question "what does bargainer mean?" offers "an agreement between two or more
+// parties…" as the correct answer, records Correct, and promotes the word.
+//
+// The multi-word rows are the other half. Gating on Headword() alone would send
+// every multi-word headword to the fallback, because the head is built from
+// fields[0] — "hot" for `hot dog`, "a" for `a priori`.
+func TestEntryDefinesTheWordItWasLookedUpFor(t *testing.T) {
+	d := testDict(t)
+	for _, tc := range []struct {
+		word string
+		want bool
+	}{
+		{"bargainer", false}, // returns the `bargain` entry
+		{"sycophantic", true},
+		{"hot dog", true},  // head is [hot][dog]
+		{"a priori", true}, // head is [a][priori][a][pri·o·ri]
+		{"jalapeño", true}, // diacritics
+		{"bases", true},    // defines itself; it fails LATER, on no usable gloss
+		{"gaslighting", true},
+		{"mesa", true},
+	} {
+		raw, err := d.Lookup(tc.word)
+		if err != nil {
+			t.Fatalf("%s is not in the committed corpus: %v", tc.word, err)
+		}
+		if got := entryDefines(tc.word, ParseEntry(raw)); got != tc.want {
+			t.Errorf("entryDefines(%q) = %v, want %v (headword %q)",
+				tc.word, got, tc.want, ParseEntry(raw).Headword())
+		}
+	}
+}

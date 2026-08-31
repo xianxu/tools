@@ -420,3 +420,137 @@ findings:
       2026-08-20/27 stub and misses the entire build log. Merge them under the single
       canonical heading.
 ```
+
+---
+
+## Re-review — 2026-08-30T20:34:03-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 7 — review form 2.3: meaning multiple choice from the local deck |
+| repo | tools |
+| issue file | workshop/issues/000007-vocab-form-meaning.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a8962469ff08154f5377a7572586c575c2d4610f..87e848c32ea068876cfa3a51a2952cd82ce22580 |
+| command | sdlc close --issue 7 |
+| reviewer | claude |
+| timestamp | 2026-08-30T20:34:03-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Form 2.3 is genuinely built and genuinely wired: `go build`, `go vet`, `go test ./...`, `go test ./cmd/define/ -race` and `gofmt -l` are all clean here, `go list` confirms `play` still imports nothing, and every one of the eleven tests the plan's Done-when rows cite exists in the tree. Round 1's Critical (BR-1) is fixed the right way — a seed-shuffled index permutation in both selection passes rather than a shuffled slice — and pinned by a property test that goes red on the defect rather than green on the fix. BR-12's rule ("derive the plan tables from the tree") was applied and the three named siblings are all delivered, and BR-14 is fixed. What stops SHIP is two things: BR-13's *rule* was written into the plan Revisions but never swept, so three of its eight named instances survive and four fresh siblings joined them in this same window; and a behavioural gap nothing has raised yet — on a derivative lookup (`bargainer` → NOAD's `bargain` entry) form 2.3 marks a gloss "correct" that defines a different word, which form 2.1 never did because it showed the whole entry.
+
+### 1. Strengths
+
+- **`cmd/define/play/pick.go:50-71`** — the BR-1 fix is the right shape and the comment explains *why a permutation and not a shuffled slice* (`choiceFor` reuses the sitting's pool, so reordering it would couple each question to the ones before). `TestPickOptionsVariesTheDistractorsAcrossASitting` (`play/pick_test.go:200`) asserts ≥8 distinct distractor sets over 20 targets — a property the defect cannot satisfy, not a restatement of the implementation.
+- **`play/pick_test.go:158`** — `TestEveryAxisIsSelectable` now derives from the `numAxes` sentinel and asserts *membership of `distractorAxes`* directly, with the behavioural check kept beside it. The comment states honestly why the behavioural check alone was vacuous (pass 2 reaches any candidate by design). This is the correct answer to BR-3.
+- **`store/yaml_test.go:443-473`** — `TestYAMLWritesAtLastWhateverFieldsAreSet` derives "`at:` is the last key" from the *written record* rather than comparing two named fields. That is exactly the pin D6 needs, and it survives future field additions.
+- **`play_loop_test.go:110-124`** — `gradeKey` fixes a real, quiet hazard: once a two-word rig produces form 2.3, `"y"`/`"n"` stopped being answers at all, so session-level tests would have been asserting about sessions that never graded anything.
+- **`play_loop_test.go:857`** — `TestSittingWithNoModelAndNoNetwork` *panics* the model seam and `getenv` instead of nil-ing them, which is the difference between proving the path is offline and proving it has a `!= nil` guard.
+- **`doc_sync_test.go:40-77`** — the README prompt guard now iterates shipped forms and composes the line exactly as the loop does, and states its residual (a third form must be added by hand) rather than hiding it.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**A derivative lookup makes the "correct" option the definition of a different word** — `cmd/define/optionpool.go:106` (`targetCandidate`), reachable from `choiceFor` at `optionpool.go:124` and `play_loop.go:284`.
+
+`targetCandidate` takes the first usable gloss of whatever entry `d.dict.Lookup(word)` returned, without checking that the entry actually defines `word`. NOAD redirects derived forms to the base headword. Measured over the committed corpus (`cmd/define/testdata/entries/en`): looking up **`bargainer`** returns the entry whose headword is `bargain`, and `targetCandidate("bargainer", …)` yields `"an agreement between two or more parties as to what each party will do for the other"` — `bargain`'s definition, marked `Correct: true` and offered as the answer to "what does *bargainer* mean?". One of 34 corpus entries has this shape; `a priori`, `hot dog` and `jalapeño` also mismatch a naive headword comparison but are false positives (multi-word head tokenization and diacritics), so the real rate is ~3% of the corpus and higher in practice, since looking a derived form up is an ordinary way to use a dictionary.
+
+Form 2.1 was immune: it showed the whole rendered entry, `DERIVATIVES bargainer | ˈbärɡ(ə)nər | noun` included, and the learner self-rated. Form 2.3 asserts a single gloss *is* the word's meaning, records `Correct`, and promotes the word in the schedule. The full entry does appear at reveal, so the learner can notice — but only after being graded right for a wrong association.
+
+*Fix sketch:* gate `targetCandidate` (or `choiceFor`) on the entry defining the prompted word, and fall back to form 2.1 otherwise — the route `bases` already takes, so no new failure mode. `Entry.Headword()` alone is **not** sufficient: `parse.go:436` builds the head from `fields[0]`, so it returns `hot` for *hot dog* and `a` for *a priori*. Compare against the head token run (with the existing `differsOnlyByDiacritics` for accents), or check whether the word appears only under the parsed `DERIVATIVES` section (`parse.go:214` already splits it out). Pin it with a corpus row for `bargainer` beside the existing `bases` row in `TestASittingFallsBackForAnEntryWithNoDefinition`.
+
+### 4. Minor findings
+
+- **`play/pick.go:68-71` and `play/pick.go:153-158`** are the same reverse Fisher–Yates written twice, once over `[]int` and once over `[]Option` (ARCH-DRY). A generic `func shuffle[T any](p *prng, xs []T)` unifies them and needs no import, so the empty-allowlist guard is not the reason they are separate.
+
+### 5. Test coverage notes
+
+- The suite is strong where it was weak last round: `optionpool_test.go` now covers `buildPool`'s cost envelope, `optionCandidates`, `targetCandidate`, `choiceFor` and `seedFor`, and both golden pins (`TestPRNGSequenceIsPinned`, `TestSeedForIsPinned`) do what BR-4 asked.
+- **The cost-envelope test's lower bound is vacuous.** In `TestSittingCostIsBoundedByTheCap` the deck is 8 real words plus 120 `filler*` words that are not in the corpus, so `counting.lookups >= poolCap` is true no matter how many lookups *succeeded*. Measured: the pool this rig actually builds is **2 candidates** at the fixed test clock, and 1–8 across 60 day-seeds — so the assertion at `optionpool_test.go:58` cannot fail for the reason its comment gives, and nothing in the test asserts a `*play.Choice` was produced. (This is BR-13's named instance; see the disposition.)
+- `TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis` **skips** in this environment (`no pty available: operation not permitted`), including with the sandbox off. Its D8 identity assertion reads correct on inspection, but I could not execute it; that half of the verification rests on the operator's real-terminal run recorded in the issue Log.
+- Nothing pins the "one usable sense per axis, general = first *unlabelled*" rule that `optionCandidates` implements — `TestOptionCandidatesPicksOneSensePerAxis` asserts at most one per axis and that a domain candidate exists, but never that the general candidate is the first unlabelled one. `defenestrate` is the ready fixture (its general candidate is a later sense, because its first usable one is `rare`), and `#12` reuses the rule.
+
+### 6. Architectural notes
+
+- **ARCH-DRY** — flagged once (Minor, above). `optionCandidates`/`targetCandidate` both walk blocks×senses but implement genuinely different selection rules; keeping them apart is right. `SampleStrings` being exported so `main` shares `play`'s PRNG rather than growing a second one is the correct call.
+- **ARCH-PURE** — pass. `go list -f '{{join .Imports}}' ./cmd/define/play` returns empty, so the determinism claim sits inside a mechanically enforced guard. All prose handling landed in `main` (D5/D5a) and `play` receives finished `Candidate`s. `buildPool` is the only IO in `optionpool.go` and the pure functions around it take `Entry` values.
+- **ARCH-PURPOSE** — one flag (the Important finding). The shadow-sweep on this window's single sources: `Question.Keys()` → `draw` derives, README derives via `doc_sync_test.go`; the `Axis` set → `distractorAxes` and `String()` both derived-guarded from `numAxes`. The one hand-maintained restatement left standing is `README.md:252`'s `kinds: looked-up, asked`, which restates `store.EventKind` by hand, omits `reviewed`, and does not mention the `missed:` key this diff writes into that same file. That is a deferred consumer, and it is inside BR-13.
+- **ARCH-MOCK** — pass. No new external dependency; the dictionary fake plus the committed corpus back every new test, `countingDict` wraps the same seam production uses, and the pty conformance test exercises the real binary against a real deck.
+- **ARCH-CONSTRAINTS** — pass on the declared bound, with the caveat above. `poolCap = 40` is stated with its reasoning and `TestSittingCostIsBoundedByTheCap` enforces `lookups <= poolCap + count`; the pool is built once per sitting, not per question. Nothing new is on the per-keystroke path.
+
+### 7. Plan revision recommendations
+
+- A `## Revisions` entry recording that the option material is only valid when the entry *defines the prompted word* — D4 ("the gloss is the option text, and it already exists") and D4a both assume the looked-up word and the entry's headword are the same, which NOAD's derivative redirects make false. Name `bargainer` as the measured instance and state the fallback (form 2.1, the `bases` route) as the decision.
+- A `## Revisions` entry closing BR-13 as a *sweep* rather than a list: state that the rule applies to test doc comments, README prose and the atlas equally, and record the enumeration that was run (e.g. `go doc` over each touched package plus a grep for the repudiated phrasings) — otherwise the next round finds the fifth instance of the same family.
+
+---
+
+```findings
+dispose:
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Verified in the tree - play.Missed is in the Integration points table (plan:149), D4a corrected (plan:61-63), Done-when row 9 added and row 3 widened (plan:179,184); all 11 cited tests exist; go doc -short on play gives 15 exported names, 11 tabled, 4 belonging to issue 6.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      5 of 8 named instances fixed; 3 survive and 4 fresh siblings joined them, so the rule was written down but never swept.
+  - id: BR-14
+    disposition: addressed
+    note: |
+      grep -n '^## ' on the issue file shows one Log, at line 147, in canonical order.
+findings:
+  - id: new
+    severity: Important
+    family: answer-must-define-the-prompted-word
+    title: |
+      A derivative lookup makes form 2.3's "correct" option the definition of a different word
+    detail: |
+      cmd/define/optionpool.go:106 (targetCandidate) takes the first usable gloss of
+      whatever entry the dictionary returned, without checking that the entry defines
+      the prompted word. NOAD redirects derived forms to the base headword. Measured
+      over the committed corpus - looking up `bargainer` returns the `bargain` entry,
+      and targetCandidate("bargainer", ...) yields "an agreement between two or more
+      parties as to what each party will do for the other", marked Correct:true and
+      offered as the answer to "what does bargainer mean?". 1 of 34 corpus entries has
+      this shape. Form 2.1 was immune because it showed the whole rendered entry
+      including "DERIVATIVES bargainer"; form 2.3 asserts one gloss IS the meaning,
+      records Correct, and promotes the word in the schedule. Fix - gate choiceFor on
+      the entry defining the prompted word and fall back to form 2.1 otherwise, the
+      route `bases` already takes. Entry.Headword() alone is NOT sufficient: parse.go:436
+      builds the head from fields[0], so it returns "hot" for `hot dog` and "a" for
+      `a priori`. Compare against the head token run (differsOnlyByDiacritics already
+      exists for accents) or check the parsed DERIVATIVES section. Pin with a
+      `bargainer` row beside the `bases` row in
+      TestASittingFallsBackForAnEntryWithNoDefinition.
+  - id: new
+    severity: Minor
+    family: duplicated-algorithm-should-be-one-helper
+    title: |
+      The same reverse Fisher-Yates is written twice in pick.go
+    detail: |
+      cmd/define/play/pick.go:68-71 shuffles []int and pick.go:153-158 shuffles
+      []Option with an identical loop (ARCH-DRY). A generic
+      `func shuffle[T any](p *prng, xs []T)` unifies them and needs no import, so the
+      package's empty-allowlist guard is not the reason they are separate.
+```
+
+**Note on the BR-13 disposition — the four surviving siblings, since the rule is the deliverable.** The rule ("a comment making a falsifiable behavioural claim must be derived, pinned, or weakened to the true claim") was recorded in the plan's Revisions but the enumeration it implies was never run, so round 2 fixed the five named code comments and left everything else:
+
+1. **`cmd/define/optionpool_test.go:66-67`** — `"D4a: at most one sense per axis, and the general one is the FIRST usable sense of the first block."` This is verbatim the stale claim BR-12b/BR-13 corrected, surviving **two lines above** the only edit round 2 made to this file (line 96). `optionCandidates` takes the first *unlabelled* usable sense across all blocks; `defenestrate` proves the difference.
+2. **`cmd/define/play/pick_test.go:239-241`** — attributes to D5a the claim that a fixed seed must reproduce a question *"forever, so that a question can be reproduced from a log"*. D5a says no such thing, and round 2 repudiated exactly that phrasing in `pick.go` and `optionpool.go`.
+3. **`cmd/define/play/recall.go:32-38`** — `Keys()` was inserted between `// Grade reads the self-rating.` and `Grade`. Verified: `go doc ./cmd/define/play Recall.Keys` renders "Grade reads the self-rating… Anything else returns false — a stray key is not a silent wrong answer", and `Recall.Grade` is now undocumented.
+4. **`cmd/define/README.md:70`** — "A word is never offered as a distractor against a word whose dictionary definition mentions it." `mentions` (`glosslabel.go:268`) returns `false` for any headword shorter than `minCrossRefWord` (6), so the guard never fires for short words. "Never" should be the measured claim.
+
+And the three from BR-13's own list that round 2 did not touch: `optionpool_test.go:56-59` (the lookup-count check does not establish a non-empty pool — measured above), `pty_conformance_test.go:743-745` (the superseded `misses >= missed lines` paragraph still sits above its replacement), and `README.md:252` (`kinds: looked-up, asked`, missing `reviewed` and the new `missed:` key this diff writes into that block).

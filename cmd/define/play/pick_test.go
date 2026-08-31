@@ -236,13 +236,18 @@ func seedOf(i int) uint64 { return uint64(i)*2654435761 + 7 }
 // The PRNG and the option shuffle are GOLDEN, because the argument for
 // hand-rolling them is that this repo pins them.
 //
-// D5a rejects math/rand on the grounds that a fixed seed must reproduce a
-// question "forever, so that a question can be reproduced from a log" — and
-// nothing pinned the sequence, so changing a shift constant left the whole suite
-// green. Comparing two runs inside one binary proves only that the code is
-// deterministic, which math/rand also is; what had to be pinned is the specific
-// sequence. These literals are the current output, and changing them is a
-// deliberate act that invalidates every recorded question.
+// D5a rejects math/rand, and nothing pinned the sequence: changing a shift
+// constant left the whole suite green. Comparing two runs inside one binary
+// proves only that the code is deterministic, which math/rand also is; what had
+// to be pinned is the SPECIFIC sequence.
+//
+// What that buys, stated accurately — an earlier version of this comment said
+// "so a question can be reproduced from a log", which is false and was corrected
+// across the whole diff: the option set also depends on the pool, which is the
+// deck at that moment, and the log records none of it. The true claim is that
+// the same deck on the same day gives the same sitting, so a mid-sitting restart
+// re-asks rather than reshuffles, and tests are stable across machines. Changing
+// these literals is a deliberate act that changes what today's sitting asks.
 func TestPRNGSequenceIsPinned(t *testing.T) {
 	p := newPRNG(7)
 	want := []uint64{7575888327, 8070950887952051652, 13931920357059763743}

@@ -114,14 +114,62 @@ func targetCandidate(word string, e Entry) (play.Candidate, bool) {
 	return play.Candidate{}, false
 }
 
+// entryDefines reports whether the entry actually defines the prompted word.
+//
+// NOAD REDIRECTS DERIVED FORMS to their base headword: looking up `bargainer`
+// returns the `bargain` entry, whose first gloss is "an agreement between two or
+// more parties…". Form 2.1 survived that because it shows the whole rendered
+// entry, DERIVATIVES line included, and the learner reads it as the answer to
+// "did you know this word". Form 2.3 cannot: it asserts that ONE gloss IS the
+// meaning of the word on screen, marks it Correct, and promotes the word in the
+// schedule on the strength of it. So the entry has to be checked, and a redirect
+// falls back to form 2.1 — the same route `bases` takes.
+//
+// `Headword()` alone is NOT the check, which is why this walks the token run:
+// the head is built from `fields[0]` (parse.go:436), so it returns "hot" for
+// `hot dog` and "a" for `a priori`, and gating on it would send every multi-word
+// headword to the fallback. Accumulating `HeadWord` plus the `HeadOther` tokens
+// that follow it reconstructs "hot dog" and "a priori", and stops at the
+// syllable token — which is exactly where `bargainer` fails to match.
+func entryDefines(word string, e Entry) bool {
+	want := store.Key(word)
+	if want == "" {
+		return false
+	}
+	var run string
+	for _, h := range e.Head {
+		if h.Kind != HeadWord && h.Kind != HeadOther {
+			break
+		}
+		if run != "" {
+			run += " "
+		}
+		run += h.Text
+		// Compared at every step rather than at the end: the run keeps growing
+		// past the headword into NOAD's own repetitions ("a priori a pri·o·ri"),
+		// so only a PREFIX can be expected to match.
+		if got := store.Key(run); got == want || differsOnlyByDiacritics(got, want) {
+			return true
+		}
+	}
+	return false
+}
+
 // choiceFor builds form 2.3 for one word, or reports that it cannot.
 //
-// Cannot happens for two ordinary reasons, neither an error: the entry offers no
-// usable definition, or the deck has not yet grown enough distractors (D9 — a
+// Cannot happens for three ordinary reasons, none an error: the entry does not
+// define the prompted word (a NOAD derivative redirect — see entryDefines), the
+// entry offers no usable definition at all (`bases`, every sense a
+// cross-reference), or the deck has not yet grown enough distractors (D9 — a
 // learner three lookups in). The caller falls back to form 2.1, which is
 // invisible to the learner and keeps the sitting the length the schedule asked
 // for.
 func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint64) *play.Choice {
+	// A redirect to a base headword cannot be a recognition question: the gloss
+	// would be a different word's meaning, offered as this one's.
+	if !entryDefines(word, e) {
+		return nil
+	}
 	target, ok := targetCandidate(word, e)
 	if !ok {
 		return nil
@@ -159,8 +207,8 @@ func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint6
 // property of a stdlib version — the same standard pick.go's PRNG is held to.
 //
 // The DAY is one of the parts, so a word asked again next week gets a different
-// option set. Without it the learner would meet the same four definitions in the
-// same order every time and could learn the position instead of the meaning.
+// option set. Without it the learner would meet the same options in the same
+// order every time and could learn the position instead of the meaning.
 func seedFor(parts ...string) uint64 {
 	const offset64, prime64 = 14695981039346656037, 1099511628211
 	h := uint64(offset64)

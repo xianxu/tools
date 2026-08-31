@@ -65,10 +65,7 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	for i := range order {
 		order[i] = i
 	}
-	for i := len(order) - 1; i > 0; i-- {
-		j := rng.intn(i + 1)
-		order[i], order[j] = order[j], order[i]
-	}
+	shuffle(rng, order)
 
 	take := func(c Candidate) {
 		used[c.Word] = true
@@ -109,7 +106,7 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	for _, c := range distractors {
 		opts = append(opts, Option{Gloss: c.Gloss, Word: c.Word, Axis: c.Axis})
 	}
-	rng.shuffleOptions(opts)
+	shuffle(rng, opts)
 	return opts
 }
 
@@ -150,10 +147,16 @@ func (p *prng) next() uint64 {
 
 func (p *prng) intn(n int) int { return int(p.next() % uint64(n)) }
 
-func (p *prng) shuffleOptions(opts []Option) {
-	for i := len(opts) - 1; i > 0; i-- {
+// shuffle is Fisher-Yates over any slice.
+//
+// Generic because it was written twice — once for the []int permutation that
+// drives selection and once for the []Option result — with identical bodies
+// (ARCH-DRY). Generics need no import, so the package's empty allowlist was
+// never the reason they were separate.
+func shuffle[T any](p *prng, xs []T) {
+	for i := len(xs) - 1; i > 0; i-- {
 		j := p.intn(i + 1)
-		opts[i], opts[j] = opts[j], opts[i]
+		xs[i], xs[j] = xs[j], xs[i]
 	}
 }
 

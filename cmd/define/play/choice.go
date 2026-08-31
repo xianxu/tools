@@ -1,6 +1,9 @@
 package play
 
-// Choice is form 2.3: show the word, offer four definitions, one of them right.
+// Choice is form 2.3: show the word, offer up to four definitions, one right.
+//
+// UP TO four: a young deck supplies two or three, and Keys() names the digits
+// that actually work rather than promising 1-4 (D9).
 //
 // This is a RECOGNITION test, where form 2.1 is a recall test — which is why
 // this one's content is unanswerable unseen and therefore lives in Prompt, as

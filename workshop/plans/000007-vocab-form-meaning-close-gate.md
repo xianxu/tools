@@ -235,6 +235,57 @@ rounds:
           family: artifact-violates-its-schema
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-30T20:34:03-07:00"
+      agent: claude
+      dispose:
+        - id: BR-12
+          disposition: addressed
+          note: Verified in the tree - play.Missed is in the Integration points table (plan:149), D4a corrected (plan:61-63), Done-when row 9 added and row 3 widened (plan:179,184); all 11 cited tests exist; go doc -short on play gives 15 exported names, 11 tabled, 4 belonging to issue 6.
+          round: 3
+        - id: BR-13
+          disposition: not-addressed
+          note: 5 of 8 named instances fixed; 3 survive and 4 fresh siblings joined them, so the rule was written down but never swept.
+          round: 3
+        - id: BR-14
+          disposition: addressed
+          note: grep -n '^## ' on the issue file shows one Log, at line 147, in canonical order.
+          round: 3
+      findings:
+        - id: BR-15
+          severity: Important
+          title: A derivative lookup makes form 2.3's "correct" option the definition of a different word
+          detail: |-
+            cmd/define/optionpool.go:106 (targetCandidate) takes the first usable gloss of
+            whatever entry the dictionary returned, without checking that the entry defines
+            the prompted word. NOAD redirects derived forms to the base headword. Measured
+            over the committed corpus - looking up `bargainer` returns the `bargain` entry,
+            and targetCandidate("bargainer", ...) yields "an agreement between two or more
+            parties as to what each party will do for the other", marked Correct:true and
+            offered as the answer to "what does bargainer mean?". 1 of 34 corpus entries has
+            this shape. Form 2.1 was immune because it showed the whole rendered entry
+            including "DERIVATIVES bargainer"; form 2.3 asserts one gloss IS the meaning,
+            records Correct, and promotes the word in the schedule. Fix - gate choiceFor on
+            the entry defining the prompted word and fall back to form 2.1 otherwise, the
+            route `bases` already takes. Entry.Headword() alone is NOT sufficient: parse.go:436
+            builds the head from fields[0], so it returns "hot" for `hot dog` and "a" for
+            `a priori`. Compare against the head token run (differsOnlyByDiacritics already
+            exists for accents) or check the parsed DERIVATIVES section. Pin with a
+            `bargainer` row beside the `bases` row in
+            TestASittingFallsBackForAnEntryWithNoDefinition.
+          family: answer-must-define-the-prompted-word
+          round: 3
+        - id: BR-16
+          severity: Minor
+          title: The same reverse Fisher-Yates is written twice in pick.go
+          detail: |-
+            cmd/define/play/pick.go:68-71 shuffles []int and pick.go:153-158 shuffles
+            []Option with an identical loop (ARCH-DRY). A generic
+            `func shuffle[T any](p *prng, xs []T)` unifies them and needs no import, so the
+            package's empty-allowlist guard is not the reason they are separate.
+          family: duplicated-algorithm-should-be-one-helper
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#7 (boundary-review)
@@ -373,8 +424,42 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   2026-08-20/27 stub and misses the entire build log. Merge them under the single
   canonical heading.
 
+## Round 3 — 2026-08-30T20:34:03-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-12 — addressed — Verified in the tree - play.Missed is in the Integration points table (plan:149), D4a corrected (plan:61-63), Done-when row 9 added and row 3 widened (plan:179,184); all 11 cited tests exist; go doc -short on play gives 15 exported names, 11 tabled, 4 belonging to issue 6.
+- BR-13 — not-addressed — 5 of 8 named instances fixed; 3 survive and 4 fresh siblings joined them, so the rule was written down but never swept.
+- BR-14 — addressed — grep -n '^## ' on the issue file shows one Log, at line 147, in canonical order.
+
+### Raised
+
+- **BR-15** [Important] `answer-must-define-the-prompted-word` A derivative lookup makes form 2.3's "correct" option the definition of a different word
+  cmd/define/optionpool.go:106 (targetCandidate) takes the first usable gloss of
+  whatever entry the dictionary returned, without checking that the entry defines
+  the prompted word. NOAD redirects derived forms to the base headword. Measured
+  over the committed corpus - looking up `bargainer` returns the `bargain` entry,
+  and targetCandidate("bargainer", ...) yields "an agreement between two or more
+  parties as to what each party will do for the other", marked Correct:true and
+  offered as the answer to "what does bargainer mean?". 1 of 34 corpus entries has
+  this shape. Form 2.1 was immune because it showed the whole rendered entry
+  including "DERIVATIVES bargainer"; form 2.3 asserts one gloss IS the meaning,
+  records Correct, and promotes the word in the schedule. Fix - gate choiceFor on
+  the entry defining the prompted word and fall back to form 2.1 otherwise, the
+  route `bases` already takes. Entry.Headword() alone is NOT sufficient: parse.go:436
+  builds the head from fields[0], so it returns "hot" for `hot dog` and "a" for
+  `a priori`. Compare against the head token run (differsOnlyByDiacritics already
+  exists for accents) or check the parsed DERIVATIVES section. Pin with a
+  `bargainer` row beside the `bases` row in
+  TestASittingFallsBackForAnEntryWithNoDefinition.
+- **BR-16** [Minor] `duplicated-algorithm-should-be-one-helper` The same reverse Fisher-Yates is written twice in pick.go
+  cmd/define/play/pick.go:68-71 shuffles []int and pick.go:153-158 shuffles
+  []Option with an identical loop (ARCH-DRY). A generic
+  `func shuffle[T any](p *prng, xs []T)` unifies them and needs no import, so the
+  package's empty-allowlist guard is not the reason they are separate.
+
 ## Open findings
 
-- **BR-12** [Important] `plan-artifact-must-match-tree` BR-2 fixed the five rows it named; three enumerable siblings of the same class remain
 - **BR-13** [Minor] `docs-restate-behaviour-inaccurately` Five doc comments state behaviour the code does not have
-- **BR-14** [Minor] `artifact-violates-its-schema` The issue file has two "## Log" sections, the second outside the canonical order
+- **BR-15** [Important] `answer-must-define-the-prompted-word` A derivative lookup makes form 2.3's "correct" option the definition of a different word
+- **BR-16** [Minor] `duplicated-algorithm-should-be-one-helper` The same reverse Fisher-Yates is written twice in pick.go

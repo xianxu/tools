@@ -43,7 +43,7 @@ What follows, and it narrows the taxonomy a second time:
 - TWO distinct axes in one question — a domain distractor AND a register one — will be uncommon, because domain labels are sparse.
 - So the taxonomy this form realistically produces is **register confusion, occasional domain confusion, and did-not-know-it.** That is less than D1 implied and more than a boolean, and saying so here is the point: a decision made on a measurement should carry the measurement's limits with it.
 
-`pickOptions` therefore fills axes in a fixed priority — domain, register, general — and falls back to `general` whenever the pool has nothing labelled. A question is never blocked on an axis being available.
+`PickOptions` therefore fills axes in a fixed priority — domain, register, general — and falls back to `general` whenever the pool has nothing labelled. A question is never blocked on an axis being available.
 
 **D4 — the gloss is the option text, and it already exists.** `Sense.Gloss` is a single clean line (`"the land alongside or sloping down to a river or lake"`), which is exactly what an option needs. No new rendering, no truncation policy to invent — and it keeps `Render` out of this entirely, so nothing here can affect what a lookup prints.
 
@@ -72,9 +72,9 @@ The alternative is not asceticism — the constraint FORCES the seam D5 already 
 | numbering the options `1`–`4` | `play` | `byte('0'+n)`, concatenated with `+`. `fmt` buys nothing for one digit |
 | a seeded shuffle | `play` | a hand-rolled xorshift64, ~4 lines. **Better than `math/rand` here**: Done-when 3 claims determinism under a fixed seed, and a PRNG defined in this repo is pinned by this repo rather than by `math/rand`'s cross-version behaviour |
 | the near-synonym gloss match (D3a) | **`main`** | word-boundary scanning over dictionary prose is `strings` work — and it is DICTIONARY work, which D5 already places in `main` |
-| the label table (D3) | **`main`** | `senseLabel`/`noadLabels` are text parsing, already sited in `cmd/define/glosslabel.go` |
+| the label table (D3) | **`main`** | `readGloss` and the three `noad*Labels` tables are text parsing, sited in `cmd/define/glosslabel.go` |
 
-So `pickOptions` receives candidates that are ALREADY filtered and labelled — gloss, headword, `Axis` — and does selection and formatting only. It never sees prose. That is the same division `Recall` uses (`play/recall.go:19-24`: already-rendered text in, no parsing), so this is the existing precedent applied rather than a new rule invented to satisfy a guard.
+So `PickOptions` receives candidates that are ALREADY filtered and labelled — gloss, headword, `Axis` — and does selection and formatting only. It never sees prose. That is the same division `Recall` uses (`play/recall.go:19-24`: already-rendered text in, no parsing), so this is the existing precedent applied rather than a new rule invented to satisfy a guard.
 
 **Hand-rolling `strings` inside `play` would be the wrong answer** and is explicitly rejected: re-implementing a standard search to keep an allowlist empty is the guard wagging the design (ARCH-DRY). The guard stays intact because the text work MOVED, not because it was rewritten badly.
 
@@ -396,3 +396,50 @@ the pool, which is the deck's membership and `LastSeen` ordering at that moment,
 and the event log records none of it. The true claim — the same deck on the same
 day yields the same sitting, so a restart re-asks rather than reshuffles — is
 narrower, still worth the code, and now what the comments say.
+
+### 2026-08-30 — close review round 3: a correctness bug the form's premise hid
+
+**BR-15 (Important, and really a correctness defect) — the option material is
+only valid when the entry DEFINES the prompted word.** D4 says *"the gloss is the
+option text, and it already exists"* and D4a says which sense to take; both quietly
+assume the looked-up word and the entry's headword are the same word. NOAD
+redirects derived forms to their base: looking up `bargainer` returns the
+`bargain` entry, so form 2.3 offered *"an agreement between two or more parties
+as to what each party will do for the other"* as the correct answer to *"what
+does bargainer mean?"*, recorded `Correct`, and promoted the word in the
+schedule. One of 34 corpus entries has this shape.
+
+**Form 2.1 was immune, which is why nothing caught it.** Recall shows the whole
+rendered entry — DERIVATIVES line included — and the learner reads it as the
+answer to "did you know this word". Form 2.3 asserts that ONE gloss *is* the
+meaning. The same dictionary behaviour is harmless under one form and wrong under
+the other, and the assumption was inherited rather than re-examined when the form
+changed.
+
+`entryDefines` gates it, and falls back to form 2.1 — the route `bases` already
+takes. `Headword()` alone is not the check: the head is built from `fields[0]`
+(`parse.go:436`), so it returns `hot` for `hot dog` and `a` for `a priori`, and
+gating on it would send every multi-word headword to the fallback. The check
+accumulates `HeadWord` plus the following `HeadOther` tokens and compares each
+prefix, which reconstructs the phrases and stops at the syllable token — exactly
+where `bargainer` fails.
+
+**BR-13 closed as a SWEEP, since a list is what let it recur.** The rule from
+round 2 (*a comment making a falsifiable behavioural claim must be derived,
+pinned, or weakened*) had been recorded and not EXECUTED, so round 2 fixed five
+named comments and left the rest. The enumeration, run over `cmd/define/`,
+`atlas/` and both `#7` artifacts:
+
+```
+grep -rn "first sense of the first block|reproduc(ed|ible) from a log|four definitions|1-4 =" 
+grep -rn "senseLabel|excludeCrossReferenced|noadLabels|pickOptions"
+```
+
+Four survivors it found, none of which any reviewer had listed: `choice.go`'s
+package doc still said "offer four definitions"; `pick_test.go`'s new golden test
+repeated the very reproducible-from-a-log claim it was written to replace;
+`seedFor` said "the same four definitions"; and D5a still named `pickOptions`,
+`senseLabel` and `noadLabels`. Re-running the sweep is now clean. The lesson is
+narrow and worth keeping: **recording a rule is not applying it** — the round
+that writes the rule must also run it, or the next round finds the instance the
+rule was written to catch.
