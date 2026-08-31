@@ -2673,3 +2673,36 @@ does not exist. `#7` tripped it with six at once, because form 2.3's selection i
 pure and its tests live in `play/` BY DESIGN. A guard that fails on the
 arrangement the architecture asks for trains people to weaken the guard, so it
 was fixed to walk the tree rather than the plan being edited to appease it.
+
+## Three Criticals, one missing distinction: a deck holds KEYS, a dictionary holds ENTRIES (define #7)
+
+`#7`'s close took six review rounds. Three of them raised a Critical that looked
+new each time and was the same defect:
+
+| round | symptom | what I added |
+|---|---|---|
+| 4 | one entry supplied two options under two spellings | dedup on `Word` |
+| 5 | two options carried byte-identical glosses | dedup on `Gloss` |
+| 6 | one entry supplied two options with DIFFERENT senses, both defining the prompted word, one marked wrong | dedup on `Source` — the entry |
+
+`Word` was a DECK KEY being used as if it identified a meaning. The mapping from
+keys to entries is many-to-one (`jalapeño` and `jalapeno` are two keys and one
+entry), so every attribute of the OPTION — its word, its text — was a proxy that
+would eventually come apart from the thing that actually matters, which is the
+entry.
+
+**The tell was in my own commit messages.** Rounds 4 and 5 both claimed to have
+"fixed the class". A fix that claims the class and is followed by another
+instance of it did not fix the class; it fixed a bigger symptom. When a finding
+recurs after a class-fix, the class was named at the wrong level — go up one.
+
+**The fact that explains all three was already written down in this repo.** `#29`
+exists precisely because the dictionary resolves several spellings to one entry;
+`dict_fake_test.go` models it and `TestLiveDictionaryResolvesAnUnaccentedQuery`
+pins it live. The cost of not asking "what does the rest of the codebase already
+know about identity here?" was three rounds of Critical findings.
+
+**The question that would have short-circuited it** is not "why are these two
+options the same?" but "what makes two options the same?" — the first invites a
+key per symptom, the second forces you to name the unit of meaning. Ask the
+second one first when deduplicating anything.
