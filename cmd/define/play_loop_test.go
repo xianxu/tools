@@ -967,3 +967,65 @@ func TestASittingFallsBackForAnEntryThatCannotBeAsked(t *testing.T) {
 		})
 	}
 }
+
+// Done-when 10: an unaided answer reaches the EVENT LOG, not just the Outcome.
+//
+// Driven through playSession rather than by calling CaptureReview, because the
+// wiring is the claim: deleting `out.Unaided` from the capturer leaves every
+// `play` test green, since Apply would still be setting a field nobody read.
+func TestUnaidedAnswerReachesTheLog(t *testing.T) {
+	opts := []play.Option{
+		{Gloss: "behaving in an obsequious way", Correct: true},
+		{Gloss: "an isolated flat-topped hill", Word: "mesa", Axis: play.AxisGeneral},
+	}
+	for _, tc := range []struct {
+		name        string
+		keys        string
+		wantUnaided bool
+	}{
+		// Answered cold: the form checked it and no reveal preceded it.
+		{"answered cold", "1", true},
+		// Revealed FIRST, then answered correctly. Still Correct, never unaided
+		// — and this is the case that catches reading the flag after advance()
+		// has zeroed s.Revealed.
+		{"revealed, then answered", "\r1", false},
+		// A wrong answer is never unaided whatever preceded it.
+		{"answered wrongly", "2", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, st := playRig(t, "sycophantic")
+			var out, errb bytes.Buffer
+			q := play.NewChoice("sycophantic", "", opts)
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor(tc.keys), rawTerm{}, &out, &errb)
+
+			events := reviewEvents(t, st)
+			if len(events) != 1 {
+				t.Fatalf("%d review events, want 1", len(events))
+			}
+			if events[0].Unaided != tc.wantUnaided {
+				t.Errorf("event.Unaided = %v, want %v", events[0].Unaided, tc.wantUnaided)
+			}
+		})
+	}
+}
+
+// And form 2.1's `y` never earns it, however fast — one form to the left of the
+// board, and the same overconfidence.
+func TestRecallNeverRecordsUnaided(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic")
+	var out, errb bytes.Buffer
+	q := play.NewRecall("sycophantic", "the definition")
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor("y"), rawTerm{}, &out, &errb)
+
+	events := reviewEvents(t, st)
+	if len(events) != 1 {
+		t.Fatalf("%d review events, want 1", len(events))
+	}
+	if !events[0].Correct {
+		t.Fatal("the answer was not recorded as correct")
+	}
+	if events[0].Unaided {
+		t.Error("form 2.1's `y` recorded as unaided — it is the learner's claim that " +
+			"they knew it, and nothing checked")
+	}
+}

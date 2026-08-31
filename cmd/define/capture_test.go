@@ -80,6 +80,8 @@ type countingCapturer struct {
 	// axes records the axis each review was recorded WITH, so a test can assert
 	// D7's finding reached the seam rather than only that a review happened.
 	axes []play.Axis
+	// unaided records the same for #39's two-rung promotion signal.
+	unaided []bool
 	// voices records the SESSION voice each capture happened under. #29 needs it:
 	// its first Done-when is that the session does not move, and the capture is
 	// where a lookup's language becomes observable — a word files into
@@ -100,9 +102,10 @@ func (c *countingCapturer) CaptureAsk(word, question string, _ options) {
 	c.askedWord = append(c.askedWord, word)
 }
 
-func (c *countingCapturer) CaptureReview(_ string, _ bool, axis play.Axis, _ options) {
+func (c *countingCapturer) CaptureReview(out play.Outcome, _ options) {
 	c.reviews++
-	c.axes = append(c.axes, axis)
+	c.axes = append(c.axes, out.Axis)
+	c.unaided = append(c.unaided, out.Unaided)
 }
 
 // ONE lookup, ONE capture — on every entry path.
@@ -562,7 +565,7 @@ func TestCaptureReviewAppendsOneEvent(t *testing.T) {
 			st := store.NewMem()
 			c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-			c.CaptureReview("obsequious", tc.correct, play.AxisNone, options{})
+			c.CaptureReview(play.Outcome{Word: "obsequious", Verdict: verdictOf(tc.correct)}, options{})
 
 			events, err := st.Events(time.Time{})
 			if err != nil {
@@ -590,7 +593,7 @@ func TestCaptureReviewNormalisesTheWord(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("Obsequious", true, play.AxisNone, options{})
+	c.CaptureReview(play.Outcome{Word: "Obsequious", Verdict: play.Correct}, options{})
 
 	events, _ := st.Events(time.Time{})
 	if len(events) != 1 || events[0].Word != store.Key("obsequious") {
@@ -604,7 +607,7 @@ func TestCaptureReviewRespectsNoCapture(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("obsequious", true, play.AxisNone, options{noCapture: true})
+	c.CaptureReview(play.Outcome{Word: "obsequious", Verdict: play.Correct}, options{noCapture: true})
 
 	if events, _ := st.Events(time.Time{}); len(events) != 0 {
 		t.Errorf("recorded %d events under DEFINE_NO_CAPTURE", len(events))
@@ -618,7 +621,7 @@ func TestCaptureReviewDoesNotTouchTheDeck(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("obsequious", true, play.AxisNone, options{})
+	c.CaptureReview(play.Outcome{Word: "obsequious", Verdict: play.Correct}, options{})
 
 	deck, err := st.Deck()
 	if err != nil {
@@ -627,4 +630,13 @@ func TestCaptureReviewDoesNotTouchTheDeck(t *testing.T) {
 	if len(deck) != 0 {
 		t.Errorf("the deck gained %d words from a review: %+v", len(deck), deck)
 	}
+}
+
+// verdictOf keeps the correct/wrong table rows readable now that CaptureReview
+// takes an Outcome rather than a bool.
+func verdictOf(correct bool) play.Verdict {
+	if correct {
+		return play.Correct
+	}
+	return play.Wrong
 }

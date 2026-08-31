@@ -449,7 +449,7 @@ func TestYAMLWritesAtLastWhateverFieldsAreSet(t *testing.T) {
 	// EVERY field set, so no key can hide behind omitempty.
 	if err := s.AppendEvent(store.ReviewEvent{
 		Word: "sycophantic", Kind: store.EventReviewed, Found: true, Correct: false,
-		Question: "which definition?", Missed: "domain", At: day,
+		Question: "which definition?", Missed: "domain", Unaided: true, At: day,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +464,7 @@ func TestYAMLWritesAtLastWhateverFieldsAreSet(t *testing.T) {
 			keys = append(keys, f[:i])
 		}
 	}
-	if len(keys) < 6 {
+	if len(keys) < 7 {
 		t.Fatalf("only %d keys written (%v); the fixture is not exercising the whole record:\n%s", len(keys), keys, b)
 	}
 	if last := keys[len(keys)-1]; last != "at" {

@@ -146,10 +146,10 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				// Ctrl-C lossless by construction rather than by a flush, and the
 				// loop never inspects the verdict — a skip produced no outcome at
 				// all, so there is nothing to filter here.
-				// out.Axis is AxisNone for every form that cannot say why it was
-				// missed, and for every correct answer — so this stays one call
-				// with no branch on which form asked.
-				d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, out.Axis, opt)
+				// The whole outcome: it already carries the word, the verdict,
+				// the axis a miss was missed on and whether the answer was
+				// unaided. One argument cannot be passed in the wrong order.
+				d.capture.CaptureReview(out, opt)
 			case play.OutcomeDrop:
 				// Through the store's own Forget, which is --forget's path: the deck
 				// loses the word and the events keep it. Reported, because removing
