@@ -108,6 +108,8 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 | `Paint` | `cmd/define/screen.go` | modified | PURE — `menu` renamed `footer`; pads the buffer region when the screen is pinned (D2, D3a) |
 | `newPinnedScreen` | `cmd/define/screen.go` | new | the `--play` constructor: buffer fills, footer at the bottom. A named constructor rather than a bool at a call site already taking two ints |
 | `fitFooter` | `cmd/define/screen.go` | modified | PURE — was `fitMenu`; renamed with `Paint`'s parameter so the pair cannot disagree about what it fits |
+| `OptionIndent` | `cmd/define/play/choice.go` | new | PURE — how many columns `optionLine` prepends. Exported because the caller pre-wraps the gloss and must know what goes in front of its first line |
+| `choiceFor` | `cmd/define/optionpool.go` | modified | takes the terminal width and wraps each gloss through `wrapText`, because a frame CLIPS an over-wide buffer line where the terminal used to wrap it |
 | `sittingBar` | `cmd/define/playbar.go` | new | PURE — figures + progress → the bar's text. Takes numbers, never a deck |
 | `sittingDeck` | `cmd/define/play_loop.go` | new | the deck ONE sitting holds in memory, and the home of D7's claim: `answered` applies the same transition `Fold` does, `dropped` keeps it agreeing with the deck the learner just curated, `figures` walks it with no IO |
 | `GradeOf` | `cmd/define/schedule/progress.go` | new | PURE — the rule turning `(correct, unaided)` into a rung. Exported because D7 gave it a second caller, and two spellings of one rule is how the bar's figures would drift from the log's |
@@ -353,3 +355,38 @@ the ones already in mind.** `grep -l TestPTYPlay` was the enumeration, and it ha
 four rows. Two more were added rather than re-examined —
 `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` for D5a's Critical and
 `TestPTYPlayResizeRepaints` for the sitting's SIGWINCH, both mutation-verified.
+
+### 2026-08-31 — operator found it: a frame CLIPS, and option glosses were never wrapped
+
+Reported from a real sitting, with a screenshot: `ligament`'s option line ran off
+the right edge and was **cut**, not wrapped.
+
+The plan never considered it, and the reason it did not is worth writing down.
+Every claim about width in this plan is about the LIVE EDGE — `Paint` clips the
+prompt, `fitFooter` drops footer rows — because those are the components #41
+adds. The BUFFER's clipping is `#30`'s, inherited and unexamined: *"buffer lines
+are clipped to the width — clipped at PAINT time, so the transcript and the click
+map keep the whole text."* True, and it silently changed what an unwrapped line
+does. Before this issue the terminal wrapped an over-wide option line — at the
+column, with no indent, which `#7` recorded as a KNOWN ROUGH EDGE and left. A
+frame cannot allow that wrap (a wrapped line is a frame one row too tall, and the
+terminal then scrolls every placed row), so it clips, and the rough edge became
+information loss.
+
+`#7` had already named the fix: *"if it becomes annoying the honest fix is to
+wrap in main and pass pre-wrapped option text, the same way the definition
+already arrives pre-rendered."* It is not annoying any more, it is lossy. So
+`choiceFor` takes the width and wraps each gloss through `wrapText` — the same
+function that wraps the definition — to `play.OptionIndent`, which is exported
+for exactly this reason: the caller pre-wraps and therefore has to know what the
+form will prepend.
+
+One forced consequence: `Choice.Reveal` put the label inline (`"you chose 3  …"`),
+which pushes a pre-wrapped first line ten columns past its width. The label now
+gets its own line. Wrapping every option ten columns narrower to buy room for one
+line in one state is the worse trade.
+
+**The rule: adopting an existing seam inherits its behaviour on inputs the
+previous consumer never sent it.** `#30`'s clipping was correct for a REPL, whose
+lines are all pre-wrapped by `Render`. `--play` had one line that was not, and
+nothing in "adopt the editor's screen" prompted anyone to ask which.

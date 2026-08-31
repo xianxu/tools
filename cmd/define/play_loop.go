@@ -433,7 +433,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// cannot (D9). A young deck is a NORMAL state, not an error, and the
 		// fallback is invisible to the learner — the sitting stays the length
 		// the schedule asked for either way.
-		if q := choiceFor(key, rendered, entry, pool, seedFor(key, day)); q != nil {
+		if q := choiceFor(key, rendered, entry, pool, seedFor(key, day), opt.width); q != nil {
 			qs = append(qs, q)
 			continue
 		}
