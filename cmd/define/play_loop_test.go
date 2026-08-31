@@ -1047,7 +1047,7 @@ func TestFinishReportsTheLoad(t *testing.T) {
 	if !strings.Contains(got, "reviews/day") {
 		t.Errorf("the summary does not report the deck's daily cost:\n%s", got)
 	}
-	if !strings.Contains(got, "new words/day sustainable") {
+	if !strings.Contains(got, "new words/day") && !strings.Contains(got, "no room for new words") {
 		t.Errorf("the summary does not report the sustainable new-word rate:\n%s", got)
 	}
 	// The budget it assumed must be NAMED, or a learner who sits twice a day has

@@ -397,8 +397,9 @@ func finish(w io.Writer, s play.Session, d deps, opt options) int {
 	// to double it. Inventing a second flag would give the tool two answers to
 	// "how much do I do per day".
 	fresh := schedule.SustainableNewWords(opt.count, deck, prog)
-	fmt.Fprintf(w, "~%.0f reviews/day at your current mix · %.1f new words/day sustainable at %d a sitting\n",
-		load, fresh, opt.count)
+	// Through the SHARED formatter, so this line and the pinned bar cannot
+	// describe the same deck differently or word the -count assumption two ways.
+	fmt.Fprintln(w, sittingSummary(sittingFigures{load: load, fresh: fresh, budget: opt.count}))
 	return 0
 }
 
