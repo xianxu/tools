@@ -199,3 +199,28 @@ recorded here because they change what this issue must NOT do:
 operator made against the alternative of 2.0, and `--stats` is what would
 eventually say whether it is right. The confident/+2 transition has no producer
 until a form can report confidence — see the review-modes issue for `/board`.
+
+## Revisions
+
+### 2026-08-31 — the `+2 confident` transition has an objective producer
+
+**Reason.** The Spec above names a `confident → box + 2` transition and says its
+producer is "a form that can say". While filing `#40` it became clear that the
+obvious candidate — a `firm` mark in the grid — is the WORST source for it, and
+that a better one already exists.
+
+**Delta.**
+
+- **`+2` is earned by a correct answer in form 2.3 given WITHOUT a reveal.**
+  `Apply` already knows `s.Revealed` at grading time, so "answered correctly
+  without needing to see the answer first" is available today, costs nothing, and
+  is MEASURED rather than claimed. A learner who peeked and then picked right has
+  demonstrated recognition; one who picked right cold has demonstrated recall.
+  That is exactly the distinction `+2` wants.
+- **Self-report does NOT earn `+2`.** `#40`'s grid is triage without retrieval,
+  and the illusion of knowing runs in the direction of overconfidence, so a
+  `firm` mark earns `+1` — the same as an ordinary correct answer — and no more.
+  The reasoning lives in `#40`'s Spec.
+- **Nothing else changes.** The transition table stands; only its producer is
+  now named, and named as something the session can observe rather than something
+  the learner asserts.
