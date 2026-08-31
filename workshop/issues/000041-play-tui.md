@@ -136,8 +136,8 @@ decisions and the twelve Done-when rows live in
 `workshop/plans/000041-play-tui-plan.md`.
 
 - [x] Design via `sdlc start-plan` — plan doc written, cleared plan-quality in 4 rounds.
-- [ ] **T1** — `Paint`'s `menu` becomes `footer`, with `fitMenu`; one concept, two consumers (D2).
-- [ ] **T2** — `sittingBar` in `cmd/define/playbar.go`, sharing `finish`'s wording (D8).
+- [x] **T1** — `Paint`'s `menu` becomes `footer`, with `fitMenu`; one concept, two consumers (D2).
+- [x] **T2** — `sittingBar` in `cmd/define/playbar.go`, sharing `finish`'s wording (D8).
 - [ ] **T3** — `--play` builds a `console`, and the reveal's `restore`/`enterRaw` pair is DELETED (D1, D5a).
 - [ ] **T4** — the question is written to the buffer once, not per keystroke (D4).
 - [ ] **T5** — the live edge: `newPinnedScreen` and paint-time padding (D3, D3a).
@@ -154,3 +154,35 @@ Filed from a design conversation. The operator's framing was "full TUI with a
 bottom bar of today's coverage and progress"; the enabling change is narrower
 than that, because `#30` already built the screen abstraction for the editor and
 this is its second consumer.
+
+## Log
+
+### 2026-08-31 — T1 and T2 landed; resume at T3
+
+**Done, both mutation-verified.** T1 renamed `Paint`'s `menu` to `footer`
+(`fitMenu` → `fitFooter` with it) and rewrote the doc prose, since the concept
+generalised rather than the spelling changing. T2 added `sittingBar` /
+`sittingSummary` / `costPhrase` in `cmd/define/playbar.go`, and `finish` now
+formats through the shared `sittingSummary` — giving them separate bodies turns
+`TestTheBarAndTheSummaryAgree` red.
+
+**Resume at T3, which is the risky one.** It is coupled to T4 and T5 and they
+should land together, because none of them builds alone:
+
+- **T3** — `runPlay` builds a `console` the way `replraw.go:38-70` does
+  (`enterAlt`, `enterMouse`, a screen, `watchResize`, `onceHandBack`), and
+  `playSession` takes it instead of `stdout`/`stderr`/`rawTerm`. **DELETE the
+  reveal's `restore`/`enterRaw` pair and its error branch** (`play_loop.go:177`
+  and `:185`) — that is D5a, and skipping it is what makes the alternate screen
+  vanish on the first reveal.
+- **T4** — track the written question index; write `Prompt()` on transition and
+  `Reveal()` on `OutcomeReveal`, not per keystroke.
+- **T5** — `newPinnedScreen`, and pad the buffer region at PAINT time.
+
+Every `playSession` call site in the tests moves with T3's signature.
+
+**One test is red ON PURPOSE and clears as T3–T6 land:**
+`TestPlanTableStatusMatchesTheChangeWindow` names `draw`, `todaysQuestions` and
+`playSession` as claimed-modified-but-untouched. Nothing else fails.
+
+Branch: `000041-play-tui`.
