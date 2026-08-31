@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
@@ -76,6 +77,9 @@ type countingCapturer struct {
 	asked     []string
 	askedWord []string
 	reviews   int
+	// axes records the axis each review was recorded WITH, so a test can assert
+	// D7's finding reached the seam rather than only that a review happened.
+	axes []play.Axis
 	// voices records the SESSION voice each capture happened under. #29 needs it:
 	// its first Done-when is that the session does not move, and the capture is
 	// where a lookup's language becomes observable — a word files into
@@ -96,7 +100,10 @@ func (c *countingCapturer) CaptureAsk(word, question string, _ options) {
 	c.askedWord = append(c.askedWord, word)
 }
 
-func (c *countingCapturer) CaptureReview(string, bool, options) { c.reviews++ }
+func (c *countingCapturer) CaptureReview(_ string, _ bool, axis play.Axis, _ options) {
+	c.reviews++
+	c.axes = append(c.axes, axis)
+}
 
 // ONE lookup, ONE capture — on every entry path.
 //
@@ -555,7 +562,7 @@ func TestCaptureReviewAppendsOneEvent(t *testing.T) {
 			st := store.NewMem()
 			c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-			c.CaptureReview("obsequious", tc.correct, options{})
+			c.CaptureReview("obsequious", tc.correct, play.AxisNone, options{})
 
 			events, err := st.Events(time.Time{})
 			if err != nil {
@@ -583,7 +590,7 @@ func TestCaptureReviewNormalisesTheWord(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("Obsequious", true, options{})
+	c.CaptureReview("Obsequious", true, play.AxisNone, options{})
 
 	events, _ := st.Events(time.Time{})
 	if len(events) != 1 || events[0].Word != store.Key("obsequious") {
@@ -597,7 +604,7 @@ func TestCaptureReviewRespectsNoCapture(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("obsequious", true, options{noCapture: true})
+	c.CaptureReview("obsequious", true, play.AxisNone, options{noCapture: true})
 
 	if events, _ := st.Events(time.Time{}); len(events) != 0 {
 		t.Errorf("recorded %d events under DEFINE_NO_CAPTURE", len(events))
@@ -611,7 +618,7 @@ func TestCaptureReviewDoesNotTouchTheDeck(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("obsequious", true, options{})
+	c.CaptureReview("obsequious", true, play.AxisNone, options{})
 
 	deck, err := st.Deck()
 	if err != nil {

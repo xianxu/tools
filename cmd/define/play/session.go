@@ -78,9 +78,16 @@ const (
 // that receive only an Outcome, which is every consumer this interface is meant
 // to allow.
 type Outcome struct {
-	Kind        OutcomeKind
-	Word        string
-	Verdict     Verdict
+	Kind    OutcomeKind
+	Word    string
+	Verdict Verdict
+	// Axis is WHY the option they picked was in the set, on a Record outcome
+	// for a form that can say (see Missed). AxisNone otherwise — including on
+	// every correct answer, which is D8: a right answer writes no finding.
+	//
+	// On Outcome rather than returned from Grade because only SOME forms have
+	// it. Widening Grade would make form 2.1 answer a question it cannot.
+	Axis        Axis
 	SessionDone bool
 }
 
@@ -210,7 +217,7 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		s.Revealed, s.Graded = true, true
 		s = score(s, verdict)
 		return s, []Outcome{
-			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict},
+			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict, Axis: missedAxis(q)},
 			{Kind: OutcomeReveal, Word: q.Word()},
 		}
 	}
@@ -251,7 +258,7 @@ func advance(s Session, q Question, v Verdict) (Session, Outcome) {
 		// and demote the word.
 		return s, Outcome{Kind: OutcomeNone, SessionDone: s.Done}
 	}
-	return s, Outcome{Kind: OutcomeRecord, Word: q.Word(), Verdict: v, SessionDone: s.Done}
+	return s, Outcome{Kind: OutcomeRecord, Word: q.Word(), Verdict: v, Axis: missedAxis(q), SessionDone: s.Done}
 }
 
 // Missed is implemented by forms whose WRONG answers carry a kind.

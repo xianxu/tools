@@ -753,3 +753,46 @@ func TestThePromptSaysWhatTheKeysDo(t *testing.T) {
 		})
 	}
 }
+
+// Done-when 2: the CHOSEN option reaches the log, not just right/wrong.
+//
+// Driven through playSession rather than by calling CaptureReview, because the
+// claim is about a wiring only the loop supplies (lessons.md, #15): deleting
+// `out.Axis` from the loop's call leaves every play package test green, since
+// Apply would still be putting the axis on the Outcome nobody read.
+func TestAMissRecordsTheAxisItChose(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	opts := []play.Option{
+		{Gloss: "behaving in an obsequious way", Correct: true},
+		{Gloss: "an official report of proceedings", Word: "record", Axis: play.AxisDomain},
+		{Gloss: "a manservant or valet", Word: "man", Axis: play.AxisRegister},
+	}
+	for _, tc := range []struct {
+		name string
+		key  string
+		want play.Axis
+	}{
+		{"picking the domain distractor", "2", play.AxisDomain},
+		{"picking the register distractor", "3", play.AxisRegister},
+		// D8: a right answer writes no axis, so the taxonomy has nothing to
+		// filter back out later.
+		{"answering correctly", "1", play.AxisNone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &countingCapturer{}
+			d.capture = spy
+			q := play.NewChoice("sycophantic", opts)
+
+			var out, errb bytes.Buffer
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor(tc.key), rawTerm{}, &out, &errb)
+
+			if spy.reviews != 1 {
+				t.Fatalf("CaptureReview called %d times, want 1", spy.reviews)
+			}
+			if got := spy.axes[0]; got != tc.want {
+				t.Errorf("recorded axis %v (%q), want %v — the axis never left the form",
+					got, got.String(), tc.want)
+			}
+		})
+	}
+}
