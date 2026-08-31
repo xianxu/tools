@@ -93,7 +93,7 @@ So `pickOptions` receives candidates that are ALREADY filtered and labelled — 
 | `Question` is the whole of what the session knows about a form | `play/question.go:53-77` | true — and its doc names *"form 2.3's 1/2/3/4"* and *"2.3's options"* |
 | a form puts unanswerable-unseen content in `Prompt` | `play/question.go:69-72` | true — so the options go there |
 | the session RESERVES Enter, space, `d` and Ctrl-C | `play/question.go:74-77` | true — so the answer keys must avoid them; `1`–`4` do |
-| `Sense.Gloss` is a single clean definition line | `parse.go:181-186` | true — measured on `bank`, `record`, `run` |
+| `Sense.Gloss` is a single clean definition line | `parse.go:181-186` | **FALSE — corrected 2026-08-30 during T1.** Measured over the whole corpus, not three entries: `bank`, `complete`, `concrete` and `defenestrate` each carry a sense whose gloss is exactly `[with object]`, `man` carries `(plural men /men/)`, and `alewife`/`bases`/`record` carry cross-references (`another term for menhaden`). See the Revisions |
 | labels LEAD the gloss | measured over the corpus, 2026-08-30 | true — `dated`, `archaic`, `Grammar`, `Law historical`, `informal, mainly…` |
 | the deck stores no definitions | `store/word.go:20-25` | true — `Text`, `FirstSeen`, `LastSeen`, `Lookups` only, so options come from lookups |
 | `--play` already looks every due word up | `play_loop.go:255-265` | true — the pool extends that walk rather than adding a mechanism |
@@ -232,3 +232,51 @@ Then, on a real terminal with a deck of a dozen words: `define --play`, answer a
   CREATES on a typo, so it cannot fail loudly — which is exactly why round 1's
   claim that the note was "recorded where a resumer meets it" read as true while
   being false of the tree.
+
+### 2026-08-30 — two claims the corpus disproved during T1
+
+Both were asserted from three entries and are false over the whole corpus. Found
+by dumping every parsed gloss before writing the code, which is the only reason
+they were found before the form was built on them.
+
+**D2 said labels LEAD the gloss, so extracting one is "a PREFIX match at the
+head".** True of most senses, false of enough to matter — a GRAMMAR BRACKET or a
+parenthetical can come first:
+
+```
+[no object] Military (of a soldier) illegally run away from military service
+[with adjective] informal a book considered in terms of its readability
+(the runs) informal diarrhea.
+```
+
+A prefix match written from the decision would have called every one of these
+unlabelled, losing exactly the domain and register senses the axes are built
+from. `readGloss` walks the head instead, stripping `[...]`, `(...)` and a
+leading `/pronunciation/` until it reaches a label or the definition. Also
+discovered in the same dump: NOAD stacks a REGIONAL label in front of a real one
+("North American English informal a person who shows off"), so regional labels
+have to be recognized in order to be scanned past — they are not an axis (the
+settled taxonomy has three values), but a scanner that stopped at the first
+unknown word would never reach the register label behind them.
+
+**D4 said `Sense.Gloss` is "a single clean definition line", and the verified
+table called it measured.** It was measured on `bank`, `record` and `run` — and
+`bank` itself has a sense whose gloss is exactly `[with object]`. Over the whole
+corpus there are three kinds of non-definition:
+
+| shape | example | why it cannot be an option |
+|---|---|---|
+| a bare grammar bracket | `[with object]` | an option reading "[with object]" makes the form look broken |
+| an inflection note | `(plural men /men/)`, `(evener, evenest)` | not a meaning |
+| a cross-reference | `another term for menhaden`, `short for criminal record` | tests nothing about meaning; unanswerable as the ANSWER |
+
+`readGloss` therefore returns `Usable`, and T5 must filter on it. This is a real
+addition to T1's scope, not a detail: without it the first sitting on a deck
+containing `bank` would show a multiple choice with `[with object]` as an option.
+
+**Method note, since it generalises.** Both errors have the same cause — a claim
+checked against the entries that came to mind rather than against the set. The
+corpus is 34 files and dumping every gloss took one throwaway test. `lessons.md`
+already carries *"Enumerate the category, not the instances you happened to
+meet"* (#35); this is that lesson recurring in a plan's verified-claims table,
+which is the one place designed to stop it.
