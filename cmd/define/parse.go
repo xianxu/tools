@@ -720,11 +720,21 @@ func firstSenseNumber(locs [][]int, text string) int {
 }
 
 // newSense splits a sense into its gloss and examples. Examples follow the first
-// ":" and are separated by interior pipes (any leading pronunciation span was
-// already peeled off by parseBlocks).
+// TOP-LEVEL ":" and are separated by interior pipes (any leading pronunciation
+// span was already peeled off by parseBlocks).
+//
+// TOP-LEVEL, because NOAD writes colons inside brackets that are not example
+// boundaries. `potassium` is glossed "(Symbol: K) the chemical element of atomic
+// number 19, …", and splitting on the first colon anywhere made the gloss
+// "(Symbol" and threw the entire definition into a quoted example — visible in
+// an ordinary `define potassium`, not only in a review question.
+//
+// `delimiterDepths` was already in this file for the same class of mistake:
+// firstSenseNumber uses it to ignore numerals inside brackets. Reaching for the
+// tool that was already here is the whole fix.
 func newSense(number string, sub bool, text string) Sense {
 	s := Sense{Number: number, Sub: sub}
-	if i := strings.Index(text, ":"); i >= 0 {
+	if i := topLevelColon(text); i >= 0 {
 		s.Gloss = strings.TrimSpace(text[:i])
 		for _, seg := range strings.Split(text[i+1:], "|") {
 			if ex, ok := newExample(seg); ok {
@@ -735,6 +745,17 @@ func newSense(number string, sub bool, text string) Sense {
 	}
 	s.Gloss = strings.TrimSpace(text)
 	return s
+}
+
+// topLevelColon is the first ":" outside any bracket, or -1.
+func topLevelColon(text string) int {
+	depths := delimiterDepths(text)
+	for i := 0; i < len(text); i++ {
+		if text[i] == ':' && depths[i] == 0 {
+			return i
+		}
+	}
+	return -1
 }
 
 // newExample peels any leading bracketed grammar label (and the colon that

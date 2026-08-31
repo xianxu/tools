@@ -2730,3 +2730,38 @@ DEFECT CLASS (one entry with two differently-glossed senses under two deck keys)
 Those coincided in the finding's prose and came apart in the corpus — the
 jalapeño entry has one usable sense, so gloss-dedup already covered it. **Pick a
 fixture from the class, then check the reported instance is an example of it.**
+
+## A golden test enshrines whatever was there, bug included (define, side-quest 2026-08-31)
+
+`potassium` rendered as a gloss of `(Symbol` with the entire definition thrown
+into a quoted example. `newSense` split gloss from example on the FIRST colon
+anywhere, and NOAD writes `(Symbol: K)` — a colon inside brackets.
+
+**`minute` in the committed corpus had exactly the same defect, and
+`TestRenderOutputMatchesTheCorpusGolden` was GREEN on it.** The golden was
+generated from real output at a moment when the bug was already present, so it
+recorded `(symbol` + `"ʹ): Delta Lyrae…"` as the expected rendering. Regenerating
+it after the fix produced a 17-line diff over one entry, every line an
+improvement.
+
+The lesson is not "goldens are bad" — that golden is the only thing asserting
+the rendered bytes, and it earns its place. It is that **a golden pins CHANGE,
+never correctness.** It can only ever tell you the output differs from the day it
+was captured; it cannot tell you the output was wrong that day. So:
+
+- **A green golden is not evidence the output is right**, and a comment saying it
+  was "generated from the commit before the change" makes it evidence about that
+  commit, not about the product.
+- **When a golden diff appears, read every line of it.** The diff is the only
+  moment anyone looks at the bytes, so it is the only moment a pre-existing bug
+  is visible. Here 17 lines took a minute to read and confirmed the fix; a
+  regenerate-and-move-on would have shipped the same evidence unexamined.
+- **Pair a golden with unit tests that assert PROPERTIES**, which can be wrong in
+  a way a reader notices. `TestSenseSplitIgnoresColonsInsideBrackets` states what
+  a colon inside brackets means; the golden only states what bytes came out.
+
+**Found by a user on a word not in the corpus**, which is the other half: the
+corpus is 34 entries chosen for the shapes someone thought to collect. The fix
+reached for `delimiterDepths`, which was already in the same file doing exactly
+this job for `firstSenseNumber` — so the tool existed and the second site never
+got it. When adding a scanner for brackets, grep for the ones already there.

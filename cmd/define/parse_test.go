@@ -318,3 +318,61 @@ func TestAlsoSpellingsTakesOnlyTheSourceOrthographies(t *testing.T) {
 		})
 	}
 }
+
+// A COLON INSIDE PARENTHESES IS NOT THE GLOSS/EXAMPLE BOUNDARY.
+//
+// Reported from a real sitting: `potassium` rendered as a gloss of "(Symbol" and
+// an example beginning "K) the chemical element of atomic number 19…". NOAD
+// writes the element symbol as a parenthetical — "(Symbol: K)" — and newSense
+// took the FIRST colon anywhere, so it split inside the brackets and threw the
+// entire definition into a quoted example.
+//
+// This is a lookup bug before it is a review bug: `define potassium` printed the
+// meaning as an example. Form 2.3 made it visible by offering "(Symbol" as an
+// answer, which is why it was noticed.
+//
+// The file already had delimiterDepths for exactly this class — firstSenseNumber
+// uses it to ignore numerals inside brackets — so the fix is to apply the tool
+// that was already here rather than to add one.
+func TestSenseSplitIgnoresColonsInsideBrackets(t *testing.T) {
+	for _, tc := range []struct {
+		name, text, wantGloss string
+		wantExamples          int
+	}{
+		{
+			"the measured case",
+			"(Symbol: K) the chemical element of atomic number 19, a soft silvery-white reactive metal",
+			"(Symbol: K) the chemical element of atomic number 19, a soft silvery-white reactive metal", 0,
+		},
+		{
+			"a bracketed label with a colon still opens the examples after it",
+			"the land alongside a river: willows lined the bank",
+			"the land alongside a river", 1,
+		},
+		{
+			"a parenthetical colon before a real one",
+			"(Symbol: Na) a soft metal: sodium burns in air",
+			"(Symbol: Na) a soft metal", 1,
+		},
+		{
+			"square brackets too",
+			"[Chem.: see note] an element",
+			"[Chem.: see note] an element", 0,
+		},
+		{
+			"no colon at all",
+			"a small short-tailed wallaby",
+			"a small short-tailed wallaby", 0,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := newSense("1", false, tc.text)
+			if got.Gloss != tc.wantGloss {
+				t.Errorf("gloss = %q,\n want %q", got.Gloss, tc.wantGloss)
+			}
+			if len(got.Examples) != tc.wantExamples {
+				t.Errorf("%d examples, want %d: %+v", len(got.Examples), tc.wantExamples, got.Examples)
+			}
+		})
+	}
+}
