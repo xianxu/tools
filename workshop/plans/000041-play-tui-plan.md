@@ -30,11 +30,29 @@ The state is one `int` and it lives in the loop, which is where "perform the out
 
 **D5 — the transcript surviving exit is REUSED, not re-decided.** `#30` M1.2b is *"Paint draws a whole frame, and the transcript survives the alt screen"*, and `handBack`/`onceHandBack` in `replraw.go` own the order. A learner who quits a sitting should still see the words they just reviewed; that is more true of a review than of an editor session. Whatever the editor does here, `--play` does the same call.
 
-**D6 — paging is inherited, and it is the user-visible fix that justifies this issue on its own.** Form 2.3's reveal shows the whole rendered entry, which for `run` or `bank` is several screenfuls, and today the question scrolls off the top. `#30` already decodes the wheel and PageUp/PageDown into `Scroll`/`Page`, and `screen` already has the viewport. The loop's `toInput` gains those cases; nothing else moves.
+**D5a — ADOPTING FRAMES DELETES THE PLAYBACK DANCE, and that is the resolution of the only Critical this design had.** Today every reveal calls `raw.sess.restore()`, plays the pronunciation in cooked mode, and calls `enterRaw` again (`play_loop.go:177-199`). `enterAlt` is an OPT-IN call on `rawSession` and `restore` leaves the alternate screen, while `enterRaw` returns a fresh session with `alt` false — so a frame-drawing `--play` would lose the alternate screen on its first reveal and never re-enter it. Everything after that would paint into the normal screen over the user's scrollback.
 
-**D7 — the bar's numbers are computed ONCE PER ANSWER, never per frame.** `schedule.DailyLoad` needs the deck and the folded log — two disk reads. `Draw` is called on every keystroke, and a frame that reads the disk would put IO on the keystroke path, which `#30` spent a milestone getting off it.
+The fix is not to re-enter it. **Playback stops leaving raw mode at all.** The dance exists because *"the indicator and any warning are written for a human to read"* — that is, they need newline translation — and under the frame model the indicator is a frame write like any other. `screen.Write` already honours the `\r\x1b[K` erase-line sequence by dropping the OPEN line, which is exactly how `#30` M1.2b kept `♫ playing 3×` out of the exit transcript.
 
-So the loop holds the figures and refreshes them only where they can have changed: after an `OutcomeRecord`, which is the only thing that moves a box. On failure the previous figures stand rather than the bar disappearing — a stale count is better than a flickering one, and the sitting is not the place to report that a disk read failed.
+So the whole `restore`/`enterRaw` pair goes, along with its error branch — the *"lost the terminal after playback"* path that exits 1. That branch is not being weakened: it exists only because the terminal was handed back and might not come back, and nothing is handed back any more. A Critical resolved by deleting code rather than working around it is the strongest sign the seam was the right one to adopt.
+
+**D6 — paging is inherited, and it is handled BEFORE `toInput`, never inside it.** Form 2.3's reveal shows the whole rendered entry, which for `run` or `bank` is several screenfuls, and today the question scrolls off the top. `#30` already decodes the wheel and PageUp/PageDown, and `screen` already has the viewport.
+
+The first draft of this plan routed those keys through `toInput`, which was wrong in the way that matters: `toInput` converts a `main.Key` into a `play.Input`, and a viewport is not something the session has any business knowing. `play` is mechanically guarded pure and its whole design is that *"main owns the terminal and knows Ctrl-C is 0x03; play must not"* — a `play.Input` kind for "page up" would put a display concept inside the pure package and every future form would inherit it.
+
+So the loop intercepts the paging keys and calls `view.Page`/`view.Scroll` directly, exactly as the editor does, and only what is left becomes a `play.Input`. The session never learns a viewport exists.
+
+**D7 — the bar's numbers touch the disk ONCE PER SITTING, and the per-answer update is in memory.** The first draft said "once per answer, two disk reads, microseconds" and both halves were wrong. `Deck()` reads ONE FILE PER WORD and `Events(anyTime)` reads ONE FILE PER DAY OF HISTORY, so recomputing per answer is `O(deck files + log days)` — for a 5,000-word deck with two years of log that is roughly 5,700 file reads for every question answered, on a path a person is waiting on.
+
+So the loop reads them ONCE, at the start of the sitting, and then keeps `prog` in memory and applies the SAME transition the fold would:
+
+```go
+prog[key] = schedule.Answer(prog[key], grade, now)
+```
+
+That is not an approximation of `Fold` — it is the function `Fold` applies, so the in-memory figures cannot drift from what the next sitting will derive. `DailyLoad` is then a walk over the deck slice in memory: a few thousand iterations of at most twenty integer multiplications, which is microseconds, and it is charged per ANSWER rather than per frame only because there is no reason to redo it more often.
+
+**Total new IO for a sitting: one deck read and one log read**, both of which the sitting already performs to build the queue — so the honest budget is that this issue adds NO disk reads at all if `todaysQuestions` hands its work down instead of discarding it (`play_loop.go:249` computes both and returns neither, which `#39`'s BR-1 already noted).
 
 **D8 — the bar states what it assumes.** `~14 reviews/day · 0.9 new/day at 20 a sitting · 7 of 18 done`. The `-count` assumption is already spelled out in `finish()` (`#39` D11) and the bar uses the same wording, because two spellings of one assumption is how they drift.
 
@@ -77,12 +95,24 @@ So the loop holds the figures and refreshes them only where they can have change
 |------|----------|--------|-------|
 | `playConsole` | `cmd/define/play_loop.go` | new | the terminal — mirrors `replRaw`'s construction (D1) |
 | `draw` | `cmd/define/play_loop.go` | modified | becomes "compute the live edge", not "append lines" (D4) |
+| `finish` | `cmd/define/play_loop.go` | modified | shares `sittingBar`'s formatter, so the bar and the summary cannot word the `-count` assumption differently (D8) |
+| `todaysQuestions` | `cmd/define/play_loop.go` | modified | returns the deck and the folded progress it already computes, instead of discarding them (D7) |
 | `playSession` | `cmd/define/play_loop.go` | modified | takes a `console`; tracks the written question and the cached figures |
 | `toInput` | `cmd/define/play_loop.go` | modified | gains the paging keys (D6) |
 
 **ARCH-MOCK.** No new external dependency. The display seam is an INTERFACE (`display`) that the editor's tests already fake, so `--play`'s tests take the same double; the pty conformance suite covers the real terminal, and `#7` already added a form-2.3 pty check that this issue extends with a bar assertion.
 
-**ARCH-CONSTRAINTS.** The interaction path is a keystroke and a redraw. A frame is O(visible rows) of string building and is already throttled to 16ms with a trailing flush (`paintInterval`), which this issue inherits rather than re-tunes. THE ONE NEW COST IS THE BAR'S FIGURES, and D7 keeps it off that path entirely: `DailyLoad` is two disk reads and is recomputed only after an `OutcomeRecord` — at most once per answered question, so at most `-count` times a sitting, against the dictionary lookups the sitting already pays at startup. Nothing here grows with deck size on a per-frame basis; the per-answer recompute is linear in the deck, which for a 5,000-word deck is a map walk of microseconds.
+**ARCH-CONSTRAINTS.** The interaction path is a keystroke and a redraw. A frame is O(visible rows) of string building, already throttled to 16ms with a trailing flush (`paintInterval`), which this issue inherits rather than re-tunes.
+
+**The bar's figures are the one new cost, and the first draft of this plan mis-stated them as "two disk reads, microseconds".** They are not: `Deck()` reads one file per word and `Events(anyTime)` one file per day of history, so a per-answer recompute is `O(deck files + log days)` — about 5,700 file reads per question on a 5,000-word deck with two years of log, with a person waiting. D7 moves it off that path entirely: the reads happen ONCE per sitting (and are already paid by `todaysQuestions`), the progress map is updated in memory with the same `schedule.Answer` the fold applies, and `DailyLoad` becomes a walk over the deck slice — a few thousand iterations of at most twenty integer multiplications.
+
+| path | frequency | cost |
+|---|---|---|
+| frame paint | per keystroke, ≤16ms apart | O(visible rows), no IO |
+| figure refresh | per answered question | O(deck), in memory, no IO |
+| deck + log read | once per sitting | already paid by `todaysQuestions` |
+
+Overload behaviour: a deck large enough for the per-answer walk to be felt would already have made the sitting's startup lookups untenable, so the bound that binds is the one `#39` made visible rather than anything this issue adds.
 
 ---
 
@@ -92,13 +122,21 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
 - [ ] **T1 — `menu` becomes `footer`** (D2). Rename the parameter and `fitMenu`, update the editor's call sites and the `display` interface's doc. No behaviour change; the test suite is the proof.
 - [ ] **T2 — `sittingBar`** (D8). A pure formatter in `cmd/define/playbar.go`, sharing its wording with `finish()`. Table test including the degenerate cases: nothing due, zero budget, a load of zero.
-- [ ] **T3 — `--play` builds a `console`** (D1). Mirror `replRaw`'s construction, including `handBack` (D5). `playSession` takes the console instead of a raw writer.
+- [ ] **T3 — `--play` builds a `console`** (D1, D5a). Mirror `replRaw`'s construction, including `handBack` (D5), and DELETE the reveal's `restore`/`enterRaw` pair and its error branch — playback no longer leaves raw mode. `playSession` takes the console instead of a raw writer.
 - [ ] **T4 — the question is written once** (D4). Track the written index; write `Prompt()` on transition and `Reveal()` on `OutcomeReveal`. Test that N keystrokes on one question leave ONE copy of it in the buffer — the assertion a naive port fails.
 - [ ] **T5 — the live edge** (D3). `draw` computes the grading keys and the bar and calls `Draw`; the frame's shape is `Paint`'s business.
-- [ ] **T6 — the figures are cached** (D7). Recompute after `OutcomeRecord` only; keep the previous values on a read failure. Test with a counting store that a sitting of N answers reads the deck at most N+1 times.
-- [ ] **T7 — paging** (D6). `toInput` maps the wheel and PageUp/PageDown to `Scroll`/`Page`. Test that a reveal taller than the viewport keeps the prompt word on screen after a page.
+- [ ] **T6 — the figures are in memory** (D7). `todaysQuestions` returns the deck and progress it already computes; the loop applies `schedule.Answer` on each record and recomputes `DailyLoad` from memory. Test with a counting store that a sitting of N answers reads the deck ONCE, not N times.
+- [ ] **T7 — paging** (D6). The LOOP intercepts the wheel and PageUp/PageDown and calls `view.Scroll`/`view.Page`; `toInput` is untouched and `play` learns nothing. Test that a reveal taller than the viewport keeps the prompt word on screen after a page, and that `play.Input` gained no kind.
 - [ ] **T8 — SIGWINCH** (D1). The resize case redraws through the console, as the editor's does.
-- [ ] **T9 — pty conformance + docs.** Extend `#7`'s form-2.3 pty test to assert the bar is present and updates; atlas and README.
+- [ ] **T9 — pty conformance + docs.** Three existing pty tests assert over `--play`'s RAW BYTE STREAM, which becomes whole frames, so each is re-examined rather than assumed:
+
+  | test | what it asserts | expectation under frames |
+  |---|---|---|
+  | `TestPTYPlayRendersEveryLineAtColumnZero` | no bare `\n` reaches the terminal | must still HOLD — `Paint` emits CRLF — and it stays the shipped-defect net |
+  | `TestPTYPlayCorrectAnswerNeverRevealsIt` | the definition is absent before answering | holds: the buffer carries the question only until `OutcomeReveal` |
+  | `TestPTYPlayGradeFirst` | the keys are offered up front, definition hidden | holds, but the keys now arrive inside a frame, so `unstyled()` must still find them |
+
+  All three re-run on real hardware, not reasoned about. Then extend `#7`'s form-2.3 pty test to assert the bar is present and updates; atlas and README.
 
 ---
 
@@ -131,3 +169,33 @@ go test -tags conformance ./cmd/define/    # unsandboxed
 Then on a real terminal with a deck of a dozen words: `define --play`, confirm the bar is pinned at the bottom and its counts move as answers land; reveal a long entry (`run`, `bank`) and page back to the question; resize the window mid-sitting; quit and confirm the sitting is still on screen.
 
 **Close:** one boundary, one `sdlc close`, one publish.
+
+## Revisions
+
+### 2026-08-31 — plan-quality round 1
+
+- **PQ-1 (Critical) — the reveal's `restore`/`enterRaw` pair would have dropped
+  the alternate screen on the first reveal and never re-entered it**, since
+  `enterAlt` is opt-in on `rawSession` and `enterRaw` returns a fresh one.
+  Resolved by DELETING the dance: playback no longer leaves raw mode, because
+  under the frame model the indicator is a frame write and `screen.Write`
+  already handles it. The error branch goes with it, and is not weakened — it
+  exists only because the terminal was handed back, and nothing is handed back
+  any more.
+- **PQ-2 — the cost was stated as "two disk reads, microseconds" and it is
+  `O(deck files + log days)` per answer.** ~5,700 file reads per question on a
+  realistic deck. The figures now refresh in memory through the same
+  `schedule.Answer` the fold applies, so they cannot drift from what the next
+  sitting derives, and the reads happen once per sitting — already paid.
+- **PQ-3 — routing paging through `toInput` would have taught the pure `play`
+  package about a viewport.** `toInput` converts a terminal key into a session
+  intent, and `play`'s design is that main owns the terminal. The loop
+  intercepts the paging keys and calls `view.Page`/`view.Scroll` directly;
+  `play.Input` gains no kind.
+- **Minor — three pty tests assert over the raw byte stream**, which becomes
+  whole frames. T9 now names each and what is expected of it, rather than
+  leaving a reviewer to discover that `--play`'s column-zero defect net was
+  silently in scope.
+- **Minor — `finish` and `todaysQuestions` were touched but unlisted.** Both
+  are now in the integration table, which is what gives D8's DRY claim and D7's
+  "already paid" claim an owner.
