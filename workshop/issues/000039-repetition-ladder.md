@@ -289,3 +289,48 @@ that a better one already exists.
 - **Nothing else changes.** The transition table stands; only its producer is
   now named, and named as something the session can observe rather than something
   the learner asserts.
+
+## Log
+
+### 2026-08-31 — built in one pass
+
+**The `advance` trap was the interesting part**, and the plan-quality gate found
+it before any code existed. `advance` zeroes `s.Revealed` before it builds the
+Record outcome, so the obvious implementation — computing `unaided` where the
+outcome is constructed — marks EVERY correct answer unaided and runs the ladder
+at double speed. It would have looked like a working feature. The discriminating
+case is reveal-then-answer-correctly, which is why it became a Done-when row
+rather than a line in the manual verification block.
+
+**`SelfRated` exists because form 2.1's `y` is self-report**, which the first
+draft of the plan missed: it granted the two-rung promotion to `Recall`, one form
+to the left of the board the issue had just denied it to.
+
+**The halving and the express lane are pinned as a PAIR.** Removing the lane
+turns the recovery walk red at step 1; demoting one box instead of halving fails
+seven tests. A test asserting only the end state would have passed on either.
+
+**Manual verification on a real terminal**, with the real dictionary, two
+sittings on fresh decks:
+
+| run | reviewed | correct | `unaided: true` |
+|---|---|---|---|
+| answered cold | 8 | 4 | **4** |
+| revealed first | 6 | 2 | **0** |
+
+Every cold correct answer earned the flag and no revealed one did — the
+behaviour `TestARevealDisqualifiesUnaided` pins, confirmed outside the test
+harness.
+
+**Two repo guards were fixed as side-quests.**
+`TestPlanTablesNameEntitiesThatExist` required a `deleted` row's entity to still
+EXIST, so the one status word that asserts an absence could never pass; it now
+checks the opposite, mutation-verified. And the plan named two tests that did not
+exist under those names — the plan's names were better, so the tests were renamed
+to match rather than the plan edited to describe whatever I had typed.
+
+**A migration effect worth knowing:** no migration runs, but `Fold` re-derives
+every box under the new transition, so the first sitting after this ships will be
+LARGE for a mature deck. `TestReFoldingAnOldLogIsSafe` pins the direction — below
+box 10 words become due sooner, never later, so nobody loses reviews they had
+earned.
