@@ -16,6 +16,17 @@
 
 **D2 — `Paint`'s `menu` parameter is RENAMED `footer`, and that is not cosmetic.** The concept `Paint` actually implements is *"rows below the prompt, which give up whole rows before the prompt does"*. The editor's use of that is a command menu; play's is a status bar; calling the parameter `menu` would make play's call site read as something it is not, and would invite a future third consumer to add a third parameter for its own bottom rows. One name, one budget, two consumers.
 
+**D3a — "PINNED TO THE BOTTOM" IS NOT FREE: `Paint` does not pad a short buffer.** It writes the visible frame, then the prompt, then the footer (`screen.go:400-411`) — so with a five-line question on a forty-row terminal the bar sits at row seven with thirty-three blank rows beneath it. For the editor that is correct behaviour, and deliberately so: a REPL prompt belongs directly under the last output, not stranded at the screen's edge.
+
+So the buffer region must be able to occupy its FULL height, and that is a property of the screen rather than of a paint call. Two named constructors instead of a boolean at a call site that already takes two integers:
+
+```go
+newLiveScreen(tty, rows, cols)    // editor: the footer follows the content
+newPinnedScreen(tty, rows, cols)  // --play: the buffer fills, the footer sits at the bottom
+```
+
+The padding is blank rows emitted at PAINT time, never lines appended to the buffer — the transcript and the click map must not gain rows that exist only because the terminal is tall. Done-when 11 pins the distinction by asserting the buffer's line count is unchanged by a resize.
+
 **D3 — the grading keys are the PROMPT and the status bar is the FOOTER, which gets the sacrifice order right for free.** `Paint` documents its own order of value: *"The prompt is the line you are typing and survives first… The menu is a dropdown and gives up whole rows next. The buffer is scrollable, so it takes what is left."* For a review sitting that ordering is already correct — a learner who cannot see the grading keys cannot answer at all, while a learner who cannot see their daily load loses nothing this minute. So no new layout logic, and the visual order (buffer, keys, bar) is the one wanted.
 
 **D4 — the question goes into the BUFFER once; the keys and the bar are the live edge.** This is the change of model, and the place a naive port breaks. `draw()` today writes the prompt, the reveal and the keys on EVERY call, which is correct for a scrolling terminal and would, against a line buffer, append a copy of the question per keystroke.
@@ -69,7 +80,7 @@ That is not an approximation of `Fold` — it is the function `Fold` applies, so
 | `display` already has `Draw`, `Page`, `Scroll`, `Resize` | `cmd/define/replraw.go:114` | true |
 | `Paint` budgets every component in DISPLAY ROWS and states its order of sacrifice | `cmd/define/screen.go:371` | true — prompt clipped last, menu drops whole rows, buffer takes the rest |
 | the paint throttle is already 16ms | `cmd/define/screen.go:495` | true — `paintInterval`, with a trailing flush |
-| `schedule.DailyLoad` needs the deck AND the fold | `cmd/define/schedule/load.go` | true — two disk reads, which is why D7 caches |
+| `Deck()` reads a file per WORD and `Events()` a file per DAY | `cmd/define/store/yaml.go` | true — which is why D7 keeps the refresh in memory rather than re-reading |
 | `finish` already prints the load and names the `-count` assumption | `cmd/define/play_loop.go` | true — `#39` T7 |
 | the atlas already records this divergence as predicted | `atlas/define.md` | true — *"play_loop.go … therefore owns no coordinates. #30 D5a predicted this seam"* |
 
@@ -81,7 +92,8 @@ That is not an approximation of `Fold` — it is the function `Fold` applies, so
 
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
-| `Paint` | `cmd/define/screen.go` | modified | PURE — `menu` renamed `footer`; one concept, two consumers (D2) |
+| `Paint` | `cmd/define/screen.go` | modified | PURE — `menu` renamed `footer`; pads the buffer region when the screen is pinned (D2, D3a) |
+| `newPinnedScreen` | `cmd/define/screen.go` | new | the `--play` constructor: buffer fills, footer at the bottom. A named constructor rather than a bool at a call site already taking two ints |
 | `fitMenu` | `cmd/define/screen.go` | modified | PURE — renamed `fitFooter` with it, so the pair does not disagree |
 | `sittingBar` | `cmd/define/playbar.go` | new | PURE — figures + progress → the bar's text. Takes numbers, never a deck |
 
@@ -98,7 +110,7 @@ That is not an approximation of `Fold` — it is the function `Fold` applies, so
 | `finish` | `cmd/define/play_loop.go` | modified | shares `sittingBar`'s formatter, so the bar and the summary cannot word the `-count` assumption differently (D8) |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | returns the deck and the folded progress it already computes, instead of discarding them (D7) |
 | `playSession` | `cmd/define/play_loop.go` | modified | takes a `console`; tracks the written question and the cached figures |
-| `toInput` | `cmd/define/play_loop.go` | modified | gains the paging keys (D6) |
+| `toInput` | `cmd/define/play_loop.go` | unchanged | listed because D6 REVERSED an earlier plan to widen it: the loop intercepts paging before this is reached, and `play` learns no viewport |
 
 **ARCH-MOCK.** No new external dependency. The display seam is an INTERFACE (`display`) that the editor's tests already fake, so `--play`'s tests take the same double; the pty conformance suite covers the real terminal, and `#7` already added a form-2.3 pty check that this issue extends with a bar assertion.
 
@@ -124,7 +136,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [ ] **T2 — `sittingBar`** (D8). A pure formatter in `cmd/define/playbar.go`, sharing its wording with `finish()`. Table test including the degenerate cases: nothing due, zero budget, a load of zero.
 - [ ] **T3 — `--play` builds a `console`** (D1, D5a). Mirror `replRaw`'s construction, including `handBack` (D5), and DELETE the reveal's `restore`/`enterRaw` pair and its error branch — playback no longer leaves raw mode. `playSession` takes the console instead of a raw writer.
 - [ ] **T4 — the question is written once** (D4). Track the written index; write `Prompt()` on transition and `Reveal()` on `OutcomeReveal`. Test that N keystrokes on one question leave ONE copy of it in the buffer — the assertion a naive port fails.
-- [ ] **T5 — the live edge** (D3). `draw` computes the grading keys and the bar and calls `Draw`; the frame's shape is `Paint`'s business.
+- [ ] **T5 — the live edge** (D3, D3a). `newPinnedScreen`, and `Paint` pads the buffer region to its full height when pinned — blank rows at paint time, never lines in the buffer. `draw` computes the grading keys and the bar and calls `Draw`; the frame's shape is `Paint`'s business.
 - [ ] **T6 — the figures are in memory** (D7). `todaysQuestions` returns the deck and progress it already computes; the loop applies `schedule.Answer` on each record and recomputes `DailyLoad` from memory. Test with a counting store that a sitting of N answers reads the deck ONCE, not N times.
 - [ ] **T7 — paging** (D6). The LOOP intercepts the wheel and PageUp/PageDown and calls `view.Scroll`/`view.Page`; `toInput` is untouched and `play` learns nothing. Test that a reveal taller than the viewport keeps the prompt word on screen after a page, and that `play.Input` gained no kind.
 - [ ] **T8 — SIGWINCH** (D1). The resize case redraws through the console, as the editor's does.
@@ -156,6 +168,8 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a p
 | 8 | the `-count` assumption is worded once | `TestTheBarAndTheSummaryAgree` — same formatter | the bar and `finish()` spell it differently |
 | 9 | SIGWINCH repaints mid-sitting | `TestPlayRepaintsOnResize` | the resize case is not wired |
 | 10 | the real terminal shows the bar and updates it | the `#7` pty test, extended | it works in-process and not on a tty |
+| 11 | the bar sits at the TERMINAL'S bottom on a short question, and padding never enters the buffer | `TestAShortQuestionStillPinsTheBar` and `TestPaddingNeverReachesTheTranscript` | the bar floats under the content, or blank rows appear in `Lines()` |
+| 12 | the editor's footer still FOLLOWS its content | the editor's existing frame tests, unchanged | `newPinnedScreen`'s padding leaks into the REPL |
 
 ---
 
@@ -199,3 +213,24 @@ Then on a real terminal with a deck of a dozen words: `define --play`, confirm t
 - **Minor — `finish` and `todaysQuestions` were touched but unlisted.** Both
   are now in the integration table, which is what gives D8's DRY claim and D7's
   "already paid" claim an owner.
+
+### 2026-08-31 — plan-quality round 2
+
+- **PQ-3 was still open because I revised the DECISIONS and left the tables.**
+  Two rows still cited the reversed reasoning: the verified-claims row repeating
+  "two disk reads, which is why D7 caches" (the exact basis PQ-2 corrected) and
+  the integration row saying `toInput` "gains the paging keys" against a D6 that
+  now says it is untouched.
+
+  **The rule, which is the deliverable rather than the two edits: a Revision that
+  reverses a decision re-reads every table row and task that cited it.** A plan's
+  prose and its tables are written at different moments and read by different
+  people — the judge reads the tables, a human reads the prose — so a correction
+  applied to one and not the other leaves the artifact arguing with itself, and
+  the half that is wrong is the half a machine is checking.
+
+- **PQ-6 — D3 claimed the bar pins to the bottom "for free" and `Paint` never
+  pads a short buffer.** The sacrifice ORDER was free; the PINNING is not. D3a
+  adds `newPinnedScreen`, and Done-when 12 pins that the editor's footer keeps
+  following its content — this must not become a change to the REPL's
+  appearance, which would be a second issue wearing this one's clothes.

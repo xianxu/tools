@@ -62,6 +62,53 @@ rounds:
           family: touched-site-unlisted
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-31T13:40:54-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: D5a deletes the dance; premises verified (screen.go:64-78 honours eraseLine, replraw.go:517 already plays in raw mode).
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: D7 carries deck+prog forward and applies schedule.Answer in memory; T6 pins it with a counting store.
+          round: 2
+        - id: PQ-3
+          disposition: not-addressed
+          note: Layering half fixed; the shared page/scroll helper (replraw.go:366-376 + wheelLines) and the enterMouse drag-select cost are still absent.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          round: 2
+      findings:
+        - id: PQ-6
+          severity: Important
+          title: D3 claims the bar pins to the bottom for free, but Paint never pads a short buffer
+          detail: |-
+            screen.go:394-396 budgets s.rows, and visible() (screen.go:211-221) returns s.lines
+            unpadded when the buffer is shorter — so early in a sitting the footer floats under
+            the last question rather than on the terminal's last row. Padding Paint changes the
+            EDITOR's frames too (a shared seam), so the plan must state which way it goes, and
+            Done-when 3 needs a predicate over row position, since "a state forgets to pass the
+            footer" passes either way (ARCH-PURPOSE).
+          family: inherited-mechanism-unverified
+          round: 2
+        - id: PQ-7
+          severity: Minor
+          title: Round 1's reversals were folded into the Decisions but left standing in the tables
+          detail: |-
+            Two enumerable instances: the verified-claims row still says DailyLoad is "two disk
+            reads, which is why D7 caches" (the exact basis PQ-2 corrected, and D7 no longer
+            caches), and the integration-points row still says toInput "gains the paging keys
+            (D6)" against a D6 that says it is untouched. The rule, not the two edits: a
+            Revision that reverses a decision re-reads every table row and task that cited it.
+          family: reversed-decision-not-swept
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#41 (plan-quality)
@@ -103,10 +150,34 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   finish (play_loop.go:381) owns the current wording of the load line and the -count assumption.
   List it in the integration-points table as modified so the DRY claim has an owner.
 
+## Round 2 — 2026-08-31T13:40:54-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-1 — addressed — D5a deletes the dance; premises verified (screen.go:64-78 honours eraseLine, replraw.go:517 already plays in raw mode).
+- PQ-2 — addressed — D7 carries deck+prog forward and applies schedule.Answer in memory; T6 pins it with a counting store.
+- PQ-3 — not-addressed — Layering half fixed; the shared page/scroll helper (replraw.go:366-376 + wheelLines) and the enterMouse drag-select cost are still absent.
+- PQ-4 — addressed
+- PQ-5 — addressed
+
+### Raised
+
+- **PQ-6** [Important] `inherited-mechanism-unverified` D3 claims the bar pins to the bottom for free, but Paint never pads a short buffer
+  screen.go:394-396 budgets s.rows, and visible() (screen.go:211-221) returns s.lines
+  unpadded when the buffer is shorter — so early in a sitting the footer floats under
+  the last question rather than on the terminal's last row. Padding Paint changes the
+  EDITOR's frames too (a shared seam), so the plan must state which way it goes, and
+  Done-when 3 needs a predicate over row position, since "a state forgets to pass the
+  footer" passes either way (ARCH-PURPOSE).
+- **PQ-7** [Minor] `reversed-decision-not-swept` Round 1's reversals were folded into the Decisions but left standing in the tables
+  Two enumerable instances: the verified-claims row still says DailyLoad is "two disk
+  reads, which is why D7 caches" (the exact basis PQ-2 corrected, and D7 no longer
+  caches), and the integration-points row still says toInput "gains the paging keys
+  (D6)" against a D6 that says it is untouched. The rule, not the two edits: a
+  Revision that reverses a decision re-reads every table row and task that cited it.
+
 ## Open findings
 
-- **PQ-1** [Critical] `terminal-state-reentry` D1/D5 adopt the alt screen but the reveal's restore/enterRaw dance drops it and never re-enters
-- **PQ-2** [Important] `cost-basis-unverified` ARCH-CONSTRAINTS states the bar's cost as "two disk reads, microseconds"; it is O(deck files + days of log) per answer
 - **PQ-3** [Important] `viewport-gesture-layering` D6 routes paging through toInput, which would teach the pure play package about a viewport
-- **PQ-4** [Minor] `existing-assertions-unaccounted` T9 extends only #7's pty test; three other --play pty tests scrape the output shape this issue changes
-- **PQ-5** [Minor] `touched-site-unlisted` Done-when 8 requires finish() to share sittingBar's formatter, but finish appears in no table as modified
+- **PQ-6** [Important] `inherited-mechanism-unverified` D3 claims the bar pins to the bottom for free, but Paint never pads a short buffer
+- **PQ-7** [Minor] `reversed-decision-not-swept` Round 1's reversals were folded into the Decisions but left standing in the tables
