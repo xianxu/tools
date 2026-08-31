@@ -9,7 +9,7 @@ func TestApplyCarriesTheMissedAxisOutOnTheRecord(t *testing.T) {
 		{Gloss: "right", Correct: true},
 		{Gloss: "a Law sense", Word: "larceny", Axis: AxisDomain},
 	}
-	s := NewSession([]Question{NewChoice("sycophantic", opts)})
+	s := NewSession([]Question{NewChoice("sycophantic", "", opts)})
 	_, outs := Apply(s, Input{Kind: InputRune, Rune: '2'})
 
 	var rec *Outcome
@@ -32,7 +32,7 @@ func TestApplyCarriesTheMissedAxisOutOnTheRecord(t *testing.T) {
 // D8: a right answer writes no axis.
 func TestACorrectAnswerCarriesNoAxis(t *testing.T) {
 	opts := []Option{{Gloss: "right", Correct: true}, {Gloss: "wrong", Axis: AxisDomain}}
-	s := NewSession([]Question{NewChoice("w", opts)})
+	s := NewSession([]Question{NewChoice("w", "", opts)})
 	_, outs := Apply(s, Input{Kind: InputRune, Rune: '1'})
 	for _, o := range outs {
 		if o.Kind == OutcomeRecord && o.Axis != AxisNone {

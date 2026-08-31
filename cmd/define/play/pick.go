@@ -27,7 +27,7 @@ type Candidate struct {
 // the number the 1-4 key range in Grade can express.
 const maxOptions = 4
 
-// pickOptions builds one question.
+// PickOptions builds one question.
 //
 // Two passes, and the split is the whole design:
 //
@@ -42,7 +42,7 @@ const maxOptions = 4
 // available", made concrete.
 //
 // The result is SHUFFLED, so the answer does not sit in slot 1 every time.
-func pickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
+func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	used := map[string]bool{target.Word: true}
 	var distractors []Candidate
 
@@ -85,11 +85,11 @@ func pickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	for _, c := range distractors {
 		opts = append(opts, Option{Gloss: c.Gloss, Word: c.Word, Axis: c.Axis})
 	}
-	shuffle(opts, seed)
+	newPRNG(seed).shuffleOptions(opts)
 	return opts
 }
 
-// shuffle is Fisher-Yates over a hand-rolled xorshift64.
+// prng is a hand-rolled xorshift64.
 //
 // NOT math/rand, and the reason is stronger than this package's import guard.
 // Done-when 3 claims a fixed seed gives the same question — forever, so that a
@@ -98,24 +98,51 @@ func pickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 // already changed once across versions. A PRNG defined here is pinned by this
 // repo's own tests, which is the guarantee the Done-when actually needs.
 //
-// xorshift64 is not cryptographic and does not need to be: it is choosing which
-// of four definitions goes first.
-func shuffle(opts []Option, seed uint64) {
-	// A zero seed is a fixed point for xorshift — it would emit zeros forever
-	// and shuffle nothing, silently. Seed 0 is also exactly what a caller passes
-	// before wiring a real one, so this is the case that would ship.
-	state := seed
-	if state == 0 {
-		state = 0x9E3779B97F4A7C15 // any nonzero constant; the golden ratio's
+// Not cryptographic and does not need to be: it is choosing which of four
+// definitions goes first.
+type prng struct{ state uint64 }
+
+func newPRNG(seed uint64) *prng {
+	// A zero seed is a FIXED POINT for xorshift — it emits zeros forever and
+	// shuffles nothing, silently. Zero is also exactly what a caller passes
+	// before wiring a real seed, so this is the case that would ship.
+	if seed == 0 {
+		seed = 0x9E3779B97F4A7C15 // the golden ratio; any nonzero constant
 	}
-	next := func() uint64 {
-		state ^= state << 13
-		state ^= state >> 7
-		state ^= state << 17
-		return state
-	}
+	return &prng{state: seed}
+}
+
+func (p *prng) next() uint64 {
+	p.state ^= p.state << 13
+	p.state ^= p.state >> 7
+	p.state ^= p.state << 17
+	return p.state
+}
+
+func (p *prng) intn(n int) int { return int(p.next() % uint64(n)) }
+
+func (p *prng) shuffleOptions(opts []Option) {
 	for i := len(opts) - 1; i > 0; i-- {
-		j := int(next() % uint64(i+1))
+		j := p.intn(i + 1)
 		opts[i], opts[j] = opts[j], opts[i]
+	}
+}
+
+// SampleStrings moves a uniform sample of n entries to the front of ss, in
+// place, deterministically under seed.
+//
+// A PARTIAL Fisher-Yates: only the first n positions are drawn, so sampling 40
+// words out of a deck of three thousand costs 40 swaps rather than three
+// thousand. Exported because the deck lives in package main and this is the one
+// piece of the sampling that has to be seeded the same way the shuffle is —
+// ARCH-DRY, rather than main growing a second PRNG that drifts from this one.
+func SampleStrings(ss []string, n int, seed uint64) {
+	if n > len(ss) {
+		n = len(ss)
+	}
+	p := newPRNG(seed)
+	for i := 0; i < n; i++ {
+		j := i + p.intn(len(ss)-i)
+		ss[i], ss[j] = ss[j], ss[i]
 	}
 }

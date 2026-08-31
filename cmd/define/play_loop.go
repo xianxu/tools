@@ -252,6 +252,15 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		return nil, 0
 	}
 
+	// The distractor pool for the whole sitting, built ONCE. Per-question it
+	// would be one dictionary lookup per deck word per due word — quadratic in a
+	// deck that only grows (ARCH-CONSTRAINTS).
+	//
+	// Seeded on the DAY, so today's sitting draws the same sample whichever
+	// order the words come up in, and a different one tomorrow.
+	day := now.Format("2006-01-02")
+	pool := buildPool(d, deck, seedFor("pool", day))
+
 	var qs []play.Question
 	for _, key := range keys {
 		text, err := d.dict.Lookup(key)
@@ -261,10 +270,19 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
 			continue
 		}
+		entry := ParseEntry(text)
 		// No regions: `--play` draws its own frames and has no click map (D5a).
-		rendered, _ := Render(ParseEntry(text), RenderOpts{
+		rendered, _ := Render(entry, RenderOpts{
 			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 		})
+		// Form 2.3 when the deck can supply distractors, form 2.1 when it
+		// cannot (D9). A young deck is a NORMAL state, not an error, and the
+		// fallback is invisible to the learner — the sitting stays the length
+		// the schedule asked for either way.
+		if q := choiceFor(key, rendered, entry, pool, seedFor(key, day)); q != nil {
+			qs = append(qs, q)
+			continue
+		}
 		qs = append(qs, play.NewRecall(key, rendered))
 	}
 	if len(qs) == 0 {

@@ -19,7 +19,7 @@ var target = Candidate{Word: "sycophantic", Gloss: "behaving in an obsequious wa
 
 // Done-when 1. Exactly one option is the answer, and it is the target's gloss.
 func TestPickOptionsHasOneAnswer(t *testing.T) {
-	opts := pickOptions(target, testPool(), 42)
+	opts := PickOptions(target, testPool(), 42)
 	if len(opts) != 4 {
 		t.Fatalf("%d options, want 4", len(opts))
 	}
@@ -40,9 +40,9 @@ func TestPickOptionsHasOneAnswer(t *testing.T) {
 // Done-when 3. Same seed, same question — order included, since the position of
 // the answer is part of what makes a question reproducible.
 func TestPickOptionsIsDeterministic(t *testing.T) {
-	a := pickOptions(target, testPool(), 7)
+	a := PickOptions(target, testPool(), 7)
 	for i := 0; i < 20; i++ {
-		b := pickOptions(target, testPool(), 7)
+		b := PickOptions(target, testPool(), 7)
 		if len(a) != len(b) {
 			t.Fatalf("run %d produced %d options, first run produced %d", i, len(b), len(a))
 		}
@@ -55,7 +55,7 @@ func TestPickOptionsIsDeterministic(t *testing.T) {
 	// And a different seed must actually move something, or "seeded" is a lie.
 	same := true
 	for s := uint64(1); s < 30 && same; s++ {
-		other := pickOptions(target, testPool(), s)
+		other := PickOptions(target, testPool(), s)
 		for j := range a {
 			if a[j] != other[j] {
 				same = false
@@ -72,7 +72,7 @@ func TestPickOptionsIsDeterministic(t *testing.T) {
 func TestPickOptionsMovesTheAnswerAround(t *testing.T) {
 	seen := map[int]bool{}
 	for s := uint64(0); s < 200; s++ {
-		for i, o := range pickOptions(target, testPool(), s) {
+		for i, o := range PickOptions(target, testPool(), s) {
 			if o.Correct {
 				seen[i] = true
 			}
@@ -85,7 +85,7 @@ func TestPickOptionsMovesTheAnswerAround(t *testing.T) {
 
 // D2a: fill domain, then register, then general.
 func TestPickOptionsVariesTheAxes(t *testing.T) {
-	opts := pickOptions(target, testPool(), 3)
+	opts := PickOptions(target, testPool(), 3)
 	got := map[Axis]int{}
 	for _, o := range opts {
 		if !o.Correct {
@@ -110,7 +110,7 @@ func TestPickOptionsNeverRepeatsAWord(t *testing.T) {
 	}
 	for s := uint64(0); s < 50; s++ {
 		seen := map[string]bool{}
-		for _, o := range pickOptions(target, pool, s) {
+		for _, o := range PickOptions(target, pool, s) {
 			if o.Word != "" && seen[o.Word] {
 				t.Fatalf("seed %d used %q twice", s, o.Word)
 			}
@@ -133,7 +133,7 @@ func TestPickOptionsWithATinyDeck(t *testing.T) {
 		for i := 0; i < tc.pool; i++ {
 			pool = append(pool, Candidate{Word: string(rune('a' + i)), Gloss: "g", Axis: AxisGeneral})
 		}
-		got := pickOptions(target, pool, 1)
+		got := PickOptions(target, pool, 1)
 		if len(got) != tc.want {
 			t.Errorf("a pool of %d gave %d options, want %d", tc.pool, len(got), tc.want)
 		}
@@ -150,7 +150,7 @@ func TestEveryAxisIsSelectable(t *testing.T) {
 			{Word: "z", Gloss: "gz", Axis: a},
 		}
 		found := false
-		for _, o := range pickOptions(target, pool, 1) {
+		for _, o := range PickOptions(target, pool, 1) {
 			if !o.Correct && o.Axis == a {
 				found = true
 			}
@@ -161,5 +161,54 @@ func TestEveryAxisIsSelectable(t *testing.T) {
 		if a.String() == "" {
 			t.Errorf("axis %d has no String(), so it could never reach the event log", a)
 		}
+	}
+}
+
+// SampleStrings must be a SAMPLE, not a truncation: a deck's alphabetically
+// first forty words would otherwise supply every distractor forever.
+func TestSampleStringsIsDeterministicAndReachesTheWholeSlice(t *testing.T) {
+	base := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+	clone := func() []string { return append([]string(nil), base...) }
+
+	x, y := clone(), clone()
+	SampleStrings(x, 4, 99)
+	SampleStrings(y, 4, 99)
+	for i := 0; i < 4; i++ {
+		if x[i] != y[i] {
+			t.Fatalf("same seed gave different samples: %v vs %v", x[:4], y[:4])
+		}
+	}
+	// Every element must be REACHABLE in the sampled prefix, or the tail of a
+	// deck can never be reviewed against.
+	seen := map[string]bool{}
+	for s := uint64(1); s < 300; s++ {
+		c := clone()
+		SampleStrings(c, 4, s)
+		for _, v := range c[:4] {
+			seen[v] = true
+		}
+	}
+	if len(seen) != len(base) {
+		t.Errorf("only %d of %d words ever reached the sample: %v", len(seen), len(base), seen)
+	}
+	// And it must not lose or duplicate anything.
+	c := clone()
+	SampleStrings(c, 4, 5)
+	count := map[string]int{}
+	for _, v := range c {
+		count[v]++
+	}
+	if len(count) != len(base) {
+		t.Errorf("sampling changed the multiset: %v", c)
+	}
+}
+
+// n larger than the slice, and an empty slice, must not panic.
+func TestSampleStringsHandlesEdges(t *testing.T) {
+	SampleStrings(nil, 5, 1)
+	one := []string{"only"}
+	SampleStrings(one, 10, 1)
+	if one[0] != "only" {
+		t.Errorf("one-element sample = %v", one)
 	}
 }

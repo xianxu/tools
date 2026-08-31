@@ -5,7 +5,7 @@ import "testing"
 // The word must be ALONE on the first line: #38's region math depends on it
 // (D1a), and #38 is parked, so nothing over there would notice if this changed.
 func TestChoicePromptKeepsTheWordAloneOnLineOne(t *testing.T) {
-	c := NewChoice("sycophantic", []Option{
+	c := NewChoice("sycophantic", "", []Option{
 		{Gloss: "behaving in an obsequious way", Correct: true},
 		{Gloss: "the offence of taking property", Axis: AxisDomain},
 		{Gloss: "a fool or simpleton", Axis: AxisRegister},
@@ -46,7 +46,7 @@ func TestChoiceGradesOnlyItsOwnKeys(t *testing.T) {
 		{' ', false, Skipped},
 		{0x03, false, Skipped},
 	} {
-		c := NewChoice("w", opts)
+		c := NewChoice("w", "", opts)
 		v, ok := c.Grade(tc.key)
 		if ok != tc.wantOK || v != tc.wantVerd {
 			t.Errorf("Grade(%q) = (%v, %v), want (%v, %v)", tc.key, v, ok, tc.wantVerd, tc.wantOK)
@@ -61,7 +61,7 @@ func TestChoiceReportsTheAxisItWasMissedOn(t *testing.T) {
 		{Gloss: "a Law sense", Axis: AxisDomain},
 		{Gloss: "an archaic sense", Axis: AxisRegister},
 	}
-	c := NewChoice("w", opts)
+	c := NewChoice("w", "", opts)
 	if c.MissedAxis() != AxisNone {
 		t.Errorf("before grading MissedAxis = %v, want AxisNone", c.MissedAxis())
 	}
@@ -71,7 +71,7 @@ func TestChoiceReportsTheAxisItWasMissedOn(t *testing.T) {
 	}
 
 	// D8: a correct answer carries no axis, so nothing is written for it.
-	right := NewChoice("w", opts)
+	right := NewChoice("w", "", opts)
 	right.Grade('1')
 	if got := right.MissedAxis(); got != AxisNone {
 		t.Errorf("a correct answer reports %v, want AxisNone — D8: no axis on the log for a right answer", got)
@@ -81,7 +81,7 @@ func TestChoiceReportsTheAxisItWasMissedOn(t *testing.T) {
 // The reveal has to teach, which is the whole point of the sitting.
 func TestChoiceRevealNamesTheAnswerAndWhatTheyPicked(t *testing.T) {
 	opts := []Option{{Gloss: "the right one", Correct: true}, {Gloss: "the wrong one", Axis: AxisDomain}}
-	c := NewChoice("w", opts)
+	c := NewChoice("w", "", opts)
 	c.Grade('2')
 	rev := c.Reveal()
 	if !contains(rev, "the right one") {

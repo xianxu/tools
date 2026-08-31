@@ -76,15 +76,30 @@ type Option struct {
 type Choice struct {
 	word    string
 	options []Option
-	chosen  int // -1 until graded
+	// definition is the whole rendered entry, shown after the answer.
+	//
+	// The options carry ONE gloss each, which is enough to choose between and
+	// not enough to learn from — a learner who just missed a word wants its
+	// examples, its other senses and its origin. Recall reveals the full entry
+	// for exactly this reason, and a recognition form that revealed less would
+	// teach less than the easier form does.
+	definition string
+	chosen     int // -1 until graded
 }
 
 // NewChoice takes finished options — glosses already extracted, axes already
 // assigned, near-synonyms already excluded. See D5: prose does not cross into
 // this package.
-func NewChoice(word string, options []Option) *Choice {
-	return &Choice{word: word, options: options, chosen: -1}
+func NewChoice(word, definition string, options []Option) *Choice {
+	return &Choice{word: word, definition: definition, options: options, chosen: -1}
 }
+
+// Options is the option set, in the order the learner sees it.
+//
+// Exported for two consumers that both need to know WHERE an option is on
+// screen: tests, which cannot know which digit is correct once the set is
+// shuffled, and #38, which will mark the option lines clickable.
+func (c *Choice) Options() []Option { return c.options }
 
 func (c *Choice) Word() string { return c.word }
 
@@ -129,6 +144,9 @@ func (c *Choice) Reveal() string {
 	}
 	if c.chosen >= 0 && c.chosen < len(c.options) && !c.options[c.chosen].Correct {
 		s += "\n\nyou chose " + optionLine(c.chosen, c.options[c.chosen].Gloss)
+	}
+	if c.definition != "" {
+		s += "\n\n" + c.definition
 	}
 	return s
 }
