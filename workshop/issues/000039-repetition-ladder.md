@@ -1,0 +1,201 @@
+---
+id: 000039
+status: open
+deps: []
+github_issue:
+created: 2026-08-31
+updated: 2026-08-31
+estimate_hours:
+---
+
+# spaced repetition: one unbounded ladder, confidence-driven promotion, and a visible daily budget
+
+## Problem
+
+`define`'s schedule is a Leitner ladder of `1, 3, 7, 14, 30, 90` days with a
+mastery bar of seven consecutive correct answers. Three things are wrong with it,
+and they were found by using the tool rather than by reading the code.
+
+**It starts backing off immediately.** The first three rungs are 1, 3 and 7 days,
+which assumes the word is already learned and only needs protecting. A word met
+once yesterday is not learned. Pimsleur's graduated interval recall and Anki's
+FSRS both spend heavily in the first days and then back off; this ladder never
+spends.
+
+**It has a ceiling, and a ceiling is unsustainable at any admission rate.** In
+steady state, with `a` new words per day over `N` rungs:
+
+```
+daily reviews = a × N            (climbing: every word passes each rung once)
+              + stock / I_top    (everything parked at the top)
+```
+
+The second term grows LINEARLY forever. At 7 new words/day with a 90-day top
+rung, the accumulated stock alone costs ~55 reviews/day after two years and there
+is no budget left for anything new. The ladder needs no ceiling: if intervals
+keep growing geometrically, a word of age τ is reviewed at roughly `1/τ` per day
+and the total load integrates to `a × ln(T)` — logarithmic, so a fixed daily
+budget supports a nearly constant new-word rate indefinitely.
+
+**Mastery costs 235 days and one slip near the end costs six months.** Seven
+CONSECUTIVE correct on a ladder whose top rung is 90 days means five promotions
+to climb (55 days) plus two confirmations at 90 days each. A wrong answer resets
+the streak to zero.
+
+There is also no way for the learner to see what any of this costs them. The
+number that should govern how many new words they take on — reviews per day — is
+not computed or shown anywhere.
+
+## Spec
+
+**One ladder. No phases, no terminus.** "Acquisition" and "maintenance" are the
+early and late rungs of a single curve, not two systems. The interval is
+computed, not tabled:
+
+```
+IntervalDays(box) = max(1, floor(1.6 ** box))
+```
+
+| box | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| wait (days) | 1 | 1 | 2 | 4 | 6 | 10 | 16 | 26 | 42 | 68 | 109 | 175 | 281 |
+| reviewed on day | 1 | 2 | 4 | 8 | 14 | 24 | 40 | 66 | 108 | 176 | 285 | 460 | 741 |
+
+**The two 1-day rungs are the point, not a rounding artifact.** A new word is
+seen on day 1 and again on day 2, which is when the forgetting curve is steepest.
+`floor(1.6**(box+1))` would remove the duplicate and with it the most valuable
+rung in the ladder; the duplicate is what gives the curve its acquisition
+density, and it costs one extra review per word, once.
+
+**No cap.** Box 20 is a 12-year interval and costs nothing to keep. A word never
+leaves the system; it just gets cheap.
+
+**Why 1.6 rather than 2.** Cepeda et al.'s spacing meta-analysis finds the
+optimal gap shrinks as a proportion of the target retention interval, which
+argues for a ratio under 2. The review rate goes as `r/(r-1)`, so 1.6 costs about
+35% more reviews than doubling — roughly 6 new words/day on a 50-review budget
+where doubling would allow 8. That is retention bought with review slots, and it
+is the trade this issue chooses. Revisit if `--stats` shows retention is fine.
+
+### Transitions
+
+| answer | effect |
+|---|---|
+| correct | `box + 1`, or `box + 2` while `box < MaxBox` |
+| confident (a form that can say) | `box + 2` |
+| wrong | `box → box / 2`, and `MaxBox → MaxBox - 1` |
+
+**Demotion halves rather than stepping.** One sentence, and it scales: box 12
+(281 days) falls to box 6 (16 days), which is a real relearning interval, while
+box 2 falls to box 1, which is barely a nudge. Harsh where harshness is warranted
+and gentle where it is not — which the current fixed `-1` cannot be.
+
+**`MaxBox` is the express lane back.** A word you took to box 12 and lapsed is not
+a word you have never seen: storage strength survives even when retrieval
+strength does not, which is why relearning is faster than learning (Ebbinghaus's
+savings). So while `box < MaxBox`, a correct answer climbs two rungs instead of
+one. Worked example, from box 10 (175 days):
+
+```
+lapse   → box 5  (10d),  MaxBox 9
+correct → box 7  (26d)   [5 < 9, so +2]
+correct → box 9  (68d)   [7 < 9, so +2]
+correct → box 10         [9 = 9, so +1]
+```
+
+Three reviews instead of five, and the first retest lands 10 days after the
+failure, which is where the relearning actually happens.
+
+**`MaxBox` erodes by one on every lapse**, so a word that keeps failing
+gradually loses its express lane and is eventually relearned properly rather than
+being waved back up forever. Like `Box` and `Streak` it is DERIVED by `Fold` from
+the event log — no new stored state, per `store/event.go`'s rule that the log is
+the only record.
+
+**These two are a PAIR and neither works alone.** A gentle `-2` demotion needs no
+express lane because it never travels far; a halving demotion without one would
+make a single slip cost most of a year. Do not adopt one without the other.
+
+### Mastery
+
+`Mastered = Box >= 9`, reached on day 108 with nine correct recalls, the last of
+which came after a 42-day gap. The streak requirement goes away: reaching box 9
+already requires a clean-enough run, and the current rule's real cost was never
+the streak but the two extra 90-day waits it forced.
+
+**Mastery stays a LABEL, never a removal**, and `queue.go` already states why:
+*"a word never offered can never be answered wrong, so it could never be
+demoted, and the learner's mastered count could only ever grow while their actual
+recall decayed."* A mastered word keeps being reviewed — at box 9 that is three
+times a year, which rounds to nothing — and keeps serving as a distractor.
+
+### Admission and overflow
+
+**Every looked-up word is admitted.** No gate, no second-lookup rule, no
+friction: removal is one keystroke and should be reachable from every surface
+where a word appears.
+
+This is safe because `schedule.Queue` ALREADY handles overflow by ordering:
+reviewed words are ranked before fresh ones, so `--play` only reaches new
+material once the existing backlog fits in the budget. The learning rate
+self-throttles to what the learner can afford, while the deck grows freely and
+`Lookups` ranks which unstudied word surfaces first — a personal frequency
+distribution measured from what they actually read, which is strictly better for
+this tool than the corpus frequency list `#10` retired.
+
+**One fix is needed to make that true: rank overdue RELATIVE to interval.**
+`queue.go` currently ranks by absolute days overdue, which systematically favours
+high boxes — a box-12 word 50 days late (18% over) outranks a box-1 word 4 days
+late (400% over), though the second is in real danger and the first being
+slightly late is harmless or even beneficial. Ranking by `overdue / interval`
+puts the fragile words first, which is what makes always-admit safe under a
+backlog.
+
+### The budget, made visible
+
+Reviews per day is a pure function of `Progress` and needs no new data:
+
+```
+daily reviews = Σ 1 / IntervalDays(box)   over the deck
+```
+
+`--stats` (`#8`) should report it, plus the sustainable new-word rate at the
+current mix — the number that should govern how many new words the learner takes
+on, rather than being discovered as a growing backlog.
+
+## Done when
+
+- [ ] `IntervalDays` is computed from the ratio, unbounded, with `1, 1, 2, 4, 6, 10, 16, 26…` pinned by a table test.
+- [ ] Correct promotes one rung, or two while below `MaxBox`; wrong halves the box and erodes `MaxBox`.
+- [ ] `MaxBox` is derived by `Fold` from the log, stored nowhere.
+- [ ] `Mastered` is `Box >= 9` and excludes nothing from the queue.
+- [ ] `Queue` ranks reviewed words by overdue RELATIVE to interval, pinned by a test where a low-box word beats a more-absolutely-overdue high-box one.
+- [ ] Daily-review load and the sustainable new-word rate are computable from `Progress` alone, and reported.
+- [ ] The recovery path is pinned end to end: a word at box 10 that lapses is back at box 10 in three reviews, not five.
+
+## Plan
+
+- [ ] Design via `sdlc start-plan` before implementing.
+
+## Log
+
+### 2026-08-31
+
+Filed from a design conversation with the operator. The shape was reached by
+working the arithmetic rather than by preference — the ceiling problem, the
+`a × ln(T)` result and the relative-overdue flaw all came out of asking what a
+fixed daily budget can actually buy.
+
+Two things were found in the existing code during that conversation and are
+recorded here because they change what this issue must NOT do:
+
+- `Queue` already orders reviewed before fresh, which is the admission control
+  this issue would otherwise have had to build. It needs the relative-overdue
+  fix and nothing else.
+- `Queue` already documents that mastered words must not be excluded, with the
+  absorbing-state argument. Mastery must stay presentational.
+
+**Open, deliberately not decided here:** the ratio 1.6 is a judgment call the
+operator made against the alternative of 2.0, and `--stats` is what would
+eventually say whether it is right. The confident/+2 transition has no producer
+until a form can report confidence — see the review-modes issue for `/board`.
