@@ -50,17 +50,28 @@ func TestStoreHistoryPrefixDoesNotQueryTheStore(t *testing.T) {
 	}
 }
 
+// countingStore counts the store's two READS, separately and together.
+//
+// `reads` is the total, which is what a caller asking "did this path touch the
+// disk at all" wants. `decks` and `events` are the halves, because #41 D7 claims
+// something narrower — that a whole sitting calls Deck() exactly once and
+// Events() exactly once — and a sum cannot tell one extra deck read from one
+// fewer log read.
 type countingStore struct {
 	store.Store
-	reads int
+	reads  int
+	decks  int
+	events int
 }
 
 func (c *countingStore) Events(t time.Time) ([]store.ReviewEvent, error) {
 	c.reads++
+	c.events++
 	return c.Store.Events(t)
 }
 func (c *countingStore) Deck() ([]store.Word, error) {
 	c.reads++
+	c.decks++
 	return c.Store.Deck()
 }
 

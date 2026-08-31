@@ -109,6 +109,8 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 | `newPinnedScreen` | `cmd/define/screen.go` | new | the `--play` constructor: buffer fills, footer at the bottom. A named constructor rather than a bool at a call site already taking two ints |
 | `fitFooter` | `cmd/define/screen.go` | modified | PURE — was `fitMenu`; renamed with `Paint`'s parameter so the pair cannot disagree about what it fits |
 | `sittingBar` | `cmd/define/playbar.go` | new | PURE — figures + progress → the bar's text. Takes numbers, never a deck |
+| `sittingDeck` | `cmd/define/play_loop.go` | new | the deck ONE sitting holds in memory, and the home of D7's claim: `answered` applies the same transition `Fold` does, `dropped` keeps it agreeing with the deck the learner just curated, `figures` walks it with no IO |
+| `GradeOf` | `cmd/define/schedule/progress.go` | new | PURE — the rule turning `(correct, unaided)` into a rung. Exported because D7 gave it a second caller, and two spellings of one rule is how the bar's figures would drift from the log's |
 
 - **`sittingBar`** — the footer's text for one moment in a sitting.
   - **DRY rationale:** `finish()` already renders the same figures at the end of a sitting (`#39` T7). One formatter means the bar and the summary cannot describe the same deck differently, and the `-count` assumption is worded once.
@@ -305,3 +307,23 @@ made real rather than departures from it:
   does not depend on a failure branch existing. **The rule: deleting the code a
   test drove is not deleting the test's claim — check what else that test was the
   only pin for.**
+
+### 2026-08-31 — T5/T6 landed: two entities the plan implied but did not name
+
+D7 said the loop "keeps `prog` in memory and applies the SAME transition the fold
+would". Implementing it turned up that the sentence names a THING — a deck the
+sitting holds, with three operations on it — and the plan had it as a phrase.
+`sittingDeck` is that thing, and it is where the claim can actually be defended:
+`answered` is the only place the transition is applied, `dropped` is the only
+place the in-memory deck and the deck on disk can disagree, and `figures` is the
+only walk. Left as loose locals in the loop, each of those would have been a
+place to forget.
+
+The second is smaller and the same shape. "The SAME function `Fold` applies" was
+not literally true: `Fold` reaches the rule through `gradeOf(store.ReviewEvent)`,
+which the loop has no event to call it with. So `schedule.GradeOf(correct,
+unaided bool)` is the rule, `gradeOf` is one line over it, and the loop is the
+second caller. **A DRY claim in a decision has to name the function, or it is a
+claim about two pieces of code that happen to agree today.**
+
+Both rows are now in Core concepts.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"slices"
 	"strconv"
 	"strings"
@@ -400,6 +401,100 @@ func readFrame(t *testing.T, frame string, cols int) frameGeometry {
 		}
 	}
 	return frameGeometry{rows: maxRow + 1, cursorRow: row, cursorCol: col}
+}
+
+// DONE-WHEN 11: on a PINNED screen the footer sits at the terminal's bottom
+// edge, whatever the content is (#41 D3a).
+//
+// "Pinned to the bottom" is not free, and that was the finding the plan's third
+// round turned up: Paint writes the visible frame, then the prompt, then the
+// footer, so a one-line question on a 24-row terminal put the bar on row three
+// with twenty blank rows beneath it.
+func TestAShortQuestionStillPinsTheBar(t *testing.T) {
+	const termRows, termCols = 24, 80
+	sc := screen{pinned: true}
+	sc.Write([]byte("sycophantic\n"))
+
+	var b strings.Builder
+	sc.Paint(&b, termRows, termCols, "y = got it, n = missed it", []string{"0 of 18 · ~2 reviews/day"})
+
+	if got := readFrame(t, b.String(), termCols); got.rows != termRows {
+		t.Errorf("a one-line question painted a %d-row frame in a %d-row terminal — the bar is "+
+			"floating under the content rather than pinned to the bottom", got.rows, termRows)
+	}
+}
+
+// DONE-WHEN 12: the EDITOR's footer still follows its content.
+//
+// The other half of the same decision, and the one that makes it a decision
+// rather than a fix: a REPL prompt belongs directly under the last output, not
+// stranded at the screen's edge. `newPinnedScreen`'s padding leaking into the
+// editor would be a change to the appearance of a loop people already use — a
+// second issue wearing this one's clothes.
+func TestTheEditorsFooterFollowsItsContent(t *testing.T) {
+	const termRows, termCols = 24, 80
+	var sc screen // NOT pinned: the editor's
+	sc.Write([]byte("arrondissement\n"))
+
+	var b strings.Builder
+	sc.Paint(&b, termRows, termCols, "› syc", []string{"  /help"})
+
+	// One buffer line, one prompt row, one menu row.
+	if got := readFrame(t, b.String(), termCols); got.rows != 3 {
+		t.Errorf("the editor's frame is %d rows for one line of output, want 3 — the dropdown "+
+			"belongs under the line being typed, not at the bottom of the screen", got.rows)
+	}
+}
+
+// The padding is ROWS, emitted at paint time, and never LINES in the buffer.
+//
+// The transcript and the click map must not gain rows that exist only because
+// the terminal is tall — so this paints twice at two heights, which is what a
+// resize is, and asserts the buffer did not move.
+func TestPaddingNeverReachesTheTranscript(t *testing.T) {
+	const termCols = 80
+	sc := screen{pinned: true}
+	sc.Write([]byte("sycophantic\nbehaving in an obsequious way\n"))
+	before := len(sc.Lines())
+
+	var tall, short strings.Builder
+	sc.Paint(&tall, 40, termCols, "y = got it", []string{"the bar"})
+	sc.Paint(&short, 12, termCols, "y = got it", []string{"the bar"})
+
+	// The padding actually happened, or the assertion below is about nothing.
+	if got := readFrame(t, tall.String(), termCols); got.rows != 40 {
+		t.Fatalf("the tall frame is %d rows, want 40 — nothing was padded, so this test asserts nothing", got.rows)
+	}
+	if after := len(sc.Lines()); after != before {
+		t.Errorf("the buffer went from %d lines to %d across two paints — blank rows are being "+
+			"APPENDED, so the exit transcript grows with the terminal's height", before, after)
+	}
+}
+
+// newPinnedScreen is the difference, and it is visible where the screen is BUILT
+// rather than at every paint.
+func TestOnlyThePinnedConstructorPads(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		make func(io.Writer) *liveScreen
+		want int
+	}{
+		{"the editor's", func(w io.Writer) *liveScreen { return newLiveScreen(w, 20, 40) }, 2},
+		{"--play's", func(w io.Writer) *liveScreen { return newPinnedScreen(w, 20, 40) }, 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var tty strings.Builder
+			live := tc.make(&tty)
+			live.interval = -1
+			live.Write([]byte("one line\n"))
+			tty.Reset()
+			live.Draw("the prompt", nil)
+
+			if got := readFrame(t, tty.String(), 40); got.rows != tc.want {
+				t.Errorf("frame = %d rows, want %d", got.rows, tc.want)
+			}
+		})
+	}
 }
 
 func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {

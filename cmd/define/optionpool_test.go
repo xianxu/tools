@@ -43,7 +43,7 @@ func TestSittingCostIsBoundedByTheCap(t *testing.T) {
 	d.dict = counting
 	opt.count = 5
 
-	qs, code := todaysQuestions(d, opt, &strings.Builder{}, &strings.Builder{})
+	qs, _, code := todaysQuestions(d, opt, &strings.Builder{}, &strings.Builder{})
 	if code != 0 {
 		t.Fatalf("todaysQuestions exit %d", code)
 	}
@@ -311,7 +311,7 @@ func TestNoQuestionDrawsTwoOptionsFromOneEntry(t *testing.T) {
 	// usable senses ("existing in a material or physical form" and the archaic
 	// "form (something) into a mass") — under two deck keys.
 	d, opt, _ := playRig(t, "concrete", "cóncrete", "quokka", "mesa", "parrot")
-	qs := questionsFor(t, d, opt)
+	qs, _ := questionsFor(t, d, opt)
 	if len(qs) == 0 {
 		t.Fatal("no questions")
 	}

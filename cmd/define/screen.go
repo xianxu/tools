@@ -42,6 +42,21 @@ type screen struct {
 	// regions is what each buffer line OFFERS, keyed by line. Sparse: most lines
 	// have none, and a session's worth of empty slices would be the bulk of it.
 	regions map[int][]Region
+	// pinned makes the buffer region occupy its FULL height, so the footer sits
+	// at the terminal's bottom edge rather than directly under the content.
+	//
+	// A property of the screen rather than of a paint call, because it is a
+	// standing fact about what this surface is: `--play`'s status bar belongs at
+	// the bottom, and the editor's dropdown belongs under the line you are
+	// typing (D3a). A REPL prompt stranded at the screen's edge with thirty
+	// blank rows above it would be a regression in a loop people already use,
+	// which is why the two are named constructors rather than a boolean at a
+	// call site that already takes two integers.
+	//
+	// The padding is blank rows emitted at PAINT time, never lines appended to
+	// the buffer: the transcript and the click map must not gain rows that exist
+	// only because the terminal is tall.
+	pinned bool
 }
 
 // Write appends bytes to the buffer, splitting on newlines.
@@ -412,6 +427,15 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 	for i, line := range frame {
 		b.WriteString(clipVisible(markClickable(line, s.regions[top+i]), s.cols) + "\r\n")
 	}
+	if s.pinned {
+		// The buffer region takes its whole share whether or not there is text
+		// to fill it, which is what puts the footer on the bottom row (D3a).
+		// visible() never returns more rows than s.rows, so this cannot go
+		// negative — and it emits ROWS, not lines: Lines() is unchanged.
+		for range s.rows - len(frame) {
+			b.WriteString("\r\n")
+		}
+	}
 	b.WriteString(prompt)
 	for _, m := range footer {
 		b.WriteString("\r\n" + m)
@@ -501,8 +525,23 @@ type liveScreen struct {
 // into fields the timer's goroutine writes.
 const paintInterval = 16 * time.Millisecond
 
+// newLiveScreen is the EDITOR's screen: the footer follows the content, because
+// a REPL prompt belongs directly under the last output.
 func newLiveScreen(tty io.Writer, rows, cols int) *liveScreen {
 	return &liveScreen{s: &screen{}, tty: tty, rows: rows, cols: cols, interval: paintInterval}
+}
+
+// newPinnedScreen is `--play`'s: the buffer region fills, so the footer sits at
+// the terminal's bottom edge (D3a).
+//
+// A named constructor rather than a bool at a call site that already takes two
+// integers — and a second constructor rather than a parameter on the first,
+// because the two surfaces want opposite things and the difference should be
+// visible where the screen is BUILT rather than at every paint.
+func newPinnedScreen(tty io.Writer, rows, cols int) *liveScreen {
+	l := newLiveScreen(tty, rows, cols)
+	l.s.pinned = true
+	return l
 }
 
 // window is the throttle's gap. Zero means the default; NEGATIVE means none at

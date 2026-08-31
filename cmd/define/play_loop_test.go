@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -98,14 +99,18 @@ func playbackConsole(out, errb io.Writer) console {
 	return recordingConsole(out, errb, func() {})
 }
 
-func questionsFor(t *testing.T, d deps, opt options) []play.Question {
+// questionsFor is the queue AND the deck the sitting holds in memory — both,
+// because todaysQuestions computes both and a test that dropped the second would
+// drive every sitting against an empty deck, where the cost figures are zero and
+// the bar cannot be wrong (D7).
+func questionsFor(t *testing.T, d deps, opt options) ([]play.Question, sittingDeck) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	qs, code := todaysQuestions(d, opt, &out, &errb)
+	qs, held, code := todaysQuestions(d, opt, &out, &errb)
 	if code != 0 {
 		t.Fatalf("todaysQuestions = %d, stderr %s", code, errb.String())
 	}
-	return qs
+	return qs, held
 }
 
 // gradeKey is the keystroke that grades q with the wanted verdict, WHICHEVER
@@ -141,14 +146,14 @@ func gradeKey(t *testing.T, q play.Question, want play.Verdict) string {
 // event per answer.
 func TestFullSessionRecordsOneEventPerAnswer(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic", "ephemeral")
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 	if len(qs) != 2 {
 		t.Fatalf("got %d questions, want 2", len(qs))
 	}
 
 	var out, errb bytes.Buffer
 	keys := "\r" + gradeKey(t, qs[0], play.Correct) + "\r" + gradeKey(t, qs[1], play.Wrong)
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor(keys), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(keys), playbackConsole(&out, &errb))
 
 	events := reviewEvents(t, st)
 	if len(events) != 2 {
@@ -168,11 +173,11 @@ func TestFullSessionRecordsOneEventPerAnswer(t *testing.T) {
 // from "records", and it is the one that would break if anything batched.
 func TestInterruptPreservesRecordedEvents(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic", "ephemeral")
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
 	// Answer the first, then Ctrl-C before the second.
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\r"+gradeKey(t, qs[0], play.Correct)+"^"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\r"+gradeKey(t, qs[0], play.Correct)+"^"), playbackConsole(&out, &errb))
 
 	events := reviewEvents(t, st)
 	if len(events) != 1 {
@@ -207,10 +212,10 @@ func TestSessionRunsWithTheModelUnavailable(t *testing.T) {
 		t.Error("the review loop constructed a model client; form 2.1 needs no model at all")
 		return llm.New(llm.Config{})
 	}
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\ry"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\ry"), playbackConsole(&out, &errb))
 
 	if len(reviewEvents(t, st)) != 1 {
 		t.Error("the session did not complete")
@@ -265,11 +270,11 @@ func TestUngradedKeyNeverReachesTheCapturer(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
 	spy := &countingCapturer{}
 	d.capture = spy
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
 	// Reveal, then a key form 2.1 does not grade, then interrupt.
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\rz^"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\rz^"), playbackConsole(&out, &errb))
 
 	if spy.reviews != 0 {
 		t.Errorf("CaptureReview called %d times for an ungraded key — the loop is recording outcomes it should not",
@@ -283,10 +288,10 @@ func TestGradedKeyReachesTheCapturerExactlyOnce(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
 	spy := &countingCapturer{}
 	d.capture = spy
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\ry"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\ry"), playbackConsole(&out, &errb))
 
 	if spy.reviews != 1 {
 		t.Errorf("CaptureReview called %d times for one graded answer, want 1", spy.reviews)
@@ -310,7 +315,7 @@ func TestCancelledContextEndsTheSession(t *testing.T) {
 
 	for i := 0; i < rounds; i++ {
 		d, opt, st := playRig(t, "sycophantic", "ephemeral")
-		qs := questionsFor(t, d, opt)
+		qs, held := questionsFor(t, d, opt)
 		spy := &countingCapturer{}
 		d.capture = spy
 
@@ -323,7 +328,7 @@ func TestCancelledContextEndsTheSession(t *testing.T) {
 		cancel()
 
 		var out, errb bytes.Buffer
-		code := playSession(ctx, d, opt, s, keysFor("yyyy"), playbackConsole(&out, &errb))
+		code := playSession(ctx, d, opt, s, held, keysFor("yyyy"), playbackConsole(&out, &errb))
 
 		if code != 0 {
 			t.Fatalf("round %d: exit = %d, want 0 — an interrupted session is not a failure", i, code)
@@ -347,7 +352,7 @@ func TestOnlyDueWordsAreOffered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	qs := questionsFor(t, d, opt)
+	qs, _ := questionsFor(t, d, opt)
 
 	if len(qs) != 1 || qs[0].Word() != "sycophantic" {
 		var got []string
@@ -374,12 +379,12 @@ func TestOnlyDueWordsAreOffered(t *testing.T) {
 // A double could not fail this: it has no rows to place.
 func TestSessionOutputIsAllCRLF(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic", "ephemeral")
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var raw, errb bytes.Buffer
 	live := newLiveScreen(&raw, 24, 80)
 	live.interval = -1 // every write paints; nothing waits on a real clock
-	playSession(t.Context(), d, opt, play.NewSession(qs),
+	playSession(t.Context(), d, opt, play.NewSession(qs), held,
 		keysFor("\r"+gradeKey(t, qs[0], play.Correct)+"\r"+gradeKey(t, qs[1], play.Wrong)),
 		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
 
@@ -403,11 +408,13 @@ func TestSessionOutputIsAllCRLF(t *testing.T) {
 //
 // Three of #41's Done-when rows are about WHICH of those three a thing lands in,
 // so the double that folds them into one writer cannot see any of them.
-func paintedSitting(t *testing.T, d deps, opt options, qs []play.Question, script string,
-	normal io.Writer) (*liveScreen, *bytes.Buffer) {
+func paintedSitting(t *testing.T, d deps, opt options, qs []play.Question, held sittingDeck,
+	script string, normal io.Writer) (*liveScreen, *bytes.Buffer) {
 	t.Helper()
 	tty := &bytes.Buffer{}
-	live := newLiveScreen(tty, 24, 80)
+	// PINNED, which is what production builds for a sitting (D3a) — a test on
+	// the editor's screen would paint a frame --play never draws.
+	live := newPinnedScreen(tty, 24, 80)
 	live.interval = -1 // every write paints; nothing here waits on a real clock
 	var errb bytes.Buffer
 	finish := func() {}
@@ -416,7 +423,7 @@ func paintedSitting(t *testing.T, d deps, opt options, qs []play.Question, scrip
 		// handBack to restore something, with no terminal anywhere.
 		finish = onceHandBack(live, &rawSession{control: &strings.Builder{}}, normal)
 	}
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor(script),
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(script),
 		console{view: live, finish: finish, stdout: live, stderr: &errb})
 	return live, tty
 }
@@ -430,9 +437,9 @@ func paintedSitting(t *testing.T, d deps, opt options, qs []play.Question, scrip
 // call, but the difference between the transcript and the frame.
 func TestPlayDrawsThroughTheDisplay(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
-	live, tty := paintedSitting(t, d, opt, qs, "\r^", nil)
+	live, tty := paintedSitting(t, d, opt, qs, held, "\r^", nil)
 
 	if got := live.Transcript(); strings.Contains(got, sessionKeys) {
 		t.Errorf("the grading keys reached the BUFFER:\n%s\nThey are the live edge — appending them "+
@@ -452,11 +459,11 @@ func TestPlayDrawsThroughTheDisplay(t *testing.T) {
 // pressed. This is the assertion the naive port fails (D4).
 func TestRepeatedKeystrokesDoNotDuplicateTheQuestion(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	// Keys this form does not use: every one is OutcomeNone, so the session
 	// does not move and the only thing that happens is a redraw.
-	live, _ := paintedSitting(t, d, opt, qs, "qqqqqqq^", nil)
+	live, _ := paintedSitting(t, d, opt, qs, held, "qqqqqqq^", nil)
 
 	if n := strings.Count(live.Transcript(), qs[0].Prompt()); n != 1 {
 		t.Errorf("the question is in the buffer %d times after 7 keystrokes, want 1 — "+
@@ -472,10 +479,10 @@ func TestRepeatedKeystrokesDoNotDuplicateTheQuestion(t *testing.T) {
 // hand-back prints it, so reversing them loses the last line a learner sees.
 func TestPlayTranscriptSurvivesExit(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var normal bytes.Buffer
-	paintedSitting(t, d, opt, qs, "\ry", &normal)
+	paintedSitting(t, d, opt, qs, held, "\ry", &normal)
 
 	if !strings.Contains(normal.String(), "sycophantic") {
 		t.Errorf("the sitting vanished with the alternate screen: %q", normal.String())
@@ -486,6 +493,102 @@ func TestPlayTranscriptSurvivesExit(t *testing.T) {
 	}
 }
 
+// DONE-WHEN 3: the bar is pinned across question, reveal and resize.
+//
+// Drawn in EVERY state, which is what "pinned" means for a footer: a state that
+// forgets to pass it is a bar that blinks out exactly when the learner is
+// reading. Asserted on the frames, not on the buffer — the bar is the live edge
+// and filing it would be the other bug (Done-when 1).
+func TestTheBarSurvivesEveryState(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	qs, held := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	// Question, then reveal, then graded, then a resize, then the summary.
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\rn^"),
+		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
+
+	if len(view.menus) == 0 {
+		t.Fatal("no frames drawn at all")
+	}
+	for i, footer := range view.menus {
+		if len(footer) != 1 {
+			t.Fatalf("frame %d drew %d footer rows, want the one bar: %q", i, len(footer), footer)
+		}
+		if !strings.Contains(footer[0], "reviews/day") {
+			t.Errorf("frame %d's footer is not the bar: %q", i, footer[0])
+		}
+	}
+}
+
+// The bar's PROGRESS moves as answers land, which is the half a static footer
+// would pass. Two questions, two answers, three distinct counters.
+func TestTheBarCountsAnswersAsTheyLand(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral")
+	qs, held := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	playSession(t.Context(), d, opt, play.NewSession(qs), held,
+		keysFor(gradeKey(t, qs[0], play.Correct)+gradeKey(t, qs[1], play.Correct)),
+		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
+
+	var counters []string
+	for _, footer := range view.menus {
+		if n := footer[0][:strings.Index(footer[0], " ·")]; len(counters) == 0 || counters[len(counters)-1] != n {
+			counters = append(counters, n)
+		}
+	}
+	want := []string{"0 of 2", "1 of 2", "2 of 2"}
+	if !slices.Equal(counters, want) {
+		t.Errorf("the bar counted %v, want %v — a bar that does not move is a bar nobody reads", counters, want)
+	}
+}
+
+// DONE-WHEN 6: a whole sitting reads the deck ONCE and the log ONCE, whatever
+// its length (D7).
+//
+// The cost claim is the reason this is a test and not a comment: Deck() reads a
+// file per WORD and Events() a file per DAY of history, so a per-answer refresh
+// is thousands of file reads per question with a person waiting. A counting
+// store is the only thing that can see the difference.
+func TestASittingReadsTheDeckOnce(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	counter := &countingStore{Store: st}
+	d.deck = counter
+	qs, held := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	var script string
+	for _, q := range qs {
+		script += gradeKey(t, q, play.Correct)
+	}
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(script), playbackConsole(&out, &errb))
+
+	if counter.decks != 1 || counter.events != 1 {
+		t.Errorf("a %d-answer sitting called Deck() %d times and Events() %d times, want 1 and 1 — "+
+			"every extra one is a file per deck word and a file per day of log, on a path a person is waiting on",
+			len(qs), counter.decks, counter.events)
+	}
+}
+
+// A word dropped mid-sitting leaves the bar's deck too, or the figures charge
+// for a word the learner just curated away and disagree with the deck on disk.
+func TestDroppingAWordLowersTheCostTheBarShows(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs, held := questionsFor(t, d, opt)
+	before := held.figures(opt.count).load
+
+	var out, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("d^"), playbackConsole(&out, &errb))
+
+	if after := held.figures(opt.count).load; after >= before {
+		t.Errorf("the deck cost %.3f before the drop and %.3f after — dropping a word must "+
+			"lower what the deck costs, or the bar is charging for a word that is gone", before, after)
+	}
+}
+
 // Audio plays before reveal by DEFAULT, which is the Spec and which no test
 // exercised: playRig sets noAudio, so the whole playback branch was at zero
 // coverage. fakePlayer is the seam — playAnnounced shells out to afplay(1), so a
@@ -493,10 +596,10 @@ func TestPlayTranscriptSurvivesExit(t *testing.T) {
 func TestRevealPlaysThePronunciationByDefault(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
 	player := audible(&d, &opt) // the default; playRig turns audio off for every other test
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\r^"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\r^"), playbackConsole(&out, &errb))
 
 	if len(player.Played) == 0 {
 		t.Error("revealing did not play the pronunciation, and audio is on by default")
@@ -508,10 +611,10 @@ func TestNoAudioSilencesTheSession(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
 	player := audible(&d, &opt)
 	opt.noAudio = true // ...and THEN silence it: the flag, not an unreachable source
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\r^"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\r^"), playbackConsole(&out, &errb))
 
 	if len(player.Played) != 0 {
 		t.Errorf("-no-audio played %v", player.Played)
@@ -527,7 +630,7 @@ func TestCountBoundsTheSession(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "defenestrate")
 	opt.count = 2
 
-	qs := questionsFor(t, d, opt)
+	qs, _ := questionsFor(t, d, opt)
 
 	if len(qs) != 2 {
 		t.Errorf("got %d questions with -count 2, want 2", len(qs))
@@ -548,11 +651,11 @@ func TestDropRemovesFromDeckButKeepsEvents(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
 	// Drop the first word, then quit.
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("d^"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("d^"), playbackConsole(&out, &errb))
 
 	deck, err := st.Deck()
 	if err != nil {
@@ -587,10 +690,10 @@ func TestDropRecordsNoReview(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
 	spy := &countingCapturer{}
 	d.capture = spy
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("d"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("d"), playbackConsole(&out, &errb))
 
 	if spy.reviews != 0 {
 		t.Errorf("dropping recorded %d reviews", spy.reviews)
@@ -640,7 +743,7 @@ func TestAllLookupsFailingIsNotNothingDue(t *testing.T) {
 	d.dict = missingDict{}
 
 	var out, errb bytes.Buffer
-	qs, code := todaysQuestions(d, opt, &out, &errb)
+	qs, _, code := todaysQuestions(d, opt, &out, &errb)
 
 	if len(qs) != 0 {
 		t.Fatalf("got %d questions from a dictionary that refuses everything", len(qs))
@@ -656,7 +759,7 @@ func TestAllLookupsFailingIsNotNothingDue(t *testing.T) {
 	}
 }
 
-// A MISS IS RECORDED BEFORE IT IS REVEALED, and the pin had to be rebuilt.
+// A MISS IS RECORDED BEFORE IT PLAYS, and the pin had to be rebuilt.
 //
 // Apply emits {Record, Reveal} and session.go calls that order load-bearing: the
 // record is written before anything that can block on the terminal. The old pin
@@ -664,46 +767,75 @@ func TestAllLookupsFailingIsNotNothingDue(t *testing.T) {
 // terminal that could not be re-entered — reversing the loop's iteration lost
 // the verdict AND exited 1.
 //
-// #41 D5a DELETED that branch: playback no longer hands the terminal back, so
-// there is nothing left to fail at. An order that is load-bearing cannot be
-// pinned by a branch that no longer exists, so the observation moves INSIDE
-// playback: the player runs while the loop is in the reveal outcome, and what it
-// can see of the store is exactly what the loop had done before it got there.
+// #41 D5a DELETES that branch, and #38's plan (PQ-11, round 4) had already
+// worked out what the replacement has to be. It must OBSERVE THE ORDER, not a
+// consequence of it: a draft that asserted "the record survives a failed
+// playback" measured GREEN under a reversed iteration, correctly — once the
+// early return is gone, both orders write the record, so the consequence stops
+// discriminating. The old test worked only because the reveal arm could abort.
 //
-// Reversing the iteration reddens this: the reveal would play with an empty log.
-func TestAMissIsRecordedBeforeItIsRevealed(t *testing.T) {
-	d, opt, st := playRig(t, "sycophantic")
+// So both sides append to ONE ordered log, and the assertion is on the sequence.
+// Falsifiable by reversing the outs iteration and by nothing else.
+func TestAMissRecordsBeforeItPlays(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
 	audible(&d, &opt)
-	var seen int
-	d.player = &hookPlayer{onPlay: func() { seen = len(reviewEvents(t, st)) }}
-	qs := questionsFor(t, d, opt)
+	seq := &orderLog{}
+	d.capture = &loggingCapturer{seq: seq}
+	d.player = &loggingPlayer{seq: seq}
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
 	// A MISS, not a peek — only a miss owes two outcomes, so only a miss has an
 	// order to get wrong.
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("n"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("n"), playbackConsole(&out, &errb))
 
-	if seen != 1 {
-		t.Errorf("the store held %d events while the reveal was playing, want the miss already in it — "+
-			"a verdict recorded after the reveal is a verdict lost to anything that goes wrong during it", seen)
-	}
-	if n := len(reviewEvents(t, st)); n != 1 {
-		t.Errorf("got %d events at the end, want the one miss", n)
+	if got := seq.first(2); len(got) < 2 || got[0] != "record" || got[1] != "play" {
+		t.Errorf("the sitting did %v, want the record first — a verdict written after the "+
+			"reveal is a verdict lost to anything that goes wrong while the answer is up", got)
 	}
 }
 
-// hookPlayer is a fakePlayer that lets a test observe the world from INSIDE a
-// play — the only moment at which the loop is partway through one keystroke's
-// outcomes.
-type hookPlayer struct {
+// orderLog is one ordered record of things that must happen in a fixed order,
+// written by every seam that participates.
+//
+// ONE log rather than a timestamp on each double: two clocks can tie, and an
+// assertion over two independent recordings is an assertion about how they were
+// read as much as about what happened.
+type orderLog struct {
+	mu   sync.Mutex
+	seen []string
+}
+
+func (l *orderLog) add(what string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.seen = append(l.seen, what)
+}
+
+func (l *orderLog) first(n int) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.seen[:min(n, len(l.seen))]
+}
+
+type loggingCapturer struct {
+	countingCapturer
+	seq *orderLog
+}
+
+func (c *loggingCapturer) CaptureReview(out play.Outcome, opt options) {
+	c.seq.add("record")
+	c.countingCapturer.CaptureReview(out, opt)
+}
+
+type loggingPlayer struct {
 	fakePlayer
-	once   sync.Once
-	onPlay func()
+	seq *orderLog
 }
 
-func (h *hookPlayer) Play(ctx context.Context, path string) error {
-	h.once.Do(h.onPlay) // the FIRST play: the reveal repeats it -times
-	return h.fakePlayer.Play(ctx, path)
+func (p *loggingPlayer) Play(ctx context.Context, path string) error {
+	p.seq.add("play")
+	return p.fakePlayer.Play(ctx, path)
 }
 
 // missingDict answers every lookup with "no entry" — a deck whose words the
@@ -822,9 +954,9 @@ func TestCorrectAnswerPlaysNoAudio(t *testing.T) {
 	fp := audible(&d, &opt)
 	opt.times = 1
 
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("y"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("y"), playbackConsole(&out, &errb))
 
 	if len(fp.Played) != 0 {
 		t.Errorf("played %v for a word the learner got right", fp.Played)
@@ -849,9 +981,9 @@ func TestAMissPlaysThePronunciationAndRecordsIt(t *testing.T) {
 	fp := audible(&d, &opt)
 	opt.times = 1
 
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("n^"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("n^"), playbackConsole(&out, &errb))
 
 	if len(fp.Played) == 0 {
 		t.Error("a miss played nothing; the definition it earns includes hearing it")
@@ -922,7 +1054,7 @@ func TestAMissRecordsTheAxisItChose(t *testing.T) {
 			q := play.NewChoice("sycophantic", "", opts)
 
 			var out, errb bytes.Buffer
-			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor(tc.key), playbackConsole(&out, &errb))
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), sittingDeck{}, keysFor(tc.key), playbackConsole(&out, &errb))
 
 			if spy.reviews != 1 {
 				t.Fatalf("CaptureReview called %d times, want 1", spy.reviews)
@@ -954,7 +1086,7 @@ func TestASittingFallsBackToRecall(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, opt, _ := playRig(t, tc.deck...)
-			qs := questionsFor(t, d, opt)
+			qs, held := questionsFor(t, d, opt)
 			if len(qs) == 0 {
 				t.Fatal("no questions")
 			}
@@ -964,7 +1096,7 @@ func TestASittingFallsBackToRecall(t *testing.T) {
 			// Whichever form it is, the sitting must be answerable — the
 			// fallback is only invisible if it actually works.
 			var out, errb bytes.Buffer
-			playSession(t.Context(), d, opt, play.NewSession(qs[:1]),
+			playSession(t.Context(), d, opt, play.NewSession(qs[:1]), held,
 				keysFor("\r"+gradeKey(t, qs[0], play.Correct)), playbackConsole(&out, &errb))
 			if out.Len() == 0 {
 				t.Error("the session drew nothing")
@@ -981,7 +1113,7 @@ func TestOptionCountGrowsWithTheDeck(t *testing.T) {
 	} {
 		words := []string{"sycophantic", "ephemeral", "quokka", "mesa", "parrot", "concrete", "pulp", "minute"}[:tc.deck]
 		d, opt, _ := playRig(t, words...)
-		qs := questionsFor(t, d, opt)
+		qs, _ := questionsFor(t, d, opt)
 		c, ok := qs[0].(*play.Choice)
 		if !ok {
 			t.Fatalf("a deck of %d gave %s, want form 2.3", tc.deck, typeName(qs[0]))
@@ -1008,7 +1140,7 @@ func TestSittingWithNoModelAndNoNetwork(t *testing.T) {
 	// And no audio source at all, so nothing can reach the CDN either.
 	d.audio = noAudioSource{}
 
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 	if len(qs) == 0 {
 		t.Fatal("no questions")
 	}
@@ -1017,7 +1149,7 @@ func TestSittingWithNoModelAndNoNetwork(t *testing.T) {
 		keys += "\r" + gradeKey(t, q, play.Correct)
 	}
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor(keys), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(keys), playbackConsole(&out, &errb))
 
 	if got := len(reviewEvents(t, st)); got != len(qs) {
 		t.Errorf("%d events for %d questions — an offline sitting must still record", got, len(qs))
@@ -1051,7 +1183,7 @@ func TestASittingFallsBackForAnEntryThatCannotBeAsked(t *testing.T) {
 	} {
 		t.Run(tc.word, func(t *testing.T) {
 			d, opt, _ := playRig(t, tc.word, "sycophantic", "quokka", "mesa", "parrot", "concrete")
-			qs := questionsFor(t, d, opt)
+			qs, _ := questionsFor(t, d, opt)
 
 			var form, otherForms string
 			for _, q := range qs {
@@ -1103,7 +1235,7 @@ func TestUnaidedAnswerReachesTheLog(t *testing.T) {
 			d, opt, st := playRig(t, "sycophantic")
 			var out, errb bytes.Buffer
 			q := play.NewChoice("sycophantic", "", opts)
-			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor(tc.keys), playbackConsole(&out, &errb))
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), sittingDeck{}, keysFor(tc.keys), playbackConsole(&out, &errb))
 
 			events := reviewEvents(t, st)
 			if len(events) != 1 {
@@ -1122,7 +1254,7 @@ func TestRecallNeverRecordsUnaided(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic")
 	var out, errb bytes.Buffer
 	q := play.NewRecall("sycophantic", "the definition")
-	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor("y"), playbackConsole(&out, &errb))
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), sittingDeck{}, keysFor("y"), playbackConsole(&out, &errb))
 
 	events := reviewEvents(t, st)
 	if len(events) != 1 {
@@ -1144,10 +1276,10 @@ func TestRecallNeverRecordsUnaided(t *testing.T) {
 // reader" smell that got Progress.Streak deleted in this very issue.
 func TestFinishReportsTheLoad(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
-	qs := questionsFor(t, d, opt)
+	qs, held := questionsFor(t, d, opt)
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs[:1]),
+	playSession(t.Context(), d, opt, play.NewSession(qs[:1]), held,
 		keysFor("\r"+gradeKey(t, qs[0], play.Correct)), playbackConsole(&out, &errb))
 
 	got := out.String()

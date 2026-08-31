@@ -140,8 +140,8 @@ decisions and the twelve Done-when rows live in
 - [x] **T2** — `sittingBar` in `cmd/define/playbar.go`, sharing `finish`'s wording (D8).
 - [x] **T3** — `--play` builds a `console`, and the reveal's `restore`/`enterRaw` pair is DELETED (D1, D5a).
 - [x] **T4** — the question is written to the buffer once, not per keystroke (D4).
-- [ ] **T5** — the live edge: `newPinnedScreen` and paint-time padding (D3, D3a).
-- [ ] **T6** — figures in memory; `todaysQuestions` returns its work and `finish` stops re-reading (D7).
+- [x] **T5** — the live edge: `newPinnedScreen` and paint-time padding (D3, D3a).
+- [x] **T6** — figures in memory; `todaysQuestions` returns its work and `finish` stops re-reading (D7).
 - [ ] **T7** — paging intercepted in the LOOP; `toInput` untouched (D6).
 - [ ] **T8** — SIGWINCH repaints through the console.
 - [ ] **T9** — pty conformance (three existing tests re-examined) and docs.

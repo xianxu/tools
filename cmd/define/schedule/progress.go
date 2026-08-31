@@ -160,6 +160,28 @@ func Fold(events []store.ReviewEvent) map[string]Progress {
 	return out
 }
 
+// GradeOf is how the two booleans an answer is recorded as read as a rung on the
+// ladder.
+//
+// EXPORTED because there are two callers and they must not be able to disagree.
+// gradeOf reconstructs it from a logged event; `--play`'s loop applies it to its
+// in-memory copy of the progress map the instant an answer lands, so the cost
+// figures a sitting SHOWS cannot drift from the ones the next sitting DERIVES
+// from the log (#41 D7). Two spellings of one rule is how they would.
+//
+// Booleans rather than a ReviewEvent, so the caller with an outcome in hand does
+// not have to build a log entry it is not writing.
+func GradeOf(correct, unaided bool) Grade {
+	switch {
+	case !correct:
+		return GradeWrong
+	case unaided:
+		return GradeUnaided
+	default:
+		return GradeCorrect
+	}
+}
+
 // gradeOf reconstructs how an answer was given from what the log recorded.
 //
 // The log stores two booleans rather than the enum, because `Correct` predates
@@ -167,13 +189,4 @@ func Fold(events []store.ReviewEvent) map[string]Progress {
 // existed reads as GradeCorrect — the conservative reading, which promotes one
 // rung rather than two, so re-folding an old log can only make words due SOONER
 // than the new ladder would otherwise say.
-func gradeOf(e store.ReviewEvent) Grade {
-	switch {
-	case !e.Correct:
-		return GradeWrong
-	case e.Unaided:
-		return GradeUnaided
-	default:
-		return GradeCorrect
-	}
-}
+func gradeOf(e store.ReviewEvent) Grade { return GradeOf(e.Correct, e.Unaided) }

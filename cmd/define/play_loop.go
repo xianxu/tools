@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/schedule"
+	"github.com/xianxu/tools/cmd/define/store"
 )
 
 // runPlay is a review session: today's queue, one question at a time.
@@ -28,7 +30,7 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 		return 0
 	}
 
-	questions, code := todaysQuestions(d, opt, stdout, stderr)
+	questions, held, code := todaysQuestions(d, opt, stdout, stderr)
 	if code != 0 || len(questions) == 0 {
 		return code
 	}
@@ -60,7 +62,7 @@ func runPlay(ctx context.Context, d deps, opt options, stdin io.Reader, stdout, 
 	// across the screen. The screen places every row itself, so nothing on this
 	// path depends on the line discipline any more — and two owners of line
 	// endings is how they drift (#30 D5).
-	return playSession(ctx, d, opt, play.NewSession(questions),
+	return playSession(ctx, d, opt, play.NewSession(questions), held,
 		readKeys(ctx, f, interrupts), playConsole(ctx, d, sess, stdout))
 }
 
@@ -81,7 +83,9 @@ func playConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer
 	// mouse, and the bytes are identical — the report is the only way to be
 	// handed the gesture the reader actually made.
 	sess.enterMouse()
-	live := newLiveScreen(stdout, terminalRows(stdout), terminalCols(stdout))
+	// PINNED, unlike the editor's: a status bar belongs at the terminal's bottom
+	// edge, where the editor's dropdown belongs under the line being typed (D3a).
+	live := newPinnedScreen(stdout, terminalRows(stdout), terminalCols(stdout))
 	// MEASURED here, where the terminal is, and delivered to the loop as a value
 	// — so the loop's resize case knows nothing about os/signal.
 	resizes := watchResize(ctx, d.notifySignals, func() winSize {
@@ -109,10 +113,25 @@ func playConsole(ctx context.Context, d deps, sess *rawSession, stdout io.Writer
 // It takes a `console` rather than a pair of writers and a borrowed terminal:
 // the same type the editor loop takes, which is the whole of #41's claim that
 // there is ONE way to draw in this binary.
-func playSession(ctx context.Context, d deps, opt options, s play.Session,
+func playSession(ctx context.Context, d deps, opt options, s play.Session, held sittingDeck,
 	keys <-chan Key, con console) int {
 
 	view, stdout, stderr := con.view, con.stdout, con.stderr
+
+	// THE BAR'S FIGURES, refreshed in memory (D7).
+	//
+	// `budget` and `total` are fixed for the sitting; `load`, `fresh` and `done`
+	// move as answers land. Recomputed after each keystroke's outcomes rather
+	// than per frame, because a frame is per keystroke and this is per ANSWER.
+	fig := held.figures(opt.count)
+	fig.total = len(s.Questions)
+	refresh := func() {
+		f := held.figures(opt.count)
+		fig.load, fig.fresh = f.load, f.fresh
+		// ANSWERED, which is what the Spec's bar says. A dropped word is not an
+		// answer: the learner curated it away rather than being asked about it.
+		fig.done = s.Right + s.Wrong
+	}
 
 	// THE QUESTION IS A BUFFER LINE AND THE KEYS ARE THE LIVE EDGE (D4).
 	//
@@ -125,14 +144,23 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 	// question's index, and -1 means none — the state is one int, and it lives
 	// here because "perform the outcomes" already does.
 	written := -1
-	draw := func() {
+	// `show` rather than `draw`: the package-level draw() is gone, and a closure
+	// wearing its name would read as the same thing narrowed rather than as the
+	// different thing it is — this one decides what has changed, where that one
+	// printed everything every time.
+	show := func() {
 		if q := s.Current(); q != nil && written != s.Index {
 			written = s.Index
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
 			fmt.Fprintf(stdout, "\n%s\n", q.Prompt())
 		}
-		view.Draw(livePrompt(s), nil)
+		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
+		// the order of sacrifice right for free (D3): Paint clips the prompt last
+		// and drops footer rows first, and a learner who cannot see the keys
+		// cannot answer at all, while one who cannot see their daily load loses
+		// nothing this minute.
+		view.Draw(livePrompt(s), []string{sittingBar(fig)})
 	}
 
 	// Every exit is the summary and THEN the terminal, in that order. The summary
@@ -141,12 +169,12 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 	// into a screen nobody paints again and would be missing from the transcript
 	// as well as from the terminal.
 	over := func() int {
-		code := finish(stdout, s, d, opt)
+		code := finish(stdout, s, fig)
 		con.finish()
 		return code
 	}
 
-	draw()
+	show()
 	for !s.Done {
 		// Cancellation is checked BEFORE the select, not only inside it.
 		//
@@ -221,6 +249,9 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				// the axis a miss was missed on and whether the answer was
 				// unaided. One argument cannot be passed in the wrong order.
 				d.capture.CaptureReview(out, opt)
+				// ...and the same transition on the copy in hand, so the bar
+				// shows the cost AFTER this answer without reading anything.
+				held.answered(out, d.clock.Now())
 			case play.OutcomeDrop:
 				// Through the store's own Forget, which is --forget's path: the deck
 				// loses the word and the events keep it. Reported, because removing
@@ -228,6 +259,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				if removed, err := d.deck.Forget(out.Word); err != nil {
 					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
 				} else if removed {
+					held.dropped(out.Word)
 					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
 				}
 
@@ -269,7 +301,8 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				}
 			}
 		}
-		draw()
+		refresh()
+		show()
 	}
 	return over()
 }
@@ -300,23 +333,33 @@ func toInput(k Key) (play.Input, bool) {
 
 // todaysQuestions builds the queue: fold the log, ask the schedule, render each
 // word's definition.
-func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Question, int) {
+//
+// It RETURNS the deck and the folded progress rather than discarding them, and
+// that is the whole of D7. Deck() reads one file per WORD and Events() one file
+// per DAY of history, so a sitting that recomputed its cost figures per answer
+// would pay ~5,700 file reads per question on a 5,000-word deck with two years
+// of log — with a person waiting. These two reads are the sitting's only ones,
+// and everything after them happens in memory.
+func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Question, sittingDeck, int) {
 	deck, err := d.deck.Deck()
 	if err != nil {
 		fmt.Fprintf(stderr, "define: could not read the deck: %v\n", err)
-		return nil, 1
+		return nil, sittingDeck{}, 1
 	}
 	events, err := d.deck.Events(anyTime)
 	if err != nil {
 		// A log we cannot read means no progress, which makes every word look
 		// new — wrong, but reviewing the wrong order beats refusing to review.
+		// The sitting still runs, and its reviews are still recorded; only the
+		// cost figures are computed against an empty history.
 		fmt.Fprintf(stderr, "define: could not read the review log (%v); treating every word as new\n", err)
 	}
+	held := sittingDeck{deck: deck, prog: schedule.Fold(events)}
 	now := d.clock.Now()
-	keys := schedule.Queue(deck, schedule.Fold(events), now, opt.count)
+	keys := schedule.Queue(deck, held.prog, now, opt.count)
 	if len(keys) == 0 {
 		fmt.Fprintln(stdout, emptyQueueReason(len(deck), opt.count))
-		return nil, 0
+		return nil, held, 0
 	}
 
 	// The distractor pool for the whole sitting, built ONCE. Per-question it
@@ -357,9 +400,60 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// to look up. Saying nothing is due would send the learner away believing
 		// their deck is clear when the dictionary is the problem.
 		fmt.Fprintf(stderr, "define: %d words are due but none could be looked up\n", len(keys))
-		return nil, 1
+		return nil, held, 1
 	}
-	return qs, 0
+	return qs, held, 0
+}
+
+// sittingDeck is the deck as ONE sitting sees it: read once at the start and
+// kept in memory for the rest of it (D7).
+//
+// The point is not caching. It is that the same transition schedule.Fold applies
+// to a logged event is applied HERE the instant an answer lands — so the cost
+// the bar shows during a sitting and the cost the next sitting derives from the
+// log are the same number by construction, not by two pieces of code agreeing.
+type sittingDeck struct {
+	deck []store.Word
+	prog map[string]schedule.Progress
+}
+
+// answered applies one graded answer, exactly as folding the event it produced
+// would. schedule.GradeOf is the shared rule; capture.go writes the same two
+// booleans into the log.
+func (sd *sittingDeck) answered(out play.Outcome, at time.Time) {
+	key := store.Key(out.Word)
+	if key == "" {
+		return
+	}
+	if sd.prog == nil {
+		// A sitting whose log read failed folds to an empty map, and a caller
+		// that built this value itself has none. Filling it here rather than
+		// returning early: a silent no-op would make the figures look computed.
+		sd.prog = map[string]schedule.Progress{}
+	}
+	sd.prog[key] = schedule.Answer(sd.prog[key], schedule.GradeOf(out.Verdict == play.Correct, out.Unaided), at)
+}
+
+// dropped removes a word the learner curated away mid-sitting.
+//
+// Without this the bar would keep charging the deck for a word that is no longer
+// in it, and disagree with the deck the learner just edited. The store's Forget
+// is the durable half; this is the same edit to the copy in hand.
+func (sd *sittingDeck) dropped(word string) {
+	key := store.Key(word)
+	sd.deck = slices.DeleteFunc(sd.deck, func(w store.Word) bool { return store.Key(w.Text) == key })
+}
+
+// figures is what the bar and the summary are built from: a walk over the deck
+// slice, no IO. A few thousand iterations of at most twenty integer
+// multiplications, which is why it is charged per ANSWER rather than per frame —
+// there is simply no reason to redo it more often.
+func (sd *sittingDeck) figures(budget int) sittingFigures {
+	return sittingFigures{
+		load:   schedule.DailyLoad(sd.deck, sd.prog),
+		fresh:  schedule.SustainableNewWords(budget, sd.deck, sd.prog),
+		budget: budget,
+	}
 }
 
 // anyTime is the zero time, which Events(since) treats as "everything".
@@ -436,37 +530,25 @@ func gradePrompt(q play.Question) string {
 // growing backlog was the only way to discover it, which is the worst possible
 // feedback loop for a tool whose entire subject is spaced feedback.
 //
-// RECOMPUTED here rather than carried down from todaysQuestions, and that is
-// correctness rather than convenience: the answers just given have changed
-// every box involved, so the figure the learner should see is the one AFTER
-// today, not the one the sitting opened with.
+// IT NO LONGER READS ANYTHING, and #39 T7's reasoning is what survives the
+// change. That version re-read the deck and the log here on the grounds that
+// "the answers just given have changed every box involved, so the figure the
+// learner should see is the one AFTER today". True, and the loop's in-memory
+// copy already IS that figure: it is updated by the same schedule.Answer the
+// fold applies (D7). #39 had no such copy to use, which is what made the re-read
+// the only way rather than the wrong way — and it was also the second `Deck()`
+// and second `Events()` in a sitting that claims to pay for one of each.
 //
-// A failure to read the deck or the log costs the line, not the sitting. The
-// learner has just finished their reviews and those are already recorded; a
-// summary that could fail the whole verb would trade something that matters for
-// something that does not.
-func finish(w io.Writer, s play.Session, d deps, opt options) int {
+// The failure branches go with the reads. There is nothing left here that can
+// fail, so a summary can no longer cost a sitting whose reviews are recorded.
+func finish(w io.Writer, s play.Session, fig sittingFigures) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)
-
-	deck, err := d.deck.Deck()
-	if err != nil {
-		return 0
-	}
-	events, err := d.deck.Events(anyTime)
-	if err != nil {
-		return 0
-	}
-	prog := schedule.Fold(events)
-	load := schedule.DailyLoad(deck, prog)
-	// The budget is -count: the number of questions a sitting asks, which is
-	// the DAILY budget for a learner who sits down once a day. That assumption
-	// is stated in the line rather than hidden, so someone who sits twice knows
-	// to double it. Inventing a second flag would give the tool two answers to
-	// "how much do I do per day".
-	fresh := schedule.SustainableNewWords(opt.count, deck, prog)
 	// Through the SHARED formatter, so this line and the pinned bar cannot
 	// describe the same deck differently or word the -count assumption two ways.
-	fmt.Fprintln(w, sittingSummary(sittingFigures{load: load, fresh: fresh, budget: opt.count}))
+	// The budget is -count: the number of questions a sitting asks, which is the
+	// DAILY budget for a learner who sits down once a day, and it is NAMED in
+	// the line rather than hidden so someone who sits twice knows to double it.
+	fmt.Fprintln(w, sittingSummary(fig))
 	return 0
 }
 
