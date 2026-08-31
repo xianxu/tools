@@ -14,13 +14,52 @@
 
 **D1 — the distractor tension is settled: SAFE AXES ONLY, and the issue's own Revisions carry the reasoning.** The far-in-meaning guard stays, so every question has exactly one defensible answer; the three distractors are chosen to VARY along axes NOAD labels itself, so a miss still says which kind. Near-synonym collapse and connotation are out of reach without semantics and belong to `#12`/`#13`, which have a model veto. Recorded in the issue on 2026-08-30 with the measurement behind it.
 
+**D1a — THE WORD STAYS ALONE ON `Prompt`'s FIRST LINE, and that is a constraint `#38` imposes on this issue.** `#38` (parked after T0) makes `--play`'s prompt word clickable, and its whole premise is that *a recall form's prompt IS the word* (`play/recall.go:29`) — so the region is line 0, column 0, width `visibleCells(word)`. A form whose `Prompt` opens with anything else silently breaks that arithmetic in a parked issue nobody is looking at.
+
+So `Choice.Prompt` is:
+
+```
+sycophantic
+                              ← blank
+1  behaving or done in an obsequious way …
+2  the offence of taking property …
+3  a fool or simpleton …
+4  a light meal eaten in the afternoon …
+```
+
+The word alone, then the options. `#38`'s region math holds unchanged, and its T4 gains options it can mark LATER without re-deciding anything.
+
+**Also flagged, because parking `#38` created it:** T5 edits `todaysQuestions` (`play_loop.go:233-265`), which `#38`'s T5 also rewrites. `#7` lands first, so `#38`'s plan must be RE-READ before it resumes — its "the prompt word is a region" task now meets a multi-line prompt. Recorded in `#38`'s Log at the same time as this decision, so a resumer meets it rather than discovers it.
+
 **D2 — NOAD's labels lead the gloss, which is what makes this cheap.** Measured over the committed corpus: `"dated a manservant or valet."`, `"archaic form (something) into a mass"`, `"Grammar (of a tense or participle)…"`, `"Law historical the benefit or profit of lands…"`, `"informal, mainly North American English used…"`. So extracting one is a PREFIX match against a closed set at the head of `Sense.Gloss` (`parse.go:181-186`) — not a search, not a heuristic over prose.
 
 **D3 — the label set is a closed table this repo may own, and `#35` already argued why.** `originLanguages` (`origin.go:27`) faced the same objection and answered it: a table restating a fact the CDN or the dictionaries own would go stale, but *"this table reads NOAD's EDITORIAL PROSE: the set of language names a dictionary writes in its etymologies, which is stable, small, and ours to read."* Register and domain labels are the same kind of fact — NOAD's own style vocabulary. A missing row costs a distractor its axis, which degrades to `general`, not to a wrong question.
 
+**D2a — the axes are BEST-EFFORT, and the yield is measured rather than assumed.** Counted over the committed corpus, 2026-08-30: **12 of 34 entries carry a labelled sense (35%)**, and the two label families are not equally common — register is frequent (51 `informal`, plus `formal`, `archaic`, `dated`, `dialect`, `rare`, `humorous`) while domain is sparse (`Law` 4, `Grammar` 3, `Nautical` 2, `Music`/`Military`/`Computing` 1 each).
+
+What follows, and it narrows the taxonomy a second time:
+
+- A deck of a dozen or more will usually supply ONE labelled distractor per question, so "picked the labelled one" is reachable.
+- TWO distinct axes in one question — a domain distractor AND a register one — will be uncommon, because domain labels are sparse.
+- So the taxonomy this form realistically produces is **register confusion, occasional domain confusion, and did-not-know-it.** That is less than D1 implied and more than a boolean, and saying so here is the point: a decision made on a measurement should carry the measurement's limits with it.
+
+`pickOptions` therefore fills axes in a fixed priority — domain, register, general — and falls back to `general` whenever the pool has nothing labelled. A question is never blocked on an axis being available.
+
 **D4 — the gloss is the option text, and it already exists.** `Sense.Gloss` is a single clean line (`"the land alongside or sloping down to a river or lake"`), which is exactly what an option needs. No new rendering, no truncation policy to invent — and it keeps `Render` out of this entirely, so nothing here can affect what a lookup prints.
 
+**D3a — the near-synonym guard has a MECHANISM, and it is the dictionary's own cross-references.** D1 said "never a near-synonym" and named no way to know. Without semantics there is no general test — but there is a specific, cheap and measured one: **NOAD defines near-synonyms by reference to each other.** `sycophantic` is glossed *"behaving or done in an obsequious way…"*. So a candidate is EXCLUDED when its headword appears in the target's gloss, or the target's headword appears in its gloss.
+
+Measured over the corpus: this fires on 3 of 34 first-glosses, and all three are the harmless direction (`record`, `subject` and `use` contain the word `thing`) — so a minimum length and a word-boundary match keep it from excluding half the deck.
+
+**It is a reduction, not a proof**, and the plan says so rather than implying a guarantee: two deck words can be near-synonyms NOAD never cross-references. The residual is accepted because the option set is DEFINITIONS — the Revisions' own argument that *"two different words rarely share one"* — and because the form has no model veto by design. What this mechanism removes is the case that is both most likely and most visible: the pair the learner met through each other's entry.
+
 **D5 — the option material is assembled in `main`, never in `play`.** `play` is pure and must not import `main`: `Sense`, `Entry` and the dictionary all live there. `Recall` already set this precedent — *"Rendering happens in the caller, deliberately: Render needs RenderOpts and the dictionary, both IO-shaped, and pulling them in here would end this package's purity"* (`recall.go:19-24`). Form 2.3 takes finished options the same way.
+
+**D4a — WHICH SENSE becomes an option is defined, because determinism and the axis both rest on it.** `bank` has a dozen senses; picking one arbitrarily makes the question non-reproducible and the axis meaningless.
+
+- **The correct option is the target's FIRST sense of its FIRST block** — NOAD orders senses by centrality, so this is the meaning a learner is most likely to have met, and it is the same sense `Recall`'s reveal leads with.
+- **A distractor's sense is the one CARRYING the axis being sought**: for `AxisDomain`, the first sense whose gloss leads with a domain label; for `AxisRegister`, likewise; for `AxisGeneral`, the first sense of the first block, as above.
+- A candidate that cannot supply the sought axis is not a candidate FOR THAT SLOT, which is what makes the fallback to `general` a selection outcome rather than a special case.
 
 **D6 — `ReviewEvent` gains a field BEFORE `At`, and that ordering is load-bearing.** `event.go:32-35` states it: *"At stays LAST, and a field added after it would break the torn-record rule silently… completeness leans on a cut record losing its timestamp. A field written after `at:` would survive the cut that drops `at`, and a fragment would"* read as complete. So the new field goes above `At`, and the torn-record test is the pin that says so.
 
@@ -61,7 +100,7 @@
 | `Axis` | `cmd/define/play/choice.go` | new | PURE — the reduced taxonomy: `AxisDomain`, `AxisRegister`, `AxisGeneral` |
 | `senseLabel` | `cmd/define/glosslabel.go` | new | PURE — the leading NOAD label of a gloss, or none |
 | `noadLabels` | `cmd/define/glosslabel.go` | new | PURE — the closed table (D3) |
-| `pickOptions` | `cmd/define/choicebuild.go` | new | PURE — deck + target + seed → four options, deterministic |
+| `pickOptions` | `cmd/define/play/choice.go` | new | PURE — candidates + target + seed → options, deterministic. In `play`, which is MECHANICALLY guarded pure (`play/purity_test.go`), so Done-when 3's determinism claim sits inside the guard that enforces it rather than beside it |
 
 - **`Choice`** — shows a word and four glosses, and remembers which was picked.
   - **Relationships:** 1:1 with a due word; holds N `Option`s (4, or fewer per D9).
@@ -69,7 +108,7 @@
   - **Future extensions:** `#12`'s cloze is the same shape with a different `Prompt`; if a form ever needs five options the count is data, not structure.
 
 - **`pickOptions`** — the selection rule, and the whole of D1 in one function.
-  - **DRY rationale:** `#12` will need the same axis-varying selection over a different pool (authored items rather than the deck), so the signature takes candidates rather than reaching for a deck.
+  - **DRY rationale:** `#12` will need the same axis-varying selection over a different pool (authored items rather than the deck), so the signature takes candidates rather than reaching for a deck. Taking finished candidates is also what lets it live in `play`: the dictionary work happens in `main` (D5) and only the RULE crosses.
   - **Future extensions:** a fourth axis when a form gains a model veto; the axis set is a type, so adding one is a row and a test.
 
 ### Integration points
@@ -108,7 +147,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 | 4 | degrades below four deck words | `TestPickOptionsWithATinyDeck`, `TestASittingFallsBackToRecall` | a two-word deck produces a broken question or a skipped word |
 | 5 | works with the network off | `TestSittingWithNoModelAndNoNetwork` | any path here reaches the model seam |
 | 6 | the axes are the reduced taxonomy, and only that | `TestEveryAxisIsSelectable` — derived from the `Axis` set, as `#30`'s registry guards are | an axis is added that nothing can select |
-| 7 | the session did NOT change to accept a second form | `play_loop_test.go` unchanged for this issue | `playSession` grows a case for a form |
+| 7 | the SESSION did not change to accept a second form | `play/session_test.go` and `play/*` unchanged, and `TestSessionIsFormAgnostic` still green — NOT "play_loop_test.go unchanged", which T5 must edit to build the pool | `playSession` or `play.Apply` grows a case that names a form |
 | 8 | `At` stays last in the event record | the existing torn-record test, unchanged | the new field is appended after `at:` |
 
 ---
@@ -123,3 +162,30 @@ go test -tags conformance ./cmd/define/    # unsandboxed
 Then, on a real terminal with a deck of a dozen words: `define --play`, answer a 2.3 question wrongly on purpose, and confirm the event log records which axis was chosen; answer one correctly and confirm no axis is written; run a sitting with the network off.
 
 **Close:** one boundary, one `sdlc close`, one publish.
+
+## Revisions
+
+### 2026-08-30 — plan-quality round 1 (PQ-1…PQ-5 and a Minor)
+
+- **PQ-1 (Critical) is a conflict I created by parking `#38` mid-flight.** T5 edits
+  the same function `#38`'s T5 rewrites, and — worse — `Choice`'s multi-line
+  prompt would silently break `#38`'s load-bearing premise that the prompt IS the
+  word. Resolved by CONSTRAINT rather than by sequencing: the word stays alone on
+  the first line (D1a), so `#38`'s region math holds unchanged. The ordering note
+  is recorded in `#38`'s Log too, so a resumer meets it.
+- **PQ-2 demanded a measurement the decision had skipped.** 12 of 34 corpus
+  entries carry a labelled sense, and register labels vastly outnumber domain
+  ones — so the taxonomy narrows a second time, to *register confusion,
+  occasional domain confusion, did-not-know-it*. D2a states it. A decision made
+  on a measurement has to carry that measurement's limits.
+- **PQ-3 — "never a near-synonym" named no mechanism.** Now it does, and it is the
+  dictionary's own cross-references: NOAD glosses near-synonyms through each other
+  (`sycophantic` → *"in an obsequious way"*). Measured to fire on 3 of 34 glosses.
+  Stated as a REDUCTION rather than a proof.
+- **PQ-4 — which sense of a multi-sense entry becomes an option was undefined**,
+  and determinism, one-correct-answer and the axis all rest on it. D4a defines it.
+- **PQ-5 — Done-when 7 forbade editing the very file T5 must edit.** The claim was
+  always about the SESSION, not the loop's wiring; the row now says so and names
+  the form-agnostic test that actually pins it.
+- **Minor: `pickOptions` moves into `play`**, which is mechanically guarded pure —
+  so the determinism claim sits inside the guard that enforces it.

@@ -2595,3 +2595,49 @@ written to skip when no pty exists, and therefore silently uncertified wherever
 that is true — including inside a boundary review.
 
 The tests were not missing. The schedule was. Filed as `#37`.
+
+## A test that asserts what the implementation's comment claims pins the assumption (define, side-quest 2026-08-30)
+
+`AudioCandidates` carried the comment *"Multi-word headwords are spelled with
+underscores on the CDN"* and built `hot_dog_en_us_1.mp3`. The unit test asserted
+`hot_dog_en_us_1.mp3`. Both were written in the same sitting, from the same
+guess, and the server was never asked. `hot_dog` is a 404; the real key is
+`hotdog`. Every multi-word headword in the corpus — `hot dog`, `a priori` — had
+missed for the life of the feature.
+
+Three separate things kept it invisible, and each is reusable:
+
+1. **The test's source was the code, not the system.** For an EXTERNAL contract,
+   a unit test can only pin what someone already believed. It cannot discover
+   that the belief is wrong, so it converts a guess into a regression guard
+   pointing the wrong way. The rule is not "don't unit-test the builder" — it is
+   that a unit test asserting an external key MUST cite a live measurement, and
+   name the conformance row that re-checks it.
+
+2. **The sibling assertion looked like coverage and discriminated nothing.** The
+   test also checked "must not produce a URL with a space" — satisfied by `_`,
+   by `-`, and by the correct answer alike. A negative that every candidate
+   passes is not evidence; it is a row that makes the file look tested. Same
+   class as *A negative check must cover the whole thing it claims* (#29), met
+   here in the weaker form where the check is real but its alternatives are all
+   equivalent.
+
+3. **A miss was a SUPPORTED outcome on that path**, so the bug had no symptom.
+   Nothing distinguished "the CDN has no recording for this word" — routine, and
+   genuinely true for most phrases — from "we asked for a filename that cannot
+   exist". When absence is a legal answer, a wrong request is indistinguishable
+   from a correct one, and only a positive control finds it: a word the server
+   IS known to serve, asked for through the production path.
+
+The fix pins the rule live, and asserts the negative too (`hot_dog` and `hot-dog`
+must stay 404). Asserting only that `hotdog` answers would stay green if the CDN
+started accepting several spellings, and the day it narrowed again would be the
+day phrases broke with nothing to say why.
+
+**Found by a user question, not by the suite** — *"'ne plus ultra' no
+pronunciation found, can you figure out if you can find it?"*. The reported word
+turned out to have no recording under any spelling, so the original report was
+not a bug at all; the bug was three feet to the left, and only surfaced because
+the first move was to probe a KNOWN-GOOD control rather than the reported word.
+When a miss is reported on a path where missing is normal, establish that the
+path works at all before investigating the input.

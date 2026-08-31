@@ -117,8 +117,21 @@ func AudioCandidates(word string, v voice) []string {
 	if v.Locale == "" {
 		v.Locale = defaultLocale(v.Lang)
 	}
-	// Multi-word headwords are spelled with underscores on the CDN.
-	slug := strings.ReplaceAll(word, " ", "_")
+	// Multi-word headwords are spelled with the spaces REMOVED, not with
+	// underscores — the CDN key for "hot dog" is `hotdog`.
+	//
+	// MEASURED 2026-08-30, because the underscore here was an assumption that had
+	// never met the server and silently broke every phrase in the corpus:
+	//
+	//	hotdog_en_us_1   200      hot_dog_en_us_1   404      hot-dog_en_us_1   404
+	//	defacto_en_us_1  200      de_facto_en_us_1  404      de-facto_en_us_1  404
+	//
+	// Coverage for phrases is genuinely sparse even so — `adhoc`, `statusquo`,
+	// `coupdetat` and `neplusultra` are all 404 under every spelling — so a miss
+	// on a phrase is still the normal outcome. That is the difference this fix
+	// makes readable: a phrase that HAS a recording now gets it, instead of every
+	// phrase missing for the same wrong reason.
+	slug := strings.ReplaceAll(word, " ", "")
 	esc := url.PathEscape(slug)
 	// The locale is user input too — it comes straight from -locale — so it is
 	// escaped like the word. Unescaped, a value containing "/" would rewrite the
