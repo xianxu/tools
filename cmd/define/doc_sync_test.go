@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/xianxu/tools/cmd/define/play"
 )
 
 // The README's account of the play loop DERIVES from the loop, or it drifts.
@@ -35,21 +37,44 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 	}
 	readme := string(b)
 
-	for _, tc := range []struct {
-		name, line string
-	}{
-		{"the grading prompt, shown while a verdict is owed", gradePrompt},
-		{"the graded prompt, shown once the answer is up", gradedPrompt},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if !strings.Contains(readme, tc.line) {
-				t.Errorf("README.md does not contain the line draw() prints:\n\t%q\n"+
+	// EVERY SHIPPED FORM's prompt, composed exactly as the loop composes it.
+	//
+	// This used to read two consts. That was wrong in a way the README could not
+	// show: the grading prompt is now per-FORM, because a const naming form
+	// 2.1's y/n was printed under form 2.3's numbered options and told the
+	// learner to press a key that did nothing.
+	//
+	// The residual, stated rather than hidden: a THIRD form added to play and
+	// not added to this slice is not checked here. That half is human. What is
+	// mechanical is that Question.Keys() is on the interface, so a new form
+	// cannot compile without writing one, and the rows below fail the build the
+	// moment an existing form's wording moves.
+	forms := []play.Question{
+		play.NewRecall("ephemeral", "lasting for a very short time"),
+		play.NewChoice("ephemeral", "", []play.Option{
+			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
+		}),
+	}
+	seen := map[string]bool{}
+	for _, f := range forms {
+		line := gradePrompt(f)
+		t.Run(line, func(t *testing.T) {
+			if seen[line] {
+				t.Errorf("two forms print the identical prompt %q — one of them is not describing its own keys", line)
+			}
+			seen[line] = true
+			if !strings.Contains(readme, line) {
+				t.Errorf("README.md does not contain the line draw() prints for %T:\n\t%q\n"+
 					"The loop changed and the README did not. Update README.md, or "+
-					"change the const in play_loop.go if the new wording is the "+
-					"intended one.", tc.line)
+					"change the form's Keys() if the new wording is the intended one.", f, line)
 			}
 		})
 	}
+	t.Run("the graded prompt, shown once the answer is up", func(t *testing.T) {
+		if !strings.Contains(readme, gradedPrompt) {
+			t.Errorf("README.md does not contain:\n\t%q", gradedPrompt)
+		}
+	})
 }
 
 // The atlas's raw-notation count DERIVES from the ratchet rather than restating
@@ -285,6 +310,31 @@ func TestAtlasDescribesEveryRenderOpt(t *testing.T) {
 			t.Errorf("the atlas never mentions RenderOpts.%s. A rendering input nobody "+
 				"documented is one the next reader has to infer from the code — and this "+
 				"one carried a Critical's fix.", name)
+		}
+	}
+}
+
+// The README must name EVERY reason a word falls back to form 2.1.
+//
+// Derived from the code's own list rather than checked against a copy in the
+// test, because a hand-maintained enumeration is what failed: choiceFor branched
+// on three reasons while the README named two and the atlas named one, and the
+// third — a dictionary redirect sending `bargainer` to `bargain` — is
+// user-visible, since that word silently gets the other form.
+func TestREADMENamesEveryFallbackReason(t *testing.T) {
+	b, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	readme := strings.ToLower(string(b))
+	if len(fallbackReasons) == 0 {
+		t.Fatal("no fallback reasons declared; this guard would certify nothing")
+	}
+	for _, r := range fallbackReasons {
+		if !strings.Contains(readme, strings.ToLower(r)) {
+			t.Errorf("README.md does not name the fallback reason %q.\n"+
+				"A learner whose word silently gets the other form has no way to know why. "+
+				"Add it, or change fallbackReasons if the wording moved.", r)
 		}
 	}
 }

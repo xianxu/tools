@@ -1919,10 +1919,147 @@ away believing their deck is clear, so that path reports what happened and exits
 failing to enter raw mode in the first place, because they are the same failure.
 
 **`Question` is the whole of what a session knows about a form.** `Word`,
-`Prompt`, `Reveal`, `Grade` — and `Grade` lives on the FORM, which is what makes
-"adding a second form requires no change to the loop" a property rather than a
-promise. Form 2.1 grades `y`/`n`; `#7`'s 2.3 will grade digits; the session never
-learns either. `TestSessionIsFormAgnostic` drives the same table through a fake
+`Prompt`, `Reveal`, `Grade`, `Keys` — and `Grade` lives on the FORM, which is
+what makes "adding a second form requires no change to the loop" a property
+rather than a promise. Form 2.1 grades `y`/`n`; form 2.3 grades digits; the
+session never learns either.
+
+**`Keys` joined that list when the second form shipped, and the reason is the
+kind of bug an interface exists to prevent.** The line under the question —
+"y = got it, n = missed it, …" — was a CONST in the loop. It named form 2.1's
+keys, so the moment form 2.3 was asked the learner was told to press `y` on a
+screen where only `1`–`4` did anything, and no test could see it because every
+test typed the keys the const named. A form describing its own keys is the only
+arrangement in which that cannot recur. The loop still owns the SESSION's
+reserved half (`d`, Ctrl-C) and appends it, because those are true whatever form
+is asking and a form restating them would be two owners of one fact.
+
+### Form 2.3: choosing a definition
+
+**The distractors are the learner's OWN deck, which is a pedagogical choice
+before it is an offline one.** A model could invent plausible wrong answers; the
+words the learner is actually confusing right now are better wrong answers, and
+they cost no key and no network.
+
+**The three distractors vary along axes NOAD labels itself**, and that is what
+makes a miss informative rather than binary. `Axis` is the reduced taxonomy —
+`AxisDomain`, `AxisRegister`, `AxisGeneral` — and the reduction is measured, not
+a shortcut: NOAD prints domain (`Law`, `Grammar`, `Nautical`) and register
+(`informal`, `archaic`, `dated`) inline at the head of a sense, so both are free
+to read and neither creates a second defensible answer. Near-synonym collapse and
+connotation need semantics, hence a model, hence they belong to `#12`/`#13`,
+which have a model veto. This form has none by design.
+
+**Selection fills the SCARCE axis first.** Counted over the committed corpus,
+register labels outnumber domain roughly five to one and only 12 of 34 entries
+carry a labelled sense at all — so a set that filled register first would almost
+never leave a domain candidate unused. A second pass tops up from whatever
+remains, because three axes and three slots only line up when the deck has all
+three; without it a deck with no `Law`-labelled word would return three-option
+questions forever.
+
+**The near-synonym guard is the dictionary's own cross-references.** "Never a
+near-synonym" named no mechanism until it was noticed that NOAD defines close
+words THROUGH each other — `sycophantic` is glossed *"behaving or done in an
+obsequious way"*. So a candidate is excluded when either headword appears in the
+other's gloss, on a word boundary, above six characters. Six is measured: three
+corpus glosses contain "thing" and every one is a coincidence. It is a REDUCTION
+and not a proof — two deck words can be near-synonyms NOAD never links — and the
+residual is accepted because the options are definitions, which two different
+words rarely share.
+
+**`readGloss` walks the head of a gloss rather than matching a prefix**, and the
+walk exists because the obvious design was measured and found wrong. Labels
+usually lead, but a grammar bracket or a parenthetical can come first
+(`[no object] Military (of a soldier) …`, `(the runs) informal diarrhea.`), and
+NOAD stacks REGIONAL labels in front of real ones (`North American English
+informal …`). A prefix match would have called every one of those unlabelled,
+losing exactly the senses the axes are built from. Regional labels are recognized
+so they can be scanned past, but are not an axis — the settled taxonomy has three
+values, and folding "where" into "tone" would blunt the finding.
+
+**Not every `Sense.Gloss` is a definition, which the plan had asserted it was.**
+`bank`, `complete`, `concrete` and `defenestrate` each carry a sense whose gloss
+is exactly `[with object]`; `man` carries `(plural men /men/)`; `alewife` and
+`bases` carry cross-references (`another term for menhaden`). `readGloss` returns
+`Usable`, and an unusable gloss is never an option — one reading "[with object]"
+would make the form look broken.
+
+**The seeded shuffle and the pool sample are hand-rolled, not `math/rand`.**
+The Done-when claims a fixed seed reproduces a question, and `math/rand`'s
+sequence for a seed is a property of the Go runtime rather than of this repo. A
+xorshift64 defined in `play` is pinned by this repo's tests, which is the
+guarantee actually being claimed. The pool is sampled with a partial
+Fisher-Yates, capped at 40 lookups per sitting — per-question it would be one
+dictionary lookup per deck word per due word, quadratic in a deck that only
+grows.
+
+**A wrong answer records WHICH option, through an optional interface.**
+`Outcome.Axis` carries it, filled from `Missed` — a capability, never a form, so
+`Apply` still contains no branch that knows what a `Choice` is. Form 2.1 does not
+implement it, because a failed recall genuinely has no kind, and requiring every
+form to answer would make the interface lie for the one that cannot. A correct
+answer reports `AxisNone`, which stringifies to `""`, which `omitempty` drops —
+so "no axis on a right answer" is enforced by the type rather than by a branch a
+caller could forget. `ReviewEvent.Missed` sits ABOVE `At`, because the
+torn-record rule leans on `at:` being the last key on disk.
+
+**Three things send a word to form 2.1**, and the list is DECLARED
+(`fallbackReasons`, `optionpool.go`) because it was being hand-maintained in the
+code, the README and here, and had already drifted to two, two and one:
+
+1. **the deck has no other word to draw on** — a learner three lookups in has a
+   deck of three, which is the normal early state of the tool rather than an
+   edge case;
+2. **the entry is nothing but cross-references** — `bases` is "plural form of
+   base1", so there is no definition to be the right answer;
+3. **the entry defines a different word** — NOAD redirects derived forms to
+   their base, so `bargainer` returns the `bargain` entry.
+
+The fallback is invisible to the learner and the sitting stays the length the
+schedule asked for.
+
+**Reason 3 is the one that had to be learned.** Form 2.1 shows the whole rendered
+entry, DERIVATIVES line included, so a redirect is harmless under it; form 2.3
+asserts that ONE gloss IS the word's meaning, records `Correct`, and promotes the
+word on that basis. The same dictionary behaviour is fine under one form and
+wrong under the other, and the assumption was inherited rather than re-examined
+when the form changed. `entryDefines` gates it, and both PRODUCERS of a
+(word, gloss) pair call it — `optionCandidates` and `targetCandidate` — rather
+than the caller, because gating the caller caught the target and left the
+distractor path open for a round.
+
+**An option set also dedups on GLOSS, not only on word.** Two deck keys can
+resolve to one entry: `jalapeño` and `jalapeno` are separate keys (`store.Key`
+folds case and whitespace but not diacritics) and the dictionary answers both
+identically. Keyed on word alone, a set then carries byte-identical options with
+one marked correct — so a learner who reads both and picks the other is recorded
+as a miss, given an axis they never chose, and has the word demoted for being
+right. Nothing upstream can catch it: both words are real deck entries whose
+entry genuinely defines them, and neither headword appears in the shared gloss,
+so `crossReferenced` is blind to it. The option set is the only place that can
+see two options saying the same thing.
+
+**The seed drives SELECTION, not just the order options appear in**, and the
+first version got that wrong in a way both Done-when rows were green on. The
+pool is built once per sitting, so scanning it in fixed order made every
+question take the same first-matching candidate: measured at 17 of 20 questions
+sharing one distractor set, after which a learner answers the rest by
+elimination. "Exactly one correct option" and "deterministic under a fixed seed"
+are both true of a sitting that asks the same question twenty times, which is
+why neither noticed. Both passes now walk a seed-shuffled index permutation —
+a permutation rather than a shuffled slice, since the pool is shared across
+questions and reordering it would make each selection depend on the ones before.
+
+**Revealing before answering shows the right option, and that is inherited
+rather than chosen.** Space and Enter are reserved by the session, and on form
+2.1 they show a definition the learner then self-rates against; on form 2.3 they
+show which option is correct, and nothing stops the learner pressing that digit
+for a `Correct`. It is a personal tool and the only person deceived is the one
+doing it, so the behaviour is left alone and named in the README instead of
+being special-cased per form — a form-specific reveal rule would put key
+semantics back inside the session, which is exactly what `Question` exists to
+prevent. `TestSessionIsFormAgnostic` drives the same table through a fake
 form using entirely different keys, and asserts that 2.1's own keys mean nothing
 to it — the only honest way to test that claim before a second form exists.
 

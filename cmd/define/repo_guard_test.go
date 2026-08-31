@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -764,21 +765,36 @@ func TestPlanNamedTestsExist(t *testing.T) {
 		// at close, a legitimate state between issues rather than a missing file.
 		t.Skip("no active plans")
 	}
-	// Test names as they appear in Go source, anywhere in the package.
+	// Test names as they appear in Go source, anywhere under cmd/define —
+	// SUBPACKAGES INCLUDED.
+	//
+	// This used to Glob `cmd/define/*_test.go`, which is flat, so a plan pinning
+	// a test in `play/`, `store/`, `schedule/` or `puretest/` was told the test
+	// "does not exist". #7 hit it with six at once: form 2.3's selection is pure
+	// and its tests live in `play/` by design, which is exactly where this
+	// repo's plans are SUPPOSED to put them (ARCH-PURE). A guard that fails on
+	// the arrangement the architecture asks for teaches people to weaken the
+	// guard, so the fix is here rather than in the plan.
 	declared := map[string]bool{}
-	files, err := filepath.Glob(filepath.Join(root, "cmd", "define", "*_test.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	decl := regexp.MustCompile(`(?m)^func ((?:Test|Fuzz|Benchmark)[A-Za-z0-9_]*)\(`)
-	for _, f := range files {
-		b, err := os.ReadFile(f)
+	err = filepath.WalkDir(filepath.Join(root, "cmd", "define"), func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatalf("reading %s: %v", f, err)
+			return err
+		}
+		if e.IsDir() || !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		b, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
 		}
 		for _, m := range decl.FindAllStringSubmatch(string(b), -1) {
 			declared[m[1]] = true
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	if len(declared) == 0 {
 		t.Fatal("no test declarations found: the guard would certify nothing")

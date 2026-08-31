@@ -2595,3 +2595,138 @@ written to skip when no pty exists, and therefore silently uncertified wherever
 that is true — including inside a boundary review.
 
 The tests were not missing. The schedule was. Filed as `#37`.
+
+## A test that asserts what the implementation's comment claims pins the assumption (define, side-quest 2026-08-30)
+
+`AudioCandidates` carried the comment *"Multi-word headwords are spelled with
+underscores on the CDN"* and built `hot_dog_en_us_1.mp3`. The unit test asserted
+`hot_dog_en_us_1.mp3`. Both were written in the same sitting, from the same
+guess, and the server was never asked. `hot_dog` is a 404; the real key is
+`hotdog`. Every multi-word headword in the corpus — `hot dog`, `a priori` — had
+missed for the life of the feature.
+
+Three separate things kept it invisible, and each is reusable:
+
+1. **The test's source was the code, not the system.** For an EXTERNAL contract,
+   a unit test can only pin what someone already believed. It cannot discover
+   that the belief is wrong, so it converts a guess into a regression guard
+   pointing the wrong way. The rule is not "don't unit-test the builder" — it is
+   that a unit test asserting an external key MUST cite a live measurement, and
+   name the conformance row that re-checks it.
+
+2. **The sibling assertion looked like coverage and discriminated nothing.** The
+   test also checked "must not produce a URL with a space" — satisfied by `_`,
+   by `-`, and by the correct answer alike. A negative that every candidate
+   passes is not evidence; it is a row that makes the file look tested. Same
+   class as *A negative check must cover the whole thing it claims* (#29), met
+   here in the weaker form where the check is real but its alternatives are all
+   equivalent.
+
+3. **A miss was a SUPPORTED outcome on that path**, so the bug had no symptom.
+   Nothing distinguished "the CDN has no recording for this word" — routine, and
+   genuinely true for most phrases — from "we asked for a filename that cannot
+   exist". When absence is a legal answer, a wrong request is indistinguishable
+   from a correct one, and only a positive control finds it: a word the server
+   IS known to serve, asked for through the production path.
+
+The fix pins the rule live, and asserts the negative too (`hot_dog` and `hot-dog`
+must stay 404). Asserting only that `hotdog` answers would stay green if the CDN
+started accepting several spellings, and the day it narrowed again would be the
+day phrases broke with nothing to say why.
+
+**Found by a user question, not by the suite** — *"'ne plus ultra' no
+pronunciation found, can you figure out if you can find it?"*. The reported word
+turned out to have no recording under any spelling, so the original report was
+not a bug at all; the bug was three feet to the left, and only surfaced because
+the first move was to probe a KNOWN-GOOD control rather than the reported word.
+When a miss is reported on a path where missing is normal, establish that the
+path works at all before investigating the input.
+
+## An unticked checkbox can silently DISABLE a repo guard (define #7, close round 4)
+
+`TestPlanTablesNameEntitiesThatExist` exempts rows whose status is `new` while
+the plan still has any `- [ ] ` line — reasonably, since a plan under
+construction names entities that do not exist yet. `#7` ticked the tasks in the
+ISSUE and not in the PLAN DOC, so `inProgress` stayed true through four close
+review rounds and every `new` row went unchecked. The table drifted three times
+— `shuffleOptions` deleted, `entryDefines` added, five renames — and a reviewer
+found it each round while the guard written for exactly that sat idle.
+
+Two things to carry:
+
+1. **A conditional exemption is a switch, and something has to turn it off.**
+   "Skip while in progress" is right, but nothing made "no longer in progress"
+   happen — closing ticks the issue, and the guard reads the plan. The moment
+   the plan's tasks were ticked the guard fired immediately and correctly.
+   **Tick the plan document's own task list at close, not just the issue's.**
+
+2. **Reviewers found what the guard would have.** Three rounds of
+   `plan-artifact-must-match-tree` findings were a human doing, by hand and
+   imperfectly, a job already automated and switched off. When a finding names a
+   class the repo already guards, the first question is not "how do I fix the
+   instances" but "why did the guard not fire" — the answer is worth more than
+   the fix.
+
+**And the sibling guard was simply broken.** `TestPlanNamedTestsExist` globbed
+`cmd/define/*_test.go` — flat — so a plan pinning a test in `play/` was told it
+does not exist. `#7` tripped it with six at once, because form 2.3's selection is
+pure and its tests live in `play/` BY DESIGN. A guard that fails on the
+arrangement the architecture asks for trains people to weaken the guard, so it
+was fixed to walk the tree rather than the plan being edited to appease it.
+
+## Three Criticals, one missing distinction: a deck holds KEYS, a dictionary holds ENTRIES (define #7)
+
+`#7`'s close took six review rounds. Three of them raised a Critical that looked
+new each time and was the same defect:
+
+| round | symptom | what I added |
+|---|---|---|
+| 4 | one entry supplied two options under two spellings | dedup on `Word` |
+| 5 | two options carried byte-identical glosses | dedup on `Gloss` |
+| 6 | one entry supplied two options with DIFFERENT senses, both defining the prompted word, one marked wrong | dedup on `Source` — the entry |
+
+`Word` was a DECK KEY being used as if it identified a meaning. The mapping from
+keys to entries is many-to-one (`jalapeño` and `jalapeno` are two keys and one
+entry), so every attribute of the OPTION — its word, its text — was a proxy that
+would eventually come apart from the thing that actually matters, which is the
+entry.
+
+**The tell was in my own commit messages.** Rounds 4 and 5 both claimed to have
+"fixed the class". A fix that claims the class and is followed by another
+instance of it did not fix the class; it fixed a bigger symptom. When a finding
+recurs after a class-fix, the class was named at the wrong level — go up one.
+
+**The fact that explains all three was already written down in this repo.** `#29`
+exists precisely because the dictionary resolves several spellings to one entry;
+`dict_fake_test.go` models it and `TestLiveDictionaryResolvesAnUnaccentedQuery`
+pins it live. The cost of not asking "what does the rest of the codebase already
+know about identity here?" was three rounds of Critical findings.
+
+**The question that would have short-circuited it** is not "why are these two
+options the same?" but "what makes two options the same?" — the first invites a
+key per symptom, the second forces you to name the unit of meaning. Ask the
+second one first when deduplicating anything.
+
+## Verify each pin against its own mutation, and name the mutation (define #7, BR-27)
+
+I wrote two tests for one fix, ran the mutation once, watched ONE of them go red,
+and recorded "both mutation-verified" in the plan. The other passed with the fix
+removed entirely — its fixture could not produce the defect — so a test that
+pinned nothing was on the record as a pin, which is worse than no test at all.
+
+Two rules, and the second is the one I keep needing:
+
+1. **A test written to pin a fix is verified against THAT fix, individually.**
+   Reverting the fix and watching "the suite" go red proves only that something
+   in the suite covers it.
+2. **A "mutation-verified" claim in a durable artifact must NAME the mutation.**
+   "Mutation-verified" is unfalsifiable prose; *"dropping `usedSource` from
+   `free`, and deleting `Source:` from `optionCandidates`, each turn it red"* is
+   a claim a later reader can re-run in a minute. Write the second one.
+
+The tell that should have caught it: the fixture was chosen to illustrate the
+BUG REPORT (`jalapeño`/`jalapeno`, the pair the finding named) rather than the
+DEFECT CLASS (one entry with two differently-glossed senses under two deck keys).
+Those coincided in the finding's prose and came apart in the corpus — the
+jalapeño entry has one usable sense, so gloss-dedup already covered it. **Pick a
+fixture from the class, then check the reported instance is an example of it.**

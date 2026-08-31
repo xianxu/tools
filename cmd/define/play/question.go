@@ -75,4 +75,17 @@ type Question interface {
 	// Ctrl-C quits (see toInput in play_loop.go). A form must not build its
 	// answer set from those.
 	Grade(r rune) (Verdict, bool)
+	// Keys describes the ANSWER keys this form grades, for the line the loop
+	// prints under the question — "y = got it, n = missed it".
+	//
+	// On the interface rather than a constant in the loop because the loop's
+	// prompt was a const naming form 2.1's keys, and form 2.3 grades digits: a
+	// learner would have been told to press `y` on a screen where only 1-4 did
+	// anything. A form that knows which keys it grades is the only thing that
+	// can describe them.
+	//
+	// The form's keys ONLY. The session's reserved keys — `d` and Ctrl-C — are
+	// appended by the loop, because they are true whatever form is asking and a
+	// form repeating them would be two owners of one fact.
+	Keys() string
 }

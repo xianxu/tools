@@ -657,3 +657,142 @@ func TestPTYWithoutMouseBehavesAsBefore(t *testing.T) {
 		t.Errorf("tracking was left on by a session that never saw a mouse: %q", rest)
 	}
 }
+
+// seedDeckN seeds several words, which is what form 2.3 needs to exist at all.
+//
+// seedDeck's one word can only ever produce form 2.1 — a word is never its own
+// distractor — so every --play pty check before this one was measuring the
+// fallback and none of them could see the multiple-choice form.
+func seedDeckN(t *testing.T, words ...string) string {
+	t.Helper()
+	deck := t.TempDir()
+	for _, w := range words {
+		_, seed := startDefineInDir(t, deck, nil, "--no-audio", w)
+		got := watch(seed).take(3 * time.Second)
+		if !strings.Contains(got, "adjective") && !strings.Contains(got, "noun") {
+			conformance.SkipOrFail(t, fmt.Sprintf("seeding %q did not resolve:\n%q", w, got), nil)
+		}
+		seed.WriteString("\x04")
+	}
+	return deck
+}
+
+// Form 2.3 ON A REAL TERMINAL, end to end: the options are offered, a deliberate
+// wrong answer is graded, and the event log records WHICH axis was picked.
+//
+// This is the manual verification the plan asked for, written as a test instead.
+// The in-process tests drive playSession with a hand-built Choice, so none of
+// them exercises the path that decides a real deck deserves form 2.3, renders
+// four real NOAD glosses into a prompt, and writes the axis to a real file.
+func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
+	deck := seedDeckN(t, "sycophantic", "quokka", "mesa", "parrot", "concrete")
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	first := unstyled(out.take(4 * time.Second))
+
+	// The prompt must offer digits, not y/n — the bug Question.Keys() exists to
+	// prevent, seen from the outside.
+	if !strings.Contains(first, "= pick the definition") {
+		t.Fatalf("form 2.3 was not offered, or its keys were not printed:\n%q", first)
+	}
+	if strings.Contains(first, "y = got it") {
+		t.Errorf("a multiple-choice question printed form 2.1's keys — a learner would press a dead key:\n%q", first)
+	}
+	for _, n := range []string{"1  ", "2  "} {
+		if !strings.Contains(first, n) {
+			t.Errorf("no option line %q on screen:\n%q", n, first)
+		}
+	}
+	// The answer must NOT already be identifiable: the reveal has not happened.
+	if strings.Contains(first, "you chose") {
+		t.Errorf("the reveal leaked before an answer:\n%q", first)
+	}
+
+	// EVERY ANSWER IS A DELIBERATE MISS, and deterministically so.
+	//
+	// The first version pressed `1` for every question and then required a
+	// `missed:` line, which made the assertion depend on TODAY'S DATE: the
+	// answer's slot is a function of seedFor(word, day), so on roughly one day
+	// in a thousand all five words put the answer in slot 1 and the test failed
+	// for a reason having nothing to do with the code. A conformance test that
+	// fails by calendar teaches people to re-run it until it passes.
+	//
+	// So the answer is READ rather than guessed. Enter reveals, and an unanswered
+	// Choice's reveal prints the correct option's own line — so the option number
+	// that appears a SECOND time is the right one, and anything else is a
+	// guaranteed miss.
+	// Every chunk is kept: the loop consumes the output the final assertion
+	// needs, and take() drains rather than peeks.
+	transcript := first
+	for i := 0; i < 6; i++ {
+		f.WriteString("\r") // reveal
+		revealed := unstyled(out.take(700 * time.Millisecond))
+		transcript += revealed
+		correct := optionNumberIn(revealed)
+		if correct == 0 {
+			break // the sitting is over, or this word fell back to Recall
+		}
+		wrong := byte('1')
+		if correct == '1' {
+			wrong = '2'
+		}
+		f.WriteString(string(wrong))
+		transcript += unstyled(out.take(400 * time.Millisecond))
+	}
+	transcript += unstyled(out.take(3 * time.Second))
+	if !strings.Contains(transcript, "right,") {
+		t.Errorf("the sitting never finished:\n%q", transcript)
+	}
+
+	// THE RECORD. A miss must carry an axis; a correct answer must not.
+	events, err := os.ReadFile(latestEventFile(t, deck))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(events)
+	if !strings.Contains(log, "kind: reviewed") {
+		t.Fatalf("no review events were written:\n%s", log)
+	}
+	// Guaranteed now, not probable: every answer above was chosen to be wrong.
+	if !strings.Contains(log, "missed:") {
+		t.Errorf("no miss recorded an axis, though every answer was a deliberate miss — "+
+			"D7's finding never reached the log:\n%s", log)
+	}
+	// D8, stated as an exact identity rather than a conditional: the number of
+	// `missed:` lines must equal the number of MISSES, so a correct answer
+	// carrying an axis fails whether or not any correct answer occurred.
+	reviewed := strings.Count(log, "kind: reviewed")
+	right := strings.Count(log, "correct: true")
+	if misses, axes := reviewed-right, strings.Count(log, "missed:"); axes != misses {
+		t.Errorf("%d axes written for %d misses across %d reviews — an axis was recorded "+
+			"for a correct answer, or a miss recorded none (D8):\n%s", axes, misses, reviewed, log)
+	}
+}
+
+// latestEventFile is the day file the sitting just wrote.
+func latestEventFile(t *testing.T, deck string) string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(deck, "events"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no events directory in %s: %v", deck, err)
+	}
+	return filepath.Join(deck, "events", entries[len(entries)-1].Name())
+}
+
+// optionNumberIn returns the digit of the option line that appears in a REVEAL
+// chunk, or 0.
+//
+// An unanswered Choice's Reveal prints the correct option's own line before the
+// full entry, so the first `N  ` line in the chunk the reveal produced is the
+// answer. Reading it is what makes the pty test's misses deliberate instead of
+// dependent on which slot today's seed happened to choose.
+func optionNumberIn(chunk string) byte {
+	for _, line := range strings.Split(chunk, "\n") {
+		l := strings.TrimLeft(line, " \t")
+		if len(l) > 3 && l[0] >= '1' && l[0] <= '9' && l[1] == ' ' && l[2] == ' ' {
+			return l[0]
+		}
+	}
+	return 0
+}

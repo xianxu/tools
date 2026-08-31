@@ -430,3 +430,45 @@ func TestEventsAreNotScopedByLanguage(t *testing.T) {
 		t.Errorf("events = %+v, want the one event visible from either language", evs)
 	}
 }
+
+// `at:` is the LAST key of a written record, whatever fields the record has.
+//
+// Done-when 8 of #7, stated as a property rather than as "the torn-record test
+// file is unchanged". The distinction is the point: #7 adds a field to
+// ReviewEvent, and a plan row phrased as file-state would have gone red for the
+// edit rather than for the defect. What must not change is the ORDER on disk.
+//
+// The older assertion compared `at:` against `question:` alone, so a field added
+// after `at:` but before `question:` in the struct — or any new field at all —
+// left it green. This one derives from the record itself: every key: line is
+// found, and `at:` must be the last of them.
+func TestYAMLWritesAtLastWhateverFieldsAreSet(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewYAML(dir, store.DefaultLang, nil)
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	// EVERY field set, so no key can hide behind omitempty.
+	if err := s.AppendEvent(store.ReviewEvent{
+		Word: "sycophantic", Kind: store.EventReviewed, Found: true, Correct: false,
+		Question: "which definition?", Missed: "domain", At: day,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "events", "2026-08-20.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "- "))
+		if i := strings.Index(f, ":"); i > 0 && !strings.HasPrefix(f, "#") {
+			keys = append(keys, f[:i])
+		}
+	}
+	if len(keys) < 6 {
+		t.Fatalf("only %d keys written (%v); the fixture is not exercising the whole record:\n%s", len(keys), keys, b)
+	}
+	if last := keys[len(keys)-1]; last != "at" {
+		t.Errorf("the last key is %q, want \"at\" — a field written after `at:` survives the cut that drops "+
+			"`at`, and the fragment then reads as a whole record (event.go, complete()):\n%s", last, b)
+	}
+}

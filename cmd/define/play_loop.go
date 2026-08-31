@@ -146,7 +146,10 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session,
 				// Ctrl-C lossless by construction rather than by a flush, and the
 				// loop never inspects the verdict — a skip produced no outcome at
 				// all, so there is nothing to filter here.
-				d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, opt)
+				// out.Axis is AxisNone for every form that cannot say why it was
+				// missed, and for every correct answer — so this stays one call
+				// with no branch on which form asked.
+				d.capture.CaptureReview(out.Word, out.Verdict == play.Correct, out.Axis, opt)
 			case play.OutcomeDrop:
 				// Through the store's own Forget, which is --forget's path: the deck
 				// loses the word and the events keep it. Reported, because removing
@@ -249,6 +252,15 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		return nil, 0
 	}
 
+	// The distractor pool for the whole sitting, built ONCE. Per-question it
+	// would be one dictionary lookup per deck word per due word — quadratic in a
+	// deck that only grows (ARCH-CONSTRAINTS).
+	//
+	// Seeded on the DAY, so today's sitting draws the same sample whichever
+	// order the words come up in, and a different one tomorrow.
+	day := now.Format("2006-01-02")
+	pool := buildPool(d, deck, seedFor("pool", day))
+
 	var qs []play.Question
 	for _, key := range keys {
 		text, err := d.dict.Lookup(key)
@@ -258,10 +270,19 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
 			continue
 		}
+		entry := ParseEntry(text)
 		// No regions: `--play` draws its own frames and has no click map (D5a).
-		rendered, _ := Render(ParseEntry(text), RenderOpts{
+		rendered, _ := Render(entry, RenderOpts{
 			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 		})
+		// Form 2.3 when the deck can supply distractors, form 2.1 when it
+		// cannot (D9). A young deck is a NORMAL state, not an error, and the
+		// fallback is invisible to the learner — the sitting stays the length
+		// the schedule asked for either way.
+		if q := choiceFor(key, rendered, entry, pool, seedFor(key, day)); q != nil {
+			qs = append(qs, q)
+			continue
+		}
 		qs = append(qs, play.NewRecall(key, rendered))
 	}
 	if len(qs) == 0 {
@@ -306,7 +327,7 @@ func draw(w io.Writer, s play.Session) {
 	// keystroke that carried no information, and the slow one at that, since a
 	// reveal fetches and plays the pronunciation. A learner who wants to check
 	// before rating still can; they simply no longer have to (#24).
-	fmt.Fprint(w, "\n"+gradePrompt+"\n")
+	fmt.Fprint(w, "\n"+gradePrompt(q)+"\n")
 }
 
 // The two prompt lines draw() emits, named because README.md quotes them
@@ -318,12 +339,28 @@ func draw(w io.Writer, s play.Session) {
 // doc comments, then reached the doc comments and not the two test citations.
 // Sweeping is what kept failing; a consumer that fails the build does not.
 const (
-	// gradePrompt is shown while a verdict is still owed — with or without the
-	// definition on screen, because grading no longer requires a reveal (#24).
-	gradePrompt = "y = got it, n = missed it, d = remove from deck, Ctrl-C to stop"
+	// sessionKeys are the keys the SESSION reserves, true whatever form is
+	// asking (question.go:74-77). The form's own keys are prepended by
+	// gradePrompt — this half does not vary, and a form restating it would be
+	// two owners of one fact.
+	sessionKeys = "d = remove from deck, Ctrl-C to stop"
 	// gradedPrompt is shown once the answer is in and the definition is up.
 	gradedPrompt = "any key = next word, d = remove from deck, Ctrl-C to stop"
 )
+
+// gradePrompt is what to press while a verdict is still owed: the FORM's answer
+// keys, then the session's reserved ones.
+//
+// A function rather than the const it used to be. The const spelled form 2.1's
+// y/n, so the moment a second form shipped the learner was being told to press a
+// key that did nothing — a bug no test could see, because every test typed the
+// keys the const named.
+func gradePrompt(q play.Question) string {
+	// No nil guard: draw returns before this when Current() is nil, so a nil
+	// here would be a bug in the loop rather than a state to render politely.
+	// The guard that was here shipped as dead code and would have hidden that.
+	return q.Keys() + ", " + sessionKeys
+}
 
 func finish(w io.Writer, s play.Session) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)

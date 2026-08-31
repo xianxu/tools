@@ -96,6 +96,35 @@ func questionsFor(t *testing.T, d deps, opt options) []play.Question {
 	return qs
 }
 
+// gradeKey is the keystroke that grades q with the wanted verdict, WHICHEVER
+// form q is.
+//
+// Necessary because a session's forms are chosen by the deck, not by the test:
+// a rig with two words now produces form 2.3, whose answer sits in a shuffled
+// position, so "y" and "n" stopped being answers at all. Tests that assert
+// something about the SESSION — that it records once per answer, that an
+// interrupt preserves what was recorded — should not have to care which form
+// asked, and before this they silently did.
+//
+// Naming *play.Choice here is fine where Done-when 7 forbids it in Apply: the
+// prohibition is on the session learning about forms, and this is a test
+// deciding what to type.
+func gradeKey(t *testing.T, q play.Question, want play.Verdict) string {
+	t.Helper()
+	if c, ok := q.(*play.Choice); ok {
+		for i, o := range c.Options() {
+			if o.Correct == (want == play.Correct) {
+				return string(rune('1' + i))
+			}
+		}
+		t.Fatalf("form 2.3 for %q has no option giving %v: %+v", q.Word(), want, c.Options())
+	}
+	if want == play.Correct {
+		return "y"
+	}
+	return "n"
+}
+
 // THE DONE-WHEN: a full session against a fake store and fake clock records one
 // event per answer.
 func TestFullSessionRecordsOneEventPerAnswer(t *testing.T) {
@@ -106,7 +135,8 @@ func TestFullSessionRecordsOneEventPerAnswer(t *testing.T) {
 	}
 
 	var out, errb bytes.Buffer
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\ry\rn"), rawTerm{}, &out, &errb)
+	keys := "\r" + gradeKey(t, qs[0], play.Correct) + "\r" + gradeKey(t, qs[1], play.Wrong)
+	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor(keys), rawTerm{}, &out, &errb)
 
 	events := reviewEvents(t, st)
 	if len(events) != 2 {
@@ -130,7 +160,7 @@ func TestInterruptPreservesRecordedEvents(t *testing.T) {
 
 	var out, errb bytes.Buffer
 	// Answer the first, then Ctrl-C before the second.
-	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\ry^"), rawTerm{}, &out, &errb)
+	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor("\r"+gradeKey(t, qs[0], play.Correct)+"^"), rawTerm{}, &out, &errb)
 
 	events := reviewEvents(t, st)
 	if len(events) != 1 {
@@ -333,7 +363,8 @@ func TestSessionOutputIsAllCRLF(t *testing.T) {
 
 	var raw, errb bytes.Buffer
 	playSession(t.Context(), d, opt, play.NewSession(qs),
-		keysFor("\ry\rn"), rawTerm{}, &crlfWriter{w: &raw}, &errb)
+		keysFor("\r"+gradeKey(t, qs[0], play.Correct)+"\r"+gradeKey(t, qs[1], play.Wrong)),
+		rawTerm{}, &crlfWriter{w: &raw}, &errb)
 
 	got := raw.String()
 	if strings.Count(got, "\n") == 0 {
@@ -749,6 +780,189 @@ func TestThePromptSaysWhatTheKeysDo(t *testing.T) {
 			}
 			if strings.Contains(b.String(), tc.absent) {
 				t.Errorf("prompt = %q, must NOT offer %q in this state", b.String(), tc.absent)
+			}
+		})
+	}
+}
+
+// Done-when 2: the CHOSEN option reaches the log, not just right/wrong.
+//
+// Driven through playSession rather than by calling CaptureReview, because the
+// claim is about a wiring only the loop supplies (lessons.md, #15): deleting
+// `out.Axis` from the loop's call leaves every play package test green, since
+// Apply would still be putting the axis on the Outcome nobody read.
+func TestAMissRecordsTheAxisItChose(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	opts := []play.Option{
+		{Gloss: "behaving in an obsequious way", Correct: true},
+		{Gloss: "an official report of proceedings", Word: "record", Axis: play.AxisDomain},
+		{Gloss: "a manservant or valet", Word: "man", Axis: play.AxisRegister},
+	}
+	for _, tc := range []struct {
+		name string
+		key  string
+		want play.Axis
+	}{
+		{"picking the domain distractor", "2", play.AxisDomain},
+		{"picking the register distractor", "3", play.AxisRegister},
+		// D8: a right answer writes no axis, so the taxonomy has nothing to
+		// filter back out later.
+		{"answering correctly", "1", play.AxisNone},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &countingCapturer{}
+			d.capture = spy
+			q := play.NewChoice("sycophantic", "", opts)
+
+			var out, errb bytes.Buffer
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor(tc.key), rawTerm{}, &out, &errb)
+
+			if spy.reviews != 1 {
+				t.Fatalf("CaptureReview called %d times, want 1", spy.reviews)
+			}
+			if got := spy.axes[0]; got != tc.want {
+				t.Errorf("recorded axis %v (%q), want %v — the axis never left the form",
+					got, got.String(), tc.want)
+			}
+		})
+	}
+}
+
+// D9: a young deck falls back to form 2.1, invisibly.
+//
+// The learner three lookups in is the NORMAL early state of this tool, not an
+// edge case — and it is the state every new user is in, so a session that broke
+// here would break on first use.
+func TestASittingFallsBackToRecall(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		deck     []string
+		wantKind string
+	}{
+		// One word: its own entry is the only thing in the pool, and a word is
+		// never its own distractor, so there is nothing to choose between.
+		{"a one-word deck", []string{"sycophantic"}, "*play.Recall"},
+		{"two words", []string{"sycophantic", "ephemeral"}, "*play.Choice"},
+		{"a fuller deck", []string{"sycophantic", "ephemeral", "quokka", "mesa", "parrot"}, "*play.Choice"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, _ := playRig(t, tc.deck...)
+			qs := questionsFor(t, d, opt)
+			if len(qs) == 0 {
+				t.Fatal("no questions")
+			}
+			if got := typeName(qs[0]); got != tc.wantKind {
+				t.Errorf("first question is %s, want %s", got, tc.wantKind)
+			}
+			// Whichever form it is, the sitting must be answerable — the
+			// fallback is only invisible if it actually works.
+			var out, errb bytes.Buffer
+			playSession(t.Context(), d, opt, play.NewSession(qs[:1]),
+				keysFor("\r"+gradeKey(t, qs[0], play.Correct)), rawTerm{}, &out, &errb)
+			if out.Len() == 0 {
+				t.Error("the session drew nothing")
+			}
+		})
+	}
+}
+
+// A four-option question needs four sources, and the option count must GROW
+// with the deck rather than sitting at two forever.
+func TestOptionCountGrowsWithTheDeck(t *testing.T) {
+	for _, tc := range []struct{ deck, wantOptions int }{
+		{2, 2}, {3, 3}, {4, 4}, {8, 4},
+	} {
+		words := []string{"sycophantic", "ephemeral", "quokka", "mesa", "parrot", "concrete", "pulp", "minute"}[:tc.deck]
+		d, opt, _ := playRig(t, words...)
+		qs := questionsFor(t, d, opt)
+		c, ok := qs[0].(*play.Choice)
+		if !ok {
+			t.Fatalf("a deck of %d gave %s, want form 2.3", tc.deck, typeName(qs[0]))
+		}
+		if got := len(c.Options()); got != tc.wantOptions {
+			t.Errorf("a deck of %d gave %d options, want %d", tc.deck, got, tc.wantOptions)
+		}
+	}
+}
+
+// Done-when 5: the whole sitting runs with no model and no network.
+//
+// The model seam is made to PANIC rather than left nil: nil would make this pass
+// on a loop that reaches for the model behind a `!= nil` guard, which is exactly
+// how a network dependency creeps into an offline path unnoticed.
+func TestSittingWithNoModelAndNoNetwork(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	d.newLLM = func(llm.Config) llm.Client {
+		panic("form 2.3 reached the model seam; this form is offline by design")
+	}
+	d.getenv = func(string) string {
+		panic("form 2.3 read the environment for a credential")
+	}
+	// And no audio source at all, so nothing can reach the CDN either.
+	d.audio = noAudioSource{}
+
+	qs := questionsFor(t, d, opt)
+	if len(qs) == 0 {
+		t.Fatal("no questions")
+	}
+	var keys string
+	for _, q := range qs {
+		keys += "\r" + gradeKey(t, q, play.Correct)
+	}
+	var out, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), keysFor(keys), rawTerm{}, &out, &errb)
+
+	if got := len(reviewEvents(t, st)); got != len(qs) {
+		t.Errorf("%d events for %d questions — an offline sitting must still record", got, len(qs))
+	}
+}
+
+func typeName(v any) string {
+	switch v.(type) {
+	case *play.Choice:
+		return "*play.Choice"
+	case *play.Recall:
+		return "*play.Recall"
+	}
+	return "unknown"
+}
+
+// The two ways an ENTRY (rather than the deck) sends a word to form 2.1.
+//
+// Both are properties of what the dictionary returned, so the deck here is large
+// enough that every other word gets form 2.3 — which is what isolates the entry
+// as the cause rather than the deck size.
+func TestASittingFallsBackForAnEntryThatCannotBeAsked(t *testing.T) {
+	for _, tc := range []struct{ word, why string }{
+		// Every sense is a cross-reference: "plural form of base1",
+		// "/ˈbāsēz/ plural form of basis". No definition to be the answer.
+		{"bases", "every sense is a cross-reference"},
+		// NOAD redirects the derived form: looking this up returns the `bargain`
+		// entry, so the "correct" option would be a different word's meaning
+		// offered as this one's, recorded Correct, and promoted in the schedule.
+		{"bargainer", "the entry defines the base word, not this one"},
+	} {
+		t.Run(tc.word, func(t *testing.T) {
+			d, opt, _ := playRig(t, tc.word, "sycophantic", "quokka", "mesa", "parrot", "concrete")
+			qs := questionsFor(t, d, opt)
+
+			var form, otherForms string
+			for _, q := range qs {
+				if q.Word() == tc.word {
+					form = typeName(q)
+				} else if otherForms == "" {
+					otherForms = typeName(q)
+				}
+			}
+			if form == "" {
+				t.Fatalf("%q was dropped from the sitting entirely; %d questions", tc.word, len(qs))
+			}
+			if form != "*play.Recall" {
+				t.Errorf("%q got %s — %s, so it cannot be a recognition question", tc.word, form, tc.why)
+			}
+			if otherForms != "*play.Choice" {
+				t.Errorf("the rest of the deck got %s, so this test is not distinguishing "+
+					"the entry from the deck size", otherForms)
 			}
 		})
 	}

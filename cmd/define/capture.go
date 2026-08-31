@@ -4,6 +4,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
@@ -63,7 +64,12 @@ type Capturer interface {
 	// Apply emits no record outcome for one, so the type refusing to express it
 	// is the design rather than a gap. A recorded skip would read as a miss in
 	// schedule.Fold and demote a word the learner was honest about.
-	CaptureReview(word string, correct bool, opt options)
+	//
+	// The axis is WHY a wrong answer was wrong, for the forms that can say (#7
+	// D7). It is play.Axis rather than a string so the meaning survives the
+	// call: the conversion to the log's text happens once, at the store
+	// boundary, instead of every caller agreeing on a spelling.
+	CaptureReview(word string, correct bool, axis play.Axis, opt options)
 }
 
 // storeCapturer is the only thing that RECORDS a lookup. It is not the only
@@ -119,7 +125,7 @@ func (c *storeCapturer) Capture(word string, found bool, opt options) {
 // which is what makes Ctrl-C mid-session lossless by construction rather than by
 // a flush at the end. That property is free from the append-only log (#3) and
 // would be lost by any batching.
-func (c *storeCapturer) CaptureReview(word string, correct bool, opt options) {
+func (c *storeCapturer) CaptureReview(word string, correct bool, axis play.Axis, opt options) {
 	// decideCapture, not a second policy: -raw and DEFINE_NO_CAPTURE mean "write
 	// nothing into this directory", and a review is a write. captureEventOnly is
 	// the right floor — a review is an EVENT, and it must never touch the deck,
@@ -132,7 +138,11 @@ func (c *storeCapturer) CaptureReview(word string, correct bool, opt options) {
 		return
 	}
 	if err := c.st.AppendEvent(store.ReviewEvent{
-		Word: key, Kind: store.EventReviewed, Found: true, Correct: correct, At: c.clock.Now(),
+		Word: key, Kind: store.EventReviewed, Found: true, Correct: correct,
+		// AxisNone stringifies to "", which omitempty drops — so D8 ("a correct
+		// answer records no axis") is enforced by the type, not by a branch here
+		// that a later caller could forget to write.
+		Missed: axis.String(), At: c.clock.Now(),
 	}); err != nil {
 		c.warnf("could not record the review of %q: %v", word, err)
 	}
@@ -170,6 +180,6 @@ func (c *storeCapturer) warnf(format string, args ...any) {
 // decideCapture. This is only "there is nowhere to write".
 type noopCapturer struct{}
 
-func (noopCapturer) Capture(string, bool, options)       {}
-func (noopCapturer) CaptureAsk(string, string, options)  {}
-func (noopCapturer) CaptureReview(string, bool, options) {}
+func (noopCapturer) Capture(string, bool, options)                  {}
+func (noopCapturer) CaptureAsk(string, string, options)             {}
+func (noopCapturer) CaptureReview(string, bool, play.Axis, options) {}

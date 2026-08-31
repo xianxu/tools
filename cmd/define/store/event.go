@@ -29,6 +29,19 @@ type ReviewEvent struct {
 	// asked before any lookup has no word — which is what generalised complete()
 	// below from "has a word" to "has a subject".
 	Question string `yaml:"question,omitempty"`
+	// Missed is WHY a wrong answer was wrong, when the form can say: the axis of
+	// the option the learner picked ("domain", "register", "general"). #7's
+	// form 2.3 sets it; form 2.1 cannot, because a failed recall has no kind.
+	//
+	// Empty on every correct answer and omitted from the file (D8) — writing
+	// something on a right answer would put a word in the log that #17 M2's
+	// weakness taxonomy then has to filter back out.
+	//
+	// The AXIS rather than the distractor's word (D7): "picked the Law one" is a
+	// finding a later reader can interpret, while "picked larceny" is a fact
+	// about one question whose option set no longer exists. It also keeps the
+	// event small and stable while the deck churns underneath it.
+	Missed string `yaml:"missed,omitempty"`
 	// At stays LAST, and a field added after it would break the torn-record rule
 	// silently. See complete(): the rule is termination PLUS completeness, and
 	// completeness leans on a cut record losing its timestamp. A field written

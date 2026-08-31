@@ -305,3 +305,37 @@ func TestLiveDictionaryResolvesAnUnaccentedQuery(t *testing.T) {
 		})
 	}
 }
+
+// The LIVE dictionary really does redirect derived forms to their base, which is
+// the behaviour entryDefines exists to detect.
+//
+// Without this the model is only asserted by a committed fixture, and a fixture
+// is a copy of a belief. If macOS ever answered `bargainer` with its own entry,
+// the gate would silently send a perfectly askable word to form 2.1 forever and
+// every offline test would stay green.
+func TestLiveDictionaryRedirectsADerivedForm(t *testing.T) {
+	raw, err := noadDictionary{}.Lookup("bargainer")
+	if err != nil {
+		conformance.SkipOrFail(t, "bargainer did not resolve", err)
+		return
+	}
+	e := ParseEntry(raw)
+	if e.Headword() == "bargainer" {
+		t.Errorf("the live dictionary now gives `bargainer` its own entry (headword %q) — "+
+			"entryDefines would send an askable word to form 2.1 forever. Re-measure the "+
+			"redirect model before trusting the gate.", e.Headword())
+	}
+	if entryDefines("bargainer", e) {
+		t.Errorf("entryDefines says the live entry defines `bargainer`, but its headword is %q",
+			e.Headword())
+	}
+	// And the base word must still pass, or the gate is refusing everything.
+	base, err := noadDictionary{}.Lookup("bargain")
+	if err != nil {
+		conformance.SkipOrFail(t, "bargain did not resolve", err)
+		return
+	}
+	if !entryDefines("bargain", ParseEntry(base)) {
+		t.Error("entryDefines rejects the base word's own entry; the gate is too broad")
+	}
+}

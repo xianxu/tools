@@ -209,3 +209,54 @@ func TestCDNFrenchCoverageIsStillPartial(t *testing.T) {
 		}
 	}
 }
+
+// Multi-word headwords are keyed with the spaces REMOVED, and the separators that
+// look plausible are 404s.
+//
+// This row exists because the unit test could not have caught the bug it pins.
+// AudioCandidates spelled "hot dog" as `hot_dog` from the day it was written —
+// an assumption that never met the server — and the unit test asserted the same
+// assumption back, so every multi-word headword in the corpus missed silently for
+// the life of the feature. A miss is a SUPPORTED outcome on this path, which is
+// what kept it quiet: nothing distinguishes "the CDN has no recording" from "we
+// asked for the wrong file".
+//
+// So the negative half is the point. Asserting only that `hotdog` answers would
+// stay green if the CDN started accepting both spellings, and the day it stopped
+// would be the day phrases broke again with no test to say why.
+func TestCDNKeysPhrasesWithoutSeparators(t *testing.T) {
+	// Both measured 200 on 2026-08-30. Two words rather than one: `hot dog` is in
+	// the committed corpus, and `de facto` is not, so the rule is pinned as a rule
+	// and not as one fixture's accident.
+	for _, phrase := range []string{"hot dog", "de facto"} {
+		t.Run(phrase, func(t *testing.T) {
+			// Through the production fetch, like the other positive rows here — the
+			// recording may sit at the _2 suffix, and a row that probes [0] alone
+			// pins a smaller claim than its name.
+			_, from, err := newHTTPAudioSource().Fetch(t.Context(), AudioCandidates(phrase, voice{Lang: "en", Locale: "us"}))
+			if err != nil {
+				if errors.Is(err, ErrNoAudio) {
+					t.Errorf("%q has no recording under any candidate — either the CDN dropped it "+
+						"or the key rule changed again; re-measure before editing AudioCandidates", phrase)
+					return
+				}
+				conformance.SkipOrFail(t, "network unavailable", err)
+				return
+			}
+			if !strings.Contains(from, strings.ReplaceAll(phrase, " ", "")) {
+				t.Errorf("%q answered from %s, which is not the spaces-removed key", phrase, from)
+			}
+		})
+	}
+
+	// The separators the code used to send, and the one that reads as its obvious
+	// alternative. Probed directly rather than through AudioCandidates, since the
+	// whole claim is about a spelling the builder must NOT produce.
+	base := "https://ssl.gstatic.com/dictionary/static/pronunciation/2022-03-02/audio/ho/"
+	for _, bad := range []string{"hot_dog", "hot-dog"} {
+		if got := head(t, base+bad+"_en_us_1.mp3"); got == http.StatusOK {
+			t.Errorf("%s now resolves — the CDN accepts more than one spelling, so the "+
+				"unit test's negative assertion has stopped discriminating", bad)
+		}
+	}
+}
