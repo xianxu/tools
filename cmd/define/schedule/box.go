@@ -1,8 +1,9 @@
 // Package schedule decides what is worth the learner's attention today.
 //
-// Leitner boxes with fixed intervals, chosen over SM-2 deliberately: for a
+// Leitner boxes on a GEOMETRIC ladder, chosen over SM-2 deliberately: for a
 // personal tool "why is this due?" must be answerable in one sentence, and an
-// ease factor cannot be.
+// ease factor cannot be. The sentence here is "each correct recall multiplies
+// the wait by 1.6".
 //
 // ENTIRELY PURE: no IO, no clock of its own, no state. It imports `store` and
 // pure standard-library packages only, and every instant arrives as a parameter.
@@ -26,37 +27,69 @@
 // produced it.
 package schedule
 
-// intervalDays is the Leitner ladder. Fixed, and short enough to read.
+// The ladder's ratio, as an exact rational: 1.6 = 8/5.
 //
-// One slice, so a per-learner variant later replaces the table rather than the
-// logic around it. Nothing here measures whether these suit this learner; #8's
-// stats are what would eventually say.
-// An ARRAY, not a slice, so len() is a constant expression and LastBox can be a
-// const. As a `var` it was exported, mutable, and depended on by every clamp and
-// by Mastered — any package could have assigned to it and silently rewritten the
-// schedule for the whole process.
-var intervalDays = [...]int{1, 3, 7, 14, 30, 90}
+// A RATIONAL rather than a float, and the reason is the one `#7` established for
+// its PRNG and hash. `math.Pow(1.6, b)` is not guaranteed bit-identical across
+// architectures, so a ladder built on it could differ by platform — and a
+// schedule that differs by platform is one this repo cannot pin in a table test
+// and a learner cannot reason about. `8^b / 5^b` in int64 is exact everywhere,
+// needs no import, and leaves this package's allowlist untouched.
+const (
+	ratioNum = 8
+	ratioDen = 5
+)
 
-// LastBox is the final rung. Reaching it takes LastBox consecutive correct
-// answers from box 0.
-const LastBox = len(intervalDays) - 1
+// ladderLimit is where the ARITHMETIC stops, and it is not a pedagogical
+// ceiling.
+//
+// `8^20` is 1.15e18, comfortably inside int64; `8^21` overflows. Box 20 is a
+// 12,089-day interval and is reached only after **20,135 days of correct
+// answers — 55 years** (pinned by TestTheClampIsUnreachable). So no learner can
+// arrive here, and the ladder is unbounded in every sense that matters to one.
+//
+// NAMED `ladderLimit` AND NOT `maxBox`, deliberately: Progress carries a MaxBox
+// field, and `p.Box < maxBox` and `p.Box < p.MaxBox` are both valid Go with
+// opposite meanings — the first would grant every word a permanent express lane,
+// silently and forever. Two concepts one letter apart is a defect waiting for a
+// tired reader.
+const ladderLimit = 20
 
 // IntervalDays is how many local calendar days a word in this box waits.
 //
+// `floor(1.6^box)`, computed as `8^box / 5^box`. The first two rungs are BOTH
+// one day — `floor(1.6^0)` and `floor(1.6^1)` are both 1 — and that duplicate is
+// the most valuable rung in the ladder rather than an artifact: a new word is
+// seen on day 1 and again on day 2, which is when forgetting is steepest.
+//
+//	box    0  1  2  3  4   5   6   7   8   9   10   11   12
+//	wait   1  1  2  4  6  10  16  26  42  68  109  175  281
+//	day@   0  1  2  4  8  14  24  40  66 108  176  285  460
+//
 // Clamps rather than panicking on an out-of-range box: Fold derives boxes from
-// an append-only log, and a log written by a future version with a longer ladder
-// must degrade to "the longest interval we know" rather than crash a review
-// session.
+// an append-only log, and a log written by a future version with a different
+// ratio must degrade to the longest interval we can express rather than crash a
+// review session.
 func IntervalDays(box int) int {
-	return intervalDays[clampBox(box)]
+	box = clampBox(box)
+	num, den := int64(1), int64(1)
+	for i := 0; i < box; i++ {
+		num *= ratioNum
+		den *= ratioDen
+	}
+	if d := num / den; d > 1 {
+		return int(d)
+	}
+	// Boxes 0 and 1 both land here: 1/1 and 8/5 both floor to 1.
+	return 1
 }
 
 func clampBox(box int) int {
 	if box < 0 {
 		return 0
 	}
-	if box > LastBox {
-		return LastBox
+	if box > ladderLimit {
+		return ladderLimit
 	}
 	return box
 }

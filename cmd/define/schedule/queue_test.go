@@ -101,9 +101,11 @@ func TestQueueIsDeterministicOnTies(t *testing.T) {
 // schedule.
 func TestNotDueWordsAreExcluded(t *testing.T) {
 	deck := []store.Word{word("waiting", 1, 0), word("due", 1, 0)}
+	// Three corrects reach box 3, whose interval is 4 days — long enough that
+	// "reviewed yesterday" is unambiguously not due.
 	prog := Fold([]store.ReviewEvent{
-		reviewed("waiting", true, at(59)), // box 1, 3 days — not due on day 60
-		reviewed("due", true, at(50)),     // box 1 — due on day 60
+		reviewed("waiting", true, at(57)), reviewed("waiting", true, at(58)), reviewed("waiting", true, at(59)),
+		reviewed("due", true, at(48)), reviewed("due", true, at(49)), reviewed("due", true, at(50)),
 	})
 
 	got := Queue(deck, prog, at(60), 10)
@@ -135,11 +137,11 @@ func TestForgottenWordDoesNotReturn(t *testing.T) {
 // wrong, so it could never be demoted, and the learner's mastered count could
 // only grow while their actual recall decayed.
 //
-// Nothing is needed to make mastered words rare: they sit at the 90-day interval,
-// which is the ladder doing its job.
+// Nothing is needed to make mastered words rare: they sit at box 9's 68-day
+// interval and climb from there, which is the ladder doing its job.
 func TestMasteredWordsStillComeRoundAtTheLongInterval(t *testing.T) {
 	var events []store.ReviewEvent
-	for i := 0; i < masteryStreak; i++ {
+	for i := 0; i < MasteredBox; i++ {
 		events = append(events, reviewed("known", true, at(i)))
 	}
 	prog := Fold(events)
@@ -148,13 +150,14 @@ func TestMasteredWordsStillComeRoundAtTheLongInterval(t *testing.T) {
 	}
 	last := prog[store.Key("known")].LastReviewed
 
-	// Not due the day after mastery — the 90-day interval is what keeps it rare.
+	iv := IntervalDays(prog[store.Key("known")].Box)
+	// Not due the day after mastery — the long interval is what keeps it rare.
 	if got := Queue([]store.Word{word("known", 3, 0)}, prog, last.AddDate(0, 0, 1), 10); len(got) != 0 {
 		t.Errorf("queue = %v one day after mastery, want nothing", got)
 	}
 	// But it DOES come back, or mastery would be permanent and unverifiable.
-	if got := Queue([]store.Word{word("known", 3, 0)}, prog, last.AddDate(0, 0, 90), 10); keys(got) != "known" {
-		t.Errorf("queue = %v 90 days later, want the mastered word back — mastery must not be absorbing", got)
+	if got := Queue([]store.Word{word("known", 3, 0)}, prog, last.AddDate(0, 0, iv), 10); keys(got) != "known" {
+		t.Errorf("queue = %v %d days later, want the mastered word back — mastery must not be absorbing", got, iv)
 	}
 }
 
@@ -162,9 +165,10 @@ func TestMasteredWordsStillComeRoundAtTheLongInterval(t *testing.T) {
 // status reflects current recall rather than a high-water mark.
 func TestMasteryCanBeLost(t *testing.T) {
 	var events []store.ReviewEvent
-	for i := 0; i < masteryStreak; i++ {
+	for i := 0; i < MasteredBox; i++ {
 		events = append(events, reviewed("known", true, at(i)))
 	}
+	before := Fold(events)[store.Key("known")].Box
 	events = append(events, reviewed("known", false, at(200)))
 
 	p := Fold(events)[store.Key("known")]
@@ -172,8 +176,8 @@ func TestMasteryCanBeLost(t *testing.T) {
 	if Mastered(p) {
 		t.Error("still mastered after forgetting it — the status is a high-water mark, not recall")
 	}
-	if p.Box != LastBox-1 {
-		t.Errorf("box = %d, want %d", p.Box, LastBox-1)
+	if p.Box != before/2 {
+		t.Errorf("box = %d, want %d (half of %d)", p.Box, before/2, before)
 	}
 }
 
@@ -227,4 +231,51 @@ func TestZeroNowIsHandled(t *testing.T) {
 	prog := Fold([]store.ReviewEvent{reviewed("a", true, at(0))})
 
 	_ = Queue(deck, prog, time.Time{}, 5) // must not panic
+}
+
+// OVERDUE IS RELATIVE TO THE INTERVAL, not a count of days.
+//
+// Ranking by absolute days systematically favours high boxes, because they
+// accumulate more of them: a box-12 word 50 days past a 281-day interval is 18%
+// over, while a box-1 word 4 days past a 1-day interval is 400% over. The second
+// is the one in danger — it is being acquired and has almost no storage strength
+// — and the first being slightly late is harmless or even beneficial, since a
+// slightly-too-long gap is a desirable difficulty.
+//
+// This matters because the deck admits every word looked up, so a backlog is a
+// NORMAL state rather than an emergency; which words a backlog starves is a
+// design decision, and starving the fragile ones is the wrong one.
+func TestQueuePrefersProportionallyOverdue(t *testing.T) {
+	now := at(400)
+	prog := map[string]Progress{
+		// 4 days past a 1-day interval: 400% over, 3 days absolute.
+		"fragile": {Box: 1, MaxBox: 1, LastReviewed: at(396)},
+		// 50 days past a 281-day interval: 18% over, 50 days absolute.
+		"mature": {Box: 12, MaxBox: 12, LastReviewed: at(69)},
+	}
+	deck := []store.Word{word("fragile", 1, 0), word("mature", 1, 0)}
+
+	// Both are due; only one fits the budget.
+	if got := Queue(deck, prog, now, 2); len(got) != 2 {
+		t.Fatalf("fixture is wrong: %v are due, want both", got)
+	}
+	if got := Queue(deck, prog, now, 1); keys(got) != "fragile" {
+		t.Errorf("queue = %v, want the fragile word — ranking by ABSOLUTE days "+
+			"gives the mature one (50 days over) priority over a word that is 400%% over", got)
+	}
+}
+
+// And the ordering must not silently invert for a word that is barely due.
+func TestQueueOrdersSeveralByProportion(t *testing.T) {
+	now := at(500)
+	prog := map[string]Progress{
+		"most":   {Box: 2, MaxBox: 2, LastReviewed: at(490)}, // 10d past 2d  = 400% over
+		"middle": {Box: 5, MaxBox: 5, LastReviewed: at(475)}, // 25d past 10d = 150% over
+		"least":  {Box: 9, MaxBox: 9, LastReviewed: at(420)}, // 80d past 68d = 18% over
+	}
+	deck := []store.Word{word("least", 1, 0), word("most", 1, 0), word("middle", 1, 0)}
+
+	if got := keys(Queue(deck, prog, now, 3)); got != "most,middle,least" {
+		t.Errorf("queue = %q, want \"most,middle,least\"", got)
+	}
 }

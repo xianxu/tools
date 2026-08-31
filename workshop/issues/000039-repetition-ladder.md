@@ -1,12 +1,13 @@
 ---
 id: 000039
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-31
 updated: 2026-08-31
-estimate_hours:
+estimate_hours: 2.94
 started: 2026-08-31T11:01:05-07:00
+actual_hours: 1.59
 ---
 
 # spaced repetition: one unbounded ladder, confidence-driven promotion, and a visible daily budget
@@ -166,17 +167,81 @@ on, rather than being discovered as a growing backlog.
 
 ## Done when
 
-- [ ] `IntervalDays` is computed from the ratio, unbounded, with `1, 1, 2, 4, 6, 10, 16, 26…` pinned by a table test.
-- [ ] Correct promotes one rung, or two while below `MaxBox`; wrong halves the box and erodes `MaxBox`.
-- [ ] `MaxBox` is derived by `Fold` from the log, stored nowhere.
-- [ ] `Mastered` is `Box >= 9` and excludes nothing from the queue.
-- [ ] `Queue` ranks reviewed words by overdue RELATIVE to interval, pinned by a test where a low-box word beats a more-absolutely-overdue high-box one.
-- [ ] Daily-review load and the sustainable new-word rate are computable from `Progress` alone, and reported.
-- [ ] The recovery path is pinned end to end: a word at box 10 that lapses is back at box 10 in three reviews, not five.
+- [x] `IntervalDays` is computed from the ratio, unbounded, with `1, 1, 2, 4, 6, 10, 16, 26…` pinned by a table test.
+- [x] Correct promotes one rung, or two while below `MaxBox`; wrong halves the box and erodes `MaxBox`.
+- [x] `MaxBox` is derived by `Fold` from the log, stored nowhere.
+- [x] `Mastered` is `Box >= 9` and excludes nothing from the queue.
+- [x] `Queue` ranks reviewed words by overdue RELATIVE to interval, pinned by a test where a low-box word beats a more-absolutely-overdue high-box one.
+- [x] Daily-review load and the sustainable new-word rate are computable from `Progress` alone, and reported.
+- [x] The recovery path is pinned end to end: a word at box 10 that lapses is back at box 10 in three reviews, not five.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.40 impl=0.06
+item: smaller-go-module        design=0.05 impl=0.20
+item: greenfield-go-module     design=0.06 impl=0.32
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.03 impl=0.14
+item: greenfield-go-module     design=0.05 impl=0.24
+item: cross-cutting-refactor   design=0.05 impl=0.28
+item: smaller-go-module        design=0.02 impl=0.08
+item: atlas-docs               design=0.03 impl=0.06
+item: milestone-review         design=0.0  impl=0.30
+item: milestone-review         design=0.0  impl=0.32
+design-buffer: 0.15
+total: 2.94
+```
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional.
+
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.40/0.06 | the design carrier | the Spec, this plan, two plan-quality rounds |
+| `smaller-go-module` 0.05/0.20 | T1 the computed ladder | a table becomes a function, plus a 21-row exactness test and the clamp argument |
+| `greenfield-go-module` 0.06/0.32 | T2 `Grade`, transitions, `MaxBox` | the algorithmic heart: a new enum, three transitions, the express lane and its erosion — four Done-when rows |
+| `smaller-go-module` 0.02/0.12 | T3 `Mastered`, delete `Streak` | touches `Answer`, `Fold`, `Mastered` and their tests |
+| `smaller-go-module` 0.03/0.14 | T4 relative overdue | one comparator, plus a test that must be RED on today's code |
+| `greenfield-go-module` 0.05/0.24 | T5 the load functions | a new file, three functions, one derived from the ladder |
+| `cross-cutting-refactor` 0.05/0.28 | T6 `unaided` to the log | four files — `store`, `play`, `capture`, the loop — and the `advance` trap (D14) |
+| `smaller-go-module` 0.02/0.08 | T7 `finish` reports | one line, one test |
+| `atlas-docs` 0.03/0.06 | T8 | atlas, README, project row |
+| `milestone-review` 0.0/0.30 | the boundary: run + the manual verification pass | folded into one line because this plan commits to ONE boundary; the manual pass is verification rather than review, and `#127` should read it as such |
+| `milestone-review` 0.0/0.32 | the boundary: remediation | priced at the TOP of the range on measured evidence — see below |
+
+**Two corrections were applied, both derived and both per-primitive.**
+
+*Remediation is priced at the top of its range.* `#7` closed one day ago and took
+**eight review rounds** surfacing three Criticals. Its estimate priced a boundary
+at 0.16 to run plus 0.12 to remediate; the rounds alone plainly cost more than
+0.28h. Correcting a primitive against a measured row in this repo is what the
+primitive table is for.
+
+*The task lines were raised after the first draft priced them BELOW `#7`'s.* The
+first version summed 1.16h of task implementation against `#7`'s 1.48h — for more
+scope (8 tasks to 6, 15 Done-when rows to 9, spanning `schedule`, `play`,
+`store`, `capture.go` and `play_loop.go`). Claiming a neutral hold while pricing
+lower than the measured neighbour is not neutral; it is a correction in the wrong
+direction. Each line was re-derived against what it actually does, not nudged
+toward a target.
+
+**The standing calibration question, unchanged.** Two closed rows: `#30` at 3.4×
+and `#7` at 1.70×. Both overran, which points at the v3.1 impl scale being too
+aggressive for `define`-sized work (`#127`). **A calibration-adjusted reading of
+this issue is therefore ~4.5-5h, and that number is recorded here deliberately
+while the block's own total stays 2.94.** The block reports what the model says;
+the paragraph reports what I expect. Folding the second into the first would
+corrupt the ledger that exists to measure the gap between them. If this lands
+near 1.7× again, that is three consecutive rows and the SCALE should move rather
+than each estimate quietly compensating.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+- [x] Design via `sdlc start-plan` before implementing.
 
 ## Log
 
@@ -225,3 +290,59 @@ that a better one already exists.
 - **Nothing else changes.** The transition table stands; only its producer is
   now named, and named as something the session can observe rather than something
   the learner asserts.
+
+## Log
+
+### 2026-08-31 — built in one pass
+- 2026-08-31: closed — go test ./... green; -race green across cmd/define, play, store and schedule; full conformance suite green on real hardware unsandboxed (368s).; review verdict: FIX-THEN-SHIP
+
+MANUAL VERIFICATION on a real terminal with the real dictionary, two sittings on fresh decks: answered cold gave 8 reviewed / 4 correct / 4 unaided; revealed-first gave 6 reviewed / 2 correct / 0 unaided. Every cold correct answer earned the flag and no revealed one did — the D14 behaviour confirmed outside the test harness. The sitting summary reports the load line correctly ("~6 reviews/day at your current mix · 0.0 new words/day sustainable at 2 a sitting").
+
+The two headline risks are mutation-verified. D14: moving the unaided computation into advance() — which zeroes s.Revealed before building the outcome — turns TestARevealDisqualifiesUnaided red with exactly the predicted diagnostic, and would otherwise have marked every correct answer unaided and run the ladder at double speed. D5a: removing the express lane turns the recovery walk red at step 1, and demoting one box instead of halving fails 7 tests, so the pair is pinned as a pair.
+
+Also verified by mutation: DailyLoad summing the folded map instead of the deck (understates a mostly-unreviewed deck), the ladder's exact 21-row table, the at:-last field ordering with the new Unaided field, and the queue's relative-overdue ranking (which was red on the old code before implementing).
+
+Two repo guards fixed as side-quests, both mutation-verified. TestPlanTablesNameEntitiesThatExist demanded that a "deleted" row's entity still EXIST, so the only one of the four status words asserting an absence could never pass. And two tests the plan named did not exist under those names — the plan's names were better, so the tests were renamed to match rather than the plan edited to describe whatever I had typed.
+
+Migration: no migration runs, but Fold re-derives every box, so the first sitting after this ships is LARGE for a mature deck. TestReFoldingAnOldLogIsSafe pins the direction — below box 10 words become due sooner, never later — and the README warns about it.
+
+**The `advance` trap was the interesting part**, and the plan-quality gate found
+it before any code existed. `advance` zeroes `s.Revealed` before it builds the
+Record outcome, so the obvious implementation — computing `unaided` where the
+outcome is constructed — marks EVERY correct answer unaided and runs the ladder
+at double speed. It would have looked like a working feature. The discriminating
+case is reveal-then-answer-correctly, which is why it became a Done-when row
+rather than a line in the manual verification block.
+
+**`SelfRated` exists because form 2.1's `y` is self-report**, which the first
+draft of the plan missed: it granted the two-rung promotion to `Recall`, one form
+to the left of the board the issue had just denied it to.
+
+**The halving and the express lane are pinned as a PAIR.** Removing the lane
+turns the recovery walk red at step 1; demoting one box instead of halving fails
+seven tests. A test asserting only the end state would have passed on either.
+
+**Manual verification on a real terminal**, with the real dictionary, two
+sittings on fresh decks:
+
+| run | reviewed | correct | `unaided: true` |
+|---|---|---|---|
+| answered cold | 8 | 4 | **4** |
+| revealed first | 6 | 2 | **0** |
+
+Every cold correct answer earned the flag and no revealed one did — the
+behaviour `TestARevealDisqualifiesUnaided` pins, confirmed outside the test
+harness.
+
+**Two repo guards were fixed as side-quests.**
+`TestPlanTablesNameEntitiesThatExist` required a `deleted` row's entity to still
+EXIST, so the one status word that asserts an absence could never pass; it now
+checks the opposite, mutation-verified. And the plan named two tests that did not
+exist under those names — the plan's names were better, so the tests were renamed
+to match rather than the plan edited to describe whatever I had typed.
+
+**A migration effect worth knowing:** no migration runs, but `Fold` re-derives
+every box under the new transition, so the first sitting after this ships will be
+LARGE for a mature deck. `TestReFoldingAnOldLogIsSafe` pins the direction — below
+box 10 words become due sooner, never later, so nobody loses reviews they had
+earned.

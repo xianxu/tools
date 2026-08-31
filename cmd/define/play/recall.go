@@ -37,6 +37,11 @@ func (r *Recall) Reveal() string { return r.definition }
 // schedule for a word the learner never rated.
 func (r *Recall) Keys() string { return "y = got it, n = missed it" }
 
+// IsSelfRated: this form's verdict is the LEARNER'S CLAIM. `y` means "I knew
+// it" and nothing checked. That is why a correct answer here never earns the
+// ladder's two-rung promotion, however quickly it came — see play.SelfRated.
+func (r *Recall) IsSelfRated() bool { return true }
+
 func (r *Recall) Grade(k rune) (Verdict, bool) {
 	switch k {
 	case 'y', 'Y':

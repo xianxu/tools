@@ -113,9 +113,31 @@ After an `n` the definition is on screen and the prompt changes:
 any key = next word, d = remove from deck, Ctrl-C to stop
 ```
 
-Words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days — and a
-miss drops one step rather than all the way back. `-count` bounds a sitting
-(default 20). No API key: the deck and the dictionary are enough, and the review
+**Words come back on a widening schedule, and each correct recall multiplies the
+wait by 1.6** — so 1, 1, 2, 4, 6, 10, 16, 26, 42, 68, 109 days and onward. You see
+a new word tomorrow and again the day after, which is when forgetting is
+steepest; a word you have recalled ten times you will not see again for months.
+
+There is no top rung. A word you know well drifts to a year, then two, and keeps
+drifting — it never leaves, it just gets cheap. That is what makes a large deck
+affordable: the cost of a word falls about as fast as the deck grows.
+
+**A miss halves the box** rather than dropping one step. A word at a 281-day
+interval falls back to 16 days, which is a real chance to relearn it; a word at
+4 days barely moves. And it climbs back faster than it went up — once you have
+known a word, relearning it is quicker than learning it was, and the schedule
+knows that.
+
+`-count` bounds a sitting (default 20). At the end of one, `define` tells you
+what your deck now costs per day and how many new words that leaves room for:
+
+```
+7 right, 3 wrong
+~14 reviews/day at your current mix · 0.9 new words/day sustainable at 20 a sitting
+```
+
+A brand-new deck looks expensive — every unreviewed word is due tomorrow — and
+gets cheaper fast as words climb. No API key: the deck and the dictionary are enough, and the review
 loop never reaches for the model. Pronunciation audio is fetched over the network
 only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
 network call at all; `--no-audio` makes one fully offline either way.

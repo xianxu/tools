@@ -1799,12 +1799,50 @@ person looks at real output in the meantime.
 
 ## Scheduling: what is worth attention today
 
-**Leitner, not SM-2, and the reason is explainability.** Fixed intervals — 1, 3,
-7, 14, 30, 90 days — because for a personal tool *"why is this due?"* must be
-answerable in one sentence, and an ease factor cannot be. `IntervalDays` clamps
-an out-of-range box rather than panicking: boxes are derived from an append-only
-log, and a log written by a future version with a longer ladder must degrade to
-the longest interval we know rather than crash a review session.
+**Leitner, not SM-2, and the reason is explainability.** For a personal tool
+*"why is this due?"* must be answerable in one sentence, and an ease factor
+cannot be. The sentence is **"each correct recall multiplies the wait by 1.6"**:
+`IntervalDays(box) = floor(1.6^box)`, giving 1, 1, 2, 4, 6, 10, 16, 26, 42, 68,
+109, 175, 281 days and onward.
+
+**The interval is COMPUTED, in exact integers.** `8^box / 5^box` in `int64`, not
+`math.Pow`. The reason is the one `#7` established for its PRNG and hash:
+`math.Pow` is not guaranteed bit-identical across architectures, and a schedule
+that differs by platform is one this repo cannot pin in a table test and a
+learner cannot reason about. A rational ratio in integers is exact everywhere and
+needs no import, so `schedule`'s allowlist is untouched.
+
+**Boxes 0 AND 1 are both one day, and that is the most valuable rung.**
+`floor(1.6^0)` and `floor(1.6^1)` are both 1, so a new word is seen on day 1 and
+again on day 2 — which is when the forgetting curve is steepest. It reads like a
+rounding artifact, and the "fix" (indexing from `1.6^(box+1)`) removes the entire
+acquisition density the ladder exists to provide. `TestTheFirstTwoRungsAreBothOneDay`
+exists because it looks like a bug cold.
+
+**There is no pedagogical ceiling, and that is what makes a large deck
+affordable.** A word in box b costs `1/IntervalDays(b)` reviews per day, so with
+a CAPPED top rung the stock of parked words grows linearly forever and no
+admission rate is sustainable — at 7 new words a day against a 90-day cap, the
+accumulated stock alone costs ~55 reviews/day after two years. With intervals
+that keep growing, a word of age τ is reviewed at roughly `1/τ` per day and the
+total load integrates to `a·ln(T)`: logarithmic, so a fixed daily budget supports
+a nearly constant new-word rate indefinitely.
+
+`ladderLimit = 20` is therefore an ARITHMETIC bound and not a ceiling: `8^21`
+overflows `int64`, and box 20 is reached only after 20,135 days of correct
+answers — 55 years, pinned by `TestTheClampIsUnreachable`. It is named
+`ladderLimit` rather than `maxBox` because `Progress` carries a `MaxBox` field,
+and `p.Box < maxBox` versus `p.Box < p.MaxBox` are both valid Go with opposite
+meanings — the first would grant every word a permanent express lane, silently.
+
+**What the deck costs is COMPUTED and SHOWN.** `DailyLoad` is `Σ 1/interval` over
+the deck, and it takes the DECK rather than the folded progress map: `Fold`
+returns an entry only for words with a review event, so summing the map would
+report a tenth of the cost of a mostly-unreviewed deck — understating it exactly
+when the warning matters most. `SustainableNewWords` divides the leftover budget
+by `reviewsInFirstYear()`, which is derived by walking the ladder rather than
+written down. The sitting summary is its first reader; `#41`'s status bar is the
+second.
 
 **Schedule state is DERIVED from the event log, never stored beside it.** This is
 the load-bearing decision of `#5`, and `store/event.go` had already written the
@@ -1828,9 +1866,31 @@ Only `EventReviewed` participates. A lookup or a question is *activity*, not
 *assessment* — they say what the learner is working ON, which is `#17`'s signal,
 not what they know.
 
-**Demotion is one box, not a fall to zero.** A word at the 90-day interval that
-slips once is not a word you have never seen; the interval is where Leitner keeps
-what you have learned.
+**Demotion HALVES the box, and the express lane is its other half.** One
+sentence, and it scales where a fixed step cannot: box 12 (281 days) falls to box
+6 (16 days), a real relearning interval, while box 2 falls to box 1, barely a
+nudge. Halving alone would make a single slip cost most of a year, so `Progress`
+carries `MaxBox` — the high-water mark — and a correct answer below it climbs TWO
+rungs instead of one. Storage strength survives when retrieval strength does not,
+which is why relearning is faster than learning; Ebbinghaus called it savings.
+
+**They are a PAIR and neither works alone**, which `TestRecoveryFromALapse` pins
+by walking the whole recovery step by step: removing the lane makes it five
+reviews instead of three, and removing the halving means the word never leaves
+the top. A test asserting only the end state would have passed on either.
+
+`MaxBox` erodes by one on every lapse, so a word that keeps failing gradually
+loses the express lane and is eventually relearned properly rather than being
+waved back up forever.
+
+**A two-rung promotion is earned by an OBSERVATION, never a claim.** `Apply`
+knows whether the learner revealed before answering, so "correct, cold, in a form
+that checked the answer" is something the session saw. Form 2.1's `y` is not
+that — it means *"I knew it"* with nobody checking — so `Recall` declares itself
+through `play.SelfRated` and never earns it. The flag is computed in `Apply`'s
+`InputRune` arm and PASSED to `advance`, because `advance` zeroes `s.Revealed`
+before it builds the outcome: reading it there would mark every correct answer
+unaided and run the ladder at double speed.
 
 **A day is a LOCAL CALENDAR day.** `Due` compares through `store.StartOfDay`,
 never `N × 24h`: a learner who reviews at 9am Monday and sits down at 8am Tuesday

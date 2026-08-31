@@ -967,3 +967,97 @@ func TestASittingFallsBackForAnEntryThatCannotBeAsked(t *testing.T) {
 		})
 	}
 }
+
+// Done-when 10: an unaided answer reaches the EVENT LOG, not just the Outcome.
+//
+// Driven through playSession rather than by calling CaptureReview, because the
+// wiring is the claim: deleting `out.Unaided` from the capturer leaves every
+// `play` test green, since Apply would still be setting a field nobody read.
+func TestUnaidedAnswerReachesTheLog(t *testing.T) {
+	opts := []play.Option{
+		{Gloss: "behaving in an obsequious way", Correct: true},
+		{Gloss: "an isolated flat-topped hill", Word: "mesa", Axis: play.AxisGeneral},
+	}
+	for _, tc := range []struct {
+		name        string
+		keys        string
+		wantUnaided bool
+	}{
+		// Answered cold: the form checked it and no reveal preceded it.
+		{"answered cold", "1", true},
+		// Revealed FIRST, then answered correctly. Still Correct, never unaided
+		// — and this is the case that catches reading the flag after advance()
+		// has zeroed s.Revealed.
+		{"revealed, then answered", "\r1", false},
+		// A wrong answer is never unaided whatever preceded it.
+		{"answered wrongly", "2", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, st := playRig(t, "sycophantic")
+			var out, errb bytes.Buffer
+			q := play.NewChoice("sycophantic", "", opts)
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor(tc.keys), rawTerm{}, &out, &errb)
+
+			events := reviewEvents(t, st)
+			if len(events) != 1 {
+				t.Fatalf("%d review events, want 1", len(events))
+			}
+			if events[0].Unaided != tc.wantUnaided {
+				t.Errorf("event.Unaided = %v, want %v", events[0].Unaided, tc.wantUnaided)
+			}
+		})
+	}
+}
+
+// And form 2.1's `y` never earns it, however fast — one form to the left of the
+// board, and the same overconfidence.
+func TestRecallNeverRecordsUnaided(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic")
+	var out, errb bytes.Buffer
+	q := play.NewRecall("sycophantic", "the definition")
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{q}), keysFor("y"), rawTerm{}, &out, &errb)
+
+	events := reviewEvents(t, st)
+	if len(events) != 1 {
+		t.Fatalf("%d review events, want 1", len(events))
+	}
+	if !events[0].Correct {
+		t.Fatal("the answer was not recorded as correct")
+	}
+	if events[0].Unaided {
+		t.Error("form 2.1's `y` recorded as unaided — it is the learner's claim that " +
+			"they knew it, and nothing checked")
+	}
+}
+
+// Done-when 12: the sitting reports what the deck costs, and names the budget
+// it assumed.
+//
+// Without a reader, DailyLoad would be a function nobody calls — the same "no
+// reader" smell that got Progress.Streak deleted in this very issue.
+func TestFinishReportsTheLoad(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs[:1]),
+		keysFor("\r"+gradeKey(t, qs[0], play.Correct)), rawTerm{}, &out, &errb)
+
+	got := out.String()
+	if !strings.Contains(got, "reviews/day") {
+		t.Errorf("the summary does not report the deck's daily cost:\n%s", got)
+	}
+	if !strings.Contains(got, "new words/day sustainable") {
+		t.Errorf("the summary does not report the sustainable new-word rate:\n%s", got)
+	}
+	// The budget it assumed must be NAMED, or a learner who sits twice a day has
+	// no way to know the number is per-sitting.
+	if !strings.Contains(got, "a sitting") {
+		t.Errorf("the summary does not say which budget it assumed:\n%s", got)
+	}
+	// And the number must be real: a four-word deck of unreviewed words costs
+	// about four reviews a day, not zero.
+	if strings.Contains(got, "~0 reviews/day") {
+		t.Errorf("the load reports zero for a four-word deck — the deck is not being read:\n%s", got)
+	}
+}
