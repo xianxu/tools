@@ -232,3 +232,50 @@ func TestZeroNowIsHandled(t *testing.T) {
 
 	_ = Queue(deck, prog, time.Time{}, 5) // must not panic
 }
+
+// OVERDUE IS RELATIVE TO THE INTERVAL, not a count of days.
+//
+// Ranking by absolute days systematically favours high boxes, because they
+// accumulate more of them: a box-12 word 50 days past a 281-day interval is 18%
+// over, while a box-1 word 4 days past a 1-day interval is 400% over. The second
+// is the one in danger — it is being acquired and has almost no storage strength
+// — and the first being slightly late is harmless or even beneficial, since a
+// slightly-too-long gap is a desirable difficulty.
+//
+// This matters because the deck admits every word looked up, so a backlog is a
+// NORMAL state rather than an emergency; which words a backlog starves is a
+// design decision, and starving the fragile ones is the wrong one.
+func TestQueuePrefersProportionallyOverdue(t *testing.T) {
+	now := at(400)
+	prog := map[string]Progress{
+		// 4 days past a 1-day interval: 400% over, 3 days absolute.
+		"fragile": {Box: 1, MaxBox: 1, LastReviewed: at(396)},
+		// 50 days past a 281-day interval: 18% over, 50 days absolute.
+		"mature": {Box: 12, MaxBox: 12, LastReviewed: at(69)},
+	}
+	deck := []store.Word{word("fragile", 1, 0), word("mature", 1, 0)}
+
+	// Both are due; only one fits the budget.
+	if got := Queue(deck, prog, now, 2); len(got) != 2 {
+		t.Fatalf("fixture is wrong: %v are due, want both", got)
+	}
+	if got := Queue(deck, prog, now, 1); keys(got) != "fragile" {
+		t.Errorf("queue = %v, want the fragile word — ranking by ABSOLUTE days "+
+			"gives the mature one (50 days over) priority over a word that is 400%% over", got)
+	}
+}
+
+// And the ordering must not silently invert for a word that is barely due.
+func TestQueueOrdersSeveralByProportion(t *testing.T) {
+	now := at(500)
+	prog := map[string]Progress{
+		"most":   {Box: 2, MaxBox: 2, LastReviewed: at(490)}, // 10d past 2d  = 400% over
+		"middle": {Box: 5, MaxBox: 5, LastReviewed: at(475)}, // 25d past 10d = 150% over
+		"least":  {Box: 9, MaxBox: 9, LastReviewed: at(420)}, // 80d past 68d = 18% over
+	}
+	deck := []store.Word{word("least", 1, 0), word("most", 1, 0), word("middle", 1, 0)}
+
+	if got := keys(Queue(deck, prog, now, 3)); got != "most,middle,least" {
+		t.Errorf("queue = %q, want \"most,middle,least\"", got)
+	}
+}

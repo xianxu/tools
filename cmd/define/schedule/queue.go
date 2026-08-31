@@ -36,7 +36,10 @@ func Queue(deck []store.Word, prog map[string]Progress, now time.Time, budget in
 	type candidate struct {
 		key     string
 		overdue int // local calendar days past due; fresh words are not ranked by this
-		lookups int
+		// interval is this word's current wait, and it is carried so overdue can
+		// be judged as a PROPORTION rather than a count of days.
+		interval int
+		lookups  int
 	}
 	var reviewed, fresh []candidate
 	// Deduped by KEY, because store.Key collapses "Define" and "define" into one
@@ -73,7 +76,8 @@ func Queue(deck []store.Word, prog map[string]Progress, now time.Time, budget in
 			fresh = append(fresh, c)
 			continue
 		}
-		c.overdue = store.DaysBetween(p.LastReviewed, now) - IntervalDays(p.Box)
+		c.interval = IntervalDays(p.Box)
+		c.overdue = store.DaysBetween(p.LastReviewed, now) - c.interval
 		reviewed = append(reviewed, c)
 	}
 
@@ -89,11 +93,28 @@ func Queue(deck []store.Word, prog map[string]Progress, now time.Time, budget in
 		}
 		return a.key < b.key
 	}
+	// OVERDUE AS A PROPORTION of the interval, compared by cross-multiplication.
+	//
+	// Absolute days systematically favour high boxes, which accumulate more of
+	// them: a box-12 word 50 days past a 281-day wait is 18% over, while a box-1
+	// word 4 days past a 1-day wait is 400% over. The second is the one in
+	// danger — it is still being acquired — and the first being slightly late is
+	// harmless, arguably a desirable difficulty. Since the deck admits every
+	// word looked up, a backlog is a normal state, and which words a backlog
+	// starves is a design decision rather than an accident.
+	//
+	// CROSS-MULTIPLIED IN int64 rather than dividing into floats: this file
+	// already requires that "a queue that reorders between runs is untestable
+	// and looks broken to the learner", and a comparator that rounds differently
+	// on another machine is exactly that. Intervals are at most ~1.2e4 days and
+	// overdue at most a few thousand, so the products cannot come near
+	// overflowing.
 	sort.Slice(reviewed, func(i, j int) bool {
-		if reviewed[i].overdue != reviewed[j].overdue {
-			return reviewed[i].overdue > reviewed[j].overdue
+		a, b := reviewed[i], reviewed[j]
+		if l, r := int64(a.overdue)*int64(b.interval), int64(b.overdue)*int64(a.interval); l != r {
+			return l > r
 		}
-		return byLookupsThenKey(reviewed[i], reviewed[j])
+		return byLookupsThenKey(a, b)
 	})
 	sort.Slice(fresh, func(i, j int) bool {
 		return byLookupsThenKey(fresh[i], fresh[j])
