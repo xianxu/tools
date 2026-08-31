@@ -1,11 +1,12 @@
 ---
 id: 000039
-status: open
+status: working
 deps: []
 github_issue:
 created: 2026-08-31
 updated: 2026-08-31
 estimate_hours:
+started: 2026-08-31T11:01:05-07:00
 ---
 
 # spaced repetition: one unbounded ladder, confidence-driven promotion, and a visible daily budget
