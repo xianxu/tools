@@ -131,7 +131,20 @@ exists to measure the spread. `#127` should read the variance.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+Single-pass: plain checkboxes, ONE boundary (AGENTS.md §3). Full detail, the
+decisions and the twelve Done-when rows live in
+`workshop/plans/000041-play-tui-plan.md`.
+
+- [x] Design via `sdlc start-plan` — plan doc written, cleared plan-quality in 4 rounds.
+- [ ] **T1** — `Paint`'s `menu` becomes `footer`, with `fitMenu`; one concept, two consumers (D2).
+- [ ] **T2** — `sittingBar` in `cmd/define/playbar.go`, sharing `finish`'s wording (D8).
+- [ ] **T3** — `--play` builds a `console`, and the reveal's `restore`/`enterRaw` pair is DELETED (D1, D5a).
+- [ ] **T4** — the question is written to the buffer once, not per keystroke (D4).
+- [ ] **T5** — the live edge: `newPinnedScreen` and paint-time padding (D3, D3a).
+- [ ] **T6** — figures in memory; `todaysQuestions` returns its work and `finish` stops re-reading (D7).
+- [ ] **T7** — paging intercepted in the LOOP; `toInput` untouched (D6).
+- [ ] **T8** — SIGWINCH repaints through the console.
+- [ ] **T9** — pty conformance (three existing tests re-examined) and docs.
 
 ## Log
 
