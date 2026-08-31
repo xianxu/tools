@@ -16,7 +16,9 @@
 
 **D2 — box 0 and box 1 are BOTH one day, and that is the point.** `floor(1.6^0) = 1` and `floor(1.6^1) = 1`. It reads like a rounding artifact and is the most valuable rung in the ladder: a new word is seen on day 1 and again on day 2, which is when the forgetting curve is steepest. `floor(1.6^(box+1))` would remove the duplicate and with it the entire acquisition density this issue exists to add. It costs one extra review per word, once.
 
-**D3 — there is no pedagogical ceiling; `maxBox = 20` is an ARITHMETIC bound and no learner can reach it.** `8^20` is 1.15e18, comfortably inside `int64`; `8^21` overflows. Box 20 is a 12,089-day interval and is reached only after **20,135 days of correct answers — 55 years.** So the clamp exists to keep the arithmetic honest, not to park words, and the plan says so because "unbounded ladder" and "clamped at 20" look contradictory until you see the number.
+**D3 — there is no pedagogical ceiling; `ladderLimit = 20` is an ARITHMETIC bound and no learner can reach it.** `8^20` is 1.15e18, comfortably inside `int64`; `8^21` overflows. Box 20 is a 12,089-day interval and is reached only after **20,135 days of correct answers — 55 years.** So the clamp exists to keep the arithmetic honest, not to park words, and the plan says so because "unbounded ladder" and "clamped at 20" look contradictory until you see the number.
+
+**It is `ladderLimit` and NOT `maxBox`, deliberately.** `Progress` gains a `MaxBox` field in D5, and `p.Box < maxBox` and `p.Box < p.MaxBox` are both valid Go with opposite meanings — the first grants every word a permanent express lane, silently, forever. Two concepts one letter apart is a defect waiting for a tired reader, so the constant is named for what it bounds.
 
 ```
 box    0    1    2    3    4    5    6    7    8    9   10   11   12
@@ -38,7 +40,30 @@ day@   0    1    2    4    8   14   24   40   66  108  176  285  460
 
 **D9 — the load number gets a READER in this issue, not a later one.** `finish()` already prints `"N right, M wrong"` at the end of a sitting; it gains one line. Shipping `DailyLoad` with no caller would be the same "no reader" smell D6 deletes `Streak` for, and `#41`'s status bar is then a second consumer rather than the first.
 
-**D10 — "unaided" is measured, not claimed.** `Apply` knows `s.Revealed` at grading time, so a correct answer given without a reveal is an observation the session already has. `#39`'s original Spec said the producer would be "a form that can say"; a `firm` mark in `#40`'s grid is self-report and earns `+1`, not `+2` — recorded in this issue's Revisions.
+**D12 — `CaptureReview` takes the `Outcome`, not a fourth positional argument.** It is `CaptureReview(word string, correct bool, axis play.Axis, opt options)` today; adding `unaided bool` would make the call site read `CaptureReview(out.Word, out.Verdict == play.Correct, out.Unaided, out.Axis, opt)` — two adjacent swappable bools, introduced by the same change that adds `Grade` to remove one. The `Outcome` already carries every one of those fields, so the seam becomes `CaptureReview(out play.Outcome, opt options)` and the swap becomes unexpressible.
+
+**D11 — the budget is `-count`, and it is named rather than invented.** `SustainableNewWords` needs a budget and this issue introduces no new knob for it: `opt.count` (the `-count` flag, default 20) is the number of questions a sitting will ask, and it is therefore the daily budget FOR A LEARNER WHO SITS DOWN ONCE A DAY. That assumption is stated in the output rather than hidden — the line reads "at 20 a day" so a learner who sits twice knows to double it. Inventing a second budget flag would give the tool two answers to "how much do I do per day", which is the drift this plan avoids everywhere else.
+
+**D10 — "unaided" is measured, not claimed, and FORM 2.1 CANNOT PRODUCE IT.** `Apply` knows `s.Revealed` at grading time, so "correct, without a reveal" is available. But that is not sufficient on its own, and the first draft of this plan got it wrong: **form 2.1's `y` IS self-report.** The learner presses `y` to mean *"I knew it"*, and no one checked. Granting `+2` for that is exactly the overconfidence the issue's own Revision rules out for `#40`'s grid — the same mistake one form to the left.
+
+The distinction that matters is whether a verdict is an OBSERVATION or a CLAIM:
+
+| form | how the verdict arises | earns `+2`? |
+|---|---|---|
+| 2.3 `Choice` | the learner's pick is compared to a known answer | yes, if no reveal preceded it |
+| 2.1 `Recall` | the learner asserts they knew it | never |
+| 2.5 board (`#40`) | the learner marks `firm` | never |
+
+So the rule is `correct && !revealed && the form's verdict is an observation`, and the third clause comes from the FORM via an optional interface, the same shape `Missed` already uses:
+
+```go
+// SelfRated is implemented by forms whose verdict is the learner's CLAIM
+// rather than something the form checked. Form 2.1 is the whole population
+// today; #40's board joins it.
+type SelfRated interface{ IsSelfRated() bool }
+```
+
+`Recall` implements it and returns true; `Choice` does not implement it at all. `Apply` asks and takes `false` when nobody answers — so a new form that forgets to declare itself is treated as OBSERVED, which is the wrong default. Therefore: the interface is `SelfRated`, not `Observed`, precisely so the forgetful case fails toward the stricter reading only after a reviewer notices — and Done-when 13 pins that every shipped form is on the correct side.
 
 ---
 
@@ -60,6 +85,20 @@ day@   0    1    2    4    8   14   24   40   66  108  176  285  460
 
 ---
 
+**D13 — RE-FOLDING AN EXISTING LOG CHANGES EVERY WORD'S DUE DATE, and the first sitting after this ships will be large.** `Fold` replays the whole log under the new transition, so no migration runs — but every box is silently re-derived, and the plan has to say what that does rather than discover it.
+
+Derived: a word with `N` correct answers sat at old box `min(N, 5)`; under the new ladder it sits near box `N`.
+
+| N correct | old interval | new interval | effect |
+|---|---|---|---|
+| 3 | 14d | 4d | due much sooner |
+| 5 | 90d | 10d | **due much sooner** |
+| 8 | 90d | 42d | due sooner |
+| 10 | 90d | 109d | slightly later |
+| 12 | 90d | 281d | later |
+
+The direction is safe — most words become MORE frequent, not less, so nothing is silently forgotten — but a learner with a mature deck will open the next sitting to a pile. That is worth one line in the README rather than a support question, and it is why Done-when 15 pins the direction rather than the magnitude.
+
 ## Core concepts
 
 ### Pure entities
@@ -72,7 +111,7 @@ day@   0    1    2    4    8   14   24   40   66  108  176  285  460
 | `Progress.MaxBox` | `cmd/define/schedule/progress.go` | new | PURE — the highest box ever reached, derived by `Fold` |
 | `Progress.Streak` | `cmd/define/schedule/progress.go` | deleted | had exactly one reader, which this issue removes (D6) |
 | `Mastered` | `cmd/define/schedule/progress.go` | modified | PURE — `Box >= MasteredBox`; still excludes nothing |
-| `DailyLoad` | `cmd/define/schedule/load.go` | new | PURE — `Σ 1/IntervalDays(box)` over the deck's progress |
+| `DailyLoad` | `cmd/define/schedule/load.go` | new | PURE — `Σ 1/IntervalDays(box)` over the DECK, with unreviewed words counted at box 0 |
 | `SustainableNewWords` | `cmd/define/schedule/load.go` | new | PURE — `(budget − load) / reviewsInFirstYear` |
 | `reviewsInFirstYear` | `cmd/define/schedule/load.go` | new | PURE — derived by walking the ladder to 365 days, not typed (11 today) |
 | `Queue` | `cmd/define/schedule/queue.go` | modified | PURE — ranks overdue relative to interval (D7) |
@@ -81,6 +120,8 @@ day@   0    1    2    4    8   14   24   40   66  108  176  285  460
   - **Relationships:** 1:1 with a `ReviewEvent`; reconstructed by `Fold` from `Correct` + `Unaided`.
   - **DRY rationale:** one enum replaces a bool that three call sites would otherwise each widen their own way, and it is the seam `#40`'s `unsure` extends rather than re-opens.
   - **Future extensions:** `GradeUnsure` for the board — box unchanged, re-asked sooner.
+
+**`DailyLoad` takes the DECK, not just the progress map, and that is the whole correctness question.** `Fold` returns an entry only for words that have a review event, so a deck of 500 words of which 50 have been reviewed folds to 50 entries. Summing over the map alone would report a tenth of the true cost and would UNDERSTATE exactly when the learner most needs the warning — a big backlog of never-reviewed words. Signature is `DailyLoad(deck []store.Word, prog map[string]Progress) float64`, matching `Queue`'s shape, and a missing entry is the zero `Progress`: box 0, interval 1, one review per day. Done-when 14 pins it with a deck whose words are mostly unreviewed.
 
 - **`DailyLoad`** — what the deck costs per day, in reviews.
   - **DRY rationale:** the same figure is wanted by `finish()` now, `#41`'s status bar next, and `#8`'s stats after that. Deriving it three times is how three screens come to disagree.
@@ -105,13 +146,13 @@ day@   0    1    2    4    8   14   24   40   66  108  176  285  460
 
 Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
-- [ ] **T1 — the computed ladder** (D1, D2, D3). `IntervalDays` becomes `8^box / 5^box` in `int64`, clamped to `[0, 20]`. Delete `intervalDays` and `LastBox`; add `MaxBox` as the arithmetic clamp with the 55-year comment. Table test pinning boxes 0–20 exactly, plus the properties: monotonic non-decreasing, boxes 0 and 1 both 1, and `IntervalDays(-5) == IntervalDays(0)`.
+- [ ] **T1 — the computed ladder** (D1, D2, D3). `IntervalDays` becomes `8^box / 5^box` in `int64`, clamped to `[0, 20]`. Delete `intervalDays` and `LastBox`; add `ladderLimit` as the arithmetic clamp with the 55-year comment. Table test pinning boxes 0–20 exactly, plus the properties: monotonic non-decreasing, boxes 0 and 1 both 1, and `IntervalDays(-5) == IntervalDays(0)`.
 - [ ] **T2 — `Grade` and the transitions** (D4, D5, D5a). `Answer(p, Grade, at)`. Wrong halves the box and erodes `MaxBox` to `max(newBox, MaxBox-1)`; correct climbs 2 while `Box < MaxBox` else 1; unaided climbs 2. Step is capped at 2 — unaided below `MaxBox` is not 4. Table test including the issue's worked recovery from box 10.
 - [ ] **T3 — `Mastered` and the removal of `Streak`** (D6). `Mastered(p) = p.Box >= MasteredBox` with `MasteredBox = 9`, and a comment carrying the number's reason: day 108, nine recalls, the last after a 42-day gap. Delete `Streak` and `masteryStreak`; the compiler finds every reader.
 - [ ] **T4 — `Queue` ranks relative overdue** (D7). Keep `overdue` and add `interval` to the candidate; compare by cross-multiplication in `int64`. Test where a low-box word beats a more-absolutely-overdue high-box one, which is red on today's code.
 - [ ] **T5 — the load functions** (D9). `DailyLoad`, `SustainableNewWords`, `reviewsInFirstYear` in a new `schedule/load.go`. `reviewsInFirstYear` is DERIVED by walking the ladder, never typed, so changing the ratio cannot leave it stale.
-- [ ] **T6 — "unaided" reaches the log** (D8, D10). `ReviewEvent.Unaided` above `At`; `Outcome.Unaided` set from `!s.Revealed` at grading; `CaptureReview` widened; `Fold` reconstructs the `Grade`. The seam is the one `#7` built for the axis, extended rather than re-invented.
-- [ ] **T7 — the sitting reports its cost** (D9). `finish()` gains a line: `"~14 reviews/day at your current mix · 3 new words/day sustainable"`. This is what gives T5 a reader.
+- [ ] **T6 — "unaided" reaches the log** (D8, D10, D12). `ReviewEvent.Unaided` above `At`; `Outcome.Unaided` set at grading; `CaptureReview` takes the `Outcome`; `Fold` reconstructs the `Grade`. The seam is the one `#7` built for the axis, extended rather than re-invented.
+- [ ] **T7 — the sitting reports its cost** (D9, D11). `finish()` gains a line: `"~14 reviews/day at your current mix · 3 new words/day sustainable"`. This is what gives T5 a reader.
 - [ ] **T8 — docs.** `atlas/define.md`'s scheduling section rewritten for the computed ladder; `cmd/define/README.md`'s "words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days" corrected; the project row ticked.
 
 ---
@@ -133,7 +174,10 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a p
 | 9 | `reviewsInFirstYear` derives from the ladder | `TestReviewsInFirstYearDerives` — recompute against `IntervalDays`, not a literal | the ratio changes and the constant does not |
 | 10 | an unaided answer is recorded and folds to `GradeUnaided` | `TestUnaidedAnswerReachesTheLog` through `playSession`, as `#7`'s axis test does | the loop stops passing it, which no `play` test would see |
 | 11 | `at:` is still the last key on disk | `TestYAMLWritesAtLastWhateverFieldsAreSet`, extended with the new field | the field lands below `At` |
-| 12 | the sitting reports its cost | `TestFinishReportsTheLoad` | the number loses its reader |
+| 12 | the sitting reports its cost, and names the budget it assumed | `TestFinishReportsTheLoad` | the number loses its reader, or the `-count` assumption goes unstated |
+| 13 | every shipped form is on the right side of the observed/claimed split | `TestSelfRatedFormsNeverEarnUnaided` — derived by driving each form in `play` through a correct, unrevealed answer | a self-rated form starts earning `+2` |
+| 14 | `DailyLoad` counts never-reviewed deck words | `TestDailyLoadCountsUnreviewedWords` — a deck of 20 with 2 reviewed must not report the cost of 2 | the fold's map is summed instead of the deck |
+| 15 | re-folding an old log makes words due SOONER, never later, below box 10 | `TestReFoldingAnOldLogIsSafe` — a synthetic log of 5 corrects lands on a shorter interval than the old ladder gave | a future ratio change silently defers review |
 
 ---
 
