@@ -118,3 +118,46 @@ Same-domain selection moves this form toward diagnosis and toward ambiguity at
 the same time. Whether the taxonomy survives, or `#17 M2` needs its own path
 after all, is a question for this issue's design — it should be answered
 deliberately rather than discovered at a review boundary.
+
+### 2026-08-30 — the open tension is SETTLED: safe axes only
+
+**Reason.** The 2026-08-28 revision left this for the build and said to answer it
+deliberately. Answered, by the operator, on a measurement.
+
+**The measurement.** The four error kinds `#17` named are not equally available
+offline, and not equally risky. NOAD labels two of them ITSELF, inline in the
+sense text — counted over the committed corpus: 51 `informal`, plus `formal`,
+`archaic`, `dated`, `dialect`, `rare`, `humorous`; and domain labels `Law`,
+`Grammar`, `Nautical`, `Music`, `Military`, `Computing`.
+
+| kind | derivable with no model? | ambiguity risk |
+|---|---|---|
+| domain | YES — NOAD's own label | none: a `Law` sense defines something else entirely |
+| register | YES — NOAD's own label | none |
+| connotation | no — needs semantics | moderate |
+| near-synonym collapse | no — needs semantics | HIGH — its definition may genuinely fit the target |
+
+The two axes that are free are exactly the two that are safe, and the two that
+need a model are exactly the two that create the second-defensible-answer problem
+the far-in-meaning guard exists to prevent. That is what dissolves the tension
+rather than trading one horn for the other.
+
+**DECIDED.**
+
+- **The far-in-meaning guard STAYS.** No distractor is a near-synonym, so every
+  question keeps exactly one defensible answer — which this form needs, because
+  unlike `#12` it has no model veto by design.
+- **The three distractors are CHOSEN to vary along the labelled axes**: one from
+  another domain, one from another register, one general. A miss therefore still
+  carries information — "picked the `Law` one" is not the same event as "picked
+  the `archaic` one" — without any option plausibly defining the target.
+- **`#17 M2`'s taxonomy arrives REDUCED, and that is now a stated outcome rather
+  than a discovery.** This form can produce *domain confusion*, *register
+  confusion* and *did not know it*. It CANNOT produce near-synonym collapse or
+  connotation, and no amount of care here will make it: those need semantic
+  closeness, which needs a model. They belong to `#12` (cloze, which has a veto)
+  or `#13` (free sentence, graded). The Revisions asked whether the taxonomy
+  survives or `#17 M2` needs its own path — the answer is BOTH, split by kind.
+- **Recording the chosen option is unchanged and still the load-bearing bit.**
+  The reduced taxonomy is readable only because the event keeps which option was
+  picked; collapsing to a boolean forecloses it exactly as `#17`'s close warned.
