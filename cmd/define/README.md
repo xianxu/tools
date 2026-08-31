@@ -34,11 +34,48 @@ define -no-color bank       # never emit ANSI (also automatic when piped)
 
 ## Reviewing what is due
 
-**`define --play` reviews what is due today.** The word appears alone and you
-answer straight away: `y` if you had it, `n` if you did not. A `y` moves on
-immediately; an `n` shows you the definition, and any key then continues. Ctrl-C
-stops whenever you like and keeps everything you answered — each answer is
-written as it happens, not at the end.
+**`define --play` reviews what is due today.** There are two kinds of question,
+and which you get depends only on how big your deck is — you never choose.
+
+### Multiple choice, once your deck can supply distractors
+
+The word appears with four definitions, one of them right. This is the main
+form, because recognising a meaning among plausible alternatives is a harder and
+more useful test than deciding for yourself whether you knew it.
+
+```
+$ define --play
+sycophantic
+
+1  an isolated flat-topped hill with steep sides
+2  behaving or done in an obsequious way in order to gain advantage
+3  a small short-tailed wallaby with a short face
+4  an official report of the proceedings of a court
+
+1-4 = pick the definition, d = remove from deck, Ctrl-C to stop
+```
+
+**The wrong answers are your own words**, taken from your deck — never invented
+by a model, so this works offline and costs nothing. They are also chosen to
+differ from one another: where your deck allows, one is a specialist sense the
+dictionary labels (`Law`, `Grammar`, `Nautical`), one is marked for register
+(`informal`, `archaic`, `dated`), and one is ordinary vocabulary. Which one you
+pick is recorded, not just whether you were right — so "kept picking the archaic
+ones" is a thing your history can eventually tell you.
+
+A word is never offered as a distractor against a word whose dictionary
+definition mentions it. NOAD defines close synonyms through each other —
+`sycophantic` is glossed *"behaving or done in an obsequious way"* — and that
+cross-reference is exactly the case where two options could both be defensible.
+
+Answer and the full entry appears, with the right answer and what you picked
+named above it.
+
+### Recall, on a young deck
+
+With fewer than two other words to draw on there is nothing to choose between,
+so the word appears alone and you rate yourself. This is what a new deck gets,
+and it needs no explanation because it is what you would do with a paper card.
 
 ```
 $ define --play
@@ -49,11 +86,15 @@ y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 
 | key | does |
 |---|---|
-| `y` | you had it — straight to the next word, no definition |
-| `n` | you missed it — the definition appears, then any key continues |
-| space or Enter | check the definition first, if you want to, before answering |
+| `1`–`4` | multiple choice: pick the definition |
+| `y` | recall: you had it — straight to the next word |
+| `n` | recall: you missed it — the definition appears |
+| space or Enter | see the answer first, before answering |
 | `d` | remove this word from the deck — its history is kept |
 | Ctrl-C | stop; everything you answered is already saved |
+
+Ctrl-C stops whenever you like and keeps everything you answered — each answer
+is written as it happens, not at the end.
 
 After an `n` the definition is on screen and the prompt changes:
 

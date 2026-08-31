@@ -247,7 +247,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       `#23 M1` wrote D2's interim locale rule specifically for it to inherit.
       Small, and it finishes the language thread rather than leaving Spanish
       half-delivered.
-- [ ] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
+- [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
 - [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [ ] form 2.2 — cloze from authored items, distractors **selected not invented** [tools#12]

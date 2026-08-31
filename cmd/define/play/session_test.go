@@ -357,6 +357,7 @@ type fakeForm struct{ word string }
 func (f *fakeForm) Word() string   { return f.word }
 func (f *fakeForm) Prompt() string { return "which one?" }
 func (f *fakeForm) Reveal() string { return "it was the first" }
+func (f *fakeForm) Keys() string   { return "1 = right, 2 = wrong" }
 func (f *fakeForm) Grade(r rune) (Verdict, bool) {
 	switch r {
 	case '1':

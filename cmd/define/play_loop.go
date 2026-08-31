@@ -327,7 +327,7 @@ func draw(w io.Writer, s play.Session) {
 	// keystroke that carried no information, and the slow one at that, since a
 	// reveal fetches and plays the pronunciation. A learner who wants to check
 	// before rating still can; they simply no longer have to (#24).
-	fmt.Fprint(w, "\n"+gradePrompt+"\n")
+	fmt.Fprint(w, "\n"+gradePrompt(q)+"\n")
 }
 
 // The two prompt lines draw() emits, named because README.md quotes them
@@ -339,12 +339,28 @@ func draw(w io.Writer, s play.Session) {
 // doc comments, then reached the doc comments and not the two test citations.
 // Sweeping is what kept failing; a consumer that fails the build does not.
 const (
-	// gradePrompt is shown while a verdict is still owed — with or without the
-	// definition on screen, because grading no longer requires a reveal (#24).
-	gradePrompt = "y = got it, n = missed it, d = remove from deck, Ctrl-C to stop"
+	// sessionKeys are the keys the SESSION reserves, true whatever form is
+	// asking (question.go:74-77). The form's own keys are prepended by
+	// gradePrompt — this half does not vary, and a form restating it would be
+	// two owners of one fact.
+	sessionKeys = "d = remove from deck, Ctrl-C to stop"
 	// gradedPrompt is shown once the answer is in and the definition is up.
 	gradedPrompt = "any key = next word, d = remove from deck, Ctrl-C to stop"
 )
+
+// gradePrompt is what to press while a verdict is still owed: the FORM's answer
+// keys, then the session's reserved ones.
+//
+// A function rather than the const it used to be. The const spelled form 2.1's
+// y/n, so the moment a second form shipped the learner was being told to press a
+// key that did nothing — a bug no test could see, because every test typed the
+// keys the const named.
+func gradePrompt(q play.Question) string {
+	if q == nil {
+		return sessionKeys
+	}
+	return q.Keys() + ", " + sessionKeys
+}
 
 func finish(w io.Writer, s play.Session) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)

@@ -35,6 +35,8 @@ func (r *Recall) Reveal() string { return r.definition }
 // case-insensitively because a session is typed fast. Anything else returns
 // false — a stray key is not a silent wrong answer, which would corrupt the
 // schedule for a word the learner never rated.
+func (r *Recall) Keys() string { return "y = got it, n = missed it" }
+
 func (r *Recall) Grade(k rune) (Verdict, bool) {
 	switch k {
 	case 'y', 'Y':

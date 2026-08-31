@@ -151,6 +151,16 @@ func (c *Choice) Reveal() string {
 	return s
 }
 
+// Keys names the digits that actually work, which on a young deck is fewer than
+// four (D9). Telling a learner "1-4" beside a two-option question invites a
+// keystroke that does nothing.
+func (c *Choice) Keys() string {
+	if len(c.options) < 2 {
+		return "no options"
+	}
+	return "1-" + string(rune('0'+len(c.options))) + " = pick the definition"
+}
+
 // Grade reads 1-4 and nothing else.
 //
 // A digit past the end of the option set returns false rather than a verdict:
