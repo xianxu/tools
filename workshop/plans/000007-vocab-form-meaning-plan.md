@@ -175,7 +175,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
 | # | claim | pinned by | red when |
 |---|---|---|---|
-| 1 | four options, exactly one correct, from the deck | `TestPickOptionsHasOneAnswer` | a second option's gloss is the target's |
+| 1 | up to four options, exactly one correct, from the deck, and no two saying the same thing | `TestPickOptionsHasOneAnswer` (the count and the single `Correct` flag) **and** `TestPickOptionsNeverRepeatsAGloss` (the duplicate-gloss half, which the first cannot see) | a set carries two `Correct` options, or two options with the same gloss — the `jalapeño`/`jalapeno` case, where one entry answers two deck keys |
 | 2 | the CHOSEN option is recorded, not just correctness | `TestAMissRecordsTheAxisItChose` | the axis is collapsed to a boolean |
 | 3 | deterministic under a fixed seed | `TestPickOptionsIsDeterministic`, `TestPRNGSequenceIsPinned`, `TestSeedForIsPinned` | selection reaches for map order or wall-clock, **or the PRNG/hash constants move** — the goldens are what make "ours, not the runtime's" true rather than asserted |
 | 4 | degrades below four deck words | `TestPickOptionsWithATinyDeck`, `TestASittingFallsBackToRecall` | a two-word deck produces a broken question or a skipped word |
@@ -482,3 +482,45 @@ DESIGN — ARCH-PURE asks for exactly that arrangement — so the guard was fixe
 walk the tree. A guard that fails on the structure the architecture requires
 teaches people to edit the plan until the guard shuts up, which is worse than no
 guard.
+
+### 2026-08-30 — close review round 5: the second clause, and enumerations that derive
+
+**BR-17's second clause was the live one, and I had implemented only the first.**
+The finding said *"gate on the entry defining the prompted word"* AND *"no two
+options in one set may share a gloss"*. Round 4 did the first and the second
+stayed reachable: `jalapeño` and `jalapeno` are separate deck keys — `store.Key`
+folds case and whitespace but not diacritics — and the dictionary answers both
+with the same entry, which is documented production behaviour with its own live
+conformance check. Both survive `entryDefines`, `crossReferenced` cannot see it
+because neither headword appears in the shared gloss, and `PickOptions` deduped
+on `Word` alone. The set then carried byte-identical options with one marked
+correct, so a learner who read both and picked the other was recorded as a miss,
+given an axis they never chose, and had the word demoted for being right.
+
+Fixed by deduping on gloss as well as word, seeded with the ANSWER's gloss.
+`TestPickOptionsNeverRepeatsAGloss` pins it and is mutation-verified. Reverting
+to word-only dedup turns it red.
+
+**A fixture lied and the new rule exposed it.** `TestPickOptionsWithATinyDeck`
+gave every candidate the gloss `"g"`, so gloss-dedup collapsed a nine-candidate
+pool to two options and the test failed. The test was right and the fixture was
+wrong — a pool of identical definitions cannot occur in a deck, and using one had
+made the sizing assertions meaningless in a way nothing would have shown until
+the rule that cares about glosses arrived.
+
+**BR-21 — three files enumerated the fallback reasons and all three disagreed**
+(code branched on three, README named two, atlas named one). 4th finding in
+`docs-restate-behaviour-inaccurately`, so the rule: **a doc sentence that
+ENUMERATES is a closed claim about the code and must DERIVE from the same list
+the code branches on, or be written open.** Implemented, not just stated:
+`fallbackReasons` is now a declared list in `optionpool.go` and
+`TestREADMENamesEveryFallbackReason` checks the README against it — the same move
+`doc_sync_test.go` already made for the prompt lines. The README's neighbouring
+"never offered as a distractor" was corrected too: `mentions` ignores headwords
+under six characters, so "never" was an overclaim.
+
+**BR-23 — the redirect model had no live check.** `entryDefines` rests on a
+belief about macOS's dictionary that only a committed fixture asserted, and a
+fixture is a copy of a belief. `TestLiveDictionaryRedirectsADerivedForm` measures
+it against the real dictionary, in both directions: `bargainer` must not get its
+own entry, and `bargain` must still pass, so the gate cannot quietly become a ban.

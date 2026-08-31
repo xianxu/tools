@@ -714,3 +714,180 @@ findings:
       guard whose precondition every caller already establishes is dead code that reads as
       protection, and it hides which layer actually owns the invariant.
 ```
+
+---
+
+## Re-review — 2026-08-30T21:29:47-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 7 — review form 2.3: meaning multiple choice from the local deck |
+| repo | tools |
+| issue file | workshop/issues/000007-vocab-form-meaning.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a8962469ff08154f5377a7572586c575c2d4610f..67f76c660faed3c77814ef61c11c38569f2e1c40 |
+| command | sdlc close --issue 7 |
+| reviewer | claude |
+| timestamp | 2026-08-30T21:29:47-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Form 2.3 is genuinely built, wired and well tested: `go build`, `go vet`, `gofmt -l`, `go test ./cmd/define/...` and `-race` are all clean here, `go list` confirms `play` still imports nothing, and this round's two headline claims check out under mutation — removing either `entryDefines` call turns `TestARedirectSuppliesNoOptionMaterialAtAll` and `TestNoCandidateEverCarriesAnotherWordsGloss` red, and breaking a Core-concepts Name cell now fires `TestPlanTablesNameEntitiesThatExist` (verified in a scratch worktree with `git init`). What blocks SHIP is that **BR-17 stated a two-clause rule and only the first clause was implemented**. The second — *"no two options in one set may share a gloss"*, with the `pick_test.go` pin the finding named — was not written, and it is still reachable in production: with a deck holding both `jalapeño` and `jalapeno` (the unaccented-typing path `#29` exists for, and which the real dictionary resolves to the same entry), the `jalapeno` question offers option 2 `Correct:true` and option 3 `Correct:false` with **byte-identical glosses**, so picking option 3 records a miss with a fabricated axis and demotes the word. `PickOptions` still dedups on `Word` only (`play/pick.go:46`). BR-13, BR-18 and BR-19 also carry survivors, measured below.
+
+### 1. Strengths
+
+- **`cmd/define/optionpool.go:80-90, 116-119`** — moving the guard from the caller into *both producers* is the right structural answer to "the instance, not the class", and the comment says exactly why a caller-level check failed. Mutation-verified: deleting either guard turns two tests red, and `TestNoCandidateEverCarriesAnotherWordsGloss` states the property over the whole corpus with a `checked == 0` vacuity trap, so a future fixture cannot reintroduce it silently.
+- **`cmd/define/repo_guard_test.go:757-800`** — `TestPlanNamedTestsExist` was globbing `cmd/define/*_test.go` flat, so six tests this plan pins in `play/` read as nonexistent. Fixing the *guard* rather than editing the plan to appease it is the correct call, and the comment ("a guard that fails on the arrangement the architecture asks for teaches people to weaken the guard") is the right generalisation. ARCH-PURE.
+- **`workshop/lessons.md:2644-2675`** — "an unticked checkbox can silently DISABLE a repo guard" is the highest-value artifact in this window. Diagnosing *why the guard never fired* instead of hand-fixing a fourth round of rows is exactly ARCH-PURPOSE's class-over-instance discipline.
+- **`cmd/define/capture.go:141-145` + `store/event.go:32-42`** — D8 is enforced by the type (`AxisNone.String() == ""` → `omitempty` drops it) rather than by a branch a caller can forget, and `Missed` sits above `At` with the torn-record reason restated at both ends.
+- **`cmd/define/doc_sync_test.go:40-77`** — the README prompt guard iterates shipped forms and composes the line the way `draw` does, including a duplicate-prompt check, and states its residual instead of hiding it.
+
+### 2. Critical findings
+
+**BR-17's second clause is unimplemented and reachable — `cmd/define/play/pick.go:46`.** `used := map[string]bool{target.Word: true}` keys on `Word` only; nothing anywhere compares glosses. Reproduction (measured, in a scratch copy of HEAD):
+
+```go
+d, opt, _ := playRig(t, "jalapeño", "jalapeno", "sycophantic", "quokka", "mesa", "parrot", "concrete")
+// question "jalapeno" →
+//   opt2 word=jalapeno  correct=true  "a very hot green chili pepper, used especially in Mexic…"
+//   opt3 word=jalapeño  correct=false "a very hot green chili pepper, used especially in Mexic…"
+```
+
+Both deck words survive `entryDefines` (via `differsOnlyByDiacritics`, `optionpool.go:164`), `store.Key` folds case and whitespace but *not* diacritics (`store/word.go:29-31`), and `crossReferenced` cannot see it because neither headword appears in the shared gloss. The deck shape is ordinary: `define jalapeno` and `define jalapeño` are two `Upsert`s under two keys (`capture.go:111`), and the accent-insensitive lookup is documented production behaviour (`dict_fake_test.go:67-72`, pinned live by `TestLiveDictionaryResolvesAnUnaccentedQuery`). *Fix:* dedup on gloss as well as word in `PickOptions` — including against `target.Gloss` — and add the `pick_test.go` row BR-17 asked for.
+
+### 3. Important findings
+
+**Done-when row 1's "red when" is false of the test it names — `workshop/plans/000007-vocab-form-meaning-plan.md:178`.** The row claims `TestPickOptionsHasOneAnswer` goes red when "a second option's gloss is the target's". Mutation-verified: changing `testPool()`'s first candidate gloss to `target.Gloss` leaves the test **PASS** — it counts `Correct` flags and never compares distractor glosses. This is the 3rd finding in `guard-passes-without-the-property`; see the machine block for the rule.
+
+**The README and atlas enumerate the form-2.1 fallback causes and omit the one two Critical rounds produced.** `cmd/define/README.md:78-81` says the fallback is for "a one-word deck, or a word whose entry is nothing but cross-references"; `atlas/define.md:2007` covers only "below two options it is not a question". `choiceFor`'s own doc (`optionpool.go:173-176`) names three causes. A learner reviewing `bargainer` gets Recall and nothing user-facing explains why. 4th in `docs-restate-behaviour-inaccurately`.
+
+### 4. Minor findings
+
+- `cmd/define/optionpool_test.go:252-258` — the "the guard is too broad" check is nested under `if err == nil`, and `d.Lookup("bargain")` **always errors** (measured: the corpus has `bargainer.txt`, no `bargain.txt`, and the accent fallback does not match). The check never runs.
+- No live conformance row measures the derivative-redirect model. The fake models it with one fixture; `entryDefines` refuses 1 of 34 corpus entries (measured), and nothing bounds the rate against the real dictionary, which `entryDefines` can silently push to form 2.1. The live dictionary is unreachable in this environment (`systemDictionary` → "every active dictionary"), so I could not measure it.
+- `TestSittingCostIsBoundedByTheCap` sits exactly at its bound (40 pool + 5 due = 45 ≤ 45) with zero slack — correct, but worth knowing it has no headroom.
+- The Done-when table lists row 9 before row 8 (`plan.md:185-186`).
+
+### 5. Test coverage notes
+
+- The suite is strong and mostly property-shaped: `TestPickOptionsVariesTheDistractorsAcrossASitting`, `TestNoCandidateEverCarriesAnotherWordsGloss` and `TestYAMLWritesAtLastWhateverFieldsAreSet` all assert properties the defect cannot satisfy rather than restating the implementation.
+- The gap the Critical exposes is systematic: **no test anywhere compares two options' glosses.** `TestPickOptionsHasOneAnswer` counts flags, `TestPickOptionsNeverRepeatsAWord` compares words. A `for i, j` gloss-inequality assertion inside `PickOptions`' result would have caught both the `bargainer` symptom (round 4) and the `jalapeño` one (still live).
+- `TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis` skips here (no pty). Its D8 identity assertion reads correct, but that half rests on the operator's real-terminal run in the issue Log.
+- `gradePrompt`'s nil branch is unreached by the entire suite — verified by replacing it with a `panic` and running `./cmd/define/...` clean.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — pass.** `shuffle[T any]` (`pick.go:156`) serves both call sites; `SampleStrings` is exported so `main` shares `play`'s PRNG rather than growing a second. `optionCandidates`/`targetCandidate` implement genuinely different selection rules and are rightly separate.
+- **ARCH-PURE — pass.** `go list -f '{{join .Imports}}' ./cmd/define/play` returns empty. All prose handling is in `main`; `play` receives finished `Candidate`s. `buildPool` is the only IO in `optionpool.go`.
+- **ARCH-PURPOSE — flag (the Critical).** Shadow-sweep of this window's single sources: `Question.Keys()` → `draw` and the README both derive (`doc_sync_test.go`); the `Axis` set → `distractorAxes` and `String()` both derived from `numAxes`; the plan's Core-concepts Name column → now derived (`TestPlanTablesNameEntitiesThatExist`, verified firing). The hand-maintained restatements still standing are the plan's `## Tasks` bullets (`senseLabel`, `pickOptions`) and the README/atlas fallback enumeration. And BR-17's rule was answered at the clause the commit message narrated, not the clause the finding stated — the instance again, one level up.
+- **ARCH-MOCK — flag (Minor).** `countingDict` wraps the same seam production uses, the pty test drives the real binary against a real deck, and the corpus is committed. Missing: a live conformance row for the redirect behaviour this issue now gates on.
+- **ARCH-CONSTRAINTS — pass.** `poolCap = 40`, pool built once per sitting, `TestSittingCostIsBoundedByTheCap` enforces `lookups ≤ poolCap + count` **and** asserts a `*play.Choice` was produced, so a bound-satisfied-by-zero build fails. Nothing new on the keystroke path.
+
+### 7. Plan revision recommendations
+
+1. **`## Revisions` — "the option-set invariant has two clauses, not one."** Record that a gloss must come from an entry that defines its word *and* that no two options in a set may share a gloss; name `jalapeño`/`jalapeno` as the measured second instance and `differsOnlyByDiacritics` + non-folding `store.Key` as the mechanism. Fix Done-when row 1's `red when` so it is a mutation the named test actually fails on.
+2. **`## Tasks` — rewrite T1 and T3 to name `readGloss` and `PickOptions`.** The issue's own `## Plan` T1 already does this correctly (`issue:138`); the plan doc was never mirrored, and neither `TestPlanTablesNameEntitiesThatExist` (Name column only) nor `TestARemovedDeclarationIsSweptOrRetired` (only names the tree once declared) can reach a task bullet.
+3. **`## Revisions` — close BR-13 as a sweep with its enumeration written down**, since round 4 disposed it `not-addressed` for the third consecutive round without touching any of the four files it names.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      3 of 7 named instances survive; the round-4 commit touched none of their files.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      Clause 1 fixed and mutation-verified; clause 2 (no two options share a gloss) unimplemented and measured reachable.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      Mechanism delivered and verified firing, but the finding's own named instance (plan.md pickOptions) sits outside its scope.
+  - id: BR-19
+    disposition: not-addressed
+    note: |
+      Branch still at play_loop.go:359; replacing it with a panic leaves the whole suite green.
+findings:
+  - id: new
+    severity: Important
+    family: guard-passes-without-the-property
+    title: |
+      Done-when row 1 claims a red-when that TestPickOptionsHasOneAnswer cannot deliver
+    detail: |
+      3rd finding in family guard-passes-without-the-property, so the deliverable is the
+      rule: a Done-when "red when" cell is a claim about a MUTATION, and it must be
+      verified by performing that mutation, not by reading the test. Measured -
+      plan.md:178 says TestPickOptionsHasOneAnswer goes red when "a second option's gloss
+      is the target's"; setting testPool()[0].Gloss = target.Gloss in a scratch copy of
+      HEAD leaves the test PASS, because it counts Correct flags and never compares
+      distractor glosses. The repo already mechanises test EXISTENCE
+      (TestPlanNamedTestsExist) and Name-column resolution
+      (TestPlanTablesNameEntitiesThatExist); the red-when column, which is where a plan
+      makes its load-bearing claim, is checked by nobody. The cheapest honest form of the
+      rule: every row's red-when must be reproduced once, by hand, at the close, and the
+      reproduction recorded beside the row - or the cell weakened to what the test does
+      assert. This row's failure is the same defect as BR-17's open clause, which is how
+      a false red-when hides a live bug.
+  - id: new
+    severity: Important
+    family: docs-restate-behaviour-inaccurately
+    title: |
+      README and atlas enumerate the form-2.1 fallback causes and omit the derivative redirect
+    detail: |
+      4th finding in family docs-restate-behaviour-inaccurately, so the deliverable is the
+      rule, not the two lines: a doc sentence that ENUMERATES ("X, or Y") is a closed
+      claim about the code and must be derived from the same list the code branches on,
+      or be written open ("for example"). Measured - choiceFor (optionpool.go:173-176)
+      names three refusals; README.md:78-81 names two ("a one-word deck, or a word whose
+      entry is nothing but cross-references") and atlas/define.md:2007 names one ("below
+      two options it is not a question"). The third, added by BR-15/BR-17 across two
+      rounds and given its own Core-concepts row, is user-visible: a learner reviewing
+      `bargainer` silently gets Recall. Two enumerations of the same fact in two files,
+      both hand-maintained, is the shape doc_sync_test.go already fixed for the prompt
+      lines - the fallback reasons are the next candidate for the same treatment. The
+      sibling instance in the same family, still open: README.md:68 says a word is "never"
+      offered as a distractor against a word whose gloss mentions it, while mentions()
+      returns false for any headword under 6 characters.
+  - id: new
+    severity: Minor
+    family: conditional-assertion
+    title: |
+      The over-breadth half of TestARedirectSuppliesNoOptionMaterialAtAll never executes
+    detail: |
+      2nd finding in family conditional-assertion, so the rule is the deliverable: a test
+      may not nest an assertion under a runtime condition no fixture can satisfy - the
+      negative branch must Fatal, or the condition must go. Measured -
+      optionpool_test.go:253 does `base, err := d.Lookup("bargain"); if err == nil { ... }`,
+      and the corpus has bargainer.txt with no bargain.txt, so Lookup returns ErrNoEntry
+      on every run and the "the guard is too broad" check has never run. Sibling shape,
+      same round: the round-2 fix for BR-8 correctly replaced an `if n > 0` gate with an
+      unconditional identity, and this file reintroduced the pattern nine lines later. The
+      property itself is in fact covered elsewhere (TestSittingCostIsBoundedByTheCap
+      asserts a *play.Choice is produced; TestASittingFallsBackForAnEntryThatCannotBeAsked
+      asserts the rest of the deck gets Choice), so the block should be deleted rather
+      than repaired - a dead check that duplicates a live one is worse than neither.
+  - id: new
+    severity: Minor
+    family: fake-behaviour-lacks-live-conformance
+    title: |
+      The derivative-redirect model that entryDefines gates on has no live conformance check
+    detail: |
+      ARCH-MOCK. entryDefines is a new gate that can silently route a word from form 2.3 to
+      form 2.1, and the behaviour it models - NOAD redirecting a derived form to its base
+      headword - is represented by exactly one committed fixture (bargainer.txt). Measured
+      over the corpus: 1 of 34 entries refuses. Nothing measures the rate against the real
+      dictionary, so an entryDefines that is too strict on inflected, multi-word or variant
+      heads would quietly disable the form for a large share of a real deck while every test
+      stays green. The repo already has the seam and the cadence for this
+      (live_property_test.go walks /usr/share/dict/words under `-tags conformance`); a row
+      there reporting the refusal rate and a sample of refused words would validate the model
+      and bound the degradation. I could not measure it here - systemDictionary returns
+      "every active dictionary" and Lookup finds nothing in this environment.
+```

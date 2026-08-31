@@ -352,6 +352,103 @@ rounds:
           family: unreachable-branch
           round: 4
       blocked: true
+    - "n": 5
+      timestamp: "2026-08-30T21:29:47-07:00"
+      agent: claude
+      dispose:
+        - id: BR-13
+          disposition: not-addressed
+          note: 3 of 7 named instances survive; the round-4 commit touched none of their files.
+          round: 5
+        - id: BR-17
+          disposition: not-addressed
+          note: Clause 1 fixed and mutation-verified; clause 2 (no two options share a gloss) unimplemented and measured reachable.
+          round: 5
+        - id: BR-18
+          disposition: not-addressed
+          note: Mechanism delivered and verified firing, but the finding's own named instance (plan.md pickOptions) sits outside its scope.
+          round: 5
+        - id: BR-19
+          disposition: not-addressed
+          note: Branch still at play_loop.go:359; replacing it with a panic leaves the whole suite green.
+          round: 5
+      findings:
+        - id: BR-20
+          severity: Important
+          title: Done-when row 1 claims a red-when that TestPickOptionsHasOneAnswer cannot deliver
+          detail: |-
+            3rd finding in family guard-passes-without-the-property, so the deliverable is the
+            rule: a Done-when "red when" cell is a claim about a MUTATION, and it must be
+            verified by performing that mutation, not by reading the test. Measured -
+            plan.md:178 says TestPickOptionsHasOneAnswer goes red when "a second option's gloss
+            is the target's"; setting testPool()[0].Gloss = target.Gloss in a scratch copy of
+            HEAD leaves the test PASS, because it counts Correct flags and never compares
+            distractor glosses. The repo already mechanises test EXISTENCE
+            (TestPlanNamedTestsExist) and Name-column resolution
+            (TestPlanTablesNameEntitiesThatExist); the red-when column, which is where a plan
+            makes its load-bearing claim, is checked by nobody. The cheapest honest form of the
+            rule: every row's red-when must be reproduced once, by hand, at the close, and the
+            reproduction recorded beside the row - or the cell weakened to what the test does
+            assert. This row's failure is the same defect as BR-17's open clause, which is how
+            a false red-when hides a live bug.
+          family: guard-passes-without-the-property
+          round: 5
+        - id: BR-21
+          severity: Important
+          title: README and atlas enumerate the form-2.1 fallback causes and omit the derivative redirect
+          detail: |-
+            4th finding in family docs-restate-behaviour-inaccurately, so the deliverable is the
+            rule, not the two lines: a doc sentence that ENUMERATES ("X, or Y") is a closed
+            claim about the code and must be derived from the same list the code branches on,
+            or be written open ("for example"). Measured - choiceFor (optionpool.go:173-176)
+            names three refusals; README.md:78-81 names two ("a one-word deck, or a word whose
+            entry is nothing but cross-references") and atlas/define.md:2007 names one ("below
+            two options it is not a question"). The third, added by BR-15/BR-17 across two
+            rounds and given its own Core-concepts row, is user-visible: a learner reviewing
+            `bargainer` silently gets Recall. Two enumerations of the same fact in two files,
+            both hand-maintained, is the shape doc_sync_test.go already fixed for the prompt
+            lines - the fallback reasons are the next candidate for the same treatment. The
+            sibling instance in the same family, still open: README.md:68 says a word is "never"
+            offered as a distractor against a word whose gloss mentions it, while mentions()
+            returns false for any headword under 6 characters.
+          family: docs-restate-behaviour-inaccurately
+          round: 5
+        - id: BR-22
+          severity: Minor
+          title: The over-breadth half of TestARedirectSuppliesNoOptionMaterialAtAll never executes
+          detail: |-
+            2nd finding in family conditional-assertion, so the rule is the deliverable: a test
+            may not nest an assertion under a runtime condition no fixture can satisfy - the
+            negative branch must Fatal, or the condition must go. Measured -
+            optionpool_test.go:253 does `base, err := d.Lookup("bargain"); if err == nil { ... }`,
+            and the corpus has bargainer.txt with no bargain.txt, so Lookup returns ErrNoEntry
+            on every run and the "the guard is too broad" check has never run. Sibling shape,
+            same round: the round-2 fix for BR-8 correctly replaced an `if n > 0` gate with an
+            unconditional identity, and this file reintroduced the pattern nine lines later. The
+            property itself is in fact covered elsewhere (TestSittingCostIsBoundedByTheCap
+            asserts a *play.Choice is produced; TestASittingFallsBackForAnEntryThatCannotBeAsked
+            asserts the rest of the deck gets Choice), so the block should be deleted rather
+            than repaired - a dead check that duplicates a live one is worse than neither.
+          family: conditional-assertion
+          round: 5
+        - id: BR-23
+          severity: Minor
+          title: The derivative-redirect model that entryDefines gates on has no live conformance check
+          detail: |-
+            ARCH-MOCK. entryDefines is a new gate that can silently route a word from form 2.3 to
+            form 2.1, and the behaviour it models - NOAD redirecting a derived form to its base
+            headword - is represented by exactly one committed fixture (bargainer.txt). Measured
+            over the corpus: 1 of 34 entries refuses. Nothing measures the rate against the real
+            dictionary, so an entryDefines that is too strict on inflected, multi-word or variant
+            heads would quietly disable the form for a large share of a real deck while every test
+            stays green. The repo already has the seam and the cadence for this
+            (live_property_test.go walks /usr/share/dict/words under `-tags conformance`); a row
+            there reporting the refusal rate and a sample of refused words would validate the model
+            and bound the degradation. I could not measure it here - systemDictionary returns
+            "every active dictionary" and Lookup finds nothing in this environment.
+          family: fake-behaviour-lacks-live-conformance
+          round: 5
+      blocked: true
 ---
 
 # Gate ledger — tools#7 (boundary-review)
@@ -568,9 +665,80 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   guard whose precondition every caller already establishes is dead code that reads as
   protection, and it hides which layer actually owns the invariant.
 
+## Round 5 — 2026-08-30T21:29:47-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-13 — not-addressed — 3 of 7 named instances survive; the round-4 commit touched none of their files.
+- BR-17 — not-addressed — Clause 1 fixed and mutation-verified; clause 2 (no two options share a gloss) unimplemented and measured reachable.
+- BR-18 — not-addressed — Mechanism delivered and verified firing, but the finding's own named instance (plan.md pickOptions) sits outside its scope.
+- BR-19 — not-addressed — Branch still at play_loop.go:359; replacing it with a panic leaves the whole suite green.
+
+### Raised
+
+- **BR-20** [Important] `guard-passes-without-the-property` Done-when row 1 claims a red-when that TestPickOptionsHasOneAnswer cannot deliver
+  3rd finding in family guard-passes-without-the-property, so the deliverable is the
+  rule: a Done-when "red when" cell is a claim about a MUTATION, and it must be
+  verified by performing that mutation, not by reading the test. Measured -
+  plan.md:178 says TestPickOptionsHasOneAnswer goes red when "a second option's gloss
+  is the target's"; setting testPool()[0].Gloss = target.Gloss in a scratch copy of
+  HEAD leaves the test PASS, because it counts Correct flags and never compares
+  distractor glosses. The repo already mechanises test EXISTENCE
+  (TestPlanNamedTestsExist) and Name-column resolution
+  (TestPlanTablesNameEntitiesThatExist); the red-when column, which is where a plan
+  makes its load-bearing claim, is checked by nobody. The cheapest honest form of the
+  rule: every row's red-when must be reproduced once, by hand, at the close, and the
+  reproduction recorded beside the row - or the cell weakened to what the test does
+  assert. This row's failure is the same defect as BR-17's open clause, which is how
+  a false red-when hides a live bug.
+- **BR-21** [Important] `docs-restate-behaviour-inaccurately` README and atlas enumerate the form-2.1 fallback causes and omit the derivative redirect
+  4th finding in family docs-restate-behaviour-inaccurately, so the deliverable is the
+  rule, not the two lines: a doc sentence that ENUMERATES ("X, or Y") is a closed
+  claim about the code and must be derived from the same list the code branches on,
+  or be written open ("for example"). Measured - choiceFor (optionpool.go:173-176)
+  names three refusals; README.md:78-81 names two ("a one-word deck, or a word whose
+  entry is nothing but cross-references") and atlas/define.md:2007 names one ("below
+  two options it is not a question"). The third, added by BR-15/BR-17 across two
+  rounds and given its own Core-concepts row, is user-visible: a learner reviewing
+  `bargainer` silently gets Recall. Two enumerations of the same fact in two files,
+  both hand-maintained, is the shape doc_sync_test.go already fixed for the prompt
+  lines - the fallback reasons are the next candidate for the same treatment. The
+  sibling instance in the same family, still open: README.md:68 says a word is "never"
+  offered as a distractor against a word whose gloss mentions it, while mentions()
+  returns false for any headword under 6 characters.
+- **BR-22** [Minor] `conditional-assertion` The over-breadth half of TestARedirectSuppliesNoOptionMaterialAtAll never executes
+  2nd finding in family conditional-assertion, so the rule is the deliverable: a test
+  may not nest an assertion under a runtime condition no fixture can satisfy - the
+  negative branch must Fatal, or the condition must go. Measured -
+  optionpool_test.go:253 does `base, err := d.Lookup("bargain"); if err == nil { ... }`,
+  and the corpus has bargainer.txt with no bargain.txt, so Lookup returns ErrNoEntry
+  on every run and the "the guard is too broad" check has never run. Sibling shape,
+  same round: the round-2 fix for BR-8 correctly replaced an `if n > 0` gate with an
+  unconditional identity, and this file reintroduced the pattern nine lines later. The
+  property itself is in fact covered elsewhere (TestSittingCostIsBoundedByTheCap
+  asserts a *play.Choice is produced; TestASittingFallsBackForAnEntryThatCannotBeAsked
+  asserts the rest of the deck gets Choice), so the block should be deleted rather
+  than repaired - a dead check that duplicates a live one is worse than neither.
+- **BR-23** [Minor] `fake-behaviour-lacks-live-conformance` The derivative-redirect model that entryDefines gates on has no live conformance check
+  ARCH-MOCK. entryDefines is a new gate that can silently route a word from form 2.3 to
+  form 2.1, and the behaviour it models - NOAD redirecting a derived form to its base
+  headword - is represented by exactly one committed fixture (bargainer.txt). Measured
+  over the corpus: 1 of 34 entries refuses. Nothing measures the rate against the real
+  dictionary, so an entryDefines that is too strict on inflected, multi-word or variant
+  heads would quietly disable the form for a large share of a real deck while every test
+  stays green. The repo already has the seam and the cadence for this
+  (live_property_test.go walks /usr/share/dict/words under `-tags conformance`); a row
+  there reporting the refusal rate and a sample of refused words would validate the model
+  and bound the degradation. I could not measure it here - systemDictionary returns
+  "every active dictionary" and Lookup finds nothing in this environment.
+
 ## Open findings
 
 - **BR-13** [Minor] `docs-restate-behaviour-inaccurately` Five doc comments state behaviour the code does not have
 - **BR-17** [Critical] `answer-must-define-the-prompted-word` buildPool is not gated by entryDefines, so a redirect puts a base entry's gloss into questions under the derived word
 - **BR-18** [Important] `plan-artifact-must-match-tree` The plan's Core concepts table names shuffleOptions, which this commit deleted, and omits entryDefines, which it added
 - **BR-19** [Minor] `unreachable-branch` gradePrompt's nil guard is dead - draw already returns when Current() is nil
+- **BR-20** [Important] `guard-passes-without-the-property` Done-when row 1 claims a red-when that TestPickOptionsHasOneAnswer cannot deliver
+- **BR-21** [Important] `docs-restate-behaviour-inaccurately` README and atlas enumerate the form-2.1 fallback causes and omit the derivative redirect
+- **BR-22** [Minor] `conditional-assertion` The over-breadth half of TestARedirectSuppliesNoOptionMaterialAtAll never executes
+- **BR-23** [Minor] `fake-behaviour-lacks-live-conformance` The derivative-redirect model that entryDefines gates on has no live conformance check

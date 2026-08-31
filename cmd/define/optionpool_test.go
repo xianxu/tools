@@ -249,12 +249,21 @@ func TestARedirectSuppliesNoOptionMaterialAtAll(t *testing.T) {
 	if _, ok := targetCandidate("bargainer", e); ok {
 		t.Error("a redirect produced a target candidate")
 	}
-	// And the entry it redirects TO is still perfectly good material.
-	base, err := d.Lookup("bargain")
-	if err == nil {
-		if got := optionCandidates("bargain", ParseEntry(base)); len(got) == 0 {
-			t.Error("the base word supplies no candidates; the guard is too broad")
-		}
+	// And THE SAME ENTRY is perfectly good material for the word it does define
+	// — the over-breadth half, which is the whole reason this is a gate and not
+	// a ban. One entry, two words, opposite answers: that is the distinction the
+	// gate makes, asserted on the one object that can show it.
+	//
+	// NOT nested under `if err == nil`, which is how the first version wrote it:
+	// the corpus is committed, so a lookup failure is a broken fixture, and
+	// hiding the only assertion that can detect over-breadth behind a condition
+	// no fixture guarantees is how it silently stops running.
+	if got := optionCandidates("bargain", e); len(got) == 0 {
+		t.Error("the entry supplies no candidates for `bargain`, the word it DOES define; " +
+			"the guard is too broad and would send every word to form 2.1")
+	}
+	if _, ok := targetCandidate("bargain", e); !ok {
+		t.Error("no target candidate for `bargain` from its own entry")
 	}
 }
 

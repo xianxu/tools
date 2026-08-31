@@ -356,9 +356,9 @@ const (
 // key that did nothing — a bug no test could see, because every test typed the
 // keys the const named.
 func gradePrompt(q play.Question) string {
-	if q == nil {
-		return sessionKeys
-	}
+	// No nil guard: draw returns before this when Current() is nil, so a nil
+	// here would be a bug in the loop rather than a state to render politely.
+	// The guard that was here shipped as dead code and would have hidden that.
 	return q.Keys() + ", " + sessionKeys
 }
 

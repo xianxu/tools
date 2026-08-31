@@ -44,6 +44,21 @@ const maxOptions = 4
 // The result is SHUFFLED, so the answer does not sit in slot 1 every time.
 func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	used := map[string]bool{target.Word: true}
+	// DEDUP ON GLOSS TOO, not just on word, and seeded with the ANSWER's gloss.
+	//
+	// Two deck words can resolve to one dictionary entry: `jalapeño` and
+	// `jalapeno` are separate deck keys (store.Key folds case and whitespace but
+	// not diacritics) and the dictionary answers both with the same entry, which
+	// is documented, production, accent-insensitive behaviour. Keying only on
+	// Word then puts BYTE-IDENTICAL glosses in one option set, one marked
+	// Correct and one not — so a learner who reads both and picks the other one
+	// is recorded as a miss, given a fabricated axis, and has the word demoted.
+	//
+	// `crossReferenced` cannot catch it: neither headword appears in the shared
+	// gloss. Nothing upstream can, either, because both words are real deck
+	// entries whose entry genuinely defines them. The set is the only place that
+	// can see two options saying the same thing.
+	usedGloss := map[string]bool{target.Gloss: true}
 	var distractors []Candidate
 	rng := newPRNG(seed)
 
@@ -69,8 +84,10 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 
 	take := func(c Candidate) {
 		used[c.Word] = true
+		usedGloss[c.Gloss] = true
 		distractors = append(distractors, c)
 	}
+	free := func(c Candidate) bool { return !used[c.Word] && !usedGloss[c.Gloss] }
 
 	// Pass 1: one per axis, scarcest axis first.
 	for _, want := range distractorAxes {
@@ -78,7 +95,7 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 			break
 		}
 		for _, i := range order {
-			if c := pool[i]; c.Axis == want && !used[c.Word] {
+			if c := pool[i]; c.Axis == want && free(c) {
 				take(c)
 				break
 			}
@@ -89,7 +106,7 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 		if len(distractors) >= maxOptions-1 {
 			break
 		}
-		if c := pool[i]; !used[c.Word] {
+		if c := pool[i]; free(c) {
 			take(c)
 		}
 	}

@@ -168,6 +168,20 @@ func entryDefines(word string, e Entry) bool {
 	return false
 }
 
+// fallbackReasons is every reason choiceFor refuses, as prose a doc must carry.
+//
+// DECLARED rather than described, because the same enumeration was being
+// hand-maintained in three places — this function, the README and the atlas —
+// and had already drifted: both docs listed two of the reasons and the atlas
+// listed one, while the code branched on three. A sentence that enumerates
+// ("X, or Y") is a closed claim about the code, so it derives from here or it
+// goes stale. Same move doc_sync_test.go already made for the prompt lines.
+var fallbackReasons = []string{
+	"the deck has no other word to draw on",
+	"the entry is nothing but cross-references",
+	"the entry defines a different word",
+}
+
 // choiceFor builds form 2.3 for one word, or reports that it cannot.
 //
 // Cannot happens for three ordinary reasons, none an error: the entry does not

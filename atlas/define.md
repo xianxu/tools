@@ -2004,10 +2004,41 @@ so "no axis on a right answer" is enforced by the type rather than by a branch a
 caller could forget. `ReviewEvent.Missed` sits ABOVE `At`, because the
 torn-record rule leans on `at:` being the last key on disk.
 
-**Below two options it is not a question**, and the session falls back to form
-2.1. A learner three lookups in has a deck of three; that is the normal early
-state of the tool, not an edge case, and the fallback is invisible — the sitting
-stays the length the schedule asked for.
+**Three things send a word to form 2.1**, and the list is DECLARED
+(`fallbackReasons`, `optionpool.go`) because it was being hand-maintained in the
+code, the README and here, and had already drifted to two, two and one:
+
+1. **the deck has no other word to draw on** — a learner three lookups in has a
+   deck of three, which is the normal early state of the tool rather than an
+   edge case;
+2. **the entry is nothing but cross-references** — `bases` is "plural form of
+   base1", so there is no definition to be the right answer;
+3. **the entry defines a different word** — NOAD redirects derived forms to
+   their base, so `bargainer` returns the `bargain` entry.
+
+The fallback is invisible to the learner and the sitting stays the length the
+schedule asked for.
+
+**Reason 3 is the one that had to be learned.** Form 2.1 shows the whole rendered
+entry, DERIVATIVES line included, so a redirect is harmless under it; form 2.3
+asserts that ONE gloss IS the word's meaning, records `Correct`, and promotes the
+word on that basis. The same dictionary behaviour is fine under one form and
+wrong under the other, and the assumption was inherited rather than re-examined
+when the form changed. `entryDefines` gates it, and both PRODUCERS of a
+(word, gloss) pair call it — `optionCandidates` and `targetCandidate` — rather
+than the caller, because gating the caller caught the target and left the
+distractor path open for a round.
+
+**An option set also dedups on GLOSS, not only on word.** Two deck keys can
+resolve to one entry: `jalapeño` and `jalapeno` are separate keys (`store.Key`
+folds case and whitespace but not diacritics) and the dictionary answers both
+identically. Keyed on word alone, a set then carries byte-identical options with
+one marked correct — so a learner who reads both and picks the other is recorded
+as a miss, given an axis they never chose, and has the word demoted for being
+right. Nothing upstream can catch it: both words are real deck entries whose
+entry genuinely defines them, and neither headword appears in the shared gloss,
+so `crossReferenced` is blind to it. The option set is the only place that can
+see two options saying the same thing.
 
 **The seed drives SELECTION, not just the order options appear in**, and the
 first version got that wrong in a way both Done-when rows were green on. The

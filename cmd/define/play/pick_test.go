@@ -131,7 +131,15 @@ func TestPickOptionsWithATinyDeck(t *testing.T) {
 	} {
 		var pool []Candidate
 		for i := 0; i < tc.pool; i++ {
-			pool = append(pool, Candidate{Word: string(rune('a' + i)), Gloss: "g", Axis: AxisGeneral})
+			// DISTINCT glosses. The first version gave every candidate "g",
+			// which the gloss-dedup rule correctly collapses to one option —
+			// a fixture that could not represent a real deck, where two words
+			// sharing a definition is the anomaly this form now guards against.
+			pool = append(pool, Candidate{
+				Word:  string(rune('a' + i)),
+				Gloss: "definition number " + string(rune('a'+i)),
+				Axis:  AxisGeneral,
+			})
 		}
 		got := PickOptions(target, pool, 1)
 		if len(got) != tc.want {
@@ -261,5 +269,35 @@ func TestPRNGSequenceIsPinned(t *testing.T) {
 	z := newPRNG(0)
 	if a, b := z.next(), z.next(); a == 0 || a == b {
 		t.Errorf("seed 0 degenerated: %d, %d", a, b)
+	}
+}
+
+// NO TWO OPTIONS MAY SAY THE SAME THING, including the answer.
+//
+// Two deck words can resolve to one dictionary entry — `jalapeño` and `jalapeno`
+// are separate deck keys that the dictionary answers identically — so a set
+// deduped on Word alone offers byte-identical glosses, one Correct and one not.
+// The learner who picks the other one is recorded as a miss with a fabricated
+// axis, and the word is demoted for answering correctly.
+func TestPickOptionsNeverRepeatsAGloss(t *testing.T) {
+	shared := "a very hot green chili pepper, used especially in Mexican cooking"
+	tgt := Candidate{Word: "jalapeno", Gloss: shared}
+	pool := []Candidate{
+		{Word: "jalapeño", Gloss: shared, Axis: AxisGeneral}, // the same entry
+		{Word: "jalapeños", Gloss: shared, Axis: AxisDomain}, // and again
+		{Word: "mesa", Gloss: "a flat-topped hill", Axis: AxisGeneral},
+		{Word: "quokka", Gloss: "a small wallaby", Axis: AxisRegister},
+	}
+	for s := uint64(0); s < 60; s++ {
+		opts := PickOptions(tgt, pool, s)
+		seen := map[string]bool{}
+		for _, o := range opts {
+			if seen[o.Gloss] {
+				t.Fatalf("seed %d: two options share the gloss %q — one is marked Correct "+
+					"and the other is not, so reading them both and picking the second "+
+					"records a miss for a right answer: %+v", s, o.Gloss, opts)
+			}
+			seen[o.Gloss] = true
+		}
 	}
 }

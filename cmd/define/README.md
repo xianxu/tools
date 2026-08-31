@@ -65,20 +65,28 @@ dictionary labels (`Law`, `Grammar`, `Nautical`), one is marked for register
 pick is recorded, not just whether you were right — so "kept picking the archaic
 ones" is a thing your history can eventually tell you.
 
-A word is never offered as a distractor against a word whose dictionary
-definition mentions it. NOAD defines close synonyms through each other —
-`sycophantic` is glossed *"behaving or done in an obsequious way"* — and that
-cross-reference is exactly the case where two options could both be defensible.
+A word is not offered as a distractor against a word whose dictionary definition
+mentions it. NOAD defines close synonyms through each other — `sycophantic` is
+glossed *"behaving or done in an obsequious way"* — and that cross-reference is
+exactly the case where two options could both be defensible. It is a filter, not
+a proof: it only matches headwords of six characters or more (shorter ones like
+"thing" appear in too many definitions by coincidence), and two words can be
+close in meaning without the dictionary ever linking them.
 
 Answer and the full entry appears, with the right answer and what you picked
 named above it.
 
 ### Recall, on a young deck
 
-With no other word to draw on there is nothing to choose between, so the word
-appears alone and you rate yourself. This is what the very first review gets — a
-one-word deck, or a word whose entry is nothing but cross-references ("another
-term for …"), which cannot be the answer to a recognition question.
+The word appears alone and you rate yourself. A word gets this form when a
+multiple choice is not possible, and there are exactly three reasons:
+
+- **the deck has no other word to draw on** — the very first reviews;
+- **the entry is nothing but cross-references** ("another term for …"), so there
+  is no definition to be the right answer;
+- **the entry defines a different word** — the dictionary sends derived forms to
+  their base, so looking up *bargainer* returns *bargain*, and offering that
+  definition as *bargainer*'s meaning would be wrong.
 
 ```
 $ define --play

@@ -313,3 +313,28 @@ func TestAtlasDescribesEveryRenderOpt(t *testing.T) {
 		}
 	}
 }
+
+// The README must name EVERY reason a word falls back to form 2.1.
+//
+// Derived from the code's own list rather than checked against a copy in the
+// test, because a hand-maintained enumeration is what failed: choiceFor branched
+// on three reasons while the README named two and the atlas named one, and the
+// third — a dictionary redirect sending `bargainer` to `bargain` — is
+// user-visible, since that word silently gets the other form.
+func TestREADMENamesEveryFallbackReason(t *testing.T) {
+	b, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	readme := strings.ToLower(string(b))
+	if len(fallbackReasons) == 0 {
+		t.Fatal("no fallback reasons declared; this guard would certify nothing")
+	}
+	for _, r := range fallbackReasons {
+		if !strings.Contains(readme, strings.ToLower(r)) {
+			t.Errorf("README.md does not name the fallback reason %q.\n"+
+				"A learner whose word silently gets the other form has no way to know why. "+
+				"Add it, or change fallbackReasons if the wording moved.", r)
+		}
+	}
+}
