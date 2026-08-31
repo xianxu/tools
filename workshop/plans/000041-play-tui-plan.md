@@ -63,7 +63,20 @@ prog[key] = schedule.Answer(prog[key], grade, now)
 
 That is not an approximation of `Fold` — it is the function `Fold` applies, so the in-memory figures cannot drift from what the next sitting will derive. `DailyLoad` is then a walk over the deck slice in memory: a few thousand iterations of at most twenty integer multiplications, which is microseconds, and it is charged per ANSWER rather than per frame only because there is no reason to redo it more often.
 
-**Total new IO for a sitting: one deck read and one log read**, both of which the sitting already performs to build the queue — so the honest budget is that this issue adds NO disk reads at all if `todaysQuestions` hands its work down instead of discarding it (`play_loop.go:249` computes both and returns neither, which `#39`'s BR-1 already noted).
+**THE FULL IO ENUMERATION, because a cost claim has to name every site that pays it — including the ones this plan does not modify.** Four exist today or are added here:
+
+| site | reads today | after this issue |
+|---|---|---|
+| `todaysQuestions` `:238`, `:242` | `Deck()` + `Events()` | unchanged — the one read, now RETURNED rather than discarded |
+| `finish` `:384`, `:388` | `Deck()` + `Events()` again | **removed** — takes the figures the loop already holds |
+| the per-answer refresh | — | in memory, no IO |
+| the frame paint | — | no IO |
+
+So a sitting reads the deck once and the log once, whatever its length. **`finish` re-reading was `#39` T7's deliberate choice** — *"the figure a learner should see is the one AFTER today"* — and that reasoning survives while its mechanism does not: the loop's in-memory `prog` is updated by the SAME `schedule.Answer` the fold applies, so it already IS the after-today figure. `#39` had no in-memory copy to use; this issue creates one, which is what makes the re-read redundant rather than wrong.
+
+The deck also changes mid-sitting when a word is dropped, and the loop already sees that as `OutcomeDrop` — so it drops from its in-memory copy too, and the bar cannot disagree with the deck the learner just curated.
+
+**A failed read is unchanged and not a new concern:** `play_loop.go:246` already degrades a failed log read to empty progress and carries on, which is right — the reviews are recorded as they happen, and a sitting must not end because a summary could not be computed.
 
 **D8 — the bar states what it assumes.** `~14 reviews/day · 0.9 new/day at 20 a sitting · 7 of 18 done`. The `-count` assumption is already spelled out in `finish()` (`#39` D11) and the bar uses the same wording, because two spellings of one assumption is how they drift.
 
@@ -137,7 +150,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [ ] **T3 — `--play` builds a `console`** (D1, D5a). Mirror `replRaw`'s construction, including `handBack` (D5), and DELETE the reveal's `restore`/`enterRaw` pair and its error branch — playback no longer leaves raw mode. `playSession` takes the console instead of a raw writer.
 - [ ] **T4 — the question is written once** (D4). Track the written index; write `Prompt()` on transition and `Reveal()` on `OutcomeReveal`. Test that N keystrokes on one question leave ONE copy of it in the buffer — the assertion a naive port fails.
 - [ ] **T5 — the live edge** (D3, D3a). `newPinnedScreen`, and `Paint` pads the buffer region to its full height when pinned — blank rows at paint time, never lines in the buffer. `draw` computes the grading keys and the bar and calls `Draw`; the frame's shape is `Paint`'s business.
-- [ ] **T6 — the figures are in memory** (D7). `todaysQuestions` returns the deck and progress it already computes; the loop applies `schedule.Answer` on each record and recomputes `DailyLoad` from memory. Test with a counting store that a sitting of N answers reads the deck ONCE, not N times.
+- [ ] **T6 — the figures are in memory, and `finish` stops re-reading** (D7). `todaysQuestions` returns the deck and progress it already computes; the loop applies `schedule.Answer` on each record, drops on `OutcomeDrop`, and recomputes `DailyLoad` from memory. `finish` takes the figures instead of reading — superseding `#39` T7's re-read, whose REASONING survives (the after-today figure) while its mechanism becomes redundant. Counting store: a sitting of N answers calls `Deck()` exactly once and `Events()` exactly once.
 - [ ] **T7 — paging** (D6). The LOOP intercepts the wheel and PageUp/PageDown and calls `view.Scroll`/`view.Page`; `toInput` is untouched and `play` learns nothing. Test that a reveal taller than the viewport keeps the prompt word on screen after a page, and that `play.Input` gained no kind.
 - [ ] **T8 — SIGWINCH** (D1). The resize case redraws through the console, as the editor's does.
 - [ ] **T9 — pty conformance + docs.** Three existing pty tests assert over `--play`'s RAW BYTE STREAM, which becomes whole frames, so each is re-examined rather than assumed:
@@ -163,8 +176,8 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a p
 | 3 | the bar is pinned across question, reveal and resize | `TestTheBarSurvivesEveryState` | a state forgets to pass the footer |
 | 4 | a reveal taller than the viewport PAGES; the word stays on screen | `TestALongRevealPagesRatherThanScrollingTheWordAway` | paging is not wired |
 | 5 | the transcript survives exit | `TestPlayTranscriptSurvivesExit`, the shape `#30` used | `handBack` is skipped |
-| 6 | the bar's figures are computed at most once per ANSWER | `TestTheBarDoesNotReadTheDiskPerFrame` — a counting store, N answers, ≤N+1 reads | the figures move onto the frame path |
-| 7 | a failed read keeps the previous figures rather than blanking the bar | `TestTheBarSurvivesAFailedRead` | the bar disappears on a transient error |
+| 6 | a whole sitting reads the deck ONCE and the log ONCE, whatever its length | `TestASittingReadsTheDeckOnce` — a counting store, N answers, exactly one `Deck()` and one `Events()` | any of the four sites in D7's enumeration reads again |
+| 7 | a failed log read degrades to empty progress and the sitting still runs | the existing behaviour at `play_loop.go:246`, unchanged | a read failure ends a sitting whose reviews are already recorded |
 | 8 | the `-count` assumption is worded once | `TestTheBarAndTheSummaryAgree` — same formatter | the bar and `finish()` spell it differently |
 | 9 | SIGWINCH repaints mid-sitting | `TestPlayRepaintsOnResize` | the resize case is not wired |
 | 10 | the real terminal shows the bar and updates it | the `#7` pty test, extended | it works in-process and not on a tty |
@@ -234,3 +247,29 @@ Then on a real terminal with a deck of a dozen words: `define --play`, confirm t
   adds `newPinnedScreen`, and Done-when 12 pins that the editor's footer keeps
   following its content — this must not become a change to the REPL's
   appearance, which would be a second issue wearing this one's clothes.
+
+### 2026-08-31 — plan-quality round 3
+
+- **PQ-9 (and what kept PQ-3 alive) — I swept the tables in round 2 and left the
+  DONE-WHEN ROWS.** Rows 6 and 7 still encoded the per-answer-read model D7 had
+  reversed: "computed at most once per ANSWER" and "a failed read keeps the
+  previous figures", the second of which presupposes a repeated read that no
+  longer exists.
+
+  Round 2 stated the rule — *a Revision that reverses a decision re-reads every
+  table row and task that cited it* — and then applied it to two of the three
+  surfaces a plan has. **The surfaces are: the decision prose, the entity
+  tables, and the Done-when rows**, and a sweep that stops at two is how the same
+  finding returns with a new number. Applied to all three now, and the rule is
+  restated with the enumeration rather than as an instruction to be thorough.
+
+- **PQ-8 — "one deck read and one log read per sitting" was contradicted by a
+  site I wrote a day ago.** `finish` reads both again (`#39` T7), so the sitting
+  pays two of each and T6's test would have failed as written.
+
+  2nd finding in `cost-basis-unverified`, so the rule: **every IO claim names the
+  call sites that pay it and is checked against all of them, including sites the
+  plan does not modify.** The enumeration is now a table in ARCH-CONSTRAINTS with
+  four rows, and the decision it forced is a real simplification — `finish` stops
+  re-reading, because the loop now holds an in-memory `prog` updated by the same
+  transition the fold applies, which `#39` did not have available.

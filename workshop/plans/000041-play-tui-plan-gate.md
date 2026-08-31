@@ -109,6 +109,49 @@ rounds:
           family: reversed-decision-not-swept
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-31T13:44:55-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-3
+          disposition: not-addressed
+          note: Layering fixed; the shared gesture helper (replraw.go:359-385 + wheelLines at :80) and enterMouse — without which KeyWheel* is never produced (key.go:318-320) — are both still absent.
+          round: 3
+        - id: PQ-6
+          disposition: addressed
+          note: D3a names newPinnedScreen and Done-when 11/12 give row-position and no-REPL-regression predicates.
+          round: 3
+        - id: PQ-7
+          disposition: addressed
+          note: Both rows corrected and the sweep rule stated in Revision round 2.
+          round: 3
+      findings:
+        - id: PQ-8
+          severity: Important
+          title: D7's "one deck read and one log read" per sitting is contradicted by finish(), and T6's test fails against it
+          detail: |-
+            This is the 2nd finding in family cost-basis-unverified, so the deliverable is the rule, not the
+            sentence: every IO claim names the call sites that pay it and is checked against all of them,
+            including sites the plan does not modify. finish() reads Deck() and Events(anyTime) again at
+            play_loop.go:384-388, documented at :372-375 as deliberate correctness, so the sitting pays two of
+            each and T6's "reads the deck ONCE, not N times" fails as written. Write the enumeration
+            (todaysQuestions :238/:242, finish :384/:388, the new per-answer walk) and decide there whether
+            finish consumes D7's in-memory prog, since D8 already makes it share the formatter.
+          family: cost-basis-unverified
+          round: 3
+        - id: PQ-9
+          severity: Minor
+          title: Done-when rows 6 and 7 still encode the per-answer-read model D7 reversed
+          detail: |-
+            This is the 2nd finding in family reversed-decision-not-swept. The rule is already written in
+            Revision round 2; what is missing is executing the enumeration it implies across all twelve
+            Done-when rows and nine tasks. Measured prevalence in this instance: row 6's bound of N+1 reads is
+            satisfied by the design D7 rejected and disagrees with T6's "ONCE", and row 7's "keeps the previous
+            figures" presupposes a repeated read that D7 removed, where play_loop.go:246 already degrades a
+            failed log read to empty progress.
+          family: reversed-decision-not-swept
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#41 (plan-quality)
@@ -176,8 +219,34 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   (D6)" against a D6 that says it is untouched. The rule, not the two edits: a
   Revision that reverses a decision re-reads every table row and task that cited it.
 
+## Round 3 — 2026-08-31T13:44:55-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-3 — not-addressed — Layering fixed; the shared gesture helper (replraw.go:359-385 + wheelLines at :80) and enterMouse — without which KeyWheel* is never produced (key.go:318-320) — are both still absent.
+- PQ-6 — addressed — D3a names newPinnedScreen and Done-when 11/12 give row-position and no-REPL-regression predicates.
+- PQ-7 — addressed — Both rows corrected and the sweep rule stated in Revision round 2.
+
+### Raised
+
+- **PQ-8** [Important] `cost-basis-unverified` D7's "one deck read and one log read" per sitting is contradicted by finish(), and T6's test fails against it
+  This is the 2nd finding in family cost-basis-unverified, so the deliverable is the rule, not the
+  sentence: every IO claim names the call sites that pay it and is checked against all of them,
+  including sites the plan does not modify. finish() reads Deck() and Events(anyTime) again at
+  play_loop.go:384-388, documented at :372-375 as deliberate correctness, so the sitting pays two of
+  each and T6's "reads the deck ONCE, not N times" fails as written. Write the enumeration
+  (todaysQuestions :238/:242, finish :384/:388, the new per-answer walk) and decide there whether
+  finish consumes D7's in-memory prog, since D8 already makes it share the formatter.
+- **PQ-9** [Minor] `reversed-decision-not-swept` Done-when rows 6 and 7 still encode the per-answer-read model D7 reversed
+  This is the 2nd finding in family reversed-decision-not-swept. The rule is already written in
+  Revision round 2; what is missing is executing the enumeration it implies across all twelve
+  Done-when rows and nine tasks. Measured prevalence in this instance: row 6's bound of N+1 reads is
+  satisfied by the design D7 rejected and disagrees with T6's "ONCE", and row 7's "keeps the previous
+  figures" presupposes a repeated read that D7 removed, where play_loop.go:246 already degrades a
+  failed log read to empty progress.
+
 ## Open findings
 
 - **PQ-3** [Important] `viewport-gesture-layering` D6 routes paging through toInput, which would teach the pure play package about a viewport
-- **PQ-6** [Important] `inherited-mechanism-unverified` D3 claims the bar pins to the bottom for free, but Paint never pads a short buffer
-- **PQ-7** [Minor] `reversed-decision-not-swept` Round 1's reversals were folded into the Decisions but left standing in the tables
+- **PQ-8** [Important] `cost-basis-unverified` D7's "one deck read and one log read" per sitting is contradicted by finish(), and T6's test fails against it
+- **PQ-9** [Minor] `reversed-decision-not-swept` Done-when rows 6 and 7 still encode the per-answer-read model D7 reversed
