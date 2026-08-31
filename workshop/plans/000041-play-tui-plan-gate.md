@@ -152,6 +152,37 @@ rounds:
           family: reversed-decision-not-swept
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-31T13:49:01-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-3
+          disposition: not-addressed
+          note: Routing before toInput is fixed; the shared helper and enterMouse are still unstated.
+          round: 4
+        - id: PQ-8
+          disposition: addressed
+          note: Four-site enumeration is complete — I confirmed no other Deck()/Events() caller in the play path.
+          round: 4
+        - id: PQ-9
+          disposition: addressed
+          note: Rows 6 and 7 now match D7, and row 7's claim verifies against play_loop.go:242-246.
+          round: 4
+      findings:
+        - id: PQ-10
+          severity: Minor
+          title: Done-when row 7 is pinned by "the existing behaviour, unchanged" and no test covers that behaviour today
+          detail: |-
+            The Done-when preamble requires every pin be a named test or a grep for a property, never
+            "file X is unchanged", and row 7 is the one row that breaks its own rule. Grepping the
+            message at play_loop.go:246 finds no test asserting the degraded path. T6 changes
+            todaysQuestions' signature so that path must now hand the loop a usable empty progress
+            rather than merely continuing locally, which is precisely when an uncovered branch is worth
+            a test.
+          family: pin-without-predicate
+          round: 4
+      blocked: false
+content_hash: 1af18d02b97caa3d67fbd669db50ba4df96d31726d1cce55bef6f30b85bbd645
 ---
 
 # Gate ledger — tools#41 (plan-quality)
@@ -245,8 +276,25 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   figures" presupposes a repeated read that D7 removed, where play_loop.go:246 already degrades a
   failed log read to empty progress.
 
+## Round 4 — 2026-08-31T13:49:01-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-3 — not-addressed — Routing before toInput is fixed; the shared helper and enterMouse are still unstated.
+- PQ-8 — addressed — Four-site enumeration is complete — I confirmed no other Deck()/Events() caller in the play path.
+- PQ-9 — addressed — Rows 6 and 7 now match D7, and row 7's claim verifies against play_loop.go:242-246.
+
+### Raised
+
+- **PQ-10** [Minor] `pin-without-predicate` Done-when row 7 is pinned by "the existing behaviour, unchanged" and no test covers that behaviour today
+  The Done-when preamble requires every pin be a named test or a grep for a property, never
+  "file X is unchanged", and row 7 is the one row that breaks its own rule. Grepping the
+  message at play_loop.go:246 finds no test asserting the degraded path. T6 changes
+  todaysQuestions' signature so that path must now hand the loop a usable empty progress
+  rather than merely continuing locally, which is precisely when an uncovered branch is worth
+  a test.
+
 ## Open findings
 
 - **PQ-3** [Important] `viewport-gesture-layering` D6 routes paging through toInput, which would teach the pure play package about a viewport
-- **PQ-8** [Important] `cost-basis-unverified` D7's "one deck read and one log read" per sitting is contradicted by finish(), and T6's test fails against it
-- **PQ-9** [Minor] `reversed-decision-not-swept` Done-when rows 6 and 7 still encode the per-answer-read model D7 reversed
+- **PQ-10** [Minor] `pin-without-predicate` Done-when row 7 is pinned by "the existing behaviour, unchanged" and no test covers that behaviour today
