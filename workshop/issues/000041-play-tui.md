@@ -1,11 +1,12 @@
 ---
 id: 000041
-status: open
+status: working
 deps: ["tools#39"]
 github_issue:
 created: 2026-08-31
 updated: 2026-08-31
 estimate_hours:
+started: 2026-08-31T13:26:27-07:00
 ---
 
 # play mode paints frames through screen, and gains a status bar
