@@ -107,7 +107,7 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 |------|----------|--------|------|
 | `Paint` | `cmd/define/screen.go` | modified | PURE — `menu` renamed `footer`; pads the buffer region when the screen is pinned (D2, D3a) |
 | `newPinnedScreen` | `cmd/define/screen.go` | new | the `--play` constructor: buffer fills, footer at the bottom. A named constructor rather than a bool at a call site already taking two ints |
-| `fitMenu` | `cmd/define/screen.go` | modified | PURE — renamed `fitFooter` with it, so the pair does not disagree |
+| `fitFooter` | `cmd/define/screen.go` | modified | PURE — was `fitMenu`; renamed with `Paint`'s parameter so the pair cannot disagree about what it fits |
 | `sittingBar` | `cmd/define/playbar.go` | new | PURE — figures + progress → the bar's text. Takes numbers, never a deck |
 
 - **`sittingBar`** — the footer's text for one moment in a sitting.
