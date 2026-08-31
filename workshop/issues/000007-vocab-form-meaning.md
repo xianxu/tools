@@ -5,7 +5,7 @@ deps: ["tools#6"]
 github_issue:
 created: 2026-08-20
 updated: 2026-08-30
-estimate_hours: 2.85
+estimate_hours: 2.81
 started: 2026-08-30T17:13:15-07:00
 ---
 
@@ -63,44 +63,70 @@ is downstream of that one decision.
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
-item: greenfield-go-module     design=0.3  impl=0.2
-item: smaller-go-module        design=0.2  impl=0.2
-item: greenfield-go-module     design=0.5  impl=0.32
-item: cross-cutting-refactor   design=0.2  impl=0.16
-item: smaller-go-module        design=0.1  impl=0.16
-item: atlas-docs               design=0.05 impl=0.06
-item: milestone-review         design=0.0  impl=0.2
+item: issue-spec               design=0.45 impl=0.1
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.03 impl=0.2
+item: greenfield-go-module     design=0.06 impl=0.32
+item: smaller-go-module        design=0.02 impl=0.12
+item: cross-cutting-refactor   design=0.03 impl=0.14
+item: greenfield-go-module     design=0.05 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.16
+item: atlas-docs               design=0.03 impl=0.06
+item: milestone-review         design=0.0  impl=0.16
+item: milestone-review         design=0.0  impl=0.12
+item: milestone-review         design=0.0  impl=0.1
 design-buffer: 0.15
-total: 2.85
+total: 2.81
 ```
 
 *Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
 `baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
 `sdlc estimate-source` (the ledger is newer; recalibration is `#127`), so the
-per-primitive hours are provisional — recorded here because a close-time
-comparison against a provisional baseline should know it was provisional.
-
-**Item by item**, so the close can score the derivation and not just the total:
+per-primitive hours are provisional — recorded because a close-time comparison
+against a provisional baseline should know it was provisional.
 
 | item | task | why this primitive |
 |---|---|---|
-| `greenfield-go-module` 0.3/0.2 | T1 `senseLabel`, `noadLabels`, `excludeCrossReferenced` | new single-concern text parsing over dictionary prose; design mostly spent in D2/D3/D3a |
-| `smaller-go-module` 0.2/0.2 | T2 `Choice`, `Option`, `Axis` | MIRRORS `Recall`, an existing form implementing the same interface — extend, not greenfield. Impl at the top of the range for D5a's import-free constraint |
-| `greenfield-go-module` 0.5/0.32 | T3 `pickOptions`, `shuffle` | the real algorithm: axis priority, determinism, hand-rolled PRNG, small-deck degradation. The highest design line because D1/D2a/D3a/D4a are all this task |
-| `cross-cutting-refactor` 0.2/0.16 | T4 the axis into the record | four files — `Outcome`, `CaptureReview`, `ReviewEvent`, the store — widening one value |
-| `smaller-go-module` 0.1/0.16 | T5 wire into `--play` | extending a walk that already exists (`play_loop.go:255-265`) |
-| `atlas-docs` 0.05/0.06 | T6 | README section, atlas, project row |
-| `milestone-review` 0.0/0.2 | the one boundary | single-pass work, one `sdlc close`; impl at the top of the range because a boundary rarely clears in one round |
+| `issue-spec` 0.45/0.1 | the design carrier | spec, plan doc, three plan-quality rounds. **Measured, not allocated** — see below |
+| `greenfield-go-module` 0.05/0.24 | T1 `senseLabel`, `noadLabels`, `excludeCrossReferenced` | new single-concern parsing over dictionary prose |
+| `smaller-go-module` 0.03/0.2 | T2 `Choice`, `Option`, `Axis` | MIRRORS `Recall`; impl at the top of the range for D5a's import-free constraint |
+| `greenfield-go-module` 0.06/0.32 | T3 `pickOptions`, `shuffle` | axis priority, determinism, hand-rolled PRNG, small-deck degradation |
+| `smaller-go-module` 0.02/0.12 | T4a `ReviewEvent` field + the `At` ordering | the store half, pinned by the torn-record test |
+| `cross-cutting-refactor` 0.03/0.14 | T4b `Outcome`, `CaptureReview`, `Apply` | the widening across the session seam |
+| `greenfield-go-module` 0.05/0.24 | T5a the pool + seeded sampling under a cap | **not an extension**: ARCH-CONSTRAINTS requires a sampling mechanism that does not exist yet |
+| `smaller-go-module` 0.02/0.16 | T5b `TestASittingFallsBackToRecall`, `TestSittingWithNoModelAndNoNetwork` | sitting-level integration, not unit |
+| `atlas-docs` 0.03/0.06 | T6 | README section, atlas, project row |
+| `milestone-review` 0.0/0.16 | the boundary, run | |
+| `milestone-review` 0.0/0.12 | the boundary, remediate | a boundary rarely clears in one round; `#30` booked both lines per boundary and still overran |
+| `milestone-review` 0.0/0.1 | the manual verification pass | "Verification before close" is a real terminal, a deliberate wrong answer, event-log inspection, a network-off sitting, `-race` and `-tags conformance`. `#30` gave exactly this its own line |
 
-**A risk this number does NOT price in, recorded so the close reads honestly.**
-`#30` — the immediately preceding issue in this repo, same author, same
-codebase — estimated 3.19h and measured **10.91h, a 3.4× overrun**, across 13
-boundary rounds. Nothing here is fudged upward to compensate: applying a private
-correction factor would corrupt the very ledger that is supposed to detect the
-bias (`#127`), and the model's own recalibration is the right place for it. But
-if this issue also lands near 3×, that is two consecutive rows saying the v3.1
-impl scale is too aggressive for `define`-sized work, and the pair is worth more
-to the ledger than either row alone.
+**Design is MEASURED here, not allocated.** `sdlc actual --issue 7` reports
+**0.18h** attributed to `#7` over the claim-to-estimate window
+(`3c098707` 17:13 → 17:45, 0.53h elapsed and shared with `#30` and `#38`). The
+first version of this block booked **1.35h** of design — smeared as round
+`0.3`/`0.2`/`0.5` allocations across the task lines, against a window that
+cannot contain it. It is now one measured `issue-spec` carrier at 0.45, with the
+per-task design lines at `0.02`–`0.06`, because the plan doc has already
+pre-resolved the decisions those lines would have paid for: D6/D7/D8 settle T4
+entirely, D1a/D4/D5a settle T2, D2/D3 settle T1. Design that is already spent is
+not design that remains.
+
+**Why the total barely moved, and why that is the interesting part.** 2.85 →
+2.81. But design fell 1.35 → 0.74 and impl rose 1.30 → 1.96, and the
+redistribution is the whole point. `#30` estimated 3.19h and measured **10.91h
+(3.4×)** across 13 boundary rounds; the open question that overrun poses for
+`#127` is whether v3.1's *implementation* scale — impl written at 40% of the v2
+table — is too aggressive for `define`-sized work. A row can only answer that if
+impl is the line carrying the estimate. The first version raised **design**, the
+line that is already spent and shrinkable, and left impl *below* `#38`'s 1.40 —
+so however it landed, it would not have isolated the variable. This version sits
+above `#38` on impl and below it on design, which makes it a clean same-unit
+test.
+
+Still no private correction factor, and deliberately: applying one would corrupt
+the ledger that exists to detect the bias. If this lands near 3× again, that is
+two consecutive rows against the impl scale, and the pair is worth more to `#127`
+than either row alone.
 
 ## Plan
 
