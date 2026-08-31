@@ -1,6 +1,6 @@
 ---
 id: 000038
-status: working
+status: punt
 deps: []
 github_issue:
 created: 2026-08-30
@@ -199,6 +199,27 @@ Derivation notes.
 - [ ] T8 — docs: the README's review-loop section and the atlas's.
 
 ## Log
+
+### 2026-08-30 — PARKED after T0, deliberately
+
+Operator moved to the review-forms work. Parked rather than abandoned: the plan
+cleared four rounds of plan-quality and is the durable part, so resuming is
+`sdlc claim --issue 38` and picking up at T1.
+
+**State when parked.** T0 is DONE and merged into the branch
+`000038-play-clickable` — `options.playsAudio()` is one predicate applied inside
+`playAnnounced`, replacing four hand-copies in two spellings, with the row none
+of the existing audio tests could be (they all go through callers that stop
+first). That task stands on its own and would be worth keeping even if the rest
+of this issue never happens.
+
+T1–T8 are unstarted. The branch is unpublished, so nothing is on `main`.
+
+**The one thing a resumer must not lose**, because it is the reason the plan took
+four rounds: `--play`'s playback restores raw mode, and since `#30` folded the
+alternate screen and mouse reporting into `rawSession`, `restore()` tears both
+down while `enterRaw()` returns a session with neither. Adopting the screen
+without deleting that dance (T2) breaks the sitting at the first reveal, silently.
 
 ### 2026-08-30
 
