@@ -57,8 +57,10 @@ Measured over the corpus: this fires on 3 of 34 first-glosses, and all three are
 
 **D4a — WHICH SENSE becomes an option is defined, because determinism and the axis both rest on it.** `bank` has a dozen senses; picking one arbitrarily makes the question non-reproducible and the axis meaningless.
 
-- **The correct option is the target's FIRST sense of its FIRST block** — NOAD orders senses by centrality, so this is the meaning a learner is most likely to have met, and it is the same sense `Recall`'s reveal leads with.
-- **A distractor's sense is the one CARRYING the axis being sought**: for `AxisDomain`, the first sense whose gloss leads with a domain label; for `AxisRegister`, likewise; for `AxisGeneral`, the first sense of the first block, as above.
+- **The correct option is the target's first USABLE sense in document order** — the first block's, whenever that block has one. NOAD orders senses by centrality, so this is the meaning a learner is most likely to have met. It takes the first usable sense of ANY axis: a `rare` or `Law` sense is still what the entry leads with, and skipping to a later unlabelled one would ask about a meaning NOAD does not put first.
+- **A distractor's sense is the one CARRYING the axis being sought**: for `AxisDomain`, the first sense whose gloss leads with a domain label; for `AxisRegister`, likewise; for `AxisGeneral`, **the first UNLABELLED usable sense** — across all blocks, not "the first sense of the first block".
+
+  *Corrected 2026-08-30 (BR-12b). The original said "the first sense of the first block" for both, which is wrong for any entry whose opening sense is labelled: `defenestrate`'s general candidate is a later sense, because its first usable one is `rare`. The code was right and this text was stale — and `#12` reuses this rule, so the imprecision would have propagated.*
 - A candidate that cannot supply the sought axis is not a candidate FOR THAT SLOT, which is what makes the fallback to `general` a selection outcome rather than a special case.
 
 **D5a — `play` imports NOTHING, and the new code KEEPS it that way rather than widening the allowlist.** Measured: `go list -f '{{join .Imports}}' ./cmd/define/play` returns empty, and `play/purity_test.go:21` is `ImportsOnly(t, playPkg, []string{})` — `puretest` calls an empty allowlist *"the strongest possible version of the claim"*, and `#30` BR-41 added a dedicated fixture because `play` importing nothing was that guard's only pin. Adding `fmt`, `strings` and `math/rand` to build a form would quietly retire it.
@@ -144,6 +146,7 @@ SHIPPED. The originals named five entities the tree does not have, because the
 | `CaptureReview` | `cmd/define/capture.go` | modified | the event log — widened to carry the chosen axis (D7) |
 | `ReviewEvent.Missed` | `cmd/define/store/event.go` | new | the field carrying the chosen axis, placed ABOVE `At` (D6) |
 | `Outcome` | `cmd/define/play/session.go` | modified | carries the chosen axis out of `Apply` |
+| `Missed` | `cmd/define/play/session.go` | new | **EXPORTED** — the optional capability a form implements to say WHY it was missed. `Apply` asks; form 2.1 does not implement it, because a failed recall has no kind. Missed from round 1's table patch, which is what BR-12 named |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | builds the option pool from the deck it already walks |
 | `buildPool` | `cmd/define/optionpool.go` | new | the dictionary — one lookup per sampled pool word, capped at `poolCap` |
 | `Question` | `cmd/define/play/question.go` | modified | gains `Keys()`, so a form describes its own answer keys. NOT anticipated by the plan: the loop's grading prompt was a const spelling form 2.1's `y`/`n`, and it was printed under form 2.3's numbered options |
@@ -173,11 +176,12 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 |---|---|---|---|
 | 1 | four options, exactly one correct, from the deck | `TestPickOptionsHasOneAnswer` | a second option's gloss is the target's |
 | 2 | the CHOSEN option is recorded, not just correctness | `TestAMissRecordsTheAxisItChose` | the axis is collapsed to a boolean |
-| 3 | deterministic under a fixed seed | `TestPickOptionsIsDeterministic` | selection reaches for map order or wall-clock |
+| 3 | deterministic under a fixed seed | `TestPickOptionsIsDeterministic`, `TestPRNGSequenceIsPinned`, `TestSeedForIsPinned` | selection reaches for map order or wall-clock, **or the PRNG/hash constants move** — the goldens are what make "ours, not the runtime's" true rather than asserted |
 | 4 | degrades below four deck words | `TestPickOptionsWithATinyDeck`, `TestASittingFallsBackToRecall` | a two-word deck produces a broken question or a skipped word |
 | 5 | works with the network off | `TestSittingWithNoModelAndNoNetwork` | any path here reaches the model seam |
 | 6 | the axes are the reduced taxonomy, and only that | `TestEveryAxisIsSelectable` — derived from the `Axis` set, as `#30`'s registry guards are | an axis is added that nothing can select |
 | 7 | the SESSION did not change to accept a second form | `TestSessionIsFormAgnostic` (`play/session_test.go:327`) green, AND no form name (`Choice`, `Recall`) appears inside `playSession` or `play.Apply` — a grep, not a file-state claim | either predicate fails |
+| 9 | a SITTING is not one question repeated: the distractors vary per question | `TestPickOptionsVariesTheDistractorsAcrossASitting` — 20 targets over one pool must give ≥8 distinct distractor sets | the seed reaches only the final shuffle, so every target takes the same first-matching candidate out of the once-per-sitting pool |
 | 8 | `At` stays last in the event record | the existing torn-record test green, AND `at:` is the last key of a written record — the property, not the test file's mtime | the new field is appended after `at:` |
 
 ---
@@ -347,3 +351,48 @@ lookups, and asserts the pool is not silently empty either.
 
 **BR-6 — the README's fallback threshold was off by one.** Corrected, along with
 a note that a young deck gets two or three options rather than four.
+
+### 2026-08-30 — close review round 2: the RULE behind BR-2, and four stale comments
+
+**BR-12 is the second finding in `plan-artifact-must-match-tree`, so the
+deliverable is the rule, not three more patches.**
+
+> **A plan's entity tables and Done-when rows are DERIVED from the tree at the
+> close, never hand-patched against a reviewer's enumeration.** For exported
+> surface that means running `go doc -short` on each touched package and
+> checking every name against the table; for pins, grepping the test names the
+> rows cite; for decisions, re-reading each `D` against the function that
+> implements it.
+
+Round 1 fixed exactly the five rows BR-2 listed and left its siblings, which is
+the failure mode the rule exists to end — a reviewer's list is a SAMPLE, and
+patching the sample is how the same finding returns. Applied here:
+
+```
+$ go doc -short ./cmd/define/play | grep -oE '^(type|func) [A-Z][A-Za-z]*'
+```
+
+Fifteen exported names. Eleven are in the table; four are not — `Input`,
+`InputKind`, `OutcomeKind` and `Session` — and those four are `#6`'s, untouched
+by this window, so they correctly belong to no row here. The one real gap the
+derivation found is `Missed`, now added. That is what running the check buys
+over reading the diff: it distinguishes "missing" from "not mine".
+
+**BR-12b — D4a was stale**, and the code was right. Corrected above.
+
+**BR-12c — the round-1 pin never became a Done-when row.** The Revisions
+described `TestPickOptionsVariesTheDistractorsAcrossASitting` and the table kept
+eight rows, so the artifact still asserted that rows 1 and 3 covered selection —
+the wording that was green on a Critical defect. Row 9 added, row 3 widened to
+name the goldens.
+
+**Five doc comments stated behaviour the code does not have** (3rd finding in
+`docs-restate-behaviour-inaccurately`), so the rule there too: *a comment making
+a falsifiable behavioural claim must be derived, pinned, or weakened to the true
+claim.* The worst of the five was not a slip but an OVERCLAIM I had repeated in
+three places — that the hand-rolled PRNG and hash make a question "reproducible
+from a log indefinitely". They do not and cannot: the option set also depends on
+the pool, which is the deck's membership and `LastSeen` ordering at that moment,
+and the event log records none of it. The true claim — the same deck on the same
+day yields the same sitting, so a restart re-asks rather than reshuffles — is
+narrower, still worth the code, and now what the comments say.

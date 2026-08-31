@@ -115,12 +115,17 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 
 // prng is a hand-rolled xorshift64.
 //
-// NOT math/rand, and the reason is stronger than this package's import guard.
-// Done-when 3 claims a fixed seed gives the same question — forever, so that a
-// question can be reproduced from a log. math/rand's sequence for a given seed
-// is a property of the Go runtime, and the top-level generator's behaviour has
-// already changed once across versions. A PRNG defined here is pinned by this
-// repo's own tests, which is the guarantee the Done-when actually needs.
+// NOT math/rand. The binding constraint is this package's empty import
+// allowlist, but the sequence being OURS matters on its own: math/rand's output
+// for a given seed is a property of the Go runtime, and the top-level
+// generator's behaviour has already changed once across versions.
+//
+// What that buys, stated accurately: the same deck on the same day yields the
+// same sitting, so a mid-sitting restart re-asks rather than reshuffles, and
+// tests are stable across runs and machines. It does NOT make a recorded
+// question re-derivable from the event log — the option set depends on the pool,
+// which is the deck at that moment, and the log records none of that.
+// TestPRNGSequenceIsPinned is what makes "ours" true rather than asserted.
 //
 // Not cryptographic and does not need to be: it is choosing which of four
 // definitions goes first.

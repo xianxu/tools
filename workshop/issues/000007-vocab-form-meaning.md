@@ -159,6 +159,37 @@ Created as part of the `define-learn` project.
   first design question is "wait for #7".
 
 
+### 2026-08-30 — built and closed in one pass
+
+Two claims in the plan were disproved by MEASURING the corpus before writing
+code, and both would have shipped as bugs:
+
+- **D2 — "labels lead the gloss, so extraction is a prefix match."** A grammar
+  bracket or parenthetical often comes first (`[no object] Military (of a
+  soldier) …`), and NOAD stacks regional labels in front of real ones. A prefix
+  match would have called exactly the labelled senses the axes are built from
+  unlabelled.
+- **D4 — "`Sense.Gloss` is a single clean definition line", called verified.** It
+  was checked on three entries, and one of the three (`bank`) has a sense whose
+  gloss is literally `[with object]`. `readGloss` now returns `Usable`.
+
+**A UX bug the plan never contemplated, found by reading the screen.** The
+grading prompt was a CONST in the loop spelling form 2.1's `y`/`n`. Under form
+2.3's numbered options it told the learner to press a key that did nothing — and
+no test could see it, because every test typed the keys the const named.
+`Question.Keys()` moves it onto the form; the loop keeps the session's reserved
+half. The doc guard now derives from the shipped forms.
+
+**Every `--play` pty check seeded a ONE-word deck**, so all of them were
+measuring the form 2.1 fallback and none could see form 2.3. Fixed with
+`seedDeckN`, and the new pty test is the plan's manual verification written as a
+test: real deck, real NOAD glosses, real event file, axis read back out.
+
+**Known rough edge, left deliberately:** long option glosses wrap to column 0
+with no hanging indent. Fixing it means `play` knowing the terminal width, which
+would give the caller ownership of line-breaking for a form whose point is that
+it owns no formatting. Recorded at `optionLine`.
+
 ## Revisions
 
 ### 2026-08-28 — the same rule, and a tension this form has to settle
@@ -244,35 +275,23 @@ rather than trading one horn for the other.
   The reduced taxonomy is readable only because the event keeps which option was
   picked; collapsing to a boolean forecloses it exactly as `#17`'s close warned.
 
-## Log
+### 2026-08-30 — close review round 2
 
-### 2026-08-30 — built and closed in one pass
+Verdict moved REWORK → FIX-THEN-SHIP. Round 1's Critical (the seed reaching only
+ordering, so 17 of 20 questions shared a distractor set) is fixed and pinned.
 
-Two claims in the plan were disproved by MEASURING the corpus before writing
-code, and both would have shipped as bugs:
+Round 2's blocking finding was the more instructive one: **round 1 fixed exactly
+the five rows the reviewer listed and left the siblings.** A reviewer's
+enumeration is a SAMPLE, and patching the sample is how a finding returns. The
+rule now recorded in the plan — entity tables and Done-when rows are DERIVED from
+the tree at the close (`go doc -short` per touched package, grep for the pins,
+each decision re-read against its implementing function) — and running it found
+one real gap (`play.Missed`) and correctly cleared four names that belong to `#6`
+rather than here.
 
-- **D2 — "labels lead the gloss, so extraction is a prefix match."** A grammar
-  bracket or parenthetical often comes first (`[no object] Military (of a
-  soldier) …`), and NOAD stacks regional labels in front of real ones. A prefix
-  match would have called exactly the labelled senses the axes are built from
-  unlabelled.
-- **D4 — "`Sense.Gloss` is a single clean definition line", called verified.** It
-  was checked on three entries, and one of the three (`bank`) has a sense whose
-  gloss is literally `[with object]`. `readGloss` now returns `Usable`.
-
-**A UX bug the plan never contemplated, found by reading the screen.** The
-grading prompt was a CONST in the loop spelling form 2.1's `y`/`n`. Under form
-2.3's numbered options it told the learner to press a key that did nothing — and
-no test could see it, because every test typed the keys the const named.
-`Question.Keys()` moves it onto the form; the loop keeps the session's reserved
-half. The doc guard now derives from the shipped forms.
-
-**Every `--play` pty check seeded a ONE-word deck**, so all of them were
-measuring the form 2.1 fallback and none could see form 2.3. Fixed with
-`seedDeckN`, and the new pty test is the plan's manual verification written as a
-test: real deck, real NOAD glosses, real event file, axis read back out.
-
-**Known rough edge, left deliberately:** long option glosses wrap to column 0
-with no hanging indent. Fixing it means `play` knowing the terminal width, which
-would give the caller ownership of line-breaking for a form whose point is that
-it owns no formatting. Recorded at `optionLine`.
+Also corrected: `D4a` claimed the general sense is "the first sense of the first
+block" when the code takes the first UNLABELLED usable sense (the code is right;
+`defenestrate` proves the difference), and five doc comments overclaimed — most
+notably that the hand-rolled PRNG and hash make a question "reproducible from a
+log", which they cannot, because the option set depends on deck state the log
+never records.

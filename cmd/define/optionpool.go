@@ -61,10 +61,18 @@ func buildPool(d deps, deck []store.Word, seed uint64) []play.Candidate {
 // (two options from one headword would be two answers with a single source).
 // Selection then picks whichever of them the slot it is filling needs.
 //
-//   - general: the FIRST usable sense of the first block. NOAD orders senses by
-//     centrality, so this is the meaning the learner most likely met, and it is
-//     the sense Recall's reveal leads with.
-//   - domain / register: the first usable sense whose gloss carries that label.
+//   - each axis takes the FIRST usable sense carrying it, in document order
+//     across all blocks. For general that means the first UNLABELLED usable
+//     sense — which is usually the first sense of the first block, since NOAD
+//     orders by centrality, but is a later one whenever the earlier senses are
+//     all labelled. Measured: `defenestrate`'s general candidate is not its
+//     first sense, because that one is `rare`.
+//
+// The plan's D4a said "the first sense of the first block" flatly. That was
+// written before the labelled/unlabelled split existed and is wrong for any
+// entry whose opening sense carries a label; the code is right and D4a is
+// corrected in the plan's revisions. `#12` reuses this rule, so the precise
+// statement matters beyond this form.
 //
 // "Usable" is doing real work: the corpus contains senses whose whole gloss is
 // `[with object]` or `(plural men /men/)` or `another term for menhaden`, and
@@ -86,9 +94,15 @@ func optionCandidates(word string, e Entry) []play.Candidate {
 }
 
 // targetCandidate is the sense the question is ASKING about: the first usable
-// one, first block. Not ok when the entry offers no definition at all — an
-// entry that is nothing but cross-references cannot be the answer to a
-// recognition question, so the caller falls back to form 2.1.
+// sense in document order — the first block's, whenever that block has one at
+// all. Not ok when the entry offers no definition anywhere: an entry that is
+// nothing but cross-references (`bases` — "plural form of base1") cannot be the
+// answer to a recognition question, so the caller falls back to form 2.1.
+//
+// Unlike optionCandidates this takes the first usable sense of ANY axis, not
+// the first unlabelled one. The target is what the learner looked up; a `rare`
+// or `Law` sense is still what NOAD leads with, and substituting a later
+// unlabelled one would ask about a meaning the entry does not put first.
 func targetCandidate(word string, e Entry) (play.Candidate, bool) {
 	for _, b := range e.Blocks {
 		for _, s := range b.Senses {
@@ -131,10 +145,18 @@ func choiceFor(word, rendered string, e Entry, pool []play.Candidate, seed uint6
 
 // seedFor is a question's seed: FNV-1a over the parts.
 //
-// Written out rather than taken from hash/fnv because Done-when 3 wants a
-// question reproducible from a log indefinitely, and a hash defined here is
-// pinned by this repo's tests — the same argument the shuffle makes about
-// math/rand, and the reason the two live at the same standard.
+// Written out rather than taken from hash/fnv, and the reason is narrower than
+// the first version claimed. It said "reproducible from a log indefinitely",
+// which is not true and cannot be: the option set also depends on the POOL, and
+// the pool is the deck at that moment — its membership and its `LastSeen`
+// ordering — none of which the event log records. A recorded question is not
+// re-derivable from the log alone whatever hash is used.
+//
+// What the seed does guarantee is that the same deck on the same day yields the
+// same sitting: a mid-sitting restart re-asks the same questions rather than
+// reshuffling, and tests are stable across runs and machines. Writing the hash
+// out keeps that sequence this repo's to pin (TestSeedForIsPinned) instead of a
+// property of a stdlib version — the same standard pick.go's PRNG is held to.
 //
 // The DAY is one of the parts, so a word asked again next week gets a different
 // option set. Without it the learner would meet the same four definitions in the

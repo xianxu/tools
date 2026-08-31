@@ -230,3 +230,193 @@ findings:
       atlas/define.md runs the new "Below two options it is not a question" paragraph into
       the pre-existing TestSessionIsFormAgnostic sentence on one long line.
 ```
+
+---
+
+## Re-review — 2026-08-30T20:12:15-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 7 — review form 2.3: meaning multiple choice from the local deck |
+| repo | tools |
+| issue file | workshop/issues/000007-vocab-form-meaning.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a8962469ff08154f5377a7572586c575c2d4610f..b423c58c577214ec8f2426209692bae69a434595 |
+| command | sdlc close --issue 7 |
+| reviewer | claude |
+| timestamp | 2026-08-30T20:12:15-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All eleven prior findings are genuinely addressed, and the four that were cheap to check I mutation-verified rather than took on trust: reverting the `order` permutation in `pick.go` turns `TestPickOptionsVariesTheDistractorsAcrossASitting` red (6 sets); adding `AxisConnotation` outside `distractorAxes` turns `TestEveryAxisIsSelectable` red; moving the xorshift shift and the FNV basis turns both golden tests red; deleting `keys = keys[:poolCap]` turns `TestSittingCostIsBoundedByTheCap` red. I also measured BR-1's fix end-to-end rather than only in the unit test — a 24-word corpus deck through the real `todaysQuestions` now yields **19 distinct distractor sets across 19 form-2.3 questions** (was 4 sets with 17 repeats), with domain, register and general distractors present in all 19. `go test ./...`, `-race` (115s) and `gofmt`/`vet` are clean. Nothing in the code blocks the boundary. What remains is one Important plan-artifact finding — BR-2's *instance* was fixed and its *class* was not — plus two Minors.
+
+## 1. Strengths
+
+- **BR-1's fix is the right shape and is measurably effective.** A seed-shuffled index permutation walked by both passes (`cmd/define/play/pick.go:57-73`), rather than shuffling the caller's slice, correctly preserves the property that `choiceFor` reuses one sitting-wide pool. Verified end-to-end, not just in the unit test.
+- **`TestEveryAxisIsSelectable` now asserts the property it names** (`play/pick_test.go:151-167`). Moving from a behavioural probe (which pass 2 always satisfied) to a direct membership assertion over `AxisGeneral..numAxes` is the correct diagnosis — the review's own suggested fix (reshaping the pool) would not have worked, and the plan's Revisions say so.
+- **The goldens are real goldens.** `TestPRNGSequenceIsPinned` and `TestSeedForIsPinned` pin literal sequences, and the zero-seed fixed-point check beside the first one is a genuinely load-bearing extra.
+- **`TestSittingCostIsBoundedByTheCap` turns a declared envelope into an enforced one** through the same `d.dict` seam production uses (ARCH-MOCK holds: one boundary, both flows).
+- **Labels are stripped from option text** (`optionCandidates` uses `f.Text`, not `s.Gloss`), so a `Law`-axis distractor doesn't print "Law" and give its own axis away. Not called out anywhere, but it's necessary for the form to work and it's right.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I1 — BR-2 fixed the five rows it named and left the class unswept (`workshop/plans/000007-vocab-form-meaning-plan.md`, "Core concepts" + "Done when").**
+
+> **This is the 2nd finding in family `plan-artifact-must-match-tree`.** Round 1 fixed instances. Do NOT fix these three instances one at a time — state and apply the rule.
+
+The rule: **the plan's entity tables and Done-when rows are derived from the tree at the close, not hand-patched against whatever a reviewer happened to enumerate.** The enumeration is mechanical — `go doc ./cmd/define/play` for exported surface, `grep '^func Test' ` for pins, and each `D*` decision re-read against its implementing function. Three siblings survived round 1's patch:
+
+1. `play.Missed` (`play/session.go:265`) is a **new exported interface** in `play` and appears in neither table. This is exactly the "new downstream API arrives unnoticed" that BR-2 was about; the fix added the two entities BR-2 named (`Candidate`, `SampleStrings`) and stopped there.
+2. **D4a diverges from the code.** D4a says the `AxisGeneral` sense is "the first sense of the first block". `optionCandidates` (`cmd/define/optionpool.go:78-92`) walks *all* blocks and takes the first *unlabelled* usable sense. Measured on `defenestrate`: its first usable sense is `rare throw (someone) out of a window` (register), so the general candidate is a later sense, `remove or dismiss (someone) from a position of power`. The code is right — a "general" candidate that carried a label would misreport the axis — so the correction belongs in D4a, and `#12` will reuse this selection rule.
+3. **`TestPickOptionsVariesTheDistractorsAcrossASitting` never became a Done-when row.** The Revisions describe it; the table still has eight rows and row 3's "red when" still reads "selection reaches for map order or wall-clock", which was green on the defect. The table's own preamble warns about exactly this drift.
+
+*Fix:* one `## Revisions` entry that adds the `Missed` row, corrects D4a's `AxisGeneral` clause, and adds Done-when row 9 — plus a line stating the derive-from-the-tree rule so the next round doesn't produce a fourth instance.
+
+## 4. Minor findings
+
+**M1 — five doc comments assert behaviour the code doesn't have.**
+
+> **This is the 3rd finding in family `docs-restate-behaviour-inaccurately`.** Rounds 1 and 2 fixed instances (README threshold, reveal-leaks-the-answer). The rule: **a comment that states a falsifiable behavioural claim must either be derived/pinned — the `doc_sync_test.go` pattern — or be weakened to the claim that is actually true.** Enumerated:
+
+- `optionpool.go:82` — "general: the FIRST usable sense of the first block" (see I1.2).
+- `optionpool.go:95` — `targetCandidate` "first usable one, first block"; the loop walks all blocks.
+- `glosslabel.go:157` — "Neither overwrites a label already found", immediately above a branch where a domain label *does* overwrite a register label already found.
+- `optionpool.go:130-138` and `pick.go:110-116` — the justification for hand-rolling FNV and xorshift is that a question must be "reproducible from a log indefinitely". It isn't: the option set also depends on the pool, which depends on the deck's contents and `LastSeen` ordering at the time (`store.sortDeck`), neither of which is logged. The `play` half stands on the empty-import guard regardless; the `seedFor` half in `main` has only this argument, which is why it's worth restating honestly (ARCH-DRY: `hash/fnv` is available there and FNV-1a's constants are a published standard).
+- `optionpool_test.go:58` — "a pool of zero would satisfy the bound above while silently disabling form 2.3", but the assertion below it is on *lookup count*, which a pool of zero also satisfies (40 sampled filler words that all fail to look up). The property is covered elsewhere by `TestOptionCountGrowsWithTheDeck`; the comment overstates what this check does.
+- Also: `pty_conformance_test.go:734-739` keeps a superseded comment paragraph ("so count instead: misses >= missed lines") directly above the paragraph that replaced it.
+- Also: `cmd/define/README.md:251` still lists `kinds: looked-up, asked` with no `reviewed` — pre-existing for the kind, newly relevant now that `missed:` is written to that file.
+
+**M2 — the issue file has two `## Log` sections** (`workshop/issues/000007-vocab-form-meaning.md:147` and `:247`), the second after `## Revisions`, outside the canonical order. Measured: #7 is the only one of 15 active issues with a duplicate. `sdlc issue validate` passes (presence-only), but any reader or tool taking "the Log" gets the 2026-08-20/27 stub and misses the build log entirely. Merge them under the single `## Log`.
+
+**M3 —** `targetCandidate` sets `Axis: play.AxisGeneral` on the returned target, which `PickOptions` never reads (the correct option is built with no axis). Dead assignment; either drop it or say why it's there.
+
+## 5. Test coverage notes
+
+Mutation-verified as load-bearing this round: the pool permutation, `distractorAxes` membership, both golden constants, and the `poolCap` truncation. Previously verified and still green: the loop's `out.Axis` wiring, `hasLabelPrefix`'s word boundary, `at:`-last ordering, per-form `Keys()`.
+
+The one gap I could not close: **`go test -tags conformance ./cmd/define -run TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis` skips here** (`no pty available: operation not permitted`), so the real-terminal path — including the D8 identity assertion that replaced BR-8's conditional — is unexecuted by me for the second round running. The assertion reads correctly (`reviewed - correct:true == count("missed:")`, unconditional), and `Correct` is `omitempty` so the count is sound. Worth the operator confirming it was actually run on a terminal before the close, since the issue Log claims it as the manual verification.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, one note (M1).** No duplicated logic in the diff. Exporting `SampleStrings` so `main` shares `play`'s PRNG instead of growing a second one remains the right call. `seedFor` re-implementing FNV-1a in a package that can import `hash/fnv` is the one arguable duplication, and its stated justification is the weakest of the three.
+- **ARCH-PURE — pass.** `go list -f '{{join .Imports}}' ./cmd/define/play` is still empty. All prose handling (`readGloss`, `crossReferenced`, the label tables) sits in `main`; `PickOptions` receives finished `Candidate`s. `Choice`/`Option`/`Axis`/`prng` are unit-tested with no IO, no fakes.
+- **ARCH-PURPOSE — pass on the code, flag on the artifacts (I1).** The shadow-sweep on the behaviour comes out clean: distractors vary across a sitting (19/19 measured), all three axes reach real questions, the axis reaches the log through a capability rather than a type switch, and the fallback covers both a young deck and a definition-less entry. The instance-vs-class failure is confined to the plan artifacts, which is why it's Important rather than Critical.
+- **ARCH-MOCK — pass.** `buildPool` and `todaysQuestions` share the `d.dict` seam; `countingDict` wraps it rather than replacing it; the offline claim is pinned by making `newLLM`/`getenv` **panic** rather than by a nil check, which is the stronger form. Live conformance exists (`-tags conformance`) but is unexecutable in this environment.
+- **ARCH-CONSTRAINTS — pass, upgraded from round 1's flag.** `poolCap = 40` is now enforced by a counting test that goes red on the exact regression the code comment warns about, and nothing new sits on the keystroke path (`Prompt()` concatenates ≤4 lines per redraw).
+
+## 7. Plan revision recommendations
+
+1. **`## Revisions` — "the entity tables and Done-when rows must be DERIVED, not patched."** State the rule, then apply it in one sweep: add a Core-concepts row for the new exported `play.Missed` interface; correct D4a's `AxisGeneral` clause to "the first usable sense carrying no label, in document order" and cite `defenestrate` as the measurement; add Done-when row 9 — *a sitting is not one question repeated*, pinned by `TestPickOptionsVariesTheDistractorsAcrossASitting`, red when the seed reaches only the shuffle.
+2. **`## Revisions` — the doc-accuracy rule (M1).** Record the enumeration and the rule: a comment stating falsifiable behaviour is derived, pinned, or weakened. In particular, restate `seedFor`'s and `prng`'s justification as "pinned against silent drift by this repo's goldens" rather than "a question is reproducible from a log indefinitely", which the unlogged pool state does not support.
+3. **Issue file** — merge the two `## Log` sections into one under the canonical position (M2).
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      Mutation-verified: reverting to fixed pool order gives 6 sets (test red). End-to-end on a 24-word corpus deck: 19 distinct distractor sets across 19 questions.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      The five named rows are corrected in plan and issue; the class is not swept — see the new plan-artifact-must-match-tree finding.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Mutation-verified: adding AxisConnotation outside distractorAxes turns the membership assertion red.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Mutation-verified: xorshift shift 13 to 12 and the FNV offset basis each turn their golden test red.
+  - id: BR-5
+    disposition: addressed
+    note: |
+      countingDict pins the envelope (red when the poolCap truncation is removed); targetCandidate, choiceFor, optionCandidates and seedFor all now have direct tests.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      README now reads "With no other word to draw on" and states that a young deck gets two or three options.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      choice_test.go imports strings with the puretest .Imports rationale in the import block.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      The D8 check is now an unconditional identity (reviewed minus correct equals missed-line count); no n > 0 gate remains.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      The dead branch is gone and replaced by a comment explaining why no branch is needed.
+  - id: BR-10
+    disposition: addressed
+    note: |
+      Named deliberately in the README key table and in a dedicated atlas paragraph.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Import group split in doc_sync_test.go; the atlas paragraph is wrapped and no longer runs into the TestSessionIsFormAgnostic sentence.
+findings:
+  - id: new
+    severity: Important
+    family: plan-artifact-must-match-tree
+    title: |
+      BR-2 fixed the five rows it named; three enumerable siblings of the same class remain
+    detail: |
+      2nd finding in this family, so the deliverable is the rule, not the instances.
+      Rule - the plan's entity tables and Done-when rows are DERIVED from the tree at
+      the close (go doc for exported surface, grep for pins, each D-decision re-read
+      against its implementing function), never hand-patched against a reviewer's
+      enumeration. Survivors of round 1's patch - (a) play.Missed, a new EXPORTED
+      interface at play/session.go:265, is in neither table, which is the same
+      unnoticed-downstream-API failure BR-2 named; (b) D4a says the AxisGeneral sense
+      is "the first sense of the first block" but optionCandidates walks all blocks and
+      takes the first UNLABELLED usable sense - measured on defenestrate, whose general
+      candidate is a later sense because its first usable one is register-labelled (the
+      code is right, D4a is stale, and issue 12 reuses this rule); (c)
+      TestPickOptionsVariesTheDistractorsAcrossASitting is described in the Revisions
+      but never became a Done-when row, so the table still has eight rows and row 3's
+      "red when" is the wording that was green on the defect.
+  - id: new
+    severity: Minor
+    family: docs-restate-behaviour-inaccurately
+    title: |
+      Five doc comments state behaviour the code does not have
+    detail: |
+      3rd finding in this family, so the deliverable is the rule - a comment stating a
+      falsifiable behavioural claim must be derived or pinned (the doc_sync_test.go
+      pattern) or weakened to the true claim. Measured instances - optionpool.go:82
+      "first usable sense of the first block"; optionpool.go:95 same for
+      targetCandidate; glosslabel.go:157 "Neither overwrites a label already found"
+      above a branch where domain does overwrite register; optionpool.go:130 and
+      pick.go:110 justify hand-rolling FNV and xorshift by "reproducible from a log
+      indefinitely", which the unlogged pool state (deck contents plus LastSeen
+      ordering via store.sortDeck) does not support; optionpool_test.go:58 claims the
+      lookup-count check proves the pool is non-empty, which it does not. Also a
+      superseded comment paragraph left above its replacement at
+      pty_conformance_test.go:734, and README.md:251 still lists only "looked-up,
+      asked" as event kinds although this diff writes a new key into that file.
+  - id: new
+    severity: Minor
+    family: artifact-violates-its-schema
+    title: |
+      The issue file has two "## Log" sections, the second outside the canonical order
+    detail: |
+      workshop/issues/000007-vocab-form-meaning.md carries "## Log" at line 147 and
+      again at line 247, after "## Revisions". Measured - number 7 is the only one of
+      15 active issues with a duplicate section. sdlc issue validate passes because it
+      checks presence only, so any reader or tool taking "the Log" gets the
+      2026-08-20/27 stub and misses the entire build log. Merge them under the single
+      canonical heading.
+```

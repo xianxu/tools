@@ -94,7 +94,7 @@ func TestOptionCandidatesPicksOneSensePerAxis(t *testing.T) {
 		}
 	}
 	// `record` carries `Law` and `Computing` senses, so a domain candidate must
-	// be among them — this is the axis machinery working on real NOAD text.
+	// be among them — the axis machinery working on real NOAD text.
 	if seen[play.AxisDomain] == 0 {
 		t.Errorf("no domain candidate from `record`, which NOAD labels Law and Computing: %+v", got)
 	}

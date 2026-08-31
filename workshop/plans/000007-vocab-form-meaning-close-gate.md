@@ -134,6 +134,107 @@ rounds:
           family: formatting-nit
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-30T20:12:15-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Mutation-verified: reverting to fixed pool order gives 6 sets (test red). End-to-end on a 24-word corpus deck: 19 distinct distractor sets across 19 questions.'
+          round: 2
+        - id: BR-2
+          disposition: addressed
+          note: The five named rows are corrected in plan and issue; the class is not swept — see the new plan-artifact-must-match-tree finding.
+          round: 2
+        - id: BR-3
+          disposition: addressed
+          note: 'Mutation-verified: adding AxisConnotation outside distractorAxes turns the membership assertion red.'
+          round: 2
+        - id: BR-4
+          disposition: addressed
+          note: 'Mutation-verified: xorshift shift 13 to 12 and the FNV offset basis each turn their golden test red.'
+          round: 2
+        - id: BR-5
+          disposition: addressed
+          note: countingDict pins the envelope (red when the poolCap truncation is removed); targetCandidate, choiceFor, optionCandidates and seedFor all now have direct tests.
+          round: 2
+        - id: BR-6
+          disposition: addressed
+          note: README now reads "With no other word to draw on" and states that a young deck gets two or three options.
+          round: 2
+        - id: BR-7
+          disposition: addressed
+          note: choice_test.go imports strings with the puretest .Imports rationale in the import block.
+          round: 2
+        - id: BR-8
+          disposition: addressed
+          note: The D8 check is now an unconditional identity (reviewed minus correct equals missed-line count); no n > 0 gate remains.
+          round: 2
+        - id: BR-9
+          disposition: addressed
+          note: The dead branch is gone and replaced by a comment explaining why no branch is needed.
+          round: 2
+        - id: BR-10
+          disposition: addressed
+          note: Named deliberately in the README key table and in a dedicated atlas paragraph.
+          round: 2
+        - id: BR-11
+          disposition: addressed
+          note: Import group split in doc_sync_test.go; the atlas paragraph is wrapped and no longer runs into the TestSessionIsFormAgnostic sentence.
+          round: 2
+      findings:
+        - id: BR-12
+          severity: Important
+          title: BR-2 fixed the five rows it named; three enumerable siblings of the same class remain
+          detail: |-
+            2nd finding in this family, so the deliverable is the rule, not the instances.
+            Rule - the plan's entity tables and Done-when rows are DERIVED from the tree at
+            the close (go doc for exported surface, grep for pins, each D-decision re-read
+            against its implementing function), never hand-patched against a reviewer's
+            enumeration. Survivors of round 1's patch - (a) play.Missed, a new EXPORTED
+            interface at play/session.go:265, is in neither table, which is the same
+            unnoticed-downstream-API failure BR-2 named; (b) D4a says the AxisGeneral sense
+            is "the first sense of the first block" but optionCandidates walks all blocks and
+            takes the first UNLABELLED usable sense - measured on defenestrate, whose general
+            candidate is a later sense because its first usable one is register-labelled (the
+            code is right, D4a is stale, and issue 12 reuses this rule); (c)
+            TestPickOptionsVariesTheDistractorsAcrossASitting is described in the Revisions
+            but never became a Done-when row, so the table still has eight rows and row 3's
+            "red when" is the wording that was green on the defect.
+          family: plan-artifact-must-match-tree
+          round: 2
+        - id: BR-13
+          severity: Minor
+          title: Five doc comments state behaviour the code does not have
+          detail: |-
+            3rd finding in this family, so the deliverable is the rule - a comment stating a
+            falsifiable behavioural claim must be derived or pinned (the doc_sync_test.go
+            pattern) or weakened to the true claim. Measured instances - optionpool.go:82
+            "first usable sense of the first block"; optionpool.go:95 same for
+            targetCandidate; glosslabel.go:157 "Neither overwrites a label already found"
+            above a branch where domain does overwrite register; optionpool.go:130 and
+            pick.go:110 justify hand-rolling FNV and xorshift by "reproducible from a log
+            indefinitely", which the unlogged pool state (deck contents plus LastSeen
+            ordering via store.sortDeck) does not support; optionpool_test.go:58 claims the
+            lookup-count check proves the pool is non-empty, which it does not. Also a
+            superseded comment paragraph left above its replacement at
+            pty_conformance_test.go:734, and README.md:251 still lists only "looked-up,
+            asked" as event kinds although this diff writes a new key into that file.
+          family: docs-restate-behaviour-inaccurately
+          round: 2
+        - id: BR-14
+          severity: Minor
+          title: The issue file has two "## Log" sections, the second outside the canonical order
+          detail: |-
+            workshop/issues/000007-vocab-form-meaning.md carries "## Log" at line 147 and
+            again at line 247, after "## Revisions". Measured - number 7 is the only one of
+            15 active issues with a duplicate section. sdlc issue validate passes because it
+            checks presence only, so any reader or tool taking "the Log" gets the
+            2026-08-20/27 stub and misses the entire build log. Merge them under the single
+            canonical heading.
+          family: artifact-violates-its-schema
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#7 (boundary-review)
@@ -217,16 +318,63 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   atlas/define.md runs the new "Below two options it is not a question" paragraph into
   the pre-existing TestSessionIsFormAgnostic sentence on one long line.
 
+## Round 2 — 2026-08-30T20:12:15-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Mutation-verified: reverting to fixed pool order gives 6 sets (test red). End-to-end on a 24-word corpus deck: 19 distinct distractor sets across 19 questions.
+- BR-2 — addressed — The five named rows are corrected in plan and issue; the class is not swept — see the new plan-artifact-must-match-tree finding.
+- BR-3 — addressed — Mutation-verified: adding AxisConnotation outside distractorAxes turns the membership assertion red.
+- BR-4 — addressed — Mutation-verified: xorshift shift 13 to 12 and the FNV offset basis each turn their golden test red.
+- BR-5 — addressed — countingDict pins the envelope (red when the poolCap truncation is removed); targetCandidate, choiceFor, optionCandidates and seedFor all now have direct tests.
+- BR-6 — addressed — README now reads "With no other word to draw on" and states that a young deck gets two or three options.
+- BR-7 — addressed — choice_test.go imports strings with the puretest .Imports rationale in the import block.
+- BR-8 — addressed — The D8 check is now an unconditional identity (reviewed minus correct equals missed-line count); no n > 0 gate remains.
+- BR-9 — addressed — The dead branch is gone and replaced by a comment explaining why no branch is needed.
+- BR-10 — addressed — Named deliberately in the README key table and in a dedicated atlas paragraph.
+- BR-11 — addressed — Import group split in doc_sync_test.go; the atlas paragraph is wrapped and no longer runs into the TestSessionIsFormAgnostic sentence.
+
+### Raised
+
+- **BR-12** [Important] `plan-artifact-must-match-tree` BR-2 fixed the five rows it named; three enumerable siblings of the same class remain
+  2nd finding in this family, so the deliverable is the rule, not the instances.
+  Rule - the plan's entity tables and Done-when rows are DERIVED from the tree at
+  the close (go doc for exported surface, grep for pins, each D-decision re-read
+  against its implementing function), never hand-patched against a reviewer's
+  enumeration. Survivors of round 1's patch - (a) play.Missed, a new EXPORTED
+  interface at play/session.go:265, is in neither table, which is the same
+  unnoticed-downstream-API failure BR-2 named; (b) D4a says the AxisGeneral sense
+  is "the first sense of the first block" but optionCandidates walks all blocks and
+  takes the first UNLABELLED usable sense - measured on defenestrate, whose general
+  candidate is a later sense because its first usable one is register-labelled (the
+  code is right, D4a is stale, and issue 12 reuses this rule); (c)
+  TestPickOptionsVariesTheDistractorsAcrossASitting is described in the Revisions
+  but never became a Done-when row, so the table still has eight rows and row 3's
+  "red when" is the wording that was green on the defect.
+- **BR-13** [Minor] `docs-restate-behaviour-inaccurately` Five doc comments state behaviour the code does not have
+  3rd finding in this family, so the deliverable is the rule - a comment stating a
+  falsifiable behavioural claim must be derived or pinned (the doc_sync_test.go
+  pattern) or weakened to the true claim. Measured instances - optionpool.go:82
+  "first usable sense of the first block"; optionpool.go:95 same for
+  targetCandidate; glosslabel.go:157 "Neither overwrites a label already found"
+  above a branch where domain does overwrite register; optionpool.go:130 and
+  pick.go:110 justify hand-rolling FNV and xorshift by "reproducible from a log
+  indefinitely", which the unlogged pool state (deck contents plus LastSeen
+  ordering via store.sortDeck) does not support; optionpool_test.go:58 claims the
+  lookup-count check proves the pool is non-empty, which it does not. Also a
+  superseded comment paragraph left above its replacement at
+  pty_conformance_test.go:734, and README.md:251 still lists only "looked-up,
+  asked" as event kinds although this diff writes a new key into that file.
+- **BR-14** [Minor] `artifact-violates-its-schema` The issue file has two "## Log" sections, the second outside the canonical order
+  workshop/issues/000007-vocab-form-meaning.md carries "## Log" at line 147 and
+  again at line 247, after "## Revisions". Measured - number 7 is the only one of
+  15 active issues with a duplicate section. sdlc issue validate passes because it
+  checks presence only, so any reader or tool taking "the Log" gets the
+  2026-08-20/27 stub and misses the entire build log. Merge them under the single
+  canonical heading.
+
 ## Open findings
 
-- **BR-1** [Critical] `seeded-selection-not-just-ordering` PickOptions uses the seed only to shuffle order, so one sitting shares a single distractor set
-- **BR-2** [Critical] `plan-artifact-must-match-tree` The plan's Core concepts table names five entities that do not exist in the tree
-- **BR-3** [Important] `guard-passes-without-the-property` TestEveryAxisIsSelectable passes for an axis that distractorAxes never selects
-- **BR-4** [Important] `guard-passes-without-the-property` The hand-rolled PRNG and FNV hash are justified by tests that do not pin them
-- **BR-5** [Important] `declared-envelope-unenforced` buildPool, poolCap, optionCandidates, targetCandidate, choiceFor and seedFor have no direct tests
-- **BR-6** [Important] `docs-restate-behaviour-inaccurately` README states the recall fallback threshold one word too high
-- **BR-7** [Minor] `duplicate-stdlib-helper` choice_test.go hand-rolls linesOf and contains though the package's tests may import strings
-- **BR-8** [Minor] `conditional-assertion` The pty test's D8 check is skipped whenever the learner gets nothing right
-- **BR-9** [Minor] `unreachable-branch` Choice.Keys() has a dead "no options" branch
-- **BR-10** [Minor] `docs-restate-behaviour-inaccurately` Revealing before answering a Choice hands the learner the correct option
-- **BR-11** [Minor] `formatting-nit` Import grouping and an unwrapped atlas line
+- **BR-12** [Important] `plan-artifact-must-match-tree` BR-2 fixed the five rows it named; three enumerable siblings of the same class remain
+- **BR-13** [Minor] `docs-restate-behaviour-inaccurately` Five doc comments state behaviour the code does not have
+- **BR-14** [Minor] `artifact-violates-its-schema` The issue file has two "## Log" sections, the second outside the canonical order

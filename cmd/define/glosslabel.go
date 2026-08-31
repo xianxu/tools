@@ -144,8 +144,12 @@ func readGloss(gloss string) glossFacts {
 		}
 		if label, kind, ok := leadingLabel(rest); ok {
 			rest = rest[len(label):]
-			// Domain outranks register: it is the scarcer axis and the more
-			// specific fact. Neither overwrites a label already found.
+			// Domain OUTRANKS register and will replace one already found: it
+			// is the scarcer axis and the more specific fact, and NOAD writes
+			// stacked runs like "informal Law" where the field is the stronger
+			// signal. Register only fills an empty slot, and a second label of
+			// the same rank never displaces the first — so within a rank it is
+			// first-wins, and across ranks domain wins.
 			if kind == play.AxisDomain && f.Axis != play.AxisDomain {
 				f.Axis, f.Label = play.AxisDomain, label
 			} else if kind == play.AxisRegister && f.Axis == play.AxisGeneral {
