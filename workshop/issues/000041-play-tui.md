@@ -138,8 +138,8 @@ decisions and the twelve Done-when rows live in
 - [x] Design via `sdlc start-plan` — plan doc written, cleared plan-quality in 4 rounds.
 - [x] **T1** — `Paint`'s `menu` becomes `footer`, with `fitMenu`; one concept, two consumers (D2).
 - [x] **T2** — `sittingBar` in `cmd/define/playbar.go`, sharing `finish`'s wording (D8).
-- [ ] **T3** — `--play` builds a `console`, and the reveal's `restore`/`enterRaw` pair is DELETED (D1, D5a).
-- [ ] **T4** — the question is written to the buffer once, not per keystroke (D4).
+- [x] **T3** — `--play` builds a `console`, and the reveal's `restore`/`enterRaw` pair is DELETED (D1, D5a).
+- [x] **T4** — the question is written to the buffer once, not per keystroke (D4).
 - [ ] **T5** — the live edge: `newPinnedScreen` and paint-time padding (D3, D3a).
 - [ ] **T6** — figures in memory; `todaysQuestions` returns its work and `finish` stops re-reading (D7).
 - [ ] **T7** — paging intercepted in the LOOP; `toInput` untouched (D6).

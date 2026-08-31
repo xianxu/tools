@@ -37,7 +37,7 @@ func TestLineLoopRoutesAQuestion(t *testing.T) {
 func TestEditorLoopRoutesAQuestion(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
 }
@@ -61,7 +61,7 @@ func TestLineLoopRoutesAForcedQuestion(t *testing.T) {
 func TestEditorLoopRoutesAForcedQuestion(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	assertAskedAndUnanswered(t, errb.String(), out.String())
 	if rig.player.count() != 0 {
@@ -113,7 +113,7 @@ func TestAQuestionDoesNotBecomeTheCurrentWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	// Look up a word, ask a question, then press Enter: the REPLAY is the word.
-	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	// 3 plays for the lookup, 3 more for the replay. If the question had become
 	// the current word the replay would have found no audio for it.
@@ -135,7 +135,7 @@ func TestAQuestionIsNotCaptured(t *testing.T) {
 	fake.Script("", llmtest.Reply{Capture: streamCapture})
 	rig.deps.getenv, rig.deps.newLLM = envFor(fake.URL), llm.New
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r"+aQuestion+"\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	if len(cap.calls) != 1 || cap.calls[0] != "sycophantic" {
 		t.Errorf("captured %v, want just the lookup — a question is not a lookup", cap.calls)
@@ -171,7 +171,7 @@ func TestAQuestionIsRecalledByUpArrow(t *testing.T) {
 			hist := &memHistory{}
 			rig.deps.history = hist
 			var out, errb bytes.Buffer
-			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 			if len(hist.lines) != 1 || hist.lines[0] != tc.want {
 				t.Fatalf("history = %q, want [%q] — the question was not recorded for recall", hist.lines, tc.want)
@@ -281,7 +281,7 @@ func TestRawNeverAsks(t *testing.T) {
 		opt := rawOpt
 		opt.tty = true
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+		runEditor(t.Context(), scriptKeys(aQuestion+"\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 		assertDidNotAsk(t, 0, 0, errb.String(), wantMiss)
 	})
 	t.Run("editor/forced", func(t *testing.T) {
@@ -289,7 +289,7 @@ func TestRawNeverAsks(t *testing.T) {
 		opt := rawOpt
 		opt.tty = true
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+		runEditor(t.Context(), scriptKeys("?why\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 		assertDidNotAsk(t, 0, 0, errb.String(), wantRefusal)
 	})
 }
@@ -373,7 +373,7 @@ func TestRawLoopMessagePlacement(t *testing.T) {
 			// rows once did exactly that and stayed green through a real bug
 			// (BR-13).
 			errs := &screen{}
-			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, editorConsole(&out, errs, finish))
+			runEditor(t.Context(), scriptKeys(tc.keys), nil, rig.deps, opt, recordingConsole(&out, errs, finish))
 
 			lines := errs.Lines()
 			if len(lines) == 0 {
@@ -406,7 +406,7 @@ func TestForcedAndUnforcedAsksRenderAtTheSameHeight(t *testing.T) {
 	framing := func(keys string) int {
 		rig, opt, finish := editorRig(t, "sycophantic", true)
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys(keys), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+		runEditor(t.Context(), scriptKeys(keys), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 		return strings.Count(out.String(), "\r\n")
 	}
 	if forced, unforced := framing("?why\r"), framing(aQuestion+"\r"); forced != unforced {

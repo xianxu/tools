@@ -74,7 +74,7 @@ type recordDisplay struct {
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
 
-// editorConsole is the console a test drives, and it takes ONE writer for the
+// recordingConsole is the console a test drives, and it takes ONE writer for the
 // frame and stdout because that is not incidental: in production the display and
 // both streams are a single liveScreen (#30 D5b), so a test that split them
 // would read a session the loop never produced.
@@ -83,10 +83,14 @@ func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
 // io.Writer parameters below are positionally swappable exactly here, and
 // nowhere else.
 //
+// Named for what it IS rather than for who drives it: #41 made `--play` the
+// second loop taking a console, and a sitting's test building an "editorConsole"
+// would read as the wrong loop.
+//
 // A test that ASSERTS on what was drawn keeps the struct literal instead and
 // names its own recorder: `view.lastPrompt()` says what it means, and a literal
 // with named fields cannot be swapped by position either.
-func editorConsole(out, errb io.Writer, finish func()) console {
+func recordingConsole(out, errb io.Writer, finish func()) console {
 	view := paintInto(out)
 	// view AND stdout, one object — production's shape, where both are the same
 	// liveScreen (#30 D5b). stderr stays its own buffer here, which is the one
@@ -203,7 +207,7 @@ func (d *recordDisplay) scrolls() (pages, lines, rows []int) {
 func TestEditorLoopDefinesTypedWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	code := runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
@@ -220,7 +224,7 @@ func TestEditorLoopDefinesTypedWord(t *testing.T) {
 func TestEditorLoopBareEnterReplays(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	if got := rig.player.count(); got != 6 {
 		t.Errorf("played %d times, want 6", got)
@@ -237,7 +241,7 @@ func TestEditorLoopBareEnterReplays(t *testing.T) {
 func TestEditorLoopFeedsHistory(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rsyc"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\rsyc"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	// The final frame should carry the grey remainder of the earlier word.
 	if !strings.Contains(out.String(), greyOn+"ophantic"+greyOff) {
@@ -249,7 +253,7 @@ func TestEditorLoopCtrlCExitsZero(t *testing.T) {
 	rig, opt, _ := editorRig(t, "sycophantic", true)
 	restored := false
 	var out, errb bytes.Buffer
-	code := runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, editorConsole(&out, &errb, func() { restored = true }))
+	code := runEditor(t.Context(), scriptKeys("syc\x03"), nil, rig.deps, opt, recordingConsole(&out, &errb, func() { restored = true }))
 
 	if code != 0 {
 		t.Errorf("exit = %d, want 0", code)
@@ -268,7 +272,7 @@ func TestEditorLoopCancellationRestoresTerminal(t *testing.T) {
 	restored := false
 	var out, errb bytes.Buffer
 
-	runEditor(ctx, make(chan Key), nil, rig.deps, opt, editorConsole(&out, &errb, func() { restored = true }))
+	runEditor(ctx, make(chan Key), nil, rig.deps, opt, recordingConsole(&out, &errb, func() { restored = true }))
 	if !restored {
 		t.Error("cancellation exited without restoring the terminal")
 	}
@@ -286,12 +290,12 @@ func tailOf(s string) string {
 func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 	baseline := strings.Count(out.String(), "\n")
 
 	rig2, opt2, finish2 := editorRig(t, "sycophantic", true)
 	var out2 bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r\r\r\r"), nil, rig2.deps, opt2, editorConsole(&out2, &bytes.Buffer{}, finish2))
+	runEditor(t.Context(), scriptKeys("sycophantic\r\r\r\r"), nil, rig2.deps, opt2, recordingConsole(&out2, &bytes.Buffer{}, finish2))
 
 	// Three extra replays, zero extra lines.
 	if got := strings.Count(out2.String(), "\n"); got != baseline {
@@ -312,7 +316,7 @@ func TestEditorLoopBareEnterDoesNotAdvance(t *testing.T) {
 func TestEditorLoopUsesCarriageReturnsInRawMode(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	s := out.String()
 	// Find the newline the loop writes to commit the input line.
@@ -361,7 +365,7 @@ func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
 	// Define the long word, then type a prefix of it and submit.
-	runEditor(t.Context(), scriptKeys("sycophantic\rsyc\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\rsyc\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	s := out.String()
 	// The last frame written before the second submit must carry no grey.
@@ -385,7 +389,7 @@ func TestEditorLoopCommitsWithoutTheSuggestion(t *testing.T) {
 func TestEditorLoopNormalisesTheSubmittedLine(t *testing.T) {
 	rig, opt, finish := editorRig(t, "hot dog", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("  hot   dog  \r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("  hot   dog  \r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	if strings.Contains(errb.String(), "no dictionary entry") {
 		t.Errorf("the line was not normalised before lookup: %q", errb.String())
@@ -399,7 +403,7 @@ func TestEditorLoopNormalisesTheSubmittedLine(t *testing.T) {
 func TestEditorLoopBareEnterWithNoCurrentWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	if !strings.Contains(errb.String(), "press return to replay") {
 		t.Errorf("want the hint, got %q", errb.String())
@@ -414,7 +418,7 @@ func TestEditorLoopBareEnterWithNoCurrentWord(t *testing.T) {
 func TestEditorLoopFailedLookupKeepsPreviousWord(t *testing.T) {
 	rig, opt, finish := editorRig(t, "sycophantic", true)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\rrizz\r\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\rrizz\r\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	if !strings.Contains(errb.String(), "rizz") {
 		t.Error("the failed lookup was not reported")
@@ -584,7 +588,7 @@ func TestCtrlDStillEndsTheSession(t *testing.T) {
 	keys <- Key{Kind: KeyEOF}
 	keys <- Key{Kind: KeyRune, Rune: 'x'}
 	close(keys)
-	code := runEditor(t.Context(), keys, nil, rig.deps, opt, editorConsole(&out, &errb, func() { ended = true }))
+	code := runEditor(t.Context(), keys, nil, rig.deps, opt, recordingConsole(&out, &errb, func() { ended = true }))
 
 	if code != 0 {
 		t.Errorf("exit = %d, want 0", code)

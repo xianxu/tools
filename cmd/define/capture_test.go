@@ -140,7 +140,7 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+		runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
@@ -150,7 +150,7 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
@@ -299,7 +299,7 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil, nil)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	deck, err := st.Deck()
 	if err != nil {

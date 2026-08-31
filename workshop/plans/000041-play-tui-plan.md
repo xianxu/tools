@@ -119,7 +119,8 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `playConsole` | `cmd/define/play_loop.go` | new | the terminal — mirrors `replRaw`'s construction (D1) |
-| `draw` | `cmd/define/play_loop.go` | modified | becomes "compute the live edge", not "append lines" (D4) |
+| `draw` | `cmd/define/play_loop.go` | deleted | it wrote the question, the reveal AND the keys on every call; those three have different lifetimes and a scrolling terminal could not express the difference (D4) |
+| `livePrompt` | `cmd/define/play_loop.go` | new | what `draw`'s last two lines became: the frame's PROMPT for one state, returned rather than printed. The question and the reveal are buffer writes the LOOP owns, because it is the loop that knows they are transitions |
 | `finish` | `cmd/define/play_loop.go` | modified | shares `sittingBar`'s formatter, so the bar and the summary cannot word the `-count` assumption differently (D8) |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | returns the deck and the folded progress it already computes, instead of discarding them (D7) |
 | `playSession` | `cmd/define/play_loop.go` | modified | takes a `console`; tracks the written question and the cached figures |
@@ -273,3 +274,34 @@ Then on a real terminal with a deck of a dozen words: `define --play`, confirm t
   four rows, and the decision it forced is a real simplification — `finish` stops
   re-reading, because the loop now holds an in-memory `prog` updated by the same
   transition the fold applies, which `#39` did not have available.
+
+### 2026-08-31 — T3/T4 landed: `draw` split by lifetime rather than modified
+
+The integration table said `draw` | **modified** | *"becomes 'compute the live
+edge', not 'append lines'"*. Implementing it showed the row was one entity where
+there are two: `draw` wrote three things with three different lifetimes, and the
+change is not that it computes differently but that the three go to different
+places. The keys are the frame's prompt (`livePrompt`, pure, returned); the
+question and the reveal are buffer writes, and they belong to the LOOP because
+only the loop knows which keystroke was a transition — the write-once state
+(`written`) has to sit beside "perform the outcomes" or it is tracking something
+its owner cannot see.
+
+So `draw` is **deleted** and `livePrompt` is **new**, which is what the code
+does. A `modified` row over a name that no longer exists is the plan claiming a
+shape the tree does not have.
+
+Two consequences worth recording, both of which are the plan's own tests being
+made real rather than departures from it:
+
+- **`editorConsole` is now `recordingConsole`.** `console` has a second consumer,
+  so a sitting's test that built an "editorConsole" would name the wrong loop.
+- **`TestLosingTheTerminalAfterPlaybackExitsOne` is replaced, not just deleted.**
+  D5a deletes the branch it drove, but that test was ALSO the pin for the outcome
+  ORDER (record before reveal) that `session.go` calls load-bearing — BR-13 found
+  that reversing the loop's iteration left the whole suite green. The replacement
+  is `TestAMissIsRecordedBeforeItIsRevealed`, which observes the store from
+  INSIDE playback via a hooked player: the order stays pinned by something that
+  does not depend on a failure branch existing. **The rule: deleting the code a
+  test drove is not deleting the test's claim — check what else that test was the
+  only pin for.**

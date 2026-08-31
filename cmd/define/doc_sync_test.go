@@ -64,7 +64,7 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 			}
 			seen[line] = true
 			if !strings.Contains(readme, line) {
-				t.Errorf("README.md does not contain the line draw() prints for %T:\n\t%q\n"+
+				t.Errorf("README.md does not contain the line livePrompt returns for %T:\n\t%q\n"+
 					"The loop changed and the README did not. Update README.md, or "+
 					"change the form's Keys() if the new wording is the intended one.", f, line)
 			}
