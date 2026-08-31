@@ -522,6 +522,51 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 	}
 }
 
+// THE ALTERNATE SCREEN SURVIVES A REVEAL, which is #41 D5a's Critical seen from
+// the outside.
+//
+// The design's one Critical was that `enterAlt` is opt-in on rawSession and
+// `restore()` leaves the alternate screen — so the old reveal, which called
+// restore() to play the pronunciation in cooked mode and then `enterRaw` again,
+// would have dropped the alt screen on the FIRST reveal and never re-entered it.
+// Every frame after that would have painted over the user's scrollback, silently.
+//
+// Only a real terminal can say the mode sequences actually went out and did not
+// come back, so this is the row that closes it: the alt screen is entered once,
+// and is not left until the sitting ends.
+func TestPTYPlayKeepsTheAlternateScreenAcrossAReveal(t *testing.T) {
+	deck := seedDeck(t)
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	first := out.take(3 * time.Second)
+	if !strings.Contains(first, altScreenOn) {
+		t.Fatalf("the sitting never took the alternate screen:\n%q", first)
+	}
+
+	f.WriteString(" ") // reveal — the keystroke that used to hand the terminal back
+	revealed := out.take(2 * time.Second)
+	if strings.Contains(revealed, altScreenOff) {
+		t.Errorf("the reveal LEFT the alternate screen; every frame after it paints over the "+
+			"user's scrollback:\n%q", revealed)
+	}
+	if strings.Contains(revealed, altScreenOn) {
+		t.Errorf("the reveal re-entered the alternate screen, so it had left it:\n%q", revealed)
+	}
+
+	// ...and it IS given back at the end, or this test would pass on a sitting
+	// that simply never restores.
+	f.WriteString("y")
+	ended := out.take(3 * time.Second)
+	if !strings.Contains(ended, altScreenOff) {
+		t.Errorf("the sitting kept the alternate screen on exit:\n%q", ended)
+	}
+	// The transcript is what the learner is left looking at (D5).
+	if !strings.Contains(unstyled(ended), "sycophantic") {
+		t.Errorf("the sitting vanished with the alternate screen:\n%q", ended)
+	}
+}
+
 // Mouse reporting is asked for, and given back (#30 M1.4b).
 //
 // Giving it back matters more than turning it on: a terminal left reporting the
@@ -709,40 +754,65 @@ func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
 		t.Errorf("the reveal leaked before an answer:\n%q", first)
 	}
 
-	// EVERY ANSWER IS A DELIBERATE MISS, and deterministically so.
+	// THE BAR, which is #41's whole reason for existing on this surface.
+	if !strings.Contains(first, "0 of 5") {
+		t.Errorf("the pinned bar is not on screen, or does not say how far in the sitting is:\n%q", first)
+	}
+
+	// ONE DELIBERATE MISS, read rather than guessed — and #41 changed how it has
+	// to be read.
 	//
-	// The first version pressed `1` for every question and then required a
-	// `missed:` line, which made the assertion depend on TODAY'S DATE: the
-	// answer's slot is a function of seedFor(word, day), so on roughly one day
-	// in a thousand all five words put the answer in slot 1 and the test failed
-	// for a reason having nothing to do with the code. A conformance test that
-	// fails by calendar teaches people to re-run it until it passes.
+	// The answer's slot is a function of seedFor(word, day), so pressing `1`
+	// every time and demanding a `missed:` line made the assertion depend on
+	// TODAY'S DATE: on roughly one day in a thousand all five words put the
+	// answer in slot 1. A conformance test that fails by calendar teaches people
+	// to re-run it until it passes.
 	//
-	// So the answer is READ rather than guessed. Enter reveals, and an unanswered
-	// Choice's reveal prints the correct option's own line — so the option number
-	// that appears a SECOND time is the right one, and anything else is a
-	// guaranteed miss.
-	// Every chunk is kept: the loop consumes the output the final assertion
-	// needs, and take() drains rather than peeks.
-	transcript := first
-	for i := 0; i < 6; i++ {
-		f.WriteString("\r") // reveal
-		revealed := unstyled(out.take(700 * time.Millisecond))
-		transcript += revealed
-		correct := optionNumberIn(revealed)
-		if correct == 0 {
-			break // the sitting is over, or this word fell back to Recall
-		}
-		wrong := byte('1')
-		if correct == '1' {
-			wrong = '2'
-		}
-		f.WriteString(string(wrong))
+	// So the answer is read off the screen. It used to be readable in the chunk
+	// the reveal produced, because `--play` APPENDED — an unanswered Choice's
+	// reveal prints the correct option's own line, so the first option line in
+	// that chunk was it. Under frames there is no such chunk: the reveal is
+	// several screenfuls and what the terminal shows afterwards is its END, with
+	// the options scrolled off. Measured on a real terminal, not reasoned about.
+	//
+	// PAGING is what brings them back, which is the behaviour #41 was filed for.
+	// Enough PageUps to hit the top — the viewport clamps — and the first
+	// question's word, its options and the revealed answer are the first lines
+	// in the buffer, all on one screen.
+	f.WriteString("\r") // reveal
+	out.take(time.Second)
+	f.WriteString(strings.Repeat(pageUp, 30))
+	top := unstyled(out.take(2 * time.Second))
+
+	correct := twiceNumberedOption(lastFrame(top))
+	if correct == 0 {
+		t.Fatalf("could not read the revealed answer after paging to the top of the sitting:\n%q", lastFrame(top))
+	}
+	wrong := byte('1')
+	if correct == '1' {
+		wrong = '2'
+	}
+	f.WriteString(string(wrong)) // a GUARANTEED miss
+
+	// The rest of the sitting, answered without ceremony: `1` grades, and when
+	// `1` was wrong the word is already graded so the next `1` simply moves on.
+	// Every chunk is kept — take() drains rather than peeks, and the final
+	// assertions read the whole transcript.
+	transcript := first + top
+	for i := 0; i < 12; i++ {
 		transcript += unstyled(out.take(400 * time.Millisecond))
+		if strings.Contains(transcript, "right,") {
+			break
+		}
+		f.WriteString("1")
 	}
 	transcript += unstyled(out.take(3 * time.Second))
 	if !strings.Contains(transcript, "right,") {
 		t.Errorf("the sitting never finished:\n%q", transcript)
+	}
+	// ...and the bar MOVED, which a static footer would not.
+	if !strings.Contains(transcript, "1 of 5") {
+		t.Errorf("the bar never counted an answer:\n%q", transcript)
 	}
 
 	// THE RECORD. A miss must carry an axis; a correct answer must not.
@@ -780,19 +850,36 @@ func latestEventFile(t *testing.T, deck string) string {
 	return filepath.Join(deck, "events", entries[len(entries)-1].Name())
 }
 
-// optionNumberIn returns the digit of the option line that appears in a REVEAL
-// chunk, or 0.
+// twiceNumberedOption is the option digit that appears TWICE in one frame, which
+// on a revealed Choice is the answer.
 //
-// An unanswered Choice's Reveal prints the correct option's own line before the
-// full entry, so the first `N  ` line in the chunk the reveal produced is the
-// answer. Reading it is what makes the pty test's misses deliberate instead of
-// dependent on which slot today's seed happened to choose.
-func optionNumberIn(chunk string) byte {
-	for _, line := range strings.Split(chunk, "\n") {
+// An unanswered Choice's Reveal reprints the correct option's own line above the
+// definition, so within the question's own screenful every option appears once
+// and one appears again. Reading it is what makes the pty test's miss deliberate
+// instead of dependent on which slot today's seed happened to choose.
+//
+// TWICE rather than "the first one in the reveal's chunk", which is what this
+// was until #41: a frame redraws the question AND the reveal together, so "the
+// first option line" became option 1 every time and the miss stopped being
+// deliberate — silently, since a wrong guess is still a legal answer.
+//
+// The definition's own sense numbers do not collide: they are rendered `1.` and
+// this shape needs two spaces after the digit.
+func twiceNumberedOption(frame string) byte {
+	seen := map[byte]int{}
+	for _, line := range strings.Split(frame, "\n") {
 		l := strings.TrimLeft(line, " \t")
 		if len(l) > 3 && l[0] >= '1' && l[0] <= '9' && l[1] == ' ' && l[2] == ' ' {
-			return l[0]
+			seen[l[0]]++
+		}
+	}
+	for d, n := range seen {
+		if n == 2 {
+			return d
 		}
 	}
 	return 0
 }
+
+// pageUp is what a terminal sends for the key, decoded by key.go.
+const pageUp = "\x1b[5~"

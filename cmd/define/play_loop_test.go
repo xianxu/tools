@@ -589,6 +589,117 @@ func TestDroppingAWordLowersTheCostTheBarShows(t *testing.T) {
 	}
 }
 
+// DONE-WHEN 4: a reveal taller than the terminal PAGES, and the word comes back.
+//
+// This is the user-visible thing #41 was filed for. Form 2.3's reveal shows the
+// whole rendered entry; on a word like `run` or `bank` that is several
+// screenfuls, and before frames the word being asked about scrolled off the top
+// with no way back.
+//
+// Driven live rather than through a scripted channel, because what is asserted
+// is the frame ON SCREEN at one moment — and the sitting's last acts (the
+// summary, the hand-back) write to the buffer, which resets the viewport. So the
+// keys are sent one at a time and each frame is read where it is drawn.
+func TestALongRevealPagesRatherThanScrollingTheWordAway(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	qs, held := questionsFor(t, d, opt)
+
+	// A SHORT terminal, which is what makes one entry several screenfuls.
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 8, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	keys <- Key{Kind: KeyEnter} // reveal: the entry is taller than the viewport
+	waitFor(t, func() bool { return strings.Contains(lastFrame(tty.String()), "DERIVATIVES") })
+	if got := lastFrame(tty.String()); strings.Contains(got, "sycophantic  syc·o·phan·tic") {
+		t.Fatalf("the reveal fits the terminal, so this test asserts nothing:\n%s", got)
+	}
+
+	keys <- Key{Kind: KeyPageUp}
+	waitFor(t, func() bool { return strings.Contains(lastFrame(tty.String()), "sycophantic  syc·o·phan·tic") })
+
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+}
+
+// A viewport gesture is NOT an answer, and `play` never learns a viewport exists
+// (D6).
+//
+// The other half of paging, and the one a naive wiring gets wrong: routing these
+// keys through toInput would have put a display concept inside the pure package.
+func TestPagingIsNotAnAnswer(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic")
+	qs, held := questionsFor(t, d, opt)
+	spy := &countingCapturer{}
+	d.capture = spy
+
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	keys := make(chan Key, 6)
+	for _, k := range []Key{
+		{Kind: KeyPageUp}, {Kind: KeyPageDown}, {Kind: KeyWheelUp}, {Kind: KeyWheelDown},
+		{Kind: KeyInterrupt},
+	} {
+		keys <- k
+	}
+	close(keys)
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
+
+	if !slices.Equal(view.pages, []int{1, -1}) {
+		t.Errorf("the loop paged %v, want [1 -1] — PageUp is BACKWARD, toward older text", view.pages)
+	}
+	if !slices.Equal(view.lines, []int{wheelLines, -wheelLines}) {
+		t.Errorf("the wheel scrolled %v, want [%d %d]", view.lines, wheelLines, -wheelLines)
+	}
+	if spy.reviews != 0 || len(reviewEvents(t, st)) != 0 {
+		t.Error("a viewport gesture graded an answer — looking at something is not answering it")
+	}
+}
+
+// DONE-WHEN 9: SIGWINCH repaints mid-sitting.
+func TestPlayRepaintsOnResize(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	qs, held := questionsFor(t, d, opt)
+
+	out := &syncBuf{}
+	var errb bytes.Buffer
+	view := paintInto(out)
+	resizes := make(chan winSize, 1)
+	// Sent BEFORE any key, and the keys channel is unbuffered — otherwise both
+	// cases are ready at once and select picks uniformly at random, so the
+	// interrupt would sometimes end the sitting before the resize was read.
+	resizes <- winSize{rows: 12, cols: 40}
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: view, resizes: resizes, finish: func() {}, stdout: view, stderr: &errb})
+	}()
+
+	waitFor(t, func() bool { _, _, rows := view.scrolls(); return len(rows) == 1 })
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+
+	if _, _, rows := view.scrolls(); !slices.Equal(rows, []int{12}) {
+		t.Errorf("the loop resized to %v rows, want [12] — a frame drawn for the old shape "+
+			"scrolls the terminal, and every row the sitting placed moves with it", rows)
+	}
+	// And it REDREW. Resize deliberately does not paint (the live edge is
+	// rendered against the new width too), so a loop that resizes without
+	// drawing leaves the old frame on a differently shaped screen.
+	if n := len(view.drawnMenus()); n < 2 {
+		t.Errorf("%d frames drawn, want the initial one and the one after the resize", n)
+	}
+}
+
 // Audio plays before reveal by DEFAULT, which is the Spec and which no test
 // exercised: playRig sets noAudio, so the whole playback branch was at zero
 // coverage. fakePlayer is the seam — playAnnounced shells out to afplay(1), so a

@@ -98,7 +98,7 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `playRegion` | `cmd/define/replraw.go` | new | `playAnnounced` — the one switch on `RegionKind`, shared by both loops (D4) |
-| `runPlay` | `cmd/define/play_loop.go` | unchanged | `liveScreen` — replaced both `crlfWriter`s (D9). **Landed by `#41` T3** (`playConsole`), which needed the same seam for its status bar |
+| `runPlay` | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces both `crlfWriter`s (D9). **Already landed, by `#41` T3** (`playConsole`), which needed the same seam for its status bar; nothing here is left for this issue to do |
 | `playSession` | `cmd/define/play_loop.go` | modified | takes `console` (**already, via `#41` T3**) and the region map — D10 |
 | `playSession`'s reveal write | `cmd/define/play_loop.go` | modified | `writeRendered` for the reveal (D3). This was a row for `draw`, which `#41` T4 **deleted**: the question, the reveal and the grading keys have three different lifetimes and a scrolling terminal could not express the difference, so the reveal is now written by the loop on `OutcomeReveal` and the keys are the frame's prompt (`livePrompt`). The seam D3 names is unchanged — it is the call that gains the click map |
 

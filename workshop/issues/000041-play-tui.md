@@ -63,12 +63,12 @@ and nothing about what it asks. `#40` is the first consumer.
 
 ## Done when
 
-- [ ] `--play` paints whole frames through `display`; no path appends bare lines.
-- [ ] A status bar stays pinned at the bottom across question, reveal and resize.
-- [ ] A reveal longer than the terminal PAGES; the prompt word stays on screen.
-- [ ] The transcript survives exit, pinned by the same test shape `#30` used.
-- [ ] SIGWINCH repaints correctly mid-sitting.
-- [ ] A pty conformance test drives a real sitting and asserts the bar is present, updates as answers land, and is still there after a reveal.
+- [x] `--play` paints whole frames through `display`; no path appends bare lines.
+- [x] A status bar stays pinned at the bottom across question, reveal and resize.
+- [x] A reveal longer than the terminal PAGES; the prompt word stays on screen.
+- [x] The transcript survives exit, pinned by the same test shape `#30` used.
+- [x] SIGWINCH repaints correctly mid-sitting.
+- [x] A pty conformance test drives a real sitting and asserts the bar is present, updates as answers land, and is still there after a reveal.
 
 ## Estimate
 
@@ -142,9 +142,9 @@ decisions and the twelve Done-when rows live in
 - [x] **T4** — the question is written to the buffer once, not per keystroke (D4).
 - [x] **T5** — the live edge: `newPinnedScreen` and paint-time padding (D3, D3a).
 - [x] **T6** — figures in memory; `todaysQuestions` returns its work and `finish` stops re-reading (D7).
-- [ ] **T7** — paging intercepted in the LOOP; `toInput` untouched (D6).
-- [ ] **T8** — SIGWINCH repaints through the console.
-- [ ] **T9** — pty conformance (three existing tests re-examined) and docs.
+- [x] **T7** — paging intercepted in the LOOP; `toInput` untouched (D6).
+- [x] **T8** — SIGWINCH repaints through the console.
+- [x] **T9** — pty conformance (three existing tests re-examined) and docs.
 
 ## Log
 

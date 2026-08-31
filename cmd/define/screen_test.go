@@ -497,6 +497,19 @@ func TestOnlyThePinnedConstructorPads(t *testing.T) {
 	}
 }
 
+// lastFrame is the most recent WHOLE frame in what a terminal received.
+//
+// Paint opens every frame with home-and-erase, so the bytes after the last one
+// are what is on screen; everything before it has been erased. A pty test that
+// searched the accumulated stream would find text the terminal had already
+// wiped, which under #41 is most of it.
+func lastFrame(painted string) string {
+	if i := strings.LastIndex(painted, cursorHome+eraseDown); i >= 0 {
+		return painted[i:]
+	}
+	return painted
+}
+
 func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {
 	const prompt = "› syc"
 	for _, tc := range []struct {

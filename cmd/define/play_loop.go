@@ -190,11 +190,52 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		select {
 		case <-ctx.Done():
 			return over()
+		case sz := <-con.resizes:
+			// A frame is drawn for a SHAPE, and both halves of it go wrong: too
+			// tall and the terminal scrolls, which moves every row the sitting
+			// believes it placed; too narrow and the bar and the keys are laid
+			// out against a width that is not there.
+			//
+			// The editor's case, mirrored — with one line missing on purpose.
+			// It also sets opt.width, the POLICY width new entries wrap to;
+			// here every question was rendered before the sitting started, so
+			// re-deriving it would change nothing and would claim a re-wrap
+			// this loop does not do.
+			view.Resize(sz.rows, sz.cols)
+			show()
+			continue
 		case got, ok := <-keys:
 			if !ok {
 				return over()
 			}
 			k = got
+		}
+
+		// A VIEWPORT GESTURE NEVER REACHES play (D6).
+		//
+		// It changes what you are LOOKING AT, not what you are answering, and
+		// `play` is mechanically guarded pure — main owns the terminal and knows
+		// Ctrl-C is 0x03; play must not. A `play.Input` kind for "page up" would
+		// put a display concept inside the pure package and every future form
+		// would inherit it, which is why an earlier draft routing these through
+		// toInput was reversed.
+		//
+		// This is what a long reveal needed: form 2.3 on a word like `run` is
+		// several screenfuls, and before frames the question simply scrolled off
+		// the top with no way back.
+		switch k.Kind {
+		case KeyPageUp:
+			view.Page(1)
+			continue
+		case KeyPageDown:
+			view.Page(-1)
+			continue
+		case KeyWheelUp:
+			view.Scroll(wheelLines)
+			continue
+		case KeyWheelDown:
+			view.Scroll(-wheelLines)
+			continue
 		}
 
 		// The question the keystroke is ABOUT, read before Apply moves on. A
