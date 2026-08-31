@@ -40,6 +40,12 @@ day@   0    1    2    4    8   14   24   40   66  108  176  285  460
 
 **D9 — the load number gets a READER in this issue, not a later one.** `finish()` already prints `"N right, M wrong"` at the end of a sitting; it gains one line. Shipping `DailyLoad` with no caller would be the same "no reader" smell D6 deletes `Streak` for, and `#41`'s status bar is then a second consumer rather than the first.
 
+**D14 — `unaided` must be CAPTURED BEFORE `advance` resets it, and reading `s.Revealed` inside `advance` silently inverts the feature.** `advance` sets `s.Revealed, s.Graded = false, false` (`session.go:251`) and only then constructs the Record outcome (`:262`) — which is the sole site that can carry a `Correct` verdict. So the obvious implementation, computing `unaided` where the outcome is built, yields `true` for EVERY correct answer including one given after a reveal. The feature would appear to work, every word would climb two rungs, and the ladder would run at double speed.
+
+Nothing would catch it either: a Done-when that drives a correct unrevealed answer is green on the bug, and so is one that drives a wrong answer. **The discriminating case is reveal-then-answer-correctly**, which is why it is a Done-when row (13) rather than a line in the manual verification block.
+
+`advance` therefore takes the flag as a parameter, computed by the `InputRune` arm while `s.Revealed` still holds its real value. The value travels with the decision that produced it rather than being re-read from state that has moved on.
+
 **D12 — `CaptureReview` takes the `Outcome`, not a fourth positional argument.** It is `CaptureReview(word string, correct bool, axis play.Axis, opt options)` today; adding `unaided bool` would make the call site read `CaptureReview(out.Word, out.Verdict == play.Correct, out.Unaided, out.Axis, opt)` — two adjacent swappable bools, introduced by the same change that adds `Grade` to remove one. The `Outcome` already carries every one of those fields, so the seam becomes `CaptureReview(out play.Outcome, opt options)` and the swap becomes unexpressible.
 
 **D11 — the budget is `-count`, and it is named rather than invented.** `SustainableNewWords` needs a budget and this issue introduces no new knob for it: `opt.count` (the `-count` flag, default 20) is the number of questions a sitting will ask, and it is therefore the daily budget FOR A LEARNER WHO SITS DOWN ONCE A DAY. That assumption is stated in the output rather than hidden — the line reads "at 20 a day" so a learner who sits twice knows to double it. Inventing a second budget flag would give the tool two answers to "how much do I do per day", which is the drift this plan avoids everywhere else.
@@ -79,6 +85,7 @@ type SelfRated interface{ IsSelfRated() bool }
 | `Queue` deliberately does not exclude mastered words | `schedule/queue.go:58` | true — the `Due` guard's comment: *"a word never offered can never be answered wrong"* |
 | `schedule`'s import allowlist | `schedule/purity_test.go:23` | true — `time`, `sort`, `slices`, `cmp`, `store`; this plan adds none |
 | `Apply` knows `s.Revealed` when it grades | `play/session.go:190` | true — the `InputRune` arm reads it before grading |
+| **`advance` ZEROES `s.Revealed` before it builds the Record outcome** | `play/session.go:251` | true — the reset is at :251, the outcome at :262 |
 | `At` must stay last in a written record | `store/event.go:45` | true — stated there, pinned by `TestYAMLWritesAtLastWhateverFieldsAreSet` |
 | `--stats` does not exist | measured 2026-08-31 | true — `#8` is open, so `finish()` is the only available reader (D9) |
 | `8^20` fits in `int64` | computed, 2026-08-31 | true — 1.15e18 against a 9.22e18 max; `8^21` overflows |
@@ -151,7 +158,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [ ] **T3 — `Mastered` and the removal of `Streak`** (D6). `Mastered(p) = p.Box >= MasteredBox` with `MasteredBox = 9`, and a comment carrying the number's reason: day 108, nine recalls, the last after a 42-day gap. Delete `Streak` and `masteryStreak`; the compiler finds every reader.
 - [ ] **T4 — `Queue` ranks relative overdue** (D7). Keep `overdue` and add `interval` to the candidate; compare by cross-multiplication in `int64`. Test where a low-box word beats a more-absolutely-overdue high-box one, which is red on today's code.
 - [ ] **T5 — the load functions** (D9). `DailyLoad`, `SustainableNewWords`, `reviewsInFirstYear` in a new `schedule/load.go`. `reviewsInFirstYear` is DERIVED by walking the ladder, never typed, so changing the ratio cannot leave it stale.
-- [ ] **T6 — "unaided" reaches the log** (D8, D10, D12). `ReviewEvent.Unaided` above `At`; `Outcome.Unaided` set at grading; `CaptureReview` takes the `Outcome`; `Fold` reconstructs the `Grade`. The seam is the one `#7` built for the axis, extended rather than re-invented.
+- [ ] **T6 — "unaided" reaches the log** (D8, D10, D12, D14). `ReviewEvent.Unaided` above `At`; `Outcome.Unaided` set at grading; `CaptureReview` takes the `Outcome`; `Fold` reconstructs the `Grade`. The seam is the one `#7` built for the axis, extended rather than re-invented.
 - [ ] **T7 — the sitting reports its cost** (D9, D11). `finish()` gains a line: `"~14 reviews/day at your current mix · 3 new words/day sustainable"`. This is what gives T5 a reader.
 - [ ] **T8 — docs.** `atlas/define.md`'s scheduling section rewritten for the computed ladder; `cmd/define/README.md`'s "words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days" corrected; the project row ticked.
 
@@ -175,7 +182,7 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a p
 | 10 | an unaided answer is recorded and folds to `GradeUnaided` | `TestUnaidedAnswerReachesTheLog` through `playSession`, as `#7`'s axis test does | the loop stops passing it, which no `play` test would see |
 | 11 | `at:` is still the last key on disk | `TestYAMLWritesAtLastWhateverFieldsAreSet`, extended with the new field | the field lands below `At` |
 | 12 | the sitting reports its cost, and names the budget it assumed | `TestFinishReportsTheLoad` | the number loses its reader, or the `-count` assumption goes unstated |
-| 13 | every shipped form is on the right side of the observed/claimed split | `TestSelfRatedFormsNeverEarnUnaided` — derived by driving each form in `play` through a correct, unrevealed answer | a self-rated form starts earning `+2` |
+| 13 | every shipped form is on the right side of the observed/claimed split, AND a reveal disqualifies | `TestSelfRatedFormsNeverEarnUnaided` (each form, correct + unrevealed) and `TestARevealDisqualifiesUnaided` (reveal, THEN answer correctly) | a self-rated form earns `+2`, or `unaided` is read after `advance` has zeroed `s.Revealed` (D14) |
 | 14 | `DailyLoad` counts never-reviewed deck words | `TestDailyLoadCountsUnreviewedWords` — a deck of 20 with 2 reviewed must not report the cost of 2 | the fold's map is summed instead of the deck |
 | 15 | re-folding an old log makes words due SOONER, never later, below box 10 | `TestReFoldingAnOldLogIsSafe` — a synthetic log of 5 corrects lands on a shorter interval than the old ladder gave | a future ratio change silently defers review |
 

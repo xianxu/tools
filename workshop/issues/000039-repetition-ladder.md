@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-08-31
 updated: 2026-08-31
-estimate_hours:
+estimate_hours: 2.66
 started: 2026-08-31T11:01:05-07:00
 ---
 
@@ -173,6 +173,64 @@ on, rather than being discovered as a growing backlog.
 - [ ] `Queue` ranks reviewed words by overdue RELATIVE to interval, pinned by a test where a low-box word beats a more-absolutely-overdue high-box one.
 - [ ] Daily-review load and the sustainable new-word rate are computable from `Progress` alone, and reported.
 - [ ] The recovery path is pinned end to end: a word at box 10 that lapses is back at box 10 in three reviews, not five.
+
+## Estimate
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.40 impl=0.06
+item: smaller-go-module        design=0.05 impl=0.16
+item: greenfield-go-module     design=0.06 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.10
+item: smaller-go-module        design=0.03 impl=0.12
+item: greenfield-go-module     design=0.05 impl=0.20
+item: cross-cutting-refactor   design=0.05 impl=0.20
+item: smaller-go-module        design=0.02 impl=0.08
+item: atlas-docs               design=0.03 impl=0.06
+item: milestone-review         design=0.0  impl=0.20
+item: milestone-review         design=0.0  impl=0.32
+item: milestone-review         design=0.0  impl=0.10
+design-buffer: 0.15
+total: 2.66
+```
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional.
+
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.40/0.06 | the design carrier | the Spec, this plan, and two plan-quality rounds |
+| `smaller-go-module` 0.05/0.16 | T1 the computed ladder | replacing a six-entry table with a function in a package that already has the shape |
+| `greenfield-go-module` 0.06/0.24 | T2 `Grade`, transitions, `MaxBox` | the real algorithm: a new enum, three transitions and the express lane |
+| `smaller-go-module` 0.02/0.10 | T3 `Mastered`, delete `Streak` | the compiler finds every reader |
+| `smaller-go-module` 0.03/0.12 | T4 relative overdue | one comparator, cross-multiplied |
+| `greenfield-go-module` 0.05/0.20 | T5 the load functions | a new file, three functions, one of them derived from the ladder |
+| `cross-cutting-refactor` 0.05/0.20 | T6 `unaided` to the log | four files — `store`, `play`, `capture`, the loop — and the `advance` trap (D14) |
+| `smaller-go-module` 0.02/0.08 | T7 `finish` reports | one line, one test |
+| `atlas-docs` 0.03/0.06 | T8 | atlas, README, project row |
+| `milestone-review` 0.0/0.20 | the boundary, run | |
+| `milestone-review` 0.0/0.32 | the boundary, remediate | **priced against measured evidence, not the table's midpoint** — see below |
+| `milestone-review` 0.0/0.10 | manual verification | a real terminal, `-race`, `-tags conformance` |
+
+**The remediation line is raised on evidence, and that is not the same as
+padding.** `#7` closed one day ago and took **eight review rounds**, surfacing
+three Criticals. Its estimate priced one boundary at 0.16 to run plus 0.12 to
+remediate; the rounds alone plainly cost more than 0.28h. So this issue prices
+remediation at the top of the `milestone-review` range rather than its middle.
+That is a per-primitive correction derived from a measured row in this repo,
+which is what the primitive table is for — it is not a private multiplier
+applied to the total, which is the thing `#7`'s estimate block refused to do and
+still refuses.
+
+**The standing calibration question.** Two closed rows now: `#30` at 3.4× and
+`#7` at 1.7×. Both overran, which points at the v3.1 impl scale being too
+aggressive for `define`-sized work (`#127`). This row does not correct for it
+beyond the review line above — a private factor would corrupt the ledger that
+exists to detect the bias. If this lands near 1.7× again, that is three
+consecutive rows and the scale itself should move rather than each estimate
+quietly compensating.
 
 ## Plan
 

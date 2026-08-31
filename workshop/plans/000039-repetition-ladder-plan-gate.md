@@ -71,6 +71,53 @@ rounds:
           family: fold-replay-compat
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-08-31T11:16:45-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: D10 adds the SelfRated optional interface with Recall on the claimed side and Done-when 13 pinning the split.
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: D11 names opt.count (main.go:419, default 20) and states the once-a-day assumption in the printed line.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: DailyLoad(deck []store.Word, prog map[string]Progress) with the missing-entry rule and Done-when 14.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: The clamp is ladderLimit; D3 gives the one-letter-apart collision as the reason.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: D12 changes the seam to CaptureReview(out play.Outcome, opt options).
+          round: 2
+        - id: PQ-6
+          disposition: addressed
+          note: D13 derives the re-fold direction table and Done-when 15 pins direction, not magnitude.
+          round: 2
+      findings:
+        - id: PQ-7
+          severity: Minor
+          title: Unaided is derived in advance(), which zeroes s.Revealed before it builds the outcome
+          detail: |-
+            play/session.go:251 sets `s.Revealed, s.Graded = false, false` and only then
+            constructs the Record outcome at :262 — the sole site that can carry a
+            Correct verdict. The plan's claim row cites session.go:190 (Apply's
+            InputRune arm), which is a true statement about a different line than the
+            one T6 lands on. Computing Unaided from s.Revealed inside advance yields
+            true for every correct answer, including one given after a reveal, and no
+            Done-when row covers that negative case: 13 drives forms through an
+            unrevealed correct answer and 10 pins the positive path, so both stay green.
+            Capture the flag before the reset, and add the reveal-then-correct case to
+            Done-when 13 rather than leaving it to the manual verification block.
+          family: observe-before-state-reset
+          round: 2
+      blocked: false
+content_hash: 37b9e398a1a5a9086274b8d573ff48f51b4eed089dc0853d4e8d0a087f6ba945
 ---
 
 # Gate ledger — tools#39 (plan-quality)
@@ -116,11 +163,31 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   (>=455 days under the old 1/3/7/14/30/90 ladder) before the new interval
   exceeds the old 90-day cap — but that takes deriving and belongs in the plan.
 
+## Round 2 — 2026-08-31T11:16:45-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — D10 adds the SelfRated optional interface with Recall on the claimed side and Done-when 13 pinning the split.
+- PQ-2 — addressed — D11 names opt.count (main.go:419, default 20) and states the once-a-day assumption in the printed line.
+- PQ-3 — addressed — DailyLoad(deck []store.Word, prog map[string]Progress) with the missing-entry rule and Done-when 14.
+- PQ-4 — addressed — The clamp is ladderLimit; D3 gives the one-letter-apart collision as the reason.
+- PQ-5 — addressed — D12 changes the seam to CaptureReview(out play.Outcome, opt options).
+- PQ-6 — addressed — D13 derives the re-fold direction table and Done-when 15 pins direction, not magnitude.
+
+### Raised
+
+- **PQ-7** [Minor] `observe-before-state-reset` Unaided is derived in advance(), which zeroes s.Revealed before it builds the outcome
+  play/session.go:251 sets `s.Revealed, s.Graded = false, false` and only then
+  constructs the Record outcome at :262 — the sole site that can carry a
+  Correct verdict. The plan's claim row cites session.go:190 (Apply's
+  InputRune arm), which is a true statement about a different line than the
+  one T6 lands on. Computing Unaided from s.Revealed inside advance yields
+  true for every correct answer, including one given after a reveal, and no
+  Done-when row covers that negative case: 13 drives forms through an
+  unrevealed correct answer and 10 pins the positive path, so both stay green.
+  Capture the flag before the reset, and add the reveal-then-correct case to
+  Done-when 13 rather than leaving it to the manual verification block.
+
 ## Open findings
 
-- **PQ-1** [Critical] `form-capability-gate` D10 grants +2 to form 2.1 self-report, contradicting the issue's Revision
-- **PQ-2** [Important] `unsourced-input` T7 prints a sustainable new-word rate with no named source for `budget`
-- **PQ-3** [Important] `deck-is-the-roster` DailyLoad's deck-vs-log scope is unstated and unpinned
-- **PQ-4** [Important] `name-one-meaning` `MaxBox` is planned as both the arithmetic clamp and a Progress field
-- **PQ-5** [Minor] `bool-param-over-enum` T6 adds a second adjacent bool to CaptureReview right after D4 argues against bools
-- **PQ-6** [Minor] `fold-replay-compat` The plan says nothing about what re-folding existing logs does to live schedules
+- **PQ-7** [Minor] `observe-before-state-reset` Unaided is derived in advance(), which zeroes s.Revealed before it builds the outcome
