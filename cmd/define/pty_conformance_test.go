@@ -626,6 +626,42 @@ func TestPTYResizeRepaints(t *testing.T) {
 	}
 }
 
+// A SITTING repaints on a real SIGWINCH, and the bar is still on the bottom row.
+//
+// The editor's row above pins that the signal is delivered at all; this one pins
+// that `--play`'s select case is wired to it, which is a different loop and was
+// a different omission. The bar makes it a stronger assertion than the editor's:
+// a footer pinned to the bottom of the WRONG height is off the screen entirely.
+func TestPTYPlayResizeRepaints(t *testing.T) {
+	deck := seedDeck(t)
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+		conformance.SkipOrFail(t, "cannot size the pty on this platform", err)
+	}
+	if first := out.take(3 * time.Second); !strings.Contains(unstyled(first), "reviews/day") {
+		t.Fatalf("the sitting never drew its bar:\n%q", first)
+	}
+
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 10, Cols: 80}); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	after := unstyled(out.take(2 * time.Second))
+	if !strings.Contains(after, cursorHome) {
+		t.Fatalf("nothing was repainted after the window changed — SIGWINCH never reached the "+
+			"sitting's select:\n%q", after)
+	}
+	frame := lastFrame(after)
+	if rows := strings.Count(frame, "\r\n") + 1; rows > 10 {
+		t.Errorf("the frame is %d rows in a 10-row window: %q", rows, frame)
+	}
+	if !strings.Contains(frame, "reviews/day") {
+		t.Errorf("the bar is not in the frame drawn for the new shape — a footer pinned to the "+
+			"old height is off the screen:\n%q", frame)
+	}
+}
+
 // The session survives the alternate screen (#30 D3, M1.5).
 //
 // The alt buffer is discarded on the way out, so without the transcript

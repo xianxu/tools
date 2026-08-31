@@ -148,15 +148,15 @@ Overload behaviour: a deck large enough for the per-answer walk to be felt would
 
 Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
-- [ ] **T1 — `menu` becomes `footer`** (D2). Rename the parameter and `fitMenu`, update the editor's call sites and the `display` interface's doc. No behaviour change; the test suite is the proof.
-- [ ] **T2 — `sittingBar`** (D8). A pure formatter in `cmd/define/playbar.go`, sharing its wording with `finish()`. Table test including the degenerate cases: nothing due, zero budget, a load of zero.
-- [ ] **T3 — `--play` builds a `console`** (D1, D5a). Mirror `replRaw`'s construction, including `handBack` (D5), and DELETE the reveal's `restore`/`enterRaw` pair and its error branch — playback no longer leaves raw mode. `playSession` takes the console instead of a raw writer.
-- [ ] **T4 — the question is written once** (D4). Track the written index; write `Prompt()` on transition and `Reveal()` on `OutcomeReveal`. Test that N keystrokes on one question leave ONE copy of it in the buffer — the assertion a naive port fails.
-- [ ] **T5 — the live edge** (D3, D3a). `newPinnedScreen`, and `Paint` pads the buffer region to its full height when pinned — blank rows at paint time, never lines in the buffer. `draw` computes the grading keys and the bar and calls `Draw`; the frame's shape is `Paint`'s business.
-- [ ] **T6 — the figures are in memory, and `finish` stops re-reading** (D7). `todaysQuestions` returns the deck and progress it already computes; the loop applies `schedule.Answer` on each record, drops on `OutcomeDrop`, and recomputes `DailyLoad` from memory. `finish` takes the figures instead of reading — superseding `#39` T7's re-read, whose REASONING survives (the after-today figure) while its mechanism becomes redundant. Counting store: a sitting of N answers calls `Deck()` exactly once and `Events()` exactly once.
-- [ ] **T7 — paging** (D6). The LOOP intercepts the wheel and PageUp/PageDown and calls `view.Scroll`/`view.Page`; `toInput` is untouched and `play` learns nothing. Test that a reveal taller than the viewport keeps the prompt word on screen after a page, and that `play.Input` gained no kind.
-- [ ] **T8 — SIGWINCH** (D1). The resize case redraws through the console, as the editor's does.
-- [ ] **T9 — pty conformance + docs.** Three existing pty tests assert over `--play`'s RAW BYTE STREAM, which becomes whole frames, so each is re-examined rather than assumed:
+- [x] **T1 — `menu` becomes `footer`** (D2). Rename the parameter and `fitMenu`, update the editor's call sites and the `display` interface's doc. No behaviour change; the test suite is the proof.
+- [x] **T2 — `sittingBar`** (D8). A pure formatter in `cmd/define/playbar.go`, sharing its wording with `finish()`. Table test including the degenerate cases: nothing due, zero budget, a load of zero.
+- [x] **T3 — `--play` builds a `console`** (D1, D5a). Mirror `replRaw`'s construction, including `handBack` (D5), and DELETE the reveal's `restore`/`enterRaw` pair and its error branch — playback no longer leaves raw mode. `playSession` takes the console instead of a raw writer.
+- [x] **T4 — the question is written once** (D4). Track the written index; write `Prompt()` on transition and `Reveal()` on `OutcomeReveal`. Test that N keystrokes on one question leave ONE copy of it in the buffer — the assertion a naive port fails.
+- [x] **T5 — the live edge** (D3, D3a). `newPinnedScreen`, and `Paint` pads the buffer region to its full height when pinned — blank rows at paint time, never lines in the buffer. `draw` computes the grading keys and the bar and calls `Draw`; the frame's shape is `Paint`'s business.
+- [x] **T6 — the figures are in memory, and `finish` stops re-reading** (D7). `todaysQuestions` returns the deck and progress it already computes; the loop applies `schedule.Answer` on each record, drops on `OutcomeDrop`, and recomputes `DailyLoad` from memory. `finish` takes the figures instead of reading — superseding `#39` T7's re-read, whose REASONING survives (the after-today figure) while its mechanism becomes redundant. Counting store: a sitting of N answers calls `Deck()` exactly once and `Events()` exactly once.
+- [x] **T7 — paging** (D6). The LOOP intercepts the wheel and PageUp/PageDown and calls `view.Scroll`/`view.Page`; `toInput` is untouched and `play` learns nothing. Test that a reveal taller than the viewport keeps the prompt word on screen after a page, and that `play.Input` gained no kind.
+- [x] **T8 — SIGWINCH** (D1). The resize case redraws through the console, as the editor's does.
+- [x] **T9 — pty conformance + docs.** Three existing pty tests assert over `--play`'s RAW BYTE STREAM, which becomes whole frames, so each is re-examined rather than assumed:
 
   | test | what it asserts | expectation under frames |
   |---|---|---|
@@ -185,7 +185,7 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a p
 | 9 | SIGWINCH repaints mid-sitting | `TestPlayRepaintsOnResize` | the resize case is not wired |
 | 10 | the real terminal shows the bar and updates it | the `#7` pty test, extended | it works in-process and not on a tty |
 | 11 | the bar sits at the TERMINAL'S bottom on a short question, and padding never enters the buffer | `TestAShortQuestionStillPinsTheBar` and `TestPaddingNeverReachesTheTranscript` | the bar floats under the content, or blank rows appear in `Lines()` |
-| 12 | the editor's footer still FOLLOWS its content | the editor's existing frame tests, unchanged | `newPinnedScreen`'s padding leaks into the REPL |
+| 12 | the editor's footer still FOLLOWS its content | `TestTheEditorsFooterFollowsItsContent` and `TestOnlyThePinnedConstructorPads`, plus the editor's existing frame tests unchanged | `newPinnedScreen`'s padding leaks into the REPL |
 
 ---
 
@@ -327,3 +327,29 @@ second caller. **A DRY claim in a decision has to name the function, or it is a
 claim about two pieces of code that happen to agree today.**
 
 Both rows are now in Core concepts.
+
+### 2026-08-31 — T9: three pty rows held, a fourth did not, and that was the trip's value
+
+The plan named THREE existing pty rows to re-examine and predicted all three
+would hold. They did, on real hardware. The plan did not name the fourth —
+`TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis`, `#7`'s form-2.3 row — and that
+is the one frames broke.
+
+It read the correct option out of *"the chunk the reveal produced"*, which is a
+premise only an APPEND-ONLY surface has. A frame redraws the question and the
+reveal together, so "the first option line in the chunk" became option 1 every
+time and the test's deliberate miss silently stopped being deliberate — a wrong
+guess is still a legal answer, so the failure surfaced as a stall rather than as
+a wrong assertion. Measured on a real terminal rather than reasoned about: after
+a reveal the options are scrolled off the screen entirely.
+
+The fix uses this issue's own behaviour as the instrument — page to the top, then
+read the option digit that appears TWICE — and the row now also asserts the bar
+is present and counts, which is T9's other half.
+
+**The rule the plan should have applied to itself: "re-examine the tests that
+assert over the surface this issue changes" means ENUMERATING them, not listing
+the ones already in mind.** `grep -l TestPTYPlay` was the enumeration, and it has
+four rows. Two more were added rather than re-examined —
+`TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` for D5a's Critical and
+`TestPTYPlayResizeRepaints` for the sitting's SIGWINCH, both mutation-verified.
