@@ -121,8 +121,10 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// THE BAR'S FIGURES, refreshed in memory (D7).
 	//
 	// `budget` and `total` are fixed for the sitting; `load`, `fresh` and `done`
-	// move as answers land. Recomputed after each keystroke's outcomes rather
-	// than per frame, because a frame is per keystroke and this is per ANSWER.
+	// move only when the deck does. So this is called from the two outcomes that
+	// change it — a record and a drop — and NOT once per frame: a frame is per
+	// keystroke, and an O(deck) walk per keystroke is a cost the plan's own
+	// table says this path does not pay.
 	fig := held.figures(opt.count)
 	fig.total = len(s.Questions)
 	refresh := func() {
@@ -293,6 +295,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// ...and the same transition on the copy in hand, so the bar
 				// shows the cost AFTER this answer without reading anything.
 				held.answered(out, d.clock.Now())
+				refresh()
 			case play.OutcomeDrop:
 				// Through the store's own Forget, which is --forget's path: the deck
 				// loses the word and the events keep it. Reported, because removing
@@ -301,6 +304,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
 				} else if removed {
 					held.dropped(out.Word)
+					refresh()
 					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
 				}
 
@@ -342,7 +346,6 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				}
 			}
 		}
-		refresh()
 		show()
 	}
 	return over()

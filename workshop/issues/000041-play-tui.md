@@ -186,3 +186,53 @@ Every `playSession` call site in the tests moves with T3's signature.
 `playSession` as claimed-modified-but-untouched. Nothing else fails.
 
 Branch: `000041-play-tui`.
+
+## Log
+
+### 2026-08-31 — T3 through T9 landed; the issue is code-complete
+
+**Four commits, each mutation-verified.** T3/T4 (the console and write-once),
+T5/T6 (the pinned screen and the in-memory figures), T7/T8/T9 (paging, SIGWINCH,
+the pty rows), and a fifth for the sitting's own pty resize row.
+
+**The three predicted-risky things all behaved as the plan said.** D5a's Critical
+was real and deleting the playback dance resolved it —
+`TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` now says so on real hardware.
+D3a's padding is a screen property (`newPinnedScreen`) and does not reach the
+editor, pinned in both directions. D7's cost claim holds: a sitting calls
+`Deck()` once and `Events()` once whatever its length, pinned by a counting
+store.
+
+**Two entities the plan implied but did not name**, both recorded as plan
+revisions: `sittingDeck` (the deck one sitting holds, with the transition, the
+drop and the walk on it) and `schedule.GradeOf` (the rule `Fold` reaches through
+`gradeOf`, exported because D7 gave it a second caller). *A DRY claim in a
+decision has to name the function, or it is a claim about two pieces of code that
+happen to agree today.*
+
+**The finding worth carrying forward is T9's.** The plan named THREE pty rows to
+re-examine and predicted all three would hold; they did. It did not name the
+FOURTH, `#7`'s form-2.3 row, and that is the one frames broke — it read the
+correct option out of "the chunk the reveal produced", a premise only an
+append-only surface has. The failure surfaced as a stall rather than a wrong
+assertion, because a wrong guess is still a legal answer, so the deliberate miss
+had silently stopped being deliberate. *"Re-examine the tests that assert over
+the surface this issue changes" means ENUMERATING them* — `grep -l TestPTYPlay`
+was the enumeration and it has four rows.
+
+**`#38` is affected and its plan carries a revision.** `#38` T2 and T3 describe
+the deletion and the screen adoption this issue landed, because a status bar has
+nowhere to go on a surface that owns no coordinates. Its plan now records what is
+in the tree and what it still owns (the click map); `draw` is gone, so its D3 and
+T4 need re-reading against the current `playSession` before that work starts. Its
+round-4 specification for the replacement order-pin was followed exactly —
+`TestAMissRecordsBeforeItPlays`, one ordered log written by both the capturer and
+the player, mutation-verified against a reversed iteration.
+
+**Verified:** `go test ./...`, `go test ./cmd/define/ -race`, and
+`go test -tags conformance ./cmd/define/` (124s, the whole pty suite) all green.
+
+**What is left for a human**: the plan's manual pass — a real sitting on a real
+terminal with a dozen words. Everything in it is covered by a pty row (the bar
+present and counting, a reveal that pages, a resize mid-sitting, the transcript
+after quitting), so this is confirmation rather than discovery.
