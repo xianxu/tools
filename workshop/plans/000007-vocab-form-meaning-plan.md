@@ -119,7 +119,7 @@ SHIPPED. The originals named five entities the tree does not have, because the
 | `Choice` | `cmd/define/play/choice.go` | new | PURE — form 2.3, implementing `Question` |
 | `Option` | `cmd/define/play/choice.go` | new | PURE — one answer line: its gloss and why it is in the set |
 | `Axis` | `cmd/define/play/choice.go` | new | PURE — the reduced taxonomy: `AxisDomain`, `AxisRegister`, `AxisGeneral`, with a `numAxes` sentinel the guard derives from |
-| `Candidate` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — one possible distractor (word, gloss, axis), pre-expanded by `main`. Not in the original table |
+| `Candidate` / `sourceOf` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — one possible distractor: deck key, SOURCE ENTRY, gloss, axis. Pre-expanded by `main`. `Source` was added in close round 6 and is the field that closes the whole family: a deck holds KEYS, a dictionary holds ENTRIES, and the mapping is many-to-one. Not in the original table |
 | `PickOptions` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — target + candidates + seed → options. Was planned as unexported `pickOptions` in `choice.go`; `main` has to call it |
 | `prng` / `shuffle` | `cmd/define/play/pick.go` | new | PURE — xorshift64, and one GENERIC Fisher-Yates over it. The planned bare `shuffle` became a type plus a generic helper once the sampler and the selector both needed the same stream (ARCH-DRY) |
 | `SampleStrings` | `cmd/define/play/pick.go` | new | PURE, **EXPORTED** — partial Fisher-Yates so `main` samples the deck with `play`'s PRNG rather than growing a second one. Not in the original table, and the one row that is genuinely new downstream API |
@@ -524,3 +524,36 @@ belief about macOS's dictionary that only a committed fixture asserted, and a
 fixture is a copy of a belief. `TestLiveDictionaryRedirectsADerivedForm` measures
 it against the real dictionary, in both directions: `bargainer` must not get its
 own entry, and `bargain` must still pass, so the gate cannot quietly become a ban.
+
+### 2026-08-30 — close review round 6: the root cause, three rounds late
+
+**BR-24 (Critical) is the third form of one defect, and this round found what all
+three were.** A DECK HOLDS KEYS; A DICTIONARY HOLDS ENTRIES; THE MAPPING IS
+MANY-TO-ONE. `Candidate.Word` was a deck key being used as if it identified a
+meaning, and every consequence followed from that:
+
+| round | symptom | key added |
+|---|---|---|
+| 4 | one entry supplied two options under two spellings | `Word` (already there) |
+| 5 | two options carried byte-identical glosses | `Gloss` |
+| 6 | one entry supplied two options with DIFFERENT senses, both defining the prompted word, one marked wrong | `Source` |
+
+Rounds 4 and 5 each fixed the symptom in front of them, and round 5's own
+Revisions congratulated itself on "fixing the class" while keying on `Word` and
+`Gloss` — two attributes of the option — and never on the entry, which is the
+unit of MEANING. `Candidate` now carries `Source`, both producers set it from
+`Entry.Headword()`, and selection dedups on all three keys because each closes a
+case the others structurally cannot see: `Word` the obvious repeat, `Gloss` two
+entries that print the same text, `Source` one entry offering two of its own
+senses.
+
+**What I should have done at round 4 and did not:** ask what makes two options
+"the same", rather than what made THESE two the same. The answer was available
+then — `#29` exists because the dictionary resolves several spellings to one
+entry, and `dict_fake_test.go` and `TestLiveDictionaryResolvesAnUnaccentedQuery`
+both model it. Three rounds of Critical findings were the cost of patching a
+symptom while the fact that explains it was already written down in the repo.
+
+`TestOneEntryMaySupplyOnlyOneOption` asserts all three keys as one property, and
+`TestNoQuestionDrawsTwoOptionsFromOneEntry` does it at the sitting level over the
+deck shape that produces it. Both mutation-verified.

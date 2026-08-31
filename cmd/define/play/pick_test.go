@@ -301,3 +301,54 @@ func TestPickOptionsNeverRepeatsAGloss(t *testing.T) {
 		}
 	}
 }
+
+// ONE ENTRY MAY SUPPLY AT MOST ONE OPTION, even under two deck keys and even
+// with two different senses.
+//
+// The third form of the same defect, found one round apart from the other two:
+// `jalapeño` and `jalapeno` are separate deck keys answered by one entry, so
+// after Word-dedup and Gloss-dedup it could still contribute two options
+// carrying DIFFERENT senses of itself — both genuinely defining the prompted
+// word, one arbitrarily marked wrong. The entry is the unit of meaning, so it
+// is the key that closes the class.
+func TestOneEntryMaySupplyOnlyOneOption(t *testing.T) {
+	tgt := Candidate{Word: "mesa", Source: "mesa", Gloss: "an isolated flat-topped hill"}
+	pool := []Candidate{
+		{Word: "jalapeño", Source: "jalapeño", Gloss: "a very hot green chili pepper", Axis: AxisGeneral},
+		{Word: "jalapeno", Source: "jalapeño", Gloss: "a pepper used in Mexican cooking", Axis: AxisDomain},
+		{Word: "jalapenos", Source: "jalapeño", Gloss: "the plural of the pepper", Axis: AxisRegister},
+		{Word: "quokka", Source: "quokka", Gloss: "a small short-tailed wallaby", Axis: AxisGeneral},
+		{Word: "parrot", Source: "parrot", Gloss: "a vividly coloured bird", Axis: AxisRegister},
+	}
+	for s := uint64(0); s < 60; s++ {
+		opts := PickOptions(tgt, pool, s)
+		// The property, over ALL THREE keys at once — the three defects were
+		// one class, so this is one assertion rather than three tests.
+		seenW, seenG := map[string]bool{}, map[string]bool{}
+		sources := map[string]int{}
+		for _, o := range opts {
+			if seenW[o.Word] {
+				t.Fatalf("seed %d: %q appears twice: %+v", s, o.Word, opts)
+			}
+			if seenG[o.Gloss] {
+				t.Fatalf("seed %d: the gloss %q appears twice: %+v", s, o.Gloss, opts)
+			}
+			seenW[o.Word], seenG[o.Gloss] = true, true
+		}
+		// Options carry no Source, so the entry check is done through the pool:
+		// at most one option may come from any single entry.
+		for _, o := range opts {
+			for _, c := range pool {
+				if c.Word == o.Word {
+					sources[c.Source]++
+				}
+			}
+		}
+		for src, n := range sources {
+			if n > 1 {
+				t.Fatalf("seed %d: entry %q supplied %d options — two senses of one entry "+
+					"both define the prompted word, and one is marked wrong: %+v", s, src, n, opts)
+			}
+		}
+	}
+}

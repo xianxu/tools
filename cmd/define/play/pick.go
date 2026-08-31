@@ -18,9 +18,40 @@ package play
 // sense, its best-performance sense — and selection makes sure only one of them
 // reaches a given question.
 type Candidate struct {
-	Word  string
-	Gloss string
-	Axis  Axis
+	// Word is the DECK KEY — what the learner typed and what the event records.
+	Word string
+	// Source identifies the dictionary ENTRY this gloss came from, and it is not
+	// the same thing as Word.
+	//
+	// This distinction is the root of three separate defects found one round
+	// apart, each looking like a new bug and each the same one: a deck holds
+	// KEYS, a dictionary holds ENTRIES, and the mapping is many-to-one.
+	// `jalapeño` and `jalapeno` are two keys (store.Key folds case and
+	// whitespace, not diacritics) that the dictionary answers with one entry.
+	// Dedup on Word alone let that entry supply two options; dedup on Word and
+	// Gloss still let it supply two options carrying DIFFERENT SENSES of itself,
+	// both of which genuinely define the prompted word, one arbitrarily marked
+	// wrong.
+	//
+	// Keying on the entry is what actually closes it, because the entry is the
+	// unit of meaning. Empty means "no entry identity available", and selection
+	// then falls back to Word — a caller that forgets to set it is no worse off
+	// than before, which keeps this from being a new way to break the form.
+	Source string
+	Gloss  string
+	Axis   Axis
+}
+
+// sourceOf is a candidate's entry identity, falling back to its deck key.
+//
+// The fallback matters: a Candidate built without a Source (a test, or a future
+// caller) must still be deduped rather than colliding with every other
+// Source-less candidate under the empty string.
+func sourceOf(c Candidate) string {
+	if c.Source != "" {
+		return c.Source
+	}
+	return c.Word
 }
 
 // maxOptions is four. Not a tuning knob: four is what the issue specifies, and
@@ -59,6 +90,7 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	// entries whose entry genuinely defines them. The set is the only place that
 	// can see two options saying the same thing.
 	usedGloss := map[string]bool{target.Gloss: true}
+	usedSource := map[string]bool{sourceOf(target): true}
 	var distractors []Candidate
 	rng := newPRNG(seed)
 
@@ -85,9 +117,16 @@ func PickOptions(target Candidate, pool []Candidate, seed uint64) []Option {
 	take := func(c Candidate) {
 		used[c.Word] = true
 		usedGloss[c.Gloss] = true
+		usedSource[sourceOf(c)] = true
 		distractors = append(distractors, c)
 	}
-	free := func(c Candidate) bool { return !used[c.Word] && !usedGloss[c.Gloss] }
+	// THREE KEYS, and each one closes a case the others cannot see. Word stops
+	// the obvious repeat; Gloss stops two entries that happen to print the same
+	// text; Source stops ONE entry supplying two of its own senses under two
+	// deck keys, which is the case that reads as two different right answers.
+	free := func(c Candidate) bool {
+		return !used[c.Word] && !usedGloss[c.Gloss] && !usedSource[sourceOf(c)]
+	}
 
 	// Pass 1: one per axis, scarcest axis first.
 	for _, want := range distractorAxes {

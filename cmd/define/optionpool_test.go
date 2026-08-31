@@ -295,3 +295,54 @@ func TestNoCandidateEverCarriesAnotherWordsGloss(t *testing.T) {
 		t.Error("no redirect entry in the corpus — this test asserted nothing")
 	}
 }
+
+// The same defect at the SITTING level, on the deck shape that produces it:
+// two keys the dictionary answers with one entry.
+//
+// `define jalapeno` and `define jalapeño` are two Upserts under two keys
+// (capture.go), and the accent-insensitive lookup is documented production
+// behaviour with its own live conformance check — so this deck is ordinary, not
+// contrived.
+func TestNoQuestionDrawsTwoOptionsFromOneEntry(t *testing.T) {
+	d, opt, _ := playRig(t, "jalapeño", "jalapeno", "sycophantic", "quokka", "mesa", "parrot", "concrete")
+	qs := questionsFor(t, d, opt)
+	if len(qs) == 0 {
+		t.Fatal("no questions")
+	}
+	// Map every gloss the deck can produce back to the entry it came from.
+	glossSource := map[string]string{}
+	for _, w := range []string{"jalapeño", "jalapeno", "sycophantic", "quokka", "mesa", "parrot", "concrete"} {
+		raw, err := d.dict.Lookup(w)
+		if err != nil {
+			continue
+		}
+		e := ParseEntry(raw)
+		for _, c := range optionCandidates(w, e) {
+			glossSource[c.Gloss] = e.Headword()
+		}
+	}
+	choices := 0
+	for _, q := range qs {
+		c, ok := q.(*play.Choice)
+		if !ok {
+			continue
+		}
+		choices++
+		seen := map[string]int{}
+		for _, o := range c.Options() {
+			if src, known := glossSource[o.Gloss]; known {
+				seen[src]++
+			}
+		}
+		for src, n := range seen {
+			if n > 1 {
+				t.Errorf("the question for %q draws %d options from the entry %q — "+
+					"two senses of one entry, both defining the word, one marked wrong:\n%s",
+					q.Word(), n, src, c.Prompt())
+			}
+		}
+	}
+	if choices == 0 {
+		t.Fatal("no form 2.3 questions; this test asserted nothing")
+	}
+}

@@ -97,7 +97,7 @@ func optionCandidates(word string, e Entry) []play.Candidate {
 				continue
 			}
 			seen[f.Axis] = true
-			out = append(out, play.Candidate{Word: word, Gloss: f.Text, Axis: f.Axis})
+			out = append(out, play.Candidate{Word: word, Source: e.Headword(), Gloss: f.Text, Axis: f.Axis})
 		}
 	}
 	return out
@@ -120,7 +120,7 @@ func targetCandidate(word string, e Entry) (play.Candidate, bool) {
 	for _, b := range e.Blocks {
 		for _, s := range b.Senses {
 			if f := readGloss(s.Gloss); f.Usable {
-				return play.Candidate{Word: word, Gloss: f.Text, Axis: play.AxisGeneral}, true
+				return play.Candidate{Word: word, Source: e.Headword(), Gloss: f.Text, Axis: play.AxisGeneral}, true
 			}
 		}
 	}

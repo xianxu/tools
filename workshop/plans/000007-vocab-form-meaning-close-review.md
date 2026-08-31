@@ -891,3 +891,132 @@ findings:
       and bound the degradation. I could not measure it here - systemDictionary returns
       "every active dictionary" and Lookup finds nothing in this environment.
 ```
+
+---
+
+## Re-review — 2026-08-30T22:01:29-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 7 — review form 2.3: meaning multiple choice from the local deck |
+| repo | tools |
+| issue file | workshop/issues/000007-vocab-form-meaning.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | a8962469ff08154f5377a7572586c575c2d4610f..def5aea43e28874c5a91864ca47ef5f4511eb95a |
+| command | sdlc close --issue 7 |
+| reviewer | claude |
+| timestamp | 2026-08-30T22:01:29-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+Round 5 closes BR-17 properly — both clauses are implemented and both are mutation-verified (I reverted each in a scratch worktree and watched the named test go red), BR-18's guard is now armed and fires within seconds on a bogus table row, BR-19's dead branch is gone, and BR-22's conditional assertion is unconditional. The suite is green (`go test ./...`, 107s) and `play` still imports nothing. What blocks SHIP is that the option-set invariant was fixed at its two *proxies* and not at its key: `PickOptions` dedups on `Word` and now on `Gloss`, but two deck keys differing only by diacritics resolve to one dictionary entry (`differsOnlyByDiacritics`, `optionpool.go:164` — the very mechanism round 5 relied on), and if that entry has more than one usable sense the two keys yield *different* glosses under *different* words. I reproduced a live option set where both "existing in a material or physical form; not abstract" (Correct) and "form (something) into a mass; solidify" (marked wrong, axis `register`) are offered for the prompted word — the same harm round 5 fixed, reached by the sibling path. Secondarily, BR-20 and BR-21 each had their named instance fixed and their stated *rule* left unapplied.
+
+**1. Strengths**
+
+- `PickOptions`' seeded permutation (`pick.go:75-88`) is the right shape: a permutation rather than reordering the caller's slice, so `choiceFor` can reuse one sitting-wide pool without each question's selection depending on the previous ones. The comment explains why, and `TestPickOptionsVariesTheDistractorsAcrossASitting` pins it with a threshold (≥8 of 20) that sits far from both the correct and the buggy value.
+- `TestSittingCostIsBoundedByTheCap` (`optionpool_test.go:30`) is the model for an ARCH-CONSTRAINTS pin: it asserts the upper bound *and* that the output actually contains a form 2.3 question, so "the pool was capped to nothing" cannot pass as "working". A bound alone is satisfied by zero, and the test says so.
+- `Missed` as an optional interface (`play/session.go:266-282`) keeps `Apply` free of any form name while still carrying the axis out — verified: `awk '/^func Apply/,/^}/' | grep 'Choice\|Recall'` is empty.
+- `TestYAMLWritesAtLastWhateverFieldsAreSet` (`store/yaml_test.go:434`) derives the ordering property from the written record rather than comparing two named keys, which is what makes it survive the field this issue adds.
+- `entryDefines` walking the `HeadWord`/`HeadOther` run instead of `Headword()` (`optionpool.go:150-168`) is correct and measured: `hot dog`, `a priori`, `jalapeño`, `MacBook` all pass, `bargainer` refuses — I re-measured the whole corpus at 1 refusal in 34.
+
+**2. Critical findings**
+
+- **`cmd/define/play/pick.go:61,90` — an option set may still carry two options that both define the prompted word.** This is the **3rd finding in family `answer-must-define-the-prompted-word`**, so the deliverable is the rule, not this instance. The rule: **an option set may contain at most one option per source ENTRY.** `Word` and `Gloss` are both proxies for entry identity, and each fails on a case the other doesn't — `Word` failed on `jalapeño`/`jalapeno` (BR-17 clause 2), `Gloss` fails as soon as the shared entry has more than one usable sense. Measured: `differsOnlyByDiacritics` (`optionpool.go:164`) admits both deck keys against the one entry; `optionCandidates` (`optionpool.go:80`) then returns one candidate per axis, so 17 of 34 corpus entries yield ≥2 differently-glossed candidates; `choiceFor`'s `c.Word == target.Word` filter does not match across the spelling variants; `crossReferenced` is blind because neither headword is in either gloss. Reproduced end to end in a scratch worktree using the committed `concrete` entry under a second accented deck key — the set offered the target's sense as Correct and the entry's own `register` sense as a distractor, so a learner picking it is recorded as a miss with a fabricated `register` axis and the word is demoted for a defensible answer. *Fix sketch:* give `play.Candidate` (and the target) an entry-identity field — the parsed `Headword()`, or the key the lookup resolved to — set in `optionCandidates`/`targetCandidate`, and dedup `PickOptions` on it; that subsumes both existing dedups instead of adding a third. Pin with a `pick_test.go` row where two candidates share an entry id and differ in gloss, and an `optionpool_test.go` row driving a multi-sense corpus entry through two deck keys.
+
+**3. Important findings**
+
+- **BR-20 re-raised (`workshop/plans/000007-vocab-form-meaning-plan.md:184`) — the red-when rule was never applied.** Round 5 fixed row 1, which is what BR-20 named, and neither stated the rule above the table nor reproduced any other row's mutation. Measured: row 7's second predicate — *"no form name (`Choice`, `Recall`) appears inside `playSession` or `play.Apply` — a grep, not a file-state claim"* — is run by nothing in the tree. I ran it by hand and it holds today, but no test goes red if it stops. That is the same defect the row's own preamble ("a pin is a predicate over behaviour") exists to forbid.
+- **BR-21 re-raised (`atlas/define.md:2007-2018`) — the enumeration derives in one of the two files it drifted in.** `TestREADMENamesEveryFallbackReason` now checks `README.md` against `fallbackReasons`; the atlas's *"Three things send a word to form 2.1"* list is still hand-maintained, and it was the file that had drifted furthest (one of three). `doc_sync_test.go` already reads the atlas elsewhere (`TestAtlasDescribesEveryRenderOpt`), so this is one more loop in the same test. Separately, `fallbackReasons` (`optionpool.go:179`) sits *beside* `choiceFor`'s branches rather than being consumed by them, so it single-sources the docs but not the code — a fourth refusal added to `choiceFor` would not appear in the list.
+
+**4. Minor findings**
+
+- `cmd/define/play/recall.go:38` — `Keys()` was inserted between `Grade`'s doc comment and `Grade`, so `go doc Recall.Keys` prints Grade's contract and `Grade` is undocumented. (Verified with `go doc`.)
+- `cmd/define/optionpool_test.go:79` — still claims the general candidate is "the FIRST usable sense of the first block"; the phrase wraps a line, which is why round 3's grep sweep missed it.
+- `cmd/define/optionpool_test.go:141` — "choiceFor's two refusals" now that `fallbackReasons` declares three.
+- `workshop/plans/…-plan.md` Core concepts — no row for `fallbackReasons`, a new declaration a guard now depends on.
+- `cmd/define/pty_conformance_test.go:717` — "answer everything with `1`" assumes at least one miss; the outcome is a deterministic function of today's date via `seedFor(key, day)`, so ~0.1% of days would fail the `missed:` assertion for the wrong reason. Also assumes every one of the five words gets form 2.3; a live-dictionary fallback would stall the sitting rather than fail clearly.
+- `cmd/define/play_loop_test.go:871` — `TestOptionCountGrowsWithTheDeck` indexes `qs[0]` without a length check.
+
+**5. Test coverage notes**
+
+Coverage of the *shipped* behaviour is genuinely strong: every seam BR-5 named now has a direct test, the goldens pin the PRNG and the hash, and the two round-5 fixes are mutation-verified (I confirmed both, independently). The gap is a class the tests keep re-discovering rather than enumerating: the option-set invariant is pinned by three tests that each assert one *proxy* (`…NeverRepeatsAWord`, `…NeverRepeatsAGloss`, `…HasOneAnswer`) and none that asserts the property — "no two options a learner can defend". A single property test over the corpus, in the shape of `TestNoCandidateEverCarriesAnotherWordsGloss`, would have caught the Critical above and would catch the next proxy failure too.
+
+**6. Architectural notes**
+
+- **ARCH-DRY — pass.** `shuffle` generic over `[]int` and `[]Option` closes BR-16; `SampleStrings` is exported precisely so `main` reuses `play`'s PRNG instead of growing a second. `isWordByte` (`glosslabel.go:215`) and `isBoundary` (`parse.go:876`) are different facts, not duplication.
+- **ARCH-PURE — pass, and this is the cleanest part of the diff.** `go list -f '{{.Imports}}' ./cmd/define/play` is empty, `TestPlayPurity/imports` is green against an empty allowlist, and `pick_test.go` runs with `testing` alone. All prose handling sits in `main` behind the `Candidate` seam.
+- **ARCH-PURPOSE — flag.** Two half-swept single-source changes: the fallback enumeration derives for the README and not the atlas, and the option-set fix reached two proxies and not the key. Both are the "instance, not the class" shape, and both are the *third* round on their family.
+- **ARCH-MOCK — pass with a note.** No new external dependency; the committed corpus plus `dict_fake_test.go` back every form test, and `TestLiveDictionaryRedirectsADerivedForm` gives the new redirect model a live check in both directions (it skips here — NOAD is unavailable in this environment). BR-23's refusal-*rate* row was not delivered; the offline bound I measured is 1/34, with every risky head shape passing.
+- **ARCH-CONSTRAINTS — pass.** `poolCap` is declared, enforced in `buildPool`, built once per sitting, and pinned in both directions.
+
+**7. Plan revision recommendations**
+
+1. `## Revisions` — **"the option-set invariant's key is the ENTRY, not the word or the gloss."** Record that `Word` and `Gloss` are proxies that each fail on a case the other covers, name the accented-variant-plus-multi-sense measurement (17/34 entries yield ≥2 candidates; `differsOnlyByDiacritics` admits both keys), and state the rule as one dedup on entry identity that subsumes the other two.
+2. Done-when row 1 — widen the claim and its `red when` from "no two options with the same gloss" to "no two options from the same entry", and name the new pin.
+3. Done-when — add the rule BR-20 asked for above the table (*a `red when` cell is a claim about a mutation and must be reproduced once, at close, or weakened*), and either weaken row 7's second predicate to what is actually checked or add the grep as a test.
+4. Core concepts — add a row for `fallbackReasons` (`cmd/define/optionpool.go`, new, PURE), and record that the round-2 derivation procedure (`go doc -short`) returns nothing for package `main`, so it can only ever have covered `play/` — which is why the last two rounds' additions (`entryDefines`, `fallbackReasons`) both arrived unnoticed.
+
+```findings
+dispose:
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      Named instances fixed, but the rule's sweep is a line-oriented phrase grep and three claims stand: optionpool_test.go:79 still says "the FIRST usable sense of the first block" (the phrase wraps, so the grep could not see it); optionpool_test.go:141 says "choiceFor's two refusals" while fallbackReasons declares three; and play/recall.go:38 now carries Grade's doc comment verbatim, so `go doc Recall.Keys` prints Grade's contract and Grade is undocumented — a shape no phrase grep can find, but a ~20-line AST check ("a doc comment opens with the name of the declaration it precedes") finds it, and finds exactly one new instance in this window.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      Both clauses mutation-verified in a scratch worktree: dropping the entryDefines gate from optionCandidates turns TestNoCandidateEverCarriesAnotherWordsGloss and TestARedirectSuppliesNoOptionMaterialAtAll red; reverting `free` to word-only dedup turns TestPickOptionsNeverRepeatsAGloss red. See the new finding for the sibling path the gloss key does not cover.
+  - id: BR-18
+    disposition: addressed
+    note: |
+      Ticking the plan's task list arms TestPlanTablesNameEntitiesThatExist; I injected a bogus Name-cell identifier and the guard failed within seconds, and TestPlanNamedTestsExist now walks the tree.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      The guard is deleted and replaced by a comment naming the invariant's owner; draw returns at play_loop.go:306 when Current() is nil, confirmed.
+  - id: BR-20
+    disposition: not-addressed
+    note: |
+      Row 1 (the instance) was fixed; the rule was neither stated above the table nor applied. Measured: row 7's second predicate — "no form name appears inside playSession or play.Apply, a grep not a file-state claim" — is run by no test. I ran it by hand and it holds today, but nothing goes red if it stops.
+  - id: BR-21
+    disposition: not-addressed
+    note: |
+      README now derives from fallbackReasons via TestREADMENamesEveryFallbackReason, but atlas/define.md:2007-2018 still hand-maintains the same closed enumeration — and the atlas was the file that had drifted furthest. doc_sync_test.go already checks the atlas elsewhere, so this is one more loop in the same test. Also fallbackReasons sits beside choiceFor's branches rather than being consumed by them. The README "never offered as a distractor" half is fixed.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      The block is unconditional and now asserts on the same entry, which is the object that shows the gate/ban distinction. Swept the window's test files and the repo for the shape; every remaining `if err == nil` is an expected-error check.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      TestLiveDictionaryRedirectsADerivedForm pins the model in both directions (skips here — NOAD unavailable). The refusal-RATE row asked for was not delivered; offline bound re-measured at 1 of 34, with hot dog / a priori / jalapeño / MacBook all passing.
+findings:
+  - id: new
+    severity: Critical
+    family: answer-must-define-the-prompted-word
+    title: |
+      Two options in one set can both define the prompted word, because dedup keys on Word and Gloss but not on the source ENTRY
+    detail: |
+      3rd finding in this family, so the deliverable is the rule: an option set may contain at most one option per source ENTRY. Word and Gloss are proxies that each fail where the other holds — Word failed on jalapeño/jalapeno (BR-17 clause 2), Gloss fails the moment the shared entry has more than one usable sense. Measured: differsOnlyByDiacritics (optionpool.go:164) admits both deck keys against one entry; optionCandidates (optionpool.go:80) returns one candidate per axis, and 17 of 34 corpus entries yield >=2 differently-glossed candidates; choiceFor's `c.Word == target.Word` filter does not match across the spelling variants and crossReferenced is blind because neither headword is in either gloss. Reproduced in a scratch worktree over the committed `concrete` entry under a second accented deck key: the set offered "existing in a material or physical form; not abstract" as Correct and the same entry's "form (something) into a mass; solidify" as a register distractor, so a learner picking it records a miss with a fabricated axis and the word is demoted for a defensible answer. Fix: carry entry identity (Headword(), or the resolved lookup key) on play.Candidate and the target, set it in optionCandidates/targetCandidate, and dedup PickOptions on it — subsuming both existing dedups rather than adding a third. Pin with a pick_test.go row where two candidates share an entry id with different glosses, and an optionpool_test.go row driving a multi-sense corpus entry through two deck keys.
+  - id: new
+    severity: Minor
+    family: plan-artifact-must-match-tree
+    title: |
+      fallbackReasons has no Core-concepts row, and the recorded derivation procedure cannot see package main
+    detail: |
+      5th finding in this family, so the rule rather than the row. Round 2 recorded the derivation as `go doc -short` per touched package; that command returns nothing for package main, so the procedure could only ever have covered play/ — and both entities added since (entryDefines, fallbackReasons) live in cmd/define. entryDefines got a row only after a reviewer named it; fallbackReasons, which a doc guard now depends on, has none. BR-18's armed guard checks table-to-tree only. The mechanical form of the rule is a declaration scan of the named files (go/ast or a `^func|^var|^const|^type` grep) run against the Name column at close, in place of `go doc -short`.
+  - id: new
+    severity: Minor
+    family: uncontrolled-test-input
+    title: |
+      The pty form-2.3 test's "at least one miss" assertion depends on today's date
+    detail: |
+      pty_conformance_test.go:717 answers every question with `1` and then requires a `missed:` line. The answer's slot is a deterministic function of seedFor(key, day), so on roughly 1 day in 1000 all five words put the answer in slot 1 and the assertion fails for the wrong reason. The same block also assumes all five words get form 2.3 — a live-dictionary fallback to Recall would stall the sitting rather than fail legibly. Drive the keys from the rendered option lines, or seed the sitting through a fixed clock.
+```
