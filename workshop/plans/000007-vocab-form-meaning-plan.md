@@ -61,6 +61,21 @@ Measured over the corpus: this fires on 3 of 34 first-glosses, and all three are
 - **A distractor's sense is the one CARRYING the axis being sought**: for `AxisDomain`, the first sense whose gloss leads with a domain label; for `AxisRegister`, likewise; for `AxisGeneral`, the first sense of the first block, as above.
 - A candidate that cannot supply the sought axis is not a candidate FOR THAT SLOT, which is what makes the fallback to `general` a selection outcome rather than a special case.
 
+**D5a — `play` imports NOTHING, and the new code KEEPS it that way rather than widening the allowlist.** Measured: `go list -f '{{join .Imports}}' ./cmd/define/play` returns empty, and `play/purity_test.go:21` is `ImportsOnly(t, playPkg, []string{})` — `puretest` calls an empty allowlist *"the strongest possible version of the claim"*, and `#30` BR-41 added a dedicated fixture because `play` importing nothing was that guard's only pin. Adding `fmt`, `strings` and `math/rand` to build a form would quietly retire it.
+
+The alternative is not asceticism — the constraint FORCES the seam D5 already asked for, which is why it is worth keeping:
+
+| what it needs | where it goes | why no import |
+|---|---|---|
+| numbering the options `1`–`4` | `play` | `byte('0'+n)`, concatenated with `+`. `fmt` buys nothing for one digit |
+| a seeded shuffle | `play` | a hand-rolled xorshift64, ~4 lines. **Better than `math/rand` here**: Done-when 3 claims determinism under a fixed seed, and a PRNG defined in this repo is pinned by this repo rather than by `math/rand`'s cross-version behaviour |
+| the near-synonym gloss match (D3a) | **`main`** | word-boundary scanning over dictionary prose is `strings` work — and it is DICTIONARY work, which D5 already places in `main` |
+| the label table (D3) | **`main`** | `senseLabel`/`noadLabels` are text parsing, already sited in `cmd/define/glosslabel.go` |
+
+So `pickOptions` receives candidates that are ALREADY filtered and labelled — gloss, headword, `Axis` — and does selection and formatting only. It never sees prose. That is the same division `Recall` uses (`play/recall.go:19-24`: already-rendered text in, no parsing), so this is the existing precedent applied rather than a new rule invented to satisfy a guard.
+
+**Hand-rolling `strings` inside `play` would be the wrong answer** and is explicitly rejected: re-implementing a standard search to keep an allowlist empty is the guard wagging the design (ARCH-DRY). The guard stays intact because the text work MOVED, not because it was rewritten badly.
+
 **D6 — `ReviewEvent` gains a field BEFORE `At`, and that ordering is load-bearing.** `event.go:32-35` states it: *"At stays LAST, and a field added after it would break the torn-record rule silently… completeness leans on a cut record losing its timestamp. A field written after `at:` would survive the cut that drops `at`, and a fragment would"* read as complete. So the new field goes above `At`, and the torn-record test is the pin that says so.
 
 **D7 — the recorded thing is the AXIS, not the distractor's word.** Two candidates: store which word's gloss was picked, or store why that option was in the set. The axis is what `#17 M2` reads — *"picked the `Law` one"* is the finding; *"picked `larceny`"* is a fact about one question that a later reader cannot interpret without rebuilding the option set. Storing the axis also keeps the event small and stable while the deck churns underneath it.
@@ -100,7 +115,9 @@ Measured over the corpus: this fires on 3 of 34 first-glosses, and all three are
 | `Axis` | `cmd/define/play/choice.go` | new | PURE — the reduced taxonomy: `AxisDomain`, `AxisRegister`, `AxisGeneral` |
 | `senseLabel` | `cmd/define/glosslabel.go` | new | PURE — the leading NOAD label of a gloss, or none |
 | `noadLabels` | `cmd/define/glosslabel.go` | new | PURE — the closed table (D3) |
-| `pickOptions` | `cmd/define/play/choice.go` | new | PURE — candidates + target + seed → options, deterministic. In `play`, which is MECHANICALLY guarded pure (`play/purity_test.go`), so Done-when 3's determinism claim sits inside the guard that enforces it rather than beside it |
+| `pickOptions` | `cmd/define/play/choice.go` | new | PURE — LABELLED candidates + target + seed → options, deterministic. Takes no prose: import-free per D5a |
+| `shuffle` | `cmd/define/play/choice.go` | new | PURE — xorshift64 over a seed; the determinism Done-when 3 claims, owned here rather than by `math/rand` (D5a) |
+| `excludeCrossReferenced` | `cmd/define/glosslabel.go` | new | PURE — D3a's near-synonym guard. In `main` because it reads prose, which `play` may not (D5a) |
 
 - **`Choice`** — shows a word and four glosses, and remembers which was picked.
   - **Relationships:** 1:1 with a due word; holds N `Option`s (4, or fewer per D9).
@@ -139,6 +156,8 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
 ## Done when
 
+**Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test, or a grep for a property — and never "file X is unchanged".** Stated as a rule because this table got it wrong twice in one review: first pinning `play_loop_test.go` unchanged when T5 must edit it, then pinning `play/*` unchanged when T2, T3 and T4 all write there. The defect is structural, not clerical: a plan's tasks and its Done-when rows are written at different moments, so any row phrased as file-state decays the instant the task list grows. A behavioural pin cannot decay that way — it goes red for the reason it names.
+
 | # | claim | pinned by | red when |
 |---|---|---|---|
 | 1 | four options, exactly one correct, from the deck | `TestPickOptionsHasOneAnswer` | a second option's gloss is the target's |
@@ -147,8 +166,8 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 | 4 | degrades below four deck words | `TestPickOptionsWithATinyDeck`, `TestASittingFallsBackToRecall` | a two-word deck produces a broken question or a skipped word |
 | 5 | works with the network off | `TestSittingWithNoModelAndNoNetwork` | any path here reaches the model seam |
 | 6 | the axes are the reduced taxonomy, and only that | `TestEveryAxisIsSelectable` — derived from the `Axis` set, as `#30`'s registry guards are | an axis is added that nothing can select |
-| 7 | the SESSION did not change to accept a second form | `play/session_test.go` and `play/*` unchanged, and `TestSessionIsFormAgnostic` still green — NOT "play_loop_test.go unchanged", which T5 must edit to build the pool | `playSession` or `play.Apply` grows a case that names a form |
-| 8 | `At` stays last in the event record | the existing torn-record test, unchanged | the new field is appended after `at:` |
+| 7 | the SESSION did not change to accept a second form | `TestSessionIsFormAgnostic` (`play/session_test.go:327`) green, AND no form name (`Choice`, `Recall`) appears inside `playSession` or `play.Apply` — a grep, not a file-state claim | either predicate fails |
+| 8 | `At` stays last in the event record | the existing torn-record test green, AND `at:` is the last key of a written record — the property, not the test file's mtime | the new field is appended after `at:` |
 
 ---
 
@@ -189,3 +208,27 @@ Then, on a real terminal with a deck of a dozen words: `define --play`, answer a
   the form-agnostic test that actually pins it.
 - **Minor: `pickOptions` moves into `play`**, which is mechanically guarded pure —
   so the determinism claim sits inside the guard that enforces it.
+
+### 2026-08-30 — plan-quality round 2 (PQ-7, PQ-8, PQ-9)
+
+- **PQ-7 — `play`'s purity guard allows ZERO imports, and the plan had not said
+  which side of it the new code lands on.** Decided: keep the guard intact and
+  move the text work to `main` (D5a). The constraint turned out to force the seam
+  D5 already wanted — `pickOptions` never sees prose — so this is the `Recall`
+  precedent applied rather than a concession. Hand-rolling `strings` inside `play`
+  is explicitly rejected as the guard wagging the design.
+- **PQ-8 — the same Done-when defect reappeared one directory up**, so it is
+  fixed as a RULE above the table rather than as a third instance: a pin is a
+  predicate over behaviour, never a file-unchanged claim. Rows 7 and 8 both
+  rewritten; rows 1-6 were already named tests and pass the rule.
+- **PQ-9 was my own breakage, and the gate caught it before the tree did.** The
+  `#38` coupling note from round 1 was appended to
+  `000038-play-clickable-words.md` — a filename that does not exist — creating a
+  second, frontmatter-less issue file for `38` and taking `sdlc issue show 38`
+  down with it. The note is now in `000038-play-clickable.md` and resolution
+  works. **The rule, since the instance is trivial and the class is not:** a
+  peer-issue write is not done until the peer file is read back and
+  `sdlc issue show <peer>` still resolves to exactly one file. An append with `>>`
+  CREATES on a typo, so it cannot fail loudly — which is exactly why round 1's
+  claim that the note was "recorded where a resumer meets it" read as true while
+  being false of the tree.
