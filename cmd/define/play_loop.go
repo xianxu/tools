@@ -456,41 +456,29 @@ func toInput(k Key) (play.Input, bool) {
 	return play.Input{}, false
 }
 
-// boardFooter is the whole live edge for a board: the grid, a blank, the toggle
-// and the bar, in that order (D10).
+// boardFooter is the live edge for a board: everything the FORM draws, then the
+// bar.
 //
-// THE GRID IS FIRST, and that is load-bearing rather than aesthetic: formCell
-// reads a footer entry index straight back as a grid row, so anything above the
-// grid would silently shift every cell. The order is also the order of value,
-// which is what fitFooter drops from the end — but a board is never IN a footer
-// that has to drop anything, because a board that does not fit is not offered
-// (D15, fitsABoard). That is what left fitFooter unchanged.
+// One line of assembly, and that is the point. The grid, the toggle and the
+// panel are the board's own rendering — a form owns how it looks, and a loop
+// composing it out of accessors would make the board's appearance a thing two
+// files agree about, on the surface where disagreeing marks the wrong word. All
+// this adds is the bar, which belongs to the sitting rather than to the question.
+//
+// THE FORM IS FIRST, which is load-bearing rather than aesthetic: formCell reads
+// a footer entry index straight back as a grid row, so anything above it would
+// silently shift every cell. It is also the order of value, which is what
+// fitFooter drops from the end — but a board is never IN a footer that has to
+// drop anything, because a board that does not fit is not offered (D15,
+// fitsABoard). That is what left fitFooter unchanged.
 func boardFooter(q play.Question, fig sittingFigures) []string {
-	rows := strings.Split(q.Prompt(), "\n")
-	if m, ok := q.(play.Moded); ok {
-		rows = append(rows, "", boardToggle(m.Mode()))
-	}
-	return append(rows, sittingBar(fig))
+	return append(strings.Split(q.Prompt(), "\n"), sittingBar(fig))
 }
 
-// boardToggle is the mode, and the ONE place it is shown.
-//
-// The live mark is bracketed, exactly as a marked cell brackets its own — so the
-// grid and the toggle say "this is set" in the same shape, and Tab's effect is
-// visible in the shape it will land in.
-//
-// Both spellings are the same width, so the line does not jump under a key that
-// is pressed to be pressed again.
-func boardToggle(m play.Mark) string {
-	if m == play.Yes {
-		return "marking: [yes]   no"
-	}
-	return "marking:  yes  [no]"
-}
-
-// boardChromeRows is what a board costs BESIDES its grid: the keys prompt, the
-// blank, the toggle and the bar.
-const boardChromeRows = 4
+// boardChromeRows is what a board costs BESIDES its own rows: the keys prompt
+// above it and the bar below. Everything else it draws itself, and Rows() counts
+// it.
+const boardChromeRows = 2
 
 // fitsABoard reports whether a terminal this tall can draw a board of gridRows
 // WHOLE (D15).
@@ -502,8 +490,8 @@ const boardChromeRows = 4
 // terminal would scroll to fit it, and a click at viewport row R would stop
 // meaning the word drawn there. Refusing to offer the board keeps fitFooter's
 // guarantee true rather than negotiating with it.
-func fitsABoard(termRows, gridRows int) bool {
-	return gridRows+boardChromeRows <= termRows
+func fitsABoard(termRows, boardRows int) bool {
+	return boardRows+boardChromeRows <= termRows
 }
 
 // formCell offers a click to the form on screen and reports which of its cells

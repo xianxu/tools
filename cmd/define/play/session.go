@@ -487,13 +487,11 @@ type Grid interface {
 // and folding them together would force a mode onto the next batch form that
 // does not want one.
 type Moded interface {
-	// Toggle switches the mode. This is the whole of what Tab means.
+	// Toggle switches the mode. This is the whole of what Tab means, and the
+	// whole of this interface: the form DRAWS its own toggle, so nothing outside
+	// it ever needs to read the mode. An accessor here would be a second way to
+	// learn a fact the form already puts on screen.
 	Toggle()
-	// Mode is the mark the next answer will land, for the line that DRAWS the
-	// toggle. The footer is the toggle's home (D6), and the form is the only
-	// thing that knows which way it is set — the loop asking is what keeps the
-	// two from disagreeing about a setting they both show.
-	Mode() Mark
 }
 
 // SelfRated is implemented by forms whose verdict is the learner's CLAIM rather

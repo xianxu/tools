@@ -322,13 +322,20 @@ chosen at the new height.
 
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
-| `Board` | `cmd/define/play/board.go` | new | PURE — form 2.5: N words, two marks each, a mode. Implements `Question`, `SelfRated` and `Batch` |
+| `Board` | `cmd/define/play/board.go` | new | PURE — form 2.5: N words, two marks each, a mode. Implements `Question`, `SelfRated`, `Batch`, `Grid` and `Moded`. Draws its OWN live edge — grid, toggle and panel — so the loop composes nothing (R1) |
+| `Cell` | `cmd/define/play/board.go` | new | PURE — one word and the one-line gloss the panel shows when it is marked (R1) |
+| `Grid` | `cmd/define/play/session.go` | new | PURE — the capability "I am drawn as cells you click": `Rows`, `CellAt`, `Mark`. The first capability the LOOP asks rather than `Apply` (D11) |
+| `Moded` | `cmd/define/play/session.go` | new | PURE — the capability "Tab means something to me" (D13) |
 | `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
 | `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word", asked at four points, not one (D12) |
 | `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` on advance, on the miss-on-hidden branch, on drop, and on Enter (D2, D3, D12) |
-| `livePrompt` | `cmd/define/play_loop.go` | modified | PURE — a board is never `Graded`, so the graded prompt must not fire (D12) |
+| `livePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — D12 predicted a change here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
+| `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` instead of naming the constant, because `d` is refused on a board (R2) |
+| `reservedKeys` | `cmd/define/play_loop.go` | new | PURE — the session's reserved keys FOR THIS FORM. `d` is not among them for a form holding many (D12, R2) |
+| `boardFooter` | `cmd/define/play_loop.go` | new | PURE — the board's own rows, then the bar. One line, because the form owns the rest (R1) |
+| `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole (D15) |
 | `boardsFor` | `cmd/define/play_loop.go` | new | PURE — partitions the day's keys into boards and single questions at box ≥ 3 (D4) |
-| `fitFooter` | `cmd/define/screen.go` | modified | PURE — gains a floor so grid rows are never the ones dropped (D10) |
+| `fitFooter` | `cmd/define/screen.go` | unchanged | PURE — D15 retired D10's floor: a board that does not fit is not OFFERED, which keeps this function's budget invariant true rather than negotiating with it (R2) |
 | `sittingFigures` | `cmd/define/playbar.go` | modified | PURE — `total` becomes the WORD count (D8) |
 
 - **`Board`** — up to sixteen words, marked by click or by labelled key.
@@ -346,6 +353,7 @@ chosen at the new height.
 | `display` | `cmd/define/replraw.go` | modified | the seam gains ONE question: which footer row a click landed on. The editor answers "none", which is the whole of its involvement (D10) |
 | `FooterRowAt` | `cmd/define/screen.go` | new | the terminal — `Paint` already computes the footer's origin and simply does not report it. This is that report, and it is what makes the live edge clickable |
 | `toInput` | `cmd/define/play_loop.go` | modified | the keyboard — a row for Tab, which is dropped today (D13), and Enter split from space (D14) |
+| `formCell` | `cmd/define/play_loop.go` | new | the mouse — asks the screen which footer entry and the form which cell, and does the subtraction between two answers it is not qualified to give itself (D11) |
 | the loop's click branch | `cmd/define/play_loop.go` | modified | the mouse — offers a click to the form first, falls through to `playRegion` (D11) |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | the store — packs box ≥ 3 keys into boards (D4) |
 | `ReviewEvent.Form` | `cmd/define/store/event.go` | new | the event log — which form asked, so the deferred remedies can be chosen from evidence (D4a) |
@@ -378,6 +386,54 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [ ] **T12 — docs.** `cmd/define/README.md`, `atlas/define.md`'s forms section, the `--help` key table — **and the two in-tree forward references D7 falsifies**: `schedule/progress.go` says this issue extends the `Grade` seam with `GradeUnsure`, and `play/session.go` describes the mark as "firm".
 
 ---
+
+## Revisions
+
+### 2026-09-01 (R1) — the form draws its own live edge, and the panel is the last mark's gloss
+
+D10's footer order names a **panel** and nothing in the plan said what it showed.
+Put to the operator with the board on screen: *the last-marked word's
+definition*. That is the feedback moment, in the place a definition sits on every
+other form.
+
+It carries two consequences the plan did not have.
+
+- **`NewBoard` takes `[]Cell`, not `[]string`** — a word and a ONE-LINE gloss.
+  Finished content, exactly as `Choice` takes rendered `Option`s: extracting a
+  sense needs the dictionary and this package imports nothing. One line rather
+  than the whole entry, because a board is offered only when the terminal can
+  draw it whole and a twenty-row panel would mean a board nobody's terminal fits.
+- **`Prompt()` returns the WHOLE live edge** — grid, blank, toggle, panel — and
+  `boardFooter` is one line that appends the bar. The first cut had the loop
+  assembling it from `Mode()` and a gloss, which made the board's appearance a
+  thing two files agree about, on the surface where disagreeing marks the wrong
+  word. A form owns how it looks; `Choice` owns its option layout for the same
+  reason. `Moded` therefore needs only `Toggle()`, and `Rows()` counts the whole
+  edge rather than the grid — which is the number `fitsABoard` is actually about.
+
+The keys line stays ABOVE the grid (operator, 2026-09-01), where `Paint` puts the
+prompt: it reads as a header for the grid, and it is the one row `Paint` protects
+from clipping.
+
+### 2026-09-01 (R2) — three table rows that described work that did not happen
+
+Caught by `TestPlanTableStatusMatchesTheChangeWindow`, which is the mechanism
+that exists because hand-sweeping keeps failing — and it failed here in exactly
+the way the issue's own Revisions section had already written down.
+
+- **`fitFooter` — `modified` → `unchanged`.** D15 retired D10's floor in the
+  prose ("`fitFooter` is therefore UNCHANGED") and the Pure-entities table kept
+  the old claim. The plan's own sweep missed the plan's own table.
+- **`livePrompt` — `modified` → `unchanged`.** D12 predicted a change that turned
+  out unnecessary: `s.Graded` is never true for a board, so the graded prompt
+  cannot fire and the function needs no guard. What actually changed is
+  `gradePrompt`, which now asks `reservedKeys` — because `d` is refused on a
+  board (D12) and the prompt was offering it anyway.
+- **The rows that were missing entirely** are listed above: `Cell`, `Grid`,
+  `Moded`, `formCell`, `boardFooter`, `fitsABoard`, `reservedKeys`. A plan that
+  names four new symbols and ships eleven is as wrong as one whose status column
+  lies.
+
 
 ## Done when
 

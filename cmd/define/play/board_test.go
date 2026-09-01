@@ -17,6 +17,16 @@ var (
 	_ Moded     = (*Board)(nil)
 )
 
+// cellsOf is a board's worth of words with no glosses. The panel is pinned on
+// its own; everywhere else the gloss is not what is under test.
+func cellsOf(words ...string) []Cell {
+	cs := make([]Cell, len(words))
+	for i, w := range words {
+		cs[i] = Cell{Word: w}
+	}
+	return cs
+}
+
 // sixteen is a full board, and the words vary in length so the layout has
 // something to align.
 var sixteen = []string{
@@ -34,7 +44,7 @@ var sixteen = []string{
 // silently removed a word from the deck, because toInput takes `d` before any
 // form sees it.
 func TestBoardLabelsSkipTheReservedD(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 
 	if strings.ContainsRune(boardLabels, 'd') {
 		t.Fatalf("boardLabels = %q, and `d` is toInput's drop-from-deck key", boardLabels)
@@ -54,7 +64,7 @@ func TestBoardLabelsSkipTheReservedD(t *testing.T) {
 	// Every printed label is reachable, which is the other half of Done-when 6:
 	// a mouse-less terminal must be able to mark every cell.
 	for i := range sixteen {
-		fresh := NewBoard(sixteen, 100)
+		fresh := NewBoard(cellsOf(sixteen...), 100)
 		if _, ok := fresh.Grade(rune(boardLabels[i])); !ok {
 			t.Errorf("Grade(%q) did not reach cell %d", boardLabels[i], i)
 		}
@@ -81,7 +91,7 @@ func TestBoardGradesOnlyItsOwnKeys(t *testing.T) {
 		{' ', false},
 		{0x03, false},
 	} {
-		b := NewBoard(sixteen, 100)
+		b := NewBoard(cellsOf(sixteen...), 100)
 		v, ok := b.Grade(tc.key)
 		if ok != tc.wantOK {
 			t.Errorf("Grade(%q) = (%v, %v), want ok=%v", tc.key, v, ok, tc.wantOK)
@@ -100,7 +110,7 @@ func TestBoardGradesOnlyItsOwnKeys(t *testing.T) {
 // has.
 func TestAKeyAndAClickAreTheSameAct(t *testing.T) {
 	for i := range sixteen {
-		byKey, byClick := NewBoard(sixteen, 100), NewBoard(sixteen, 100)
+		byKey, byClick := NewBoard(cellsOf(sixteen...), 100), NewBoard(cellsOf(sixteen...), 100)
 		kv, kok := byKey.Grade(rune(boardLabels[i]))
 		cv, cok := byClick.Mark(i)
 		if kv != cv || kok != cok {
@@ -117,7 +127,7 @@ func TestAKeyAndAClickAreTheSameAct(t *testing.T) {
 
 // THE MODE DECIDES, which is why Mark takes no verdict.
 func TestAMarkLandsTheActiveMode(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	if b.Mode() != Yes {
 		t.Errorf("a new board's mode is %v, want Yes — most cells on a mature board are a yes", b.Mode())
 	}
@@ -151,11 +161,16 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 // price of writing immediately is that nothing can be taken back. Fold would
 // read the pair as two reviews of one word on one day.
 func TestACellIsMarkedOnce(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	if _, ok := b.Mark(3); !ok {
 		t.Fatal("the first mark was refused")
 	}
-	before := b.Prompt()
+	// The GRID, not the whole live edge: the toggle below it legitimately moves
+	// when the mode flips, and that is not the cell changing.
+	grid := func() string {
+		return strings.Join(strings.Split(b.Prompt(), "\n")[:b.gridRows()], "\n")
+	}
+	before := grid()
 
 	if v, ok := b.Mark(3); ok {
 		t.Errorf("a second click on cell 3 graded (%v, true) — that is a duplicate review in the log", v)
@@ -167,14 +182,14 @@ func TestACellIsMarkedOnce(t *testing.T) {
 	if v, ok := b.Grade(rune(boardLabels[3])); ok {
 		t.Errorf("cell 3 was re-marked as %v by its key", v)
 	}
-	if b.Prompt() != before {
-		t.Errorf("a refused mark still changed the grid:\nbefore:\n%s\nafter:\n%s", before, b.Prompt())
+	if grid() != before {
+		t.Errorf("a refused mark still changed the grid:\nbefore:\n%s\nafter:\n%s", before, grid())
 	}
 }
 
 // Off the end is not a cell.
 func TestAMarkOffTheBoardIsRefused(t *testing.T) {
-	b := NewBoard([]string{"keel", "mesa", "run"}, 80)
+	b := NewBoard(cellsOf("keel", "mesa", "run"), 80)
 	for _, i := range []int{-1, 3, 16, 99} {
 		if v, ok := b.Mark(i); ok {
 			t.Errorf("Mark(%d) = (%v, true) on a board of three", i, v)
@@ -186,7 +201,7 @@ func TestAMarkOffTheBoardIsRefused(t *testing.T) {
 // SIXTEENTH mark is the one that matters — a board that reported itself spent
 // early would advance with words unanswered and no event for them.
 func TestABoardIsSpentOnlyWhenEveryCellIsMarked(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	for i := range sixteen {
 		if b.Spent() {
 			t.Fatalf("spent after %d of %d marks", i, len(sixteen))
@@ -204,10 +219,10 @@ func TestABoardIsSpentOnlyWhenEveryCellIsMarked(t *testing.T) {
 // sixteen, and every part of it has to work at that size.
 func TestABoardOfThreeIsAWholeBoard(t *testing.T) {
 	words := []string{"keel", "mesa", "run"}
-	b := NewBoard(words, 80)
+	b := NewBoard(cellsOf(words...), 80)
 
-	if got := b.Rows(); got != 1 {
-		t.Errorf("Rows() = %d, want 1 — three short words fit on one line", got)
+	if got := b.gridRows(); got != 1 {
+		t.Errorf("gridRows() = %d, want 1 — three short words fit on one line", got)
 	}
 	if _, ok := b.Grade('3'); ok {
 		t.Error("Grade('3') found a fourth cell on a board of three")
@@ -225,7 +240,7 @@ func TestABoardOfThreeIsAWholeBoard(t *testing.T) {
 // Rest is what Enter means to a form holding many: the unmarked are answered and
 // NAMED, because the session records one event per word it returns.
 func TestRestTakesTheUnmarkedAndNamesThem(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	b.Mark(0)
 	b.Toggle()
 	b.Mark(1)
@@ -247,12 +262,12 @@ func TestRestTakesTheUnmarkedAndNamesThem(t *testing.T) {
 	}
 	// The safe direction: anything that is not Correct falls back down the
 	// ladder rather than climbing it.
-	fresh := NewBoard([]string{"keel", "mesa"}, 80)
+	fresh := NewBoard(cellsOf("keel", "mesa"), 80)
 	fresh.Rest(Wrong)
 	if fresh.marks[0] != No {
 		t.Errorf("Rest(Wrong) left mark %v, want No", fresh.marks[0])
 	}
-	fresh2 := NewBoard([]string{"keel", "mesa"}, 80)
+	fresh2 := NewBoard(cellsOf("keel", "mesa"), 80)
 	fresh2.Rest(Skipped)
 	if fresh2.marks[0] != No {
 		t.Errorf("Rest(Skipped) left mark %v, want No — an unmarked word is asked again, not promoted", fresh2.marks[0])
@@ -262,7 +277,7 @@ func TestRestTakesTheUnmarkedAndNamesThem(t *testing.T) {
 // advance builds Outcome{Word: q.Word()} at a call site that knows nothing about
 // grids, so the form has to answer "which word did that just mean".
 func TestWordIsTheCellTheMarkLandedOn(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	for _, i := range []int{5, 0, 15, 9} {
 		if _, ok := b.Mark(i); !ok {
 			t.Fatalf("mark %d refused", i)
@@ -281,7 +296,7 @@ func TestNoGridLineExceedsTheWidth(t *testing.T) {
 	long := []string{"antidisestablishmentarianism", "keel"}
 	for _, words := range [][]string{sixteen, {"keel", "mesa", "run"}, long, {"a"}} {
 		for _, w := range []int{20, 24, 37, 40, 60, 79, 80, 120, 200} {
-			b := NewBoard(words, w)
+			b := NewBoard(cellsOf(words...), w)
 			for i, line := range strings.Split(b.Prompt(), "\n") {
 				if n := columnsIn(line); n > w {
 					t.Errorf("width %d, %d words: line %d is %d columns:\n%s", w, len(words), i, n, line)
@@ -296,7 +311,7 @@ func TestNoGridLineExceedsTheWidth(t *testing.T) {
 
 // Every word is on screen from the first frame, each with its printed key.
 func TestPromptLabelsEveryWord(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	p := b.Prompt()
 	for i, w := range sixteen {
 		if !strings.Contains(p, "["+string(boardLabels[i])+"] ") {
@@ -311,7 +326,7 @@ func TestPromptLabelsEveryWord(t *testing.T) {
 // THE MARK STANDS WHERE THE KEY WAS, which says both "answered" and "this key no
 // longer does anything" — Mark's refusal is otherwise silent.
 func TestPromptShowsTheMarkWhereTheKeyWas(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	b.Mark(2)
 	b.Toggle()
 	b.Mark(7)
@@ -343,7 +358,7 @@ func TestPromptShowsTheMarkWhereTheKeyWas(t *testing.T) {
 // the invariant is that the two agree.
 func TestCellAtFindsWhatPromptDrew(t *testing.T) {
 	for _, width := range []int{40, 80, 120} {
-		b := NewBoard(sixteen, width)
+		b := NewBoard(cellsOf(sixteen...), width)
 		lines := strings.Split(b.Prompt(), "\n")
 		for i := range sixteen {
 			key := "[" + string(boardLabels[i]) + "] "
@@ -389,9 +404,9 @@ func TestCellAtFindsWhatPromptDrew(t *testing.T) {
 // A short final row has no cell past its last word.
 func TestAClickPastTheLastCellFindsNothing(t *testing.T) {
 	// Five words at a width that holds four columns: the second row has one.
-	b := NewBoard([]string{"keel", "mesa", "run", "bank", "set"}, 80)
-	if b.Rows() != 2 || b.cols != 4 {
-		t.Fatalf("expected a 4-wide grid of 2 rows, got %d cols and %d rows", b.cols, b.Rows())
+	b := NewBoard(cellsOf("keel", "mesa", "run", "bank", "set"), 80)
+	if b.gridRows() != 2 || b.cols != 4 {
+		t.Fatalf("expected a 4-wide grid of 2 rows, got %d cols and %d rows", b.cols, b.gridRows())
 	}
 	if got, ok := b.CellAt(1, 0); !ok || got != 4 {
 		t.Fatalf("CellAt(1,0) = (%d,%v), want cell 4", got, ok)
@@ -403,7 +418,7 @@ func TestAClickPastTheLastCellFindsNothing(t *testing.T) {
 
 // A board hides nothing, so there is no definition to earn by missing one.
 func TestABoardRevealsNothingAndRatesItself(t *testing.T) {
-	b := NewBoard(sixteen, 100)
+	b := NewBoard(cellsOf(sixteen...), 100)
 	if b.Reveal() != "" {
 		t.Errorf("Reveal() = %q, want empty — every word is already on screen", b.Reveal())
 	}
@@ -416,9 +431,9 @@ func TestABoardRevealsNothingAndRatesItself(t *testing.T) {
 // gets no event — so its box does not move and it is due again tomorrow.
 func TestNewBoardCapsAtItsLabelAlphabet(t *testing.T) {
 	words := append(append([]string{}, sixteen...), "seventeenth")
-	b := NewBoard(words, 100)
-	if len(b.words) != MaxBoardWords {
-		t.Errorf("a board of %d words kept %d, want %d", len(words), len(b.words), MaxBoardWords)
+	b := NewBoard(cellsOf(words...), 100)
+	if len(b.cells) != MaxBoardWords {
+		t.Errorf("a board of %d words kept %d, want %d", len(words), len(b.cells), MaxBoardWords)
 	}
 	if strings.Contains(b.Prompt(), "seventeenth") {
 		t.Error("the seventeenth word is on a grid with no key for it")
@@ -429,7 +444,7 @@ func TestNewBoardCapsAtItsLabelAlphabet(t *testing.T) {
 // SESSION does, with a double; this asserts that *Board is the thing the session
 // was widened for.
 func TestABoardRunsThroughTheSession(t *testing.T) {
-	b := NewBoard([]string{"keel", "mesa", "run"}, 80)
+	b := NewBoard(cellsOf("keel", "mesa", "run"), 80)
 	s := NewSession([]Question{b})
 
 	// A yes records against the word the mark landed on, and does NOT advance.
@@ -494,7 +509,7 @@ func TestABoardRunsThroughTheSession(t *testing.T) {
 
 // Tab reaches the board through the state machine, and the grid says so.
 func TestTabFlipsTheBoardsModeThroughApply(t *testing.T) {
-	b := NewBoard([]string{"keel", "mesa", "run"}, 80)
+	b := NewBoard(cellsOf("keel", "mesa", "run"), 80)
 	s := NewSession([]Question{b})
 
 	s, _ = Apply(s, Input{Kind: InputToggle})
@@ -517,7 +532,7 @@ func TestTabFlipsTheBoardsModeThroughApply(t *testing.T) {
 // printed key performs, which is the property that keeps the two paths from
 // drifting.
 func TestAClickMarksAGridFormThroughApply(t *testing.T) {
-	b := NewBoard([]string{"keel", "mesa", "run"}, 80)
+	b := NewBoard(cellsOf("keel", "mesa", "run"), 80)
 	s := NewSession([]Question{b})
 
 	s, outs := Apply(s, Input{Kind: InputMark, Cell: 2})
@@ -539,5 +554,92 @@ func TestAClickMarksAGridFormThroughApply(t *testing.T) {
 	b.Toggle()
 	if _, outs = Apply(s, Input{Kind: InputMark, Cell: 0}); outs[0].Verdict != Wrong {
 		t.Errorf("a click in No mode recorded %v", outs[0].Verdict)
+	}
+}
+
+// THE PANEL IS THE FEEDBACK MOMENT: mark a word and its gloss appears where a
+// definition would be on any other form.
+func TestThePanelShowsTheLastMarkedWordsGloss(t *testing.T) {
+	cells := []Cell{
+		{Word: "quokka", Gloss: "a short-tailed wallaby of SW Australia"},
+		{Word: "keel", Gloss: "the lengthwise timber along a ship's base"},
+		{Word: "mesa"}, // no gloss: an entry that is only cross-references
+	}
+	b := NewBoard(cells, 80)
+	lines := func() []string { return strings.Split(b.Prompt(), "\n") }
+
+	// EMPTY IS STILL A ROW. A panel that appeared with the first mark would
+	// shift the grid up by one, and every word would move under a pointer
+	// already resting on it.
+	before := len(lines())
+	if got := lines()[before-1]; got != "" {
+		t.Errorf("the panel starts as %q, want empty — nothing is marked yet", got)
+	}
+
+	b.Mark(0)
+	if got, after := lines()[len(lines())-1], len(lines()); after != before {
+		t.Errorf("the live edge grew from %d rows to %d when a mark landed — the grid moved under the pointer (panel %q)", before, after, got)
+	}
+	if got := lines()[len(lines())-1]; !strings.Contains(got, "quokka") || !strings.Contains(got, "wallaby") {
+		t.Errorf("the panel is %q, want the word it just marked and its gloss", got)
+	}
+
+	// It follows the LAST mark, whichever that is.
+	b.Toggle()
+	b.Mark(1)
+	if got := lines()[len(lines())-1]; !strings.Contains(got, "keel") {
+		t.Errorf("the panel is %q after marking keel", got)
+	}
+	// A word with no gloss names itself rather than showing a bare separator.
+	b.Mark(2)
+	if got := lines()[len(lines())-1]; got != "mesa" {
+		t.Errorf("the panel is %q for a word with no gloss, want just the word", got)
+	}
+	// A refused mark leaves it where it was.
+	b.Mark(2)
+	if got := lines()[len(lines())-1]; got != "mesa" {
+		t.Errorf("a refused mark moved the panel to %q", got)
+	}
+}
+
+// The panel obeys the width like every other row: a long gloss is the most
+// likely thing here to wrap, and a footer row that wraps scrolls the terminal.
+func TestALongGlossDoesNotWidenTheLiveEdge(t *testing.T) {
+	long := "a very long definition indeed, going on well past any reasonable terminal width and then continuing for a while after that"
+	for _, w := range []int{20, 40, 80, 120} {
+		b := NewBoard([]Cell{{Word: "quokka", Gloss: long}}, w)
+		b.Mark(0)
+		for i, line := range strings.Split(b.Prompt(), "\n") {
+			if n := columnsIn(line); n > w {
+				t.Errorf("width %d: line %d is %d columns:\n%s", w, i, n, line)
+			}
+		}
+	}
+}
+
+// THE ROWS UNDER THE GRID ARE NOT WORDS. A click on the toggle must not mark
+// something — a mark cannot be taken back, so the wrong one is permanent.
+//
+// The property, pinned apart from whichever line in CellAt happens to deliver
+// it: this is the thing that must stay true, and a rewrite of the arithmetic
+// should have to keep it rather than keep a particular guard.
+func TestTheToggleAndPanelRowsAreNotCells(t *testing.T) {
+	// Boards of every shape a full grid can take, because the row that stops
+	// being a cell moves with the word count.
+	for _, n := range []int{1, 2, 3, 4, 5, 8, 13, 16} {
+		b := NewBoard(cellsOf(sixteen[:n]...), 80)
+		lines := strings.Split(b.Prompt(), "\n")
+		for row := b.gridRows(); row < len(lines); row++ {
+			for col := 0; col < 80; col++ {
+				if i, ok := b.CellAt(row, col); ok {
+					t.Fatalf("%d words: a click at row %d (%q), col %d marked cell %d",
+						n, row, lines[row], col, i)
+				}
+			}
+		}
+		// ...and the premise: the grid rows above them DO answer.
+		if _, ok := b.CellAt(b.gridRows()-1, 0); !ok {
+			t.Errorf("%d words: the grid's last row offers no cell at column 0", n)
+		}
 	}
 }

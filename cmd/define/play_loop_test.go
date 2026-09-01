@@ -2042,10 +2042,20 @@ func TestEnterStillRevealsOnASingleWordForm(t *testing.T) {
 // footer entries, so a row at or past Rows() is the toggle or the bar rather
 // than a word. The end-to-end join — that the grid really is drawn there — is
 // TestAClickOnABoardMarksIt on the real screen.
+func boardCells(words ...string) []play.Cell {
+	cs := make([]play.Cell, len(words))
+	for i, w := range words {
+		cs[i] = play.Cell{Word: w}
+	}
+	return cs
+}
+
 func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
-	board := play.NewBoard([]string{"keel", "mesa", "run", "bank", "set"}, 80)
-	if board.Rows() != 2 {
-		t.Fatalf("expected a two-row grid, got %d", board.Rows())
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80)
+	// Five words at four columns: two grid rows, then the blank, the toggle and
+	// the panel the form draws under them.
+	if board.Rows() != 5 {
+		t.Fatalf("expected a five-row live edge, got %d:\n%s", board.Rows(), board.Prompt())
 	}
 
 	// The gutter column, derived from what Prompt DREW rather than from the
@@ -2098,15 +2108,16 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 func TestAClickOnABoardMarksIt(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic", "ephemeral")
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard([]string{"sycophantic", "ephemeral"}, opt.width)
-	if board.Rows() != 1 {
-		t.Fatalf("expected a one-row grid, got %d rows:\n%s", board.Rows(), board.Prompt())
+	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width)
+	// One grid row, then the blank, the toggle and the panel.
+	if board.Rows() != 4 {
+		t.Fatalf("expected a four-row live edge, got %d rows:\n%s", board.Rows(), board.Prompt())
 	}
 
 	// TEN ROWS, so the geometry is arithmetic rather than a guess. Pinned, the
-	// footer sits at the bottom edge: four entries (grid, blank, toggle, bar)
-	// means the grid's only row is viewport row 10-4 = 6.
-	const termRows, gridRow = 10, 6
+	// footer sits at the bottom edge: five entries (the board's own four, plus
+	// the bar) means the grid's only row is viewport row 10-5 = 5.
+	const termRows, gridRow = 10, 5
 	// The second cell's column, read off what Prompt DREW rather than computed.
 	col := strings.Index(board.Prompt(), "[1] ") + len("[1] ")
 	if col < 1 {
@@ -2181,7 +2192,7 @@ func paintedRows(t *testing.T, out string, n int) []string {
 func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic", "ephemeral")
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard([]string{"sycophantic", "ephemeral"}, opt.width)
+	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width)
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 10, opt.width)
@@ -2200,13 +2211,16 @@ func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
 	if !strings.Contains(unstyled(tty.String()), "[0] sycophantic") {
 		t.Errorf("the grid was never drawn:\n%s", unstyled(tty.String()))
 	}
-	// The toggle is drawn, and it is the ONE place the mode is shown.
+	// The toggle is drawn, and the FORM draws it — the loop only appends the bar,
+	// so every row of the board on screen came out of one Prompt().
 	frame := unstyled(tty.String())
-	if !strings.Contains(frame, boardToggle(play.Yes)) {
-		t.Errorf("the toggle row is missing:\n%s", frame)
+	for _, row := range strings.Split(board.Prompt(), "\n") {
+		if !strings.Contains(frame, row) {
+			t.Errorf("the frame is missing the board's row %q:\n%s", row, frame)
+		}
 	}
-	if strings.Contains(frame, boardToggle(play.No)) {
-		t.Errorf("both spellings of the toggle are on screen:\n%s", frame)
+	if !strings.Contains(frame, "marking: [yes]") {
+		t.Errorf("the toggle row is missing:\n%s", frame)
 	}
 }
 
@@ -2216,7 +2230,7 @@ func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
 // word on a grid. A prompt line offering it anyway is the exact bug gradePrompt
 // was created to fix.
 func TestABoardsPromptDoesNotOfferTheDropKey(t *testing.T) {
-	board := play.NewBoard([]string{"keel", "mesa"}, 80)
+	board := play.NewBoard(boardCells("keel", "mesa"), 80)
 	line := gradePrompt(board)
 	if strings.Contains(line, "remove from deck") {
 		t.Errorf("a board's prompt offers a key Apply refuses:\n\t%q", line)
@@ -2242,27 +2256,27 @@ func TestABoardsPromptDoesNotOfferTheDropKey(t *testing.T) {
 // fitFooter's budget invariant true instead of negotiating with it.
 func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 	for _, tc := range []struct {
-		termRows, gridRows int
-		want               bool
+		termRows, boardRows int
+		want                bool
 	}{
-		{10, 4, true}, // 4 grid + prompt + blank + toggle + bar = 8
-		{8, 4, true},  // exactly
-		{7, 4, false}, // one short, and half a board is unusable
-		{24, 4, true}, // an ordinary terminal
-		{5, 1, true},  // a board of one row
-		{4, 1, false}, //
-		{0, 1, false}, //
-		{100, 25, true},
+		{10, 7, true}, // a 4x4 board: 4 grid rows plus 3 of its own chrome
+		{9, 7, true},  // exactly: the board, the keys prompt and the bar
+		{8, 7, false}, // one short, and half a board is unusable
+		{24, 7, true}, // an ordinary terminal
+		{6, 4, true},  // a board of one grid row
+		{5, 4, false}, //
+		{0, 4, false}, //
+		{100, 28, true},
 	} {
-		if got := fitsABoard(tc.termRows, tc.gridRows); got != tc.want {
-			t.Errorf("fitsABoard(%d rows, %d grid) = %v, want %v", tc.termRows, tc.gridRows, got, tc.want)
+		if got := fitsABoard(tc.termRows, tc.boardRows); got != tc.want {
+			t.Errorf("fitsABoard(%d rows, a %d-row board) = %v, want %v", tc.termRows, tc.boardRows, got, tc.want)
 		}
 	}
-	// The chrome it counts is the chrome boardFooter actually draws, plus the
-	// prompt — two owners of that number would put half a board on screen.
-	board := play.NewBoard([]string{"keel", "mesa", "run", "bank", "set"}, 80)
+	// The chrome it counts is what boardFooter actually ADDS, plus the prompt —
+	// two owners of that number would put half a board on screen.
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80)
 	footer := boardFooter(board, sittingFigures{})
 	if got, want := len(footer)-board.Rows()+1, boardChromeRows; got != want {
-		t.Errorf("boardFooter draws %d chrome rows plus the prompt, but fitsABoard budgets %d", got, want)
+		t.Errorf("boardFooter adds %d rows to the board's own, plus the prompt, but fitsABoard budgets %d", got, want)
 	}
 }

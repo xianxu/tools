@@ -321,6 +321,52 @@ Done-when row either. Grid, toggle and bar are implemented; the panel is left fo
 the operator rather than guessed at, because giving the board definitions would
 change `NewBoard`'s signature for a feature nobody specified.
 
+### 2026-09-01 — the panel, and a plan guard that caught the sweep failing again
+
+The operator chose **the last-marked word's definition** for D10's unspecified
+panel, and **left the keys line above the grid**. Both are recorded as `R1` in
+the plan's new `## Revisions`.
+
+**The panel made the board draw its own live edge, which is the better shape
+anyway.** The first cut had the loop assembling grid + toggle + panel from
+`Mode()` and a gloss; that made the board's appearance a thing two files agree
+about, on the surface where disagreeing marks the wrong word. Now `Prompt()`
+returns the whole edge and `boardFooter` is one line that appends the bar. Two
+things fell out: `Moded` needs only `Toggle()` — nothing outside the form ever
+reads the mode — and `Rows()` counts the whole edge, which is the number
+`fitsABoard` was always actually about.
+
+**`NewBoard` takes `[]Cell`** — a word and a one-line gloss — the same seam
+`Choice` sits on, where the caller does the dictionary work and the form takes
+finished content. `targetCandidate` (optionpool.go) already produces exactly that
+gloss, so T8 has it to hand.
+
+**An empty panel is still a row.** A row that appeared with the first mark would
+shift the grid up by one and move every word under a pointer already resting on
+it.
+
+**A SECOND redundant bound, found the same way as T5's.** `CellAt` guarded
+`row >= gridRows()` and the mutation could not be made to fail: a row below the
+grid indexes past the last cell by construction, so `i >= len(cells)` was already
+answering. Removed, on this codebase's own precedent — *"the guard that was here
+shipped as dead code and would have hidden that"*. The PROPERTY (the toggle and
+panel rows are not clickable) is now pinned apart from the mechanism, over eight
+board shapes and every column, so a rewrite of the arithmetic has to keep it.
+
+**`TestPlanTableStatusMatchesTheChangeWindow` caught three stale plan rows**, and
+the failure is the lesson this issue already wrote down, one round later:
+
+- `fitFooter` still said `modified` though **D15 retired that in the prose** —
+  the plan's own sweep missed the plan's own table.
+- `livePrompt` said `modified` and needed no change at all: a board is never
+  `Graded`, so the graded prompt cannot fire. What changed is `gradePrompt`.
+- Seven new symbols were shipped that no table row named.
+
+The rule that leaves: **a hand-sweep of a plan's tables does not hold, and this
+repo already knew it** — the guard exists because #29 got four of twenty rows
+wrong across two review rounds. Trust the guard, and run the full suite before
+believing a plan.
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it

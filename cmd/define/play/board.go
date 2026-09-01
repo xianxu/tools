@@ -101,10 +101,26 @@ const (
 	boardCols = 4
 )
 
+// Cell is one word on the board and the ONE-LINE gloss shown when it is marked.
+//
+// The gloss arrives finished, exactly as Choice takes rendered Options and
+// Recall takes a rendered definition: extracting a sense, reading NOAD's labels
+// and rejecting an entry that defines a different word all need the dictionary,
+// and this package imports nothing.
+//
+// A one-line gloss rather than the whole entry, and that is the live edge's
+// constraint rather than a preference — a board is offered only when the
+// terminal can draw it WHOLE, so a panel that could be twenty rows tall would
+// mean a board nobody's terminal fits.
+type Cell struct {
+	Word  string
+	Gloss string
+}
+
 // Board is one grid. Pointer receivers: it REMEMBERS every mark, which is the
 // whole of what makes it a batch.
 type Board struct {
-	words []string
+	cells []Cell
 	marks []Mark
 	// mode is the mark a click or a labelled key lands, flipped by Tab.
 	//
@@ -140,11 +156,11 @@ type Board struct {
 // it: a word this board does not ask about gets no event, so its box does not
 // move and it is due again tomorrow. The caller (boardsFor) packs in
 // MaxBoardWords chunks and is pinned there; this is the belt.
-func NewBoard(words []string, width int) *Board {
-	if len(words) > MaxBoardWords {
-		words = words[:MaxBoardWords]
+func NewBoard(cells []Cell, width int) *Board {
+	if len(cells) > MaxBoardWords {
+		cells = cells[:MaxBoardWords]
 	}
-	b := &Board{words: words, marks: make([]Mark, len(words)), mode: Yes, width: width}
+	b := &Board{cells: cells, marks: make([]Mark, len(cells)), mode: Yes, width: width}
 	b.layout()
 	return b
 }
@@ -157,8 +173,8 @@ func NewBoard(words []string, width int) *Board {
 // with at most sixteen short cells the packing is not worth the seam.
 func (b *Board) layout() {
 	longest := 0
-	for _, w := range b.words {
-		if n := columnsIn(w); n > longest {
+	for _, c := range b.cells {
+		if n := columnsIn(c.Word); n > longest {
 			longest = n
 		}
 	}
@@ -181,22 +197,37 @@ func (b *Board) layout() {
 	if b.cols > boardCols {
 		b.cols = boardCols
 	}
-	if b.cols > len(b.words) {
-		b.cols = len(b.words)
+	if b.cols > len(b.cells) {
+		b.cols = len(b.cells)
 	}
 	if b.cols < 1 {
 		b.cols = 1
 	}
 }
 
-// Rows is how many grid lines Prompt() produces.
+// Rows is how many lines Prompt() produces — the WHOLE live edge, the grid and
+// the chrome under it together.
 //
 // Exported because it is the number D15's fit test is about: a board is offered
-// only when the terminal can hold its grid whole, and the board is the only
-// thing that knows how tall it is.
+// only when the terminal can hold it whole, and the board is the only thing that
+// knows how tall it is. That it counts the toggle and the panel too is the point
+// — a fit computed from the grid alone would put the last row off the bottom.
 func (b *Board) Rows() int {
-	return (len(b.words) + b.cols - 1) / b.cols
+	return b.gridRows() + chromeRows
 }
+
+// gridRows is the grid's own share: the rows CellAt can find a word on.
+func (b *Board) gridRows() int {
+	return (len(b.cells) + b.cols - 1) / b.cols
+}
+
+// chromeRows is what Prompt draws under the grid: a blank, the toggle, the
+// panel.
+//
+// The panel row is drawn EVEN WHEN EMPTY, which is not tidiness. A row that
+// appeared with the first mark would shift the grid up by one, and every word
+// would move under a pointer already resting on it.
+const chromeRows = 3
 
 // Word is the word the LAST mark landed on.
 //
@@ -204,10 +235,10 @@ func (b *Board) Rows() int {
 // change at the call site: the session records a verdict against a word, and on
 // a grid the form is the only thing that knows which one that was.
 func (b *Board) Word() string {
-	if len(b.words) == 0 {
+	if len(b.cells) == 0 {
 		return ""
 	}
-	return b.words[b.last]
+	return b.cells[b.last].Word
 }
 
 // Prompt is the labelled grid, rebuilt every frame.
@@ -226,14 +257,14 @@ func (b *Board) Word() string {
 // bought colour in the first place (D10).
 func (b *Board) Prompt() string {
 	var s string
-	for r, rows := 0, b.Rows(); r < rows; r++ {
+	for r, rows := 0, b.gridRows(); r < rows; r++ {
 		if r > 0 {
 			s += "\n"
 		}
 		line := ""
 		for c := 0; c < b.cols; c++ {
 			i := r*b.cols + c
-			if i >= len(b.words) {
+			if i >= len(b.cells) {
 				break
 			}
 			if c > 0 {
@@ -246,12 +277,48 @@ func (b *Board) Prompt() string {
 		// erase for nothing.
 		s += trimRight(line)
 	}
-	return s
+	// THE CHROME IS THE FORM'S TOO, and that is why it is here rather than
+	// assembled by the loop out of Mode() and a gloss. A form owns how it looks —
+	// Choice owns its option layout for the same reason — and the loop assembling
+	// it would make the board's appearance a thing two files agree about, on the
+	// surface where disagreeing marks the wrong word. All the loop adds is the
+	// bar, which belongs to the sitting rather than to this question.
+	return s + "\n\n" + b.toggleLine() + "\n" + b.panelLine()
+}
+
+// toggleLine is the mode, and the ONE place it is shown.
+//
+// The live mark is bracketed exactly as a marked cell brackets its own, so the
+// grid and the toggle say "this is set" in the same shape — and Tab's effect is
+// visible in the shape it will land in. Both spellings are the same width, so
+// the line does not jump under a key pressed to be pressed again.
+func (b *Board) toggleLine() string {
+	if b.mode == Yes {
+		return "marking: [yes]   no"
+	}
+	return "marking:  yes  [no]"
+}
+
+// panelLine is the last-marked word and its gloss: the feedback moment, in the
+// place a definition would be on any other form.
+//
+// EMPTY UNTIL SOMETHING IS MARKED, and empty is still a row — see chromeRows.
+// Truncated to the width like everything else here, because the whole live edge
+// has to fit the terminal the board was offered for.
+func (b *Board) panelLine() string {
+	if len(b.cells) == 0 || b.marks[b.last] == Unmarked {
+		return ""
+	}
+	c := b.cells[b.last]
+	if c.Gloss == "" {
+		return c.Word
+	}
+	return truncate(c.Word+"  "+c.Gloss, b.width)
 }
 
 // cellText is one cell: the key or the mark, then the word padded to the column.
 func (b *Board) cellText(i int) string {
-	return "[" + string(b.glyph(i)) + "] " + pad(truncate(b.words[i], b.wordCells), b.wordCells)
+	return "[" + string(b.glyph(i)) + "] " + pad(truncate(b.cells[i].Word, b.wordCells), b.wordCells)
 }
 
 // glyph is what stands in the brackets: the mark once there is one, the key
@@ -347,7 +414,7 @@ func (b *Board) Grade(k rune) (Verdict, bool) {
 // would read the pair as two reviews of one word on one day. Apply states the
 // same rule for single-word forms: "A second assessment is not on offer".
 func (b *Board) Mark(i int) (Verdict, bool) {
-	if i < 0 || i >= len(b.words) || b.marks[i] != Unmarked {
+	if i < 0 || i >= len(b.cells) || b.marks[i] != Unmarked {
 		return Skipped, false
 	}
 	b.marks[i] = b.mode
@@ -368,7 +435,7 @@ func (b *Board) Mark(i int) (Verdict, bool) {
 // is wrong here: a mark cannot be taken back (see Mark), so a click that is not
 // clearly on a word must do nothing rather than mark its neighbour.
 func (b *Board) CellAt(row, col int) (int, bool) {
-	if row < 0 || row >= b.Rows() || col < 0 {
+	if row < 0 || col < 0 {
 		return 0, false
 	}
 	c := col / b.cell
@@ -376,7 +443,15 @@ func (b *Board) CellAt(row, col int) (int, bool) {
 		return 0, false
 	}
 	i := row*b.cols + c
-	if i >= len(b.words) {
+	// NO SEPARATE `row >= gridRows` BOUND, and its absence is the honest kind.
+	// A row below the grid — the blank, the toggle, the panel — indexes past the
+	// last cell by construction, because the grid has exactly as many rows as it
+	// takes to hold them all. The guard was written, and a mutation showed it
+	// could not be made to fail: it was dead code, and dead code here would hide
+	// the day this line stopped being the one that answers.
+	// TestTheToggleAndPanelRowsAreNotCells is the property, pinned separately
+	// from the mechanism.
+	if i >= len(b.cells) {
 		return 0, false
 	}
 	return i, true
@@ -411,7 +486,7 @@ func (b *Board) Rest(v Verdict) []string {
 		if b.marks[i] == Unmarked {
 			b.marks[i] = m
 			b.last = i
-			rest = append(rest, b.words[i])
+			rest = append(rest, b.cells[i].Word)
 		}
 	}
 	return rest
