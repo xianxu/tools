@@ -399,6 +399,44 @@ persistence.** It is the same shape as #30's rule about doubles standing in for
 the object that joins two halves — here the two halves are the struct and the
 file, and the thing between them is the yaml tag.
 
+### 2026-09-01 — T8, T9, T10: the box picks the form
+
+**T8 — and this is the first thing in the program to consult a box when choosing
+HOW to ask.** Selection was a capability question until now: form 2.3 when the
+deck could supply distractors, 2.1 when it could not, and nothing looked at a box
+at all.
+
+**Singles first, then boards, and that is a choice.** Packing is the point of the
+form — sixteen words for sixteen keystrokes — and packing cannot preserve the
+queue's interleaving, because a board built from words scattered through it has
+to sit somewhere. So retrieval gets the freshest attention and the maintenance
+sweep comes after. The counter-argument is real and now MEASURABLE: a tired
+learner marks everything yes, which is the illusion-of-knowing the Spec worries
+about, and `ReviewEvent.Form` is what will eventually say whether it happens.
+
+**`opt.rows`, and why it is not `opt.width`.** Width is a WRAP POLICY and may be
+zero — a pipe wants no baked-in breaks. Height has no such policy; a frame is as
+tall as the terminal is. Read at flag-parse time because form selection needs it
+before the screen exists.
+
+**And the trap the continuation warned about twice, caught before it bit.**
+`playRig` returns an `options` with no `rows`, which is zero, which makes
+`fitsABoard` false for every board — so `#40`'s entire form would never have been
+offered in any test while every test stayed green. `rows: defaultRows` now, with
+the same comment `width: defaultCols` carries. The mutation that removes it is
+caught by `TestASittingOfDueWordsIsABoard`.
+
+**T9 — the relearn line is built from the OUTCOMES, not the board's marks.** The
+two are the same by construction, which is exactly why the choice matters: a line
+assembled from the form could one day disagree with the events, and a transcript
+that disagrees with the log is worse than no transcript. An all-yes board writes
+nothing — a bare `relearn:` reads as a list that failed to render.
+
+**T10 — `Batch` gains `Words()`.** `fig.done` was already a word count (every
+mark scores), so a board made the bar compare words against slots and a
+twenty-word sitting read "0 of 2". The budget was never affected: `schedule.Queue`
+returns that many keys whatever they are packed into.
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it

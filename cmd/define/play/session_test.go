@@ -550,6 +550,7 @@ func (b *fakeBatch) Grade(r rune) (Verdict, bool) {
 	}
 	return Skipped, false
 }
+func (b *fakeBatch) Words() int  { return len(b.words) }
 func (b *fakeBatch) Spent() bool { return b.marked >= len(b.words) }
 func (b *fakeBatch) Rest(v Verdict) []string {
 	rest := b.words[b.marked:]

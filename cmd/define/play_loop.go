@@ -134,7 +134,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// silently stale in the bar, and a stale number on screen is worse than
 		// no number.
 		fig = held.figures(opt.count)
-		fig.total = len(s.Questions)
+		fig.total = sittingWords(s.Questions)
 		// ANSWERED, which is what the Spec's bar says. A dropped word is not an
 		// answer: the learner curated it away rather than being asked about it.
 		fig.done = s.Right + s.Wrong
@@ -156,6 +156,10 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// question's index, and -1 means none — the state is one int, and it lives
 	// here because "perform the outcomes" already does.
 	written := -1
+	// relearn is the words this board has been marked `no` on, emptied into the
+	// transcript when it closes. A slice on the loop rather than state on the
+	// form: see relearnLine.
+	var relearn []string
 	// `show` rather than `draw`: the package-level draw() is gone, and a closure
 	// wearing its name would read as the same thing narrowed rather than as the
 	// different thing it is — this one decides what has changed, where that one
@@ -312,6 +316,17 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		asked := s.Current()
 		var outs []play.Outcome
 		s, outs = play.Apply(s, in)
+		// THE BOARD'S OUTCOME, KEPT (D10). Its grid never reaches the buffer, so
+		// without this a swept board would leave the transcript with no trace
+		// that the sitting happened at all.
+		_, wasGrid := asked.(play.Grid)
+		if wasGrid {
+			for _, out := range outs {
+				if out.Kind == play.OutcomeRecord && out.Verdict == play.Wrong {
+					relearn = append(relearn, out.Word)
+				}
+			}
+		}
 
 		// EVERY outcome, ONCE, IN ORDER.
 		//
@@ -416,6 +431,16 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 						defaultIndicator(opt), stdout, stderr)
 				}
 			}
+		}
+		// WRITTEN AS THE BOARD CLOSES, before the next question is drawn — so the
+		// line sits in the transcript where the board was, rather than after
+		// whatever came next. `asked` is the form the keystroke was about, and a
+		// board leaves the screen the moment its last word is answered.
+		if wasGrid && s.Current() != asked {
+			if line := relearnLine(relearn); line != "" {
+				fmt.Fprintf(stdout, "\n%s\n", line)
+			}
+			relearn = nil
 		}
 		show()
 	}
@@ -524,6 +549,123 @@ func formCell(view display, q play.Question, k Key) (int, bool) {
 	return g.CellAt(row, k.Col)
 }
 
+// sittingWords is how many WORDS the sitting will ask about, which is not the
+// same as how many questions it holds (D8).
+//
+// `fig.done` was already a word count — every mark scores — so a board made the
+// bar compare words against slots, and a twenty-word sitting with one board in
+// it read "0 of 2". The budget is untouched: schedule.Queue returns that many
+// keys whatever they are packed into. This is the number on screen, and it is
+// the number the whole load argument is about.
+func sittingWords(qs []play.Question) int {
+	n := 0
+	for _, q := range qs {
+		if b, ok := q.(play.Batch); ok {
+			n += b.Words()
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// relearnLine is what a board leaves in the transcript as it closes (D10).
+//
+// The live edge is ephemeral by design — that is what bought marks that change
+// as they land — and for a grid that is right, because a grid of sixteen words
+// is not something to scroll back to. The OUTCOME is worth keeping: the words
+// marked `no` are the ones the sitting was actually about.
+//
+// Built from the outcomes the loop RECORDED rather than from the board's marks,
+// and that is not an arbitrary choice between two equal sources: it makes the
+// transcript name exactly what reached the log. A line assembled from the form
+// could disagree with the events, and a transcript that disagrees with the log
+// is worse than no transcript.
+func relearnLine(words []string) string {
+	if len(words) == 0 {
+		return ""
+	}
+	return "relearn: " + strings.Join(words, ", ")
+}
+
+// boardBox is the box at which a word becomes eligible for the board (D4).
+//
+// A STARTING NUMBER, not a derived one, and the only figure in this issue with
+// no argument under it. What is argued is the shape of the risk: a wrong `Yes`
+// sends a word to box+1 where a real test would have sent it to box/2, so the
+// cost is the DELAY it buys — 0 days at box 0, 4 at box 3, 165 at box 10 — while
+// the CHANCE of a wrong yes falls as the box rises. The product peaks in the
+// middle, around boxes 5-7, which no single floor expresses well.
+//
+// Boxes 0 and 1 are literally free: the ladder waits one day at both, so a
+// wrongly promoted new word comes back tomorrow regardless. Three is past those
+// two free rungs, at a four-day interval and roughly three recalls of history.
+//
+// It is meant to be REPLACED BY EVIDENCE rather than by argument, which is what
+// ReviewEvent.Form (D4a) is for. The operator confirmed the floor stands until
+// the log can answer.
+const boardBox = 3
+
+// boardsFor splits today's keys into the ones swept on a board and the ones
+// asked one at a time (D4).
+//
+// SINGLES FIRST, THEN BOARDS, and the order is a choice rather than an
+// accident. Packing is the point of the whole form — sixteen words for sixteen
+// keystrokes is what makes a large deck affordable — and packing cannot preserve
+// the queue's interleaving, because a board formed from words scattered through
+// the queue has to sit somewhere. So retrieval gets the learner's freshest
+// attention and the maintenance sweep comes after.
+//
+// The counter-argument is real and now measurable: a tired learner marks
+// everything yes, which is the illusion-of-knowing the Spec worries about.
+// `ReviewEvent.Form` is what will eventually say whether it happens.
+//
+// A CHUNK THAT WILL NOT FIT GOES BACK TO SINGLES (D15). A board that cannot be
+// drawn whole is not a board, and form 2.3 is a complete answer rather than a
+// degraded one.
+func boardsFor(keys []string, prog map[string]schedule.Progress, opt options) (single []string, boards [][]string) {
+	var eligible []string
+	for _, k := range keys {
+		if prog[k].Box < boardBox {
+			single = append(single, k)
+			continue
+		}
+		eligible = append(eligible, k)
+	}
+	for len(eligible) > 0 {
+		n := min(len(eligible), play.MaxBoardWords)
+		chunk := eligible[:n]
+		eligible = eligible[n:]
+		if boardFits(chunk, opt) {
+			boards = append(boards, chunk)
+			continue
+		}
+		single = append(single, chunk...)
+	}
+	return single, boards
+}
+
+// boardFits reports whether this terminal can draw a board of these words whole.
+//
+// It builds a PROBE and asks it, because the board owns its own layout: how many
+// columns fit, and therefore how many rows, is arithmetic only the form does.
+// Glosses are left out — the panel is one row whatever it says, so they cannot
+// change the answer.
+//
+// The width check is separate and blunt: below minWrapWidth this program already
+// treats the terminal as too narrow to lay text out at all, and a board there
+// would be columns of truncated stubs.
+func boardFits(words []string, opt options) bool {
+	if opt.width < minWrapWidth {
+		return false
+	}
+	cells := make([]play.Cell, len(words))
+	for i, w := range words {
+		cells[i] = play.Cell{Word: w}
+	}
+	return fitsABoard(opt.rows, play.NewBoard(cells, opt.width).Rows())
+}
+
 // todaysQuestions builds the queue: fold the log, ask the schedule, render each
 // word's definition.
 //
@@ -564,9 +706,15 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 	day := now.Format("2006-01-02")
 	pool := buildPool(d, deck, seedFor("pool", day))
 
+	// THE BOX PICKS THE FORM (D4), and this is the first time anything in this
+	// program has consulted one to choose HOW to ask. Selection was a capability
+	// question until now — form 2.3 when the deck can supply distractors, 2.1
+	// when it cannot — and nothing looked at a box at all.
+	single, boards := boardsFor(keys, held.prog, opt)
+
 	var qs []play.Question
 	marks := map[string]clickable{}
-	for _, key := range keys {
+	for _, key := range single {
 		text, err := d.dict.Lookup(key)
 		if err != nil {
 			// A word in the deck the dictionary no longer knows. Skip it rather
@@ -599,6 +747,32 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			continue
 		}
 		qs = append(qs, play.NewRecall(key, rendered))
+	}
+	// THE BOARDS, and they are the only questions that need no render: nothing
+	// about a board reaches the buffer, so there is no click map to build and no
+	// definition to wrap. One gloss each — for the panel — is the whole of what
+	// the form takes, and targetCandidate is the same sense form 2.3 asks about.
+	//
+	// A word the dictionary no longer knows is skipped exactly as it is above.
+	// The board only gets SHORTER for it, so the fit boardsFor already checked
+	// still holds.
+	for _, chunk := range boards {
+		var cells []play.Cell
+		for _, key := range chunk {
+			text, err := d.dict.Lookup(key)
+			if err != nil {
+				fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
+				continue
+			}
+			var gloss string
+			if c, ok := targetCandidate(key, ParseEntry(text)); ok {
+				gloss = c.Gloss
+			}
+			cells = append(cells, play.Cell{Word: key, Gloss: gloss})
+		}
+		if len(cells) > 0 {
+			qs = append(qs, play.NewBoard(cells, opt.width))
+		}
 	}
 	if len(qs) == 0 {
 		// NOT "nothing due today": words WERE due, and every one of them failed

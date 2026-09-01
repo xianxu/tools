@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/play"
+	"github.com/xianxu/tools/cmd/define/schedule"
 	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 )
@@ -46,7 +48,13 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 	// the 0 sentinel. A rig that left it 0 turned the wrap OFF, and the wrap is
 	// what every region has to survive — that default hid a dropped click map on
 	// every multiple-choice question until the operator found it.
-	return d, options{color: true, tty: true, width: defaultCols, count: 20, times: 1, noAudio: true}, st
+	// ROWS 24, for the same reason width is 80 and stated again because it is the
+	// same trap: a rig whose default is a state production cannot produce hides
+	// the feature that reads it. `--play` refuses unless stdout is a terminal, so
+	// opt.rows is terminalRows' real answer and never zero — and zero would make
+	// fitsABoard false for every board, so #40's whole form would never be
+	// offered in any test while looking perfectly healthy.
+	return d, options{color: true, tty: true, width: defaultCols, rows: defaultRows, count: 20, times: 1, noAudio: true}, st
 }
 
 // audible makes the playback branch REACHABLE and returns the player recording it.
@@ -2331,5 +2339,295 @@ func TestAReviewEventNamesItsFormOnDisk(t *testing.T) {
 				t.Errorf("the log names the form %q, want %q — the field is what lets a later query ask whether this form promotes too generously", evs[0].Form, tc.want)
 			}
 		})
+	}
+}
+
+// seedBox drives a word to a box by logging n correct reviews, so a test can
+// build a deck that spans the board's threshold.
+//
+// Through the LOG rather than by writing a Progress: box is a fold over events,
+// and a test that set the number directly would be asserting against a state the
+// program cannot reach.
+func seedBox(t *testing.T, st *store.Mem, word string, n int) {
+	t.Helper()
+	for i := range n {
+		if err := st.AppendEvent(store.ReviewEvent{
+			Word: word, Kind: store.EventReviewed, Found: true, Correct: true,
+			At: aDay.Add(time.Duration(i) * time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// DONE-WHEN 3 (the issue's): THE SCHEDULER CHOOSES THE FORM, and both sides are
+// asserted — 2.5 at box >= 3, one at a time below (D4).
+//
+// This is the first thing in the program to consult a box when choosing HOW to
+// ask. Everything before it was a capability question: form 2.3 when the deck
+// could supply distractors, 2.1 when it could not.
+func TestTheBoxPicksTheForm(t *testing.T) {
+	opt := options{width: defaultCols, rows: defaultRows}
+	prog := map[string]schedule.Progress{
+		"keel": {Box: 0}, "mesa": {Box: 1}, "run": {Box: 2},
+		"bank": {Box: 3}, "set": {Box: 4}, "quokka": {Box: 9},
+	}
+	keys := []string{"keel", "bank", "mesa", "set", "run", "quokka"}
+	single, boards := boardsFor(keys, prog, opt)
+
+	if want := []string{"keel", "mesa", "run"}; !slices.Equal(single, want) {
+		t.Errorf("asked one at a time: %v, want %v — the boxes under %d, in queue order", single, want, boardBox)
+	}
+	if len(boards) != 1 {
+		t.Fatalf("%d boards, want one holding the three mature words", len(boards))
+	}
+	if want := []string{"bank", "set", "quokka"}; !slices.Equal(boards[0], want) {
+		t.Errorf("the board holds %v, want %v — the boxes at or above %d", boards[0], want, boardBox)
+	}
+	// A word with no history at all is box 0, which is the common case on a young
+	// deck and must not reach the board.
+	single, boards = boardsFor([]string{"unheard-of"}, map[string]schedule.Progress{}, opt)
+	if len(boards) != 0 || len(single) != 1 {
+		t.Errorf("a word with no history produced %d boards and %d singles, want 0 and 1", len(boards), len(single))
+	}
+}
+
+// PACKED SIXTEEN AT A TIME, which is the load argument made concrete.
+func TestBoardsArePackedToTheLabelAlphabet(t *testing.T) {
+	opt := options{width: defaultCols, rows: 60}
+	var keys []string
+	prog := map[string]schedule.Progress{}
+	for i := range 40 {
+		k := fmt.Sprintf("word%02d", i)
+		keys = append(keys, k)
+		prog[k] = schedule.Progress{Box: 5}
+	}
+	single, boards := boardsFor(keys, prog, opt)
+	if len(single) != 0 {
+		t.Errorf("%d words were asked one at a time, want none — every one is eligible", len(single))
+	}
+	var sizes []int
+	for _, b := range boards {
+		sizes = append(sizes, len(b))
+	}
+	if want := []int{16, 16, 8}; !slices.Equal(sizes, want) {
+		t.Errorf("boards of %v, want %v", sizes, want)
+	}
+	// And every word is on exactly one of them.
+	seen := map[string]bool{}
+	for _, b := range boards {
+		for _, k := range b {
+			if seen[k] {
+				t.Errorf("%q is on two boards", k)
+			}
+			seen[k] = true
+		}
+	}
+	if len(seen) != len(keys) {
+		t.Errorf("%d of %d words reached a board", len(seen), len(keys))
+	}
+}
+
+// DONE-WHEN 10: A BOARD IS NEVER DRAWN CLIPPED (D15).
+//
+// A terminal too short for the whole board sends those words to form 2.3 for
+// that sitting, which is a complete answer rather than a degraded one. The
+// alternative — a floor in fitFooter — would have broken the budget Paint rests
+// on, and the symptom would have been a click landing on the wrong word.
+func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
+	prog := map[string]schedule.Progress{}
+	var keys []string
+	for i := range 16 {
+		k := fmt.Sprintf("word%02d", i)
+		keys = append(keys, k)
+		prog[k] = schedule.Progress{Box: 5}
+	}
+	// Tall enough: a 16-word board at 80 columns is four grid rows plus its own
+	// three, and the prompt and bar make nine.
+	if _, boards := boardsFor(keys, prog, options{width: defaultCols, rows: 9}); len(boards) != 1 {
+		t.Errorf("a 9-row terminal offered %d boards, want 1", len(boards))
+	}
+	for _, tc := range []struct {
+		name string
+		opt  options
+	}{
+		{"one row too short", options{width: defaultCols, rows: 8}},
+		{"a small window", options{width: defaultCols, rows: 5}},
+		{"too narrow to lay out at all", options{width: 12, rows: 60}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			single, boards := boardsFor(keys, prog, tc.opt)
+			if len(boards) != 0 {
+				t.Errorf("%d boards offered on a terminal that cannot draw one whole", len(boards))
+			}
+			if len(single) != len(keys) {
+				t.Errorf("%d of %d words fell back to being asked one at a time", len(single), len(keys))
+			}
+		})
+	}
+}
+
+// DONE-WHEN 1: A SITTING OF ELIGIBLE WORDS PRESENTS THEM AS A GRID — end to end
+// through todaysQuestions, over a deck that spans the threshold.
+func TestASittingOfDueWordsIsABoard(t *testing.T) {
+	mature := []string{"quokka", "mesa", "parrot", "bank"}
+	young := []string{"sycophantic", "ephemeral"}
+	d, opt, st := playRig(t, append(append([]string{}, mature...), young...)...)
+	for _, w := range mature {
+		seedBox(t, st, w, boardBox)
+	}
+
+	var out, errb bytes.Buffer
+	qs, _, code := todaysQuestions(d, opt, &out, &errb)
+	if code != 0 {
+		t.Fatalf("todaysQuestions = %d: %s", code, errb.String())
+	}
+
+	var board *play.Board
+	var singles []play.Question
+	for _, q := range qs {
+		if b, ok := q.(*play.Board); ok {
+			if board != nil {
+				t.Fatal("two boards for four mature words, want one")
+			}
+			board = b
+			continue
+		}
+		singles = append(singles, q)
+	}
+	if board == nil {
+		t.Fatalf("no board in a sitting of %d questions over a deck with %d mature words", len(qs), len(mature))
+	}
+	if len(singles) != len(young) {
+		t.Errorf("%d questions asked one at a time, want the %d young words", len(singles), len(young))
+	}
+	// BOTH SIDES: every mature word is on the board, every young one is not.
+	grid := board.Prompt()
+	for _, w := range mature {
+		if !strings.Contains(grid, w) {
+			t.Errorf("%q is mature and not on the board:\n%s", w, grid)
+		}
+	}
+	for _, w := range young {
+		if strings.Contains(grid, w) {
+			t.Errorf("%q is young and reached the board:\n%s", w, grid)
+		}
+	}
+	// The panel has something to show: the gloss came from the same sense form
+	// 2.3 asks about.
+	if _, ok := board.Mark(0); !ok {
+		t.Fatal("the first cell refused a mark")
+	}
+	panel := strings.Split(board.Prompt(), "\n")
+	if last := panel[len(panel)-1]; !strings.Contains(last, " ") {
+		t.Errorf("the panel is %q — the board was built with no glosses", last)
+	}
+	// The board comes LAST: retrieval gets the freshest attention.
+	if _, ok := qs[len(qs)-1].(*play.Board); !ok {
+		t.Errorf("the board is not the last question; the queue is %T...%T", qs[0], qs[len(qs)-1])
+	}
+}
+
+// DONE-WHEN 11: THE OUTCOME SURVIVES THE SITTING (#40 D10, T9).
+//
+// The board is live edge and vanishes whole — that is what bought marks that
+// change as they land. What must not vanish is which words the learner said no
+// to, because those are the ones the sitting was actually about.
+func TestABoardLeavesItsRelearnListInTheTranscript(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	// yes on the first, then no on the other two — Tab switches the mark.
+	keys := make(chan Key, 5)
+	keys <- Key{Kind: KeyRune, Rune: '0'}
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyRune, Rune: '1'}
+	keys <- Key{Kind: KeyRune, Rune: '2'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	script := unstyled(live.Transcript())
+	if !strings.Contains(script, "relearn: mesa, parrot") {
+		t.Errorf("the transcript does not name the words marked no:\n%s", script)
+	}
+	if strings.Contains(script, "quokka") {
+		t.Errorf("a word marked YES is in the relearn list:\n%s", script)
+	}
+	// ...and the grid itself is still not in the transcript.
+	if strings.Contains(script, "[0] ") {
+		t.Errorf("the grid reached the transcript:\n%s", script)
+	}
+}
+
+// A board swept entirely `yes` leaves NOTHING, because an empty relearn list is
+// not news — and a bare "relearn:" would read as a list that failed to render.
+func TestABoardWithNothingToRelearnWritesNoLine(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa"), opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyRune, Rune: '0'}
+	keys <- Key{Kind: KeyRune, Rune: '1'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if strings.Contains(unstyled(live.Transcript()), "relearn") {
+		t.Errorf("an all-yes board wrote a relearn line:\n%s", live.Transcript())
+	}
+}
+
+// DONE-WHEN 12: THE BAR COUNTS WORDS, NOT SLOTS (#40 D8).
+//
+// `done` was always a word count — every mark scores — so a board made the bar
+// compare words against slots, and a twenty-word sitting with one board in it
+// read "0 of 2".
+func TestTheBarCountsWordsNotSlots(t *testing.T) {
+	qs := []play.Question{
+		play.NewRecall("keel", "d"),
+		play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), 80),
+		play.NewChoice("run", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
+	}
+	if got, want := sittingWords(qs), 6; got != want {
+		t.Errorf("sittingWords = %d, want %d — one board of four plus two single questions", got, want)
+	}
+	if got := sittingWords(nil); got != 0 {
+		t.Errorf("an empty sitting counts %d words", got)
+	}
+	// The number reaches the bar.
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 2)
+	keys <- Key{Kind: KeyRune, Rune: '0'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if frame := unstyled(tty.String()); !strings.Contains(frame, "of 4") {
+		t.Errorf("the bar does not count the board's four words:\n%s", frame)
 	}
 }

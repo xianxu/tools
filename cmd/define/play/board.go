@@ -469,6 +469,9 @@ func (b *Board) CellAt(row, col int) (int, bool) {
 // two-rung promotion, and it is the form's structure rather than a rule (D1).
 func (b *Board) IsSelfRated() bool { return true }
 
+// Words is how many this board holds, which is what the bar counts (D8).
+func (b *Board) Words() int { return len(b.cells) }
+
 // Spent reports that every word here has been answered — the Batch question the
 // session asks before it advances.
 func (b *Board) Spent() bool {

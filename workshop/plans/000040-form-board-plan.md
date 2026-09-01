@@ -327,7 +327,7 @@ chosen at the new height.
 | `Grid` | `cmd/define/play/session.go` | new | PURE — the capability "I am drawn as cells you click": `Rows`, `CellAt`, `Mark`. The first capability the LOOP asks rather than `Apply` (D11) |
 | `Moded` | `cmd/define/play/session.go` | new | PURE — the capability "Tab means something to me" (D13) |
 | `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
-| `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word", asked at four points, not one (D12) |
+| `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word", asked at FIVE points: the four of D12, plus `Words()` for the bar (D8) |
 | `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` on advance, on the miss-on-hidden branch, on drop, and on Enter (D2, D3, D12) |
 | `livePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — D12 predicted a change here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
 | `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` instead of naming the constant, because `d` is refused on a board (R2) |
@@ -336,7 +336,9 @@ chosen at the new height.
 | `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole (D15) |
 | `boardsFor` | `cmd/define/play_loop.go` | new | PURE — partitions the day's keys into boards and single questions at box ≥ 3 (D4) |
 | `fitFooter` | `cmd/define/screen.go` | unchanged | PURE — D15 retired D10's floor: a board that does not fit is not OFFERED, which keeps this function's budget invariant true rather than negotiating with it (R2) |
-| `sittingFigures` | `cmd/define/playbar.go` | modified | PURE — `total` becomes the WORD count (D8) |
+| `sittingWords` | `cmd/define/play_loop.go` | new | PURE — the bar's `total` becomes the WORD count. In the loop, where `fig.total` is set, rather than in `sittingFigures`, which never knew about questions at all (D8, R4) |
+| `relearnLine` | `cmd/define/play_loop.go` | new | PURE — the one buffer line a board leaves as it closes, built from the outcomes the loop RECORDED so the transcript cannot disagree with the log (D10) |
+| `boardFits` | `cmd/define/play_loop.go` | new | PURE — builds a probe board and asks it how tall it is, because the form owns its own layout (D15) |
 
 - **`Board`** — up to sixteen words, marked by click or by labelled key.
   - **Relationships:** 1:N with words (N ≤ 16); occupies ONE `Session.Questions` slot.
@@ -379,9 +381,9 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [x] **T5 — the loop offers a click to the form first** (D11). Falls through to `playRegion` when the form declines. `#38`'s `TestPlayClickActsAndIsNotAnAnswer` must pass UNTOUCHED — every existing form declines.
 - [x] **T6 — the footer carries the board** (D10, D15). Grid, toggle, panel, bar, in that order. `fitFooter` is UNCHANGED; instead `boardsFor` asks `fitsABoard` and sends the words to 2.3 when the terminal is too short.
 - [x] **T7 — `ReviewEvent.Form`** (D4a). The field, `CaptureReview` writing it, and `Fold` ignoring it — it is telemetry, not assessment. **Operator-requested and the instrument the deferred remedies depend on.**
-- [ ] **T8 — form selection** (D4). `boardsFor` partitions today's keys at box ≥ 3 and packs the eligible ones sixteen at a time.
-- [ ] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
-- [ ] **T10 — the bar counts words** (D8).
+- [x] **T8 — form selection** (D4). `boardsFor` partitions today's keys at box ≥ 3 and packs the eligible ones sixteen at a time.
+- [x] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
+- [x] **T10 — the bar counts words** (D8).
 - [ ] **T11 — the load claim, measured** (Done-when 7).
 - [ ] **T13 — pty conformance.** Done-when 14, which had a row and no task. `#37` records that pty rows need `-tags conformance` AND a real pty — *"in the review environment every one reports 'no pty available'"* — so they are run here or they are run nowhere.
 - [ ] **T12 — docs.** `cmd/define/README.md`, `atlas/define.md`'s forms section, the `--help` key table — **and the two in-tree forward references D7 falsifies**: `schedule/progress.go` says this issue extends the `Grade` seam with `GradeUnsure`, and `play/session.go` describes the mark as "firm".
@@ -434,6 +436,15 @@ the way the issue's own Revisions section had already written down.
   `Moded`, `formCell`, `boardFooter`, `fitsABoard`, `reservedKeys`. A plan that
   names four new symbols and ships eleven is as wrong as one whose status column
   lies.
+
+
+### 2026-09-01 (R4) — the bar's total is set in the loop, not in `sittingFigures`
+
+The Pure-entities table named `sittingFigures` as the thing that changes for D8.
+It does not: `sittingFigures` is a struct of numbers and never knew what a
+question was. What changes is `fig.total = len(s.Questions)` in the loop's
+`refresh`, which is now `sittingWords(s.Questions)`. Corrected, and the new
+helpers T8-T10 shipped are listed in the table above.
 
 
 ## Done when

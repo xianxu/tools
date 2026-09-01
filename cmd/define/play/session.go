@@ -456,6 +456,13 @@ func missedAxis(q Question) Axis {
 //	                 no single current word to name. Refused rather than guessed.
 //	InputFinish    — Enter spends the form; every other form has nothing to spend.
 type Batch interface {
+	// Words is how many words this form holds, for the bar (D8).
+	//
+	// The bar's total was `len(s.Questions)`, which is the SLOT count — a
+	// twenty-word sitting with a board in it read "0 of 2". The budget is
+	// unaffected either way, because schedule.Queue returns that many KEYS
+	// whatever they are packed into; what was wrong was the number on screen.
+	Words() int
 	// Spent reports whether every word this form holds has been answered.
 	Spent() bool
 	// Rest answers every word still unmarked with v and returns them, which is
