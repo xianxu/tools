@@ -97,6 +97,47 @@ rounds:
           family: confirmed-purpose-has-no-task
           round: 2
       blocked: false
+    - "n": 3
+      timestamp: "2026-09-01T10:25:53-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-8
+          disposition: not-addressed
+          note: Issue rows 3/4/5 swept and the rule stated in Revisions; only the both-sides pin for box >= 3 remains open.
+          round: 3
+      findings:
+        - id: PQ-9
+          severity: Important
+          title: Space is InputReveal too, so it spends the board — the plan decides only Enter
+          detail: |-
+            This is the 2nd finding in family apply-assumes-one-word-per-question (prevalence 2:
+            PQ-2 at the state machine, this at the input mapping). Do not fix the instance. The rule
+            is: a form that reinterprets an existing Input kind must enumerate EVERY key toInput can
+            turn into that kind, not the one key the decision was written about. toInput maps
+            KeyEnter (play_loop.go:411) and rune ' ' (play_loop.go:415) to the same InputReveal, and
+            a board is never Graded (D12) so session.go:169 does not intercept — space therefore runs
+            Rest(Wrong) over every unmarked word, the action D3 calls the only expensive-to-undo one
+            on this surface. Write the enumeration into the plan as a table (toInput's five cases plus
+            the gestures viewportGesture consumes at play_loop.go:254, one row each for what a board
+            does) and sweep it in this round.
+          family: apply-assumes-one-word-per-question
+          round: 3
+        - id: PQ-10
+          severity: Important
+          title: fitFooter's new floor breaks the budget invariant Paint documents, with no stated behaviour at the limit
+          detail: |-
+            T6/D10 give fitFooter a floor so grid rows are never dropped. fitFooter (screen.go:740-750)
+            today guarantees footerRows <= avail, which is what makes s.rows (screen.go:419) and the
+            cursor walk-back (screen.go:450) sound; Paint's own comment (screen.go:380-414) states that
+            a footer taller than the terminal scrolls it and "a click at viewport row R stops meaning
+            buffer line R+offset" — landing on FooterRowAt, the seam this issue adds. State the
+            replacement contract and the over-budget behaviour (clip to whole cell-rows and carry the
+            rest, refuse the board below a minimum height, or give the buffer zero rows and accept that
+            T9's relearn line is invisible), and add a Done-when row whose mutation is "the floor lets
+            footerRows exceed termRows - promptRows".
+          family: contract-override-omits-limit-case
+          round: 3
+      blocked: true
 content_hash: d5dc613d6dd0630fd4316647b4748277ff2278fc4fafb5ba1f27872051240683
 ---
 
@@ -147,6 +188,38 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   (/board forces the form) has no task, no pin and no D9 entry. Row 3's "a deck spanning both"
   also has no plan row testing the below-threshold side going to 2.3.
 
+## Round 3 — 2026-09-01T10:25:53-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- PQ-8 — not-addressed — Issue rows 3/4/5 swept and the rule stated in Revisions; only the both-sides pin for box >= 3 remains open.
+
+### Raised
+
+- **PQ-9** [Important] `apply-assumes-one-word-per-question` Space is InputReveal too, so it spends the board — the plan decides only Enter
+  This is the 2nd finding in family apply-assumes-one-word-per-question (prevalence 2:
+  PQ-2 at the state machine, this at the input mapping). Do not fix the instance. The rule
+  is: a form that reinterprets an existing Input kind must enumerate EVERY key toInput can
+  turn into that kind, not the one key the decision was written about. toInput maps
+  KeyEnter (play_loop.go:411) and rune ' ' (play_loop.go:415) to the same InputReveal, and
+  a board is never Graded (D12) so session.go:169 does not intercept — space therefore runs
+  Rest(Wrong) over every unmarked word, the action D3 calls the only expensive-to-undo one
+  on this surface. Write the enumeration into the plan as a table (toInput's five cases plus
+  the gestures viewportGesture consumes at play_loop.go:254, one row each for what a board
+  does) and sweep it in this round.
+- **PQ-10** [Important] `contract-override-omits-limit-case` fitFooter's new floor breaks the budget invariant Paint documents, with no stated behaviour at the limit
+  T6/D10 give fitFooter a floor so grid rows are never dropped. fitFooter (screen.go:740-750)
+  today guarantees footerRows <= avail, which is what makes s.rows (screen.go:419) and the
+  cursor walk-back (screen.go:450) sound; Paint's own comment (screen.go:380-414) states that
+  a footer taller than the terminal scrolls it and "a click at viewport row R stops meaning
+  buffer line R+offset" — landing on FooterRowAt, the seam this issue adds. State the
+  replacement contract and the over-budget behaviour (clip to whole cell-rows and carry the
+  rest, refuse the board below a minimum height, or give the buffer zero rows and accept that
+  T9's relearn line is invisible), and add a Done-when row whose mutation is "the floor lets
+  footerRows exceed termRows - promptRows".
+
 ## Open findings
 
 - **PQ-8** [Minor] `confirmed-purpose-has-no-task` Three of the issue's seven Done-when rows are contradicted or unserved by the revised plan
+- **PQ-9** [Important] `apply-assumes-one-word-per-question` Space is InputReveal too, so it spends the board — the plan decides only Enter
+- **PQ-10** [Important] `contract-override-omits-limit-case` fitFooter's new floor breaks the budget invariant Paint documents, with no stated behaviour at the limit

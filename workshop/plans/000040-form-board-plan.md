@@ -277,6 +277,45 @@ paging keys (`#41` D6) this one is legitimately about WHAT IS BEING ANSWERED
 rather than what is being looked at, so it belongs in `play` rather than being
 intercepted by the loop.
 
+**D14 — ENTER COMMITS AND SPACE MUST NOT, so the merged pair splits.**
+
+`toInput` maps BOTH Enter and space to `InputReveal`, and `Apply`'s own comment
+calls that deliberate: *"Enter and space both land on this kind, which toInput
+maps to the same kind."* D3 spends the board on `InputReveal` — so **space would
+commit it**, taking every unmarked word as `No`. A casual keystroke would fire
+the one action on this surface that is expensive to undo.
+
+So `Enter` gets its own kind, `InputFinish`, and space keeps `InputReveal`. For
+every existing form `Apply` treats `InputFinish` exactly as `InputReveal`, so
+2.1 and 2.3 are unchanged and their tests pass untouched — that equivalence is
+the proof the pair split without the forms noticing. Only a `Batch` form
+distinguishes them: `InputFinish` spends it, `InputReveal` does nothing, because
+a board has nothing to reveal.
+
+**D15 — A BOARD THAT DOES NOT FIT IS NOT OFFERED, which is what keeps
+`fitFooter`'s budget invariant true.**
+
+`fitFooter` guarantees `footerRows <= avail` today, and `Paint` rests on it:
+`s.rows` is computed from it and so is the cursor walk-back. `Paint`'s own
+comment states the consequence of breaking it — *"the terminal then SCROLLS to
+fit it, which moves every row the app believes it placed, and a click at viewport
+row R stops meaning buffer line R+offset"* — which lands squarely on
+`FooterRowAt`, the seam this issue adds. **A floor that simply refuses to drop
+grid rows would violate it on a short terminal**, and the failure would be a
+click on the wrong word.
+
+So the floor is not a floor. The board is offered only when the terminal can hold
+it: grid rows + the toggle + the prompt + the bar. Below that height those words
+go to form 2.3 for that sitting, decided in `boardsFor` where the form is chosen
+— **a board that cannot be drawn whole is not a board**, and 2.3 is a complete
+answer rather than a degraded one.
+
+`fitFooter` is therefore UNCHANGED, which also retires D10's second consequence:
+there is no sacrifice-order problem, because the board is never in a footer that
+has to sacrifice. A resize below the minimum mid-sitting leaves the current board
+drawn as it was — its rows are already budgeted — and the next question is
+chosen at the new height.
+
 ## Core concepts
 
 ### Pure entities
@@ -305,7 +344,7 @@ intercepted by the loop.
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `display.FooterRowAt` | `cmd/define/replraw.go`, `screen.go` | new | the terminal — answers WHICH FOOTER ROW a click landed on, which is what makes the live edge clickable (D10) |
-| `toInput` | `cmd/define/play_loop.go` | modified | the keyboard — one row for Tab, which is dropped today (D13) |
+| `toInput` | `cmd/define/play_loop.go` | modified | the keyboard — a row for Tab, which is dropped today (D13), and Enter split from space (D14) |
 | the loop's click branch | `cmd/define/play_loop.go` | modified | the mouse — offers a click to the form first, falls through to `playRegion` (D11) |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | the store — packs box ≥ 3 keys into boards (D4) |
 | `ReviewEvent.Form` | `cmd/define/store/event.go` | new | the event log — which form asked, so the deferred remedies can be chosen from evidence (D4a) |
@@ -325,10 +364,10 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
 - [ ] **T1 — `Batch`, and the FOUR places `Apply` consults it** (D2, D12). The interface, then: `advance` moves on only when `Spent()`; the miss-on-hidden branch must not set `Graded` for a batch form; `InputDrop` is refused; Enter spends the board via `Rest(Wrong)`. Existing forms implement none of it and are unaffected — the whole `play` suite and `TestSessionIsFormAgnostic` pass untouched, which is what proves the seam widened rather than branched.
 - [ ] **T2 — `Board` and `Mark`** (D5, D7). Two marks. `Prompt()` renders the labelled grid; `Grade` takes a cell label; `Mark(i, v)` takes a click; `Spent()`; `Rest(v)`; `IsSelfRated() → true`; `Reveal()` is empty. Table test including a board of three (D5) and the sixteenth mark. **Labels are `0`–`9` then `a b c e f g`** — `d` is reserved by `toInput` before a form sees it.
-- [ ] **T3 — Tab** (D13). One row in `toInput`, one `play.Input` kind, and the board's mode flips. It belongs in `play` because it is about what is being ANSWERED, unlike the paging keys.
+- [ ] **T3 — Tab, and Enter split from space** (D13, D14). Enter becomes `InputFinish`; `Apply` treats it as `InputReveal` for every non-batch form, so 2.1 and 2.3 are untouched and their tests prove it. One row in `toInput`, one `play.Input` kind, and the board's mode flips. It belongs in `play` because it is about what is being ANSWERED, unlike the paging keys.
 - [ ] **T4 — `display.FooterRowAt`** (D10). `Paint` already computes the footer's origin; `liveScreen` records it and answers which footer row a viewport row is. The editor's screen answers "none", which is the whole of its involvement.
 - [ ] **T5 — the loop offers a click to the form first** (D11). Falls through to `playRegion` when the form declines. `#38`'s `TestPlayClickActsAndIsNotAnAnswer` must pass UNTOUCHED — every existing form declines.
-- [ ] **T6 — the footer carries the board** (D10). Grid, toggle, panel, bar, in that order; `fitFooter` gains a floor so grid rows are never dropped.
+- [ ] **T6 — the footer carries the board** (D10, D15). Grid, toggle, panel, bar, in that order. `fitFooter` is UNCHANGED; instead `boardsFor` asks `fitsABoard` and sends the words to 2.3 when the terminal is too short.
 - [ ] **T7 — `ReviewEvent.Form`** (D4a). The field, `CaptureReview` writing it, and `Fold` ignoring it — it is telemetry, not assessment. **Operator-requested and the instrument the deferred remedies depend on.**
 - [ ] **T8 — form selection** (D4). `boardsFor` partitions today's keys at box ≥ 3 and packs the eligible ones sixteen at a time.
 - [ ] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
@@ -346,14 +385,14 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR. **Every `red when` cell is EXECUT
 |---|---|---|---|
 | 1 | a sitting of eligible words presents them as a grid | `TestASittingOfDueWordsIsABoard` | `boardsFor` sends them to 2.3 one at a time |
 | 2 | every mark reaches the log as it happens | `TestEveryMarkOnABoardIsRecordedImmediately` — counting store, N marks, N events before the sitting ends | marks are batched to the end, losing them to Ctrl-C |
-| 3 | **Enter takes the unmarked as `No`** | `TestEnterCommitsTheUnmarkedAsNo` | Enter reveals, or ends the sitting, or spares them |
+| 3 | **Enter takes the unmarked as `No`, and SPACE DOES NOT** | `TestEnterCommitsTheUnmarkedAsNo`, `TestSpaceDoesNotCommitABoard` | the merged Enter/space kind spends the board, so a casual keystroke demotes sixteen words |
 | 4 | **Ctrl-C leaves unmarked words UNTOUCHED, and marked ones recorded** | `TestCtrlCCancelsABoardWithoutMovingUnmarkedWords` — fold the log after, boxes unchanged | a board writes its marks at the end instead of as they land |
 | 5 | a `No` mark does not freeze the board | `TestANoMarkDoesNotEndTheBoard` | the miss-on-hidden branch sets `Graded` for a batch form |
 | 6 | **the mouse-less path works, and `d` still drops** | `TestABoardIsMarkableByKeyAlone`, `TestDOnABoardIsNotACellLabel` | labels include `d`, or the keyboard path is missing and the board degrades to "everything is No" |
 | 7 | a click marks on a board and plays everywhere else | `TestAClickOnABoardMarksIt`, and `#38`'s `TestPlayClickActsAndIsNotAnAnswer` UNCHANGED | the loop learns what a board is instead of asking |
 | 8 | the session still learns nothing about which form is asking | `TestSessionIsFormAgnostic` unchanged, plus a grep for `*Board` in `session.go` finding nothing | `Apply` type-switches instead of consulting `Batch` |
 | 9 | **every review event records the form that asked** | `TestAReviewEventNamesItsForm` over all three forms | the field is written for one form and defaulted for the others, which is worse than absent |
-| 10 | grid rows are never the ones the footer drops | `TestAShortTerminalDropsTheBarBeforeTheGrid` | `fitFooter`'s plain tail-drop eats half a board |
+| 10 | **a board is never drawn clipped** | `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard`, and `TestPaintFitsTheTerminalAndParksTheCursor` UNCHANGED | `fitFooter` is given a floor, so `footerRows` exceeds `termRows - promptRows`, the terminal scrolls, and a click lands on the wrong word |
 | 11 | the outcome survives the sitting | `TestABoardLeavesItsRelearnListInTheTranscript` | the board is live edge and vanishes whole |
 | 12 | the bar counts WORDS | `TestTheBarCountsWordsNotSlots` | `total` stays `len(s.Questions)` and a 20-word sitting reads "0 of 2" |
 | 13 | the board is materially cheaper per word | `TestABoardCostsFewerKeystrokesThanMeaningChoice` | the grid asks for more than one keystroke per word |
