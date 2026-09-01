@@ -888,6 +888,49 @@ func TestEveryRegionKindIsActionable(t *testing.T) {
 	}
 }
 
+// ...and the SAME registry answers for a sitting, driven directly (#38 D4).
+//
+// The loop above proves every kind acts in the EDITOR. `#30` Done-when 7 asks
+// for more than that — "one mechanism, so a third consumer is a row rather than
+// a new feature" — and the failure it forbids is a kind that acts in one loop
+// and not the other. Driving `playRegion` itself is what makes that
+// unexpressible: there is only one switch to be missing a case from.
+func TestEveryRegionKindIsActionableThroughTheSharedRegistry(t *testing.T) {
+	for kind := RegionKind(0); kind < numRegionKinds; kind++ {
+		rig, opt, _ := editorRig(t, "sycophantic", true)
+		opt.times = 1
+		var out, errb bytes.Buffer
+
+		playRegion(t.Context(), rig.deps, opt,
+			Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"},
+			"", defaultIndicator(opt), &out, &errb)
+
+		if rig.player.count() == 0 {
+			t.Errorf("RegionKind %d played nothing through playRegion — a sitting draws the "+
+				"underline and a click on it does nothing", kind)
+		}
+	}
+}
+
+// The registry REFUSES what it does not know, rather than playing the headword
+// as a fallback.
+//
+// A kind with no row is a bug in the registry, and silently doing something
+// plausible is how it would ship: the underline would work, and only the wrong
+// recording would say otherwise.
+func TestAnUnknownRegionKindPlaysNothing(t *testing.T) {
+	rig, opt, _ := editorRig(t, "sycophantic", true)
+	var out, errb bytes.Buffer
+
+	playRegion(t.Context(), rig.deps, opt,
+		Region{Kind: numRegionKinds + 7, Text: "sycophantic", Word: "sycophantic"},
+		"", defaultIndicator(opt), &out, &errb)
+
+	if got := rig.player.count(); got != 0 {
+		t.Errorf("an unknown kind played %d times — the registry guessed instead of refusing", got)
+	}
+}
+
 // THE WHOLE PATH, on real objects: a terminal's click coordinates reach the word
 // they point at (#30 M2, BR-47).
 //
