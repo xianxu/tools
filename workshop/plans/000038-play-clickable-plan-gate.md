@@ -254,7 +254,20 @@ rounds:
           family: citation-does-not-point-at-the-claim
           round: 5
       blocked: false
-content_hash: 1090f1b92d4be5b4780834ccda29bed431e593cabe6c99c529bc0c63894a33cf
+    - "n": 6
+      timestamp: "2026-08-31T18:35:17-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-12
+          disposition: not-addressed
+          note: Plan unchanged since round 5 (last edit 3e19b95, 18:23; round 5 at 18:28). All three premises re-measured true at HEAD; a fifth row, the KeyClick dispatch, is unassigned.
+          round: 6
+        - id: PQ-13
+          disposition: not-addressed
+          note: The current-truth tables still anchor by line number; unchanged since the round that raised it.
+          round: 6
+      blocked: false
+content_hash: e2c1aa752b2c57f1b325790f8141762fe6882dff22b4f57c75c171066273561a
 ---
 
 # Gate ledger — tools#38 (plan-quality)
@@ -404,6 +417,13 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   178-181, 161 and replraw.go 264, 170, 140, 94, 534, 366-380 all moved or vanished;
   two of those rows are now false in substance, since the playback dance is deleted
   and viewportGesture is already shared with --play.
+
+## Round 6 — 2026-08-31T18:35:17-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-12 — not-addressed — Plan unchanged since round 5 (last edit 3e19b95, 18:23; round 5 at 18:28). All three premises re-measured true at HEAD; a fifth row, the KeyClick dispatch, is unassigned.
+- PQ-13 — not-addressed — The current-truth tables still anchor by line number; unchanged since the round that raised it.
 
 ## Open findings
 
