@@ -138,7 +138,7 @@ func (s *screen) write(text string) {
 	}
 }
 
-// regionsAt records the regions belonging to a run of buffer lines, so a click
+// addRegions records the regions belonging to a run of buffer lines, so a click
 // can be resolved back to what was rendered there (#30 M2.3).
 //
 // A per-LINE map rather than a list scanned linearly: a session is thousands of

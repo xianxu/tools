@@ -207,16 +207,6 @@ func orElse[T comparable](v, fallback T) T {
 	return v
 }
 
-// openStore builds the store-backed dependencies over the WORKING DIRECTORY.
-//
-// DEFINE_NO_CAPTURE means "write nothing in this directory", and that has a real
-// cost: persisted history IS the event log (#3), so opting out also drops
-// history to session-only. Stated here, in --help, and in the README, rather
-// than discovered.
-//
-// A store that cannot be opened must not break define: warn and fall back,
-// exactly as a missing recording degrades rather than fails. Someone in a
-// read-only directory still gets a dictionary.
 // newsFeedFor gates the news feed on the language it actually serves.
 //
 // httpFeed hardcodes hl=en-US&gl=US&ceid=US:en — it is English BY CONSTRUCTION.
@@ -250,6 +240,16 @@ func sessionUsage(lang store.Lang, clk store.Clock, warn io.Writer) UsageSource 
 	return &bothSources{news: newsFeedFor(lang, newCachingFeed(newHTTPFeed(), store.NewMem(), clk)), warn: warn}
 }
 
+// openStore builds the store-backed dependencies over the WORKING DIRECTORY.
+//
+// DEFINE_NO_CAPTURE means "write nothing in this directory", and that has a real
+// cost: persisted history IS the event log (#3), so opting out also drops
+// history to session-only. Stated here, in --help, and in the README, rather
+// than discovered.
+//
+// A store that cannot be opened must not break define: warn and fall back,
+// exactly as a missing recording degrades rather than fails. Someone in a
+// read-only directory still gets a dictionary.
 func openStore(opt options, warn io.Writer) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides

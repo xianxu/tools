@@ -85,16 +85,30 @@ take — a click here should reach it rather than growing a third caller.
 
 ## Done when
 
-- [ ] The word `--play` is asking about can be clicked to hear it.
-- [ ] A click is a REPLAY and never an answer: no review is recorded, no schedule
-      moves, the sitting does not advance.
-- [ ] The click reaches `replayInPlace`, the same path `y`/`n`/Enter reach, so a
-      third caller does not appear.
-- [ ] A terminal that reports no mouse behaves exactly as `--play` does today,
+- [x] The word `--play` is asking about can be clicked to hear it.
+      `TestPlayClickOnThePromptWordPlaysIt`, and
+      `TestTheAskedWordIsClickableOnAMultipleChoiceQuestion` for the form whose
+      prompt wraps — the case the operator found inert.
+- [x] A click is a REPLAY and never an answer: no review is recorded, no schedule
+      moves, the sitting does not advance. `TestPlayClickActsAndIsNotAnAnswer`,
+      driven into the GRADED state on a two-word deck, because that is the only
+      arrangement where an advance is observable — the first version of this row
+      survived its own `red when`.
+- [x] The click reaches the same registry the editor's does, so a third caller
+      does not appear. `playRegion`, with
+      `TestEveryRegionKindIsActionableThroughTheSharedRegistry` beside the
+      editor's own row. **Not `replayInPlace`**, which this row originally named:
+      that reads a `session` a sitting does not have, so the shared thing beneath
+      both is `playAnnounced` and the switch lifts to sit above it (D4).
+- [x] A terminal that reports no mouse behaves exactly as `--play` does today,
       and tracking is handed back on exit — the same guarantees `rawSession`
-      already carries.
-- [ ] Whatever happens to `--play`'s scrollback is a DECISION with its reason
-      recorded, not a side effect of adopting the screen.
+      already carries. The existing `--play` pty rows, unchanged, plus
+      `TestPTYMouseTrackingIsAskedForAndGivenBack`.
+- [x] Whatever happens to `--play`'s scrollback is a DECISION with its reason
+      recorded, not a side effect of adopting the screen. Decided in `#41` D5 and
+      recorded in `atlas/define.md`: the alternate screen is taken and the
+      transcript is printed back on exit, pinned by
+      `TestPlayTranscriptSurvivesExit`.
 
 ## Estimate
 
@@ -258,6 +272,39 @@ actual lands near **3–4h**. The estimate is NOT padded toward it.
 - [x] T8 — docs: the README's review-loop section and the atlas's.
 
 ## Log
+
+### 2026-08-31 — resumed, implemented, and three boundary rounds
+
+`#41` merged and took T2, T3 and T6 with it; T1, T4, T5, T7 and T8 landed here on
+top of T0 from the 2026-08-30 session. Operator drove a real sitting, found the
+feature INERT on multiple-choice questions, and confirmed it working after the
+fix.
+
+**Boundary rounds, and what each bought.**
+
+- **Round 1 — REWORK, one Critical.** `writeClickable` moved regions by the
+  loop's `opt.width` while the screen wraps at its own `cols`; after a resize the
+  two rulers disagreed and a headword region landed on a blank line. The
+  arithmetic moved into `liveScreen.WriteRegions`, which holds the width, so a
+  second ruler is unexpressible. Also: T5 had adopted `Render` and `WriteRegions`
+  carrying none of the three obligations they document, two of them live defects.
+- **Round 2 — REWORK, one Critical.** The plan's Core-concepts table named two
+  entities the tree does not declare, and seven task rows were unticked because
+  an earlier scripted edit matched nothing and reported success. And the
+  `RenderOpts.Word` fix had no test — deleting it left the suite green.
+- **Round 3 — FIX-THEN-SHIP.** Done-when row 2 survived its own stated mutation:
+  "a click never answers" was delivered by `toInput`'s default, not by T7's
+  guard, so the row pinned a property the code under test did not provide. Also a
+  class of five mis-attached doc comments, now closed by
+  `TestADocCommentNamesWhatItSitsOn` — which found two orphans nobody had
+  noticed, `openStore`'s and `checkPlanName`'s.
+
+**The rule the three rounds share, and it is in `lessons.md`: a claim is
+discharged by something that can FAIL.** A table row is a claim about the tree, a
+one-line fix is a claim about behaviour, and a `red when` cell is a mutation that
+has to be RUN — none of them counts until something reddens when it stops being
+true.
+
 
 ### 2026-08-31 — resumed; `#41` landed three of the nine tasks
 

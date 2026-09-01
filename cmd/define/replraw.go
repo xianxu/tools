@@ -551,15 +551,6 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	}
 }
 
-// replayInPlace speaks the current word again without moving the cursor off the
-// prompt line. Stays in RAW mode throughout: Ctrl-C must reach the key reader as
-// a byte while playback blocks.
-//
-// `pron` is #29's source language, empty for an ordinary replay. A bare Enter
-// and `/pron fr` are therefore ONE replay path with one parameter rather than
-// two implementations — #14's "two loops, one decision table", applied before a
-// second one could be written. It takes the whole session because the source
-// spellings come from the entry, not just the word.
 // playRegion is what a CLICK does, and it is ONE registry for both loops.
 //
 // `#30` Done-when 7 asked for exactly this — *"the affordance is ONE mechanism,
@@ -600,6 +591,16 @@ func playRegion(ctx context.Context, d deps, opt options, r Region, entry string
 	playAnnounced(ctx, d, opt, utteranceFor(r.Word, entry, pron, opt), ind, stdout, stderr)
 }
 
+// replayInPlace speaks the current word again without moving the cursor off the
+// prompt line. Stays in RAW mode throughout: Ctrl-C must reach the key reader as
+// a byte while playback blocks.
+//
+// `pron` is #29's source language, empty for an ordinary replay. A bare Enter
+// and `/pron fr` are therefore ONE replay path with one parameter rather than
+// two implementations — #14's "two loops, one decision table", applied before a
+// second one could be written. It takes the whole session because the source
+// spellings come from the entry, not just the word.
+//
 // Plain \n, not \r\n: the screen places every row, and it is the only writer
 // left on this path (#41 retired the translating one). Two spellings of a line
 // terminator in one function is how they drift — `playRegion` beside this one

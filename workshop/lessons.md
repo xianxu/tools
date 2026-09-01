@@ -2923,3 +2923,38 @@ and deleting the field again left the entire suite green.
 exactly as a feature does, and the cheapest moment to write it is while the
 divergence is still in your head — the fixture is the thing you just reproduced.
 
+## A `red when` cell is a mutation, and it has to be RUN (`#38`)
+
+`#38`'s Done-when row 2 read *"a click NEVER answers — red when: the click reaches
+`play.Apply`"*. The boundary review executed that literal mutation and the test
+stayed green: the property was delivered by `toInput`'s default (it returns false
+for a click), not by the guard the row was written for. The row pinned something
+the code under test did not provide.
+
+The second attempt still survived, for a subtler reason: with a ONE-word deck a
+click that advanced simply ended the sitting, which is indistinguishable from not
+advancing. It needed two questions before the advance was observable.
+
+**Sweep the whole Done-when table as mutations before crossing a boundary**, and
+when a mutation does not redden, ask which of the two things it means: the test
+is weak, or the fixture cannot express the failure. The second is the one that
+hides.
+
+## Two orphaned doc comments were found by a 50-line AST guard (`#38`)
+
+A comment block acquires the wrong owner when a declaration is inserted between
+it and its function: the new one arrives undocumented and the old one's prose now
+describes its neighbour. `go vet` does not look, and the exported-comment linters
+do not reach unexported declarations — which is most of `cmd/define`.
+
+`TestADocCommentNamesWhatItSitsOn` walks the package with `go/ast` and fires when
+a function's doc opens with the name of another function IN THE SAME FILE — the
+shape an insertion produces. Same-file, because a first word naming something two
+files away is prose (`newStoreCapturer`'s doc opens by naming its `vocab`
+parameter). Test functions are exempt: their docs name the subject by convention.
+
+It found five, two of them a day old and two nobody had noticed — `openStore`'s
+doc had drifted onto `newsFeedFor`, `checkPlanName`'s onto `coreConceptsSection`.
+**When a finding is "a comment is in the wrong place", ask whether the class is
+walkable; here it was fifty lines.**
+

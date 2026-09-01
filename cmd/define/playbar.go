@@ -140,6 +140,13 @@ func wrapWritten(text string, width int) string {
 // alternative, teaching `play` to hand back its options separately, would put
 // line-breaking in the package whose whole point is that the caller owns
 // formatting.
+func isOptionLine(line string) bool {
+	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
+		return false
+	}
+	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
+}
+
 // minWrapWidth is the narrowest terminal worth breaking lines for: below it a
 // dictionary entry cannot be broken and stay readable.
 //
@@ -150,13 +157,6 @@ func wrapWritten(text string, width int) string {
 // was meant to replace. Extracting an owner is one move; deleting what it
 // replaces is the other, and the second is the one that makes the claim true.
 const minWrapWidth = 20
-
-func isOptionLine(line string) bool {
-	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
-		return false
-	}
-	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
-}
 
 // wrapMovedRegions re-points regions at the lines they will ACTUALLY land on
 // once a pinned screen has wrapped the text they were computed against.

@@ -741,6 +741,22 @@ guards could fail.
 [tools#23 M1]: #tools-23-m1
 [tools#23 M2]: #tools-23-m2
 
+### 2026-08-31 — scope event: `#38` shipped alongside, outside MVP
+
+Not in `mvp_scope` and it does not change the done-when. Recorded because the
+project is the portfolio view and it shipped inside its window, on operator
+request, touching the same console the project's verbs live in — the same
+reasoning as the 2026-08-26 entry below.
+
+- **tools#38 — the review loop's words are clickable.** Click the word a sitting
+  is asking about to hear it, and anything in a revealed definition, exactly as
+  in the interactive session. `#30`'s registry is now shared by both loops rather
+  than living inside the editor's closure, which is what its own Done-when 7
+  asked for — a third consumer (`#40`'s board) is a row.
+
+  Depended on `#41` for the screen: three of its nine tasks landed there while
+  this was parked. est 2.83 / actual TBD.
+
 ### 2026-08-26 — scope event: two console features shipped alongside, outside MVP
 
 Neither is in `mvp_scope` and neither changes the done-when. Recorded because the

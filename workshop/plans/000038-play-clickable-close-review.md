@@ -363,3 +363,225 @@ findings:
       differ (jalapeno / jalapeño) would close it. Same family as BR-1 because it is
       the same obligation, one step further on: adopted, but not made falsifiable.
 ```
+
+---
+
+## Re-review — 2026-08-31T23:02:27-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 38 — the review loop's words are not clickable, because --play draws its own frames |
+| repo | tools |
+| issue file | workshop/issues/000038-play-clickable.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | f56b34e5f54d9ba050246d3fde25e8036636f4ab..fd2972cbd07f5f84141709321f4de18a6975b3e0 |
+| command | sdlc close --issue 38 |
+| reviewer | claude |
+| timestamp | 2026-08-31T23:02:27-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The two Criticals from earlier rounds are genuinely closed and now mechanically enforced: I reverted the one-ruler fix in a scratch worktree (`wrapMovedRegions(text, rs, l.cols)` → `, 80`) and both `TestAResizeDoesNotMisplaceTheClickMap` and `TestWriteRegionsMovesTheMapByTheScreensOwnWidth` went red; I deleted `Word: key` and `TestARegionAnswersForTheDeckKeyNotTheHeadword` went red; I renamed a Core-concepts cell back to `playRegions` and `TestPlanTablesNameEntitiesThatExist` failed with the exact message the family needed. The full suite is green (`go test ./...`), conformance is green apart from `TestReflectAgainstTheLiveService`, which is a live-LLM row unrelated to this window, and every `TestPTY*` row SKIPs here ("no pty available") as the estimate predicted. What blocks SHIP is that the same round that wrote *"a claim is discharged by something that can fail"* into `lessons.md` left the issue's own D8 — the click must never answer — undischarged: I disabled the entire `KeyClick` branch **and** routed `KeyClick` into `play.Apply` as an `InputReveal`, which is verbatim the Done-when row's `red when` cell, and `TestPlayClickIsNotAnAnswer` stayed green. Alongside that, the four-slot tracker enumeration BR-12 asked for was written down one slot short and three slots are still wrong at HEAD.
+
+## 1. Strengths
+
+- **`liveScreen.WriteRegions` now owns both rulers** (`cmd/define/screen.go:655`). Moving `wrapMovedRegions` inside the screen makes the second width *unexpressible* rather than merely unused — the caller has no width to pass. Mutation-confirmed above; this is the right shape and matches `#41` BR-20's resolution.
+- **`wrapMovedRegions` asks `wrapWritten` itself how many rows a line becomes** (`cmd/define/playbar.go:186`) instead of re-deriving the rule. The erase-gesture exemption and the sub-20 policy therefore cannot differ between the wrap and the map — exactly the failure mode a second implementation would have. ARCH-DRY pass.
+- **`marksIn` LOCATES the render inside the reveal** (`cmd/define/play_loop.go:581`) rather than counting from a formula. I checked this against `Choice.Reveal()` (`play/choice.go:156`), which emits a pre-wrapped option gloss that can itself be multi-line — a formula would have been wrong there, and `strings.Count` is exactly right.
+- **`playRegion`'s `default: return`** (`cmd/define/replraw.go:596`) refuses an unknown kind instead of falling back to the headword, and `TestEveryRegionKindIsActionableThroughTheSharedRegistry` derives its loop from `numRegionKinds`. Deleting the `RegionOriginLang` case reddens both the editor's row and the shared one.
+- **`playAnnounced` applies the audio-off predicate itself** (`cmd/define/main.go:850`). Disabling that guard makes `TestPlayAnnouncedFetchesNothingWithAudioOff` fetch from the CDN in all three subcases — the row genuinely covers what no caller-level test could reach.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — `TestPlayClickIsNotAnAnswer` cannot fail; Done-when row 2 and T7 ship unpinned.** `cmd/define/play_loop.go:266`, plan Done-when row 2.
+
+This is the **3rd finding in family `mechanism-adopted-without-its-obligations`.** BR-1 and BR-15 fixed instances (T5's three obligations; the `Word: key` pin). Do NOT fix this instance alone — the rule is that **every Done-when row's `red when:` cell is executed at the boundary, as a sweep of the whole table, and a row whose named test survives its own stated mutation is not a pin.** I ran that sweep on the 9 in-process rows this window owns; 8 discriminate and 1 does not:
+
+| row | mutation applied | result |
+|---|---|---|
+| 1 | prompt write given `nil` regions | red |
+| 1 | `Line: 1` → `Line: 0` | red (3 tests) |
+| **2** | **`KeyClick` branch disabled** | **green** |
+| **2** | **`KeyClick` routed into `play.Apply` as `InputReveal` — the literal `red when`** | **green** |
+| 3 | reveal written with `nil` regions | red |
+| 3 | `off := 0` | red |
+| 4 | `case RegionOriginLang` removed | red |
+| 4b | `playAnnounced` guard disabled | red |
+| 3a/3b | `l.cols` → `80` | red |
+| 3c | `Word: key` deleted | red |
+
+Row 2 is green because `toInput` (`play_loop.go:407`) already returns `false` for `KeyClick` — so the property is delivered by an unrelated default, and the `continue` that T7 exists to add is dead protection. It only reddens if a click is made to *grade* (I confirmed `InputRune 'y'` fails it), which is a strictly narrower claim than the row makes. Fix: pin the branch itself — assert the click PLAYED and did not advance in the same test (`s.Index` unchanged, `player.count() > 0`), and drive it against a real `newPinnedScreen` rather than `paintInto`'s hand-`offer`ed region so the guard is on the path. Then re-run the table sweep and record it, as `#41`'s 4c row already does with "mutation-verified".
+
+**I-2 — the completion-state enumeration is one slot short, and 3 of 6 are wrong at HEAD.**
+
+This is the **3rd finding in family `tracker-state-stale`.** BR-10 fixed slot 1, BR-12 fixed slot 3 of a four-slot list. Do NOT fix these instances — the four-slot list was itself the defect. Measured at HEAD:
+
+| slot | state | enforced by |
+|---|---|---|
+| issue frontmatter `status:` | ✓ `working` | `sdlc close` |
+| issue `## Plan` boxes | ✓ all `[x]` | `sdlc close` plan-unchecked |
+| plan `## Tasks` boxes | ✓ all `[x]` | (BR-12) |
+| **issue `## Done when` boxes** | **✗ all 5 unticked** | **nothing** |
+| **issue `## Log` boundary entry** | **✗ absent** (last entry: "resumed; `#41` landed three of the nine tasks"; three review rounds unlogged, contra AGENTS.md §3) | **nothing** |
+| **referencing project row** | **✗ `workshop/projects/define-learn.md` has no `[tools#38]` row at all** | **nothing** |
+
+The family recurs because the three enforced slots are exactly the three that keep coming back green. `sdlc close`'s plan-unchecked gate reads `## Plan` only (`ariadne/cmd/sdlc/close.go:569`), so nothing can refuse a close whose Done-when says nothing is done — and the repo convention is that they ARE ticked (`workshop/history/issues/000041-play-tui.md`, `000039-repetition-ladder.md` both close fully ticked). The durable fix belongs where the other two artifact guards already live: a `repo_guard_test.go` row asserting that an active issue with a fully-ticked `## Plan` has a fully-ticked `## Done when`. That converts slot 4 into slot 2's enforcement class and is the same move `TestPlanTablesNameEntitiesThatExist` made for the symbol family.
+
+Also inside slot 4: Done-when row 3 still reads *"The click reaches `replayInPlace`"*, which plan PQ-4/D4 superseded — the click reaches `playRegion` → `playAnnounced`, and `replayInPlace` is no longer on the click path at all. That row is false as current truth, not merely unticked.
+
+**I-3 — the doc-comment attachment defect is a class of 5, mechanically enumerable.** `cmd/define/replraw.go:554-563`.
+
+This is the **2nd finding in family `doc-comment-attachment`** (BR-6). Do NOT fix the one instance — I wrote a ~50-line `go/ast` walk and it finds every sibling in one pass:
+
+- `replraw.go:579` — `playRegion` carries `replayInPlace`'s doc (no blank line at :562/:563); godoc reads "replayInPlace speaks the current word again…" as `playRegion`'s. **In-window, introduced here.**
+- `replraw.go:607` — `replayInPlace` now carries an unnamed "Plain \n, not \r\n" note. **In-window.**
+- `screen.go:149` — `addRegions`'s doc opens "regionsAt records…"; stale name.
+- `play/recall.go:38` — `Keys()`'s doc opens "Grade reads the self-rating…"; the prose belongs to `Grade`.
+- `playbar.go:143-152` — `isOptionLine`'s doc block runs into `minWrapWidth`'s with no blank line, so `minWrapWidth` carries `isOptionLine`'s prose and `isOptionLine` (:154) is undocumented.
+
+`go vet` does not catch this and the exported-comment linters do not reach unexported funcs. A `FuncDecl`-only guard (first word of the doc == the declared name, with an allowlist for the deliberate build-tag continuation at `dict_stub.go:27`) is ~40 lines in `repo_guard_test.go` and closes the family permanently.
+
+## 4. Minor findings
+
+- **BR-2 not addressed** — 6 of the 12 rows in "What this plan asserts about the existing tree" still cite line anchors that miss: `play_loop.go:262-265` now lands in the click comment, `:174-198` in the prompt comment, `:178-181` on the region literal, `replraw.go:264` on `voc := vocabularyFor(...)`, `:170` mid-comment, `:366-380` on the exit comment. Two rows are also false in substance (entries' regions are no longer discarded; the viewport keys are shared via `viewportGesture`).
+- **BR-6 not addressed** — see I-3.
+- **BR-7 not addressed** — `play_loop.go:448` initialises `held.marks`, `:466` builds a second local map, `:508` assigns over the first.
+- **BR-8 not addressed** — `play_loop.go:274` passes `entry: ""`, so `utteranceFor` gets `ParseEntry("")` and an ORIGIN click plays the English spelling in the foreign voice. The raw text is in hand at `:468` and discarded. README.md:157 now claims the reveal is clickable *"exactly as in the interactive session"*, which makes this a documented-behaviour divergence rather than a silent one.
+- **BR-13 not addressed** — `play/choice.go:113-114` still says "computes its region as line 0, column 0" (it is line 1) and "#38 is PARKED" (the issue is `working`); `README.md:159` "Narrow the window and the links follow the text as it re-wraps" is false — `Resize` (`screen.go:694`) only sets `l.rows`/`l.cols`, so neither existing buffer lines nor existing regions move, and it contradicts the accurate sentence two paragraphs above it ("wraps what comes after it to the new width").
+- **BR-14 not addressed** — `replraw.go:584`, `replraw.go:616`, `repl.go:313` still each spell `if !opt.playsAudio() { Fprintln(stderr, nothingToReplay) }` with the same constant.
+- `play_loop.go:270-273` calls `defaultIndicator(opt)` "the record-shaped indicator, not the editor's erasable one" — with `opt.tty` true (which `--play` requires) it returns `erase: eraseLine`, i.e. it *is* erasable; only `before: "\n"` differs.
+
+## 5. Test coverage notes
+
+- The mutation sweep in I-1 is the main result: 8 of 9 in-process Done-when rows discriminate, row 2 does not.
+- `marksIn`'s `at < 0` branch (render not present in the reveal — "a form that reworded its reveal") has no test. Cheap to add as a pure row, and it is the branch that silently returns no regions.
+- `TestPlayClickOnThePromptWordPlaysIt` asserts only `player.count() > 0`, not *which* word played; `TestTheAskedWordIsClickableOnAMultipleChoiceQuestion` covers the identity separately, so the pair is adequate.
+- The `playRig` fix (`width: 0` → `defaultCols`) is the right generalisation of `#41` BR-24 and `lessons.md` carries the rule rather than the instance.
+- Environmental, not a finding: every `TestPTY*` SKIPs here, so Done-when 5, 6b, 7 and 8 rest entirely on the manual terminal pass the plan's "Verification before close" specifies. No `## Log` entry records that pass yet (see I-2, slot 5) — `sdlc close --verified` will need it in the evidence string.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** One registry lifted (`playRegion`), one predicate lifted (`playsAudio`), one wrap owner — all good. Flagged: BR-14's three identical guard-and-message copies (D11 justified leaving messages with callers on the grounds that they differ; all three are the same constant, so the premise does not hold for these three), and BR-7's duplicate `marks` map.
+- **ARCH-PURE — pass.** `clickable`, `marksIn` and `wrapMovedRegions` are pure and `TestAWrapMovesTheClickMapRatherThanDroppingIt` drives the last with no screen at all. `playRegion` is correctly labelled INTEGRATION and injected into both loops with the indicator as its only parameter. No business logic moved into IO.
+- **ARCH-PURPOSE — flag.** Shadow-sweep of the click registry: the editor consumer derives (`replraw.go:329`), the sitting consumer derives (`play_loop.go:274`), and `numRegionKinds` drives the test loop so a third kind is exercised on declaration. The one consumer that does *not* fully derive is the sitting's ORIGIN path (BR-8): it drops the entry text the editor supplies, so the same registry produces a degraded utterance in one loop — and the README asserts the two are identical.
+- **ARCH-MOCK — pass.** `playAnnounced` reaches the CDN and player through the existing stateful fakes (`rig.cdn.Requested()`, `fakePlayer.count()`); `playSession` is drivable with a scripted key channel and a real `newPinnedScreen`, so production flow and test flow share the boundary. Live conformance exists for the pty surface, environmentally skipped here.
+- **ARCH-CONSTRAINTS — pass.** `wrapMovedRegions` runs once per `WriteRegions`, i.e. per question and per reveal, not per keystroke; `held.marks` retains one already-allocated rendered string per question, bounded by `-count`. The text is wrapped twice per `WriteRegions` (once to measure, once to write) — bounded and off the keystroke path, and the redundancy buys the single-owner guarantee, so it is the right trade. The plan's "no new budget claimed" holds.
+
+## 7. Plan revision recommendations
+
+- **A `## Revisions` entry for the Done-when sweep.** Record that every row's `red when:` was executed as a mutation at the boundary, with the result per row, and correct row 2's cell — either to what the test actually discriminates ("the click GRADES") or, better, strengthen the test and keep the cell. `#41`'s rows 4c and 6 already carry "mutation-verified"; this plan should carry it for all of its own.
+- **A `## Revisions` entry retiring the tree-claims table's line anchors** in favour of symbol/test names, per BR-2's rule, and correcting the two rows now false in substance (regions kept, not discarded; `viewportGesture` shared).
+- **The issue** (not the plan) needs: Done-when row 3 rewritten to `playRegion`/`playAnnounced` per D4, all five boxes ticked, and a `## Log` entry for the three boundary rounds.
+- **`workshop/projects/define-learn.md`** needs a `[tools#38]` row beside the `[tools#41]` one, or an explicit note that this thread does not track it.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      T4 now specifies line 1, and T5 carries all three HEAD-documented obligations as rows.
+  - id: BR-2
+    disposition: not-addressed
+    note: |
+      6 of 12 tree-claim rows still cite wrong lines; two rows are false in substance.
+  - id: BR-6
+    disposition: not-addressed
+    note: |
+      replraw.go:554-563 unchanged; see the new finding for the enumerated class of 5.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      play_loop.go:448, :466, :508 still build and overwrite two maps.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      play_loop.go:274 still passes entry ""; README.md:157 now claims exactness with the editor.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Table names clickable / sittingDeck.marksIn / wrapMovedRegions; guard PASSES and I confirmed it reddens on a reverted cell.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Plan Tasks fixed, but the enumeration was one slot short: Done-when, Log and the project row are all still wrong at HEAD.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      choice.go:113-114 and README.md:159 both unchanged and both false at HEAD.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      replraw.go:584, replraw.go:616 and repl.go:313 still each spell the guard and the same constant.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Verified by reverting Word: key in a scratch worktree — TestARegionAnswersForTheDeckKeyNotTheHeadword goes red on all three regions.
+findings:
+  - id: new
+    severity: Important
+    family: mechanism-adopted-without-its-obligations
+    title: |
+      Done-when row 2 survives its own stated mutation, so T7's click guard ships with no failing test
+    detail: |
+      3rd in this family, so the deliverable is the rule, not the instance: every Done-when
+      row's `red when:` cell is EXECUTED as a mutation at the boundary, swept as one table.
+      I ran that sweep on the 9 in-process rows; 8 redden and row 2 does not. Disabling the
+      whole `KeyClick` branch (play_loop.go:266) leaves TestPlayClickIsNotAnAnswer green, and
+      so does the literal `red when` — I routed KeyClick into play.Apply as an InputReveal and
+      it still passed. The property is delivered by toInput's default (play_loop.go:421
+      returns false for KeyClick), not by T7's guard, and the test only reddens if a click is
+      made to GRADE. It also drives paintInto with a hand-`offer`ed region rather than a real
+      pinned screen, so the guard is not on the path under test. Fix the rule: assert the
+      click PLAYED and did not advance (s.Index unchanged, player.count() > 0) against a real
+      newPinnedScreen, then record the per-row sweep result in the plan the way #41's rows 4c
+      and 6 already do.
+  - id: new
+    severity: Important
+    family: tracker-state-stale
+    title: |
+      the completion-state enumeration is one slot short, and 3 of 6 slots are wrong at HEAD
+    detail: |
+      3rd in this family, so the rule rather than the instances: an issue's completion state
+      is SIX slots, and the four-slot list BR-12 wrote was itself the defect. Measured at
+      HEAD: frontmatter status OK; issue `## Plan` OK; plan `## Tasks` OK; issue `## Done
+      when` all five boxes UNTICKED; issue `## Log` carries no entry for any of the three
+      boundary rounds (AGENTS.md 3 requires it); workshop/projects/define-learn.md has no
+      `[tools#38]` row at all beside its `[tools#41]` one. The family recurs because exactly
+      the three enforced slots are the three that stay green — `sdlc close`'s plan-unchecked
+      gate reads `## Plan` only (ariadne/cmd/sdlc/close.go:569), so nothing can refuse a close
+      whose Done-when says nothing is done, while the repo convention is that they ARE ticked
+      (history/issues/000041 and 000039 both close fully ticked). Durable fix: a
+      repo_guard_test.go row asserting that an active issue with a fully-ticked `## Plan` has
+      a fully-ticked `## Done when`, which puts that slot in the same enforcement class as the
+      two that stopped recurring. Separately, Done-when row 3 still reads "The click reaches
+      `replayInPlace`", which D4/PQ-4 superseded — it is false as current truth, not merely
+      unticked.
+  - id: new
+    severity: Important
+    family: doc-comment-attachment
+    title: |
+      the mis-attached doc comment is a class of five, enumerable in one go/ast pass
+    detail: |
+      2nd in this family (BR-6), so the rule: a doc comment's first word must be the name of
+      the declaration it sits on, and the class is checked mechanically rather than by
+      re-reading the file. A ~50-line go/ast walk over cmd/define finds every sibling at once:
+      replraw.go:579 (playRegion carries replayInPlace's doc — in-window), replraw.go:607
+      (replayInPlace carries an unnamed line-ending note — in-window), screen.go:149
+      (addRegions' doc opens "regionsAt records…"), play/recall.go:38 (Keys() carries Grade's
+      prose), playbar.go:143-152 (isOptionLine's block runs into minWrapWidth's, leaving
+      isOptionLine undocumented). go vet does not catch this and the exported-comment linters
+      do not reach unexported funcs, so a FuncDecl-only guard in repo_guard_test.go — with an
+      allowlist for the deliberate build-tag continuation at dict_stub.go:27 — is what closes
+      the family.
+```

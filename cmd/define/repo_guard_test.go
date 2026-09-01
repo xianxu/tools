@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"io/fs"
 	"os"
@@ -727,7 +730,6 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 	}
 }
 
-// checkPlanName asserts one Name cell resolves to a declaration at the stated path.
 // coreConceptsSection is the part of a plan the entity tables live in: from the
 // "## Core concepts" heading to the next "## " one.
 //
@@ -898,6 +900,7 @@ func planSections(body string) []string {
 	return out
 }
 
+// checkPlanName asserts one Name cell resolves to a declaration at the stated path.
 func checkPlanName(t *testing.T, root, plan, name, path, status string, checked *int) {
 	t.Helper()
 	{
@@ -1424,4 +1427,94 @@ func treeDeclares(t *testing.T, root, name string) bool {
 func isCitableName(name string) bool {
 	return strings.HasPrefix(name, "Test") || strings.HasPrefix(name, "Fuzz") ||
 		(name != "" && name[0] >= 'A' && name[0] <= 'Z')
+}
+
+// A DOC COMMENT'S FIRST WORD IS THE NAME OF THE DECLARATION IT SITS ON.
+//
+// Second finding in this family, so the deliverable is the check rather than the
+// five edits. `go vet` does not look at this, and the exported-comment linters do
+// not reach unexported declarations — which is most of this package. The failure
+// is quiet and specific: a comment block written for one function acquires
+// another when a declaration is inserted between them, so the new one arrives
+// undocumented and the old one's prose now describes its neighbour. All five
+// instances found at once were of exactly that shape, two of them inserted by the
+// window under review.
+//
+// FuncDecl only, and named-function only. A method's receiver is not in the
+// comment by convention, and a `var`/`const` block's doc legitimately describes
+// the group rather than any member.
+func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
+	root := repoRoot(t)
+	fset := token.NewFileSet()
+	checked := 0
+	for _, dir := range []string{"cmd/define", "cmd/define/play", "cmd/define/schedule", "cmd/define/store"} {
+		pkgs, err := parser.ParseDir(fset, filepath.Join(root, dir), nil, parser.ParseComments)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", dir, err)
+		}
+		for _, pkg := range pkgs {
+			for path, f := range pkg.Files {
+				for _, d := range f.Decls {
+					fn, ok := d.(*ast.FuncDecl)
+					if !ok || fn.Doc == nil || fn.Name == nil {
+						continue
+					}
+					// A TEST's doc legitimately opens with the name of what it
+					// tests — "seedFor is GOLDEN…" over TestSeedForIsPinned is
+					// the repo's convention and reads correctly. The failure
+					// this catches is a PRODUCTION declaration wearing its
+					// neighbour's prose.
+					if strings.HasPrefix(fn.Name.Name, "Test") ||
+						strings.HasPrefix(fn.Name.Name, "Fuzz") ||
+						strings.HasPrefix(fn.Name.Name, "Benchmark") {
+						continue
+					}
+					first := strings.Fields(fn.Doc.Text())
+					if len(first) == 0 {
+						continue
+					}
+					checked++
+					// The name, or the name with punctuation ("Keys names…",
+					// "Grade:"), or a leading article the repo also writes
+					// ("The frame is…" reads about the return value, not about
+					// a neighbour). Only a first word that is ANOTHER
+					// declaration's name is the failure this catches.
+					word := strings.Trim(first[0], "`:,.—-")
+					if word == fn.Name.Name {
+						continue
+					}
+					// SAME FILE only, because that is the shape this catches: a
+					// declaration inserted between a comment and the function it
+					// was written for. A first word naming something in another
+					// file is prose — `newStoreCapturer`'s doc opens by naming
+					// its `vocab` PARAMETER, which collides with a function two
+					// files away and is perfectly correct.
+					if !declaredIn(f)[word] {
+						continue
+					}
+					t.Errorf("%s: the doc comment on %s opens with %q, which is another "+
+						"declaration in this package — a comment block acquires the wrong "+
+						"owner when a declaration is inserted between them, leaving one "+
+						"undocumented and the other described by its neighbour's prose",
+						filepath.Base(path), fn.Name.Name, word)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no documented functions parsed, so this guard checked nothing")
+	}
+}
+
+// declaredIn is every function name in ONE file, so the guard can tell a
+// neighbour's name from ordinary prose. Without it the check would fire on every
+// comment that happens to open with an identifier-shaped word.
+func declaredIn(f *ast.File) map[string]bool {
+	out := map[string]bool{}
+	for _, d := range f.Decls {
+		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name != nil {
+			out[fn.Name.Name] = true
+		}
+	}
+	return out
 }

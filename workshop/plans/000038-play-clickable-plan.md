@@ -141,10 +141,13 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 
 ## Done when
 
+Every `red when` cell here was EXECUTED as a mutation at the close boundary, not
+reasoned about — which is how row 2 was found to survive its own (`#38` BR-16).
+
 | # | claim | pinned by | red when |
 |---|---|---|---|
 | 1 | the word being asked about is clickable | `TestPlayClickOnThePromptWordPlaysIt` | the region is not written with the word |
-| 2 | a click NEVER answers | `TestPlayClickIsNotAnAnswer` — no review recorded, `Right`/`Wrong` unchanged, the question still current | the click reaches `play.Apply` |
+| 2 | a click ACTS and never answers | `TestPlayClickActsAndIsNotAnAnswer` — driven into the GRADED state on a TWO-word deck, and asserting both halves: the click played, and the sitting did not advance | the click reaches `play.Apply`. **Both mutations RUN**, because the first version of this row survived its own: disabling the `KeyClick` branch, and routing a click into `Apply` as an `InputReveal`. The second needs two questions to be observable — with one, advancing off the last question just ends the sitting, which looks the same |
 | 3 | a revealed definition is clickable like anywhere else | `TestPlayARevealedDefinitionCarriesItsRegions` — drives the LOOP against a real screen and asserts a CLICK on the headword inside the definition resolves, so the offset arithmetic and the screen's rebasing are pinned at their joint | the reveal is written without its regions, or with regions never shifted past the lines `Choice.Reveal` puts above the entry |
 | 4 | one registry, both loops | `TestEveryRegionKindIsActionableThroughTheSharedRegistry` drives `playRegion` itself, beside `TestEveryRegionKindIsActionable` which still drives the editor; `TestAnUnknownRegionKindPlaysNothing` pins that it refuses rather than guessing | a kind acts in one loop and not the other |
 | 4b | **`-no-audio` fetches nothing, from any caller** | `TestPlayAnnouncedFetchesNothingWithAudioOff` — on `playAnnounced` itself, since that is where the guard now lives | the predicate is left in the callers, so a fifth one sits below it |

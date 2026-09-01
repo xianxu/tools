@@ -936,34 +936,77 @@ func TestPlayClickOnThePromptWordPlaysIt(t *testing.T) {
 	}
 }
 
-// DONE-WHEN 2: a click NEVER answers (D8, T7).
+// DONE-WHEN 2: a click ACTS and never answers (D8, T7).
 //
-// Hearing the word is what y/n are answering ABOUT. A click that graded would
-// corrupt the schedule silently, which is the worst kind of bug here — the
-// damage is to data the learner cannot see.
-func TestPlayClickIsNotAnAnswer(t *testing.T) {
-	d, opt, st := playRig(t, "sycophantic")
-	audible(&d, &opt)
-	spy := &countingCapturer{}
-	d.capture = spy
+// The first version of this row did not discriminate, and the boundary review
+// measured it: disabling the whole `KeyClick` branch left it green, and so did
+// routing a click into `play.Apply` as an `InputReveal`. The "never answers"
+// half is delivered by `toInput`'s default — it returns false for `KeyClick` —
+// not by T7's guard, so a test asserting only that nothing was recorded pins a
+// property the guard does not provide.
+//
+// **A `red when` cell is a mutation, and it has to be RUN.** The discriminating
+// state is GRADED: there "any key = next word", so a click reaching Apply
+// advances the question. So this drives a real pinned screen to the graded
+// state, clicks, and asserts BOTH halves — the click played, and the sitting did
+// not move on.
+func TestPlayClickActsAndIsNotAnAnswer(t *testing.T) {
+	// TWO words, and that is load-bearing. With one, a click that reached Apply
+	// would ADVANCE off the last question and simply end the sitting — which
+	// looks identical to not advancing, and the review's own `red when` mutation
+	// passed against exactly that. A second question is what makes the advance
+	// observable.
+	d, opt, st := playRig(t, "sycophantic", "ephemeral")
+	player := audible(&d, &opt)
 	qs, held := questionsFor(t, d, opt)
+	if len(qs) < 2 {
+		t.Fatalf("got %d questions, need 2 so an advance is visible", len(qs))
+	}
 
-	var out, errb bytes.Buffer
-	view := paintInto(&out)
-	view.offer(2, 0, Region{Kind: RegionHeadword, Text: "sycophantic", Word: "sycophantic"})
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	// SCRIPTED and buffered, so the loop consumes them in order and nothing is
+	// observed mid-flight. A WRONG answer on a hidden word records the miss and
+	// reveals WITHOUT advancing — the graded state, where "any key = next word"
+	// is live and a click reaching Apply would move the sitting on.
+	//
+	// Row 1 is the word, and it is not a guess: show() writes "\n"+Prompt()+"\n"
+	// as the sitting's first write, so line 0 is the leading blank.
 	keys := make(chan Key, 3)
-	keys <- Key{Kind: KeyClick, Row: 2, Col: 0}
+	keys <- Key{Kind: KeyRune, Rune: []rune(gradeKey(t, qs[0], play.Wrong))[0]}
+	keys <- Key{Kind: KeyClick, Row: 1, Col: 0}
 	keys <- Key{Kind: KeyInterrupt}
 	close(keys)
 
 	playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
-		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
 
-	if spy.reviews != 0 || len(reviewEvents(t, st)) != 0 {
-		t.Error("a click recorded a review — hearing a word is not answering about it")
+	// The premise: the click landed on something. Without this the assertions
+	// below pass for a sitting where the region was never written.
+	if _, ok := live.RegionAtRow(1, 0); !ok {
+		t.Fatalf("row 1 offers no region, so no click was possible:\n%s", live.Transcript())
 	}
-	if !strings.Contains(out.String(), "0 right, 0 wrong") {
-		t.Errorf("the sitting scored a click:\n%s", out.String())
+	// It ACTED: the miss plays once, the click plays again.
+	if got := player.count(); got < 2 {
+		t.Errorf("played %d times, want the miss AND the click — the click did nothing", got)
+	}
+	// ...and it did not ANSWER. A click reaching Apply in the graded state
+	// advances past the word, and the sitting would end "0 right, 0 wrong" on a
+	// second question instead.
+	if n := len(reviewEvents(t, st)); n != 1 {
+		t.Errorf("%d review events, want the one miss — a click graded", n)
+	}
+	if !strings.Contains(live.Transcript(), "0 right, 1 wrong") {
+		t.Errorf("the sitting did not end on the miss alone:\n%s", live.Transcript())
+	}
+	// THE DISCRIMINATOR: the sitting never moved on. A click that reached Apply
+	// in the graded state advances, and the next question would be written.
+	if strings.Contains(unstyled(live.Transcript()), qs[1].Word()) {
+		t.Errorf("the sitting advanced to %q — the click was consumed as an answer:\n%s",
+			qs[1].Word(), live.Transcript())
 	}
 }
 
