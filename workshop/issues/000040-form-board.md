@@ -514,6 +514,80 @@ batch's rest inside `InputQuit` without emitting outcomes changes nothing,
 because the form is discarded and the LOG is what the row asserts on. The
 stronger mutation — emitting a record per word — reddens it.
 
+### 2026-09-01 — boundary review round 1: REWORK, and what the three blockers were really about
+
+Seven findings, three blocking. Every one was real, and each fix went at the
+CLASS rather than the site. Sidecar:
+`workshop/plans/000040-form-board-close-review.md`.
+
+**BR-1 Critical — space on a board emitted `OutcomeReveal`.** Reproduced by the
+reviewer through execution: the loop filed a blank reveal into the append-only
+buffer and called `playAnnounced` on `q.Word()`, which on a grid is the
+last-marked cell or cell 0 before any mark. D14 and the board's own doc both say
+`InputReveal` must do nothing for a form holding many words. Space is the natural
+key to press — it reveals on both other forms and the board's prompt does not
+mention it — so this was reachable in the first real sitting.
+
+**The defect is D12's enumeration, not the missing guard.** It named FOUR `Apply`
+paths that must consult `Batch`, found by measurement, and the plan treated the
+list as the deliverable. The real shape is `InputKind × Batch` and `InputReveal`
+was a fifth cell. `numInputKinds` is a sentinel now and
+`TestEveryInputKindIsAnsweredForABatchForm` ranges over it, so the next kind
+added arrives with no expectation and fails. `choice.go`'s `numAxes` had
+established that exact pattern in this package — *"the guard derives the set from
+this, never from a list"* — and the list got written down anyway.
+
+**Why the existing test missed it:** `TestEnterSpendsABatchFormAndSpaceDoesNot`
+asserted only that space did not spend or record. "Harmless" and "inert" are
+different claims, and only the second is what D14 promised.
+
+**BR-2 Important — a constant standing in for a measurement.**
+`boardChromeRows = 2` charged the keys prompt one row; that line is 76 columns
+and a board was offered from 20. Below 76 the live edge was under-budgeted and
+`fitFooter` dropped from the end: the bar under 76 columns, the panel at 38 or
+less, the TOGGLE at 25 or less — the one owner of which mark is live, while every
+mark is irreversible. `displayRows` already answers "how tall is this line at
+this width"; the constant was a second, implicit owner of it.
+
+The fix keeps ONE constant on purpose. `barRows = 1` is a minimum rather than a
+measurement, because `fitFooter` drops from the END and the bar is last, so a bar
+that needs three rows is dropped instead of costing the board anything. **A
+budget only has to measure what it can be squeezed by.**
+
+**BR-3 Important — the Done-when table cited four tests that were never
+written**, and an `(R3)` that did not exist. Corrected, and the class guarded:
+`TestPlanCitesTestsThatExist` resolves every backticked `Test*` in an active plan
+to a real `func Test…(`.
+
+**And mutation-checking THAT guard found something worse.** Citing a fake test
+left it green: `currentTruthOnly` cuts a plan at its FIRST `## Revisions`, this
+plan had grown two, and the first sat above `## Done when` — so both plan guards
+had been reading a truncated file and passing on it, including every earlier
+sweep this Log records as clean. The revisions are one appended section now.
+**A guard added without a mutation is a guard nobody has seen fail**, and this
+one would have shipped certifying nothing.
+
+**Four Minors, all fixed:** `Rows()` and `Prompt()` now agree BY CONSTRUCTION
+(built as a slice) rather than by arithmetic that happened to match everywhere
+but the empty board; the keystroke half of Done-when 13 asserted its own fixture
+(`len(boardKeys) > len(words)` cannot fail) and now asserts the board is SPENT; a
+cell's trailing padding is documented and pinned as its own click target; the
+comment claiming the loop adds colour described an intention rather than the
+code, and now says deferred. The fifth — the relearn line on the Ctrl-C path,
+load-bearing on `Current()` returning nil once `Done` — has its own test.
+
+**One architectural note taken up:** `boardFooter`'s "the form's rows come first,
+in order" was called load-bearing and tested by nothing.
+`TestBoardFooterPutsTheFormsOwnRowsFirst` is that pin, and it is what a second
+live-edge form will hit first.
+
+**Reviewer's coverage note, accepted:** the pty row SKIPPED in their environment
+(`no pty available`), so Done-when 14 rested on this session's out-of-band run.
+Re-run after the fixes, unsandboxed: `TestPTYPlayBoardIsDrawnAndClickable`,
+`TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis` and `TestPTYPlayGradeFirst` all
+pass. That the row cannot be independently confirmed in a sandboxed review is
+`#37`'s subject, not this issue's.
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it
