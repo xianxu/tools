@@ -515,3 +515,43 @@ func TestWrapWrittenLeavesFittingLinesAlone(t *testing.T) {
 		})
 	}
 }
+
+// STYLED text wraps, and only the ERASE gesture is exempt (BR-23).
+//
+// The Critical this pins was mine and it shipped for one round: protecting the
+// `♫ playing 3×` indicator, whose `\r\x1b[K` marker `wrapText` would scatter
+// across a break, I skipped every line carrying an escape. `--play` refuses to
+// run with `-no-color` (BR-3), so every rendered definition line carries colour
+// — the skip therefore exempted exactly the lines the wrap exists for.
+//
+// A UNIT test rather than a sitting, because the sitting's version of this
+// depends on which word comes second and how long its entry is. A contract is
+// the thing to state.
+func TestWrapWrittenWrapsStyledTextButNotTheEraseGesture(t *testing.T) {
+	const width = 40
+
+	t.Run("a coloured line wraps", func(t *testing.T) {
+		line := "      \x1b[3;32m“" + strings.Repeat("word ", 20) + "”\x1b[0m"
+		if visibleCells(line) <= width {
+			t.Fatalf("the fixture is only %d cells, so nothing would wrap", visibleCells(line))
+		}
+		got := wrapWritten(line, width)
+		for _, l := range strings.Split(got, "\n") {
+			if n := visibleCells(l); n > width {
+				t.Errorf("a styled line is still %d columns after wrapping: %q", n, l)
+			}
+		}
+		// ...and the style survived: the escapes are still in there, attached to
+		// the words they opened on.
+		if !strings.Contains(got, "\x1b[3;32m") || !strings.Contains(got, "\x1b[0m") {
+			t.Errorf("wrapping dropped the styling: %q", got)
+		}
+	})
+
+	t.Run("the erase gesture is left whole", func(t *testing.T) {
+		line := eraseLine + "♫ playing 3× " + strings.Repeat("and again ", 8)
+		if got := wrapWritten(line, width); got != line {
+			t.Errorf("the take-that-line-back marker was scattered across a break:\n in  %q\n out %q", line, got)
+		}
+	})
+}

@@ -102,12 +102,21 @@ func wrapWritten(text string, width int) string {
 	}
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
-		// EPHEMERAL UI is left alone. The `♫ playing 3×` indicator carries the
-		// screen's own `\r\x1b[K` take-that-line-back gesture, and `wrapText`
-		// rebuilds a line out of its FIELDS — which would scatter an escape
-		// sequence across a break. These lines are short by construction; the
-		// case worth protecting is that they stay intact.
-		if strings.ContainsRune(line, 0x1b) {
+		// THE ERASE GESTURE is left alone, and ONLY it. `wrapText` rebuilds a
+		// line out of its FIELDS, which would scatter the screen's own
+		// `\r\x1b[K` take-that-line-back marker across a break and leave the
+		// `♫ playing 3×` indicator in the exit transcript it exists to stay out
+		// of. Those lines are short by construction, so nothing is lost.
+		//
+		// SGR is NOT skipped, and the first version of this skipped every line
+		// carrying an escape — which disabled the wrap for exactly the lines it
+		// exists for. `--play` refuses to run with `-no-color` (BR-3), so every
+		// rendered definition line carries colour, so every one of them was
+		// exempt: a Critical, and one no in-process test could see while the rig
+		// ran colourless. `visibleCells` measures styled text correctly, and a
+		// span broken across a wrap still renders — the attribute persists to
+		// its reset, wherever the line break falls.
+		if strings.Contains(line, eraseLine) {
 			continue
 		}
 		// The columns before the content, which is what a continuation has to

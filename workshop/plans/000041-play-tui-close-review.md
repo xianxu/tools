@@ -628,3 +628,160 @@ findings:
       wrapped external dependency — or stop asserting the unguarded columns in the table `#40`
       reads as the record of what landed.
 ```
+
+---
+
+## Re-review — 2026-08-31T17:41:30-07:00 (REWORK)
+
+| field | value |
+|-------|-------|
+| issue | 41 — play mode paints frames through screen, and gains a status bar |
+| repo | tools |
+| issue file | workshop/issues/000041-play-tui.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 94f3ad077210c544fe60b8539e2a92def29333c1..6201f4d1b57cd7f4eafb5121e9c21b8f0f31b120 |
+| command | sdlc close --issue 41 |
+| reviewer | claude |
+| timestamp | 2026-08-31T17:41:30-07:00 |
+| verdict | REWORK |
+
+## Review
+
+```verdict
+verdict: REWORK
+confidence: high
+```
+
+The issue's Spec is delivered and delivered well — `--play` genuinely draws through the editor's `console`/`display`, the playback dance is gone rather than worked around, the bar is pinned in both directions, and the four prior rounds' structural findings (BR-1/BR-5/BR-7) were closed by extraction rather than by patching the instance. What blocks SHIP is that the final commit's own fix re-opened the family it claimed to close: `wrapWritten` now returns any line containing an escape untouched, and `--play` can only run with `opt.color == true` (it refuses unless `opt.tty`, which is the same expression as `opt.color`). I measured a coloured sitting at 40 columns and got four buffer lines of 55–87 cells that `Paint` clips — the exact defect of the operator's original report, restored for the only configuration production has. No in-process test can see it because `playRig` hardcodes `color: false`, and the one pty resize row changes rows (24→10) but never columns. Separately, BR-16 stays open with two *new* stale citations introduced this round, and BR-18's fix is correct in the code but unpinned — I moved the terminal gates back below `todaysQuestions` and the whole package stayed green.
+
+## 1. Strengths
+
+- **D5a resolved by deletion, not by workaround.** `play_loop.go:325-345` — the `restore`/`enterRaw` pair and its exit-1 branch are gone because nothing is handed back any more. The comment states why the branch is not being weakened. This is the strongest thing in the window.
+- **BR-1/BR-7 closed at the seam, both halves.** `newConsole` (`replraw.go:37`) takes the screen constructor as its one parameter, and `viewportGesture` (`replraw.go:96`) is called by *both* loops — `play_loop.go:245` deletes the copy rather than leaving it beside the extraction, which is the half that was missing a round earlier.
+- **The non-drift claim is enforced by one function.** `schedule.GradeOf` (`schedule/progress.go:174`) with `gradeOf(e) = GradeOf(e.Correct, e.Unaided)` as a one-liner means the bar's transition and the fold's transition cannot disagree — a DRY claim that names the function instead of asserting two pieces of code agree.
+- **The padding decision is pinned in the direction that usually gets skipped.** `TestOnlyThePinnedConstructorPads` and `TestTheEditorsFooterFollowsItsContent` (`screen_test.go:507`, `:441`) assert the editor's appearance did *not* change, which is what keeps this from being a second issue wearing this one's clothes.
+- **`workshop/lessons.md:2769+`** gained three rules with their why, including the `grep -l` enumeration lesson that produced the fourth pty row.
+
+## 2. Critical findings
+
+**`cmd/define/playbar.go:105-109` — the escape-skip disables the wrap in the only configuration `--play` can run in.**
+
+`wrapWritten` skips any line containing `0x1b`. `runPlay` refuses unless `isTerminal(stdout)` and `opt.tty`, and `main.go:523/527` define `color` and `tty` as the *same* expression — so every real sitting has `opt.color == true`, and `todaysQuestions` (`play_loop.go:431`) renders with `Color: opt.color`. Every styled line of a reveal therefore bypasses the seam.
+
+Measured (scratch test, `playRig` + `opt.color = true`, `opt.width = 100`, `newPinnedScreen(24, 40)`, one reveal):
+
+```
+line is 87 cells in a 40-col terminal: "    ephemerality \x1b[35m/əˌfem(ə)ˈralədē/\x1b[0m noun ephemerally …"
+line is 85 cells in a 40-col terminal: "        \x1b[3;32m“chickweed is an ephemeral weed, producing …”\x1b[0m"
+4 over-wide lines
+```
+
+Deleting the three-line skip makes that go to 0 over-wide lines and leaves `go test ./cmd/define/...` green (106s) — so nothing in the suite defends the skip, and the stated hazard is over-broad: `wrapText` measures with `visibleCells` and splits on `strings.Fields`, and no escape sequence contains whitespace. The `♫ playing 3×` line and `\r\x1b[K` are short and return unchanged from the width check anyway.
+
+Two things make this the fifth finding in the family rather than a fresh bug: the skip was *added* by the commit that claimed to close the family, and the same commit deleted the resize-time `opt.width` maintenance that had been the prior mitigation.
+
+**This is the 5th finding in family `frame-clips-unwrapped-text`.** Do not fix this instance. The rule the four earlier instances were reaching for is now one step further than "wrap at the seam":
+
+> A seam covers every write only when (a) every path into the buffer goes through it, and (b) its predicate is exercised in the configuration production actually runs in.
+
+Both halves are enumerable, and the enumeration is small enough to write down:
+
+| path into `screen.lines` | wraps today |
+|---|---|
+| `liveScreen.Write` (`screen.go:511`) | yes, unless the line carries an escape |
+| `liveScreen.WriteRegions` (`screen.go:551`) | **no** — calls `l.s.Write` directly |
+
+| line class | wraps today |
+|---|---|
+| plain | yes |
+| escape-carrying (i.e. all styled output) | **no** |
+
+`WriteRegions` is latent today (`--play` passes no regions, `play_loop.go:429`) and live for `#40`, which is the clickable board. The comment at `screen.go:503` — *"Here nothing can write around it"* — is already false for it.
+
+Fix sketch: route both methods through one private `l.writeBuffer(text)` that applies the wrap when `pinned`; replace `strings.ContainsRune(line, 0x1b)` with a guard on the `eraseLine` gesture specifically; and make the predicate in `TestANarrowedSittingWrapsTheRestOfItself` run with `opt.color = true`.
+
+## 3. Important findings
+
+**`cmd/define/play_loop_test.go:39` — `playRig` returns `options{color: false, …}`, a configuration `--play` cannot be in.**
+
+Since BR-3, `runPlay` exits 1 unless `opt.tty`, and `opt.tty` and `opt.color` are the identical expression. Every in-process `--play` test therefore drives a state production refuses to enter, and the tests that *would* have caught the Critical above — `TestANarrowedSittingWrapsTheRestOfItself` (Done-when 0b) and `TestALongOptionGlossWrapsRatherThanBeingCut` — pass for that reason. The pty rows do run with colour, but `TestPTYPlayResizeRepaints` (`pty_conformance_test.go:664`) narrows rows 24→10 and never touches columns, so no row narrows the width on a coloured sitting.
+
+The rule: **a rig's defaults have to be reachable from the flag parse of the command under test.** Set `color: true, tty: true` in `playRig` (or derive them from one helper as `main.go` does) and add a column-narrowing pty row.
+
+## 4. Minor findings
+
+- `cmd/define/playbar.go:122-137` — the final commit spliced `minWrapWidth`'s comment and declaration into the middle of `isOptionLine`'s doc block; `isOptionLine` now has no doc comment and `minWrapWidth`'s doc opens with a paragraph about option lines. (Counted under BR-16, not raised separately.)
+- `wrapWritten` lives in `playbar.go` — "what a sitting tells the learner about its own cost" — while its only caller is `screen.go`. It should sit beside the seam it defends.
+- `screen.pinned` now governs two orthogonal properties: pad the buffer region, *and* wrap writes. `#40` will want a pinned board; a future editor change might want wrapping. Two fields or a small policy struct.
+- `TestUnwrappedWidthLeavesTheGlossAlone` (`optionpool_test.go:~466`) pins `width == 0`, which the seam can no longer produce — `terminalCols` floors at 80 and `l.cols` is never 0. Still a valid unit contract; just no longer a path.
+
+## 5. Test coverage notes
+
+- `go test ./...` green at HEAD (106s). `go test -tags conformance ./cmd/define/` fails only on `TestReflectAgainstTheLiveService` (expired OAuth token in this environment, unrelated to the window).
+- **All 16 `TestPTY*` rows SKIP here** (`no pty available`), including `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal`, which is the only pin for D5a's Critical, and `TestPTYPlayRefusesWithNoColor`, which is Done-when 0a's second pin. Same gap the previous round reported; I could not verify them on real hardware and am taking the issue Log's claim as unverified rather than false.
+- BR-18's fix is unpinned: I moved the three terminal gates back below `todaysQuestions` and `go test ./cmd/define/` stayed green (107s). `TestPlayRefusesWhenStdoutIsNotATerminal` asserts exit 1, no escapes in stdout, and a stderr substring — an empty-deck message contains no escapes, so it passes either way. The pin wants `out.Len() == 0` plus a counting store showing zero `Deck()`/`Events()` calls.
+- BR-21's fix (`refresh()` at init) is behaviour-identical to the hand-copy it replaced, so no test can fail without it. Accepted as structural.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** `newConsole`, `viewportGesture` and `costPhrase` each have two real callers; the test-side `recordingConsole`/`playbackConsole` share one double. The only DRY-adjacent nit is `wrapWritten`'s file placement.
+- **ARCH-PURE — pass.** `sittingBar`/`costPhrase`/`wrapWritten`/`isOptionLine`/`livePrompt`/`GradeOf`/`screen.Paint` are all unit-tested with no IO; `liveScreen` remains the only terminal-toucher; `playSession` is a thin loop over an injected `console`. `viewportGesture` needs a `display` double to test — it is a thin dispatcher rather than strictly pure, which the plan's row now hedges as "PURE dispatch"; not worth a third `plan-table-vs-tree` finding, but `#33`'s widening should decide the column's meaning.
+- **ARCH-PURPOSE — flag.** The family was declared closed at the seam in the same commit that opened a new hole in it. The finding named one site (`playAnnounced`); the class is "every path into the buffer × every line class", and that enumeration was never written — which is precisely the pattern the family escalation exists to surface. Same axis on BR-16: the class was correctly identified and then *deferred to `#33`* while this window added two more instances to the tree.
+- **ARCH-MOCK — pass.** No new external dependency. `display` is the seam, the doubles run the whole loop, and production and test share the boundary. The pty suite is the live conformance check; it just cannot run here.
+- **ARCH-CONSTRAINTS — pass.** `refresh()` is charged per answer, not per frame, and `TestASittingReadsTheDeckOnce` pins the one-`Deck()`/one-`Events()` claim with a counting store. The 16ms throttle is inherited rather than re-tuned. `wrapWritten` is now O(text) per write on a pinned screen — off the keystroke path, since the sitting writes only on transitions.
+
+## 7. Plan revision recommendations
+
+1. **`atlas/define.md:2044-2058`** — the wrap paragraph describes the *third* version: *"the loop routes the question, the reveal, the drop notice, the summary and its diagnostics through one function, and the resize case keeps `opt.width` current."* At HEAD the loop routes nothing (the pinned screen's `Write` does it) and `play_loop.go:205-215` explicitly refuses to set a second width. Rewrite for the seam, and state the escape exception once it is decided.
+2. **`workshop/plans/000041-play-tui-plan.md:311`** — cites `TestAMissIsRecordedBeforeItIsRevealed`; the tree declares `TestAMissRecordsBeforeItPlays`. This is the same never-existed name `#33`'s new Revisions section quotes as the example, still live in a current-truth artifact.
+3. **A `## Revisions` entry for the 5th family instance**, recording that the seam fix introduced it, and carrying the two-axis enumeration above so the next round has a predicate rather than an instance.
+4. **Done-when 0b** should say its predicate runs with colour on; as written it is satisfied by a test in a state production refuses.
+
+```findings
+dispose:
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Nothing at HEAD touches it: no usage gate rejects `--play -raw`, decideCapture still returns captureNothing (capture.go:30), and held.answered/refresh still advance the bar.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      repo_guard_test.go is untouched in this window, so neither the removed-type/unexported/deleted-file widening nor the forward "cited Test name is declared" check exists; the class was filed to #33 while this round added two NEW instances — highlightwriter.go:60 cites TestHighlightWriterShortWriteContract (never existed; the real name is TestHighlightWriterTreatsAShortWriteAsAnError) and playbar.go:122-137 lost isOptionLine's doc comment to the inserted minWrapWidth const — plus two survivors: plan:311 still cites TestAMissIsRecordedBeforeItIsRevealed, and atlas/define.md:2054 still describes the deleted per-site wrap and the deleted resize-time opt.width update.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      The code is right (gates at play_loop.go:56-77, above todaysQuestions at :79) but nothing pins it — I moved the three gates back below todaysQuestions in a scratch copy and `go test ./cmd/define/` stayed green (107s); TestPlayRefusesWhenStdoutIsNotATerminal only checks exit 1, absence of ESC, and a stderr substring, none of which a "the deck is empty" line to stdout would break.
+  - id: BR-20
+    disposition: addressed
+    note: |
+      The wrap moved to liveScreen.Write for pinned screens (screen.go:511) and playAnnounced's plain-text `define: %s` warning is now wrapped; pinned in both directions by TestThePinnedScreenWrapsWhateverIsWrittenToIt — but the same commit introduced a new hole in the seam, raised below.
+  - id: BR-21
+    disposition: addressed
+    note: |
+      play_loop.go:146 calls refresh() at init; behaviour-identical to the hand-copy, so accepted as a structural fix with no possible failing test.
+  - id: BR-22
+    disposition: addressed
+    note: |
+      viewportGesture/wrapWritten/livePrompt moved to Pure entities and newPinnedScreen to Integration points; #33 gained the widening spec in its own Revisions section.
+findings:
+  - id: new
+    severity: Critical
+    family: frame-clips-unwrapped-text
+    title: |
+      wrapWritten skips every escape-carrying line, and --play can only run with colour on, so a reveal's rendered definition is never wrapped
+    detail: |
+      This is the 5th finding in family `frame-clips-unwrapped-text`, and it was INTRODUCED by the commit that closed the fourth. Do NOT fix this instance.
+      playbar.go:105-109 returns any line containing 0x1b untouched. runPlay refuses unless isTerminal(stdout) and opt.tty, and main.go:523/527 define color and tty as the same expression, so every real sitting renders with Color:true and every styled line bypasses the seam. The same commit also deleted the resize case's opt.width maintenance that had been the prior mitigation.
+      MEASURED (scratch: playRig + opt.color=true, opt.width=100, newPinnedScreen(24,40), one reveal): 4 buffer lines of 55-87 cells in a 40-column terminal, e.g. "    ephemerality \x1b[35m/..../\x1b[0m noun ephemerally ..." at 87 cells. Deleting the three-line skip takes that to 0 and leaves `go test ./cmd/define/...` green, so nothing defends it; wrapText already measures with visibleCells and strings.Fields cannot split inside an escape sequence.
+      THE RULE, one step past "wrap at the seam": a seam covers every write only when (a) every path into the buffer goes through it and (b) its predicate is exercised in the configuration production actually runs in. The enumeration is two-by-two and belongs in the plan: paths = liveScreen.Write (wraps, except escapes) and liveScreen.WriteRegions (screen.go:551, calls l.s.Write directly and does NOT wrap — latent for --play, live for #40's board, and already contradicting screen.go:503's "Here nothing can write around it"); line classes = plain (wraps) and escape-carrying (does not).
+      Fix the class: route both methods through one private writeBuffer(text) that applies the wrap when pinned, narrow the guard to the eraseLine gesture rather than "contains any escape", and drive TestANarrowedSittingWrapsTheRestOfItself with opt.color = true.
+  - id: new
+    severity: Important
+    family: rig-config-not-production
+    title: |
+      playRig hardcodes color:false, a configuration --play now refuses to run in, so every in-process sitting test drives an unreachable state
+    detail: |
+      play_loop_test.go:39 returns options{color: false, width: 0, ...}. Since BR-3, runPlay exits 1 unless opt.tty, and opt.tty and opt.color are the identical expression (main.go:523/527) — so no in-process test has ever exercised the only configuration a sitting can be in. That is why the Critical above shipped: Done-when 0b's two pins (TestANarrowedSittingWrapsTheRestOfItself, TestALongOptionGlossWrapsRatherThanBeingCut) both pass with colour off. The pty rows do run coloured, but TestPTYPlayResizeRepaints narrows ROWS 24->10 and never COLS, so no row narrows the width of a coloured sitting.
+      THE RULE: a rig's default options have to be reachable from the flag parse of the command under test. Set color/tty true in playRig (or derive both from one helper, as main.go does) and add a column-narrowing pty row.
+```

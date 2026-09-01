@@ -490,3 +490,30 @@ Also from these rounds:
 - **BR-21 — the initial figures hand-copied `refresh()`'s first lines.** Calling
   `refresh()` is exactly equivalent at init, so a third field added later cannot
   be stale on the first frame.
+
+### 2026-08-31 — round 4: a Critical I introduced, and the rig that hid it
+
+`wrapWritten` skipped every line carrying an escape, to protect the `♫ playing
+3×` indicator's `\r\x1b[K` marker from being scattered by a wrap. Since BR-3,
+`--play` refuses to run with `-no-color` — so every rendered definition line
+carries colour, and the skip exempted **exactly the lines the wrap exists for**.
+Now only the erase gesture is exempt; SGR wraps, because `visibleCells` measures
+styled text correctly and an attribute persists across a break to its own reset.
+
+**BR-24 is why it shipped, and it is the more useful finding.** `playRig`
+returned `options{color: false}` — a configuration `--play` now REFUSES — so no
+in-process sitting has ever run in the only state production can produce. Both of
+Done-when 0b's pins were green over uncoloured text. The rig now sets
+`color: true, tty: true`, and `unstyled` moved out of the conformance file
+because in-process assertions over frame text now meet escapes for the first
+time.
+
+**THE RULE: a rig's default options must be reachable from the flag parse of the
+command under test.** A default that production cannot produce is a suite testing
+a state that does not exist, and it fails silently — everything passes.
+
+And the second-order one, which is why this took four rounds: **a guard added to
+protect a special case must name the case, not the mechanism it happens to use.**
+"Skip escape-carrying lines" was a guess at what needed protecting; "skip lines
+carrying the erase gesture" is the actual case, and it is one `strings.Contains`
+away.

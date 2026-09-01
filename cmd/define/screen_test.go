@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -497,6 +498,20 @@ func TestOnlyThePinnedConstructorPads(t *testing.T) {
 		})
 	}
 }
+
+// unstyled drops SGR sequences so a text assertion survives a styling change.
+//
+// Only the colour sequences: cursor movement and erasure are what several tests
+// are ABOUT, and stripping those would make those assertions vacuous.
+//
+// UNTAGGED, because both suites need it. It lived in the conformance file until
+// `#41` made `--play`'s rig run coloured — the only configuration a sitting can
+// be in — and every in-process assertion over a frame's text met escapes for the
+// first time. A second stripper beside this one is how they would come to
+// disagree about what counts as style.
+var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
 
 // lastFrame is the most recent WHOLE frame in what a terminal received.
 //

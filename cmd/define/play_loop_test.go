@@ -35,7 +35,13 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 	// in a test is a real process.
 	d.player = &fakePlayer{}
 	d.audio = noAudioSource{}
-	return d, options{color: false, width: 0, count: 20, times: 1, noAudio: true}, st
+	// COLOUR AND TTY ON, which is the only configuration a sitting can be in:
+	// `--play` refuses unless `opt.tty`, and `tty` and `color` are the identical
+	// expression at the flag parse (main.go). A rig whose defaults are
+	// unreachable from the command under test is a rig that tests a state
+	// production cannot produce — which is how BR-23's Critical shipped, with
+	// both of Done-when 0b's pins green over uncoloured text.
+	return d, options{color: true, tty: true, width: 0, count: 20, times: 1, noAudio: true}, st
 }
 
 // audible makes the playback branch REACHABLE and returns the player recording it.
@@ -700,13 +706,15 @@ func TestALongRevealPagesRatherThanScrollingTheWordAway(t *testing.T) {
 	}()
 
 	keys <- Key{Kind: KeyEnter} // reveal: the entry is taller than the viewport
-	waitFor(t, func() bool { return strings.Contains(lastFrame(tty.String()), "DERIVATIVES") })
-	if got := lastFrame(tty.String()); strings.Contains(got, "sycophantic  syc·o·phan·tic") {
+	waitFor(t, func() bool { return strings.Contains(unstyled(lastFrame(tty.String())), "DERIVATIVES") })
+	if got := unstyled(lastFrame(tty.String())); strings.Contains(got, "sycophantic  syc·o·phan·tic") {
 		t.Fatalf("the reveal fits the terminal, so this test asserts nothing:\n%s", got)
 	}
 
 	keys <- Key{Kind: KeyPageUp}
-	waitFor(t, func() bool { return strings.Contains(lastFrame(tty.String()), "sycophantic  syc·o·phan·tic") })
+	waitFor(t, func() bool {
+		return strings.Contains(unstyled(lastFrame(tty.String())), "sycophantic  syc·o·phan·tic")
+	})
 
 	keys <- Key{Kind: KeyInterrupt}
 	<-done

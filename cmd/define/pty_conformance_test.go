@@ -419,14 +419,6 @@ func bareNewlines(s string) int {
 	return n
 }
 
-// unstyled drops SGR sequences so a text assertion survives a styling change.
-//
-// Only the colour sequences: cursor movement and erasure are what several tests
-// here are ABOUT, and stripping those would make those assertions vacuous.
-var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
-
 // The grade-first flow on a real terminal.
 //
 // #6 BR-45 is why this exists in the same milestone as the change rather than
