@@ -197,6 +197,72 @@ active, and `dictselect.go` already names it while deliberately filtering
 thesauruses out of the curated general-dictionary list — so that issue starts
 with a measurement of OAWT's output shape, not a design.
 
+### 2026-09-01 — T2: `Board` and `Mark`
+
+Landed with sixteen mutations executed against the new rows; all sixteen were
+caught, including the two T1 rows in `Apply` that a board is the first form to
+exercise for real.
+
+**Three open questions from the resume, settled by the operator.** Box ≥ 3
+STAYS, to be replaced by evidence from `ReviewEvent.Form` (T7) rather than by
+argument — the plan is unchanged. `#40` is finished before `#10` is claimed.
+`~/play41` is removed; the manual verification step builds a fresh deck.
+
+**`Mark` takes no verdict — `Mark(i)`, not the plan's `Mark(i, v)`.** THE MODE
+DECIDES, and the mode is the board's own state: it is drawn in the footer's
+toggle and flipped by Tab. A caller passing a verdict in would be a second owner
+of a fact this form already renders, and the two would disagree the first time a
+frame was drawn between the toggle and the click. This is the session's own
+lesson applied one level down — when two things must agree about a measurement,
+one owns it and the other asks.
+
+**A CELL IS MARKED ONCE, which the plan did not say and the log requires.** Every
+mark emits its `OutcomeRecord` as it lands — that is what makes Ctrl-C lossless
+(D3) — and the price of writing immediately is that nothing can be taken back.
+`Fold` would read a re-marked cell as two reviews of one word on one day. So a
+second mark is refused, and the refusal is made VISIBLE rather than silent: the
+mark stands where the key was (`[y]` in place of `[3]`), which says both "this is
+answered" and "this key no longer does anything". A key that stops working
+without saying so is the kind of thing a learner blames themselves for.
+
+The same reasoning made the gutter a non-target in `CellAt`. A forgiving hit box
+is the usual kindness and is wrong here: a mark cannot be taken back, so a click
+that is not clearly on a word does nothing rather than marking its neighbour.
+
+**`Prompt()` renders the grid and T6 puts it in the FOOTER.** T2's task line and
+D10 read as contradictory — one says `Prompt()` renders the labelled grid, the
+other says the grid cannot be a buffer line. Both are true: the form renders it,
+and the loop calls it per frame for the live edge instead of writing it into the
+buffer once. Nothing in `play` changes for that; it is entirely T6's wiring.
+
+**The board owns its geometry.** `NewBoard(words, width)` takes the terminal
+width — the same seam `Choice` sits on, where prose and terminals belong to the
+caller and a form takes finished dimensions — and answers `Rows()` and
+`CellAt(row, col)`. The alternative, exporting the column count and cell width so
+the loop could do the arithmetic, is two owners of one measurement whose failure
+mode is a click that marks the word next to the one under the pointer. `Rows()`
+is also what D15's fit test needs: the board is the only thing that knows how
+tall it is.
+
+Width buys the guarantee D15 actually rests on: **no line `Prompt()` produces is
+wider than the width it was built for**, pinned across four boards and nine
+widths. Below `labelWidth + 1` a single cell cannot be drawn at all, which is far
+under the terminal size a board is ever offered at.
+
+**ASCII marks, not `✓`/`✗`.** Those runes are East Asian Ambiguous, so some
+terminals give them two columns — and a cell one column wider than the board
+believes is exactly the failure D15 is written against, a click landing on the
+wrong word. Colour is what will make the marks pop, and it is T6's to add:
+keeping the grid in the live edge is what bought colour in the first place.
+
+**Found, for T6: `sessionKeys` LIES on a board.** `gradePrompt` appends
+*"d = remove from deck, Ctrl-C to stop"* to every form's `Keys()`, on the grounds
+that it is true whatever form is asking. D12 made `d` REFUSED on a batch form, so
+the learner is now told to press a key that does nothing — which is the exact bug
+`gradePrompt` was created to fix when the keys line was a const spelling form
+2.1's y/n. `Keys()` here names Tab and Enter for the same reason: neither is true
+whatever form is asking, so neither can live in `sessionKeys`.
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it
