@@ -2899,3 +2899,27 @@ existing mechanism, read that mechanism's doc comments AT HEAD and turn each
 obligation into a row.** A plan written before the mechanism's latest change
 never sees the obligations that change added.
 
+## A scripted edit must assert on what it expects to find (`#38`)
+
+Ticking seven task rows in a plan silently did nothing: the edit used a
+find-and-replace against text an earlier edit had already changed, so every
+substitution matched nothing and the script reported success. The review found
+the rows still unticked two rounds later.
+
+**Every scripted edit to an artifact asserts the anchor is present before
+replacing it.** A `replace` that matches nothing is indistinguishable from one
+that worked, and the failure surfaces at a gate rather than at the keyboard. This
+is the same discipline the repo's own guards enforce on prose — applied to the
+tool doing the editing.
+
+## Fixing an obligation is not discharging it (`#38`)
+
+`RenderOpts.Word` was left empty, so region words fell back to the entry's
+headword — `jalapeño` where the deck holds `jalapeno`, which are different URLs
+at the CDN. The fix was one field, the commit message called it "a live defect",
+and deleting the field again left the entire suite green.
+
+**A claim is discharged by something that can fail.** A one-line fix earns a test
+exactly as a feature does, and the cheapest moment to write it is while the
+divergence is still in your head — the fixture is the thing you just reproduced.
+

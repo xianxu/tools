@@ -130,6 +130,132 @@ rounds:
           family: tracker-state-stale
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-08-31T22:34:51-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: not-addressed
+          note: code side fixed (Line 1 and the screen-width ruler are both mutation-pinned; Word:key is present but unpinned), but T4/T5 in `## Tasks` are byte-identical to before — the commit's "All three are rows in T5 now" did not happen.
+          round: 3
+        - id: BR-2
+          disposition: not-addressed
+          note: the current-truth table was not touched; 8 of 10 anchors I re-measured at HEAD point at unrelated lines, and two rows are false in substance.
+          round: 3
+        - id: BR-3
+          disposition: addressed
+          note: mutation-verified twice in a scratch copy — deleting the call and substituting a fixed 80 for l.cols each redden two tests.
+          round: 3
+        - id: BR-4
+          disposition: addressed
+          note: atlas/define.md and README.md both rewritten to the per-line rule and the one-ruler rule; one new inaccuracy in the README raised separately.
+          round: 3
+        - id: BR-5
+          disposition: addressed
+          note: row 3a renamed and restated, row 3b added; TestPlanNamedTestsExist passes on the plan once the task boxes are ticked.
+          round: 3
+        - id: BR-6
+          disposition: not-addressed
+          note: replraw.go:554-563 still runs into playRegion's comment with no blank line; replayInPlace's own doc at :613 does not name it.
+          round: 3
+        - id: BR-7
+          disposition: not-addressed
+          note: play_loop.go still initialises held.marks at the constructor, builds a second local map, and assigns it over the first.
+          round: 3
+        - id: BR-8
+          disposition: not-addressed
+          note: play_loop.go:272 still passes entry "" — and this is the issue's stated parity promise, not an extension (ARCH-PURPOSE).
+          round: 3
+        - id: BR-9
+          disposition: addressed
+          note: both sites now use fmt.Fprintln; the \r\n spelling is gone from this path.
+          round: 3
+        - id: BR-10
+          disposition: addressed
+          note: 'issue frontmatter is status: working; the wider sweep it was one slot of is raised as a new finding.'
+          round: 3
+      findings:
+        - id: BR-11
+          severity: Critical
+          title: the plan's Core-concepts PURE table names playRegions and promptRegionFor, neither of which the tree declares
+          detail: |-
+            This is the 2nd finding in family `plan-table-vs-tree`. Earlier rounds fixed
+            instances (BR-5 renamed one Done-when cell). Do NOT fix this instance alone —
+            the rule is that EVERY identifier a plan states as current truth is checked
+            against the tree in one sweep at the boundary, and the repo already owns the
+            enumerator: TestPlanTablesNameEntitiesThatExist for Core-concepts cells,
+            TestPlanNamedTestsExist for backticked test names. Both are currently
+            suppressed on this plan by its unticked task boxes.
+            Measured: the delivered entities are `clickable` (play_loop.go:519) and
+            `(*sittingDeck).marksIn` (play_loop.go:581); the prompt region is built inline
+            in `show()` and has no named function. Reproduced in a scratch copy — with the
+            boxes as they are the guard PASSES; tick them (which `sdlc close`'s
+            plan-unchecked gate requires) and it fails on both names. So the close cannot
+            be recorded without either a red suite or a corrected table.
+          family: plan-table-vs-tree
+          round: 3
+        - id: BR-12
+          severity: Important
+          title: the plan's Tasks still show T0/T1/T4/T5/T6/T7/T8 unticked while the issue ticks all nine and the code has landed
+          detail: |-
+            This is the 2nd finding in family `tracker-state-stale`. BR-10 fixed one
+            instance (issue frontmatter status). Do NOT fix this instance alone — the rule:
+            an issue's completion state lives in FOUR slots and is swept as one enumeration
+            at the boundary: issue frontmatter `status:`, the issue's `## Plan` boxes, the
+            plan's `## Tasks` boxes, and the referencing project row. Measured at HEAD: slot
+            1 fixed by BR-10; slot 3 wrong (plan lines 120-136, including T6 which the issue
+            marks landed by `#41`); slot 4 never checked — workshop/projects/define-learn.md
+            carries a `[tools#41]` row and no `[tools#38]` row at all. 2 of 4 wrong after a
+            round that named one of them.
+            This is also what hides the Critical above: TestPlanTablesNameEntitiesThatExist
+            exempts `new` rows while a plan has unticked steps, and TestPlanNamedTestsExist
+            skips the document entirely ("no finished unit of work names a test").
+          family: tracker-state-stale
+          round: 3
+        - id: BR-13
+          severity: Minor
+          title: Choice.Prompt's doc still says the region is line 0 and that 38 is PARKED, and the README says links follow the text as it re-wraps
+          detail: |-
+            This is the 2nd finding in family `docs-lag-behavior-change`. BR-4 fixed the
+            atlas and README paragraphs for the wrap rule. Do NOT fix these two instances
+            alone — the rule: a behaviour change sweeps every prose site that NAMES the
+            behaviour, located by grepping the changed symbol and the issue number, not by
+            recalling which doc mentioned it. Measured this round: play/choice.go:113-114
+            states "computes its region as line 0, column 0" and "#38 is PARKED" (it is line
+            1 and the issue is working) — a comment written specifically to protect this
+            invariant, so a stale one defeats its only purpose; and README.md:159 "Narrow
+            the window and the links follow the text as it re-wraps" is false, since Resize
+            only updates l.rows/l.cols and neither existing buffer lines nor existing
+            regions move — only writes made after the resize are affected.
+          family: docs-lag-behavior-change
+          round: 3
+        - id: BR-14
+          severity: Minor
+          title: three copies of the audio-off guard plus its identical message, where D11 justified the copies by claiming callers keep their own
+          detail: |-
+            replraw.go:584 (playRegion), replraw.go:616 (replayInPlace) and repl.go:313
+            (replayPiped) each spell `if !opt.playsAudio() { Fprintln(stderr,
+            nothingToReplay) }`. D11 left the message with the callers on the grounds that
+            "callers keep their own MESSAGES; only the condition is shared" — but all three
+            messages are the same constant, so the premise does not hold for these three.
+            This window added the third. ARCH-DRY.
+          family: duplicated-guard-and-message
+          round: 3
+        - id: BR-15
+          severity: Minor
+          title: the RenderOpts.Word obligation is fixed in code but no test fails without it
+          detail: |-
+            Deleting `Word: key` from the Render call in todaysQuestions leaves the whole
+            cmd/define suite green — I ran it with that mutation and the only failures were
+            the git-dependent repo guards (the scratch copy has no .git). regionsIn falls
+            back to e.Headword(), so the divergence the fix commit calls "a live defect — a
+            click on a normalised deck word would have fetched the wrong recording" is
+            unpinned. A row asserting Region.Word == the deck key when key and headword
+            differ (jalapeno / jalapeño) would close it. Same family as BR-1 because it is
+            the same obligation, one step further on: adopted, but not made falsifiable.
+          family: mechanism-adopted-without-its-obligations
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#38 (boundary-review)
@@ -212,15 +338,88 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   workshop/issues/000038-play-clickable.md:3 - the resume never moved the status
   off punt.
 
+## Round 3 — 2026-08-31T22:34:51-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — not-addressed — code side fixed (Line 1 and the screen-width ruler are both mutation-pinned; Word:key is present but unpinned), but T4/T5 in `## Tasks` are byte-identical to before — the commit's "All three are rows in T5 now" did not happen.
+- BR-2 — not-addressed — the current-truth table was not touched; 8 of 10 anchors I re-measured at HEAD point at unrelated lines, and two rows are false in substance.
+- BR-3 — addressed — mutation-verified twice in a scratch copy — deleting the call and substituting a fixed 80 for l.cols each redden two tests.
+- BR-4 — addressed — atlas/define.md and README.md both rewritten to the per-line rule and the one-ruler rule; one new inaccuracy in the README raised separately.
+- BR-5 — addressed — row 3a renamed and restated, row 3b added; TestPlanNamedTestsExist passes on the plan once the task boxes are ticked.
+- BR-6 — not-addressed — replraw.go:554-563 still runs into playRegion's comment with no blank line; replayInPlace's own doc at :613 does not name it.
+- BR-7 — not-addressed — play_loop.go still initialises held.marks at the constructor, builds a second local map, and assigns it over the first.
+- BR-8 — not-addressed — play_loop.go:272 still passes entry "" — and this is the issue's stated parity promise, not an extension (ARCH-PURPOSE).
+- BR-9 — addressed — both sites now use fmt.Fprintln; the \r\n spelling is gone from this path.
+- BR-10 — addressed — issue frontmatter is status: working; the wider sweep it was one slot of is raised as a new finding.
+
+### Raised
+
+- **BR-11** [Critical] `plan-table-vs-tree` the plan's Core-concepts PURE table names playRegions and promptRegionFor, neither of which the tree declares
+  This is the 2nd finding in family `plan-table-vs-tree`. Earlier rounds fixed
+  instances (BR-5 renamed one Done-when cell). Do NOT fix this instance alone —
+  the rule is that EVERY identifier a plan states as current truth is checked
+  against the tree in one sweep at the boundary, and the repo already owns the
+  enumerator: TestPlanTablesNameEntitiesThatExist for Core-concepts cells,
+  TestPlanNamedTestsExist for backticked test names. Both are currently
+  suppressed on this plan by its unticked task boxes.
+  Measured: the delivered entities are `clickable` (play_loop.go:519) and
+  `(*sittingDeck).marksIn` (play_loop.go:581); the prompt region is built inline
+  in `show()` and has no named function. Reproduced in a scratch copy — with the
+  boxes as they are the guard PASSES; tick them (which `sdlc close`'s
+  plan-unchecked gate requires) and it fails on both names. So the close cannot
+  be recorded without either a red suite or a corrected table.
+- **BR-12** [Important] `tracker-state-stale` the plan's Tasks still show T0/T1/T4/T5/T6/T7/T8 unticked while the issue ticks all nine and the code has landed
+  This is the 2nd finding in family `tracker-state-stale`. BR-10 fixed one
+  instance (issue frontmatter status). Do NOT fix this instance alone — the rule:
+  an issue's completion state lives in FOUR slots and is swept as one enumeration
+  at the boundary: issue frontmatter `status:`, the issue's `## Plan` boxes, the
+  plan's `## Tasks` boxes, and the referencing project row. Measured at HEAD: slot
+  1 fixed by BR-10; slot 3 wrong (plan lines 120-136, including T6 which the issue
+  marks landed by `#41`); slot 4 never checked — workshop/projects/define-learn.md
+  carries a `[tools#41]` row and no `[tools#38]` row at all. 2 of 4 wrong after a
+  round that named one of them.
+  This is also what hides the Critical above: TestPlanTablesNameEntitiesThatExist
+  exempts `new` rows while a plan has unticked steps, and TestPlanNamedTestsExist
+  skips the document entirely ("no finished unit of work names a test").
+- **BR-13** [Minor] `docs-lag-behavior-change` Choice.Prompt's doc still says the region is line 0 and that 38 is PARKED, and the README says links follow the text as it re-wraps
+  This is the 2nd finding in family `docs-lag-behavior-change`. BR-4 fixed the
+  atlas and README paragraphs for the wrap rule. Do NOT fix these two instances
+  alone — the rule: a behaviour change sweeps every prose site that NAMES the
+  behaviour, located by grepping the changed symbol and the issue number, not by
+  recalling which doc mentioned it. Measured this round: play/choice.go:113-114
+  states "computes its region as line 0, column 0" and "#38 is PARKED" (it is line
+  1 and the issue is working) — a comment written specifically to protect this
+  invariant, so a stale one defeats its only purpose; and README.md:159 "Narrow
+  the window and the links follow the text as it re-wraps" is false, since Resize
+  only updates l.rows/l.cols and neither existing buffer lines nor existing
+  regions move — only writes made after the resize are affected.
+- **BR-14** [Minor] `duplicated-guard-and-message` three copies of the audio-off guard plus its identical message, where D11 justified the copies by claiming callers keep their own
+  replraw.go:584 (playRegion), replraw.go:616 (replayInPlace) and repl.go:313
+  (replayPiped) each spell `if !opt.playsAudio() { Fprintln(stderr,
+  nothingToReplay) }`. D11 left the message with the callers on the grounds that
+  "callers keep their own MESSAGES; only the condition is shared" — but all three
+  messages are the same constant, so the premise does not hold for these three.
+  This window added the third. ARCH-DRY.
+- **BR-15** [Minor] `mechanism-adopted-without-its-obligations` the RenderOpts.Word obligation is fixed in code but no test fails without it
+  Deleting `Word: key` from the Render call in todaysQuestions leaves the whole
+  cmd/define suite green — I ran it with that mutation and the only failures were
+  the git-dependent repo guards (the scratch copy has no .git). regionsIn falls
+  back to e.Headword(), so the divergence the fix commit calls "a live defect — a
+  click on a normalised deck word would have fetched the wrong recording" is
+  unpinned. A row asserting Region.Word == the deck key when key and headword
+  differ (jalapeno / jalapeño) would close it. Same family as BR-1 because it is
+  the same obligation, one step further on: adopted, but not made falsifiable.
+
 ## Open findings
 
 - **BR-1** [Important] `mechanism-adopted-without-its-obligations` T4 and T5 specify region coordinates against premises the screen and Render do not hold
 - **BR-2** [Minor] `citation-does-not-point-at-the-claim` ten of eighteen line anchors in the plan's current-truth sections are wrong after 41 landed
-- **BR-3** [Critical] `wrap-width-single-owner` writeClickable is handed opt.width while the screen wraps at its own cols, so a resize MISPLACES the click map instead of dropping it
-- **BR-4** [Important] `docs-lag-behavior-change` atlas and README still describe the all-or-nothing wrap rule that commit 70b18a5 replaced
-- **BR-5** [Important] `plan-table-vs-tree` Done-when row 3a names TestClickMapIsDroppedRatherThanMisplacedByAWrap, which does not exist
 - **BR-6** [Minor] `doc-comment-attachment` replayInPlace's doc comment now heads playRegion, leaving replayInPlace undocumented
 - **BR-7** [Minor] `redundant-duplicate-state` todaysQuestions builds two marks maps where one would do
 - **BR-8** [Minor] `available-context-discarded` a sitting's ORIGIN-language click always passes an empty entry, degrading to the headword fallback
-- **BR-9** [Minor] `line-ending-single-owner` playRegion writes nothingToReplay with \n while replayInPlace writes the same constant with \r\n
-- **BR-10** [Minor] `tracker-state-stale` the issue is still status: punt with every Plan row ticked
+- **BR-11** [Critical] `plan-table-vs-tree` the plan's Core-concepts PURE table names playRegions and promptRegionFor, neither of which the tree declares
+- **BR-12** [Important] `tracker-state-stale` the plan's Tasks still show T0/T1/T4/T5/T6/T7/T8 unticked while the issue ticks all nine and the code has landed
+- **BR-13** [Minor] `docs-lag-behavior-change` Choice.Prompt's doc still says the region is line 0 and that 38 is PARKED, and the README says links follow the text as it re-wraps
+- **BR-14** [Minor] `duplicated-guard-and-message` three copies of the audio-off guard plus its identical message, where D11 justified the copies by claiming callers keep their own
+- **BR-15** [Minor] `mechanism-adopted-without-its-obligations` the RenderOpts.Word obligation is fixed in code but no test fails without it

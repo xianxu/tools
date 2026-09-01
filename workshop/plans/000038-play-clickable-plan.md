@@ -85,10 +85,11 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
-| `playRegions` | `cmd/define/play_loop.go` | new | PURE — the `word -> []Region` map, because `play` cannot hold a `main` type (D7) |
-| `promptRegionFor` | `cmd/define/play_loop.go` | new | PURE — the region for the prompt word the loop is about to write |
+| `clickable` | `cmd/define/play_loop.go` | new | PURE — one entry's rendered TEXT beside the regions in it, because their coordinates are relative to that text and the loop writes something larger. Named `playRegions` and specified as a bare `word -> []Region` map while the plan still assumed `--play` appended; the text has to travel with them (D7) |
+| `sittingDeck.marksIn` | `cmd/define/play_loop.go` | new | PURE — the regions for a word, moved into the coordinates of the text about to be written, by LOCATING the render inside a form's reveal rather than counting from a formula that would duplicate a layout the form owns |
+| `wrapMovedRegions` | `cmd/define/playbar.go` | new | PURE — re-points regions across a wrap: a line the wrap does not break keeps its columns and moves down, a line it breaks loses its regions. Called only by `liveScreen.WriteRegions`, which holds the width (`#41` BR-25) |
 
-- **`playRegions`** — questions are pre-rendered before the sitting starts, so their regions are known then and needed later.
+- **`clickable`** — questions are pre-rendered before the sitting starts, so their regions are known then and needed later. **`promptRegionFor` was never built**: the prompt word's region is one struct literal at the write site (line 1, column 0, `visibleCells(word)`), and a named constructor for a three-field literal used once would be indirection rather than reuse.
   - **Relationships:** 1:1 with the question queue, keyed by `play.Question.Word()`.
   - **DRY rationale:** avoids re-rendering an entry to recover its regions, and avoids teaching `play` about `main`.
   - **Future extensions:** a second review form (`#7`, `#12`, `#13`) renders differently; keyed by word rather than by form, so it widens without changing shape.
@@ -117,8 +118,8 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 
 Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and AGENTS.md §3 says an `Mx` tag commits to its own `milestone-close`.
 
-- [ ] **T0 — one audio-off predicate** (D11). `options.playsAudio()`, applied inside `playAnnounced` so no caller can be below it, and the four hand-copies replaced by a call. Behaviour-preserving: every existing audio test passes untouched, and a new row asserts `playAnnounced` fetches NOTHING when audio is off — which none of them do today, since the callers never let it get that far.
-- [ ] **T1 — lift the click registry.** `playRegion(ctx, d, opt, r Region, entry string, ind indicator, stdout, stderr)`: the switch on `RegionKind`, building the utterance and calling `playAnnounced` — which now carries the guard itself (T0). The editor's `clicked` (`replraw.go:264`) becomes a call to it. NO behaviour change — `TestEveryRegionKindIsActionable`, `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` pass untouched, which is what proves the lift was a lift.
+- [x] **T0 — one audio-off predicate** (D11). `options.playsAudio()`, applied inside `playAnnounced` so no caller can be below it, and the four hand-copies replaced by a call. Behaviour-preserving: every existing audio test passes untouched, and a new row asserts `playAnnounced` fetches NOTHING when audio is off — which none of them do today, since the callers never let it get that far.
+- [x] **T1 — lift the click registry.** `playRegion(ctx, d, opt, r Region, entry string, ind indicator, stdout, stderr)`: the switch on `RegionKind`, building the utterance and calling `playAnnounced` — which now carries the guard itself (T0). The editor's `clicked` (`replraw.go:264`) becomes a call to it. NO behaviour change — `TestEveryRegionKindIsActionable`, `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` pass untouched, which is what proves the lift was a lift.
 - [x] **T2 — delete the playback dance** (D2), AND re-home the invariant that dies with it. **LANDED BY `#41` T3/T4** — see the 2026-08-31 revision below.
       `play_loop.go:174-198` loses `restore`/`enterRaw` and the `lost the terminal after playback` path. A new row asserts the alternate screen is STILL up after a reveal, which is the regression the deletion prevents.
       **The exit-1 test that drove the re-entry failure went with it, and it was the ONLY pin for the outcome-ORDER obligation** — `play_loop.go:126-141` enumerates three consumer obligations and names that test for `order`, recording that reversing the iteration once left the whole suite green (BR-13). Its premise is a `rawTerm` on `/dev/null` so re-entry fails, which this deletion makes unreachable.
@@ -126,14 +127,17 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
       So the fake records a SEQUENCE: `capture.CaptureReview` and the player each append to one ordered log, and the assertion is that the record's entry precedes the playback's. That is falsifiable by reversing the `outs` iteration and by nothing else — which is what BR-13 needed and what a consequence-based test could not give once the abort was deleted.
       **The rule: a task that deletes code re-homes every invariant whose only pin lives there, in the same task — and re-homing means finding an observable that still discriminates, not porting the old assertion.**
 - [x] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9). **LANDED BY `#41` T3** as `newConsole(ctx, d, sess, stdout, newScreen)`, which both loops call — `--play` passes `newPinnedScreen` rather than `newLiveScreen`, because a status bar belongs at the terminal's bottom edge.
-- [ ] **T4 — the prompt word is a region.** `draw` is append-only, so the word lands on the line about to be written: one `RegionHeadword` at column 0, width `visibleCells(word)`.
-- [ ] **T5 — the revealed definition carries its regions** (D7, operator's choice), through `writeRendered` (D3).
-- [ ] **T6 — the viewport, all three parts.** The alternate screen has NO scrollback, so without this a sitting cannot be scrolled at all — worse than today, where the terminal keeps it.
+- [x] **T4 — the prompt word is a region.** One `RegionHeadword` at column 0, width `visibleCells(word)`, on **line 1 — not line 0**. `draw` is gone (`#41`); the loop writes `"\n" + q.Prompt() + "\n"`, and `addRegions` anchors at the line the write STARTS on, so the leading blank is line 0. Both forms put the headword on their first line.
+- [x] **T5 — the revealed definition carries its regions** (D7, operator's choice), through `writeRendered` (D3). It adopts `Render` and `WriteRegions`, so it carries the three obligations THEY document at HEAD — the plan originally carried none, and two were live defects:
+      - **`RenderOpts.Word` must be the DECK'S KEY.** Empty means "no click map wanted" and falls back to `Entry.Headword()`; `jalapeno` in the deck against `jalapeño` on the head line are different URLs at the CDN. Pinned by `TestARegionAnswersForTheDeckKeyNotTheHeadword`.
+      - **the regions are relative to the RENDER**, and a form's reveal is larger, so the offset is LOCATED rather than computed from a formula.
+      - **a pinned screen WRAPS between the caller and the buffer**, so the map is moved by the screen's own width — which is why that arithmetic lives in `liveScreen.WriteRegions` and not here (row 3b).
+- [x] **T6 — the viewport, all three parts.** **LANDED BY `#41` T7/T8.** The alternate screen has NO scrollback, so without this a sitting cannot be scrolled at all — worse than today, where the terminal keeps it.
       - **Scroll:** PageUp/PageDown and the wheel, the same cases `replraw.go:366-380` already has.
       - **Resize:** `watchResize` (`rawterm.go:230`) into the loop's select, as `runEditor` does — the first fix for this finding covered scrolling and left SIGWINCH out, so a window change mid-sitting would have left the frame wrong.
       - Neither a scroll nor a resize reaches `play.Apply`.
-- [ ] **T7 — the click acts and does not answer** (D8).
-- [ ] **T8 — docs**: `cmd/define/README.md`'s review-loop section, and `atlas/define.md`'s clickable-regions section, which names the interactive loop as the only consumer.
+- [x] **T7 — the click acts and does not answer** (D8). It stops beside the viewport gestures, before `toInput`, so `play.Apply` never learns a mouse exists.
+- [x] **T8 — docs**: `cmd/define/README.md`'s review-loop section, and `atlas/define.md`'s clickable-regions section, which names the interactive loop as the only consumer.
 
 ## Done when
 
@@ -149,6 +153,7 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 | 5 | **playback does not tear the screen down** | `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` | the restore/re-enter dance comes back |
 | 6 | a sitting can be scrolled | **DONE by `#41` T7** — `TestPagingIsNotAnAnswer` (the loop pages and grades nothing) and `TestALongRevealPagesRatherThanScrollingTheWordAway` (the word comes back), both mutation-verified | the viewport cases are dropped, leaving no scrollback at all |
 | 3a | **a wrap MOVES the click map rather than dropping it or misplacing it** (`#41` BR-25) | `TestAWrapMovesTheClickMapRatherThanDroppingIt` (the arithmetic: a region on an unbroken line moves down, one on a broken line is dropped) and `TestWriteRegionsMovesTheMapByTheScreensOwnWidth` (the seam) | a region on an unbroken line is thrown away — which made the ASKED word inert on every form-2.3 question — or one is kept whose column now belongs to a continuation |
+| 3c | **a region answers for the deck's key, not the entry's headword** | `TestARegionAnswersForTheDeckKeyNotTheHeadword` | `RenderOpts.Word` is left empty, so `regionsIn` falls back to `Entry.Headword()` and a click on a normalised deck word fetches a different recording |
 | 3b | **the map is moved by the width the SCREEN wraps at, not one the caller supplies** | `TestAResizeDoesNotMisplaceTheClickMap` — narrow mid-sitting, then reveal, and every region still names the line it points at | the arithmetic runs on a second ruler, so after a resize a headword region lands on a blank line |
 | 7 | the terminal is handed back | the existing `--play` pty rows, unchanged | `handBack` is dropped from an exit path |
 | 8 | a mouse-less terminal is unaffected | the existing `--play` pty rows, unchanged | the loop needs a click to proceed |
@@ -411,3 +416,38 @@ recording.
 HEAD-documented obligations as checkable items.** Reading `WriteRegions` and
 `RenderOpts` at the moment T5 was written would have produced all three; the plan
 was written before `#41` existed and never re-read them.
+
+### 2026-08-31 — round 2: the plan's own tables were the Critical, and a fix with no pin
+
+Three findings, and two of them are about this document rather than the code.
+
+- **BR-11 (Critical) — the Core-concepts PURE table named `playRegions` and
+  `promptRegionFor`, and the tree declares neither.** `playRegions` was specified
+  as a bare `word -> []Region` map back when `--play` still appended; the regions'
+  coordinates are relative to a TEXT, so the text has to travel with them, and the
+  entity that exists is `clickable`. `promptRegionFor` was never built at all: the
+  prompt word's region is one struct literal at the write site, and a named
+  constructor for a three-field literal used once is indirection rather than
+  reuse. Both rows now name what the tree has, and the "never built" is recorded
+  rather than quietly dropped.
+
+- **BR-12 — the Tasks showed seven of nine unticked while the issue ticked all
+  nine and the code had landed.** My earlier edit to these rows used `replace`
+  without an assert against text that had already changed, so it no-opped in
+  silence. **A scripted edit to an artifact asserts on what it expects to find,
+  or it reports success for having done nothing** — the same discipline the code
+  guards enforce, applied to the tool doing the editing.
+
+- **The `RenderOpts.Word` fix had no test**, which the review measured by deleting
+  `Word: key` and finding the whole suite green. Fixing an obligation is not
+  discharging it: `regionsIn` falls back to `Entry.Headword()`, so the divergence
+  the fix commit called "a live defect" was unpinned.
+  `TestARegionAnswersForTheDeckKeyNotTheHeadword` drives a deck holding
+  `jalapeno` against an entry reading `jalapeño` — different URLs at the CDN —
+  and reddens under that deletion. Row 3c.
+
+**The rule these leave, and it is one rule: a claim is discharged by something
+that can fail.** A table row is a claim about the tree; a fix is a claim about
+behaviour. Neither is worth anything until something reddens when it stops being
+true — which is exactly what this plan's own Done-when preamble demands of its
+rows and what BR-1's family has now said three times.

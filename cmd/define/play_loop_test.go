@@ -1154,6 +1154,43 @@ func TestAResizeDoesNotMisplaceTheClickMap(t *testing.T) {
 	}
 }
 
+// A REGION ANSWERS FOR THE DECK'S KEY, not the entry's headword.
+//
+// `RenderOpts.Word` is identity rather than presentation, and its own doc says
+// so: empty means "no click map wanted" and `regionsIn` falls back to
+// `Entry.Headword()`. `--play` passed nothing until this issue, and the deck
+// holds normalised keys — `jalapeno` where NOAD's head line reads `jalapeño`.
+// The CDN answers different URLs for the two, so a click would have fetched a
+// recording for a word the learner never looked up.
+//
+// The fix was one field; this is the row that makes it falsifiable. Deleting
+// `Word: key` left the whole suite green.
+func TestARegionAnswersForTheDeckKeyNotTheHeadword(t *testing.T) {
+	d, opt, _ := playRig(t, "jalapeno")
+	qs, held := questionsFor(t, d, opt)
+	if len(qs) == 0 {
+		t.Fatal("no questions: the fake dictionary should resolve jalapeno to the jalapeño entry")
+	}
+
+	c, ok := held.marks[store.Key("jalapeno")]
+	if !ok || len(c.regions) == 0 {
+		t.Fatalf("no regions kept for the deck key: %+v", held.marks)
+	}
+	// The premise, or this test asserts nothing: the entry's head line must
+	// spell the word DIFFERENTLY from the key.
+	if !strings.Contains(unstyled(c.text), "jalapeño") {
+		t.Fatalf("the rendered entry does not carry the accented spelling, so key and headword "+
+			"do not diverge here:\n%s", unstyled(c.text))
+	}
+	for _, r := range c.regions {
+		if r.Word != "jalapeno" {
+			t.Errorf("a region answers for %q, want the deck's key %q — the CDN has different "+
+				"URLs for the two, so a click would fetch a recording for a word the learner "+
+				"never looked up", r.Word, "jalapeno")
+		}
+	}
+}
+
 // DONE-WHEN 9: SIGWINCH repaints mid-sitting.
 func TestPlayRepaintsOnResize(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
