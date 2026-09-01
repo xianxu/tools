@@ -600,6 +600,10 @@ func playRegion(ctx context.Context, d deps, opt options, r Region, entry string
 	playAnnounced(ctx, d, opt, utteranceFor(r.Word, entry, pron, opt), ind, stdout, stderr)
 }
 
+// Plain \n, not \r\n: the screen places every row, and it is the only writer
+// left on this path (#41 retired the translating one). Two spellings of a line
+// terminator in one function is how they drift — `playRegion` beside this one
+// writes the same sentence, and did so with the other spelling.
 func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron store.Lang, stdout, stderr io.Writer) {
 	switch {
 	case sess.current == "":
@@ -607,9 +611,9 @@ func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron 
 		// for a bare Enter with nothing current, and a byte-identical duplicate
 		// is what made "the one place that answers this" false the moment it was
 		// written (BR-20).
-		fmt.Fprintf(stderr, "define: %s\r\n", nothingSays(replCommand{}, true))
+		fmt.Fprintln(stderr, "define: "+nothingSays(replCommand{}, true))
 	case !opt.playsAudio():
-		fmt.Fprint(stderr, nothingToReplay+"\r\n")
+		fmt.Fprintln(stderr, nothingToReplay)
 	default:
 		playAnnounced(ctx, d, opt, utteranceFor(sess.current, sess.entry, pron, opt),
 			indicator{show: true, erase: eraseLine}, stdout, stderr)

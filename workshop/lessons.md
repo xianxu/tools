@@ -2865,3 +2865,37 @@ downstream behaviour off, and the test then asserts over a path with that
 behaviour missing. Ask of every field: *can the flag parse produce this value for
 this command?*
 
+## The wrap and the map must be measured by one ruler, and only the owner holds it (`#38`)
+
+A click map's coordinates are relative to the text they were computed from. A
+pinned screen wraps between the caller and the buffer, so those coordinates move.
+Two versions of the rule shipped and both were wrong:
+
+- **All-or-nothing** — drop the map if the wrap changed anything — made the
+  clicked-on word inert in the commonest case, because one long line beside it
+  wrapped.
+- **Per line, measured by the caller's width** — the caller held a width fixed at
+  startup while the screen re-measures on every resize. After a resize the two
+  disagreed and regions landed on lines that did not contain their text, which is
+  the wrong-click bug the rule exists to forbid.
+
+The fix is not a better calculation. **Move the calculation to whoever owns the
+number**, so a second ruler is unexpressible rather than merely unused — the same
+move `#41` made putting the wrap itself on the screen's `Write` after finding a
+helper writing around it. When two things must agree about a measurement, one of
+them owns it and the other asks.
+
+## Adopting a mechanism means adopting its documented obligations, as checkable rows (`#38`)
+
+`#38`'s T5 said "the revealed definition carries its regions, through
+`writeRendered`". `WriteRegions` and `RenderOpts` document three obligations
+between them, and the task carried none: the write's leading newline moves every
+region down a line; `RenderOpts.Word` must be the caller's KEY, because empty
+falls back to the entry's headword and `jalapeno` against `jalapeño` are
+different URLs at the CDN; and a pinned screen's wrap moves the map.
+
+Two of the three were live defects. **Before writing a task that adopts an
+existing mechanism, read that mechanism's doc comments AT HEAD and turn each
+obligation into a row.** A plan written before the mechanism's latest change
+never sees the obligations that change added.
+

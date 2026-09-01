@@ -148,7 +148,8 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 | 6b | **a resize repaints mid-sitting** | `TestPTYPlayResizeRepaints` | `watchResize` is not wired into the loop's select |
 | 5 | **playback does not tear the screen down** | `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` | the restore/re-enter dance comes back |
 | 6 | a sitting can be scrolled | **DONE by `#41` T7** — `TestPagingIsNotAnAnswer` (the loop pages and grades nothing) and `TestALongRevealPagesRatherThanScrollingTheWordAway` (the word comes back), both mutation-verified | the viewport cases are dropped, leaving no scrollback at all |
-| 3a | **the click map is DROPPED rather than misplaced when a wrap would move it** (`#41` BR-25) | `TestClickMapIsDroppedRatherThanMisplacedByAWrap` — and the text still arrives | a region computed before the wrap underlines one word and answers for another |
+| 3a | **a wrap MOVES the click map rather than dropping it or misplacing it** (`#41` BR-25) | `TestAWrapMovesTheClickMapRatherThanDroppingIt` (the arithmetic: a region on an unbroken line moves down, one on a broken line is dropped) and `TestWriteRegionsMovesTheMapByTheScreensOwnWidth` (the seam) | a region on an unbroken line is thrown away — which made the ASKED word inert on every form-2.3 question — or one is kept whose column now belongs to a continuation |
+| 3b | **the map is moved by the width the SCREEN wraps at, not one the caller supplies** | `TestAResizeDoesNotMisplaceTheClickMap` — narrow mid-sitting, then reveal, and every region still names the line it points at | the arithmetic runs on a second ruler, so after a resize a headword region lands on a blank line |
 | 7 | the terminal is handed back | the existing `--play` pty rows, unchanged | `handBack` is dropped from an exit path |
 | 8 | a mouse-less terminal is unaffected | the existing `--play` pty rows, unchanged | the loop needs a click to proceed |
 
@@ -372,3 +373,41 @@ in two issues that this rig's defaults hid a real defect: `#41` BR-24 was
 sentinel-valued default in a rig is a state production may not have** — `0`
 meaning off, `""` meaning none, a nil clock — and each one silently removes the
 behaviour the test was written to check. The rig runs at `defaultCols` now.
+
+### 2026-08-31 — boundary review round 1: a Critical of the same shape as the one before it
+
+The review returned REWORK on a Critical (BR-3) that is the operator's bug wearing
+the other face, and the pair together is the finding worth keeping:
+
+- **First version:** all-or-nothing — drop the whole map if the wrap changed
+  anything. Made the ASKED word inert on every form-2.3 question, because the
+  prompt puts four glosses under the headword and a gloss routinely wraps.
+- **Second version:** per line, measured with `opt.width` — the width the LOOP
+  was handed at startup — while the screen wraps at `l.cols`, which `Resize`
+  updates. After a narrowing resize the two rulers disagree and every region
+  lands on a line that does not contain its text: a headword region on a blank
+  line, an ORIGIN region on a quotation. **That is the wrong click the rule
+  exists to forbid**, reproduced by the reviewer in the real loop.
+
+**THE RULE: the wrap and the map must be measured by ONE ruler, and only the
+screen holds it.** `wrapMovedRegions` now runs inside `liveScreen.WriteRegions`,
+which already holds `l.cols` and already routes through `writeBuffer`. The
+caller-supplied width is gone, so the second ruler is not merely unused — it is
+unexpressible. That is the same shape as `#41` BR-20's resolution (wrap at the
+seam, because a rule every caller must remember has a caller who will not), and I
+did not apply it here until a review measured the consequence.
+
+**BR-1, and it is the plan's failure rather than the code's.** T4 and T5
+specified coordinates against premises `WriteRegions` and `Render` do not hold,
+and named none of the three obligations those two document at HEAD: the leading
+newline means the prompt word is line 1 rather than 0; `RenderOpts.Word` must be
+the deck's KEY, because empty falls back to `Entry.Headword()` and `jalapeno`
+against `jalapeño` are different URLs at the CDN; and the map has to be moved by
+the screen's width. All three are now rows in T5, and the `Word` one was a live
+defect — a click on a normalised deck word would have fetched the wrong
+recording.
+
+**A task adopting an existing mechanism carries that mechanism's
+HEAD-documented obligations as checkable items.** Reading `WriteRegions` and
+`RenderOpts` at the moment T5 was written would have produced all three; the plan
+was written before `#41` existed and never re-read them.

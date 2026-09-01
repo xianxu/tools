@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/play"
@@ -159,32 +158,26 @@ func isOptionLine(line string) bool {
 	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
 }
 
-// writeClickable writes text and its click map, with every region re-pointed at
-// the line it will ACTUALLY land on.
+// wrapMovedRegions re-points regions at the lines they will ACTUALLY land on
+// once a pinned screen has wrapped the text they were computed against.
 //
-// A region's Line and Col are relative to the text they were computed from, and
-// `#41` put a WRAP between the caller and the buffer: a pinned screen breaks an
-// over-wide line before it lands, which moves every line below it and every
-// column past the break. `#41` BR-25 wrote the obligation down for the first
-// consumer to write regions into a pinned screen, and this is it.
+// Called by `liveScreen.WriteRegions`, and ONLY there: it needs the width the
+// wrap will use, and the screen is the only thing that knows it. A caller that
+// passed its own width — `--play` did, using the one it was handed at startup —
+// is measuring with a second ruler, and after a resize the two disagree and
+// every region lands on a line that does not contain its text.
 //
-// The first version of this was ALL-OR-NOTHING — drop the whole map if the wrap
-// changed anything — and it was wrong in the case that matters most. Form 2.3's
-// prompt is the headword, a blank, then four glosses, and a gloss routinely
-// wraps; so the word the sitting is ASKING ABOUT lost its region on every
-// multiple-choice question, which is the issue's own headline feature. The
-// operator found it on the first real sitting.
+// The rule is per LINE. An earlier version was all-or-nothing (drop the whole
+// map if the wrap changed anything) and was wrong in the case that matters most:
+// form 2.3's prompt is the headword, a blank, then four glosses, and a gloss
+// routinely wraps — so the word the sitting is ASKING ABOUT lost its region on
+// every multiple-choice question, which the operator found on the first real
+// sitting. A line the wrap does not break keeps its columns and only moves down,
+// which is arithmetic this can do exactly; a line the wrap DOES break loses its
+// regions, because a column past the break belongs to a continuation and
+// guessing which would be the wrong-click bug.
 //
-// Per LINE instead: a line the wrap does not break keeps its columns and only
-// moves down, which is arithmetic this can do exactly. A line the wrap DOES
-// break loses its regions, because a column past the break belongs to a
-// continuation line and guessing which would be the wrong-click bug.
-func writeClickable(w io.Writer, text string, rs []Region, width int) {
-	writeRendered(w, text, wrapMovedRegions(text, rs, width))
-}
-
-// wrapMovedRegions is that arithmetic. PURE, so the rule above is testable
-// without a screen.
+// PURE, so the rule is testable without a screen.
 func wrapMovedRegions(text string, rs []Region, width int) []Region {
 	if len(rs) == 0 {
 		return nil

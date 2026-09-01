@@ -637,17 +637,25 @@ func (l *liveScreen) Draw(prompt string, footer []string) {
 func (l *liveScreen) WriteRegions(text string, rs []Region) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.s.addRegions(rs)
-	// Through writeBuffer, so a pinned screen wraps here too. No production
-	// caller reaches this on one today — `--play` has no click map (D5a) — but
-	// `#40`'s board will, and a latent bypass in the seam whose whole claim is
-	// that there is no bypass is worth closing before it has a caller.
+	// THE REGIONS ARE MOVED HERE, against THIS screen's own cols, and that is
+	// the whole of the fix.
 	//
-	// A REGION's column is relative to the text it was computed from, so a wrap
-	// that moves a word moves what a click there means. That is a real cost and
-	// it belongs to whoever first writes regions into a pinned screen: they must
-	// wrap BEFORE computing the regions. Silently skipping the wrap instead
-	// trades a wrong click for a clipped line, which is the worse half.
+	// A region's Line and Col are relative to the text they were computed from,
+	// and a pinned screen wraps between the caller and the buffer — so a line
+	// the wrap breaks moves everything below it. The caller cannot do this
+	// arithmetic: it does not know the width. `--play` tried, using the
+	// `opt.width` it was given at startup, and after a resize the two widths
+	// disagreed and every region landed on a line that did not contain its text
+	// — a headword region on a blank line, an ORIGIN region on a quotation. That
+	// is the WRONG-CLICK failure this whole path exists to make impossible, and
+	// it was possible because the wrap and the map were measured by two
+	// different rulers.
+	//
+	// One ruler. The screen owns the wrap, so the screen owns the map.
+	if l.s.pinned {
+		rs = wrapMovedRegions(text, rs, l.cols)
+	}
+	l.s.addRegions(rs)
 	l.writeBuffer(text)
 	l.throttledPaint()
 }

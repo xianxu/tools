@@ -156,10 +156,10 @@ quit.
 about to hear it; after a reveal, click anything in the definition — the headword
 or the language after `ORIGIN` — exactly as in the interactive session. A click
 never answers: hearing the word is what `y`/`n` are answering *about*, so it plays
-and nothing else. On a window too narrow for the entry as it was rendered, the
-underlines stop appearing until the next question — the text is all still there,
-and a link that played the word beside the one you pointed at would be worse than
-no link.
+and nothing else. Narrow the window and the links follow the text as it
+re-wraps; a link inside a line that had to be broken drops out rather than
+guessing, because one that played the word beside the one you pointed at would be
+worse than no link.
 
 Because it draws a whole screen, `--play` needs one. `define --play > file` and
 `define --play -no-color` both say so and stop rather than filling a file with

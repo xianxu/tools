@@ -2052,14 +2052,22 @@ its loop from `numRegionKinds`.
   gestures, so `play.Apply` never learns a mouse exists. A click that recorded a
   review would corrupt the schedule silently, which is the worst kind of bug
   here: the damage is to data the learner cannot see.
-- **The click map is DROPPED rather than misplaced when the wrap would move it.**
-  `#41` put a wrap between the caller and the buffer, and a region's column is
-  relative to the text it was computed from — so `writeClickable` applies the wrap
-  first and passes the regions along only if it changed nothing. At a sitting's
-  own width it changes nothing; after a NARROWING resize the text still arrives
-  whole and the underlines stop until the next question is written. An underline
-  that plays the wrong word is worse than no underline, because losing an
-  affordance is visible and a wrong click is not.
+- **A wrap MOVES the click map, and the screen is what moves it.** `#41` put a
+  wrap between the caller and the buffer, and a region's Line and Col are
+  relative to the text it was computed from. `liveScreen.WriteRegions` re-points
+  every region against its OWN `cols` before the text reaches the buffer: a line
+  the wrap does not break keeps its columns and only moves down; a line the wrap
+  DOES break loses its regions, because a column past the break belongs to a
+  continuation and guessing which is the wrong-click bug.
+
+  Two earlier versions of this rule were wrong in opposite directions, and both
+  shipped. All-or-nothing — drop the whole map if anything wrapped — made the
+  ASKED word inert on every multiple-choice question, since form 2.3's prompt
+  puts four glosses under the headword and a gloss routinely wraps; the operator
+  found it on the first sitting. Then the arithmetic ran on the width the LOOP
+  held rather than the screen's, so a resize put a headword region on a blank
+  line — the wrong click the rule exists to forbid. **The wrap and the map must
+  be measured by one ruler, and only the screen holds it.**
 
 **A SITTING REFUSES rather than degrades, and it settles that before doing any
 work.** `--play` needs stdin to be a terminal (a review is a conversation, and

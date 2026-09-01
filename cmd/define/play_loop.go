@@ -173,10 +173,12 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// region-finding problem for a prompt: nothing to search for, no
 			// offsets to survive a wrap, because a headword is never wide enough
 			// to wrap.
-			writeClickable(stdout, "\n"+q.Prompt()+"\n", []Region{{
+			// Line 1, not 0: the write leads with a blank line, and addRegions
+			// anchors at the line the write STARTS on.
+			writeRendered(stdout, "\n"+q.Prompt()+"\n", []Region{{
 				Kind: RegionHeadword, Text: q.Word(), Word: q.Word(),
 				Line: 1, Col: 0, Width: visibleCells(q.Word()),
-			}}, opt.width)
+			}})
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -354,8 +356,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					// begins, and those coordinates belong to the render, not to
 					// the reveal.
 					reveal := "\n" + asked.Reveal() + "\n"
-					writeClickable(stdout, reveal,
-						held.marksIn(asked.Word(), reveal), opt.width)
+					writeRendered(stdout, reveal, held.marksIn(asked.Word(), reveal))
 				}
 				// THE PREDICATE, not a fifth hand-copy of `!opt.noAudio &&
 				// opt.times > 0` (T0). playAnnounced applies it itself, so being
@@ -477,6 +478,13 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// the loop keeps its own word→regions map, built here, where the entry is
 		// rendered and the coordinates are true.
 		rendered, rs := Render(entry, RenderOpts{
+			// Word is IDENTITY, not presentation, and RenderOpts says so: a
+			// click on the headword replays the word the deck holds, and
+			// deriving it from the entry instead lets the two disagree —
+			// `jalapeno` in the deck against `jalapeño` on the head line, for
+			// which the CDN answers different URLs. Empty means "no click map
+			// wanted", which was true of `--play` until this issue.
+			Word:  key,
 			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 		})
 		marks[key] = clickable{text: rendered, regions: rs}

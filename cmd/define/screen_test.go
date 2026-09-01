@@ -588,6 +588,47 @@ func TestThePinnedScreenWrapsWhateverIsWrittenToIt(t *testing.T) {
 	})
 }
 
+// A CLICK MAP IS MOVED BY THE SCREEN'S OWN WIDTH, deterministically.
+//
+// The loop-level version of this depends on which word the deck offers first and
+// how long its gloss is; this one does not. The invariant: after
+// `WriteRegions`, every region names the text on the buffer line it points at —
+// whatever the wrap did on the way in.
+func TestWriteRegionsMovesTheMapByTheScreensOwnWidth(t *testing.T) {
+	const cols = 28
+	// Laid out for a WIDER screen: the middle line must break at 28 and does
+	// not at 80, which is exactly the disagreement a resize creates.
+	text := "alpha\n" +
+		"1  " + strings.Repeat("gloss ", 6) + "\n" +
+		"omega\n"
+	rs := []Region{
+		{Kind: RegionHeadword, Text: "alpha", Word: "alpha", Line: 0, Col: 0, Width: 5},
+		{Kind: RegionHeadword, Text: "omega", Word: "omega", Line: 2, Col: 0, Width: 5},
+	}
+
+	var tty strings.Builder
+	live := newPinnedScreen(&tty, 200, cols)
+	live.interval = -1
+	live.WriteRegions(text, rs)
+
+	lines := strings.Split(live.Transcript(), "\n")
+	found := 0
+	for i := range lines {
+		r, ok := live.RegionAtRow(i, 0)
+		if !ok {
+			continue
+		}
+		found++
+		if !strings.Contains(lines[i], r.Text) {
+			t.Errorf("region %q points at buffer line %d, which reads %q", r.Text, i, lines[i])
+		}
+	}
+	if found != len(rs) {
+		t.Errorf("%d of %d regions resolved — a region on an UNBROKEN line must survive the wrap",
+			found, len(rs))
+	}
+}
+
 func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {
 	const prompt = "› syc"
 	for _, tc := range []struct {

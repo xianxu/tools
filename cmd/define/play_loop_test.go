@@ -1093,6 +1093,67 @@ func TestTheAskedWordIsClickableOnAMultipleChoiceQuestion(t *testing.T) {
 	}
 }
 
+// THE CRITICAL: a reveal written AFTER a resize still underlines its own words.
+//
+// `writeClickable` used to take the loop's `opt.width`, fixed at startup, while
+// the screen wraps at its own `cols`, which `Resize` updates. After a narrowing
+// resize the two rulers disagreed and every region landed on a line that did not
+// contain its text — a headword region on a blank line, an ORIGIN region on a
+// quotation. That is the wrong-click failure the whole path exists to make
+// impossible, and it was possible because the wrap and the map were measured
+// separately.
+//
+// The assertion is the invariant itself rather than a coordinate: EVERY region
+// in the buffer underlines the text it names.
+func TestAResizeDoesNotMisplaceTheClickMap(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs, held := questionsFor(t, d, opt)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	resizes := make(chan winSize, 1)
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	waitFor(t, func() bool { return strings.Contains(live.Transcript(), qs[0].Word()) })
+	frames := strings.Count(tty.String(), cursorHome)
+	// NARROW ENOUGH that a line ABOVE the definition's headword must break —
+	// Choice.Reveal puts the correct option's gloss there. At 40 that gloss
+	// happens to fit for some words, and then nothing below it shifts and the
+	// test discriminates nothing.
+	resizes <- winSize{rows: 200, cols: 28}
+	waitFor(t, func() bool { return strings.Count(tty.String(), cursorHome) > frames })
+
+	written := len(live.Transcript())
+	keys <- Key{Kind: KeyEnter} // reveal, written at the new width
+	waitFor(t, func() bool { return len(live.Transcript()) > written })
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+
+	lines := strings.Split(live.Transcript(), "\n")
+	checked := 0
+	for i := range lines {
+		r, ok := live.RegionAtRow(i, 0)
+		if !ok {
+			continue
+		}
+		checked++
+		if !strings.Contains(unstyled(lines[i]), r.Text) {
+			t.Errorf("a region for %q is on buffer line %d, which reads %q — the map was moved "+
+				"by a different width than the one the screen wrapped at", r.Text, i, unstyled(lines[i]))
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no region resolved anywhere in the buffer, so this test asserts nothing")
+	}
+}
+
 // DONE-WHEN 9: SIGWINCH repaints mid-sitting.
 func TestPlayRepaintsOnResize(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")
