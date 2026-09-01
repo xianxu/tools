@@ -248,7 +248,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       Small, and it finishes the language thread rather than leaving Spanish
       half-delivered.
 - [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
-- [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
+- [ ] authored practice items — a CEFR band and a domain per word (cached forever), and stems the model writes offline; distractors SELECTED at the learner's band or one below [tools#10]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
