@@ -85,14 +85,31 @@ func costPhrase(f sittingFigures) string {
 // A line that already fits is returned untouched, so text `Render` has already
 // wrapped passes through — only what is too wide is broken, and it is broken at
 // spaces rather than at the column.
+//
+// APPLIED AT THE SEAM, by the pinned screen's own Write, and that is the fourth
+// version of this fix. The first three enforced it at call sites: the queue
+// build, then the loop's writes. Both leave a helper the loop calls writing
+// around it — `playAnnounced`'s network warning goes to the screen and was
+// measured at 156 cells in a 40-column terminal. A rule that every caller must
+// remember is a rule with a caller who will not.
 func wrapWritten(text string, width int) string {
-	if width <= 0 {
-		// terminalWidth's sentinel: below 20 columns nothing can be broken and
-		// stay readable, and it is the same answer Render is given.
+	// THE SUB-20 POLICY, in one place. `terminalWidth` answers 0 below twenty
+	// columns because a definition cannot be broken that narrowly and stay
+	// readable; the screen's own `cols` is never 0, so the rule has to live with
+	// the wrap rather than with whoever happens to be supplying the number.
+	if width < minWrapWidth {
 		return text
 	}
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
+		// EPHEMERAL UI is left alone. The `♫ playing 3×` indicator carries the
+		// screen's own `\r\x1b[K` take-that-line-back gesture, and `wrapText`
+		// rebuilds a line out of its FIELDS — which would scatter an escape
+		// sequence across a break. These lines are short by construction; the
+		// case worth protecting is that they stay intact.
+		if strings.ContainsRune(line, 0x1b) {
+			continue
+		}
 		// The columns before the content, which is what a continuation has to
 		// line up under: an option's number-and-gap, or the indentation Render
 		// gave a definition body, a quotation or a bullet.
@@ -114,6 +131,11 @@ func wrapWritten(text string, width int) string {
 // alternative, teaching `play` to hand back its options separately, would put
 // line-breaking in the package whose whole point is that the caller owns
 // formatting.
+// minWrapWidth is the narrowest terminal worth breaking lines for. Below it a
+// dictionary entry cannot be broken and stay readable, which is the same
+// judgement `terminalWidth` makes when it answers 0.
+const minWrapWidth = 20
+
 func isOptionLine(line string) bool {
 	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
 		return false

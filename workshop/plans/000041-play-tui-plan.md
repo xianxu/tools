@@ -106,11 +106,13 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
 | `Paint` | `cmd/define/screen.go` | modified | PURE — `menu` renamed `footer`; pads the buffer region when the screen is pinned (D2, D3a) |
-| `newPinnedScreen` | `cmd/define/screen.go` | new | the `--play` constructor: buffer fills, footer at the bottom. A named constructor rather than a bool at a call site already taking two ints |
 | `fitFooter` | `cmd/define/screen.go` | modified | PURE — was `fitMenu`; renamed with `Paint`'s parameter so the pair cannot disagree about what it fits |
 | `OptionIndent` | `cmd/define/play/choice.go` | new | PURE — how many columns `optionLine` prepends. Exported because the caller pre-wraps the gloss and must know what goes in front of its first line |
 | `choiceFor` | `cmd/define/optionpool.go` | unchanged | listed because BR-4 REVERSED a first fix that gave it the terminal width: rendering-time is the wrong place to wrap, since the sitting writes what it rendered much later. The wrap lives in `wrapWritten`, at the moment of writing |
 | `sittingBar` | `cmd/define/playbar.go` | new | PURE — figures + progress → the bar's text. Takes numbers, never a deck |
+| `viewportGesture` | `cmd/define/replraw.go` | new | PURE dispatch over the `display` seam — the paging keys, for BOTH loops (D6, BR-1). A second copy of the policy is how two loops come to disagree about which direction a page goes |
+| `wrapWritten` | `cmd/define/playbar.go` | new | PURE — string to string. Wraps whatever is written into a clipping frame, at the width in force then (BR-4, BR-15, BR-20). One line-kind at a time is what produced FOUR findings in one family |
+| `livePrompt` | `cmd/define/play_loop.go` | new | PURE — what `draw`'s last two lines became: the frame's PROMPT for one state, returned rather than printed. The question and the reveal are buffer writes the LOOP owns, because it is the loop that knows they are transitions |
 | `sittingDeck` | `cmd/define/play_loop.go` | new | the deck ONE sitting holds in memory, and the home of D7's claim: `answered` applies the same transition `Fold` does, `dropped` keeps it agreeing with the deck the learner just curated, `figures` walks it with no IO |
 | `GradeOf` | `cmd/define/schedule/progress.go` | new | PURE — the rule turning `(correct, unaided)` into a rung. Exported because D7 gave it a second caller, and two spellings of one rule is how the bar's figures would drift from the log's |
 
@@ -122,11 +124,9 @@ The deck also changes mid-sitting when a word is dropped, and the loop already s
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
+| `newPinnedScreen` | `cmd/define/screen.go` | new | the terminal, for `--play`: the buffer region fills so the footer sits on the bottom row, and its `Write` WRAPS, which is the seam a helper cannot write around (D3a, BR-20) |
 | `newConsole` | `cmd/define/replraw.go` | new | the terminal, for BOTH loops — the screen constructor is its one parameter (D1, BR-7). The first cut of this was `playConsole`, a verbatim copy of `replRaw`'s six statements differing in one token; D1 had committed to the opposite |
-| `viewportGesture` | `cmd/define/replraw.go` | new | PURE dispatch — the paging keys, for both loops (D6, BR-1). A second copy of the policy is how the two loops come to disagree about which direction a page goes |
-| `wrapWritten` | `cmd/define/playbar.go` | new | wraps EVERYTHING the loop writes into the buffer, at the width in force then (BR-4, BR-15). One line-kind at a time is what produced three findings in one family |
 | `draw` | `cmd/define/play_loop.go` | deleted | it wrote the question, the reveal AND the keys on every call; those three have different lifetimes and a scrolling terminal could not express the difference (D4) |
-| `livePrompt` | `cmd/define/play_loop.go` | new | what `draw`'s last two lines became: the frame's PROMPT for one state, returned rather than printed. The question and the reveal are buffer writes the LOOP owns, because it is the loop that knows they are transitions |
 | `finish` | `cmd/define/play_loop.go` | modified | shares `sittingBar`'s formatter, so the bar and the summary cannot word the `-count` assumption differently (D8) |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | returns the deck and the folded progress it already computes, instead of discarding them (D7) |
 | `playSession` | `cmd/define/play_loop.go` | modified | takes a `console`; tracks the written question and the cached figures |
@@ -454,3 +454,39 @@ broken that narrowly and stay readable, and `Render` is given the same answer. W
 already on screen keeps the wrapping it was written with**, exactly as the
 editor's scrollback does (`#30`) — and nothing is lost by it, because clipping
 happens at PAINT and the whole text is still in the buffer if the window widens.
+
+### 2026-08-31 — review rounds 2 and 3: the same family four times, and the seam that ends it
+
+`frame-clips-unwrapped-text` produced FOUR findings across an operator report and
+three review rounds. Each fix was correct and each was an instance:
+
+1. the operator's option gloss, wrapped at the **queue build**;
+2. BR-4's narrowing resize, so the wrap moved to the **loop's writes**;
+3. BR-15's rendered definition — a line-kind the loop's wrap did not match;
+4. BR-20's `playAnnounced` warning, measured at 156 cells in a 40-column
+   terminal — written by a HELPER the loop calls, so no rule enforced at the
+   loop's call sites could ever have caught it.
+
+The fix is the pinned screen's own `Write`. **A rule every caller must remember
+is a rule with a caller who will not** — and the callers are not even all in this
+package. The sub-20-column policy moved with it, so there is one number and one
+place rather than `opt.width` and `cols` answering the same question differently.
+
+The loop's per-site wraps are DELETED with it, and so is the resize case's
+`opt.width` update: the screen's own `cols` is what `Resize` maintains, and a
+second width would be a second answer.
+
+Also from these rounds:
+
+- **BR-1 was open for two rounds because I extracted the helper and gave it to
+  one loop.** `viewportGesture` existed, the editor called it, and `--play` kept
+  the copy the finding was about. Extracting a shared function is half the fix;
+  the other half is deleting what it replaced.
+- **BR-22 — three pure functions were filed under "Integration points", whose
+  column header is "Wraps", and the IO constructor under "Pure entities".** The
+  status column is guarded and the KIND column is not, so the table `#40` reads
+  as the record of what landed can be wrong in the half nothing checks. Rows
+  corrected; the mechanisation belongs to `#33`, which is filed for exactly this.
+- **BR-21 — the initial figures hand-copied `refresh()`'s first lines.** Calling
+  `refresh()` is exactly equivalent at init, so a third field added later cannot
+  be stale on the first frame.

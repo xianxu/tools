@@ -557,12 +557,32 @@ func (l *liveScreen) window() time.Duration {
 }
 
 // Write feeds the buffer and shows the result, at most paintInterval apart.
+//
+// On a PINNED screen it wraps first, to the terminal's current width. That is
+// the seam the wrap belongs at rather than at the loop's call sites: `Paint`
+// clips a line too wide for the terminal, and a sitting writes not only its own
+// text but whatever the helpers it calls write — a playback warning reached the
+// buffer at 156 cells in a 40-column terminal while every site the loop owns was
+// wrapped. Here nothing can write around it.
+//
+// The editor's screen does NOT wrap: its text is pre-wrapped by `Render` at the
+// policy width, and its ask path streams token by token, where a chunk that ends
+// mid-line has no line to wrap yet. A sitting writes whole messages.
 func (l *liveScreen) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	n, err := l.s.Write(p)
+	text := p
+	if l.s.pinned {
+		text = []byte(wrapWritten(string(p), l.cols))
+	}
+	if _, err := l.s.Write(text); err != nil {
+		return 0, err
+	}
 	l.throttledPaint()
-	return n, err
+	// The CALLER's units, which is what io.Writer means by n — the wrap changes
+	// how many bytes the buffer received, and reporting that would tell a caller
+	// it had written more than it handed over.
+	return len(p), nil
 }
 
 // throttledPaint paints unless a frame went out too recently, in which case it

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"slices"
 	"strconv"
@@ -508,6 +509,50 @@ func lastFrame(painted string) string {
 		return painted[i:]
 	}
 	return painted
+}
+
+// THE PINNED SCREEN WRAPS WHATEVER IS WRITTEN TO IT, whoever writes it.
+//
+// This is the seam fix for a class that took four findings: `Paint` CLIPS a line
+// too wide for the terminal, and a sitting writes not only its own text but
+// whatever the helpers it calls write. Three earlier versions enforced the wrap
+// at call sites — the queue build, then the loop's writes — and each time a
+// site outside them was found, most recently `playAnnounced`'s network warning
+// at 156 cells in a 40-column terminal. Asserting it HERE covers every caller
+// including ones that do not exist yet.
+func TestThePinnedScreenWrapsWhateverIsWrittenToIt(t *testing.T) {
+	const cols = 40
+	long := "define: " + strings.Repeat("a warning from some helper ", 8)
+
+	t.Run("--play's wraps it", func(t *testing.T) {
+		var tty strings.Builder
+		live := newPinnedScreen(&tty, 24, cols)
+		live.interval = -1
+		fmt.Fprintln(live, long)
+
+		for _, line := range strings.Split(live.Transcript(), "\n") {
+			if n := visibleCells(line); n > cols {
+				t.Errorf("a buffer line is %d columns in a %d-column terminal, so Paint clips it: %q", n, cols, line)
+			}
+		}
+		// ...and nothing was lost to the wrap.
+		if flat := strings.Join(strings.Fields(live.Transcript()), " "); !strings.Contains(flat, strings.Join(strings.Fields(long), " ")) {
+			t.Errorf("the text did not survive wrapping:\n%s", live.Transcript())
+		}
+	})
+
+	t.Run("the editor's does not", func(t *testing.T) {
+		// Its text is pre-wrapped by Render, and its ask path streams token by
+		// token — where a chunk ending mid-line has no line to wrap yet.
+		var tty strings.Builder
+		live := newLiveScreen(&tty, 24, cols)
+		live.interval = -1
+		fmt.Fprintln(live, long)
+
+		if !strings.Contains(live.Transcript(), long) {
+			t.Errorf("the editor's screen rewrote what it was given:\n%s", live.Transcript())
+		}
+	})
 }
 
 func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {

@@ -126,8 +126,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// change it — a record and a drop — and NOT once per frame: a frame is per
 	// keystroke, and an O(deck) walk per keystroke is a cost the plan's own
 	// table says this path does not pay.
-	fig := held.figures(opt.count)
-	fig.total = len(s.Questions)
+	var fig sittingFigures
 	refresh := func() {
 		// The WHOLE struct, then the two the deck does not know. Copying named
 		// fields out of a fresh figures() means a field added later goes
@@ -139,6 +138,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// answer: the learner curated it away rather than being asked about it.
 		fig.done = s.Right + s.Wrong
 	}
+	// The FIRST frame derives from the same expression as every later one:
+	// refresh() is exactly right at init, because Right+Wrong is zero there.
+	// Hand-copying its first lines here is how a third field added to it would
+	// be stale before the sitting's first keystroke.
+	refresh()
 
 	// THE QUESTION IS A BUFFER LINE AND THE KEYS ARE THE LIVE EDGE (D4).
 	//
@@ -160,7 +164,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			written = s.Index
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
-			fmt.Fprintf(stdout, "\n%s\n", wrapWritten(q.Prompt(), opt.width))
+			fmt.Fprintf(stdout, "\n%s\n", q.Prompt())
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -176,7 +180,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// into a screen nobody paints again and would be missing from the transcript
 	// as well as from the terminal.
 	over := func() int {
-		code := finish(stdout, s, fig, opt.width)
+		code := finish(stdout, s, fig)
 		con.finish()
 		return code
 	}
@@ -203,22 +207,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// believes it placed; too narrow and the bar and the keys are laid
 			// out against a width that is not there.
 			//
-			// The editor's case, INCLUDING opt.width — which the first version
-			// of this omitted on the grounds that every question was rendered
-			// before the sitting started. That stopped being true the moment
-			// option glosses had to arrive wrapped (BR-4): the wrap width is a
-			// per-write fact now, so a narrowing sitting that did not update it
-			// would clip every option from here on, which is the operator's own
-			// finding at the other end of its class.
-			//
-			// Below 20 columns wrapping is turned off — a definition cannot be
-			// broken that narrowly and stay readable — while the frame still has
-			// to fit the columns that exist. Two questions, two answers, and only
-			// one of them may be zero.
-			opt.width = sz.cols
-			if sz.cols < 20 {
-				opt.width = 0
-			}
+			// The SHAPE, and nothing else. The editor also re-derives opt.width
+			// here because it renders new entries mid-session; a sitting renders
+			// its whole queue up front and wraps at the screen's Write against
+			// the screen's own cols, which Resize is what updates. Setting a
+			// second width here would be a second answer to the same question.
 			view.Resize(sz.rows, sz.cols)
 			show()
 			continue
@@ -309,13 +302,11 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// loses the word and the events keep it. Reported, because removing
 				// something on one keystroke should say so.
 				if removed, err := d.deck.Forget(out.Word); err != nil {
-					fmt.Fprintf(stderr, "%s\n", wrapWritten(
-						fmt.Sprintf("define: could not remove %q: %v", out.Word, err), opt.width))
+					fmt.Fprintf(stderr, "define: could not remove %q: %v\n", out.Word, err)
 				} else if removed {
 					held.dropped(out.Word)
 					refresh()
-					fmt.Fprintf(stdout, "\n%s\n", wrapWritten(
-						fmt.Sprintf("removed %q from the deck", out.Word), opt.width))
+					fmt.Fprintf(stdout, "\nremoved %q from the deck\n", out.Word)
 				}
 
 			case play.OutcomeReveal:
@@ -323,7 +314,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// it is written, which is what keeps a reveal out of the buffer
 				// until it is earned and out of it twice however many keys follow.
 				if asked != nil {
-					fmt.Fprintf(stdout, "\n%s\n", wrapWritten(asked.Reveal(), opt.width))
+					fmt.Fprintf(stdout, "\n%s\n", asked.Reveal())
 				}
 				if !opt.noAudio && opt.times > 0 {
 					// RAW THROUGHOUT, and that is D5a's whole content.
@@ -601,14 +592,14 @@ func gradePrompt(q play.Question) string {
 //
 // The failure branches go with the reads. There is nothing left here that can
 // fail, so a summary can no longer cost a sitting whose reviews are recorded.
-func finish(w io.Writer, s play.Session, fig sittingFigures, width int) int {
+func finish(w io.Writer, s play.Session, fig sittingFigures) int {
 	fmt.Fprintf(w, "\n%d right, %d wrong\n", s.Right, s.Wrong)
 	// Through the SHARED formatter, so this line and the pinned bar cannot
 	// describe the same deck differently or word the -count assumption two ways.
 	// The budget is -count: the number of questions a sitting asks, which is the
 	// DAILY budget for a learner who sits down once a day, and it is NAMED in
 	// the line rather than hidden so someone who sits twice knows to double it.
-	fmt.Fprintln(w, wrapWritten(sittingSummary(fig), width))
+	fmt.Fprintln(w, sittingSummary(fig))
 	return 0
 }
 

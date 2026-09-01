@@ -332,6 +332,86 @@ rounds:
           family: lessons-not-recorded
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-08-31T17:13:53-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: viewportGesture called from replraw.go:413 and play_loop.go:247; stubbing the play call reddens TestPagingIsNotAnAnswer and TestALongRevealPagesRatherThanScrollingTheWordAway. The enterMouse cost is in the source comment only — folded into BR-16's docs gate.
+          round: 4
+        - id: BR-12
+          disposition: not-addressed
+          note: 'Unchanged at HEAD: decideCapture still returns captureNothing under opt.raw (capture.go:30, :135) while held.answered advances the in-memory progress; no --play/-raw conflict guard exists in main.go.'
+          round: 4
+        - id: BR-15
+          disposition: addressed
+          note: 'Mutation-verified: making wrapWritten a no-op reddens TestANarrowedSittingWrapsTheRestOfItself with 7 overwide lines (worst 97 cells), covering option lines, the rendered definition body and the summary. The helper-write gap is raised separately as the family''s 4th.'
+          round: 4
+        - id: BR-16
+          disposition: not-addressed
+          note: Instances swept, but the closing commit added a new one and the mechanism was not built. See the finding detail below.
+          round: 4
+        - id: BR-17
+          disposition: addressed
+          note: 'All three named contradictions verified fixed against the tree: choiceFor is unchanged and its row says so, viewportGesture now has two callers, and site (c) is stated as a policy exception. The unguarded-column half is re-raised as the family''s 2nd with new evidence.'
+          round: 4
+        - id: BR-18
+          disposition: not-addressed
+          note: 'The gates did move above todaysQuestions (play_loop.go:52-72), but nothing pins it: moving them back below the call in a scratch worktree leaves the whole cmd/define suite green (107s, ok). The same round moved TestEmptyQueueExitsZero off runPlay onto todaysQuestions, deleting the only runPlay-on-empty-deck coverage.'
+          round: 4
+        - id: BR-19
+          disposition: addressed
+          note: 'lessons.md gains three rules (seam adoption, enumerate the class, a plan naming an anti-pattern is not protection), each with the #41 evidence.'
+          round: 4
+      findings:
+        - id: BR-20
+          severity: Important
+          title: playAnnounced writes into the clipping frame without wrapWritten, so a playback diagnostic is cut mid-sitting
+          detail: |-
+            This is the 4th finding in family `frame-clips-unwrapped-text`. Do NOT fix this instance —
+            the rule is already stated at playbar.go:66-87; what is missing is that it is enforced at
+            call sites the LOOP owns, so any write made by a helper the loop calls escapes it.
+            play_loop.go:354 calls playAnnounced, whose stderr is the screen; main.go:856 writes
+            `define: %s` unwrapped, and main.go:844/:866 and reportVoice do the same.
+            MEASURED (scratch probe: playRig, opt.width=40, newPinnedScreen(24,40), a player returning
+            a network error, one miss then a reveal): one transcript line of 156 cells in a 40-column
+            terminal, which Paint clips. atlas/define.md's new section already claims the loop routes
+            "its diagnostics" through the one function; only the drop error at play_loop.go:312 is.
+            Fix the class: wrap at the SEAM — the pinned screen's or the console's Write, against its
+            own cols, with the sub-20-column policy in one place — so a helper cannot write around it,
+            and extend the narrowing test to drive a failing playback so the predicate covers it.
+          family: frame-clips-unwrapped-text
+          round: 4
+        - id: BR-21
+          severity: Minor
+          title: The initial sittingFigures hand-copies refresh()'s first two lines
+          detail: |-
+            This is the 2nd finding in family `partial-copy-refresh`. BR-8 fixed refresh() copying
+            named fields out of figures(); play_loop.go:129-130 is now the site that does it, so a
+            third adjustment added to refresh() would be stale on the first frame, before any answer.
+            The rule: one expression builds the figures and every site derives from it. refresh() is
+            exactly equivalent at init because s.Right+s.Wrong is 0 there, so calling it is the fix.
+          family: partial-copy-refresh
+          round: 4
+        - id: BR-22
+          severity: Minor
+          title: Three pure entities are listed as Integration points and an IO constructor as Pure
+          detail: |-
+            This is the 2nd finding in family `plan-table-vs-tree`. Do NOT fix only these rows.
+            workshop/plans/000041-play-tui-plan.md:125-127 lists viewportGesture (whose own text says
+            "PURE dispatch"), wrapWritten (string to string, playbar.go) and livePrompt (play.Session
+            to string) under "Integration points", whose column header is "Wraps"; none wraps an
+            external dependency and none is injected. Conversely newPinnedScreen (:109), which takes a
+            tty and builds the IO shell, sits under "Pure entities".
+            THE RULE: a table row asserts path, status, and kind/description, and
+            TestPlanTableStatusMatchesTheChangeWindow judges only status. Either mechanise what can be
+            — every backticked Name is DECLARED at the stated path, and an Integration row names a
+            wrapped external dependency — or stop asserting the unguarded columns in the table `#40`
+            reads as the record of what landed.
+          family: plan-table-vs-tree
+          round: 4
+      blocked: true
 ---
 
 # Gate ledger — tools#41 (boundary-review)
@@ -531,12 +611,57 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   this issue changes MEANS enumerating them" — belong in lessons.md, where the next issue
   reads them.
 
+## Round 4 — 2026-08-31T17:13:53-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — viewportGesture called from replraw.go:413 and play_loop.go:247; stubbing the play call reddens TestPagingIsNotAnAnswer and TestALongRevealPagesRatherThanScrollingTheWordAway. The enterMouse cost is in the source comment only — folded into BR-16's docs gate.
+- BR-12 — not-addressed — Unchanged at HEAD: decideCapture still returns captureNothing under opt.raw (capture.go:30, :135) while held.answered advances the in-memory progress; no --play/-raw conflict guard exists in main.go.
+- BR-15 — addressed — Mutation-verified: making wrapWritten a no-op reddens TestANarrowedSittingWrapsTheRestOfItself with 7 overwide lines (worst 97 cells), covering option lines, the rendered definition body and the summary. The helper-write gap is raised separately as the family's 4th.
+- BR-16 — not-addressed — Instances swept, but the closing commit added a new one and the mechanism was not built. See the finding detail below.
+- BR-17 — addressed — All three named contradictions verified fixed against the tree: choiceFor is unchanged and its row says so, viewportGesture now has two callers, and site (c) is stated as a policy exception. The unguarded-column half is re-raised as the family's 2nd with new evidence.
+- BR-18 — not-addressed — The gates did move above todaysQuestions (play_loop.go:52-72), but nothing pins it: moving them back below the call in a scratch worktree leaves the whole cmd/define suite green (107s, ok). The same round moved TestEmptyQueueExitsZero off runPlay onto todaysQuestions, deleting the only runPlay-on-empty-deck coverage.
+- BR-19 — addressed — lessons.md gains three rules (seam adoption, enumerate the class, a plan naming an anti-pattern is not protection), each with the #41 evidence.
+
+### Raised
+
+- **BR-20** [Important] `frame-clips-unwrapped-text` playAnnounced writes into the clipping frame without wrapWritten, so a playback diagnostic is cut mid-sitting
+  This is the 4th finding in family `frame-clips-unwrapped-text`. Do NOT fix this instance —
+  the rule is already stated at playbar.go:66-87; what is missing is that it is enforced at
+  call sites the LOOP owns, so any write made by a helper the loop calls escapes it.
+  play_loop.go:354 calls playAnnounced, whose stderr is the screen; main.go:856 writes
+  `define: %s` unwrapped, and main.go:844/:866 and reportVoice do the same.
+  MEASURED (scratch probe: playRig, opt.width=40, newPinnedScreen(24,40), a player returning
+  a network error, one miss then a reveal): one transcript line of 156 cells in a 40-column
+  terminal, which Paint clips. atlas/define.md's new section already claims the loop routes
+  "its diagnostics" through the one function; only the drop error at play_loop.go:312 is.
+  Fix the class: wrap at the SEAM — the pinned screen's or the console's Write, against its
+  own cols, with the sub-20-column policy in one place — so a helper cannot write around it,
+  and extend the narrowing test to drive a failing playback so the predicate covers it.
+- **BR-21** [Minor] `partial-copy-refresh` The initial sittingFigures hand-copies refresh()'s first two lines
+  This is the 2nd finding in family `partial-copy-refresh`. BR-8 fixed refresh() copying
+  named fields out of figures(); play_loop.go:129-130 is now the site that does it, so a
+  third adjustment added to refresh() would be stale on the first frame, before any answer.
+  The rule: one expression builds the figures and every site derives from it. refresh() is
+  exactly equivalent at init because s.Right+s.Wrong is 0 there, so calling it is the fix.
+- **BR-22** [Minor] `plan-table-vs-tree` Three pure entities are listed as Integration points and an IO constructor as Pure
+  This is the 2nd finding in family `plan-table-vs-tree`. Do NOT fix only these rows.
+  workshop/plans/000041-play-tui-plan.md:125-127 lists viewportGesture (whose own text says
+  "PURE dispatch"), wrapWritten (string to string, playbar.go) and livePrompt (play.Session
+  to string) under "Integration points", whose column header is "Wraps"; none wraps an
+  external dependency and none is injected. Conversely newPinnedScreen (:109), which takes a
+  tty and builds the IO shell, sits under "Pure entities".
+  THE RULE: a table row asserts path, status, and kind/description, and
+  TestPlanTableStatusMatchesTheChangeWindow judges only status. Either mechanise what can be
+  — every backticked Name is DECLARED at the stated path, and an Integration row names a
+  wrapped external dependency — or stop asserting the unguarded columns in the table `#40`
+  reads as the record of what landed.
+
 ## Open findings
 
-- **BR-1** [Important] `viewport-gesture-layering` D6 routes paging through toInput, which would teach the pure play package about a viewport
 - **BR-12** [Minor] `figures-drift` --play -raw records nothing but the bar still applies the transition
-- **BR-15** [Important] `frame-clips-unwrapped-text` A reveal written after a narrowing resize carries a definition wrapped to the STARTUP width, and the frame clips it
 - **BR-16** [Important] `doc-sweep-incomplete` Five current-truth artifacts name symbols the tree does not have, and the new refusal surface reaches neither README nor atlas
-- **BR-17** [Important] `plan-table-vs-tree` The plan's Core concepts table describes two entities the tree does not have, and the guard checks only the status column
 - **BR-18** [Minor] `terminal-ui-gate` The surface gate runs after todaysQuestions has already read the deck and written to the non-terminal stdout
-- **BR-19** [Minor] `lessons-not-recorded` workshop/lessons.md is untouched across a window that ran two review rounds and 14 findings
+- **BR-20** [Important] `frame-clips-unwrapped-text` playAnnounced writes into the clipping frame without wrapWritten, so a playback diagnostic is cut mid-sitting
+- **BR-21** [Minor] `partial-copy-refresh` The initial sittingFigures hand-copies refresh()'s first two lines
+- **BR-22** [Minor] `plan-table-vs-tree` Three pure entities are listed as Integration points and an IO constructor as Pure

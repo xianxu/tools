@@ -475,3 +475,156 @@ findings:
       this issue changes MEANS enumerating them" — belong in lessons.md, where the next issue
       reads them.
 ```
+
+---
+
+## Re-review — 2026-08-31T17:13:53-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 41 — play mode paints frames through screen, and gains a status bar |
+| repo | tools |
+| issue file | workshop/issues/000041-play-tui.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 94f3ad077210c544fe60b8539e2a92def29333c1..4653c0f8543dbbe7463a74b326c6323d78dcd43f |
+| command | sdlc close --issue 41 |
+| reviewer | claude |
+| timestamp | 2026-08-31T17:13:53-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The issue's substance landed and it is well pinned: `--play` really does draw through `console`/`display`, the bar is pinned by frame-geometry tests, paging/SIGWINCH/write-once/one-read-per-sitting all have predicates, and the two headline round-2 fixes survive mutation (`wrapWritten` no-op → `TestANarrowedSittingWrapsTheRestOfItself` reddens with 7 overwide lines; removing the play loop's `viewportGesture` call reddens two tests). `go test ./...`, `go test ./cmd/define -race` are green here; the pty rows skip in this environment. What keeps it from SHIP is that two of the five open findings are disposed by the tree but not by a predicate or a mechanism: BR-16's `doc-sweep-incomplete` closing commit swept five stale citations and introduced a sixth (`TestHighlightWriterShortWriteContract`, which no file declares), and BR-18's gate move is real but reverting it leaves the entire suite green. One new measured instance of `frame-clips-unwrapped-text` remains — `playAnnounced`'s diagnostic writes into the same clipping frame without going through `wrapWritten` (probe: 156 cells in a 40-column terminal).
+
+## 1. Strengths
+
+- **`newConsole` + `viewportGesture` are the right consolidation, and both are genuinely reachable from both loops** (`replraw.go:44`/`:109`, called at `replraw.go:33`, `replraw.go:413`, `play_loop.go:247`). The screen constructor as the single parameter is exactly the "widen the seam" move D1 committed to.
+- **`wrapWritten` states the class rather than the instance** (`playbar.go:88`), and its pin is a predicate over *every* line written after a narrowing resize (`play_loop_test.go:810-820`) rather than one assertion per line-kind. I confirmed by mutation that it covers option lines, the rendered definition body, and the summary in one test.
+- **Done-when 11/12 are pinned in both directions** — `TestAShortQuestionStillPinsTheBar` and `TestOnlyThePinnedConstructorPads` (`screen_test.go:413`, `:471`) assert the padding exists for `--play` *and* does not leak into the editor, with `TestPaddingNeverReachesTheTranscript` checking `Lines()` across two heights.
+- **`schedule.GradeOf` makes D7's DRY claim structural** (`schedule/progress.go:163`): `gradeOf` is now one line over it, so the bar's transition and the fold's cannot diverge.
+- **`twiceNumberedOption`'s determinism fix is real** (`pty_conformance_test.go:918-950`): scanning `'1'..'9'` in order instead of ranging a map removes the tie-breaking nondeterminism BR-10 named.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**I-1 — `playAnnounced` writes into the clipping frame without `wrapWritten` (`cmd/define/play_loop.go:354` → `cmd/define/main.go:856`).**
+**This is the 4th finding in family `frame-clips-unwrapped-text`.** Earlier rounds fixed instances. Do NOT fix this instance — the rule is already written down (`playbar.go:66-87`, `lessons.md`); what is missing is that it is enforced at *call sites the loop owns*, so any write made by a shared helper the loop calls escapes it. Measured with a scratch probe (`playRig`, `opt.width=40`, a player returning a network error, one miss → reveal): the transcript gains a 156-cell line in a 40-column terminal, which `Paint` clips. `atlas/define.md` already claims the loop routes "its diagnostics" through the one function; it routes only the drop error (`play_loop.go:312`). Two other unwrapped sites on the same path: the `♫ playing N×` indicator and `reportVoice`'s fallback line. *Fix sketch:* move the wrap to the **seam** — have the pinned screen (or a `console` stdout/stderr wrapper) wrap on `Write` against its own `cols`, keeping the sub-20-column policy in one place — so a future helper cannot write around it; then extend `TestANarrowedSittingWrapsTheRestOfItself` (or a sibling) to drive a failing playback so the predicate covers the helper path. ARCH-PURPOSE: the enumeration in `playbar.go:82` lists five loop-owned sites and stops at the loop's boundary; that is the instance, not the class.
+
+**I-2 — BR-16's sweep introduced a fresh instance of the family it was closing, and the mechanism it asked for was not built.**
+`cmd/define/highlightwriter.go:60` (added by `4653c0f`) says "`TestHighlightWriterShortWriteContract` in this file's neighbour defends that". No file declares that test; the nearest real one is `TestHighlightWriterTreatsAShortWriteAsAnError` (`highlightwriter_test.go:157`), which defends the *highlight* writer's short-write handling, not the deleted writer's caller-unit-progress contract the sentence attributes to it. `repo_guard_test.go` is untouched across the whole window, so BR-16's widening — (a) removed types/unexported decls, (b) deleted file paths, (c) a forward check that every `Test[A-Z]\w+` cited in a current-truth artifact is declared — was not built. A scan for (c) across `cmd/` finds a pre-existing second live instance outside this window: `TestTheClampIsUnreachable`, cited as the pin at `schedule/box.go:48` and `atlas/define.md:1837`, is declared nowhere. Detail in the disposition below.
+
+## 4. Minor findings
+
+- **M-1 — the initial `fig` hand-copies `refresh()`'s first two lines** (`play_loop.go:129-141`). **2nd finding in family `partial-copy-refresh`** — BR-8 fixed `refresh()` copying fields out of `figures()`; the initializer is now the site that does it, so a third field added to `refresh` is stale on the first frame. The rule: one expression builds the figures and every site derives from it. `refresh()` is exactly equivalent at init (`s.Right+s.Wrong == 0`), so the fix is to call it.
+- **M-2 — the plan's Integration-points table holds three pure entities, and its Pure table holds an IO constructor** (`workshop/plans/000041-play-tui-plan.md:124-127`, `:112`). `viewportGesture` (self-labelled "PURE dispatch"), `wrapWritten` (string→string in `playbar.go`) and `livePrompt` (`play.Session`→string) wrap no external dependency; `newPinnedScreen`, which takes a tty and builds the IO shell, sits under Pure entities. **2nd finding in family `plan-table-vs-tree`** — the rule: a row makes three claims (path, status, kind/description) and `TestPlanTableStatusMatchesTheChangeWindow` guards one. Either mechanise what can be mechanised (every backticked Name is declared at the stated path; an Integration row names a wrapped external dependency) or stop asserting the unguarded columns in the table `#40` reads as the record of what landed.
+- **M-3 —** `--play`'s inherited `enterMouse` cost (drag-select needs Option/Shift) is recorded in `replraw.go:63-66` and `lessons.md`, but the README's `--play` section and the atlas's new "The sitting is a frame" section do not mention it; `/help` documents it for the editor only. Folded into the I-2 docs gate.
+
+## 5. Test coverage notes
+
+- All seven `TestPTYPlay*` rows **SKIP** here (`no pty available: operation not permitted`), including `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` — the only pin for D5a's Critical — and `TestPTYPlayRefusesWithNoColor`, the only pin for the `-no-color` refusal. The issue log reports the tagged suite green on real hardware (124s); I could not reproduce that in this environment.
+- `-no-color` is unreachable in-process because it is only checked after `isTerminal(stdout)` passes. Extracting the three-way refusal into a pure `refuseReason(stdinTTY, stdoutTTY, tty bool)` would make all three causes table-testable without a pty and leave only the detection in the IO shell (ARCH-PURE).
+- The wrap tests all run `color: false`; production runs colour on. I probed the coloured path (`opt.color = true`, resize 100→40, reveal): **0 overwide lines**, so `visibleCells`/`escapeLen` handle it. Worth a case in the table so it stays true.
+- `go test ./...` green; `go test ./cmd/define -race -count=1` green (120s).
+
+## 6. Architectural notes for upcoming work
+
+- **ARCH-DRY — pass**, with M-1 as the one residue. `newConsole`, `viewportGesture`, `costPhrase`, `GradeOf`, `OptionIndent` all have two real callers, each verified.
+- **ARCH-PURE — pass.** `screen` stays pure with `liveScreen` as the only terminal-touching part; `sittingBar`/`costPhrase`/`wrapWritten`/`livePrompt`/`sittingDeck` are unit-tested with no IO. Flag only that the plan's tables label three of them as integration points (M-2), which is what `#40` will read.
+- **ARCH-PURPOSE — flagged (I-1).** The single-source shadow-sweep passes for the prompt lines (`doc_sync_test.go` derives the README), the bar/summary (one `costPhrase`), the grade rule (`GradeOf`) and the option indent (`OptionIndent`). It fails for the wrap: `wrapWritten` is a rule applied by convention at five call sites rather than enforced at the seam, and the one writer outside the loop's body does not derive.
+- **ARCH-MOCK — pass with a caveat.** No new external dependency; `display`/`console` is the seam and `recordingConsole` the double both loops share, with `fakePlayer` and a counting store behind it. The live conformance check exists but cannot run here.
+- **ARCH-CONSTRAINTS — pass.** The declared envelope is enforced: `refresh()` is charged per answered question rather than per frame, `TestASittingReadsTheDeckOnce` holds the one-`Deck()`/one-`Events()` bound with a counting store, and the 16ms throttle is inherited untouched. `figures()` is O(deck) in memory as stated.
+- For `#40`: `newConsole` takes the screen constructor and `viewportGesture` owns the key policy, so the board is a third caller of both without new parameters. If I-1 is fixed at the seam, `#40` inherits wrapping for free rather than re-enumerating its own write sites.
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — "boundary review round 3"**: record that the Integration-points table lists `viewportGesture`, `wrapWritten` and `livePrompt`, which are pure, and that `newPinnedScreen` sits under Pure entities though it builds the IO shell; state the rule (a row asserts path + status + kind, and only status is guarded) and say which of the three the guard will now check.
+- **Same entry**: correct `wrapWritten`'s row — it wraps everything *the loop's own body* writes, not "EVERYTHING the loop writes"; `playAnnounced`'s diagnostics reach the buffer unwrapped. Update the `frame-clips-unwrapped-text` enumeration in the round-2 revision to include site (e), writes made by helpers the loop calls.
+- **Same entry**: note that BR-16's mechanism (widening `TestARemovedDeclarationIsSweptOrRetired`) was not built, and that the sweep introduced `TestHighlightWriterShortWriteContract` at `highlightwriter.go:60` — the family's own evidence that instance-fixing is what keeps failing.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      viewportGesture called from replraw.go:413 and play_loop.go:247; stubbing the play call reddens TestPagingIsNotAnAnswer and TestALongRevealPagesRatherThanScrollingTheWordAway. The enterMouse cost is in the source comment only — folded into BR-16's docs gate.
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Unchanged at HEAD: decideCapture still returns captureNothing under opt.raw (capture.go:30, :135) while held.answered advances the in-memory progress; no --play/-raw conflict guard exists in main.go.
+  - id: BR-15
+    disposition: addressed
+    note: |
+      Mutation-verified: making wrapWritten a no-op reddens TestANarrowedSittingWrapsTheRestOfItself with 7 overwide lines (worst 97 cells), covering option lines, the rendered definition body and the summary. The helper-write gap is raised separately as the family's 4th.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Instances swept, but the closing commit added a new one and the mechanism was not built. See the finding detail below.
+  - id: BR-17
+    disposition: addressed
+    note: |
+      All three named contradictions verified fixed against the tree: choiceFor is unchanged and its row says so, viewportGesture now has two callers, and site (c) is stated as a policy exception. The unguarded-column half is re-raised as the family's 2nd with new evidence.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      The gates did move above todaysQuestions (play_loop.go:52-72), but nothing pins it: moving them back below the call in a scratch worktree leaves the whole cmd/define suite green (107s, ok). The same round moved TestEmptyQueueExitsZero off runPlay onto todaysQuestions, deleting the only runPlay-on-empty-deck coverage.
+  - id: BR-19
+    disposition: addressed
+    note: |
+      lessons.md gains three rules (seam adoption, enumerate the class, a plan naming an anti-pattern is not protection), each with the #41 evidence.
+findings:
+  - id: new
+    severity: Important
+    family: frame-clips-unwrapped-text
+    title: |
+      playAnnounced writes into the clipping frame without wrapWritten, so a playback diagnostic is cut mid-sitting
+    detail: |
+      This is the 4th finding in family `frame-clips-unwrapped-text`. Do NOT fix this instance —
+      the rule is already stated at playbar.go:66-87; what is missing is that it is enforced at
+      call sites the LOOP owns, so any write made by a helper the loop calls escapes it.
+      play_loop.go:354 calls playAnnounced, whose stderr is the screen; main.go:856 writes
+      `define: %s` unwrapped, and main.go:844/:866 and reportVoice do the same.
+      MEASURED (scratch probe: playRig, opt.width=40, newPinnedScreen(24,40), a player returning
+      a network error, one miss then a reveal): one transcript line of 156 cells in a 40-column
+      terminal, which Paint clips. atlas/define.md's new section already claims the loop routes
+      "its diagnostics" through the one function; only the drop error at play_loop.go:312 is.
+      Fix the class: wrap at the SEAM — the pinned screen's or the console's Write, against its
+      own cols, with the sub-20-column policy in one place — so a helper cannot write around it,
+      and extend the narrowing test to drive a failing playback so the predicate covers it.
+  - id: new
+    severity: Minor
+    family: partial-copy-refresh
+    title: |
+      The initial sittingFigures hand-copies refresh()'s first two lines
+    detail: |
+      This is the 2nd finding in family `partial-copy-refresh`. BR-8 fixed refresh() copying
+      named fields out of figures(); play_loop.go:129-130 is now the site that does it, so a
+      third adjustment added to refresh() would be stale on the first frame, before any answer.
+      The rule: one expression builds the figures and every site derives from it. refresh() is
+      exactly equivalent at init because s.Right+s.Wrong is 0 there, so calling it is the fix.
+  - id: new
+    severity: Minor
+    family: plan-table-vs-tree
+    title: |
+      Three pure entities are listed as Integration points and an IO constructor as Pure
+    detail: |
+      This is the 2nd finding in family `plan-table-vs-tree`. Do NOT fix only these rows.
+      workshop/plans/000041-play-tui-plan.md:125-127 lists viewportGesture (whose own text says
+      "PURE dispatch"), wrapWritten (string to string, playbar.go) and livePrompt (play.Session
+      to string) under "Integration points", whose column header is "Wraps"; none wraps an
+      external dependency and none is injected. Conversely newPinnedScreen (:109), which takes a
+      tty and builds the IO shell, sits under "Pure entities".
+      THE RULE: a table row asserts path, status, and kind/description, and
+      TestPlanTableStatusMatchesTheChangeWindow judges only status. Either mechanise what can be
+      — every backticked Name is DECLARED at the stated path, and an Integration row names a
+      wrapped external dependency — or stop asserting the unguarded columns in the table `#40`
+      reads as the record of what landed.
+```
