@@ -3183,3 +3183,16 @@ round of review spent on a design a sitting would have changed is a round spent
 polishing the wrong object — and the plan's `ux-rename-iteration` line, priced for
 "3–5 rounds per TUI-heavy milestone", is an estimate of exactly this and was
 still treated as if reviews could substitute for it.
+
+## Let the plan-status guard adjudicate, and commit first (`#40`)
+
+`livePrompt`/`gradePrompt` flipped status four times in one issue. Twice that was
+real churn — the code genuinely changed across review rounds. Twice it was me
+reading `git diff` hunk headers by hand and losing to the guard, which locates a
+declaration in the CURRENT file and compares it against the diff from the
+merge-base: while edits sit uncommitted, the two can disagree about which
+function a hunk lands in.
+
+**Commit, then run the guard, then write what it says.** Arguing with a
+mechanism that reads the tree from an argument about line numbers is a way to
+spend a round and be wrong at the end of it.

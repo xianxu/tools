@@ -1,5 +1,13 @@
 # Form 2.5: The Board Implementation Plan (`#40`)
 
+> **A NOTE ON THE TWO PROMPT ROWS BELOW.** `livePrompt`/`gradePrompt` flipped
+> status four times across this issue, and twice it was me chasing a phantom:
+> `TestPlanTableStatusMatchesTheChangeWindow` locates a declaration in the
+> CURRENT file and compares it against the diff from the merge-base, so while
+> edits sit uncommitted the two can disagree about which function a hunk lands
+> in. **Commit, then let the guard adjudicate.** Hand arithmetic over hunk
+> headers lost to it twice here.
+
 > **For agentic workers:** Consult AGENTS.md Section 3 (Subagent Strategy) to determine the appropriate execution approach: use superpowers-subagent-driven-development (if subagents are suitable per AGENTS.md) or superpowers-executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Mature words are triaged sixteen at a time on a grid — one keystroke each — so a large deck stays affordable, and the scheduler rather than the learner decides which words get the cheap form.
@@ -329,8 +337,8 @@ chosen at the new height.
 | `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
 | `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word". The set of paths that consult it is `InputKind × Batch`, DERIVED from `numInputKinds` by `TestEveryInputKindIsAnsweredForABatchForm` rather than counted in prose (R7), plus `Words()` for the bar (D8) |
 | `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` wherever an input can mean something different to a form holding many words, and stamps every record's `Form` in one place (D2, D3, D12, D4a, R7) |
-| `livePrompt` | `cmd/define/play_loop.go` | modified | PURE — D12 predicted a guard here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
-| `gradePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — asks `reservedKeys` rather than naming the constant, because `d` is refused on a board; the mode rides on it as of R11, via the form's own `Keys()` (R2, R11) |
+| `livePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — D12 predicted a guard here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
+| `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` rather than naming the constant, because `d` is refused on a board; the mode rides on it as of R11, via the form's own `Keys()` (R2, R11) |
 | `reservedKeys` | `cmd/define/play_loop.go` | new | PURE — the session's reserved keys FOR THIS FORM. `d` is not among them for a form holding many (D12, R2) |
 | `boardFooter` | `cmd/define/play_loop.go` | new | PURE — the board's own rows, then the bar. One line, because the form owns the rest (R1) |
 | `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole (D15) |
