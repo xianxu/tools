@@ -732,3 +732,32 @@ exactly what rots.
 the reviewer's word that it had no present instance; it took thirty seconds to
 write and found a months-old hole immediately. A filter that discards silently
 cannot be audited by reading it — only by making it speak.
+
+### 2026-09-01 (R15) — the resize test's driver, and three ways to read a screen wrongly
+
+R12 rewrote the resize test to place its click from the paint rather than from
+arithmetic. Getting that right took three attempts, and each failure is worth
+recording because each is a different confusion about what a "row" is.
+
+1. **Scraping the emitted frame raced the redraw.** The loop repaints after a
+   resize, so the frame that was read and the frame the click resolved against
+   were different ones.
+2. **Asking the screen alone raced the other way.** `FooterRowAt` answers from
+   the LAST paint, so between the resize and the redraw it reports the
+   pre-resize footer origin quite happily.
+3. **Requiring both, matched by prefix, admitted the stale state anyway** — the
+   40-column grid row is a PREFIX of the 80-column one, same first two cells. A
+   comparison that admits the stale state cannot distinguish it, which is this
+   test's own subject one layer up.
+
+And underneath all three, the confusion that made frame-scraping wrong in
+principle: **`FooterRowAt` answers in the TERMINAL's rows and a frame split on
+`\r\n` gives LOGICAL lines.** The keys prompt is one logical line and, at 76
+columns in a 40-column window, two physical rows — so the two indices part
+company from that point down and a click placed by frame index lands a row high.
+
+The driver now reads only the screen, and detects the relayout by the ENTRY COUNT
+— at 80 the board is three rows and the footer holds four entries, at 40 it is
+four and holds five, and the new count cannot be reached by the old layout. It
+also never touches the board: that object belongs to the loop goroutine, `-race`
+said so, and production has one goroutine on a form for exactly this reason.

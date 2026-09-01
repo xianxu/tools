@@ -3141,3 +3141,23 @@ Where a filter drops something its caller was going to check, say so and fail.
 And match markers the way they are WRITTEN — anchored — because prose about a
 marker is not a marker, and documentation of a rule is the first place that
 distinction bites.
+
+## A frame's lines are not the terminal's rows (`#40` R15)
+
+`FooterRowAt` answers in the rows the terminal reports for a click. A frame
+string split on `\r\n` gives LOGICAL lines. They agree only while nothing wraps —
+and the keys prompt is one logical line and two physical rows in a narrow window,
+so from that point down the two indices differ by one and a click placed by frame
+index lands a row high.
+
+Three attempts at one test driver, each a different way of being wrong about
+this: scraping the frame raced the redraw; asking the screen alone raced the
+other way, because it answers from the last paint; and requiring both, matched by
+PREFIX, admitted the stale state anyway — the narrow layout's first row is a
+prefix of the wide one's.
+
+**Drive a screen through the screen.** If a test needs to know where something
+was drawn, ask the object that drew it, and detect state changes by something the
+old state cannot produce — here the footer's entry COUNT, which grows when the
+board relays out. And never let a test goroutine touch a form the loop owns:
+`-race` says so, and production has one goroutine on it for the same reason.

@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 	"golang.org/x/term"
@@ -997,8 +998,15 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 
 	// THE BOARD WAS OFFERED, and its own keys line is on screen rather than form
 	// 2.1's or 2.3's.
-	if !strings.Contains(first, "Tab = switch") {
-		t.Fatalf("the board was not offered, or its keys were not printed:\n%q", first)
+	//
+	// DERIVED from the form, not restated. This row spelled "Tab = switch" and
+	// went red when R11 reworded the line — correctly, but for the wrong reason:
+	// a conformance row's subject is that the board REACHED a real terminal, not
+	// how its prompt is phrased. The wording is pinned once, against the README,
+	// by TestREADMEQuotesThePromptsTheLoopActuallyPrints.
+	keys := play.NewBoard([]play.Cell{{Word: words[0]}, {Word: words[1]}}, 80).Keys()
+	if !strings.Contains(first, keys) {
+		t.Fatalf("the board was not offered, or its keys were not printed (want %q):\n%q", keys, first)
 	}
 	if strings.Contains(first, "= pick the definition") || strings.Contains(first, "y = got it") {
 		t.Errorf("a board printed another form's keys — a learner would press a dead key:\n%q", first)
@@ -1008,10 +1016,11 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 	if strings.Contains(first, "remove from deck") {
 		t.Errorf("the board's prompt offers a key it refuses:\n%q", first)
 	}
-	// THE MODE IS ON THE PROMPT ROW (R11), which Paint clips last — so it is
-	// knowable for as long as anything on screen is.
-	if !strings.Contains(first, "marking [yes] no") {
-		t.Errorf("the prompt does not say which mark is live:\n%q", first)
+	// THE MODE IS ON THAT SAME LINE (R11), which Paint clips last — so what a
+	// click will mean is knowable for as long as anything on screen is. It had a
+	// footer row until a resize showed fitFooter dropping it.
+	if !strings.Contains(keys, "[yes]") {
+		t.Fatalf("the form's keys line does not say which mark is live: %q", keys)
 	}
 
 	// DRAWN WHOLE. Every row of a 24x80 frame must fit 80 columns: a footer row
@@ -1063,8 +1072,10 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 	// TAB, which reached nothing at all before this issue.
 	f.WriteString("\t")
 	afterTab := unstyled(out.take(2 * time.Second))
-	if !strings.Contains(lastFrame(afterTab), "marking yes [no]") {
-		t.Errorf("Tab did not flip the toggle on a real terminal:\n%q", lastFrame(afterTab))
+	flipped := play.NewBoard([]play.Cell{{Word: words[0]}}, 80)
+	flipped.Toggle()
+	if !strings.Contains(lastFrame(afterTab), flipped.Keys()) {
+		t.Errorf("Tab did not flip the mode on a real terminal (want %q):\n%q", flipped.Keys(), lastFrame(afterTab))
 	}
 
 	// The rest by KEY, which is the path a mouse-less terminal has.

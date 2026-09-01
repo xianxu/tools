@@ -3093,35 +3093,55 @@ func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
 			return
 		}
 		resizes <- winSize{rows: 24, cols: 40}
-		// The relayout is observable in the FORM, which is what the frame is
-		// drawn from — waiting on the paint alone would race the redraw.
-		if !settled(func() bool { return board.Rows() > 3 }) {
+		// THE DRIVER NEVER TOUCHES THE BOARD. `board` belongs to the loop
+		// goroutine, which is about to relayout it — reading `board.Rows()` here
+		// is a data race, and -race says so. Production has one goroutine on a
+		// form for exactly this reason.
+		//
+		// A PROBE instead: the same words at the same width lay out the same way,
+		// which is the property boardFits already relies on. Everything the
+		// driver needs to place a click comes from the probe (a column) and the
+		// screen (a row), and the screen is behind a mutex.
+		probe := play.NewBoard(boardCells(words...), 40)
+		col := strings.Index(strings.Split(probe.Prompt(), "\n")[0], "[1] ")
+		if col < 0 {
 			return
 		}
 
-		// THE ROW COMES FROM THE SCREEN'S OWN PAINT RECORD, not from scraping
-		// the output. Splitting the emitted frame on "\r\n" and using the index
-		// was the first spelling, and it raced: the loop repaints after the
-		// resize, so the frame that was read and the frame the click resolves
-		// against were different ones, and FooterRowAt answered "not the
-		// footer". The screen is the thing that knows where it put the footer —
-		// asking it is what production does.
+		// EVERYTHING COMES FROM THE SCREEN, and the frame text is not consulted
+		// at all. Two earlier spellings scraped it and both were wrong in the
+		// same way: `FooterRowAt` answers in the TERMINAL's rows, and a frame
+		// split on "\r\n" gives LOGICAL lines. The keys prompt is one logical
+		// line and — at 76 columns in a 40-column window — two physical rows, so
+		// the two indices differ by one from that point down and a click placed
+		// by frame index lands a row high. (The first spelling also matched the
+		// pre-resize paint outright, because the 40-column grid row is a PREFIX
+		// of the 80-column one.)
+		//
+		// The relayout is observable through the map alone: at 80 the board is
+		// three rows and the footer holds four entries; at 40 it is four and the
+		// footer holds five. So wait until some row reports the LAST entry index
+		// a relaid-out board produces — that count cannot be reached by the old
+		// layout — and then take the row that is entry 0.
+		lastEntry := probe.Rows() // entries are the board's rows, then the bar
 		row := -1
 		if !settled(func() bool {
+			seenLast, first := false, -1
 			for r := 0; r < 24; r++ {
-				if e, off, ok := live.FooterRowAt(r); ok && e == 0 && off == 0 {
-					row = r
-					return true
+				e, off, ok := live.FooterRowAt(r)
+				if !ok {
+					continue
+				}
+				if e == lastEntry {
+					seenLast = true
+				}
+				if e == 0 && off == 0 && first < 0 {
+					first = r
 				}
 			}
-			return false
+			row = first
+			return seenLast && first >= 0
 		}) {
-			return
-		}
-		// The COLUMN from the board, at its current layout, for the same reason.
-		line := strings.Split(board.Prompt(), "\n")[0]
-		col := strings.Index(line, "[1] ")
-		if col < 0 {
 			return
 		}
 		keys <- Key{Kind: KeyClick, Row: row, Col: col + len("[1] ")}
@@ -3151,8 +3171,13 @@ func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
 	}
 
 	// THE BOARD'S OWN ROWS FIT, which is the invariant the click map rests on:
-	// one footer entry, one physical row. The keys prompt and the bar may wrap —
-	// Paint budgets the first with displayRows and fitFooter drops the second.
+	// one footer entry, one physical row, so an entry index IS a grid row. The
+	// keys prompt and the bar may wrap — Paint budgets the first with
+	// displayRows and fitFooter drops the second — which is exactly why the
+	// board's rows are the ones that have to fit.
+	//
+	// Read here, AFTER playSession returned: the loop goroutine is done, so the
+	// board is this goroutine's to look at.
 	frame := unstyled(tty.String())
 	for i, row := range strings.Split(board.Prompt(), "\n") {
 		if n := visibleCells(row); n > 40 {
