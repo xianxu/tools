@@ -98,35 +98,44 @@ each, and the session advances.
 time, ask me all of these again"* — and it is the only expensive-to-undo action
 on this surface, which is why the alternative had to exist before it shipped.
 
-**D4 — NO BOX THRESHOLD. The board draws from all of today's words.**
+**D4 — THE BOX PICKS THE FORM, AND THE BOARD IS THE FIRST FORM IT HAS EVER
+PICKED.**
 
-This reverses the Spec, deliberately. Operator, 2026-09-01: *"words should come
-from all today's practice words. this is a weaker form of recall, but faster… I
-feel we should not have those two limits at start, and see how things work."*
+Worth stating plainly because it is easy to get backwards: **form selection today
+is a CAPABILITY question, not a scheduling one.** `todaysQuestions` calls
+`choiceFor`, which returns form 2.3 when it can pick two usable distractors and
+falls back to 2.1 when it cannot — a young deck, an entry that is only
+cross-references, an entry that defines a different word. Nothing consults a box.
+The board introduces box-based selection.
 
-The Spec bound the form to the box on two arguments. The **load** argument
-survives but does not need a threshold: a box-8 word costs `1/42 ≈ 0.024`
-reviews/day against a box-0 word's `1.0`, so the tail is where the volume is
-whether or not a rule says so. The **correctness** argument — a grid is
-self-report without retrieval, and the illusion of knowing runs that way — is the
-one being consciously accepted for now.
+The Spec set the line at 8. Operator, 2026-09-01: *"not removing box as selector,
+I guess just allow form-box to be used earlier."*
 
-**And the risk is not shaped the way the Spec assumed.** Extra days before a
-wrongly-promoted word returns:
+**And the risk is not shaped the way the Spec assumed.** The comparison that
+matters is not "days added" but *how much longer than a real test would have
+allowed*: a wrong `Yes` sends the word to `box+1`, where form 2.3 would have
+caught it and sent it to `box/2`.
 
-| from box | 0→1 | 2→3 | 4→5 | 6→7 | 8→9 |
-|---|---|---|---|---|---|
-| days added | **0** | 2 | 4 | 10 | 26 |
+| box | 0 | 2 | 4 | 6 | 8 | 10 |
+|---|---|---|---|---|---|---|
+| days a wrong `Yes` buys | **0** | 3 | 8 | 22 | 62 | 165 |
 
-The ladder's first two rungs are both one day — `box.go` calls that duplicate
-*"the most valuable rung"* — so a brand-new word marked `Yes` in error **comes
-back tomorrow regardless**. The error is free at the bottom. Absolute delay grows
-with the box while pedagogical damage is worst where forgetting is steepest,
-which is the bottom; the two run opposite and cross around boxes 5–7. **A hard
-cut at 8 aimed at neither end of that.**
+Delay grows steeply with the box while the CHANCE of a wrong `Yes` falls with it —
+a box-10 word has been recalled ten times. The product peaks in the middle,
+around **boxes 5–7**, where the board buys 15–20 days on a word that is not
+secure. Both ends are cheap, which is the opposite of the Spec's assumption that
+high boxes are the safe place.
+
+Boxes 0 and 1 are literally free: `box.go`'s ladder waits one day at both, so a
+wrongly promoted new word returns tomorrow regardless.
+
+**The threshold is box ≥ 3** — past the two free rungs, a 4-day interval, roughly
+three recalls of history, and a wrong `Yes` buys four days. It is a starting
+number rather than a derived one, and D4a is what makes it revisable from
+evidence instead of from argument.
 
 The operator's two candidate remedies — the board promotes more slowly, or it is
-used less often — are both DEFERRED, to be chosen later from evidence and
+used less often — are both DEFERRED, to be chosen later from the log and
 eventually made per-learner.
 
 **D4a — WHICH MEANS THE LOG MUST RECORD THE FORM, and today it does not.**
@@ -143,16 +152,45 @@ promoted word vanishes for weeks, and when it is eventually forgotten that is
 indistinguishable from ordinary forgetting. One field on the event, one line at
 the capture site.
 
-**D5 — CLICKS, not a cursor.** The learner clicks a word to mark it with the
-active mode; Tab swaps the mode between Yes and No. This is `#38`'s affordance
-finding its second consumer, and it deletes the first draft's D3 entirely — no
-cursor, no auto-advance, and no pressure on `play.Input` to grow a movement kind.
+**CONFIRMED by the operator**, 2026-09-01: *"do record. I think it's a matter of
+data mining: using this scheme, did user fail beyond reasonable in real recall
+test later. but do add telemetry you need."* That names the query, which is what
+decides the field: the analysis joins a board-promoted word to its NEXT real
+test, so the form must be on the event that PROMOTED it, not on a summary
+elsewhere. `ReviewEvent.Form` it is.
+
+**D5 — CLICKS AND LABELLED KEYS, not a cursor.** The learner clicks a word to
+mark it with the active mode; Tab swaps the mode between Yes and No. This is
+`#38`'s affordance finding its second consumer, and it deletes the first draft's
+D3 entirely — no cursor, no auto-advance, and no pressure on `play.Input` to grow
+a movement kind.
+
+**Every cell also carries a KEY, printed beside it**: `[0] arrondissement  [1]
+bailiwick …`. Operator, 2026-09-01: *"let's use 0-9, and a-f."* Without it a
+terminal reporting no mouse has no way to mark anything — Enter still works, so
+the board would silently degrade to "everything is No", which is wrong rather
+than merely limited, and `#38`'s pty rows exist precisely because a mouse-less
+terminal must keep working.
+
+**`d` IS NOT AVAILABLE, and the labels are `0`–`9` then `a b c e f g`.**
+`toInput` intercepts `'d'` and `'D'` as *drop from deck* before any form sees the
+key, and `Question.Grade`'s own doc states the rule: *"The session RESERVES some
+keys before a form ever sees them… A form must not build its answer set from
+those."* Sixteen labels skipping `d`. The gap is visible rather than surprising,
+because the labels are PRINTED — nobody has to know the sequence.
 
 **D6 — the toggle and the feedback panel are the LIVE EDGE, not buffer lines.**
 The buffer is append-only, which is what makes a click's coordinates exact
 (`#30` D1). Anything that changes in place is the prompt or the footer, and
 `Paint` already takes a multi-row footer that gives up whole rows before the
 prompt does. So the definition panel is the footer and costs nothing.
+
+**AND SO IS THE TOGGLE.** The sketch put "Do you remember? [Yes] No" above the
+grid, which would have required `screen` to grow a HEADER — rows above the buffer
+that every frame-budget calculation would have to learn about, for one line.
+Operator, 2026-09-01: *"it's fine to move it to the footer."* So the whole live
+edge is at the bottom: the toggle, the definition panel, the keys, the bar — and
+`screen` is untouched by this issue.
 
 **D7 — `unsure` is DELETED.** Operator: *"I guess unsure means no."* Three marks
 collapse to two, `Yes → GradeCorrect` and `No → GradeWrong`, and the first draft's
@@ -253,28 +291,18 @@ Then on a real terminal with a deck holding mature words: `define --play`, confi
 
 ## Open for the operator
 
-Three of the original five are settled above (D3 Enter/Ctrl-C, D4 the threshold,
-D7 `unsure`). Two remain, and both are structural:
+All settled as of 2026-09-01. Recorded here so the list is visibly closed rather
+than quietly dropped:
 
-1. **The toggle sits at the TOP of your sketch, and the live edge is at the
-   bottom.** The buffer is append-only, so "Do you remember? [Yes] No" cannot be a
-   buffer line — it changes as you Tab. Either it moves down beside the keys and
-   the bar, or `screen` grows a HEADER: rows above the buffer, which nothing has
-   needed until now and which every frame-budget calculation would have to learn
-   about. The header is the truer rendering of your sketch and the larger change.
+| question | answer |
+|---|---|
+| Enter vs Ctrl-C | Enter commits the unmarked as No; Ctrl-C cancels, and cancelling is free (D3) |
+| the box threshold | the box stays the selector, lowered to ≥ 3 (D4) |
+| `unsure` | deleted — "unsure means no" (D7) |
+| telemetry | record the form on every review event (D4a) |
+| the toggle's position | the footer, so `screen` grows no header (D6) |
+| a mouse-less terminal | labelled keys `0`–`9`, `a b c e f g`, printed beside each word (D5) |
 
-2. **A terminal reporting no mouse has no way to mark a word.** Enter still
-   works, so the board would silently degrade to "everything is No" — wrong
-   rather than merely limited, and `#38`'s own pty rows exist because a
-   mouse-less terminal must keep working. Cheapest keyboard path is
-   `1`–`9`/`a`–`g` as the sixteen cells, which also gives the mouse users a
-   faster option. Or is mouse-only acceptable, with the board simply not offered
-   where the mouse is absent?
-
-3. **And one I would like your instinct on, since D4 removed the box as the
-   selector:** if the schedule no longer picks the form, what does? A flag or
-   `/board` returns the choice to the learner, which the Spec argued against. The
-   alternative your mock hints at — **sweep the board first over today's words,
-   and the ones marked No become the sitting's real work in form 2.3** — keeps
-   the speed, makes "No" the route to a real test rather than only a demotion,
-   and needs no selector at all.
+One thing I chose rather than asked, flagged because it is the only number in
+here without an argument behind it: **box ≥ 3** is a starting point, not a
+derived threshold. D4a exists so it can be replaced by evidence.
