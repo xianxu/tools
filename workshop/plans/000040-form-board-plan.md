@@ -27,63 +27,145 @@
 
 ## Decisions
 
-**D1 — TWO OF THE SPEC'S REQUIREMENTS ARE ALREADY IN THE TREE, and finding that is most of what this design bought.**
+> **Revised 2026-09-01 from the operator's sketch and two follow-ups.** The
+> original Spec's board was a maturity-triage form driven by the box, marked with
+> a keystroke per word, carrying three marks. It is now a CLICK-driven grid over
+> all of today's words, with two marks. Four of the first draft's decisions were
+> deleted by that; what they were and why they went is recorded below, because a
+> plan that silently loses a decision cannot be argued with later.
 
-The Spec asks for a Revision to `#39` saying that `+2` should come from *"a correct answer in form 2.3 with no reveal first"*. That is `unaidedNow` (`play/session.go:317`), which already computes exactly `v == Correct && !s.Revealed && !IsSelfRated()`, and `schedule.Answer` already promotes `GradeUnaided` by two. **`#39` needs no revision; it shipped this.**
+**D1 — TWO OF THE SPEC'S REQUIREMENTS ARE ALREADY IN THE TREE.**
 
-And the Spec's *"`firm` earns `+1` and not `+2`"* follows for free: a `Board` that implements `SelfRated` cannot produce `GradeUnaided`, so `firm` maps to `GradeCorrect` and the mechanism that would have over-promoted it is structurally unreachable. **No new grade, no new schedule arithmetic, no exception in `Answer`.**
+The Spec asks for a Revision to `#39` saying `+2` should come from *"a correct
+answer in form 2.3 with no reveal first"*. That is `unaidedNow`
+(`play/session.go:317`), which computes exactly `v == Correct && !s.Revealed &&
+!IsSelfRated()`, and `schedule.Answer` already promotes `GradeUnaided` by two.
+**`#39` shipped this; it needs no revision.**
 
-One nuance the Spec's table does not state and the code does: `GradeCorrect` is `+2` when `Box < MaxBox` — the express lane back after a lapse. So `firm` on a mature word that has LAPSED climbs two. That is correct and consistent — the Spec says *"the same as a correct answer"*, and this is what a correct answer does — but it must be written down, because the table reads `box + 1` flatly and a future reader will otherwise call it a bug.
+And a `Board` implementing `SelfRated` cannot produce `GradeUnaided`, so *"Yes is
+not a confident answer"* is structural rather than a rule anyone must remember.
+No new grade, no exception in `Answer`.
 
-**D2 — the session discovers that a form holds many words by ASKING, which is the third instance of a pattern this package already has twice.**
+One nuance the Spec's table does not state and the code does: `GradeCorrect` is
+`+2` when `Box < MaxBox` — the express lane back after a lapse. A `Yes` on a
+lapsed word climbs two. Correct and consistent, and written down here because the
+table reads `box + 1` flatly.
 
-`advance` moves to the next question on every graded answer (`session.go:263`). A board must stay current while sixteen marks land. The session must not learn what a board is — `#6`'s Done-when and `TestSessionIsFormAgnostic` forbid it — so the question is put to the FORM:
+**D2 — the session discovers that a form holds many words by ASKING.**
+
+`advance` moves on after every graded answer (`session.go:263`). A board must
+stay current while sixteen marks land, and the session must not learn what a
+board is (`#6`'s Done-when, `TestSessionIsFormAgnostic`). So the question goes to
+the FORM — the third instance of a pattern `play` already has twice:
 
 ```go
 // Batch is implemented by forms that hold more than one word.
 type Batch interface {
 	// Spent reports whether every word this form holds has been answered.
 	Spent() bool
+	// Rest answers every word still unmarked and returns them, which is what
+	// Enter means to a form holding many.
+	Rest(v Verdict) []string
 }
 ```
 
-`advance` consults it exactly as `missedAxis` consults `Missed` and `unaidedNow` consults `SelfRated`: a capability named, never a form. A form that does not implement it is spent after one answer, which is every existing form and is the right default.
+`Missed` (`session.go:287`) and `SelfRated` (`:311`) exist because *"a type switch
+on `*Choice` would be the thing Done-when 7 forbids"*. This is the same sentence
+about `*Board`.
 
-**D3 — THE CURSOR ADVANCES ITSELF, and that is what keeps `play.Input` from growing.**
+**D3 — ENTER COMMITS, CTRL-C CANCELS, and the cancel is free.**
 
-The obvious design gives the board arrow keys. It must not: arrows arrive as `Key` KINDS, `toInput` maps only runes and Enter/space, and widening `play.Input` with a movement kind would put a display concept inside the pure package — the same reasoning that made `#41` D6 intercept paging in the loop instead.
+Operator, 2026-09-01: *"ctrl-C means nothing is changed from that form (board).
+already clicked words can still be recorded, but unmarked words, are just
+unmarked, no state change for them."*
 
-So there is no movement. The cursor starts at the first word and steps left-to-right, top-to-bottom after each mark. Sixteen words, sixteen keystrokes, in order — which is exactly what the Spec asks for (*"one keystroke each"*) and is also the faster interaction: a learner sweeping a grid does not want to steer.
+That behaviour already exists and needs no code. Every click emits its own
+`OutcomeRecord`, which `CaptureReview` writes immediately — the property
+`play_loop.go` states as *"recorded NOW, before the next question is drawn… what
+makes Ctrl-C lossless by construction rather than by a flush"*. `Apply` on
+`InputQuit` emits only `OutcomeDone`. So an interrupted board leaves clicked
+words written and unmarked words with NO event, `Fold` leaves their boxes where
+they were, and they are due again tomorrow.
 
-**Consequence, stated rather than discovered:** there is no going back to change a mark. That is acceptable for triage — the marks are conservative in the direction that matters, and `unsure` exists precisely for "I am not sure", which is the answer a mis-key would want anyway.
+**Enter is the half that needs code**, which is the inversion worth noticing: the
+DESTRUCTIVE path carries the logic and the cancel path is the absence of it.
+Enter reaches `Apply` as `InputReveal`, which a board has nothing to do with — it
+reveals nothing — so `Apply` asks the `Batch` capability and, for a form that has
+one, spends it: `Rest(Wrong)` marks every unmarked word, one `OutcomeRecord`
+each, and the session advances.
 
-**D4 — `unsure` needs somewhere to live, and the Spec's three requirements for it cannot all be met by a box change.**
+**Sixteen demotions from one keystroke is deliberate** — it means *"I am out of
+time, ask me all of these again"* — and it is the only expensive-to-undo action
+on this surface, which is why the alternative had to exist before it shipped.
 
-The Spec says `unsure` leaves the box unchanged, re-asks the word sooner, AND sends it to form 2.3 next time. The first two come free from recording nothing: `Fold` leaves `LastReviewed` where it was, so the word is still due and comes back next sitting. The third does not — form selection is by BOX (D6), the box is unchanged, so the word would meet the board again forever.
+**D4 — NO BOX THRESHOLD. The board draws from all of today's words.**
 
-**So `unsure` is recorded as its own event kind**, `store.EventUnsure`, and form selection reads it: a word whose most recent review event is an `unsure` is asked through 2.3 whatever its box. It is an event rather than a `Progress` field because `progress.go` states the rule for this whole package — *"DERIVED, never stored… storing counters alongside would create a second source of truth that drifts"* — and because the log is append-only, so the signal expires naturally when a real answer lands on top of it.
+This reverses the Spec, deliberately. Operator, 2026-09-01: *"words should come
+from all today's practice words. this is a weaker form of recall, but faster… I
+feel we should not have those two limits at start, and see how things work."*
 
-**`schedule.Fold` must IGNORE it**, exactly as it ignores lookups and questions: an unsure is activity, not assessment, and folding it as a miss would demote the word the Spec says must not move.
+The Spec bound the form to the box on two arguments. The **load** argument
+survives but does not need a threshold: a box-8 word costs `1/42 ≈ 0.024`
+reviews/day against a box-0 word's `1.0`, so the tail is where the volume is
+whether or not a rule says so. The **correctness** argument — a grid is
+self-report without retrieval, and the illusion of knowing runs that way — is the
+one being consciously accepted for now.
 
-**D5 — the board is SIXTEEN WORDS OR FEWER, and a short board is normal.**
+**And the risk is not shaped the way the Spec assumed.** Extra days before a
+wrongly-promoted word returns:
 
-A sitting rarely divides by sixteen. The last board takes what is left; a board of three is a board. The alternative — hold words back until sixteen accumulate — would silently drop words from a sitting the schedule asked for, which is the failure `emptyQueueReason` exists to make impossible elsewhere.
+| from box | 0→1 | 2→3 | 4→5 | 6→7 | 8→9 |
+|---|---|---|---|---|---|
+| days added | **0** | 2 | 4 | 10 | 26 |
 
-**D6 — the threshold is `MasteredBox`, not 8, and this reverses the Spec.**
+The ladder's first two rungs are both one day — `box.go` calls that duplicate
+*"the most valuable rung"* — so a brand-new word marked `Yes` in error **comes
+back tomorrow regardless**. The error is free at the bottom. Absolute delay grows
+with the box while pedagogical damage is worst where forgetting is steepest,
+which is the bottom; the two run opposite and cross around boxes 5–7. **A hard
+cut at 8 aimed at neither end of that.**
 
-The Spec's table says box ≥ 8. `MasteredBox` is 9 and is already defined as *"where a word stops being highlighted… reached on day 108 after nine correct recalls, the last of which came after a 42-day gap"*. Two thresholds one apart, both meaning "this word no longer needs real work", is two owners of one judgement — the exact shape `lessons.md` records as drifting.
+The operator's two candidate remedies — the board promotes more slowly, or it is
+used less often — are both DEFERRED, to be chosen later from evidence and
+eventually made per-learner.
 
-`Mastered(p)` is already exported and already has two consumers (`#6`'s highlighting, `#8`'s stats). The board is the third, and it is the one that makes the label mean something operationally rather than cosmetically.
+**D4a — WHICH MEANS THE LOG MUST RECORD THE FORM, and today it does not.**
 
-**If the operator wants 8 specifically, the honest move is to change `MasteredBox` to 8** and let all three consumers move together — not to add a second constant. Flagged for the operator at plan review; the plan proceeds on `Mastered`.
+`ReviewEvent` carries the word, the verdict, the axis, `Unaided` and the time
+(`store/event.go:23-51`). Nothing says which form asked. Without it the log
+cannot answer *"do board-promoted words lapse more than 2.3-promoted ones?"* —
+so neither remedy can be chosen from evidence, and the configuration the operator
+wants to learn later has nothing to be fitted against.
 
-**D7 — the bar counts WORDS, not slots.**
+This is not one of the deferred limits. It is the instrument that makes deferring
+them safe, and it matters because **the damage is silent and delayed**: a wrongly
+promoted word vanishes for weeks, and when it is eventually forgotten that is
+indistinguishable from ordinary forgetting. One field on the event, one line at
+the capture site.
 
-`fig.total = len(s.Questions)` is the slot count, and a board is one slot holding up to sixteen words. Left alone, a sitting of 20 mature words would read "0 of 2". The budget itself is unaffected — `schedule.Queue` returns `budget` KEYS and packing them into boards does not change how many words are asked about — so this is a display fix, but it is the number the Spec's own load argument is about.
+**D5 — CLICKS, not a cursor.** The learner clicks a word to mark it with the
+active mode; Tab swaps the mode between Yes and No. This is `#38`'s affordance
+finding its second consumer, and it deletes the first draft's D3 entirely — no
+cursor, no auto-advance, and no pressure on `play.Input` to grow a movement kind.
 
-**D8 — NOT in scope:** `/board` as a manual override. The Spec asks for it and it is one command row, but it is the escape hatch rather than the feature, and it cannot be designed until the scheduler path exists to escape from. It gets its own task (T8) and is the first thing to cut if the boundary runs long.
+**D6 — the toggle and the feedback panel are the LIVE EDGE, not buffer lines.**
+The buffer is append-only, which is what makes a click's coordinates exact
+(`#30` D1). Anything that changes in place is the prompt or the footer, and
+`Paint` already takes a multi-row footer that gives up whole rows before the
+prompt does. So the definition panel is the footer and costs nothing.
 
----
+**D7 — `unsure` is DELETED.** Operator: *"I guess unsure means no."* Three marks
+collapse to two, `Yes → GradeCorrect` and `No → GradeWrong`, and the first draft's
+entire `EventUnsure` mechanism — a new event kind, a `Fold` exemption, and a
+form-selection rule reading it — goes with it.
+
+**D8 — the bar counts WORDS, not slots.** `fig.total = len(s.Questions)` is the
+slot count, and a board is one slot holding up to sixteen words; a 20-word sitting
+would read "0 of 2". The budget is unaffected — `schedule.Queue` returns `budget`
+KEYS — so this is display, but it is the number the load argument is about.
+
+**D9 — NOT in scope:** any per-learner configuration of the two deferred
+remedies. D4a ships the instrument; fitting anything to it is a later issue.
 
 ## Core concepts
 
@@ -171,6 +253,28 @@ Then on a real terminal with a deck holding mature words: `define --play`, confi
 
 ## Open for the operator
 
-1. **D6 — the threshold.** The Spec says box ≥ 8; `MasteredBox` is 9 and already means "no longer needs real work", with two consumers. The plan uses `Mastered` rather than adding a second constant one apart. If 8 is the number you want, the honest change is `MasteredBox = 9 → 8`, moving highlighting and stats with it.
-2. **D4 — `unsure` becomes an event kind.** It is the only way to meet all three of the Spec's requirements for it, and it adds a row to the store's vocabulary. Cheaper alternative if you would rather not: drop *"next time through form 2.3"* and let `unsure` mean only "box unchanged, ask again" — one less concept, and the word meets the board again.
-3. **The Spec's `#39` revision is not needed** — `unaidedNow` already does what it asks for. Confirm you agree before I close that thread.
+Three of the original five are settled above (D3 Enter/Ctrl-C, D4 the threshold,
+D7 `unsure`). Two remain, and both are structural:
+
+1. **The toggle sits at the TOP of your sketch, and the live edge is at the
+   bottom.** The buffer is append-only, so "Do you remember? [Yes] No" cannot be a
+   buffer line — it changes as you Tab. Either it moves down beside the keys and
+   the bar, or `screen` grows a HEADER: rows above the buffer, which nothing has
+   needed until now and which every frame-budget calculation would have to learn
+   about. The header is the truer rendering of your sketch and the larger change.
+
+2. **A terminal reporting no mouse has no way to mark a word.** Enter still
+   works, so the board would silently degrade to "everything is No" — wrong
+   rather than merely limited, and `#38`'s own pty rows exist because a
+   mouse-less terminal must keep working. Cheapest keyboard path is
+   `1`–`9`/`a`–`g` as the sixteen cells, which also gives the mouse users a
+   faster option. Or is mouse-only acceptable, with the board simply not offered
+   where the mouse is absent?
+
+3. **And one I would like your instinct on, since D4 removed the box as the
+   selector:** if the schedule no longer picks the form, what does? A flag or
+   `/board` returns the choice to the learner, which the Spec argued against. The
+   alternative your mock hints at — **sweep the board first over today's words,
+   and the ones marked No become the sitting's real work in form 2.3** — keeps
+   the speed, makes "No" the route to a real test rather than only a demotion,
+   and needs no selector at all.
