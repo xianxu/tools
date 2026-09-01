@@ -205,41 +205,117 @@ KEYS — so this is display, but it is the number the load argument is about.
 **D9 — NOT in scope:** any per-learner configuration of the two deferred
 remedies. D4a ships the instrument; fitting anything to it is a later issue.
 
+**D10 — THE GRID IS THE LIVE EDGE, and that is the whole shape of this issue.**
+
+The first draft put the grid in the buffer as a `Prompt()` string "like any other
+form". It cannot be: `show()` writes a question into the buffer once per index
+and the buffer is APPEND-ONLY — `addRegions` calls that load-bearing, because
+*"nothing afterwards can move a line that is already written"* is what makes a
+click's coordinates exact (`#30` D1). A grid written there is frozen at the
+moment it is written, and marks that toggle green and red are impossible.
+
+Four ways out were put to the operator; **D was chosen** (2026-09-01: *"D for
+now. let's keep things simple before going full screen TUI"*):
+
+| | keeps colour | keeps clicking | cost |
+|---|---|---|---|
+| A — grid in the buffer, marks only in the panel | ✗ | ✓ | loses the feature |
+| B — grid in the footer | ✓ | ✗ | keyboard-only |
+| C — `screen` rewrites the last N buffer lines | ✓ | ✓ | breaks the invariant clicks rest on |
+| **D — grid in the footer, and `display` reports WHICH FOOTER ROW was clicked** | ✓ | ✓ | one question on the seam |
+
+**D is the option that does not start a layout system.** The footer already
+redraws every frame, already has a row budget (`fitFooter`), and `Paint` already
+computes where it begins — it simply does not report it. A full-screen TUI means
+arbitrary redrawable regions, focus and a component tree; C plus a header is the
+first step down that road, and nothing here needs it yet.
+
+**Two consequences, named rather than inherited:**
+
+- **The footer's sacrifice order is now load-bearing.** `fitFooter` drops rows
+  from the END, so `[grid, toggle, panel, bar]` loses the bar first and the panel
+  next, which is the right order by luck. **Grid rows must never drop** — half a
+  board is unusable — so the fit needs a floor rather than the plain tail-drop.
+- **The board is NOT in the exit transcript**, because the live edge is ephemeral
+  by design (`#41` D4). Right for triage, wrong for the outcome: the words marked
+  `No` are the ones worth keeping, so the board writes ONE buffer line as it
+  closes — the relearn list — and nothing else.
+
+**D11 — A CLICK MEANS "MARK" ON A BOARD AND "PLAY" EVERYWHERE ELSE, so the loop
+asks the form which it is.**
+
+`#38` shipped the invariant *"a click ACTS and never answers"*, pinned by
+`TestPlayClickActsAndIsNotAnAnswer`: a click stops before `toInput` so
+`play.Apply` never sees it. A board reverses that — its clicks ARE answers.
+
+The loop therefore offers a click to the current form first and falls through to
+`playRegion` when the form does not take it. The invariant survives, restated
+honestly: **a click never answers a form that did not ask for it.** Every
+existing form declines, so `#38`'s row stays green unchanged, which is the proof
+the seam widened rather than branched.
+
+**D12 — `Spent()` IS NOT ENOUGH; three other `Apply` paths assume one word.**
+
+Measured, not reasoned:
+
+- **A `No` mark would FREEZE the board.** It reaches the miss-on-a-hidden-word
+  branch (`session.go`), which sets `s.Revealed, s.Graded = true, true` — so the
+  next keystroke means "any key = next word" and the board ends after one mark.
+- **`InputDrop`** advances with `Skipped` and drops `q.Word()`. On a board there
+  is no single current word, so `d` has nothing to name. It is REFUSED on a
+  board rather than given a guess.
+- **`livePrompt`** returns `gradedPrompt` when `s.Graded`, which a board never is.
+
+So the `Batch` capability is consulted at each of those points, not only in
+`advance`. That is more surface than the first draft claimed, and it is the
+honest cost of a form that holds many words.
+
+**D13 — Tab reaches nothing today.** `key.go` decodes `KeyTab`, and `toInput` has
+no case for it, so it is dropped before `play` sees it. The mode toggle needs it,
+which means one row in `toInput` and one `play.Input` kind — and unlike the
+paging keys (`#41` D6) this one is legitimately about WHAT IS BEING ANSWERED
+rather than what is being looked at, so it belongs in `play` rather than being
+intercepted by the loop.
+
 ## Core concepts
 
 ### Pure entities
 
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
-| `Board` | `cmd/define/play/board.go` | new | PURE — form 2.5: N words, a cursor, one mark each. Implements `Question`, `SelfRated` and `Batch` |
-| `Mark` | `cmd/define/play/board.go` | new | PURE — `firm`/`unsure`/`no idea`, and the `Verdict` each maps to |
-| `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word", asked by `advance`. Third of its kind beside `Missed` and `SelfRated` |
-| `advance` | `cmd/define/play/session.go` | modified | PURE — moves on only when the current form is `Spent()` |
-| `boardsFor` | `cmd/define/play_loop.go` | new | PURE — partitions the day's keys into boards and single questions by `Mastered` |
-| `sittingFigures` | `cmd/define/playbar.go` | modified | PURE — `total` becomes the WORD count (D7) |
+| `Board` | `cmd/define/play/board.go` | new | PURE — form 2.5: N words, two marks each, a mode. Implements `Question`, `SelfRated` and `Batch` |
+| `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
+| `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word", asked at four points, not one (D12) |
+| `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` on advance, on the miss-on-hidden branch, on drop, and on Enter (D2, D3, D12) |
+| `livePrompt` | `cmd/define/play_loop.go` | modified | PURE — a board is never `Graded`, so the graded prompt must not fire (D12) |
+| `boardsFor` | `cmd/define/play_loop.go` | new | PURE — partitions the day's keys into boards and single questions at box ≥ 3 (D4) |
+| `fitFooter` | `cmd/define/screen.go` | modified | PURE — gains a floor so grid rows are never the ones dropped (D10) |
+| `sittingFigures` | `cmd/define/playbar.go` | modified | PURE — `total` becomes the WORD count (D8) |
 
-- **`Board`** — sixteen mature words, marked one keystroke each.
+- **`Board`** — up to sixteen words, marked by click or by labelled key.
   - **Relationships:** 1:N with words (N ≤ 16); occupies ONE `Session.Questions` slot.
-  - **DRY rationale:** `Word()` returns the CURSOR's word, so `advance`'s existing `Outcome{Word: q.Word()}` records the right word with no change at the call site. The board does not get its own record path.
-  - **Future extensions:** `#12`'s cloze and `#13`'s free sentence are single-word forms and need none of this; a future "N at a time" form is a second `Batch` implementer and nothing else moves.
+  - **DRY rationale:** `Word()` returns the word a mark is landing on, so `advance`'s existing `Outcome{Word: q.Word()}` records the right word with no change at the call site.
+  - **Future extensions:** a second many-word form is another `Batch` implementer and nothing else moves.
 
-- **`Batch`** — the session's question, not the form's announcement.
-  - **DRY rationale:** third instance of the optional-capability pattern. `Missed` (`session.go:287`) and `SelfRated` (`:311`) both exist because *"a type switch on `*Choice` would be the thing Done-when 7 forbids"*; this is the same sentence about `*Board`.
+- **`Batch`** — the session's question, never the form's announcement.
+  - **DRY rationale:** third instance of the pattern. `Missed` and `SelfRated` exist because *"a type switch on `*Choice` would be the thing Done-when 7 forbids"*; this is that sentence about `*Board`.
 
 ### Integration points
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `todaysQuestions` | `cmd/define/play_loop.go` | modified | the store — packs mature keys into boards (D6) |
-| `EventUnsure` | `cmd/define/store/event.go` | new | the event log — `unsure`'s durable home (D4) |
-| `CaptureReview` | `cmd/define/capture.go` | modified | the store — writes `EventUnsure` for the third mark |
-| `Fold` | `cmd/define/schedule/progress.go` | modified | — ignores `EventUnsure`, as it ignores lookups |
+| `display.FooterRowAt` | `cmd/define/replraw.go`, `screen.go` | new | the terminal — answers WHICH FOOTER ROW a click landed on, which is what makes the live edge clickable (D10) |
+| `toInput` | `cmd/define/play_loop.go` | modified | the keyboard — one row for Tab, which is dropped today (D13) |
+| the loop's click branch | `cmd/define/play_loop.go` | modified | the mouse — offers a click to the form first, falls through to `playRegion` (D11) |
+| `todaysQuestions` | `cmd/define/play_loop.go` | modified | the store — packs box ≥ 3 keys into boards (D4) |
+| `ReviewEvent.Form` | `cmd/define/store/event.go` | new | the event log — which form asked, so the deferred remedies can be chosen from evidence (D4a) |
+| `CaptureReview` | `cmd/define/capture.go` | modified | the store — writes the form on every review event |
 
-**ARCH-MOCK.** No new external dependency. `Board` is pure and unit-tested with no IO; the loop's tests use the recorder `#30` built and `#41` extended; the pty suite covers the real terminal.
+**ARCH-MOCK.** No new external dependency. `Board` is pure and unit-tested with no IO; the loop's tests use the recorder `#30` built; the pty suite covers the real terminal, and the mouse-less path is exactly what `#38`'s rows exist for.
 
-**ARCH-CONSTRAINTS.** The interaction path is a keystroke and a redraw, inherited from `#41` unchanged: a frame is O(visible rows), throttled at 16ms. A board's `Prompt()` is O(16) string building per frame — the same order as form 2.3's four options. `boardsFor` is O(deck) once per sitting, beside the walk `#41` already does. **The load claim this issue exists for is the thing to measure**, and Done-when 7 makes it a test rather than an assertion: N mature words through the board must cost materially fewer keystrokes than N through 2.3.
+**ARCH-CONSTRAINTS.** Keystroke-and-redraw, inherited from `#41` unchanged: 16ms throttle, O(visible rows) per frame. The board moves work from the buffer to the FOOTER, which is repainted every frame — so a board's grid is rebuilt per keystroke rather than written once. That is O(16 cells) of string building at human typing rates, the same order as form 2.3's four options, and it is the price of marks that change colour. `boardsFor` is O(deck) once per sitting.
 
-**ARCH-PURE.** `Board` and `Mark` import nothing — `play`'s purity guard (`cmd/define/puretest`) enforces it mechanically, and a board that reached for a width or a terminal would fail the build.
+**ARCH-PURE.** `Board` and `Mark` import nothing; `cmd/define/puretest` enforces it.
 
 ---
 
@@ -247,34 +323,41 @@ remedies. D4a ships the instrument; fitting anything to it is a later issue.
 
 Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
-- [ ] **T1 — `Batch`, and `advance` asks it** (D2). The interface, plus `spent(q)` beside `missedAxis(q)` and `unaidedNow(...)`. Existing forms are unaffected because they do not implement it: `TestSessionIsFormAgnostic` and the whole `play` suite pass untouched, which is what proves the seam widened rather than branched.
-- [ ] **T2 — `Board` and `Mark`** (D3, D5). `Prompt()` renders the grid with the cursor; `Grade` marks and steps; `Spent()`; `IsSelfRated() → true`; `Reveal()` is the empty string, because triage shows nothing. Table test including a board of three (D5) and the sixteenth mark.
-- [ ] **T3 — `EventUnsure`** (D4). The kind, `CaptureReview` writing it, and `Fold` IGNORING it. Counting test: a folded log containing an unsure leaves the word's box exactly where it was.
-- [ ] **T4 — form selection** (D6). `boardsFor` partitions the day's keys by `Mastered`, packs the mature ones sixteen at a time, and sends a word with a recent `unsure` to 2.3 whatever its box. Test over a deck spanning both sides of the threshold.
-- [ ] **T5 — the loop draws it.** Nothing should be needed here: a board is a `Question`, `#41` gave `--play` coordinates, and `show()` writes `Prompt()` once per question. **If this task needs code, that is the finding** — it means `Batch` leaked into the loop, and the fix is in T1 rather than here.
-- [ ] **T6 — the bar counts words** (D7). `sittingFigures.total` from the word count; `done` from marks and answers together.
-- [ ] **T7 — the load claim, measured.** Done-when 7: N mature words through the board versus through 2.3, counted in keystrokes.
-- [ ] **T8 — `/board`** (D8). The manual override, and the first thing to cut.
-- [ ] **T9 — docs.** `cmd/define/README.md`'s review-loop section, `atlas/define.md`'s forms section, and the `--help` key table.
+- [ ] **T1 — `Batch`, and the FOUR places `Apply` consults it** (D2, D12). The interface, then: `advance` moves on only when `Spent()`; the miss-on-hidden branch must not set `Graded` for a batch form; `InputDrop` is refused; Enter spends the board via `Rest(Wrong)`. Existing forms implement none of it and are unaffected — the whole `play` suite and `TestSessionIsFormAgnostic` pass untouched, which is what proves the seam widened rather than branched.
+- [ ] **T2 — `Board` and `Mark`** (D5, D7). Two marks. `Prompt()` renders the labelled grid; `Grade` takes a cell label; `Mark(i, v)` takes a click; `Spent()`; `Rest(v)`; `IsSelfRated() → true`; `Reveal()` is empty. Table test including a board of three (D5) and the sixteenth mark. **Labels are `0`–`9` then `a b c e f g`** — `d` is reserved by `toInput` before a form sees it.
+- [ ] **T3 — Tab** (D13). One row in `toInput`, one `play.Input` kind, and the board's mode flips. It belongs in `play` because it is about what is being ANSWERED, unlike the paging keys.
+- [ ] **T4 — `display.FooterRowAt`** (D10). `Paint` already computes the footer's origin; `liveScreen` records it and answers which footer row a viewport row is. The editor's screen answers "none", which is the whole of its involvement.
+- [ ] **T5 — the loop offers a click to the form first** (D11). Falls through to `playRegion` when the form declines. `#38`'s `TestPlayClickActsAndIsNotAnAnswer` must pass UNTOUCHED — every existing form declines.
+- [ ] **T6 — the footer carries the board** (D10). Grid, toggle, panel, bar, in that order; `fitFooter` gains a floor so grid rows are never dropped.
+- [ ] **T7 — `ReviewEvent.Form`** (D4a). The field, `CaptureReview` writing it, and `Fold` ignoring it — it is telemetry, not assessment. **Operator-requested and the instrument the deferred remedies depend on.**
+- [ ] **T8 — form selection** (D4). `boardsFor` partitions today's keys at box ≥ 3 and packs the eligible ones sixteen at a time.
+- [ ] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
+- [ ] **T10 — the bar counts words** (D8).
+- [ ] **T11 — the load claim, measured** (Done-when 7).
+- [ ] **T12 — docs.** `cmd/define/README.md`, `atlas/define.md`'s forms section, the `--help` key table — **and the two in-tree forward references D7 falsifies**: `schedule/progress.go` says this issue extends the `Grade` seam with `GradeUnsure`, and `play/session.go` describes the mark as "firm".
 
 ---
 
 ## Done when
 
-Every row's pin is a PREDICATE OVER BEHAVIOUR — a named test or a grep for a property — never "file X is unchanged". **Every `red when` cell is EXECUTED as a mutation at the boundary**, and the result recorded per row (`#38` BR-16: a row that survives its own mutation pins nothing).
+Every row's pin is a PREDICATE OVER BEHAVIOUR. **Every `red when` cell is EXECUTED as a mutation at the boundary and the result recorded per row** (`#38` BR-16: a row that survives its own mutation pins nothing).
 
 | # | claim | pinned by | red when |
 |---|---|---|---|
-| 1 | a sitting of mature words presents them as a grid, sixteen at a time | `TestASittingOfMatureWordsIsABoard` | `boardsFor` sends them to 2.3 one at a time |
-| 2 | every word in the grid can be marked, and each mark reaches the log as it happens | `TestEveryMarkOnABoardIsRecordedImmediately` — a counting store, N marks, N events before the sitting ends | marks are batched to the end, losing them to Ctrl-C |
-| 3 | the scheduler chooses the form, not the learner | `TestTheBoxChoosesTheForm` over a deck spanning the threshold | the form is a flag or a mood |
-| 4 | `unsure` leaves the box where it was AND sends the word to 2.3 next time | `TestUnsureDoesNotMoveTheBoxAndForcesARealTest` | it is folded as a miss, or the word meets the board again |
-| 5 | `firm` can never earn the two-rung promotion | `TestABoardIsSelfRated` — and `TestSelfRatedFormsNeverEarnUnaided`, which already exists and must not need changing | `Board` stops implementing `SelfRated` |
-| 6 | the session still learns nothing about which form is asking | `TestSessionIsFormAgnostic`, unchanged, plus a grep for `*Board` in `session.go` finding nothing | `advance` type-switches instead of asking `Batch` |
-| 7 | the board is materially cheaper per word | `TestABoardCostsFewerKeystrokesThanMeaningChoice` | the grid asks for a keystroke per word plus navigation |
-| 8 | the bar counts WORDS | `TestTheBarCountsWordsNotSlots` | `total` stays `len(s.Questions)` and a 20-word sitting reads "0 of 2" |
-| 9 | a short board is normal | `TestALastBoardTakesWhatIsLeft` | words are held back until sixteen accumulate |
-| 10 | the real terminal draws it | a pty row extending `#41`'s | it works in-process and not on a tty |
+| 1 | a sitting of eligible words presents them as a grid | `TestASittingOfDueWordsIsABoard` | `boardsFor` sends them to 2.3 one at a time |
+| 2 | every mark reaches the log as it happens | `TestEveryMarkOnABoardIsRecordedImmediately` — counting store, N marks, N events before the sitting ends | marks are batched to the end, losing them to Ctrl-C |
+| 3 | **Enter takes the unmarked as `No`** | `TestEnterCommitsTheUnmarkedAsNo` | Enter reveals, or ends the sitting, or spares them |
+| 4 | **Ctrl-C leaves unmarked words UNTOUCHED, and marked ones recorded** | `TestCtrlCCancelsABoardWithoutMovingUnmarkedWords` — fold the log after, boxes unchanged | a board writes its marks at the end instead of as they land |
+| 5 | a `No` mark does not freeze the board | `TestANoMarkDoesNotEndTheBoard` | the miss-on-hidden branch sets `Graded` for a batch form |
+| 6 | **the mouse-less path works, and `d` still drops** | `TestABoardIsMarkableByKeyAlone`, `TestDOnABoardIsNotACellLabel` | labels include `d`, or the keyboard path is missing and the board degrades to "everything is No" |
+| 7 | a click marks on a board and plays everywhere else | `TestAClickOnABoardMarksIt`, and `#38`'s `TestPlayClickActsAndIsNotAnAnswer` UNCHANGED | the loop learns what a board is instead of asking |
+| 8 | the session still learns nothing about which form is asking | `TestSessionIsFormAgnostic` unchanged, plus a grep for `*Board` in `session.go` finding nothing | `Apply` type-switches instead of consulting `Batch` |
+| 9 | **every review event records the form that asked** | `TestAReviewEventNamesItsForm` over all three forms | the field is written for one form and defaulted for the others, which is worse than absent |
+| 10 | grid rows are never the ones the footer drops | `TestAShortTerminalDropsTheBarBeforeTheGrid` | `fitFooter`'s plain tail-drop eats half a board |
+| 11 | the outcome survives the sitting | `TestABoardLeavesItsRelearnListInTheTranscript` | the board is live edge and vanishes whole |
+| 12 | the bar counts WORDS | `TestTheBarCountsWordsNotSlots` | `total` stays `len(s.Questions)` and a 20-word sitting reads "0 of 2" |
+| 13 | the board is materially cheaper per word | `TestABoardCostsFewerKeystrokesThanMeaningChoice` | the grid asks for more than one keystroke per word |
+| 14 | the real terminal draws and clicks it | a pty row extending `#41`'s and `#38`'s | it works in-process and not on a tty |
 
 ---
 
