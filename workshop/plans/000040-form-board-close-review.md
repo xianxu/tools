@@ -325,3 +325,141 @@ findings:
     detail: |
       cmd/define/play/session_test.go:863 — `reveals bool` sits beside `kinds` and `advances` and reads as a third checked dimension. Revealed is in fact asserted unconditionally for every kind, so the field is dead; either drop it or make the reveal expectation per-case.
 ```
+
+---
+
+## Re-review — 2026-09-01T13:42:55-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 40 — form 2.5: the board — grid triage for mature words |
+| repo | tools |
+| issue file | workshop/issues/000040-form-board.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | eb9f1698d6800ff5ad22683f49e2c36e970d36f3..ffdb93580efd301d6819d2f2054d6289c1108374 |
+| command | sdlc close --issue 40 |
+| reviewer | claude |
+| timestamp | 2026-09-01T13:42:55-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The board is a well-built form and round 2's two blockers were fixed at the seam, not the site: I verified both by revert-mutation — removing `g.Resize(sz.cols)` reddens `TestANarrowingResizeKeepsTheBoardsClickMapHonest`, removing the `offset != 0` refusal reddens `TestFormCellAsksTheScreenAndTheForm/a wrapped entry's continuation row`, no-op'ing `Board.Resize` reddens `TestABoardRelaysOutForTheWidthItIsDrawnAt`, and the R10 `currentTruthOnly` guard fails loudly when I plant BR-3's exact shape (a `## Revisions` above `## Core concepts` plus a fabricated `Test*` name). BR-8's Critical half — a permanent mark on the wrong word — is genuinely closed. What is not closed is the rest of BR-8's own enumeration, and I measured it: the relayout is applied **at resize time to the current form only**, so a board that becomes current later is drawn at its selection-time width (73 columns on a 40-column terminal, reproduced end-to-end through `playSession`); and after a shortening resize `fitFooter` still drops the toggle — the one owner of which mark is live — at 10x40 and 12x24, which the plan (R9), the atlas and `boardFooter`'s own comment all say cannot happen. Full suite green (`go test ./...`, 108s); pty rows SKIP here (`no pty available`, #37).
+
+## 1. Strengths
+
+- **Two defences, both real and both pinned.** `Board.Resize` closes it at the root and `formCell`'s `offset != 0` closes it at the seam (`cmd/define/play_loop.go:576`), and each has a test that goes red without it — I checked all three by reverting. The comment at `play_loop.go:568-575` explaining why the seam guard exists *even though it should never fire* is the right instinct for an irreversible action.
+- **`FooterRowAt` grew the offset without widening its contract** (`cmd/define/screen.go:239-251`). The index still belongs to the screen (which wrapped the entries) and the caller gets exactly the one extra fact it needs to refuse a column it cannot place. `TestFooterRowAtNamesTheEntryUnderAClick/a wrapped entry owns every row it occupies, and says WHICH` pins the offset per row.
+- **The R10 fix went to the filter, not the file** (`repo_guard_test.go:624-647`). One check covers all eight call sites; I planted the swallowing shape in a scratch plan and three separate guards failed naming the swallowed section. `TestPlanCitesTestsThatExist` now distinguishes "nothing to check" from "I was handed nothing" (`:1197-1215`).
+- **The `numInputKinds` matrix test is the shape D12 should have had** (`play/session_test.go:857-915`): the `len(want) != numInputKinds` fatal means a new kind arrives with no expectation and fails, and `Revealed`/`Graded` are asserted unconditionally rather than per case — which is also how BR-11 got closed properly instead of by deleting a field.
+- **Docs are complete for the surface**: README gains the board's frame, its keys, the click, Tab, the split Enter and the `d`-is-not-offered note; `atlas/define.md` gains a full form 2.5 section including the five capabilities and the measured cost. `doc_sync_test.go` now drives the board's prompt line against the README, which is the one row that can catch `reservedKeys` regressing.
+
+## 2. Critical findings
+
+None new. BR-8's Critical mechanism (a click marking the wrong word) is closed and verified; see the disposition below for the half that is not.
+
+## 3. Important findings
+
+**BR-8, disposed `not-addressed` — the enumeration it demanded is two rows short.** BR-8's rule was *"every quantity the board's fit and click map depend on must be read from the terminal as it is at draw/click time, never fixed at selection time"*, with four rows: prompt height (fixed), layout width, the fit re-check, the wrapped-entry column. Measured against the shipped code:
+
+- **Layout width is read at RESIZE time, for `s.Current()` only** (`cmd/define/play_loop.go:256-258`). A board later in the queue never hears about it. Reproduced end-to-end through `playSession` with a `[Recall, Board]` queue and a `winSize{24,40}` on the resize channel: after the single is answered, the board is drawn with rows of **73–75 columns on a 40-column terminal**. Singles come first by design (`boardsFor`), so *any* resize during the retrieval phase leaves every board in the sitting stale. Harm is bounded by the seam guard — no wrong-word mark — but half of every grid row is drawn and silently unclickable, on a form whose own doc says a key that stops working without saying so is what a learner blames themselves for.
+- **The fit is not re-checked after a resize, and the argument for that is measurably wrong.** The plan's R9 table (`workshop/plans/000040-form-board-plan.md:624`) says *"`fitFooter` drops trailing entries, which are grid rows that are neither drawn nor clickable"*. `boardFooter` puts the form's rows FIRST, so the trailing entries are the bar, the panel and then the **toggle**. Painted through the real screen with the loop's own sequence (`view.Resize` → `b.Resize` → `Draw(gradePrompt, boardFooter)`): at **12x40** the panel and bar drop; at **10x40** and **12x24** the toggle drops — and at 12x24 only 8 of 16 words are drawn at all, while the undrawn ones are still markable blind and still taken as `no` by Enter. That is BR-2's harm arriving through the door BR-8 named.
+
+*Fix sketch — one place, which is what makes it the rule rather than the site:* keep the current terminal size in `playSession` (initialised from `opt.rows`/`opt.width`, updated in the resize case) and have `show()` relayout the current form from it before drawing — `if g, ok := q.(play.Grid); ok { g.Resize(cols) }` — **replacing** the resize-case call rather than joining it, so there is one owner. Then decide the short-terminal case explicitly instead of by fitFooter's tail-drop: either the board trims its own grid rows to an available height it is told (keeping `boardFooter`'s index→grid-row identity intact, which trailing-drop preserves), or the loop re-checks `fitsABoard` at draw time and the plan says what happens when it fails. Either way the claim in `play_loop.go:509-511`, `atlas/define.md:2068` and R9 has to match what fitFooter actually drops. (ARCH-PURPOSE, ARCH-CONSTRAINTS)
+
+**`cmd/define/play_loop_test.go:3101-3106` — the loop-level pin for R9's click map asserts over an empty set, always.** *This is the 2nd finding in family `assertion-cannot-fail`.* The rule, not the instance: **a test whose subject is an event must assert the event happened; `for _, e := range events` with no count check certifies nothing.** Measured — instrumented with a count and run three times, the test records **0 review events every time**, and it still passes when I stub `formCell` to return `false` unconditionally. The click never lands because the goroutine derives its row from `strings.Split(frame, "\r\n")`, i.e. from logical writes, while `FooterRowAt` works in *physical* rows — the 76-column keys prompt wraps to two rows at width 40, so every row sent is one short and `FooterRowAt` answers `false`. This is the same lesson the issue's Log already records for T13 (*"the click's ROW and COLUMN are read off the paint rather than computed"*), unapplied one test over. What the test does pin (the relayout, the row widths) is real and does fail without the fix; only the mark assertion is dead.
+
+*Fix sketch:* walk the physical rows of the last frame (the frame is `cursorHome+eraseDown` delimited and each written row is `\r\n`-terminated, so wrapped entries must be expanded by `displayRows` — or simply probe `live.FooterRowAt(r)` for the row whose entry is grid row 0 and take the column from the drawn text), then assert `len(reviewEvents(t, st)) == 1` before checking the word. Also drop the dead `_ = i` and the `HasPrefix ||` disjunct subsumed by `Contains` at `:3070-3077`.
+
+## 4. Minor findings
+
+- *3rd finding in family `comment-asserts-absent-behaviour`* — the rule: **prose restating a set the code owns is a second owner and drifts; point at the type instead.** Two live instances: the plan's Core-concepts `Grid` row (`plan.md:327`) still enumerates `Rows`, `CellAt`, `Mark` while the interface has four methods since R9 added `Resize`; and `boardFooter`'s comment (`play_loop.go:509-511`) plus `atlas/define.md:2068` still assert *"a board is never IN a footer that has to drop anything"*, which the measurement above contradicts. Neither is guarded — `TestPlanTableStatusMatchesTheChangeWindow` reads the `name | file | status` cells only.
+- *3rd finding in family `plan-citations-unenforced`* — `currentTruthOnly` has **two** discarding rules and R10 gave a premise assertion to one of them. The second (`repo_guard_test.go:640-646`, dropping any `### ` section containing `**closed:**`) still discards silently, and because it splits on `"\n### "` a closed section swallows everything up to the *next* `### ` — which can include a following `## ` top-level section. No live instance in the tree today (`workshop/projects/define-learn.md` is the only artifact with `**closed:**`, and its closed sections are already below the `## Log` truncation), so this is a note rather than a defect: the rule R10 wrote applies to every rule the filter has, not just the one that bit.
+- `Board.toggleLine()` is a fixed 19 columns, so after `Resize(cols)` below 19 the board's own "no line wider than the width" invariant is false for the toggle row. Harmless today (grid rows come first, so nothing shifts) and unreachable at selection time (`minWrapWidth`), but `TestABoardRelaysOutForTheWidthItIsDrawnAt` exercises 24 as its narrowest width, so the invariant is unpinned exactly where it stops holding.
+- README: *"A word you have recalled three times or more is swept on a grid"* — `boardBox` is a box, not a recall count; a lapsed word can be at box 3 with many more than three recalls behind it.
+
+## 5. Test coverage notes
+
+- Round 2's three code fixes each have a test that fails without them; I verified all three by reverting rather than by reading. The R10 guard fix I verified by planting BR-3's shape in a scratch plan — three guards failed naming the swallowed section, where round 1's version passed.
+- The gap is the composition: nothing pins **a click on a relaid-out board through a real screen**. `TestABoardRelaysOutForTheWidthItIsDrawnAt` pins `CellAt` against the board's own text, `TestFormCellAsksTheScreenAndTheForm` pins the refusal against a fake view, and the loop-level test that was supposed to join them is vacuous (above). `TestPTYPlayBoardIsDrawnAndClickable` does read the click off the paint, but it does not resize and it SKIPS in this environment (`no pty available: operation not permitted` for all 20 pty rows — #37's subject, not this issue's), so Done-when 14 again rests on the implementor's out-of-band run.
+- Nothing draws a board through `screen.Paint` after a size change and asserts what survived. That one test would have caught the dropped toggle, and it is the pin the fit-after-resize row needs.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** No duplicated layout arithmetic: `boardFits` builds a probe and asks it, `fitsABoard` takes a measured `promptRows`, and the two redundant bounds found by mutation were removed rather than kept "for safety". One forward-looking caution: if the draw-time relayout is *added* beside the resize-case call rather than replacing it, the width will have two owners — the failure mode this issue keeps paying for.
+- **ARCH-PURE — pass.** `board.go` imports nothing (empty allowlist, `puretest`), `Apply`/`apply` stay a pure state machine, and the new mutation (`Resize`) is state on the form driven from the thin loop. `TestTheSessionNamesNoForm` reads `session.go` off disk and strips comments — a grep guard that can actually fail, with its own premise check.
+- **ARCH-PURPOSE — flag.** The shadow sweep is where this boundary is short. R9 wrote the enumeration out (four quantities) which is exactly the right move; the sweep then closed two rows and argued the other two away. A finding's deliverable is the class, and the class here is enumerated and small — closing it means the draw seam, not the resize event.
+- **ARCH-MOCK — pass.** No new external dependency. The `store.NewYAML` round trip is the right pin for a persistence claim (the `yaml:"-"` class), and `seedMature` writes the fixture through the production writer rather than by hand. The live conformance check exists (`TestPTYPlayBoardIsDrawnAndClickable`) but cannot run in a review environment, which is a known, filed gap.
+- **ARCH-CONSTRAINTS — flag.** The declared envelope is *"a board that cannot be drawn whole is not a board"*. It is enforced at selection time and, after R9, horizontally at resize time; it is **not** enforced vertically after a resize, and the measurements above are the envelope being silently exceeded (toggle gone at 10x40; half the words undrawn at 12x24) with no bounded behaviour declared for it. Per-frame cost is unchanged and fine — `Prompt()` is O(16 cells) at keystroke rates.
+
+## 7. Plan revision recommendations
+
+Add an `## Revisions` entry (R11) covering:
+
+1. **R9's "the fit after a resize" row is wrong about what drops.** `boardFooter` puts the form's rows first, so `fitFooter` drops the bar, then the panel, then the toggle, then the blank, and only then grid rows. Replace the row with the measurement (12x40 → panel + bar; 10x40 → toggle, panel, bar; 12x24 → everything below the 8th grid row) and state the chosen bounded behaviour.
+2. **R9's "board layout width" row overstates where the relayout happens.** It says the width is read at draw time; the code reads it in the resize case for `s.Current()` only. Either say that, or move the call to `show()` and say *that*.
+3. **Core-concepts `Grid` row (`:327`)** must list `Resize` — the interface gained a fourth method in R9.
+4. **The two prose claims that now contradict measurement**: `play_loop.go:509-511` and `atlas/define.md:2068` (*"a board is never IN a footer that has to drop anything"*).
+
+```findings
+dispose:
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      wrong-word click closed and pinned; the layout-width and fit-after-resize rows of its own enumeration are still open — measured
+  - id: BR-9
+    disposition: addressed
+    note: |
+      verified by planting BR-3's shape in a scratch plan: three guards now FAIL naming the swallowed section
+  - id: BR-10
+    disposition: addressed
+    note: |
+      the Batch doc points at numInputKinds and the table test; remaining "four" mentions are records or the true batchOf call-site count
+  - id: BR-11
+    disposition: addressed
+    note: |
+      the reveals field is gone and Revealed is asserted unconditionally for every kind
+findings:
+  - id: new
+    severity: Important
+    family: assertion-cannot-fail
+    title: |
+      TestANarrowingResizeKeepsTheBoardsClickMapHonest asserts over an empty event set, so R9's click-map claim is unpinned at the loop
+    detail: |
+      2nd finding in family assertion-cannot-fail. The rule, not the instance: a test whose subject is an
+      EVENT must assert the event happened — `for _, e := range events` with no count check certifies nothing.
+      Measured: instrumented and run three times, the test records 0 review events every time, and it still
+      passes when formCell is stubbed to return false unconditionally. The click never lands because the
+      goroutine derives its row from strings.Split(frame, "\r\n") — logical writes — while FooterRowAt works in
+      physical rows, and the 76-column keys prompt wraps to two at width 40. Same lesson the issue's Log
+      records for T13 ("the click's ROW and COLUMN are read off the paint rather than computed"), unapplied
+      one test over. The relayout and row-width halves of the test are real and do fail without the fix.
+  - id: new
+    severity: Minor
+    family: comment-asserts-absent-behaviour
+    title: |
+      Two live prose enumerations restate sets the code owns: the plan's Grid row omits Resize, and boardFooter plus atlas claim a board is never in a footer that drops rows
+    detail: |
+      3rd finding in family. The rule: prose restating a set the code owns is a second owner and drifts —
+      point at the type. plan.md:327 lists Rows, CellAt, Mark for an interface that has had four methods since
+      R9 added Resize. play_loop.go:509-511 and atlas/define.md:2068 assert "a board is never IN a footer that
+      has to drop anything", which measurement contradicts after a resize (toggle dropped at 10x40 and 12x24).
+      Neither is guarded: TestPlanTableStatusMatchesTheChangeWindow reads the name|file|status cells only.
+  - id: new
+    severity: Minor
+    family: plan-citations-unenforced
+    title: |
+      currentTruthOnly has two discarding rules and R10 gave a premise assertion to only one
+    detail: |
+      3rd finding in family. The closed-section rule (repo_guard_test.go:640-646) still discards silently, and
+      because it splits on "\n### " a closed section swallows everything up to the NEXT "### " — which can
+      include a following top-level "## " section. No live instance in the tree today (define-learn.md's closed
+      sections already sit below the ## Log truncation), so this is the rule R10 wrote applied to every rule the
+      filter has, rather than a present defect.
+```

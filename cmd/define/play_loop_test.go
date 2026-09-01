@@ -2060,10 +2060,10 @@ func boardCells(words ...string) []play.Cell {
 
 func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80)
-	// Five words at four columns: two grid rows, then the blank, the toggle and
-	// the panel the form draws under them.
-	if board.Rows() != 5 {
-		t.Fatalf("expected a five-row live edge, got %d:\n%s", board.Rows(), board.Prompt())
+	// Five words at four columns: two grid rows, then the blank and the panel.
+	// (R11 moved the toggle to the prompt row.)
+	if board.Rows() != 4 {
+		t.Fatalf("expected a four-row live edge, got %d:\n%s", board.Rows(), board.Prompt())
 	}
 
 	// The gutter column, derived from what Prompt DREW rather than from the
@@ -2125,15 +2125,15 @@ func TestAClickOnABoardMarksIt(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic", "ephemeral")
 	_, held := questionsFor(t, d, opt)
 	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width)
-	// One grid row, then the blank, the toggle and the panel.
-	if board.Rows() != 4 {
-		t.Fatalf("expected a four-row live edge, got %d rows:\n%s", board.Rows(), board.Prompt())
+	// One grid row, then the blank and the panel (R11 moved the toggle out).
+	if board.Rows() != 3 {
+		t.Fatalf("expected a three-row live edge, got %d rows:\n%s", board.Rows(), board.Prompt())
 	}
 
 	// TEN ROWS, so the geometry is arithmetic rather than a guess. Pinned, the
-	// footer sits at the bottom edge: five entries (the board's own four, plus
-	// the bar) means the grid's only row is viewport row 10-5 = 5.
-	const termRows, gridRow = 10, 5
+	// footer sits at the bottom edge: four entries (the board's own three, plus
+	// the bar) means the grid's only row is viewport row 10-4 = 6.
+	const termRows, gridRow = 10, 6
 	// The second cell's column, read off what Prompt DREW rather than computed.
 	col := strings.Index(board.Prompt(), "[1] ") + len("[1] ")
 	if col < 1 {
@@ -2235,8 +2235,11 @@ func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
 			t.Errorf("the frame is missing the board's row %q:\n%s", row, frame)
 		}
 	}
-	if !strings.Contains(frame, "marking: [yes]") {
-		t.Errorf("the toggle row is missing:\n%s", frame)
+	// The mode is on the PROMPT row now (R11) rather than a footer row, because
+	// fitFooter drops from the end and that made the one statement of what a
+	// click will mean the first thing a short terminal lost.
+	if !strings.Contains(frame, "marking [yes] no") {
+		t.Errorf("the frame does not say which mark is live:\n%s", frame)
 	}
 }
 
@@ -2275,20 +2278,20 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 		termRows, boardRows, promptRows int
 		want                            bool
 	}{
-		{10, 7, 1, true}, // a 4x4 board: 4 grid rows plus 3 of its own chrome
-		{9, 7, 1, true},  // exactly: the board, a one-row keys prompt, the bar
-		{8, 7, 1, false}, // one short, and half a board is unusable
-		{24, 7, 1, true}, // an ordinary terminal
-		{6, 4, 1, true},  // a board of one grid row
-		{5, 4, 1, false}, //
-		{0, 4, 1, false}, //
+		{10, 6, 1, true}, // a 4x4 board: 4 grid rows plus 2 of its own chrome
+		{8, 6, 1, true},  // exactly: the board, a one-row keys prompt, the bar
+		{7, 6, 1, false}, // one short, and half a board is unusable
+		{24, 6, 1, true}, // an ordinary terminal
+		{5, 3, 1, true},  // a board of one grid row
+		{4, 3, 1, false}, //
+		{0, 3, 1, false}, //
 		{100, 28, 1, true},
 		// AND THE PROMPT'S REAL HEIGHT, which is what a constant got wrong: the
 		// keys line is 76 columns wide and a board is offered from 20.
-		{9, 7, 2, false},
-		{10, 7, 2, true},
-		{12, 7, 4, true},
-		{11, 7, 4, false},
+		{8, 6, 2, false},
+		{9, 6, 2, true},
+		{11, 6, 4, true},
+		{10, 6, 4, false},
 	} {
 		if got := fitsABoard(tc.termRows, tc.boardRows, tc.promptRows); got != tc.want {
 			t.Errorf("fitsABoard(%d rows, a %d-row board, a %d-row prompt) = %v, want %v",
@@ -2475,15 +2478,15 @@ func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
 		prog[k] = schedule.Progress{Box: 5}
 	}
 	// Tall enough: a 16-word board at 80 columns is four grid rows plus its own
-	// three, and the prompt and bar make nine.
-	if _, boards := boardsFor(keys, prog, options{width: defaultCols, rows: 9}); len(boards) != 1 {
-		t.Errorf("a 9-row terminal offered %d boards, want 1", len(boards))
+	// two, and the prompt and bar make eight.
+	if _, boards := boardsFor(keys, prog, options{width: defaultCols, rows: 8}); len(boards) != 1 {
+		t.Errorf("an 8-row terminal offered %d boards, want 1", len(boards))
 	}
 	for _, tc := range []struct {
 		name string
 		opt  options
 	}{
-		{"one row too short", options{width: defaultCols, rows: 8}},
+		{"one row too short", options{width: defaultCols, rows: 7}},
 		{"a small window", options{width: defaultCols, rows: 5}},
 		{"too narrow to lay out at all", options{width: 12, rows: 60}},
 		// THE WIDTH AXIS. The keys line is 76 columns, so below that it wraps
@@ -3034,17 +3037,27 @@ func eventsOf(t *testing.T, st *store.Mem) []store.ReviewEvent {
 }
 
 // R9, THROUGH THE LOOP: a narrowing resize under a live board must not leave a
-// click marking the wrong word.
+// click marking the wrong word (R12).
 //
-// Two defences, and this drives both. The board relays out, so its rows keep
-// fitting and a footer entry stays one physical row; and `formCell` refuses a
-// click on any continuation row, because a column of the terminal only means a
-// column of the form's line while that line is drawn on one row.
+// The first version of this test asserted over an EVENT SET IT NEVER PRODUCED —
+// `for _, e := range reviewEvents(...)` with no count check, and the click never
+// landed, so it passed with `formCell` stubbed to return false. The rule it
+// broke is one this issue's own Log already records for T13: **read the click's
+// row and column off the PAINT, never compute them** — the goroutine derived a
+// row from logical writes while `FooterRowAt` works in physical rows.
+//
+// So the click is placed from the frame, and the premise is checked before the
+// assertion: a test whose subject is an event must assert the event happened.
 func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
+	// Long words, so the board's rows are wide at 80 and MUST be relaid out at
+	// 40 or they wrap — which is the whole failure.
 	words := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
-	d, opt, st := playRig(t, "concrete", "ephemeral", "quokka", "mesa")
+	d, opt, st := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
 	board := play.NewBoard(boardCells(words...), 80)
+	if board.Rows() != 3 {
+		t.Fatalf("expected a one-row grid plus chrome at 80 columns, got %d rows:\n%s", board.Rows(), board.Prompt())
+	}
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, 80)
@@ -3052,56 +3065,110 @@ func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
 	var errb bytes.Buffer
 
 	resizes := make(chan winSize, 1)
-	resizes <- winSize{rows: 24, cols: 40}
 	keys := make(chan Key, 2)
 
-	// The resize lands first, then a click on the grid's first row. The row and
-	// column are read off the PAINT after the resize, which is why the click is
-	// sent from a goroutine once the frame has settled.
+	// The resize lands, the frame settles, and only THEN is the click placed —
+	// from the painted frame, at the physical row and column the terminal is
+	// actually showing the second cell at.
+	// The driver ALWAYS closes `keys`, whatever it fails to find. A helper
+	// goroutine that gives up without closing leaves playSession blocked on the
+	// channel forever, so the test HANGS instead of failing — which is how the
+	// first version of this behaved under the very mutation it exists to catch.
+	// A test that hangs on the defect certifies about as much as one that passes
+	// on it, and takes longer to say so. (`waitFor`'s own t.Fatal is worse than
+	// useless here: FailNow on a non-test goroutine is a Goexit, so it skips
+	// every remaining line including the close.)
 	go func() {
-		waitFor(t, func() bool { return strings.Contains(unstyled(tty.String()), "[0] ") })
-		waitFor(t, func() bool {
-			_, _, ok := live.FooterRowAt(24 - (board.Rows() + 1))
-			return ok
-		})
-		frames := strings.Split(unstyled(tty.String()), cursorHome+eraseDown)
-		rows := strings.Split(frames[len(frames)-1], "\r\n")
-		for i, r := range rows {
-			if strings.HasPrefix(r, "[1] ") || strings.Contains(r, "[1] ") {
-				keys <- Key{Kind: KeyClick, Row: i, Col: strings.Index(r, "[1] ")}
-				break
+		defer close(keys)
+		settled := func(cond func() bool) bool {
+			for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+				if cond() {
+					return true
+				}
+				time.Sleep(time.Millisecond)
 			}
-			_ = i
+			return false
 		}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "[0] ") }) {
+			return
+		}
+		resizes <- winSize{rows: 24, cols: 40}
+		// The relayout is observable in the FORM, which is what the frame is
+		// drawn from — waiting on the paint alone would race the redraw.
+		if !settled(func() bool { return board.Rows() > 3 }) {
+			return
+		}
+
+		// THE ROW COMES FROM THE SCREEN'S OWN PAINT RECORD, not from scraping
+		// the output. Splitting the emitted frame on "\r\n" and using the index
+		// was the first spelling, and it raced: the loop repaints after the
+		// resize, so the frame that was read and the frame the click resolves
+		// against were different ones, and FooterRowAt answered "not the
+		// footer". The screen is the thing that knows where it put the footer —
+		// asking it is what production does.
+		row := -1
+		if !settled(func() bool {
+			for r := 0; r < 24; r++ {
+				if e, off, ok := live.FooterRowAt(r); ok && e == 0 && off == 0 {
+					row = r
+					return true
+				}
+			}
+			return false
+		}) {
+			return
+		}
+		// The COLUMN from the board, at its current layout, for the same reason.
+		line := strings.Split(board.Prompt(), "\n")[0]
+		col := strings.Index(line, "[1] ")
+		if col < 0 {
+			return
+		}
+		keys <- Key{Kind: KeyClick, Row: row, Col: col + len("[1] ")}
 		keys <- Key{Kind: KeyInterrupt}
-		close(keys)
 	}()
 
 	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
 		console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
 
-	// THE BOARD'S OWN ROWS FIT FORTY COLUMNS, which is the invariant the click
-	// map rests on: one footer entry, one physical row.
-	//
-	// The board's rows ONLY. The keys prompt is allowed to wrap — Paint budgets
-	// it with displayRows and it carries no click map — and so is the bar, which
-	// fitFooter drops from the end if it will not fit.
+	// THE PREMISE FIRST: the click landed at all. Without this the assertion
+	// below is a loop over nothing, which is what shipped and passed.
+	evs := reviewEvents(t, st)
+	if len(evs) != 1 {
+		t.Fatalf("%d review events, want the one click — the click never reached the form:\n%s",
+			len(evs), lastPaintedFrame(tty.String()))
+	}
+	// ...and the frame really did show the grid, so the row above was a grid row
+	// rather than an empty footer entry that happened to answer.
+	if !strings.Contains(unstyled(tty.String()), "[1] "+words[1]) {
+		t.Fatalf("the second cell was never painted:\n%s", lastPaintedFrame(tty.String()))
+	}
+	// AND IT MARKED THE WORD DRAWN THERE. Without the relayout the board's rows
+	// are 74 columns wide at a 40-column terminal, each wraps into two physical
+	// rows, and the column carries a different word.
+	if evs[0].Word != words[1] {
+		t.Errorf("the click marked %q, want %q — the column meant a different word after the resize", evs[0].Word, words[1])
+	}
+
+	// THE BOARD'S OWN ROWS FIT, which is the invariant the click map rests on:
+	// one footer entry, one physical row. The keys prompt and the bar may wrap —
+	// Paint budgets the first with displayRows and fitFooter drops the second.
 	frame := unstyled(tty.String())
 	for i, row := range strings.Split(board.Prompt(), "\n") {
 		if n := visibleCells(row); n > 40 {
-			t.Errorf("the board's row %d is %d columns after a resize to 40 — it will wrap, and a click on the continuation means another word:\n%q", i, n, row)
+			t.Errorf("the board's row %d is %d columns after a resize to 40 — it wraps, and a click on the continuation means another word:\n%q", i, n, row)
 		}
 		if row != "" && !strings.Contains(frame, row) {
 			t.Errorf("the board's row %d was never drawn after the resize:\n%q", i, row)
 		}
 	}
-	if board.Rows() <= 4 {
-		t.Errorf("the board is %d rows at 40 columns; it was 4 at 80, so it did not relayout", board.Rows())
+	if board.Rows() <= 3 {
+		t.Errorf("the board is %d rows at 40 columns and was 3 at 80 — it did not relayout", board.Rows())
 	}
-	// AND THE MARK, if one landed, is on the word that was actually drawn there.
-	for _, e := range reviewEvents(t, st) {
-		if e.Word != words[1] {
-			t.Errorf("a click after the resize marked %q, want %q — the column meant a different word", e.Word, words[1])
-		}
-	}
+}
+
+// lastPaintedFrame is the most recent whole frame in a session's output.
+func lastPaintedFrame(out string) string {
+	frames := strings.Split(unstyled(out), cursorHome+eraseDown)
+	return frames[len(frames)-1]
 }

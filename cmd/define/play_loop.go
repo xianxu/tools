@@ -255,6 +255,15 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// wrap policy that answers 0 on a narrow terminal.
 			if g, ok := s.Current().(play.Grid); ok {
 				g.Resize(sz.cols)
+				// AND NO RE-SELECTION. The board stays, at the new shape, even
+				// if the terminal is now too short to draw it whole — which is
+				// D15's rule holding rather than bending. `boardsFor` chooses
+				// the form for words that have not been asked yet; this board's
+				// marks are already in the log and cannot be retracted, so
+				// "send it to 2.3 instead" would mean re-asking words already
+				// answered. What a too-short terminal loses is listed in
+				// boardFooter, in the order it loses it, and the row that says
+				// what a click means is not in the footer at all.
 			}
 			show()
 			continue
@@ -497,18 +506,26 @@ func toInput(k Key) (play.Input, bool) {
 // boardFooter is the live edge for a board: everything the FORM draws, then the
 // bar.
 //
-// One line of assembly, and that is the point. The grid, the toggle and the
-// panel are the board's own rendering — a form owns how it looks, and a loop
-// composing it out of accessors would make the board's appearance a thing two
-// files agree about, on the surface where disagreeing marks the wrong word. All
-// this adds is the bar, which belongs to the sitting rather than to the question.
+// One line of assembly, and that is the point. The grid and the panel are the
+// board's own rendering — a form owns how it looks, and a loop composing it out
+// of accessors would make the board's appearance a thing two files agree about,
+// on the surface where disagreeing marks the wrong word. All this adds is the
+// bar, which belongs to the sitting rather than to the question.
 //
 // THE FORM IS FIRST, which is load-bearing rather than aesthetic: formCell reads
 // a footer entry index straight back as a grid row, so anything above it would
-// silently shift every cell. It is also the order of value, which is what
-// fitFooter drops from the end — but a board is never IN a footer that has to
-// drop anything, because a board that does not fit is not offered (D15,
-// fitsABoard). That is what left fitFooter unchanged.
+// silently shift every cell. It is also the order of value that fitFooter drops
+// from: the bar goes first, then the panel, then grid rows.
+//
+// A BOARD CAN END UP IN A FOOTER THAT DROPS ROWS, and D15's "never" was measured
+// wrong (R11). It holds at SELECTION — boardsFor refuses a board the terminal
+// cannot draw whole — and a resize afterwards is a shape nobody chose. What the
+// order buys is that the losses are harmless in sequence: the bar (a figure), the
+// panel (cosmetic), then grid rows, which are conspicuously absent and, because
+// they were never painted, are not clickable either (FooterRowAt answers nothing
+// for a row fitFooter dropped). The one thing that must not go is the statement
+// of what a click will MEAN, and that is why the mode moved to the prompt row,
+// which Paint clips last.
 func boardFooter(q play.Question, fig sittingFigures) []string {
 	return append(strings.Split(q.Prompt(), "\n"), sittingBar(fig))
 }

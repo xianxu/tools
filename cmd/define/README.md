@@ -104,14 +104,13 @@ saying whether you still have it, not proving it.
 
 ```
 $ define --play
-a word's key or a click = mark, Tab = switch, Enter = finish, Ctrl-C to stop
+marking [yes] no, Tab switches, click or key marks, Enter ends, Ctrl-C to stop
 [0] arrondissement  [1] bailiwick       [y] keel            [3] mesa
 [4] ephemeral       [n] quokka          [6] potassium       [7] ligament
 [n] sycophantic     [9] concrete        [a] parrot          [y] run
 [c] light           [e] bank            [f] set             [g] obsequious
 
-marking:  yes  [no]
-quokka  a short-tailed wallaby of southwestern Australia
+sycophantic  behaving in an obsequious way to gain advantage
 12 of 41 · ~12 reviews/day · 3.2 new words/day at 20 a sitting
 ```
 
@@ -122,7 +121,8 @@ dictionary entry on screen for every word; a board puts one line up for the
 entire sweep.
 
 **Click a word, or press the key printed beside it.** `Tab` switches between
-marking yes and marking no — the bracketed one is live. A marked cell shows its
+marking yes and marking no — the bracketed one on the prompt line is live, and
+that line is the last thing a short window gives up. A marked cell shows its
 mark where its key was, and a word can only be marked once: the answer is
 written the moment it lands, so there is nothing to take back.
 

@@ -145,14 +145,32 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 	if b.Mode() != Yes {
 		t.Errorf("Tab did not flip back: mode is %v", b.Mode())
 	}
-	// AND Keys() DOES NOT SAY WHICH. The footer's toggle row is the one owner of
-	// the mode; a keys line that also named it would be the same fact drawn
-	// twice, one edit away from disagreeing on the surface where disagreeing
-	// marks the wrong word.
+	// AND Keys() IS WHERE THE MODE IS SHOWN (R11). It had a footer row of its
+	// own, and a resize measured what that costs: fitFooter drops from the END,
+	// so a short terminal lost the one statement of what a click would mean
+	// while every mark stayed irreversible. Paint clips the PROMPT last, so the
+	// mode now lives on the row that survives longest.
+	//
+	// STILL ONE OWNER — the toggle row is gone, not duplicated. The mode is Yes
+	// here: the two Toggles above returned it.
 	yes := b.Keys()
+	if !strings.Contains(yes, "[yes]") || strings.Contains(yes, "[no]") {
+		t.Errorf("Keys() in Yes mode = %q, want the live mark bracketed", yes)
+	}
 	b.Toggle()
-	if b.Keys() != yes {
-		t.Errorf("Keys() changed with the mode:\n Yes: %q\n  No: %q", yes, b.Keys())
+	no := b.Keys()
+	if !strings.Contains(no, "[no]") || strings.Contains(no, "[yes]") {
+		t.Errorf("Keys() in No mode = %q, want the live mark bracketed", no)
+	}
+	// Same width, so the line does not jump under a key pressed twice.
+	if columnsIn(yes) != columnsIn(no) {
+		t.Errorf("the two spellings are %d and %d columns:\n%q\n%q", columnsIn(yes), columnsIn(no), yes, no)
+	}
+	// And nothing BELOW the grid says it a second time.
+	for _, line := range strings.Split(b.Prompt(), "\n") {
+		if strings.Contains(line, "marking") {
+			t.Errorf("the mode is drawn twice — Prompt has %q as well as the keys line", line)
+		}
 	}
 }
 

@@ -247,13 +247,18 @@ func (b *Board) gridRows() int {
 	return (len(b.cells) + b.cols - 1) / b.cols
 }
 
-// chromeRows is what Prompt draws under the grid: a blank, the toggle, the
-// panel.
+// chromeRows is what Prompt draws under the grid: a blank and the panel.
 //
 // The panel row is drawn EVEN WHEN EMPTY, which is not tidiness. A row that
 // appeared with the first mark would shift the grid up by one, and every word
 // would move under a pointer already resting on it.
-const chromeRows = 3
+//
+// The TOGGLE used to be a third, and it moved to the prompt row (R11): the
+// footer drops rows from the end, so the one statement of what a click will mean
+// was the first thing a short terminal lost. What is left below the grid is the
+// panel, whose loss is cosmetic — and then grid rows, which are visible when
+// missing and are not clickable when undrawn.
+const chromeRows = 2
 
 // Word is the word the LAST mark landed on.
 //
@@ -319,21 +324,8 @@ func (b *Board) Prompt() string {
 	// it would make the board's appearance a thing two files agree about, on the
 	// surface where disagreeing marks the wrong word. All the loop adds is the
 	// bar, which belongs to the sitting rather than to this question.
-	lines = append(lines, "", b.toggleLine(), b.panelLine())
+	lines = append(lines, "", b.panelLine())
 	return joinLines(lines)
-}
-
-// toggleLine is the mode, and the ONE place it is shown.
-//
-// The live mark is bracketed exactly as a marked cell brackets its own, so the
-// grid and the toggle say "this is set" in the same shape — and Tab's effect is
-// visible in the shape it will land in. Both spellings are the same width, so
-// the line does not jump under a key pressed to be pressed again.
-func (b *Board) toggleLine() string {
-	if b.mode == Yes {
-		return "marking: [yes]   no"
-	}
-	return "marking:  yes  [no]"
 }
 
 // panelLine is the last-marked word and its gloss: the feedback moment, in the
@@ -379,12 +371,20 @@ func (b *Board) glyph(i int) rune {
 // the board would freeze after its first No.
 func (b *Board) Reveal() string { return "" }
 
-// Keys names the board's own keys, and NOT which mark is live.
+// Keys names the board's keys AND which mark is live, and it is the one owner of
+// both (R11).
 //
-// The mode is drawn by the footer's toggle row (D6), and that row is its one
-// owner. This line said it too for a while and the two were a mode shown twice —
-// which is the same fault as a mark shown by two rulers, one edit away from
-// disagreeing on the surface where being wrong marks the wrong word.
+// THE MODE LIVES HERE BECAUSE THIS ROW SURVIVES. It had its own footer row, on
+// the reasoning that the live edge is where things that change belong — and a
+// resize measured what that costs: `fitFooter` drops footer rows from the END,
+// so a terminal too short after a narrowing dropped the panel and then the
+// TOGGLE, leaving the board on screen with no statement of what the next click
+// would mean while every mark is irreversible. `Paint` clips the PROMPT last and
+// only when it alone exceeds the terminal, so the mode is knowable for as long
+// as anything is.
+//
+// One owner either way — the footer's toggle row is gone, not duplicated. What
+// changed is which row it is, and the reason is which row survives.
 //
 // Tab and Enter ARE named here even though both are session Input kinds, and
 // that is deliberate: sessionKeys in the loop is the set that is true WHATEVER
@@ -395,11 +395,15 @@ func (b *Board) Reveal() string { return "" }
 // The label set is NOT enumerated. It has a hole at `d` and it is printed beside
 // every word, so spelling "0-9 a-c e-g" here would be a second owner of the
 // sequence and a harder thing to read than the grid itself.
+//
+// Both spellings are the SAME WIDTH, so the line does not jump under a key
+// pressed to be pressed again — and short enough that this plus the session's
+// reserved keys fits eighty columns.
 func (b *Board) Keys() string {
-	// Short enough that the loop's full prompt line — this plus the session's
-	// reserved keys — fits eighty columns. A prompt that wraps is a frame one
-	// row taller than the board was offered for.
-	return "a word's key or a click = mark, Tab = switch, Enter = finish"
+	if b.mode == Yes {
+		return "marking [yes] no, Tab switches, click or key marks, Enter ends"
+	}
+	return "marking yes [no], Tab switches, click or key marks, Enter ends"
 }
 
 // Mode is the mark a click will land. Not on any interface — the form draws its

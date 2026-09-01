@@ -3090,3 +3090,34 @@ question is not "where else does this exact bug appear" but "what else is this
 quantity read from, and when". Writing the enumeration into the fix — as a
 derived set, a measured value, or a table in the revision — is what stops round
 three.
+
+## Put the irreplaceable thing on the row that survives (`#40` R11)
+
+The board's mode toggle had its own footer row, because the live edge is where
+things that change belong. `fitFooter` drops footer rows from the END, so a
+narrowing resize dropped the panel and then the toggle — leaving a grid on screen
+with no statement of what the next click would MEAN, while every mark is
+irreversible.
+
+`Paint`'s order of sacrifice is a design surface, not an implementation detail.
+**Ask, of every element on a live edge: what does its absence cost, and where in
+the drop order does that put it?** The mode moved to the prompt row, which Paint
+clips last. Still one owner — the question was never whether to duplicate it, but
+which row it should be on.
+
+The general form: an element whose absence makes the remaining UI *misleading*
+outranks every element whose absence merely makes it *smaller*.
+
+## A test that hangs on the defect is barely better than one that passes on it (`#40` R12)
+
+A resize test drove its input from a helper goroutine that called `waitFor`,
+whose timeout is `t.Fatal`. `FailNow` off the test goroutine is a `Goexit`: the
+goroutine died without closing the key channel, the loop blocked forever, and the
+mutation that should have reddened the test hung the run instead — five minutes,
+no output, no signal.
+
+**A driver goroutine closes its channel with `defer`, always, and reports nothing
+itself.** Assertions belong on the test goroutine, where a failure is a failure.
+The same test also asserted over an event set it never produced (`for _, e :=
+range events` with no count check) — so: **a test whose subject is an event must
+assert the event happened**, before it asserts anything about it.

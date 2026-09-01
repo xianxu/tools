@@ -329,8 +329,8 @@ chosen at the new height.
 | `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
 | `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word". The set of paths that consult it is `InputKind × Batch`, DERIVED from `numInputKinds` by `TestEveryInputKindIsAnsweredForABatchForm` rather than counted in prose (R7), plus `Words()` for the bar (D8) |
 | `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` wherever an input can mean something different to a form holding many words, and stamps every record's `Form` in one place (D2, D3, D12, D4a, R7) |
-| `livePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — D12 predicted a change here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
-| `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` instead of naming the constant, because `d` is refused on a board (R2) |
+| `livePrompt` | `cmd/define/play_loop.go` | modified | PURE — D12 predicted a guard here and none was needed (a board is never `Graded`, R2); what it gained is the doc for why the board's prompt row is the one that survives a short terminal (R11) |
+| `gradePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — it already composed `Keys()` with the reserved half, so R11's move of the mode ONTO that line needed nothing here. `reservedKeys` is the new function (R2) |
 | `reservedKeys` | `cmd/define/play_loop.go` | new | PURE — the session's reserved keys FOR THIS FORM. `d` is not among them for a form holding many (D12, R2) |
 | `boardFooter` | `cmd/define/play_loop.go` | new | PURE — the board's own rows, then the bar. One line, because the form owns the rest (R1) |
 | `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole (D15) |
@@ -652,3 +652,48 @@ with a `## Done when` table that cites no test at all is an error, not a skip.
 no guard.** It is the same shape as the estimate gate refusing rather than
 guessing — evidence you cannot produce must be reported as absent, never as
 satisfied.
+
+### 2026-09-01 (R11) — the mode moves to the prompt row, because that is the row that survives
+
+D6 put the toggle in the footer, on the reasoning that the live edge is where
+things that change belong. R9's resize measured what that costs: `fitFooter`
+drops footer rows from the END, so a terminal too short after a narrowing dropped
+the panel and then the TOGGLE — leaving a board on screen with no statement of
+what the next click would mean, while every mark is irreversible.
+
+`Paint` clips the PROMPT last, and only when the prompt alone exceeds the
+terminal. So the mode lives on `Keys()` now: *"marking [yes] no, Tab switches,
+click or key marks, Enter ends"*. Still ONE owner — the toggle row is gone, not
+duplicated — and what changed is which row it is, chosen for which row survives.
+
+**And D15's "a board is never in a footer that has to drop anything" was measured
+wrong.** It holds at SELECTION, which is what `boardsFor` enforces; a resize
+afterwards is a shape nobody chose. The board is NOT re-selected then — its marks
+are already in the log, so sending those words to 2.3 would mean re-asking words
+already answered. What the order of the footer buys instead is that the losses
+are harmless in sequence: the bar (a figure), the panel (cosmetic), then grid
+rows — which are conspicuously absent and, never having been painted, are not
+clickable either. The one thing that must not go is now not in the footer at all.
+
+### 2026-09-01 (R12) — the resize test asserted over an event set it never produced
+
+`TestANarrowingResizeKeepsTheBoardsClickMapHonest` ranged over
+`reviewEvents(...)` with no count check, and the click never landed — so it
+passed with `formCell` stubbed to return false. The rule it broke is one this
+issue's own Log already records for T13: **read the click's row and column off
+the PAINT, never compute them.** The driver derived a row by splitting the
+emitted frame, which is logical writes, while `FooterRowAt` works in physical
+rows — and the loop repaints after a resize, so the frame that was read and the
+frame the click resolved against were different ones.
+
+The row now comes from the screen's own paint record (`FooterRowAt`, which is
+what production asks) and the column from the board's current layout. The premise
+is asserted before the claim: **a test whose subject is an event must assert the
+event happened.**
+
+**And it HUNG rather than failed under its own mutation**, which is the same
+defect wearing a second coat. `waitFor`'s `t.Fatal` runs on the helper goroutine;
+`FailNow` there is a `Goexit`, so the goroutine died without closing the key
+channel and `playSession` blocked forever. The driver closes with `defer` now and
+gives up quietly, leaving the main body to fail. A test that hangs on the defect
+certifies about as much as one that passes on it, and takes longer to say so.

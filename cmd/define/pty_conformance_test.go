@@ -1008,8 +1008,10 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 	if strings.Contains(first, "remove from deck") {
 		t.Errorf("the board's prompt offers a key it refuses:\n%q", first)
 	}
-	if !strings.Contains(first, "marking: [yes]") {
-		t.Errorf("the toggle row is not on screen:\n%q", first)
+	// THE MODE IS ON THE PROMPT ROW (R11), which Paint clips last — so it is
+	// knowable for as long as anything on screen is.
+	if !strings.Contains(first, "marking [yes] no") {
+		t.Errorf("the prompt does not say which mark is live:\n%q", first)
 	}
 
 	// DRAWN WHOLE. Every row of a 24x80 frame must fit 80 columns: a footer row
@@ -1061,7 +1063,7 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 	// TAB, which reached nothing at all before this issue.
 	f.WriteString("\t")
 	afterTab := unstyled(out.take(2 * time.Second))
-	if !strings.Contains(lastFrame(afterTab), "marking:  yes  [no]") {
+	if !strings.Contains(lastFrame(afterTab), "marking yes [no]") {
 		t.Errorf("Tab did not flip the toggle on a real terminal:\n%q", lastFrame(afterTab))
 	}
 

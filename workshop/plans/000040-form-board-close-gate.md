@@ -108,6 +108,64 @@ rounds:
           family: test-declares-unchecked-expectation
           round: 2
       blocked: true
+    - "n": 3
+      timestamp: "2026-09-01T13:42:55-07:00"
+      agent: claude
+      dispose:
+        - id: BR-8
+          disposition: not-addressed
+          note: wrong-word click closed and pinned; the layout-width and fit-after-resize rows of its own enumeration are still open — measured
+          round: 3
+        - id: BR-9
+          disposition: addressed
+          note: 'verified by planting BR-3''s shape in a scratch plan: three guards now FAIL naming the swallowed section'
+          round: 3
+        - id: BR-10
+          disposition: addressed
+          note: the Batch doc points at numInputKinds and the table test; remaining "four" mentions are records or the true batchOf call-site count
+          round: 3
+        - id: BR-11
+          disposition: addressed
+          note: the reveals field is gone and Revealed is asserted unconditionally for every kind
+          round: 3
+      findings:
+        - id: BR-12
+          severity: Important
+          title: TestANarrowingResizeKeepsTheBoardsClickMapHonest asserts over an empty event set, so R9's click-map claim is unpinned at the loop
+          detail: |-
+            2nd finding in family assertion-cannot-fail. The rule, not the instance: a test whose subject is an
+            EVENT must assert the event happened — `for _, e := range events` with no count check certifies nothing.
+            Measured: instrumented and run three times, the test records 0 review events every time, and it still
+            passes when formCell is stubbed to return false unconditionally. The click never lands because the
+            goroutine derives its row from strings.Split(frame, "\r\n") — logical writes — while FooterRowAt works in
+            physical rows, and the 76-column keys prompt wraps to two at width 40. Same lesson the issue's Log
+            records for T13 ("the click's ROW and COLUMN are read off the paint rather than computed"), unapplied
+            one test over. The relayout and row-width halves of the test are real and do fail without the fix.
+          family: assertion-cannot-fail
+          round: 3
+        - id: BR-13
+          severity: Minor
+          title: 'Two live prose enumerations restate sets the code owns: the plan''s Grid row omits Resize, and boardFooter plus atlas claim a board is never in a footer that drops rows'
+          detail: |-
+            3rd finding in family. The rule: prose restating a set the code owns is a second owner and drifts —
+            point at the type. plan.md:327 lists Rows, CellAt, Mark for an interface that has had four methods since
+            R9 added Resize. play_loop.go:509-511 and atlas/define.md:2068 assert "a board is never IN a footer that
+            has to drop anything", which measurement contradicts after a resize (toggle dropped at 10x40 and 12x24).
+            Neither is guarded: TestPlanTableStatusMatchesTheChangeWindow reads the name|file|status cells only.
+          family: comment-asserts-absent-behaviour
+          round: 3
+        - id: BR-14
+          severity: Minor
+          title: currentTruthOnly has two discarding rules and R10 gave a premise assertion to only one
+          detail: |-
+            3rd finding in family. The closed-section rule (repo_guard_test.go:640-646) still discards silently, and
+            because it splits on "\n### " a closed section swallows everything up to the NEXT "### " — which can
+            include a following top-level "## " section. No live instance in the tree today (define-learn.md's closed
+            sections already sit below the ## Log truncation), so this is the rule R10 wrote applied to every rule the
+            filter has, rather than a present defect.
+          family: plan-citations-unenforced
+          round: 3
+      blocked: true
 ---
 
 # Gate ledger — tools#40 (boundary-review)
@@ -157,9 +215,42 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-11** [Minor] `test-declares-unchecked-expectation` The InputKind table's expectation struct declares a `reveals` field that no case sets and nothing reads
   cmd/define/play/session_test.go:863 — `reveals bool` sits beside `kinds` and `advances` and reads as a third checked dimension. Revealed is in fact asserted unconditionally for every kind, so the field is dead; either drop it or make the reveal expectation per-case.
 
+## Round 3 — 2026-09-01T13:42:55-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-8 — not-addressed — wrong-word click closed and pinned; the layout-width and fit-after-resize rows of its own enumeration are still open — measured
+- BR-9 — addressed — verified by planting BR-3's shape in a scratch plan: three guards now FAIL naming the swallowed section
+- BR-10 — addressed — the Batch doc points at numInputKinds and the table test; remaining "four" mentions are records or the true batchOf call-site count
+- BR-11 — addressed — the reveals field is gone and Revealed is asserted unconditionally for every kind
+
+### Raised
+
+- **BR-12** [Important] `assertion-cannot-fail` TestANarrowingResizeKeepsTheBoardsClickMapHonest asserts over an empty event set, so R9's click-map claim is unpinned at the loop
+  2nd finding in family assertion-cannot-fail. The rule, not the instance: a test whose subject is an
+  EVENT must assert the event happened — `for _, e := range events` with no count check certifies nothing.
+  Measured: instrumented and run three times, the test records 0 review events every time, and it still
+  passes when formCell is stubbed to return false unconditionally. The click never lands because the
+  goroutine derives its row from strings.Split(frame, "\r\n") — logical writes — while FooterRowAt works in
+  physical rows, and the 76-column keys prompt wraps to two at width 40. Same lesson the issue's Log
+  records for T13 ("the click's ROW and COLUMN are read off the paint rather than computed"), unapplied
+  one test over. The relayout and row-width halves of the test are real and do fail without the fix.
+- **BR-13** [Minor] `comment-asserts-absent-behaviour` Two live prose enumerations restate sets the code owns: the plan's Grid row omits Resize, and boardFooter plus atlas claim a board is never in a footer that drops rows
+  3rd finding in family. The rule: prose restating a set the code owns is a second owner and drifts —
+  point at the type. plan.md:327 lists Rows, CellAt, Mark for an interface that has had four methods since
+  R9 added Resize. play_loop.go:509-511 and atlas/define.md:2068 assert "a board is never IN a footer that
+  has to drop anything", which measurement contradicts after a resize (toggle dropped at 10x40 and 12x24).
+  Neither is guarded: TestPlanTableStatusMatchesTheChangeWindow reads the name|file|status cells only.
+- **BR-14** [Minor] `plan-citations-unenforced` currentTruthOnly has two discarding rules and R10 gave a premise assertion to only one
+  3rd finding in family. The closed-section rule (repo_guard_test.go:640-646) still discards silently, and
+  because it splits on "\n### " a closed section swallows everything up to the NEXT "### " — which can
+  include a following top-level "## " section. No live instance in the tree today (define-learn.md's closed
+  sections already sit below the ## Log truncation), so this is the rule R10 wrote applied to every rule the
+  filter has, rather than a present defect.
+
 ## Open findings
 
 - **BR-8** [Critical] `frame-budget-hardcoded-not-measured` A narrowing resize under a live board marks the wrong word on a click and drops the toggle, panel and bar
-- **BR-9** [Important] `plan-citations-unenforced` TestPlanCitesTestsThatExist skips silently when currentTruthOnly truncates the plan, which is the shape that produced BR-3
-- **BR-10** [Minor] `comment-asserts-absent-behaviour` The Batch doc still says the capability is consulted at FOUR points and lists three, omitting the InputReveal path added in the same commit
-- **BR-11** [Minor] `test-declares-unchecked-expectation` The InputKind table's expectation struct declares a `reveals` field that no case sets and nothing reads
+- **BR-12** [Important] `assertion-cannot-fail` TestANarrowingResizeKeepsTheBoardsClickMapHonest asserts over an empty event set, so R9's click-map claim is unpinned at the loop
+- **BR-13** [Minor] `comment-asserts-absent-behaviour` Two live prose enumerations restate sets the code owns: the plan's Grid row omits Resize, and boardFooter plus atlas claim a board is never in a footer that drops rows
+- **BR-14** [Minor] `plan-citations-unenforced` currentTruthOnly has two discarding rules and R10 gave a premise assertion to only one
