@@ -5,7 +5,7 @@ deps: ["tools#39", "tools#41"]
 github_issue:
 created: 2026-08-31
 updated: 2026-09-01
-estimate_hours:
+estimate_hours: 3.60
 started: 2026-09-01T08:54:58-07:00
 ---
 
@@ -76,13 +76,89 @@ cannot be drawn by appending lines.
 
 ## Done when
 
-- [ ] A sitting containing mature words presents them as a grid, sixteen at a time.
-- [ ] Every word in the grid can be marked, and the marks reach the event log with the same "recorded as it happens" guarantee a single answer has.
-- [ ] The scheduler chooses 2.5 for box ≥ 8 and 2.3 below, pinned by a test over a deck spanning both.
-- [ ] `unsure` re-asks the word through form 2.3 rather than changing its box.
-- [ ] `/board` forces the form for a sitting; it is not the default.
+- [ ] A sitting containing eligible words presents them as a grid, sixteen at a time.
+- [ ] Every word in the grid can be marked — by click OR by its printed key, so a mouse-less terminal is not stuck — and the marks reach the event log with the same "recorded as it happens" guarantee a single answer has.
+- [ ] The scheduler chooses 2.5 at box ≥ 3 and 2.3 below, pinned by a test over a deck spanning both, asserting BOTH sides.
+- [ ] Enter takes every unmarked word as `No`; Ctrl-C cancels, leaving marked words recorded and unmarked ones with no event at all.
+- [ ] Every review event names the form that asked it, so the two deferred remedies can later be chosen from the log rather than from argument.
 - [ ] The `Question` interface is unchanged, or the change is form-agnostic — the session still learns nothing about which form is asking (`#6`'s Done-when, `TestSessionIsFormAgnostic`).
-- [ ] Measured: a sitting of N mature words through the board takes materially fewer keystrokes than the same N through form 2.3.
+- [ ] Measured: a sitting of N words through the board takes materially fewer keystrokes than the same N through form 2.3.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.* The calibration doc is tagged **stale** by
+`sdlc estimate-source`, so the per-primitive hours are provisional.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: issue-spec               design=0.50 impl=0.08
+item: cross-cutting-refactor   design=0.05 impl=0.24
+item: greenfield-go-module     design=0.06 impl=0.28
+item: smaller-go-module        design=0.01 impl=0.08
+item: cross-cutting-refactor   design=0.04 impl=0.16
+item: smaller-go-module        design=0.03 impl=0.12
+item: smaller-go-module        design=0.03 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.02 impl=0.12
+item: smaller-go-module        design=0.01 impl=0.06
+item: smaller-go-module        design=0.01 impl=0.06
+item: smaller-go-module        design=0.02 impl=0.10
+item: atlas-docs               design=0.02 impl=0.08
+item: ux-rename-iteration      design=0.30 impl=0.05
+item: milestone-review         design=0.00 impl=0.30
+item: milestone-review         design=0.00 impl=0.32
+design-buffer: 0.15
+total: 3.60
+```
+
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.50/0.08 | the design carrier | the issue, the operator's sketch and FOUR follow-ups that each deleted a decision, two plan-quality rounds, and a rendered mock |
+| `cross-cutting-refactor` 0.05/0.24 | T1 `Batch` and the four `Apply` points | it edits the state machine every form runs through — advance, the miss-on-hidden branch, drop, and Enter |
+| `greenfield-go-module` 0.06/0.28 | T2 `Board` and `Mark` | a new form: grid layout, labels, two marks, a mode, and four interfaces to satisfy |
+| `smaller-go-module` 0.01/0.08 | T3 Tab | one row in `toInput`, one `Input` kind |
+| `cross-cutting-refactor` 0.04/0.16 | T4 `display.FooterRowAt` | widens the seam BOTH loops take, and the editor has to answer it too |
+| `smaller-go-module` 0.03/0.12 | T5 the click asks the form first | `#38`'s row must stay green untouched, which is the constraint rather than the code |
+| `smaller-go-module` 0.03/0.14 | T6 the footer carries the board | plus `fitFooter`'s floor, so grid rows are never dropped |
+| `smaller-go-module` 0.02/0.12 | T7 `ReviewEvent.Form` | a store field, the capture site, and `Fold` ignoring it |
+| `smaller-go-module` 0.02/0.12 | T8 `boardsFor` | partition and pack |
+| `smaller-go-module` 0.01/0.06 | T9 the relearn line | one buffer write as the board closes |
+| `smaller-go-module` 0.01/0.06 | T10 the bar counts words | |
+| `smaller-go-module` 0.02/0.10 | T11 the load claim, measured | |
+| `atlas-docs` 0.02/0.08 | T12 | README, atlas, `--help`, and the two in-tree forward references D7 falsifies |
+| `ux-rename-iteration` 0.30/0.05 | the TUI iteration round | a visual form gets looked at and adjusted. `#41` proved the cost real — the operator found a clipped option line on the first sitting — and this issue has a grid, a toggle, a panel and a colour scheme |
+| `milestone-review` 0.00/0.30 | the boundary: run + manual verification | |
+| `milestone-review` 0.00/0.32 | the boundary: remediation | |
+
+**ONE DELIBERATE DEVIATION FROM v3.1, named rather than buried.** v2's table gives
+milestone review `0.2–0.5` and v3.1 writes `impl=` at 40% of that, so the scaled
+ceiling is **0.20**. These two rows are priced 0.30 and 0.32 — 1.5–1.6× above it,
+and 17% of the total. That is an evidence-based OVERRIDE of the primitive table,
+not the model applied as written: `#41` ran five close rounds and `#38` four,
+against this same machinery, in the last two days. Pricing this boundary at the
+ceiling would encode a number two adjacent rows have already falsified.
+
+**THE PREDICTION, on the record so the close can tell a miss from a
+confirmation.** The ledger here is five rows wide: `#30` 3.4×, `#7` 1.70×, `#39`
+0.54×, `#41` 1.44×, `#38` 1.50×. The last two are the nearest neighbours — same
+files, same boundary machinery, days old — and both overran by half, entirely at
+the boundary rather than in the building.
+
+This issue is **larger and more structural than either**: it widens the `display`
+seam, edits four paths in the state machine every form runs through, reverses an
+invariant `#38` shipped and pinned yesterday, and adds a field to the store's
+vocabulary. Two plan-quality rounds already found three Criticals in the design,
+which is a leading indicator rather than a comfort — those were the ones caught
+before code.
+
+So the honest prediction is **5–6h**, and the estimate is NOT padded toward it:
+v3.1 is applied as written except where the deviation above says otherwise, or
+the calibration row means nothing. If it misses, it misses at the boundary, and
+**T4 and T5 are the rows most likely to put it there** — one widens a seam two
+loops share, and the other changes what a gesture means without being allowed to
+change what it means anywhere else.
 
 ## Plan
 
@@ -103,3 +179,52 @@ illusion of knowing from driving the ladder.
 active, and `dictselect.go` already names it while deliberately filtering
 thesauruses out of the curated general-dictionary list — so that issue starts
 with a measurement of OAWT's output shape, not a design.
+
+## Revisions
+
+### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it
+
+The `## Spec` describes a keystroke-per-word maturity triage with three marks,
+chosen by the box at ≥ 8. The operator sketched something different and answered
+four follow-ups; the design now lives in
+`workshop/plans/000040-form-board-plan.md`. The Spec is kept as filed — it is the
+record of what was asked for — and the deltas are here.
+
+**What changed:**
+
+- **Clicks and labelled keys, not a cursor.** Each cell prints its key
+  (`0`–`9` then `a b c e f g` — `d` is reserved by `toInput` as *drop from deck*
+  before any form sees it). Clicking is `#38`'s affordance finding its second
+  consumer.
+- **Two marks, not three.** *"I guess unsure means no."* That deletes the entire
+  `EventUnsure` mechanism the first plan drafted — a new event kind, a `Fold`
+  exemption, and a form-selection rule reading it.
+- **Box ≥ 3, not ≥ 8.** *"Words should come from all today's practice words…
+  allow form-board to be used earlier."* The risk runs opposite to the Spec's
+  assumption: a wrong `Yes` buys ZERO extra days at box 0 (the ladder's first two
+  rungs both wait a day) and 165 at box 10, while the chance of being wrong falls
+  as the box rises — so the product peaks in the MIDDLE, not at the top.
+- **Both remedies for the form's weakness — promote slower, or use it less often
+  — are DEFERRED**, to be chosen from evidence and eventually made per-learner.
+  Which is why **every review event now records the form that asked**: the query
+  the operator named ("did the user fail beyond reasonable in a real recall test
+  later") joins a promotion to a later test, and nothing in the log can answer it
+  today.
+- **Enter commits, Ctrl-C cancels.** Ctrl-C needs no code: clicks record as they
+  happen and `InputQuit` emits no record, so unmarked words keep their boxes.
+- **The grid is the LIVE EDGE, in the footer.** The buffer is append-only —
+  that is what makes a click's coordinates exact — so a grid written there could
+  never change colour. `display` gains one question: which footer row a click
+  landed on. Chosen over rewriting the buffer because it does not start a layout
+  system.
+- **`/board` is a NON-GOAL, with a reason.** It existed as the "I am short on
+  time" escape while the board was confined to mature words. With the schedule
+  offering it from box 3, there is much less to escape to, and a manual override
+  reintroduces exactly the learner-picks-the-cheap-form problem the Spec argued
+  against. Filed separately if it is still wanted after real use.
+
+**The rule this revision leaves**, because the plan-quality gate had to find it
+twice: **a revision sweeps every artifact that restates the decision, and the
+issue's own Spec and Done-when are artifacts.** The plan's prose, its tables and
+its Done-when rows are three surfaces; the issue file is a fourth, and stopping
+at the plan is how a Done-when row survives naming a threshold nothing uses.

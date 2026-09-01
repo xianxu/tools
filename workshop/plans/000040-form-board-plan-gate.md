@@ -50,6 +50,54 @@ rounds:
           family: doc-sweep-incomplete
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-01T10:19:29-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-1
+          disposition: addressed
+          note: 'D10 moves the grid to the footer and adds FooterRowAt; D11 restates the invariant and keeps #38''s test untouched.'
+          round: 2
+        - id: PQ-2
+          disposition: addressed
+          note: D12 names the miss-on-hidden branch, InputDrop, livePrompt and Enter as the four Batch consultation points, and T1 scopes all four.
+          round: 2
+        - id: PQ-3
+          disposition: addressed
+          note: Core concepts, Integration points, Tasks and Done-when now carry two marks, no cursor, box >= 3, and correct decision references.
+          round: 2
+        - id: PQ-4
+          disposition: addressed
+          note: T7 builds ReviewEvent.Form and Done-when row 9 pins it over all three forms; event.go's own comment guards the before-At ordering.
+          round: 2
+        - id: PQ-5
+          disposition: addressed
+          note: T3, T4, T5 and T6 give the loop real scope for Tab, the footer origin, the click offer and the footer floor.
+          round: 2
+        - id: PQ-6
+          disposition: addressed
+          note: Done-when rows 3, 4 and 6 pin Enter-commits, Ctrl-C-cancels and the mouse-less path including d.
+          round: 2
+        - id: PQ-7
+          disposition: addressed
+          note: T12 names both in-tree forward references D7 falsifies.
+          round: 2
+      findings:
+        - id: PQ-8
+          severity: Minor
+          title: Three of the issue's seven Done-when rows are contradicted or unserved by the revised plan
+          detail: |-
+            This is the 2nd finding in family confirmed-purpose-has-no-task, so the deliverable is the
+            rule, not the site: after a revision, sweep every artifact that restates a deleted decision —
+            the plan body AND the issue's Spec and Done-when — and make every issue Done-when row either
+            served by a task, restated via a Revisions entry, or named a non-goal with its reason.
+            Measured here: row 3 says box >= 8 against D4's >= 3, row 4 pins unsure against D7, and row 5
+            (/board forces the form) has no task, no pin and no D9 entry. Row 3's "a deck spanning both"
+            also has no plan row testing the below-threshold side going to 2.3.
+          family: confirmed-purpose-has-no-task
+          round: 2
+      blocked: false
+content_hash: d5dc613d6dd0630fd4316647b4748277ff2278fc4fafb5ba1f27872051240683
 ---
 
 # Gate ledger — tools#40 (plan-quality)
@@ -76,12 +124,29 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **PQ-7** [Minor] `doc-sweep-incomplete` T9's doc sweep misses the in-tree forward references to this issue that D7 falsifies
   schedule/progress.go:13-14 says this issue's board "extends [the Grade seam] with GradeUnsure", which D7 deletes; play/session.go:305 describes the mark as "firm". T9 names README.md, atlas/define.md and the --help key table only.
 
+## Round 2 — 2026-09-01T10:19:29-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-1 — addressed — D10 moves the grid to the footer and adds FooterRowAt; D11 restates the invariant and keeps #38's test untouched.
+- PQ-2 — addressed — D12 names the miss-on-hidden branch, InputDrop, livePrompt and Enter as the four Batch consultation points, and T1 scopes all four.
+- PQ-3 — addressed — Core concepts, Integration points, Tasks and Done-when now carry two marks, no cursor, box >= 3, and correct decision references.
+- PQ-4 — addressed — T7 builds ReviewEvent.Form and Done-when row 9 pins it over all three forms; event.go's own comment guards the before-At ordering.
+- PQ-5 — addressed — T3, T4, T5 and T6 give the loop real scope for Tab, the footer origin, the click offer and the footer floor.
+- PQ-6 — addressed — Done-when rows 3, 4 and 6 pin Enter-commits, Ctrl-C-cancels and the mouse-less path including d.
+- PQ-7 — addressed — T12 names both in-tree forward references D7 falsifies.
+
+### Raised
+
+- **PQ-8** [Minor] `confirmed-purpose-has-no-task` Three of the issue's seven Done-when rows are contradicted or unserved by the revised plan
+  This is the 2nd finding in family confirmed-purpose-has-no-task, so the deliverable is the
+  rule, not the site: after a revision, sweep every artifact that restates a deleted decision —
+  the plan body AND the issue's Spec and Done-when — and make every issue Done-when row either
+  served by a task, restated via a Revisions entry, or named a non-goal with its reason.
+  Measured here: row 3 says box >= 8 against D4's >= 3, row 4 pins unsure against D7, and row 5
+  (/board forces the form) has no task, no pin and no D9 entry. Row 3's "a deck spanning both"
+  also has no plan row testing the below-threshold side going to 2.3.
+
 ## Open findings
 
-- **PQ-1** [Critical] `click-never-answers-invariant` D5 makes a click record a verdict, reversing a stated loop invariant, and the region machinery cannot reach the live edge anyway
-- **PQ-2** [Critical] `apply-assumes-one-word-per-question` Gating advance on Spent() is not enough — three other Apply paths and livePrompt assume one word per question
-- **PQ-3** [Critical] `plan-body-stale-after-revision` Core concepts, Integration points, Tasks and Done-when still specify the unsure mark, the cursor, and a Mastered-based threshold that D4, D5 and D7 delete
-- **PQ-4** [Important] `confirmed-purpose-has-no-task` D4a's ReviewEvent.Form — operator-confirmed and the instrument that makes the deferred remedies safe — has no task and no Done-when row
-- **PQ-5** [Important] `loop-changes-unacknowledged` T5 claims the loop needs no code, but three decisions require it — the grid's redraw path, the footer rows, and Tab
-- **PQ-6** [Minor] `done-when-omits-decided-behaviour` No Done-when row pins D3's Enter-commits / Ctrl-C-cancels split, nor D5's labelled keys skipping d
-- **PQ-7** [Minor] `doc-sweep-incomplete` T9's doc sweep misses the in-tree forward references to this issue that D7 falsifies
+- **PQ-8** [Minor] `confirmed-purpose-has-no-task` Three of the issue's seven Done-when rows are contradicted or unserved by the revised plan
