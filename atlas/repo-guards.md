@@ -126,18 +126,27 @@ because a plan's design sections describe the design as it IS, while everything
 from its `## Revisions` heading on is a record and is skipped.
 
 **Rows three to six are the SYMBOL half**, which recurred NINE times while the
-first two ratchets counted filenames only. Table rows were the tractable part; plans named `deckDeps`, `MigrateFlatDeck`,
-`dictChoice` and `dcsDictionaries`, none of which the tree had. A plan's
-Core-concepts table already states "this identifier lives at this path" in
-machine-readable form, so making the plan a CONSUMER of the tree is cheap. A row
-whose file does not exist yet is skipped — a plan legitimately precedes its code;
-a row pointing at a real file that does not declare the name is a lie.
+first two ratchets counted filenames only. Table rows were the tractable part:
+four separate plan rows named identifiers the tree did not have, across two
+review rounds. A plan's Core-concepts table already states "this identifier lives
+at this path" in machine-readable form, so making the plan a CONSUMER of the tree
+is cheap. A row whose file does not exist yet is skipped — a plan legitimately
+precedes its code; a row pointing at a real file that does not declare the name
+is a lie.
+
+**The examples are counted here, not named** — deliberately, and it is this
+guard's own rule applied to its own documentation. Spelling four retired
+identifiers on this page would make it the tenth artifact in the family, and it
+did: they sat here unswept because `currentTruthOnly` matched the `**closed:**`
+in the paragraph above as a record marker and discarded the whole page. The names
+that belong in the record live in `retiredSymbolNames` and in the guard's own
+doc comment, which is a test file and exempt by design.
 
 **`retiredSymbolNames` is where the rule needs a human.** A rename cannot be
 detected automatically — only the person doing it knows the old name — so
 renaming adds one row there, and everything after that is mechanical. It is what
-caught three `newDeck` comments left behind by the very commit that added the
-table guard.
+caught three stale comments left behind by the very commit that added the table
+guard — naming a symbol that commit had just retired.
 
 **The last two rows are the same move applied to boundaries Go cannot see
 into.** A cgo preamble and a shell script cannot import a Go declaration, so the

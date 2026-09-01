@@ -708,3 +708,27 @@ tree, which is why this is the rule written down rather than a defect fixed: **a
 filter with two ways to discard needs the assertion on both, or the next one
 silently gets none.** Verified by planting a closed section above
 `## Core concepts`: it now fails, naming what was swallowed.
+
+### 2026-09-01 (R14) — the premise assertion found a live instance the review believed did not exist, and a guard blind for months
+
+R13 was written as "the rule applied to every rule the filter has", with the
+review noting no live instance in the tree. There was one, and it was worse than
+a plan's layout: **`atlas/repo-guards.md` documents `currentTruthOnly` and
+therefore spells `**closed:**` in its prose**, so `strings.Contains` matched it
+and the guard inventory — the whole top of the page — had been discarded from
+every guard reading current truth.
+
+Two of them were blind over it. Unblinded, `TestNoArtifactNamesARetiredSymbol`
+immediately found FIVE retired identifiers on that page, the tenth artifact in
+the nine-recurrence family the page itself is about.
+
+Fixed at both ends. `closedSection` matches the marker at the START of a line,
+because a marker is written by whatever wrote the record and prose ABOUT a marker
+is not one. And the page now counts its examples rather than naming them — this
+guard's own rule applied to its own documentation, since names on a page are
+exactly what rots.
+
+**The lesson is about the ORDER of the two changes.** The assertion was added on
+the reviewer's word that it had no present instance; it took thirty seconds to
+write and found a months-old hole immediately. A filter that discards silently
+cannot be audited by reading it — only by making it speak.

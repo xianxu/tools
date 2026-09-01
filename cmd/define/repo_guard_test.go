@@ -646,7 +646,7 @@ func currentTruthOnly(t *testing.T, name, text string) string {
 	// discard needs the assertion on both, or the next one silently gets none.
 	var kept []string
 	for _, sec := range strings.Split(text, "\n### ") {
-		if strings.Contains(sec, "**closed:**") {
+		if closedSection(sec) {
 			if i := strings.Index(sec, "\n## "); i >= 0 {
 				t.Errorf("%s has a closed \"### \" section with a top-level section after it (%q). "+
 					"Closed sections are discarded up to the next \"### \", so that section is invisible "+
@@ -658,6 +658,27 @@ func currentTruthOnly(t *testing.T, name, text string) string {
 		kept = append(kept, sec)
 	}
 	return strings.Join(kept, "\n### ")
+}
+
+// closedSection reports whether a "### " block carries a project file's
+// `**closed:**` marker — the LINE, not the characters.
+//
+// `strings.Contains` was the first spelling and it was wrong in the way that
+// matters for a filter: `atlas/repo-guards.md` DOCUMENTS this very rule, so the
+// marker appears mid-sentence in its prose, and the whole top of that file — the
+// guard inventory itself — was silently discarded from every guard reading
+// current truth. It went unnoticed until R13 made discarding say so, which is
+// the argument for the premise assertion in one line.
+//
+// A marker is written at the start of a line by whatever wrote the record. Prose
+// about a marker is not a marker.
+func closedSection(sec string) bool {
+	for _, line := range strings.Split(sec, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "**closed:**") {
+			return true
+		}
+	}
+	return false
 }
 
 // A plan's Core-concepts table may not name an entity the tree does not have.

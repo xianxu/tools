@@ -3121,3 +3121,23 @@ itself.** Assertions belong on the test goroutine, where a failure is a failure.
 The same test also asserted over an event set it never produced (`for _, e :=
 range events` with no count check) — so: **a test whose subject is an event must
 assert the event happened**, before it asserts anything about it.
+
+## A filter that discards silently cannot be audited by reading it (`#40` R14)
+
+`currentTruthOnly` strips the record sections out of an artifact before the name
+guards read it, and it found closed blocks with `strings.Contains(sec,
+"**closed:**")`. `atlas/repo-guards.md` DOCUMENTS that rule, so the marker
+appears in its prose — and the whole guard inventory had been discarded from
+every guard reading current truth. Two of them were blind over that page for
+months, and unblinding it turned up five retired identifiers on the page whose
+subject is retired identifiers.
+
+Nobody found it by reading the filter, twice over: the fix that added a premise
+assertion to the OTHER discarding rule was written on the belief there was no
+live instance, and it took thirty seconds to write and fired immediately.
+
+**A discard is a decision, and a decision that never speaks cannot be reviewed.**
+Where a filter drops something its caller was going to check, say so and fail.
+And match markers the way they are WRITTEN — anchored — because prose about a
+marker is not a marker, and documentation of a rule is the first place that
+distinction bites.
