@@ -992,7 +992,7 @@ func noDeckMessage(noCapture bool) string {
 // Render receives a number.
 func terminalWidth(w io.Writer) int {
 	sz, ok := terminalSize(w)
-	if !ok || sz.cols < 20 { // not a terminal, or implausibly narrow: do not wrap
+	if !ok || sz.cols < minWrapWidth { // not a terminal, or too narrow to break: do not wrap
 		return 0
 	}
 	return sz.cols

@@ -102,6 +102,7 @@ y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 | `n` | recall: you missed it — the definition appears |
 | space or Enter | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
 | `d` | remove this word from the deck — its history is kept |
+| PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
 | Ctrl-C | stop; everything you answered is already saved |
 
 Ctrl-C stops whenever you like and keeps everything you answered — each answer
@@ -128,17 +129,34 @@ interval falls back to 16 days, which is a real chance to relearn it; a word at
 known a word, relearning it is quicker than learning it was, and the schedule
 knows that.
 
-`-count` bounds a sitting (default 20). At the end of one, `define` tells you
-what your deck now costs per day and how many new words that leaves room for:
+`-count` bounds a sitting (default 20). A bar pinned to the bottom of the screen
+shows how far in you are and what the deck costs, and it updates as you answer:
+
+```
+7 of 18 · ~14 reviews/day · 0.9 new words/day at 20 a sitting
+```
+
+The same figures close the sitting, under the score:
 
 ```
 7 right, 3 wrong
-~14 reviews/day at your current mix · 0.9 new words/day sustainable at 20 a sitting
+~14 reviews/day · 0.9 new words/day at 20 a sitting
 ```
 
 A brand-new deck looks expensive — every unreviewed word is due tomorrow — and
-gets cheaper fast as words climb. No API key: the deck and the dictionary are enough, and the review
-loop never reaches for the model. Pronunciation audio is fetched over the network
+gets cheaper fast as words climb.
+
+A sitting takes the screen the same way the interactive session does: the bar
+stays at the bottom, a definition longer than the window is scrolled rather than
+lost, resizing the window redraws — and wraps what comes after it to the new
+width — and everything you reviewed is printed back into your terminal when you
+quit.
+
+Because it draws a whole screen, `--play` needs one. `define --play > file` and
+`define --play -no-color` both say so and stop rather than filling a file with
+escape sequences or painting control codes at a terminal that was asked not to
+receive any. No API key: the deck and the dictionary are
+enough, and the review loop never reaches for the model. Pronunciation audio is fetched over the network
 only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
 network call at all; `--no-audio` makes one fully offline either way.
 

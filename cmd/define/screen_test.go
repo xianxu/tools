@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"io"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,7 +31,7 @@ func TestScreenWriteBuildsLines(t *testing.T) {
 		{"no trailing newline still shows", []string{"a\nb"}, []string{"a", "b"}},
 		// The ask path streams token by token; this is that shape.
 		{"token stream", []string{"The", " quick", " brown\n", "fox"}, []string{"The quick brown", "fox"}},
-		// crlfWriter's case, which the screen replaces on this path: a reply
+		// The split-CRLF case the screen inherited: a reply
 		// split as "a\r" then "\nb" must not become two lines plus a stray CR.
 		{"a CRLF split across writes", []string{"a\r", "\nb\n"}, []string{"a", "b"}},
 	} {
@@ -402,6 +405,189 @@ func readFrame(t *testing.T, frame string, cols int) frameGeometry {
 	return frameGeometry{rows: maxRow + 1, cursorRow: row, cursorCol: col}
 }
 
+// DONE-WHEN 11: on a PINNED screen the footer sits at the terminal's bottom
+// edge, whatever the content is (#41 D3a).
+//
+// "Pinned to the bottom" is not free, and that was the finding the plan's third
+// round turned up: Paint writes the visible frame, then the prompt, then the
+// footer, so a one-line question on a 24-row terminal put the bar on row three
+// with twenty blank rows beneath it.
+func TestAShortQuestionStillPinsTheBar(t *testing.T) {
+	const termRows, termCols = 24, 80
+	sc := screen{pinned: true}
+	sc.Write([]byte("sycophantic\n"))
+
+	var b strings.Builder
+	sc.Paint(&b, termRows, termCols, "y = got it, n = missed it", []string{"0 of 18 · ~2 reviews/day"})
+
+	if got := readFrame(t, b.String(), termCols); got.rows != termRows {
+		t.Errorf("a one-line question painted a %d-row frame in a %d-row terminal — the bar is "+
+			"floating under the content rather than pinned to the bottom", got.rows, termRows)
+	}
+}
+
+// DONE-WHEN 12: the EDITOR's footer still follows its content.
+//
+// The other half of the same decision, and the one that makes it a decision
+// rather than a fix: a REPL prompt belongs directly under the last output, not
+// stranded at the screen's edge. `newPinnedScreen`'s padding leaking into the
+// editor would be a change to the appearance of a loop people already use — a
+// second issue wearing this one's clothes.
+func TestTheEditorsFooterFollowsItsContent(t *testing.T) {
+	const termRows, termCols = 24, 80
+	var sc screen // NOT pinned: the editor's
+	sc.Write([]byte("arrondissement\n"))
+
+	var b strings.Builder
+	sc.Paint(&b, termRows, termCols, "› syc", []string{"  /help"})
+
+	// One buffer line, one prompt row, one menu row.
+	if got := readFrame(t, b.String(), termCols); got.rows != 3 {
+		t.Errorf("the editor's frame is %d rows for one line of output, want 3 — the dropdown "+
+			"belongs under the line being typed, not at the bottom of the screen", got.rows)
+	}
+}
+
+// The padding is ROWS, emitted at paint time, and never LINES in the buffer.
+//
+// The transcript and the click map must not gain rows that exist only because
+// the terminal is tall — so this paints twice at two heights, which is what a
+// resize is, and asserts the buffer did not move.
+func TestPaddingNeverReachesTheTranscript(t *testing.T) {
+	const termCols = 80
+	sc := screen{pinned: true}
+	sc.Write([]byte("sycophantic\nbehaving in an obsequious way\n"))
+	before := len(sc.Lines())
+
+	var tall, short strings.Builder
+	sc.Paint(&tall, 40, termCols, "y = got it", []string{"the bar"})
+	sc.Paint(&short, 12, termCols, "y = got it", []string{"the bar"})
+
+	// The padding actually happened, or the assertion below is about nothing.
+	if got := readFrame(t, tall.String(), termCols); got.rows != 40 {
+		t.Fatalf("the tall frame is %d rows, want 40 — nothing was padded, so this test asserts nothing", got.rows)
+	}
+	if after := len(sc.Lines()); after != before {
+		t.Errorf("the buffer went from %d lines to %d across two paints — blank rows are being "+
+			"APPENDED, so the exit transcript grows with the terminal's height", before, after)
+	}
+}
+
+// newPinnedScreen is the difference, and it is visible where the screen is BUILT
+// rather than at every paint.
+func TestOnlyThePinnedConstructorPads(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		make func(io.Writer) *liveScreen
+		want int
+	}{
+		{"the editor's", func(w io.Writer) *liveScreen { return newLiveScreen(w, 20, 40) }, 2},
+		{"--play's", func(w io.Writer) *liveScreen { return newPinnedScreen(w, 20, 40) }, 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var tty strings.Builder
+			live := tc.make(&tty)
+			live.interval = -1
+			live.Write([]byte("one line\n"))
+			tty.Reset()
+			live.Draw("the prompt", nil)
+
+			if got := readFrame(t, tty.String(), 40); got.rows != tc.want {
+				t.Errorf("frame = %d rows, want %d", got.rows, tc.want)
+			}
+		})
+	}
+}
+
+// unstyled drops SGR sequences so a text assertion survives a styling change.
+//
+// Only the colour sequences: cursor movement and erasure are what several tests
+// are ABOUT, and stripping those would make those assertions vacuous.
+//
+// UNTAGGED, because both suites need it. It lived in the conformance file until
+// `#41` made `--play`'s rig run coloured — the only configuration a sitting can
+// be in — and every in-process assertion over a frame's text met escapes for the
+// first time. A second stripper beside this one is how they would come to
+// disagree about what counts as style.
+var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
+
+// lastFrame is the most recent WHOLE frame in what a terminal received.
+//
+// Paint opens every frame with home-and-erase, so the bytes after the last one
+// are what is on screen; everything before it has been erased. A pty test that
+// searched the accumulated stream would find text the terminal had already
+// wiped, which under #41 is most of it.
+func lastFrame(painted string) string {
+	if i := strings.LastIndex(painted, cursorHome+eraseDown); i >= 0 {
+		return painted[i:]
+	}
+	return painted
+}
+
+// THE PINNED SCREEN WRAPS WHATEVER IS WRITTEN TO IT, whoever writes it.
+//
+// This is the seam fix for a class that took four findings: `Paint` CLIPS a line
+// too wide for the terminal, and a sitting writes not only its own text but
+// whatever the helpers it calls write. Three earlier versions enforced the wrap
+// at call sites — the queue build, then the loop's writes — and each time a
+// site outside them was found, most recently `playAnnounced`'s network warning
+// at 156 cells in a 40-column terminal. Asserting it HERE covers every caller
+// including ones that do not exist yet.
+func TestThePinnedScreenWrapsWhateverIsWrittenToIt(t *testing.T) {
+	const cols = 40
+	long := "define: " + strings.Repeat("a warning from some helper ", 8)
+
+	t.Run("--play's wraps it", func(t *testing.T) {
+		var tty strings.Builder
+		live := newPinnedScreen(&tty, 24, cols)
+		live.interval = -1
+		fmt.Fprintln(live, long)
+
+		for _, line := range strings.Split(live.Transcript(), "\n") {
+			if n := visibleCells(line); n > cols {
+				t.Errorf("a buffer line is %d columns in a %d-column terminal, so Paint clips it: %q", n, cols, line)
+			}
+		}
+		// ...and nothing was lost to the wrap.
+		if flat := strings.Join(strings.Fields(live.Transcript()), " "); !strings.Contains(flat, strings.Join(strings.Fields(long), " ")) {
+			t.Errorf("the text did not survive wrapping:\n%s", live.Transcript())
+		}
+	})
+
+	t.Run("through WriteRegions too", func(t *testing.T) {
+		// The PATH axis. Round 5 closed which LINES are wrapped and left which
+		// PATHS: WriteRegions called the buffer directly, so the seam's own
+		// claim that nothing can write around it was false. `--play` has no
+		// click map today; `#40`'s board will.
+		var tty strings.Builder
+		live := newPinnedScreen(&tty, 24, cols)
+		live.interval = -1
+		live.WriteRegions(long+"\n", nil)
+
+		for _, line := range strings.Split(live.Transcript(), "\n") {
+			if n := visibleCells(line); n > cols {
+				t.Errorf("a region write reached the buffer at %d columns in a %d-column "+
+					"terminal, so Paint clips it: %q", n, cols, line)
+			}
+		}
+	})
+
+	t.Run("the editor's does not", func(t *testing.T) {
+		// Its text is pre-wrapped by Render, and its ask path streams token by
+		// token — where a chunk ending mid-line has no line to wrap yet.
+		var tty strings.Builder
+		live := newLiveScreen(&tty, 24, cols)
+		live.interval = -1
+		fmt.Fprintln(live, long)
+
+		if !strings.Contains(live.Transcript(), long) {
+			t.Errorf("the editor's screen rewrote what it was given:\n%s", live.Transcript())
+		}
+	})
+}
+
 func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {
 	const prompt = "› syc"
 	for _, tc := range []struct {
@@ -462,7 +648,7 @@ func TestPaintFitsTheTerminalAndParksTheCursor(t *testing.T) {
 			// typing — and for a prompt that wraps, that is its LAST row, not
 			// its first. Composed from where the prompt starts in the frame plus
 			// where the cursor lands within it.
-			wantRow := got.rows - menuHeight(tc.menu, tc.termCols) - want.rows + want.cursorRow
+			wantRow := got.rows - footerHeight(tc.menu, tc.termCols) - want.rows + want.cursorRow
 			if wantRow < 0 {
 				wantRow = 0
 			}
@@ -600,12 +786,12 @@ func TestLiveScreenFlushesAHeldFrameWithNoFurtherWrites(t *testing.T) {
 	waitFor(t, func() bool { return tty.painted() > before })
 }
 
-// menuHeight is what the menu costs the frame, for the test's own arithmetic —
-// deliberately recomputed from the FITTED menu rather than read out of Paint, so
-// the assertion cannot agree with the code by construction.
-func menuHeight(menu []string, cols int) int {
+// footerHeight is what the footer costs the frame, for the test's own
+// arithmetic — deliberately recomputed from the FITTED footer rather than read
+// out of Paint, so the assertion cannot agree with the code by construction.
+func footerHeight(footer []string, cols int) int {
 	n := 0
-	for _, m := range menu {
+	for _, m := range footer {
 		n += displayRows(m, cols)
 	}
 	return n

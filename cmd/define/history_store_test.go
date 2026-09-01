@@ -50,17 +50,28 @@ func TestStoreHistoryPrefixDoesNotQueryTheStore(t *testing.T) {
 	}
 }
 
+// countingStore counts the store's two READS, separately and together.
+//
+// `reads` is the total, which is what a caller asking "did this path touch the
+// disk at all" wants. `decks` and `events` are the halves, because #41 D7 claims
+// something narrower — that a whole sitting calls Deck() exactly once and
+// Events() exactly once — and a sum cannot tell one extra deck read from one
+// fewer log read.
 type countingStore struct {
 	store.Store
-	reads int
+	reads  int
+	decks  int
+	events int
 }
 
 func (c *countingStore) Events(t time.Time) ([]store.ReviewEvent, error) {
 	c.reads++
+	c.events++
 	return c.Store.Events(t)
 }
 func (c *countingStore) Deck() ([]store.Word, error) {
 	c.reads++
+	c.decks++
 	return c.Store.Deck()
 }
 
@@ -100,7 +111,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	first.deps.history = newStoreHistory(st1, nil)
 	first.deps.capture = newStoreCapturer(st1, fixedClock(1), nil, nil)
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, first.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, first.deps, opt, recordingConsole(&out, &errb, finish))
 
 	// A second editor over the same directory: the restart case.
 	second, opt2, finish2 := editorRig(t, "sycophantic", true)
@@ -108,7 +119,7 @@ func TestEditorPersistsThroughDeps(t *testing.T) {
 	second.deps.history = newStoreHistory(st2, nil)
 	second.deps.capture = newStoreCapturer(st2, fixedClock(2), nil, nil)
 	var out2 bytes.Buffer
-	runEditor(t.Context(), scriptKeys("syc"), nil, second.deps, opt2, editorConsole(&out2, &bytes.Buffer{}, finish2))
+	runEditor(t.Context(), scriptKeys("syc"), nil, second.deps, opt2, recordingConsole(&out2, &bytes.Buffer{}, finish2))
 
 	if !strings.Contains(out2.String(), greyOn+"ophantic") {
 		t.Errorf("the previous session's word was not suggested: %q", tailOf(out2.String()))

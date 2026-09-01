@@ -97,3 +97,20 @@ func TestChoiceRevealNamesTheAnswerAndWhatTheyPicked(t *testing.T) {
 		t.Errorf("Reveal = %q, want it to show what they picked — that is the learning moment", rev)
 	}
 }
+
+// OptionIndent and the prefix optionLine actually writes are ONE fact.
+//
+// main pre-wraps a gloss to this indent (#41), so a prefix that grew without the
+// constant growing would clip every option's first line by the difference —
+// silently, and only on a terminal narrow enough to matter.
+func TestOptionLineStartsAtOptionIndent(t *testing.T) {
+	const gloss = "a definition"
+	line := optionLine(0, gloss)
+	if got := len(line) - len(gloss); got != OptionIndent {
+		t.Errorf("optionLine puts %d columns before the gloss, and OptionIndent says %d — "+
+			"main wraps to the constant, so the difference is clipped off every option", got, OptionIndent)
+	}
+	if line[:OptionIndent] != "1  " {
+		t.Errorf("prefix = %q, want the option number and two spaces", line[:OptionIndent])
+	}
+}

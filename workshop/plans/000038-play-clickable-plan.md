@@ -64,9 +64,9 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 
 | claim | verified at | status |
 |---|---|---|
-| `draw` is append-only and never clears | `play_loop.go:283-291` | true — `fmt.Fprintf(w, "\n%s\n", q.Prompt())` |
+| ~~`draw` is append-only and never clears~~ | `play_loop.go:283-291` | true when written; **no longer the tree** — `#41` T4 deleted `draw`, and the question is written to the buffer once per question rather than once per frame |
 | a recall form's prompt IS the word | `play/recall.go:29` | true — `Prompt() string { return r.word }` |
-| `--play` wraps stdout/stderr in `crlfWriter` | `play_loop.go:64-65` | true |
+| ~~`--play` wraps stdout/stderr in `crlfWriter`~~ | `play_loop.go:64-65` | true when written; **no longer the tree** — `#41` T3 landed D9 |
 | entries are pre-rendered and their regions discarded | `play_loop.go:262-265` | true |
 | the playback dance restores and re-enters raw mode | `play_loop.go:174-198` | true — and `restore` now also leaves alt + mouse (D2) |
 | `restore` leaves mouse and the alt screen | `rawterm.go:50-61` | true |
@@ -86,7 +86,7 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
 | `playRegions` | `cmd/define/play_loop.go` | new | PURE — the `word -> []Region` map, because `play` cannot hold a `main` type (D7) |
-| `promptRegionFor` | `cmd/define/play_loop.go` | new | PURE — the region for the word `draw` is about to write |
+| `promptRegionFor` | `cmd/define/play_loop.go` | new | PURE — the region for the prompt word the loop is about to write |
 
 - **`playRegions`** — questions are pre-rendered before the sitting starts, so their regions are known then and needed later.
   - **Relationships:** 1:1 with the question queue, keyed by `play.Question.Word()`.
@@ -98,9 +98,9 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `playRegion` | `cmd/define/replraw.go` | new | `playAnnounced` — the one switch on `RegionKind`, shared by both loops (D4) |
-| `runPlay` | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces both `crlfWriter`s (D9) |
-| `playSession` | `cmd/define/play_loop.go` | modified | takes `console` (`replraw.go:94`) and the region map — D10 |
-| `draw` | `cmd/define/play_loop.go` | modified | `writeRendered` for the reveal (D3) |
+| `runPlay` | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces both `crlfWriter`s (D9). **Already landed, by `#41` T3** (`newConsole`, the builder both loops share), which needed the same seam for its status bar; nothing here is left for this issue to do |
+| `playSession` | `cmd/define/play_loop.go` | modified | takes `console` (**already, via `#41` T3**) and the region map — D10 |
+| `playSession`'s reveal write | `cmd/define/play_loop.go` | modified | `writeRendered` for the reveal (D3). This was a row for `draw`, which `#41` T4 **deleted**: the question, the reveal and the grading keys have three different lifetimes and a scrolling terminal could not express the difference, so the reveal is now written by the loop on `OutcomeReveal` and the keys are the frame's prompt (`livePrompt`). The seam D3 names is unchanged — it is the call that gains the click map |
 
 - **`playRegion`** — given a region, what to play it against and an indicator, perform the playback.
   - **NOT pure**, and the label matters: it reaches `playAnnounced`, which fetches audio and writes. Its test uses the player and CDN fakes the repo already has, not a colocated unit test.
@@ -119,13 +119,13 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 
 - [ ] **T0 — one audio-off predicate** (D11). `options.playsAudio()`, applied inside `playAnnounced` so no caller can be below it, and the four hand-copies replaced by a call. Behaviour-preserving: every existing audio test passes untouched, and a new row asserts `playAnnounced` fetches NOTHING when audio is off — which none of them do today, since the callers never let it get that far.
 - [ ] **T1 — lift the click registry.** `playRegion(ctx, d, opt, r Region, entry string, ind indicator, stdout, stderr)`: the switch on `RegionKind`, building the utterance and calling `playAnnounced` — which now carries the guard itself (T0). The editor's `clicked` (`replraw.go:264`) becomes a call to it. NO behaviour change — `TestEveryRegionKindIsActionable`, `TestClickOnHeadwordReplays` and `TestClickOnOriginLanguagePlaysIt` pass untouched, which is what proves the lift was a lift.
-- [ ] **T2 — delete the playback dance** (D2), AND re-home the invariant that dies with it.
+- [x] **T2 — delete the playback dance** (D2), AND re-home the invariant that dies with it. **LANDED BY `#41` T3/T4** — see the 2026-08-31 revision below.
       `play_loop.go:174-198` loses `restore`/`enterRaw` and the `lost the terminal after playback` path. A new row asserts the alternate screen is STILL up after a reveal, which is the regression the deletion prevents.
-      **`TestLosingTheTerminalAfterPlaybackExitsOne` (`play_loop_test.go:529`) goes with it, and it is the ONLY pin for the outcome-ORDER obligation** — `play_loop.go:126-141` enumerates three consumer obligations and names that test for `order`, recording that reversing the iteration once left the whole suite green (BR-13). Its premise is a `rawTerm` on `/dev/null` so re-entry fails, which this deletion makes unreachable.
+      **The exit-1 test that drove the re-entry failure went with it, and it was the ONLY pin for the outcome-ORDER obligation** — `play_loop.go:126-141` enumerates three consumer obligations and names that test for `order`, recording that reversing the iteration once left the whole suite green (BR-13). Its premise is a `rawTerm` on `/dev/null` so re-entry fails, which this deletion makes unreachable.
       The replacement must OBSERVE THE ORDER, not a consequence of it. A first draft asserted "the record survives a failed playback", and the gate measured it green under a reversed iteration — correctly: once the early `return 1` is gone, both orders write the record, so the consequence stops discriminating. The old test worked only because the reveal arm could abort the loop.
       So the fake records a SEQUENCE: `capture.CaptureReview` and the player each append to one ordered log, and the assertion is that the record's entry precedes the playback's. That is falsifiable by reversing the `outs` iteration and by nothing else — which is what BR-13 needed and what a consequence-based test could not give once the abort was deleted.
       **The rule: a task that deletes code re-homes every invariant whose only pin lives there, in the same task — and re-homing means finding an observable that still discriminates, not porting the old assertion.**
-- [ ] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9).
+- [x] **T3 — `--play` writes into a `liveScreen`.** `enterAlt`, `enterMouse`, `newLiveScreen`, `handBack` on exit, replacing both `crlfWriter`s (D9). **LANDED BY `#41` T3** as `newConsole(ctx, d, sess, stdout, newScreen)`, which both loops call — `--play` passes `newPinnedScreen` rather than `newLiveScreen`, because a status bar belongs at the terminal's bottom edge.
 - [ ] **T4 — the prompt word is a region.** `draw` is append-only, so the word lands on the line about to be written: one `RegionHeadword` at column 0, width `visibleCells(word)`.
 - [ ] **T5 — the revealed definition carries its regions** (D7, operator's choice), through `writeRendered` (D3).
 - [ ] **T6 — the viewport, all three parts.** The alternate screen has NO scrollback, so without this a sitting cannot be scrolled at all — worse than today, where the terminal keeps it.
@@ -144,7 +144,7 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 | 3 | a revealed definition is clickable like anywhere else | `TestPlayClickOnARevealedHeadword` | the reveal is written without its regions |
 | 4 | one registry, both loops | `TestEveryRegionKindIsActionable` extended to drive `playRegion` directly | a kind acts in one loop and not the other |
 | 4b | **`-no-audio` fetches nothing, from any caller** | `TestPlayAnnouncedFetchesNothingWithAudioOff` — on `playAnnounced` itself, since that is where the guard now lives | the predicate is left in the callers, so a fifth one sits below it |
-| 4c | **the outcome ORDER survives its pin's deletion** | `TestAMissRecordsBeforeItPlays` — one ordered log written by both the capturer and the player, replacing `TestLosingTheTerminalAfterPlaybackExitsOne` | the `outs` iteration is reversed |
+| 4c | **the outcome ORDER survives its pin's deletion** | `TestAMissRecordsBeforeItPlays` — one ordered log written by both the capturer and the player, replacing the deleted exit-1 test. **DONE:** landed with `#41` T3, mutation-verified against a reversed iteration | the `outs` iteration is reversed |
 | 6b | **a resize repaints mid-sitting** | `TestPTYPlayResizeRepaints` | `watchResize` is not wired into the loop's select |
 | 5 | **playback does not tear the screen down** | `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` | the restore/re-enter dance comes back |
 | 6 | a sitting can be scrolled | `TestPlayPageKeysScroll` | the viewport cases are dropped, leaving no scrollback at all |
@@ -224,3 +224,35 @@ capturer and the player append to, asserting the record's entry comes first.
 The wider rule, which is the part worth keeping: **re-homing an invariant means
 finding an observable that still discriminates, not porting the old assertion to
 a world where its mechanism is gone.**
+
+### 2026-08-31 — `#41` landed T2, T3 and D9 first
+
+`#41` (`--play` paints frames through `screen`, and gains a status bar) needed
+the same seam this plan's T3 describes, and needed it for a different reason: a
+status bar has nowhere to go on a surface that owns no coordinates. So it landed
+T2 and T3 ahead of this issue rather than duplicating them.
+
+What is now IN THE TREE, and no longer this plan's to do:
+
+- **T3 / D9** — `newConsole` builds the console for both loops, and
+  both `crlfWriter`s are gone. One difference from what T3 wrote: the screen is
+  `newPinnedScreen`, not `newLiveScreen`, so the buffer region fills and the
+  footer sits on the bottom row (`#41` D3a).
+- **T2 / D2** — the reveal's `restore`/`enterRaw` pair and its exit-1 branch are
+  deleted. `#41` D5a found the same Critical this plan's PQ-1 did, from the other
+  side: `enterAlt` is opt-in and `restore` leaves the alternate screen, so a
+  frame-drawing sitting loses it on the first reveal.
+- **4c** — the outcome-ORDER pin is rebuilt as `TestAMissRecordsBeforeItPlays`,
+  built to THIS plan's round-4 specification: one ordered log written by both the
+  capturer and the player, because a consequence-based assertion measured green
+  under a reversed iteration once the abort was gone. Verified by mutation.
+
+**What this plan still owns, and what changed under it:** the click map. `draw`
+is gone — `#41` T4 split it by lifetime, so the question and the reveal are
+buffer writes the loop makes on transitions and the grading keys are the frame's
+prompt (`livePrompt`). D3's seam is unchanged in substance: the reveal's write is
+still the call that has to carry regions, it is just made from the loop rather
+than from a function called `draw`. D5's "the visual result stays close" now has
+a stronger form than it claimed — the sitting is a frame, with paging.
+
+Re-read D3, D5 and T4 against the current `playSession` before implementing.

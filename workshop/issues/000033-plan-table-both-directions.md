@@ -79,3 +79,41 @@ before it is built:
 Filed from `#29`'s close review round 4. Third finding in this family across one
 issue; the first two were fixed as instances and as a mechanism respectively, and
 this is the mechanism's own gap.
+
+## Revisions
+
+### 2026-08-31 — `#41`'s boundary review measured the gap twice, and named the widening
+
+`#41` hit this family twice at its close gate (`doc-sweep-incomplete` BR-16,
+`plan-table-vs-tree` BR-22), and the review wrote the spec this issue needs. Both
+are the same shape: **a guard checks one column and the artifact asserts three.**
+
+`TestARemovedDeclarationIsSweptOrRetired` only sees `-func` lines whose names pass
+`isCitableName` (exported, or `Test*`). It structurally cannot see:
+
+- a removed **type** — `crlfWriter`, which `#41` deleted while three current-truth
+  comments still named it;
+- a removed **unexported func** — `playConsole`, `draw`, `fitMenu`, all renamed by
+  `#41` and all left cited;
+- a deleted **file path** — `crlf_test.go`, named by two comments after deletion;
+- a name that was **never declared at all** — `#41` shipped a comment citing
+  `TestAMissIsRecordedBeforeItIsRevealed`, a test that has never existed.
+
+`TestPlanTableStatusMatchesTheChangeWindow` judges only `modified`/`unchanged`/
+`new` against the diff. The PATH and the KIND cells are unguarded, so `#41`'s
+plan filed three pure functions under "Integration points" (column header:
+"Wraps") and an IO constructor under "Pure entities", in the table `#40` reads as
+the record of what landed.
+
+**The widening this issue should deliver**, in the review's own words:
+
+1. removed **type/const/unexported** declarations, not just `-func` + citable;
+2. deleted **file paths**;
+3. a FORWARD check — every `Test[A-Z]\w+` cited in a current-truth artifact is
+   declared somewhere in the tree;
+4. an Integration-points row names something the tree can be seen to WRAP, or the
+   unguarded columns stop being asserted.
+
+(1)–(3) turn the whole `doc-sweep-incomplete` family into a build failure, which
+is the only thing that has ever worked on it here: it has now recurred five times
+under a rule everyone agrees with.

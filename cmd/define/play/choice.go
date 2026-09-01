@@ -125,19 +125,27 @@ func (c *Choice) Prompt() string {
 	return s
 }
 
+// OptionIndent is how many columns optionLine puts in front of a gloss.
+//
+// EXPORTED because the caller PRE-WRAPS the gloss and therefore has to know what
+// this package will prepend to its first line. That was the alternative #7 named
+// — *"the honest fix is to wrap in main and pass pre-wrapped option text, the
+// same way the definition already arrives pre-rendered"* — and #41 forced it:
+// the terminal used to wrap a long option line, badly but visibly, and a frame
+// CLIPS instead, because a line that wraps is a frame one row too tall and the
+// terminal then scrolls every placed row (screen.go's whole budget). So an
+// unwrapped gloss stopped being ugly and started being missing.
+//
+// A constant rather than a 3 in main: the prefix's width is this form's fact,
+// and two owners of it would drift the day a form numbers past nine.
+// TestOptionLineStartsAtOptionIndent is the pin.
+const OptionIndent = 3
+
 // optionLine numbers one option. `byte('0'+n)` rather than fmt: this package
 // imports nothing, and one digit does not need a formatter (D5a).
 //
-// NO HANGING INDENT, and that is a known rough edge rather than a decision.
-// A long gloss — NOAD's `quokka` runs to a taxonomic name — wraps in the
-// terminal, and the continuation starts at column 0 where a reader's eye expects
-// the next option. Fixing it means knowing the terminal width, which this
-// package deliberately does not: it would have to arrive as another constructor
-// argument, and the caller would then own line-breaking for a form whose whole
-// point is that the caller owns no formatting. Measured on a real terminal
-// during #7's verification and left; if it becomes annoying the honest fix is to
-// wrap in main and pass pre-wrapped option text, the same way the definition
-// already arrives pre-rendered.
+// The gloss arrives already wrapped to OptionIndent, so its continuation lines
+// carry their own padding and this only has to place the number.
 func optionLine(i int, gloss string) string {
 	return string(rune('0'+i+1)) + "  " + gloss
 }
@@ -154,7 +162,12 @@ func (c *Choice) Reveal() string {
 		}
 	}
 	if c.chosen >= 0 && c.chosen < len(c.options) && !c.options[c.chosen].Correct {
-		s += "\n\nyou chose " + optionLine(c.chosen, c.options[c.chosen].Gloss)
+		// The label gets its OWN line, and that is a consequence of the gloss
+		// arriving pre-wrapped: "you chose " in front of it would push the first
+		// line ten columns past the width it was wrapped to, and a frame clips
+		// what does not fit. Wrapping every option ten columns narrower to buy
+		// room for one line in one state is the worse trade.
+		s += "\n\nyou chose\n" + optionLine(c.chosen, c.options[c.chosen].Gloss)
 	}
 	if c.definition != "" {
 		s += "\n\n" + c.definition

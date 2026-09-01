@@ -14,7 +14,7 @@ import (
 // deltas where `obsequious` can land as `obseq` + `uious`. Both need the same
 // two hard things — never split an escape sequence, and never highlight a word
 // before knowing where it ends — so both get the same writer rather than each
-// growing its own. Same shape as crlfWriter, which carries `lastWasCR` across
+// growing its own. Same shape as the line-ending writer that carried `lastWasCR` across
 // writes for exactly this class of reason.
 //
 // THE CONTRACT (workshop/plans/000021-highlight-learned-plan.md states it
@@ -54,10 +54,11 @@ func newHighlightWriter(out io.Writer, v Vocabulary, on string) *highlightWriter
 
 // Write reports (len(p), nil) on success and (0, err) on failure.
 //
-// The zero is deliberate and differs from crlfWriter in the same package, which
+// The zero is deliberate and differs from the line-ending writer #41 deleted, which
 // returns caller-unit PROGRESS on a partial write. The difference is retry:
-// crlfWriter can be written to again, so a caller must know how far it got, and
-// crlf_test.go defends that. This writer POISONS on the first failure — every
+// that one could be written to again, so a caller must know how far it got, and
+// TestHighlightWriterShortWriteContract in this file's neighbour defends that
+// with the same shortWriter double. This writer POISONS on the first failure — every
 // later Write returns the same error and emits nothing — so there is no retry to
 // inform, and no byte can be written twice. Reporting a partial count here would
 // invite a resume that the writer will never honour.

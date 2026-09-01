@@ -171,9 +171,10 @@ func runAsk(ctx context.Context, d deps, opt options, sess *session, q question,
 	// translation happens before it, so a match ending at a line break is decided
 	// against the same bytes every other analysis in this program sees.
 	//
-	// It used to sit INSIDE the raw loop's crlfWriter, which #30 D5 removed: the
-	// screen owns line placement now, and two owners of line endings is how they
-	// drift. `--play` still wraps its own.
+	// It used to sit INSIDE the raw loop's line-ending writer, which #30 D5
+	// removed: the screen owns line placement now, and two owners of line endings
+	// is how they drift. `#41` did the same for `--play`, which retired that
+	// writer from this binary entirely.
 	hw := newHighlightWriter(out, vocabularyFor(d, opt), knownOn)
 	defer func() {
 		// REPORTED, not discarded. The writer poisons on its first downstream

@@ -284,9 +284,12 @@ diagnostics where the definition goes. In production every field is the same
 
 - **`screen` is an `io.Writer`, and that is what kept this from being a rewrite.**
   `Render` returns a string, the ask path streams, commands and the indicator
-  print — every one of them feeds the buffer unchanged. It REPLACED `crlfWriter`
-  on this path, because two owners of line endings is how they drift. (`--play`
-  keeps its own; see "All session output goes through `crlfWriter`" below.)
+  print — every one of them feeds the buffer unchanged. It REPLACED the
+  translating writer this path used to wrap stdout in, because two owners of line
+  endings is how they drift. `#41` made `--play` the second consumer, which left
+  that writer with no caller at all — `crlf.go` is DELETED, not retained. The
+  piped path never needed it: `replLines` runs cooked, where the terminal
+  translates.
 - **A write REPAINTS.** The buffer alone is invisible, and a streamed answer
   arrives token by token while `♫ playing 3×` has to show during playback that
   blocks for seconds. So `liveScreen.Write` paints, and `screen` stays pure and
@@ -892,9 +895,11 @@ Its contract, in the order the rules matter:
    drags it back to that span's start. Plain text may be cut freely.
 4. **Downstream errors poison the writer.** The first failure is remembered and
    nothing is emitted after it, so no byte is written twice. A short write with a
-   nil error is a failure — `crlfWriter`, which `--play` nests this inside,
-   produces exactly that. (The raw loop did too, until `#30` replaced it with the
-   screen.)
+   nil error is a failure — the line-ending writer produced exactly that, which
+   is how this rule was found. Both interactive loops replaced it with the screen
+   (`#30`, then `#41`), so the writer that motivated the rule is gone; the rule
+   outlives it because `screen.Write` and any future wrapper owe the same
+   contract.
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
 `sgrState` is the pure half: it watches escapes go past and answers "what style
@@ -935,9 +940,8 @@ rows.
 writer on the answer — over the screen in the raw loop, over the real stdout when
 piped. So highlighting sees the answer's own logical text and the screen places
 the highlighted bytes as lines afterwards. It used to wrap the raw loop's
-`crlfWriter` instead, which `#30` D5 removed. Inverted, the highlighter would
-meet `\r\n` where
-it expects `\n`.
+line-ending writer instead, which `#30` D5 removed. Inverted, the highlighter
+would meet `\r\n` where it expects `\n`.
 
 The `Flush` is DEFERRED rather than written at each return, and that is
 structural: `runAsk` returns on five paths and held text is invisible until a
@@ -1975,8 +1979,9 @@ making "did we finish" two facts in two places.
 **A deck whose words all fail to look up is NOT "nothing due today".** Words were
 due; the dictionary is the problem. Saying nothing is due would send the learner
 away believing their deck is clear, so that path reports what happened and exits
-1 — and losing the terminal after playback exits 1 as well, the same code as
-failing to enter raw mode in the first place, because they are the same failure.
+1. It used to have a sibling — "lost the terminal after playback", the same exit
+code because it was the same failure — and `#41` deleted it: playback no longer
+hands the terminal back, so there is no re-entry left to fail.
 
 **`Question` is the whole of what a session knows about a form.** `Word`,
 `Prompt`, `Reveal`, `Grade`, `Keys` — and `Grade` lives on the FORM, which is
@@ -1993,6 +1998,94 @@ test typed the keys the const named. A form describing its own keys is the only
 arrangement in which that cannot recur. The loop still owns the SESSION's
 reserved half (`d`, Ctrl-C) and appends it, because those are true whatever form
 is asking and a form restating them would be two owners of one fact.
+
+### The sitting is a frame (`#41`)
+
+`--play` draws through `console`/`display` exactly as the editor does, and the
+divergence `#30` D5a predicted is closed. `newConsole` is the shared builder
+both loops now call, with the screen constructor as its one parameter — the
+first cut of it was a verbatim copy of `replRaw`'s
+construction: alternate screen, mouse reporting, a screen, `watchResize`,
+`onceHandBack`. What that bought, in the order it matters:
+
+- **A long reveal PAGES instead of scrolling the word away.** Form 2.3's reveal
+  is the whole rendered entry, which on `run` or `bank` is several screenfuls;
+  before frames the word being asked about was simply gone off the top. The loop
+  intercepts PageUp/PageDown and the wheel and calls `view.Page`/`view.Scroll` —
+  BEFORE `toInput`, never inside it, because a viewport is not something the pure
+  `play` package may learn about.
+- **A status bar, pinned.** `sittingBar` formats it and `finish()` formats its
+  summary through the same `costPhrase`, so the two cannot word the `-count`
+  assumption differently.
+- **Three surfaces are SHARED with the editor rather than copied**, and each
+  was a copy first: `newConsole(ctx, d, sess, stdout, newScreen)` builds the
+  terminal for both loops with the screen constructor as its one difference,
+  `viewportGesture(view, k)` owns which keys move the view and which way a page
+  goes, and `wrapWritten` owns the wrap. `#40`'s board is the third caller of all
+  three.
+- **The question is a BUFFER LINE and the keys are the LIVE EDGE.** The old
+  `draw()` wrote the question, the reveal and the keys on every call, which is
+  right for a scrolling terminal and would file a copy of the question per
+  keystroke against a line buffer. The loop tracks the written index and writes
+  on transition; `livePrompt` returns the keys, which are painted and never
+  filed.
+
+**A SITTING REFUSES rather than degrades, and it settles that before doing any
+work.** `--play` needs stdin to be a terminal (a review is a conversation, and
+piped input would answer questions it never saw), stdout to be a terminal (a
+redirected one would collect frames at a fabricated 80 columns), and `-no-color`
+to be off (that flag means "emit no ANSI", which main.go's own comment extends to
+cursor control, for terminals that mangle escapes). All three are checked before
+the deck is read — the same rule usage errors follow — and all three refuse,
+because there is no line-mode fallback for a sitting and pretending otherwise
+would write the frames anyway. The editor degrades instead, by ROUTING to
+`replLines`; that option does not exist here.
+
+**Everything the loop writes is wrapped at the moment of WRITING, not of
+rendering (`wrapWritten`).** This took three findings in one family to state.
+`Paint` CLIPS a buffer line at the terminal's width — letting it wrap would make
+the frame a row too tall and the terminal would scroll every row the sitting
+placed — while `--play` renders its text when the queue is built and writes it
+much later. So every pre-rendered artifact carries a width that may already be
+wrong: an option gloss at the startup width (the operator found this one), the
+same lines after a narrowing resize, and the rendered definition a reveal writes.
+Wrapping one line-kind at a time is what produced three findings; the loop routes
+the question, the reveal, the drop notice, the summary and its diagnostics
+through one function, and the resize case keeps `opt.width` current. A line that
+already fits is returned untouched, so `Render`'s own wrapping passes through.
+The question already on screen keeps the wrapping it was written with, exactly as
+the editor's scrollback does — and nothing is lost by it, because the clip
+happens at paint and the whole text is still in the buffer if the window widens.
+
+**`newPinnedScreen` versus `newLiveScreen`, and the difference is a decision.**
+`Paint` writes the visible frame, then the prompt, then the footer — so a
+five-line question on a forty-row terminal put the bar at row seven. A pinned
+screen pads the buffer region to its full height at PAINT time, so the footer
+sits on the bottom row. Blank ROWS, never lines: the transcript must not gain
+rows because the terminal is tall. The editor keeps the unpadded constructor,
+because a REPL prompt belongs directly under the last output.
+
+**Adopting frames DELETED the playback dance, and that was a Critical rather than
+a tidy-up.** Every reveal used to `restore()`, play the pronunciation in cooked
+mode, and `enterRaw` again. `enterAlt` is opt-in on `rawSession` and `restore()`
+leaves the alternate screen, while `enterRaw` returns a session with `alt` false
+— so a frame-drawing sitting would have lost the alternate screen on its FIRST
+reveal and painted every frame after it over the user's scrollback. Playback now
+stays raw: under the frame model the `♫ playing 3×` indicator is a frame write,
+and `screen.Write` already honours its `\r\x1b[K` erase by taking the open line
+back. `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` is the pin.
+
+**The bar's figures are read ONCE per sitting and updated in memory.** `Deck()`
+reads a file per WORD and `Events()` a file per DAY of history, so recomputing
+per answer is thousands of file reads per question with a person waiting.
+`todaysQuestions` returns what it already computed as a `sittingDeck`, and the
+loop applies `schedule.Answer` to it through `schedule.GradeOf` — the same rule
+`Fold` reaches through `gradeOf`, so the figures a sitting SHOWS cannot drift
+from the ones the next sitting DERIVES. A drop removes the word from the copy
+too, so the bar cannot charge for a word the learner just curated away. `finish`
+takes the figures rather than re-reading: `#39` T7's reasoning (the learner
+should see the AFTER-today figure) survives, because the in-memory copy already
+is that figure.
 
 ### Form 2.3: choosing a definition
 
@@ -2155,14 +2248,13 @@ an `Input` kind and every future form gets it free — the same reasoning that p
 and the EVENTS stay: `--forget`'s contract, since history is what happened and
 cannot be untrue while the deck is the working set the learner curates.
 
-**All session output goes through `crlfWriter`.** (The `--play` loop's, which
-still draws its own frames; the interactive loop's screen replaced it there —
-see "The screen".) In raw mode a bare `\n` moves
-down WITHOUT returning to column 0, so a multi-line definition cascades
-diagonally across the screen. `#16` built that writer for exactly this; `--play`
-shipped without it and the operator's first real session found it immediately.
-`draw` writes plain `\n` and the translation happens in one place over every
-byte, including `Render`'s — which is where the newlines actually are.
+**A sitting draws WHOLE FRAMES, through the same seam the editor uses (`#41`).**
+It used to write lines through a translating writer to a scrolling terminal, because in
+raw mode a bare `\n` moves down WITHOUT returning to column 0 and a multi-line
+definition cascades diagonally across the screen — `#16` built that writer for
+exactly this, `--play` shipped without it, and the operator's first real session
+found it. The screen places every row itself, so the second writer is gone; see
+"The sitting is a frame" below for what owning coordinates bought.
 
 **Cancellation is checked BEFORE the select, not only inside it.** `select` picks
 uniformly at random among ready cases, so a cancelled context with a key already

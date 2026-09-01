@@ -111,7 +111,7 @@ func TestPlayReviewsTheCurrentLanguageOnly(t *testing.T) {
 			// today a Spanish word is correctly SELECTED and then skipped for
 			// having no entry, and asserting only on questions would read that as
 			// "the session offered nothing" rather than "the scoping worked".
-			qs, _ := todaysQuestions(d, opt, &warn, &warn)
+			qs, _, _ := todaysQuestions(d, opt, &warn, &warn)
 			considered := warn.String()
 			for _, q := range qs {
 				considered += " " + q.Word()

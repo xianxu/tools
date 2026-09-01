@@ -43,7 +43,7 @@ func TestSittingCostIsBoundedByTheCap(t *testing.T) {
 	d.dict = counting
 	opt.count = 5
 
-	qs, code := todaysQuestions(d, opt, &strings.Builder{}, &strings.Builder{})
+	qs, _, code := todaysQuestions(d, opt, &strings.Builder{}, &strings.Builder{})
 	if code != 0 {
 		t.Fatalf("todaysQuestions exit %d", code)
 	}
@@ -311,7 +311,7 @@ func TestNoQuestionDrawsTwoOptionsFromOneEntry(t *testing.T) {
 	// usable senses ("existing in a material or physical form" and the archaic
 	// "form (something) into a mass") — under two deck keys.
 	d, opt, _ := playRig(t, "concrete", "cóncrete", "quokka", "mesa", "parrot")
-	qs := questionsFor(t, d, opt)
+	qs, _ := questionsFor(t, d, opt)
 	if len(qs) == 0 {
 		t.Fatal("no questions")
 	}
@@ -383,4 +383,175 @@ func TestEntryIdentityDistinguishesEntriesHeadwordConflates(t *testing.T) {
 			t.Errorf("identity for %q is %q, the same as Headword() — the head run was not used", w, id)
 		}
 	}
+}
+
+// A LONG GLOSS WRAPS, and every line fits the terminal (#41).
+//
+// The operator's screenshot is the case: `ligament`'s option line ran off the
+// right edge and was CUT, not wrapped. Before #41 the terminal wrapped it, at
+// the column and with no indent; a frame clips instead, because a line that
+// wraps makes the frame a row too tall and the terminal then scrolls every row
+// the sitting placed.
+//
+// Two claims, and the second is the one a fix that merely truncated would drop:
+// it fits, AND nothing was lost.
+func TestALongOptionGlossWrapsRatherThanBeingCut(t *testing.T) {
+	const width = 50
+	d := testDict(t)
+	raw, err := d.Lookup("quokka")
+	if err != nil {
+		t.Fatalf("quokka is not in the committed corpus: %v", err)
+	}
+	entry := ParseEntry(raw)
+	target, ok := targetCandidate("quokka", entry)
+	if !ok {
+		t.Fatal("quokka yields no target gloss")
+	}
+	if visibleCells(target.Gloss)+play.OptionIndent <= width {
+		t.Fatalf("the corpus gloss is only %d columns, so nothing would wrap and this test "+
+			"would assert nothing: %q", visibleCells(target.Gloss), target.Gloss)
+	}
+	q := choiceFor("quokka", "", entry, []play.Candidate{
+		{Word: "mesa", Gloss: "an isolated flat-topped hill with steep sides", Axis: play.AxisGeneral},
+		{Word: "parrot", Gloss: "a bird with a short hooked bill", Axis: play.AxisGeneral},
+	}, 1)
+	if q == nil {
+		t.Fatal("no choice built")
+	}
+
+	prompt := wrapWritten(q.Prompt(), width)
+	for _, line := range strings.Split(prompt, "\n") {
+		if n := visibleCells(line); n > width {
+			t.Errorf("a prompt line is %d columns wide in a %d-column terminal, so the frame "+
+				"clips it: %q", n, width, line)
+		}
+	}
+	// ...and every word survived. Truncation also "fits".
+	if !strings.Contains(collapseSpace(prompt), collapseSpace(target.Gloss)) {
+		t.Errorf("the gloss did not survive wrapping — it fits because it was cut:\n%s", prompt)
+	}
+	// The continuations are INDENTED under the gloss rather than starting at
+	// column 0, where the eye expects the next option. That is the half #7 left
+	// as a known rough edge and #41 had to close anyway.
+	indented := false
+	for _, line := range strings.Split(prompt, "\n") {
+		if strings.TrimSpace(line) != "" && strings.HasPrefix(line, strings.Repeat(" ", play.OptionIndent)) {
+			indented = true
+		}
+	}
+	if !indented {
+		t.Error("no continuation line was indented, so either nothing wrapped or the hanging indent is gone")
+	}
+}
+
+// collapseSpace flattens a wrap so the assertion is about the WORDS surviving
+// rather than about where the breaks landed.
+func collapseSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// A width of 0 means "do not wrap", which is terminalWidth's sentinel for a
+// terminal too narrow to break a definition in. The gloss must arrive whole.
+func TestUnwrappedWidthLeavesTheGlossAlone(t *testing.T) {
+	d := testDict(t)
+	raw, _ := d.Lookup("quokka")
+	entry := ParseEntry(raw)
+	target, _ := targetCandidate("quokka", entry)
+
+	q := choiceFor("quokka", "", entry, []play.Candidate{
+		{Word: "mesa", Gloss: "an isolated flat-topped hill", Axis: play.AxisGeneral},
+		{Word: "parrot", Gloss: "a bird with a short hooked bill", Axis: play.AxisGeneral},
+	}, 1)
+	if q == nil {
+		t.Fatal("no choice built")
+	}
+	if got := wrapWritten(q.Prompt(), 0); !strings.Contains(got, target.Gloss) {
+		t.Errorf("width 0 did not leave the gloss intact:\n%s", got)
+	}
+}
+
+// wrapWritten leaves alone anything that already FITS, whatever kind of line it
+// is — so text Render has already wrapped passes through untouched and only what
+// is too wide is broken.
+func TestWrapWrittenLeavesFittingLinesAlone(t *testing.T) {
+	// WIDE ENOUGH for every row below to fit — the claim is "a line that fits is
+	// returned untouched", so a row that does not fit would be testing the other
+	// half and passing for the wrong reason.
+	const width = 60
+	for _, tc := range []struct{ name, in string }{
+		{"a headword", "internationalization"},
+		{"a blank line", ""},
+		{"a rendered definition line, already wrapped", "  a definition line"},
+		{"a numbered SENSE, which Render writes with a dot", "    1. cover an area with concrete and then some"},
+		{"a digit with one space is not an option line", "1 not an option"},
+		{"a definition body line Render already wrapped", "      a definition line"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := wrapWritten(tc.in, width); got != tc.in {
+				t.Errorf("wrapWritten rewrote a line that already fits:\n in  %q\n out %q", tc.in, got)
+			}
+		})
+	}
+	// ...and it DOES break what is too wide, at a width narrow enough to force
+	// it, or the table above passes for a function that does nothing. Both kinds, each under its own indent: an
+	// option line hangs under the gloss, a body line under its own indentation.
+	for _, tc := range []struct{ name, in, wantIndent string }{
+		{"an option line hangs under the gloss", "1  " + strings.Repeat("word ", 10), strings.Repeat(" ", play.OptionIndent)},
+		{"a body line hangs under its own indent", "      " + strings.Repeat("word ", 10), "      "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const narrow = 20
+			got := wrapWritten(tc.in, narrow)
+			lines := strings.Split(got, "\n")
+			if len(lines) < 2 {
+				t.Fatalf("an over-wide line was not wrapped: %q", got)
+			}
+			for _, l := range lines {
+				if visibleCells(l) > narrow {
+					t.Errorf("a wrapped line is still %d columns: %q", visibleCells(l), l)
+				}
+			}
+			if !strings.HasPrefix(lines[1], tc.wantIndent) {
+				t.Errorf("continuation %q does not hang under %q", lines[1], tc.wantIndent)
+			}
+		})
+	}
+}
+
+// STYLED text wraps, and only the ERASE gesture is exempt (BR-23).
+//
+// The Critical this pins was mine and it shipped for one round: protecting the
+// `♫ playing 3×` indicator, whose `\r\x1b[K` marker `wrapText` would scatter
+// across a break, I skipped every line carrying an escape. `--play` refuses to
+// run with `-no-color` (BR-3), so every rendered definition line carries colour
+// — the skip therefore exempted exactly the lines the wrap exists for.
+//
+// A UNIT test rather than a sitting, because the sitting's version of this
+// depends on which word comes second and how long its entry is. A contract is
+// the thing to state.
+func TestWrapWrittenWrapsStyledTextButNotTheEraseGesture(t *testing.T) {
+	const width = 40
+
+	t.Run("a coloured line wraps", func(t *testing.T) {
+		line := "      \x1b[3;32m“" + strings.Repeat("word ", 20) + "”\x1b[0m"
+		if visibleCells(line) <= width {
+			t.Fatalf("the fixture is only %d cells, so nothing would wrap", visibleCells(line))
+		}
+		got := wrapWritten(line, width)
+		for _, l := range strings.Split(got, "\n") {
+			if n := visibleCells(l); n > width {
+				t.Errorf("a styled line is still %d columns after wrapping: %q", n, l)
+			}
+		}
+		// ...and the style survived: the escapes are still in there, attached to
+		// the words they opened on.
+		if !strings.Contains(got, "\x1b[3;32m") || !strings.Contains(got, "\x1b[0m") {
+			t.Errorf("wrapping dropped the styling: %q", got)
+		}
+	})
+
+	t.Run("the erase gesture is left whole", func(t *testing.T) {
+		line := eraseLine + "♫ playing 3× " + strings.Repeat("and again ", 8)
+		if got := wrapWritten(line, width); got != line {
+			t.Errorf("the take-that-line-back marker was scattered across a break:\n in  %q\n out %q", line, got)
+		}
+	})
 }
