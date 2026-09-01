@@ -103,56 +103,78 @@ take — a click here should reach it rather than growing a third caller.
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
-item: issue-spec               design=0.45 impl=0.08
+item: issue-spec               design=0.55 impl=0.08
 item: smaller-go-module        design=0.02 impl=0.10
 item: cross-cutting-refactor   design=0.05 impl=0.12
-item: smaller-go-module        design=0.05 impl=0.12
-item: smaller-go-module        design=0.03 impl=0.16
-item: smaller-go-module        design=0.01 impl=0.08
-item: smaller-go-module        design=0.02 impl=0.10
-item: smaller-go-module        design=0.02 impl=0.14
+item: smaller-go-module        design=0.02 impl=0.08
+item: cross-cutting-refactor   design=0.06 impl=0.20
 item: smaller-go-module        design=0.01 impl=0.08
 item: atlas-docs               design=0.02 impl=0.06
-item: milestone-review         design=0.00 impl=0.16
-item: milestone-review         design=0.00 impl=0.20
+item: milestone-review         design=0.00 impl=0.30
+item: milestone-review         design=0.00 impl=0.32
 design-buffer: 0.15
 total: 2.18
 ```
 
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.55/0.08 | the design carrier | the issue, the operator's two decisions, FOUR plan-quality rounds — plus two design passes since: the revision recording what `#41` landed, and the re-read against the tree it left. Up from 0.45 for those two |
+| `smaller-go-module` 0.02/0.10 | T0 `options.playsAudio()` | one predicate, applied inside `playAnnounced`, replacing four hand-copies. The seam exists |
+| `cross-cutting-refactor` 0.05/0.12 | T1 lift the click registry | the one task that touches a working loop: `runEditor`'s `clicked` closure becomes a call to `playRegion` |
+| `smaller-go-module` 0.02/0.08 | T4 the prompt word is a region | line 0, column 0 of the write `show()` already makes. Design up 0.01 because `draw` is gone and the site had to be re-found |
+| `cross-cutting-refactor` 0.06/0.20 | T5 the revealed definition carries its regions | **the row the re-read repriced.** Was 0.02/0.10 for "call `writeRendered` and the regions ride along"; a pinned screen's `WriteRegions` now WRAPS, so a region computed before the wrap underlines one word and answers for another. Cross-cutting because the fix reaches `todaysQuestions`, the forms' ownership of their own reveal text, and the write path |
+| `smaller-go-module` 0.01/0.08 | T7 a click never answers | one guard and one assertion |
+| `atlas-docs` 0.02/0.06 | T8 | the README's review-loop section and the atlas's clickable-regions section |
+| `milestone-review` 0.00/0.30 | the boundary: run | |
+| `milestone-review` 0.00/0.32 | the boundary: remediation | |
+
 Derivation notes.
 
-- **`issue-spec` design 0.45 is mostly already spent**: the issue, the operator's
-  two decisions, and FOUR plan-quality rounds. Lower than `#30`'s 0.50 because
-  the architecture was decided there — this issue adopts it rather than choosing
-  it. The rounds were not cheap, though, and three of them found real defects:
-  a Critical the first draft would have shipped, a guard that scoped wrong, and a
-  replacement pin that did not discriminate.
+**THE TOTAL IS UNCHANGED AT 2.18 AND EVERY ROW MOVED, which is the one thing a
+reader of this calibration row has to know.** The plan-quality gate at
+`change-code` measured the old block as *"provably stale against the tree it will
+be measured on"* and warned that the errors offset: *"landing near 2.18 for a
+different set of reasons produces a calibration row nobody can read later."* They
+do offset, almost exactly. The mapping table above is what makes the row readable;
+without it the arithmetic looks like nothing happened.
 
-- **Only ONE `cross-cutting-refactor`**, T1, and it is the one task that touches
-  a working loop: lifting the click registry out of `runEditor`'s closure changes
-  code `#30` just closed. The rest are `smaller-go-module` — extend or mirror,
-  against a design that is settled and a machine that exists.
+- **Three priced rows are DEAD, ~0.54h of the old 2.18.** `#41` landed T2 (the
+  playback dance), T3 (the screen) and T6 (the viewport) while this issue was
+  parked, and verified two of this plan's Done-when rows on real hardware under
+  the exact test names it predicted. Removed rather than re-labelled.
 
-- **No `greenfield-go-module` and no `TUI screen` primitive**, which is the whole
-  shape of this issue: `#30` built the screen, the click map, the region
-  registry, the viewport keys, `watchResize`, `onceHandBack` and `console`. This
-  is a second consumer adopting them (D10). If any row here is optimistic it is
-  T3, where `--play`'s five return paths meet `onceHandBack`.
+- **T5 absorbs most of what those three gave back**, and it is the honest reason
+  the total held. It was priced when T5 meant "call `writeRendered`". `#41` BR-25
+  wrote the constraint down for whoever arrived first: a region's column is
+  relative to the text it was computed from, so a wrap that moves a word moves
+  what a click there means. The failure is SILENT and appears only on entries
+  long enough to wrap, which is most of them. Reclassified `cross-cutting-refactor`
+  because the fix reaches three places, not one.
 
-- **Two `milestone-review`s for ONE boundary**, priced 0.16 to run and 0.20 to
-  remediate. That is not a hedge, it is this session's measured rate: `#30`'s M1
-  took six rounds, M2 five, its close two — and EVERY one returned at least an
-  Important. Pricing remediation at zero is the single thing the record rules out.
+- **The T3 premium is gone with T3.** The old note said *"if any row here is
+  optimistic it is T3, where `--play`'s five return paths meet `onceHandBack`"* —
+  that risk was `#41`'s and it materialised there, not here.
 
-- **THE PREDICTION, on the record so the close can tell a miss from a
-  confirmation.** `#30` estimated 3.19 and measured 10.91 — **3.4×** — and the
-  overrun was almost entirely boundary rounds rather than building. This issue is
-  smaller and its design is already through four rounds, so the same multiplier
-  should not apply; but if the boundary behaves as `#30`'s did, the actual lands
-  near **4–5h** rather than 2.18.
-  **The estimate is NOT padded toward that.** v3.1 is applied as written, or the
-  calibration row means nothing — which is exactly what `#30`'s own estimate note
-  said before being wrong in the same direction.
+- **The two `milestone-review` rows go 0.16/0.20 → 0.30/0.32**, matching `#41`'s.
+  The old pair argued from `#30`'s round counts and then priced at half of what
+  the adjacent issue priced off the same evidence. `#41` then ran FIVE close
+  rounds against these same files and measured 4.77 against 3.31, with roughly
+  half the total being boundary work. One boundary is still one boundary: removing
+  T2/T3/T6 does not shrink these.
+
+- **`issue-spec` design 0.45 → 0.55.** v3.1 leaves design hours unscaled, and
+  there have been two further design passes since the block was written.
+
+**THE PREDICTION, restated so the close can tell a miss from a confirmation.**
+The local ledger in this exact area is now four rows wide: `#30` 3.4×, `#7`
+1.70×, `#39` 0.54×, `#41` 1.44×. A spread, not a bias, and every overrun in it
+was boundary rounds rather than building. This issue's remaining scope is small
+and its design has been through six passes, so the building should be close to
+priced; **if it misses, it misses at the boundary, and T5 is the row most likely
+to put it there** — a silent offset bug is exactly what a review round finds and
+sends back. On that reading the actual lands near **2.5–3.5h**. The estimate is
+NOT padded toward it: v3.1 is applied as written, or the calibration row means
+nothing.
 
 ## Plan
 
@@ -162,11 +184,11 @@ Derivation notes.
       boundary; four plan-quality rounds).
 - [ ] T0 — one audio-off predicate, applied inside `playAnnounced`.
 - [ ] T1 — lift the click registry into `playRegion`, shared by both loops.
-- [ ] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands.
-- [ ] T3 — `--play` writes into a `liveScreen`.
+- [x] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands. **Landed by `#41` T3/T4**; the replacement pin is `TestAMissRecordsBeforeItPlays`, built to this plan's round-4 specification.
+- [x] T3 — `--play` writes into a `liveScreen`. **Landed by `#41` T3** as `newConsole(…, newPinnedScreen)`.
 - [ ] T4 — the prompt word is a region.
 - [ ] T5 — the revealed definition carries its regions.
-- [ ] T6 — the viewport: scroll, wheel and resize.
+- [x] T6 — the viewport: scroll, wheel and resize. **Landed by `#41` T7/T8** as the shared `viewportGesture` plus the loop's resize case.
 - [ ] T7 — a click acts and never answers.
 - [ ] T8 — docs: the README's review-loop section and the atlas's.
 
