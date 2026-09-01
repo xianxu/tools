@@ -1986,3 +1986,283 @@ func TestFinishReportsTheLoad(t *testing.T) {
 		t.Errorf("the load reports zero for a four-word deck — the deck is not being read:\n%s", got)
 	}
 }
+
+// ENTER IS ITS OWN KIND NOW, AND TAB REACHES play AT ALL (#40 D13, D14).
+//
+// Both rows are about the same seam: toInput is where main.Key stops and a
+// session intent begins, and both of these were wrong there rather than deeper
+// in. Enter was merged with space, which would have fired a board's commit on
+// the most careless key there is; Tab was decoded by key.go and dropped on the
+// floor because nothing here had a case for it.
+func TestToInputSplitsEnterFromSpaceAndCarriesTab(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  Key
+		want play.InputKind
+	}{
+		{"Enter finishes", Key{Kind: KeyEnter}, play.InputFinish},
+		{"space reveals", Key{Kind: KeyRune, Rune: ' '}, play.InputReveal},
+		{"Tab toggles", Key{Kind: KeyTab}, play.InputToggle},
+		{"d drops, before any form sees it", Key{Kind: KeyRune, Rune: 'd'}, play.InputDrop},
+		{"Ctrl-C quits", Key{Kind: KeyInterrupt}, play.InputQuit},
+		{"anything else is the form's", Key{Kind: KeyRune, Rune: 'y'}, play.InputRune},
+	} {
+		got, ok := toInput(tc.key)
+		if !ok || got.Kind != tc.want {
+			t.Errorf("%s: toInput(%+v) = (%+v, %v), want kind %v", tc.name, tc.key, got, ok, tc.want)
+		}
+	}
+}
+
+// AND THE SPLIT IS INVISIBLE TO EVERY FORM THAT HOLDS ONE WORD, which is the
+// property that let it ship without touching 2.1 or 2.3. Apply treats
+// InputFinish exactly as InputReveal for them, so Enter still reveals.
+func TestEnterStillRevealsOnASingleWordForm(t *testing.T) {
+	for _, q := range []play.Question{
+		play.NewRecall("keel", "the bottom of a ship"),
+		play.NewChoice("keel", "", []play.Option{{Gloss: "the bottom of a ship", Correct: true}, {Gloss: "a flat-topped hill"}}),
+	} {
+		s := play.NewSession([]play.Question{q})
+		in, _ := toInput(Key{Kind: KeyEnter})
+		s, outs := play.Apply(s, in)
+		if !s.Revealed {
+			t.Errorf("%T: Enter did not reveal", q)
+		}
+		if len(outs) != 1 || outs[0].Kind != play.OutcomeReveal {
+			t.Errorf("%T: Enter produced %+v, want an OutcomeReveal", q, outs)
+		}
+	}
+}
+
+// THE LOOP'S HALF OF THE CLICK (#40 D11, T5): the subtraction between two
+// answers it is not qualified to give itself.
+//
+// The screen says which footer entry the pointer was on; the form says which
+// cell is at that spot. The loop only knows that the grid is drawn as the FIRST
+// footer entries, so a row at or past Rows() is the toggle or the bar rather
+// than a word. The end-to-end join — that the grid really is drawn there — is
+// TestAClickOnABoardMarksIt on the real screen.
+func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
+	board := play.NewBoard([]string{"keel", "mesa", "run", "bank", "set"}, 80)
+	if board.Rows() != 2 {
+		t.Fatalf("expected a two-row grid, got %d", board.Rows())
+	}
+
+	// The gutter column, derived from what Prompt DREW rather than from the
+	// board's arithmetic: one column left of where the second cell starts.
+	firstLine := strings.Split(board.Prompt(), "\n")[0]
+	gutter := strings.Index(firstLine, "[1] ") - 1
+	if gutter < 1 {
+		t.Fatalf("could not find the second cell in %q", firstLine)
+	}
+
+	view := paintInto(io.Discard)
+	view.footerAt(7, 0) // the grid's first row
+	view.footerAt(8, 1) // its second
+	view.footerAt(9, 2) // the toggle, which is not a cell
+
+	for _, tc := range []struct {
+		name     string
+		q        play.Question
+		row, col int
+		want     int
+		wantOK   bool
+	}{
+		{"the first grid row", board, 7, 0, 0, true},
+		{"the second grid row", board, 8, 0, 4, true},
+		{"a gutter is not a cell", board, 7, gutter, 0, false},
+		{"the toggle row is not a cell", board, 9, 0, 0, false},
+		{"a row the screen does not place", board, 3, 0, 0, false},
+		{"a form that is not a grid", play.NewRecall("keel", "d"), 7, 0, 0, false},
+		{"no form at all", nil, 7, 0, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := formCell(view, tc.q, Key{Kind: KeyClick, Row: tc.row, Col: tc.col})
+			if ok != tc.wantOK || (ok && got != tc.want) {
+				t.Errorf("formCell = (%d, %v), want (%d, %v)", got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
+// DONE-WHEN 7, THE END TO END: A CLICK MARKS ON A BOARD (#40 D11, T5+T6).
+//
+// The two halves are pinned separately — formCell's subtraction against a
+// scripted screen, and FooterRowAt's arithmetic on a real one — and the object
+// that JOINS them is this loop. #30's rule applies: a double may not stand in
+// for the joining object, so this drives a real pinned screen with a real board
+// and asserts the mark reached the log.
+//
+// The discriminator is the EVENT. A loop that did not offer the click to the
+// form would send it to playRegion instead, which records nothing at all.
+func TestAClickOnABoardMarksIt(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard([]string{"sycophantic", "ephemeral"}, opt.width)
+	if board.Rows() != 1 {
+		t.Fatalf("expected a one-row grid, got %d rows:\n%s", board.Rows(), board.Prompt())
+	}
+
+	// TEN ROWS, so the geometry is arithmetic rather than a guess. Pinned, the
+	// footer sits at the bottom edge: four entries (grid, blank, toggle, bar)
+	// means the grid's only row is viewport row 10-4 = 6.
+	const termRows, gridRow = 10, 6
+	// The second cell's column, read off what Prompt DREW rather than computed.
+	col := strings.Index(board.Prompt(), "[1] ") + len("[1] ")
+	if col < 1 {
+		t.Fatalf("no second cell in %q", board.Prompt())
+	}
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, termRows, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 2)
+	keys <- Key{Kind: KeyClick, Row: gridRow, Col: col}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE PREMISE, checked against the PAINT rather than assumed: the grid really
+	// was drawn on the row that was clicked, and the click's column really was
+	// inside the second cell. Without this the assertions below would pass for a
+	// sitting whose footer was somewhere else entirely.
+	//
+	// Read off the frame, not off FooterRowAt — the click map and the paint are
+	// the two things that have to agree, so a premise taken from one of them
+	// could not catch the two disagreeing.
+	rows := paintedRows(t, tty.String(), 0)
+	if len(rows) <= gridRow {
+		t.Fatalf("the first frame is %d rows, want the grid at row %d:\n%s", len(rows), gridRow, strings.Join(rows, "\n"))
+	}
+	if !strings.HasPrefix(rows[gridRow], "[0] sycophantic") {
+		t.Fatalf("viewport row %d is %q, want the grid's first row", gridRow, rows[gridRow])
+	}
+	if !strings.HasPrefix(rows[gridRow][col:], "ephemeral") {
+		t.Fatalf("column %d of the grid row is %q, want the second cell's word", col, rows[gridRow][col:])
+	}
+
+	// AND THE MARK LANDED, on the word that was actually under the pointer.
+	evs := reviewEvents(t, st)
+	if len(evs) != 1 {
+		t.Fatalf("%d review events, want the one click:\n%s", len(evs), unstyled(tty.String()))
+	}
+	if evs[0].Word != "ephemeral" {
+		t.Errorf("the click recorded %q, want the word it landed on", evs[0].Word)
+	}
+	if board.Spent() {
+		t.Error("one click spent a board of two cells")
+	}
+}
+
+// paintedRows is frame n of a session's output, split into the rows the terminal
+// placed.
+//
+// A frame begins at cursorHome+eraseDown, and its rows are separated by the
+// CRLFs Paint writes. The last row carries the cursor walk-back and the prompt
+// reprint appended to it, which is why callers match on a PREFIX.
+func paintedRows(t *testing.T, out string, n int) []string {
+	t.Helper()
+	frames := strings.Split(out, cursorHome+eraseDown)[1:] // [0] is whatever preceded the first
+	if len(frames) <= n {
+		t.Fatalf("output holds %d frames, want at least %d:\n%s", len(frames), n+1, out)
+	}
+	return strings.Split(unstyled(frames[n]), "\r\n")
+}
+
+// A BOARD IS THE LIVE EDGE, so it is NOT in the transcript (#41 D4, #40 D10).
+//
+// The buffer is what survives the sitting, and a grid whose marks changed in
+// place could never have been written there. The relearn line is what the
+// transcript gets instead (T9).
+func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard([]string{"sycophantic", "ephemeral"}, opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 10, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 1)
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if strings.Contains(unstyled(live.Transcript()), "[0] ") {
+		t.Errorf("the grid reached the transcript, where nothing can change:\n%s", live.Transcript())
+	}
+	if !strings.Contains(unstyled(tty.String()), "[0] sycophantic") {
+		t.Errorf("the grid was never drawn:\n%s", unstyled(tty.String()))
+	}
+	// The toggle is drawn, and it is the ONE place the mode is shown.
+	frame := unstyled(tty.String())
+	if !strings.Contains(frame, boardToggle(play.Yes)) {
+		t.Errorf("the toggle row is missing:\n%s", frame)
+	}
+	if strings.Contains(frame, boardToggle(play.No)) {
+		t.Errorf("both spellings of the toggle are on screen:\n%s", frame)
+	}
+}
+
+// THE PROMPT MUST NOT OFFER `d` ON A BOARD (#40 D12).
+//
+// Apply refuses the drop for a form holding many words, because `d` names no
+// word on a grid. A prompt line offering it anyway is the exact bug gradePrompt
+// was created to fix.
+func TestABoardsPromptDoesNotOfferTheDropKey(t *testing.T) {
+	board := play.NewBoard([]string{"keel", "mesa"}, 80)
+	line := gradePrompt(board)
+	if strings.Contains(line, "remove from deck") {
+		t.Errorf("a board's prompt offers a key Apply refuses:\n\t%q", line)
+	}
+	if !strings.Contains(line, quitKey) {
+		t.Errorf("a board's prompt does not offer Ctrl-C:\n\t%q", line)
+	}
+	if n := visibleCells(line); n > defaultCols {
+		t.Errorf("the prompt is %d columns wide, which wraps at %d and makes the frame a row taller than the board was offered for:\n\t%q", n, defaultCols, line)
+	}
+	// ...and every single-word form still gets the full set.
+	for _, q := range []play.Question{
+		play.NewRecall("keel", "d"),
+		play.NewChoice("keel", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
+	} {
+		if !strings.Contains(gradePrompt(q), sessionKeys) {
+			t.Errorf("%T lost the reserved keys: %q", q, gradePrompt(q))
+		}
+	}
+}
+
+// A BOARD THAT DOES NOT FIT IS NOT OFFERED (#40 D15), which is what leaves
+// fitFooter's budget invariant true instead of negotiating with it.
+func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
+	for _, tc := range []struct {
+		termRows, gridRows int
+		want               bool
+	}{
+		{10, 4, true}, // 4 grid + prompt + blank + toggle + bar = 8
+		{8, 4, true},  // exactly
+		{7, 4, false}, // one short, and half a board is unusable
+		{24, 4, true}, // an ordinary terminal
+		{5, 1, true},  // a board of one row
+		{4, 1, false}, //
+		{0, 1, false}, //
+		{100, 25, true},
+	} {
+		if got := fitsABoard(tc.termRows, tc.gridRows); got != tc.want {
+			t.Errorf("fitsABoard(%d rows, %d grid) = %v, want %v", tc.termRows, tc.gridRows, got, tc.want)
+		}
+	}
+	// The chrome it counts is the chrome boardFooter actually draws, plus the
+	// prompt — two owners of that number would put half a board on screen.
+	board := play.NewBoard([]string{"keel", "mesa", "run", "bank", "set"}, 80)
+	footer := boardFooter(board, sittingFigures{})
+	if got, want := len(footer)-board.Rows()+1, boardChromeRows; got != want {
+		t.Errorf("boardFooter draws %d chrome rows plus the prompt, but fitsABoard budgets %d", got, want)
+	}
+}

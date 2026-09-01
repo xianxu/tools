@@ -263,6 +263,64 @@ the learner is now told to press a key that does nothing — which is the exact 
 2.1's y/n. `Keys()` here names Tab and Enter for the same reason: neither is true
 whatever form is asking, so neither can live in `sessionKeys`.
 
+### 2026-09-01 — T3–T6: Tab, the click seam, and the footer that carries the board
+
+Twenty-six mutations executed across the four tasks; every one caught, two of
+them only after the code was corrected (below). `#38`'s
+`TestPlayClickActsAndIsNotAnAnswer` is green and UNTOUCHED, which is the proof
+the click seam widened rather than branched.
+
+**T3.** `toInput` maps Enter to `InputFinish` and Tab to a new `InputToggle`;
+`Apply` asks a fourth capability, `Moded`, and no-ops for a form that has no
+mode. Tab is deliberately NOT part of "any key = next word": a board is never
+`Graded`, so the only forms it could advance there are 2.1 and 2.3, where it
+would be an accident-prone extra way to scroll a definition away mid-read.
+
+**T4.** `screen` records the footer it DREW and the viewport row it began at, and
+`FooterRowAt` answers which footer ENTRY a row is showing — the index, not a
+display-row offset, because an entry that wraps owns several rows and it is the
+screen that wrapped it. A row `fitFooter` dropped answers none: inventing an
+entry for a row that was never painted would mark a word that is not on screen.
+
+**T5, and a bound that had two owners.** The loop asks the screen which footer
+entry, then the form which cell — and the first draft added `row >= g.Rows()`
+between them. A mutation showed it changed nothing: `CellAt` already refuses a
+row past the grid, because the grid knows how tall it is. Removed. Two owners of
+one bound is how the toggle row becomes a cell on the day one of them is edited.
+
+**And a guard that is unobservable today and load-bearing tomorrow.** `Apply`
+returns `OutcomeNone` for a refused mark rather than `advance(Skipped)`. For a
+board the two are identical — an unspent form does not advance — so the mutation
+survived. It survives only because `Grid` and `Batch` are separate capabilities:
+a grid form holding ONE word is spent by definition, and without the guard a
+click on nothing would step past the question. `fakeGrid` (a Grid that is not a
+Batch) is the pin, and it is the contract being tested rather than the board.
+
+**T6.** `show()` routes a `Grid` form to the footer and writes nothing to the
+buffer. `boardFooter` is grid, blank, toggle, bar — the grid FIRST, which is
+load-bearing rather than aesthetic, because `formCell` reads a footer index
+straight back as a grid row. `fitFooter` is unchanged, as D15 promised; the fit
+is `fitsABoard`, and a test pins its chrome count against what `boardFooter`
+actually draws so the two cannot drift into half a board on screen.
+
+**`sessionKeys` no longer lies, and `gradedPrompt` now derives.** `d` is refused
+on a batch form (D12), so `reservedKeys(q)` drops it there — the exact bug
+`gradePrompt` was created to fix, one form later. `gradedPrompt` is built from
+`sessionKeys` instead of restating it, so the pair cannot drift; `doc_sync_test`
+still finds both strings in the README verbatim.
+
+**The mode has ONE owner: the footer's toggle row.** `Board.Keys()` named it too
+for a while, which was the same fact drawn twice on the surface where two rulers
+mark the wrong word. `Keys()` is now mode-free and its length is pinned under
+eighty columns — a prompt that wraps is a frame one row taller than the board was
+offered for.
+
+**Open, and NOT invented:** D10's footer order names a **panel** between the
+toggle and the bar, and nothing in the plan says what it shows or when. It has no
+Done-when row either. Grid, toggle and bar are implemented; the panel is left for
+the operator rather than guessed at, because giving the board definitions would
+change `NewBoard`'s signature for a feature nobody specified.
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it

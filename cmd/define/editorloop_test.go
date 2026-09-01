@@ -70,6 +70,10 @@ type recordDisplay struct {
 	cols    []int
 	regions []Region
 	at      map[[2]int]Region
+	// footerRows scripts FooterRowAt: a viewport row to the footer entry drawn
+	// there. Empty means "the live edge is not clickable here", which is the
+	// answer for every test that predates the board.
+	footerRows map[int]int
 }
 
 func paintInto(w io.Writer) *recordDisplay { return &recordDisplay{w: w} }
@@ -149,6 +153,25 @@ func (d *recordDisplay) RegionAtRow(row, col int) (Region, bool) {
 	defer d.mu.Unlock()
 	r, ok := d.at[[2]int{row, col}]
 	return r, ok
+}
+
+// FooterRowAt is SCRIPTED the same way, and answers "none" until a test says
+// otherwise — which is the editor's whole involvement with the live edge's click
+// map (#40 D10). `footerAt` is how --play's tests put a board row under a click.
+func (d *recordDisplay) FooterRowAt(row int) (int, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	i, ok := d.footerRows[row]
+	return i, ok
+}
+
+func (d *recordDisplay) footerAt(row, entry int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.footerRows == nil {
+		d.footerRows = map[int]int{}
+	}
+	d.footerRows[row] = entry
 }
 
 func (d *recordDisplay) offer(row, col int, r Region) {

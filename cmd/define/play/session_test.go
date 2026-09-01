@@ -631,3 +631,146 @@ func TestDropIsRefusedByABatchForm(t *testing.T) {
 		t.Errorf("`d` moved the session on: index %d done %v", s.Index, s.Done)
 	}
 }
+
+// TAB REACHES A FORM THAT HAS A MODE, AND NOTHING ELSE (D13).
+//
+// The session must not learn what a board is, so Tab asks a CAPABILITY like the
+// three before it. The half that matters for 2.1 and 2.3 is the second subtest:
+// a new input kind that quietly advanced them would be a way to scroll a
+// definition away mid-read.
+func TestTabSwitchesTheModeOfAFormThatHasOne(t *testing.T) {
+	t.Run("a moded form is toggled", func(t *testing.T) {
+		m := &fakeModed{}
+		s := NewSession([]Question{m})
+		s, outs := Apply(s, Input{Kind: InputToggle})
+		if m.toggles != 1 {
+			t.Errorf("Tab toggled %d times, want 1", m.toggles)
+		}
+		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+			t.Errorf("Tab produced %+v, want one OutcomeNone — the frame redraws and nothing is recorded", outs)
+		}
+		if s.Index != 0 || s.Done {
+			t.Errorf("Tab advanced the session: index %d done %v", s.Index, s.Done)
+		}
+	})
+
+	t.Run("a form without a mode is untouched", func(t *testing.T) {
+		s := NewSession([]Question{NewRecall("keel", "the bottom of a ship")})
+		s, outs := Apply(s, Input{Kind: InputToggle})
+		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+			t.Errorf("Tab on form 2.1 produced %+v, want nothing", outs)
+		}
+		if s.Index != 0 || s.Done || s.Revealed || s.Graded {
+			t.Errorf("Tab moved form 2.1: %+v", s)
+		}
+	})
+
+	t.Run("Tab does not mean next word once a verdict is in", func(t *testing.T) {
+		// "any key = next word" deliberately excludes it: a board is never
+		// Graded, so the only thing Tab could advance is a definition the
+		// learner is still reading.
+		s := NewSession([]Question{NewRecall("keel", "the bottom of a ship"), NewRecall("mesa", "a flat-topped hill")})
+		s, _ = Apply(s, Input{Kind: InputRune, Rune: 'n'})
+		if !s.Graded {
+			t.Fatal("a miss on a hidden word did not set Graded")
+		}
+		s, _ = Apply(s, Input{Kind: InputToggle})
+		if s.Index != 0 {
+			t.Error("Tab advanced past a definition that was still on screen")
+		}
+	})
+}
+
+// fakeModed is the double: a form with a mode and nothing else. A double rather
+// than *Board so this file keeps asserting what the SESSION does.
+type fakeModed struct {
+	toggles int
+	mode    Mark
+}
+
+func (m *fakeModed) Word() string   { return "keel" }
+func (m *fakeModed) Prompt() string { return "keel" }
+func (m *fakeModed) Reveal() string { return "" }
+func (m *fakeModed) Keys() string   { return "y = yes, n = no" }
+func (m *fakeModed) Grade(rune) (Verdict, bool) {
+	return Skipped, false
+}
+func (m *fakeModed) Mode() Mark { return m.mode }
+func (m *fakeModed) Toggle() {
+	m.toggles++
+	if m.mode == Yes {
+		m.mode = No
+		return
+	}
+	m.mode = Yes
+}
+
+// AND IT NEVER ANSWERS A FORM THAT DID NOT ASK FOR IT. #38's invariant, in the
+// form it takes once one form does ask: every other form declines the kind, so
+// its row stays green untouched.
+func TestAClickDoesNotAnswerANonGridForm(t *testing.T) {
+	for _, q := range []Question{
+		NewRecall("keel", "the bottom of a ship"),
+		NewChoice("keel", "", []Option{{Gloss: "the bottom of a ship", Correct: true}, {Gloss: "a flat-topped hill"}}),
+		newFakeBatch("alpha", "beta"), // holds many words, but draws no cells
+	} {
+		s := NewSession([]Question{q, NewRecall("mesa", "a flat-topped hill")})
+		s, outs := Apply(s, Input{Kind: InputMark, Cell: 0})
+		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+			t.Errorf("%T: a click produced %+v, want nothing", q, outs)
+		}
+		if s.Index != 0 || s.Revealed || s.Graded || s.Right != 0 || s.Wrong != 0 {
+			t.Errorf("%T: a click moved the session: %+v", q, s)
+		}
+	}
+}
+
+// fakeGrid is a Grid that is NOT a Batch: one word, drawn as one cell. It exists
+// because Grid and Batch are separate capabilities and the board happens to be
+// both — so the board cannot show what the machine does with a form that is only
+// one of them.
+type fakeGrid struct{ marked bool }
+
+func (g *fakeGrid) Word() string                { return "keel" }
+func (g *fakeGrid) Prompt() string              { return "[0] keel" }
+func (g *fakeGrid) Reveal() string              { return "" }
+func (g *fakeGrid) Keys() string                { return "0 = mark" }
+func (g *fakeGrid) Grade(rune) (Verdict, bool)  { return Skipped, false }
+func (g *fakeGrid) Rows() int                   { return 1 }
+func (g *fakeGrid) CellAt(int, int) (int, bool) { return 0, true }
+func (g *fakeGrid) Mark(i int) (Verdict, bool) {
+	if i != 0 || g.marked {
+		return Skipped, false
+	}
+	g.marked = true
+	return Correct, true
+}
+
+// A REFUSED CLICK MOVES NOTHING, and a form holding one word is where that
+// matters: it is spent by definition, so routing a refusal through advance would
+// step past the question on a click that hit nothing.
+func TestARefusedClickDoesNotAdvanceAGridThatIsNotABatch(t *testing.T) {
+	s := NewSession([]Question{&fakeGrid{}, NewRecall("mesa", "a flat-topped hill")})
+
+	// The cell this form does not have.
+	s, outs := Apply(s, Input{Kind: InputMark, Cell: 3})
+	if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+		t.Fatalf("a click on a cell that is not there produced %+v", outs)
+	}
+	if s.Index != 0 {
+		t.Fatal("a refused click advanced past the question")
+	}
+	// The real one lands and DOES advance, because this form holds one word.
+	s, outs = Apply(s, Input{Kind: InputMark, Cell: 0})
+	if len(outs) != 1 || outs[0].Kind != OutcomeRecord || outs[0].Word != "keel" {
+		t.Fatalf("the mark produced %+v", outs)
+	}
+	if s.Index != 1 {
+		t.Errorf("a spent one-word grid did not advance: index %d", s.Index)
+	}
+	// And now the SECOND click on a spent cell must not step off the queue.
+	s, outs = Apply(s, Input{Kind: InputMark, Cell: 0})
+	if s.Index != 1 || s.Done {
+		t.Errorf("a click on the next question's non-existent grid moved the session: %+v %+v", s, outs)
+	}
+}

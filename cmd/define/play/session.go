@@ -27,6 +27,30 @@ const (
 	// For every form holding one word the two remain EQUIVALENT, which is what
 	// keeps 2.1 and 2.3 from noticing the split.
 	InputFinish
+	// InputToggle switches the MODE of a form that has one. Tab.
+	//
+	// It belongs in play rather than being intercepted by the loop, and the line
+	// between the two is what the keystroke is ABOUT: the paging keys change what
+	// you are looking at, which is the terminal's business, while this changes
+	// what your next answer will mean, which is the session's. An earlier draft
+	// routed the paging keys through here and was reversed for exactly that
+	// reason (#41 D6); this one goes the other way for the same test.
+	InputToggle
+	// InputMark answers ONE CELL of a form drawn as a grid. A click, and the
+	// only input that carries a coordinate.
+	//
+	// #38 shipped "a click ACTS and never answers", pinned by a row that is
+	// still green: a click on a headword plays the word and stops before
+	// toInput, so Apply never sees it. A board reverses that for itself, and the
+	// invariant survives restated honestly — A CLICK NEVER ANSWERS A FORM THAT
+	// DID NOT ASK FOR IT. Every form that is not a Grid declines this kind, which
+	// is what makes the seam a widening rather than a branch.
+	//
+	// It is not a forged keystroke. The loop could have looked up the cell's
+	// printed label and sent InputRune, which would need no new kind at all —
+	// and it would mean this machine could no longer tell a key from a pointer,
+	// on the one surface where the difference is the whole design.
+	InputMark
 	// InputQuit ends the session now, keeping everything already recorded.
 	InputQuit
 	// InputDrop removes the current word from the deck and moves on.
@@ -42,6 +66,7 @@ const (
 type Input struct {
 	Kind InputKind
 	Rune rune // set when Kind is InputRune
+	Cell int  // set when Kind is InputMark: which cell of a grid form
 }
 
 // OutcomeKind is what the LOOP must do next. The session performs no effects
@@ -205,6 +230,46 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		// recording as it happens, not of anything done here.
 		s.Done = true
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
+
+	case InputMark:
+		// The cell was resolved by the FORM before this — the loop asked
+		// Grid.CellAt where the click landed, because the form is the only thing
+		// that knows where it drew its words. This lands the mark and records it
+		// exactly as the printed key would: one act, two ways in.
+		g, ok := q.(Grid)
+		if !ok {
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
+		v, ok := g.Mark(in.Cell)
+		if !ok {
+			// A cell that is already answered, or no cell at all. Nothing
+			// happens and nothing is said, which is what a click on ordinary
+			// text has always done here.
+			//
+			// LOAD-BEARING FOR A GRID THAT IS NOT A BATCH, which is the only
+			// reason it is not `advance(Skipped)` — that would be the same thing
+			// for a board, because an unspent form does not advance. Grid and
+			// Batch are separate capabilities, and a one-word grid form is spent
+			// by definition: without this, a click on nothing would move it on.
+			// TestARefusedClickDoesNotAdvanceAGridThatIsNotABatch is the pin.
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
+		next, out := advance(s, q, v, unaidedNow(s, q, v))
+		return next, []Outcome{out}
+
+	case InputToggle:
+		// Tab, and it reaches only a form that HAS a mode.
+		//
+		// A NO-OP everywhere else, rather than a member of the "any key = next
+		// word" rule above. A board is never Graded, so the only forms Tab could
+		// advance there are 2.1 and 2.3 — where it would be an accident-prone
+		// extra way to scroll a definition away mid-read. Doing nothing is the
+		// safer failure of the two, and the only one that cannot lose something
+		// the learner was still reading.
+		if m, ok := q.(Moded); ok {
+			m.Toggle()
+		}
+		return s, []Outcome{{Kind: OutcomeNone}}
 
 	case InputFinish:
 		// A form holding many words SPENDS itself: every word still unmarked is
@@ -387,6 +452,48 @@ func spent(q Question) bool {
 func batchOf(q Question) Batch {
 	b, _ := q.(Batch)
 	return b
+}
+
+// Grid is implemented by forms drawn as a GRID on the live edge, whose cells are
+// answered by clicking them.
+//
+// Fifth of its kind, and the first one the LOOP asks rather than Apply — which
+// is why all three methods are on one interface instead of split by consumer.
+// They are one capability: a form that decides where its own words are printed
+// is the only thing that can say which one was clicked, and a form that can say
+// that is the only thing whose clicks mean anything. Splitting the geometry from
+// the answering would put the two halves of that sentence in different places.
+type Grid interface {
+	// Rows is how many lines Prompt() produces, so the caller can budget the
+	// live edge and know how far the grid extends.
+	Rows() int
+	// CellAt is which cell is at a position INSIDE the grid: row 0 is the grid's
+	// first line, column 0 its first column. The caller subtracts wherever it
+	// drew the block, which is the only part of this it is qualified to know.
+	CellAt(row, col int) (int, bool)
+	// Mark lands the form's active mode on cell i, and reports what that meant.
+	// False for a cell that is not there or is already answered.
+	Mark(i int) (Verdict, bool)
+}
+
+// Moded is implemented by forms that hold a MODE: a setting the learner
+// switches, which changes what their next answer MEANS rather than what it is
+// about.
+//
+// Fourth of its kind beside Missed, SelfRated and Batch, and asked rather than
+// switched on for the same reason all three exist. Separate from Batch
+// deliberately, even though the board is today the only implementer of either:
+// "I hold many words" and "my answer key has two meanings" are different facts,
+// and folding them together would force a mode onto the next batch form that
+// does not want one.
+type Moded interface {
+	// Toggle switches the mode. This is the whole of what Tab means.
+	Toggle()
+	// Mode is the mark the next answer will land, for the line that DRAWS the
+	// toggle. The footer is the toggle's home (D6), and the form is the only
+	// thing that knows which way it is set — the loop asking is what keeps the
+	// two from disagreeing about a setting they both show.
+	Mode() Mark
 }
 
 // SelfRated is implemented by forms whose verdict is the learner's CLAIM rather

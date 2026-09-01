@@ -14,6 +14,7 @@ var (
 	_ Question  = (*Board)(nil)
 	_ Batch     = (*Board)(nil)
 	_ SelfRated = (*Board)(nil)
+	_ Moded     = (*Board)(nil)
 )
 
 // sixteen is a full board, and the words vary in length so the layout has
@@ -134,13 +135,14 @@ func TestAMarkLandsTheActiveMode(t *testing.T) {
 	if b.Mode() != Yes {
 		t.Errorf("Tab did not flip back: mode is %v", b.Mode())
 	}
-	// Keys() is redrawn every frame, so it must say which mark is live.
-	if !strings.Contains(b.Keys(), "yes") {
-		t.Errorf("Keys() in Yes mode = %q, want it to name the mark that will land", b.Keys())
-	}
+	// AND Keys() DOES NOT SAY WHICH. The footer's toggle row is the one owner of
+	// the mode; a keys line that also named it would be the same fact drawn
+	// twice, one edit away from disagreeing on the surface where disagreeing
+	// marks the wrong word.
+	yes := b.Keys()
 	b.Toggle()
-	if !strings.Contains(b.Keys(), "no") {
-		t.Errorf("Keys() in No mode = %q, want it to name the mark that will land", b.Keys())
+	if b.Keys() != yes {
+		t.Errorf("Keys() changed with the mode:\n Yes: %q\n  No: %q", yes, b.Keys())
 	}
 }
 
@@ -487,5 +489,55 @@ func TestABoardRunsThroughTheSession(t *testing.T) {
 	}
 	if s.Right != 1 || s.Wrong != 2 {
 		t.Errorf("tally is %d right %d wrong, want 1 and 2", s.Right, s.Wrong)
+	}
+}
+
+// Tab reaches the board through the state machine, and the grid says so.
+func TestTabFlipsTheBoardsModeThroughApply(t *testing.T) {
+	b := NewBoard([]string{"keel", "mesa", "run"}, 80)
+	s := NewSession([]Question{b})
+
+	s, _ = Apply(s, Input{Kind: InputToggle})
+	if b.Mode() != No {
+		t.Fatalf("Tab left the mode at %v", b.Mode())
+	}
+	s, outs := Apply(s, Input{Kind: InputRune, Rune: '0'})
+	if len(outs) != 1 || outs[0].Verdict != Wrong {
+		t.Errorf("a mark after Tab produced %+v, want Wrong", outs)
+	}
+	if _, ok := Apply(s, Input{Kind: InputToggle}); b.Mode() != Yes {
+		t.Errorf("a second Tab left the mode at %v, want Yes; outs %+v", b.Mode(), ok)
+	}
+}
+
+// A CLICK ANSWERS A BOARD, AND ONLY A BOARD (D11).
+//
+// The loop resolves the cell — it asks the screen which footer row and the form
+// which cell — and hands Apply an InputMark. From here on it is the same act the
+// printed key performs, which is the property that keeps the two paths from
+// drifting.
+func TestAClickMarksAGridFormThroughApply(t *testing.T) {
+	b := NewBoard([]string{"keel", "mesa", "run"}, 80)
+	s := NewSession([]Question{b})
+
+	s, outs := Apply(s, Input{Kind: InputMark, Cell: 2})
+	if len(outs) != 1 || outs[0].Kind != OutcomeRecord || outs[0].Word != "run" || outs[0].Verdict != Correct {
+		t.Fatalf("a click on cell 2 produced %+v", outs)
+	}
+	if s.Index != 0 || s.Done {
+		t.Errorf("the session advanced off a board with two cells unmarked")
+	}
+	// A second click on the same cell is not a second review.
+	if _, outs = Apply(s, Input{Kind: InputMark, Cell: 2}); len(outs) != 1 || outs[0].Kind != OutcomeNone {
+		t.Errorf("a second click on cell 2 produced %+v, want nothing", outs)
+	}
+	// Off the grid is nothing.
+	if _, outs = Apply(s, Input{Kind: InputMark, Cell: 9}); len(outs) != 1 || outs[0].Kind != OutcomeNone {
+		t.Errorf("a click on cell 9 of a board of three produced %+v", outs)
+	}
+	// And the mode is what lands, exactly as it does for a key.
+	b.Toggle()
+	if _, outs = Apply(s, Input{Kind: InputMark, Cell: 0}); outs[0].Verdict != Wrong {
+		t.Errorf("a click in No mode recorded %v", outs[0].Verdict)
 	}
 }

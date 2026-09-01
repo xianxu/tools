@@ -58,6 +58,18 @@ type screen struct {
 	// the buffer: the transcript and the click map must not gain rows that exist
 	// only because the terminal is tall.
 	pinned bool
+	// footer and footerTop are WHERE THE LIVE EDGE ENDED UP, recorded by the
+	// last Paint so a click can be resolved against it (#40 D10).
+	//
+	// Paint already computes both — the footer it actually drew, after fitFooter
+	// dropped what would not fit, and the viewport row it began at — and simply
+	// did not report them. This is that report, and it is what makes the live
+	// edge clickable at all: the buffer is append-only, which is what makes a
+	// click's coordinates exact and also what stops anything written there from
+	// ever changing, so a surface with marks that change colour has to live in
+	// the footer instead.
+	footer    []string
+	footerTop int
 }
 
 // Write appends bytes to the buffer, splitting on newlines.
@@ -200,6 +212,36 @@ func (s *screen) LineAt(row int) (int, bool) {
 		return 0, false
 	}
 	return top + row, true
+}
+
+// FooterRowAt resolves a click on the LIVE EDGE: a viewport row to the index of
+// the footer entry drawn there, as that entry was passed to Draw.
+//
+// The INDEX, not a display-row offset. A footer entry that wraps occupies
+// several viewport rows and every one of them answers the same index, which is
+// what a caller actually wants to know — "which of the things I handed over was
+// clicked". An offset would make the caller responsible for knowing which of its
+// entries had wrapped, and it is the screen that wrapped them.
+//
+// False for the buffer, for the prompt, and for a footer row fitFooter dropped:
+// a click on a row that was not drawn is a click on nothing, and inventing an
+// entry for it would mark a word that is not on screen.
+//
+// Answered from the LAST PAINT rather than from the current state, because that
+// is what the person clicking was looking at.
+func (s *screen) FooterRowAt(row int) (int, bool) {
+	if row < s.footerTop {
+		return 0, false
+	}
+	off := row - s.footerTop
+	for i, m := range s.footer {
+		h := displayRows(m, s.cols)
+		if off < h {
+			return i, true
+		}
+		off -= h
+	}
+	return 0, false
 }
 
 // Lines is the whole buffer. Present for tests and for the exit transcript
@@ -438,6 +480,16 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 			b.WriteString("\r\n")
 		}
 	}
+	// Recorded HERE, from the values this paint is about to use, rather than
+	// recomputed by whoever asks later. The buffer's height is len(frame) unless
+	// the padding above just filled it out, which is the one place the two
+	// surfaces differ — and it is exactly the arithmetic that decides where a
+	// footer click lands.
+	bufRows := len(frame)
+	if s.pinned && s.rows > bufRows {
+		bufRows = s.rows
+	}
+	s.footer, s.footerTop = footer, bufRows+promptRows
 	b.WriteString(prompt)
 	for _, m := range footer {
 		b.WriteString("\r\n" + m)
@@ -670,6 +722,15 @@ func (l *liveScreen) RegionAtRow(row, col int) (Region, bool) {
 		return Region{}, false
 	}
 	return l.s.RegionAt(line, col)
+}
+
+// FooterRowAt resolves a click on the live edge, under the lock like every other
+// read of the screen: Paint runs from the throttle's goroutine too, and this
+// reads what Paint wrote.
+func (l *liveScreen) FooterRowAt(row int) (int, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.s.FooterRowAt(row)
 }
 
 // Page and Scroll move the viewport and show the result. The paint is the point:

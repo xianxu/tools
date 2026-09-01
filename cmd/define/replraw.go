@@ -184,6 +184,13 @@ type display interface {
 	// RegionAtRow answers what is offered at a VIEWPORT row and display column,
 	// which is what a terminal reports for a click.
 	RegionAtRow(row, col int) (Region, bool)
+	// FooterRowAt answers which footer entry a VIEWPORT row is showing, so a
+	// click can reach the live edge and not only the buffer (#40 D10).
+	//
+	// The editor never asks. It is on the shared seam rather than on a
+	// `--play`-only one because both loops hold the same screen, and a second
+	// interface for one method would be two names for one object.
+	FooterRowAt(row int) (int, bool)
 }
 
 // onceHandBack is handBack, exactly once. Named so the loop's exit paths — three

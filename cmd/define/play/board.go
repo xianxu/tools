@@ -275,9 +275,14 @@ func (b *Board) glyph(i int) rune {
 // the board would freeze after its first No.
 func (b *Board) Reveal() string { return "" }
 
-// Keys names the board's own keys and the MODE they will land, live.
+// Keys names the board's own keys, and NOT which mark is live.
 //
-// Tab and Enter are named here even though both are session Input kinds, and
+// The mode is drawn by the footer's toggle row (D6), and that row is its one
+// owner. This line said it too for a while and the two were a mode shown twice —
+// which is the same fault as a mark shown by two rulers, one edit away from
+// disagreeing on the surface where being wrong marks the wrong word.
+//
+// Tab and Enter ARE named here even though both are session Input kinds, and
 // that is deliberate: sessionKeys in the loop is the set that is true WHATEVER
 // form is asking, and neither of these is. Enter finishes a form only when the
 // form holds many words, and Tab reaches nothing at all on 2.1 or 2.3. The form
@@ -287,10 +292,10 @@ func (b *Board) Reveal() string { return "" }
 // every word, so spelling "0-9 a-c e-g" here would be a second owner of the
 // sequence and a harder thing to read than the grid itself.
 func (b *Board) Keys() string {
-	if b.mode == Yes {
-		return "key beside a word = yes, Tab = switch to no, Enter = finish"
-	}
-	return "key beside a word = no, Tab = switch to yes, Enter = finish"
+	// Short enough that the loop's full prompt line — this plus the session's
+	// reserved keys — fits eighty columns. A prompt that wraps is a frame one
+	// row taller than the board was offered for.
+	return "a word's key or a click = mark, Tab = switch, Enter = finish"
 }
 
 // Mode is the mark a click will land, for the footer's toggle line.

@@ -161,7 +161,19 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// different thing it is — this one decides what has changed, where that one
 	// printed everything every time.
 	show := func() {
-		if q := s.Current(); q != nil && written != s.Index {
+		q := s.Current()
+		// A GRID IS THE LIVE EDGE AND NOT A BUFFER LINE (#40 D10).
+		//
+		// The buffer is append-only, which is what makes a click's coordinates
+		// exact — and also what would freeze a grid the moment it was written.
+		// Its marks change as they land, so it is rebuilt into the FOOTER on
+		// every frame instead, and nothing about it reaches the transcript
+		// except the relearn line it writes as it closes.
+		if _, ok := q.(play.Grid); ok {
+			view.Draw(livePrompt(s), boardFooter(q, fig))
+			return
+		}
+		if q != nil && written != s.Index {
 			written = s.Index
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
@@ -255,26 +267,42 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			continue
 		}
 
-		// A CLICK ACTS AND NEVER ANSWERS (D8, T7).
+		// A CLICK NEVER ANSWERS A FORM THAT DID NOT ASK FOR IT (D8, T7; #40 D11).
 		//
-		// Hearing the word is what `y`/`n` are answering ABOUT, so a click that
-		// recorded a review would corrupt the schedule silently — the worst kind
-		// of bug here, because the damage is to data the learner cannot see. Like
-		// a viewport gesture it stops before `toInput`, so `play.Apply` never
-		// learns that a mouse exists.
+		// #38 shipped this as "a click ACTS and never answers", and the reason
+		// stands unchanged for every form that holds one word: hearing the word
+		// is what `y`/`n` are answering ABOUT, so a click that recorded a review
+		// would corrupt the schedule silently — the worst kind of bug here,
+		// because the damage is to data the learner cannot see.
+		//
+		// A board asks for it. Its cells ARE its answers, so the click is offered
+		// to the form FIRST and falls through to playRegion when the form
+		// declines — which every existing form does, by not being a grid. That is
+		// why #38's row is still green untouched, and being untouched is the
+		// proof that the seam widened rather than branched.
 		//
 		// A click on nothing is nothing: no beep, no message. Pointing at
 		// ordinary text is not an error.
+		var in play.Input
 		if k.Kind == KeyClick {
-			if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
-				// The record-shaped indicator, not the editor's erasable one:
-				// a sitting's `♫ playing 3×` is a frame write like any other
-				// (D5a), and defaultIndicator is what every other playback on
-				// this path already uses.
-				playRegion(ctx, d, opt, r, "", defaultIndicator(opt), stdout, stderr)
-				show()
+			cell, marks := formCell(view, s.Current(), k)
+			if !marks {
+				if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
+					// The record-shaped indicator, not the editor's erasable one:
+					// a sitting's `♫ playing 3×` is a frame write like any other
+					// (D5a), and defaultIndicator is what every other playback on
+					// this path already uses.
+					playRegion(ctx, d, opt, r, "", defaultIndicator(opt), stdout, stderr)
+					show()
+				}
+				continue
 			}
-			continue
+			in = play.Input{Kind: play.InputMark, Cell: cell}
+		} else {
+			var ok bool
+			if in, ok = toInput(k); !ok {
+				continue
+			}
 		}
 
 		// The question the keystroke is ABOUT, read before Apply moves on. A
@@ -282,10 +310,6 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// reading it after would make that a fact about Apply that this loop
 		// silently depends on, and BR-4 is what a nil Current() costs.
 		asked := s.Current()
-		in, ok := toInput(k)
-		if !ok {
-			continue
-		}
 		var outs []play.Outcome
 		s, outs = play.Apply(s, in)
 
@@ -409,7 +433,17 @@ func toInput(k Key) (play.Input, bool) {
 	case KeyInterrupt, KeyEOF:
 		return play.Input{Kind: play.InputQuit}, true
 	case KeyEnter:
-		return play.Input{Kind: play.InputReveal}, true
+		// ENTER IS NOT SPACE ANY MORE (D14). The two were one kind while every
+		// form held one word and one answer; a board takes every unmarked word
+		// as No when it is finished, and leaving them merged fired that on the
+		// most careless key there is. Apply treats InputFinish exactly as
+		// InputReveal for every form that is not a Batch, which is what keeps
+		// 2.1 and 2.3 from noticing.
+		return play.Input{Kind: play.InputFinish}, true
+	case KeyTab:
+		// Dropped on the floor until now — key.go decoded it and nothing here
+		// had a case for it (D13).
+		return play.Input{Kind: play.InputToggle}, true
 	case KeyRune:
 		switch k.Rune {
 		case ' ':
@@ -420,6 +454,86 @@ func toInput(k Key) (play.Input, bool) {
 		return play.Input{Kind: play.InputRune, Rune: k.Rune}, true
 	}
 	return play.Input{}, false
+}
+
+// boardFooter is the whole live edge for a board: the grid, a blank, the toggle
+// and the bar, in that order (D10).
+//
+// THE GRID IS FIRST, and that is load-bearing rather than aesthetic: formCell
+// reads a footer entry index straight back as a grid row, so anything above the
+// grid would silently shift every cell. The order is also the order of value,
+// which is what fitFooter drops from the end — but a board is never IN a footer
+// that has to drop anything, because a board that does not fit is not offered
+// (D15, fitsABoard). That is what left fitFooter unchanged.
+func boardFooter(q play.Question, fig sittingFigures) []string {
+	rows := strings.Split(q.Prompt(), "\n")
+	if m, ok := q.(play.Moded); ok {
+		rows = append(rows, "", boardToggle(m.Mode()))
+	}
+	return append(rows, sittingBar(fig))
+}
+
+// boardToggle is the mode, and the ONE place it is shown.
+//
+// The live mark is bracketed, exactly as a marked cell brackets its own — so the
+// grid and the toggle say "this is set" in the same shape, and Tab's effect is
+// visible in the shape it will land in.
+//
+// Both spellings are the same width, so the line does not jump under a key that
+// is pressed to be pressed again.
+func boardToggle(m play.Mark) string {
+	if m == play.Yes {
+		return "marking: [yes]   no"
+	}
+	return "marking:  yes  [no]"
+}
+
+// boardChromeRows is what a board costs BESIDES its grid: the keys prompt, the
+// blank, the toggle and the bar.
+const boardChromeRows = 4
+
+// fitsABoard reports whether a terminal this tall can draw a board of gridRows
+// WHOLE (D15).
+//
+// A board that cannot be drawn whole is not a board, so the words go to form 2.3
+// for that sitting instead — which is a complete answer rather than a degraded
+// one. The alternative was a floor in fitFooter, and it would have broken the
+// budget Paint rests on: footerRows would exceed what the prompt left, the
+// terminal would scroll to fit it, and a click at viewport row R would stop
+// meaning the word drawn there. Refusing to offer the board keeps fitFooter's
+// guarantee true rather than negotiating with it.
+func fitsABoard(termRows, gridRows int) bool {
+	return gridRows+boardChromeRows <= termRows
+}
+
+// formCell offers a click to the form on screen and reports which of its cells
+// was hit, if any.
+//
+// TWO questions, and each is asked of the only thing that can answer it. The
+// SCREEN says which footer entry the pointer was on, because the screen laid the
+// footer out; the FORM says which cell is at that spot, because the form decided
+// where its words are printed. The loop knows neither and does the subtraction
+// between them — the grid is drawn as the FIRST footer entries, so a footer row
+// below Rows() is the toggle or the bar rather than a word.
+//
+// False for every form that is not a grid, which is every form but the board,
+// and false is what leaves #38's behaviour exactly as it was.
+func formCell(view display, q play.Question, k Key) (int, bool) {
+	g, ok := q.(play.Grid)
+	if !ok {
+		// Also the nil case, at the end of a queue: a nil Question is not a Grid.
+		return 0, false
+	}
+	row, ok := view.FooterRowAt(k.Row)
+	if !ok {
+		return 0, false
+	}
+	// NO SECOND BOUND HERE. A `row >= g.Rows()` guard was written first and a
+	// mutation showed it changed nothing: CellAt already refuses a row past the
+	// grid, because the grid is the thing that knows how tall it is. Two owners
+	// of one bound is how the toggle row comes to be a cell on the day one of
+	// them is edited.
+	return g.CellAt(row, k.Col)
 }
 
 // todaysQuestions builds the queue: fold the log, ask the schedule, render each
@@ -654,14 +768,32 @@ func livePrompt(s play.Session) string {
 // doc comments, then reached the doc comments and not the two test citations.
 // Sweeping is what kept failing; a consumer that fails the build does not.
 const (
-	// sessionKeys are the keys the SESSION reserves, true whatever form is
-	// asking (question.go:74-77). The form's own keys are prepended by
-	// gradePrompt — this half does not vary, and a form restating it would be
-	// two owners of one fact.
-	sessionKeys = "d = remove from deck, Ctrl-C to stop"
+	// quitKey is the one reserved key true of EVERY form without exception,
+	// which is what earned it a name of its own (#40 D12).
+	quitKey = "Ctrl-C to stop"
+	// sessionKeys are the keys the SESSION reserves, true of every form that
+	// holds ONE word (question.go:74-77). The form's own keys are prepended by
+	// gradePrompt — this half does not vary per form, and a form restating it
+	// would be two owners of one fact.
+	sessionKeys = "d = remove from deck, " + quitKey
 	// gradedPrompt is shown once the answer is in and the definition is up.
-	gradedPrompt = "any key = next word, d = remove from deck, Ctrl-C to stop"
+	// DERIVED from the pair above, so the wording cannot drift between them.
+	gradedPrompt = "any key = next word, " + sessionKeys
 )
+
+// reservedKeys is the session's own half of the prompt, for THIS form.
+//
+// `d` NAMES NO WORD on a form holding many — a grid has no single current word,
+// so Apply refuses the drop rather than guessing which cell it meant (#40 D12).
+// Offering it here would be the exact bug gradePrompt was created to fix: a keys
+// line promising a key that does nothing. The reserved set shrank for one kind
+// of form, so the sentence about it had to stop being a constant.
+func reservedKeys(q play.Question) string {
+	if _, ok := q.(play.Batch); ok {
+		return quitKey
+	}
+	return sessionKeys
+}
 
 // gradePrompt is what to press while a verdict is still owed: the FORM's answer
 // keys, then the session's reserved ones.
@@ -674,7 +806,7 @@ func gradePrompt(q play.Question) string {
 	// No nil guard: draw returns before this when Current() is nil, so a nil
 	// here would be a bug in the loop rather than a state to render politely.
 	// The guard that was here shipped as dead code and would have hidden that.
-	return q.Keys() + ", " + sessionKeys
+	return q.Keys() + ", " + reservedKeys(q)
 }
 
 // finish prints the sitting's score AND what the deck now costs per day.
