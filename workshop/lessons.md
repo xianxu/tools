@@ -2849,3 +2849,19 @@ quirk: when a command grows a precondition, grep the rigs for defaults that now
 violate it. Deriving the rig's options from the same helper the flag parse uses
 removes the question.
 
+**It recurred one issue later, on the same rig, through a different field.**
+`#38` made the words in a sitting clickable; `playRig` still carried `width: 0`,
+which is `terminalWidth`'s "do not wrap" sentinel. A sitting always has a real
+width, so the wrap the new click map has to survive was simply OFF in every
+test — and the map was silently dropped on every multiple-choice question,
+because a gloss below the headword wraps. Four tests written specifically for the
+feature were green while the feature was inert in its commonest case, and the
+operator found it on the first real sitting.
+
+**So the rule is stronger than "check the rig when a precondition lands":
+EVERY sentinel-valued default in a rig is a state production may not have.** `0`
+meaning "off", `""` meaning "none", a nil clock — each one turns some
+downstream behaviour off, and the test then asserts over a path with that
+behaviour missing. Ask of every field: *can the flag parse produce this value for
+this command?*
+

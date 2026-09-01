@@ -41,7 +41,12 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 	// unreachable from the command under test is a rig that tests a state
 	// production cannot produce — which is how BR-23's Critical shipped, with
 	// both of Done-when 0b's pins green over uncoloured text.
-	return d, options{color: true, tty: true, width: 0, count: 20, times: 1, noAudio: true}, st
+	// WIDTH 80, which is what a sitting actually has: `--play` refuses unless
+	// stdout is a terminal, so opt.width is terminalWidth's real answer and never
+	// the 0 sentinel. A rig that left it 0 turned the wrap OFF, and the wrap is
+	// what every region has to survive — that default hid a dropped click map on
+	// every multiple-choice question until the operator found it.
+	return d, options{color: true, tty: true, width: defaultCols, count: 20, times: 1, noAudio: true}, st
 }
 
 // audible makes the playback branch REACHABLE and returns the player recording it.
@@ -1011,36 +1016,80 @@ func TestPlayARevealedDefinitionCarriesItsRegions(t *testing.T) {
 	}
 }
 
-// ...and the regions are DROPPED rather than misplaced when the wrap would move
-// them (#41 BR-25).
+// ...and a region on a line the wrap does NOT break survives, moved to where
+// that line lands (#41 BR-25, and the operator's report).
 //
-// An underline that plays the word beside the one you pointed at is worse than
-// no underline: losing an affordance is visible, a wrong click is not.
-func TestClickMapIsDroppedRatherThanMisplacedByAWrap(t *testing.T) {
-	const narrow = 20
-	var out bytes.Buffer
-	view := paintInto(&out)
-	long := "1  " + strings.Repeat("word ", 12)
+// The first version of this rule was all-or-nothing: drop the whole map if the
+// wrap changed anything. Form 2.3's prompt is the headword, a blank, then four
+// glosses — and a gloss routinely wraps — so the word the sitting is ASKING
+// ABOUT lost its region on every multiple-choice question. The feature was
+// inert in exactly the case it exists for, and green, because the rig ran at
+// width 0 where the wrap does nothing.
+func TestAWrapMovesTheClickMapRatherThanDroppingIt(t *testing.T) {
+	const width = 20
+	// Line 0 is a short headword; line 1 is a gloss that must wrap.
+	text := "word\n1  " + strings.Repeat("gloss ", 8) + "\ntail\n"
+	head := Region{Kind: RegionHeadword, Text: "word", Word: "word", Line: 0, Col: 0, Width: 4}
+	inGloss := Region{Kind: RegionHeadword, Text: "gloss", Word: "gloss", Line: 1, Col: 3, Width: 5}
+	onTail := Region{Kind: RegionHeadword, Text: "tail", Word: "tail", Line: 2, Col: 0, Width: 4}
 
-	writeClickable(view, long+"\n", []Region{{
-		Kind: RegionHeadword, Text: "word", Word: "word", Line: 0, Col: 3, Width: 4,
-	}}, narrow)
+	got := wrapMovedRegions(text, []Region{head, inGloss, onTail}, width)
 
-	if got := view.collected(); len(got) != 0 {
-		t.Errorf("a click map survived a wrap that moves it: %+v", got)
+	if len(got) != 2 {
+		t.Fatalf("kept %d regions, want the two on unbroken lines: %+v", len(got), got)
 	}
-	// The TEXT still arrives — dropping the map must not drop the content.
-	if !strings.Contains(out.String(), "word word") {
-		t.Errorf("the text was dropped with the regions:\n%s", out.String())
+	if got[0].Line != 0 || got[0].Word != "word" {
+		t.Errorf("the headword moved to line %d, want 0 — nothing above it wrapped", got[0].Line)
 	}
-	// ...and at a width that changes nothing, the map rides along.
-	out.Reset()
-	wide := paintInto(&out)
-	writeClickable(wide, long+"\n", []Region{{
-		Kind: RegionHeadword, Text: "word", Word: "word", Line: 0, Col: 3, Width: 4,
-	}}, 200)
-	if len(wide.collected()) != 1 {
-		t.Errorf("the click map was dropped at a width that wraps nothing: %+v", wide.collected())
+	// The tail moved DOWN by however many rows the gloss became.
+	rows := strings.Count(wrapWritten("1  "+strings.Repeat("gloss ", 8), width), "\n") + 1
+	if want := 1 + rows; got[1].Line != want {
+		t.Errorf("the tail is on line %d, want %d — a region below a wrap moves by the rows it added",
+			got[1].Line, want)
+	}
+	// And the one INSIDE the wrapped line is gone: its column belongs to a
+	// continuation now, and guessing which is the wrong-click bug.
+	for _, r := range got {
+		if r.Word == "gloss" {
+			t.Error("a region on a line the wrap BROKE survived — its column is no longer where it says")
+		}
+	}
+}
+
+// THE OPERATOR'S CASE, end to end: a form-2.3 sitting at a real terminal width,
+// where the prompt's glosses wrap and the headword above them must not.
+func TestTheAskedWordIsClickableOnAMultipleChoiceQuestion(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs, held := questionsFor(t, d, opt)
+	if _, ok := qs[0].(*play.Choice); !ok {
+		t.Fatalf("first question is %T, want form 2.3 — this test is about a prompt that wraps", qs[0])
+	}
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("^"),
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	word := qs[0].Word()
+	row := -1
+	for i, line := range strings.Split(live.Transcript(), "\n") {
+		if unstyled(line) == word {
+			row = i
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatalf("the prompt word is not on a line of its own:\n%s", live.Transcript())
+	}
+	r, ok := live.RegionAtRow(row, 0)
+	if !ok {
+		t.Fatalf("the word the sitting is ASKING ABOUT is not clickable on a multiple-choice " +
+			"question — its region was dropped because the glosses below it wrapped")
+	}
+	if r.Word != word {
+		t.Errorf("the click answers for %q, want %q", r.Word, word)
 	}
 }
 

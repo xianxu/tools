@@ -159,29 +159,62 @@ func isOptionLine(line string) bool {
 	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
 }
 
-// writeClickable writes text and its click map, but ONLY while the two still
-// agree about where things are.
+// writeClickable writes text and its click map, with every region re-pointed at
+// the line it will ACTUALLY land on.
 //
 // A region's Line and Col are relative to the text they were computed from, and
 // `#41` put a WRAP between the caller and the buffer: a pinned screen breaks an
-// over-wide line before it lands, which moves every span below and to the right
-// of the break. `#41` BR-25 wrote the obligation down for the first consumer to
-// write regions into a pinned screen, and this is it.
+// over-wide line before it lands, which moves every line below it and every
+// column past the break. `#41` BR-25 wrote the obligation down for the first
+// consumer to write regions into a pinned screen, and this is it.
 //
-// So the wrap is applied HERE, and the regions ride along only if it changed
-// nothing. At a sitting's own width it changes nothing — the entry was rendered
-// at that width — so this is the ordinary case. After the window NARROWS, the
-// text still arrives whole and readable and the underlines stop appearing until
-// the next question is written at the new width.
+// The first version of this was ALL-OR-NOTHING — drop the whole map if the wrap
+// changed anything — and it was wrong in the case that matters most. Form 2.3's
+// prompt is the headword, a blank, then four glosses, and a gloss routinely
+// wraps; so the word the sitting is ASKING ABOUT lost its region on every
+// multiple-choice question, which is the issue's own headline feature. The
+// operator found it on the first real sitting.
 //
-// THAT TRADE IS THE POINT, not a shortcut: an underline that plays the word
-// beside the one you pointed at is worse than no underline, because the reader
-// cannot tell it happened. Losing an affordance is visible; a wrong click is
-// not.
+// Per LINE instead: a line the wrap does not break keeps its columns and only
+// moves down, which is arithmetic this can do exactly. A line the wrap DOES
+// break loses its regions, because a column past the break belongs to a
+// continuation line and guessing which would be the wrong-click bug.
 func writeClickable(w io.Writer, text string, rs []Region, width int) {
-	if wrapWritten(text, width) != text {
-		fmt.Fprint(w, text)
-		return
+	writeRendered(w, text, wrapMovedRegions(text, rs, width))
+}
+
+// wrapMovedRegions is that arithmetic. PURE, so the rule above is testable
+// without a screen.
+func wrapMovedRegions(text string, rs []Region, width int) []Region {
+	if len(rs) == 0 {
+		return nil
 	}
-	writeRendered(w, text, rs)
+	lines := strings.Split(text, "\n")
+	// Where each original line starts once the wrap has run, and whether the
+	// wrap broke it. Both come from wrapWritten itself rather than from a second
+	// implementation of its rules — the erase-gesture exemption and the
+	// sub-20-column policy have to be the same on both sides or the map lands
+	// one line off exactly where they differ.
+	start := make([]int, len(lines))
+	broke := make([]bool, len(lines))
+	at := 0
+	for i, line := range lines {
+		start[i] = at
+		rows := strings.Count(wrapWritten(line, width), "\n") + 1
+		broke[i] = rows > 1
+		at += rows
+	}
+	var out []Region
+	for _, r := range rs {
+		if r.Line < 0 || r.Line >= len(lines) || broke[r.Line] {
+			// Out of range, or on a line the wrap broke. Dropped rather than
+			// placed by guess: an underline that plays the word beside the one
+			// you pointed at is worse than no underline, because losing an
+			// affordance is visible and a wrong click is not.
+			continue
+		}
+		r.Line = start[r.Line]
+		out = append(out, r)
+	}
+	return out
 }

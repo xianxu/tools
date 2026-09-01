@@ -98,7 +98,7 @@ So `options.playsAudio()` is the predicate, `playAnnounced` applies it itself �
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
 | `playRegion` | `cmd/define/replraw.go` | new | `playAnnounced` — the one switch on `RegionKind`, shared by both loops (D4) |
-| `runPlay` | `cmd/define/play_loop.go` | modified | `liveScreen` — replaces both `crlfWriter`s (D9). **Already landed, by `#41` T3** (`newConsole`, the builder both loops share), which needed the same seam for its status bar; nothing here is left for this issue to do |
+| `runPlay` | `cmd/define/play_loop.go` | unchanged | `liveScreen` — replaced both `crlfWriter`s (D9). **Landed in `#41`'s window, not this one** (`newConsole`, the builder both loops share), so it is untouched here and the status column says so |
 | `playSession` | `cmd/define/play_loop.go` | modified | takes `console` (**already, via `#41` T3**) and the region map — D10 |
 | `playSession`'s reveal write | `cmd/define/play_loop.go` | modified | `writeRendered` for the reveal (D3). This was a row for `draw`, which `#41` T4 **deleted**: the question, the reveal and the grading keys have three different lifetimes and a scrolling terminal could not express the difference, so the reveal is now written by the loop on `OutcomeReveal` and the keys are the frame's prompt (`livePrompt`). The seam D3 names is unchanged — it is the call that gains the click map |
 
@@ -340,3 +340,35 @@ wrong click is not.** The alternative — re-rendering each remaining entry at t
 new width so the regions are correct again — is real and cheap in IO (the entries
 are parsed and held), but it rebuilds `play.Question` values the forms own, and
 that is a design change rather than a fix.
+
+### 2026-08-31 — the operator found it inert, and the rig is why
+
+> tried `define --lang en --play` nothing seems clickable (for sound) though?
+
+Reproduced at a real terminal width in one probe: on a form-2.3 question the
+PROMPT wraps — it is the headword, a blank, then four glosses, and a gloss
+routinely runs past 80 columns — so `writeClickable`'s all-or-nothing rule
+("drop the whole map if the wrap changed anything") threw away the region for the
+word the sitting is asking about. The feature was inert in the case it exists
+for. The reveal's regions survived, because the definition is rendered at the
+sitting's own width and needs no wrap.
+
+**The rule is now per LINE.** `wrapMovedRegions` asks `wrapWritten` itself how
+many rows each line becomes — the same function, so the erase-gesture exemption
+and the sub-20 policy cannot differ between the two sides — then moves a region
+on an unbroken line down by the rows the wrap added above it, and drops only the
+regions on lines the wrap actually broke. That keeps the wrong-click guarantee
+(a column past a break belongs to a continuation, and guessing which is the bug)
+while losing nothing that did not move.
+
+**Why four tests written for this feature were green over it: `playRig` carried
+`width: 0`.** That is `terminalWidth`'s "do not wrap" sentinel, and a sitting
+never has it — `--play` refuses unless stdout is a terminal. So the wrap every
+region has to survive was OFF in every in-process test. This is the SECOND time
+in two issues that this rig's defaults hid a real defect: `#41` BR-24 was
+`color: false`, a configuration `--play` refuses outright.
+
+`lessons.md` now carries the generalisation rather than the instance: **every
+sentinel-valued default in a rig is a state production may not have** — `0`
+meaning off, `""` meaning none, a nil clock — and each one silently removes the
+behaviour the test was written to check. The rig runs at `defaultCols` now.
