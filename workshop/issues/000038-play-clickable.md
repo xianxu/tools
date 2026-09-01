@@ -1,12 +1,13 @@
 ---
 id: 000038
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-08-31
 estimate_hours: 2.83
 started: 2026-08-30T16:08:11-07:00
+actual_hours: 4.24
 ---
 
 # the review loop's words are not clickable, because --play draws its own frames
@@ -274,6 +275,7 @@ actual lands near **3–4h**. The estimate is NOT padded toward it.
 ## Log
 
 ### 2026-08-31 — resumed, implemented, and three boundary rounds
+- 2026-08-31: closed — go test ./... green; -race green; conformance green (130s pty at HEAD, 386s whole suite earlier). OPERATOR-VERIFIED: reported the feature inert, confirmed "works now". FOUR review rounds, 17 findings, all addressed at the CLASS. Round 3 (ff5e80b): BR-16, the sharpest of the issue — Done-when row 2 said "a click NEVER answers, red when: the click reaches play.Apply" and the reviewer RAN that mutation to find it green, because the property came from toInput`s default (it returns false for a click) rather than from T7`s guard; my second attempt also survived, because with a ONE-word deck a click that advanced just ended the sitting, indistinguishable from not advancing. TestPlayClickActsAndIsNotAnAnswer now drives a TWO-word deck into the graded state and asserts both halves; both mutations redden. BR-18: five mis-attached doc comments closed by a GUARD rather than five edits — TestADocCommentNamesWhatItSitsOn walks go/ast and fires when a function`s doc opens with the name of another function in the same FILE, which is the shape an insertion produces; same-file because a first word naming something two files away is prose, test functions exempt because their docs name the subject by convention. It found two orphans nobody had noticed: openStore`s doc had drifted onto newsFeedFor, checkPlanName`s onto coreConceptsSection. BR-17: the issue`s Done-when was five unticked boxes while its Plan was fully ticked, its Log carried no boundary entry, and the project had no #38 row — all three filled, the project as a scope event matching the 2026-08-26 entry`s reasoning for out-of-MVP console work. BR-12 was fixed in round 2 (the tick edit had no-opped silently) and is OK at HEAD, as round 3`s own BR-17 measurement states. Rounds 1-2: the two-rulers wrap Critical moved into liveScreen.WriteRegions so a second width is unexpressible; the Core-concepts table naming two entities the tree lacks; the RenderOpts.Word fix that had no test. The plan`s Done-when preamble now records that every red-when was EXECUTED. lessons.md gains six rules across the issue.; review verdict: FIX-THEN-SHIP
 
 `#41` merged and took T2, T3 and T6 with it; T1, T4, T5, T7 and T8 landed here on
 top of T0 from the 2026-08-30 session. Operator drove a real sitting, found the

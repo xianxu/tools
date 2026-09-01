@@ -358,6 +358,72 @@ rounds:
           family: doc-comment-attachment
           round: 4
       blocked: true
+    - "n": 5
+      timestamp: "2026-08-31T23:25:59-07:00"
+      agent: claude
+      dispose:
+        - id: BR-2
+          disposition: not-addressed
+          note: 'Re-measured at HEAD: 10 of 12 anchors point at unrelated code; only main.go:801 and play/recall.go:29 hold.'
+          round: 5
+        - id: BR-6
+          disposition: addressed
+          note: playRegion and replayInPlace each carry their own doc at replraw.go:552/595, and the guard now pins the shape.
+          round: 5
+        - id: BR-7
+          disposition: not-addressed
+          note: play_loop.go:448 still initialises held.marks, :466 builds a second local, :508 assigns over it.
+          round: 5
+        - id: BR-8
+          disposition: not-addressed
+          note: play_loop.go:274 still passes entry ""; the raw text is still discarded at :475.
+          round: 5
+        - id: BR-12
+          disposition: addressed
+          note: Plan Tasks T0-T8 all ticked; subsumed by BR-17's wider enumeration, whose instances are also all correct at HEAD.
+          round: 5
+        - id: BR-13
+          disposition: not-addressed
+          note: choice.go:113-114 and README.md:159 are byte-identical to last round; I re-verified Resize only assigns rows/cols.
+          round: 5
+        - id: BR-14
+          disposition: not-addressed
+          note: Three identical guard+message blocks remain at replraw.go:575, replraw.go:617, repl.go:313.
+          round: 5
+        - id: BR-16
+          disposition: addressed
+          note: 'Verified by mutation: disabling the KeyClick branch and routing KeyClick into play.Apply as InputReveal both redden the test now.'
+          round: 5
+        - id: BR-17
+          disposition: not-addressed
+          note: All six slots are correct at HEAD, but the repo_guard_test.go row the finding named as the durable fix was not written.
+          round: 5
+        - id: BR-18
+          disposition: not-addressed
+          note: The guard is real and reddens, but 2 of the finding's own 5 instances escape it — I confirmed both stay green when reverted.
+          round: 5
+      findings:
+        - id: BR-19
+          severity: Minor
+          title: the plan's new Done-when preamble claims a mutation sweep that four of its rows cannot have had
+          detail: |-
+            This is the 2nd finding in family `citation-does-not-point-at-the-claim`, so the rule
+            rather than the instance: a blanket claim over a table is only as true as its weakest
+            row, and a row pinned by a test that SKIPs in the environment where the sweep runs
+            cannot be part of it. plan:144 now reads "Every `red when` cell here was EXECUTED as a
+            mutation at the close boundary". Measured: rows 5, 6b, 7 and 8 are pinned only by
+            TestPTYPlayKeepsTheAlternateScreenAcrossAReveal, TestPTYPlayResizeRepaints and the
+            existing --play pty rows, and `go test -tags conformance -run TestPTY -v` reports "no
+            pty available: operation not permitted" and SKIPs every one — a skipped test cannot
+            redden, so those four mutations were not executed. Round 3 also landed no `## Revisions`
+            entry (rounds 1 and 2 both did; AGENTS.md 1 requires one for a mid-stream plan
+            revision), which is where BR-16 asked for the per-row record to live. Fix both together:
+            add the round-3 Revisions entry carrying a per-row result table — 9 in-process rows
+            executed with row 2's two mutations named, 4 pty rows marked deferred to the manual
+            terminal pass — and qualify the preamble to match.
+          family: citation-does-not-point-at-the-claim
+          round: 5
+      blocked: false
 ---
 
 # Gate ledger — tools#38 (boundary-review)
@@ -572,15 +638,46 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   allowlist for the deliberate build-tag continuation at dict_stub.go:27 — is what closes
   the family.
 
+## Round 5 — 2026-08-31T23:25:59-07:00 (claude) — passed
+
+### Disposed
+
+- BR-2 — not-addressed — Re-measured at HEAD: 10 of 12 anchors point at unrelated code; only main.go:801 and play/recall.go:29 hold.
+- BR-6 — addressed — playRegion and replayInPlace each carry their own doc at replraw.go:552/595, and the guard now pins the shape.
+- BR-7 — not-addressed — play_loop.go:448 still initialises held.marks, :466 builds a second local, :508 assigns over it.
+- BR-8 — not-addressed — play_loop.go:274 still passes entry ""; the raw text is still discarded at :475.
+- BR-12 — addressed — Plan Tasks T0-T8 all ticked; subsumed by BR-17's wider enumeration, whose instances are also all correct at HEAD.
+- BR-13 — not-addressed — choice.go:113-114 and README.md:159 are byte-identical to last round; I re-verified Resize only assigns rows/cols.
+- BR-14 — not-addressed — Three identical guard+message blocks remain at replraw.go:575, replraw.go:617, repl.go:313.
+- BR-16 — addressed — Verified by mutation: disabling the KeyClick branch and routing KeyClick into play.Apply as InputReveal both redden the test now.
+- BR-17 — not-addressed — All six slots are correct at HEAD, but the repo_guard_test.go row the finding named as the durable fix was not written.
+- BR-18 — not-addressed — The guard is real and reddens, but 2 of the finding's own 5 instances escape it — I confirmed both stay green when reverted.
+
+### Raised
+
+- **BR-19** [Minor] `citation-does-not-point-at-the-claim` the plan's new Done-when preamble claims a mutation sweep that four of its rows cannot have had
+  This is the 2nd finding in family `citation-does-not-point-at-the-claim`, so the rule
+  rather than the instance: a blanket claim over a table is only as true as its weakest
+  row, and a row pinned by a test that SKIPs in the environment where the sweep runs
+  cannot be part of it. plan:144 now reads "Every `red when` cell here was EXECUTED as a
+  mutation at the close boundary". Measured: rows 5, 6b, 7 and 8 are pinned only by
+  TestPTYPlayKeepsTheAlternateScreenAcrossAReveal, TestPTYPlayResizeRepaints and the
+  existing --play pty rows, and `go test -tags conformance -run TestPTY -v` reports "no
+  pty available: operation not permitted" and SKIPs every one — a skipped test cannot
+  redden, so those four mutations were not executed. Round 3 also landed no `## Revisions`
+  entry (rounds 1 and 2 both did; AGENTS.md 1 requires one for a mid-stream plan
+  revision), which is where BR-16 asked for the per-row record to live. Fix both together:
+  add the round-3 Revisions entry carrying a per-row result table — 9 in-process rows
+  executed with row 2's two mutations named, 4 pty rows marked deferred to the manual
+  terminal pass — and qualify the preamble to match.
+
 ## Open findings
 
 - **BR-2** [Minor] `citation-does-not-point-at-the-claim` ten of eighteen line anchors in the plan's current-truth sections are wrong after 41 landed
-- **BR-6** [Minor] `doc-comment-attachment` replayInPlace's doc comment now heads playRegion, leaving replayInPlace undocumented
 - **BR-7** [Minor] `redundant-duplicate-state` todaysQuestions builds two marks maps where one would do
 - **BR-8** [Minor] `available-context-discarded` a sitting's ORIGIN-language click always passes an empty entry, degrading to the headword fallback
-- **BR-12** [Important] `tracker-state-stale` the plan's Tasks still show T0/T1/T4/T5/T6/T7/T8 unticked while the issue ticks all nine and the code has landed
 - **BR-13** [Minor] `docs-lag-behavior-change` Choice.Prompt's doc still says the region is line 0 and that 38 is PARKED, and the README says links follow the text as it re-wraps
 - **BR-14** [Minor] `duplicated-guard-and-message` three copies of the audio-off guard plus its identical message, where D11 justified the copies by claiming callers keep their own
-- **BR-16** [Important] `mechanism-adopted-without-its-obligations` Done-when row 2 survives its own stated mutation, so T7's click guard ships with no failing test
 - **BR-17** [Important] `tracker-state-stale` the completion-state enumeration is one slot short, and 3 of 6 slots are wrong at HEAD
 - **BR-18** [Important] `doc-comment-attachment` the mis-attached doc comment is a class of five, enumerable in one go/ast pass
+- **BR-19** [Minor] `citation-does-not-point-at-the-claim` the plan's new Done-when preamble claims a mutation sweep that four of its rows cannot have had

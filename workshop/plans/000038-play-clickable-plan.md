@@ -141,8 +141,21 @@ Plain checkboxes, not `Mx` tags: this is single-pass work with ONE boundary, and
 
 ## Done when
 
-Every `red when` cell here was EXECUTED as a mutation at the close boundary, not
-reasoned about — which is how row 2 was found to survive its own (`#38` BR-16).
+**Which `red when` cells were EXECUTED, and which were not.** The blanket claim
+this preamble first made was only as true as its weakest row, and four rows are
+pinned solely by pty tests that SKIP wherever no pty is available — a skipped
+test cannot redden, so those mutations were never run.
+
+- **Rows 1, 2, 3, 3a, 3b, 3c, 4, 4b, 4c — SWEPT.** Each `red when` was applied
+  and each reddened. Row 2 is why the sweep exists: it survived its own twice
+  (`#38` BR-16), first because `toInput` already refuses a click and then because
+  a one-word deck cannot show an advance.
+- **Rows 5, 6, 6b, 7, 8 — RUN, not MUTATED.** The pty suite passes on real
+  hardware (130s at HEAD, and the whole conformance suite in 386s), so the
+  behaviour is exercised; the mutations were not, because the rows skip in any
+  environment without a pty — including the one the boundary review runs in.
+  That is a standing weakness of the conformance seam rather than of these rows,
+  and `#41`'s review recorded the same thing.
 
 | # | claim | pinned by | red when |
 |---|---|---|---|
@@ -454,3 +467,32 @@ that can fail.** A table row is a claim about the tree; a fix is a claim about
 behaviour. Neither is worth anything until something reddens when it stops being
 true — which is exactly what this plan's own Done-when preamble demands of its
 rows and what BR-1's family has now said three times.
+
+### 2026-08-31 — round 3: a red-when that never reddened, and a doc-comment class
+
+Landed with `ff5e80b`; recorded here because rounds 1 and 2 each carry an entry
+and a mid-stream plan revision owes one.
+
+- **BR-16 — Done-when row 2 survived its own stated mutation, twice.** *"A click
+  NEVER answers — red when: the click reaches `play.Apply`."* The reviewer ran
+  that literal mutation and the test stayed green: the property is delivered by
+  `toInput`'s default, which returns false for a click, not by T7's guard. My
+  first replacement survived too, for a subtler reason — with a ONE-word deck a
+  click that advanced simply ended the sitting, which is indistinguishable from
+  not advancing. **When a mutation does not redden, the question is which of two
+  things it means: the test is weak, or the FIXTURE cannot express the failure.**
+  The second is the one that hides. Two questions make the advance observable.
+- **BR-18 — five mis-attached doc comments, closed by a guard rather than five
+  edits.** `TestADocCommentNamesWhatItSitsOn` walks `go/ast` and fires when a
+  function's doc opens with the name of another function in the SAME FILE, which
+  is the shape an insertion produces. It found two orphans nobody had noticed:
+  `openStore`'s doc had drifted onto `newsFeedFor`, `checkPlanName`'s onto
+  `coreConceptsSection`.
+- **BR-17 — the issue's completion state.** Its `## Done when` was five unticked
+  boxes while its `## Plan` was fully ticked, its `## Log` carried no boundary
+  entry, and the project had no `#38` row. The three that recur are exactly the
+  three no gate reads.
+- **BR-19 — and this preamble was itself an instance.** Claiming the whole table
+  was swept, when four rows are pinned by tests that skip, is the same shape as a
+  citation that does not point at its claim. Narrowed above to what was actually
+  run.

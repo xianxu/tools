@@ -2940,6 +2940,12 @@ when a mutation does not redden, ask which of the two things it means: the test
 is weak, or the fixture cannot express the failure. The second is the one that
 hides.
 
+**And record WHICH rows were swept, not that the table was.** Claiming the sweep
+covered everything is only as true as the weakest row, and a row pinned by a test
+that SKIPs where the sweep runs — every pty row here — cannot be part of it. The
+same finding twice in one issue: a blanket claim over a table is a citation that
+does not point at anything.
+
 ## Two orphaned doc comments were found by a 50-line AST guard (`#38`)
 
 A comment block acquires the wrong owner when a declaration is inserted between

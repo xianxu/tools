@@ -585,3 +585,142 @@ findings:
       allowlist for the deliberate build-tag continuation at dict_stub.go:27 — is what closes
       the family.
 ```
+
+---
+
+## Re-review — 2026-08-31T23:25:59-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 38 — the review loop's words are not clickable, because --play draws its own frames |
+| repo | tools |
+| issue file | workshop/issues/000038-play-clickable.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | f56b34e5f54d9ba050246d3fde25e8036636f4ab..ff5e80b23adc5fbcfbd342875d75cd334e33abf0 |
+| command | sdlc close --issue 38 |
+| reviewer | claude |
+| timestamp | 2026-08-31T23:25:59-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The code this window ships is correct and, where it matters, mechanically pinned: I re-ran the full suite (`go test ./...`, green, 106s) and the conformance build (green, 127s), and I mutation-verified the round-3 claims in a scratch worktree rather than reading the commit message. BR-16's fix is real — disabling the `KeyClick` branch reddens `TestPlayClickActsAndIsNotAnAnswer` ("played 1 times, want the miss AND the click") *and* `TestPlayClickOnThePromptWordPlaysIt`, and routing `KeyClick` into `play.Apply` as an `InputReveal` — the literal `red when` that used to survive — now reddens too. BR-18's `TestADocCommentNamesWhatItSitsOn` is a genuine mechanical guard: re-attaching `Grade`'s doc to `Keys` fails it with the exact message. What keeps this off SHIP is that two of the three round-3 fixes stopped at the instances the finding named. BR-18's guard is `FuncDecl`-only and same-file-only, so I confirmed by mutation that **two of its own five enumerated instances escape it** — restoring `regionsAt` on `screen.go:141` and restoring the `const minWrapWidth` doc-swallow in `playbar.go` both leave the whole suite green. BR-17's six tracker slots are all correct at HEAD, but the `repo_guard_test.go` row it named as the durable fix was not written, so that slot is still the unenforced one. Alongside those, five carried Minors (BR-2, BR-7, BR-8, BR-13, BR-14) are untouched at HEAD, each re-measured.
+
+### 1. Strengths
+
+- **`liveScreen.WriteRegions` (`screen.go:637-661`) really is one ruler.** `wrapMovedRegions(text, rs, l.cols)` sits immediately above `l.writeBuffer(text)`, which wraps at the same `l.cols`; the caller-supplied width is gone from the signature, so a second ruler is unexpressible rather than merely unused. `TestWriteRegionsMovesTheMapByTheScreensOwnWidth` asserts the invariant (every region names the text on the line it points at) rather than a coordinate.
+- **One action registry, verified by sweep.** `grep RegionHeadword\|RegionOriginLang` over non-test code returns exactly one action switch, `replraw.go:584-587` inside `playRegion`, and both loops reach it (`replraw.go:329`, `play_loop.go:274`). `TestEveryRegionKindIsActionableThroughTheSharedRegistry` derives its loop from `numRegionKinds`, and `TestAnUnknownRegionKindPlaysNothing` pins refusal over a plausible fallback. This is `#30` Done-when 7 actually delivered.
+- **`options.playsAudio()` absorbed all four hand-copies and moved the guard *inside* `playAnnounced` (`main.go:850-856`)**, so a fifth caller cannot be written below it. `TestPlayAnnouncedFetchesNothingWithAudioOff` asserts on the CDN fake's `Requested()`, not only the player, so "fetched but didn't play" cannot pass it.
+- **`playRig`'s `width: 0` → `defaultCols` (`play_loop_test.go:44-49`)** is the right generalisation of the operator's inert-feature bug, and `lessons.md` carries the rule ("every sentinel-valued default in a rig is a state production may not have") rather than the instance.
+- **`TestADocCommentNamesWhatItSitsOn` found two orphans nobody had reported** (`openStore`→`newsFeedFor`, `checkPlanName`→`coreConceptsSection`). Reaching for a 50-line `go/ast` walk instead of five edits was the right call; the gap below is about its reach, not its shape.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+- **`cmd/define/repo_guard_test.go:1446` — the doc-comment guard does not cover the enumeration that produced it (BR-18, not-addressed).** Measured in a scratch worktree at HEAD: reverting `screen.go:141` to `// regionsAt records…` leaves `TestADocCommentNamesWhatItSitsOn`, `TestNoArtifactNamesARetiredSymbol` and `TestARemovedDeclarationIsSweptOrRetired` all green (`declaredIn` is `FuncDecl`-only, so a *retired* name is never a match; `TestARemovedDeclarationIsSweptOrRetired` filters on `isCitableName`, and `regionsAt` is unexported). Restoring the `playbar.go` shape — `isOptionLine`'s doc block running into `minWrapWidth`'s, with `isOptionLine` moved below the `const` — is also green, because a `GenDecl`'s `Doc` is never inspected. So 3 of BR-18's 5 named instances are guarded and 2 are hand-fixed only. Fix: add `*ast.GenDecl` names (and their doc) to `declaredIn`/the walk — that closes the `playbar` shape in ~5 lines — and either extend the retired-declaration sweep to unexported names inside `.go` comments or record in the guard's own comment that the renamed-symbol shape is deliberately out of scope, so the next reader knows which half is covered.
+- **`workshop/issues/000038-play-clickable.md` / `repo_guard_test.go` — the tracker enumeration's durable fix was not written (BR-17, not-addressed).** All six slots are correct at HEAD (frontmatter `working`; `## Plan` 9/9; plan `## Tasks` T0–T8; `## Done when` 5/5; a `## Log` boundary entry; `workshop/projects/define-learn.md:744` scope event) — I checked each. But BR-17's stated rule was "a `repo_guard_test.go` row asserting that an active issue with a fully-ticked `## Plan` has a fully-ticked `## Done when`, which puts that slot in the same enforcement class as the two that stopped recurring", and `grep "func Test" repo_guard_test.go` shows no such row. `sdlc close`'s plan-unchecked gate reads `## Plan` only, so nothing can refuse a close whose Done-when says nothing is done. **This is the 4th finding in family `tracker-state-stale`;** the two slots that stopped recurring are exactly the two with guards, which is the evidence the rule is the right one.
+
+### 4. Minor findings
+
+- `workshop/plans/000038-play-clickable-plan.md:38-55` — 10 of 12 line anchors in the "verified" table are wrong at HEAD (BR-2, not-addressed): `play_loop.go:262-265` lands in the D8 comment, `:174-198` and `:178-181` in the new prompt-region write, `:161` in `show`'s doc, `replraw.go:264` on `voc :=`, `:170` in the pager comment, `:140`/`:94` on blank/`}`, `:534` in `submitLine`, `:366-380` in the exit comment. Only `main.go:801` and `play/recall.go:29` still point at their claim.
+- `cmd/define/play/choice.go:113-114` and `cmd/define/README.md:159` — both prose claims still false (BR-13, not-addressed): the doc says `#38` "computes its region as line 0, column 0" (it is `Line: 1`, `play_loop.go:180`) and that "#38 is PARKED"; the README says "Narrow the window and the links follow the text as it re-wraps", but `liveScreen.Resize` (`screen.go:694-698`) only assigns `l.rows, l.cols` — no buffer line is re-wrapped and no existing region moves.
+- `cmd/define/replraw.go:575`, `replraw.go:617`, `cmd/define/repl.go:313` — three identical `if !opt.playsAudio() { Fprintln(stderr, nothingToReplay) }` blocks (BR-14, not-addressed). ARCH-DRY.
+- `cmd/define/play_loop.go:448/466/508` — `held.marks` initialised, a second local `marks` built, the local assigned over it (BR-7, not-addressed).
+- `cmd/define/play_loop.go:274` — a sitting's `ORIGIN` click passes `entry ""`, so `utteranceFor` gets `ParseEntry("")` and `SourceSpellings` falls back to the English headword (BR-8, not-addressed). `todaysQuestions` holds the raw `text` at `play_loop.go:475` and discards it; one field on `clickable` closes it. README:158 promises "exactly as in the interactive session".
+- `repo_guard_test.go:1450` uses `parser.ParseDir`, deprecated since Go 1.22. Works; worth a note when this file is next touched.
+
+### 5. Test coverage notes
+
+- Mutation results I ran this round: `KeyClick` branch disabled → 2 tests red; `KeyClick` → `play.Apply` as `InputReveal` → `TestPlayClickActsAndIsNotAnAnswer` red; `Grade` doc re-attached to `Keys` → guard red. Three claimed fixes, three confirmed pins.
+- Mutations that stayed **green** (the gap above): `addRegions` doc reverted to `regionsAt`; `isOptionLine` moved below `const minWrapWidth` so its doc swallows the const's.
+- `TestPlayARevealedDefinitionCarriesItsRegions` and `TestAResizeDoesNotMisplaceTheClickMap` drive `playSession` against a real `newPinnedScreen` and assert through `RegionAtRow` — the loop's `marksIn` offset and the screen's wrap-rebasing are pinned at their joint, which is the right shape for a two-layer coordinate bug. Both carry a `checked == 0` / `row < 0` fatal so they cannot pass vacuously.
+- Every `TestPTY*` row SKIPs here ("no pty available: operation not permitted"), including the pins for Done-when 5, 6b, 7 and 8. That is `#37`'s environment limit, not this diff's — but it is why the estimate's manual terminal pass is load-bearing, and it is what makes the plan's new preamble overclaim (below).
+- Not covered anywhere: `marksIn` returning `nil` when `strings.Index` misses (`play_loop.go:589-593`). It is the correct degrade, but a form that rewords its reveal would silently lose every region in a sitting with no test noticing.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — flag.** Registry and audio-predicate consolidations both pass by sweep (one action switch, `grep noAudio` returns only the predicate). The flag is BR-14: three byte-identical copies of the audio-off guard *and* its message, the third added by this window, against D11's premise that "callers keep their own MESSAGES".
+- **ARCH-PURE — pass.** `clickable`, `sittingDeck.marksIn` and `wrapMovedRegions` are pure and unit-tested without IO (`TestAWrapMovesTheClickMapRatherThanDroppingIt` needs no screen). `playRegion` is correctly labelled INTEGRATION and tested through the player/CDN fakes.
+- **ARCH-PURPOSE — flag.** Shadow-sweep on "one registry": both consumers derive, `numRegionKinds` drives the test loop. Two deferred-purpose flags: BR-8 (the sitting's `ORIGIN` consumer does *not* fully derive — it drops the entry text the editor supplies, so the same registry yields a degraded utterance in one loop while the README says they are identical), and the BR-17/BR-18 pattern above, where the enumeration was written and the sweep stopped at the named instances.
+- **ARCH-MOCK — pass.** Player and CDN stateful fakes are the seam for every new audio row; `playSession` is drivable with a scripted key channel and a real `newPinnedScreen`, so production and test flow share the boundary; pty rows are the live conformance surface.
+- **ARCH-CONSTRAINTS — pass.** `wrapMovedRegions` is O(lines) per write and runs twice per question, against a reveal of tens of lines — well inside the inherited 16 ms paint envelope. The wrap does run twice per `WriteRegions` (once to measure, once in `writeBuffer`), which is the price of keeping `wrapMovedRegions` pure; at this scale that is the right trade and needs no change.
+
+### 7. Plan revision recommendations
+
+- **A `## Revisions` entry for round 3.** The plan was revised in `ff5e80b` (Done-when row 2 rewritten, preamble added) with no entry, while rounds 1 and 2 both added theirs; AGENTS.md §1 requires timestamp + reason + delta.
+- **Qualify the new preamble at `plan:144`, and put the per-row table in that entry.** As written it says every `red when` was executed as a mutation; rows 5, 6b, 7 and 8 are pinned only by `TestPTY*` tests that SKIP in this environment, so their mutations cannot redden and were not run. Record the 9 in-process rows as executed (with row 2's two mutations named) and the 4 pty rows as "deferred to the manual terminal pass", the way `#41`'s rows 4c and 6 carry "mutation-verified".
+- **Re-anchor the "verified against the existing tree" table by SYMBOL** (BR-2's stated rule), which `TestPlanTablesNameEntitiesThatExist` and `TestPlanNamedTestsExist` already guard mechanically; two of its rows are now false in substance, not just misaddressed.
+
+```findings
+dispose:
+  - id: BR-2
+    disposition: not-addressed
+    note: |
+      Re-measured at HEAD: 10 of 12 anchors point at unrelated code; only main.go:801 and play/recall.go:29 hold.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      playRegion and replayInPlace each carry their own doc at replraw.go:552/595, and the guard now pins the shape.
+  - id: BR-7
+    disposition: not-addressed
+    note: |
+      play_loop.go:448 still initialises held.marks, :466 builds a second local, :508 assigns over it.
+  - id: BR-8
+    disposition: not-addressed
+    note: |
+      play_loop.go:274 still passes entry ""; the raw text is still discarded at :475.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      Plan Tasks T0-T8 all ticked; subsumed by BR-17's wider enumeration, whose instances are also all correct at HEAD.
+  - id: BR-13
+    disposition: not-addressed
+    note: |
+      choice.go:113-114 and README.md:159 are byte-identical to last round; I re-verified Resize only assigns rows/cols.
+  - id: BR-14
+    disposition: not-addressed
+    note: |
+      Three identical guard+message blocks remain at replraw.go:575, replraw.go:617, repl.go:313.
+  - id: BR-16
+    disposition: addressed
+    note: |
+      Verified by mutation: disabling the KeyClick branch and routing KeyClick into play.Apply as InputReveal both redden the test now.
+  - id: BR-17
+    disposition: not-addressed
+    note: |
+      All six slots are correct at HEAD, but the repo_guard_test.go row the finding named as the durable fix was not written.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      The guard is real and reddens, but 2 of the finding's own 5 instances escape it — I confirmed both stay green when reverted.
+findings:
+  - id: new
+    severity: Minor
+    family: citation-does-not-point-at-the-claim
+    title: |
+      the plan's new Done-when preamble claims a mutation sweep that four of its rows cannot have had
+    detail: |
+      This is the 2nd finding in family `citation-does-not-point-at-the-claim`, so the rule
+      rather than the instance: a blanket claim over a table is only as true as its weakest
+      row, and a row pinned by a test that SKIPs in the environment where the sweep runs
+      cannot be part of it. plan:144 now reads "Every `red when` cell here was EXECUTED as a
+      mutation at the close boundary". Measured: rows 5, 6b, 7 and 8 are pinned only by
+      TestPTYPlayKeepsTheAlternateScreenAcrossAReveal, TestPTYPlayResizeRepaints and the
+      existing --play pty rows, and `go test -tags conformance -run TestPTY -v` reports "no
+      pty available: operation not permitted" and SKIPs every one — a skipped test cannot
+      redden, so those four mutations were not executed. Round 3 also landed no `## Revisions`
+      entry (rounds 1 and 2 both did; AGENTS.md 1 requires one for a mid-stream plan
+      revision), which is where BR-16 asked for the per-row record to live. Fix both together:
+      add the round-3 Revisions entry carrying a per-row result table — 9 in-process rows
+      executed with row 2's two mutations named, 4 pty rows marked deferred to the manual
+      terminal pass — and qualify the preamble to match.
+```
