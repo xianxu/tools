@@ -2818,3 +2818,34 @@ viewport switch. Both were caught by review, not by the plan that forbade them.
 writing a block that mirrors an existing one, diff them literally before
 committing — if they differ in one token, that token is the parameter.
 
+## A guard added to protect a special case must name the CASE, not a mechanism it happens to use (`#41`)
+
+`--play` wraps what it writes, because a frame clips an over-wide line. The
+`♫ playing 3×` indicator carries the screen's `\r\x1b[K` take-that-line-back
+marker, which a wrap would scatter across a break — so the wrap skipped it. The
+guard was written as *"skip lines carrying an escape"*, which is a mechanism the
+case happens to use.
+
+Every rendered definition line carries colour. `--play` refuses to run with
+`-no-color`. So the guard exempted the entire class the wrap exists for, and the
+suite stayed green — see the next entry for why.
+
+**The case was `strings.Contains(line, eraseLine)` and it was one call away.**
+When adding a skip, write down the sentence describing what must be protected,
+then encode THAT sentence. If the encoding is broader than the sentence, the
+difference is what will break.
+
+## A test rig's defaults must be reachable from the flag parse of the command under test (`#41`)
+
+`playRig` returned `options{color: false}`. A `--play` gate landed mid-issue that
+REFUSES unless `opt.tty`, and `tty` and `color` are the same expression at the
+flag parse — so from that moment no in-process sitting test drove a configuration
+production can produce. Two tests written specifically to pin the wrap were green
+over uncoloured text while the wrap was broken for every coloured line.
+
+**A default production cannot produce is a suite testing a state that does not
+exist, and it fails by passing.** This is repo-general, not a `cmd/define`
+quirk: when a command grows a precondition, grep the rigs for defaults that now
+violate it. Deriving the rig's options from the same helper the flag parse uses
+removes the question.
+

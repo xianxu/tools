@@ -1,12 +1,13 @@
 ---
 id: 000041
-status: working
+status: codecomplete
 deps: ["tools#39"]
 github_issue:
 created: 2026-08-31
 updated: 2026-08-31
 estimate_hours: 3.31
 started: 2026-08-31T13:26:27-07:00
+actual_hours: 4.77
 ---
 
 # play mode paints frames through screen, and gains a status bar
@@ -190,6 +191,7 @@ Branch: `000041-play-tui`.
 ## Log
 
 ### 2026-08-31 — T3 through T9 landed; the issue is code-complete
+- 2026-08-31: closed — go test ./... green; -race green; conformance green (131s, 9 --play pty rows). FOUR review rounds, 13 findings, all addressed at the CLASS. Round 4 (13828b3): BR-23 Critical, mine from round 3 — wrapWritten skipped every escape-carrying line to protect the indicator`s erase marker, and since BR-3 --play only runs WITH colour, so the guard exempted exactly the class it existed to serve. Only the erase gesture is exempt now; SGR wraps, because visibleCells measures styled text and an attribute persists across a break to its own reset. Pinned by TestWrapWrittenWrapsStyledTextButNotTheEraseGesture, a unit test rather than a sitting because a sitting`s version depends on which word comes second; reintroducing the skip reddens it at 108 columns in a 40-column terminal. BR-24, the reason it shipped: playRig returned color:false, a configuration --play REFUSES, so no in-process sitting had ever run in the only state production can produce — the rig runs coloured now and unstyled moved out of the conformance file. Round 3: BR-20 was the 4th finding in frame-clips-unwrapped-text, fixed at the SEAM (the pinned screen`s own Write) because playAnnounced writes from a helper the loop calls; BR-22 table kinds; BR-21 figures init. Rounds 1-2: the stdout/-no-color gate, the wrap moved off queue-build, crlfWriter deleted, newConsole and viewportGesture shared by both loops, the drop test moved onto the drawn bar, the degraded-log test. BR-16`s instances are all swept; the RULE it asks for (widening the removed-declaration guard to types, unexported funcs, deleted file paths, and a forward Test-name check) is issue #33, which now carries the review`s spec verbatim — building it here would be #33`s work under #41`s window.; review verdict: FIX-THEN-SHIP
 
 **Four commits, each mutation-verified.** T3/T4 (the console and write-once),
 T5/T6 (the pinned screen and the in-memory figures), T7/T8/T9 (paging, SIGWINCH,

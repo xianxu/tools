@@ -396,7 +396,7 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 			// dictionary entry cannot be broken that narrowly and stay readable
 			// — while the frame still has to fit the columns that exist.
 			opt.width = sz.cols
-			if sz.cols < 20 {
+			if sz.cols < minWrapWidth {
 				opt.width = 0
 			}
 			view.Resize(sz.rows, sz.cols)

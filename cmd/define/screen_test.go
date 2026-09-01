@@ -556,6 +556,24 @@ func TestThePinnedScreenWrapsWhateverIsWrittenToIt(t *testing.T) {
 		}
 	})
 
+	t.Run("through WriteRegions too", func(t *testing.T) {
+		// The PATH axis. Round 5 closed which LINES are wrapped and left which
+		// PATHS: WriteRegions called the buffer directly, so the seam's own
+		// claim that nothing can write around it was false. `--play` has no
+		// click map today; `#40`'s board will.
+		var tty strings.Builder
+		live := newPinnedScreen(&tty, 24, cols)
+		live.interval = -1
+		live.WriteRegions(long+"\n", nil)
+
+		for _, line := range strings.Split(live.Transcript(), "\n") {
+			if n := visibleCells(line); n > cols {
+				t.Errorf("a region write reached the buffer at %d columns in a %d-column "+
+					"terminal, so Paint clips it: %q", n, cols, line)
+			}
+		}
+	})
+
 	t.Run("the editor's does not", func(t *testing.T) {
 		// Its text is pre-wrapped by Render, and its ask path streams token by
 		// token — where a chunk ending mid-line has no line to wrap yet.

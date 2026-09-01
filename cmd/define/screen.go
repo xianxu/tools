@@ -571,11 +571,7 @@ func (l *liveScreen) window() time.Duration {
 func (l *liveScreen) Write(p []byte) (int, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	text := p
-	if l.s.pinned {
-		text = []byte(wrapWritten(string(p), l.cols))
-	}
-	if _, err := l.s.Write(text); err != nil {
+	if err := l.writeBuffer(string(p)); err != nil {
 		return 0, err
 	}
 	l.throttledPaint()
@@ -583,6 +579,21 @@ func (l *liveScreen) Write(p []byte) (int, error) {
 	// how many bytes the buffer received, and reporting that would tell a caller
 	// it had written more than it handed over.
 	return len(p), nil
+}
+
+// writeBuffer is the ONE way text reaches the buffer, and the wrap lives here so
+// that is true of every path rather than of the one anybody thought about.
+//
+// `Write` was the first, and its comment claimed "nothing can write around it"
+// while `WriteRegions` did exactly that — the sixth finding in this family, and
+// the axis the fifth did not enumerate: that one closed which LINES are wrapped
+// and left which PATHS. Callers hold mu.
+func (l *liveScreen) writeBuffer(text string) error {
+	if l.s.pinned {
+		text = wrapWritten(text, l.cols)
+	}
+	_, err := l.s.Write([]byte(text))
+	return err
 }
 
 // throttledPaint paints unless a frame went out too recently, in which case it
@@ -627,7 +638,17 @@ func (l *liveScreen) WriteRegions(text string, rs []Region) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.s.addRegions(rs)
-	l.s.Write([]byte(text))
+	// Through writeBuffer, so a pinned screen wraps here too. No production
+	// caller reaches this on one today — `--play` has no click map (D5a) — but
+	// `#40`'s board will, and a latent bypass in the seam whose whole claim is
+	// that there is no bypass is worth closing before it has a caller.
+	//
+	// A REGION's column is relative to the text it was computed from, so a wrap
+	// that moves a word moves what a click there means. That is a real cost and
+	// it belongs to whoever first writes regions into a pinned screen: they must
+	// wrap BEFORE computing the regions. Silently skipping the wrap instead
+	// trades a wrong click for a clipped line, which is the worse half.
+	l.writeBuffer(text)
 	l.throttledPaint()
 }
 

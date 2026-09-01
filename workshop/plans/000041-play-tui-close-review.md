@@ -785,3 +785,123 @@ findings:
       play_loop_test.go:39 returns options{color: false, width: 0, ...}. Since BR-3, runPlay exits 1 unless opt.tty, and opt.tty and opt.color are the identical expression (main.go:523/527) — so no in-process test has ever exercised the only configuration a sitting can be in. That is why the Critical above shipped: Done-when 0b's two pins (TestANarrowedSittingWrapsTheRestOfItself, TestALongOptionGlossWrapsRatherThanBeingCut) both pass with colour off. The pty rows do run coloured, but TestPTYPlayResizeRepaints narrows ROWS 24->10 and never COLS, so no row narrows the width of a coloured sitting.
       THE RULE: a rig's default options have to be reachable from the flag parse of the command under test. Set color/tty true in playRig (or derive both from one helper, as main.go does) and add a column-narrowing pty row.
 ```
+
+---
+
+## Re-review — 2026-08-31T18:10:11-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 41 — play mode paints frames through screen, and gains a status bar |
+| repo | tools |
+| issue file | workshop/issues/000041-play-tui.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 94f3ad077210c544fe60b8539e2a92def29333c1..13828b3ecc4473ce0efea90a2d449960322d2e28 |
+| command | sdlc close --issue 41 |
+| reviewer | claude |
+| timestamp | 2026-08-31T18:10:11-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The window delivers what the Spec and the plan promise: `--play` draws whole frames through the same `console`/`display` seam the editor uses, the bar is pinned and counted, paging works, the transcript survives, SIGWINCH repaints, and the deck+log are read exactly once per sitting. `go test ./cmd/define/...` is green (107s), and `-race` on the new play/screen rows is green. I mutation-verified three of the claimed fixes rather than reading the commit messages: reverting round 4's `eraseLine` narrowing reddens `TestWrapWrittenWrapsStyledTextButNotTheEraseGesture` (BR-23 genuinely fixed); reverting `playRig` to `color:false, tty:false` leaves the suite green (BR-24 fixed but unpinned); moving the three terminal gates back below `todaysQuestions` leaves the suite green (BR-18's code is right, its claim is undefended). What keeps this from SHIP is two cheap structural items that `#40` will consume directly — `liveScreen.WriteRegions` still writes around the wrap seam whose own comment says nothing can, and `minWrapWidth` was introduced as "the sub-20 policy in one place" while two other spellings of `< 20` survive untouched — plus a live doc instance this window's own sweep introduced. Caveat on my evidence: the pty conformance rows all SKIP in this environment ("no pty available: operation not permitted"), so I verified `-tags conformance` compiles and vets but could not exercise real hardware; the issue Log's claim that the full 124s pty suite ran green is unverified by me.
+
+## 1. Strengths
+
+- **The seam fix is the right shape, and the round-4 correction is real.** `liveScreen.Write` wrapping on the pinned screen (`cmd/define/screen.go:571-585`) is the version that finally covers helpers the loop doesn't own, and narrowing the exemption from "any escape" to `strings.Contains(line, eraseLine)` (`cmd/define/playbar.go:118`) is exactly the "name the case, not the mechanism" correction. Mutation-verified red without it.
+- **`newConsole` and `viewportGesture` are genuinely shared, not extracted-and-abandoned.** `replraw.go:56` and `play_loop.go:107` both call `newConsole`; `replraw.go:413` and `play_loop.go:240` both call `viewportGesture`, and the editor's four-case switch is deleted rather than left beside it. That is the half BR-1 was open two rounds for.
+- **`GradeOf` closes D7's DRY claim with a named function.** `schedule/progress.go:171-181` is the single rule; `gradeOf` is one line over it (`:192`) and `sittingDeck.answered` is the second caller. Grepping `GradeWrong|GradeCorrect|GradeUnaided` outside tests finds no third spelling.
+- **The docs gate is met properly, not perfunctorily.** README gains the paging keys, the bar sample, and both refusals (`cmd/define/README.md:105,132-159`); atlas gains a whole "The sitting is a frame" section covering `newConsole`, `newPinnedScreen`, `viewportGesture`, `wrapWritten`, `sittingDeck` and the refusal policy.
+- **`TestANarrowedSittingWrapsTheRestOfItself` asserts the class, not an instance** (`play_loop_test.go:817-834`): every line written after the resize, with a "nothing wrapped, so this test asserts nothing" guard so it can't pass vacuously.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**(a) `liveScreen.WriteRegions` writes around the wrap seam — `cmd/define/screen.go:626-632`.**
+**This is the 6th finding in family `frame-clips-unwrapped-text`.** Do not fix it as an instance. BR-23 stated the rule as a two-by-two enumeration — paths (`Write`, `WriteRegions`) × line classes (plain, escape-carrying) — and round 4 closed the line-class axis only. `WriteRegions` calls `l.s.Write([]byte(text))` directly, so on a pinned screen it bypasses `wrapWritten` entirely, and `screen.go:566`'s "Here nothing can write around it" is now literally false. No production caller hits it today (`main.go:803` reaches it only through the editor's `newLiveScreen`), which is why the suite is green — it is latent for `--play` and live for `#40`, whose board writes regions into a pinned screen. Fix the class: one private `writeBuffer(text string)` on `liveScreen` that applies the pinned wrap, with both `Write` and `WriteRegions` routed through it, and a test that writes an over-wide region into a `newPinnedScreen` and asserts no buffer line exceeds `cols`.
+
+**(b) `minWrapWidth` is a third spelling of the sub-20 policy, introduced by a comment claiming it is the only one — `cmd/define/playbar.go:96-101,143-146`.**
+**This is the 2nd finding in family `parallel-construction`.** The rule BR-1's disposition already stated is the one that covers it: *extracting a shared owner is half the fix; the other half is deleting what it replaced.* Round 3's plan revision claims "The sub-20-column policy moved with it, so there is one number and one place", and `minWrapWidth`'s own comment says "THE SUB-20 POLICY, in one place" — but nothing moved. Measured at HEAD, three unlinked spellings: `main.go:995` (`sz.cols < 20` in `terminalWidth`), `replraw.go:399` (`if sz.cols < 20` in the editor's resize case), `playbar.go:146` (`const minWrapWidth = 20`). The enumeration this window owes, run: of the six "one place" claims it makes — `newConsole`, `viewportGesture`, `GradeOf`, `costPhrase`, `wrapWritten`, `minWrapWidth` — four are clean, `wrapWritten` is (a) above, and `minWrapWidth` is this. Fix: have `terminalWidth` and the editor's resize case both compare against `minWrapWidth` (or hoist it somewhere both can see), so the number has one owner.
+
+## 4. Minor findings
+
+- `atlas/define.md:2016` says `wrapWritten` is one of "three surfaces SHARED with the editor"; it is called only from the pinned branch of `liveScreen.Write`, and the same section correctly says the editor's screen does not wrap.
+- `play_loop_test.go:766` still comments "the resize case keeps `opt.width` current" — that maintenance was deleted in `6201f4d`.
+- `wrapText` (`render.go:623`) rebuilds through `strings.Fields`, so an over-wide line loses its internal whitespace runs (e.g. the headword line's double space). Only fires on lines that would otherwise be clipped, so it's a trade rather than a bug — worth a sentence where `wrapWritten` documents itself.
+
+## 5. Test coverage notes
+
+- **BR-24's rig fix is not pinned.** Reverting `playRig` (`play_loop_test.go:43`) to `options{color: false, tty: false, …}` leaves the whole `cmd/define` package green. The rule BR-24 stated — "a rig's default options must be reachable from the flag parse of the command under test" — is cheap to enforce: a subtest that runs `runPlay` with the rig's options against a fake terminal and asserts it does *not* refuse. Without it, the state that hid a Critical for a round can silently return.
+- **BR-18's ordering is not pinned.** Mutation-verified: moving the stdin/stdout/`-no-color` gates below the `todaysQuestions` call leaves the package green (`TestPlayRefusesWhenStdoutIsNotATerminal` only checks exit 1, absence of `\x1b`, and a stderr substring, none of which an empty-deck stdout line breaks). A `runPlay`-on-empty-deck-to-a-non-terminal row would redden it — the coverage that existed until `TestEmptyQueueExitsZero` moved down to `todaysQuestions`.
+- **No pty row narrows COLUMNS.** `TestPTYPlayResizeRepaints` (`pty_conformance_test.go:668`) narrows 24→10 rows at a fixed 80 columns, so the wrap-on-narrowing behaviour is pinned in-process only. BR-24 asked for this row; it is still absent.
+- **The README's bar and summary samples are hand-maintained restatements of `costPhrase`.** `doc_sync_test.go` already does exactly this derivation for the prompt lines; extending it to `sittingBar`/`sittingSummary` would close the one remaining place where README can drift from the `-count` wording D8 exists to single-source.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — flag.** Finding (b), and finding (a) as its second instance. Everything else consolidated well.
+- **ARCH-PURE — pass.** `sittingBar`, `costPhrase`, `wrapWritten`, `livePrompt`, `GradeOf` are string/value functions unit-tested with no IO; `sittingDeck.figures` walks memory. The IO is confined to `newConsole`, `liveScreen.Paint` and the store. One note for `#33` rather than a finding: the plan files `viewportGesture` under "Pure entities" while it mutates a `display`; it is injected, so the arrangement is right, but the kind cell isn't.
+- **ARCH-PURPOSE — pass, with (a) as the exception.** Shadow-sweep of the single-source claims is in finding (b). The one real deferral — mechanising `doc-sweep-incomplete` — is filed to `#33` with the full four-part widening spec written out, which is the class named rather than the instance fixed. That is the right home; `#41`'s purpose is the TUI.
+- **ARCH-MOCK — pass.** `display` is faked in-process (`recordingConsole`, `paintInto`), the store is `store.Mem`, audio is `fakePlayer`/`okAudio`, and the real terminal is covered by the pty suite behind a build tag with `SkipOrFail`. Production and test flows share the `console` boundary.
+- **ARCH-CONSTRAINTS — pass.** The keystroke path stays O(visible rows) behind the 16ms throttle; `refresh()` is charged per answer, not per frame; `TestASittingReadsTheDeckOnce` pins the one-`Deck()`-one-`Events()` bound with a counting store. `wrapWritten` adds O(bytes written) on a per-transition path.
+
+## 7. Plan revision recommendations
+
+1. **`## Revisions` → "review rounds 2 and 3"** — the sentence *"The sub-20-column policy moved with it, so there is one number and one place"* is not what the tree does. Either land finding (b) and leave the sentence, or correct it to record that `minWrapWidth` is a third spelling.
+2. **Core concepts, `newPinnedScreen` row** — *"its `Write` WRAPS, which is the seam a helper cannot write around"* overstates it while `WriteRegions` exists. Land finding (a), or qualify the row.
+3. **`## Revisions` → "T3/T4 landed"**, plan line 311 — names `TestAMissIsRecordedBeforeItIsRevealed`; the test is `TestAMissRecordsBeforeItPlays`. Exempt from `TestPlanNamedTestsExist` because `currentTruthOnly` strips `## Revisions`, so nothing will ever catch it.
+4. **Not the plan but the same gate: `atlas/define.md:2052-2055`** still describes the per-site wrap and the resize-time `opt.width` maintenance that `6201f4d` deleted, in the document AGENTS.md §8 defines as "current state of codebase".
+
+```findings
+dispose:
+  - id: BR-12
+    disposition: not-addressed
+    note: |
+      Unchanged at HEAD — no `--play`/-raw usage guard in main.go, decideCapture still returns captureNothing under opt.raw (capture.go:30), and held.answered/refresh still advance the bar. Minor; never blocks.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      Docs gate DELIVERED (README refusals+paging, atlas "The sitting is a frame") and the class correctly filed to #33 with the widening spec; but highlightwriter.go:60 now cites TestHighlightWriterShortWriteContract, a name no test has ever declared, introduced by this window's own sweep, and atlas/define.md:2052-2055 still describes the per-site wrap and resize-time opt.width update that 6201f4d deleted.
+  - id: BR-18
+    disposition: not-addressed
+    note: |
+      Code is right (gates at play_loop.go:56-77, above todaysQuestions at :79) but mutation-verified unpinned — I moved the three gates below the call in a scratch copy and the whole cmd/define package stayed green.
+  - id: BR-23
+    disposition: addressed
+    note: |
+      Mutation-verified: reverting playbar.go:118 to ContainsRune(line, 0x1b) reddens TestWrapWrittenWrapsStyledTextButNotTheEraseGesture. The path axis of BR-23's own enumeration (WriteRegions) is raised separately below.
+  - id: BR-24
+    disposition: addressed
+    note: |
+      playRig now returns color:true, tty:true (play_loop_test.go:43). Two residuals in the test-coverage notes: reverting the rig leaves the suite green, and TestPTYPlayResizeRepaints still narrows only rows.
+findings:
+  - id: new
+    severity: Important
+    family: frame-clips-unwrapped-text
+    title: |
+      liveScreen.WriteRegions bypasses the pinned wrap seam whose own comment says nothing can write around it
+    detail: |
+      6th in this family, and the path axis of BR-23's own two-by-two enumeration — round 4 closed the line-class axis (escape-carrying vs plain) and left the path axis (Write vs WriteRegions) open. screen.go:626-632 calls l.s.Write directly, so on a pinned screen it skips wrapWritten and screen.go:566's "Here nothing can write around it" is false. No production caller reaches it today (main.go:803 goes through the editor's unpinned screen), so it is latent for --play and live for #40's board. Fix the class: one private writeBuffer(text) on liveScreen applying the pinned wrap, with both Write and WriteRegions routed through it, plus a test that writes an over-wide region into a newPinnedScreen.
+  - id: new
+    severity: Important
+    family: parallel-construction
+    title: |
+      minWrapWidth is a third spelling of the sub-20 policy, introduced by a comment claiming it is the only one
+    detail: |
+      2nd in this family, and the same rule BR-1's disposition stated: extracting a shared owner is half the fix, deleting what it replaced is the other half. playbar.go:96 says "THE SUB-20 POLICY, in one place" and the plan's round-3 revision says "there is one number and one place", but nothing moved — main.go:995 (sz.cols < 20 in terminalWidth) and replraw.go:399 (if sz.cols < 20 in the editor's resize case) are untouched by this window. Enumeration of the six "one place" claims this window makes — newConsole, viewportGesture, GradeOf, costPhrase, wrapWritten, minWrapWidth: four clean, wrapWritten is the finding above, minWrapWidth is this one. Have terminalWidth and the editor's resize case compare against the constant.
+  - id: new
+    severity: Minor
+    family: lessons-not-recorded
+    title: |
+      Rounds 3 and 4 produced two transferable rules that reached the plan's Revisions but not workshop/lessons.md
+    detail: |
+      2nd in this family. AGENTS.md section 4 asks for the rule in lessons.md, and this window did add three entries — but they stop at round 2. The two rules the last two rounds actually bought are absent: "a guard added to protect a special case must name the case, not the mechanism it happens to use" (BR-23, the escape-vs-erase-gesture skip) and "a rig's default options must be reachable from the flag parse of the command under test" (BR-24). The second is repo-general and will recur outside cmd/define. The rule behind the family: a review round's rule lands in lessons.md, not only in the plan's Revisions, because the plan is archived with the issue and lessons.md is what the next session reads.
+```

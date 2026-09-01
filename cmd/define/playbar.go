@@ -140,9 +140,15 @@ func wrapWritten(text string, width int) string {
 // alternative, teaching `play` to hand back its options separately, would put
 // line-breaking in the package whose whole point is that the caller owns
 // formatting.
-// minWrapWidth is the narrowest terminal worth breaking lines for. Below it a
-// dictionary entry cannot be broken and stay readable, which is the same
-// judgement `terminalWidth` makes when it answers 0.
+// minWrapWidth is the narrowest terminal worth breaking lines for: below it a
+// dictionary entry cannot be broken and stay readable.
+//
+// THE ONLY spelling of that judgement, which it became one round after a comment
+// here claimed it already was. `terminalWidth` and the editor's resize case both
+// carried their own `< 20`, so declaring a constant and leaving them was half a
+// fix — the same half BR-1 left when a shared helper landed beside the copy it
+// was meant to replace. Extracting an owner is one move; deleting what it
+// replaces is the other, and the second is the one that makes the claim true.
 const minWrapWidth = 20
 
 func isOptionLine(line string) bool {
