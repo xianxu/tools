@@ -343,7 +343,8 @@ chosen at the new height.
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `display.FooterRowAt` | `cmd/define/replraw.go`, `screen.go` | new | the terminal — answers WHICH FOOTER ROW a click landed on, which is what makes the live edge clickable (D10) |
+| `display` | `cmd/define/replraw.go` | modified | the seam gains ONE question: which footer row a click landed on. The editor answers "none", which is the whole of its involvement (D10) |
+| `FooterRowAt` | `cmd/define/screen.go` | new | the terminal — `Paint` already computes the footer's origin and simply does not report it. This is that report, and it is what makes the live edge clickable |
 | `toInput` | `cmd/define/play_loop.go` | modified | the keyboard — a row for Tab, which is dropped today (D13), and Enter split from space (D14) |
 | the loop's click branch | `cmd/define/play_loop.go` | modified | the mouse — offers a click to the form first, falls through to `playRegion` (D11) |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | the store — packs box ≥ 3 keys into boards (D4) |
@@ -362,7 +363,7 @@ chosen at the new height.
 
 Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
-- [ ] **T1 — `Batch`, and the FOUR places `Apply` consults it** (D2, D12). The interface, then: `advance` moves on only when `Spent()`; the miss-on-hidden branch must not set `Graded` for a batch form; `InputDrop` is refused; Enter spends the board via `Rest(Wrong)`. Existing forms implement none of it and are unaffected — the whole `play` suite and `TestSessionIsFormAgnostic` pass untouched, which is what proves the seam widened rather than branched.
+- [x] **T1 — `Batch`, and the FOUR places `Apply` consults it** (D2, D12). The interface, then: `advance` moves on only when `Spent()`; the miss-on-hidden branch must not set `Graded` for a batch form; `InputDrop` is refused; Enter spends the board via `Rest(Wrong)`. Existing forms implement none of it and are unaffected — the whole `play` suite and `TestSessionIsFormAgnostic` pass untouched, which is what proves the seam widened rather than branched.
 - [ ] **T2 — `Board` and `Mark`** (D5, D7). Two marks. `Prompt()` renders the labelled grid; `Grade` takes a cell label; `Mark(i, v)` takes a click; `Spent()`; `Rest(v)`; `IsSelfRated() → true`; `Reveal()` is empty. Table test including a board of three (D5) and the sixteenth mark. **Labels are `0`–`9` then `a b c e f g`** — `d` is reserved by `toInput` before a form sees it.
 - [ ] **T3 — Tab, and Enter split from space** (D13, D14). Enter becomes `InputFinish`; `Apply` treats it as `InputReveal` for every non-batch form, so 2.1 and 2.3 are untouched and their tests prove it. One row in `toInput`, one `play.Input` kind, and the board's mode flips. It belongs in `play` because it is about what is being ANSWERED, unlike the paging keys.
 - [ ] **T4 — `display.FooterRowAt`** (D10). `Paint` already computes the footer's origin; `liveScreen` records it and answers which footer row a viewport row is. The editor's screen answers "none", which is the whole of its involvement.

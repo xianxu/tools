@@ -12,8 +12,21 @@ type InputKind int
 const (
 	// InputRune is a key the FORM grades. The session never learns what it means.
 	InputRune InputKind = iota
-	// InputReveal asks to see the answer.
+	// InputReveal asks to see the answer. SPACE, and Enter for every form that
+	// holds one word — see InputFinish.
 	InputReveal
+	// InputFinish is ENTER, split from space because a form holding many words
+	// spends itself on it.
+	//
+	// The two were one kind, deliberately: "Enter and space both land on this
+	// kind". That held while every form had one word and one answer. A board
+	// takes every unmarked word as Wrong when it is finished, and leaving the
+	// pair merged would fire that on SPACE — the one expensive-to-undo action on
+	// that surface, on the most careless key there is.
+	//
+	// For every form holding one word the two remain EQUIVALENT, which is what
+	// keeps 2.1 and 2.3 from noticing the split.
+	InputFinish
 	// InputQuit ends the session now, keeping everything already recorded.
 	InputQuit
 	// InputDrop removes the current word from the deck and moves on.
@@ -166,13 +179,20 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 	// InputDrop and InputQuit stay OUTSIDE deliberately: "this word is not mine"
 	// and "stop" are still true after a verdict, and routing them here would
 	// silently turn a drop into a plain advance.
-	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal) {
+	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal || in.Kind == InputFinish) {
 		next, out := advance(s, q, Skipped, false)
 		return next, []Outcome{out}
 	}
 
 	switch in.Kind {
 	case InputDrop:
+		// REFUSED by a form holding many words, because `d` names no word there:
+		// advance would drop q.Word(), which on a grid is whichever cell happens
+		// to be next. Dropping the wrong word is silent and takes a word out of
+		// the deck, so the form does nothing rather than guessing.
+		if batchOf(q) != nil {
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
 		// Dropping is allowed in every state — before a reveal, after a peek, and
 		// after a miss. "This word is not mine" is true whatever is on screen,
 		// and someone who just missed a word is exactly who wants to drop it.
@@ -186,9 +206,30 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		s.Done = true
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 
+	case InputFinish:
+		// A form holding many words SPENDS itself: every word still unmarked is
+		// answered Wrong, one record each, and the session moves on. That is
+		// "I am out of time, ask me all of these again", and it is the reason
+		// Enter needed its own kind.
+		if b := batchOf(q); b != nil {
+			rest := b.Rest(Wrong)
+			outs := make([]Outcome, 0, len(rest)+1)
+			for _, w := range rest {
+				s = score(s, Wrong)
+				outs = append(outs, Outcome{Kind: OutcomeRecord, Word: w, Verdict: Wrong})
+			}
+			next, out := advance(s, q, Skipped, false)
+			outs = append(outs, out)
+			for i := range outs {
+				outs[i].SessionDone = next.Done
+			}
+			return next, outs
+		}
+		// Every other form: Enter means what space means.
+		fallthrough
+
 	case InputReveal:
-		// The graded case is handled above: Enter and space both land on this
-		// kind, and once graded they mean "next".
+		// The graded case is handled above: once graded they mean "next".
 		if s.Revealed {
 			return s, []Outcome{{Kind: OutcomeNone}}
 		}
@@ -217,6 +258,15 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 			// there would mark EVERY correct answer unaided — the feature would
 			// look like it worked while running the ladder at double speed.
 			// TestARevealDisqualifiesUnaided is the pin.
+			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
+			return next, []Outcome{out}
+		}
+		// A form holding many words has no hidden word to reveal — its marks are
+		// self-report over a grid — so a Wrong mark is an ordinary graded answer.
+		// Falling through to the branch below would set Graded, and the next
+		// keystroke would then mean "any key = next word": the form would freeze
+		// after its first No.
+		if batchOf(q) != nil {
 			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
 			return next, []Outcome{out}
 		}
@@ -260,10 +310,14 @@ func score(s Session, v Verdict) Session {
 // implemented in two places or neither.
 func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) {
 	s = score(s, v)
-	s.Index++
-	s.Revealed, s.Graded = false, false
-	if s.Index >= len(s.Questions) {
-		s.Done = true
+	// A form holding many words keeps the slot until every one is answered
+	// (Batch). Everything else is spent by definition.
+	if spent(q) {
+		s.Index++
+		s.Revealed, s.Graded = false, false
+		if s.Index >= len(s.Questions) {
+			s.Done = true
+		}
 	}
 
 	if v == Skipped {
@@ -294,6 +348,45 @@ func missedAxis(q Question) Axis {
 		return m.MissedAxis()
 	}
 	return AxisNone
+}
+
+// Batch is implemented by forms that hold MORE THAN ONE word.
+//
+// Third of its kind beside Missed and SelfRated, and for the same reason both of
+// those exist: the session must not learn which form is asking (#6's Done-when),
+// so it names a CAPABILITY and asks. A type switch on *Board here would be the
+// thing that Done-when forbids.
+//
+// It is consulted at FOUR points rather than one, which is the honest cost of a
+// form holding many words. `advance` is the obvious one; the other three were
+// found by measurement rather than by reading:
+//
+//	the miss branch — a Wrong mark reaches "a MISS on a hidden word earns the
+//	                  definition", which sets Graded, and the next key would then
+//	                  mean "next word". The form would freeze after one mark.
+//	InputDrop      — advance(Skipped) drops q.Word(), and a form holding many has
+//	                 no single current word to name. Refused rather than guessed.
+//	InputFinish    — Enter spends the form; every other form has nothing to spend.
+type Batch interface {
+	// Spent reports whether every word this form holds has been answered.
+	Spent() bool
+	// Rest answers every word still unmarked with v and returns them, which is
+	// what Enter means to a form holding many.
+	Rest(v Verdict) []string
+}
+
+// spent asks a form whether it is finished, and takes YES from anything that
+// cannot answer — which is every form holding one word, and the right default.
+func spent(q Question) bool {
+	b, ok := q.(Batch)
+	return !ok || b.Spent()
+}
+
+// batchOf is the form as a Batch, or nil. Named so the four call sites read as
+// one question rather than four type assertions.
+func batchOf(q Question) Batch {
+	b, _ := q.(Batch)
+	return b
 }
 
 // SelfRated is implemented by forms whose verdict is the learner's CLAIM rather

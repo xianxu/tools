@@ -473,3 +473,161 @@ func TestQuitAndDropAlsoReportTheEnd(t *testing.T) {
 		t.Error("dropping the last question did not report the end")
 	}
 }
+
+// A FORM THAT HOLDS MANY WORDS STAYS CURRENT UNTIL IT IS SPENT.
+//
+// `advance` moves on after every graded answer, which is right for every form
+// that holds one word and wrong for a board. The session must not learn what a
+// board IS (#6's Done-when), so it asks — the third instance of the pattern
+// `Missed` and `SelfRated` already establish.
+//
+// Four points need it, not one, and three of them are why this test drives Apply
+// rather than advance directly: a `Wrong` mark reaches the miss-on-a-hidden-word
+// branch, which sets Graded and would freeze the form; a drop has no single word
+// to name; and Enter must spend the form rather than reveal.
+func TestABatchFormStaysCurrentUntilSpent(t *testing.T) {
+	s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+
+	// Two marks, and the session must not have moved.
+	for i, r := range []rune{'y', 'n'} {
+		var outs []Outcome
+		s, outs = Apply(s, Input{Kind: InputRune, Rune: r})
+		if s.Index != 0 {
+			t.Fatalf("mark %d advanced the session to index %d — the form is not spent", i, s.Index)
+		}
+		if s.Done {
+			t.Fatalf("mark %d ended the session", i)
+		}
+		if s.Graded {
+			t.Fatalf("mark %d set Graded, so the next key means \"next word\" and the form is frozen", i)
+		}
+		if len(outs) == 0 || outs[0].Kind != OutcomeRecord {
+			t.Fatalf("mark %d recorded nothing: %+v", i, outs)
+		}
+	}
+
+	// The third mark spends it, and only then does the session move.
+	s, _ = Apply(s, Input{Kind: InputRune, Rune: 'y'})
+	if !s.Done {
+		t.Errorf("the form is spent and the session did not finish: index %d done %v", s.Index, s.Done)
+	}
+}
+
+// A single-word form is spent after one answer, which is every form that exists
+// and is the right default for one that does not implement the capability.
+func TestASingleWordFormIsSpentAfterOneAnswer(t *testing.T) {
+	s := NewSession([]Question{NewRecall("alpha", "a"), NewRecall("beta", "b")})
+	s, _ = Apply(s, Input{Kind: InputRune, Rune: 'y'})
+	if s.Index != 1 {
+		t.Errorf("index = %d after one answer, want 1 — a form that holds one word advances", s.Index)
+	}
+}
+
+// fakeBatch is the double: N words, one verdict each, spent when they are all
+// answered. A test double rather than *Board, so this file keeps asserting what
+// the SESSION does rather than what a form does.
+type fakeBatch struct {
+	words  []string
+	marked int
+}
+
+func newFakeBatch(words ...string) *fakeBatch { return &fakeBatch{words: words} }
+
+func (b *fakeBatch) Word() string   { return b.words[min(b.marked, len(b.words)-1)] }
+func (b *fakeBatch) Prompt() string { return "grid" }
+func (b *fakeBatch) Reveal() string { return "" }
+func (b *fakeBatch) Keys() string   { return "y = yes, n = no" }
+func (b *fakeBatch) Grade(r rune) (Verdict, bool) {
+	switch r {
+	case 'y':
+		b.marked++
+		return Correct, true
+	case 'n':
+		b.marked++
+		return Wrong, true
+	}
+	return Skipped, false
+}
+func (b *fakeBatch) Spent() bool { return b.marked >= len(b.words) }
+func (b *fakeBatch) Rest(v Verdict) []string {
+	rest := b.words[b.marked:]
+	b.marked = len(b.words)
+	return rest
+}
+
+// ENTER SPENDS A BATCH FORM AND SPACE MUST NOT.
+//
+// toInput maps BOTH Enter and space to InputReveal, deliberately — this
+// machine's own comment says so. Spending a board on that kind means a casual
+// space takes every unmarked word as No, which is the one action on that surface
+// that is expensive to undo, on the most careless key there is.
+//
+// So Enter carries its own kind. For every form that holds ONE word the two are
+// equivalent, which is what keeps 2.1 and 2.3 from noticing the split.
+func TestEnterSpendsABatchFormAndSpaceDoesNot(t *testing.T) {
+	t.Run("space leaves it alone", func(t *testing.T) {
+		s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+		s, outs := Apply(s, Input{Kind: InputReveal})
+		if s.Done || s.Index != 0 {
+			t.Errorf("space spent the form: index %d done %v", s.Index, s.Done)
+		}
+		for _, o := range outs {
+			if o.Kind == OutcomeRecord {
+				t.Errorf("space recorded %q — it marked a word nobody marked", o.Word)
+			}
+		}
+	})
+
+	t.Run("Enter takes the rest as Wrong", func(t *testing.T) {
+		s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+		s, _ = Apply(s, Input{Kind: InputRune, Rune: 'y'}) // one marked by hand
+		s, outs := Apply(s, Input{Kind: InputFinish})
+
+		var recorded []string
+		for _, o := range outs {
+			if o.Kind == OutcomeRecord {
+				if o.Verdict != Wrong {
+					t.Errorf("%q was committed as %v, want Wrong", o.Word, o.Verdict)
+				}
+				recorded = append(recorded, o.Word)
+			}
+		}
+		if len(recorded) != 2 {
+			t.Errorf("Enter recorded %v, want the two words left unmarked", recorded)
+		}
+		if !s.Done {
+			t.Error("Enter did not spend the form")
+		}
+	})
+
+	t.Run("a single-word form treats Enter exactly as space", func(t *testing.T) {
+		// The equivalence that keeps 2.1 and 2.3 from noticing the split.
+		reveal := NewSession([]Question{NewRecall("alpha", "a")})
+		finish := NewSession([]Question{NewRecall("alpha", "a")})
+		reveal, ro := Apply(reveal, Input{Kind: InputReveal})
+		finish, fo := Apply(finish, Input{Kind: InputFinish})
+		if reveal.Revealed != finish.Revealed || len(ro) != len(fo) || ro[0].Kind != fo[0].Kind {
+			t.Errorf("Enter and space diverged on a one-word form: %+v vs %+v", ro, fo)
+		}
+	})
+}
+
+// `d` IS REFUSED BY A FORM HOLDING MANY WORDS, rather than dropping a guess.
+//
+// InputDrop advances with Skipped and drops q.Word(). On a grid there is no
+// single current word, so q.Word() is whichever cell happens to be next — and
+// dropping the wrong word is SILENT and takes it out of the deck. The form does
+// nothing instead.
+func TestDropIsRefusedByABatchForm(t *testing.T) {
+	s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+	s, outs := Apply(s, Input{Kind: InputDrop})
+
+	for _, o := range outs {
+		if o.Kind == OutcomeDrop {
+			t.Errorf("a board dropped %q — on a grid `d` names no word", o.Word)
+		}
+	}
+	if s.Done || s.Index != 0 {
+		t.Errorf("`d` moved the session on: index %d done %v", s.Index, s.Done)
+	}
+}
