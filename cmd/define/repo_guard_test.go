@@ -1107,6 +1107,78 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 	}
 }
 
+// A PLAN'S `pinned by` COLUMN IS A CLAIM ABOUT THE TREE, and it is checkable.
+//
+// The sibling above checks the STATUS column — "did this window touch that
+// symbol" — and reads only the `name | file.go | status` rows, which left the
+// Done-when table's `pinned by` column unguarded. `#40`'s boundary review found
+// it: three rows cited four tests that had never been written, and the shipped
+// pins appeared only in the issue's Log. A Done-when row naming a test that does
+// not exist is worse than one naming none, because it reads as evidence.
+//
+// The issue's own Log had recorded the lesson one round earlier — "a hand-sweep
+// of a plan's tables does not hold, and this repo already knew it" — and the
+// hand-sweep failed again in the column the guard could not see. So the guard
+// grows rather than the discipline.
+//
+// EVERY backticked `Test*` identifier in an active plan, not only the Done-when
+// table's: a plan citing a test anywhere is making the same claim.
+func TestPlanCitesTestsThatExist(t *testing.T) {
+	root := repoRoot(t)
+	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) == 0 {
+		// conformance:inapplicable — every plan is archived at close, so no
+		// active plan is a legitimate state between issues.
+		t.Skip("no active plans")
+	}
+	// The tree's test functions, by name, read once.
+	declared := map[string]bool{}
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range regexp.MustCompile(`func (Test[A-Za-z0-9_]*)\(`).FindAllStringSubmatch(string(b), -1) {
+			declared[m[1]] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(declared) == 0 {
+		t.Fatal("found no test functions in the tree; this guard would pass vacuously")
+	}
+
+	cite := regexp.MustCompile("`(Test[A-Za-z0-9_]*)`")
+	checked := 0
+	for _, plan := range plans {
+		b, err := os.ReadFile(plan)
+		if err != nil {
+			t.Fatalf("reading %s: %v", plan, err)
+		}
+		for _, m := range cite.FindAllStringSubmatch(currentTruthOnly(string(b)), -1) {
+			checked++
+			if !declared[m[1]] {
+				t.Errorf("%s cites `%s` and no such test exists. A plan naming a test that was "+
+					"never written reads as evidence; write it, or cite the one that shipped.",
+					filepath.Base(plan), m[1])
+			}
+		}
+	}
+	if checked == 0 {
+		// conformance:inapplicable — a plan may legitimately name no test yet,
+		// which is the normal state before implementation begins.
+		t.Skip("no active plan cites a test by name")
+	}
+}
+
 // changeWindowBase is the commit this branch diverged from main.
 //
 // Through git(), which is FATAL, not Skip. That helper's own comment carries the

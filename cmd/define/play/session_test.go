@@ -842,3 +842,77 @@ func TestEveryRecordNamesItsForm(t *testing.T) {
 		}
 	}
 }
+
+// EVERY InputKind IS ANSWERED FOR A FORM HOLDING MANY WORDS, and the set is
+// derived from the sentinel rather than listed here.
+//
+// THIS IS THE CLASS, not the guard that was missing. D12 wrote down four Apply
+// paths that must consult Batch; the real shape is `InputKind x Batch`, and
+// `InputReveal` was a fifth cell nobody had enumerated — space set `Revealed`,
+// returned an `OutcomeReveal` carrying an arbitrary cell's word, and the loop
+// filed a blank reveal in the append-only buffer and pronounced a word nobody
+// asked about. The enumeration lived in prose, so prose is what failed.
+//
+// Ranging over numInputKinds means the NEXT kind added to this machine cannot
+// skip the question: it arrives here with no expectation and fails.
+func TestEveryInputKindIsAnsweredForABatchForm(t *testing.T) {
+	// What each kind must do to a board with three words and nothing marked.
+	want := map[InputKind]struct {
+		kinds    []OutcomeKind
+		advances bool
+		reveals  bool
+	}{
+		// A cell's key marks it: one record, and the form keeps the slot.
+		InputRune: {kinds: []OutcomeKind{OutcomeRecord}},
+		// NOTHING. A form holding many words has no hidden word to reveal.
+		InputReveal: {kinds: []OutcomeKind{OutcomeNone}},
+		// Spends the form: a record per unmarked word, then the advance.
+		InputFinish: {kinds: []OutcomeKind{OutcomeRecord, OutcomeRecord, OutcomeRecord, OutcomeNone}, advances: true},
+		// The mode flips and the frame redraws.
+		InputToggle: {kinds: []OutcomeKind{OutcomeNone}},
+		// A click on cell 0 marks it.
+		InputMark: {kinds: []OutcomeKind{OutcomeRecord}},
+		// Ends the sitting, keeping what was already recorded.
+		InputQuit: {kinds: []OutcomeKind{OutcomeDone}, advances: true},
+		// REFUSED: `d` names no word on a grid.
+		InputDrop: {kinds: []OutcomeKind{OutcomeNone}},
+	}
+	if len(want) != int(numInputKinds) {
+		t.Fatalf("this table covers %d input kinds and the machine has %d — a kind was added and nobody said what it means to a form holding many words", len(want), numInputKinds)
+	}
+
+	for k := InputKind(0); k < numInputKinds; k++ {
+		exp, ok := want[k]
+		if !ok {
+			t.Errorf("input kind %d has no expectation", k)
+			continue
+		}
+		b := NewBoard(cellsOf("alpha", "beta", "gamma"), 80)
+		s := NewSession([]Question{b, NewRecall("mesa", "a flat-topped hill")})
+		// A rune this form grades, and a cell it has.
+		next, outs := Apply(s, Input{Kind: k, Rune: '0', Cell: 0})
+
+		var got []OutcomeKind
+		for _, o := range outs {
+			got = append(got, o.Kind)
+		}
+		if len(got) != len(exp.kinds) {
+			t.Errorf("kind %d produced %v, want %v", k, got, exp.kinds)
+			continue
+		}
+		for i := range got {
+			if got[i] != exp.kinds[i] {
+				t.Errorf("kind %d outcome %d is %v, want %v", k, i, got[i], exp.kinds[i])
+			}
+		}
+		if next.Revealed {
+			t.Errorf("kind %d set Revealed on a form with nothing to reveal — the loop then writes a blank reveal and pronounces an arbitrary cell", k)
+		}
+		if next.Graded {
+			t.Errorf("kind %d set Graded on a board, which freezes it: the next key would mean \"next word\"", k)
+		}
+		if moved := next.Index != 0 || next.Done; moved != exp.advances {
+			t.Errorf("kind %d advanced=%v, want %v (index %d done %v)", k, moved, exp.advances, next.Index, next.Done)
+		}
+	}
+}

@@ -500,13 +500,19 @@ func boardFooter(q play.Question, fig sittingFigures) []string {
 	return append(strings.Split(q.Prompt(), "\n"), sittingBar(fig))
 }
 
-// boardChromeRows is what a board costs BESIDES its own rows: the keys prompt
-// above it and the bar below. Everything else it draws itself, and Rows() counts
-// it.
-const boardChromeRows = 2
+// barRows is the ONE row the bar is guaranteed below the board.
+//
+// A minimum rather than a measurement, and that asymmetry with promptRows is
+// deliberate. `fitFooter` drops whole rows from the END, and the board's own
+// rows come FIRST — so if the bar turns out to need three rows on a narrow
+// terminal, the bar is what gets dropped and the board is still whole. That is
+// the sacrifice order D10 wanted, and it means the bar's real height cannot cost
+// the board anything. The prompt is different: it sits ABOVE the footer and
+// takes its share off the top, so its real height has to be charged.
+const barRows = 1
 
-// fitsABoard reports whether a terminal this tall can draw a board of gridRows
-// WHOLE (D15).
+// fitsABoard reports whether a terminal this tall can draw a board of boardRows
+// WHOLE, given a keys prompt of promptRows (D15).
 //
 // A board that cannot be drawn whole is not a board, so the words go to form 2.3
 // for that sitting instead — which is a complete answer rather than a degraded
@@ -515,8 +521,15 @@ const boardChromeRows = 2
 // terminal would scroll to fit it, and a click at viewport row R would stop
 // meaning the word drawn there. Refusing to offer the board keeps fitFooter's
 // guarantee true rather than negotiating with it.
-func fitsABoard(termRows, boardRows int) bool {
-	return boardRows+boardChromeRows <= termRows
+//
+// promptRows is MEASURED and passed in, because a constant here was a second
+// owner of a height `displayRows` already computes. It was 1, and the board's
+// keys line is seventy-six columns while the board was offered from twenty — so
+// on a narrow terminal `fitFooter` silently dropped the bar, then the panel, and
+// at twenty-five columns the TOGGLE, which is the one owner of which mark is
+// live while every mark is irreversible.
+func fitsABoard(termRows, boardRows, promptRows int) bool {
+	return boardRows+promptRows+barRows <= termRows
 }
 
 // formCell offers a click to the form on screen and reports which of its cells
@@ -647,10 +660,13 @@ func boardsFor(keys []string, prog map[string]schedule.Progress, opt options) (s
 
 // boardFits reports whether this terminal can draw a board of these words whole.
 //
-// It builds a PROBE and asks it, because the board owns its own layout: how many
-// columns fit, and therefore how many rows, is arithmetic only the form does.
-// Glosses are left out — the panel is one row whatever it says, so they cannot
-// change the answer.
+// It builds a PROBE and asks it TWO questions, because both heights belong to
+// something else: the board owns its layout — how many columns fit, and
+// therefore how many rows — and `displayRows` owns how tall a line is once the
+// terminal has wrapped it. Neither is re-derived here.
+//
+// Glosses are left out of the probe: the panel is one row whatever it says, so
+// they cannot change the answer.
 //
 // The width check is separate and blunt: below minWrapWidth this program already
 // treats the terminal as too narrow to lay text out at all, and a board there
@@ -663,7 +679,10 @@ func boardFits(words []string, opt options) bool {
 	for i, w := range words {
 		cells[i] = play.Cell{Word: w}
 	}
-	return fitsABoard(opt.rows, play.NewBoard(cells, opt.width).Rows())
+	probe := play.NewBoard(cells, opt.width)
+	// THE PROMPT THE LOOP WILL ACTUALLY DRAW, measured at this width — the same
+	// expression livePrompt returns for this form, so the two cannot disagree.
+	return fitsABoard(opt.rows, probe.Rows(), displayRows(gradePrompt(probe), opt.width))
 }
 
 // todaysQuestions builds the queue: fold the log, ask the schedule, render each

@@ -2964,3 +2964,76 @@ doc had drifted onto `newsFeedFor`, `checkPlanName`'s onto `coreConceptsSection`
 **When a finding is "a comment is in the wrong place", ask whether the class is
 walkable; here it was fifty lines.**
 
+
+## An enumeration that lives in prose fails silently the next time the set grows (`#40`)
+
+`#40` D12 wrote down FOUR `Apply` paths that must consult the `Batch` capability,
+found by measurement, and the plan treated that list as the deliverable. The real
+shape is `InputKind × Batch`, and `InputReveal` was a fifth cell nobody had
+counted — so space on a board set `Revealed`, handed the loop an arbitrary cell's
+word to pronounce and a blank reveal to file in the append-only buffer. The
+boundary review reproduced it by execution.
+
+**The deliverable is the enumeration, not the guard.** `numInputKinds` is now a
+sentinel and a table test ranges over it, so the next kind added arrives with no
+expectation and fails. `choice.go`'s `numAxes` had already established the
+pattern in the same package — *"the guard derives the set from this, never from a
+list"* — and the list was written down anyway.
+
+Ask, of any "the following N places must X": **what makes N?** If it is a
+property of a type, derive it. If it is prose, it is already stale.
+
+## A constant standing in for a measurement someone else already computes (`#40`)
+
+`boardChromeRows = 2` charged a board's keys prompt one row. That line is 76
+columns wide and the board was offered from 20, so below 76 the live edge was
+under-budgeted and the footer silently dropped rows from the end — the bar, then
+the panel, then the mode toggle, which is the ONE owner of which mark is live on
+a surface where every mark is irreversible.
+
+`displayRows` already answers "how tall is this line at this width". The
+constant was a second, implicit owner of it. **When a budget charges a component
+a fixed height, ask whether anything in the tree already measures that
+component** — and if the answer is yes, the constant is the bug waiting.
+
+The fix kept ONE constant deliberately, and the asymmetry is the interesting
+part: the bar keeps a one-row minimum because `fitFooter` drops from the END and
+the bar is last, so its real height cannot cost the board anything. A budget only
+has to measure what it can be squeezed by.
+
+## A `## Revisions` section placed mid-document truncates every guard that reads it (`#40`)
+
+`currentTruthOnly` cuts a plan at its first `## Revisions`, so the guards see only
+what is above it. `#40`'s plan grew two such sections, the first sitting above
+`## Done when` — and both `TestPlanTableStatusMatchesTheChangeWindow` and the new
+`TestPlanCitesTestsThatExist` were reading a truncated file and passing on it.
+
+Found only because the new guard was mutation-checked: citing a test that does
+not exist left it green. **A guard added without a mutation is a guard nobody has
+seen fail**, and this one would have shipped certifying nothing.
+
+Revisions are APPENDED, once, at the END. AGENTS.md already says "append"; this
+is what the word is doing.
+
+## An in-memory double cannot pin a claim about persistence (`#40`)
+
+`yaml:"-"` on a new `ReviewEvent` field left the whole suite green: the loop's
+tests read through `store.Mem`, which keeps events in memory, so the field
+reached every assertion without ever reaching a file. The field exists to be
+queried months later, and a field that reaches only memory answers nothing.
+
+Same shape as `#30`'s rule about doubles standing in for the object that joins
+two separately-pinned halves — here the halves are the struct and the file, and
+the thing between them is the tag. **A claim about what SURVIVES needs the real
+writer.**
+
+## A Done-when that names a proxy is a hypothesis, and measuring it can falsify the proxy (`#40`)
+
+Done-when 13 asked for "materially fewer KEYSTROKES than form 2.3". Measured:
+1.00 per word against 1.00, or 1.12 against 1.25 with misses. A wash. The claim
+the Spec actually makes — *"a hundred mature words cost what ten fragile ones
+cost"* — is about what the learner READS, and there the ratio is 20-40x.
+
+The wrong response is to find a framing under which the proxy passes. **Say which
+measurement the claim rests on, and move the row.** A proxy that survives its own
+measurement unexamined is how a Done-when becomes decoration.

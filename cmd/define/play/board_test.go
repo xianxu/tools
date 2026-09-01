@@ -643,3 +643,51 @@ func TestTheToggleAndPanelRowsAreNotCells(t *testing.T) {
 		}
 	}
 }
+
+// Rows() IS len(Prompt()'s lines), at every size including none.
+//
+// It was arithmetic that happened to match rather than a construction that had
+// to: with no grid rows the separator produced two blanks instead of one, so an
+// empty board's Prompt yielded four lines while Rows() said three. Unreachable
+// through boardsFor, and that is exactly why it needs a test — the invariant is
+// defended in Word() and panelLine() and was dropped here.
+func TestRowsIsWhatPromptDraws(t *testing.T) {
+	for n := 0; n <= MaxBoardWords; n++ {
+		for _, w := range []int{20, 40, 80} {
+			b := NewBoard(cellsOf(sixteen[:n]...), w)
+			if got, want := len(strings.Split(b.Prompt(), "\n")), b.Rows(); got != want {
+				t.Errorf("%d words at %d columns: Prompt drew %d lines, Rows() says %d:\n%q",
+					n, w, got, want, b.Prompt())
+			}
+		}
+	}
+}
+
+// A CLICK IN A CELL'S OWN PADDING MARKS THAT CELL, never a neighbour.
+//
+// The other half of "the gutter is not a target": a short word in a column sized
+// for a long one leaves blanks after it, and those blanks belong to it. Written
+// down as a test because it reads as clicking empty space.
+func TestACellsPaddingBelongsToIt(t *testing.T) {
+	// "keel" is short and "arrondissement" sets the column width.
+	b := NewBoard(cellsOf("arrondissement", "keel", "mesa", "run"), 80)
+	line := strings.Split(b.Prompt(), "\n")[0]
+	start := strings.Index(line, "[1] ")
+	if start < 0 {
+		t.Fatalf("no second cell in %q", line)
+	}
+	// One column past the end of "keel", which is still inside its cell.
+	col := start + len("[1] ") + len("keel")
+	got, ok := b.CellAt(0, col)
+	if !ok || got != 1 {
+		t.Errorf("CellAt(0,%d) = (%d,%v) in cell 1's padding, want cell 1", col, got, ok)
+	}
+	// ...and the gutter after the padding is still nobody's.
+	gutter := strings.Index(line, "[2] ") - 1
+	if gutter <= col {
+		t.Fatalf("could not find a gutter column after %d in %q", col, line)
+	}
+	if got, ok := b.CellAt(0, gutter); ok {
+		t.Errorf("a click in the gutter at column %d marked cell %d", gutter, got)
+	}
+}

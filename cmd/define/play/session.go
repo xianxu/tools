@@ -60,6 +60,18 @@ const (
 	// deck" is true whatever form is asking about it, so every future form gets
 	// it for free. It is also not an assessment — dropping records no review.
 	InputDrop
+	// numInputKinds is the sentinel a test derives the SET from, never a list.
+	//
+	// It exists because D12 wrote down four Apply paths that must consult Batch
+	// and the true matrix is InputKind x Batch — `InputReveal` was the fifth
+	// cell and nothing noticed, because the enumeration lived in prose. A form
+	// holding many words has no single hidden word to reveal, so space set
+	// `Revealed` and handed the loop an arbitrary cell's word to pronounce and a
+	// blank reveal to file in the append-only buffer.
+	//
+	// TestEveryInputKindIsAnsweredForABatchForm ranges over this, so the NEXT
+	// kind added cannot skip the question. Same move as choice.go's `numAxes`.
+	numInputKinds
 )
 
 // Input is one decoded keystroke.
@@ -317,6 +329,20 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 		fallthrough
 
 	case InputReveal:
+		// A FORM HOLDING MANY WORDS HAS NOTHING TO REVEAL, and this is the fifth
+		// Apply path that has to ask (D12 enumerated four).
+		//
+		// Its words are all on screen from the first frame and its marks are
+		// self-report over a grid; there is no hidden answer to earn. Without
+		// this, space set `Revealed` and returned OutcomeReveal carrying
+		// `q.Word()` — which on a grid is whichever cell was marked last, or the
+		// first cell before any mark — so the loop filed a blank reveal in the
+		// append-only buffer and played the pronunciation of a word nobody
+		// asked about. Space is the natural key to press: it reveals on both
+		// other forms, and a board's prompt does not mention it.
+		if batchOf(q) != nil {
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
 		// The graded case is handled above: once graded they mean "next".
 		if s.Revealed {
 			return s, []Outcome{{Kind: OutcomeNone}}

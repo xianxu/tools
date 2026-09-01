@@ -391,7 +391,68 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
 ---
 
+## Done when
+
+Every row's pin is a PREDICATE OVER BEHAVIOUR. **Every `red when` cell is EXECUTED as a mutation at the boundary and the result recorded per row** (`#38` BR-16: a row that survives its own mutation pins nothing).
+
+| # | claim | pinned by | red when |
+|---|---|---|---|
+| 1 | a sitting of eligible words presents them as a grid | `TestASittingOfDueWordsIsABoard` | `boardsFor` sends them to 2.3 one at a time |
+| 2 | every mark reaches the log as it happens | `TestEveryMarkOnABoardIsRecordedImmediately` — counting store, N marks, N events before the sitting ends | marks are batched to the end, losing them to Ctrl-C |
+| 3 | **Enter takes the unmarked as `No`, and SPACE DOES NOTHING AT ALL** | `TestEnterSpendsABatchFormAndSpaceDoesNot`, `TestToInputSplitsEnterFromSpaceAndCarriesTab`, `TestEveryInputKindIsAnsweredForABatchForm` (R7) | the merged Enter/space kind spends the board, so a casual keystroke demotes sixteen words — or space is merely harmless rather than inert, and files a blank reveal while pronouncing an arbitrary cell |
+| 4 | **Ctrl-C leaves unmarked words UNTOUCHED, and marked ones recorded** | `TestCtrlCCancelsABoardWithoutMovingUnmarkedWords` — fold the log after, boxes unchanged | a board writes its marks at the end instead of as they land |
+| 5 | a `No` mark does not freeze the board | `TestABoardRunsThroughTheSession`, and `TestEveryInputKindIsAnsweredForABatchForm` asserts NO kind sets `Graded` | the miss-on-hidden branch sets `Graded` for a batch form |
+| 6 | **the mouse-less path works, and `d` still drops** | `TestABoardIsMarkableByKeyAlone`, `TestDOnABoardIsNotACellLabel` | labels include `d`, or the keyboard path is missing and the board degrades to "everything is No" |
+| 7 | a click marks on a board and plays everywhere else | `TestAClickOnABoardMarksIt`, and `#38`'s `TestPlayClickActsAndIsNotAnAnswer` UNCHANGED | the loop learns what a board is instead of asking |
+| 8 | the session still learns nothing about which form is asking | `TestSessionIsFormAgnostic` unchanged, plus `TestTheSessionNamesNoForm` — a grep for every concrete form in `session.go`'s code, with a premise check that the capabilities are there | `Apply` type-switches instead of consulting `Batch` |
+| 9 | **every review event records the form that asked** | `TestEveryRecordNamesItsForm` over all three forms and all three record-building paths, `TestAReviewEventNamesItsFormOnDisk`, `TestYAMLRoundTripsTheFormThatAsked` | the field is written for one form and defaulted for the others, which is worse than absent |
+| 10 | **a board is never drawn clipped** | `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard` and `TestFitsABoardCountsTheWholeLiveEdge`, both across a WIDTH axis (R8), and `TestPaintFitsTheTerminalAndParksTheCursor` UNCHANGED | `fitFooter` is given a floor, so `footerRows` exceeds `termRows - promptRows`, the terminal scrolls, and a click lands on the wrong word |
+| 11 | the outcome survives the sitting | `TestABoardLeavesItsRelearnListInTheTranscript`, `TestABoardWithNothingToRelearnWritesNoLine`, `TestCtrlCOnABoardStillLeavesItsRelearnList` | the board is live edge and vanishes whole |
+| 12 | the bar counts WORDS | `TestTheBarCountsWordsNotSlots` | `total` stays `len(s.Questions)` and a 20-word sitting reads "0 of 2" |
+| 13 | the board is materially cheaper per word, **measured as what the learner READS** | `TestABoardCostsFarLessPerWordThanMeaningChoice` — one keystroke per word AND at least ten to one on transcript lines (R5) | the grid asks for more than one keystroke per word, or the board's rows reach the buffer and the reading cost collapses to 2.3's |
+| 14 | the real terminal draws and clicks it | `TestPTYPlayBoardIsDrawnAndClickable`, extending `#41`'s and `#38`'s pty rows | it works in-process and not on a tty |
+
+---
+
+## Verification before close
+
+```bash
+go test ./... && go test ./cmd/define/ -race
+go test -tags conformance ./cmd/define/    # unsandboxed
+```
+
+Then on a real terminal with a deck holding mature words: `define --play`, confirm the grid appears for them and single questions for the fragile ones, sweep a board, and check the event log holds one event per mark.
+
+**Close:** one boundary, one `sdlc close`, one publish.
+
+## Open for the operator
+
+All settled as of 2026-09-01. Recorded here so the list is visibly closed rather
+than quietly dropped:
+
+| question | answer |
+|---|---|
+| Enter vs Ctrl-C | Enter commits the unmarked as No; Ctrl-C cancels, and cancelling is free (D3) |
+| the box threshold | the box stays the selector, lowered to ≥ 3 (D4) |
+| `unsure` | deleted — "unsure means no" (D7) |
+| telemetry | record the form on every review event (D4a) |
+| the toggle's position | the footer, so `screen` grows no header (D6) |
+| a mouse-less terminal | labelled keys `0`–`9`, `a b c e f g`, printed beside each word (D5) |
+
+One thing I chose rather than asked, flagged because it is the only number in
+here without an argument behind it: **box ≥ 3** is a starting point, not a
+derived threshold. D4a exists so it can be replaced by evidence.
+
 ## Revisions
+
+> APPENDED, ONCE, AT THE END — and the placement is load-bearing rather than
+> tidiness. `currentTruthOnly` (repo_guard_test.go) truncates a plan at its first
+> `## Revisions`, so a revisions section inserted mid-document hides everything
+> below it from every guard that reads "current truth only". This plan had two,
+> the first above `## Done when`, and both `TestPlanTableStatusMatchesTheChangeWindow`
+> and the new `TestPlanCitesTestsThatExist` were silently reading a truncated
+> file. Found while mutation-checking the second guard, which is the only reason
+> it was found at all.
 
 ### 2026-09-01 (R1) — the form draws its own live edge, and the panel is the last mark's gloss
 
@@ -438,6 +499,18 @@ the way the issue's own Revisions section had already written down.
   names four new symbols and ships eleven is as wrong as one whose status column
   lies.
 
+### 2026-09-01 (R3) — `Form()` is on the `Question` interface, not an optional capability
+
+Cited by the Core-concepts table and never written down, which is its own small
+instance of the class R6 is about.
+
+`#40` adds four OPTIONAL capabilities — `Batch`, `Moded`, `Grid`, beside the
+existing `Missed` and `SelfRated` — so the obvious shape for D4a's telemetry was
+a sixth. It is not, and the reason is the plan's own red-when for Done-when 9:
+*"the field is written for one form and defaulted for the others, which is worse
+than absent"*. An optional capability defaults to the empty string, and an event
+that says "some form" looks like data. On the interface, a new form cannot
+compile without naming itself — the same argument that put `Keys()` there.
 
 ### 2026-09-01 (R4) — the bar's total is set in the loop, not in `sittingFigures`
 
@@ -446,30 +519,6 @@ It does not: `sittingFigures` is a struct of numbers and never knew what a
 question was. What changes is `fig.total = len(s.Questions)` in the loop's
 `refresh`, which is now `sittingWords(s.Questions)`. Corrected, and the new
 helpers T8-T10 shipped are listed in the table above.
-
-
-## Done when
-
-Every row's pin is a PREDICATE OVER BEHAVIOUR. **Every `red when` cell is EXECUTED as a mutation at the boundary and the result recorded per row** (`#38` BR-16: a row that survives its own mutation pins nothing).
-
-| # | claim | pinned by | red when |
-|---|---|---|---|
-| 1 | a sitting of eligible words presents them as a grid | `TestASittingOfDueWordsIsABoard` | `boardsFor` sends them to 2.3 one at a time |
-| 2 | every mark reaches the log as it happens | `TestEveryMarkOnABoardIsRecordedImmediately` — counting store, N marks, N events before the sitting ends | marks are batched to the end, losing them to Ctrl-C |
-| 3 | **Enter takes the unmarked as `No`, and SPACE DOES NOT** | `TestEnterCommitsTheUnmarkedAsNo`, `TestSpaceDoesNotCommitABoard` | the merged Enter/space kind spends the board, so a casual keystroke demotes sixteen words |
-| 4 | **Ctrl-C leaves unmarked words UNTOUCHED, and marked ones recorded** | `TestCtrlCCancelsABoardWithoutMovingUnmarkedWords` — fold the log after, boxes unchanged | a board writes its marks at the end instead of as they land |
-| 5 | a `No` mark does not freeze the board | `TestANoMarkDoesNotEndTheBoard` | the miss-on-hidden branch sets `Graded` for a batch form |
-| 6 | **the mouse-less path works, and `d` still drops** | `TestABoardIsMarkableByKeyAlone`, `TestDOnABoardIsNotACellLabel` | labels include `d`, or the keyboard path is missing and the board degrades to "everything is No" |
-| 7 | a click marks on a board and plays everywhere else | `TestAClickOnABoardMarksIt`, and `#38`'s `TestPlayClickActsAndIsNotAnAnswer` UNCHANGED | the loop learns what a board is instead of asking |
-| 8 | the session still learns nothing about which form is asking | `TestSessionIsFormAgnostic` unchanged, plus a grep for `*Board` in `session.go` finding nothing | `Apply` type-switches instead of consulting `Batch` |
-| 9 | **every review event records the form that asked** | `TestAReviewEventNamesItsForm` over all three forms | the field is written for one form and defaulted for the others, which is worse than absent |
-| 10 | **a board is never drawn clipped** | `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard`, and `TestPaintFitsTheTerminalAndParksTheCursor` UNCHANGED | `fitFooter` is given a floor, so `footerRows` exceeds `termRows - promptRows`, the terminal scrolls, and a click lands on the wrong word |
-| 11 | the outcome survives the sitting | `TestABoardLeavesItsRelearnListInTheTranscript` | the board is live edge and vanishes whole |
-| 12 | the bar counts WORDS | `TestTheBarCountsWordsNotSlots` | `total` stays `len(s.Questions)` and a 20-word sitting reads "0 of 2" |
-| 13 | the board is materially cheaper per word, **measured as what the learner READS** | `TestABoardCostsFarLessPerWordThanMeaningChoice` — one keystroke per word AND at least ten to one on transcript lines (R5) | the grid asks for more than one keystroke per word, or the board's rows reach the buffer and the reading cost collapses to 2.3's |
-| 14 | the real terminal draws and clicks it | a pty row extending `#41`'s and `#38`'s | it works in-process and not on a tty |
-
----
 
 ### 2026-09-01 (R5) — the keystroke proxy was the wrong instrument, and the measurement said so
 
@@ -503,32 +552,50 @@ measuring it can falsify the proxy rather than the claim.** The right response i
 to say which measurement the claim actually rests on, not to find a framing under
 which the proxy passes.
 
+### 2026-09-01 (R6) — the Done-when table cited four tests that were never written
 
-## Verification before close
+Rows 3, 5 and 9 named `TestEnterCommitsTheUnmarkedAsNo`,
+`TestSpaceDoesNotCommitABoard`, `TestANoMarkDoesNotEndTheBoard` and
+`TestAReviewEventNamesItsForm`. None exists; the shipped pins are
+`TestEnterSpendsABatchFormAndSpaceDoesNot`, `TestABoardRunsThroughTheSession` and
+`TestEveryRecordNamesItsForm`. Corrected above.
 
-```bash
-go test ./... && go test ./cmd/define/ -race
-go test -tags conformance ./cmd/define/    # unsandboxed
-```
+**The class, not the instance.** `TestPlanTableStatusMatchesTheChangeWindow`
+exists because hand-sweeping a plan's tables does not hold — and it reads only
+the `name | file.go | status` rows, so the `pinned by` column was unguarded and a
+plan could cite a test that does not exist. Extended:
+`TestPlanCitesTestsThatExist` resolves every backticked `Test*` identifier in an
+active plan to a `func Test…(` in the tree.
 
-Then on a real terminal with a deck holding mature words: `define --play`, confirm the grid appears for them and single questions for the fragile ones, sweep a board, and check the event log holds one event per mark.
+### 2026-09-01 (R7) — D14's "`InputReveal` does nothing on a batch form" was not implemented
 
-**Close:** one boundary, one `sdlc close`, one publish.
+Space set `Revealed` and returned an `OutcomeReveal` carrying `q.Word()` — which
+on a grid is the last-marked cell, or the first cell before any mark — so the
+loop filed a blank reveal in the append-only buffer and played the pronunciation
+of a word nobody asked about. Space is the natural key to press: it reveals on
+both other forms and the board's own prompt does not mention it.
 
-## Open for the operator
+**D12's enumeration was the defect, not the missing guard.** It wrote down four
+`Apply` paths that must consult `Batch`; the real shape is `InputKind × Batch`
+and `InputReveal` was a fifth cell. An enumeration that lives in prose fails
+silently the next time the set grows. `numInputKinds` is now a sentinel and
+`TestEveryInputKindIsAnsweredForABatchForm` ranges over it, so a kind added later
+arrives with no expectation and fails.
 
-All settled as of 2026-09-01. Recorded here so the list is visibly closed rather
-than quietly dropped:
+### 2026-09-01 (R8) — D15's fit condition is MEASURED, not constant
 
-| question | answer |
-|---|---|
-| Enter vs Ctrl-C | Enter commits the unmarked as No; Ctrl-C cancels, and cancelling is free (D3) |
-| the box threshold | the box stays the selector, lowered to ≥ 3 (D4) |
-| `unsure` | deleted — "unsure means no" (D7) |
-| telemetry | record the form on every review event (D4a) |
-| the toggle's position | the footer, so `screen` grows no header (D6) |
-| a mouse-less terminal | labelled keys `0`–`9`, `a b c e f g`, printed beside each word (D5) |
+`boardChromeRows` charged the keys prompt a hard-coded one row. That line is 76
+columns and a board is offered from 20, so below 76 the live edge was
+under-budgeted and `fitFooter` dropped rows from the end: the bar under 76
+columns, the panel at 38 or less, and the TOGGLE at 25 or less — the one owner of
+which mark is live, on a surface where every mark is irreversible.
 
-One thing I chose rather than asked, flagged because it is the only number in
-here without an argument behind it: **box ≥ 3** is a starting point, not a
-derived threshold. D4a exists so it can be replaced by evidence.
+`fitsABoard(termRows, boardRows, promptRows)` now takes the measured height, and
+`boardFits` computes it from the same `gradePrompt` the loop will draw. The bar
+keeps a one-row MINIMUM rather than a measurement, and the asymmetry is the
+point: `fitFooter` drops from the END and the board's own rows come first, so a
+bar that turns out to need three rows is dropped instead of costing the board
+anything. The prompt sits above the footer and takes its share off the top, so
+its real height has to be charged.
+
+Both fit tests gained a width axis.

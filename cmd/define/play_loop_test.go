@@ -2264,28 +2264,52 @@ func TestABoardsPromptDoesNotOfferTheDropKey(t *testing.T) {
 // fitFooter's budget invariant true instead of negotiating with it.
 func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 	for _, tc := range []struct {
-		termRows, boardRows int
-		want                bool
+		termRows, boardRows, promptRows int
+		want                            bool
 	}{
-		{10, 7, true}, // a 4x4 board: 4 grid rows plus 3 of its own chrome
-		{9, 7, true},  // exactly: the board, the keys prompt and the bar
-		{8, 7, false}, // one short, and half a board is unusable
-		{24, 7, true}, // an ordinary terminal
-		{6, 4, true},  // a board of one grid row
-		{5, 4, false}, //
-		{0, 4, false}, //
-		{100, 28, true},
+		{10, 7, 1, true}, // a 4x4 board: 4 grid rows plus 3 of its own chrome
+		{9, 7, 1, true},  // exactly: the board, a one-row keys prompt, the bar
+		{8, 7, 1, false}, // one short, and half a board is unusable
+		{24, 7, 1, true}, // an ordinary terminal
+		{6, 4, 1, true},  // a board of one grid row
+		{5, 4, 1, false}, //
+		{0, 4, 1, false}, //
+		{100, 28, 1, true},
+		// AND THE PROMPT'S REAL HEIGHT, which is what a constant got wrong: the
+		// keys line is 76 columns wide and a board is offered from 20.
+		{9, 7, 2, false},
+		{10, 7, 2, true},
+		{12, 7, 4, true},
+		{11, 7, 4, false},
 	} {
-		if got := fitsABoard(tc.termRows, tc.boardRows); got != tc.want {
-			t.Errorf("fitsABoard(%d rows, a %d-row board) = %v, want %v", tc.termRows, tc.boardRows, got, tc.want)
+		if got := fitsABoard(tc.termRows, tc.boardRows, tc.promptRows); got != tc.want {
+			t.Errorf("fitsABoard(%d rows, a %d-row board, a %d-row prompt) = %v, want %v",
+				tc.termRows, tc.boardRows, tc.promptRows, got, tc.want)
 		}
 	}
-	// The chrome it counts is what boardFooter actually ADDS, plus the prompt —
-	// two owners of that number would put half a board on screen.
+	// The rows it counts below the board are the rows boardFooter actually
+	// DRAWS. Two owners of that number would put half a board on screen.
 	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80)
 	footer := boardFooter(board, sittingFigures{})
-	if got, want := len(footer)-board.Rows()+1, boardChromeRows; got != want {
-		t.Errorf("boardFooter adds %d rows to the board's own, plus the prompt, but fitsABoard budgets %d", got, want)
+	if got, want := len(footer)-board.Rows(), barRows; got != want {
+		t.Errorf("boardFooter adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
+	}
+	// AND THE MEASUREMENT REACHES boardFits: at a width where the keys line
+	// wraps, a board that would fit a one-row prompt must be refused.
+	//
+	// Read off the real prompt rather than assumed, so the numbers here cannot
+	// drift from the wording.
+	probe := play.NewBoard(boardCells("keel", "mesa", "run", "bank"), 40)
+	pr := displayRows(gradePrompt(probe), 40)
+	if pr < 2 {
+		t.Fatalf("the keys prompt is %d row(s) at 40 columns; this case is vacuous", pr)
+	}
+	tight := probe.Rows() + 1 + barRows // enough for a ONE-row prompt, and no more
+	if boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight}) {
+		t.Errorf("a %d-row terminal was offered a board whose prompt needs %d rows", tight, pr)
+	}
+	if !boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight + pr - 1}) {
+		t.Errorf("a terminal with exactly enough room refused the board")
 	}
 }
 
@@ -2454,6 +2478,13 @@ func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
 		{"one row too short", options{width: defaultCols, rows: 8}},
 		{"a small window", options{width: defaultCols, rows: 5}},
 		{"too narrow to lay out at all", options{width: 12, rows: 60}},
+		// THE WIDTH AXIS. The keys line is 76 columns, so below that it wraps
+		// and takes rows off the top that the board was counting on — which a
+		// constant chrome budget missed entirely, and `fitFooter` then dropped
+		// the bar, the panel and eventually the TOGGLE off a board that had
+		// been offered anyway.
+		{"narrow enough that the prompt wraps past the height", options{width: 40, rows: 10}},
+		{"very narrow, where the prompt takes four rows", options{width: 24, rows: 13}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			single, boards := boardsFor(keys, prog, tc.opt)
@@ -2689,8 +2720,16 @@ func TestABoardCostsFarLessPerWordThanMeaningChoice(t *testing.T) {
 
 	// ONE KEYSTROKE PER WORD, which is the plan's red-when: "the grid asks for
 	// more than one keystroke per word".
-	if len(boardKeys) > len(words) {
-		t.Errorf("the board took %d keystrokes for %d words", len(boardKeys), len(words))
+	//
+	// Asserted against the BOARD, not against the script: `len(boardKeys) >
+	// len(words)` was the first version and it cannot fail, because boardKeys is
+	// built by ranging over words. What has to be true is that those keystrokes
+	// SPENT the board — one per word, and nothing left owing.
+	if len(boardKeys) != len(words) {
+		t.Fatalf("the script is %d keystrokes for %d words; this row asserts nothing", len(boardKeys), len(words))
+	}
+	if !board.Spent() {
+		t.Errorf("%d keystrokes did not finish a board of %d words — it asks for more than one per word", len(boardKeys), len(words))
 	}
 	// AND THE READING COST, which is where the load argument actually lives.
 	perWordBoard := float64(boardLines) / float64(len(words))
@@ -2783,6 +2822,65 @@ func TestCtrlCCancelsABoardWithoutMovingUnmarkedWords(t *testing.T) {
 	}
 	if after["quokka"] == before["quokka"] {
 		t.Errorf("quokka WAS marked and its progress did not change — the premise above is vacuous")
+	}
+	// Both marks were `yes`, so there is nothing to relearn and no line — the
+	// interrupted board that DOES have one is the sibling test below.
+	if strings.Contains(unstyled(live.Transcript()), "relearn") {
+		t.Errorf("an all-yes board wrote a relearn line:\n%s", live.Transcript())
+	}
+}
+
+// Ctrl-C mid-board still writes the relearn line for what WAS marked no.
+func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, _ := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 4)
+	keys <- Key{Kind: KeyTab}             // switch to marking no
+	keys <- Key{Kind: KeyRune, Rune: '2'} // parrot: no
+	keys <- Key{Kind: KeyInterrupt}       // ...and stop, three unmarked
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	script := unstyled(live.Transcript())
+	if !strings.Contains(script, "relearn: parrot") {
+		t.Errorf("an interrupted board lost the outcome it had:\n%s", script)
+	}
+	for _, w := range []string{"quokka", "mesa", "bank"} {
+		if strings.Contains(script, w) {
+			t.Errorf("%q was never marked and is in the relearn list:\n%s", w, script)
+		}
+	}
+}
+
+// THE BOARD'S OWN ROWS COME FIRST IN THE FOOTER, IN ORDER, and formCell reads a
+// footer entry index straight back as a grid row — so anything inserted above
+// the grid silently shifts every cell.
+//
+// `boardFooter`'s comment calls that load-bearing and nothing tested it. A second
+// live-edge form, or anything wanting a row above the grid, is where it breaks.
+func TestBoardFooterPutsTheFormsOwnRowsFirst(t *testing.T) {
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80)
+	footer := boardFooter(board, sittingFigures{})
+	own := strings.Split(board.Prompt(), "\n")
+	if len(footer) < len(own) {
+		t.Fatalf("the footer is %d rows and the board draws %d", len(footer), len(own))
+	}
+	for i, row := range own {
+		if footer[i] != row {
+			t.Errorf("footer entry %d is %q, but the board's own row %d is %q — formCell reads that index back as a grid row", i, footer[i], i, row)
+		}
+	}
+	if len(footer) != len(own)+barRows {
+		t.Errorf("the footer is %d rows, want the board's %d plus %d for the bar", len(footer), len(own), barRows)
 	}
 }
 

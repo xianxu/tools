@@ -252,15 +252,25 @@ func (b *Board) Word() string {
 // ASCII rather than ✓/✗, and the reason is geometry rather than taste: those
 // runes are East Asian Ambiguous, so some terminals give them two columns. A
 // cell one column wider than the board believes is exactly the failure D15 is
-// written against — a click that lands on the wrong word. Colour is what makes
-// the marks pop, and the loop adds it: keeping the grid in the live edge is what
-// bought colour in the first place (D10).
+// written against — a click that lands on the wrong word.
+//
+// NO COLOUR YET, and that is DEFERRED rather than done. Keeping the grid in the
+// live edge is what makes colour possible at all (D10) — a grid filed in the
+// append-only buffer could never change — but nothing styles these marks today,
+// and the glyph is what distinguishes them. An earlier version of this comment
+// said "the loop adds it", which was a description of an intention rather than
+// of the code.
 func (b *Board) Prompt() string {
-	var s string
+	// BUILT AS A SLICE, so len(lines) IS Rows() rather than merely equalling it.
+	//
+	// Concatenation got this wrong for an empty board: with no grid rows the
+	// separator's "\n\n" produced two blanks instead of one, so Prompt yielded
+	// four lines where Rows() said three. Unreachable — boardsFor never builds an
+	// empty board — but Word() and panelLine() both defend the empty case, and an
+	// invariant held in three places and dropped in a fourth is worse than one
+	// held nowhere.
+	lines := make([]string, 0, b.Rows())
 	for r, rows := 0, b.gridRows(); r < rows; r++ {
-		if r > 0 {
-			s += "\n"
-		}
 		line := ""
 		for c := 0; c < b.cols; c++ {
 			i := r*b.cols + c
@@ -275,7 +285,7 @@ func (b *Board) Prompt() string {
 		// The last cell on a row is padded to the column width like every other,
 		// and trailing blanks on a footer row are columns the screen has to
 		// erase for nothing.
-		s += trimRight(line)
+		lines = append(lines, trimRight(line))
 	}
 	// THE CHROME IS THE FORM'S TOO, and that is why it is here rather than
 	// assembled by the loop out of Mode() and a gloss. A form owns how it looks —
@@ -283,7 +293,8 @@ func (b *Board) Prompt() string {
 	// it would make the board's appearance a thing two files agree about, on the
 	// surface where disagreeing marks the wrong word. All the loop adds is the
 	// bar, which belongs to the sitting rather than to this question.
-	return s + "\n\n" + b.toggleLine() + "\n" + b.panelLine()
+	lines = append(lines, "", b.toggleLine(), b.panelLine())
+	return joinLines(lines)
 }
 
 // toggleLine is the mode, and the ONE place it is shown.
@@ -441,6 +452,12 @@ func (b *Board) Mark(i int) (Verdict, bool) {
 // THE GUTTER IS NOT A TARGET. A forgiving hit box is the usual kindness, and it
 // is wrong here: a mark cannot be taken back (see Mark), so a click that is not
 // clearly on a word must do nothing rather than mark its neighbour.
+//
+// THE CELL'S OWN PADDING IS, and that is the deliberate other half. A short word
+// in a column sized for a long one leaves blanks after it, and a click there
+// marks that word — never a neighbour, because the gutter still separates them.
+// It reads as clicking blank space, so it is written down: the alternative is a
+// target that changes width with whatever else happens to be on the board.
 func (b *Board) CellAt(row, col int) (int, bool) {
 	if row < 0 || col < 0 {
 		return 0, false
@@ -539,6 +556,18 @@ func spaces(n int) string {
 	out := ""
 	for i := 0; i < n; i++ {
 		out += " "
+	}
+	return out
+}
+
+// joinLines is strings.Join with "\n". Hand-rolled: this package imports nothing.
+func joinLines(lines []string) string {
+	out := ""
+	for i, l := range lines {
+		if i > 0 {
+			out += "\n"
+		}
+		out += l
 	}
 	return out
 }
