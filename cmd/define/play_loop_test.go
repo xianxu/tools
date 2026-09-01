@@ -2059,7 +2059,7 @@ func boardCells(words ...string) []play.Cell {
 }
 
 func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
-	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80)
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
 	// Five words at four columns: two grid rows, then the blank and the panel.
 	// (R11 moved the toggle to the prompt row.)
 	if board.Rows() != 4 {
@@ -2124,7 +2124,7 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 func TestAClickOnABoardMarksIt(t *testing.T) {
 	d, opt, st := playRig(t, "sycophantic", "ephemeral")
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width)
+	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width, play.Palette{})
 	// One grid row, then the blank and the panel (R11 moved the toggle out).
 	if board.Rows() != 3 {
 		t.Fatalf("expected a three-row live edge, got %d rows:\n%s", board.Rows(), board.Prompt())
@@ -2133,6 +2133,10 @@ func TestAClickOnABoardMarksIt(t *testing.T) {
 	// TEN ROWS, so the geometry is arithmetic rather than a guess. Pinned, the
 	// footer sits at the bottom edge: four entries (the board's own three, plus
 	// the bar) means the grid's only row is viewport row 10-4 = 6.
+	//
+	// The board also writes ONE blank line into the buffer as it opens, which
+	// separates it from the previous question — the operator's fourth note from
+	// a real sitting. It is a buffer line, so it does not move the footer.
 	const termRows, gridRow = 10, 6
 	// The second cell's column, read off what Prompt DREW rather than computed.
 	col := strings.Index(board.Prompt(), "[1] ") + len("[1] ")
@@ -2161,7 +2165,7 @@ func TestAClickOnABoardMarksIt(t *testing.T) {
 	// Read off the frame, not off FooterRowAt — the click map and the paint are
 	// the two things that have to agree, so a premise taken from one of them
 	// could not catch the two disagreeing.
-	rows := paintedRows(t, tty.String(), 0)
+	rows := paintedRowsShowing(t, tty.String(), "[0] sycophantic")
 	if len(rows) <= gridRow {
 		t.Fatalf("the first frame is %d rows, want the grid at row %d:\n%s", len(rows), gridRow, strings.Join(rows, "\n"))
 	}
@@ -2183,6 +2187,26 @@ func TestAClickOnABoardMarksIt(t *testing.T) {
 	if board.Spent() {
 		t.Error("one click spent a board of two cells")
 	}
+}
+
+// paintedRowsShowing is the first frame that DREW want, split into rows.
+//
+// By content rather than by index, because a board writes a blank buffer line as
+// it opens — separating it from the previous question — and that write paints a
+// frame of its own before the grid is drawn. A test that indexed frames counted
+// that one and read the wrong screen.
+func paintedRowsShowing(t *testing.T, out, want string) []string {
+	t.Helper()
+	for i, f := range strings.Split(out, cursorHome+eraseDown) {
+		if i == 0 {
+			continue // whatever preceded the first frame
+		}
+		if rows := strings.Split(unstyled(f), "\r\n"); strings.Contains(unstyled(f), want) {
+			return rows
+		}
+	}
+	t.Fatalf("no frame drew %q:\n%s", want, out)
+	return nil
 }
 
 // paintedRows is frame n of a session's output, split into the rows the terminal
@@ -2208,7 +2232,7 @@ func paintedRows(t *testing.T, out string, n int) []string {
 func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic", "ephemeral")
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width)
+	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 10, opt.width)
@@ -2249,7 +2273,7 @@ func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
 // word on a grid. A prompt line offering it anyway is the exact bug gradePrompt
 // was created to fix.
 func TestABoardsPromptDoesNotOfferTheDropKey(t *testing.T) {
-	board := play.NewBoard(boardCells("keel", "mesa"), 80)
+	board := play.NewBoard(boardCells("keel", "mesa"), 80, play.Palette{})
 	line := gradePrompt(board)
 	if strings.Contains(line, "remove from deck") {
 		t.Errorf("a board's prompt offers a key Apply refuses:\n\t%q", line)
@@ -2300,7 +2324,7 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 	}
 	// The rows it counts below the board are the rows boardFooter actually
 	// DRAWS. Two owners of that number would put half a board on screen.
-	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80)
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
 	footer := boardFooter(board, sittingFigures{})
 	if got, want := len(footer)-board.Rows(), barRows; got != want {
 		t.Errorf("boardFooter adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
@@ -2310,7 +2334,7 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 	//
 	// Read off the real prompt rather than assumed, so the numbers here cannot
 	// drift from the wording.
-	probe := play.NewBoard(boardCells("keel", "mesa", "run", "bank"), 40)
+	probe := play.NewBoard(boardCells("keel", "mesa", "run", "bank"), 40, play.Palette{})
 	pr := displayRows(gradePrompt(probe), 40)
 	if pr < 2 {
 		t.Fatalf("the keys prompt is %d row(s) at 40 columns; this case is vacuous", pr)
@@ -2346,7 +2370,7 @@ func TestAReviewEventNamesItsFormOnDisk(t *testing.T) {
 			})
 		}, Key{Kind: KeyRune, Rune: '1'}, "meaning"},
 		{"form 2.5, the board", func(opt options) play.Question {
-			return play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width)
+			return play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width, play.Palette{})
 		}, Key{Kind: KeyRune, Rune: '0'}, "board"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2578,7 +2602,7 @@ func TestASittingOfDueWordsIsABoard(t *testing.T) {
 func TestABoardLeavesItsRelearnListInTheTranscript(t *testing.T) {
 	d, opt, _ := playRig(t, "quokka", "mesa", "parrot")
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, opt.width)
@@ -2615,7 +2639,7 @@ func TestABoardLeavesItsRelearnListInTheTranscript(t *testing.T) {
 func TestABoardWithNothingToRelearnWritesNoLine(t *testing.T) {
 	d, opt, _ := playRig(t, "quokka", "mesa")
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells("quokka", "mesa"), opt.width)
+	board := play.NewBoard(boardCells("quokka", "mesa"), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, opt.width)
@@ -2643,7 +2667,7 @@ func TestABoardWithNothingToRelearnWritesNoLine(t *testing.T) {
 func TestTheBarCountsWordsNotSlots(t *testing.T) {
 	qs := []play.Question{
 		play.NewRecall("keel", "d"),
-		play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), 80),
+		play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), 80, play.Palette{}),
 		play.NewChoice("run", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
 	}
 	if got, want := sittingWords(qs), 6; got != want {
@@ -2655,7 +2679,7 @@ func TestTheBarCountsWordsNotSlots(t *testing.T) {
 	// The number reaches the bar.
 	d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank")
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), opt.width)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, opt.width)
@@ -2699,10 +2723,10 @@ func TestABoardCostsFarLessPerWordThanMeaningChoice(t *testing.T) {
 	// THE BOARD: one keystroke per word, one mode throughout.
 	d, opt, _ := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells(words...), opt.width)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
 	var boardKeys []Key
 	for i := range words {
-		boardKeys = append(boardKeys, Key{Kind: KeyRune, Rune: rune("0123456789abcefg"[i])})
+		boardKeys = append(boardKeys, Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])})
 	}
 	boardLines := sittingCost(t, d, opt, []play.Question{board}, held, boardKeys)
 
@@ -2796,7 +2820,7 @@ func TestCtrlCCancelsABoardWithoutMovingUnmarkedWords(t *testing.T) {
 	words := []string{"quokka", "mesa", "parrot", "bank"}
 	d, opt, st := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells(words...), opt.width)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
 
 	before := schedule.Fold(eventsOf(t, st))
 
@@ -2846,7 +2870,7 @@ func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
 	words := []string{"quokka", "mesa", "parrot", "bank"}
 	d, opt, _ := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells(words...), opt.width)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, opt.width)
@@ -2879,7 +2903,7 @@ func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
 // `boardFooter`'s comment calls that load-bearing and nothing tested it. A second
 // live-edge form, or anything wanting a row above the grid, is where it breaks.
 func TestBoardFooterPutsTheFormsOwnRowsFirst(t *testing.T) {
-	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80, play.Palette{})
 	footer := boardFooter(board, sittingFigures{})
 	own := strings.Split(board.Prompt(), "\n")
 	if len(footer) < len(own) {
@@ -2900,7 +2924,7 @@ func TestEveryMarkOnABoardIsRecordedImmediately(t *testing.T) {
 	words := []string{"quokka", "mesa", "parrot", "bank"}
 	d, opt, st := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells(words...), opt.width)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, opt.width)
@@ -2908,7 +2932,7 @@ func TestEveryMarkOnABoardIsRecordedImmediately(t *testing.T) {
 	var errb bytes.Buffer
 	keys := make(chan Key, len(words)+1)
 	for i := range words {
-		keys <- Key{Kind: KeyRune, Rune: rune("0123456789abcefg"[i])}
+		keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])}
 	}
 	keys <- Key{Kind: KeyInterrupt}
 	close(keys)
@@ -2948,7 +2972,7 @@ func TestABoardIsMarkableByKeyAlone(t *testing.T) {
 	}
 	d, opt, st := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells(words...), opt.width)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 30, opt.width)
@@ -2956,7 +2980,7 @@ func TestABoardIsMarkableByKeyAlone(t *testing.T) {
 	var errb bytes.Buffer
 	keys := make(chan Key, len(words)+1)
 	for i := range words {
-		keys <- Key{Kind: KeyRune, Rune: rune("0123456789abcefg"[i])}
+		keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])}
 	}
 	keys <- Key{Kind: KeyInterrupt}
 	close(keys)
@@ -2976,7 +3000,7 @@ func TestDOnABoardIsNotACellLabel(t *testing.T) {
 	words := []string{"quokka", "mesa", "parrot", "bank"}
 	d, opt, st := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells(words...), opt.width)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
 
 	tty := &syncBuf{}
 	live := newPinnedScreen(tty, 24, opt.width)
@@ -3054,7 +3078,7 @@ func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
 	words := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
 	d, opt, st := playRig(t, words...)
 	_, held := questionsFor(t, d, opt)
-	board := play.NewBoard(boardCells(words...), 80)
+	board := play.NewBoard(boardCells(words...), 80, play.Palette{})
 	if board.Rows() != 3 {
 		t.Fatalf("expected a one-row grid plus chrome at 80 columns, got %d rows:\n%s", board.Rows(), board.Prompt())
 	}
@@ -3102,7 +3126,7 @@ func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
 		// which is the property boardFits already relies on. Everything the
 		// driver needs to place a click comes from the probe (a column) and the
 		// screen (a row), and the screen is behind a mutex.
-		probe := play.NewBoard(boardCells(words...), 40)
+		probe := play.NewBoard(boardCells(words...), 40, play.Palette{})
 		col := strings.Index(strings.Split(probe.Prompt(), "\n")[0], "[1] ")
 		if col < 0 {
 			return

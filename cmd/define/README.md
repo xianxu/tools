@@ -120,11 +120,15 @@ of the day's work. On the grid it is a glance. A multiple choice puts a whole
 dictionary entry on screen for every word; a board puts one line up for the
 entire sweep.
 
-**Click a word, or press the key printed beside it.** `Tab` switches between
-marking yes and marking no — the bracketed one on the prompt line is live, and
-that line is the last thing a short window gives up. A marked cell shows its
-mark where its key was, and a word can only be marked once: the answer is
-written the moment it lands, so there is nothing to take back.
+**Click a word, or press the key printed beside it** — `0`–`9` then `a`–`f`, in
+order and with no gaps. `Tab` switches between marking yes and marking no; the
+bracketed one on the prompt line is live, and that line is the last thing a short
+window gives up.
+
+**A marked word turns green for yes and red for no, and keeps its key** — so you
+can still see what you answered and the grid still reads the same way. A word can
+only be marked once: the answer is written the moment it lands, so there is
+nothing to take back.
 
 **`Enter` takes everything still unmarked as "no"** — "I am out of time, ask me
 all of these again". `Ctrl-C` does the opposite and costs nothing: what you
@@ -134,20 +138,17 @@ A word marked yes counts as a correct answer, never as a confident one — the
 grid is self-report, so it can never earn the double promotion a real retrieval
 test can. As a board closes it leaves one line naming the words you marked no.
 
-**`d` does nothing on a board** and is not offered there, because there is no
-single current word for it to remove.
-
 | key | does |
 |---|---|
 | `1`–`4` | multiple choice: pick the definition |
 | `y` | recall: you had it — straight to the next word |
 | `n` | recall: you missed it — the definition appears |
-| `0`–`9`, `a`–`c`, `e`–`g` | board: mark the word printed beside that key (`d` is skipped — it removes a word) |
+| `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
 | click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
 | Tab | board: switch between marking yes and marking no |
 | Enter | board: finish, taking everything unmarked as "no". Elsewhere: see the answer, like space |
 | space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
-| `d` | remove this word from the deck — its history is kept. Not offered on a board |
+| `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead: a grid has no single current word to remove |
 | PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
 | Ctrl-C | stop; everything you answered is already saved |
 

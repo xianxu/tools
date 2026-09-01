@@ -72,15 +72,29 @@ func markOf(v Verdict) Mark {
 
 // boardLabels is the printed key beside each word, in cell order.
 //
-// `d` IS ABSENT, and its absence is load-bearing. toInput takes `d` and `D` as
-// DROP FROM DECK before any form sees the key, and Question.Grade's doc states
-// the rule: "The session RESERVES some keys before a form ever sees them… A form
-// must not build its answer set from those." A board labelled with `d` would
-// have a cell whose key silently removed a word from the deck instead.
+// `d` IS HERE, and it took an operator sitting to see why it should be. The
+// first cut skipped it — toInput takes `d` and `D` as DROP FROM DECK before any
+// form sees a key — and printed `0`–`9` then `a b c e f g`. Operator,
+// 2026-09-01: *"I think [d] should be used? jumping from [c] to [e] is a bit
+// confusing. and I don't think in this screen we are using d in keyboard
+// shortcut?"*
 //
-// The gap is visible rather than surprising, because the labels are PRINTED
-// beside the words — nobody has to know the sequence, they read it (D5).
-const boardLabels = "0123456789abcefg"
+// They are right, and D12 is the reason: a form holding many words has no single
+// current word, so `Apply` already REFUSED the drop here. The key did nothing on
+// this screen, and the sequence carried a hole to protect a key that was not in
+// use. Sixteen labels, no gap — and the session's rule survives in the sharper
+// form it always had: **`d` is reserved for forms that HAVE a current word to
+// remove.** See Apply's InputDrop case, which hands the key to the form instead.
+const boardLabels = BoardLabels
+
+// BoardLabels is the printed sequence, exported so a caller types a key by
+// DERIVING it rather than by restating the string.
+//
+// The restatement is what broke when `d` was added back: two tests and a pty row
+// each carried their own copy of "0123456789abcefg", and they typed a key the
+// board no longer had. Same failure the README prompt lines are guarded against,
+// one package over.
+const BoardLabels = "0123456789abcdef"
 
 // MaxBoardWords is the capacity, and it is the label alphabet's length rather
 // than a number chosen beside it — a seventeenth cell would have no key, so a
@@ -117,6 +131,22 @@ type Cell struct {
 	Gloss string
 }
 
+// Palette is how a mark is PAINTED, supplied by the caller.
+//
+// The form draws its own live edge (R1) and `main` owns the terminal's colours
+// (`newPalette`), so the sequences arrive finished — the same seam `Choice` sits
+// on, where the caller does the rendering and the form takes the result. The
+// zero value styles nothing, which is what every test not about colour wants.
+//
+// Escape sequences cost NO COLUMNS, and this file's arithmetic must not count
+// them: the padding is computed from the plain word and applied OUTSIDE the
+// style, so a styled cell occupies exactly the columns an unstyled one does.
+type Palette struct {
+	Yes string // starts the style for a cell marked yes
+	No  string // ...and for one marked no
+	Off string // ends either
+}
+
 // Board is one grid. Pointer receivers: it REMEMBERS every mark, which is the
 // whole of what makes it a batch.
 type Board struct {
@@ -127,6 +157,13 @@ type Board struct {
 	// Yes by default: on a board of mature words most cells are a yes, so the
 	// default is the common case and the toggle is for the exceptions.
 	mode Mark
+	// pal paints the marks. COLOUR rather than a changed label, which is the
+	// operator's correction after a real sitting: *"selected words on the board
+	// should change color instead of use [y]/[n]"*, and *"don't change the
+	// [0]...[f] as they are needed for keyboard operation"*. The first cut put
+	// the mark WHERE THE KEY WAS — saying "answered" by taking away the thing
+	// the keyboard needs, on the one path a mouse-less terminal has.
+	pal Palette
 	// last is the cell most recently marked, and it is what Word() reports.
 	// advance builds Outcome{Word: q.Word()} at a call site that knows nothing
 	// about grids, so the form has to answer "which word did that just mean".
@@ -162,11 +199,11 @@ type Board struct {
 // it: a word this board does not ask about gets no event, so its box does not
 // move and it is due again tomorrow. The caller (boardsFor) packs in
 // MaxBoardWords chunks and is pinned there; this is the belt.
-func NewBoard(cells []Cell, width int) *Board {
+func NewBoard(cells []Cell, width int, pal Palette) *Board {
 	if len(cells) > MaxBoardWords {
 		cells = cells[:MaxBoardWords]
 	}
-	b := &Board{cells: cells, marks: make([]Mark, len(cells)), mode: Yes, width: width}
+	b := &Board{cells: cells, marks: make([]Mark, len(cells)), mode: Yes, width: width, pal: pal}
 	b.layout()
 	return b
 }
@@ -274,23 +311,23 @@ func (b *Board) Word() string {
 
 // Prompt is the labelled grid, rebuilt every frame.
 //
-// A marked cell shows its MARK WHERE ITS KEY WAS — `[y]` or `[n]` in place of
-// `[3]` — which says two things at once: this word is answered, and that key no
-// longer does anything. The refusal in Mark is otherwise silent, and a key that
-// stops working without saying so is the kind of thing a learner blames
-// themselves for.
+// A marked cell is PAINTED and keeps its key. The first cut put the mark where
+// the key was — `[y]` in place of `[3]` — reasoning that it said "answered" and
+// "this key is spent" at once. An operator sitting corrected it: the key is how
+// a mouse-less terminal reaches the cell, and it is also how a learner reads the
+// grid back, so taking it away is the wrong half to spend. Colour says answered;
+// the key stays put.
 //
-// ASCII rather than ✓/✗, and the reason is geometry rather than taste: those
-// runes are East Asian Ambiguous, so some terminals give them two columns. A
-// cell one column wider than the board believes is exactly the failure D15 is
-// written against — a click that lands on the wrong word.
+// COLOUR IS WHY THE GRID IS THE LIVE EDGE (D10). A grid filed in the append-only
+// buffer could never change, so a mark that repaints an existing cell would be
+// impossible there — the footer is what makes it expressible at all, and this is
+// the feature that spends that.
 //
-// NO COLOUR YET, and that is DEFERRED rather than done. Keeping the grid in the
-// live edge is what makes colour possible at all (D10) — a grid filed in the
-// append-only buffer could never change — but nothing styles these marks today,
-// and the glyph is what distinguishes them. An earlier version of this comment
-// said "the loop adds it", which was a description of an intention rather than
-// of the code.
+// The sequences come from `main` through Palette: escape codes cost no columns,
+// and the padding is applied outside them, so nothing here has to measure a
+// styled string. ASCII text throughout otherwise — `✓`/`✗` are East Asian
+// Ambiguous, so some terminals give them two columns, and a cell one column
+// wider than the board believes is exactly the failure D15 is written against.
 func (b *Board) Prompt() string {
 	// BUILT AS A SLICE, so len(lines) IS Rows() rather than merely equalling it.
 	//
@@ -345,21 +382,41 @@ func (b *Board) panelLine() string {
 	return truncate(c.Word+"  "+c.Gloss, b.width)
 }
 
-// cellText is one cell: the key or the mark, then the word padded to the column.
+// cellText is one cell: its key, then its word — PAINTED once it is marked.
+//
+// The key never changes, because the key is how a mouse-less terminal reaches
+// the cell, and taking it away at the moment of marking is the wrong half to
+// give up. The padding sits OUTSIDE the style, so a styled cell occupies exactly
+// the columns an unstyled one does and the layout arithmetic never sees an
+// escape sequence.
 func (b *Board) cellText(i int) string {
-	return "[" + string(b.glyph(i)) + "] " + pad(truncate(b.cells[i].Word, b.wordCells), b.wordCells)
+	word := truncate(b.cells[i].Word, b.wordCells)
+	text := "[" + string(boardLabels[i]) + "] " + word
+	if on := b.paint(i); on != "" {
+		text = on + text + b.pal.Off
+	}
+	return text + spaces(b.wordCells-columnsIn(word))
 }
 
-// glyph is what stands in the brackets: the mark once there is one, the key
-// until then.
-func (b *Board) glyph(i int) rune {
+// paint is the sequence that starts this cell's style: empty for an unmarked
+// cell, and for a board built with no palette.
+func (b *Board) paint(i int) string {
 	switch b.marks[i] {
 	case Yes:
-		return 'y'
+		return b.pal.Yes
 	case No:
-		return 'n'
+		return b.pal.No
 	}
-	return rune(boardLabels[i])
+	return ""
+}
+
+// Marked reports how cell i is marked, for a caller that must see the state
+// without reading colour back out of a string.
+func (b *Board) Marked(i int) Mark {
+	if i < 0 || i >= len(b.marks) {
+		return Unmarked
+	}
+	return b.marks[i]
 }
 
 // Reveal is EMPTY, and that is the honest answer rather than a stub.
@@ -547,6 +604,35 @@ func (b *Board) Rest(v Verdict) []string {
 		}
 	}
 	return rest
+}
+
+// visibleColumns is columnsIn ignoring ANSI escape sequences, for reading a
+// DRAWN line back — a styled cell's colour costs no columns, and anything that
+// measures the grid has to agree with the terminal about that.
+//
+// Nothing in the layout needs it: the padding is computed from plain words and
+// applied outside the style, so this file never measures a styled string. It is
+// here for callers and tests that hold a finished line.
+//
+// A minimal recogniser — ESC, then anything up to a letter — because that is the
+// whole grammar this package emits: it emits none at all, and only ever passes
+// through what Palette was handed. main.escapeLen is the real one, and it is on
+// the other side of a purity guard.
+func visibleColumns(s string) int {
+	n, inEsc := 0, false
+	for _, r := range s {
+		switch {
+		case inEsc:
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+				inEsc = false
+			}
+		case r == 0x1b:
+			inEsc = true
+		default:
+			n++
+		}
+	}
+	return n
 }
 
 // columnsIn counts a string's runes, which is its width for the Latin-script

@@ -174,6 +174,22 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// every frame instead, and nothing about it reaches the transcript
 		// except the relearn line it writes as it closes.
 		if _, ok := q.(play.Grid); ok {
+			// ONE BLANK BUFFER LINE, the first time this board is drawn.
+			//
+			// A board writes nothing else to the buffer, so without it the grid
+			// begins immediately under the previous question's last line and the
+			// two read as one block — which is what the operator saw in a real
+			// sitting. Every other form is separated by the leading "\n" of its
+			// own prompt write, and a board has no prompt write to carry one.
+			//
+			// Through `written`, so it happens once per board rather than once
+			// per frame: the buffer is append-only, and a blank line per
+			// keystroke would push the transcript up the screen as the learner
+			// marked.
+			if written != s.Index {
+				written = s.Index
+				fmt.Fprintln(stdout)
+			}
 			view.Draw(livePrompt(s), boardFooter(q, fig))
 			return
 		}
@@ -496,11 +512,38 @@ func toInput(k Key) (play.Input, bool) {
 		case ' ':
 			return play.Input{Kind: play.InputReveal}, true
 		case 'd', 'D':
-			return play.Input{Kind: play.InputDrop}, true
+			// THE RUNE RIDES ALONG, because `d` is only the session's key while
+			// the form has a current word to remove. On a form holding many it is
+			// an ordinary graded key, and Apply cannot ask the form about a
+			// keystroke this did not carry.
+			return play.Input{Kind: play.InputDrop, Rune: k.Rune}, true
 		}
 		return play.Input{Kind: play.InputRune, Rune: k.Rune}, true
 	}
 	return play.Input{}, false
+}
+
+// boardPalette is how a board's marks are painted, and it is the ONE place this
+// program decides that.
+//
+// GREEN for yes, RED for no — the two conventions a terminal reader already
+// has, and the pair a learner does not have to be taught. Bold, because the
+// grid's unmarked cells are ordinary weight and the marked ones should separate
+// at a glance rather than on inspection.
+//
+// It comes from `main` because `main` owns the terminal: `play` is mechanically
+// guarded pure, and a form choosing its own escape sequences would be a second
+// owner of a decision `newPalette` already makes for every other surface. The
+// board takes finished sequences, exactly as `Choice` takes finished options.
+//
+// Empty under `-no-color`, which `--play` refuses to run with (BR-3) — so this
+// is belt rather than a reachable state, and the board then draws in plain text
+// with its keys intact, which is still usable.
+func boardPalette(opt options) play.Palette {
+	if !opt.color {
+		return play.Palette{}
+	}
+	return play.Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Off: "\x1b[0m"}
 }
 
 // boardFooter is the live edge for a board: everything the FORM draws, then the
@@ -724,7 +767,9 @@ func boardFits(words []string, opt options) bool {
 	for i, w := range words {
 		cells[i] = play.Cell{Word: w}
 	}
-	probe := play.NewBoard(cells, opt.width)
+	// NO PALETTE on the probe: escape sequences cost no columns, so they cannot
+	// change how tall the board is, which is the only thing being asked here.
+	probe := play.NewBoard(cells, opt.width, play.Palette{})
 	// THE PROMPT THE LOOP WILL ACTUALLY DRAW, measured at this width — the same
 	// expression livePrompt returns for this form, so the two cannot disagree.
 	return fitsABoard(opt.rows, probe.Rows(), displayRows(gradePrompt(probe), opt.width))
@@ -835,7 +880,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			cells = append(cells, play.Cell{Word: key, Gloss: gloss})
 		}
 		if len(cells) > 0 {
-			qs = append(qs, play.NewBoard(cells, opt.width))
+			qs = append(qs, play.NewBoard(cells, opt.width, boardPalette(opt)))
 		}
 	}
 	if len(qs) == 0 {

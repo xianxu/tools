@@ -246,12 +246,26 @@ func apply(s Session, q Question, in Input) (Session, []Outcome) {
 
 	switch in.Kind {
 	case InputDrop:
-		// REFUSED by a form holding many words, because `d` names no word there:
-		// advance would drop q.Word(), which on a grid is whichever cell happens
-		// to be next. Dropping the wrong word is silent and takes a word out of
-		// the deck, so the form does nothing rather than guessing.
+		// `d` IS THE FORM'S when the form holds many words.
+		//
+		// It was REFUSED here, because `d` names no word on a grid: advance would
+		// drop q.Word(), whichever cell that happened to be, and dropping the
+		// wrong word is silent. That reasoning is intact — what changed is what
+		// happens instead of the drop. The key did nothing on that screen, and
+		// the board's labels carried a hole at `d` to protect it, which an
+		// operator reading a real grid found confusing rather than safe.
+		//
+		// So the session reserves `d` for forms that HAVE a current word to
+		// remove, and hands it to any other form as an ordinary graded key. A
+		// form that does not grade it gets the old behaviour exactly — false,
+		// then OutcomeNone.
 		if batchOf(q) != nil {
-			return s, []Outcome{{Kind: OutcomeNone}}
+			verdict, ok := q.Grade(in.Rune)
+			if !ok {
+				return s, []Outcome{{Kind: OutcomeNone}}
+			}
+			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
+			return next, []Outcome{out}
 		}
 		// Dropping is allowed in every state — before a reveal, after a peek, and
 		// after a miss. "This word is not mine" is true whatever is on screen,

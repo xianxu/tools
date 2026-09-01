@@ -640,6 +640,29 @@ against R9's fixes and four caught; the `currentTruthOnly` fix was mutated with
 the exact shape that produced BR-3 (a `## Revisions` above `## Core concepts`
 plus a fabricated test name) and now fails naming the swallowed section.
 
+### 2026-09-01 — the operator's first sitting: four corrections
+
+Recorded in full as plan revision R16. Three boundary-review rounds found real
+defects and none of them found these, because all four are correct code that
+reads wrong to the person using it.
+
+- **A marked cell is painted and KEEPS its key.** The mark used to stand where
+  the key was. The key is how a mouse-less terminal reaches the cell and how a
+  learner reads the grid back — the wrong half to spend on saying "answered".
+  `play.Palette` brings the sequences in from `main`; padding sits outside the
+  style so the click map is untouched. It is also the first thing to actually
+  spend what D10 bought: a grid in the append-only buffer could never repaint.
+- **`d` is a label.** The hole at `d` protected a key that did nothing on that
+  screen, because D12 had already refused the drop for a form holding many words.
+  The rule is sharper now: `d` is reserved for forms that HAVE a current word.
+- **A blank buffer line as the board opens**, since a board writes nothing else
+  there and its grid began flush against the previous question.
+- **`BoardLabels` is exported**, because restoring `d` broke two tests and a pty
+  row that each restated the old sequence.
+
+**The lesson: a boundary review checks that the thing does what the plan says;
+only a sitting checks whether the plan said the right thing.**
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it

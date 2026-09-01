@@ -59,7 +59,7 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 		// not offer it (#40 D12). That is the second thing this row checks, and
 		// the reason it is worth adding rather than being the "third form" the
 		// comment above calls human.
-		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80),
+		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80, play.Palette{}),
 	}
 	seen := map[string]bool{}
 	for _, f := range forms {

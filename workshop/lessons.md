@@ -3161,3 +3161,25 @@ was drawn, ask the object that drew it, and detect state changes by something th
 old state cannot produce — here the footer's entry COUNT, which grows when the
 board relays out. And never let a test goroutine touch a form the loop owns:
 `-race` says so, and production has one goroutine on it for the same reason.
+
+## A review checks that the code does what the plan says; a sitting checks whether the plan was right (`#40` R16)
+
+Three boundary-review rounds on `#40` found a Critical reproduced by execution, a
+resize that landed a permanent mark on the wrong word, and two guards that had
+been certifying nothing. The operator's FIRST real sitting found four things none
+of them did:
+
+- the mark replaced the cell's key, which is how a mouse-less terminal reaches it
+- the label sequence skipped `d` to protect a key that did nothing on that screen
+- the grid began flush against the previous question, with no separator
+- (and the fix for the second broke three restatements of the old sequence)
+
+Every one is *correct code that reads wrong to the person using it*. A reviewer
+reads the plan and the diff and checks they agree; only the person holding the
+keyboard can tell you the agreement was on the wrong thing.
+
+**So: get it in front of the operator before the boundary review, not after.** A
+round of review spent on a design a sitting would have changed is a round spent
+polishing the wrong object — and the plan's `ux-rename-iteration` line, priced for
+"3–5 rounds per TUI-heavy milestone", is an estimate of exactly this and was
+still treated as if reviews could substitute for it.

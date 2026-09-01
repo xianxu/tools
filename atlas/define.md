@@ -2068,21 +2068,33 @@ hit and `formCell` refuses any but the first, which is the same guarantee at the
 seam. **Every quantity the fit and the click map depend on is read from the
 terminal as it is at draw and click time, never fixed at selection.**
 
-**A cell is marked ONCE, and the refusal is drawn rather than silent.** Every
-mark emits its `OutcomeRecord` as it lands, which is what makes Ctrl-C lossless;
-the price of writing immediately is that nothing can be taken back, and `Fold`
-would read a re-marked cell as two reviews of one word on one day. So the mark
-stands where the key was — `[y]` in place of `[3]` — saying both "answered" and
-"this key no longer does anything". For the same reason **the gutter is not a
-click target**: a forgiving hit box is the usual kindness and is wrong when the
-mistake it forgives is permanent.
+**A cell is marked ONCE.** Every mark emits its `OutcomeRecord` as it lands,
+which is what makes Ctrl-C lossless; the price of writing immediately is that
+nothing can be taken back, and `Fold` would read a re-marked cell as two reviews
+of one word on one day. For the same reason **the gutter is not a click target**:
+a forgiving hit box is the usual kindness and is wrong when the mistake it
+forgives is permanent.
 
-**Labels are `0`–`9` then `a b c e f g`.** `d` is absent because `toInput` takes
-it as *drop from deck* before any form sees a key. The gap is visible rather than
-surprising, because the labels are printed beside the words. `d` is also refused
-on a board by `Apply` — a grid has no single current word — so `reservedKeys`
-stops offering it there, which is the same bug `gradePrompt` was created to fix
-one form earlier.
+**A marked cell is PAINTED and keeps its key**, and the first cut had it the
+other way — the mark stood where the key was, `[y]` in place of `[3]`, on the
+reasoning that it said "answered" and "this key is spent" at once. An operator
+sitting corrected it: the key is how a mouse-less terminal reaches the cell and
+how a learner reads the grid back, so it is the wrong half to spend. The
+sequences come from `main` through `play.Palette` — green for yes, red for no —
+because `play` is guarded pure and `newPalette` already owns that decision for
+every other surface. Padding is applied OUTSIDE the style, so a painted cell
+occupies exactly the columns an unpainted one does and the click map is
+unaffected. **This is the feature the live edge was for**: a grid filed in the
+append-only buffer could never repaint a cell.
+
+**Labels are `0`–`9` then `a`–`f`, sixteen with no gap.** `d` was skipped at
+first, because `toInput` takes it as *drop from deck* before any form sees a key
+— and the same operator sitting found the jump from `[c]` to `[e]` confusing.
+They were right that nothing on that screen used it: D12 had already REFUSED the
+drop for a form holding many words, since a grid has no single current word to
+remove. So the hole protected a key that was not in use, and the session's rule
+is the sharper one it always was — **`d` is reserved for forms that HAVE a
+current word**, and any other form gets it as an ordinary graded key.
 
 **Enter commits and space must not**, which is why `InputFinish` split from
 `InputReveal`. `Enter` takes every unmarked word as `no` — "I am out of time,

@@ -166,6 +166,40 @@ rounds:
           family: plan-citations-unenforced
           round: 3
       blocked: true
+    - "n": 4
+      timestamp: "2026-09-01T14:45:56-07:00"
+      agent: claude
+      dispose:
+        - id: BR-8
+          disposition: not-addressed
+          note: 'Rows 2 and 3 of its own enumeration are still open and now measured: a board that becomes current after a resize is painted with 73-column rows into a 40-column terminal (g.Resize is called at play_loop.go:257 for s.Current() only), and after a shrinking resize Enter records Wrong for every word fitFooter dropped (12x24 -> 8 of 16 undrawn, all swept). The plan, the atlas and boardFooter''s comment now record those losses as harmless.'
+          round: 4
+        - id: BR-12
+          disposition: addressed
+          note: 'Verified twice by revert: stubbing formCell to false reddens the test in 0.4s, removing g.Resize(sz.cols) reddens it in 2.4s, and the defer close(keys) means it fails rather than hangs. 10/10 stable, 5/5 under -race.'
+          round: 4
+        - id: BR-13
+          disposition: addressed
+          note: The plan's Grid row points at the type instead of listing methods; boardFooter's comment and atlas/define.md now say a board CAN end up in a footer that drops rows. Five NEW stale toggle-row comments raised separately as the family's 4th finding.
+          round: 4
+        - id: BR-14
+          disposition: addressed
+          note: Verified by revert - the closed-section premise assertion fires on the real atlas/repo-guards.md under the old strings.Contains spelling, and with closedSection's line-start match a planted retired symbol on that page's head section is now caught where it previously was invisible.
+          round: 4
+      findings:
+        - id: BR-15
+          severity: Minor
+          title: Five code comments still describe the deleted footer toggle row, and two docs claims contradict measurement
+          detail: 4th finding in this family - do not patch the sites. Instances - board.go:239 (Rows() "counts the toggle and the panel too", it counts a blank and the panel, contradicting chromeRows twenty lines below), board.go:453-456 (Mark - "drawn in the footer's toggle"), board.go:501 (CellAt - "the blank, the toggle, the panel"), play_loop.go:573 ("a footer row below Rows() is the toggle or the bar"), play_loop.go:605; plus atlas/define.md:2065 asserting every quantity is read at draw time (false, see BR-8) and README.md:101 saying "recalled three times or more" where boardBox is a BOX, so a word recalled five times and missed twice is below the threshold. The rule is already written down; what is missing is the trigger. TestARemovedDeclarationIsSweptOrRetired skips toggleLine because isCitableName filters unexported names, and no guard can catch prose naming a CONCEPT rather than a symbol - so the enumerable half is that deleting a drawn element makes `grep -w <its word>` over currentTruthFiles the sweep set, run in the same commit. TestTheToggleAndPanelRowsAreNotCells is itself named after the removed row.
+          family: comment-asserts-absent-behaviour
+          round: 4
+        - id: BR-16
+          severity: Minor
+          title: The issue's Log stops at boundary review round 2; round 3's verdict and its R11-R15 work are recorded everywhere except the tracker
+          detail: workshop/issues/000040-form-board.md:591 is the last Log section. Rounds 1 and 2 each got an entry naming the findings and the lesson; round 3 (FIX-THEN-SHIP) and the fixes for it appear only in the plan's Revisions, the close-review sidecar, the gate ledger and workshop/lessons.md. AGENTS.md section 3 puts the boundary outcome in the issue's own Log, which is the surface a reader reaches first.
+          family: gate-round-outcome-unlogged
+          round: 4
+      blocked: true
 ---
 
 # Gate ledger — tools#40 (boundary-review)
@@ -248,9 +282,24 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   sections already sit below the ## Log truncation), so this is the rule R10 wrote applied to every rule the
   filter has, rather than a present defect.
 
+## Round 4 — 2026-09-01T14:45:56-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-8 — not-addressed — Rows 2 and 3 of its own enumeration are still open and now measured: a board that becomes current after a resize is painted with 73-column rows into a 40-column terminal (g.Resize is called at play_loop.go:257 for s.Current() only), and after a shrinking resize Enter records Wrong for every word fitFooter dropped (12x24 -> 8 of 16 undrawn, all swept). The plan, the atlas and boardFooter's comment now record those losses as harmless.
+- BR-12 — addressed — Verified twice by revert: stubbing formCell to false reddens the test in 0.4s, removing g.Resize(sz.cols) reddens it in 2.4s, and the defer close(keys) means it fails rather than hangs. 10/10 stable, 5/5 under -race.
+- BR-13 — addressed — The plan's Grid row points at the type instead of listing methods; boardFooter's comment and atlas/define.md now say a board CAN end up in a footer that drops rows. Five NEW stale toggle-row comments raised separately as the family's 4th finding.
+- BR-14 — addressed — Verified by revert - the closed-section premise assertion fires on the real atlas/repo-guards.md under the old strings.Contains spelling, and with closedSection's line-start match a planted retired symbol on that page's head section is now caught where it previously was invisible.
+
+### Raised
+
+- **BR-15** [Minor] `comment-asserts-absent-behaviour` Five code comments still describe the deleted footer toggle row, and two docs claims contradict measurement
+  4th finding in this family - do not patch the sites. Instances - board.go:239 (Rows() "counts the toggle and the panel too", it counts a blank and the panel, contradicting chromeRows twenty lines below), board.go:453-456 (Mark - "drawn in the footer's toggle"), board.go:501 (CellAt - "the blank, the toggle, the panel"), play_loop.go:573 ("a footer row below Rows() is the toggle or the bar"), play_loop.go:605; plus atlas/define.md:2065 asserting every quantity is read at draw time (false, see BR-8) and README.md:101 saying "recalled three times or more" where boardBox is a BOX, so a word recalled five times and missed twice is below the threshold. The rule is already written down; what is missing is the trigger. TestARemovedDeclarationIsSweptOrRetired skips toggleLine because isCitableName filters unexported names, and no guard can catch prose naming a CONCEPT rather than a symbol - so the enumerable half is that deleting a drawn element makes `grep -w <its word>` over currentTruthFiles the sweep set, run in the same commit. TestTheToggleAndPanelRowsAreNotCells is itself named after the removed row.
+- **BR-16** [Minor] `gate-round-outcome-unlogged` The issue's Log stops at boundary review round 2; round 3's verdict and its R11-R15 work are recorded everywhere except the tracker
+  workshop/issues/000040-form-board.md:591 is the last Log section. Rounds 1 and 2 each got an entry naming the findings and the lesson; round 3 (FIX-THEN-SHIP) and the fixes for it appear only in the plan's Revisions, the close-review sidecar, the gate ledger and workshop/lessons.md. AGENTS.md section 3 puts the boundary outcome in the issue's own Log, which is the surface a reader reaches first.
+
 ## Open findings
 
 - **BR-8** [Critical] `frame-budget-hardcoded-not-measured` A narrowing resize under a live board marks the wrong word on a click and drops the toggle, panel and bar
-- **BR-12** [Important] `assertion-cannot-fail` TestANarrowingResizeKeepsTheBoardsClickMapHonest asserts over an empty event set, so R9's click-map claim is unpinned at the loop
-- **BR-13** [Minor] `comment-asserts-absent-behaviour` Two live prose enumerations restate sets the code owns: the plan's Grid row omits Resize, and boardFooter plus atlas claim a board is never in a footer that drops rows
-- **BR-14** [Minor] `plan-citations-unenforced` currentTruthOnly has two discarding rules and R10 gave a premise assertion to only one
+- **BR-15** [Minor] `comment-asserts-absent-behaviour` Five code comments still describe the deleted footer toggle row, and two docs claims contradict measurement
+- **BR-16** [Minor] `gate-round-outcome-unlogged` The issue's Log stops at boundary review round 2; round 3's verdict and its R11-R15 work are recorded everywhere except the tracker

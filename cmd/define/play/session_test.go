@@ -805,10 +805,10 @@ func TestEveryRecordNamesItsForm(t *testing.T) {
 		{NewChoice("run", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '1'}},
 		{NewChoice("bank", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '2'}},
 		// A board, by key and by click.
-		{NewBoard(cellsOf("keel", "mesa"), 80), Input{Kind: InputRune, Rune: '0'}},
-		{NewBoard(cellsOf("keel", "mesa"), 80), Input{Kind: InputMark, Cell: 1}},
+		{NewBoard(cellsOf("keel", "mesa"), 80, Palette{}), Input{Kind: InputRune, Rune: '0'}},
+		{NewBoard(cellsOf("keel", "mesa"), 80, Palette{}), Input{Kind: InputMark, Cell: 1}},
 		// And the Enter that spends one, which builds a record per word.
-		{NewBoard(cellsOf("keel", "mesa"), 80), Input{Kind: InputFinish}},
+		{NewBoard(cellsOf("keel", "mesa"), 80, Palette{}), Input{Kind: InputFinish}},
 	} {
 		_, outs := Apply(NewSession([]Question{tc.q}), tc.in)
 		records := 0
@@ -836,7 +836,7 @@ func TestEveryRecordNamesItsForm(t *testing.T) {
 	for _, q := range []Question{
 		NewRecall("keel", "d"),
 		NewChoice("keel", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
-		NewBoard(cellsOf("keel"), 80),
+		NewBoard(cellsOf("keel"), 80, Palette{}),
 	} {
 		if q.Form() == "" {
 			t.Errorf("%T does not name itself", q)
@@ -877,8 +877,10 @@ func TestEveryInputKindIsAnsweredForABatchForm(t *testing.T) {
 		InputMark: {kinds: []OutcomeKind{OutcomeRecord}},
 		// Ends the sitting, keeping what was already recorded.
 		InputQuit: {kinds: []OutcomeKind{OutcomeDone}, advances: true},
-		// REFUSED: `d` names no word on a grid.
-		InputDrop: {kinds: []OutcomeKind{OutcomeNone}},
+		// `d` IS THE FORM'S HERE. The session reserves it only where a form has
+		// a current word to remove, and a grid has none — so it arrives as an
+		// ordinary graded key, and this table's Rune ('0') marks cell 0.
+		InputDrop: {kinds: []OutcomeKind{OutcomeRecord}},
 	}
 	if len(want) != int(numInputKinds) {
 		t.Fatalf("this table covers %d input kinds and the machine has %d — a kind was added and nobody said what it means to a form holding many words", len(want), numInputKinds)
@@ -890,7 +892,7 @@ func TestEveryInputKindIsAnsweredForABatchForm(t *testing.T) {
 			t.Errorf("input kind %d has no expectation", k)
 			continue
 		}
-		b := NewBoard(cellsOf("alpha", "beta", "gamma"), 80)
+		b := NewBoard(cellsOf("alpha", "beta", "gamma"), 80, Palette{})
 		s := NewSession([]Question{b, NewRecall("mesa", "a flat-topped hill")})
 		// A rune this form grades, and a cell it has.
 		next, outs := Apply(s, Input{Kind: k, Rune: '0', Cell: 0})

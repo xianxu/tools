@@ -329,8 +329,8 @@ chosen at the new height.
 | `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
 | `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word". The set of paths that consult it is `InputKind × Batch`, DERIVED from `numInputKinds` by `TestEveryInputKindIsAnsweredForABatchForm` rather than counted in prose (R7), plus `Words()` for the bar (D8) |
 | `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` wherever an input can mean something different to a form holding many words, and stamps every record's `Form` in one place (D2, D3, D12, D4a, R7) |
-| `livePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — D12 predicted a guard here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
-| `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` rather than naming the constant, because `d` is refused on a board; the mode rides on it as of R11, via the form's own `Keys()` (R2, R11) |
+| `livePrompt` | `cmd/define/play_loop.go` | modified | PURE — D12 predicted a guard here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
+| `gradePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — asks `reservedKeys` rather than naming the constant, because `d` is refused on a board; the mode rides on it as of R11, via the form's own `Keys()` (R2, R11) |
 | `reservedKeys` | `cmd/define/play_loop.go` | new | PURE — the session's reserved keys FOR THIS FORM. `d` is not among them for a form holding many (D12, R2) |
 | `boardFooter` | `cmd/define/play_loop.go` | new | PURE — the board's own rows, then the bar. One line, because the form owns the rest (R1) |
 | `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole (D15) |
@@ -761,3 +761,50 @@ The driver now reads only the screen, and detects the relayout by the ENTRY COUN
 four and holds five, and the new count cannot be reached by the old layout. It
 also never touches the board: that object belongs to the loop goroutine, `-race`
 said so, and production has one goroutine on a form for exactly this reason.
+
+### 2026-09-01 (R16) — four corrections from the operator's first real sitting
+
+The plan and three review rounds all missed these, and one sitting found them.
+Every one is a case of a decision that read well in prose and wrong on a screen.
+
+**1. A marked cell is PAINTED and keeps its key.** D5 and the first
+implementation put the mark WHERE THE KEY WAS — `[y]` in place of `[3]` — on the
+reasoning that it said "answered" and "this key is spent" in one stroke.
+Operator: *"selected words on the board should change color instead of use
+[y]/[n]"* and *"don't change the [0]...[f] as they are needed for keyboard
+operation"*. The key is how a mouse-less terminal reaches the cell AND how a
+learner reads the grid back, so it was the wrong half to spend. **This is also
+the feature the live edge was for** (D10): a grid filed in the append-only buffer
+could never repaint a cell, and until now nothing exercised that.
+
+`play.Palette` carries the sequences in from `main`, which owns `newPalette` —
+the same seam `Choice` sits on. Padding is applied OUTSIDE the style, so a
+painted cell occupies exactly the columns an unpainted one does and `CellAt` is
+untouched; `visibleColumns` exists for anything reading a drawn line back.
+
+**2. `d` IS a label, and the sequence has no hole.** Operator: *"jumping from [c]
+to [e] is a bit confusing. and I don't think in this screen we are using d in
+keyboard shortcut?"* — correct, and D12 is why: `Apply` already REFUSED the drop
+for a form holding many words, because a grid has no single current word. The gap
+protected a key that was not in use. The session's rule survives sharper than it
+was written: **`d` is reserved for forms that HAVE a current word to remove**, and
+any other form receives it as an ordinary graded key. `toInput` carries the rune
+so `Apply` can hand it over.
+
+**3. One blank buffer line as a board opens.** Every other form is separated from
+the previous question by the leading `\n` of its own prompt write; a board writes
+nothing to the buffer, so its grid began immediately under the last question. One
+line, once per board, through the same `written` index that keeps a question from
+being filed twice.
+
+**4. `BoardLabels` is exported**, because the fix for (2) broke two tests and a
+pty row that each carried their own copy of `"0123456789abcefg"` and typed a key
+the board no longer had. A caller derives the sequence now. Same rule the README
+prompt lines already live under, one package over.
+
+**What this says about the three review rounds.** They found real defects — a
+Critical the reviewer reproduced by execution, a resize that marked the wrong
+word, guards that certified nothing — and none of them found these four, because
+all four are correct code that reads wrong to the person using it. **A boundary
+review checks that the thing does what the plan says; only a sitting checks
+whether the plan said the right thing.**

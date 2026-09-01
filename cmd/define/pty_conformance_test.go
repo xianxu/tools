@@ -1004,7 +1004,7 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 	// a conformance row's subject is that the board REACHED a real terminal, not
 	// how its prompt is phrased. The wording is pinned once, against the README,
 	// by TestREADMEQuotesThePromptsTheLoopActuallyPrints.
-	keys := play.NewBoard([]play.Cell{{Word: words[0]}, {Word: words[1]}}, 80).Keys()
+	keys := play.NewBoard([]play.Cell{{Word: words[0]}, {Word: words[1]}}, 80, play.Palette{}).Keys()
 	if !strings.Contains(first, keys) {
 		t.Fatalf("the board was not offered, or its keys were not printed (want %q):\n%q", keys, first)
 	}
@@ -1057,7 +1057,8 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 		t.Fatalf("no third cell on the grid row %q", rows[gridRow])
 	}
 	fmt.Fprintf(f, "\x1b[<0;%d;%dM", col+1, gridRow+1)
-	afterClick := unstyled(out.take(2 * time.Second))
+	raw := out.take(2 * time.Second)
+	afterClick := unstyled(raw)
 
 	// THE PANEL, which is how a mark says it landed — and it names the word that
 	// was under the pointer rather than a neighbour.
@@ -1065,14 +1066,22 @@ func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
 	if !strings.Contains(lastFrame(afterClick), third) {
 		t.Errorf("clicking %q left no trace in the panel:\n%q", third, lastFrame(afterClick))
 	}
-	if !strings.Contains(lastFrame(afterClick), "[y] "+third) {
-		t.Errorf("the clicked cell does not show its mark:\n%q", lastFrame(afterClick))
+	// THE CELL KEEPS ITS KEY and is PAINTED — asserted on the RAW output,
+	// because `unstyled` strips exactly the thing under test. Derived from
+	// boardPalette rather than spelling the escape, so the colour is decided in
+	// one place.
+	if !strings.Contains(afterClick, "[2] "+third) {
+		t.Errorf("the clicked cell lost its key:\n%q", lastFrame(afterClick))
+	}
+	pal := boardPalette(options{color: true})
+	if !strings.Contains(lastFrame(raw), pal.Yes+"[2] "+third+pal.Off) {
+		t.Errorf("the clicked cell is not painted as a yes on a real terminal:\n%q", lastFrame(raw))
 	}
 
 	// TAB, which reached nothing at all before this issue.
 	f.WriteString("\t")
 	afterTab := unstyled(out.take(2 * time.Second))
-	flipped := play.NewBoard([]play.Cell{{Word: words[0]}}, 80)
+	flipped := play.NewBoard([]play.Cell{{Word: words[0]}}, 80, play.Palette{})
 	flipped.Toggle()
 	if !strings.Contains(lastFrame(afterTab), flipped.Keys()) {
 		t.Errorf("Tab did not flip the mode on a real terminal (want %q):\n%q", flipped.Keys(), lastFrame(afterTab))
