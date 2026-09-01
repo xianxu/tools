@@ -240,9 +240,9 @@ func TestStreamedAnswerCarriesNoEscapesWithoutColour(t *testing.T) {
 // The composition, pinned — and it CHANGED with #30 D5, which is why this test
 // no longer builds the one it used to.
 //
-// It wrapped a crlfWriter and asserted highlighting ran inside it. No production
-// path composes those any more: the raw loop writes into the screen, which owns
-// line placement, and `--play` keeps its own crlfWriter but never asks. A test
+// It wrapped a line-ending writer and asserted highlighting ran inside it. No
+// production path composes those any more: both raw loops write into the screen,
+// which owns line placement, and `#41` deleted that writer. A test
 // that keeps asserting a composition nothing builds is worse than no test — it
 // reads as coverage.
 //
@@ -310,7 +310,7 @@ func TestEveryEntryPathHighlightsAnswers(t *testing.T) {
 			replLines(t.Context(), nil, d, opt, strings.NewReader("?what is obsequious\n"), out, errOut, true, false)
 		}},
 		{"raw editor", func(t *testing.T, d deps, opt options, out, errOut *bytes.Buffer) {
-			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt, editorConsole(out, errOut, func() {}))
+			runEditor(t.Context(), scriptKeys("?what is obsequious\r"), nil, d, opt, recordingConsole(out, errOut, func() {}))
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

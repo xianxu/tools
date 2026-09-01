@@ -49,15 +49,41 @@ func TestAudioCandidatesShortWord(t *testing.T) {
 	}
 }
 
-// Multi-word headwords exist (hot dog) and must not produce a URL with a space.
+// Multi-word headwords are keyed with the spaces REMOVED — "hot dog" is `hotdog`.
+//
+// This test used to assert `hot_dog_en_us_1.mp3` and so PINNED a bug for the life
+// of the feature: every multi-word headword in the corpus (hot dog, a priori)
+// missed, and missed silently, because a miss is a supported outcome here.
+//
+// Two things made it invisible, and both are worth naming since neither is
+// specific to this file. The assertion above it — "must not produce a URL with a
+// space" — is satisfied by ANY separator, so it looked like coverage while
+// discriminating nothing. And the value it did assert came from the comment on
+// the implementation rather than from the server: the underscore was never
+// measured, it was assumed, and the test then froze the assumption.
+//
+// So the shard is asserted too. `hotdog` shards under `ho`; `hot_dog` would shard
+// under `ho` as well, which is precisely why the shard could not catch this and
+// the filename has to.
 func TestAudioCandidatesMultiWord(t *testing.T) {
-	for _, u := range AudioCandidates("hot dog", voice{Lang: "en", Locale: "us"}) {
-		if strings.Contains(u, " ") {
+	got := AudioCandidates("hot dog", voice{Lang: "en", Locale: "us"})
+	if len(got) == 0 {
+		t.Fatal("no candidates")
+	}
+	// Measured against the live CDN, 2026-08-30: hotdog_en_us_1 is 200 while
+	// hot_dog_en_us_1 and hot-dog_en_us_1 are both 404. Pinned live by
+	// TestCDNKeysPhrasesWithoutSeparators in fetch_conformance_test.go.
+	if !strings.Contains(got[0], "/ho/hotdog_en_us_1.mp3") {
+		t.Errorf("multi-word key = %s, want the spaces removed", got[0])
+	}
+	for _, u := range got {
+		// No space, and no separator standing in for one either.
+		if strings.Contains(u, " ") || strings.Contains(u, "%20") {
 			t.Errorf("unescaped space in %s", u)
 		}
-	}
-	if got := AudioCandidates("hot dog", voice{Lang: "en", Locale: "us"})[0]; !strings.Contains(got, "hot_dog_en_us_1.mp3") {
-		t.Errorf("multi-word slug = %s", got)
+		if strings.Contains(u, "hot_dog") || strings.Contains(u, "hot-dog") {
+			t.Errorf("%s uses a separator the CDN 404s on", u)
+		}
 	}
 }
 

@@ -103,24 +103,83 @@ take — a click here should reach it rather than growing a third caller.
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
-item: issue-spec               design=0.45 impl=0.08
+item: issue-spec               design=0.55 impl=0.08
 item: cross-cutting-refactor   design=0.05 impl=0.12
-item: cross-cutting-refactor   design=0.05 impl=0.12
-item: smaller-go-module        design=0.05 impl=0.12
-item: smaller-go-module        design=0.03 impl=0.16
-item: smaller-go-module        design=0.01 impl=0.08
-item: smaller-go-module        design=0.02 impl=0.10
-item: smaller-go-module        design=0.02 impl=0.14
+item: cross-cutting-refactor   design=0.05 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.08
+item: greenfield-go-module     design=0.06 impl=0.28
 item: smaller-go-module        design=0.01 impl=0.08
 item: atlas-docs               design=0.02 impl=0.06
 item: ux-rename-iteration      design=0.30 impl=0.05
-item: milestone-review         design=0.00 impl=0.16
 item: milestone-review         design=0.00 impl=0.30
+item: milestone-review         design=0.00 impl=0.32
 design-buffer: 0.15
 total: 2.83
 ```
 
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.55/0.08 | the design carrier | the issue, the operator's two decisions, FOUR plan-quality rounds — plus two design passes after the park: the revision recording what `#41` landed, and the re-read against the tree it left. Up from 0.45 for those two |
+| `cross-cutting-refactor` 0.05/0.12 | **T0 — DONE** (`9168bf2`) | `options.playsAudio()` inside `playAnnounced`, replacing four hand-copies in two spellings. Kept in the block: it is real work inside the window `sdlc actual` measures, and removing it would understate the issue |
+| `cross-cutting-refactor` 0.05/0.24 | T1 lift the click registry | the one remaining task that touches a working loop. Priced against `#41`'s `todaysQuestions` signature-widening (0.24), which is its shape — not its `menu`→`footer` rename (0.12), which is not |
+| `smaller-go-module` 0.02/0.08 | T4 the prompt word is a region | line 0, column 0 of the write `show()` already makes. Design up 0.01 because `draw` is gone and the site had to be re-found |
+| `greenfield-go-module` 0.06/0.28 | T5 the revealed definition carries its regions | **the row the re-read repriced.** Was 0.02/0.10 for "call `writeRendered` and the regions ride along"; a pinned screen's `WriteRegions` now WRAPS, so a region computed before the wrap underlines one word and answers for another — silently, on any entry long enough to wrap. `greenfield` because `cross-cutting-refactor`'s band tops out at 0.20 and this row was sitting on the ceiling while the prose called it the issue's real risk |
+| `smaller-go-module` 0.01/0.08 | T7 a click never answers | one guard and one assertion |
+| `atlas-docs` 0.02/0.06 | T8 | the README's review-loop section and the atlas's clickable-regions section |
+| `ux-rename-iteration` 0.30/0.05 | the TUI iteration round | unchanged from the post-T0 derivation, and `#41` confirmed the cost is real: the operator found a clipped option line on the first real sitting |
+| `milestone-review` 0.00/0.30 | the boundary: run + **manual verification** | the close checklist needs an unsandboxed conformance run AND a real-terminal session — click and HEAR the word, `n`, click the headword and `ORIGIN`, page back, quit, check the transcript. The audio step is verifiable no other way |
+| `milestone-review` 0.00/0.32 | the boundary: remediation | |
+
 Derivation notes.
+
+**RE-DERIVED 2026-08-31, against the tree `#41` left — and it lands back on 2.83
+for entirely different reasons, which is the one thing a reader of this
+calibration row has to know.** Three priced rows died and the survivors grew by
+almost exactly as much. The mapping table above is what makes that auditable;
+without it the arithmetic looks like nothing happened.
+
+- **T2, T3 and T6 are DEAD, ~0.54h.** `#41` landed the playback-dance deletion,
+  the screen adoption and the viewport while this branch was parked, and its close
+  verified two of this plan's Done-when rows on real hardware under the exact test
+  names this plan predicted, plus row 4c's replacement pin built to this plan's
+  round-4 specification. Removed rather than re-labelled.
+
+- **T5 absorbs most of what they gave back**, and is the honest reason the total
+  held. `#41` BR-25 wrote the constraint down for whoever arrived first: a
+  region's column is relative to the text it was computed from, so a wrap that
+  moves a word moves what a click there means. That failure is SILENT and appears
+  only on entries long enough to wrap, which is most of them.
+
+- **The T3 premium is gone with T3.** The post-T0 note said the optimistic row was
+  T3, "where `--play`'s five return paths meet `onceHandBack`". That risk was
+  `#41`'s, and it materialised there.
+
+- **T1 0.12 → 0.24**, from the estimate-quality gate: it is shaped like `#41`'s
+  `todaysQuestions` widening, not like a rename.
+
+- **The two `milestone-review` rows go 0.16/0.30 → 0.30/0.32.** See the deviation
+  note below — this is outside the model, deliberately.
+
+**ONE DELIBERATE DEVIATION FROM v3.1, named rather than buried.** v2's table gives
+milestone review `0.2–0.5` and v3.1 writes `impl=` at 40% of that, so the scaled
+ceiling is **0.20**. These rows are 1.5–1.6× above it and are 22% of the total.
+That is an evidence-based OVERRIDE of the primitive table, not the model applied
+as written: `#41` ran FIVE close rounds against these same files days ago and
+measured 4.77 against 3.31, with roughly half the total being boundary work.
+Pricing this boundary at the model's ceiling would encode a number the adjacent
+row already falsified.
+
+**THE PREDICTION, restated.** The local ledger here is four rows wide: `#30`
+3.4×, `#7` 1.70×, `#39` 0.54×, `#41` 1.44× — a spread, not a bias, and every
+overrun in it was boundary rounds rather than building. The remaining scope is
+small and the design has been through six passes, so **if this misses, it misses
+at the boundary, and T5 is the row most likely to put it there**: a silent offset
+bug is exactly what a review round finds and sends back. On that reading the
+actual lands near **3–4h**. The estimate is NOT padded toward it.
+
+--- the post-T0 derivation, kept because the rows it argued for survive ---
+
+
 
 - **`issue-spec` design 0.45 is mostly already spent**: the issue, the operator's
   two decisions, and FOUR plan-quality rounds. Lower than `#30`'s 0.50 because
@@ -190,15 +249,37 @@ Derivation notes.
       boundary; four plan-quality rounds).
 - [x] T0 — one audio-off predicate, applied inside `playAnnounced`.
 - [ ] T1 — lift the click registry into `playRegion`, shared by both loops.
-- [ ] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands.
-- [ ] T3 — `--play` writes into a `liveScreen`.
+- [x] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands. **Landed by `#41` T3/T4**; the replacement pin is `TestAMissRecordsBeforeItPlays`, built to this plan's round-4 specification.
+- [x] T3 — `--play` writes into a `liveScreen`. **Landed by `#41` T3** as `newConsole(…, newPinnedScreen)`.
 - [ ] T4 — the prompt word is a region.
 - [ ] T5 — the revealed definition carries its regions.
-- [ ] T6 — the viewport: scroll, wheel and resize.
+- [x] T6 — the viewport: scroll, wheel and resize. **Landed by `#41` T7/T8** as the shared `viewportGesture` plus the loop's resize case.
 - [ ] T7 — a click acts and never answers.
 - [ ] T8 — docs: the README's review-loop section and the atlas's.
 
 ## Log
+
+### 2026-08-31 — resumed; `#41` landed three of the nine tasks
+
+`#41` merged (PR #25) and took T2, T3 and T6 with it, so this issue resumes at
+T1 with T0 already done from the 2026-08-30 session. The plan carries the
+re-read; the estimate is re-derived above and lands back on 2.83 for a different
+set of reasons, which the mapping table makes auditable.
+
+**What a resumer must not lose, updated.** The 2026-08-30 note said it was the
+playback dance. That is done. The live one is `#41` BR-25's: a pinned screen's
+`WriteRegions` WRAPS, and a region's column is relative to the text it was
+computed from — so T5 has to wrap BEFORE computing regions, or the underline and
+the hit test land on different words. Silently, and only on entries long enough
+to wrap.
+
+**A process note, because it cost real work.** Resuming, I read this issue's file
+on `main` and re-derived its estimate from a 2.18 block — while the branch
+carried a considered 2.83 from the post-T0 session that `main` had never seen,
+because the branch was unpublished. **A parked branch's issue file is the current
+one; `main`'s copy is as old as the park.** Check out the branch before reading
+the record.
+
 
 ### 2026-08-30 — PARKED after T0, deliberately
 

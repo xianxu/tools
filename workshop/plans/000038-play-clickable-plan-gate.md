@@ -210,19 +210,64 @@ rounds:
           round: 4
       blocked: false
     - "n": 5
-      timestamp: "2026-08-30T16:45:38-07:00"
+      timestamp: "2026-08-31T18:28:30-07:00"
       agent: claude
       dispose:
         - id: PQ-6
           disposition: addressed
-          note: 'the issue''s ## Plan now carries T0-T8 as tickable rows, plain checkboxes, one boundary'
+          note: 'The issue''s ## Plan now carries T0–T8 as tickable rows.'
           round: 5
         - id: PQ-11
           disposition: addressed
-          note: T2 re-homes order via one ordered log both the Capturer double and fakePlayer append to; verified both seams are injectable and playAnnounced blocks on speak, so reversing outs is the only thing that reddens it
+          note: TestAMissRecordsBeforeItPlays exists at play_loop_test.go:1113 and play_loop.go:272 names it as the order pin.
+          round: 5
+      findings:
+        - id: PQ-12
+          severity: Important
+          title: T4 and T5 specify region coordinates against premises the screen and Render do not hold
+          detail: |-
+            Third finding in this family, so the deliverable is the enumeration, not the
+            instance. Rule: a task adopting an existing mechanism carries that mechanism's
+            HEAD-documented obligations as checkable items. For WriteRegions/Render that is
+            four rows, and the plan currently misses three. Measured: the prompt and reveal
+            writes both lead with a newline (play_loop.go:167, :317) while addRegions anchors
+            at the render's start (screen.go:149-168), so the specified Line 0 lands on the
+            blank line above the word; todaysQuestions passes no Word (play_loop.go:430-432)
+            though RenderOpts.Word documents empty as "no click map wanted" (render.go:15-25);
+            and regions built at queue-build time against startup opt.width cannot survive the
+            pinned screen's write-time wrap (screen.go:591-595) across a resize. None of the
+            three reddens the pins named in Done-when 1 and 3, which no test is required to
+            drive through a real screen — the repo's own joint rule is editorloop_test.go:891-902.
+          family: mechanism-adopted-without-its-obligations
+          round: 5
+        - id: PQ-13
+          severity: Minor
+          title: ten of eighteen line anchors in the plan's current-truth sections are wrong after 41 landed
+          detail: |-
+            Second in this family, so the rule rather than the instance: anchor a current-truth
+            claim by SYMBOL or test name, which TestPlanTablesNameEntitiesThatExist and
+            TestPlanNamedTestsExist guard mechanically and which pass at HEAD, instead of by
+            line number, which nothing guards. Measured at HEAD: play_loop.go 262-265, 174-198,
+            178-181, 161 and replraw.go 264, 170, 140, 94, 534, 366-380 all moved or vanished;
+            two of those rows are now false in substance, since the playback dance is deleted
+            and viewportGesture is already shared with --play.
+          family: citation-does-not-point-at-the-claim
           round: 5
       blocked: false
-content_hash: f04628d3e40c79fae55f9b8e5bd0abef71503729bf3c9ed9b18d24620ca07cbe
+    - "n": 6
+      timestamp: "2026-08-31T18:35:17-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-12
+          disposition: not-addressed
+          note: Plan unchanged since round 5 (last edit 3e19b95, 18:23; round 5 at 18:28). All three premises re-measured true at HEAD; a fifth row, the KeyClick dispatch, is unassigned.
+          round: 6
+        - id: PQ-13
+          disposition: not-addressed
+          note: The current-truth tables still anchor by line number; unchanged since the round that raised it.
+          round: 6
+      blocked: false
+content_hash: e2c1aa752b2c57f1b325790f8141762fe6882dff22b4f57c75c171066273561a
 ---
 
 # Gate ledger — tools#38 (plan-quality)
@@ -342,13 +387,45 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - PQ-8 — addressed — D11 + T0 move the guard inside playAnnounced as options.playsAudio(); the class of four is confirmed
 - PQ-11 — not-addressed — the named replacement is green under a reversed outs iteration, so order is still unpinned
 
-## Round 5 — 2026-08-30T16:45:38-07:00 (claude) — passed
+## Round 5 — 2026-08-31T18:28:30-07:00 (claude) — passed
 
 ### Disposed
 
-- PQ-6 — addressed — the issue's ## Plan now carries T0-T8 as tickable rows, plain checkboxes, one boundary
-- PQ-11 — addressed — T2 re-homes order via one ordered log both the Capturer double and fakePlayer append to; verified both seams are injectable and playAnnounced blocks on speak, so reversing outs is the only thing that reddens it
+- PQ-6 — addressed — The issue's ## Plan now carries T0–T8 as tickable rows.
+- PQ-11 — addressed — TestAMissRecordsBeforeItPlays exists at play_loop_test.go:1113 and play_loop.go:272 names it as the order pin.
+
+### Raised
+
+- **PQ-12** [Important] `mechanism-adopted-without-its-obligations` T4 and T5 specify region coordinates against premises the screen and Render do not hold
+  Third finding in this family, so the deliverable is the enumeration, not the
+  instance. Rule: a task adopting an existing mechanism carries that mechanism's
+  HEAD-documented obligations as checkable items. For WriteRegions/Render that is
+  four rows, and the plan currently misses three. Measured: the prompt and reveal
+  writes both lead with a newline (play_loop.go:167, :317) while addRegions anchors
+  at the render's start (screen.go:149-168), so the specified Line 0 lands on the
+  blank line above the word; todaysQuestions passes no Word (play_loop.go:430-432)
+  though RenderOpts.Word documents empty as "no click map wanted" (render.go:15-25);
+  and regions built at queue-build time against startup opt.width cannot survive the
+  pinned screen's write-time wrap (screen.go:591-595) across a resize. None of the
+  three reddens the pins named in Done-when 1 and 3, which no test is required to
+  drive through a real screen — the repo's own joint rule is editorloop_test.go:891-902.
+- **PQ-13** [Minor] `citation-does-not-point-at-the-claim` ten of eighteen line anchors in the plan's current-truth sections are wrong after 41 landed
+  Second in this family, so the rule rather than the instance: anchor a current-truth
+  claim by SYMBOL or test name, which TestPlanTablesNameEntitiesThatExist and
+  TestPlanNamedTestsExist guard mechanically and which pass at HEAD, instead of by
+  line number, which nothing guards. Measured at HEAD: play_loop.go 262-265, 174-198,
+  178-181, 161 and replraw.go 264, 170, 140, 94, 534, 366-380 all moved or vanished;
+  two of those rows are now false in substance, since the playback dance is deleted
+  and viewportGesture is already shared with --play.
+
+## Round 6 — 2026-08-31T18:35:17-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-12 — not-addressed — Plan unchanged since round 5 (last edit 3e19b95, 18:23; round 5 at 18:28). All three premises re-measured true at HEAD; a fifth row, the KeyClick dispatch, is unassigned.
+- PQ-13 — not-addressed — The current-truth tables still anchor by line number; unchanged since the round that raised it.
 
 ## Open findings
 
-(none — every finding has been disposed)
+- **PQ-12** [Important] `mechanism-adopted-without-its-obligations` T4 and T5 specify region coordinates against premises the screen and Render do not hold
+- **PQ-13** [Minor] `citation-does-not-point-at-the-claim` ten of eighteen line anchors in the plan's current-truth sections are wrong after 41 landed

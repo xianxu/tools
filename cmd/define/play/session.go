@@ -78,9 +78,24 @@ const (
 // that receive only an Outcome, which is every consumer this interface is meant
 // to allow.
 type Outcome struct {
-	Kind        OutcomeKind
-	Word        string
-	Verdict     Verdict
+	Kind    OutcomeKind
+	Word    string
+	Verdict Verdict
+	// Axis is WHY the option they picked was in the set, on a Record outcome
+	// for a form that can say (see Missed). AxisNone otherwise — including on
+	// every correct answer, which is D8: a right answer writes no finding.
+	//
+	// On Outcome rather than returned from Grade because only SOME forms have
+	// it. Widening Grade would make form 2.1 answer a question it cannot.
+	Axis Axis
+	// Unaided marks a right answer given COLD — the form checked it against an
+	// answer it already knew, and no reveal preceded it. False on every wrong
+	// answer, on every self-rated form, and after any reveal.
+	//
+	// It is the objective half of the ladder's two-rung promotion: an
+	// observation the session makes rather than a confidence the learner
+	// asserts.
+	Unaided     bool
 	SessionDone bool
 }
 
@@ -152,7 +167,7 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 	// and "stop" are still true after a verdict, and routing them here would
 	// silently turn a drop into a plain advance.
 	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal) {
-		next, out := advance(s, q, Skipped)
+		next, out := advance(s, q, Skipped, false)
 		return next, []Outcome{out}
 	}
 
@@ -162,7 +177,7 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		// after a miss. "This word is not mine" is true whatever is on screen,
 		// and someone who just missed a word is exactly who wants to drop it.
 		word := q.Word()
-		next, _ := advance(s, q, Skipped) // advances, records nothing
+		next, _ := advance(s, q, Skipped, false) // advances, records nothing
 		return next, []Outcome{{Kind: OutcomeDrop, Word: word, SessionDone: next.Done}}
 
 	case InputQuit:
@@ -197,7 +212,12 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 			// recall, which they know before they check, and the definition is
 			// FEEDBACK rather than stimulus. Getting it backwards put a mandatory
 			// keystroke in front of every correct answer (#24).
-			next, out := advance(s, q, verdict)
+			// COMPUTED HERE, while s.Revealed still holds its real value.
+			// advance() zeroes it before it builds the outcome, so reading it
+			// there would mark EVERY correct answer unaided — the feature would
+			// look like it worked while running the ladder at double speed.
+			// TestARevealDisqualifiesUnaided is the pin.
+			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
 			return next, []Outcome{out}
 		}
 		// A MISS on a hidden word earns the definition, and earns it WITHOUT
@@ -210,7 +230,7 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		s.Revealed, s.Graded = true, true
 		s = score(s, verdict)
 		return s, []Outcome{
-			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict},
+			{Kind: OutcomeRecord, Word: q.Word(), Verdict: verdict, Axis: missedAxis(q)},
 			{Kind: OutcomeReveal, Word: q.Word()},
 		}
 	}
@@ -238,7 +258,7 @@ func score(s Session, v Verdict) Session {
 // the loop just performs outcomes. A loop that inspected verdicts would be
 // re-deciding what this already decided, which is how one rule ends up
 // implemented in two places or neither.
-func advance(s Session, q Question, v Verdict) (Session, Outcome) {
+func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) {
 	s = score(s, v)
 	s.Index++
 	s.Revealed, s.Graded = false, false
@@ -251,5 +271,53 @@ func advance(s Session, q Question, v Verdict) (Session, Outcome) {
 		// and demote the word.
 		return s, Outcome{Kind: OutcomeNone, SessionDone: s.Done}
 	}
-	return s, Outcome{Kind: OutcomeRecord, Word: q.Word(), Verdict: v, SessionDone: s.Done}
+	return s, Outcome{Kind: OutcomeRecord, Word: q.Word(), Verdict: v, Axis: missedAxis(q), Unaided: unaided, SessionDone: s.Done}
+}
+
+// Missed is implemented by forms whose WRONG answers carry a kind.
+//
+// Optional deliberately. Form 2.1 cannot say why a recall failed — the learner
+// simply did not remember — so requiring every form to answer would make the
+// interface lie for the one form that has no answer. Apply asks and takes
+// AxisNone when nobody answers, which is also what a correct answer reports.
+//
+// This is what keeps the session form-AGNOSTIC while still carrying #17 M2's
+// finding out: Apply names a CAPABILITY here, never a form. A type switch on
+// *Choice would be the thing Done-when 7 forbids.
+type Missed interface {
+	MissedAxis() Axis
+}
+
+// missedAxis asks a question for the axis it was missed on, if it can answer.
+func missedAxis(q Question) Axis {
+	if m, ok := q.(Missed); ok {
+		return m.MissedAxis()
+	}
+	return AxisNone
+}
+
+// SelfRated is implemented by forms whose verdict is the learner's CLAIM rather
+// than something the form checked.
+//
+// Form 2.1 is the whole population today: `y` means "I knew it" and nobody
+// verified it. `#40`'s board joins it — a `firm` mark is triage, not retrieval.
+//
+// It is `SelfRated` and not `Observed` deliberately, even though the DEFAULT is
+// then the permissive one. A marker that a new form must remember to add would
+// silently deny every future form the promotion it has earned; a marker it must
+// remember to add to CLAIM strictness fails the other way, loudly, the first
+// time someone checks. TestSelfRatedFormsNeverEarnUnaided is that check, and it
+// ranges over the forms rather than naming a rule.
+type SelfRated interface {
+	IsSelfRated() bool
+}
+
+// unaidedNow is the observation, made while the session still holds the state
+// that proves it.
+func unaidedNow(s Session, q Question, v Verdict) bool {
+	if v != Correct || s.Revealed {
+		return false
+	}
+	sr, ok := q.(SelfRated)
+	return !ok || !sr.IsSelfRated()
 }

@@ -34,11 +34,59 @@ define -no-color bank       # never emit ANSI (also automatic when piped)
 
 ## Reviewing what is due
 
-**`define --play` reviews what is due today.** The word appears alone and you
-answer straight away: `y` if you had it, `n` if you did not. A `y` moves on
-immediately; an `n` shows you the definition, and any key then continues. Ctrl-C
-stops whenever you like and keeps everything you answered — each answer is
-written as it happens, not at the end.
+**`define --play` reviews what is due today.** There are two kinds of question,
+and which you get depends only on how big your deck is — you never choose.
+
+### Multiple choice, once your deck can supply distractors
+
+The word appears with up to four definitions, one of them right. This is the
+main form, because recognising a meaning among plausible alternatives is a
+harder and more useful test than deciding for yourself whether you knew it. A
+young deck gives two or three options rather than four — there is nothing to pad
+them with — and the prompt always names the digits that actually work.
+
+```
+$ define --play
+sycophantic
+
+1  an isolated flat-topped hill with steep sides
+2  behaving or done in an obsequious way in order to gain advantage
+3  a small short-tailed wallaby with a short face
+4  an official report of the proceedings of a court
+
+1-4 = pick the definition, d = remove from deck, Ctrl-C to stop
+```
+
+**The wrong answers are your own words**, taken from your deck — never invented
+by a model, so this works offline and costs nothing. They are also chosen to
+differ from one another: where your deck allows, one is a specialist sense the
+dictionary labels (`Law`, `Grammar`, `Nautical`), one is marked for register
+(`informal`, `archaic`, `dated`), and one is ordinary vocabulary. Which one you
+pick is recorded, not just whether you were right — so "kept picking the archaic
+ones" is a thing your history can eventually tell you.
+
+A word is not offered as a distractor against a word whose dictionary definition
+mentions it. NOAD defines close synonyms through each other — `sycophantic` is
+glossed *"behaving or done in an obsequious way"* — and that cross-reference is
+exactly the case where two options could both be defensible. It is a filter, not
+a proof: it only matches headwords of six characters or more (shorter ones like
+"thing" appear in too many definitions by coincidence), and two words can be
+close in meaning without the dictionary ever linking them.
+
+Answer and the full entry appears, with the right answer and what you picked
+named above it.
+
+### Recall, on a young deck
+
+The word appears alone and you rate yourself. A word gets this form when a
+multiple choice is not possible, and there are exactly three reasons:
+
+- **the deck has no other word to draw on** — the very first reviews;
+- **the entry is nothing but cross-references** ("another term for …"), so there
+  is no definition to be the right answer;
+- **the entry defines a different word** — the dictionary sends derived forms to
+  their base, so looking up *bargainer* returns *bargain*, and offering that
+  definition as *bargainer*'s meaning would be wrong.
 
 ```
 $ define --play
@@ -49,11 +97,16 @@ y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 
 | key | does |
 |---|---|
-| `y` | you had it — straight to the next word, no definition |
-| `n` | you missed it — the definition appears, then any key continues |
-| space or Enter | check the definition first, if you want to, before answering |
+| `1`–`4` | multiple choice: pick the definition |
+| `y` | recall: you had it — straight to the next word |
+| `n` | recall: you missed it — the definition appears |
+| space or Enter | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
 | `d` | remove this word from the deck — its history is kept |
+| PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
 | Ctrl-C | stop; everything you answered is already saved |
+
+Ctrl-C stops whenever you like and keeps everything you answered — each answer
+is written as it happens, not at the end.
 
 After an `n` the definition is on screen and the prompt changes:
 
@@ -61,10 +114,49 @@ After an `n` the definition is on screen and the prompt changes:
 any key = next word, d = remove from deck, Ctrl-C to stop
 ```
 
-Words come back on a widening schedule — 1, 3, 7, 14, 30 then 90 days — and a
-miss drops one step rather than all the way back. `-count` bounds a sitting
-(default 20). No API key: the deck and the dictionary are enough, and the review
-loop never reaches for the model. Pronunciation audio is fetched over the network
+**Words come back on a widening schedule, and each correct recall multiplies the
+wait by 1.6** — so 1, 1, 2, 4, 6, 10, 16, 26, 42, 68, 109 days and onward. You see
+a new word tomorrow and again the day after, which is when forgetting is
+steepest; a word you have recalled ten times you will not see again for months.
+
+There is no top rung. A word you know well drifts to a year, then two, and keeps
+drifting — it never leaves, it just gets cheap. That is what makes a large deck
+affordable: the cost of a word falls about as fast as the deck grows.
+
+**A miss halves the box** rather than dropping one step. A word at a 281-day
+interval falls back to 16 days, which is a real chance to relearn it; a word at
+4 days barely moves. And it climbs back faster than it went up — once you have
+known a word, relearning it is quicker than learning it was, and the schedule
+knows that.
+
+`-count` bounds a sitting (default 20). A bar pinned to the bottom of the screen
+shows how far in you are and what the deck costs, and it updates as you answer:
+
+```
+7 of 18 · ~14 reviews/day · 0.9 new words/day at 20 a sitting
+```
+
+The same figures close the sitting, under the score:
+
+```
+7 right, 3 wrong
+~14 reviews/day · 0.9 new words/day at 20 a sitting
+```
+
+A brand-new deck looks expensive — every unreviewed word is due tomorrow — and
+gets cheaper fast as words climb.
+
+A sitting takes the screen the same way the interactive session does: the bar
+stays at the bottom, a definition longer than the window is scrolled rather than
+lost, resizing the window redraws — and wraps what comes after it to the new
+width — and everything you reviewed is printed back into your terminal when you
+quit.
+
+Because it draws a whole screen, `--play` needs one. `define --play > file` and
+`define --play -no-color` both say so and stop rather than filling a file with
+escape sequences or painting control codes at a terminal that was asked not to
+receive any. No API key: the deck and the dictionary are
+enough, and the review loop never reaches for the model. Pronunciation audio is fetched over the network
 only when a word is REVEALED, so a sitting you answer entirely with `y` makes no
 network call at all; `--no-audio` makes one fully offline either way.
 
@@ -205,7 +297,10 @@ A model that is configured but does not answer says so, and the question is kept
 words/en/sycophantic.yaml  one file per word, under its language
 words/es/madrugar.yaml     a different language, a different deck
 events/2026-08-21.yaml     append-only, one file per day (named in UTC)
-                           kinds: looked-up, asked  (answers are NOT stored)
+                           kinds: looked-up, asked, reviewed. A reviewed record
+                           carries correct:, and a MISS from the multiple-choice
+                           form also carries missed: — which kind of wrong answer
+                           it was (domain, register, general)
 lang.txt                   which language this directory is in
 user-model.en.md           written by --reflect, read to pitch answers; one per
                            language, because it is read off that language's

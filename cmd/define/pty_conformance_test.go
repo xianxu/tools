@@ -419,14 +419,6 @@ func bareNewlines(s string) int {
 	return n
 }
 
-// unstyled drops SGR sequences so a text assertion survives a styling change.
-//
-// Only the colour sequences: cursor movement and erasure are what several tests
-// here are ABOUT, and stripping those would make those assertions vacuous.
-var sgr = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-func unstyled(s string) string { return sgr.ReplaceAllString(s, "") }
-
 // The grade-first flow on a real terminal.
 //
 // #6 BR-45 is why this exists in the same milestone as the change rather than
@@ -522,6 +514,80 @@ func TestPTYPlayGradeFirst(t *testing.T) {
 	}
 }
 
+// THE ALTERNATE SCREEN SURVIVES A REVEAL, which is #41 D5a's Critical seen from
+// the outside.
+//
+// The design's one Critical was that `enterAlt` is opt-in on rawSession and
+// `restore()` leaves the alternate screen — so the old reveal, which called
+// restore() to play the pronunciation in cooked mode and then `enterRaw` again,
+// would have dropped the alt screen on the FIRST reveal and never re-entered it.
+// Every frame after that would have painted over the user's scrollback, silently.
+//
+// Only a real terminal can say the mode sequences actually went out and did not
+// come back, so this is the row that closes it: the alt screen is entered once,
+// and is not left until the sitting ends.
+func TestPTYPlayKeepsTheAlternateScreenAcrossAReveal(t *testing.T) {
+	deck := seedDeck(t)
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	first := out.take(3 * time.Second)
+	if !strings.Contains(first, altScreenOn) {
+		t.Fatalf("the sitting never took the alternate screen:\n%q", first)
+	}
+
+	f.WriteString(" ") // reveal — the keystroke that used to hand the terminal back
+	revealed := out.take(2 * time.Second)
+	if strings.Contains(revealed, altScreenOff) {
+		t.Errorf("the reveal LEFT the alternate screen; every frame after it paints over the "+
+			"user's scrollback:\n%q", revealed)
+	}
+	if strings.Contains(revealed, altScreenOn) {
+		t.Errorf("the reveal re-entered the alternate screen, so it had left it:\n%q", revealed)
+	}
+
+	// ...and it IS given back at the end, or this test would pass on a sitting
+	// that simply never restores.
+	f.WriteString("y")
+	ended := out.take(3 * time.Second)
+	if !strings.Contains(ended, altScreenOff) {
+		t.Errorf("the sitting kept the alternate screen on exit:\n%q", ended)
+	}
+	// The transcript is what the learner is left looking at (D5).
+	if !strings.Contains(unstyled(ended), "sycophantic") {
+		t.Errorf("the sitting vanished with the alternate screen:\n%q", ended)
+	}
+}
+
+// `-no-color` means "emit no ANSI", and a sitting has to honour it (BR-3).
+//
+// The other half of the stdout gate, and the half only a terminal can reach: on
+// a real tty `opt.tty` is false ONLY because the flag was given. main.go's own
+// comment is the contract — *"-no-color means 'emit no ANSI', so it disables
+// cursor control too — the flag exists for terminals that mangle escapes"* — and
+// a terminal that mangles escapes is exactly the one where a full-screen sitting
+// would be unusable rather than merely ugly.
+func TestPTYPlayRefusesWithNoColor(t *testing.T) {
+	deck := seedDeck(t)
+
+	cmd, f := startDefineInDir(t, deck, nil, "--play", "--no-audio", "-no-color")
+	out := watch(f)
+	shown := out.take(3 * time.Second)
+
+	if strings.Contains(shown, altScreenOn) || strings.Contains(shown, mouseOn) {
+		t.Errorf("-no-color still took the alternate screen or the mouse:\n%q", shown)
+	}
+	if strings.Contains(shown, cursorHome) {
+		t.Errorf("-no-color still painted a frame:\n%q", shown)
+	}
+	if !strings.Contains(shown, "-no-color") {
+		t.Errorf("nothing said why the sitting did not start:\n%q", shown)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Error("exit = 0, want 1 — a sitting that cannot draw did not happen")
+	}
+}
+
 // Mouse reporting is asked for, and given back (#30 M1.4b).
 //
 // Giving it back matters more than turning it on: a terminal left reporting the
@@ -578,6 +644,42 @@ func TestPTYResizeRepaints(t *testing.T) {
 	frame := after[strings.LastIndex(after, cursorHome):]
 	if rows := strings.Count(frame, "\r\n") + 1; rows > 10 {
 		t.Errorf("the frame is %d rows in a 10-row window: %q", rows, frame)
+	}
+}
+
+// A SITTING repaints on a real SIGWINCH, and the bar is still on the bottom row.
+//
+// The editor's row above pins that the signal is delivered at all; this one pins
+// that `--play`'s select case is wired to it, which is a different loop and was
+// a different omission. The bar makes it a stronger assertion than the editor's:
+// a footer pinned to the bottom of the WRONG height is off the screen entirely.
+func TestPTYPlayResizeRepaints(t *testing.T) {
+	deck := seedDeck(t)
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+		conformance.SkipOrFail(t, "cannot size the pty on this platform", err)
+	}
+	if first := out.take(3 * time.Second); !strings.Contains(unstyled(first), "reviews/day") {
+		t.Fatalf("the sitting never drew its bar:\n%q", first)
+	}
+
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 10, Cols: 80}); err != nil {
+		t.Fatalf("resize: %v", err)
+	}
+	after := unstyled(out.take(2 * time.Second))
+	if !strings.Contains(after, cursorHome) {
+		t.Fatalf("nothing was repainted after the window changed — SIGWINCH never reached the "+
+			"sitting's select:\n%q", after)
+	}
+	frame := lastFrame(after)
+	if rows := strings.Count(frame, "\r\n") + 1; rows > 10 {
+		t.Errorf("the frame is %d rows in a 10-row window: %q", rows, frame)
+	}
+	if !strings.Contains(frame, "reviews/day") {
+		t.Errorf("the bar is not in the frame drawn for the new shape — a footer pinned to the "+
+			"old height is off the screen:\n%q", frame)
 	}
 }
 
@@ -657,3 +759,189 @@ func TestPTYWithoutMouseBehavesAsBefore(t *testing.T) {
 		t.Errorf("tracking was left on by a session that never saw a mouse: %q", rest)
 	}
 }
+
+// seedDeckN seeds several words, which is what form 2.3 needs to exist at all.
+//
+// seedDeck's one word can only ever produce form 2.1 — a word is never its own
+// distractor — so every --play pty check before this one was measuring the
+// fallback and none of them could see the multiple-choice form.
+func seedDeckN(t *testing.T, words ...string) string {
+	t.Helper()
+	deck := t.TempDir()
+	for _, w := range words {
+		_, seed := startDefineInDir(t, deck, nil, "--no-audio", w)
+		got := watch(seed).take(3 * time.Second)
+		if !strings.Contains(got, "adjective") && !strings.Contains(got, "noun") {
+			conformance.SkipOrFail(t, fmt.Sprintf("seeding %q did not resolve:\n%q", w, got), nil)
+		}
+		seed.WriteString("\x04")
+	}
+	return deck
+}
+
+// Form 2.3 ON A REAL TERMINAL, end to end: the options are offered, a deliberate
+// wrong answer is graded, and the event log records WHICH axis was picked.
+//
+// This is the manual verification the plan asked for, written as a test instead.
+// The in-process tests drive playSession with a hand-built Choice, so none of
+// them exercises the path that decides a real deck deserves form 2.3, renders
+// four real NOAD glosses into a prompt, and writes the axis to a real file.
+func TestPTYPlayChoiceOffersOptionsAndRecordsTheAxis(t *testing.T) {
+	deck := seedDeckN(t, "sycophantic", "quokka", "mesa", "parrot", "concrete")
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	first := unstyled(out.take(4 * time.Second))
+
+	// The prompt must offer digits, not y/n — the bug Question.Keys() exists to
+	// prevent, seen from the outside.
+	if !strings.Contains(first, "= pick the definition") {
+		t.Fatalf("form 2.3 was not offered, or its keys were not printed:\n%q", first)
+	}
+	if strings.Contains(first, "y = got it") {
+		t.Errorf("a multiple-choice question printed form 2.1's keys — a learner would press a dead key:\n%q", first)
+	}
+	for _, n := range []string{"1  ", "2  "} {
+		if !strings.Contains(first, n) {
+			t.Errorf("no option line %q on screen:\n%q", n, first)
+		}
+	}
+	// The answer must NOT already be identifiable: the reveal has not happened.
+	if strings.Contains(first, "you chose") {
+		t.Errorf("the reveal leaked before an answer:\n%q", first)
+	}
+
+	// THE BAR, which is #41's whole reason for existing on this surface.
+	if !strings.Contains(first, "0 of 5") {
+		t.Errorf("the pinned bar is not on screen, or does not say how far in the sitting is:\n%q", first)
+	}
+
+	// ONE DELIBERATE MISS, read rather than guessed — and #41 changed how it has
+	// to be read.
+	//
+	// The answer's slot is a function of seedFor(word, day), so pressing `1`
+	// every time and demanding a `missed:` line made the assertion depend on
+	// TODAY'S DATE: on roughly one day in a thousand all five words put the
+	// answer in slot 1. A conformance test that fails by calendar teaches people
+	// to re-run it until it passes.
+	//
+	// So the answer is read off the screen. It used to be readable in the chunk
+	// the reveal produced, because `--play` APPENDED — an unanswered Choice's
+	// reveal prints the correct option's own line, so the first option line in
+	// that chunk was it. Under frames there is no such chunk: the reveal is
+	// several screenfuls and what the terminal shows afterwards is its END, with
+	// the options scrolled off. Measured on a real terminal, not reasoned about.
+	//
+	// PAGING is what brings them back, which is the behaviour #41 was filed for.
+	// Enough PageUps to hit the top — the viewport clamps — and the first
+	// question's word, its options and the revealed answer are the first lines
+	// in the buffer, all on one screen.
+	f.WriteString("\r") // reveal
+	out.take(time.Second)
+	f.WriteString(strings.Repeat(pageUp, 30))
+	top := unstyled(out.take(2 * time.Second))
+
+	correct := twiceNumberedOption(lastFrame(top))
+	if correct == 0 {
+		t.Fatalf("could not read the revealed answer after paging to the top of the sitting:\n%q", lastFrame(top))
+	}
+	wrong := byte('1')
+	if correct == '1' {
+		wrong = '2'
+	}
+	f.WriteString(string(wrong)) // a GUARANTEED miss
+
+	// The rest of the sitting, answered without ceremony: `1` grades, and when
+	// `1` was wrong the word is already graded so the next `1` simply moves on.
+	// Every chunk is kept — take() drains rather than peeks, and the final
+	// assertions read the whole transcript.
+	transcript := first + top
+	for i := 0; i < 12; i++ {
+		transcript += unstyled(out.take(400 * time.Millisecond))
+		if strings.Contains(transcript, "right,") {
+			break
+		}
+		f.WriteString("1")
+	}
+	transcript += unstyled(out.take(3 * time.Second))
+	if !strings.Contains(transcript, "right,") {
+		t.Errorf("the sitting never finished:\n%q", transcript)
+	}
+	// ...and the bar MOVED, which a static footer would not.
+	if !strings.Contains(transcript, "1 of 5") {
+		t.Errorf("the bar never counted an answer:\n%q", transcript)
+	}
+
+	// THE RECORD. A miss must carry an axis; a correct answer must not.
+	events, err := os.ReadFile(latestEventFile(t, deck))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := string(events)
+	if !strings.Contains(log, "kind: reviewed") {
+		t.Fatalf("no review events were written:\n%s", log)
+	}
+	// Guaranteed now, not probable: every answer above was chosen to be wrong.
+	if !strings.Contains(log, "missed:") {
+		t.Errorf("no miss recorded an axis, though every answer was a deliberate miss — "+
+			"D7's finding never reached the log:\n%s", log)
+	}
+	// D8, stated as an exact identity rather than a conditional: the number of
+	// `missed:` lines must equal the number of MISSES, so a correct answer
+	// carrying an axis fails whether or not any correct answer occurred.
+	reviewed := strings.Count(log, "kind: reviewed")
+	right := strings.Count(log, "correct: true")
+	if misses, axes := reviewed-right, strings.Count(log, "missed:"); axes != misses {
+		t.Errorf("%d axes written for %d misses across %d reviews — an axis was recorded "+
+			"for a correct answer, or a miss recorded none (D8):\n%s", axes, misses, reviewed, log)
+	}
+}
+
+// latestEventFile is the day file the sitting just wrote.
+func latestEventFile(t *testing.T, deck string) string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(deck, "events"))
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("no events directory in %s: %v", deck, err)
+	}
+	return filepath.Join(deck, "events", entries[len(entries)-1].Name())
+}
+
+// twiceNumberedOption is the option digit that appears TWICE in one frame, which
+// on a revealed Choice is the answer.
+//
+// An unanswered Choice's Reveal reprints the correct option's own line above the
+// definition, so within the question's own screenful every option appears once
+// and one appears again. Reading it is what makes the pty test's miss deliberate
+// instead of dependent on which slot today's seed happened to choose.
+//
+// TWICE rather than "the first one in the reveal's chunk", which is what this
+// was until #41: a frame redraws the question AND the reveal together, so "the
+// first option line" became option 1 every time and the miss stopped being
+// deliberate — silently, since a wrong guess is still a legal answer.
+//
+// The definition's own sense numbers do not collide: they are rendered `1.` and
+// this shape needs two spaces after the digit.
+func twiceNumberedOption(frame string) byte {
+	seen := map[byte]int{}
+	for _, line := range strings.Split(frame, "\n") {
+		l := strings.TrimLeft(line, " \t")
+		if len(l) > 3 && l[0] >= '1' && l[0] <= '9' && l[1] == ' ' && l[2] == ' ' {
+			seen[l[0]]++
+		}
+	}
+	// The LOWEST matching digit, in order — not whatever a map range yields
+	// first. Two digits can tie (a frame holding part of an earlier question),
+	// and a "deliberate" miss chosen by map iteration order is deliberate on
+	// some runs and not on others, which is the calendar-dependence this
+	// function exists to remove wearing different clothes.
+	for d := byte('1'); d <= '9'; d++ {
+		if seen[d] == 2 {
+			return d
+		}
+	}
+	return 0
+}
+
+// pageUp is what a terminal sends for the key, decoded by key.go.
+const pageUp = "\x1b[5~"

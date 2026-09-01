@@ -6,37 +6,93 @@ import (
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
-// masteryStreak is how many consecutive correct answers mastery takes, and the
-// number needs a reason rather than a taste.
+// Grade is HOW an answer was given, not merely whether it was right.
 //
-// Reaching the last box from box 0 takes LastBox consecutive correct answers, so
-// any value at or below that would make Mastered mean "arrived" rather than
-// "known". This is "the promotions that reach the 90-day interval, plus two
-// confirmations at it" — which is the one-sentence explanation the Spec demands
-// of every scheduling answer.
-const masteryStreak = 7
+// Three values rather than a bool, because the ladder now promotes by an amount
+// that depends on the manner of the answer, and a bool cannot carry three
+// states. It is also the seam `#40`'s board extends with `GradeUnsure` rather
+// than re-opening.
+type Grade int
+
+const (
+	// GradeWrong is the ZERO value deliberately. A caller that forgets to set a
+	// grade demotes rather than promotes, which is the safe direction: a word
+	// wrongly demoted comes back sooner, while a word wrongly promoted silently
+	// disappears for months.
+	GradeWrong Grade = iota
+	// GradeCorrect is a right answer that needed help — the learner revealed
+	// first, or the form only asked them to rate themselves.
+	GradeCorrect
+	// GradeUnaided is a right answer given COLD, and it is an observation
+	// rather than a claim: the form compared the learner's answer to one it
+	// already knew, and no reveal preceded it. Form 2.1 can never produce this
+	// (its `y` is self-report), which `play`'s SelfRated interface enforces.
+	GradeUnaided
+)
+
+// MasteredBox is where a word stops being highlighted.
+//
+// Box 9 is reached on day 108 after nine correct recalls, the last of which came
+// after a 42-day gap — which is the part that matters. A bar that could be
+// cleared without ever surviving a long gap would certify words the learner last
+// saw three weeks ago.
+const MasteredBox = 9
 
 // Progress is one word's schedule state, DERIVED from the event log.
 //
 // No review count: #8 can fold the log for that directly, and a field with no
-// reader is a field that goes stale.
+// reader is a field that goes stale. `Streak` was deleted for exactly that
+// reason when `Mastered` stopped reading it.
 type Progress struct {
-	Box          int
-	Streak       int // consecutive correct; any wrong answer resets it
+	Box int
+	// MaxBox is the highest box this word has ever reached, and it is the
+	// express lane back after a lapse.
+	//
+	// Storage strength survives when retrieval strength does not, which is why
+	// relearning is faster than learning — Ebbinghaus called it savings. So a
+	// word below its own high-water mark climbs two rungs per correct answer
+	// instead of one. It ERODES by one on every lapse, so a word that keeps
+	// failing gradually loses the lane and is eventually relearned properly
+	// rather than being waved back up forever.
+	MaxBox       int
 	LastReviewed time.Time
 }
 
 // Answer is the transition: one review, one new state.
 //
-// Correct promotes a box; wrong demotes ONE box and resets the streak. Demotion
-// is a single step rather than a fall to zero because a word at the 90-day
-// interval that slips once is not a word you have never seen — the interval is
-// where Leitner keeps what you have learned.
-func Answer(p Progress, correct bool, at time.Time) Progress {
-	if correct {
-		return Progress{Box: clampBox(p.Box + 1), Streak: p.Streak + 1, LastReviewed: at}
+// Correct climbs one rung, or TWO while below MaxBox. Unaided climbs two. Wrong
+// HALVES the box — one sentence, and it scales: box 12 (281 days) falls to box 6
+// (16 days), a real relearning interval, while box 2 falls to box 1, barely a
+// nudge. A fixed step cannot be both.
+//
+// THE HALVING AND THE EXPRESS LANE ARE A PAIR. A gentle single-step demotion
+// needs no lane because it never travels far; halving without one would make a
+// single slip cost most of a year. Removing either alone is worse than removing
+// both, which TestRecoveryFromALapse is there to catch.
+func Answer(p Progress, g Grade, at time.Time) Progress {
+	switch g {
+	case GradeWrong:
+		box := clampBox(p.Box / 2)
+		return Progress{Box: box, MaxBox: max(box, p.MaxBox-1), LastReviewed: at}
+	case GradeUnaided:
+		return promote(p, 2, at)
+	default:
+		// Two rungs while below the high-water mark, one at or above it.
+		step := 1
+		if p.Box < p.MaxBox {
+			step = 2
+		}
+		return promote(p, step, at)
 	}
-	return Progress{Box: clampBox(p.Box - 1), Streak: 0, LastReviewed: at}
+}
+
+// promote caps the step at two. An unaided answer BELOW MaxBox does not climb
+// four: the two reasons to move faster are the same reason — this word is
+// easier than a new one — and stacking them would let a word skip most of the
+// ladder on a single lucky sitting.
+func promote(p Progress, step int, at time.Time) Progress {
+	box := clampBox(p.Box + step)
+	return Progress{Box: box, MaxBox: max(box, p.MaxBox), LastReviewed: at}
 }
 
 // Due reports whether this word's interval has elapsed.
@@ -55,14 +111,20 @@ func Due(p Progress, now time.Time) bool {
 	return store.DaysBetween(p.LastReviewed, now) >= IntervalDays(p.Box)
 }
 
-// Mastered is the FINAL box reached with masteryStreak consecutive correct.
+// Mastered is whether a word has stopped needing attention on screen.
+//
+// A LABEL, never a removal, and queue.go states the reason: "a word never
+// offered can never be answered wrong, so it could never be demoted, and the
+// learner's mastered count could only ever grow while their actual recall
+// decayed." A mastered word keeps being reviewed — at box 9 that is three times
+// a year, which rounds to nothing — and keeps serving as a distractor.
 //
 // Exported and defined once because two consumers need the same answer: #6's
-// --play decides what to stop offering, and #8's --stats reports how many words
-// are known. Two conditions written separately would drift, and the drift would
-// show as a stats screen disagreeing with the review queue.
+// --play decides what to stop highlighting and #8's --stats reports how many
+// words are known. Two conditions written separately would drift, and the drift
+// would show as a stats screen disagreeing with the review queue.
 func Mastered(p Progress) bool {
-	return p.Box >= LastBox && p.Streak >= masteryStreak
+	return p.Box >= MasteredBox
 }
 
 // Fold derives every word's Progress from the event log.
@@ -93,7 +155,38 @@ func Fold(events []store.ReviewEvent) map[string]Progress {
 		if key == "" {
 			continue
 		}
-		out[key] = Answer(out[key], e.Correct, e.At)
+		out[key] = Answer(out[key], gradeOf(e), e.At)
 	}
 	return out
 }
+
+// GradeOf is how the two booleans an answer is recorded as read as a rung on the
+// ladder.
+//
+// EXPORTED because there are two callers and they must not be able to disagree.
+// gradeOf reconstructs it from a logged event; `--play`'s loop applies it to its
+// in-memory copy of the progress map the instant an answer lands, so the cost
+// figures a sitting SHOWS cannot drift from the ones the next sitting DERIVES
+// from the log (#41 D7). Two spellings of one rule is how they would.
+//
+// Booleans rather than a ReviewEvent, so the caller with an outcome in hand does
+// not have to build a log entry it is not writing.
+func GradeOf(correct, unaided bool) Grade {
+	switch {
+	case !correct:
+		return GradeWrong
+	case unaided:
+		return GradeUnaided
+	default:
+		return GradeCorrect
+	}
+}
+
+// gradeOf reconstructs how an answer was given from what the log recorded.
+//
+// The log stores two booleans rather than the enum, because `Correct` predates
+// this and rewriting history is not on offer. An event written before `unaided`
+// existed reads as GradeCorrect — the conservative reading, which promotes one
+// rung rather than two, so re-folding an old log can only make words due SOONER
+// than the new ladder would otherwise say.
+func gradeOf(e store.ReviewEvent) Grade { return GradeOf(e.Correct, e.Unaided) }

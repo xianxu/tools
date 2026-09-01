@@ -284,9 +284,12 @@ diagnostics where the definition goes. In production every field is the same
 
 - **`screen` is an `io.Writer`, and that is what kept this from being a rewrite.**
   `Render` returns a string, the ask path streams, commands and the indicator
-  print — every one of them feeds the buffer unchanged. It REPLACED `crlfWriter`
-  on this path, because two owners of line endings is how they drift. (`--play`
-  keeps its own; see "All session output goes through `crlfWriter`" below.)
+  print — every one of them feeds the buffer unchanged. It REPLACED the
+  translating writer this path used to wrap stdout in, because two owners of line
+  endings is how they drift. `#41` made `--play` the second consumer, which left
+  that writer with no caller at all — `crlf.go` is DELETED, not retained. The
+  piped path never needed it: `replLines` runs cooked, where the terminal
+  translates.
 - **A write REPAINTS.** The buffer alone is invisible, and a streamed answer
   arrives token by token while `♫ playing 3×` has to show during playback that
   blocks for seconds. So `liveScreen.Write` paints, and `screen` stays pure and
@@ -892,9 +895,11 @@ Its contract, in the order the rules matter:
    drags it back to that span's start. Plain text may be cut freely.
 4. **Downstream errors poison the writer.** The first failure is remembered and
    nothing is emitted after it, so no byte is written twice. A short write with a
-   nil error is a failure — `crlfWriter`, which `--play` nests this inside,
-   produces exactly that. (The raw loop did too, until `#30` replaced it with the
-   screen.)
+   nil error is a failure — the line-ending writer produced exactly that, which
+   is how this rule was found. Both interactive loops replaced it with the screen
+   (`#30`, then `#41`), so the writer that motivated the rule is gone; the rule
+   outlives it because `screen.Write` and any future wrapper owe the same
+   contract.
 5. **Flush is part of the contract.** Held text is invisible until it happens.
 
 `sgrState` is the pure half: it watches escapes go past and answers "what style
@@ -935,9 +940,8 @@ rows.
 writer on the answer — over the screen in the raw loop, over the real stdout when
 piped. So highlighting sees the answer's own logical text and the screen places
 the highlighted bytes as lines afterwards. It used to wrap the raw loop's
-`crlfWriter` instead, which `#30` D5 removed. Inverted, the highlighter would
-meet `\r\n` where
-it expects `\n`.
+line-ending writer instead, which `#30` D5 removed. Inverted, the highlighter
+would meet `\r\n` where it expects `\n`.
 
 The `Flush` is DEFERRED rather than written at each return, and that is
 structural: `runAsk` returns on five paths and held text is invisible until a
@@ -1799,12 +1803,50 @@ person looks at real output in the meantime.
 
 ## Scheduling: what is worth attention today
 
-**Leitner, not SM-2, and the reason is explainability.** Fixed intervals — 1, 3,
-7, 14, 30, 90 days — because for a personal tool *"why is this due?"* must be
-answerable in one sentence, and an ease factor cannot be. `IntervalDays` clamps
-an out-of-range box rather than panicking: boxes are derived from an append-only
-log, and a log written by a future version with a longer ladder must degrade to
-the longest interval we know rather than crash a review session.
+**Leitner, not SM-2, and the reason is explainability.** For a personal tool
+*"why is this due?"* must be answerable in one sentence, and an ease factor
+cannot be. The sentence is **"each correct recall multiplies the wait by 1.6"**:
+`IntervalDays(box) = floor(1.6^box)`, giving 1, 1, 2, 4, 6, 10, 16, 26, 42, 68,
+109, 175, 281 days and onward.
+
+**The interval is COMPUTED, in exact integers.** `8^box / 5^box` in `int64`, not
+`math.Pow`. The reason is the one `#7` established for its PRNG and hash:
+`math.Pow` is not guaranteed bit-identical across architectures, and a schedule
+that differs by platform is one this repo cannot pin in a table test and a
+learner cannot reason about. A rational ratio in integers is exact everywhere and
+needs no import, so `schedule`'s allowlist is untouched.
+
+**Boxes 0 AND 1 are both one day, and that is the most valuable rung.**
+`floor(1.6^0)` and `floor(1.6^1)` are both 1, so a new word is seen on day 1 and
+again on day 2 — which is when the forgetting curve is steepest. It reads like a
+rounding artifact, and the "fix" (indexing from `1.6^(box+1)`) removes the entire
+acquisition density the ladder exists to provide. `TestTheFirstTwoRungsAreBothOneDay`
+exists because it looks like a bug cold.
+
+**There is no pedagogical ceiling, and that is what makes a large deck
+affordable.** A word in box b costs `1/IntervalDays(b)` reviews per day, so with
+a CAPPED top rung the stock of parked words grows linearly forever and no
+admission rate is sustainable — at 7 new words a day against a 90-day cap, the
+accumulated stock alone costs ~55 reviews/day after two years. With intervals
+that keep growing, a word of age τ is reviewed at roughly `1/τ` per day and the
+total load integrates to `a·ln(T)`: logarithmic, so a fixed daily budget supports
+a nearly constant new-word rate indefinitely.
+
+`ladderLimit = 20` is therefore an ARITHMETIC bound and not a ceiling: `8^21`
+overflows `int64`, and box 20 is reached only after 20,135 days of correct
+answers — 55 years, pinned by `TestTheClampIsUnreachable`. It is named
+`ladderLimit` rather than `maxBox` because `Progress` carries a `MaxBox` field,
+and `p.Box < maxBox` versus `p.Box < p.MaxBox` are both valid Go with opposite
+meanings — the first would grant every word a permanent express lane, silently.
+
+**What the deck costs is COMPUTED and SHOWN.** `DailyLoad` is `Σ 1/interval` over
+the deck, and it takes the DECK rather than the folded progress map: `Fold`
+returns an entry only for words with a review event, so summing the map would
+report a tenth of the cost of a mostly-unreviewed deck — understating it exactly
+when the warning matters most. `SustainableNewWords` divides the leftover budget
+by `reviewsInFirstYear()`, which is derived by walking the ladder rather than
+written down. The sitting summary is its first reader; `#41`'s status bar is the
+second.
 
 **Schedule state is DERIVED from the event log, never stored beside it.** This is
 the load-bearing decision of `#5`, and `store/event.go` had already written the
@@ -1828,9 +1870,31 @@ Only `EventReviewed` participates. A lookup or a question is *activity*, not
 *assessment* — they say what the learner is working ON, which is `#17`'s signal,
 not what they know.
 
-**Demotion is one box, not a fall to zero.** A word at the 90-day interval that
-slips once is not a word you have never seen; the interval is where Leitner keeps
-what you have learned.
+**Demotion HALVES the box, and the express lane is its other half.** One
+sentence, and it scales where a fixed step cannot: box 12 (281 days) falls to box
+6 (16 days), a real relearning interval, while box 2 falls to box 1, barely a
+nudge. Halving alone would make a single slip cost most of a year, so `Progress`
+carries `MaxBox` — the high-water mark — and a correct answer below it climbs TWO
+rungs instead of one. Storage strength survives when retrieval strength does not,
+which is why relearning is faster than learning; Ebbinghaus called it savings.
+
+**They are a PAIR and neither works alone**, which `TestRecoveryFromALapse` pins
+by walking the whole recovery step by step: removing the lane makes it five
+reviews instead of three, and removing the halving means the word never leaves
+the top. A test asserting only the end state would have passed on either.
+
+`MaxBox` erodes by one on every lapse, so a word that keeps failing gradually
+loses the express lane and is eventually relearned properly rather than being
+waved back up forever.
+
+**A two-rung promotion is earned by an OBSERVATION, never a claim.** `Apply`
+knows whether the learner revealed before answering, so "correct, cold, in a form
+that checked the answer" is something the session saw. Form 2.1's `y` is not
+that — it means *"I knew it"* with nobody checking — so `Recall` declares itself
+through `play.SelfRated` and never earns it. The flag is computed in `Apply`'s
+`InputRune` arm and PASSED to `advance`, because `advance` zeroes `s.Revealed`
+before it builds the outcome: reading it there would mark every correct answer
+unaided and run the ladder at double speed.
 
 **A day is a LOCAL CALENDAR day.** `Due` compares through `store.StartOfDay`,
 never `N × 24h`: a learner who reviews at 9am Monday and sits down at 8am Tuesday
@@ -1915,14 +1979,240 @@ making "did we finish" two facts in two places.
 **A deck whose words all fail to look up is NOT "nothing due today".** Words were
 due; the dictionary is the problem. Saying nothing is due would send the learner
 away believing their deck is clear, so that path reports what happened and exits
-1 — and losing the terminal after playback exits 1 as well, the same code as
-failing to enter raw mode in the first place, because they are the same failure.
+1. It used to have a sibling — "lost the terminal after playback", the same exit
+code because it was the same failure — and `#41` deleted it: playback no longer
+hands the terminal back, so there is no re-entry left to fail.
 
 **`Question` is the whole of what a session knows about a form.** `Word`,
-`Prompt`, `Reveal`, `Grade` — and `Grade` lives on the FORM, which is what makes
-"adding a second form requires no change to the loop" a property rather than a
-promise. Form 2.1 grades `y`/`n`; `#7`'s 2.3 will grade digits; the session never
-learns either. `TestSessionIsFormAgnostic` drives the same table through a fake
+`Prompt`, `Reveal`, `Grade`, `Keys` — and `Grade` lives on the FORM, which is
+what makes "adding a second form requires no change to the loop" a property
+rather than a promise. Form 2.1 grades `y`/`n`; form 2.3 grades digits; the
+session never learns either.
+
+**`Keys` joined that list when the second form shipped, and the reason is the
+kind of bug an interface exists to prevent.** The line under the question —
+"y = got it, n = missed it, …" — was a CONST in the loop. It named form 2.1's
+keys, so the moment form 2.3 was asked the learner was told to press `y` on a
+screen where only `1`–`4` did anything, and no test could see it because every
+test typed the keys the const named. A form describing its own keys is the only
+arrangement in which that cannot recur. The loop still owns the SESSION's
+reserved half (`d`, Ctrl-C) and appends it, because those are true whatever form
+is asking and a form restating them would be two owners of one fact.
+
+### The sitting is a frame (`#41`)
+
+`--play` draws through `console`/`display` exactly as the editor does, and the
+divergence `#30` D5a predicted is closed. `newConsole` is the shared builder
+both loops now call, with the screen constructor as its one parameter — the
+first cut of it was a verbatim copy of `replRaw`'s
+construction: alternate screen, mouse reporting, a screen, `watchResize`,
+`onceHandBack`. What that bought, in the order it matters:
+
+- **A long reveal PAGES instead of scrolling the word away.** Form 2.3's reveal
+  is the whole rendered entry, which on `run` or `bank` is several screenfuls;
+  before frames the word being asked about was simply gone off the top. The loop
+  intercepts PageUp/PageDown and the wheel and calls `view.Page`/`view.Scroll` —
+  BEFORE `toInput`, never inside it, because a viewport is not something the pure
+  `play` package may learn about.
+- **A status bar, pinned.** `sittingBar` formats it and `finish()` formats its
+  summary through the same `costPhrase`, so the two cannot word the `-count`
+  assumption differently.
+- **Three surfaces are SHARED with the editor rather than copied**, and each
+  was a copy first: `newConsole(ctx, d, sess, stdout, newScreen)` builds the
+  terminal for both loops with the screen constructor as its one difference,
+  `viewportGesture(view, k)` owns which keys move the view and which way a page
+  goes, and `wrapWritten` owns the wrap. `#40`'s board is the third caller of all
+  three.
+- **The question is a BUFFER LINE and the keys are the LIVE EDGE.** The old
+  `draw()` wrote the question, the reveal and the keys on every call, which is
+  right for a scrolling terminal and would file a copy of the question per
+  keystroke against a line buffer. The loop tracks the written index and writes
+  on transition; `livePrompt` returns the keys, which are painted and never
+  filed.
+
+**A SITTING REFUSES rather than degrades, and it settles that before doing any
+work.** `--play` needs stdin to be a terminal (a review is a conversation, and
+piped input would answer questions it never saw), stdout to be a terminal (a
+redirected one would collect frames at a fabricated 80 columns), and `-no-color`
+to be off (that flag means "emit no ANSI", which main.go's own comment extends to
+cursor control, for terminals that mangle escapes). All three are checked before
+the deck is read — the same rule usage errors follow — and all three refuse,
+because there is no line-mode fallback for a sitting and pretending otherwise
+would write the frames anyway. The editor degrades instead, by ROUTING to
+`replLines`; that option does not exist here.
+
+**Everything the loop writes is wrapped at the moment of WRITING, not of
+rendering (`wrapWritten`).** This took three findings in one family to state.
+`Paint` CLIPS a buffer line at the terminal's width — letting it wrap would make
+the frame a row too tall and the terminal would scroll every row the sitting
+placed — while `--play` renders its text when the queue is built and writes it
+much later. So every pre-rendered artifact carries a width that may already be
+wrong: an option gloss at the startup width (the operator found this one), the
+same lines after a narrowing resize, and the rendered definition a reveal writes.
+Wrapping one line-kind at a time is what produced three findings; the loop routes
+the question, the reveal, the drop notice, the summary and its diagnostics
+through one function, and the resize case keeps `opt.width` current. A line that
+already fits is returned untouched, so `Render`'s own wrapping passes through.
+The question already on screen keeps the wrapping it was written with, exactly as
+the editor's scrollback does — and nothing is lost by it, because the clip
+happens at paint and the whole text is still in the buffer if the window widens.
+
+**`newPinnedScreen` versus `newLiveScreen`, and the difference is a decision.**
+`Paint` writes the visible frame, then the prompt, then the footer — so a
+five-line question on a forty-row terminal put the bar at row seven. A pinned
+screen pads the buffer region to its full height at PAINT time, so the footer
+sits on the bottom row. Blank ROWS, never lines: the transcript must not gain
+rows because the terminal is tall. The editor keeps the unpadded constructor,
+because a REPL prompt belongs directly under the last output.
+
+**Adopting frames DELETED the playback dance, and that was a Critical rather than
+a tidy-up.** Every reveal used to `restore()`, play the pronunciation in cooked
+mode, and `enterRaw` again. `enterAlt` is opt-in on `rawSession` and `restore()`
+leaves the alternate screen, while `enterRaw` returns a session with `alt` false
+— so a frame-drawing sitting would have lost the alternate screen on its FIRST
+reveal and painted every frame after it over the user's scrollback. Playback now
+stays raw: under the frame model the `♫ playing 3×` indicator is a frame write,
+and `screen.Write` already honours its `\r\x1b[K` erase by taking the open line
+back. `TestPTYPlayKeepsTheAlternateScreenAcrossAReveal` is the pin.
+
+**The bar's figures are read ONCE per sitting and updated in memory.** `Deck()`
+reads a file per WORD and `Events()` a file per DAY of history, so recomputing
+per answer is thousands of file reads per question with a person waiting.
+`todaysQuestions` returns what it already computed as a `sittingDeck`, and the
+loop applies `schedule.Answer` to it through `schedule.GradeOf` — the same rule
+`Fold` reaches through `gradeOf`, so the figures a sitting SHOWS cannot drift
+from the ones the next sitting DERIVES. A drop removes the word from the copy
+too, so the bar cannot charge for a word the learner just curated away. `finish`
+takes the figures rather than re-reading: `#39` T7's reasoning (the learner
+should see the AFTER-today figure) survives, because the in-memory copy already
+is that figure.
+
+### Form 2.3: choosing a definition
+
+**The distractors are the learner's OWN deck, which is a pedagogical choice
+before it is an offline one.** A model could invent plausible wrong answers; the
+words the learner is actually confusing right now are better wrong answers, and
+they cost no key and no network.
+
+**The three distractors vary along axes NOAD labels itself**, and that is what
+makes a miss informative rather than binary. `Axis` is the reduced taxonomy —
+`AxisDomain`, `AxisRegister`, `AxisGeneral` — and the reduction is measured, not
+a shortcut: NOAD prints domain (`Law`, `Grammar`, `Nautical`) and register
+(`informal`, `archaic`, `dated`) inline at the head of a sense, so both are free
+to read and neither creates a second defensible answer. Near-synonym collapse and
+connotation need semantics, hence a model, hence they belong to `#12`/`#13`,
+which have a model veto. This form has none by design.
+
+**Selection fills the SCARCE axis first.** Counted over the committed corpus,
+register labels outnumber domain roughly five to one and only 12 of 34 entries
+carry a labelled sense at all — so a set that filled register first would almost
+never leave a domain candidate unused. A second pass tops up from whatever
+remains, because three axes and three slots only line up when the deck has all
+three; without it a deck with no `Law`-labelled word would return three-option
+questions forever.
+
+**The near-synonym guard is the dictionary's own cross-references.** "Never a
+near-synonym" named no mechanism until it was noticed that NOAD defines close
+words THROUGH each other — `sycophantic` is glossed *"behaving or done in an
+obsequious way"*. So a candidate is excluded when either headword appears in the
+other's gloss, on a word boundary, above six characters. Six is measured: three
+corpus glosses contain "thing" and every one is a coincidence. It is a REDUCTION
+and not a proof — two deck words can be near-synonyms NOAD never links — and the
+residual is accepted because the options are definitions, which two different
+words rarely share.
+
+**`readGloss` walks the head of a gloss rather than matching a prefix**, and the
+walk exists because the obvious design was measured and found wrong. Labels
+usually lead, but a grammar bracket or a parenthetical can come first
+(`[no object] Military (of a soldier) …`, `(the runs) informal diarrhea.`), and
+NOAD stacks REGIONAL labels in front of real ones (`North American English
+informal …`). A prefix match would have called every one of those unlabelled,
+losing exactly the senses the axes are built from. Regional labels are recognized
+so they can be scanned past, but are not an axis — the settled taxonomy has three
+values, and folding "where" into "tone" would blunt the finding.
+
+**Not every `Sense.Gloss` is a definition, which the plan had asserted it was.**
+`bank`, `complete`, `concrete` and `defenestrate` each carry a sense whose gloss
+is exactly `[with object]`; `man` carries `(plural men /men/)`; `alewife` and
+`bases` carry cross-references (`another term for menhaden`). `readGloss` returns
+`Usable`, and an unusable gloss is never an option — one reading "[with object]"
+would make the form look broken.
+
+**The seeded shuffle and the pool sample are hand-rolled, not `math/rand`.**
+The Done-when claims a fixed seed reproduces a question, and `math/rand`'s
+sequence for a seed is a property of the Go runtime rather than of this repo. A
+xorshift64 defined in `play` is pinned by this repo's tests, which is the
+guarantee actually being claimed. The pool is sampled with a partial
+Fisher-Yates, capped at 40 lookups per sitting — per-question it would be one
+dictionary lookup per deck word per due word, quadratic in a deck that only
+grows.
+
+**A wrong answer records WHICH option, through an optional interface.**
+`Outcome.Axis` carries it, filled from `Missed` — a capability, never a form, so
+`Apply` still contains no branch that knows what a `Choice` is. Form 2.1 does not
+implement it, because a failed recall genuinely has no kind, and requiring every
+form to answer would make the interface lie for the one that cannot. A correct
+answer reports `AxisNone`, which stringifies to `""`, which `omitempty` drops —
+so "no axis on a right answer" is enforced by the type rather than by a branch a
+caller could forget. `ReviewEvent.Missed` sits ABOVE `At`, because the
+torn-record rule leans on `at:` being the last key on disk.
+
+**Three things send a word to form 2.1**, and the list is DECLARED
+(`fallbackReasons`, `optionpool.go`) because it was being hand-maintained in the
+code, the README and here, and had already drifted to two, two and one:
+
+1. **the deck has no other word to draw on** — a learner three lookups in has a
+   deck of three, which is the normal early state of the tool rather than an
+   edge case;
+2. **the entry is nothing but cross-references** — `bases` is "plural form of
+   base1", so there is no definition to be the right answer;
+3. **the entry defines a different word** — NOAD redirects derived forms to
+   their base, so `bargainer` returns the `bargain` entry.
+
+The fallback is invisible to the learner and the sitting stays the length the
+schedule asked for.
+
+**Reason 3 is the one that had to be learned.** Form 2.1 shows the whole rendered
+entry, DERIVATIVES line included, so a redirect is harmless under it; form 2.3
+asserts that ONE gloss IS the word's meaning, records `Correct`, and promotes the
+word on that basis. The same dictionary behaviour is fine under one form and
+wrong under the other, and the assumption was inherited rather than re-examined
+when the form changed. `entryDefines` gates it, and both PRODUCERS of a
+(word, gloss) pair call it — `optionCandidates` and `targetCandidate` — rather
+than the caller, because gating the caller caught the target and left the
+distractor path open for a round.
+
+**An option set also dedups on GLOSS, not only on word.** Two deck keys can
+resolve to one entry: `jalapeño` and `jalapeno` are separate keys (`store.Key`
+folds case and whitespace but not diacritics) and the dictionary answers both
+identically. Keyed on word alone, a set then carries byte-identical options with
+one marked correct — so a learner who reads both and picks the other is recorded
+as a miss, given an axis they never chose, and has the word demoted for being
+right. Nothing upstream can catch it: both words are real deck entries whose
+entry genuinely defines them, and neither headword appears in the shared gloss,
+so `crossReferenced` is blind to it. The option set is the only place that can
+see two options saying the same thing.
+
+**The seed drives SELECTION, not just the order options appear in**, and the
+first version got that wrong in a way both Done-when rows were green on. The
+pool is built once per sitting, so scanning it in fixed order made every
+question take the same first-matching candidate: measured at 17 of 20 questions
+sharing one distractor set, after which a learner answers the rest by
+elimination. "Exactly one correct option" and "deterministic under a fixed seed"
+are both true of a sitting that asks the same question twenty times, which is
+why neither noticed. Both passes now walk a seed-shuffled index permutation —
+a permutation rather than a shuffled slice, since the pool is shared across
+questions and reordering it would make each selection depend on the ones before.
+
+**Revealing before answering shows the right option, and that is inherited
+rather than chosen.** Space and Enter are reserved by the session, and on form
+2.1 they show a definition the learner then self-rates against; on form 2.3 they
+show which option is correct, and nothing stops the learner pressing that digit
+for a `Correct`. It is a personal tool and the only person deceived is the one
+doing it, so the behaviour is left alone and named in the README instead of
+being special-cased per form — a form-specific reveal rule would put key
+semantics back inside the session, which is exactly what `Question` exists to
+prevent. `TestSessionIsFormAgnostic` drives the same table through a fake
 form using entirely different keys, and asserts that 2.1's own keys mean nothing
 to it — the only honest way to test that claim before a second form exists.
 
@@ -1958,14 +2248,13 @@ an `Input` kind and every future form gets it free — the same reasoning that p
 and the EVENTS stay: `--forget`'s contract, since history is what happened and
 cannot be untrue while the deck is the working set the learner curates.
 
-**All session output goes through `crlfWriter`.** (The `--play` loop's, which
-still draws its own frames; the interactive loop's screen replaced it there —
-see "The screen".) In raw mode a bare `\n` moves
-down WITHOUT returning to column 0, so a multi-line definition cascades
-diagonally across the screen. `#16` built that writer for exactly this; `--play`
-shipped without it and the operator's first real session found it immediately.
-`draw` writes plain `\n` and the translation happens in one place over every
-byte, including `Render`'s — which is where the newlines actually are.
+**A sitting draws WHOLE FRAMES, through the same seam the editor uses (`#41`).**
+It used to write lines through a translating writer to a scrolling terminal, because in
+raw mode a bare `\n` moves down WITHOUT returning to column 0 and a multi-line
+definition cascades diagonally across the screen — `#16` built that writer for
+exactly this, `--play` shipped without it, and the operator's first real session
+found it. The screen places every row itself, so the second writer is gone; see
+"The sitting is a frame" below for what owning coordinates bought.
 
 **Cancellation is checked BEFORE the select, not only inside it.** `select` picks
 uniformly at random among ready cases, so a cancelled context with a key already

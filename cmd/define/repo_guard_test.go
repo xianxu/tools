@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -685,7 +686,18 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 		// An unticked step means the plan is still a plan. Scanned per plan, not
 		// per row, because it is a property of the document.
 		inProgress := strings.Contains(body, "- [ ] ")
-		for _, line := range strings.Split(body, "\n") {
+		// SCOPED TO "## Core concepts", because the entity tables live there by
+		// the plan template's own contract and nothing else in a plan is one.
+		//
+		// Unscoped, this matched any table row whose second cell was a
+		// backticked `*.go` path — which is the shape of the "What this plan
+		// asserts about the existing tree, verified" table, whose third column
+		// is a verdict ("true — measured 2026-08-31") rather than a status word.
+		// Three plans in a row tripped on it, and the workaround each time was
+		// to bury a line number inside the backticks so the regex would stop
+		// matching. That is a guard training authors to obfuscate their own
+		// citations, which is worse than the false positive.
+		for _, line := range strings.Split(coreConceptsSection(body), "\n") {
 			m := row.FindStringSubmatch(line)
 			if m == nil {
 				continue
@@ -703,7 +715,7 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 				continue
 			}
 			for _, nm := range nameCell.FindAllStringSubmatch(m[1], -1) {
-				checkPlanName(t, root, filepath.Base(plan), nm[1], path, &checked)
+				checkPlanName(t, root, filepath.Base(plan), nm[1], path, status, &checked)
 			}
 		}
 	}
@@ -716,6 +728,24 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 }
 
 // checkPlanName asserts one Name cell resolves to a declaration at the stated path.
+// coreConceptsSection is the part of a plan the entity tables live in: from the
+// "## Core concepts" heading to the next "## " one.
+//
+// Returns the WHOLE body when the heading is absent, which fails toward
+// checking too much rather than too little: a plan that has renamed its section
+// should get noisy rows, not silent exemption.
+func coreConceptsSection(body string) string {
+	i := strings.Index(body, "## Core concepts")
+	if i < 0 {
+		return body
+	}
+	rest := body[i+len("## Core concepts"):]
+	if j := strings.Index(rest, "\n## "); j >= 0 {
+		return rest[:j]
+	}
+	return rest
+}
+
 // planStatuses is the Core-concepts status column's controlled vocabulary.
 var planStatuses = []string{"new", "modified", "unchanged", "deleted"}
 
@@ -764,21 +794,36 @@ func TestPlanNamedTestsExist(t *testing.T) {
 		// at close, a legitimate state between issues rather than a missing file.
 		t.Skip("no active plans")
 	}
-	// Test names as they appear in Go source, anywhere in the package.
+	// Test names as they appear in Go source, anywhere under cmd/define —
+	// SUBPACKAGES INCLUDED.
+	//
+	// This used to Glob `cmd/define/*_test.go`, which is flat, so a plan pinning
+	// a test in `play/`, `store/`, `schedule/` or `puretest/` was told the test
+	// "does not exist". #7 hit it with six at once: form 2.3's selection is pure
+	// and its tests live in `play/` by design, which is exactly where this
+	// repo's plans are SUPPOSED to put them (ARCH-PURE). A guard that fails on
+	// the arrangement the architecture asks for teaches people to weaken the
+	// guard, so the fix is here rather than in the plan.
 	declared := map[string]bool{}
-	files, err := filepath.Glob(filepath.Join(root, "cmd", "define", "*_test.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	decl := regexp.MustCompile(`(?m)^func ((?:Test|Fuzz|Benchmark)[A-Za-z0-9_]*)\(`)
-	for _, f := range files {
-		b, err := os.ReadFile(f)
+	err = filepath.WalkDir(filepath.Join(root, "cmd", "define"), func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
-			t.Fatalf("reading %s: %v", f, err)
+			return err
+		}
+		if e.IsDir() || !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		b, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
 		}
 		for _, m := range decl.FindAllStringSubmatch(string(b), -1) {
 			declared[m[1]] = true
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 	if len(declared) == 0 {
 		t.Fatal("no test declarations found: the guard would certify nothing")
@@ -853,7 +898,7 @@ func planSections(body string) []string {
 	return out
 }
 
-func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
+func checkPlanName(t *testing.T, root, plan, name, path, status string, checked *int) {
 	t.Helper()
 	{
 		recv, name := splitReceiver(name, path)
@@ -876,8 +921,26 @@ func checkPlanName(t *testing.T, root, plan, name, path string, checked *int) {
 		// stale `newDeck` row stayed green solely because one comment still
 		// mentioned the old name. A guard that a comment can satisfy is not
 		// checking the tree.
-		if !declared.Match(src) && !assigned.Match(src) &&
-			!declaredInBlock(string(src), name) && !declaredAsField(string(src), recv, name) {
+		present := declared.Match(src) || assigned.Match(src) ||
+			declaredInBlock(string(src), name) || declaredAsField(string(src), recv, name)
+
+		// A `deleted` row asserts the OPPOSITE, and until this it could never
+		// pass: the check demanded every named entity be declared, so the moment
+		// the deletion actually happened the row went red for doing what it
+		// said. That made `deleted` — one of the four words in the status
+		// vocabulary — unusable, and the only way to keep a plan green was to
+		// leave the row lying about the tree.
+		//
+		// Inverted, the row becomes a real pin: it fails if the entity is still
+		// there, which is exactly the claim "deleted" makes.
+		if status == "deleted" {
+			if present {
+				t.Errorf("%s marks %q at %s as deleted, but it is still declared there — "+
+					"either the deletion did not happen or the row is wrong.", plan, name, path)
+			}
+			return
+		}
+		if !present {
 			t.Errorf("%s names %q at %s, which does not declare it — a plan is the one "+
 				"artifact a reader trusts to describe the design, so a stale entity name "+
 				"there is worse than none. Update the row when the code renames.",

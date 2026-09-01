@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xianxu/tools/cmd/define/play"
 	"github.com/xianxu/tools/cmd/define/store"
 )
 
@@ -76,6 +77,11 @@ type countingCapturer struct {
 	asked     []string
 	askedWord []string
 	reviews   int
+	// axes records the axis each review was recorded WITH, so a test can assert
+	// D7's finding reached the seam rather than only that a review happened.
+	axes []play.Axis
+	// unaided records the same for #39's two-rung promotion signal.
+	unaided []bool
 	// voices records the SESSION voice each capture happened under. #29 needs it:
 	// its first Done-when is that the session does not move, and the capture is
 	// where a lookup's language becomes observable — a word files into
@@ -96,7 +102,11 @@ func (c *countingCapturer) CaptureAsk(word, question string, _ options) {
 	c.askedWord = append(c.askedWord, word)
 }
 
-func (c *countingCapturer) CaptureReview(string, bool, options) { c.reviews++ }
+func (c *countingCapturer) CaptureReview(out play.Outcome, _ options) {
+	c.reviews++
+	c.axes = append(c.axes, out.Axis)
+	c.unaided = append(c.unaided, out.Unaided)
+}
 
 // ONE lookup, ONE capture — on every entry path.
 //
@@ -130,7 +140,7 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+		runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
@@ -140,7 +150,7 @@ func TestCaptureArityIsOnePerLookup(t *testing.T) {
 		c := &countingCapturer{}
 		rig.deps.capture = c
 		var out, errb bytes.Buffer
-		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+		runEditor(t.Context(), scriptKeys("sycophantic\r\r\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 		assertCaptured(t, c, []string{"sycophantic"}, []bool{true})
 	})
 
@@ -289,7 +299,7 @@ func TestNoDoubleWriteThroughTheRealWiring(t *testing.T) {
 	rig.deps.capture = newStoreCapturer(st, fixedClock(1), nil, nil)
 
 	var out, errb bytes.Buffer
-	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, editorConsole(&out, &errb, finish))
+	runEditor(t.Context(), scriptKeys("sycophantic\r"), nil, rig.deps, opt, recordingConsole(&out, &errb, finish))
 
 	deck, err := st.Deck()
 	if err != nil {
@@ -555,7 +565,7 @@ func TestCaptureReviewAppendsOneEvent(t *testing.T) {
 			st := store.NewMem()
 			c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-			c.CaptureReview("obsequious", tc.correct, options{})
+			c.CaptureReview(play.Outcome{Word: "obsequious", Verdict: verdictOf(tc.correct)}, options{})
 
 			events, err := st.Events(time.Time{})
 			if err != nil {
@@ -583,7 +593,7 @@ func TestCaptureReviewNormalisesTheWord(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("Obsequious", true, options{})
+	c.CaptureReview(play.Outcome{Word: "Obsequious", Verdict: play.Correct}, options{})
 
 	events, _ := st.Events(time.Time{})
 	if len(events) != 1 || events[0].Word != store.Key("obsequious") {
@@ -597,7 +607,7 @@ func TestCaptureReviewRespectsNoCapture(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("obsequious", true, options{noCapture: true})
+	c.CaptureReview(play.Outcome{Word: "obsequious", Verdict: play.Correct}, options{noCapture: true})
 
 	if events, _ := st.Events(time.Time{}); len(events) != 0 {
 		t.Errorf("recorded %d events under DEFINE_NO_CAPTURE", len(events))
@@ -611,7 +621,7 @@ func TestCaptureReviewDoesNotTouchTheDeck(t *testing.T) {
 	st := store.NewMem()
 	c := newStoreCapturer(st, store.FixedClock(aDay), nil, nil)
 
-	c.CaptureReview("obsequious", true, options{})
+	c.CaptureReview(play.Outcome{Word: "obsequious", Verdict: play.Correct}, options{})
 
 	deck, err := st.Deck()
 	if err != nil {
@@ -620,4 +630,13 @@ func TestCaptureReviewDoesNotTouchTheDeck(t *testing.T) {
 	if len(deck) != 0 {
 		t.Errorf("the deck gained %d words from a review: %+v", len(deck), deck)
 	}
+}
+
+// verdictOf keeps the correct/wrong table rows readable now that CaptureReview
+// takes an Outcome rather than a bool.
+func verdictOf(correct bool) play.Verdict {
+	if correct {
+		return play.Correct
+	}
+	return play.Wrong
 }
