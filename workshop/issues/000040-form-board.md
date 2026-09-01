@@ -5,7 +5,7 @@ deps: ["tools#39", "tools#41"]
 github_issue:
 created: 2026-08-31
 updated: 2026-09-01
-estimate_hours: 3.60
+estimate_hours: 4.46
 started: 2026-09-01T08:54:58-07:00
 ---
 
@@ -96,21 +96,22 @@ familiarity: 1.0
 item: issue-spec               design=0.50 impl=0.08
 item: cross-cutting-refactor   design=0.05 impl=0.24
 item: greenfield-go-module     design=0.06 impl=0.28
-item: smaller-go-module        design=0.01 impl=0.08
+item: smaller-go-module        design=0.01 impl=0.12
 item: cross-cutting-refactor   design=0.04 impl=0.16
 item: smaller-go-module        design=0.03 impl=0.12
 item: smaller-go-module        design=0.03 impl=0.14
 item: smaller-go-module        design=0.02 impl=0.12
 item: smaller-go-module        design=0.02 impl=0.12
-item: smaller-go-module        design=0.01 impl=0.06
-item: smaller-go-module        design=0.01 impl=0.06
+item: smaller-go-module        design=0.01 impl=0.08
+item: smaller-go-module        design=0.01 impl=0.08
 item: smaller-go-module        design=0.02 impl=0.10
-item: atlas-docs               design=0.02 impl=0.08
-item: ux-rename-iteration      design=0.30 impl=0.05
-item: milestone-review         design=0.00 impl=0.30
-item: milestone-review         design=0.00 impl=0.32
+item: atlas-docs               design=0.05 impl=0.08
+item: smaller-go-module        design=0.02 impl=0.16
+item: ux-rename-iteration      design=0.55 impl=0.10
+item: milestone-review         design=0.00 impl=0.40
+item: milestone-review         design=0.00 impl=0.45
 design-buffer: 0.15
-total: 3.60
+total: 4.46
 ```
 
 | item | task | why this primitive |
@@ -118,27 +119,43 @@ total: 3.60
 | `issue-spec` 0.50/0.08 | the design carrier | the issue, the operator's sketch and FOUR follow-ups that each deleted a decision, two plan-quality rounds, and a rendered mock |
 | `cross-cutting-refactor` 0.05/0.24 | T1 `Batch` and the four `Apply` points | it edits the state machine every form runs through — advance, the miss-on-hidden branch, drop, and Enter |
 | `greenfield-go-module` 0.06/0.28 | T2 `Board` and `Mark` | a new form: grid layout, labels, two marks, a mode, and four interfaces to satisfy |
-| `smaller-go-module` 0.01/0.08 | T3 Tab | one row in `toInput`, one `Input` kind |
+| `smaller-go-module` 0.01/0.12 | T3 Tab, and Enter split from space | two `Input` kinds, and `Apply` must treat `InputFinish` as `InputReveal` for every non-batch form so 2.1 and 2.3 do not notice |
 | `cross-cutting-refactor` 0.04/0.16 | T4 `display.FooterRowAt` | widens the seam BOTH loops take, and the editor has to answer it too |
 | `smaller-go-module` 0.03/0.12 | T5 the click asks the form first | `#38`'s row must stay green untouched, which is the constraint rather than the code |
 | `smaller-go-module` 0.03/0.14 | T6 the footer carries the board | plus `fitFooter`'s floor, so grid rows are never dropped |
 | `smaller-go-module` 0.02/0.12 | T7 `ReviewEvent.Form` | a store field, the capture site, and `Fold` ignoring it |
 | `smaller-go-module` 0.02/0.12 | T8 `boardsFor` | partition and pack |
-| `smaller-go-module` 0.01/0.06 | T9 the relearn line | one buffer write as the board closes |
-| `smaller-go-module` 0.01/0.06 | T10 the bar counts words | |
+| `smaller-go-module` 0.01/0.08 | T9 the relearn line | one buffer write as the board closes. At the primitive's FLOOR — 0.06 was under it |
+| `smaller-go-module` 0.01/0.08 | T10 the bar counts words | at the floor, as above |
 | `smaller-go-module` 0.02/0.10 | T11 the load claim, measured | |
-| `atlas-docs` 0.02/0.08 | T12 | README, atlas, `--help`, and the two in-tree forward references D7 falsifies |
-| `ux-rename-iteration` 0.30/0.05 | the TUI iteration round | a visual form gets looked at and adjusted. `#41` proved the cost real — the operator found a clipped option line on the first sitting — and this issue has a grid, a toggle, a panel and a colour scheme |
-| `milestone-review` 0.00/0.30 | the boundary: run + manual verification | |
-| `milestone-review` 0.00/0.32 | the boundary: remediation | |
+| `atlas-docs` 0.05/0.08 | T12 | README, atlas, `--help`, and the two in-tree forward references D7 falsifies |
+| `ux-rename-iteration` 0.55/0.10 | the TUI iteration ROUNDS, plural | a visual form gets looked at and adjusted. `baseline-v2.1.md` says *"plan for 3–5 rounds per TUI-heavy milestone, not 1"*, and this is the most TUI-heavy thing in the project: a grid, a toggle, a panel, a colour scheme and click targets. `#38` bought ONE round at the floor and still missed 1.50×; `#41`'s operator found a clipped option line on the first real sitting. Priced mid-range rather than at the bottom |
+| `smaller-go-module` 0.02/0.16 | **T13 pty conformance** | Done-when 14 had a row and no task — and `#37` records that pty rows need `-tags conformance` and a real pty, which the review environment does not have, so they must be run here |
+| `milestone-review` 0.00/0.40 | the boundary: run + manual verification + the fourteen-row mutation sweep | |
+| `milestone-review` 0.00/0.45 | the boundary: remediation | |
 
-**ONE DELIBERATE DEVIATION FROM v3.1, named rather than buried.** v2's table gives
-milestone review `0.2–0.5` and v3.1 writes `impl=` at 40% of that, so the scaled
-ceiling is **0.20**. These two rows are priced 0.30 and 0.32 — 1.5–1.6× above it,
-and 17% of the total. That is an evidence-based OVERRIDE of the primitive table,
-not the model applied as written: `#41` ran five close rounds and `#38` four,
-against this same machinery, in the last two days. Pricing this boundary at the
-ceiling would encode a number two adjacent rows have already falsified.
+**TWO DELIBERATE DEVIATIONS FROM v3.1, both named, because the sentence claiming
+fidelity is what makes an unnamed one dishonest.**
+
+1. **The two `milestone-review` rows are priced 0.40 and 0.45** against v3.1's
+   scaled ceiling of 0.20. An evidence-based override: `#41` ran five close rounds
+   and `#38` four, against this same machinery, in the last two days — and
+   crucially **both priced this pair at 0.30/0.32 and both still missed by half**.
+   Pricing at the neighbours' *failed* number would be the same optimism twice.
+2. **T1 is `impl=0.24`** against `cross-cutting-refactor`'s scaled ceiling of
+   0.20. House convention — `#38` and `#41` both used it — and it edits four
+   paths in the state machine every form runs through.
+
+**AND THE ASYMMETRY THE ESTIMATE-QUALITY GATE CAUGHT, corrected rather than
+argued with.** The first derivation overrode the table UPWARD on the boundary
+rows using neighbour evidence, then sat at the FLOOR on `ux-rename-iteration` —
+the row most about that same evidence. `baseline-v2.1.md` says *"plan for 3–5
+rounds per TUI-heavy milestone, not 1"*, and this is the most TUI-heavy thing in
+the project. Applying the model in both directions moved the total 3.60 → 4.46
+**without padding a single row toward the prediction**: three floors raised
+(`T9`, `T10`, `atlas-docs` design), one missing task priced (T13's pty rows,
+which had a Done-when row and no item), and the TUI row moved off the bottom of
+its range.
 
 **THE PREDICTION, on the record so the close can tell a miss from a
 confirmation.** The ledger here is five rows wide: `#30` 3.4×, `#7` 1.70×, `#39`
@@ -153,9 +170,9 @@ vocabulary. Two plan-quality rounds already found three Criticals in the design,
 which is a leading indicator rather than a comfort — those were the ones caught
 before code.
 
-So the honest prediction is **5–6h**, and the estimate is NOT padded toward it:
-v3.1 is applied as written except where the deviation above says otherwise, or
-the calibration row means nothing. If it misses, it misses at the boundary, and
+So the honest prediction is **5–6h**, and the estimate is NOT padded toward it —
+the two deviations above are the only places the table is overridden, and both
+are argued from measured neighbours rather than from wanting a bigger number. If it misses, it misses at the boundary, and
 **T4 and T5 are the rows most likely to put it there** — one widens a seam two
 loops share, and the other changes what a gesture means without being allowed to
 change what it means anywhere else.

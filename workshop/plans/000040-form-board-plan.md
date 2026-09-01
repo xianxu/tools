@@ -373,6 +373,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [ ] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
 - [ ] **T10 — the bar counts words** (D8).
 - [ ] **T11 — the load claim, measured** (Done-when 7).
+- [ ] **T13 — pty conformance.** Done-when 14, which had a row and no task. `#37` records that pty rows need `-tags conformance` AND a real pty — *"in the review environment every one reports 'no pty available'"* — so they are run here or they are run nowhere.
 - [ ] **T12 — docs.** `cmd/define/README.md`, `atlas/define.md`'s forms section, the `--help` key table — **and the two in-tree forward references D7 falsifies**: `schedule/progress.go` says this issue extends the `Grade` seam with `GradeUnsure`, and `play/session.go` describes the mark as "firm".
 
 ---
