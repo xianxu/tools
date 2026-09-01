@@ -2034,11 +2034,39 @@ showing. The alternative — rewriting the last N buffer lines — breaks the
 invariant clicks rest on, and a header above the buffer is the first step toward
 a layout system nothing here needs yet.
 
-**The form draws its own live edge**: grid, blank, toggle, panel, all out of one
+**The form draws its own live edge**: grid, blank, panel, all out of one
 `Prompt()`. The loop appends the bar and nothing else. An earlier cut had the
 loop composing it from `Mode()` and a gloss, which made the board's appearance a
 thing two files agree about — on the surface where disagreeing marks the wrong
 word.
+
+**THE MODE IS ON THE PROMPT ROW, and that is a lesson about the order of
+sacrifice.** It had a footer row of its own until a resize measured what that
+costs: `fitFooter` drops footer rows from the END, so a narrowing left a grid on
+screen with the panel and then the TOGGLE gone — no statement of what the next
+click would mean, while every mark is irreversible. `Paint` clips the prompt last
+and only when it alone exceeds the terminal, so the mode rides on `Keys()` now.
+One owner either way; what changed is which row, chosen for which row survives.
+The general rule: an element whose absence makes the rest MISLEADING outranks
+every element whose absence merely makes it smaller.
+
+**A board can end up in a footer that drops rows.** D15's "never" holds at
+SELECTION — `boardsFor` refuses a board the terminal cannot draw whole — and a
+resize afterwards is a shape nobody chose. The board is not re-selected then:
+its marks are in the log, so sending those words to 2.3 would re-ask words
+already answered. What the footer's order buys is that the losses are harmless in
+sequence — the bar, the panel, then grid rows, which are conspicuous when missing
+and not clickable when never painted.
+
+**And the board relays out for the width it is DRAWN at** (`Board.Resize`, called
+from the loop's resize case with the SCREEN's cols, not `opt.width` — that is a
+wrap policy that answers 0 on a narrow terminal). Without it a board laid out for
+eighty columns keeps 74-column rows at forty, each wraps into two, a footer entry
+stops being one physical row, and a click on the continuation carries a column
+that means another word. `FooterRowAt` reports which physical row of an entry was
+hit and `formCell` refuses any but the first, which is the same guarantee at the
+seam. **Every quantity the fit and the click map depend on is read from the
+terminal as it is at draw and click time, never fixed at selection.**
 
 **A cell is marked ONCE, and the refusal is drawn rather than silent.** Every
 mark emits its `OutcomeRecord` as it lands, which is what makes Ctrl-C lossless;

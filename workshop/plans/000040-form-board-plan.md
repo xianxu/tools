@@ -322,15 +322,15 @@ chosen at the new height.
 
 | Name | Lives in | Status | Kind |
 |------|----------|--------|------|
-| `Board` | `cmd/define/play/board.go` | new | PURE — form 2.5: N words, two marks each, a mode. Implements `Question`, `SelfRated`, `Batch`, `Grid` and `Moded`. Draws its OWN live edge — grid, toggle and panel — so the loop composes nothing (R1) |
+| `Board` | `cmd/define/play/board.go` | new | PURE — form 2.5: N words, two marks each, a mode. Implements `Question`, `SelfRated`, `Batch`, `Grid` and `Moded`. Draws its OWN live edge — the grid and the panel — so the loop composes nothing (R1); the mode rides on `Keys()`, the row that survives a short terminal (R11) |
 | `Cell` | `cmd/define/play/board.go` | new | PURE — one word and the one-line gloss the panel shows when it is marked (R1) |
-| `Grid` | `cmd/define/play/session.go` | new | PURE — the capability "I am drawn as cells you click": `Rows`, `CellAt`, `Mark`. The first capability the LOOP asks rather than `Apply` (D11) |
+| `Grid` | `cmd/define/play/session.go` | new | PURE — the capability "I am drawn as cells you click". The first capability the LOOP asks rather than `Apply` (D11), and the methods are the type's rather than this row's to list (R9 added `Resize`) |
 | `Moded` | `cmd/define/play/session.go` | new | PURE — the capability "Tab means something to me" (D13) |
 | `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
 | `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word". The set of paths that consult it is `InputKind × Batch`, DERIVED from `numInputKinds` by `TestEveryInputKindIsAnsweredForABatchForm` rather than counted in prose (R7), plus `Words()` for the bar (D8) |
 | `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` wherever an input can mean something different to a form holding many words, and stamps every record's `Form` in one place (D2, D3, D12, D4a, R7) |
-| `livePrompt` | `cmd/define/play_loop.go` | modified | PURE — D12 predicted a guard here and none was needed (a board is never `Graded`, R2); what it gained is the doc for why the board's prompt row is the one that survives a short terminal (R11) |
-| `gradePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — it already composed `Keys()` with the reserved half, so R11's move of the mode ONTO that line needed nothing here. `reservedKeys` is the new function (R2) |
+| `livePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — D12 predicted a guard here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
+| `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` rather than naming the constant, because `d` is refused on a board; the mode rides on it as of R11, via the form's own `Keys()` (R2, R11) |
 | `reservedKeys` | `cmd/define/play_loop.go` | new | PURE — the session's reserved keys FOR THIS FORM. `d` is not among them for a form holding many (D12, R2) |
 | `boardFooter` | `cmd/define/play_loop.go` | new | PURE — the board's own rows, then the bar. One line, because the form owns the rest (R1) |
 | `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole (D15) |
@@ -380,7 +380,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [x] **T3 — Tab, and Enter split from space** (D13, D14). Enter becomes `InputFinish`; `Apply` treats it as `InputReveal` for every non-batch form, so 2.1 and 2.3 are untouched and their tests prove it. One row in `toInput`, one `play.Input` kind, and the board's mode flips. It belongs in `play` because it is about what is being ANSWERED, unlike the paging keys.
 - [x] **T4 — `display.FooterRowAt`** (D10). `Paint` already computes the footer's origin; `liveScreen` records it and answers which footer row a viewport row is. The editor's screen answers "none", which is the whole of its involvement.
 - [x] **T5 — the loop offers a click to the form first** (D11). Falls through to `playRegion` when the form declines. `#38`'s `TestPlayClickActsAndIsNotAnAnswer` must pass UNTOUCHED — every existing form declines.
-- [x] **T6 — the footer carries the board** (D10, D15). Grid, toggle, panel, bar, in that order. `fitFooter` is UNCHANGED; instead `boardsFor` asks `fitsABoard` and sends the words to 2.3 when the terminal is too short.
+- [x] **T6 — the footer carries the board** (D10, D15). The board's own rows, then the bar — the form first, which is what `formCell` reads an entry index back as. `fitFooter` is UNCHANGED; `boardsFor` asks `fitsABoard` and sends the words to 2.3 when the terminal is too short. The mode is NOT in the footer (R11).
 - [x] **T7 — `ReviewEvent.Form`** (D4a). The field, `CaptureReview` writing it, and `Fold` ignoring it — it is telemetry, not assessment. **Operator-requested and the instrument the deferred remedies depend on.**
 - [x] **T8 — form selection** (D4). `boardsFor` partitions today's keys at box ≥ 3 and packs the eligible ones sixteen at a time.
 - [x] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
@@ -436,7 +436,7 @@ than quietly dropped:
 | the box threshold | the box stays the selector, lowered to ≥ 3 (D4) |
 | `unsure` | deleted — "unsure means no" (D7) |
 | telemetry | record the form on every review event (D4a) |
-| the toggle's position | the footer, so `screen` grows no header (D6) |
+| the toggle's position | the footer, so `screen` grows no header (D6) — and later the prompt row, so a short terminal cannot drop it (R11) |
 | a mouse-less terminal | labelled keys `0`–`9`, `a b c e f g`, printed beside each word (D5) |
 
 One thing I chose rather than asked, flagged because it is the only number in
@@ -697,3 +697,14 @@ defect wearing a second coat. `waitFor`'s `t.Fatal` runs on the helper goroutine
 channel and `playSession` blocked forever. The driver closes with `defer` now and
 gives up quietly, leaving the main body to fail. A test that hangs on the defect
 certifies about as much as one that passes on it, and takes longer to say so.
+
+### 2026-09-01 (R13) — the filter's OTHER discarding rule got the same premise assertion
+
+R10 gave `currentTruthOnly`'s truncation rule a premise assertion and left its
+closed-section rule discarding silently. Splitting on `\n### ` means a closed
+section runs to the next `### `, which can swallow a following top-level `## `
+section whole — the same failure through the other door. No live instance in the
+tree, which is why this is the rule written down rather than a defect fixed: **a
+filter with two ways to discard needs the assertion on both, or the next one
+silently gets none.** Verified by planting a closed section above
+`## Core concepts`: it now fails, naming what was swallowed.

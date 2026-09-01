@@ -637,9 +637,22 @@ func currentTruthOnly(t *testing.T, name, text string) string {
 		}
 		text = text[:i]
 	}
+	// THE SECOND DISCARDING RULE, and R10's premise assertion applies to it too.
+	//
+	// Splitting on "\n### " means a closed section runs to the NEXT "### " — which
+	// can swallow a following top-level "## " section whole, exactly as the
+	// truncation above could. No live instance in the tree, which is why this is
+	// the rule written down rather than a defect fixed: a filter with two ways to
+	// discard needs the assertion on both, or the next one silently gets none.
 	var kept []string
 	for _, sec := range strings.Split(text, "\n### ") {
 		if strings.Contains(sec, "**closed:**") {
+			if i := strings.Index(sec, "\n## "); i >= 0 {
+				t.Errorf("%s has a closed \"### \" section with a top-level section after it (%q). "+
+					"Closed sections are discarded up to the next \"### \", so that section is invisible "+
+					"to every guard reading current truth. Close out the detail block before the next \"## \".",
+					name, strings.SplitN(strings.TrimPrefix(sec[i:], "\n"), "\n", 2)[0])
+			}
 			continue
 		}
 		kept = append(kept, sec)
