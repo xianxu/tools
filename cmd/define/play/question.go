@@ -88,4 +88,16 @@ type Question interface {
 	// appended by the loop, because they are true whatever form is asking and a
 	// form repeating them would be two owners of one fact.
 	Keys() string
+	// Form is this form's name for the LOG — "recall", "meaning", "board"
+	// (#40 D4a).
+	//
+	// ON THE INTERFACE rather than an optional capability, and that is the whole
+	// point: a form that could forget to name itself would write an empty string
+	// beside a real promotion, and an event that says "some form" is worse than
+	// no field at all — it looks like data. Here a new form cannot compile
+	// without answering, which is the same reason Keys() lives here.
+	//
+	// It is telemetry. Nothing in the scheduler reads it, and schedule.Fold
+	// ignoring it is pinned.
+	Form() string
 }

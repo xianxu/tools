@@ -357,6 +357,7 @@ chosen at the new height.
 | the loop's click branch | `cmd/define/play_loop.go` | modified | the mouse — offers a click to the form first, falls through to `playRegion` (D11) |
 | `todaysQuestions` | `cmd/define/play_loop.go` | modified | the store — packs box ≥ 3 keys into boards (D4) |
 | `ReviewEvent.Form` | `cmd/define/store/event.go` | new | the event log — which form asked, so the deferred remedies can be chosen from evidence (D4a) |
+| `Question` | `cmd/define/play/question.go` | modified | gains `Form() string`. ON the interface, not an optional capability: a form that could forget to name itself would write an empty string beside a real promotion (R3) |
 | `CaptureReview` | `cmd/define/capture.go` | modified | the store — writes the form on every review event |
 
 **ARCH-MOCK.** No new external dependency. `Board` is pure and unit-tested with no IO; the loop's tests use the recorder `#30` built; the pty suite covers the real terminal, and the mouse-less path is exactly what `#38`'s rows exist for.
@@ -377,7 +378,7 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [x] **T4 — `display.FooterRowAt`** (D10). `Paint` already computes the footer's origin; `liveScreen` records it and answers which footer row a viewport row is. The editor's screen answers "none", which is the whole of its involvement.
 - [x] **T5 — the loop offers a click to the form first** (D11). Falls through to `playRegion` when the form declines. `#38`'s `TestPlayClickActsAndIsNotAnAnswer` must pass UNTOUCHED — every existing form declines.
 - [x] **T6 — the footer carries the board** (D10, D15). Grid, toggle, panel, bar, in that order. `fitFooter` is UNCHANGED; instead `boardsFor` asks `fitsABoard` and sends the words to 2.3 when the terminal is too short.
-- [ ] **T7 — `ReviewEvent.Form`** (D4a). The field, `CaptureReview` writing it, and `Fold` ignoring it — it is telemetry, not assessment. **Operator-requested and the instrument the deferred remedies depend on.**
+- [x] **T7 — `ReviewEvent.Form`** (D4a). The field, `CaptureReview` writing it, and `Fold` ignoring it — it is telemetry, not assessment. **Operator-requested and the instrument the deferred remedies depend on.**
 - [ ] **T8 — form selection** (D4). `boardsFor` partitions today's keys at box ≥ 3 and packs the eligible ones sixteen at a time.
 - [ ] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
 - [ ] **T10 — the bar counts words** (D8).

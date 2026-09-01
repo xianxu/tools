@@ -2280,3 +2280,56 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 		t.Errorf("boardFooter adds %d rows to the board's own, plus the prompt, but fitsABoard budgets %d", got, want)
 	}
 }
+
+// DONE-WHEN 9, THROUGH THE STORE: a review event on disk names the form that
+// asked it (#40 D4a).
+//
+// play_test pins that Apply stamps every record; this pins that the stamp
+// survives CaptureReview and reaches the log, which is the only place the query
+// this field exists for can read it.
+func TestAReviewEventNamesItsFormOnDisk(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		q    func(opt options) play.Question
+		key  Key
+		want string
+	}{
+		{"form 2.1, the recall", func(options) play.Question {
+			return play.NewRecall("sycophantic", "behaving obsequiously")
+		}, Key{Kind: KeyRune, Rune: 'y'}, "recall"},
+		{"form 2.3, the meaning", func(options) play.Question {
+			return play.NewChoice("sycophantic", "", []play.Option{
+				{Gloss: "behaving obsequiously", Correct: true}, {Gloss: "a flat-topped hill"},
+			})
+		}, Key{Kind: KeyRune, Rune: '1'}, "meaning"},
+		{"form 2.5, the board", func(opt options) play.Question {
+			return play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width)
+		}, Key{Kind: KeyRune, Rune: '0'}, "board"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, st := playRig(t, "sycophantic", "ephemeral")
+			_, held := questionsFor(t, d, opt)
+
+			tty := &syncBuf{}
+			live := newPinnedScreen(tty, 24, opt.width)
+			live.interval = -1
+			var errb bytes.Buffer
+
+			keys := make(chan Key, 2)
+			keys <- tc.key
+			keys <- Key{Kind: KeyInterrupt}
+			close(keys)
+
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{tc.q(opt)}), held, keys,
+				console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+			evs := reviewEvents(t, st)
+			if len(evs) != 1 {
+				t.Fatalf("%d review events, want the one answer:\n%s", len(evs), unstyled(tty.String()))
+			}
+			if evs[0].Form != tc.want {
+				t.Errorf("the log names the form %q, want %q — the field is what lets a later query ask whether this form promotes too generously", evs[0].Form, tc.want)
+			}
+		})
+	}
+}

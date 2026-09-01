@@ -147,7 +147,11 @@ func (c *storeCapturer) CaptureReview(out play.Outcome, opt options) {
 		// AxisNone stringifies to "", which omitempty drops — so D8 ("a correct
 		// answer records no axis") is enforced by the type, not by a branch here
 		// that a later caller could forget to write.
-		Missed: out.Axis.String(), At: c.clock.Now(),
+		Missed: out.Axis.String(),
+		// WHICH FORM ASKED (#40 D4a). Telemetry: the scheduler never reads it,
+		// and it is what lets a later query ask whether board-promoted words
+		// lapse more than the ones a real retrieval test promoted.
+		Form: out.Form, At: c.clock.Now(),
 	}); err != nil {
 		c.warnf("could not record the review of %q: %v", out.Word, err)
 	}

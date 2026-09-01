@@ -367,6 +367,38 @@ repo already knew it** — the guard exists because #29 got four of twenty rows
 wrong across two review rounds. Trust the guard, and run the full suite before
 believing a plan.
 
+### 2026-09-01 — T7: `ReviewEvent.Form`, and a field that cannot be forgotten
+
+`Form()` is on the `Question` INTERFACE rather than an optional capability, and
+that is the whole design of this task. The plan's own red-when is *"the field is
+written for one form and defaulted for the others, which is worse than absent"* —
+so the only acceptable shape is one where a new form cannot compile without
+naming itself. `Keys()` is on the interface for the same reason.
+
+**And it is stamped in ONE place.** `Apply` now wraps the state machine and
+stamps every `OutcomeRecord` with `q.Form()` on the way out. Writing
+`Form: q.Form()` at the three sites that build a record — the ordinary advance,
+the miss-on-a-hidden-word branch, and the Enter that spends a board — would be
+three chances to ship a promotion the log cannot attribute, and the failure would
+be silent: an event with an empty form looks like data. What this field exists to
+watch is already silent and delayed enough.
+
+**Names, not the project's form numbers.** `recall`, `meaning`, `board`. A log is
+read years later by a script or a person, and `board` needs no atlas to decode
+while `2.5` does; `meaning` is also what the learner types to reach form 2.3.
+
+**A survivor worth the round it cost: `yaml:"-"` shipped green.** The loop's
+tests read through `store.Mem`, which keeps events in memory — so the field
+reached every assertion without ever reaching a file, and a field that reaches
+only memory answers nothing the query needs. Pinned now by a real
+`store.NewYAML` round trip, plus the `at:`-stays-last rule, which this field
+tests for the first time since it sits immediately before `At`.
+
+The rule that leaves: **an in-memory double cannot pin a claim about
+persistence.** It is the same shape as #30's rule about doubles standing in for
+the object that joins two halves — here the two halves are the struct and the
+file, and the thing between them is the yaml tag.
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it

@@ -358,6 +358,7 @@ func (f *fakeForm) Word() string   { return f.word }
 func (f *fakeForm) Prompt() string { return "which one?" }
 func (f *fakeForm) Reveal() string { return "it was the first" }
 func (f *fakeForm) Keys() string   { return "1 = right, 2 = wrong" }
+func (f *fakeForm) Form() string   { return "fake" }
 func (f *fakeForm) Grade(r rune) (Verdict, bool) {
 	switch r {
 	case '1':
@@ -537,6 +538,7 @@ func (b *fakeBatch) Word() string   { return b.words[min(b.marked, len(b.words)-
 func (b *fakeBatch) Prompt() string { return "grid" }
 func (b *fakeBatch) Reveal() string { return "" }
 func (b *fakeBatch) Keys() string   { return "y = yes, n = no" }
+func (b *fakeBatch) Form() string   { return "fake-batch" }
 func (b *fakeBatch) Grade(r rune) (Verdict, bool) {
 	switch r {
 	case 'y':
@@ -692,6 +694,7 @@ func (m *fakeModed) Word() string   { return "keel" }
 func (m *fakeModed) Prompt() string { return "keel" }
 func (m *fakeModed) Reveal() string { return "" }
 func (m *fakeModed) Keys() string   { return "y = yes, n = no" }
+func (m *fakeModed) Form() string   { return "fake-moded" }
 func (m *fakeModed) Grade(rune) (Verdict, bool) {
 	return Skipped, false
 }
@@ -735,6 +738,7 @@ func (g *fakeGrid) Word() string                { return "keel" }
 func (g *fakeGrid) Prompt() string              { return "[0] keel" }
 func (g *fakeGrid) Reveal() string              { return "" }
 func (g *fakeGrid) Keys() string                { return "0 = mark" }
+func (g *fakeGrid) Form() string                { return "fake-grid" }
 func (g *fakeGrid) Grade(rune) (Verdict, bool)  { return Skipped, false }
 func (g *fakeGrid) Rows() int                   { return 1 }
 func (g *fakeGrid) CellAt(int, int) (int, bool) { return 0, true }
@@ -772,5 +776,68 @@ func TestARefusedClickDoesNotAdvanceAGridThatIsNotABatch(t *testing.T) {
 	s, outs = Apply(s, Input{Kind: InputMark, Cell: 0})
 	if s.Index != 1 || s.Done {
 		t.Errorf("a click on the next question's non-existent grid moved the session: %+v %+v", s, outs)
+	}
+}
+
+// DONE-WHEN 9: EVERY RECORD NAMES THE FORM THAT ASKED (#40 D4a).
+//
+// Over all three shipped forms, and over all three PATHS that build a record —
+// the ordinary advance, the miss-on-a-hidden-word branch, and the Enter that
+// spends a board. Three call sites is three chances to ship a promotion the log
+// cannot attribute, which is why the stamp is in one place; this is what says so.
+//
+// The red-when the plan names is "written for one form and defaulted for the
+// others, which is worse than absent" — so the assertion is that the names are
+// present, distinct, and equal to what the form says about itself.
+func TestEveryRecordNamesItsForm(t *testing.T) {
+	names := map[string]bool{}
+	for _, tc := range []struct {
+		q  Question
+		in Input
+	}{
+		// The ordinary path: a self-rated yes.
+		{NewRecall("keel", "the bottom of a ship"), Input{Kind: InputRune, Rune: 'y'}},
+		// The MISS branch, which builds its own outcomes rather than going
+		// through advance.
+		{NewRecall("mesa", "a flat-topped hill"), Input{Kind: InputRune, Rune: 'n'}},
+		{NewChoice("run", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '1'}},
+		{NewChoice("bank", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '2'}},
+		// A board, by key and by click.
+		{NewBoard(cellsOf("keel", "mesa"), 80), Input{Kind: InputRune, Rune: '0'}},
+		{NewBoard(cellsOf("keel", "mesa"), 80), Input{Kind: InputMark, Cell: 1}},
+		// And the Enter that spends one, which builds a record per word.
+		{NewBoard(cellsOf("keel", "mesa"), 80), Input{Kind: InputFinish}},
+	} {
+		_, outs := Apply(NewSession([]Question{tc.q}), tc.in)
+		records := 0
+		for _, o := range outs {
+			if o.Kind != OutcomeRecord {
+				continue
+			}
+			records++
+			if o.Form == "" {
+				t.Errorf("%T on %+v recorded %q with no form — an event that says nothing looks like data", tc.q, tc.in, o.Word)
+			}
+			if o.Form != tc.q.Form() {
+				t.Errorf("%T recorded form %q, but the form calls itself %q", tc.q, o.Form, tc.q.Form())
+			}
+			names[o.Form] = true
+		}
+		if records == 0 {
+			t.Errorf("%T on %+v recorded nothing, so this row asserts nothing", tc.q, tc.in)
+		}
+	}
+	if len(names) != 3 {
+		t.Errorf("the three forms produced %d distinct names (%v) — a name shared by two forms cannot answer the query the field exists for", len(names), names)
+	}
+	// A form is named the same way whatever happened to it.
+	for _, q := range []Question{
+		NewRecall("keel", "d"),
+		NewChoice("keel", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
+		NewBoard(cellsOf("keel"), 80),
+	} {
+		if q.Form() == "" {
+			t.Errorf("%T does not name itself", q)
+		}
 	}
 }

@@ -133,7 +133,11 @@ type Outcome struct {
 	// It is the objective half of the ladder's two-rung promotion: an
 	// observation the session makes rather than a confidence the learner
 	// asserts.
-	Unaided     bool
+	Unaided bool
+	// Form is which form asked, on every Record outcome (#40 D4a). Set in ONE
+	// place — see Apply — because three call sites building Records is three
+	// chances to ship a promotion the log cannot attribute.
+	Form        string
 	SessionDone bool
 }
 
@@ -180,10 +184,29 @@ func (s Session) Current() Question {
 // Order is significant: the record is emitted FIRST, so a caller performing them
 // in order writes the event before anything that can block on the terminal.
 func Apply(s Session, in Input) (Session, []Outcome) {
+	q := s.Current()
+	next, outs := apply(s, q, in)
+	// EVERY RECORD NAMES THE FORM THAT ASKED, and it is stamped HERE rather than
+	// at the three places that build one (#40 D4a).
+	//
+	// The alternative is `Form: q.Form()` written out at the advance, the
+	// miss-on-a-hidden-word branch and the Enter-spends-a-board loop — three
+	// chances to ship a promotion the log cannot attribute, and the failure would
+	// be silent: an event with an empty form looks like data. What this field
+	// exists to watch is already silent and delayed enough.
+	for i := range outs {
+		if outs[i].Kind == OutcomeRecord && q != nil {
+			outs[i].Form = q.Form()
+		}
+	}
+	return next, outs
+}
+
+// apply is the machine itself, with the current question already in hand.
+func apply(s Session, q Question, in Input) (Session, []Outcome) {
 	if s.Done {
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 	}
-	q := s.Current()
 	if q == nil {
 		s.Done = true
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}

@@ -365,8 +365,15 @@ func (b *Board) Keys() string {
 	return "a word's key or a click = mark, Tab = switch, Enter = finish"
 }
 
-// Mode is the mark a click will land, for the footer's toggle line.
+// Mode is the mark a click will land. Not on any interface — the form draws its
+// own toggle — but the tests and the panel's story both read better for it.
 func (b *Board) Mode() Mark { return b.mode }
+
+// Form names this form in the log (#40 D4a), and this is the name the whole
+// field exists for: a board PROMOTES on self-report, and the query that will
+// eventually decide whether that is too generous joins these events to the
+// word's next real test.
+func (b *Board) Form() string { return "board" }
 
 // Toggle flips the mode. This is what Tab means on a board.
 func (b *Board) Toggle() {

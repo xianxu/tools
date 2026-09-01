@@ -449,7 +449,7 @@ func TestYAMLWritesAtLastWhateverFieldsAreSet(t *testing.T) {
 	// EVERY field set, so no key can hide behind omitempty.
 	if err := s.AppendEvent(store.ReviewEvent{
 		Word: "sycophantic", Kind: store.EventReviewed, Found: true, Correct: false,
-		Question: "which definition?", Missed: "domain", Unaided: true, At: day,
+		Question: "which definition?", Missed: "domain", Unaided: true, Form: "board", At: day,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -464,11 +464,59 @@ func TestYAMLWritesAtLastWhateverFieldsAreSet(t *testing.T) {
 			keys = append(keys, f[:i])
 		}
 	}
-	if len(keys) < 7 {
+	if len(keys) < 8 {
 		t.Fatalf("only %d keys written (%v); the fixture is not exercising the whole record:\n%s", len(keys), keys, b)
 	}
 	if last := keys[len(keys)-1]; last != "at" {
 		t.Errorf("the last key is %q, want \"at\" — a field written after `at:` survives the cut that drops "+
 			"`at`, and the fragment then reads as a whole record (event.go, complete()):\n%s", last, b)
+	}
+}
+
+// THE FORM SURVIVES THE FILE (#40 D4a).
+//
+// The field exists so that a query run months from now can ask whether
+// board-promoted words lapse more than the ones a real retrieval test promoted.
+// A field that reaches only memory answers nothing — and the in-memory store the
+// loop's tests use would have kept it whatever the yaml tag said, which is
+// exactly how a `yaml:"-"` here would have shipped green.
+func TestYAMLRoundTripsTheFormThatAsked(t *testing.T) {
+	dir := t.TempDir()
+	s := store.NewYAML(dir, store.DefaultLang, nil)
+	day := time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC)
+	for i, form := range []string{"recall", "meaning", "board"} {
+		if err := s.AppendEvent(store.ReviewEvent{
+			Word: "sycophantic", Kind: store.EventReviewed, Found: true, Correct: true,
+			Form: form, At: day.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("read back %d events, want 3", len(got))
+	}
+	for i, want := range []string{"recall", "meaning", "board"} {
+		if got[i].Form != want {
+			t.Errorf("event %d came back with form %q, want %q", i, got[i].Form, want)
+		}
+	}
+
+	// An event written before the field existed comes back empty, which reads as
+	// "some earlier form" and is the truth. Nothing may invent a value for it.
+	if err := s.AppendEvent(store.ReviewEvent{
+		Word: "mesa", Kind: store.EventReviewed, Found: true, At: day.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "events", "2026-08-20.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(b), "form:"); n != 3 {
+		t.Errorf("%d form: keys on disk, want 3 — omitempty must drop the one that was never set:\n%s", n, b)
 	}
 }
