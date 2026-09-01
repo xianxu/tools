@@ -588,6 +588,58 @@ Re-run after the fixes, unsandboxed: `TestPTYPlayBoardIsDrawnAndClickable`,
 pass. That the row cannot be independently confirmed in a sandboxed review is
 `#37`'s subject, not this issue's.
 
+### 2026-09-01 — boundary review round 2: REWORK again, and why "fix the class" was not yet what I did
+
+Four new findings, **three repeat families**, and the gate's verdict on the round
+was the useful part: *"Not converging: fix rules, not instances."* It was right.
+
+**BR-8 Critical, family `frame-budget-hardcoded-not-measured` — SECOND
+occurrence.** Round 1's BR-2 fixed the prompt's height and left the board's
+LAYOUT WIDTH fixed at selection time. The reviewer measured what a resize does: a
+board laid out for eighty columns has 74-column rows, at forty the terminal wraps
+each into two, a footer entry stops being one physical row, and `formCell` handed
+the raw physical column to `CellAt` — column 4 of a continuation marking cell 0
+while the word drawn there is another. **Permanent**, because the mark is already
+in the log. The same resize at 24x12 drops the toggle, the panel and the bar,
+which is BR-2's exact harm through a door `fitsABoard` cannot see.
+
+D15 had said this was safe (*"leaves the current board drawn as it was — its rows
+are already budgeted"*) and `Board`'s field comment said the width *"cannot
+change"*. Both wrong, both now corrected in R9 with the enumeration written out:
+prompt height, layout width, the fit after a resize, and a wrapped entry's
+columns.
+
+**BR-9 Important, family `plan-citations-unenforced` — SECOND occurrence.** Round
+1 DIAGNOSED the mechanism correctly — `currentTruthOnly` cuts at the first
+`## Revisions`, this plan had two, both guards read a truncated file — and then
+fixed this plan's layout. The reviewer's point: the shape returns tomorrow in any
+artifact, and it returns as SUCCESS, because four of the eight guards reading
+that filter end in `checked == 0 → t.Skip`. Measured: none of the four asserts a
+premise about the filtered view, while seven other guards in the same file Fatal
+on vacuity. R10.
+
+**BR-10 Minor, family `comment-asserts-absent-behaviour` — SECOND occurrence.**
+The `Batch` doc still said *"consulted at FOUR points"* and listed three — inside
+the commit that declared prose enumerations the culprit. The number was never the
+point; it now points at `numInputKinds` and the table test.
+
+**The lesson, and it is the one worth keeping from this issue.** Round 1 fixed
+each finding at what I believed was the class: a sentinel and a matrix test for
+the stale enumeration, a measured height for the constant, a new guard for the
+uncited tests. Every one of those was a real improvement and none of them was the
+rule. **When a review names a family, enumerate every member before fixing one** —
+the question is not "where else does this exact bug appear" but *"what else is
+this quantity read from, and when"*. Writing the enumeration INTO the fix, as a
+derived set or a measured value or a table in the revision, is what stops round
+three.
+
+Verification after the fixes: `go test ./...` green, `-race` green, and the pty
+rows that touch resize — `TestPTYResizeRepaints`, `TestPTYPlayResizeRepaints`,
+`TestPTYPlayBoardIsDrawnAndClickable` — all pass unsandboxed. Four mutations run
+against R9's fixes and four caught; the `currentTruthOnly` fix was mutated with
+the exact shape that produced BR-3 (a `## Revisions` above `## Core concepts`
+plus a fabricated test name) and now fails naming the swallowed section.
+
 ## Revisions
 
 ### 2026-09-01 — the operator's sketch redesigned the interaction; the Spec above predates it
