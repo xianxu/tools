@@ -50,6 +50,64 @@ rounds:
           family: click-target-wider-than-drawn
           round: 1
       blocked: true
+    - "n": 2
+      timestamp: "2026-09-01T13:14:12-07:00"
+      agent: claude
+      dispose:
+        - id: BR-1
+          disposition: addressed
+          note: 'Verified by reverting the InputReveal batch guard: TestEveryInputKindIsAnsweredForABatchForm goes red on kind 1 and on Revealed.'
+          round: 2
+        - id: BR-2
+          disposition: addressed
+          note: 'Verified by restoring the constant: TestFitsABoardCountsTheWholeLiveEdge and TestAShortTerminalGetsMeaningChoiceNotAClippedBoard/very-narrow both go red.'
+          round: 2
+        - id: BR-3
+          disposition: addressed
+          note: All 25 cited tests resolve; planting a fake citation reddens TestPlanCitesTestsThatExist. The guard's own vacuity is raised separately.
+          round: 2
+        - id: BR-4
+          disposition: addressed
+          note: board.go:255 now says NO COLOUR YET and marks it deferred; comment-only, nothing to pin.
+          round: 2
+        - id: BR-5
+          disposition: addressed
+          note: The fixture equality is now a t.Fatalf and the claim is board.Spent(), which can fail.
+          round: 2
+        - id: BR-6
+          disposition: addressed
+          note: 'Verified by restoring the concatenation: TestRowsIsWhatPromptDraws goes red at n=0 for all three widths.'
+          round: 2
+        - id: BR-7
+          disposition: addressed
+          note: CellAt's doc states the padding rule and TestACellsPaddingBelongsToIt reddens under both a wider and a narrower hit box.
+          round: 2
+      findings:
+        - id: BR-8
+          severity: Critical
+          title: A narrowing resize under a live board marks the wrong word on a click and drops the toggle, panel and bar
+          detail: 'SECOND finding in family frame-budget-hardcoded-not-measured — do not fix this instance alone. board.go:136 claims "the width it is derived from cannot change"; play_loop.go:245 changes it via view.Resize and redraws the same board. Measured: a board built at 80 has 74-column grid rows, so displayRows(row, 40) = 2; FooterRowAt returns the same entry for both physical rows (screen_test.go:1220 pins that), and formCell (play_loop.go:562) passes the raw physical column into CellAt — CellAt(0,4)=cell 0 while column 44 of that line is "[2] sycophantic", so a click on the continuation row lands a permanent mark on the wrong word. Painting the same board at 24x12 drops the blank, the TOGGLE, the panel and the bar, which is BR-2''s harm through a door fitsABoard cannot see. The rule: every quantity the board''s fit and click map depend on must be read from the terminal as it is at draw/click time, never fixed at selection time. Enumeration - prompt height (fixed), board layout width (open), the fit re-check after resize (open), the column translation for a wrapped footer entry (open). No test in the diff draws a board at a width other than the one it was built for.'
+          family: frame-budget-hardcoded-not-measured
+          round: 2
+        - id: BR-9
+          severity: Important
+          title: TestPlanCitesTestsThatExist skips silently when currentTruthOnly truncates the plan, which is the shape that produced BR-3
+          detail: 'SECOND finding in family plan-citations-unenforced — do not fix this instance. The fix round diagnosed the real mechanism (currentTruthOnly cuts at the FIRST "## Revisions", this plan had two, both plan guards read a truncated file and passed) and then fixed only this plan''s layout. Verified by execution: reinserting a "## Revisions" heading above "## Core concepts" and planting a fabricated Test name in the Done-when table leaves TestPlanCitesTestsThatExist PASS via its checked==0 t.Skip at repo_guard_test.go:1178. Measured prevalence - currentTruthOnly has 8 call sites in repo_guard_test.go; four of the guards reading it end in checked==0 t.Skip (729, 881, 1106, 1178); none checks that the surviving text still contains the section it exists to check, while seven other guards in the same file do Fatal on vacuity. The rule: a guard reading a filtered view of an artifact must assert its premise about that view and FAIL, never Skip, when the filter removed the thing it checks.'
+          family: plan-citations-unenforced
+          round: 2
+        - id: BR-10
+          severity: Minor
+          title: The Batch doc still says the capability is consulted at FOUR points and lists three, omitting the InputReveal path added in the same commit
+          detail: 'SECOND finding in family comment-asserts-absent-behaviour — state the rule rather than patching the site. cmd/define/play/session.go:474 says "It is consulted at FOUR points… the other three were found by measurement" and enumerates the miss branch, InputDrop and InputFinish; InputReveal is now a fifth. The plan repeats it at :378 ("the FOUR places Apply consults it") and in the Core-concepts rows at :326 and :327. This is the same prose enumeration whose incompleteness caused BR-1, left stating the wrong number by the commit that declared prose the culprit. The rule: prose restating a set the code owns is a second owner and drifts — point at numInputKinds and the table test instead of re-counting. Records (issue Log, close-review sidecar) legitimately keep "four".'
+          family: comment-asserts-absent-behaviour
+          round: 2
+        - id: BR-11
+          severity: Minor
+          title: The InputKind table's expectation struct declares a `reveals` field that no case sets and nothing reads
+          detail: cmd/define/play/session_test.go:863 — `reveals bool` sits beside `kinds` and `advances` and reads as a third checked dimension. Revealed is in fact asserted unconditionally for every kind, so the field is dead; either drop it or make the reveal expectation per-case.
+          family: test-declares-unchecked-expectation
+          round: 2
+      blocked: true
 ---
 
 # Gate ledger — tools#40 (boundary-review)
@@ -76,12 +134,32 @@ later rounds disposed of them. Generated — edit the gate, not this file.
 - **BR-7** [Minor] `click-target-wider-than-drawn` A click in a cell's trailing padding marks it, including past the visible end of a trimmed last cell
   cmd/define/play/board.go:453 — CellAt accepts any column within labelWidth+wordCells, while Prompt trims the row's trailing blanks. It marks the column's own word rather than a neighbour, so the stated rule holds, but clicking apparently blank space and getting a permanent mark deserves a line in CellAt's doc if intended.
 
+## Round 2 — 2026-09-01T13:14:12-07:00 (claude) — BLOCKED
+
+### Disposed
+
+- BR-1 — addressed — Verified by reverting the InputReveal batch guard: TestEveryInputKindIsAnsweredForABatchForm goes red on kind 1 and on Revealed.
+- BR-2 — addressed — Verified by restoring the constant: TestFitsABoardCountsTheWholeLiveEdge and TestAShortTerminalGetsMeaningChoiceNotAClippedBoard/very-narrow both go red.
+- BR-3 — addressed — All 25 cited tests resolve; planting a fake citation reddens TestPlanCitesTestsThatExist. The guard's own vacuity is raised separately.
+- BR-4 — addressed — board.go:255 now says NO COLOUR YET and marks it deferred; comment-only, nothing to pin.
+- BR-5 — addressed — The fixture equality is now a t.Fatalf and the claim is board.Spent(), which can fail.
+- BR-6 — addressed — Verified by restoring the concatenation: TestRowsIsWhatPromptDraws goes red at n=0 for all three widths.
+- BR-7 — addressed — CellAt's doc states the padding rule and TestACellsPaddingBelongsToIt reddens under both a wider and a narrower hit box.
+
+### Raised
+
+- **BR-8** [Critical] `frame-budget-hardcoded-not-measured` A narrowing resize under a live board marks the wrong word on a click and drops the toggle, panel and bar
+  SECOND finding in family frame-budget-hardcoded-not-measured — do not fix this instance alone. board.go:136 claims "the width it is derived from cannot change"; play_loop.go:245 changes it via view.Resize and redraws the same board. Measured: a board built at 80 has 74-column grid rows, so displayRows(row, 40) = 2; FooterRowAt returns the same entry for both physical rows (screen_test.go:1220 pins that), and formCell (play_loop.go:562) passes the raw physical column into CellAt — CellAt(0,4)=cell 0 while column 44 of that line is "[2] sycophantic", so a click on the continuation row lands a permanent mark on the wrong word. Painting the same board at 24x12 drops the blank, the TOGGLE, the panel and the bar, which is BR-2's harm through a door fitsABoard cannot see. The rule: every quantity the board's fit and click map depend on must be read from the terminal as it is at draw/click time, never fixed at selection time. Enumeration - prompt height (fixed), board layout width (open), the fit re-check after resize (open), the column translation for a wrapped footer entry (open). No test in the diff draws a board at a width other than the one it was built for.
+- **BR-9** [Important] `plan-citations-unenforced` TestPlanCitesTestsThatExist skips silently when currentTruthOnly truncates the plan, which is the shape that produced BR-3
+  SECOND finding in family plan-citations-unenforced — do not fix this instance. The fix round diagnosed the real mechanism (currentTruthOnly cuts at the FIRST "## Revisions", this plan had two, both plan guards read a truncated file and passed) and then fixed only this plan's layout. Verified by execution: reinserting a "## Revisions" heading above "## Core concepts" and planting a fabricated Test name in the Done-when table leaves TestPlanCitesTestsThatExist PASS via its checked==0 t.Skip at repo_guard_test.go:1178. Measured prevalence - currentTruthOnly has 8 call sites in repo_guard_test.go; four of the guards reading it end in checked==0 t.Skip (729, 881, 1106, 1178); none checks that the surviving text still contains the section it exists to check, while seven other guards in the same file do Fatal on vacuity. The rule: a guard reading a filtered view of an artifact must assert its premise about that view and FAIL, never Skip, when the filter removed the thing it checks.
+- **BR-10** [Minor] `comment-asserts-absent-behaviour` The Batch doc still says the capability is consulted at FOUR points and lists three, omitting the InputReveal path added in the same commit
+  SECOND finding in family comment-asserts-absent-behaviour — state the rule rather than patching the site. cmd/define/play/session.go:474 says "It is consulted at FOUR points… the other three were found by measurement" and enumerates the miss branch, InputDrop and InputFinish; InputReveal is now a fifth. The plan repeats it at :378 ("the FOUR places Apply consults it") and in the Core-concepts rows at :326 and :327. This is the same prose enumeration whose incompleteness caused BR-1, left stating the wrong number by the commit that declared prose the culprit. The rule: prose restating a set the code owns is a second owner and drifts — point at numInputKinds and the table test instead of re-counting. Records (issue Log, close-review sidecar) legitimately keep "four".
+- **BR-11** [Minor] `test-declares-unchecked-expectation` The InputKind table's expectation struct declares a `reveals` field that no case sets and nothing reads
+  cmd/define/play/session_test.go:863 — `reveals bool` sits beside `kinds` and `advances` and reads as a third checked dimension. Revealed is in fact asserted unconditionally for every kind, so the field is dead; either drop it or make the reveal expectation per-case.
+
 ## Open findings
 
-- **BR-1** [Critical] `batch-capability-not-asked-on-every-path` Space on a board emits OutcomeReveal, so the loop plays an arbitrary cell's audio and writes a blank reveal into the buffer
-- **BR-2** [Important] `frame-budget-hardcoded-not-measured` fitsABoard charges the 76-column keys prompt one row, so a board narrower than 76 columns is drawn with its toggle, panel or bar dropped
-- **BR-3** [Important] `plan-citations-unenforced` The plan's Done-when table pins three rows on four tests that do not exist, and cites an (R3) revision that was never written
-- **BR-4** [Minor] `comment-asserts-absent-behaviour` board.go claims "the loop adds colour" to the marks; no styling exists anywhere on the board path
-- **BR-5** [Minor] `assertion-cannot-fail` The keystroke half of Done-when 13's pin is a tautology over the test's own fixture
-- **BR-6** [Minor] `degenerate-input-breaks-derived-count` Rows() returns 3 for an empty board while Prompt() yields four lines
-- **BR-7** [Minor] `click-target-wider-than-drawn` A click in a cell's trailing padding marks it, including past the visible end of a trimmed last cell
+- **BR-8** [Critical] `frame-budget-hardcoded-not-measured` A narrowing resize under a live board marks the wrong word on a click and drops the toggle, panel and bar
+- **BR-9** [Important] `plan-citations-unenforced` TestPlanCitesTestsThatExist skips silently when currentTruthOnly truncates the plan, which is the shape that produced BR-3
+- **BR-10** [Minor] `comment-asserts-absent-behaviour` The Batch doc still says the capability is consulted at FOUR points and lists three, omitting the InputReveal path added in the same commit
+- **BR-11** [Minor] `test-declares-unchecked-expectation` The InputKind table's expectation struct declares a `reveals` field that no case sets and nothing reads

@@ -243,6 +243,19 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// the screen's own cols, which Resize is what updates. Setting a
 			// second width here would be a second answer to the same question.
 			view.Resize(sz.rows, sz.cols)
+			// AND THE FORM, if it lays itself out (R9). A board built for eighty
+			// columns has 74-column rows; at forty the terminal wraps each into
+			// two, a footer entry stops being one physical row, and a click on
+			// the continuation carries a column that means another word. Its
+			// marks are already in the log and cannot be retracted, so the board
+			// is relaid out rather than replaced.
+			//
+			// `sz.cols` rather than `opt.width`: this is the width the SCREEN
+			// paints at, and the board has to agree with the paint, not with a
+			// wrap policy that answers 0 on a narrow terminal.
+			if g, ok := s.Current().(play.Grid); ok {
+				g.Resize(sz.cols)
+			}
 			show()
 			continue
 		case got, ok := <-keys:
@@ -550,8 +563,23 @@ func formCell(view display, q play.Question, k Key) (int, bool) {
 		// Also the nil case, at the end of a queue: a nil Question is not a Grid.
 		return 0, false
 	}
-	row, ok := view.FooterRowAt(k.Row)
+	row, offset, ok := view.FooterRowAt(k.Row)
 	if !ok {
+		return 0, false
+	}
+	// A CONTINUATION ROW IS NOT A TARGET (R9).
+	//
+	// `k.Col` is a column of the TERMINAL, and it only means a column of the
+	// form's own line while that line is drawn on one physical row. Once an entry
+	// wraps, column 4 of its second row is column cols+4 of the line, and acting
+	// on it lands a permanent mark on whatever word happens to sit at column 4.
+	//
+	// The board keeps its rows fitting by relaying out on resize, so this should
+	// never fire — which is exactly why it is here. That guarantee lives in
+	// another package and depends on the loop remembering to pass the resize on;
+	// a click is irreversible, and "should never happen" is not a thing to bet
+	// one on.
+	if offset != 0 {
 		return 0, false
 	}
 	// NO SECOND BOUND HERE. A `row >= g.Rows()` guard was written first and a

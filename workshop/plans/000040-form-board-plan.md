@@ -327,8 +327,8 @@ chosen at the new height.
 | `Grid` | `cmd/define/play/session.go` | new | PURE — the capability "I am drawn as cells you click": `Rows`, `CellAt`, `Mark`. The first capability the LOOP asks rather than `Apply` (D11) |
 | `Moded` | `cmd/define/play/session.go` | new | PURE — the capability "Tab means something to me" (D13) |
 | `Mark` | `cmd/define/play/board.go` | new | PURE — `Yes`/`No` and the `Verdict` each maps to. TWO marks: `unsure` is deleted (D7) |
-| `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word", asked at FIVE points: the four of D12, plus `Words()` for the bar (D8) |
-| `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` on advance, on the miss-on-hidden branch, on drop, and on Enter (D2, D3, D12) |
+| `Batch` | `cmd/define/play/session.go` | new | PURE — the capability "I hold more than one word". The set of paths that consult it is `InputKind × Batch`, DERIVED from `numInputKinds` by `TestEveryInputKindIsAnsweredForABatchForm` rather than counted in prose (R7), plus `Words()` for the bar (D8) |
+| `Apply` | `cmd/define/play/session.go` | modified | PURE — consults `Batch` wherever an input can mean something different to a form holding many words, and stamps every record's `Form` in one place (D2, D3, D12, D4a, R7) |
 | `livePrompt` | `cmd/define/play_loop.go` | unchanged | PURE — D12 predicted a change here and none was needed: a board is never `Graded`, so the graded prompt cannot fire (R2) |
 | `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` instead of naming the constant, because `d` is refused on a board (R2) |
 | `reservedKeys` | `cmd/define/play_loop.go` | new | PURE — the session's reserved keys FOR THIS FORM. `d` is not among them for a form holding many (D12, R2) |
@@ -375,7 +375,7 @@ chosen at the new height.
 
 Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 
-- [x] **T1 — `Batch`, and the FOUR places `Apply` consults it** (D2, D12). The interface, then: `advance` moves on only when `Spent()`; the miss-on-hidden branch must not set `Graded` for a batch form; `InputDrop` is refused; Enter spends the board via `Rest(Wrong)`. Existing forms implement none of it and are unaffected — the whole `play` suite and `TestSessionIsFormAgnostic` pass untouched, which is what proves the seam widened rather than branched.
+- [x] **T1 — `Batch`, and the places `Apply` consults it** (D2, D12; the count is derived, not listed — R7). The interface, then: `advance` moves on only when `Spent()`; the miss-on-hidden branch must not set `Graded` for a batch form; `InputDrop` is refused; Enter spends the board via `Rest(Wrong)`. Existing forms implement none of it and are unaffected — the whole `play` suite and `TestSessionIsFormAgnostic` pass untouched, which is what proves the seam widened rather than branched.
 - [x] **T2 — `Board` and `Mark`** (D5, D7). Two marks. `Prompt()` renders the labelled grid; `Grade` takes a cell label; `Mark(i, v)` takes a click; `Spent()`; `Rest(v)`; `IsSelfRated() → true`; `Reveal()` is empty. Table test including a board of three (D5) and the sixteenth mark. **Labels are `0`–`9` then `a b c e f g`** — `d` is reserved by `toInput` before a form sees it.
 - [x] **T3 — Tab, and Enter split from space** (D13, D14). Enter becomes `InputFinish`; `Apply` treats it as `InputReveal` for every non-batch form, so 2.1 and 2.3 are untouched and their tests prove it. One row in `toInput`, one `play.Input` kind, and the board's mode flips. It belongs in `play` because it is about what is being ANSWERED, unlike the paging keys.
 - [x] **T4 — `display.FooterRowAt`** (D10). `Paint` already computes the footer's origin; `liveScreen` records it and answers which footer row a viewport row is. The editor's screen answers "none", which is the whole of its involvement.
@@ -599,3 +599,56 @@ anything. The prompt sits above the footer and takes its share off the top, so
 its real height has to be charged.
 
 Both fit tests gained a width axis.
+
+### 2026-09-01 (R9) — the board is laid out for the width it is DRAWN at, not the one it was chosen at
+
+D15 said a resize below the board's height *"leaves the current board drawn as it
+was — its rows are already budgeted"*, and `Board`'s own field comment said the
+width *"cannot change"*. Both were wrong, and the boundary review measured the
+consequence: a board laid out for eighty columns has 74-column rows, so at forty
+the terminal wraps each into two. A footer entry stops being one physical row —
+`FooterRowAt` correctly answers the same entry for both — and `formCell` handed
+the raw physical column to `CellAt`, so column 4 of a continuation row marked
+cell 0 while the text at that column belonged to another word. **The mark is
+permanent.** Painting the same board at 24x12 also dropped the toggle, the panel
+and the bar, which is R8's harm through a door `fitsABoard` cannot see.
+
+**The rule, which is bigger than the bug:** every quantity the board's fit and
+its click map depend on must be read from the terminal AS IT IS at draw and click
+time, never fixed at selection time. Four quantities, all now closed:
+
+| quantity | how it is read |
+|---|---|
+| prompt height | measured at the current width (R8) |
+| board layout width | `Board.Resize(cols)`, called from the loop's resize case with `sz.cols` — the width the SCREEN paints at, not `opt.width`, which is a wrap policy that answers 0 on a narrow terminal |
+| the fit after a resize | the board relays out, so its rows keep fitting; if the terminal is then too short, `fitFooter` drops trailing entries, which are grid rows that are neither drawn nor clickable. No scroll, no wrong-word click, and the marks already landed are already in the log |
+| a wrapped entry's columns | `FooterRowAt` now reports WHICH of an entry's physical rows was hit, and `formCell` refuses any but the first |
+
+The marks SURVIVE a relayout, which is why it is a relayout and not a new board:
+those answers are already in the event log and cannot be retracted. Only the
+geometry moves.
+
+**Two defences, deliberately.** The relayout closes it at the root; the
+continuation-row refusal closes it at the seam, for any future multi-row footer
+entry and for the day someone forgets to pass a resize on. A click is
+irreversible, and "should never happen" is not something to bet one on.
+
+### 2026-09-01 (R10) — a guard reading a filtered view must FAIL when the filter swallowed its subject
+
+R6 diagnosed the mechanism — `currentTruthOnly` truncates at the FIRST
+`## Revisions`, this plan had grown two, and every guard reading it saw a file
+that stopped before the section it existed to check — and then fixed only this
+plan's layout. The review's second round called that correctly: the shape can
+come back tomorrow, in this plan or any other, and four of the eight guards
+reading `currentTruthOnly` end in `checked == 0 → t.Skip`, so it comes back as
+SUCCESS.
+
+`currentTruthOnly` now takes the test and FAILS when a record section is not the
+last top-level section, naming the section it swallowed. One place, all eight
+call sites. And `TestPlanCitesTestsThatExist` asserts its own premise: a plan
+with a `## Done when` table that cites no test at all is an error, not a skip.
+
+**The rule: a guard that reports success about a file it never saw is worse than
+no guard.** It is the same shape as the estimate gate refusing rather than
+guessing — evidence you cannot produce must be reported as absent, never as
+satisfied.

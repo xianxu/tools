@@ -2078,6 +2078,9 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 	view.footerAt(7, 0) // the grid's first row
 	view.footerAt(8, 1) // its second
 	view.footerAt(9, 2) // the toggle, which is not a cell
+	// A CONTINUATION ROW: the same entry, drawn a second time because it was too
+	// wide for the terminal. Its columns are not in the entry's own space (R9).
+	view.footerAtOffset(10, 0, 1)
 
 	for _, tc := range []struct {
 		name     string
@@ -2091,6 +2094,11 @@ func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
 		{"a gutter is not a cell", board, 7, gutter, 0, false},
 		{"the toggle row is not a cell", board, 9, 0, 0, false},
 		{"a row the screen does not place", board, 3, 0, 0, false},
+		// The board keeps its rows fitting by relaying out, so this should never
+		// arise — which is why the loop refuses it rather than trusting that.
+		// Column 0 of a continuation is column `cols` of the line, and acting on
+		// it lands a permanent mark on whatever word sits at column 0.
+		{"a wrapped entry's continuation row", board, 10, 0, 0, false},
 		{"a form that is not a grid", play.NewRecall("keel", "d"), 7, 0, 0, false},
 		{"no form at all", nil, 7, 0, 0, false},
 	} {
@@ -3023,4 +3031,77 @@ func eventsOf(t *testing.T, st *store.Mem) []store.ReviewEvent {
 		t.Fatal(err)
 	}
 	return all
+}
+
+// R9, THROUGH THE LOOP: a narrowing resize under a live board must not leave a
+// click marking the wrong word.
+//
+// Two defences, and this drives both. The board relays out, so its rows keep
+// fitting and a footer entry stays one physical row; and `formCell` refuses a
+// click on any continuation row, because a column of the terminal only means a
+// column of the form's line while that line is drawn on one row.
+func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
+	words := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
+	d, opt, st := playRig(t, "concrete", "ephemeral", "quokka", "mesa")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), 80)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	resizes := make(chan winSize, 1)
+	resizes <- winSize{rows: 24, cols: 40}
+	keys := make(chan Key, 2)
+
+	// The resize lands first, then a click on the grid's first row. The row and
+	// column are read off the PAINT after the resize, which is why the click is
+	// sent from a goroutine once the frame has settled.
+	go func() {
+		waitFor(t, func() bool { return strings.Contains(unstyled(tty.String()), "[0] ") })
+		waitFor(t, func() bool {
+			_, _, ok := live.FooterRowAt(24 - (board.Rows() + 1))
+			return ok
+		})
+		frames := strings.Split(unstyled(tty.String()), cursorHome+eraseDown)
+		rows := strings.Split(frames[len(frames)-1], "\r\n")
+		for i, r := range rows {
+			if strings.HasPrefix(r, "[1] ") || strings.Contains(r, "[1] ") {
+				keys <- Key{Kind: KeyClick, Row: i, Col: strings.Index(r, "[1] ")}
+				break
+			}
+			_ = i
+		}
+		keys <- Key{Kind: KeyInterrupt}
+		close(keys)
+	}()
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE BOARD'S OWN ROWS FIT FORTY COLUMNS, which is the invariant the click
+	// map rests on: one footer entry, one physical row.
+	//
+	// The board's rows ONLY. The keys prompt is allowed to wrap — Paint budgets
+	// it with displayRows and it carries no click map — and so is the bar, which
+	// fitFooter drops from the end if it will not fit.
+	frame := unstyled(tty.String())
+	for i, row := range strings.Split(board.Prompt(), "\n") {
+		if n := visibleCells(row); n > 40 {
+			t.Errorf("the board's row %d is %d columns after a resize to 40 — it will wrap, and a click on the continuation means another word:\n%q", i, n, row)
+		}
+		if row != "" && !strings.Contains(frame, row) {
+			t.Errorf("the board's row %d was never drawn after the resize:\n%q", i, row)
+		}
+	}
+	if board.Rows() <= 4 {
+		t.Errorf("the board is %d rows at 40 columns; it was 4 at 80, so it did not relayout", board.Rows())
+	}
+	// AND THE MARK, if one landed, is on the word that was actually drawn there.
+	for _, e := range reviewEvents(t, st) {
+		if e.Word != words[1] {
+			t.Errorf("a click after the resize marked %q, want %q — the column meant a different word", e.Word, words[1])
+		}
+	}
 }

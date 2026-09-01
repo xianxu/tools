@@ -743,6 +743,7 @@ func (g *fakeGrid) Form() string                { return "fake-grid" }
 func (g *fakeGrid) Grade(rune) (Verdict, bool)  { return Skipped, false }
 func (g *fakeGrid) Rows() int                   { return 1 }
 func (g *fakeGrid) CellAt(int, int) (int, bool) { return 0, true }
+func (g *fakeGrid) Resize(int)                  {}
 func (g *fakeGrid) Mark(i int) (Verdict, bool) {
 	if i != 0 || g.marked {
 		return Skipped, false
@@ -857,10 +858,12 @@ func TestEveryRecordNamesItsForm(t *testing.T) {
 // skip the question: it arrives here with no expectation and fails.
 func TestEveryInputKindIsAnsweredForABatchForm(t *testing.T) {
 	// What each kind must do to a board with three words and nothing marked.
+	// No `reveals` dimension: NO kind may set Revealed on a form holding many
+	// words, so it is asserted unconditionally below rather than per case. A
+	// field beside these two would read as a third thing being checked.
 	want := map[InputKind]struct {
 		kinds    []OutcomeKind
 		advances bool
-		reveals  bool
 	}{
 		// A cell's key marks it: one record, and the form keeps the slot.
 		InputRune: {kinds: []OutcomeKind{OutcomeRecord}},

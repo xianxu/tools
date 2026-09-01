@@ -691,3 +691,69 @@ func TestACellsPaddingBelongsToIt(t *testing.T) {
 		t.Errorf("a click in the gutter at column %d marked cell %d", gutter, got)
 	}
 }
+
+// A BOARD IS LAID OUT FOR THE WIDTH IT IS DRAWN AT, not the one it was chosen at
+// (R9).
+//
+// The first version fixed the layout in NewBoard and the comment said the width
+// "cannot change". It can: the terminal is resized under a live board, and a
+// board built for eighty columns has 74-column rows that the terminal then wraps
+// into two. A footer entry stops being one physical row, and a click on the
+// continuation carries a column that means a different word — permanently,
+// because a mark cannot be taken back.
+//
+// The marks SURVIVE the relayout, which is why this is a relayout and not a new
+// board: those answers are already in the log.
+func TestABoardRelaysOutForTheWidthItIsDrawnAt(t *testing.T) {
+	b := NewBoard(cellsOf(sixteen...), 100)
+	b.Mark(2)
+	b.Toggle()
+	b.Mark(7)
+	markedYes, markedNo := sixteen[2], sixteen[7]
+
+	for _, w := range []int{80, 60, 40, 24, 100} {
+		b.Resize(w)
+
+		// EVERY LINE FITS, which is the invariant the click map rests on.
+		lines := strings.Split(b.Prompt(), "\n")
+		for i, line := range lines {
+			if n := columnsIn(line); n > w {
+				t.Errorf("after Resize(%d) line %d is %d columns:\n%s", w, i, n, line)
+			}
+		}
+		if len(lines) != b.Rows() {
+			t.Errorf("after Resize(%d): Prompt drew %d lines, Rows() says %d", w, len(lines), b.Rows())
+		}
+		// AND THE CLICK MAP AGREES WITH WHAT WAS DRAWN, at the new shape.
+		for i := range sixteen {
+			key := "[" + string(glyphFor(b, i)) + "] "
+			row, col := -1, -1
+			for r := 0; r < b.gridRows(); r++ {
+				if c := strings.Index(lines[r], key+b.cells[i].Word); c >= 0 {
+					row, col = r, c
+					break
+				}
+			}
+			if row < 0 {
+				t.Fatalf("after Resize(%d), cell %d is not on the grid:\n%s", w, i, b.Prompt())
+			}
+			if got, ok := b.CellAt(row, col); !ok || got != i {
+				t.Errorf("after Resize(%d), CellAt(%d,%d) = (%d,%v), want cell %d", w, row, col, got, ok, i)
+			}
+		}
+		// THE MARKS SURVIVE: they are already in the event log.
+		if !strings.Contains(b.Prompt(), "[y] "+markedYes) {
+			t.Errorf("after Resize(%d) the yes mark on %q is gone:\n%s", w, markedYes, b.Prompt())
+		}
+		if !strings.Contains(b.Prompt(), "[n] "+markedNo) {
+			t.Errorf("after Resize(%d) the no mark on %q is gone:\n%s", w, markedNo, b.Prompt())
+		}
+		if b.Spent() {
+			t.Errorf("after Resize(%d) the board reports itself spent after two marks", w)
+		}
+	}
+}
+
+// glyphFor is the label or mark a cell currently shows, for tests that have to
+// find a cell on the grid after some of them have been marked.
+func glyphFor(b *Board, i int) rune { return b.glyph(i) }

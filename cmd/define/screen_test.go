@@ -1189,13 +1189,13 @@ func TestFooterRowAtNamesTheEntryUnderAClick(t *testing.T) {
 
 		// 10 rows: 6 of buffer (padded, because pinned), 1 of prompt, 3 of footer.
 		for row, want := range map[int]int{7: 0, 8: 1, 9: 2} {
-			got, ok := l.FooterRowAt(row)
+			got, _, ok := l.FooterRowAt(row)
 			if !ok || got != want {
 				t.Errorf("FooterRowAt(%d) = (%d, %v), want entry %d", row, got, ok, want)
 			}
 		}
 		for _, row := range []int{-1, 0, 5, 6, 10, 99} {
-			if got, ok := l.FooterRowAt(row); ok {
+			if got, _, ok := l.FooterRowAt(row); ok {
 				t.Errorf("FooterRowAt(%d) = entry %d, want none — that row is buffer, prompt or nothing", row, got)
 			}
 		}
@@ -1211,28 +1211,29 @@ func TestFooterRowAtNamesTheEntryUnderAClick(t *testing.T) {
 		// Unpinned, so the buffer occupies only what it has: 2 rows, then the
 		// prompt, then the footer.
 		for row, want := range map[int]int{3: 0, 4: 1} {
-			got, ok := l.FooterRowAt(row)
+			got, _, ok := l.FooterRowAt(row)
 			if !ok || got != want {
 				t.Errorf("FooterRowAt(%d) = (%d, %v), want entry %d", row, got, ok, want)
 			}
 		}
-		if got, ok := l.FooterRowAt(2); ok {
+		if got, _, ok := l.FooterRowAt(2); ok {
 			t.Errorf("the prompt row answered entry %d, want none", got)
 		}
 	})
 
-	t.Run("a wrapped entry owns every row it occupies", func(t *testing.T) {
+	t.Run("a wrapped entry owns every row it occupies, and says WHICH", func(t *testing.T) {
 		var tty strings.Builder
 		l := newPinnedScreen(&tty, 10, 10)
 		l.interval = -1
 		l.Draw("p", []string{"aaaaaaaaaaaaaaa", "b"}) // 15 columns at 10 wide is two rows
 
 		// 10 rows: 6 of buffer, 1 of prompt, 3 of footer — the first entry taking
-		// two of them.
-		for row, want := range map[int]int{7: 0, 8: 0, 9: 1} {
-			got, ok := l.FooterRowAt(row)
-			if !ok || got != want {
-				t.Errorf("FooterRowAt(%d) = (%d, %v), want entry %d", row, got, ok, want)
+		// two of them. The OFFSET is what lets a caller acting on a column refuse
+		// the continuation, whose column 4 is really column 14 of the entry (R9).
+		for row, want := range map[int][2]int{7: {0, 0}, 8: {0, 1}, 9: {1, 0}} {
+			got, off, ok := l.FooterRowAt(row)
+			if !ok || got != want[0] || off != want[1] {
+				t.Errorf("FooterRowAt(%d) = (%d, %d, %v), want entry %d row %d", row, got, off, ok, want[0], want[1])
 			}
 		}
 	})
@@ -1245,11 +1246,11 @@ func TestFooterRowAtNamesTheEntryUnderAClick(t *testing.T) {
 		l.interval = -1
 		l.Draw("p", []string{"kept", "kept too", "dropped"})
 
-		if _, ok := l.FooterRowAt(1); !ok {
+		if _, _, ok := l.FooterRowAt(1); !ok {
 			t.Error("the first footer row is not clickable")
 		}
 		for _, row := range []int{3, 4} {
-			if got, ok := l.FooterRowAt(row); ok {
+			if got, _, ok := l.FooterRowAt(row); ok {
 				t.Errorf("FooterRowAt(%d) = entry %d, but that row was never painted", row, got)
 			}
 		}
@@ -1259,7 +1260,7 @@ func TestFooterRowAtNamesTheEntryUnderAClick(t *testing.T) {
 		var tty strings.Builder
 		l := newPinnedScreen(&tty, 10, 20)
 		for _, row := range []int{0, 1, 9} {
-			if got, ok := l.FooterRowAt(row); ok {
+			if got, _, ok := l.FooterRowAt(row); ok {
 				t.Errorf("FooterRowAt(%d) = entry %d on an unpainted screen", row, got)
 			}
 		}

@@ -587,7 +587,7 @@ func TestProseDoesNotSpellStaleRuntimeArtifactNames(t *testing.T) {
 			t.Fatalf("reading %s: %v", f, err)
 		}
 		seen++
-		text := currentTruthOnly(string(b))
+		text := currentTruthOnly(t, f, string(b))
 		if n := strings.Count(text, "user-model."); n > allowed[p] {
 			t.Errorf("%s spells a runtime artifact's name %d time(s), allowed %d — name the "+
 				"artifact (\"the learner model\") unless the line is a current layout, the "+
@@ -610,11 +610,32 @@ func TestProseDoesNotSpellStaleRuntimeArtifactNames(t *testing.T) {
 //   - everything from a "## Revisions" or "## Log" heading onward;
 //   - any "### " section carrying a "**closed:**" line, which is how a project
 //     file marks a milestone detail block as finished.
-func currentTruthOnly(text string) string {
+//
+// IT TAKES A T AND FAILS WHEN THE FILTER SWALLOWS THE ARTIFACT (R10). Truncating
+// at the first record heading is only sound while records come LAST. `#40`'s
+// plan grew a second "## Revisions" above "## Done when", and every guard
+// reading this saw a file that stopped before the section it existed to check —
+// four of them then reported "nothing to check" and skipped. A guard that
+// certifies nothing while reporting success is worse than no guard, and this is
+// the one place all of them pass through.
+//
+// So: a record heading must be the LAST top-level section. Anything after it is
+// invisible, and invisible is the failure — not a state to tolerate.
+func currentTruthOnly(t *testing.T, name, text string) string {
 	for _, marker := range []string{"\n## Revisions", "\n## Log"} {
-		if i := strings.Index(text, marker); i >= 0 {
-			text = text[:i]
+		i := strings.Index(text, marker)
+		if i < 0 {
+			continue
 		}
+		// What the filter is about to discard, minus the record section itself.
+		rest := text[i+1:]
+		if j := strings.Index(rest[1:], "\n## "); j >= 0 {
+			t.Errorf("%s has a %q section with another top-level section after it. "+
+				"Records are truncated at the first one, so everything below is invisible to every guard "+
+				"that reads current truth — %s is unchecked. Records go LAST, once.",
+				name, strings.TrimPrefix(marker, "\n## "), strings.SplitN(strings.TrimPrefix(rest[1+j:], "\n"), "\n", 2)[0])
+		}
+		text = text[:i]
 	}
 	var kept []string
 	for _, sec := range strings.Split(text, "\n### ") {
@@ -685,7 +706,7 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", plan, err)
 		}
-		body := currentTruthOnly(string(b))
+		body := currentTruthOnly(t, filepath.Base(plan), string(b))
 		// An unticked step means the plan is still a plan. Scanned per plan, not
 		// per row, because it is a property of the document.
 		inProgress := strings.Contains(body, "- [ ] ")
@@ -853,7 +874,7 @@ func TestPlanNamedTestsExist(t *testing.T) {
 		// finished from the moment the plan was written. Document-level alone is
 		// wrong the other way — it would exempt a milestone for exactly as long
 		// as that milestone was being built, which is when #30's miss happened.
-		body := currentTruthOnly(string(b))
+		body := currentTruthOnly(t, filepath.Base(plan), string(b))
 		units := planSections(body)
 		if !strings.Contains(body, "## Milestone ") {
 			units = []string{body}
@@ -1007,7 +1028,7 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", f, err)
 		}
-		text := currentTruthOnly(string(b))
+		text := currentTruthOnly(t, f, string(b))
 		for old, now := range retiredSymbolNames {
 			// Word-boundaried: migrateFlatDeck must not match MigrateFlatDeck,
 			// and a longer identifier containing the old name is not the old name.
@@ -1079,7 +1100,7 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", plan, err)
 		}
-		for _, line := range strings.Split(currentTruthOnly(string(b)), "\n") {
+		for _, line := range strings.Split(currentTruthOnly(t, filepath.Base(plan), string(b)), "\n") {
 			m := row.FindStringSubmatch(line)
 			if m == nil {
 				continue
@@ -1157,13 +1178,17 @@ func TestPlanCitesTestsThatExist(t *testing.T) {
 	}
 
 	cite := regexp.MustCompile("`(Test[A-Za-z0-9_]*)`")
-	checked := 0
+	checked, donewhen := 0, 0
 	for _, plan := range plans {
 		b, err := os.ReadFile(plan)
 		if err != nil {
 			t.Fatalf("reading %s: %v", plan, err)
 		}
-		for _, m := range cite.FindAllStringSubmatch(currentTruthOnly(string(b)), -1) {
+		body := currentTruthOnly(t, filepath.Base(plan), string(b))
+		if strings.Contains(body, "## Done when") {
+			donewhen++
+		}
+		for _, m := range cite.FindAllStringSubmatch(body, -1) {
 			checked++
 			if !declared[m[1]] {
 				t.Errorf("%s cites `%s` and no such test exists. A plan naming a test that was "+
@@ -1172,10 +1197,19 @@ func TestPlanCitesTestsThatExist(t *testing.T) {
 			}
 		}
 	}
-	if checked == 0 {
+	if checked == 0 && donewhen > 0 {
+		// NOT A SKIP. `checked == 0` beside a Done-when table means the citations
+		// were swallowed — which is exactly how this guard passed while `#40`'s
+		// plan cited four tests that did not exist (R10). A guard reading a
+		// FILTERED view has to assert its premise about that view and fail, not
+		// report success about a file it never saw.
+		t.Errorf("%d plan(s) have a Done-when table and not one cites a test. Either the rows "+
+			"name no pin — which is what the table is for — or currentTruthOnly truncated them away.", donewhen)
+	}
+	if checked == 0 && donewhen == 0 {
 		// conformance:inapplicable — a plan may legitimately name no test yet,
 		// which is the normal state before implementation begins.
-		t.Skip("no active plan cites a test by name")
+		t.Skip("no active plan has a Done-when table")
 	}
 }
 
@@ -1420,7 +1454,7 @@ func TestARemovedDeclarationIsSweptOrRetired(t *testing.T) {
 			// was the first spelling and it is wrong the same way it was wrong
 			// for the doc check two commits earlier — a substring hit is not a
 			// mention, and this guard was written after that fix.
-			if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(currentTruthOnly(string(b))) {
+			if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(currentTruthOnly(t, f, string(b))) {
 				t.Errorf("%s names %q, which this window REMOVED and which is not in "+
 					"retiredSymbolNames. Either add the row — the mapping is the part only "+
 					"you know — or sweep the mention. A guard that depends on someone "+

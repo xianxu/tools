@@ -215,13 +215,20 @@ func (s *screen) LineAt(row int) (int, bool) {
 }
 
 // FooterRowAt resolves a click on the LIVE EDGE: a viewport row to the index of
-// the footer entry drawn there, as that entry was passed to Draw.
+// the footer entry drawn there, and to WHICH of that entry's physical rows was
+// hit — 0 for its first, 1 for the first continuation, and so on.
 //
-// The INDEX, not a display-row offset. A footer entry that wraps occupies
-// several viewport rows and every one of them answers the same index, which is
-// what a caller actually wants to know — "which of the things I handed over was
-// clicked". An offset would make the caller responsible for knowing which of its
-// entries had wrapped, and it is the screen that wrapped them.
+// The INDEX, because that is what a caller wants to know: "which of the things I
+// handed over was clicked". The screen wrapped them, so the screen owns the
+// mapping; making the caller work out which of its entries had wrapped would be
+// two owners of one measurement.
+//
+// AND THE OFFSET, because the index alone is not enough to place a COLUMN
+// (R9). An entry too wide for the terminal is drawn across several rows, and a
+// click on the second of them carries a column that means nothing in the
+// entry's own coordinate space — column 4 of a continuation is column
+// cols+4 of the entry. A caller that acts on a column has to be able to refuse
+// that, and it can only refuse what it is told about.
 //
 // False for the buffer, for the prompt, and for a footer row fitFooter dropped:
 // a click on a row that was not drawn is a click on nothing, and inventing an
@@ -229,19 +236,19 @@ func (s *screen) LineAt(row int) (int, bool) {
 //
 // Answered from the LAST PAINT rather than from the current state, because that
 // is what the person clicking was looking at.
-func (s *screen) FooterRowAt(row int) (int, bool) {
+func (s *screen) FooterRowAt(row int) (entry, offset int, ok bool) {
 	if row < s.footerTop {
-		return 0, false
+		return 0, 0, false
 	}
 	off := row - s.footerTop
 	for i, m := range s.footer {
 		h := displayRows(m, s.cols)
 		if off < h {
-			return i, true
+			return i, off, true
 		}
 		off -= h
 	}
-	return 0, false
+	return 0, 0, false
 }
 
 // Lines is the whole buffer. Present for tests and for the exit transcript
@@ -727,7 +734,7 @@ func (l *liveScreen) RegionAtRow(row, col int) (Region, bool) {
 // FooterRowAt resolves a click on the live edge, under the lock like every other
 // read of the screen: Paint runs from the throttle's goroutine too, and this
 // reads what Paint wrote.
-func (l *liveScreen) FooterRowAt(row int) (int, bool) {
+func (l *liveScreen) FooterRowAt(row int) (int, int, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.s.FooterRowAt(row)

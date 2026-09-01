@@ -132,9 +132,15 @@ type Board struct {
 	// about grids, so the form has to answer "which word did that just mean".
 	last int
 
-	// The layout, computed once in NewBoard because the width it is derived from
-	// cannot change: a resize below the board's height leaves the current board
-	// drawn as it was and chooses the NEXT question at the new size (D15).
+	// The layout, derived from the width the board is DRAWN at — which changes,
+	// and the first draft said it could not (R9).
+	//
+	// D15 read "a resize below the board's height leaves the current board drawn
+	// as it was" as safe. It is not: a board laid out for eighty columns has
+	// 74-column rows, and at forty the terminal wraps each into two — so a footer
+	// entry stops being one physical row, and a click on the continuation row
+	// arrives with a column that means something else entirely. The mark is
+	// permanent. Resize is what keeps this honest.
 	width     int
 	cols      int
 	cell      int // columns from one cell's start to the next cell's start
@@ -203,6 +209,26 @@ func (b *Board) layout() {
 	if b.cols < 1 {
 		b.cols = 1
 	}
+}
+
+// Resize lays the board out again for the width it will now be DRAWN at.
+//
+// THE INVARIANT THIS DEFENDS: every line Prompt() produces fits the terminal, so
+// every footer entry is exactly one physical row, so the entry index the screen
+// reports for a click IS a grid row and the column it carries is in this board's
+// own coordinate space. Let the width drift and all three of those stop being
+// true at once — silently, and the symptom is a permanent mark on the wrong word.
+//
+// The MARKS SURVIVE, which is the whole reason this is a relayout rather than a
+// new board: those answers are already in the event log and cannot be retracted.
+// Only the geometry moves — the columns, and therefore how many rows the same
+// cells occupy.
+func (b *Board) Resize(cols int) {
+	if cols == b.width {
+		return
+	}
+	b.width = cols
+	b.layout()
 }
 
 // Rows is how many lines Prompt() produces — the WHOLE live edge, the grid and

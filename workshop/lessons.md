@@ -3037,3 +3037,56 @@ cost"* — is about what the learner READS, and there the ratio is 20-40x.
 The wrong response is to find a framing under which the proxy passes. **Say which
 measurement the claim rests on, and move the row.** A proxy that survives its own
 measurement unexamined is how a Done-when becomes decoration.
+
+## A layout fixed at selection time survives exactly until the window does not (`#40` R9)
+
+`Board` computed its columns once, in its constructor, and the field comment said
+the width "cannot change". The terminal is resized under a live board: a layout
+for eighty columns has 74-column rows, at forty each wraps into two, a footer
+entry stops being one physical row, and a click on the continuation carries a
+column that means a different word. Permanently — the mark is already in the log.
+
+**The rule: every quantity a click map or a frame budget depends on must be read
+from the terminal AS IT IS at draw and click time.** Not at selection time, not
+at construction. The enumeration is small and worth writing out for any
+live-edge surface: the prompt's height, the form's layout width, the fit
+re-check after a resize, and the column translation for an entry that wrapped.
+
+Two defences, and both earn their place: the form relays out (closing it at the
+root) and the loop refuses a click on any continuation row (closing it at the
+seam, for the next multi-row entry and for the day someone forgets to pass the
+resize on). **"Should never happen" is not a thing to bet an irreversible action
+on.**
+
+## A guard that reports success about a file it never saw is worse than no guard (`#40` R10)
+
+`currentTruthOnly` truncates an artifact at its first `## Revisions` — sound only
+while records come last. A plan grew a second one higher up, and every guard
+reading it saw a file that stopped before the section it existed to check. Four
+of the eight then reported "nothing to check" and SKIPPED.
+
+The first fix was to reorder that one plan. The shape comes back tomorrow, in any
+artifact, and it comes back as success.
+
+**A guard reading a FILTERED view must assert its premise about that view and
+FAIL — never Skip — when the filter removed its subject.** The filter is the
+right place for it: one check there covered all eight call sites. And a guard
+whose "nothing to check" branch cannot distinguish *there was nothing* from
+*I was handed nothing* has a hole exactly the size of its own filter.
+
+## Fixing the instance is how a family reaches round two (`#40`)
+
+Round 1 of `#40`'s boundary review found a prose enumeration that had gone stale
+(`Batch` "consulted at FOUR points", with a fifth path unguarded) and a constant
+standing in for a measurement. Both were fixed at the class — a sentinel plus a
+matrix test, a measured height — and round 2 still returned three REPEAT families:
+the same `frame-budget-hardcoded-not-measured` through the resize door, the same
+`plan-citations-unenforced` through the skip, and the same
+`comment-asserts-absent-behaviour` in the very comment that had declared prose
+the culprit while still saying "four".
+
+**When a review names a family, enumerate every member before fixing one.** The
+question is not "where else does this exact bug appear" but "what else is this
+quantity read from, and when". Writing the enumeration into the fix — as a
+derived set, a measured value, or a table in the revision — is what stops round
+three.

@@ -471,16 +471,17 @@ func missedAxis(q Question) Axis {
 // so it names a CAPABILITY and asks. A type switch on *Board here would be the
 // thing that Done-when forbids.
 //
-// It is consulted at FOUR points rather than one, which is the honest cost of a
-// form holding many words. `advance` is the obvious one; the other three were
-// found by measurement rather than by reading:
+// IT IS CONSULTED ON MORE PATHS THAN ONE, and this comment used to say how many.
 //
-//	the miss branch — a Wrong mark reaches "a MISS on a hidden word earns the
-//	                  definition", which sets Graded, and the next key would then
-//	                  mean "next word". The form would freeze after one mark.
-//	InputDrop      — advance(Skipped) drops q.Word(), and a form holding many has
-//	                 no single current word to name. Refused rather than guessed.
-//	InputFinish    — Enter spends the form; every other form has nothing to spend.
+// It said FOUR and listed three, and the number was wrong within the same commit
+// that declared prose enumerations the problem — `InputReveal` was a fifth and
+// nobody recounted. That is the fault, not the number: a set the code owns,
+// restated in prose, is a second owner and drifts silently.
+//
+// So the set is `InputKind × Batch` and it is DERIVED, from `numInputKinds`, by
+// TestEveryInputKindIsAnsweredForABatchForm. Read that table for what each kind
+// means to a form holding many words; a kind added later arrives in it with no
+// expectation and fails. `advance` is the obvious consumer besides.
 type Batch interface {
 	// Words is how many words this form holds, for the bar (D8).
 	//
@@ -530,6 +531,16 @@ type Grid interface {
 	// Mark lands the form's active mode on cell i, and reports what that meant.
 	// False for a cell that is not there or is already answered.
 	Mark(i int) (Verdict, bool)
+	// Resize tells the form the width it will now be DRAWN at, so its rows keep
+	// fitting the terminal (R9).
+	//
+	// On the interface because it is the same fact as the other three: a form
+	// that decides where its own words are printed has to be told when the space
+	// they are printed in changes. A layout fixed at selection time survives
+	// exactly until the window does not — and then a footer entry wraps, stops
+	// being one physical row, and a click on the continuation carries a column
+	// that means something else.
+	Resize(cols int)
 }
 
 // Moded is implemented by forms that hold a MODE: a setting the learner
