@@ -248,14 +248,14 @@ actual lands near **3–4h**. The estimate is NOT padded toward it.
 - [x] Design: `workshop/plans/000038-play-clickable-plan.md` (single-pass, one
       boundary; four plan-quality rounds).
 - [x] T0 — one audio-off predicate, applied inside `playAnnounced`.
-- [ ] T1 — lift the click registry into `playRegion`, shared by both loops.
+- [x] T1 — lift the click registry into `playRegion`, shared by both loops.
 - [x] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands. **Landed by `#41` T3/T4**; the replacement pin is `TestAMissRecordsBeforeItPlays`, built to this plan's round-4 specification.
 - [x] T3 — `--play` writes into a `liveScreen`. **Landed by `#41` T3** as `newConsole(…, newPinnedScreen)`.
-- [ ] T4 — the prompt word is a region.
-- [ ] T5 — the revealed definition carries its regions.
+- [x] T4 — the prompt word is a region.
+- [x] T5 — the revealed definition carries its regions.
 - [x] T6 — the viewport: scroll, wheel and resize. **Landed by `#41` T7/T8** as the shared `viewportGesture` plus the loop's resize case.
-- [ ] T7 — a click acts and never answers.
-- [ ] T8 — docs: the README's review-loop section and the atlas's.
+- [x] T7 — a click acts and never answers.
+- [x] T8 — docs: the README's review-loop section and the atlas's.
 
 ## Log
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/xianxu/tools/cmd/define/play"
@@ -156,4 +157,31 @@ func isOptionLine(line string) bool {
 		return false
 	}
 	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
+}
+
+// writeClickable writes text and its click map, but ONLY while the two still
+// agree about where things are.
+//
+// A region's Line and Col are relative to the text they were computed from, and
+// `#41` put a WRAP between the caller and the buffer: a pinned screen breaks an
+// over-wide line before it lands, which moves every span below and to the right
+// of the break. `#41` BR-25 wrote the obligation down for the first consumer to
+// write regions into a pinned screen, and this is it.
+//
+// So the wrap is applied HERE, and the regions ride along only if it changed
+// nothing. At a sitting's own width it changes nothing — the entry was rendered
+// at that width — so this is the ordinary case. After the window NARROWS, the
+// text still arrives whole and readable and the underlines stop appearing until
+// the next question is written at the new width.
+//
+// THAT TRADE IS THE POINT, not a shortcut: an underline that plays the word
+// beside the one you pointed at is worse than no underline, because the reader
+// cannot tell it happened. Losing an affordance is visible; a wrong click is
+// not.
+func writeClickable(w io.Writer, text string, rs []Region, width int) {
+	if wrapWritten(text, width) != text {
+		fmt.Fprint(w, text)
+		return
+	}
+	writeRendered(w, text, rs)
 }

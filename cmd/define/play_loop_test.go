@@ -887,6 +887,163 @@ func (logRefusingStore) Events(time.Time) ([]store.ReviewEvent, error) {
 	return nil, errFail
 }
 
+// DONE-WHEN 1: the word being asked about is CLICKABLE (T4).
+//
+// The whole issue in one row. `Prompt()`'s first line is the headword for both
+// forms, so the region is line 1 of the write — the leading blank is line 0 —
+// at column 0, and a headword is never wide enough to wrap.
+func TestPlayClickOnThePromptWordPlaysIt(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	player := audible(&d, &opt)
+	qs, held := questionsFor(t, d, opt)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	waitFor(t, func() bool { return strings.Contains(live.Transcript(), qs[0].Word()) })
+	// The cell the WORD is on, found the way a reader's eye would: the buffer
+	// line carrying it, at column 0. No coordinate invented by the test.
+	row := -1
+	for i, line := range strings.Split(live.Transcript(), "\n") {
+		if unstyled(line) == qs[0].Word() {
+			row = i
+		}
+	}
+	if row < 0 {
+		t.Fatalf("the prompt word is not on a line of its own:\n%s", live.Transcript())
+	}
+
+	keys <- Key{Kind: KeyClick, Row: row, Col: 0}
+	waitFor(t, func() bool { return player.count() > 0 })
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+
+	if player.count() == 0 {
+		t.Error("clicking the word the sitting is asking about played nothing")
+	}
+}
+
+// DONE-WHEN 2: a click NEVER answers (D8, T7).
+//
+// Hearing the word is what y/n are answering ABOUT. A click that graded would
+// corrupt the schedule silently, which is the worst kind of bug here — the
+// damage is to data the learner cannot see.
+func TestPlayClickIsNotAnAnswer(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic")
+	audible(&d, &opt)
+	spy := &countingCapturer{}
+	d.capture = spy
+	qs, held := questionsFor(t, d, opt)
+
+	var out, errb bytes.Buffer
+	view := paintInto(&out)
+	view.offer(2, 0, Region{Kind: RegionHeadword, Text: "sycophantic", Word: "sycophantic"})
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyClick, Row: 2, Col: 0}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+		console{view: view, finish: func() {}, stdout: view, stderr: &errb})
+
+	if spy.reviews != 0 || len(reviewEvents(t, st)) != 0 {
+		t.Error("a click recorded a review — hearing a word is not answering about it")
+	}
+	if !strings.Contains(out.String(), "0 right, 0 wrong") {
+		t.Errorf("the sitting scored a click:\n%s", out.String())
+	}
+}
+
+// DONE-WHEN 3: a revealed definition is clickable like anywhere else (T5), and
+// its regions are moved into the coordinates of what is actually WRITTEN.
+//
+// `Choice.Reveal()` names the right option and the learner's pick above the
+// entry, so the render's own line numbers are wrong by however many lines the
+// form prepended. Located rather than counted from a formula: the form owns its
+// layout, and a formula here would be a second copy of it.
+func TestPlayARevealedDefinitionCarriesItsRegions(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs, held := questionsFor(t, d, opt)
+
+	// A REAL screen, and the assertion is a CLICK — the joint, not the pieces.
+	// editorloop_test.go records the rule: every place two separately-pinned
+	// layers exchange a value across a coordinate boundary earns a row, and a row
+	// is earned only when a test drives both real objects. Here those layers are
+	// the loop's offset arithmetic and the screen's buffer rebasing.
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, 80) // taller than the sitting, so no scroll
+	live.interval = -1
+	var errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\r^"),
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// The definition's own header line, which is the LAST line beginning with
+	// the headword — the prompt wrote the first one. Found by reading the
+	// transcript, not by a coordinate the test invented.
+	word := qs[0].Word()
+	row := -1
+	for i, line := range strings.Split(live.Transcript(), "\n") {
+		if strings.HasPrefix(unstyled(line), word) {
+			row = i
+		}
+	}
+	if row < 0 {
+		t.Fatalf("the revealed definition never named %q:\n%s", word, live.Transcript())
+	}
+
+	r, ok := live.RegionAtRow(row, 0)
+	if !ok {
+		t.Fatalf("clicking the headword INSIDE the revealed definition (row %d) resolves to "+
+			"nothing — the reveal reached the buffer without its click map, or with one "+
+			"whose lines were never shifted past the option lines Choice.Reveal puts above it",
+			row)
+	}
+	if r.Word != word {
+		t.Errorf("the click at row %d answers for %q, want %q", row, r.Word, word)
+	}
+}
+
+// ...and the regions are DROPPED rather than misplaced when the wrap would move
+// them (#41 BR-25).
+//
+// An underline that plays the word beside the one you pointed at is worse than
+// no underline: losing an affordance is visible, a wrong click is not.
+func TestClickMapIsDroppedRatherThanMisplacedByAWrap(t *testing.T) {
+	const narrow = 20
+	var out bytes.Buffer
+	view := paintInto(&out)
+	long := "1  " + strings.Repeat("word ", 12)
+
+	writeClickable(view, long+"\n", []Region{{
+		Kind: RegionHeadword, Text: "word", Word: "word", Line: 0, Col: 3, Width: 4,
+	}}, narrow)
+
+	if got := view.collected(); len(got) != 0 {
+		t.Errorf("a click map survived a wrap that moves it: %+v", got)
+	}
+	// The TEXT still arrives — dropping the map must not drop the content.
+	if !strings.Contains(out.String(), "word word") {
+		t.Errorf("the text was dropped with the regions:\n%s", out.String())
+	}
+	// ...and at a width that changes nothing, the map rides along.
+	out.Reset()
+	wide := paintInto(&out)
+	writeClickable(wide, long+"\n", []Region{{
+		Kind: RegionHeadword, Text: "word", Word: "word", Line: 0, Col: 3, Width: 4,
+	}}, 200)
+	if len(wide.collected()) != 1 {
+		t.Errorf("the click map was dropped at a width that wraps nothing: %+v", wide.collected())
+	}
+}
+
 // DONE-WHEN 9: SIGWINCH repaints mid-sitting.
 func TestPlayRepaintsOnResize(t *testing.T) {
 	d, opt, _ := playRig(t, "sycophantic")

@@ -2030,6 +2030,37 @@ construction: alternate screen, mouse reporting, a screen, `watchResize`,
   on transition; `livePrompt` returns the keys, which are painted and never
   filed.
 
+**A SITTING'S WORDS ARE CLICKABLE, through the same registry the editor uses
+(`#38`).** `#30` Done-when 7 asked for *"one mechanism, so a third consumer is a
+row rather than a new feature"*, and until `#38` the switch on `RegionKind` lived
+inside `runEditor`'s own closure, where a second loop could only copy it.
+`playRegion` is that registry lifted out: both loops call it, and the INDICATOR
+is its one parameter, because the editor's is erasable and a sitting's is the
+record-shaped `defaultIndicator`. A kind with no row there draws an underline
+that does nothing, which `TestEveryRegionKindIsActionable` catches by deriving
+its loop from `numRegionKinds`.
+
+- **The prompt word is line 1, column 0 of the write the loop already makes.**
+  Both forms put the headword on their first line, so there is nothing to search
+  for and no offset to survive a wrap.
+- **The reveal's regions come from `Render` and are SHIFTED into the coordinates
+  of what is written.** A form's reveal is larger than the render inside it —
+  `Choice.Reveal` names the right option and the learner's pick first — so the
+  loop locates the render in the reveal rather than counting from a formula,
+  which would be a second copy of a layout the form owns.
+- **A click never answers** (D8). It stops before `toInput`, beside the viewport
+  gestures, so `play.Apply` never learns a mouse exists. A click that recorded a
+  review would corrupt the schedule silently, which is the worst kind of bug
+  here: the damage is to data the learner cannot see.
+- **The click map is DROPPED rather than misplaced when the wrap would move it.**
+  `#41` put a wrap between the caller and the buffer, and a region's column is
+  relative to the text it was computed from — so `writeClickable` applies the wrap
+  first and passes the regions along only if it changed nothing. At a sitting's
+  own width it changes nothing; after a NARROWING resize the text still arrives
+  whole and the underlines stop until the next question is written. An underline
+  that plays the wrong word is worse than no underline, because losing an
+  affordance is visible and a wrong click is not.
+
 **A SITTING REFUSES rather than degrades, and it settles that before doing any
 work.** `--play` needs stdin to be a terminal (a review is a conversation, and
 piped input would answer questions it never saw), stdout to be a terminal (a

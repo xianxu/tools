@@ -313,22 +313,20 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 	// in its own. `replayInPlace` is the same path a bare Enter and `/pron`
 	// take, so a click cannot drift from the gestures it is a shortcut for.
 	clicked := func(r Region) {
-		// The clicked entry, which is not always the current one: a reader can
-		// scroll back and click a word from earlier in the session. The session
-		// keeps only the CURRENT entry's raw text, and that text is what supplies
-		// the source spellings for a foreign replay — so an older entry replays
-		// through #29's fallback on the headword itself, which is the degraded
-		// answer rather than a wrong one.
-		clicked := session{current: r.Word}
+		// The clicked entry's RAW TEXT, which is not always the current one's: a
+		// reader can scroll back and click a word from earlier in the session.
+		// The session keeps only the CURRENT entry's text, and that text is what
+		// supplies the source spellings for a foreign replay — so an older entry
+		// replays through #29's fallback on the headword itself, which is the
+		// degraded answer rather than a wrong one.
+		var entry string
 		if r.Word == sess.current {
-			clicked.entry = sess.entry
+			entry = sess.entry
 		}
-		switch r.Kind {
-		case RegionHeadword:
-			replayInPlace(ctx, d, opt, clicked, "", stdout, stderr)
-		case RegionOriginLang:
-			replayInPlace(ctx, d, opt, clicked, r.Lang, stdout, stderr)
-		}
+		// The registry lives in playRegion, shared with `--play` (#38 D4). This
+		// loop supplies its own ERASABLE indicator; a sitting supplies the
+		// record-shaped one.
+		playRegion(ctx, d, opt, r, entry, indicator{show: true, erase: eraseLine}, stdout, stderr)
 		draw()
 	}
 
@@ -562,6 +560,46 @@ func runEditor(ctx context.Context, keys <-chan Key, interrupts *interrupter, d 
 // two implementations — #14's "two loops, one decision table", applied before a
 // second one could be written. It takes the whole session because the source
 // spellings come from the entry, not just the word.
+// playRegion is what a CLICK does, and it is ONE registry for both loops.
+//
+// `#30` Done-when 7 asked for exactly this — *"the affordance is ONE mechanism,
+// so a third consumer is a row rather than a new feature"* — and until `#38` the
+// switch lived inside `runEditor`'s `clicked` closure, where a second loop could
+// only copy it. A second switch breaks that guarantee the day a third
+// `RegionKind` lands: one loop would act on it and the other would draw an
+// underline that does nothing.
+//
+// The INDICATOR is a parameter because it is the one thing the two loops
+// legitimately differ on: the editor's is erasable, so `♫ playing 3×` is taken
+// back when the recording ends; a sitting passes `defaultIndicator(opt)`.
+//
+// `entry` is the clicked word's RAW dictionary text, or empty. It supplies the
+// source spellings a foreign replay needs (#29); empty degrades to the headword
+// itself rather than being wrong.
+func playRegion(ctx context.Context, d deps, opt options, r Region, entry string, ind indicator, stdout, stderr io.Writer) {
+	if !opt.playsAudio() {
+		// The caller's own sentence, not playAnnounced's silence: a click that
+		// does nothing needs to say why, where a review loop skipping a reveal
+		// does not (T0).
+		fmt.Fprintln(stderr, nothingToReplay)
+		return
+	}
+	// The REGISTRY. Every kind is a row; a kind with no row here draws an
+	// underline and does nothing, which TestEveryRegionKindIsActionable exists
+	// to catch — and it derives its loop from numRegionKinds, so a third kind is
+	// exercised the moment it is declared.
+	var pron store.Lang
+	switch r.Kind {
+	case RegionHeadword:
+		// The entry's own language, which utteranceFor resolves from opt.
+	case RegionOriginLang:
+		pron = r.Lang
+	default:
+		return
+	}
+	playAnnounced(ctx, d, opt, utteranceFor(r.Word, entry, pron, opt), ind, stdout, stderr)
+}
+
 func replayInPlace(ctx context.Context, d deps, opt options, sess session, pron store.Lang, stdout, stderr io.Writer) {
 	switch {
 	case sess.current == "":

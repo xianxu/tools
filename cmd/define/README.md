@@ -152,6 +152,15 @@ lost, resizing the window redraws — and wraps what comes after it to the new
 width — and everything you reviewed is printed back into your terminal when you
 quit.
 
+**The words in a sitting are clickable too.** Click the word you are being asked
+about to hear it; after a reveal, click anything in the definition — the headword
+or the language after `ORIGIN` — exactly as in the interactive session. A click
+never answers: hearing the word is what `y`/`n` are answering *about*, so it plays
+and nothing else. On a window too narrow for the entry as it was rendered, the
+underlines stop appearing until the next question — the text is all still there,
+and a link that played the word beside the one you pointed at would be worse than
+no link.
+
 Because it draws a whole screen, `--play` needs one. `define --play > file` and
 `define --play -no-color` both say so and stop rather than filling a file with
 escape sequences or painting control codes at a terminal that was asked not to
