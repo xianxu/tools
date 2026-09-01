@@ -1,11 +1,12 @@
 ---
 id: 000040
-status: open
+status: working
 deps: ["tools#39", "tools#41"]
 github_issue:
 created: 2026-08-31
-updated: 2026-08-31
+updated: 2026-09-01
 estimate_hours:
+started: 2026-09-01T08:54:58-07:00
 ---
 
 # form 2.5: the board — grid triage for mature words
