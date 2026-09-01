@@ -54,6 +54,12 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 		play.NewChoice("ephemeral", "", []play.Option{
 			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
 		}),
+		// The board's line differs in its RESERVED half too, not only in its own
+		// keys: `d` is refused on a form holding many words, so the prompt must
+		// not offer it (#40 D12). That is the second thing this row checks, and
+		// the reason it is worth adding rather than being the "third form" the
+		// comment above calls human.
+		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80),
 	}
 	seen := map[string]bool{}
 	for _, f := range forms {

@@ -361,6 +361,7 @@ chosen at the new height.
 | `ReviewEvent.Form` | `cmd/define/store/event.go` | new | the event log — which form asked, so the deferred remedies can be chosen from evidence (D4a) |
 | `Question` | `cmd/define/play/question.go` | modified | gains `Form() string`. ON the interface, not an optional capability: a form that could forget to name itself would write an empty string beside a real promotion (R3) |
 | `CaptureReview` | `cmd/define/capture.go` | modified | the store — writes the form on every review event |
+| `reservedKeys` | `cmd/define/play_loop.go` | new | the learner — `d` is refused on a board, so the prompt stops offering it. `TestREADMEQuotesThePromptsTheLoopActuallyPrints` now covers all three forms (T12) |
 
 **ARCH-MOCK.** No new external dependency. `Board` is pure and unit-tested with no IO; the loop's tests use the recorder `#30` built; the pty suite covers the real terminal, and the mouse-less path is exactly what `#38`'s rows exist for.
 
@@ -384,9 +385,9 @@ Plain checkboxes: single-pass work with ONE boundary (AGENTS.md §3).
 - [x] **T8 — form selection** (D4). `boardsFor` partitions today's keys at box ≥ 3 and packs the eligible ones sixteen at a time.
 - [x] **T9 — the relearn line** (D10). As a board closes it writes ONE buffer line naming the words marked `No`, so the transcript keeps the outcome even though the grid was ephemeral.
 - [x] **T10 — the bar counts words** (D8).
-- [ ] **T11 — the load claim, measured** (Done-when 7).
-- [ ] **T13 — pty conformance.** Done-when 14, which had a row and no task. `#37` records that pty rows need `-tags conformance` AND a real pty — *"in the review environment every one reports 'no pty available'"* — so they are run here or they are run nowhere.
-- [ ] **T12 — docs.** `cmd/define/README.md`, `atlas/define.md`'s forms section, the `--help` key table — **and the two in-tree forward references D7 falsifies**: `schedule/progress.go` says this issue extends the `Grade` seam with `GradeUnsure`, and `play/session.go` describes the mark as "firm".
+- [x] **T11 — the load claim, measured** (Done-when 7). **The measurement moved the claim — see R5.**
+- [x] **T13 — pty conformance.** Done-when 14, which had a row and no task. `#37` records that pty rows need `-tags conformance` AND a real pty — *"in the review environment every one reports 'no pty available'"* — so they are run here or they are run nowhere.
+- [x] **T12 — docs.** `cmd/define/README.md`, `atlas/define.md`'s forms section, the `--help` key table — **and the two in-tree forward references D7 falsifies**: `schedule/progress.go` says this issue extends the `Grade` seam with `GradeUnsure`, and `play/session.go` describes the mark as "firm".
 
 ---
 
@@ -465,10 +466,43 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR. **Every `red when` cell is EXECUT
 | 10 | **a board is never drawn clipped** | `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard`, and `TestPaintFitsTheTerminalAndParksTheCursor` UNCHANGED | `fitFooter` is given a floor, so `footerRows` exceeds `termRows - promptRows`, the terminal scrolls, and a click lands on the wrong word |
 | 11 | the outcome survives the sitting | `TestABoardLeavesItsRelearnListInTheTranscript` | the board is live edge and vanishes whole |
 | 12 | the bar counts WORDS | `TestTheBarCountsWordsNotSlots` | `total` stays `len(s.Questions)` and a 20-word sitting reads "0 of 2" |
-| 13 | the board is materially cheaper per word | `TestABoardCostsFewerKeystrokesThanMeaningChoice` | the grid asks for more than one keystroke per word |
+| 13 | the board is materially cheaper per word, **measured as what the learner READS** | `TestABoardCostsFarLessPerWordThanMeaningChoice` — one keystroke per word AND at least ten to one on transcript lines (R5) | the grid asks for more than one keystroke per word, or the board's rows reach the buffer and the reading cost collapses to 2.3's |
 | 14 | the real terminal draws and clicks it | a pty row extending `#41`'s and `#38`'s | it works in-process and not on a tty |
 
 ---
+
+### 2026-09-01 (R5) — the keystroke proxy was the wrong instrument, and the measurement said so
+
+Done-when 13 asked for "materially fewer KEYSTROKES than form 2.3". Measured over
+eight words:
+
+| | keystrokes/word | transcript lines/word |
+|---|---|---|
+| board, one mode throughout | 1.00 | 0.4 |
+| board, two of eight missed | 1.12 | 0.6 |
+| form 2.3, none missed | 1.00 | **8.8** |
+| form 2.3, two of eight missed | 1.25 | **23.1** |
+
+**Keystrokes are a wash.** Both forms cost one per word in the good case; 2.3
+costs a second on every miss — the definition goes up and any key moves on — and
+a board costs one per mode switch. Nothing there is "material".
+
+**What is material is how much the learner has to READ**, by a factor of twenty
+to forty. Form 2.3 writes a whole rendered entry per word into the transcript;
+a board writes one line for the entire sweep. And that is the Spec's own claim,
+which was never a typing claim: *"a hundred mature words swept in a grid cost
+what ten fragile ones cost in multiple choice"* is a ten-to-one ratio, and it is
+reading cost, for a form whose whole argument is that a large deck becomes
+unaffordable to maintain.
+
+So the row now pins both — the keystroke floor its own red-when names, and the
+reading ratio that carries the claim. The issue's Done-when is swept to match.
+
+**The rule this leaves: a Done-when that names a PROXY is a hypothesis, and
+measuring it can falsify the proxy rather than the claim.** The right response is
+to say which measurement the claim actually rests on, not to find a framing under
+which the proxy passes.
+
 
 ## Verification before close
 

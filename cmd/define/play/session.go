@@ -527,8 +527,10 @@ type Moded interface {
 // SelfRated is implemented by forms whose verdict is the learner's CLAIM rather
 // than something the form checked.
 //
-// Form 2.1 is the whole population today: `y` means "I knew it" and nobody
-// verified it. `#40`'s board joins it — a `firm` mark is triage, not retrieval.
+// Form 2.1 and form 2.5's board: `y` means "I knew it" and nobody verified it,
+// and a mark on a grid is triage rather than retrieval. The board's marks are
+// `yes` and `no`; an earlier draft called the positive one `firm` and had a
+// third, and both went when the operator cut the mark set to two (#40 D7).
 //
 // It is `SelfRated` and not `Observed` deliberately, even though the DEFAULT is
 // then the permissive one. A marker that a new form must remember to add would

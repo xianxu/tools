@@ -2631,3 +2631,298 @@ func TestTheBarCountsWordsNotSlots(t *testing.T) {
 		t.Errorf("the bar does not count the board's four words:\n%s", frame)
 	}
 }
+
+// DONE-WHEN 13, MEASURED — and the measurement moved the claim (#40 R5).
+//
+// The plan asked for "materially fewer KEYSTROKES than form 2.3", and that is
+// not what the numbers say. Both forms cost one keystroke per word in the good
+// case; 2.3 costs a second on every miss (the definition goes up and any key
+// moves on) and a board costs one per mode switch. Over eight words that is 1.00
+// against 1.00, or 1.12 against 1.25. Marginal either way.
+//
+// What IS material is how much the learner has to READ. Form 2.3 writes a whole
+// rendered entry per word into the transcript — the four options, then the right
+// answer, then the entry — and a board writes one line for the entire sweep.
+// Measured at 8.8 lines per word against 0.4, and 23.1 against 0.6 once misses
+// are involved. That is the Spec's own claim ("a hundred mature words swept in a
+// grid cost what ten fragile ones cost") and it is a reading cost, not a typing
+// one — which is the right reading of "cost" for a form whose whole argument is
+// that a large deck becomes unaffordable.
+//
+// So this pins BOTH: the keystroke floor the plan's red-when names, and the
+// reading ratio that carries the claim.
+func TestABoardCostsFarLessPerWordThanMeaningChoice(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank", "concrete", "ephemeral", "run", "set"}
+
+	// THE BOARD: one keystroke per word, one mode throughout.
+	d, opt, _ := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width)
+	var boardKeys []Key
+	for i := range words {
+		boardKeys = append(boardKeys, Key{Kind: KeyRune, Rune: rune("0123456789abcefg"[i])})
+	}
+	boardLines := sittingCost(t, d, opt, []play.Question{board}, held, boardKeys)
+
+	// FORM 2.3 over the same words, every one answered right — which is the
+	// cheapest that form can possibly be, so the comparison is against its best
+	// case rather than a convenient one.
+	d2, opt2, _ := playRig(t, words...)
+	qs, held2, code := todaysQuestions(d2, opt2, &bytes.Buffer{}, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("todaysQuestions = %d", code)
+	}
+	var singles []play.Question
+	for _, q := range qs {
+		if _, ok := q.(*play.Board); !ok {
+			singles = append(singles, q)
+		}
+	}
+	if len(singles) != len(words) {
+		t.Fatalf("%d single questions for %d words; the comparison is not like for like", len(singles), len(words))
+	}
+	var choiceKeys []Key
+	for _, q := range singles {
+		choiceKeys = append(choiceKeys, Key{Kind: KeyRune, Rune: []rune(gradeKey(t, q, play.Correct))[0]})
+	}
+	choiceLines := sittingCost(t, d2, opt2, singles, held2, choiceKeys)
+
+	// ONE KEYSTROKE PER WORD, which is the plan's red-when: "the grid asks for
+	// more than one keystroke per word".
+	if len(boardKeys) > len(words) {
+		t.Errorf("the board took %d keystrokes for %d words", len(boardKeys), len(words))
+	}
+	// AND THE READING COST, which is where the load argument actually lives.
+	perWordBoard := float64(boardLines) / float64(len(words))
+	perWordChoice := float64(choiceLines) / float64(len(words))
+	if perWordBoard <= 0 {
+		t.Fatal("the board's sitting produced no transcript at all; the ratio below would be meaningless")
+	}
+	if ratio := perWordChoice / perWordBoard; ratio < 10 {
+		t.Errorf("form 2.3 costs %.1f transcript lines per word and the board costs %.1f — a ratio of %.1f, "+
+			"and the Spec's claim is that a grid makes a large deck affordable (ten to one)",
+			perWordChoice, perWordBoard, ratio)
+	}
+	// The MECHANISM, stated so a future change that quietly starts writing the
+	// grid to the buffer fails here too rather than only in the ratio.
+	if boardLines > len(words) {
+		t.Errorf("the board wrote %d transcript lines for %d words — it is meant to write one line for the whole sweep", boardLines, len(words))
+	}
+}
+
+// sittingCost runs a scripted sitting and returns how many lines it left in the
+// transcript — what the learner has to read.
+//
+// The summary the sitting ends with is counted for BOTH forms, which makes the
+// board look slightly worse than it is. That is the conservative direction.
+func sittingCost(t *testing.T, d deps, opt options, qs []play.Question, held *sittingDeck, script []Key) int {
+	t.Helper()
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 40, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, len(script)+1)
+	for _, k := range script {
+		keys <- k
+	}
+	close(keys)
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	return strings.Count(unstyled(live.Transcript()), "\n")
+}
+
+// DONE-WHEN 2 AND 4: EVERY MARK REACHES THE LOG AS IT HAPPENS, so Ctrl-C leaves
+// the marked words recorded and the unmarked ones untouched (#40 D3).
+//
+// These are one observable. A board that wrote its marks at the END would look
+// identical in a completed sitting and lose everything on an interrupt — and the
+// interrupt is the case the operator asked for by name: *"ctrl-C means nothing is
+// changed from that form. already clicked words can still be recorded, but
+// unmarked words are just unmarked, no state change for them."*
+//
+// Asserted through the FOLD rather than the event count alone, because "no state
+// change" is a claim about boxes, and boxes are what the log folds to.
+func TestCtrlCCancelsABoardWithoutMovingUnmarkedWords(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width)
+
+	before := schedule.Fold(eventsOf(t, st))
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyRune, Rune: '0'} // quokka: yes
+	keys <- Key{Kind: KeyRune, Rune: '1'} // mesa: yes
+	keys <- Key{Kind: KeyInterrupt}       // ...and stop, two words unmarked
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// TWO events, not four and not zero. Zero is what batching at the end would
+	// leave; four would mean the interrupt committed the rest.
+	evs := reviewEvents(t, st)
+	if len(evs) != 2 {
+		t.Fatalf("%d review events after two marks and Ctrl-C, want 2", len(evs))
+	}
+	got := map[string]bool{evs[0].Word: true, evs[1].Word: true}
+	if !got["quokka"] || !got["mesa"] {
+		t.Errorf("the log holds %v, want the two words that were marked", got)
+	}
+
+	// AND THE UNMARKED WORDS DID NOT MOVE.
+	after := schedule.Fold(eventsOf(t, st))
+	for _, w := range []string{"parrot", "bank"} {
+		if after[w] != before[w] {
+			t.Errorf("%q was never marked and its progress changed: %+v -> %+v", w, before[w], after[w])
+		}
+	}
+	if after["quokka"] == before["quokka"] {
+		t.Errorf("quokka WAS marked and its progress did not change — the premise above is vacuous")
+	}
+}
+
+// DONE-WHEN 2, the completed sweep: N marks, N events.
+func TestEveryMarkOnABoardIsRecordedImmediately(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, len(words)+1)
+	for i := range words {
+		keys <- Key{Kind: KeyRune, Rune: rune("0123456789abcefg"[i])}
+	}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	evs := reviewEvents(t, st)
+	if len(evs) != len(words) {
+		t.Fatalf("%d review events for %d marks:\n%s", len(evs), len(words), unstyled(live.Transcript()))
+	}
+	seen := map[string]bool{}
+	for _, e := range evs {
+		if seen[e.Word] {
+			t.Errorf("%q was recorded twice — Fold would read that as two reviews on one day", e.Word)
+		}
+		seen[e.Word] = true
+	}
+}
+
+// DONE-WHEN 6: THE MOUSE-LESS PATH WORKS, and `d` is not a cell label.
+//
+// #38's pty rows exist because a terminal reporting no mouse must keep working.
+// Without the printed keys a board would silently degrade to "everything is no",
+// which is wrong rather than merely limited.
+func TestABoardIsMarkableByKeyAlone(t *testing.T) {
+	// SIXTEEN REAL WORDS, so the whole label alphabet is exercised including the
+	// `d` gap — and real ones because the rig's deck is looked up for its glosses.
+	words := []string{
+		"bank", "concrete", "content", "defenestrate",
+		"desert", "ephemeral", "even", "man",
+		"mesa", "minute", "parrot", "present",
+		"pulp", "quokka", "read", "run",
+	}
+	if len(words) != play.MaxBoardWords {
+		t.Fatalf("%d words, want a full board of %d", len(words), play.MaxBoardWords)
+	}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 30, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, len(words)+1)
+	for i := range words {
+		keys <- Key{Kind: KeyRune, Rune: rune("0123456789abcefg"[i])}
+	}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if n := len(reviewEvents(t, st)); n != len(words) {
+		t.Errorf("%d events for %d keys — a mouse-less terminal cannot finish a board", n, len(words))
+	}
+}
+
+// ...AND `d` IS NOT A CELL LABEL. It is the session's drop key, taken by toInput
+// before any form sees it — and on a board Apply refuses it too, because a grid
+// has no single current word to remove.
+func TestDOnABoardIsNotACellLabel(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyRune, Rune: 'd'}
+	keys <- Key{Kind: KeyRune, Rune: 'D'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if n := len(reviewEvents(t, st)); n != 0 {
+		t.Errorf("%d review events after pressing d twice — it graded a cell", n)
+	}
+	if strings.Contains(unstyled(live.Transcript()), "removed") {
+		t.Errorf("d removed a word from the deck on a board, where it names none:\n%s", live.Transcript())
+	}
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck) != len(words) {
+		t.Errorf("the deck holds %d words, want %d — d took one", len(deck), len(words))
+	}
+	// ...and it still drops on a form that HAS a current word, which is the other
+	// half: the key was refused for a reason, not disabled.
+	d2, opt2, st2 := playRig(t, "quokka", "mesa")
+	_, held2 := questionsFor(t, d2, opt2)
+	tty2 := &syncBuf{}
+	live2 := newPinnedScreen(tty2, 24, opt2.width)
+	live2.interval = -1
+	keys2 := make(chan Key, 2)
+	keys2 <- Key{Kind: KeyRune, Rune: 'd'}
+	keys2 <- Key{Kind: KeyInterrupt}
+	close(keys2)
+	playSession(t.Context(), d2, opt2, play.NewSession([]play.Question{play.NewRecall("quokka", "d")}), held2, keys2,
+		console{view: live2, finish: func() {}, stdout: live2, stderr: &errb})
+	deck2, err := st2.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck2) != 1 {
+		t.Errorf("the deck holds %d words after a drop on form 2.1, want 1 — d stopped working everywhere", len(deck2))
+	}
+}
+
+// eventsOf is every event in the store, for folding.
+func eventsOf(t *testing.T, st *store.Mem) []store.ReviewEvent {
+	t.Helper()
+	all, err := st.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return all
+}

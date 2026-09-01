@@ -76,13 +76,13 @@ cannot be drawn by appending lines.
 
 ## Done when
 
-- [ ] A sitting containing eligible words presents them as a grid, sixteen at a time.
-- [ ] Every word in the grid can be marked — by click OR by its printed key, so a mouse-less terminal is not stuck — and the marks reach the event log with the same "recorded as it happens" guarantee a single answer has.
-- [ ] The scheduler chooses 2.5 at box ≥ 3 and 2.3 below, pinned by a test over a deck spanning both, asserting BOTH sides.
-- [ ] Enter takes every unmarked word as `No`; Ctrl-C cancels, leaving marked words recorded and unmarked ones with no event at all.
-- [ ] Every review event names the form that asked it, so the two deferred remedies can later be chosen from the log rather than from argument.
-- [ ] The `Question` interface is unchanged, or the change is form-agnostic — the session still learns nothing about which form is asking (`#6`'s Done-when, `TestSessionIsFormAgnostic`).
-- [ ] Measured: a sitting of N words through the board takes materially fewer keystrokes than the same N through form 2.3.
+- [x] A sitting containing eligible words presents them as a grid, sixteen at a time.
+- [x] Every word in the grid can be marked — by click OR by its printed key, so a mouse-less terminal is not stuck — and the marks reach the event log with the same "recorded as it happens" guarantee a single answer has.
+- [x] The scheduler chooses 2.5 at box ≥ 3 and 2.3 below, pinned by a test over a deck spanning both, asserting BOTH sides.
+- [x] Enter takes every unmarked word as `No`; Ctrl-C cancels, leaving marked words recorded and unmarked ones with no event at all.
+- [x] Every review event names the form that asked it, so the two deferred remedies can later be chosen from the log rather than from argument.
+- [x] The `Question` interface is unchanged, or the change is form-agnostic — it GAINED `Form()`, which every form answers and the session never branches on — the session still learns nothing about which form is asking (`#6`'s Done-when, `TestSessionIsFormAgnostic`).
+- [x] Measured: a sitting of N words through the board costs materially less per word than the same N through form 2.3 — **one keystroke per word, and at least ten to one on what the learner has to read**. (Swept by plan revision R5: keystrokes alone are a wash at 1.00 against 1.00; the measured ratio on transcript lines is 20-40x, and that is the Spec's own ten-to-one claim.)
 
 ## Estimate
 
@@ -179,7 +179,7 @@ change what it means anywhere else.
 
 ## Plan
 
-- [ ] Design via `sdlc start-plan` before implementing.
+- [x] Design via `sdlc start-plan` before implementing.
 
 ## Log
 
@@ -436,6 +436,83 @@ nothing — a bare `relearn:` reads as a list that failed to render.
 mark scores), so a board made the bar compare words against slots and a
 twenty-word sitting read "0 of 2". The budget was never affected: `schedule.Queue`
 returns that many keys whatever they are packed into.
+
+### 2026-09-01 — T11, T13, T12: the measurement, the real terminal, the docs
+
+**T11 is recorded above as plan revision R5** — the keystroke proxy was a wash
+and the reading cost is 20-40x, so the row now pins both and the claim rests on
+the one the numbers support.
+
+**T13 — and the pty rows had to be run OUTSIDE the sandbox.** In-sandbox they
+report `no pty available: operation not permitted`, which is exactly the state
+`#37` records for the review environment: a conformance row that skips is a row
+that certifies nothing. Run with the sandbox off, the board draws whole in a
+24x80 window, a real SGR mouse report marks the cell under the pointer, Tab flips
+the toggle on a real terminal, the relearn line survives into the exit
+transcript, and the log names `form: board` four times.
+
+The click's ROW and COLUMN are read off the paint rather than computed. The
+frame and the click map are the two things that have to agree, so a premise taken
+from one of them could not catch the two disagreeing — and the first run failed
+on the frame's last row, which carries the cursor walk-back and the reprinted
+prompt appended to it (`unstyled` strips colour, not motion).
+
+**T12 — and the "`--help` key table" the plan names does not exist.** `--play`'s
+flag help is one line, and `/help` is the REPL's command list. The key table is
+the README's, which now has the board's keys, the click, Tab, the split meaning
+of Enter, and the note that `d` is not offered on a board.
+
+**The two forward references D7 falsified are corrected rather than deleted.**
+`schedule/progress.go` said this issue would extend the `Grade` seam with
+`GradeUnsure`; it now records that the extension did NOT happen and why, because
+"the seam is still the right one to extend" is worth keeping and a silent
+deletion would lose it. `play/session.go` described the board's mark as `firm`,
+which was the deleted three-mark draft's word.
+
+**And the board joined `doc_sync_test.go`'s forms slice**, so its prompt line is
+now checked against the README by the build. That row earns its place twice: the
+board's line differs in the RESERVED half too, so it is the only one that can
+catch `reservedKeys` regressing and offering `d` again.
+
+### 2026-09-01 — the Done-when sweep: fourteen rows, every `red when` executed
+
+The plan's preamble commits to it: *"Every `red when` cell is EXECUTED as a
+mutation at the boundary and the result recorded per row"* — because a row that
+survives its own mutation pins nothing (`#38` BR-16).
+
+| # | claim | mutation run | caught by |
+|---|---|---|---|
+| 1 | a sitting of eligible words is a grid | `todaysQuestions` never builds a board | `TestASittingOfDueWordsIsABoard` |
+| 2 | every mark reaches the log as it happens | `advance` holds the record until the form is spent | `TestEveryMarkOnABoardIsRecordedImmediately`, `TestCtrlCCancels…`, `TestABoardIsMarkableByKeyAlone` |
+| 3 | Enter takes the unmarked as No, space does not | `InputFinish` loses its `fallthrough`; `toInput` maps Enter to `InputReveal` again | `TestEnterSpendsABatchFormAndSpaceDoesNot`, `TestToInputSplitsEnterFromSpaceAndCarriesTab`, `TestEnterStillRevealsOnASingleWordForm` |
+| 4 | Ctrl-C leaves unmarked words untouched | `InputQuit` spends the batch and emits a record per word | `TestCtrlCCancelsABoardWithoutMovingUnmarkedWords` |
+| 5 | a No does not freeze the board | the `batchOf` guard removed from the miss-on-hidden branch | `TestABoardRunsThroughTheSession` |
+| 6 | the mouse-less path works, `d` is not a label | `boardLabels` becomes `…abcdef`; `InputDrop`'s batch refusal removed | `TestABoardIsMarkableByKeyAlone`, `TestBoardLabelsSkipTheReservedD`, `TestDOnABoardIsNotACellLabel` |
+| 7 | a click marks here and plays elsewhere | the loop never offers the click to the form; the footer row is used as the cell; the viewport row is used unsubtracted | `TestAClickOnABoardMarksIt`, `TestFormCellAsksTheScreenAndTheForm`, and `#38`'s row green UNTOUCHED |
+| 8 | the session names no form | `batchOf` type-switches on `*Board` | `TestTheSessionNamesNoForm` |
+| 9 | every event names its form | the stamp removed; moved to the wrong outcome kind; the capture site drops it; `yaml:"-"` | `TestEveryRecordNamesItsForm`, `TestAReviewEventNamesItsFormOnDisk`, `TestYAMLRoundTripsTheFormThatAsked` |
+| 10 | a board is never drawn clipped | `fitsABoard` returns true always; the chrome under-counted; the width floor removed | `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard`, `TestFitsABoardCountsTheWholeLiveEdge`; `TestPaintFitsTheTerminalAndParksTheCursor` UNCHANGED |
+| 11 | the outcome survives the sitting | the relearn write removed; it names every marked word; a bare line on an all-yes board | `TestABoardLeavesItsRelearnListInTheTranscript`, `TestABoardWithNothingToRelearnWritesNoLine` |
+| 12 | the bar counts words | `fig.total` back to `len(s.Questions)`; a board counts as one | `TestTheBarCountsWordsNotSlots` |
+| 13 | the board is materially cheaper | the grid goes into the buffer like any prompt | `TestABoardCostsFarLessPerWordThanMeaningChoice` (see R5 — the claim moved to what is READ) |
+| 14 | the real terminal draws and clicks it | run on a real pty, unsandboxed | `TestPTYPlayBoardIsDrawnAndClickable` |
+
+**Fifty-eight mutations across the thirteen tasks. Three survived and all three
+were real**, which is the whole argument for running them:
+
+1. **A `row >= g.Rows()` bound in `formCell`** that `CellAt` already enforced.
+   Removed — two owners of one bound is how the toggle row becomes a cell.
+2. **A `row >= gridRows()` bound inside `CellAt`** that `i >= len(cells)`
+   already enforced, one layer down from the first. Removed, and the PROPERTY
+   pinned separately from the mechanism over eight board shapes and every column.
+3. **`yaml:"-"` on `ReviewEvent.Form` left the whole suite green**, because the
+   loop's tests read through `store.Mem` and it keeps events in memory. A field
+   that reaches only memory answers nothing the query it exists for needs.
+
+A fourth "survivor" was an equivalent mutant and worth naming as one: marking a
+batch's rest inside `InputQuit` without emitting outcomes changes nothing,
+because the form is discarded and the LOG is what the row asserts on. The
+stronger mutation — emitting a record per word — reddens it.
 
 ## Revisions
 

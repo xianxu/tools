@@ -1984,10 +1984,19 @@ code because it was the same failure — and `#41` deleted it: playback no longe
 hands the terminal back, so there is no re-entry left to fail.
 
 **`Question` is the whole of what a session knows about a form.** `Word`,
-`Prompt`, `Reveal`, `Grade`, `Keys` — and `Grade` lives on the FORM, which is
-what makes "adding a second form requires no change to the loop" a property
-rather than a promise. Form 2.1 grades `y`/`n`; form 2.3 grades digits; the
-session never learns either.
+`Prompt`, `Reveal`, `Grade`, `Keys`, `Form` — and `Grade` lives on the FORM,
+which is what makes "adding a second form requires no change to the loop" a
+property rather than a promise. Form 2.1 grades `y`/`n`; form 2.3 grades digits;
+form 2.5 grades a cell's printed label; the session never learns any of them.
+
+**Everything a session needs to know about a form that ISN'T on `Question` is an
+optional capability it ASKS for**, and there are five: `Missed` (why a wrong
+answer was wrong), `SelfRated` (this verdict is a claim, not an observation),
+`Batch` (I hold more than one word), `Moded` (Tab means something to me) and
+`Grid` (I am drawn as cells you click). A type switch on a concrete form would be
+the thing `#6`'s Done-when forbids, so the session names a capability and takes a
+default when nobody answers. `Grid` is the first one the LOOP asks rather than
+`Apply`.
 
 **`Keys` joined that list when the second form shipped, and the reason is the
 kind of bug an interface exists to prevent.** The line under the question —
@@ -1998,6 +2007,100 @@ test typed the keys the const named. A form describing its own keys is the only
 arrangement in which that cannot recur. The loop still owns the SESSION's
 reserved half (`d`, Ctrl-C) and appends it, because those are true whatever form
 is asking and a form restating them would be two owners of one fact.
+
+### Form 2.5: the board (`#40`)
+
+**Sixteen words on a grid, one mark each, and the SCHEDULER picks it — the first
+time anything here has consulted a box to choose a form.** Selection was a
+capability question until this: form 2.3 when the deck can supply distractors,
+2.1 when it cannot. `boardsFor` partitions the day's keys at **box ≥ 3** and
+packs the eligible ones sixteen at a time.
+
+**Box 3 is a starting number, not a derived one**, and it is the only figure in
+`#40` without an argument under it. What IS argued is the shape of the risk: a
+wrong `yes` sends a word to `box+1` where a real test would have sent it to
+`box/2`, so the cost is the delay it buys — 0 days at box 0, 4 at box 3, 165 at
+box 10 — while the chance of being wrong falls as the box rises. The product
+peaks in the MIDDLE, around boxes 5–7, which no single floor expresses well. It
+is meant to be replaced by evidence, which is what `ReviewEvent.Form` is for.
+
+**The grid is the LIVE EDGE, and that is the whole shape of the issue.** The
+buffer is append-only — which is what makes a click's coordinates exact (`#30`
+D1) — so a grid written there would freeze at the moment it was written, and
+marks that change as they land would be impossible. It lives in the FOOTER,
+which repaints every frame, and `display` gained one question to make that
+clickable: `FooterRowAt`, which says which footer ENTRY a viewport row is
+showing. The alternative — rewriting the last N buffer lines — breaks the
+invariant clicks rest on, and a header above the buffer is the first step toward
+a layout system nothing here needs yet.
+
+**The form draws its own live edge**: grid, blank, toggle, panel, all out of one
+`Prompt()`. The loop appends the bar and nothing else. An earlier cut had the
+loop composing it from `Mode()` and a gloss, which made the board's appearance a
+thing two files agree about — on the surface where disagreeing marks the wrong
+word.
+
+**A cell is marked ONCE, and the refusal is drawn rather than silent.** Every
+mark emits its `OutcomeRecord` as it lands, which is what makes Ctrl-C lossless;
+the price of writing immediately is that nothing can be taken back, and `Fold`
+would read a re-marked cell as two reviews of one word on one day. So the mark
+stands where the key was — `[y]` in place of `[3]` — saying both "answered" and
+"this key no longer does anything". For the same reason **the gutter is not a
+click target**: a forgiving hit box is the usual kindness and is wrong when the
+mistake it forgives is permanent.
+
+**Labels are `0`–`9` then `a b c e f g`.** `d` is absent because `toInput` takes
+it as *drop from deck* before any form sees a key. The gap is visible rather than
+surprising, because the labels are printed beside the words. `d` is also refused
+on a board by `Apply` — a grid has no single current word — so `reservedKeys`
+stops offering it there, which is the same bug `gradePrompt` was created to fix
+one form earlier.
+
+**Enter commits and space must not**, which is why `InputFinish` split from
+`InputReveal`. `Enter` takes every unmarked word as `no` — "I am out of time,
+ask me all of these again" — and that is the only expensive-to-undo action on the
+surface; leaving it merged with space put it on the most careless key there is.
+For every form holding one word the two kinds remain equivalent, which is what
+keeps 2.1 and 2.3 from noticing the split. Ctrl-C is the opposite and needs no
+code at all: marks are already written, unmarked words have no event, and their
+boxes do not move.
+
+**A board that does not fit is not OFFERED** (`fitsABoard`), and that is what
+left `fitFooter` unchanged. A floor there would have broken the budget `Paint`
+rests on — `footerRows` exceeding what the prompt left, the terminal scrolling,
+and a click at viewport row R meaning a different word. Below the height, those
+words go to form 2.3 for that sitting, which is a complete answer rather than a
+degraded one.
+
+**A click means "mark" here and "play" everywhere else**, so the loop offers a
+click to the form FIRST and falls through to `playRegion` when it declines. `#38`'s
+invariant survives restated honestly: *a click never answers a form that did not
+ask for it*, and its row is green untouched, which is the proof the seam widened
+rather than branched.
+
+**The board is self-rated**, so a `yes` can never earn the ladder's two-rung
+promotion — structure rather than a rule anyone must remember. The `unsure` mark
+the first draft designed, along with a `store.EventUnsure` kind and a `Fold`
+exemption, was deleted whole by the operator: *"I guess unsure means no."*
+
+**What it costs, measured.** Keystrokes are a wash — 1.00 per word against form
+2.3's 1.00, or 1.12 against 1.25 once misses are involved. What is material is
+how much the learner has to READ: 0.4 transcript lines per word against 8.8, and
+0.6 against 23.1 with misses. Form 2.3 writes a whole rendered entry per word; a
+board writes one line — the relearn list — for the entire sweep. That is the
+Spec's "a hundred mature words cost what ten fragile ones cost", and it was never
+a typing claim.
+
+**`ReviewEvent.Form` names which form asked**, on every review event —
+`recall`, `meaning`, `board`. It is TELEMETRY: `Fold` does not read it and must
+not, or a scheduler would start branching on it. It exists because the board
+promotes on self-report and the two remedies for that — promote more slowly, or
+offer the board less often — are both deferred to be chosen from evidence. The
+query joins a promotion to the word's NEXT real test, which is why the form has
+to be on the event that promoted it. `Form()` is on the `Question` INTERFACE
+rather than an optional capability, so a new form cannot compile without naming
+itself; `Apply` stamps it in one place, because three call sites building records
+is three chances to ship a promotion the log cannot attribute.
 
 ### The sitting is a frame (`#41`)
 
