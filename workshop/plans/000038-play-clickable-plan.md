@@ -256,3 +256,54 @@ than from a function called `draw`. D5's "the visual result stays close" now has
 a stronger form than it claimed — the sitting is a frame, with paging.
 
 Re-read D3, D5 and T4 against the current `playSession` before implementing.
+
+### 2026-08-31 — re-read against the tree `#41` left, before implementing
+
+`#41` merged (PR #25). Re-reading D3, D5 and T4 against the current
+`playSession`, as the previous revision asked. Four deltas, one of them a
+constraint that did not exist when this plan was written.
+
+**T4's premise is gone; its conclusion survives.** The row says *"`draw` is
+append-only, so the word lands on the line about to be written"*. `draw` no
+longer exists — `#41` T4 split it by lifetime, and the loop writes `q.Prompt()`
+once per question in `playSession`'s `show()` closure. The word is still line 0,
+column 0 of that write, for BOTH forms: `Recall.Prompt()` is the word, and
+`Choice.Prompt()` is the word, a blank, then the options. So the region is
+computed at the same place, from a different function.
+
+**T5 GAINS A CONSTRAINT, and it is the one `#41` BR-25 predicted.** A pinned
+screen's `WriteRegions` now goes through `writeBuffer`, which WRAPS — because a
+frame clips an over-wide line and every path into the buffer had to be covered.
+`#41` wrote the consequence down for whoever arrived first, and this issue is
+that consumer:
+
+> A REGION's column is relative to the text it was computed from, so a wrap that
+> moves a word moves what a click there means. That is a real cost and it belongs
+> to whoever first writes regions into a pinned screen: they must wrap BEFORE
+> computing the regions.
+
+So T5 is no longer "call `writeRendered` and the regions ride along". The order is
+**wrap, then compute regions against the wrapped text, then write**. A reveal
+whose regions were computed pre-wrap would put the underline and the hit test on
+different words — silently, and only on entries long enough to wrap, which is
+most of them. This is the task's real risk and it was not in the estimate.
+
+**D3's seam is intact.** `writeRendered` still dispatches on the `regionWriter`
+interface (`main.go:801`), and the console's stdout is the `liveScreen`, which
+implements it. Nothing to change there.
+
+**A sitting now REFUSES without a terminal or with `-no-color` (`#41` BR-3), and
+`playRig` runs coloured.** Both matter for this issue's tests: a click test drives
+`playSession` with a recorder, which is unaffected, but any test reaching
+`runPlay` meets the gate, and assertions over frame text now meet SGR — use
+`unstyled`, which `#41` moved out of the conformance file for exactly this.
+
+**Still to do: T0, T1, T4, T5, T7, T8.** T2, T3 and T6 landed with `#41`, and its
+close verified two of this plan's Done-when rows on real hardware under the exact
+test names this plan predicted (`TestPTYPlayKeepsTheAlternateScreenAcrossAReveal`,
+`TestPTYPlayResizeRepaints`), plus row 4c's replacement pin
+(`TestAMissRecordsBeforeItPlays`) built to this plan's round-4 specification.
+
+**The estimate is stale in both directions** and is re-derived at `change-code`:
+three tasks are gone, and T5 grew a wrap-ordering problem the original 2.18h did
+not price.
