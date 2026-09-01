@@ -1,12 +1,13 @@
 ---
 id: 000038
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-08-30
-updated: 2026-08-30
-estimate_hours: 2.18
+updated: 2026-08-31
+estimate_hours: 2.83
 started: 2026-08-30T16:08:11-07:00
+actual_hours: 4.24
 ---
 
 # the review loop's words are not clickable, because --play draws its own frames
@@ -85,16 +86,30 @@ take — a click here should reach it rather than growing a third caller.
 
 ## Done when
 
-- [ ] The word `--play` is asking about can be clicked to hear it.
-- [ ] A click is a REPLAY and never an answer: no review is recorded, no schedule
-      moves, the sitting does not advance.
-- [ ] The click reaches `replayInPlace`, the same path `y`/`n`/Enter reach, so a
-      third caller does not appear.
-- [ ] A terminal that reports no mouse behaves exactly as `--play` does today,
+- [x] The word `--play` is asking about can be clicked to hear it.
+      `TestPlayClickOnThePromptWordPlaysIt`, and
+      `TestTheAskedWordIsClickableOnAMultipleChoiceQuestion` for the form whose
+      prompt wraps — the case the operator found inert.
+- [x] A click is a REPLAY and never an answer: no review is recorded, no schedule
+      moves, the sitting does not advance. `TestPlayClickActsAndIsNotAnAnswer`,
+      driven into the GRADED state on a two-word deck, because that is the only
+      arrangement where an advance is observable — the first version of this row
+      survived its own `red when`.
+- [x] The click reaches the same registry the editor's does, so a third caller
+      does not appear. `playRegion`, with
+      `TestEveryRegionKindIsActionableThroughTheSharedRegistry` beside the
+      editor's own row. **Not `replayInPlace`**, which this row originally named:
+      that reads a `session` a sitting does not have, so the shared thing beneath
+      both is `playAnnounced` and the switch lifts to sit above it (D4).
+- [x] A terminal that reports no mouse behaves exactly as `--play` does today,
       and tracking is handed back on exit — the same guarantees `rawSession`
-      already carries.
-- [ ] Whatever happens to `--play`'s scrollback is a DECISION with its reason
-      recorded, not a side effect of adopting the screen.
+      already carries. The existing `--play` pty rows, unchanged, plus
+      `TestPTYMouseTrackingIsAskedForAndGivenBack`.
+- [x] Whatever happens to `--play`'s scrollback is a DECISION with its reason
+      recorded, not a side effect of adopting the screen. Decided in `#41` D5 and
+      recorded in `atlas/define.md`: the alternate screen is taken and the
+      transcript is printed back on exit, pinned by
+      `TestPlayTranscriptSurvivesExit`.
 
 ## Estimate
 
@@ -103,23 +118,83 @@ take — a click here should reach it rather than growing a third caller.
 ```estimate
 model: estimate-logic-v3.1
 familiarity: 1.0
-item: issue-spec               design=0.45 impl=0.08
-item: smaller-go-module        design=0.02 impl=0.10
+item: issue-spec               design=0.55 impl=0.08
 item: cross-cutting-refactor   design=0.05 impl=0.12
-item: smaller-go-module        design=0.05 impl=0.12
-item: smaller-go-module        design=0.03 impl=0.16
-item: smaller-go-module        design=0.01 impl=0.08
-item: smaller-go-module        design=0.02 impl=0.10
-item: smaller-go-module        design=0.02 impl=0.14
+item: cross-cutting-refactor   design=0.05 impl=0.24
+item: smaller-go-module        design=0.02 impl=0.08
+item: greenfield-go-module     design=0.06 impl=0.28
 item: smaller-go-module        design=0.01 impl=0.08
 item: atlas-docs               design=0.02 impl=0.06
-item: milestone-review         design=0.00 impl=0.16
-item: milestone-review         design=0.00 impl=0.20
+item: ux-rename-iteration      design=0.30 impl=0.05
+item: milestone-review         design=0.00 impl=0.30
+item: milestone-review         design=0.00 impl=0.32
 design-buffer: 0.15
-total: 2.18
+total: 2.83
 ```
 
+| item | task | why this primitive |
+|---|---|---|
+| `issue-spec` 0.55/0.08 | the design carrier | the issue, the operator's two decisions, FOUR plan-quality rounds — plus two design passes after the park: the revision recording what `#41` landed, and the re-read against the tree it left. Up from 0.45 for those two |
+| `cross-cutting-refactor` 0.05/0.12 | **T0 — DONE** (`9168bf2`) | `options.playsAudio()` inside `playAnnounced`, replacing four hand-copies in two spellings. Kept in the block: it is real work inside the window `sdlc actual` measures, and removing it would understate the issue |
+| `cross-cutting-refactor` 0.05/0.24 | T1 lift the click registry | the one remaining task that touches a working loop. Priced against `#41`'s `todaysQuestions` signature-widening (0.24), which is its shape — not its `menu`→`footer` rename (0.12), which is not |
+| `smaller-go-module` 0.02/0.08 | T4 the prompt word is a region | line 0, column 0 of the write `show()` already makes. Design up 0.01 because `draw` is gone and the site had to be re-found |
+| `greenfield-go-module` 0.06/0.28 | T5 the revealed definition carries its regions | **the row the re-read repriced.** Was 0.02/0.10 for "call `writeRendered` and the regions ride along"; a pinned screen's `WriteRegions` now WRAPS, so a region computed before the wrap underlines one word and answers for another — silently, on any entry long enough to wrap. `greenfield` because `cross-cutting-refactor`'s band tops out at 0.20 and this row was sitting on the ceiling while the prose called it the issue's real risk |
+| `smaller-go-module` 0.01/0.08 | T7 a click never answers | one guard and one assertion |
+| `atlas-docs` 0.02/0.06 | T8 | the README's review-loop section and the atlas's clickable-regions section |
+| `ux-rename-iteration` 0.30/0.05 | the TUI iteration round | unchanged from the post-T0 derivation, and `#41` confirmed the cost is real: the operator found a clipped option line on the first real sitting |
+| `milestone-review` 0.00/0.30 | the boundary: run + **manual verification** | the close checklist needs an unsandboxed conformance run AND a real-terminal session — click and HEAR the word, `n`, click the headword and `ORIGIN`, page back, quit, check the transcript. The audio step is verifiable no other way |
+| `milestone-review` 0.00/0.32 | the boundary: remediation | |
+
 Derivation notes.
+
+**RE-DERIVED 2026-08-31, against the tree `#41` left — and it lands back on 2.83
+for entirely different reasons, which is the one thing a reader of this
+calibration row has to know.** Three priced rows died and the survivors grew by
+almost exactly as much. The mapping table above is what makes that auditable;
+without it the arithmetic looks like nothing happened.
+
+- **T2, T3 and T6 are DEAD, ~0.54h.** `#41` landed the playback-dance deletion,
+  the screen adoption and the viewport while this branch was parked, and its close
+  verified two of this plan's Done-when rows on real hardware under the exact test
+  names this plan predicted, plus row 4c's replacement pin built to this plan's
+  round-4 specification. Removed rather than re-labelled.
+
+- **T5 absorbs most of what they gave back**, and is the honest reason the total
+  held. `#41` BR-25 wrote the constraint down for whoever arrived first: a
+  region's column is relative to the text it was computed from, so a wrap that
+  moves a word moves what a click there means. That failure is SILENT and appears
+  only on entries long enough to wrap, which is most of them.
+
+- **The T3 premium is gone with T3.** The post-T0 note said the optimistic row was
+  T3, "where `--play`'s five return paths meet `onceHandBack`". That risk was
+  `#41`'s, and it materialised there.
+
+- **T1 0.12 → 0.24**, from the estimate-quality gate: it is shaped like `#41`'s
+  `todaysQuestions` widening, not like a rename.
+
+- **The two `milestone-review` rows go 0.16/0.30 → 0.30/0.32.** See the deviation
+  note below — this is outside the model, deliberately.
+
+**ONE DELIBERATE DEVIATION FROM v3.1, named rather than buried.** v2's table gives
+milestone review `0.2–0.5` and v3.1 writes `impl=` at 40% of that, so the scaled
+ceiling is **0.20**. These rows are 1.5–1.6× above it and are 22% of the total.
+That is an evidence-based OVERRIDE of the primitive table, not the model applied
+as written: `#41` ran FIVE close rounds against these same files days ago and
+measured 4.77 against 3.31, with roughly half the total being boundary work.
+Pricing this boundary at the model's ceiling would encode a number the adjacent
+row already falsified.
+
+**THE PREDICTION, restated.** The local ledger here is four rows wide: `#30`
+3.4×, `#7` 1.70×, `#39` 0.54×, `#41` 1.44× — a spread, not a bias, and every
+overrun in it was boundary rounds rather than building. The remaining scope is
+small and the design has been through six passes, so **if this misses, it misses
+at the boundary, and T5 is the row most likely to put it there**: a silent offset
+bug is exactly what a review round finds and sends back. On that reading the
+actual lands near **3–4h**. The estimate is NOT padded toward it.
+
+--- the post-T0 derivation, kept because the rows it argued for survive ---
+
+
 
 - **`issue-spec` design 0.45 is mostly already spent**: the issue, the operator's
   two decisions, and FOUR plan-quality rounds. Lower than `#30`'s 0.50 because
@@ -128,10 +203,22 @@ Derivation notes.
   a Critical the first draft would have shipped, a guard that scoped wrong, and a
   replacement pin that did not discriminate.
 
-- **Only ONE `cross-cutting-refactor`**, T1, and it is the one task that touches
-  a working loop: lifting the click registry out of `runEditor`'s closure changes
-  code `#30` just closed. The rest are `smaller-go-module` — extend or mirror,
-  against a design that is settled and a machine that exists.
+- **TWO `cross-cutting-refactor`s, and the first draft mislabelled one.** T1
+  lifts the click registry out of `runEditor`'s closure; T0 replaces the
+  audio-off predicate at four sites in four files and changes `playAnnounced`
+  itself. The table's definition is literally "multi-file rename / language
+  pivot", and all four of T0's sites are in working loops — calling it a
+  `smaller-go-module` under-reported how much of this issue touches shipped code.
+  The hours barely move (the scaled bands overlap), which is the point: it was a
+  labelling defect, and a labelling defect is what makes a ledger row unreadable
+  later.
+
+- **A `ux-rename-iteration` round, which the first draft omitted.** This is a TUI
+  feature filed from an operator screenshot, and v2.1's own Known Limitations
+  flag that case: "UX iteration round count (3–5 typical for TUI features, not
+  1)". One round is budgeted, not three — the operator's request was specific and
+  the design is already settled — but zero was not defensible. `#30` took two
+  such rounds mid-flight (the duplicated prompt, the wheel).
 
 - **No `greenfield-go-module` and no `TUI screen` primitive**, which is the whole
   shape of this issue: `#30` built the screen, the click map, the region
@@ -139,17 +226,32 @@ Derivation notes.
   is a second consumer adopting them (D10). If any row here is optimistic it is
   T3, where `--play`'s five return paths meet `onceHandBack`.
 
-- **Two `milestone-review`s for ONE boundary**, priced 0.16 to run and 0.20 to
-  remediate. That is not a hedge, it is this session's measured rate: `#30`'s M1
-  took six rounds, M2 five, its close two — and EVERY one returned at least an
-  Important. Pricing remediation at zero is the single thing the record rules out.
+- **Two `milestone-review`s for ONE boundary**, priced 0.16 to run and 0.30 to
+  remediate. Not a hedge — this session's measured rate: `#30`'s M1 took six
+  rounds, M2 five, its close two, and EVERY one returned at least an Important.
+  Pricing remediation at zero is the single thing the record rules out.
+
+  **The remediation row also carries the MANUAL TERMINAL PASS**, which the first
+  draft dropped and `#30` priced separately at 0.10. It matters more here, not
+  less: `#37` measured today that every `TestPTY*` row reports "no pty available"
+  where the work runs, and FOUR of this issue's Done-when rows (5, 6b, 7, 8) rest
+  on pty tests. So the only place several of these claims can be checked at all
+  is an operator at a real terminal, clicking. There is no vocabulary slug for
+  that, so it rides here rather than being invented.
 
 - **THE PREDICTION, on the record so the close can tell a miss from a
   confirmation.** `#30` estimated 3.19 and measured 10.91 — **3.4×** — and the
   overrun was almost entirely boundary rounds rather than building. This issue is
   smaller and its design is already through four rounds, so the same multiplier
   should not apply; but if the boundary behaves as `#30`'s did, the actual lands
-  near **4–5h** rather than 2.18.
+  near **4–5h** rather than 2.83.
+
+- **The design column is already spent**, and the block should be read that way:
+  0.68 × 1.15 ≈ 0.78h of it went on the issue, the operator's decisions and four
+  plan-quality rounds before T0 begins. What 2.83 actually asserts is that nine
+  tasks, a boundary and a manual pass land in the remaining ~2h. The chain is
+  also strictly sequential — T4 through T7 have no screen to write into until T3
+  lands — so there is no fan-out for parallelism to compress.
   **The estimate is NOT padded toward that.** v3.1 is applied as written, or the
   calibration row means nothing — which is exactly what `#30`'s own estimate note
   said before being wrong in the same direction.
@@ -160,17 +262,94 @@ Derivation notes.
       screen, and chose to mark a revealed definition too.
 - [x] Design: `workshop/plans/000038-play-clickable-plan.md` (single-pass, one
       boundary; four plan-quality rounds).
-- [ ] T0 — one audio-off predicate, applied inside `playAnnounced`.
-- [ ] T1 — lift the click registry into `playRegion`, shared by both loops.
-- [ ] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands.
-- [ ] T3 — `--play` writes into a `liveScreen`.
-- [ ] T4 — the prompt word is a region.
-- [ ] T5 — the revealed definition carries its regions.
-- [ ] T6 — the viewport: scroll, wheel and resize.
-- [ ] T7 — a click acts and never answers.
-- [ ] T8 — docs: the README's review-loop section and the atlas's.
+- [x] T0 — one audio-off predicate, applied inside `playAnnounced`.
+- [x] T1 — lift the click registry into `playRegion`, shared by both loops.
+- [x] T2 — delete the playback dance, and re-home the outcome-ORDER pin it strands. **Landed by `#41` T3/T4**; the replacement pin is `TestAMissRecordsBeforeItPlays`, built to this plan's round-4 specification.
+- [x] T3 — `--play` writes into a `liveScreen`. **Landed by `#41` T3** as `newConsole(…, newPinnedScreen)`.
+- [x] T4 — the prompt word is a region.
+- [x] T5 — the revealed definition carries its regions.
+- [x] T6 — the viewport: scroll, wheel and resize. **Landed by `#41` T7/T8** as the shared `viewportGesture` plus the loop's resize case.
+- [x] T7 — a click acts and never answers.
+- [x] T8 — docs: the README's review-loop section and the atlas's.
 
 ## Log
+
+### 2026-08-31 — resumed, implemented, and three boundary rounds
+- 2026-08-31: closed — go test ./... green; -race green; conformance green (130s pty at HEAD, 386s whole suite earlier). OPERATOR-VERIFIED: reported the feature inert, confirmed "works now". FOUR review rounds, 17 findings, all addressed at the CLASS. Round 3 (ff5e80b): BR-16, the sharpest of the issue — Done-when row 2 said "a click NEVER answers, red when: the click reaches play.Apply" and the reviewer RAN that mutation to find it green, because the property came from toInput`s default (it returns false for a click) rather than from T7`s guard; my second attempt also survived, because with a ONE-word deck a click that advanced just ended the sitting, indistinguishable from not advancing. TestPlayClickActsAndIsNotAnAnswer now drives a TWO-word deck into the graded state and asserts both halves; both mutations redden. BR-18: five mis-attached doc comments closed by a GUARD rather than five edits — TestADocCommentNamesWhatItSitsOn walks go/ast and fires when a function`s doc opens with the name of another function in the same FILE, which is the shape an insertion produces; same-file because a first word naming something two files away is prose, test functions exempt because their docs name the subject by convention. It found two orphans nobody had noticed: openStore`s doc had drifted onto newsFeedFor, checkPlanName`s onto coreConceptsSection. BR-17: the issue`s Done-when was five unticked boxes while its Plan was fully ticked, its Log carried no boundary entry, and the project had no #38 row — all three filled, the project as a scope event matching the 2026-08-26 entry`s reasoning for out-of-MVP console work. BR-12 was fixed in round 2 (the tick edit had no-opped silently) and is OK at HEAD, as round 3`s own BR-17 measurement states. Rounds 1-2: the two-rulers wrap Critical moved into liveScreen.WriteRegions so a second width is unexpressible; the Core-concepts table naming two entities the tree lacks; the RenderOpts.Word fix that had no test. The plan`s Done-when preamble now records that every red-when was EXECUTED. lessons.md gains six rules across the issue.; review verdict: FIX-THEN-SHIP
+
+`#41` merged and took T2, T3 and T6 with it; T1, T4, T5, T7 and T8 landed here on
+top of T0 from the 2026-08-30 session. Operator drove a real sitting, found the
+feature INERT on multiple-choice questions, and confirmed it working after the
+fix.
+
+**Boundary rounds, and what each bought.**
+
+- **Round 1 — REWORK, one Critical.** `writeClickable` moved regions by the
+  loop's `opt.width` while the screen wraps at its own `cols`; after a resize the
+  two rulers disagreed and a headword region landed on a blank line. The
+  arithmetic moved into `liveScreen.WriteRegions`, which holds the width, so a
+  second ruler is unexpressible. Also: T5 had adopted `Render` and `WriteRegions`
+  carrying none of the three obligations they document, two of them live defects.
+- **Round 2 — REWORK, one Critical.** The plan's Core-concepts table named two
+  entities the tree does not declare, and seven task rows were unticked because
+  an earlier scripted edit matched nothing and reported success. And the
+  `RenderOpts.Word` fix had no test — deleting it left the suite green.
+- **Round 3 — FIX-THEN-SHIP.** Done-when row 2 survived its own stated mutation:
+  "a click never answers" was delivered by `toInput`'s default, not by T7's
+  guard, so the row pinned a property the code under test did not provide. Also a
+  class of five mis-attached doc comments, now closed by
+  `TestADocCommentNamesWhatItSitsOn` — which found two orphans nobody had
+  noticed, `openStore`'s and `checkPlanName`'s.
+
+**The rule the three rounds share, and it is in `lessons.md`: a claim is
+discharged by something that can FAIL.** A table row is a claim about the tree, a
+one-line fix is a claim about behaviour, and a `red when` cell is a mutation that
+has to be RUN — none of them counts until something reddens when it stops being
+true.
+
+
+### 2026-08-31 — resumed; `#41` landed three of the nine tasks
+
+`#41` merged (PR #25) and took T2, T3 and T6 with it, so this issue resumes at
+T1 with T0 already done from the 2026-08-30 session. The plan carries the
+re-read; the estimate is re-derived above and lands back on 2.83 for a different
+set of reasons, which the mapping table makes auditable.
+
+**What a resumer must not lose, updated.** The 2026-08-30 note said it was the
+playback dance. That is done. The live one is `#41` BR-25's: a pinned screen's
+`WriteRegions` WRAPS, and a region's column is relative to the text it was
+computed from — so T5 has to wrap BEFORE computing regions, or the underline and
+the hit test land on different words. Silently, and only on entries long enough
+to wrap.
+
+**A process note, because it cost real work.** Resuming, I read this issue's file
+on `main` and re-derived its estimate from a 2.18 block — while the branch
+carried a considered 2.83 from the post-T0 session that `main` had never seen,
+because the branch was unpublished. **A parked branch's issue file is the current
+one; `main`'s copy is as old as the park.** Check out the branch before reading
+the record.
+
+
+### 2026-08-30 — PARKED after T0, deliberately
+
+Operator moved to the review-forms work. Parked rather than abandoned: the plan
+cleared four rounds of plan-quality and is the durable part, so resuming is
+`sdlc claim --issue 38` and picking up at T1.
+
+**State when parked.** T0 is DONE and merged into the branch
+`000038-play-clickable` — `options.playsAudio()` is one predicate applied inside
+`playAnnounced`, replacing four hand-copies in two spellings, with the row none
+of the existing audio tests could be (they all go through callers that stop
+first). That task stands on its own and would be worth keeping even if the rest
+of this issue never happens.
+
+T1–T8 are unstarted. The branch is unpublished, so nothing is on `main`.
+
+**The one thing a resumer must not lose**, because it is the reason the plan took
+four rounds: `--play`'s playback restores raw mode, and since `#30` folded the
+alternate screen and mouse reporting into `rawSession`, `restore()` tears both
+down while `enterRaw()` returns a session with neither. Adopting the screen
+without deleting that dance (T2) breaks the sitting at the first reveal, silently.
 
 ### 2026-08-30
 
@@ -179,28 +358,3 @@ while filing: `Prompt()` returns the bare word, so the region is trivial; the
 whole cost is that `play_loop.go` writes through `crlfWriter` to a scrolling
 terminal and therefore owns no coordinates. `#30` D5a predicted this seam and
 `#32` is filed against the same divergence.
-### 2026-08-30 — read this before resuming: #7 lands first and changes the prompt
-
-Parked at `punt` after T0. While it is parked, `#7` (review form 2.3, meaning
-multiple choice) is being built, and it touches this issue in two places — found
-by `#7`'s plan-quality gate rather than at a merge conflict.
-
-1. **`todaysQuestions` (`play_loop.go:233-265`) is edited by both.** `#7`'s T5
-   builds the distractor pool there; this issue's T5 rewrites the same function.
-   `#7` lands first, so re-read that function before resuming — do not apply T5
-   from the plan as written.
-
-2. **A second form arrives whose prompt is NOT just the word, and this issue's
-   region arithmetic assumes it is.** `play/recall.go:29` makes the prompt the
-   headword alone, so T4 draws the region at line 0, column 0, width
-   `visibleCells(word)`. `Choice`'s prompt is multi-line: the word, a blank, then
-   four numbered options.
-
-   `#7` accepted a CONSTRAINT to keep this working — the target word stays alone
-   on the first line — so the arithmetic still holds and T4 needs no change. It
-   holds because `#7` chose to protect it, not because it is inherent, so if this
-   issue ever generalises the region beyond line 0 it should stop depending on
-   the constraint and read the form's own declaration instead.
-
-   The upside: `Choice`'s options are additional clickable material this issue
-   can mark later, with no new decision needed.

@@ -2030,6 +2030,45 @@ construction: alternate screen, mouse reporting, a screen, `watchResize`,
   on transition; `livePrompt` returns the keys, which are painted and never
   filed.
 
+**A SITTING'S WORDS ARE CLICKABLE, through the same registry the editor uses
+(`#38`).** `#30` Done-when 7 asked for *"one mechanism, so a third consumer is a
+row rather than a new feature"*, and until `#38` the switch on `RegionKind` lived
+inside `runEditor`'s own closure, where a second loop could only copy it.
+`playRegion` is that registry lifted out: both loops call it, and the INDICATOR
+is its one parameter, because the editor's is erasable and a sitting's is the
+record-shaped `defaultIndicator`. A kind with no row there draws an underline
+that does nothing, which `TestEveryRegionKindIsActionable` catches by deriving
+its loop from `numRegionKinds`.
+
+- **The prompt word is line 1, column 0 of the write the loop already makes.**
+  Both forms put the headword on their first line, so there is nothing to search
+  for and no offset to survive a wrap.
+- **The reveal's regions come from `Render` and are SHIFTED into the coordinates
+  of what is written.** A form's reveal is larger than the render inside it —
+  `Choice.Reveal` names the right option and the learner's pick first — so the
+  loop locates the render in the reveal rather than counting from a formula,
+  which would be a second copy of a layout the form owns.
+- **A click never answers** (D8). It stops before `toInput`, beside the viewport
+  gestures, so `play.Apply` never learns a mouse exists. A click that recorded a
+  review would corrupt the schedule silently, which is the worst kind of bug
+  here: the damage is to data the learner cannot see.
+- **A wrap MOVES the click map, and the screen is what moves it.** `#41` put a
+  wrap between the caller and the buffer, and a region's Line and Col are
+  relative to the text it was computed from. `liveScreen.WriteRegions` re-points
+  every region against its OWN `cols` before the text reaches the buffer: a line
+  the wrap does not break keeps its columns and only moves down; a line the wrap
+  DOES break loses its regions, because a column past the break belongs to a
+  continuation and guessing which is the wrong-click bug.
+
+  Two earlier versions of this rule were wrong in opposite directions, and both
+  shipped. All-or-nothing — drop the whole map if anything wrapped — made the
+  ASKED word inert on every multiple-choice question, since form 2.3's prompt
+  puts four glosses under the headword and a gloss routinely wraps; the operator
+  found it on the first sitting. Then the arithmetic ran on the width the LOOP
+  held rather than the screen's, so a resize put a headword region on a blank
+  line — the wrong click the rule exists to forbid. **The wrap and the map must
+  be measured by one ruler, and only the screen holds it.**
+
 **A SITTING REFUSES rather than degrades, and it settles that before doing any
 work.** `--play` needs stdin to be a terminal (a review is a conversation, and
 piped input would answer questions it never saw), stdout to be a terminal (a

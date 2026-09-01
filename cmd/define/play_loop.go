@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/play"
@@ -164,7 +165,20 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			written = s.Index
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
-			fmt.Fprintf(stdout, "\n%s\n", q.Prompt())
+			//
+			// THE PROMPT WORD IS CLICKABLE (T4). Both forms put the headword on
+			// their first line at column 0 — `Recall.Prompt()` IS the word, and
+			// `Choice.Prompt()` is the word, a blank, then the options — and the
+			// leading "\n" of this write puts it on line 1. That is the whole
+			// region-finding problem for a prompt: nothing to search for, no
+			// offsets to survive a wrap, because a headword is never wide enough
+			// to wrap.
+			// Line 1, not 0: the write leads with a blank line, and addRegions
+			// anchors at the line the write STARTS on.
+			writeRendered(stdout, "\n"+q.Prompt()+"\n", []Region{{
+				Kind: RegionHeadword, Text: q.Word(), Word: q.Word(),
+				Line: 1, Col: 0, Width: visibleCells(q.Word()),
+			}})
 		}
 		// The grading keys are the PROMPT and the bar is the FOOTER, which gets
 		// the order of sacrifice right for free (D3): Paint clips the prompt last
@@ -241,6 +255,28 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			continue
 		}
 
+		// A CLICK ACTS AND NEVER ANSWERS (D8, T7).
+		//
+		// Hearing the word is what `y`/`n` are answering ABOUT, so a click that
+		// recorded a review would corrupt the schedule silently — the worst kind
+		// of bug here, because the damage is to data the learner cannot see. Like
+		// a viewport gesture it stops before `toInput`, so `play.Apply` never
+		// learns that a mouse exists.
+		//
+		// A click on nothing is nothing: no beep, no message. Pointing at
+		// ordinary text is not an error.
+		if k.Kind == KeyClick {
+			if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
+				// The record-shaped indicator, not the editor's erasable one:
+				// a sitting's `♫ playing 3×` is a frame write like any other
+				// (D5a), and defaultIndicator is what every other playback on
+				// this path already uses.
+				playRegion(ctx, d, opt, r, "", defaultIndicator(opt), stdout, stderr)
+				show()
+			}
+			continue
+		}
+
 		// The question the keystroke is ABOUT, read before Apply moves on. A
 		// reveal never advances, so s.Current() would answer the same — but
 		// reading it after would make that a fact about Apply that this loop
@@ -314,9 +350,19 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				// it is written, which is what keeps a reveal out of the buffer
 				// until it is earned and out of it twice however many keys follow.
 				if asked != nil {
-					fmt.Fprintf(stdout, "\n%s\n", asked.Reveal())
+					// THE REVEALED DEFINITION CARRIES ITS REGIONS (T5), shifted
+					// by however many lines the form prepends: `Choice.Reveal()`
+					// names the right option and what you picked before the entry
+					// begins, and those coordinates belong to the render, not to
+					// the reveal.
+					reveal := "\n" + asked.Reveal() + "\n"
+					writeRendered(stdout, reveal, held.marksIn(asked.Word(), reveal))
 				}
-				if !opt.noAudio && opt.times > 0 {
+				// THE PREDICATE, not a fifth hand-copy of `!opt.noAudio &&
+				// opt.times > 0` (T0). playAnnounced applies it itself, so being
+				// below the guard is impossible; this asks only to decide whether
+				// there is anything to announce at all.
+				if opt.playsAudio() {
 					// RAW THROUGHOUT, and that is D5a's whole content.
 					//
 					// This used to call restore(), play in cooked mode, and
@@ -399,7 +445,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		// cost figures are computed against an empty history.
 		fmt.Fprintf(stderr, "define: could not read the review log (%v); treating every word as new\n", err)
 	}
-	held := &sittingDeck{deck: deck, prog: schedule.Fold(events)}
+	held := &sittingDeck{deck: deck, prog: schedule.Fold(events), marks: map[string]clickable{}}
 	now := d.clock.Now()
 	keys := schedule.Queue(deck, held.prog, now, opt.count)
 	if len(keys) == 0 {
@@ -417,6 +463,7 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 	pool := buildPool(d, deck, seedFor("pool", day))
 
 	var qs []play.Question
+	marks := map[string]clickable{}
 	for _, key := range keys {
 		text, err := d.dict.Lookup(key)
 		if err != nil {
@@ -426,10 +473,21 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			continue
 		}
 		entry := ParseEntry(text)
-		// No regions: `--play` draws its own frames and has no click map (D5a).
-		rendered, _ := Render(entry, RenderOpts{
+		// THE REGIONS, kept rather than discarded (D7). `play` must never see
+		// them — it is mechanically guarded pure and `Region` lives in main — so
+		// the loop keeps its own word→regions map, built here, where the entry is
+		// rendered and the coordinates are true.
+		rendered, rs := Render(entry, RenderOpts{
+			// Word is IDENTITY, not presentation, and RenderOpts says so: a
+			// click on the headword replays the word the deck holds, and
+			// deriving it from the entry instead lets the two disagree —
+			// `jalapeno` in the deck against `jalapeño` on the head line, for
+			// which the CDN answers different URLs. Empty means "no click map
+			// wanted", which was true of `--play` until this issue.
+			Word:  key,
 			Color: opt.color, Width: opt.width, Vocab: vocabularyFor(d, opt),
 		})
+		marks[key] = clickable{text: rendered, regions: rs}
 		// Form 2.3 when the deck can supply distractors, form 2.1 when it
 		// cannot (D9). A young deck is a NORMAL state, not an error, and the
 		// fallback is invisible to the learner — the sitting stays the length
@@ -447,7 +505,20 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 		fmt.Fprintf(stderr, "define: %d words are due but none could be looked up\n", len(keys))
 		return nil, held, 1
 	}
+	held.marks = marks
 	return qs, held, 0
+}
+
+// clickable is one entry's rendered text and the spans in it a click can act on.
+//
+// The TEXT is kept beside the regions because their coordinates are relative to
+// it, and the loop writes something LARGER — a form's reveal prepends its own
+// lines. Finding the render inside the reveal is how the offset is computed, and
+// keeping both is what makes that possible without the form giving up ownership
+// of its own output.
+type clickable struct {
+	text    string
+	regions []Region
 }
 
 // sittingDeck is the deck as ONE sitting sees it: read once at the start and
@@ -466,6 +537,10 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 type sittingDeck struct {
 	deck []store.Word
 	prog map[string]schedule.Progress
+	// marks is what each word's rendered entry OFFERS, keyed by store.Key —
+	// built once where the entries are rendered, because that is the only place
+	// the coordinates are true (D7).
+	marks map[string]clickable
 }
 
 // answered applies one graded answer, exactly as folding the event it produced
@@ -493,6 +568,34 @@ func (sd *sittingDeck) answered(out play.Outcome, at time.Time) {
 func (sd *sittingDeck) dropped(word string) {
 	key := store.Key(word)
 	sd.deck = slices.DeleteFunc(sd.deck, func(w store.Word) bool { return store.Key(w.Text) == key })
+}
+
+// marksIn is the clicked spans for a word, moved into the coordinates of the
+// text about to be WRITTEN.
+//
+// A form's reveal is larger than the render it contains — `Choice.Reveal()` puts
+// the correct option and the learner's pick above it — so every region's Line
+// moves by the number of lines before the render begins. Located rather than
+// counted from a formula: the form owns its own layout, and a formula here would
+// be a second copy of it that a new form silently invalidates.
+func (sd *sittingDeck) marksIn(word, written string) []Region {
+	c, ok := sd.marks[store.Key(word)]
+	if !ok || c.text == "" || len(c.regions) == 0 {
+		return nil
+	}
+	at := strings.Index(written, c.text)
+	if at < 0 {
+		// The render is not in what is being written — a form that reworded its
+		// reveal, or a word with no entry. No regions rather than wrong ones.
+		return nil
+	}
+	off := strings.Count(written[:at], "\n")
+	out := make([]Region, len(c.regions))
+	for i, r := range c.regions {
+		r.Line += off
+		out[i] = r
+	}
+	return out
 }
 
 // figures is what the bar and the summary are built from: a walk over the deck

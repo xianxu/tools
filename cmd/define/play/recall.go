@@ -29,12 +29,7 @@ func (r *Recall) Word() string   { return r.word }
 func (r *Recall) Prompt() string { return r.word }
 func (r *Recall) Reveal() string { return r.definition }
 
-// Grade reads the self-rating.
-//
-// y/n because they are the keys a hand reaches for on a yes/no question, and
-// case-insensitively because a session is typed fast. Anything else returns
-// false — a stray key is not a silent wrong answer, which would corrupt the
-// schedule for a word the learner never rated.
+// Keys names the two this form grades, which is what the prompt line shows.
 func (r *Recall) Keys() string { return "y = got it, n = missed it" }
 
 // IsSelfRated: this form's verdict is the LEARNER'S CLAIM. `y` means "I knew
@@ -42,6 +37,12 @@ func (r *Recall) Keys() string { return "y = got it, n = missed it" }
 // ladder's two-rung promotion, however quickly it came — see play.SelfRated.
 func (r *Recall) IsSelfRated() bool { return true }
 
+// Grade reads the self-rating.
+//
+// y/n because they are the keys a hand reaches for on a yes/no question, and
+// case-insensitively because a session is typed fast. Anything else returns
+// false — a stray key is not a silent wrong answer, which would corrupt the
+// schedule for a word the learner never rated.
 func (r *Recall) Grade(k rune) (Verdict, bool) {
 	switch k {
 	case 'y', 'Y':

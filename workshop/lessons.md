@@ -2849,3 +2849,118 @@ quirk: when a command grows a precondition, grep the rigs for defaults that now
 violate it. Deriving the rig's options from the same helper the flag parse uses
 removes the question.
 
+**It recurred one issue later, on the same rig, through a different field.**
+`#38` made the words in a sitting clickable; `playRig` still carried `width: 0`,
+which is `terminalWidth`'s "do not wrap" sentinel. A sitting always has a real
+width, so the wrap the new click map has to survive was simply OFF in every
+test — and the map was silently dropped on every multiple-choice question,
+because a gloss below the headword wraps. Four tests written specifically for the
+feature were green while the feature was inert in its commonest case, and the
+operator found it on the first real sitting.
+
+**So the rule is stronger than "check the rig when a precondition lands":
+EVERY sentinel-valued default in a rig is a state production may not have.** `0`
+meaning "off", `""` meaning "none", a nil clock — each one turns some
+downstream behaviour off, and the test then asserts over a path with that
+behaviour missing. Ask of every field: *can the flag parse produce this value for
+this command?*
+
+## The wrap and the map must be measured by one ruler, and only the owner holds it (`#38`)
+
+A click map's coordinates are relative to the text they were computed from. A
+pinned screen wraps between the caller and the buffer, so those coordinates move.
+Two versions of the rule shipped and both were wrong:
+
+- **All-or-nothing** — drop the map if the wrap changed anything — made the
+  clicked-on word inert in the commonest case, because one long line beside it
+  wrapped.
+- **Per line, measured by the caller's width** — the caller held a width fixed at
+  startup while the screen re-measures on every resize. After a resize the two
+  disagreed and regions landed on lines that did not contain their text, which is
+  the wrong-click bug the rule exists to forbid.
+
+The fix is not a better calculation. **Move the calculation to whoever owns the
+number**, so a second ruler is unexpressible rather than merely unused — the same
+move `#41` made putting the wrap itself on the screen's `Write` after finding a
+helper writing around it. When two things must agree about a measurement, one of
+them owns it and the other asks.
+
+## Adopting a mechanism means adopting its documented obligations, as checkable rows (`#38`)
+
+`#38`'s T5 said "the revealed definition carries its regions, through
+`writeRendered`". `WriteRegions` and `RenderOpts` document three obligations
+between them, and the task carried none: the write's leading newline moves every
+region down a line; `RenderOpts.Word` must be the caller's KEY, because empty
+falls back to the entry's headword and `jalapeno` against `jalapeño` are
+different URLs at the CDN; and a pinned screen's wrap moves the map.
+
+Two of the three were live defects. **Before writing a task that adopts an
+existing mechanism, read that mechanism's doc comments AT HEAD and turn each
+obligation into a row.** A plan written before the mechanism's latest change
+never sees the obligations that change added.
+
+## A scripted edit must assert on what it expects to find (`#38`)
+
+Ticking seven task rows in a plan silently did nothing: the edit used a
+find-and-replace against text an earlier edit had already changed, so every
+substitution matched nothing and the script reported success. The review found
+the rows still unticked two rounds later.
+
+**Every scripted edit to an artifact asserts the anchor is present before
+replacing it.** A `replace` that matches nothing is indistinguishable from one
+that worked, and the failure surfaces at a gate rather than at the keyboard. This
+is the same discipline the repo's own guards enforce on prose — applied to the
+tool doing the editing.
+
+## Fixing an obligation is not discharging it (`#38`)
+
+`RenderOpts.Word` was left empty, so region words fell back to the entry's
+headword — `jalapeño` where the deck holds `jalapeno`, which are different URLs
+at the CDN. The fix was one field, the commit message called it "a live defect",
+and deleting the field again left the entire suite green.
+
+**A claim is discharged by something that can fail.** A one-line fix earns a test
+exactly as a feature does, and the cheapest moment to write it is while the
+divergence is still in your head — the fixture is the thing you just reproduced.
+
+## A `red when` cell is a mutation, and it has to be RUN (`#38`)
+
+`#38`'s Done-when row 2 read *"a click NEVER answers — red when: the click reaches
+`play.Apply`"*. The boundary review executed that literal mutation and the test
+stayed green: the property was delivered by `toInput`'s default (it returns false
+for a click), not by the guard the row was written for. The row pinned something
+the code under test did not provide.
+
+The second attempt still survived, for a subtler reason: with a ONE-word deck a
+click that advanced simply ended the sitting, which is indistinguishable from not
+advancing. It needed two questions before the advance was observable.
+
+**Sweep the whole Done-when table as mutations before crossing a boundary**, and
+when a mutation does not redden, ask which of the two things it means: the test
+is weak, or the fixture cannot express the failure. The second is the one that
+hides.
+
+**And record WHICH rows were swept, not that the table was.** Claiming the sweep
+covered everything is only as true as the weakest row, and a row pinned by a test
+that SKIPs where the sweep runs — every pty row here — cannot be part of it. The
+same finding twice in one issue: a blanket claim over a table is a citation that
+does not point at anything.
+
+## Two orphaned doc comments were found by a 50-line AST guard (`#38`)
+
+A comment block acquires the wrong owner when a declaration is inserted between
+it and its function: the new one arrives undocumented and the old one's prose now
+describes its neighbour. `go vet` does not look, and the exported-comment linters
+do not reach unexported declarations — which is most of `cmd/define`.
+
+`TestADocCommentNamesWhatItSitsOn` walks the package with `go/ast` and fires when
+a function's doc opens with the name of another function IN THE SAME FILE — the
+shape an insertion produces. Same-file, because a first word naming something two
+files away is prose (`newStoreCapturer`'s doc opens by naming its `vocab`
+parameter). Test functions are exempt: their docs name the subject by convention.
+
+It found five, two of them a day old and two nobody had noticed — `openStore`'s
+doc had drifted onto `newsFeedFor`, `checkPlanName`'s onto `coreConceptsSection`.
+**When a finding is "a comment is in the wrong place", ask whether the class is
+walkable; here it was fifty lines.**
+

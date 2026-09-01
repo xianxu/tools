@@ -207,16 +207,6 @@ func orElse[T comparable](v, fallback T) T {
 	return v
 }
 
-// openStore builds the store-backed dependencies over the WORKING DIRECTORY.
-//
-// DEFINE_NO_CAPTURE means "write nothing in this directory", and that has a real
-// cost: persisted history IS the event log (#3), so opting out also drops
-// history to session-only. Stated here, in --help, and in the README, rather
-// than discovered.
-//
-// A store that cannot be opened must not break define: warn and fall back,
-// exactly as a missing recording degrades rather than fails. Someone in a
-// read-only directory still gets a dictionary.
 // newsFeedFor gates the news feed on the language it actually serves.
 //
 // httpFeed hardcodes hl=en-US&gl=US&ceid=US:en — it is English BY CONSTRUCTION.
@@ -250,6 +240,16 @@ func sessionUsage(lang store.Lang, clk store.Clock, warn io.Writer) UsageSource 
 	return &bothSources{news: newsFeedFor(lang, newCachingFeed(newHTTPFeed(), store.NewMem(), clk)), warn: warn}
 }
 
+// openStore builds the store-backed dependencies over the WORKING DIRECTORY.
+//
+// DEFINE_NO_CAPTURE means "write nothing in this directory", and that has a real
+// cost: persisted history IS the event log (#3), so opting out also drops
+// history to session-only. Stated here, in --help, and in the README, rather
+// than discovered.
+//
+// A store that cannot be opened must not break define: warn and fall back,
+// exactly as a missing recording degrades rather than fails. Someone in a
+// read-only directory still gets a dictionary.
 func openStore(opt options, warn io.Writer) storeDeps {
 	// NOT a second copy of the capture policy: this decides whether there is
 	// anywhere to write at all. decideCapture stays the only thing that decides
@@ -780,7 +780,7 @@ func lookupAndRender(d deps, opt options, cmd replCommand, stdout, stderr io.Wri
 	})
 	writeRendered(stdout, rendered, regions)
 	d.capture.Capture(word, true, opt)
-	return lookupOutcome{play: !opt.noAudio && opt.times > 0, entry: text}
+	return lookupOutcome{play: opt.playsAudio(), entry: text}
 }
 
 // regionWriter is a writer that can also hold a CLICK MAP for what it is given.
@@ -824,6 +824,20 @@ type indicator struct {
 	trail  string // written instead of erase when there is nothing to erase
 }
 
+// playsAudio reports whether this session plays anything at all.
+//
+// ONE predicate, named, because it was hand-copied at four sites in two
+// spellings — `!opt.noAudio && opt.times > 0` and `opt.noAudio || opt.times <= 0`
+// — and playAnnounced's own doc comment below already lists "whether the
+// audio-off guard applied" as one of three divergences it exists to end. It
+// ended two of them. This one stayed ABOVE it in every caller, which is exactly
+// how a fifth caller could be written below it and fetch audio a `-no-audio`
+// session asked not to have (#38).
+//
+// So playAnnounced applies it ITSELF: being below the guard is now impossible,
+// and the callers ask the same predicate only to decide what to SAY.
+func (o options) playsAudio() bool { return !o.noAudio && o.times > 0 }
+
 // playAnnounced is the single owner of the announce → play → erase → report
 // sequence. Both entry paths ran their own copy and had diverged three ways —
 // which terminal they gated on, whether the audio-off guard applied, and the
@@ -833,6 +847,13 @@ type indicator struct {
 // Returns true when playback finished with nothing reported, so the caller can
 // decide whether its redrawn UI is still intact.
 func playAnnounced(ctx context.Context, d deps, opt options, u utterance, ind indicator, stdout, stderr io.Writer) bool {
+	if !opt.playsAudio() {
+		// Nothing to announce, nothing to fetch. The callers still say their own
+		// thing about it — "nothing to replay" reads differently from a review
+		// loop silently skipping a reveal — but none of them can be the place
+		// this is decided any more.
+		return false
+	}
 	// An erasable indicator is ephemeral UI and may be optimistic — if playback
 	// fails it is taken back and never seen. A non-erasable one (a pipe, or
 	// -no-color) is a RECORD, and a record has to be true: announced only after

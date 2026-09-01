@@ -248,7 +248,7 @@ it once `#6` produced misses; it is DESCOPED into `#7` — see below.
       Small, and it finishes the language thread rather than leaving Spanish
       half-delivered.
 - [x] form 2.3 — meaning multiple choice, deck distractors, no LLM [tools#7]
-- [ ] item authoring + harvest — async, level-aware, learner-aware, stores finished items [tools#10]
+- [ ] authored practice items — a CEFR band and a domain per word (cached forever), and stems the model writes offline; distractors SELECTED at the learner's band or one below [tools#10]
 - [ ] `--stats` — all derived from the event log [tools#8]
 - [x] spaced repetition rework — one unbounded ladder, `floor(1.6**box)`, no ceiling [tools#39]
 - [x] `--play` paints frames through `screen`, and gains a status bar [tools#41]
@@ -740,6 +740,22 @@ guards could fail.
 [tools#23]: ../issues/000023-deck-language.md
 [tools#23 M1]: #tools-23-m1
 [tools#23 M2]: #tools-23-m2
+
+### 2026-08-31 — scope event: `#38` shipped alongside, outside MVP
+
+Not in `mvp_scope` and it does not change the done-when. Recorded because the
+project is the portfolio view and it shipped inside its window, on operator
+request, touching the same console the project's verbs live in — the same
+reasoning as the 2026-08-26 entry below.
+
+- **tools#38 — the review loop's words are clickable.** Click the word a sitting
+  is asking about to hear it, and anything in a revealed definition, exactly as
+  in the interactive session. `#30`'s registry is now shared by both loops rather
+  than living inside the editor's closure, which is what its own Done-when 7
+  asked for — a third consumer (`#40`'s board) is a row.
+
+  Depended on `#41` for the screen: three of its nine tasks landed there while
+  this was parked. est 2.83 / actual TBD.
 
 ### 2026-08-26 — scope event: two console features shipped alongside, outside MVP
 

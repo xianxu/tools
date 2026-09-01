@@ -140,6 +140,13 @@ func wrapWritten(text string, width int) string {
 // alternative, teaching `play` to hand back its options separately, would put
 // line-breaking in the package whose whole point is that the caller owns
 // formatting.
+func isOptionLine(line string) bool {
+	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
+		return false
+	}
+	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
+}
+
 // minWrapWidth is the narrowest terminal worth breaking lines for: below it a
 // dictionary entry cannot be broken and stay readable.
 //
@@ -151,9 +158,56 @@ func wrapWritten(text string, width int) string {
 // replaces is the other, and the second is the one that makes the claim true.
 const minWrapWidth = 20
 
-func isOptionLine(line string) bool {
-	if len(line) <= play.OptionIndent || line[0] < '1' || line[0] > '9' {
-		return false
+// wrapMovedRegions re-points regions at the lines they will ACTUALLY land on
+// once a pinned screen has wrapped the text they were computed against.
+//
+// Called by `liveScreen.WriteRegions`, and ONLY there: it needs the width the
+// wrap will use, and the screen is the only thing that knows it. A caller that
+// passed its own width — `--play` did, using the one it was handed at startup —
+// is measuring with a second ruler, and after a resize the two disagree and
+// every region lands on a line that does not contain its text.
+//
+// The rule is per LINE. An earlier version was all-or-nothing (drop the whole
+// map if the wrap changed anything) and was wrong in the case that matters most:
+// form 2.3's prompt is the headword, a blank, then four glosses, and a gloss
+// routinely wraps — so the word the sitting is ASKING ABOUT lost its region on
+// every multiple-choice question, which the operator found on the first real
+// sitting. A line the wrap does not break keeps its columns and only moves down,
+// which is arithmetic this can do exactly; a line the wrap DOES break loses its
+// regions, because a column past the break belongs to a continuation and
+// guessing which would be the wrong-click bug.
+//
+// PURE, so the rule is testable without a screen.
+func wrapMovedRegions(text string, rs []Region, width int) []Region {
+	if len(rs) == 0 {
+		return nil
 	}
-	return strings.TrimLeft(line[1:play.OptionIndent], " ") == ""
+	lines := strings.Split(text, "\n")
+	// Where each original line starts once the wrap has run, and whether the
+	// wrap broke it. Both come from wrapWritten itself rather than from a second
+	// implementation of its rules — the erase-gesture exemption and the
+	// sub-20-column policy have to be the same on both sides or the map lands
+	// one line off exactly where they differ.
+	start := make([]int, len(lines))
+	broke := make([]bool, len(lines))
+	at := 0
+	for i, line := range lines {
+		start[i] = at
+		rows := strings.Count(wrapWritten(line, width), "\n") + 1
+		broke[i] = rows > 1
+		at += rows
+	}
+	var out []Region
+	for _, r := range rs {
+		if r.Line < 0 || r.Line >= len(lines) || broke[r.Line] {
+			// Out of range, or on a line the wrap broke. Dropped rather than
+			// placed by guess: an underline that plays the word beside the one
+			// you pointed at is worse than no underline, because losing an
+			// affordance is visible and a wrong click is not.
+			continue
+		}
+		r.Line = start[r.Line]
+		out = append(out, r)
+	}
+	return out
 }

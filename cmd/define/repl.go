@@ -309,7 +309,7 @@ func replLines(ctx context.Context, interrupts *interrupter, d deps, opt options
 	// play and report. replayInPlace is the raw loop's counterpart, and the
 	// erase style is the whole difference between them.
 	replayPiped := func(pron store.Lang) {
-		if opt.noAudio || opt.times <= 0 {
+		if !opt.playsAudio() {
 			fmt.Fprintln(stderr, nothingToReplay)
 			return
 		}

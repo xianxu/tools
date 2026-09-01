@@ -41,7 +41,12 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 	// unreachable from the command under test is a rig that tests a state
 	// production cannot produce — which is how BR-23's Critical shipped, with
 	// both of Done-when 0b's pins green over uncoloured text.
-	return d, options{color: true, tty: true, width: 0, count: 20, times: 1, noAudio: true}, st
+	// WIDTH 80, which is what a sitting actually has: `--play` refuses unless
+	// stdout is a terminal, so opt.width is terminalWidth's real answer and never
+	// the 0 sentinel. A rig that left it 0 turned the wrap OFF, and the wrap is
+	// what every region has to survive — that default hid a dropped click map on
+	// every multiple-choice question until the operator found it.
+	return d, options{color: true, tty: true, width: defaultCols, count: 20, times: 1, noAudio: true}, st
 }
 
 // audible makes the playback branch REACHABLE and returns the player recording it.
@@ -885,6 +890,348 @@ type logRefusingStore struct {
 
 func (logRefusingStore) Events(time.Time) ([]store.ReviewEvent, error) {
 	return nil, errFail
+}
+
+// DONE-WHEN 1: the word being asked about is CLICKABLE (T4).
+//
+// The whole issue in one row. `Prompt()`'s first line is the headword for both
+// forms, so the region is line 1 of the write — the leading blank is line 0 —
+// at column 0, and a headword is never wide enough to wrap.
+func TestPlayClickOnThePromptWordPlaysIt(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic")
+	player := audible(&d, &opt)
+	qs, held := questionsFor(t, d, opt)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	waitFor(t, func() bool { return strings.Contains(live.Transcript(), qs[0].Word()) })
+	// The cell the WORD is on, found the way a reader's eye would: the buffer
+	// line carrying it, at column 0. No coordinate invented by the test.
+	row := -1
+	for i, line := range strings.Split(live.Transcript(), "\n") {
+		if unstyled(line) == qs[0].Word() {
+			row = i
+		}
+	}
+	if row < 0 {
+		t.Fatalf("the prompt word is not on a line of its own:\n%s", live.Transcript())
+	}
+
+	keys <- Key{Kind: KeyClick, Row: row, Col: 0}
+	waitFor(t, func() bool { return player.count() > 0 })
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+
+	if player.count() == 0 {
+		t.Error("clicking the word the sitting is asking about played nothing")
+	}
+}
+
+// DONE-WHEN 2: a click ACTS and never answers (D8, T7).
+//
+// The first version of this row did not discriminate, and the boundary review
+// measured it: disabling the whole `KeyClick` branch left it green, and so did
+// routing a click into `play.Apply` as an `InputReveal`. The "never answers"
+// half is delivered by `toInput`'s default — it returns false for `KeyClick` —
+// not by T7's guard, so a test asserting only that nothing was recorded pins a
+// property the guard does not provide.
+//
+// **A `red when` cell is a mutation, and it has to be RUN.** The discriminating
+// state is GRADED: there "any key = next word", so a click reaching Apply
+// advances the question. So this drives a real pinned screen to the graded
+// state, clicks, and asserts BOTH halves — the click played, and the sitting did
+// not move on.
+func TestPlayClickActsAndIsNotAnAnswer(t *testing.T) {
+	// TWO words, and that is load-bearing. With one, a click that reached Apply
+	// would ADVANCE off the last question and simply end the sitting — which
+	// looks identical to not advancing, and the review's own `red when` mutation
+	// passed against exactly that. A second question is what makes the advance
+	// observable.
+	d, opt, st := playRig(t, "sycophantic", "ephemeral")
+	player := audible(&d, &opt)
+	qs, held := questionsFor(t, d, opt)
+	if len(qs) < 2 {
+		t.Fatalf("got %d questions, need 2 so an advance is visible", len(qs))
+	}
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	// SCRIPTED and buffered, so the loop consumes them in order and nothing is
+	// observed mid-flight. A WRONG answer on a hidden word records the miss and
+	// reveals WITHOUT advancing — the graded state, where "any key = next word"
+	// is live and a click reaching Apply would move the sitting on.
+	//
+	// Row 1 is the word, and it is not a guess: show() writes "\n"+Prompt()+"\n"
+	// as the sitting's first write, so line 0 is the leading blank.
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyRune, Rune: []rune(gradeKey(t, qs[0], play.Wrong))[0]}
+	keys <- Key{Kind: KeyClick, Row: 1, Col: 0}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// The premise: the click landed on something. Without this the assertions
+	// below pass for a sitting where the region was never written.
+	if _, ok := live.RegionAtRow(1, 0); !ok {
+		t.Fatalf("row 1 offers no region, so no click was possible:\n%s", live.Transcript())
+	}
+	// It ACTED: the miss plays once, the click plays again.
+	if got := player.count(); got < 2 {
+		t.Errorf("played %d times, want the miss AND the click — the click did nothing", got)
+	}
+	// ...and it did not ANSWER. A click reaching Apply in the graded state
+	// advances past the word, and the sitting would end "0 right, 0 wrong" on a
+	// second question instead.
+	if n := len(reviewEvents(t, st)); n != 1 {
+		t.Errorf("%d review events, want the one miss — a click graded", n)
+	}
+	if !strings.Contains(live.Transcript(), "0 right, 1 wrong") {
+		t.Errorf("the sitting did not end on the miss alone:\n%s", live.Transcript())
+	}
+	// THE DISCRIMINATOR: the sitting never moved on. A click that reached Apply
+	// in the graded state advances, and the next question would be written.
+	if strings.Contains(unstyled(live.Transcript()), qs[1].Word()) {
+		t.Errorf("the sitting advanced to %q — the click was consumed as an answer:\n%s",
+			qs[1].Word(), live.Transcript())
+	}
+}
+
+// DONE-WHEN 3: a revealed definition is clickable like anywhere else (T5), and
+// its regions are moved into the coordinates of what is actually WRITTEN.
+//
+// `Choice.Reveal()` names the right option and the learner's pick above the
+// entry, so the render's own line numbers are wrong by however many lines the
+// form prepended. Located rather than counted from a formula: the form owns its
+// layout, and a formula here would be a second copy of it.
+func TestPlayARevealedDefinitionCarriesItsRegions(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs, held := questionsFor(t, d, opt)
+
+	// A REAL screen, and the assertion is a CLICK — the joint, not the pieces.
+	// editorloop_test.go records the rule: every place two separately-pinned
+	// layers exchange a value across a coordinate boundary earns a row, and a row
+	// is earned only when a test drives both real objects. Here those layers are
+	// the loop's offset arithmetic and the screen's buffer rebasing.
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, 80) // taller than the sitting, so no scroll
+	live.interval = -1
+	var errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("\r^"),
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// The definition's own header line, which is the LAST line beginning with
+	// the headword — the prompt wrote the first one. Found by reading the
+	// transcript, not by a coordinate the test invented.
+	word := qs[0].Word()
+	row := -1
+	for i, line := range strings.Split(live.Transcript(), "\n") {
+		if strings.HasPrefix(unstyled(line), word) {
+			row = i
+		}
+	}
+	if row < 0 {
+		t.Fatalf("the revealed definition never named %q:\n%s", word, live.Transcript())
+	}
+
+	r, ok := live.RegionAtRow(row, 0)
+	if !ok {
+		t.Fatalf("clicking the headword INSIDE the revealed definition (row %d) resolves to "+
+			"nothing — the reveal reached the buffer without its click map, or with one "+
+			"whose lines were never shifted past the option lines Choice.Reveal puts above it",
+			row)
+	}
+	if r.Word != word {
+		t.Errorf("the click at row %d answers for %q, want %q", row, r.Word, word)
+	}
+}
+
+// ...and a region on a line the wrap does NOT break survives, moved to where
+// that line lands (#41 BR-25, and the operator's report).
+//
+// The first version of this rule was all-or-nothing: drop the whole map if the
+// wrap changed anything. Form 2.3's prompt is the headword, a blank, then four
+// glosses — and a gloss routinely wraps — so the word the sitting is ASKING
+// ABOUT lost its region on every multiple-choice question. The feature was
+// inert in exactly the case it exists for, and green, because the rig ran at
+// width 0 where the wrap does nothing.
+func TestAWrapMovesTheClickMapRatherThanDroppingIt(t *testing.T) {
+	const width = 20
+	// Line 0 is a short headword; line 1 is a gloss that must wrap.
+	text := "word\n1  " + strings.Repeat("gloss ", 8) + "\ntail\n"
+	head := Region{Kind: RegionHeadword, Text: "word", Word: "word", Line: 0, Col: 0, Width: 4}
+	inGloss := Region{Kind: RegionHeadword, Text: "gloss", Word: "gloss", Line: 1, Col: 3, Width: 5}
+	onTail := Region{Kind: RegionHeadword, Text: "tail", Word: "tail", Line: 2, Col: 0, Width: 4}
+
+	got := wrapMovedRegions(text, []Region{head, inGloss, onTail}, width)
+
+	if len(got) != 2 {
+		t.Fatalf("kept %d regions, want the two on unbroken lines: %+v", len(got), got)
+	}
+	if got[0].Line != 0 || got[0].Word != "word" {
+		t.Errorf("the headword moved to line %d, want 0 — nothing above it wrapped", got[0].Line)
+	}
+	// The tail moved DOWN by however many rows the gloss became.
+	rows := strings.Count(wrapWritten("1  "+strings.Repeat("gloss ", 8), width), "\n") + 1
+	if want := 1 + rows; got[1].Line != want {
+		t.Errorf("the tail is on line %d, want %d — a region below a wrap moves by the rows it added",
+			got[1].Line, want)
+	}
+	// And the one INSIDE the wrapped line is gone: its column belongs to a
+	// continuation now, and guessing which is the wrong-click bug.
+	for _, r := range got {
+		if r.Word == "gloss" {
+			t.Error("a region on a line the wrap BROKE survived — its column is no longer where it says")
+		}
+	}
+}
+
+// THE OPERATOR'S CASE, end to end: a form-2.3 sitting at a real terminal width,
+// where the prompt's glosses wrap and the headword above them must not.
+func TestTheAskedWordIsClickableOnAMultipleChoiceQuestion(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs, held := questionsFor(t, d, opt)
+	if _, ok := qs[0].(*play.Choice); !ok {
+		t.Fatalf("first question is %T, want form 2.3 — this test is about a prompt that wraps", qs[0])
+	}
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor("^"),
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	word := qs[0].Word()
+	row := -1
+	for i, line := range strings.Split(live.Transcript(), "\n") {
+		if unstyled(line) == word {
+			row = i
+			break
+		}
+	}
+	if row < 0 {
+		t.Fatalf("the prompt word is not on a line of its own:\n%s", live.Transcript())
+	}
+	r, ok := live.RegionAtRow(row, 0)
+	if !ok {
+		t.Fatalf("the word the sitting is ASKING ABOUT is not clickable on a multiple-choice " +
+			"question — its region was dropped because the glosses below it wrapped")
+	}
+	if r.Word != word {
+		t.Errorf("the click answers for %q, want %q", r.Word, word)
+	}
+}
+
+// THE CRITICAL: a reveal written AFTER a resize still underlines its own words.
+//
+// `writeClickable` used to take the loop's `opt.width`, fixed at startup, while
+// the screen wraps at its own `cols`, which `Resize` updates. After a narrowing
+// resize the two rulers disagreed and every region landed on a line that did not
+// contain its text — a headword region on a blank line, an ORIGIN region on a
+// quotation. That is the wrong-click failure the whole path exists to make
+// impossible, and it was possible because the wrap and the map were measured
+// separately.
+//
+// The assertion is the invariant itself rather than a coordinate: EVERY region
+// in the buffer underlines the text it names.
+func TestAResizeDoesNotMisplaceTheClickMap(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral", "quokka", "mesa")
+	qs, held := questionsFor(t, d, opt)
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 200, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	resizes := make(chan winSize, 1)
+	keys := make(chan Key)
+	done := make(chan int, 1)
+	go func() {
+		done <- playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+			console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+	}()
+
+	waitFor(t, func() bool { return strings.Contains(live.Transcript(), qs[0].Word()) })
+	frames := strings.Count(tty.String(), cursorHome)
+	// NARROW ENOUGH that a line ABOVE the definition's headword must break —
+	// Choice.Reveal puts the correct option's gloss there. At 40 that gloss
+	// happens to fit for some words, and then nothing below it shifts and the
+	// test discriminates nothing.
+	resizes <- winSize{rows: 200, cols: 28}
+	waitFor(t, func() bool { return strings.Count(tty.String(), cursorHome) > frames })
+
+	written := len(live.Transcript())
+	keys <- Key{Kind: KeyEnter} // reveal, written at the new width
+	waitFor(t, func() bool { return len(live.Transcript()) > written })
+	keys <- Key{Kind: KeyInterrupt}
+	<-done
+
+	lines := strings.Split(live.Transcript(), "\n")
+	checked := 0
+	for i := range lines {
+		r, ok := live.RegionAtRow(i, 0)
+		if !ok {
+			continue
+		}
+		checked++
+		if !strings.Contains(unstyled(lines[i]), r.Text) {
+			t.Errorf("a region for %q is on buffer line %d, which reads %q — the map was moved "+
+				"by a different width than the one the screen wrapped at", r.Text, i, unstyled(lines[i]))
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no region resolved anywhere in the buffer, so this test asserts nothing")
+	}
+}
+
+// A REGION ANSWERS FOR THE DECK'S KEY, not the entry's headword.
+//
+// `RenderOpts.Word` is identity rather than presentation, and its own doc says
+// so: empty means "no click map wanted" and `regionsIn` falls back to
+// `Entry.Headword()`. `--play` passed nothing until this issue, and the deck
+// holds normalised keys — `jalapeno` where NOAD's head line reads `jalapeño`.
+// The CDN answers different URLs for the two, so a click would have fetched a
+// recording for a word the learner never looked up.
+//
+// The fix was one field; this is the row that makes it falsifiable. Deleting
+// `Word: key` left the whole suite green.
+func TestARegionAnswersForTheDeckKeyNotTheHeadword(t *testing.T) {
+	d, opt, _ := playRig(t, "jalapeno")
+	qs, held := questionsFor(t, d, opt)
+	if len(qs) == 0 {
+		t.Fatal("no questions: the fake dictionary should resolve jalapeno to the jalapeño entry")
+	}
+
+	c, ok := held.marks[store.Key("jalapeno")]
+	if !ok || len(c.regions) == 0 {
+		t.Fatalf("no regions kept for the deck key: %+v", held.marks)
+	}
+	// The premise, or this test asserts nothing: the entry's head line must
+	// spell the word DIFFERENTLY from the key.
+	if !strings.Contains(unstyled(c.text), "jalapeño") {
+		t.Fatalf("the rendered entry does not carry the accented spelling, so key and headword "+
+			"do not diverge here:\n%s", unstyled(c.text))
+	}
+	for _, r := range c.regions {
+		if r.Word != "jalapeno" {
+			t.Errorf("a region answers for %q, want the deck's key %q — the CDN has different "+
+				"URLs for the two, so a click would fetch a recording for a word the learner "+
+				"never looked up", r.Word, "jalapeno")
+		}
+	}
 }
 
 // DONE-WHEN 9: SIGWINCH repaints mid-sitting.
