@@ -3373,3 +3373,81 @@ func TestEnterIsHeldWhileTheBoardIsNotDrawnInFull(t *testing.T) {
 		t.Errorf("%d events in a window that fits, want all %d — Enter must still commit there", n, len(words))
 	}
 }
+
+// readmeBoardWords are the words the README's board example shows, and the
+// README DERIVES its grid from them (BR-18).
+//
+// The block used to be hand-drawn, and it went stale the moment the operator's
+// sitting changed the design: it still showed `[y] keel` for a mark standing
+// where the key was, and a label row with the old hole at `d` — both contradicted
+// by the README's own prose eight lines below. doc_sync pins the prompt LINE, so
+// the grid was a restatement with no consumer.
+var readmeBoardWords = []string{
+	"arrondissement", "bailiwick", "keel", "mesa",
+	"ephemeral", "quokka", "potassium", "ligament",
+	"sycophantic", "concrete", "parrot", "run",
+	"light", "bank", "set", "obsequious",
+}
+
+// THE REFUSAL ROW IS NO WIDER THAN THE KEYS ROW IT REPLACES.
+//
+// `Paint` charges the frame for the prompt it is given, and `boardFitsIn`
+// computes the fit from the KEYS row — so a taller replacement would drop one
+// more footer row than the fit was computed against. Measured before the fix:
+// the keys row is 78 columns and the refusal was 79, which disagreed at 78, 39
+// and 26 columns.
+//
+// Bounded to cosmetics either way — Enter is already held in that state and an
+// unpainted row is unclickable — but "these two strings are the same width" is
+// not a fact anyone re-checks by eye.
+func TestTheRefusalRowIsNoWiderThanTheKeysRow(t *testing.T) {
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank"), 80, play.Palette{})
+	keys := boardPrompt(board, true)
+	refusal := boardPrompt(board, false)
+	if refusal == keys {
+		t.Fatal("the two prompts are identical; this test asserts nothing")
+	}
+	if visibleCells(refusal) > visibleCells(keys) {
+		t.Errorf("the refusal is %d columns and the keys row is %d — the frame is budgeted "+
+			"for the keys row, so a wider refusal drops a footer row the fit did not account for:\n\t%q\n\t%q",
+			visibleCells(refusal), visibleCells(keys), refusal, keys)
+	}
+	// ...and at every width the board is offered at, the refusal costs no MORE
+	// rows than the budget was computed for. Fewer is fine and is the safe
+	// direction — the frame then has a row it did not spend.
+	for _, w := range []int{minWrapWidth, 24, 26, 39, 40, 78, defaultCols, 120} {
+		if a, b := displayRows(keys, w), displayRows(refusal, w); b > a {
+			t.Errorf("at %d columns the keys row is %d rows and the refusal is %d — the frame is "+
+				"budgeted for the first and would draw the second", w, a, b)
+		}
+	}
+}
+
+// ONE FIT FORMULA, asked at selection and at draw (BR-19).
+//
+// It was spelled twice and had already diverged: the selection copy refused a
+// terminal under minWrapWidth and the draw-time copy did not, so a board
+// narrowed below that by a resize still reported itself whole. Not reachable as
+// harm — the row arithmetic turns the answer false well before the words become
+// unreadable — which is the reason to consolidate rather than a reason not to.
+func TestSelectionAndDrawAskTheSameFitQuestion(t *testing.T) {
+	words := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
+	for _, tc := range []struct{ rows, cols int }{
+		{24, 80}, {10, 80}, {8, 80}, {24, 40}, {10, 40}, {60, 19}, {60, 12}, {5, 80},
+	} {
+		opt := options{width: tc.cols, rows: tc.rows}
+		atSelection := boardFits(words, opt)
+		probe := play.NewBoard(boardCells(words...), tc.cols, play.Palette{})
+		atDraw := boardFitsIn(probe, tc.rows, tc.cols)
+		if atSelection != atDraw {
+			t.Errorf("%dx%d: selection says %v and the frame says %v — two spellings of one formula",
+				tc.rows, tc.cols, atSelection, atDraw)
+		}
+	}
+	// THE WIDTH RULE REACHES THE DRAW, which is the divergence that existed.
+	narrow := play.NewBoard(boardCells(words...), minWrapWidth-1, play.Palette{})
+	if boardFitsIn(narrow, 100, minWrapWidth-1) {
+		t.Errorf("a %d-column terminal reports a whole board; below minWrapWidth this program "+
+			"treats the terminal as too narrow to lay text out at all", minWrapWidth-1)
+	}
+}

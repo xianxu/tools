@@ -576,3 +576,139 @@ findings:
     detail: |
       workshop/issues/000040-form-board.md:591 is the last Log section. Rounds 1 and 2 each got an entry naming the findings and the lesson; round 3 (FIX-THEN-SHIP) and the fixes for it appear only in the plan's Revisions, the close-review sidecar, the gate ledger and workshop/lessons.md. AGENTS.md section 3 puts the boundary outcome in the issue's own Log, which is the surface a reader reaches first.
 ```
+
+---
+
+## Re-review — 2026-09-01T18:13:09-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 40 — form 2.5: the board — grid triage for mature words |
+| repo | tools |
+| issue file | workshop/issues/000040-form-board.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | eb9f1698d6800ff5ad22683f49e2c36e970d36f3..0d075085fa4b5a2c8486cc490de418d221f240c6 |
+| command | sdlc close --issue 40 |
+| reviewer | claude |
+| timestamp | 2026-09-01T18:13:09-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+BR-8 — the one Critical carried across four rounds — is genuinely closed, and I verified it the way the claimed-fixes rule asks rather than by reading the commit message: reverting `g.Resize(termCols)` out of `show()` reddens `TestABoardBuiltBeforeAResizeIsStillLaidOutForTheTerminal` ("the second board's row 0 is 73 columns in a 40-column window"), and deleting the `InputFinish && !boardWhole` guard reddens `TestEnterIsHeldWhileTheBoardIsNotDrawnInFull` (16 events where 1 is wanted). `go test ./...` and `go test ./cmd/define/... -race` are both green. What blocks a clean SHIP is not correctness — it is the fifth round of the same prose family: R17 changed two contracts (Enter is refused; `Board.Resize` moved call sites) and swept the plan's Revisions and Core-concepts rows only, leaving seven live artifacts restating the pre-R17 behaviour, including the resize case's own comment sitting directly above the line that contradicts it. Separately, the README's only picture of the board still renders the design R16 deleted.
+
+## 1. Strengths
+
+- **The fix is at the root, and it is the right root.** `show()` is the one place that draws, so it is the only place that can promise the layout for *every* board — `play_loop.go:196-203`. The old resize-case call could only ever fix the board that happened to be on screen. Confirmed by revert.
+- **The fit check errs in the safe direction.** `fitsABoard` charges `barRows = 1` on top of the board's rows, while `fitFooter` drops the bar *first* — so `boardWhole == true` strictly implies every grid row was painted. The false-negative case (bar dropped, board whole) costs a held Enter, never a wrong mark.
+- **Two independent defences on the click map, and neither is decorative.** `screen.go:499` records the *fitted* footer, so `FooterRowAt` cannot resolve a row `fitFooter` dropped; `formCell` (`play_loop.go:703`) separately refuses `offset != 0`. Belt and seam, on a path where the mistake is permanent.
+- **The Enter hold went in the loop, not in `play`** (`play_loop.go:375-390`) — "what was DRAWN is the terminal's business" is D6's rule applied correctly, and `play`'s purity guard still passes with an empty import allowlist.
+- **`closedSection` (`repo_guard_test.go:665`) found a live guard failure, not a hypothetical one:** matching `**closed:**` as a substring meant `atlas/repo-guards.md`'s own prose about the marker discarded the entire guard inventory from every current-truth check. That is the premise-assertion discipline paying for itself.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**(a) R17's contract change reached the plan's Revisions and nothing else.** Measured sweep set, all still stating the pre-R17 behaviour:
+
+| artifact | what it still says |
+|---|---|
+| `cmd/define/play_loop.go:289-298` | "AND THE FORM, if it lays itself out (R9)… `sz.cols` rather than `opt.width`" — immediately above `// NO Resize HERE`, with no separator. No `Resize` happens in that case and `sz.cols` no longer reaches the board. |
+| `cmd/define/play_loop.go:624-632` | dropped rows are "harmless in sequence" — the exact sentence R17's own commit message identifies as wrong ("harmless to a CLICK… and not to a sweep"). |
+| `atlas/define.md:2057` | same "harmless in sequence" claim. |
+| `atlas/define.md:2061-2062` | `Board.Resize` "called from the loop's resize case" — false as of `f2186d7`. |
+| `atlas/define.md` | no mention of `display.Size()` or of the Enter refusal anywhere. |
+| `cmd/define/README.md:133` and `:149` | "`Enter` takes everything still unmarked as 'no'" / "board: finish, taking everything unmarked as 'no'" — unconditional. |
+| `workshop/plans/…-plan.md:411`, `workshop/issues/…-form-board.md:82` | both Done-when rows state Enter's contract unconditionally; neither R17 test is cited anywhere in the plan. |
+
+Fix sketch — the rule, not the seven sites: a decision that changes a **drawn or keyed** contract has an enumerable sweep set, and it is the same set every time: the comment at the site the mechanism moved *from*, `atlas/define.md`, the README prose + key table + example block, and both Done-when tables. Write that enumeration into R18 and run it in the commit that makes the change. `TestPlanCitesTestsThatExist` catches a citation that does not resolve; nothing catches shipped behaviour with no citation, which is what happened here — so R18 should also add the two Done-when rows naming `TestEnterIsHeldWhileTheBoardIsNotDrawnInFull` and `TestABoardBuiltBeforeAResizeIsStillLaidOutForTheTerminal`.
+
+**(b) `cmd/define/README.md:107-113` renders the design R16 deleted.** The example block shows `[y] keel`, `[n] quokka`, `[n] sycophantic`, `[y] run` — the mark standing *where the key was* — and a label row `[c] [e] [f] [g]`, the old sequence with a hole at `d`. Both were removed by R16 after the operator's sitting, and the README's own prose contradicts the picture eight lines later (`:124` "`0`–`9` then `a`–`f`, in order and with no gaps", `:128` "keeps its key"). `doc_sync_test.go` pins the prompt *line* only, so the grid is a hand-maintained restatement with no consumer. Fix sketch (ARCH-PURPOSE — make the consumer derive): extend the doc-sync guard to build a `play.Board` over the README block's own words, mark the cells the block shows as marked, and assert the fenced block's cell lines equal `board.Prompt()`'s grid rows.
+
+## 4. Minor findings
+
+- `play_loop.go:203` charges the frame `displayRows(gradePrompt(q), termCols)` but draws `boardPrompt(q, boardWhole)`. Measured: the two are 78 and 79 columns, so at `cols` ∈ {78, 39, 26, …} the drawn prompt is one row taller than the budget charged and one extra footer row is dropped. Bounded to cosmetics (Enter is already held; undrawn rows are unclickable), and the error is always in the safe direction — but it is the family's own rule, measure the string you draw.
+- `boardFits` (`play_loop.go:833`) and `show()` each spell the fit formula `fitsABoard(rows, board.Rows(), displayRows(gradePrompt(board), cols))`, and only the selection copy enforces `minWrapWidth`. ARCH-DRY: one helper, asked at both moments.
+- `atlas/repo-guards.md`'s guard inventory (`:107-114`) does not list `TestPlanCitesTestsThatExist`, added in this window beside `TestPlanTablesNameEntitiesThatExist`, which is in the table.
+- `board_test.go:167` — "the toggle below it legitimately moves when the mode flips" — one more member of BR-15's set, in the test file.
+
+## 5. Test coverage notes
+
+- Both R17 fixes are pinned by tests that fail without them; I ran both reverts in a scratch worktree. `TestABoardBuiltBeforeAResizeIsStillLaidOutForTheTerminal`'s silent-return paths are covered by its own premise assertion, and a lost resize fails it rather than passing it.
+- `go test ./...` green; `go test ./cmd/define/... -race` green (115s).
+- `go test -tags conformance ./cmd/define/ -run TestPTY` still reports `no pty available: operation not permitted` and **skips every row** in this environment, so Done-when 14 continues to rest on the implementor's out-of-band run. Unchanged from rounds 1–4 and `#37`'s subject, not this issue's.
+- Nothing pins the refusal prompt's width or its row count against the budget it is drawn into (finding 3).
+
+## 6. Architectural notes
+
+- **ARCH-DRY** — flag, Minor above: the fit formula has two owners.
+- **ARCH-PURE** — pass. `Board`, `Mark`, `Palette` import nothing; `Resize`/`Rows`/`CellAt` are pure arithmetic; the "was it drawn" question is answered in the IO shell and never enters `play`.
+- **ARCH-PURPOSE** — flag. T12's docs half is the deferred purpose: the code contracts moved twice (R16, R17) and the artifacts that restate them did not. A README example that no consumer derives is a deferred consumer, not a finished one.
+- **ARCH-MOCK** — pass with note. The terminal is behind one seam (`display`), the stateful double (`recordDisplay`) now answers `Size()` with a real default rather than a zero, and live conformance exists behind `-tags conformance`. The conformance rows cannot run in a sandboxed review; that gap is tracked in `#37`.
+- **ARCH-CONSTRAINTS** — pass. `Resize` returns immediately when the width is unchanged, so the per-frame cost is one comparison plus one mutex-guarded `Size()`; `displayRows` over a 78-column string is negligible at keystroke rates, and the plan's declared envelope (O(visible rows) per frame) still holds.
+
+## 7. Plan revision recommendations
+
+- **R18 — the sweep R17 owed.** Name the enumeration (site-of-move comment, `atlas/define.md`, README prose + key table + example block, both Done-when tables) and record that it was run. Amend plan Done-when row 3 to state the refusal, and add two rows citing the R17 tests.
+- **Issue-file sweep:** `workshop/issues/000040-form-board.md:82` (Done-when row 4) states Enter's contract unconditionally — the issue's own Revisions section already declares that "the issue's own Spec and Done-when are artifacts".
+- **`## Log`:** the issue's Log still ends at the operator's sitting. Rounds 3, 4 and R17 are recorded in the plan, the sidecar, the ledger and `lessons.md` — every surface except the tracker a reader reaches first.
+
+```findings
+dispose:
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Verified by revert in a scratch worktree — both remaining rows redden their own test.
+  - id: BR-15
+    disposition: not-addressed
+    note: |
+      All five code comments unchanged (board.go:276/510/558, play_loop.go:677/709); README:101 unchanged; atlas:2069's claim became true only because the CODE moved, while atlas:2061 became false in the same commit.
+  - id: BR-16
+    disposition: not-addressed
+    note: |
+      The issue's Log still ends at the operator's sitting; rounds 3, 4 and R17 are unrecorded there.
+findings:
+  - id: new
+    severity: Important
+    family: comment-asserts-absent-behaviour
+    title: |
+      R17 changed Enter's contract and moved Board.Resize, and swept only the plan's Revisions — seven live artifacts still state the old behaviour
+    detail: |
+      FIFTH finding in this family — do NOT patch the seven sites. Measured set, all current: play_loop.go:289-298 ("AND THE FORM, if it lays itself out (R9)... `sz.cols` rather than `opt.width`") sits directly above `// NO Resize HERE` with no separator, and neither a Resize nor sz.cols reaches the board there any more; play_loop.go:624-632 and atlas/define.md:2057 still call the dropped rows "harmless in sequence", the exact sentence R17's own commit message identifies as the error; atlas/define.md:2061-2062 names "the loop's resize case" as Board.Resize's call site; atlas and README say nothing about display.Size() or the Enter refusal; README:133 and :149 state Enter's contract unconditionally; plan:411 and issue:82 do the same and neither R17 test is cited anywhere in the plan. THE RULE: a decision that changes a drawn or keyed contract has an enumerable sweep set that is the same every time — the comment at the site the mechanism moved FROM, atlas/define.md, README prose + key table + example block, and both Done-when tables. Write that enumeration into R18 and run it in the same commit. TestPlanCitesTestsThatExist catches an unresolvable citation; nothing catches shipped behaviour with no citation, which is what happened here.
+  - id: new
+    severity: Important
+    family: comment-asserts-absent-behaviour
+    title: |
+      The README's only picture of the board renders the design R16 deleted, and nothing derives it
+    detail: |
+      SIXTH in the family, and a distinct trigger from the one above. cmd/define/README.md:107-113 shows `[y] keel`, `[n] quokka`, `[n] sycophantic`, `[y] run` — the mark standing where the key was — and a label row `[c] [e] [f] [g]`, the old sequence with its hole at `d`. R16 deleted both after the operator's sitting, and the README's own prose contradicts the picture eight lines below (`:124` "0-9 then a-f, in order and with no gaps"; `:128` "keeps its key"). doc_sync_test.go pins the prompt LINE only, so the grid block is a hand-maintained restatement with no consumer and no guard. The enforceable fix is to make it derive: build a play.Board over the block's own words, mark the cells the block shows marked, and assert the fenced block's cell lines equal board.Prompt()'s grid rows.
+  - id: new
+    severity: Minor
+    family: frame-budget-hardcoded-not-measured
+    title: |
+      boardWhole is measured against gradePrompt while the frame draws boardPrompt, and the two differ by a row at some widths
+    detail: |
+      THIRD in this family — do not special-case the widths. play_loop.go:203 charges the frame `displayRows(gradePrompt(q), termCols)` and then draws `boardPrompt(q, boardWhole)`. Measured: gradePrompt is 78 visible columns and the refusal row is 79, so displayRows disagrees at cols 78 (1 vs 2), 39 (2 vs 3) and 26 (3 vs 4) — the drawn prompt is one row taller than the budget charged and one extra footer row is dropped. Bounded to cosmetics: Enter is already held in that state and an unpainted row is unclickable, and because the refusal is never shorter the error is always in the safe direction. The rule is the family's own — the budget must measure the string that will actually be drawn, so compute the prompt first and measure THAT, rather than measuring a sibling of it.
+  - id: new
+    severity: Minor
+    family: one-measurement-two-owners
+    title: |
+      The board's fit formula is spelled twice — at selection in boardFits and at draw in show() — and only one copy enforces minWrapWidth
+    detail: |
+      play_loop.go:833 (boardFits) and play_loop.go:203 (show) both spell `fitsABoard(rows, board.Rows(), displayRows(gradePrompt(board), cols))`. ARCH-DRY: one helper taking (form, rows, cols) asked at both moments. The divergence is already visible — boardFits refuses `opt.width < minWrapWidth` and the draw-time copy does not, so a board narrowed below minWrapWidth by resize can still report whole. Not reachable as harm today (the row arithmetic makes boardWhole false well before the words become unreadable), which is exactly why it should be consolidated before it is.
+  - id: new
+    severity: Minor
+    family: comment-asserts-absent-behaviour
+    title: |
+      atlas/repo-guards.md's guard inventory does not list TestPlanCitesTestsThatExist, added in this window
+    detail: |
+      The table at atlas/repo-guards.md:107-114 inventories the repo guards and includes TestPlanTablesNameEntitiesThatExist, the new guard's direct sibling. TestPlanCitesTestsThatExist shipped in 80a4044 as BR-3's class fix and has no row. An inventory that under-states is the same failure as prose that over-states: the next reader cannot tell what is guarded.
+```

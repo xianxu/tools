@@ -200,7 +200,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// grid rows are simply not drawn — and Enter takes every unmarked
 			// word as Wrong, including words the learner never saw. That is a
 			// box halved per word on a keystroke meaning "ask me these again".
-			boardWhole = fitsABoard(termRows, g.Rows(), displayRows(gradePrompt(q), termCols))
+			boardWhole = boardFitsIn(q, termRows, termCols)
 			// ONE BLANK BUFFER LINE, the first time this board is drawn.
 			//
 			// A board writes nothing else to the buffer, so without it the grid
@@ -286,20 +286,14 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// the screen's own cols, which Resize is what updates. Setting a
 			// second width here would be a second answer to the same question.
 			view.Resize(sz.rows, sz.cols)
-			// AND THE FORM, if it lays itself out (R9). A board built for eighty
-			// columns has 74-column rows; at forty the terminal wraps each into
-			// two, a footer entry stops being one physical row, and a click on
-			// the continuation carries a column that means another word. Its
-			// marks are already in the log and cannot be retracted, so the board
-			// is relaid out rather than replaced.
+			// NOTHING IS TOLD ABOUT THE FORM HERE, and that is R17.
 			//
-			// `sz.cols` rather than `opt.width`: this is the width the SCREEN
-			// paints at, and the board has to agree with the paint, not with a
-			// wrap policy that answers 0 on a narrow terminal.
-			// NO Resize HERE. show() lays the current form out for the terminal
-			// as it is, every frame — which covers this resize and also the
-			// board that becomes current later, which this call could not (R17).
-			// A second call here would be a second owner of the same fact.
+			// This case used to relayout the board — correctly for the one on
+			// screen, and for no other: a board that became current later was
+			// built at the old width and painted too wide, so its rows wrapped
+			// and a click on a continuation row meant a different word. `show`
+			// is the one place that draws, so it is the only place that can
+			// promise a layout for every board, and it does it every frame.
 			//
 			// AND NO RE-SELECTION. The board stays, at the new shape, even if the
 			// terminal is now too short to draw it whole — D15's rule holding
@@ -307,7 +301,8 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// asked; this board's marks are already in the log, so "send it to
 			// 2.3 instead" would mean re-asking answered words. What a short
 			// terminal loses is the bar, then the panel, then grid rows — and
-			// Enter is held while any of them are missing.
+			// Enter is held while any of them are missing, which is what makes
+			// those losses survivable rather than "harmless" (R18).
 			show()
 			continue
 		case got, ok := <-keys:
@@ -581,7 +576,37 @@ func boardPrompt(q play.Question, whole bool) string {
 	if whole {
 		return gradePrompt(q)
 	}
-	return "window too short to show the whole board — mark what you see, or Ctrl-C to stop"
+	return boardRefusal
+}
+
+// boardRefusal is the prompt row when the window cannot show the whole board.
+//
+// NO WIDER THAN THE KEYS ROW IT REPLACES, which is a budget constraint rather
+// than a style one: `Paint` charges the frame for the prompt it is given, and a
+// taller replacement would drop one more footer row than the fit was computed
+// against. Pinned by TestTheRefusalRowIsNoWiderThanTheKeysRow, because "these
+// two strings are the same width" is not a fact anyone will re-check by eye.
+const boardRefusal = "window too short for the whole board — mark what you see, Ctrl-C to stop"
+
+// boardFitsIn is THE answer to "can this board be drawn whole here", and it is
+// asked at both moments: at SELECTION, where a board that does not fit is not
+// offered (D15), and at every DRAW, where the answer decides whether Enter may
+// spend it (R17).
+//
+// One helper because it was two spellings of one formula, and they had already
+// diverged: the selection copy refused a terminal under `minWrapWidth` and the
+// draw-time copy did not, so a board narrowed below that by a resize still
+// reported itself whole. Not reachable as harm today — the row arithmetic turns
+// the answer false well before the words become unreadable — which is the reason
+// to consolidate it rather than a reason not to (ARCH-DRY).
+func boardFitsIn(q play.Question, termRows, termCols int) bool {
+	g, ok := q.(play.Grid)
+	if !ok || termCols < minWrapWidth {
+		// Below minWrapWidth this program already treats the terminal as too
+		// narrow to lay text out at all, and a board there is columns of stubs.
+		return false
+	}
+	return fitsABoard(termRows, g.Rows(), displayRows(gradePrompt(q), termCols))
 }
 
 // boardPalette is how a board's marks are painted, and it is the ONE place this
@@ -623,13 +648,19 @@ func boardPalette(opt options) play.Palette {
 //
 // A BOARD CAN END UP IN A FOOTER THAT DROPS ROWS, and D15's "never" was measured
 // wrong (R11). It holds at SELECTION — boardsFor refuses a board the terminal
-// cannot draw whole — and a resize afterwards is a shape nobody chose. What the
-// order buys is that the losses are harmless in sequence: the bar (a figure), the
-// panel (cosmetic), then grid rows, which are conspicuously absent and, because
-// they were never painted, are not clickable either (FooterRowAt answers nothing
-// for a row fitFooter dropped). The one thing that must not go is the statement
-// of what a click will MEAN, and that is why the mode moved to the prompt row,
-// which Paint clips last.
+// cannot draw whole — and a resize afterwards is a shape nobody chose.
+//
+// What the order buys is that the losses are SURVIVABLE in sequence: the bar (a
+// figure), the panel (cosmetic), then grid rows. An earlier version of this
+// comment called them "harmless", which was checked against the CLICK map —
+// FooterRowAt answers nothing for a row that was never painted — and was false
+// of the SWEEP, which does not go through that map at all: Enter took every
+// unmarked word including ones the window never drew. That is why Enter is now
+// held while the board is not whole (R17), and why a safety word has to name the
+// path it was checked on.
+//
+// The one thing that must not go is the statement of what a click will MEAN, and
+// that is why the mode moved to the prompt row, which Paint clips last.
 func boardFooter(q play.Question, fig sittingFigures) []string {
 	return append(strings.Split(q.Prompt(), "\n"), sittingBar(fig))
 }
@@ -821,19 +852,16 @@ func boardsFor(keys []string, prog map[string]schedule.Progress, opt options) (s
 // treats the terminal as too narrow to lay text out at all, and a board there
 // would be columns of truncated stubs.
 func boardFits(words []string, opt options) bool {
-	if opt.width < minWrapWidth {
-		return false
-	}
 	cells := make([]play.Cell, len(words))
 	for i, w := range words {
 		cells[i] = play.Cell{Word: w}
 	}
 	// NO PALETTE on the probe: escape sequences cost no columns, so they cannot
 	// change how tall the board is, which is the only thing being asked here.
-	probe := play.NewBoard(cells, opt.width, play.Palette{})
-	// THE PROMPT THE LOOP WILL ACTUALLY DRAW, measured at this width — the same
-	// expression livePrompt returns for this form, so the two cannot disagree.
-	return fitsABoard(opt.rows, probe.Rows(), displayRows(gradePrompt(probe), opt.width))
+	// THE SAME QUESTION THE FRAME WILL ASK, through the same helper — so a board
+	// offered at selection is one the draw agrees is whole, and neither can
+	// acquire a rule the other lacks.
+	return boardFitsIn(play.NewBoard(cells, opt.width, play.Palette{}), opt.rows, opt.width)
 }
 
 // todaysQuestions builds the queue: fold the log, ask the schedule, render each

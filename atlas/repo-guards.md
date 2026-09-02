@@ -110,6 +110,7 @@ corrections somewhere nothing reads.
 | `TestProseDoesNotSpellStaleRuntimeArtifactNames` | README, `atlas/`, `workshop/projects/` | a stale filename in a doc read as current truth |
 | `TestPlanTablesNameEntitiesThatExist` | active plans' Core-concepts tables | a plan naming a SYMBOL the tree does not declare |
 | `TestNoArtifactNamesARetiredSymbol` | non-test Go, README, `atlas/`, active plans | a RENAMED symbol surviving anywhere read as current |
+| `TestPlanCitesTestsThatExist` | every backticked `Test*` in an active plan | a Done-when row citing a pin that was never written, which reads as evidence |
 | `TestTheCResolverAndTheGoSymbolListAgree` | the cgo preamble vs `dcsPrivateSymbols` | a `dlsym` the conformance check does not cover |
 | `TestCaptureScriptUsesTheCuratedDictionaries` | `capture.sh` vs `curated` | fixtures captured from a dictionary production never asks |
 

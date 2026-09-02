@@ -3225,3 +3225,27 @@ built at the old width and painted too wide.
 things are drawn.** Ask the screen for its shape there; do not keep a copy, which
 is correct until the first resize you miss. Make the setter idempotent so calling
 it every frame costs a comparison.
+
+## The sweep set for a drawn-or-keyed contract is the same every time (`#40` R18)
+
+Five findings in one issue said "prose asserts behaviour that is absent". The
+fifth one finally named the fix: **stop patching sites and write the enumeration
+down.** A change to what is drawn, or to what a key does, goes stale in exactly
+seven places:
+
+1. the comment where the mechanism moved FROM — it describes a call that is gone
+2. the comment where it moved TO — it inherits the old reasoning verbatim
+3. `atlas/*.md`, which names call sites and repeats safety words
+4. README prose, which states contracts unconditionally
+5. the README key table — a key that gained a condition still reads absolute
+6. the README example block — a picture with no consumer
+7. the plan's Done-when AND the issue's Done-when, both
+
+Run it in the SAME commit. What no guard catches is shipped behaviour with **no**
+citation — a guard can only check that a citation resolves, and both of R17's
+tests existed while neither was named. The checklist is the substitute.
+
+Row 6 is the one that can stop being prose: make the example DERIVE. `#40`'s
+README board block now builds a real form and asserts the fenced rows are what it
+draws — it had gone stale within hours of the sitting that changed the design,
+while the prose eight lines below contradicted it.

@@ -408,14 +408,14 @@ Every row's pin is a PREDICATE OVER BEHAVIOUR. **Every `red when` cell is EXECUT
 |---|---|---|---|
 | 1 | a sitting of eligible words presents them as a grid | `TestASittingOfDueWordsIsABoard` | `boardsFor` sends them to 2.3 one at a time |
 | 2 | every mark reaches the log as it happens | `TestEveryMarkOnABoardIsRecordedImmediately` — counting store, N marks, N events before the sitting ends | marks are batched to the end, losing them to Ctrl-C |
-| 3 | **Enter takes the unmarked as `No`, and SPACE DOES NOTHING AT ALL** | `TestEnterSpendsABatchFormAndSpaceDoesNot`, `TestToInputSplitsEnterFromSpaceAndCarriesTab`, `TestEveryInputKindIsAnsweredForABatchForm` (R7) | the merged Enter/space kind spends the board, so a casual keystroke demotes sixteen words — or space is merely harmless rather than inert, and files a blank reveal while pronouncing an arbitrary cell |
+| 3 | **Enter takes the unmarked as `No`, SPACE DOES NOTHING AT ALL, and Enter is HELD while the board is not drawn in full** | `TestEnterSpendsABatchFormAndSpaceDoesNot`, `TestToInputSplitsEnterFromSpaceAndCarriesTab`, `TestEveryInputKindIsAnsweredForABatchForm` (R7), `TestEnterIsHeldWhileTheBoardIsNotDrawnInFull` (R17) | the merged Enter/space kind spends the board, so a casual keystroke demotes sixteen words; or space is merely harmless rather than inert, and files a blank reveal while pronouncing an arbitrary cell; or Enter sweeps words a short window never drew |
 | 4 | **Ctrl-C leaves unmarked words UNTOUCHED, and marked ones recorded** | `TestCtrlCCancelsABoardWithoutMovingUnmarkedWords` — fold the log after, boxes unchanged | a board writes its marks at the end instead of as they land |
 | 5 | a `No` mark does not freeze the board | `TestABoardRunsThroughTheSession`, and `TestEveryInputKindIsAnsweredForABatchForm` asserts NO kind sets `Graded` | the miss-on-hidden branch sets `Graded` for a batch form |
 | 6 | **the mouse-less path works, and `d` still drops** | `TestABoardIsMarkableByKeyAlone`, `TestDOnABoardIsNotACellLabel` | labels include `d`, or the keyboard path is missing and the board degrades to "everything is No" |
 | 7 | a click marks on a board and plays everywhere else | `TestAClickOnABoardMarksIt`, and `#38`'s `TestPlayClickActsAndIsNotAnAnswer` UNCHANGED | the loop learns what a board is instead of asking |
 | 8 | the session still learns nothing about which form is asking | `TestSessionIsFormAgnostic` unchanged, plus `TestTheSessionNamesNoForm` — a grep for every concrete form in `session.go`'s code, with a premise check that the capabilities are there | `Apply` type-switches instead of consulting `Batch` |
 | 9 | **every review event records the form that asked** | `TestEveryRecordNamesItsForm` over all three forms and all three record-building paths, `TestAReviewEventNamesItsFormOnDisk`, `TestYAMLRoundTripsTheFormThatAsked` | the field is written for one form and defaulted for the others, which is worse than absent |
-| 10 | **a board is never drawn clipped** | `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard` and `TestFitsABoardCountsTheWholeLiveEdge`, both across a WIDTH axis (R8), and `TestPaintFitsTheTerminalAndParksTheCursor` UNCHANGED | `fitFooter` is given a floor, so `footerRows` exceeds `termRows - promptRows`, the terminal scrolls, and a click lands on the wrong word |
+| 10 | **a board is never drawn clipped, and one drawn short cannot be swept** | `TestAShortTerminalGetsMeaningChoiceNotAClippedBoard` and `TestFitsABoardCountsTheWholeLiveEdge`, both across a WIDTH axis (R8); `TestABoardRelaysOutForTheWidthItIsDrawnAt` and `TestANarrowingResizeKeepsTheBoardsClickMapHonest` (R9); `TestABoardBuiltBeforeAResizeIsStillLaidOutForTheTerminal` (R17); and `TestPaintFitsTheTerminalAndParksTheCursor` UNCHANGED | `fitFooter` is given a floor, so `footerRows` exceeds `termRows - promptRows`, the terminal scrolls, and a click lands on the wrong word |
 | 11 | the outcome survives the sitting | `TestABoardLeavesItsRelearnListInTheTranscript`, `TestABoardWithNothingToRelearnWritesNoLine`, `TestCtrlCOnABoardStillLeavesItsRelearnList` | the board is live edge and vanishes whole |
 | 12 | the bar counts WORDS | `TestTheBarCountsWordsNotSlots` | `total` stays `len(s.Questions)` and a 20-word sitting reads "0 of 2" |
 | 13 | the board is materially cheaper per word, **measured as what the learner READS** | `TestABoardCostsFarLessPerWordThanMeaningChoice` — one keystroke per word AND at least ten to one on transcript lines (R5) | the grid asks for more than one keystroke per word, or the board's rows reach the buffer and the reading cost collapses to 2.3's |
@@ -853,3 +853,56 @@ loop refuses, not the session** — what was DRAWN is the terminal's business, a
 `play` is guarded pure precisely so it never learns about terminals (D6's rule
 for viewport gestures, applied to a destructive key). Marking still works and
 Ctrl-C is still free, so nothing is stuck.
+
+### 2026-09-01 (R18) — the sweep set for a drawn-or-keyed contract, written down because it is the same every time
+
+R17 changed what `Enter` means and moved where a board is laid out, and swept
+only this file's `## Revisions`. The close review found **seven live artifacts
+still stating the old behaviour** — the fifth finding in the
+`comment-asserts-absent-behaviour` family in one issue.
+
+Patching seven sites is not the fix. The set is ENUMERABLE and it is the same
+every time, so here it is as a checklist to run in the SAME COMMIT as any change
+to what is drawn or what a key does:
+
+| # | surface | why it goes stale |
+|---|---|---|
+| 1 | the comment at the site the mechanism moved FROM | it describes a call that is no longer there, and sits next to the new one |
+| 2 | the comment at the site it moved TO | it inherits the old reasoning verbatim |
+| 3 | `atlas/define.md` | the map names call sites and repeats safety words |
+| 4 | `README.md` prose | states contracts unconditionally |
+| 5 | `README.md` key table | one row per key, and a key that gained a condition still reads absolute |
+| 6 | `README.md` example block | a picture is a restatement with no consumer — make it DERIVE (BR-18) |
+| 7 | the plan's Done-when + the issue's Done-when | two tables, both claims about behaviour, and a new pin belongs in both |
+
+**What no guard catches, and why this is prose.** `TestPlanCitesTestsThatExist`
+catches a citation that cannot be resolved; nothing catches shipped behaviour with
+no citation at all, which is exactly what happened — both R17 tests existed and
+neither was named in the plan. A guard for "every behaviour is cited" would need
+to know what the behaviours are. The checklist is the substitute, and running it
+in the same commit is what makes it cheap.
+
+**One surface moved out of prose in this round.** The README's board picture now
+DERIVES: `TestREADMEDrawsTheBoardTheFormActuallyDraws` builds a real
+`play.Board` over the block's own words and asserts the fenced rows are what it
+draws. It had gone stale within hours of the operator's sitting — showing a mark
+where the key was, and the old label row with its hole at `d` — while the prose
+eight lines below it said the opposite.
+
+### 2026-09-01 (R19) — two owners of the fit, and a refusal row that outgrew its budget
+
+Both Minors from round 5, both in families this issue has already paid for.
+
+**`boardFitsIn` is the one fit formula**, asked at selection and at every draw. It
+was spelled twice and had already diverged: the selection copy refused a terminal
+under `minWrapWidth` and the draw-time copy did not, so a board narrowed below
+that by a resize still reported itself whole. Unreachable as harm — the row
+arithmetic turns the answer false long before the words become unreadable — which
+is the argument for consolidating it, not against.
+
+**The refusal row is no wider than the keys row it replaces.** `Paint` charges the
+frame for the prompt it is given and the fit is computed from the KEYS row, so a
+taller replacement drops one more footer row than the fit accounted for. Measured
+at 78 against 79 columns, disagreeing at widths 78, 39 and 26. Cosmetic — Enter
+is already held in that state — and now pinned, because "these two strings are
+the same width" is not a fact anyone re-checks by eye.

@@ -105,10 +105,10 @@ saying whether you still have it, not proving it.
 ```
 $ define --play
 marking [yes] no, Tab switches, click or key marks, Enter ends, Ctrl-C to stop
-[0] arrondissement  [1] bailiwick       [y] keel            [3] mesa
-[4] ephemeral       [n] quokka          [6] potassium       [7] ligament
-[n] sycophantic     [9] concrete        [a] parrot          [y] run
-[c] light           [e] bank            [f] set             [g] obsequious
+[0] arrondissement  [1] bailiwick       [2] keel            [3] mesa
+[4] ephemeral       [5] quokka          [6] potassium       [7] ligament
+[8] sycophantic     [9] concrete        [a] parrot          [b] run
+[c] light           [d] bank            [e] set             [f] obsequious
 
 sycophantic  behaving in an obsequious way to gain advantage
 12 of 41 · ~12 reviews/day · 3.2 new words/day at 20 a sitting
@@ -134,6 +134,11 @@ nothing to take back.
 all of these again". `Ctrl-C` does the opposite and costs nothing: what you
 marked is saved, and what you did not is simply not reviewed today.
 
+**`Enter` is held if the window is too short to show the whole board**, and the
+prompt line says so. It would otherwise demote words that were never on screen —
+a short window drops the bottom rows of the grid. Marking what you can see still
+works, and `Ctrl-C` is still free; make the window taller, or stop.
+
 A word marked yes counts as a correct answer, never as a confident one — the
 grid is self-report, so it can never earn the double promotion a real retrieval
 test can. As a board closes it leaves one line naming the words you marked no.
@@ -146,7 +151,7 @@ test can. As a board closes it leaves one line naming the words you marked no.
 | `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
 | click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
 | Tab | board: switch between marking yes and marking no |
-| Enter | board: finish, taking everything unmarked as "no". Elsewhere: see the answer, like space |
+| Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
 | space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
 | `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead: a grid has no single current word to remove |
 | PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |

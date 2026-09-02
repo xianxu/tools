@@ -2052,21 +2052,37 @@ every element whose absence merely makes it smaller.
 
 **A board can end up in a footer that drops rows.** D15's "never" holds at
 SELECTION — `boardsFor` refuses a board the terminal cannot draw whole — and a
-resize afterwards is a shape nobody chose. The board is not re-selected then:
-its marks are in the log, so sending those words to 2.3 would re-ask words
-already answered. What the footer's order buys is that the losses are harmless in
-sequence — the bar, the panel, then grid rows, which are conspicuous when missing
-and not clickable when never painted.
+resize afterwards is a shape nobody chose. The board is not re-selected then: its
+marks are in the log, so sending those words to 2.3 would re-ask words already
+answered. What the footer's order buys is that the losses are SURVIVABLE in
+sequence — the bar, the panel, then grid rows.
 
-**And the board relays out for the width it is DRAWN at** (`Board.Resize`, called
-from the loop's resize case with the SCREEN's cols, not `opt.width` — that is a
-wrap policy that answers 0 on a narrow terminal). Without it a board laid out for
-eighty columns keeps 74-column rows at forty, each wraps into two, a footer entry
-stops being one physical row, and a click on the continuation carries a column
-that means another word. `FooterRowAt` reports which physical row of an entry was
-hit and `formCell` refuses any but the first, which is the same guarantee at the
-seam. **Every quantity the fit and the click map depend on is read from the
-terminal as it is at draw and click time, never fixed at selection.**
+**"Harmless" was the wrong word and cost two review rounds.** It was checked
+against the CLICK map, where it is true: `FooterRowAt` answers nothing for a row
+that was never painted, so a click cannot reach one. A SWEEP does not go through
+that map — `Enter` took every unmarked word as wrong, including words the window
+never drew, halving their boxes on one keystroke. So **`Enter` is HELD while the
+board is not drawn in full**, and the prompt row says why; marking still works and
+Ctrl-C is still free. The loop refuses rather than the session, because what was
+DRAWN is the terminal's business and `play` is guarded pure — D6's rule for
+viewport gestures, applied to a destructive key.
+
+**The board relays out for the width it is DRAWN at**, and `show` is where that
+happens — the one place that draws, so the only place that can promise it for
+EVERY board. It was in the resize handler first, which fixed the board on screen
+at that instant and no other: the next board was built by `todaysQuestions` at
+the old width, painted with rows too wide, wrapped, and brought the wrong-word
+click back. `show` asks the screen for the terminal's shape through
+`display.Size` rather than the loop keeping a copy, which would be right until
+the first `SIGWINCH` it missed; `Board.Resize` is idempotent, so a frame that
+changes nothing costs a comparison.
+
+At the seam, `FooterRowAt` reports which physical row of an entry was hit and
+`formCell` refuses any but the first — the same guarantee, in case a future
+multi-row entry or a missed resize gets past the first. **Every quantity the fit
+and the click map depend on is read from the terminal as it is at draw and click
+time, never fixed at selection**, and `boardFitsIn` is the single formula both
+moments ask.
 
 **A cell is marked ONCE.** Every mark emits its `OutcomeRecord` as it lands,
 which is what makes Ctrl-C lossless; the price of writing immediately is that
