@@ -3196,3 +3196,32 @@ function a hunk lands in.
 **Commit, then run the guard, then write what it says.** Arguing with a
 mechanism that reads the tree from an argument about line numbers is a way to
 spend a round and be wrong at the end of it.
+
+## "Harmless" is a claim about a mechanism, not about a state (`#40` R17)
+
+A shrunken terminal drops trailing footer rows, so some of a board's grid rows go
+unpainted. I checked that against the click map — `FooterRowAt` answers nothing
+for a row that was never drawn, so a click cannot reach one — and wrote the
+losses down as harmless in three places.
+
+Enter does not go through the click map. It sweeps every unmarked word as wrong,
+including the ones that were never on screen: boxes halved on one keystroke, for
+words the learner had no chance to look at.
+
+The word "harmless" was carried from the mechanism it was verified against to a
+different one, silently. **A safety claim names the path it was checked on.** If
+a second path reaches the same state, it is a second claim and needs its own
+check — and the enumeration of paths is the deliverable, exactly as it was for
+`InputKind × Batch`.
+
+## Read the terminal at DRAW time, and only there (`#40` R17)
+
+Two separate bugs, one shape: a fact about the terminal read once, where it had
+to be read every frame. The resize handler told the CURRENT form its new width —
+fixing the board on screen at that instant and no other, while the next board was
+built at the old width and painted too wide.
+
+**The place that draws is the only place that can promise anything about how
+things are drawn.** Ask the screen for its shape there; do not keep a copy, which
+is correct until the first resize you miss. Make the setter idempotent so calling
+it every frame costs a comparison.

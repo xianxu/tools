@@ -341,7 +341,8 @@ chosen at the new height.
 | `gradePrompt` | `cmd/define/play_loop.go` | modified | PURE — asks `reservedKeys` rather than naming the constant, because `d` is refused on a board; the mode rides on it as of R11, via the form's own `Keys()` (R2, R11) |
 | `reservedKeys` | `cmd/define/play_loop.go` | new | PURE — the session's reserved keys FOR THIS FORM. `d` is not among them for a form holding many (D12, R2) |
 | `boardFooter` | `cmd/define/play_loop.go` | new | PURE — the board's own rows, then the bar. One line, because the form owns the rest (R1) |
-| `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole (D15) |
+| `fitsABoard` | `cmd/define/play_loop.go` | new | PURE — is this terminal tall enough to draw the board whole. Asked at SELECTION (D15) and again at every DRAW, where its answer decides whether Enter may spend the board (R17) |
+| `boardPrompt` | `cmd/define/play_loop.go` | new | PURE — the board's keys, or the reason Enter is held. The row `Paint` clips last is where a refusal has to explain itself (R17) |
 | `boardsFor` | `cmd/define/play_loop.go` | new | PURE — partitions the day's keys into boards and single questions at box ≥ 3 (D4) |
 | `fitFooter` | `cmd/define/screen.go` | unchanged | PURE — D15 retired D10's floor: a board that does not fit is not OFFERED, which keeps this function's budget invariant true rather than negotiating with it (R2) |
 | `sittingWords` | `cmd/define/play_loop.go` | new | PURE — the bar's `total` becomes the WORD count. In the loop, where `fig.total` is set, rather than in `sittingFigures`, which never knew about questions at all (D8, R4) |
@@ -360,7 +361,7 @@ chosen at the new height.
 
 | Name | Lives in | Status | Wraps |
 |------|----------|--------|-------|
-| `display` | `cmd/define/replraw.go` | modified | the seam gains ONE question: which footer row a click landed on. The editor answers "none", which is the whole of its involvement (D10) |
+| `display` | `cmd/define/replraw.go` | modified | the seam gains TWO questions: which footer row a click landed on (D10), and the terminal's shape as it is NOW, so a form that lays itself out can be told at draw time (R17). The editor answers "none" to the first, which is the whole of its involvement |
 | `FooterRowAt` | `cmd/define/screen.go` | new | the terminal — `Paint` already computes the footer's origin and simply does not report it. This is that report, and it is what makes the live edge clickable |
 | `toInput` | `cmd/define/play_loop.go` | modified | the keyboard — a row for Tab, which is dropped today (D13), and Enter split from space (D14) |
 | `formCell` | `cmd/define/play_loop.go` | new | the mouse — asks the screen which footer entry and the form which cell, and does the subtraction between two answers it is not qualified to give itself (D11) |
@@ -816,3 +817,39 @@ word, guards that certified nothing — and none of them found these four, becau
 all four are correct code that reads wrong to the person using it. **A boundary
 review checks that the thing does what the plan says; only a sitting checks
 whether the plan said the right thing.**
+
+### 2026-09-01 (R17) — draw time is the only time, and a sweep is not a click
+
+BR-8's enumeration had four rows. R9 closed two; the review measured the other
+two still open, and both were the same mistake in different clothes — a fact read
+once, where it had to be read every frame.
+
+**A board that becomes current AFTER a resize was never told.** `g.Resize` was
+called from the resize case on `s.Current()`, which fixes the board on screen at
+that instant and no other; the next board was built by `todaysQuestions` at the
+old width and painted with rows too wide for the window. Its rows wrapped, a
+footer entry stopped being one physical row, and the wrong-word click was back.
+
+`show` is the ONE place that draws, so it is the only place that can promise this
+for every board. It asks the screen for the terminal's shape — a new `Size` on
+the `display` seam — rather than the loop keeping a copy, which would be correct
+until the first `SIGWINCH` it happened not to see. `Resize` is idempotent, so
+this costs a comparison per frame.
+
+**And Enter took words the window never drew.** `fitFooter` drops trailing footer
+rows, so a shrunken terminal simply does not paint some grid rows — and Enter
+records `Wrong` for every unmarked word, including those. One keystroke, boxes
+halved, on words the learner had no chance to look at.
+
+**I had written those dropped rows down as harmless, two revisions ago.** They
+are harmless to a CLICK, which cannot reach a row that was never painted —
+`FooterRowAt` answers nothing for it. A SWEEP does not go through the click map
+at all. The word "harmless" was carried from one mechanism to another without
+being re-checked, which is the same failure as a stale prose enumeration and is
+recorded as such.
+
+Enter is now held while the board is not whole, and the prompt says why. **The
+loop refuses, not the session** — what was DRAWN is the terminal's business, and
+`play` is guarded pure precisely so it never learns about terminals (D6's rule
+for viewport gestures, applied to a destructive key). Marking still works and
+Ctrl-C is still free, so nothing is stuck.
