@@ -1,6 +1,6 @@
 ---
 id: 000042
-status: blocked
+status: working
 deps: [tools#40, tools#44]
 github_issue:
 created: 2026-09-01
@@ -83,6 +83,40 @@ wrong costs least.
   section, and `schedule`/`play` doc comments that name 2.1 as the fallback that
   always works.
 
+### The board learns to DROP, because it is about to become the only form some words see
+
+**Widened 2026-09-02, operator's call.** `d` is the only drop path this program
+has — `store.Forget` has exactly one caller, `play_loop.go`'s `OutcomeDrop` — and
+on a board `d` is cell 13, not a drop (`#40` D12: a grid has no single current
+word, so the session hands the key to the form). Sending untestable young words to
+the board therefore removes the ONLY way to remove them, and on a deck of one to
+three words every word is untestable, so a new learner could not delete a typo'd
+capture at all. That is the population most likely to need it.
+
+**Proposed mechanism: `Tab` cycles THREE modes — yes, no, drop.** The board
+already owns a mode, already draws it on the prompt row, and already lands it with
+the same keys and clicks; a third value costs no new gesture and no new key. The
+prompt row is also the last thing a short window gives up (`#40` R11), so the live
+mode is always legible.
+
+- **Rejected: a modifier or an uppercase key.** `Grade` folds case deliberately,
+  so `D` already means cell 13; un-folding it to mean "drop d" would make the one
+  key this issue is about mean two things depending on shift.
+- **Rejected: a prefix gesture** (`x` then a cell). Non-sticky, which is safer,
+  but it is a second input grammar on a form whose whole argument is that one
+  keystroke does one thing.
+- **The risk a mode carries is stickiness**, and it is bounded rather than
+  dismissed: `Forget` does NOT remove events (`store.go`), so a dropped word
+  returns to the deck with its history intact the next time it is looked up. A
+  board therefore closes with a `dropped: …` line beside its `relearn: …` one, so
+  the action is in the transcript and the recovery is a lookup.
+
+**Also in scope, because this issue is about that key:** `Board.Grade`'s doc still
+says *"`d` and `D` never arrive: toInput takes them first, and boardLabels has no
+cell for them either way."* Both halves are false since `#40` put `d` back in the
+label alphabet. A comment describing the opposite of the code, on the key this
+issue changes, is fixed here.
+
 ## Done when
 
 - [ ] A word with no usable distractors reaches a BOARD, at every box, pinned by a test over a deck that spans the threshold and asserts both sides.
@@ -90,6 +124,9 @@ wrong costs least.
 - [ ] The declared fallback reasons still derive into the README, and still name three — the reasons did not change, only what they select.
 - [ ] A word that can be neither tested nor drawn is skipped with a message that names the cause, and the sitting continues.
 - [ ] Measured: the sitting a young deck gets is no longer than it was — the board packs, so this must not add screens.
+- [ ] A word can be dropped from a board, by key and by click, and the drop reaches `store.Forget` — pinned end to end rather than at the form, since the form is not what removes anything.
+- [ ] The live mode is unambiguous on the prompt row in all three states, and a board closes naming what it dropped.
+- [ ] `Board.Grade`'s doc no longer claims `d` never arrives.
 
 ## Plan
 
@@ -107,3 +144,22 @@ NOAD sends `comports` to `comport`.
 boundary-review rounds and still has an open Critical (a narrowing resize under a
 live board). Widening a closing issue to delete a form is the scope creep the
 constitution warns about, and the selection rule this changes is `#40`'s own D4.
+
+
+## Revisions
+
+### 2026-09-02 — the board gains a drop, and the issue is wider for it
+
+**Reason:** the Spec sent untestable young words to the board without noticing
+that `d` is the only drop path in the program and does not drop on a board. On a
+young deck that is every word, so `#42` as filed would have removed the only way
+to delete a mistaken capture from exactly the learner most likely to have made
+one.
+
+**Delta:** `## Spec` gains "The board learns to DROP"; three Done-when rows added.
+Scope grew by one mode value, one transcript line and a stale doc comment.
+
+**Alternatives put to the operator and declined:** accept the loss and record it;
+add a `/forget <word>` command first as a separate issue (decoupling deck
+management from the review forms); revive the study card declined when this issue
+was filed. The operator chose to keep it inside the board.
