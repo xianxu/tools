@@ -273,8 +273,10 @@ func (b *Board) Resize(cols int) {
 //
 // Exported because it is the number D15's fit test is about: a board is offered
 // only when the terminal can hold it whole, and the board is the only thing that
-// knows how tall it is. That it counts the toggle and the panel too is the point
-// — a fit computed from the grid alone would put the last row off the bottom.
+// knows how tall it is. That it counts the CHROME too is the point — a fit
+// computed from the grid alone would put the last row off the bottom — and
+// `chromeRows` below is the one place that says what the chrome IS. Naming the
+// rows here was a second owner, and it went stale the day R11 deleted one.
 func (b *Board) Rows() int {
 	return b.gridRows() + chromeRows
 }
@@ -440,8 +442,8 @@ func (b *Board) Reveal() string { return "" }
 // only when it alone exceeds the terminal, so the mode is knowable for as long
 // as anything is.
 //
-// One owner either way — the footer's toggle row is gone, not duplicated. What
-// changed is which row it is, and the reason is which row survives.
+// One owner either way — the mode MOVED here, it was not copied here. What
+// changed is which row states it, and the reason is which row survives.
 //
 // Tab and Enter ARE named here even though both are session Input kinds, and
 // that is deliberate: sessionKeys in the loop is the set that is true WHATEVER
@@ -463,8 +465,9 @@ func (b *Board) Keys() string {
 	return "marking yes [no], Tab switches, click or key marks, Enter ends"
 }
 
-// Mode is the mark a click will land. Not on any interface — the form draws its
-// own toggle — but the tests and the panel's story both read better for it.
+// Mode is the mark a click will land. Not on any interface — the form states its
+// own mode, on its prompt row — but the tests and the panel's story both read
+// better for it.
 func (b *Board) Mode() Mark { return b.mode }
 
 // Form names this form in the log (#40 D4a), and this is the name the whole
@@ -507,9 +510,9 @@ func (b *Board) Grade(k rune) (Verdict, bool) {
 // Mark lands the active mode on cell i, and it is what a click becomes.
 //
 // It takes no verdict: the MODE decides, and the mode is the board's own state —
-// it is drawn in the footer's toggle and flipped by Tab. A caller passing a
+// it is drawn on the prompt row (`Keys`) and flipped by Tab. A caller passing a
 // verdict in would be a second owner of a fact this form already renders, and
-// the two would disagree the first time a frame was drawn between the toggle and
+// the two would disagree the first time a frame was drawn between the prompt and
 // the click.
 //
 // A CELL IS MARKED ONCE. A second mark returns false and changes nothing,
@@ -555,13 +558,13 @@ func (b *Board) CellAt(row, col int) (int, bool) {
 	}
 	i := row*b.cols + c
 	// NO SEPARATE `row >= gridRows` BOUND, and its absence is the honest kind.
-	// A row below the grid — the blank, the toggle, the panel — indexes past the
-	// last cell by construction, because the grid has exactly as many rows as it
-	// takes to hold them all. The guard was written, and a mutation showed it
+	// A row below the grid — the chrome, whatever `chromeRows` currently draws —
+	// indexes past the last cell by construction, because the grid has exactly as
+	// many rows as it takes to hold them all. The guard was written, and a mutation showed it
 	// could not be made to fail: it was dead code, and dead code here would hide
 	// the day this line stopped being the one that answers.
-	// TestTheToggleAndPanelRowsAreNotCells is the property, pinned separately
-	// from the mechanism.
+	// TestTheChromeRowsAreNotCells is the property, pinned separately from the
+	// mechanism.
 	if i >= len(b.cells) {
 		return 0, false
 	}

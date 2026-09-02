@@ -98,9 +98,11 @@ y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 
 ### The board, once a word is settled
 
-**A word you have recalled three times or more is swept on a grid rather than
-tested one at a time.** Sixteen at once, one keystroke or one click each: you are
-saying whether you still have it, not proving it.
+**A word that has climbed three rungs of the ladder is swept on a grid rather
+than tested one at a time.** It is the BOX that decides, not a tally of correct
+answers — a miss knocks a word back down, so one recalled five times and missed
+twice is still asked one at a time. Sixteen at once, one keystroke or one click
+each: you are saying whether you still have it, not proving it.
 
 ```
 $ define --play

@@ -1075,6 +1075,54 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 	}
 }
 
+// retiredPhrases is the CONCEPT half of the rule above: a phrase naming a DRAWN
+// element the tool no longer has, mapped to what states that fact now.
+//
+// `retiredSymbolNames` closes the half a compiler could almost have caught — a
+// name the tree stops declaring. This is the half nothing can: R11 deleted the
+// board's footer toggle row and moved the live mark onto the prompt row, and
+// six months of comments went on describing a row that is not drawn. No symbol
+// was renamed (`toggleLine` was unexported, which `isCitableName` filters out on
+// purpose), so every existing guard stayed green while five comments, one of
+// them contradicting its own owner twenty lines below, told a reader to look for
+// a row that is gone. It took five rounds of one boundary review to enumerate.
+//
+// The trigger the finding asked for, made mechanical: when a window deletes a
+// drawn element, the sweep set is `grep` for what it was CALLED over
+// currentTruthFiles, and this map is where that grep gets written down so it
+// runs on every later commit too. A key is a PHRASE, not a word — "toggle" is
+// still a live verb for what Tab does, and the row it used to name is not.
+var retiredPhrases = map[string]string{
+	"toggle row":      "the prompt row — `Board.Keys` states the live mark (#40 R11)",
+	"footer's toggle": "the prompt row — `Board.Keys` states the live mark (#40 R11)",
+}
+
+// No current-truth artifact describes a drawn element the tool no longer draws.
+//
+// Same scope and same reasoning as TestNoArtifactNamesARetiredSymbol — records
+// legitimately say what was true when written, so this reads currentTruthOnly.
+// Case-insensitive: these are prose phrases, and the comments that went stale
+// spelled the element in three different cases.
+func TestNoArtifactDescribesARetiredDrawnElement(t *testing.T) {
+	root := repoRoot(t)
+	for _, f := range currentTruthFiles(t, root) {
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		text := currentTruthOnly(t, f, string(b))
+		for old, now := range retiredPhrases {
+			re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(old) + `\b`)
+			if loc := re.FindStringIndex(text); loc != nil {
+				t.Errorf("%s describes %q, a drawn element the tool no longer has; %s. "+
+					"A deleted element is swept in the SAME commit — grep for what it "+
+					"was called, and add the phrase here so the next commit is swept too.",
+					f, text[loc[0]:loc[1]], now)
+			}
+		}
+	}
+}
+
 // A plan's status column is a claim about the DIFF, and it is checkable.
 //
 // "unchanged" / "modified" are not opinions about behaviour — they say whether

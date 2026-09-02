@@ -906,3 +906,43 @@ taller replacement drops one more footer row than the fit accounted for. Measure
 at 78 against 79 columns, disagreeing at widths 78, 39 and 26. Cosmetic — Enter
 is already held in that state — and now pinned, because "these two strings are
 the same width" is not a fact anyone re-checks by eye.
+
+### 2026-09-01 (R20) — the sweep gets a mechanism, and the ledger gets re-measured
+
+Written at the publish gate, after the re-close that advanced the anchor past a
+config-only side-quest commit. Round 6 read the whole window and returned no
+machine-readable findings, so the gate converged with seven rows still listed
+open — BR-15 through BR-21, two of them Important and demoted past the round cap
+with the warning that no later gate picks them up.
+
+**Re-measured against the tree rather than trusted.** BR-17 (the R17 sweep set),
+BR-18 (the README board block), BR-19, BR-20 and BR-21 were all already closed by
+R18 and R19; only the ledger was stale, because a round that names nothing can
+dispose nothing. **BR-15 was real and open**, and its seven sites are swept here:
+five comments describing a footer row R11 deleted, `Rows()`'s doc contradicting
+`chromeRows` twenty lines below it, and `cmd/define/README.md` calling `boardBox`
+a count of recalls when it is a BOX — a word recalled five times and missed twice
+sits below the threshold.
+
+**And the CLASS, which is what R18's checklist could not be.** R18 wrote the
+seven-place sweep down; it was then not run, which is the second time a stated
+rule outlived its own application in this issue. `retiredSymbolNames` shows the
+shape that works — a human writes ONE row at the moment only they can know it,
+and every later commit is swept mechanically — but it covers renames only. A
+DELETION of something drawn leaves nothing to rename: the row's identifier here
+was unexported, `isCitableName` filters those out on purpose, and so no guard
+ever saw the change.
+
+`retiredPhrases` + `TestNoArtifactDescribesARetiredDrawnElement` is that
+mechanism for the concept half: a phrase naming a drawn element the tool no
+longer has, mapped to what states the fact now, failing over every current-truth
+artifact. Keys are phrases rather than words because the word usually survives
+the row. Mutation-checked — restoring either spelling to a `board.go` comment
+reddens it. Two consequences, both applied: the atlas page that documents the
+guard must not spell the retired phrase (the convention `retiredSymbolNames`
+already had), and the page's positional prose about its own table — "rows three
+to six" — was replaced by names, since a row inserted into the table renumbers
+that sentence silently.
+
+`TestTheToggleAndPanelRowsAreNotCells` is renamed `TestTheChromeRowsAreNotCells`:
+it was named after the row that was deleted.

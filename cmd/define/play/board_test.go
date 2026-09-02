@@ -700,7 +700,7 @@ func TestALongGlossDoesNotWidenTheLiveEdge(t *testing.T) {
 // The property, pinned apart from whichever line in CellAt happens to deliver
 // it: this is the thing that must stay true, and a rewrite of the arithmetic
 // should have to keep it rather than keep a particular guard.
-func TestTheToggleAndPanelRowsAreNotCells(t *testing.T) {
+func TestTheChromeRowsAreNotCells(t *testing.T) {
 	// Boards of every shape a full grid can take, because the row that stops
 	// being a cell moves with the word count.
 	for _, n := range []int{1, 2, 3, 4, 5, 8, 13, 16} {

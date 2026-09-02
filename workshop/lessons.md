@@ -3249,3 +3249,49 @@ Row 6 is the one that can stop being prose: make the example DERIVE. `#40`'s
 README board block now builds a real form and asserts the fenced rows are what it
 draws — it had gone stale within hours of the sitting that changed the design,
 while the prose eight lines below contradicted it.
+
+## A deleted element leaves no symbol to rename, so write the PHRASE down (`#40` BR-15)
+
+The rule above says run the sweep in the same commit. It was written down and
+then not run, twice — which means the sweep needed a mechanism, not a better
+reminder.
+
+`retiredSymbolNames` already turns a RENAME into a build failure: the human adds
+one row, and every later commit is swept mechanically. A DELETION of something
+drawn gets none of that. `#40` R11 removed a footer row and moved what it said
+onto the prompt row; the row's only identifier was unexported, so
+`isCitableName` filtered it out and nothing mechanical ever saw the change. Five
+comments went on describing a row that is not drawn — one of them contradicting
+its own owner twenty lines below it — and it took five rounds of one boundary
+review to enumerate them.
+
+**So: `retiredPhrases` is the same mechanism for the half a compiler cannot
+reach.** A phrase naming a drawn element the tool no longer has, mapped to what
+states that fact now, swept over every current-truth artifact by
+`TestNoArtifactDescribesARetiredDrawnElement`. Keys are PHRASES rather than
+words, because the word usually survives the row — the verb that named the
+deleted row still names what `Tab` does.
+
+Two things fall out of it. **A doc page that documents the guard must not spell
+the retired phrase** — the same convention `retiredSymbolNames` already has, for
+the same reason: the page would become the next stale artifact. And **prose that
+restates a table's ORDER is a second owner of that order** — "rows three to six"
+renumbers itself silently the day a row is inserted. Name the rows.
+
+## An open ledger row is a question, not an answer (`#40`, round 6)
+
+A boundary review round read the whole window and returned no machine-readable
+findings block. The gate converged anyway and printed seven findings as still
+open, two of them Important and demoted past the round cap with the explicit
+warning that no later gate picks them up.
+
+Measured against the tree at the publish gate: **five of the seven were already
+fixed** by the two commits after the round that raised them, and unrecorded only
+because a round that names nothing can dispose nothing. One was real.
+
+**Before crossing a boundary on a demoted finding, re-measure it against the
+tree.** Neither trusting the ledger nor dismissing it is available: the ledger
+records what a reviewer saw at some past HEAD, and it is the tree that ships. And
+record every round's outcome in the ISSUE, not only in the plan and the gate
+files — the tracker is the artifact a reader opens first, and it was four rounds
+stale while three other files were current.

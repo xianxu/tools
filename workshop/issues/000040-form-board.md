@@ -7,7 +7,7 @@ created: 2026-08-31
 updated: 2026-09-01
 estimate_hours: 4.46
 started: 2026-09-01T08:54:58-07:00
-actual_hours: 7.89
+actual_hours: 9.26
 ---
 
 # form 2.5: the board — grid triage for mature words
@@ -199,23 +199,6 @@ thesauruses out of the curated general-dictionary list — so that issue starts
 with a measurement of OAWT's output shape, not a design.
 
 ### 2026-09-01 — T2: `Board` and `Mark`
-- 2026-09-01: closed — go test ./... green; go test ./cmd/define/ -race green; go test -tags conformance -run PTY ./cmd/define/ green (154s, UNSANDBOXED — in-sandbox every pty row reports "no pty available", the #37 state where a row certifies nothing).; review verdict: FIX-THEN-SHIP
-
-ROUND 4 left ONE blocker, BR-8, with rows 2 and 3 of its own enumeration open. Both closed as R17, and they were the same mistake in two costumes: a fact about the terminal read ONCE where it had to be read every frame.
-
-Row 2 — a board that becomes current AFTER a resize was never told. g.Resize was called from the resize case on s.Current(), which fixes the board on screen at that instant and no other; the next board was built by todaysQuestions at the old width, painted with rows too wide, wrapped, and brought the wrong-word click back. show() is the ONE place that draws, so it is the only place that can promise this for every board — and it asks the SCREEN for the terminal shape, through a new Size on the display seam, rather than the loop keeping a copy that would be right until the first SIGWINCH it missed. Resize is idempotent, so this costs one comparison per frame.
-
-Row 3 — Enter took words the window never drew. fitFooter drops trailing footer rows, so a shrunken terminal does not paint some grid rows, and Enter records Wrong for every unmarked word including those: boxes halved on one keystroke, for words the learner had no chance to look at. Enter is now HELD while the board is not whole and the prompt says why; the LOOP refuses rather than the session, because what was DRAWN is the terminal business and play is guarded pure (D6 applied to a destructive key). Marking still works and Ctrl-C is still free.
-
-AND THE REASON I MISSED ROW 3 FOR TWO ROUNDS, recorded as a lesson: I checked "dropped rows are harmless" against the CLICK MAP — FooterRowAt answers nothing for a row never painted, so a click cannot reach one — and then wrote "harmless" into three places. A sweep does not go through the click map at all. The word travelled from the mechanism it was verified against to a different one without being re-checked, which is the same failure as a stale prose enumeration. A safety claim names the path it was checked on.
-
-Five mutations against R17, all caught. The doc-comment guard also caught me inserting Size between FooterRowAt comment and its function, which is exactly the class it was built for.
-
-ALSO IN THIS WINDOW — the operator drove a real sitting and returned four corrections, recorded as R16. A marked cell is PAINTED and keeps its key (the mark used to stand where the key was; the key is how a mouse-less terminal reaches the cell and how a learner reads the grid back). play.Palette carries the sequences in from main, which owns newPalette, and padding sits outside the style so the click map is untouched — this is the first feature to spend what D10 bought, since a grid in the append-only buffer could never repaint a cell. `d` is a LABEL now: the gap protected a key that did nothing on that screen because D12 had already refused the drop for a form holding many words, so the rule is the sharper one it always was — d is reserved for forms that HAVE a current word. One blank buffer line as a board opens. BoardLabels is exported, because restoring d broke three restatements of the old sequence.
-
-The lesson from that: a review checks the code does what the plan says; only a sitting checks whether the plan said the right thing. Filed #42 from the same sitting (retire form 2.1 — it and the board are the same instrument and the board is sixteen times cheaper), deliberately NOT folded into this issue.
-
-Rounds 1-3 all remain fixed and pinned. All 14 Done-when rows have a named pin that RESOLVES (TestPlanCitesTestsThatExist enforces it) and every red-when was executed as a mutation; the per-row table is in the issue Log. #38 TestPlayClickActsAndIsNotAnAnswer green and UNTOUCHED throughout. Plan revisions R1-R17. workshop/lessons.md gains sixteen rules across the four rounds plus the sitting.
 
 Landed with sixteen mutations executed against the new rows; all sixteen were
 caught, including the two T1 rows in `Apply` that a board is the first form to
@@ -680,6 +663,76 @@ reads wrong to the person using it.
 
 **The lesson: a boundary review checks that the thing does what the plan says;
 only a sitting checks whether the plan said the right thing.**
+
+### 2026-09-01 — boundary review rounds 3–6, R11–R19, and the close
+
+**Recorded here because it was not.** BR-16 was raised at round 4 and disposed
+`not-addressed` at round 5 for exactly this: rounds 3 onward lived in the plan,
+the gate ledger and the review sidecar, and the tracker — the one artifact a
+reader opens first — still ended at round 2. The material below was written at
+the close and landed under the `T2` heading, so the Log opened with its own
+ending; it is moved here, in sequence, and the rounds after it are added.
+
+ROUND 4 left ONE blocker, BR-8, with rows 2 and 3 of its own enumeration open. Both closed as R17, and they were the same mistake in two costumes: a fact about the terminal read ONCE where it had to be read every frame.
+
+Row 2 — a board that becomes current AFTER a resize was never told. g.Resize was called from the resize case on s.Current(), which fixes the board on screen at that instant and no other; the next board was built by todaysQuestions at the old width, painted with rows too wide, wrapped, and brought the wrong-word click back. show() is the ONE place that draws, so it is the only place that can promise this for every board — and it asks the SCREEN for the terminal shape, through a new Size on the display seam, rather than the loop keeping a copy that would be right until the first SIGWINCH it missed. Resize is idempotent, so this costs one comparison per frame.
+
+Row 3 — Enter took words the window never drew. fitFooter drops trailing footer rows, so a shrunken terminal does not paint some grid rows, and Enter records Wrong for every unmarked word including those: boxes halved on one keystroke, for words the learner had no chance to look at. Enter is now HELD while the board is not whole and the prompt says why; the LOOP refuses rather than the session, because what was DRAWN is the terminal business and play is guarded pure (D6 applied to a destructive key). Marking still works and Ctrl-C is still free.
+
+AND THE REASON I MISSED ROW 3 FOR TWO ROUNDS, recorded as a lesson: I checked "dropped rows are harmless" against the CLICK MAP — FooterRowAt answers nothing for a row never painted, so a click cannot reach one — and then wrote "harmless" into three places. A sweep does not go through the click map at all. The word travelled from the mechanism it was verified against to a different one without being re-checked, which is the same failure as a stale prose enumeration. A safety claim names the path it was checked on.
+
+Five mutations against R17, all caught. The doc-comment guard also caught me inserting Size between FooterRowAt comment and its function, which is exactly the class it was built for.
+
+ALSO IN THIS WINDOW — the operator drove a real sitting and returned four corrections, recorded as R16. A marked cell is PAINTED and keeps its key (the mark used to stand where the key was; the key is how a mouse-less terminal reaches the cell and how a learner reads the grid back). play.Palette carries the sequences in from main, which owns newPalette, and padding sits outside the style so the click map is untouched — this is the first feature to spend what D10 bought, since a grid in the append-only buffer could never repaint a cell. `d` is a LABEL now: the gap protected a key that did nothing on that screen because D12 had already refused the drop for a form holding many words, so the rule is the sharper one it always was — d is reserved for forms that HAVE a current word. One blank buffer line as a board opens. BoardLabels is exported, because restoring d broke three restatements of the old sequence.
+
+The lesson from that: a review checks the code does what the plan says; only a sitting checks whether the plan said the right thing. Filed #42 from the same sitting (retire form 2.1 — it and the board are the same instrument and the board is sixteen times cheaper), deliberately NOT folded into this issue.
+
+Rounds 1-3 all remain fixed and pinned. All 14 Done-when rows have a named pin that RESOLVES (TestPlanCitesTestsThatExist enforces it) and every red-when was executed as a mutation; the per-row table is in the issue Log. #38 TestPlayClickActsAndIsNotAnAnswer green and UNTOUCHED throughout. Plan revisions R1-R17. workshop/lessons.md gains sixteen rules across the four rounds plus the sitting.
+
+**Rounds 5 and 6.** Round 5 passed FIX-THEN-SHIP and raised five more: BR-17
+(R17 changed Enter’s contract and swept only the plan), BR-18 (the README’s
+board picture still drew the design R16 deleted), BR-19 (the frame budget
+measured `gradePrompt` while the frame drew `boardPrompt`), BR-20 (the fit
+formula spelled twice, only one copy enforcing `minWrapWidth`) and BR-21 (the
+guard inventory missing `TestPlanCitesTestsThatExist`). R18 and R19 closed all
+five: the sweep set written down and run, the README block made DERIVED by
+`TestREADMEDrawsTheBoardTheFormActuallyDraws`, `boardFitsIn` made the one
+formula both moments ask, and the refusal row made no wider than the keys row it
+replaces. Round 6 read the whole window again and returned no findings block at
+all, so the gate converged with BR-15 through BR-21 still listed open — the
+ledger cannot dispose what a round does not name.
+
+**What was actually left, measured rather than trusted.** Re-checking each open
+row against the tree at the publish gate: BR-17’s seven sites, BR-18’s guard,
+BR-19, BR-20 and BR-21 were all already closed by R18/R19 and only unrecorded.
+BR-15 was real and open — five comments still describing the footer toggle row
+R11 deleted, `Rows()` contradicting `chromeRows` twenty lines below it, and the
+README calling `boardBox` a count of recalls when it is a BOX. Swept, and the
+CLASS made mechanical: `retiredPhrases` +
+`TestNoArtifactDescribesARetiredDrawnElement` is the concept half of
+`retiredSymbolNames` — a phrase naming a drawn element the tool no longer draws,
+failing over every current-truth artifact. It is the guard that could not exist
+while the rule was only written in prose: no symbol was renamed (`toggleLine`
+was unexported, which `isCitableName` filters out), so nothing mechanical saw
+the deletion. Mutation-checked: restoring "the footer’s toggle row" to a
+`board.go` comment reddens it on both keys.
+
+**The lesson.** A review round that names a family and then produces no
+machine-readable findings leaves the ledger asserting the opposite of the tree.
+Five of the seven "open" rows were fixed; one was not, and nothing distinguished
+them. Before crossing a boundary on a demoted finding, re-measure it against the
+tree — an open ledger row is a question, not an answer.
+
+Verification for this window: `go vet ./...` clean, `go test ./...` green,
+`go test ./cmd/define/ ./cmd/define/play/ -race` green (119s), and the pty
+conformance rows UNSANDBOXED — all 17 pass in 154s including
+`TestPTYPlayBoardIsDrawnAndClickable`. In-sandbox the same command is 17 skips
+reading "no pty available", the `#37` state where a row certifies nothing, so the
+sandboxed run was thrown away rather than reported. The new guard was
+mutation-checked in both directions.
+
+- 2026-09-01: closed — Re-close to advance the publish anchor past 6918689 (side-quest: .sdlc/fleet.json, config-only, no Go code and no board surface touched). Full go test ./... green after that commit (cmd/define 107.6s, play/puretest/schedule/store cached ok, conformance, llm, llmtest all ok). All #40 Done-when rows remain ticked from the 2adb50d close; no code delta to re-verify.; review verdict: FIX-THEN-SHIP
+- 2026-09-01: closed — go test ./... green; go test ./cmd/define/ -race green; go test -tags conformance -run PTY ./cmd/define/ green (154s, UNSANDBOXED — in-sandbox every pty row reports "no pty available", the #37 state where a row certifies nothing).; review verdict: FIX-THEN-SHIP
 
 ## Revisions
 

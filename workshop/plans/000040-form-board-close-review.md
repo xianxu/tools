@@ -712,3 +712,93 @@ findings:
     detail: |
       The table at atlas/repo-guards.md:107-114 inventories the repo guards and includes TestPlanTablesNameEntitiesThatExist, the new guard's direct sibling. TestPlanCitesTestsThatExist shipped in 80a4044 as BR-3's class fix and has no row. An inventory that under-states is the same failure as prose that over-states: the next reader cannot tell what is guarded.
 ```
+
+---
+
+## Re-review — 2026-09-01T20:52:25-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 40 — form 2.5: the board — grid triage for mature words |
+| repo | tools |
+| issue file | workshop/issues/000040-form-board.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | eb9f1698d6800ff5ad22683f49e2c36e970d36f3..691868992fe9106973b9bece3b38ac1613311848 |
+| command | sdlc close --issue 40 |
+| reviewer | claude |
+| timestamp | 2026-09-01T20:52:25-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+Every round-5 blocker is genuinely closed and I verified each by revert in a scratch worktree — the Enter hold, the draw-time relayout, the single fit formula, the refusal-row budget, and the README board block that now *derives* from a real `play.Board` all redden their own test when undone. The shipped binary is correct: I found no crash, no silent swallow, and no behaviour drift from the Spec. What blocks a clean SHIP is one class the close commit itself named and then only half-ran. R18 wrote down the seven-surface sweep set for "a change to what is drawn or what a key does" — and ran it over R17 only. The *other* drawn-and-keyed change in the same window, R16 (`d` became a cell label), was never swept: two board.go doc comments still say `d` never reaches the form, the plan's Done-when row 6 lists the shipped design as its failure condition, the issue's row 6 cites a test that was deleted three commits later, and `TestDOnABoardIsNotACellLabel` asserts the *deleted* contract thirty lines below a test that proves the opposite — passing only because its fixture has four cells and `d` is index 13. BR-15's five stale toggle comments are also untouched for a second round running.
+
+## 1. Strengths
+
+- **`boardFitsIn` is a real consolidation, not a rename.** `cmd/define/play_loop.go:594` is now the one fit formula and `boardFits` delegates to it (`play_loop.go:865`). Removing the `minWrapWidth` clause reddens `TestSelectionAndDrawAskTheSameFitQuestion` at 19 columns — verified.
+- **The Enter hold is put in the right place and pinned.** `play_loop.go:369-386` refuses in the *loop*, not the session, so `play` stays terminal-ignorant (D6 applied to a destructive key). Deleting the four-line guard reddens `TestEnterIsHeldWhileTheBoardIsNotDrawnInFull` — verified.
+- **The layout moved to the one place that draws.** `play_loop.go:196` reads `view.Size()` per frame instead of the loop keeping a copy. Stubbing out `g.Resize(termCols)` reddens `TestABoardBuiltBeforeAResizeIsStillLaidOutForTheTerminal` with the exact symptom ("row 0 is 73 columns in a 40-column window") — verified.
+- **The README's board picture now derives.** `cmd/define/doc_sync_test.go:364` builds a real `play.Board` and asserts the fenced rows. Planting `[y] sycophantic` back into the block reddens it twice over — verified. This is the right shape for BR-18: a picture with a consumer.
+- **ARCH-MOCK is honoured on the widened seam.** `recordDisplay` (`editorloop_test.go:159-193`) is a *stateful* fake for `FooterRowAt`/`Size` with a non-degenerate default, `newPinnedScreen` runs the real screen against a buffer, and `pty_conformance_test.go` is the live conformance check on a real tty.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**(a) R16 made `d` a cell label; the tests and both Done-when tables still assert the design it deleted.**
+**This is the 7th finding in family `comment-asserts-absent-behaviour`.** Do **not** patch the sites — the rule is what is missing. Measured, all current:
+
+- `cmd/define/play/board.go:493` — `Grade`'s doc: *"`d` and `D` never arrive: toInput takes them first, and boardLabels has no cell for them either way."* Both clauses are false. `Apply`'s `InputDrop` case (`session.go:262`) hands the rune to `q.Grade` for any `Batch`, and `boardLabels` is `"0123456789abcdef"`. Executed: `Apply(board16, {InputDrop, 'd'})` returns `{OutcomeRecord, Word:"a14", Form:"board"}` and marks cell 13.
+- `cmd/define/play/board.go:452-454` — `Keys`'s doc: *"It has a hole at `d` … spelling `0-9 a-c e-g` here would be a second owner."* The hole was removed by R16; `boardLabels`'s own doc 380 lines above says "Sixteen labels, no gap".
+- `cmd/define/play_loop_test.go:2996-2999` — the doc comment says *"`d` IS NOT A CELL LABEL … on a board Apply refuses it too"*, directly contradicting `TestABoardIsMarkableByKeyAlone` (`:2961`), which sends `BoardLabels[13]` and asserts 16 events.
+- `cmd/define/play_loop_test.go:2999` — `TestDOnABoardIsNotACellLabel` asserts `0 review events after pressing d twice`. It passes only because its fixture is four words, so index 13 is out of range. With sixteen it fails. A test that certifies the opposite of the shipped contract, kept green by a fixture accident, is the worst kind of pin: a future reader "fixing the code to match" would undo the operator's own correction.
+- `workshop/plans/000040-form-board-plan.md:414` — row 6's `red when` is *"labels include `d`"*, which is now the shipped design.
+- `workshop/issues/000040-form-board.md:508` — row 6's claim is *"`d` is not a label"* and its mutation is *"`boardLabels` becomes `…abcdef`"*, i.e. the current state.
+
+**THE RULE.** R18's checklist (`plan.md` R18) is right and was run forward over R17 only. Two things it needs before it works: (1) it must be run over **every** drawn-or-keyed change already in the window, not the one that produced the finding — R16 and R17 are both in this window and only one was swept (ARCH-PURPOSE: the class, not the instance); and (2) it needs an **8th row — the TEST that pins the old contract**, because a test's *name* and its *fixture* are restatements of the contract exactly as prose is, and this one survived while its own subject was inverted. The mechanical half is cheap: when a contract changes, the sweep set includes `grep -rn <the old claim's word>` over `*_test.go`, and any test whose name asserts the negated contract is a rename-or-delete, not a pass.
+
+**(b) The citation guards cannot see the tracker, and cannot see a symbol born and buried inside one window.**
+**This is the 4th finding in family `plan-citations-unenforced`.** Do not patch the instance. Two independent holes, both measured:
+
+- `cmd/define/repo_guard_test.go:1183` globs `workshop/plans/*-plan.md` only, and `currentTruthFiles` (`:1508-1520`) excludes `workshop/issues/`. Measured over the tree: active issues carry **45** backticked `Test*` citations in their Done-when and mutation tables, of which **2 do not resolve** — `TestBoardLabelsSkipTheReservedD` (issue `#40:508`) and `TestAMissIsRecordedBeforeItIsRevealed` (issue `#33`). The issue file is the surface a reader reaches *first*; a `pinned by` cell there makes the same claim a plan's does.
+- `TestARemovedDeclarationIsSweptOrRetired` (`:1436`) diffs `base..HEAD`, so a declaration **added and removed inside the same window is invisible**. `TestBoardLabelsSkipTheReservedD` was added in `816a0cb` and deleted in `4949778`, both inside this window: `git diff eb9f169..6918689 -- ':/*.go' | grep -c TestBoardLabelsSkipTheReservedD` returns 0.
+
+**THE RULE.** A guard over citations must span (i) every artifact class that carries a citation — plans *and* issues, since both use the same `| claim | pinned by |` table — and (ii) the whole window commit-by-commit, not just its endpoints, because a window is not a single diff. Both are one-line scope changes; the finding is that the scope was set from the artifact that produced BR-3 rather than from the set of artifacts that make the claim.
+
+## 4. Minor findings
+
+- `cmd/define/play/board.go:276` — `Rows()`'s doc still says it "counts the toggle and the panel", contradicting `chromeRows` twenty lines below (BR-15, unfixed).
+- `cmd/define/play/board.go:467`, `:510`, `:558` and `cmd/define/play_loop.go:708`, `:740` — four more live references to the footer toggle row deleted by R11 (BR-15, unfixed).
+- `cmd/define/README.md:100` — "recalled three times or more" describes `boardBox` as a recall count; it is a **box**, so a word recalled five times and missed twice is below the threshold (BR-15, unfixed).
+- `workshop/plans/000040-form-board-plan.md:333-350` — the Core-concepts table omits `Palette` (a **new exported type** on `play`'s public API), `boardFitsIn` and `boardRefusal`. Don't hand-add the rows: `TestPlanTablesNameEntitiesThatExist` only checks table→tree, and **tools#33** is the open issue for the missing direction. Same family as BR-21 (an inventory that under-states).
+- `workshop/issues/000040-form-board.md:202-218` — the close summary was inserted *under* the `### 2026-09-01 — T2` heading, above T2's own text, so the Log's chronology now starts with its ending. Content is fine; placement makes the first `###` a reader reaches read as T2's record.
+- `cmd/define/play/purity_test.go:52` — the comment stripper cuts at the first `//` on a line, so a string literal containing `//` would truncate the code it is grepping. Not reachable in `session.go` today.
+
+## 5. Test coverage notes
+
+- Green: `go test ./cmd/define/...` passes at HEAD (107s).
+- Every round-5 claim was verified by revert, not read: refusal string (79 vs 78 cols → 3 failures), `minWrapWidth` in `boardFitsIn`, the `[y]` cell in the README block, the Enter-hold branch, and `g.Resize(termCols)` in `show`. All five redden. No false "fixed in <sha>".
+- The gap the diff could ship and does not cover: **a full sixteen-cell board driven by `d`** through `TestDOnABoardIsNotACellLabel`'s own path. `TestABoardIsMarkableByKeyAlone` covers it through the label loop, which is why the contradiction is survivable — but the two tests disagree and only one is right.
+- `TestSelectionAndDrawAskTheSameFitQuestion`'s first half is now structurally equal (`boardFits` delegates to `boardFitsIn`); the assertion that carries the claim is the `minWrapWidth-1` case at `:3448`, which is real. Worth knowing when reading it.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass.** BR-20's consolidation landed and is pinned. `gradePrompt` is built twice per frame (`boardFitsIn` and `boardPrompt`); trivial, not worth a change. `boardPalette` spells `\x1b[1;32m` literally, which is `highlight.go:15`'s `knownOn` — different facts, and consistent with `editor.go`'s existing two `sgrOff` spellings, so no finding.
+- **ARCH-PURE — pass.** `play` keeps its no-imports/no-clock guard; `Board` is unit-tested with no IO (`board_test.go`, 836 lines). The Enter refusal was deliberately kept in the loop so the pure package never learns what "drawn" means — the right side of the seam.
+- **ARCH-PURPOSE — flag.** See Important (a). The enumeration was written and applied to the finding's own site; the sibling in the same window was left. This is the *fourth* round in which a stated rule outlived its own application, which is the signal that the rule needs a mechanical trigger, not another restatement.
+- **ARCH-MOCK — pass.** Production and test flow share the `display` boundary; the fake is stateful; a live pty conformance row exists and was run unsandboxed.
+- **ARCH-CONSTRAINTS — pass.** `show` is on the keystroke path and does one mutex-guarded `Size()` plus an idempotent `Resize`; `boardFitsIn` is O(cells) with cells ≤ 16; `todaysQuestions` still pays exactly one `Deck()` and one `Events()` per sitting, documented at `play_loop.go:875`. No unbounded fan-out or repeated expensive work introduced.
+
+## 7. Plan revision recommendations
+
+- **R20 — the sweep set applies to the window, not to the finding.** Record that R18's checklist was run over R17 and not over R16, name the six R16 sites above, and add the 8th row: *the test that pins the old contract — its name and its fixture*. State the mechanical trigger (`grep` the old claim's word over `*_test.go` in the same commit) so the next contract change does not need the checklist to be remembered.
+- **R21 — the citation guards' scope.** Record both measured holes (issues excluded from the glob and from `currentTruthFiles`; `base..HEAD` blind to a within-window add-then-delete), with the measured prevalence (45 issue citations, 2 unresolvable), and the rule: scope a guard to the set of artifacts that make the claim, over the whole window.
+- **Correct Done-when row 6** in the plan (`:414`) and the issue (`:508`) as part of R20 — the `red when` currently names the shipped design, and the issue's `caught by` cell cites a deleted test.

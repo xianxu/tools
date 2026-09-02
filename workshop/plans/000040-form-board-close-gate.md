@@ -248,6 +248,11 @@ rounds:
           family: comment-asserts-absent-behaviour
           round: 5
       blocked: false
+    - "n": 6
+      timestamp: "2026-09-01T20:52:25-07:00"
+      agent: claude
+      blocked: false
+      protocol_error: no valid findings block
 ---
 
 # Gate ledger — tools#40 (boundary-review)
@@ -366,6 +371,10 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   play_loop.go:833 (boardFits) and play_loop.go:203 (show) both spell `fitsABoard(rows, board.Rows(), displayRows(gradePrompt(board), cols))`. ARCH-DRY: one helper taking (form, rows, cols) asked at both moments. The divergence is already visible — boardFits refuses `opt.width < minWrapWidth` and the draw-time copy does not, so a board narrowed below minWrapWidth by resize can still report whole. Not reachable as harm today (the row arithmetic makes boardWhole false well before the words become unreadable), which is exactly why it should be consolidated before it is.
 - **BR-21** [Minor] `comment-asserts-absent-behaviour` atlas/repo-guards.md's guard inventory does not list TestPlanCitesTestsThatExist, added in this window
   The table at atlas/repo-guards.md:107-114 inventories the repo guards and includes TestPlanTablesNameEntitiesThatExist, the new guard's direct sibling. TestPlanCitesTestsThatExist shipped in 80a4044 as BR-3's class fix and has no row. An inventory that under-states is the same failure as prose that over-states: the next reader cannot tell what is guarded.
+
+## Round 6 — 2026-09-01T20:52:25-07:00 (claude) — passed
+
+**Protocol error:** no valid findings block — this round contributed no findings.
 
 ## Open findings
 

@@ -691,8 +691,9 @@ const barRows = 1
 // owner of a height `displayRows` already computes. It was 1, and the board's
 // keys line is seventy-six columns while the board was offered from twenty — so
 // on a narrow terminal `fitFooter` silently dropped the bar, then the panel, and
-// at twenty-five columns the TOGGLE, which is the one owner of which mark is
-// live while every mark is irreversible.
+// then — while the live mark still had a footer row of its own, before R11 moved
+// it onto the prompt — the one statement of what the next click would mean,
+// while every mark is irreversible.
 func fitsABoard(termRows, boardRows, promptRows int) bool {
 	return boardRows+promptRows+barRows <= termRows
 }
@@ -705,7 +706,7 @@ func fitsABoard(termRows, boardRows, promptRows int) bool {
 // footer out; the FORM says which cell is at that spot, because the form decided
 // where its words are printed. The loop knows neither and does the subtraction
 // between them — the grid is drawn as the FIRST footer entries, so a footer row
-// below Rows() is the toggle or the bar rather than a word.
+// below Rows() is the bar rather than a word.
 //
 // False for every form that is not a grid, which is every form but the board,
 // and false is what leaves #38's behaviour exactly as it was.
@@ -737,8 +738,8 @@ func formCell(view display, q play.Question, k Key) (int, bool) {
 	// NO SECOND BOUND HERE. A `row >= g.Rows()` guard was written first and a
 	// mutation showed it changed nothing: CellAt already refuses a row past the
 	// grid, because the grid is the thing that knows how tall it is. Two owners
-	// of one bound is how the toggle row comes to be a cell on the day one of
-	// them is edited.
+	// of one bound is how a chrome row comes to be a cell on the day one of them
+	// is edited.
 	return g.CellAt(row, k.Col)
 }
 
