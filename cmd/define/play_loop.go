@@ -156,6 +156,12 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// question's index, and -1 means none — the state is one int, and it lives
 	// here because "perform the outcomes" already does.
 	written := -1
+	// THE CHROME'S PALETTE, resolved once for the sitting. From `main`, because
+	// `main` owns the terminal's colours — the same seam `boardPalette` sits on,
+	// and the same reason: a form or a formatter choosing its own escape
+	// sequences would be a second owner of a decision `newPalette` already makes
+	// for every other surface (#44).
+	pal := newPalette(opt.color)
 	// boardWhole is whether the CURRENT board is drawn in full, recomputed by
 	// every frame and read by the key loop (R17). False only after a resize has
 	// shrunk the terminal under a board already in play — the board is not
@@ -212,7 +218,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// `written` still tracks the board so the non-grid arm below can tell
 			// a new question from a redraw.
 			written = s.Index
-			view.Draw(boardPrompt(q, boardWhole), boardFooter(q, fig))
+			view.Draw(asChrome(boardPrompt(q, boardWhole), pal), boardFooter(q, fig, pal))
 			return
 		}
 		if q != nil && written != s.Index {
@@ -239,7 +245,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// and drops footer rows first, and a learner who cannot see the keys
 		// cannot answer at all, while one who cannot see their daily load loses
 		// nothing this minute.
-		view.Draw(livePrompt(s), []string{sittingBar(fig)})
+		view.Draw(asChrome(livePrompt(s), pal), []string{asChrome(sittingBar(fig), pal)})
 	}
 
 	// Every exit is the summary and THEN the terminal, in that order. The summary
@@ -658,8 +664,13 @@ func boardPalette(opt options) play.Palette {
 //
 // The one thing that must not go is the statement of what a click will MEAN, and
 // that is why the mode moved to the prompt row, which Paint clips last.
-func boardFooter(q play.Question, fig sittingFigures) []string {
-	return append(strings.Split(q.Prompt(), "\n"), sittingBar(fig))
+//
+// THE PALETTE is threaded in rather than reached for, on the same seam
+// `boardPalette` sits on: `main` owns the terminal's colours and the form takes
+// finished sequences. It styles only the BAR — the grid above it is the board's
+// own rendering, already painted through `play.Palette` (#44).
+func boardFooter(q play.Question, fig sittingFigures, pal palette) []string {
+	return append(strings.Split(q.Prompt(), "\n"), asChrome(sittingBar(fig), pal))
 }
 
 // barRows is the ONE row the bar is guaranteed below the board.

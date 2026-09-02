@@ -63,6 +63,30 @@ func costPhrase(f sittingFigures) string {
 	return fmt.Sprintf("~%.0f reviews/day · %.1f new words/day at %d a sitting", f.load, f.fresh, f.budget)
 }
 
+// asChrome styles the live edge as CHROME rather than as content (#44).
+//
+// The band at the bottom of a sitting is the one unstyled thing on screen — the
+// definition, the highlighted deck words and the board's marks are all coloured —
+// so nothing marks where the text you READ ends and the keys you PRESS begin.
+// Operator, 2026-09-02: *"should be colorized to make the border clear"*.
+//
+// THE PLAIN TEXT IS LEFT ALONE AT ITS SOURCE. README.md quotes the prompt lines
+// verbatim and doc_sync_test.go pins that, so `gradePrompt` and `sittingBar` stay
+// unstyled and the dim is applied here, where the strings are handed to the
+// frame. Escapes cost no columns and every measuring helper skips them
+// (`visibleCells`, `clipVisible`, `displayRows`), so nothing about the row budget
+// moves.
+//
+// THE BAR TOO, not just the action row: dimming one and not the other would leave
+// the figure line brighter than the controls above it, which inverts what they
+// are worth — the bar is a number you glance at, the action row is what you press.
+func asChrome(text string, pal palette) string {
+	if pal.dim == "" || text == "" {
+		return text
+	}
+	return pal.dim + text + pal.off
+}
+
 // wrapWritten wraps ANYTHING the sitting writes into the buffer, to the width in
 // force at the moment of writing.
 //

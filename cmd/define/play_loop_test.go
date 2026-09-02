@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -601,14 +602,18 @@ func TestTheBarCountsAnswersAsTheyLand(t *testing.T) {
 
 	var counters []string
 	for _, footer := range view.drawnMenus() {
+		// UNSTYLED, because the bar is drawn as chrome now (#44) and this test is
+		// about the COUNTER — a dim escape on the front of the row would otherwise
+		// read as part of the number.
+		bar := unstyled(footer[0])
 		// Cut at the separator, and FAIL rather than panic if it moves: a bar
 		// format change should read as a broken assertion, not as a slice
 		// bounds error in a test about counting.
-		i := strings.Index(footer[0], " ·")
+		i := strings.Index(bar, " ·")
 		if i < 0 {
-			t.Fatalf("no ` ·` separator in the bar, so its shape changed: %q", footer[0])
+			t.Fatalf("no ` ·` separator in the bar, so its shape changed: %q", bar)
 		}
-		if n := footer[0][:i]; len(counters) == 0 || counters[len(counters)-1] != n {
+		if n := bar[:i]; len(counters) == 0 || counters[len(counters)-1] != n {
 			counters = append(counters, n)
 		}
 	}
@@ -2331,7 +2336,7 @@ func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
 	// The rows it counts below the board are the rows boardFooter actually
 	// DRAWS. Two owners of that number would put half a board on screen.
 	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{})
+	footer := boardFooter(board, sittingFigures{}, palette{})
 	if got, want := len(footer)-board.Rows(), barRows; got != want {
 		t.Errorf("boardFooter adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
 	}
@@ -2910,7 +2915,7 @@ func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
 // live-edge form, or anything wanting a row above the grid, is where it breaks.
 func TestBoardFooterPutsTheFormsOwnRowsFirst(t *testing.T) {
 	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80, play.Palette{})
-	footer := boardFooter(board, sittingFigures{})
+	footer := boardFooter(board, sittingFigures{}, palette{})
 	own := strings.Split(board.Prompt(), "\n")
 	if len(footer) < len(own) {
 		t.Fatalf("the footer is %d rows and the board draws %d", len(footer), len(own))
@@ -3555,5 +3560,77 @@ func TestTheChromeGapNeverChangesWhetherABoardFits(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// THE CHROME BAND IS DIMMED, AND BOTH ROWS OF IT ARE (#44).
+//
+// The action row and the bar are one band: dimming only the first would leave the
+// figure line brighter than the controls above it, which inverts what they are
+// worth. Operator, 2026-09-02: *"should be colorized to make the border clear"*.
+//
+// Driven through the FRAME rather than by calling asChrome, because the claim is
+// the wiring — asChrome could be perfect and unreferenced at either Draw site,
+// which is exactly the half an earlier draft of this work missed (PQ-6).
+func TestTheChromeBandIsDimmedTogether(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		color bool
+	}{
+		// `--play` refuses -no-color (BR-3), so the colourless row is belt — but a
+		// rig running colourless is how #40's wrap Critical stayed invisible, so
+		// both are driven.
+		{"a coloured sitting", true},
+		{"no palette at all", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank")
+			opt.color = tc.color
+			qs, held := questionsFor(t, d, opt)
+
+			tty := &syncBuf{}
+			live := newPinnedScreen(tty, 24, opt.width)
+			live.interval = -1
+			var errb bytes.Buffer
+			playSession(t.Context(), d, opt, play.NewSession(qs[:1]), held,
+				keysFor("\r"+gradeKey(t, qs[0], play.Correct)),
+				console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+			// EVERY frame the sitting painted, not just the last: the live edge
+			// changes between reveal, graded and done, and a rule that held on one
+			// of them and not the others is exactly the gap this is about. The
+			// last frame is the summary, where there is no action row at all.
+			out := tty.String()
+			// The action row by its exact text; the bar by the phrase only it
+			// carries. Located UNSTYLED first, so a row that is missing fails
+			// loudly rather than quietly reading as "not dimmed".
+			// The bar is matched by its PROGRESS PREFIX, not by "reviews/day": the
+			// summary `finish` writes carries that phrase too, and the summary is
+			// the record rather than the live edge — it is correctly undimmed, so
+			// a looser matcher fails on content that is behaving.
+			bar := regexp.MustCompile(`\d+ of \d+ · .*reviews/day`)
+			for _, row := range []struct {
+				what string
+				hits func(string) bool
+			}{
+				{"the action row", func(l string) bool { return strings.Contains(l, gradePrompt(qs[0])) }},
+				{"the bar", bar.MatchString},
+			} {
+				if !row.hits(unstyled(out)) {
+					t.Fatalf("%s was never painted:\n%s", row.what, unstyled(out))
+				}
+				for _, line := range strings.Split(out, "\n") {
+					if !row.hits(unstyled(line)) {
+						continue
+					}
+					if got := strings.Contains(line, "\x1b[2m"); got != tc.color {
+						t.Errorf("%s dimmed = %v, want %v — the band must read as chrome in a "+
+							"sitting and carry no escape without a palette:\n\t%q",
+							row.what, got, tc.color, line)
+						break
+					}
+				}
+			}
+		})
 	}
 }
