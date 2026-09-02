@@ -60,29 +60,63 @@ two spellings of "the indicator, inside a screen" and only one of them is right
 **One owner for "the chrome is separated from the record above it, and looks
 like chrome."**
 
-### The live prompt carries its own blank line and its own style
+### The gap is a RESERVED ROW in the frame, not a newline in a string
 
-`gradePrompt(q)` stays PLAIN and unchanged — `README.md` quotes it verbatim and
-`TestREADMEQuotesThePromptsTheLoopActuallyPrints` pins that, so styling it in
-place would either break the pin or push escape sequences into the README.
+The obvious move — prefix `"\n"` to the prompt — is wrong twice over, and both
+are the frame arithmetic this program has already been burned by:
+`Paint` measures the prompt with `displayRows(prompt, cols)`, which counts
+VISIBLE CELLS and knows nothing about an embedded newline, so a two-line prompt
+would be charged one row and the frame would be one row too tall — the terminal
+scrolls, and every row the app believes it placed moves. And `Paint` writes the
+prompt with a bare `WriteString`, where in raw mode a `\n` moves down without
+returning the carriage.
 
-The blank line and the colour go on a new seam applied where the prompt is
-handed to the frame: plain text in, `"\n"` + styled text out. Both consumers read
-it, which is the point:
+So the gap is a row the frame RESERVES, in the one accounting that already
+budgets every component:
 
-- `view.Draw(...)` — so the frame shows it;
-- `boardFitsIn` — so the row budget CHARGES it. `Paint` already measures
-  `displayRows(prompt, cols)` and `fitsABoard` already takes a measured
-  `promptRows`, so a blank line inside the string is costed automatically by
-  machinery that exists. Nothing gets a new constant.
+- `s.rows` (the buffer's share) gives the row up, exactly as it already gives
+  rows to the prompt and the footer;
+- the gap is emitted after the buffer rows and before the prompt;
+- **`s.footerTop` includes it**, or every footer click lands one row out — this
+  is the part that must not be got wrong, because on a board a mis-mapped click
+  marks the WRONG WORD and the mark is irreversible;
+- `fitsABoard` charges it, so a board is still only offered when it can be drawn
+  whole.
+
+The cursor walk-back (`footerRows+promptRows-1`) is unaffected: the gap is above
+the prompt, and the walk-back only climbs from the footer to the prompt's first
+row.
+
+**It belongs to the SITTING's screen, not to every screen.** `newPinnedScreen`
+already exists for exactly this distinction — "the two surfaces want opposite
+things and the difference should be visible where the screen is BUILT" — so the
+gap is set there, beside `pinned`, and named for what it is rather than folded
+into `pinned`'s meaning. The editor's frame is untouched: its prompt is the line
+you are TYPING, a continuation of what is above it, where the play frame's prompt
+is a legend of what you can press. Different things, and only one of them wants a
+border. (If the operator wants the editor to adopt it too, it is one line at the
+other constructor.)
 
 **This deletes the board's special-case blank.** `show()` writes one blank buffer
 line the first time a board is drawn (`play_loop.go`, guarded by `written !=
 s.Index`) because "a board writes nothing else to the buffer, so without it the
-grid begins immediately under the previous question's last line". The prompt sits
-between that buffer and the grid, so a prompt that carries its own leading blank
-makes the board's copy redundant — one rule for every form instead of a rule plus
-an exception.
+grid begins immediately under the previous question's last line". That is this
+same gap, discovered once for one form and paid for out of the append-only
+buffer. A reserved frame row makes it every form's, and makes it a row that
+cannot end up in the exit transcript.
+
+### The style goes on the strings; the plain text is untouched
+
+`gradePrompt(q)` and `sittingBar(f)` stay PLAIN — `README.md` quotes the prompt
+lines verbatim and `TestREADMEQuotesThePromptsTheLoopActuallyPrints` pins that,
+so styling them in place would either break the pin or push escape sequences into
+the README. The dim is applied where the strings are handed to `Draw`.
+
+Escapes cost no columns and every measuring helper here already skips them
+(`visibleCells`, `clipVisible`, `displayRows`), so styling changes no arithmetic.
+The one pin that must be re-read is
+`TestTheRefusalRowIsNoWiderThanTheKeysRow`, which compares two prompt strings and
+must keep comparing VISIBLE width.
 
 ### The chrome is the prompt row AND the bar
 
