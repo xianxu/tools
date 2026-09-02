@@ -21,7 +21,6 @@
 | `screen.Paint` | `cmd/define/screen.go` | modified |
 | `grantedGap` | `cmd/define/screen.go` | new |
 | `asChrome` | `cmd/define/playbar.go` | new |
-| `fitsABoard` | `cmd/define/play_loop.go` | modified |
 
 - **`chromeGap`** — the number of rows the frame holds empty between the record and the live edge. One, and named rather than spelled `1` at the three sites that must agree (`Paint`'s budget, `Paint`'s `footerTop`, `fitsABoard`).
   - **Relationships:** 1:1 with a pinned screen — the editor's screen sets it to zero.
@@ -43,8 +42,7 @@
   - **Relationships:** used by the sitting's prompt and its bar, so the whole band is styled by one rule.
   - **DRY rationale:** First occurrence; without it the dim sequence would be spelled at each of the three prompt strings (`gradePrompt`, `gradedPrompt`, `boardRefusal`) plus the bar.
 
-- **`fitsABoard`** — charges `chromeGap` alongside `promptRows` and `barRows`.
-  - **DRY rationale:** It already exists precisely so the selection-time and draw-time fit cannot diverge; the gap enters both through it.
+- **`fitsABoard`** — UNCHANGED, and see `## Revisions`: charging the gap here turned out to be provably a no-op, so the deliverable became the proof rather than the arithmetic.
 
 ### Integration points
 
@@ -460,3 +458,30 @@ git commit -m "#44: docs — the gap, and the indicator's missing before"
 - [ ] `go vet ./...` clean.
 - [ ] A real sitting: `go build -o define ./cmd/define && ./define --play` — click a word several times and confirm the frame does not drift; confirm the band reads as chrome; confirm a board still draws whole.
 - [ ] Done-when rows in `workshop/issues/000044-play-chrome.md` ticked with the evidence that ticked them.
+
+
+## Revisions
+
+### 2026-09-02 — `fitsABoard` is not modified after all
+
+**Delta:** the Core-concepts table listed `fitsABoard` as `modified` and Task 2
+Step 5 rewrote it to charge `chromeGap`. It is now unchanged, and the deliverable
+is a proof plus a pin instead.
+
+**Reason:** working the arithmetic through while implementing, charging the gap
+there is *provably equivalent* to not charging it. `grantedGap` hands out the row
+only when `T - P - F >= 2`, which gives `F + P + 1 <= T - 1`; so whenever the gap
+exists the un-charged sum already had slack for it, and whenever it does not the
+sum is unchanged. Writing the term would have altered no answer while LOOKING
+like the two consumers had been reconciled — worse than leaving it out, because
+the next reader would trust the appearance.
+
+PQ-8's actual requirement — that the charge and the emission agree everywhere
+either is consulted — is met more strongly this way: they agree *by construction*
+rather than by two formulas being kept in step. `TestTheChromeGapNeverChangesWhetherABoardFits`
+exhausts the shape space (0–40 × 1–30 × 1–5) so the equivalence is a pin rather
+than a claim in a comment, and `fitsABoard`'s doc says why the term is absent so
+nobody adds it back as a "fix".
+
+Caught by `TestPlanTableStatusMatchesTheChangeWindow`, which failed on the row
+describing work that did not happen.

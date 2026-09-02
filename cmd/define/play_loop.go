@@ -201,22 +201,17 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// word as Wrong, including words the learner never saw. That is a
 			// box halved per word on a keystroke meaning "ask me these again".
 			boardWhole = boardFitsIn(q, termRows, termCols)
-			// ONE BLANK BUFFER LINE, the first time this board is drawn.
+			// NO BLANK BUFFER LINE HERE ANY MORE (#44). A board used to write one
+			// the first time it was drawn, because it writes nothing else to the
+			// buffer and its grid would otherwise begin immediately under the
+			// previous question's last line. That gap is now the FRAME's, held
+			// for every form by `chromeGap` — so this was one form's exception to
+			// a rule the frame did not yet have, and it also spent a buffer line
+			// on it, which the exit transcript then carried.
 			//
-			// A board writes nothing else to the buffer, so without it the grid
-			// begins immediately under the previous question's last line and the
-			// two read as one block — which is what the operator saw in a real
-			// sitting. Every other form is separated by the leading "\n" of its
-			// own prompt write, and a board has no prompt write to carry one.
-			//
-			// Through `written`, so it happens once per board rather than once
-			// per frame: the buffer is append-only, and a blank line per
-			// keystroke would push the transcript up the screen as the learner
-			// marked.
-			if written != s.Index {
-				written = s.Index
-				fmt.Fprintln(stdout)
-			}
+			// `written` still tracks the board so the non-grid arm below can tell
+			// a new question from a redraw.
+			written = s.Index
 			view.Draw(boardPrompt(q, boardWhole), boardFooter(q, fig))
 			return
 		}
@@ -688,6 +683,21 @@ const barRows = 1
 // terminal would scroll to fit it, and a click at viewport row R would stop
 // meaning the word drawn there. Refusing to offer the board keeps fitFooter's
 // guarantee true rather than negotiating with it.
+//
+// THE CHROME GAP IS NOT A TERM HERE, and that is a PROOF rather than an
+// oversight (#44 PQ-8). `grantedGap` hands out the row only when two rows survive
+// past the prompt and the footer, so whenever the gap exists this sum already had
+// slack for it: `T-P-F >= 2` gives `F+P+1 <= T-1`, and whenever it does not exist
+// the sum is unchanged. Charging it here would therefore alter no answer while
+// LOOKING like the two consumers had been reconciled — and at `{T:8, F:7, P:1}`,
+// the exact row the table below pins, a naive charge would refuse a board that
+// `Paint` goes on to draw whole, swapping the keys row for `boardRefusal` and
+// holding Enter over a grid with every cell on screen.
+//
+// `fitFooter` gets its budget before the gap does, so the gap can never cost the
+// board a row either: a board this says is whole is a board the footer had room
+// for. TestTheChromeGapNeverChangesWhetherABoardFits is the pin, because "these
+// two formulas agree" is not a fact anyone will re-derive by eye.
 //
 // promptRows is MEASURED and passed in, because a constant here was a second
 // owner of a height `displayRows` already computes. It was 1, and the board's

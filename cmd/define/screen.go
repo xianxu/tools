@@ -58,6 +58,10 @@ type screen struct {
 	// the buffer: the transcript and the click map must not gain rows that exist
 	// only because the terminal is tall.
 	pinned bool
+	// gap is the rows held EMPTY between the record and the live edge, honoured
+	// by Paint. Zero for the editor, chromeGap for a sitting — set at the
+	// constructor, where `pinned` already makes that difference visible.
+	gap int
 	// footer and footerTop are WHERE THE LIVE EDGE ENDED UP, recorded by the
 	// last Paint so a click can be resolved against it (#40 D10).
 	//
@@ -440,6 +444,36 @@ const (
 //
 // termRows and termCols are passed in rather than stored, so a resize is one
 // call site's business (the loop's SIGWINCH case) and not fields that go stale.
+// chromeGap is the rows a frame holds EMPTY between the record and the live edge.
+//
+// The live edge is a legend of what you can press; the buffer is what you are
+// reading. With nothing between them the action row butts the last line of the
+// definition it belongs under and the two read as one block — which is what the
+// operator saw in a real sitting (#44).
+//
+// A ROW THE FRAME RESERVES, never a "\n" inside the prompt. `displayRows`
+// measures the prompt in visible CELLS and knows nothing about an embedded
+// newline, so a two-line prompt would be charged one row and the frame would come
+// out one row too tall — the terminal scrolls and every placed row moves. Paint
+// also writes the prompt with a bare WriteString, where raw mode needs "\r\n".
+const chromeGap = 1
+
+// grantedGap is whether a frame of this shape gets its gap, and it is ONE owner
+// because TWO consumers ask: Paint when it draws, and fitsABoard when it decides
+// whether Enter may spend a board. Two answers here means a board drawn whole and
+// refused in the same breath (#44 PQ-8).
+//
+// DECORATION, so it is the first component given up — before the buffer, before
+// the footer, before the prompt. A frame that scrolls has lost every coordinate
+// on it, and a border is not worth that. Granted only when a buffer row survives
+// beside it: at that size the reader needs the content more than the border.
+func grantedGap(want, termRows, promptRows, footerRows int) int {
+	if termRows-promptRows-footerRows >= want+1 {
+		return want
+	}
+	return 0
+}
+
 func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, footer []string) {
 	var footerRows int
 	s.cols = termCols
@@ -465,7 +499,10 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 	prompt = clipVisible(prompt, termRows*max(s.cols, 1))
 	promptRows := displayRows(prompt, s.cols)
 	footer, footerRows = fitFooter(footer, termRows-promptRows, s.cols)
-	s.rows = termRows - promptRows - footerRows
+	// The footer keeps its full budget: it is worth more than the gap, so it is
+	// sized first and the gap takes only from what is left over.
+	gap := grantedGap(s.gap, termRows, promptRows, footerRows)
+	s.rows = termRows - promptRows - footerRows - gap
 	if s.rows < 0 {
 		s.rows = 0
 	}
@@ -496,7 +533,15 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 	if s.pinned && s.rows > bufRows {
 		bufRows = s.rows
 	}
-	s.footer, s.footerTop = footer, bufRows+promptRows
+	// THE GAP IS EMITTED LAST, after the pinned padding, so it is the row
+	// directly above the prompt whatever the buffer did with its share.
+	for range gap {
+		b.WriteString("\r\n")
+	}
+	// COUNTED in the footer's origin, or every footer click lands one row out —
+	// and on a board the footer entries ARE the grid, so a click mapped one row
+	// high marks the wrong word, permanently.
+	s.footer, s.footerTop = footer, bufRows+gap+promptRows
 	b.WriteString(prompt)
 	for _, m := range footer {
 		b.WriteString("\r\n" + m)
@@ -602,6 +647,7 @@ func newLiveScreen(tty io.Writer, rows, cols int) *liveScreen {
 func newPinnedScreen(tty io.Writer, rows, cols int) *liveScreen {
 	l := newLiveScreen(tty, rows, cols)
 	l.s.pinned = true
+	l.s.gap = chromeGap
 	return l
 }
 

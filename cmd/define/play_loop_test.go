@@ -707,8 +707,14 @@ func TestALongRevealPagesRatherThanScrollingTheWordAway(t *testing.T) {
 	qs, held := questionsFor(t, d, opt)
 
 	// A SHORT terminal, which is what makes one entry several screenfuls.
+	//
+	// NINE rows, not eight: a sitting's frame reserves `chromeGap` between the
+	// record and the live edge (#44), so eight rows now leave five for the buffer
+	// and the entry's tail no longer reaches DERIVATIVES. The height is a proxy
+	// for "several screenfuls" and nine is still that — the premise assertion
+	// below is what actually holds the test honest.
 	tty := &syncBuf{}
-	live := newPinnedScreen(tty, 8, 80)
+	live := newPinnedScreen(tty, 9, 80)
 	live.interval = -1
 	var errb bytes.Buffer
 	keys := make(chan Key)
@@ -3520,5 +3526,34 @@ func TestSittingPlaybackCommitsNothingToTheBuffer(t *testing.T) {
 			"playback writes a newline its erase cannot take back, so a sitting drifts "+
 			"up the screen by one row per answered question",
 			audible, silent, words)
+	}
+}
+
+// THE GAP NEVER CHANGES WHETHER A BOARD FITS (#44 PQ-8).
+//
+// `boardFitsIn` is asked at SELECTION and at every DRAW, where its answer decides
+// whether Enter may spend the board (R17). `Paint` decides the gap separately, so
+// the two could disagree — a board drawn whole and refused in the same breath.
+// They cannot, and this is the proof by exhaustion rather than by argument:
+// charging the gap and not charging it are the same predicate at every shape,
+// because `grantedGap` only hands out a row there was already slack for.
+//
+// If this ever fails, `fitsABoard` and `grantedGap` have drifted and the visible
+// symptom is `boardRefusal` printed over a board with every cell on screen.
+func TestTheChromeGapNeverChangesWhetherABoardFits(t *testing.T) {
+	for termRows := 0; termRows <= 40; termRows++ {
+		for boardRows := 1; boardRows <= 30; boardRows++ {
+			for promptRows := 1; promptRows <= 5; promptRows++ {
+				footerRows := boardRows + barRows
+				charged := footerRows+promptRows+
+					grantedGap(chromeGap, termRows, promptRows, footerRows) <= termRows
+				if got := fitsABoard(termRows, boardRows, promptRows); got != charged {
+					t.Fatalf("termRows=%d boardRows=%d promptRows=%d: fitsABoard=%v but "+
+						"charging the gap gives %v — the draw and the fit disagree, so a board "+
+						"is drawn whole and refused at once",
+						termRows, boardRows, promptRows, got, charged)
+				}
+			}
+		}
 	}
 }
