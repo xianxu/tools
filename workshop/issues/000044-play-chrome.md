@@ -32,9 +32,19 @@ make the border clear."* Every other surface in this program is already coloured
 — the definition, the highlighted deck words, the board's marks — which makes
 the chrome the one unstyled thing on screen.
 
-**3. A click-to-play grows the buffer by one blank line, every time.** Operator:
+**3. Playback grows the buffer by one blank line, every time.** Operator:
 *"after clicking on pronunciation in the daily play, one additional line's
 inserted"*, with a screenshot of a sitting whose frame had drifted up.
+
+**A click is where the operator SAW it, not where it lives.** The plan gate
+(PQ-1/PQ-2) found the same defect on the sitting's ordinary reveal playback
+(`play_loop.go:507`) and in the editor's own submit path (`replraw.go:653`,
+`before: "\r\n"`, which `screen.Write` normalises to `"\n"` and then commits). So
+it is one blank line per PLAYBACK — per answered question in a sitting, per
+looked-up word in the editor — and a click only made it repeatable on one word.
+The first draft of this issue said "one per click" and claimed the editor
+"already knows this"; both were generalisations from the one site that had been
+looked at.
 
 The mechanism, traced:
 
@@ -48,12 +58,24 @@ The mechanism, traced:
 
 `before: "\n"` is cursor positioning, which is what it meant on a cooked
 terminal. **Inside a screen a newline is CONTENT**, and the buffer is
-append-only. The editor's click path already knows this — `replraw.go:343` passes
-`indicator{show: true, erase: eraseLine}` with no `before` at all — so there are
-two spellings of "the indicator, inside a screen" and only one of them is right
-(ARCH-DRY). The sitting got the other one, under a comment claiming
-`defaultIndicator` is "what every other playback on this path already uses"
-(`play_loop.go:356`), which is true of the one-shot path and false of the screen.
+append-only.
+
+**Five call sites write playback into a screen, and they disagree three ways**
+— which is the actual defect, the blank lines being its symptom:
+
+| site | passes | |
+|---|---|---|
+| `play_loop.go:356` — click | `defaultIndicator(opt)` | commits a blank |
+| `play_loop.go:507` — reveal | `defaultIndicator(opt)` | commits a blank |
+| `replraw.go:653` — submit | literal, `before: "\r\n"` | commits a blank |
+| `replraw.go:343` — click | literal, no `before` | correct |
+| `replraw.go:633` — `/pron` | literal, no `before` | correct |
+
+Three copies of a literal and two of a constructor meant for a different
+surface, with nothing naming the rule they are all instances of (ARCH-DRY). The
+comment at `play_loop.go:356` even states the wrong one — `defaultIndicator` is
+"what every other playback on this path already uses" — which is true of the
+one-shot path and false of every screen.
 
 ## Spec
 
@@ -132,22 +154,32 @@ terminal's colours — the same seam `boardPalette` sits on. Derived from
 belt, but a rig that runs colourless is exactly how #40's wrap Critical stayed
 invisible, so the styled path is what the tests must drive.
 
-### The indicator inside a screen has no `before`
+### The indicator inside a screen has no `before` — and a guard says so
 
-The sitting's click path takes the editor's shape. Rather than copying the
-literal a third time, the two screen paths share one named constructor — the
-screen is where the rule "a newline is content, not cursor movement" is true, so
-that is what the name says. `defaultIndicator` keeps `before: "\n"` for the
-one-shot and piped paths, where the cursor genuinely has to move.
+All five sites take one named constructor, `screenIndicator()`. The screen is
+where the rule "a newline is content, not cursor movement" is true, so that is
+what the name says. `defaultIndicator` keeps `before: "\n"` for the one-shot and
+piped paths, where the cursor genuinely does have to move.
+
+**A sweep is not a fix — the rule gets a guard.** Five sites drifted three ways
+precisely because nothing enforced them; correcting three of them by hand leaves
+the sixth free to be written wrong (ARCH-PURPOSE: the deliverable is the CLASS,
+not the instances). So a source-level test enumerates every `playAnnounced` call
+in the screen-hosted files and fails on one that does not pass
+`screenIndicator()` — the same shape as this package's existing purity guard (an
+import allowlist plus a wall-clock grep) and its doc-sync tests, and the reason
+those keep working where hand-maintained enumerations did not.
 
 ## Done when
 
 - [ ] A frame whose buffer fills the screen still shows one blank line between the last content row and the action row, pinned by a frame test that reads the placement rather than searching for a substring.
-- [ ] The action row and the bar carry the dim style in a coloured sitting, and neither carries an escape sequence when the palette is off.
-- [ ] The blank line is CHARGED: a board offered at a given height is still drawn whole, pinned by a test at the boundary height where one uncharged row would overflow.
-- [ ] Clicking a word N times in a sitting leaves the buffer the same height it was, pinned by a test that clicks more than once — one click passing is what a `before` bug looks like when the count is one.
+- [ ] The action row and the bar carry the dim style in a coloured sitting — at BOTH bar sites, the board's and the common one — and neither carries an escape sequence when the palette is off.
+- [ ] The gap is CHARGED where a board is offered and SACRIFICED FIRST where a frame is drawn, pinned at both boundary heights: the height where one uncharged row would push a board off the bottom, and the height where an unconditional gap would make the frame taller than the terminal.
+- [ ] A sitting that plays audio N times leaves the buffer the height it was — driven through the REVEAL path as well as the click path, since the reveal is the one that fires on every question.
+- [ ] No `playAnnounced` call in a screen-hosted file passes anything but `screenIndicator()`, enforced by a test rather than by having swept the five that exist today.
 - [ ] The board's own blank-buffer-line special case is gone, and a board still reads as separated from the question above it.
 - [ ] `README.md` still quotes the prompt lines verbatim and the doc pin still passes — the plain text is unchanged.
+- [ ] `go test -tags conformance ./cmd/define` passes: the pty suite's SGR-1006 click is the only end-to-end proof that `footerTop` still maps a real terminal's click to the intended cell.
 
 ## Plan
 
