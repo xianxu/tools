@@ -320,3 +320,51 @@ Also pinned unprompted, because the review named it as the one thing `#42` must
 inherit and nothing went red if it were broken: `TestTheFooterIsBudgetedBeforeTheGap`
 holds that `fitFooter` gets its budget before `grantedGap` does — the ordering
 that is the whole reason a border can never cost a board a grid row.
+
+### 2026-09-02 — boundary review round 2: the same two families, one level up
+
+Round 2 confirmed all four round-1 blockers fixed, by its own mutation runs
+rather than by reading the commit. It then found five more, and the useful thing
+about them is that four are the SAME TWO FAMILIES as round 1 — the fix had been
+applied to the instance and not to the rule.
+
+- **I1 — `doc-attaches-to-the-wrong-decl`, 2nd.** The doc guard was widened on the
+  OWNER side (`documentedDecl` accepts consts) and not the NEIGHBOUR side
+  (`declaredIn` still collected only functions), so a block whose first word is a
+  CONSTANT's name stayed invisible — the same failure mirrored. Worse, my first
+  attempt derived `declaredIn` from `documentedDecl`, which requires a doc — and
+  the declaration being caught is precisely one that has just LOST its doc. Split
+  `declName` (shape only) from `documentedDecl` (shape + doc), so the two sides
+  widen together by construction. Verified by inserting a function between a
+  const's doc and the const.
+- **I2 — `pin-must-fail-without-the-code`, 3rd.** Two claims survived mutation with
+  the suite green: Done-when 6 (the board's deleted blank line) and `grantedGap`'s
+  `>= want+1` threshold. Both now pinned —
+  `TestABoardWritesNothingToTheBuffer` (driven LIVE, measuring while the board is
+  on screen, because reading after the sitting counts `finish`'s summary) and
+  `TestTheChromeGapNeverTakesTheLastContentRow` (pure, over `grantedGap` itself,
+  because reading it back out of a frame also measures `s.rows`'s clamp).
+- **I3 — an unstated precondition.** `screenIndicator` carries no `before`, so the
+  caller must not be mid-line: `eraseOpenLine` takes the whole open line and would
+  delete the caller's text with the indicator. No shipped site violates it, but
+  the guard now FORCES every future screen site into this shape, so the
+  precondition came with it and was written nowhere. Stated on the constructor and
+  pinned by `TestAnIndicatorAfterAPartialLineSwallowsIt`.
+- **I4 — `cite-the-code-you-claim`, 4th.** `grantedGap`'s doc still advertised the
+  second consumer the `## Revisions` entry had retracted — which reads as an
+  instruction to add the term back. Two more of the same class beside it. The RULE
+  is now recorded in the plan: a revision is not complete until `git grep
+  <entity>` is clean of comments stating the superseded design, one grep per
+  revised entity. Running it found all three.
+- **I5 — the plan was 0-of-28 ticked**, which silently switched off two repo
+  guards that skip in-progress plans. Ticked; Task 2 Step 5 STRUCK rather than
+  ticked, so the archived artifact does not preserve a live instruction to
+  reintroduce the retracted term.
+- **M1 —** the indicator class got a guard and the dim class did not, so a fifth
+  `view.Draw` would ship undimmed chrome silently — and `#42` adds draw paths.
+  `TestEverySittingDrawPassesChromeThroughAsChrome` closes it.
+- **M2 —** the grid arm's `written = s.Index` was dead, with a comment claiming
+  necessity. Deleted.
+
+Every fix above was mutation-verified: the code was reverted and the named test
+watched to go red.
