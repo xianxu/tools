@@ -1,12 +1,13 @@
 ---
 id: 000044
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-02
 updated: 2026-09-02
 estimate_hours: 2.16
 started: 2026-09-02T12:50:12-07:00
+actual_hours: 4.60
 ---
 
 # the play frame's chrome: separate it, colour it, and stop it growing a line per click
@@ -233,6 +234,7 @@ Single-pass: one review boundary, so plain checkboxes rather than `Mx` tags.
 ## Log
 
 ### 2026-09-02
+- 2026-09-02: closed — go test ./... green; go vet + gofmt clean; go test -tags conformance ./cmd/define green (131s) — one live-model row (TestReflectAgainstTheLiveService) flaked once and passed on re-run in isolation and in full; non-deterministic by construction, unrelated to this issue paths, noted in Log. Rounds 1-3 all findings fixed at the RULE and mutation-verified (code reverted, named test watched red). Round 3: BR-10 the revision sweep now runs over the TREE not one directory (it had left atlas/define.md stating both retracted designs, incl. playRegions deleted indicator parameter described as a deliberate difference between the loops); BR-11 the chrome guard inverted from a hardcoded filename to nonSittingDrawFiles, the same allowlist shape BR-6 required of its sibling.; review verdict: FIX-THEN-SHIP
 
 Filed mid-planning on `#42`, from three operator messages during one sitting.
 Sequenced AHEAD of `#42` on the operator's call: the blank line changes the row
@@ -402,3 +404,23 @@ to do with this issue's paths (the frame, the indicator, the chrome). Recorded
 because a conformance suite that fails at random is a gate that will eventually be
 ignored, which is `#19`'s shape one seam over. Not filed: it is pre-existing and
 outside this issue's scope.
+
+### 2026-09-02 — close: the two demoted findings, fixed before committing
+
+The gate converged at round 5 and demoted two Importants past the round cap with
+the warning that no later gate picks them up. Both were fixed before the close
+commit, per the FIX-THEN-SHIP protocol (#174).
+
+- **BR-17 — the two AST guards were a hand-copied pair, and the copy had already
+  lost a Fatal.** ~35 verbatim shared lines, and where the original fatals with
+  "package main parsed to no files; this guard would certify nothing", the copy did
+  `pkgs["main"].Files` and nil-dereferenced — a diagnosis turned into a panic.
+  ARCH-DRY, on the very artifact this issue spent five rounds arguing for.
+  Extracted `scanPackageMain(t, exempt, visit)`; both call it, and `#42` wants a
+  third. Both guards re-verified by mutation afterwards.
+- **BR-18 — five rounds produced six families and two new rules, and
+  `workshop/lessons.md` had nothing.** The rules lived only in the plan's
+  `## Revisions`, which is archived at close and which `AGENTS.md` §2 tells the
+  next agent not to read — so their entire value, which is to the NEXT issue, was
+  being thrown away. Three entries added, and the third records that fact as its
+  own lesson.

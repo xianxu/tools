@@ -207,6 +207,147 @@ rounds:
           family: doc-attaches-to-the-wrong-decl
           round: 4
       blocked: true
+    - "n": 5
+      timestamp: "2026-09-02T15:36:35-07:00"
+      agent: claude
+      dispose:
+        - id: BR-10
+          disposition: not-addressed
+          note: 'atlas fixed at both sites, but the sweep again stopped short: replraw.go:341 and indicator_guard_test.go:249/:211 still state retracted or false designs, and no file list was recorded in the Log.'
+          round: 5
+        - id: BR-11
+          disposition: addressed
+          note: Verified by mutation — a new cmd/define file with an unchromed view.Draw now fails the guard at both the prompt and the inline bar.
+          round: 5
+        - id: BR-12
+          disposition: addressed
+          note: The bare "//" above view.Draw is gone in 7a3abc5.
+          round: 5
+      findings:
+        - id: BR-13
+          severity: Important
+          title: the chrome guard only inspects Draw's second argument when it is a composite literal, so a helper-built footer is outside the rule it names
+          detail: |-
+            THIRD IN FAMILY — do NOT fix this instance. indicator_guard_test.go:250 bails
+            (`lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`), so the
+            shipped `Draw(..., boardFooter(q, fig, pal))` at play_loop.go:217 is never
+            checked. Verified by mutation: with boardFooter returning `sittingBar(fig)`
+            unchromed, TestEverySittingDrawPassesChromeThroughAsChrome PASSES (only the
+            behavioural pin goes red). That is precisely the fifth-Draw failure M1 was
+            written to prevent, and #42 adds draw paths.
+
+            THE RULE covering BR-6, BR-11 and this one: a guard's scope must be the rule's
+            scope on EVERY axis it enumerates — file, callee, and argument shape — and
+            anything the guard structurally cannot see is an explicit reasoned exemption,
+            never silence. Measured prevalence: all 3 scope axes these two guards enumerate
+            have now each shipped as an inclusion list, and this one was written in the same
+            commit that inverted the file axis for BR-11. Fix at the rule: follow a
+            footer-returning callee's return into the package (the sibling guard already
+            does package-local resolution for parameter types), or exempt helper-built
+            footers by callee name with the real pin cited.
+          family: sweep-every-site-of-the-rule
+          round: 5
+        - id: BR-14
+          severity: Important
+          title: the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+          detail: |-
+            indicator_guard_test.go:63-172 and :202-275 share ~35 verbatim lines — repoRoot,
+            ParseDir(cmd/define), resolve package main, skip _test.go, exemption lookup +
+            t.Logf, scanned++, the `scanned == 0` Fatal, and the exemption-names-a-real-file
+            loop. Guard 1 resolves the package defensively and Fatals with "package main
+            parsed to no files" (:70-78); guard 2 does `files := pkgs["main"].Files` (:209)
+            and nil-panics in the same case. ARCH-DRY on the artifact this issue argues for:
+            the second guard is a second owner of the scaffold and it drifted on its first
+            copy. Extract scanPackageMain(t, exempt, visit) and have both call it — #42 will
+            want a third.
+          family: second-copy-becomes-a-helper
+          round: 5
+        - id: BR-15
+          severity: Minor
+          title: the plan's Core concepts tables omit screenIndicator, a new pure entity
+          detail: |-
+            screenIndicator ships at cmd/define/main.go:857 and appears in neither the Pure
+            entities table nor the Integration points table; the parenthetical under
+            Integration points says it "belongs above" but it was never moved. The tables are
+            what the boundary cross-check and TestPlanTableStatusMatchesTheChangeWindow read.
+          family: cite-the-code-you-claim
+          round: 5
+      blocked: false
+    - "n": 6
+      timestamp: "2026-09-02T15:45:37-07:00"
+      agent: claude
+      dispose:
+        - id: BR-10
+          disposition: not-addressed
+          note: atlas:370 and :2264 are fixed and verified, but the third site the finding itemized by name — indicator_guard_test.go:249, "checked by that helper's own test" — is unchanged; TestBoardFooterPutsTheFormsOwnRowsFirst asserts row ORDER and passes palette{}, so it cannot check styling under any mutation.
+          round: 6
+        - id: BR-11
+          disposition: addressed
+          note: 'Mutation-verified: a new cmd/define file with an unchromed view.Draw now fails the guard at both the prompt and the inline bar.'
+          round: 6
+        - id: BR-12
+          disposition: addressed
+          note: The bare "//" above view.Draw is gone in 7a3abc5.
+          round: 6
+      findings:
+        - id: BR-16
+          severity: Important
+          title: the chrome guard only inspects Draw's second argument when it is a composite literal, so the shipped helper-built footer is outside the rule it names
+          detail: |-
+            THIRD IN FAMILY — do NOT fix this instance. indicator_guard_test.go:250 bails on
+            `lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`, so
+            `Draw(..., boardFooter(q, fig, pal))` at play_loop.go:217 is never checked.
+            Independently mutation-verified: with boardFooter returning `sittingBar(fig)`
+            unchromed, TestEverySittingDrawPassesChromeThroughAsChrome PASSES; only the
+            behavioural pin goes red. THE RULE covering BR-6, BR-11 and this one: a
+            source-level guard's scope must equal the rule's scope on EVERY axis it
+            enumerates — file, callee, and argument shape — and anything the guard
+            structurally cannot see is an explicit reasoned exemption with the real pin
+            cited, never a silent `return true`. Measured prevalence: all 3 scope axes these
+            two guards enumerate have now each shipped as an inclusion list, and this one
+            was written in the same commit that inverted the file axis for BR-11. Fix:
+            follow a footer-returning callee's return into the package (guard 1 already
+            resolves parameter types package-locally), or exempt helper-built footers by
+            callee name citing TestTheChromeBandIsDimmedTogether/a board's bar. NOTE: the
+            working-tree close-gate ledger already carries this as BR-13 — merge, do not
+            duplicate.
+          family: sweep-every-site-of-the-rule
+          round: 6
+        - id: BR-17
+          severity: Important
+          title: the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+          detail: |-
+            indicator_guard_test.go:63-172 and :202-275 share ~35 verbatim lines — repoRoot,
+            ParseDir(cmd/define), resolve package main, skip _test.go, exemption lookup +
+            t.Logf, scanned++, the `scanned == 0` Fatal, and the exemption-names-a-real-file
+            loop. Guard 1 resolves the package defensively and Fatals with "package main
+            parsed to no files; this guard would certify nothing" (:70-78); guard 2 does
+            `files := pkgs["main"].Files` (:209) and nil-derefs in the same case, turning a
+            diagnosis into a panic. ARCH-DRY on the very artifact this issue argues for.
+            Extract scanPackageMain(t, exempt, visit) and have both call it — #42 will want
+            a third. NOTE: already carried as BR-14 in the working-tree ledger; merge.
+          family: second-copy-becomes-a-helper
+          round: 6
+        - id: BR-18
+          severity: Important
+          title: five rounds produced six families and two new rules, and workshop/lessons.md has no entry from this issue
+          detail: |-
+            `git grep '#44' workshop/lessons.md` is empty. The two rules this issue invented
+            — "a `## Revisions` entry is not done until `git grep <entity>` over the TREE is
+            clean" and "a guard's file scope is an exemption list, never an enumeration" —
+            exist only in workshop/plans/000044-play-chrome-plan.md's `## Revisions`, which
+            AGENTS.md §1 archives to workshop/history/ at close and §2 tells the next agent
+            not to read. Both failed on their first application inside this issue, so their
+            value is entirely to the NEXT one, which will not see them. AGENTS.md §4 makes
+            this the reviewer-loop's own obligation, and #40 — the previous issue on this
+            exact surface — discharged it at lessons.md:3229/3253/3281, including a round-6
+            lesson that says in as many words "record every round's outcome in the ISSUE,
+            not only in the plan and the gate files". Fix: two `## `-headed lessons.md
+            entries keyed (#44, round N) before close, each stating the rule and its
+            measured prevalence rather than the instance.
+          family: rule-written-where-it-will-be-archived
+          round: 6
+      blocked: false
 ---
 
 # Gate ledger — tools#44 (boundary-review)
@@ -330,8 +471,109 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   carried." followed by a bare "//" immediately above the Draw call. Cosmetic; the
   doc-owner guard does not fire because the owner is a statement, not a declaration.
 
+## Round 5 — 2026-09-02T15:36:35-07:00 (claude) — passed
+
+### Disposed
+
+- BR-10 — not-addressed — atlas fixed at both sites, but the sweep again stopped short: replraw.go:341 and indicator_guard_test.go:249/:211 still state retracted or false designs, and no file list was recorded in the Log.
+- BR-11 — addressed — Verified by mutation — a new cmd/define file with an unchromed view.Draw now fails the guard at both the prompt and the inline bar.
+- BR-12 — addressed — The bare "//" above view.Draw is gone in 7a3abc5.
+
+### Raised
+
+- **BR-13** [Important] `sweep-every-site-of-the-rule` the chrome guard only inspects Draw's second argument when it is a composite literal, so a helper-built footer is outside the rule it names
+  THIRD IN FAMILY — do NOT fix this instance. indicator_guard_test.go:250 bails
+  (`lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`), so the
+  shipped `Draw(..., boardFooter(q, fig, pal))` at play_loop.go:217 is never
+  checked. Verified by mutation: with boardFooter returning `sittingBar(fig)`
+  unchromed, TestEverySittingDrawPassesChromeThroughAsChrome PASSES (only the
+  behavioural pin goes red). That is precisely the fifth-Draw failure M1 was
+  written to prevent, and #42 adds draw paths.
+  
+  THE RULE covering BR-6, BR-11 and this one: a guard's scope must be the rule's
+  scope on EVERY axis it enumerates — file, callee, and argument shape — and
+  anything the guard structurally cannot see is an explicit reasoned exemption,
+  never silence. Measured prevalence: all 3 scope axes these two guards enumerate
+  have now each shipped as an inclusion list, and this one was written in the same
+  commit that inverted the file axis for BR-11. Fix at the rule: follow a
+  footer-returning callee's return into the package (the sibling guard already
+  does package-local resolution for parameter types), or exempt helper-built
+  footers by callee name with the real pin cited.
+- **BR-14** [Important] `second-copy-becomes-a-helper` the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+  indicator_guard_test.go:63-172 and :202-275 share ~35 verbatim lines — repoRoot,
+  ParseDir(cmd/define), resolve package main, skip _test.go, exemption lookup +
+  t.Logf, scanned++, the `scanned == 0` Fatal, and the exemption-names-a-real-file
+  loop. Guard 1 resolves the package defensively and Fatals with "package main
+  parsed to no files" (:70-78); guard 2 does `files := pkgs["main"].Files` (:209)
+  and nil-panics in the same case. ARCH-DRY on the artifact this issue argues for:
+  the second guard is a second owner of the scaffold and it drifted on its first
+  copy. Extract scanPackageMain(t, exempt, visit) and have both call it — #42 will
+  want a third.
+- **BR-15** [Minor] `cite-the-code-you-claim` the plan's Core concepts tables omit screenIndicator, a new pure entity
+  screenIndicator ships at cmd/define/main.go:857 and appears in neither the Pure
+  entities table nor the Integration points table; the parenthetical under
+  Integration points says it "belongs above" but it was never moved. The tables are
+  what the boundary cross-check and TestPlanTableStatusMatchesTheChangeWindow read.
+
+## Round 6 — 2026-09-02T15:45:37-07:00 (claude) — passed
+
+### Disposed
+
+- BR-10 — not-addressed — atlas:370 and :2264 are fixed and verified, but the third site the finding itemized by name — indicator_guard_test.go:249, "checked by that helper's own test" — is unchanged; TestBoardFooterPutsTheFormsOwnRowsFirst asserts row ORDER and passes palette{}, so it cannot check styling under any mutation.
+- BR-11 — addressed — Mutation-verified: a new cmd/define file with an unchromed view.Draw now fails the guard at both the prompt and the inline bar.
+- BR-12 — addressed — The bare "//" above view.Draw is gone in 7a3abc5.
+
+### Raised
+
+- **BR-16** [Important] `sweep-every-site-of-the-rule` the chrome guard only inspects Draw's second argument when it is a composite literal, so the shipped helper-built footer is outside the rule it names
+  THIRD IN FAMILY — do NOT fix this instance. indicator_guard_test.go:250 bails on
+  `lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`, so
+  `Draw(..., boardFooter(q, fig, pal))` at play_loop.go:217 is never checked.
+  Independently mutation-verified: with boardFooter returning `sittingBar(fig)`
+  unchromed, TestEverySittingDrawPassesChromeThroughAsChrome PASSES; only the
+  behavioural pin goes red. THE RULE covering BR-6, BR-11 and this one: a
+  source-level guard's scope must equal the rule's scope on EVERY axis it
+  enumerates — file, callee, and argument shape — and anything the guard
+  structurally cannot see is an explicit reasoned exemption with the real pin
+  cited, never a silent `return true`. Measured prevalence: all 3 scope axes these
+  two guards enumerate have now each shipped as an inclusion list, and this one
+  was written in the same commit that inverted the file axis for BR-11. Fix:
+  follow a footer-returning callee's return into the package (guard 1 already
+  resolves parameter types package-locally), or exempt helper-built footers by
+  callee name citing TestTheChromeBandIsDimmedTogether/a board's bar. NOTE: the
+  working-tree close-gate ledger already carries this as BR-13 — merge, do not
+  duplicate.
+- **BR-17** [Important] `second-copy-becomes-a-helper` the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+  indicator_guard_test.go:63-172 and :202-275 share ~35 verbatim lines — repoRoot,
+  ParseDir(cmd/define), resolve package main, skip _test.go, exemption lookup +
+  t.Logf, scanned++, the `scanned == 0` Fatal, and the exemption-names-a-real-file
+  loop. Guard 1 resolves the package defensively and Fatals with "package main
+  parsed to no files; this guard would certify nothing" (:70-78); guard 2 does
+  `files := pkgs["main"].Files` (:209) and nil-derefs in the same case, turning a
+  diagnosis into a panic. ARCH-DRY on the very artifact this issue argues for.
+  Extract scanPackageMain(t, exempt, visit) and have both call it — #42 will want
+  a third. NOTE: already carried as BR-14 in the working-tree ledger; merge.
+- **BR-18** [Important] `rule-written-where-it-will-be-archived` five rounds produced six families and two new rules, and workshop/lessons.md has no entry from this issue
+  `git grep '#44' workshop/lessons.md` is empty. The two rules this issue invented
+  — "a `## Revisions` entry is not done until `git grep <entity>` over the TREE is
+  clean" and "a guard's file scope is an exemption list, never an enumeration" —
+  exist only in workshop/plans/000044-play-chrome-plan.md's `## Revisions`, which
+  AGENTS.md §1 archives to workshop/history/ at close and §2 tells the next agent
+  not to read. Both failed on their first application inside this issue, so their
+  value is entirely to the NEXT one, which will not see them. AGENTS.md §4 makes
+  this the reviewer-loop's own obligation, and #40 — the previous issue on this
+  exact surface — discharged it at lessons.md:3229/3253/3281, including a round-6
+  lesson that says in as many words "record every round's outcome in the ISSUE,
+  not only in the plan and the gate files". Fix: two `## `-headed lessons.md
+  entries keyed (#44, round N) before close, each stating the rule and its
+  measured prevalence rather than the instance.
+
 ## Open findings
 
 - **BR-10** [Important] `cite-the-code-you-claim` the revision sweep ran over cmd/define, not the tree — atlas/define.md:370 and :2264 still state the retracted design
-- **BR-11** [Important] `sweep-every-site-of-the-rule` the chrome guard scopes itself to one hardcoded filename, the inclusion list BR-6 inverted for its sibling
-- **BR-12** [Minor] `doc-attaches-to-the-wrong-decl` a stray empty comment line dangles between the deleted-blank-line note and view.Draw
+- **BR-13** [Important] `sweep-every-site-of-the-rule` the chrome guard only inspects Draw's second argument when it is a composite literal, so a helper-built footer is outside the rule it names
+- **BR-14** [Important] `second-copy-becomes-a-helper` the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+- **BR-15** [Minor] `cite-the-code-you-claim` the plan's Core concepts tables omit screenIndicator, a new pure entity
+- **BR-16** [Important] `sweep-every-site-of-the-rule` the chrome guard only inspects Draw's second argument when it is a composite literal, so the shipped helper-built footer is outside the rule it names
+- **BR-17** [Important] `second-copy-becomes-a-helper` the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+- **BR-18** [Important] `rule-written-where-it-will-be-archived` five rounds produced six families and two new rules, and workshop/lessons.md has no entry from this issue

@@ -3295,3 +3295,77 @@ records what a reviewer saw at some past HEAD, and it is the tree that ships. An
 record every round's outcome in the ISSUE, not only in the plan and the gate
 files — the tracker is the artifact a reader opens first, and it was four rounds
 stale while three other files were current.
+
+## A guard's SCOPE is a rule too, and an inclusion list is the failure it exists to catch (`#44`, rounds 1–3)
+
+`#44`'s whole thesis was that a sweep is not a fix: five call sites had drifted
+three ways, so the deliverable was a source-level guard rather than five
+corrections. The guard then scoped itself with `screenHostedFiles = {…}` — a
+hand-maintained enumeration, which is exactly the shape it was written to
+replace, one level up. A sixth screen-hosted file would simply not be checked.
+
+Inverted, it became `nonScreenFiles`: **scan everything, exempt by name, and make
+each exemption carry its reason.** A new file then defaults INTO the rule.
+
+The instructive part is what happened next. A sibling guard written *in the same
+file, one screen below that comment*, hardcoded a single filename — the inclusion
+shape again, by the same hand, minutes later. Then the shared body of the two was
+found to be a hand copy in which the copy had **dropped a Fatal**, turning
+"package main parsed to no files" from a diagnosis into a nil panic.
+
+**Three rules, and the third is the one that generalises:**
+- A guard's file scope is an exemption list, never an enumeration. Its
+  `scanned == 0` and `checked == 0` cases must FATAL, and an exemption naming a
+  file that no longer exists must fail — a guard that certifies nothing is worse
+  than no guard, because it reads as evidence.
+- Every guard's predicate is stated over the PROPERTY, not over a name that
+  happens to have it today. "Every call to `playAnnounced`" was blind to a
+  forwarder; "every argument of type `indicator`" was not.
+- **Writing a rule down does not install it.** Both rules above failed on their
+  first application, in the same session that invented them. The second copy of a
+  guard is a helper, extracted then, not the third time.
+
+## A pin that cannot fail is not a pin — check it by breaking the code (`#44`, rounds 1–2)
+
+Two boundary rounds produced six findings in one family: a test that passed for a
+reason other than the one it claimed.
+
+- A footer-click test asked `FooterRowAt(footerTop + i) == i`, and `FooterRowAt`
+  *is* `row - footerTop` — it passed with the field set to nonsense.
+- Three tests built `screen{pinned: true, gap: chromeGap}` by hand, so deleting
+  the production wiring `newPinnedScreen` sets left the whole suite green — on the
+  issue's headline behaviour.
+- A styling test checked "this line carries a dim escape", and `Paint` reprints
+  the prompt onto the same `\n`-split line as the bar, so the prompt's dim
+  satisfied it while the bar had none.
+- A Done-when row ("the special case is deleted") and a threshold constant
+  (`>= want+1`) were both ticked with nothing able to notice them being undone.
+
+**The rule: before ticking a Done-when row or landing a threshold, revert the code
+and watch the named test go red.** Record the mutation beside the claim. Three
+corollaries, each earned here:
+- **Construct through the PRODUCTION constructor.** A test that builds the object
+  by hand does not test the wiring that builds it in production.
+- **Anchor an assertion to the text, not to the row** — a terminal frame puts
+  several things on one line.
+- **Measure a DIFFERENCE where the absolute number is noisy.** "Same sitting,
+  audible vs silent" isolated one leaked row out of 547; counting blank lines
+  could not, because a dictionary entry is full of them.
+
+## A retraction is not done until `git grep` over the TREE is clean (`#44`, rounds 2–3)
+
+A plan's `## Revisions` entry recorded that `fitsABoard` would NOT charge the gap
+after all. Two rounds later, `grantedGap`'s own doc still advertised `fitsABoard`
+as its second consumer — which reads as an instruction to add the term back — and
+the atlas still described `playRegion`'s deleted parameter as a deliberate
+difference between the two loops: **the bug, written down as a design note, in the
+document whose job is telling the next reader how this works.**
+
+**When a design decision is retracted, `git grep <entity>` over the whole tree is
+the enumeration.** One grep per revised entity. Scoping it to the directory you
+happen to be editing is the same defect as scoping a guard to the files you happen
+to remember — the first pass here ran over `cmd/` and missed both atlas hits.
+
+And: **a rule recorded only in a plan is a rule that will not be read.** Plans are
+archived to `workshop/history/` at close, which `AGENTS.md` §2 tells the next agent
+not to read. If a round produced a rule, it belongs HERE.

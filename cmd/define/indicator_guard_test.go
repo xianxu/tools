@@ -61,25 +61,21 @@ var nonScreenFiles = map[string]string{
 // A callee from another package taking an indicator would be invisible here,
 // which is a real limit and is why the type is declared in this package.
 func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
-	root := repoRoot(t)
 	fset := token.NewFileSet()
+	root := repoRoot(t)
 	pkgs, err := parser.ParseDir(fset, filepath.Join(root, "cmd", "define"), nil, 0)
 	if err != nil {
 		t.Fatalf("parsing cmd/define: %v", err)
 	}
-	var files map[string]*ast.File
-	for name, pkg := range pkgs {
-		if name == "main" {
-			files = pkg.Files
-		}
-	}
-	if len(files) == 0 {
+	pkg, ok := pkgs["main"]
+	if !ok || len(pkg.Files) == 0 {
 		t.Fatal("package main parsed to no files; this guard would certify nothing")
 	}
-
-	// Which parameter positions of which functions are typed `indicator`.
+	// Which parameter positions of which functions are typed `indicator`. Over the
+	// WHOLE package, including exempt files, because the exemption is about where a
+	// call may appear rather than about where the callee is declared.
 	takesIndicator := map[string][]int{}
-	for _, f := range files {
+	for _, f := range pkg.Files {
 		for _, d := range f.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok || fn.Name == nil || fn.Type.Params == nil {
@@ -101,21 +97,12 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 		t.Fatal("no function in package main takes an indicator; this guard would certify nothing")
 	}
 
-	checked, scanned := 0, 0
-	for path, f := range files {
-		base := filepath.Base(path)
-		if strings.HasSuffix(base, "_test.go") {
-			continue
-		}
-		if why, exempt := nonScreenFiles[base]; exempt {
-			t.Logf("skipping %s: %s", base, why)
-			continue
-		}
-		scanned++
+	checked := 0
+	scanned := scanPackageMain(t, nonScreenFiles, func(f *ast.File) {
 		// A function that itself takes an indicator may forward its own
 		// parameter — the argument is then a bare identifier and the obligation
-		// belongs to whoever supplied it. No such function survives in these
-		// files today; the arm states the class rather than waiting for one.
+		// belongs to whoever supplied it. No such function survives today; the arm
+		// states the class rather than waiting for one.
 		var enclosingTakesOne bool
 		ast.Inspect(f, func(n ast.Node) bool {
 			if fn, ok := n.(*ast.FuncDecl); ok {
@@ -151,23 +138,11 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 			}
 			return true
 		})
-	}
-	if scanned == 0 {
-		t.Fatal("every file in package main was exempted; this guard would certify nothing")
-	}
+	})
 	if checked == 0 {
 		t.Fatalf("scanned %d files and found no indicator argument in any of them — "+
 			"either the exemptions have swallowed the rule, or `indicator` moved and "+
 			"this guard is now checking a name nothing uses", scanned)
-	}
-	// The exemptions must still NAME REAL FILES. A renamed or deleted exemption is
-	// a rule quietly widened or a scope quietly narrowed, and either should be a
-	// deliberate edit rather than a silent one.
-	for base := range nonScreenFiles {
-		if _, ok := files[filepath.Join(root, "cmd", "define", base)]; !ok {
-			t.Errorf("nonScreenFiles exempts %s, which is not in package main — "+
-				"if it moved, move the exemption with it", base)
-		}
 	}
 }
 
@@ -200,15 +175,11 @@ var nonSittingDrawFiles = map[string]string{
 // would grey out the thing the learner is reading. So the rule is about the
 // prompt argument, and about a bar that goes in as a literal beside it.
 func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
-	root := repoRoot(t)
 	fset := token.NewFileSet()
-	pkgs, err := parser.ParseDir(fset, filepath.Join(root, "cmd", "define"), nil, 0)
-	if err != nil {
-		t.Fatalf("parsing cmd/define: %v", err)
-	}
-	files := pkgs["main"].Files
 
-	// `asChrome(...)`, or a plain identifier holding something already chromed.
+	// `asChrome(...)`. A plain identifier is NOT accepted: nothing in the sitting
+	// builds a chromed string ahead of the call today, and accepting one would let
+	// a plain variable through unnoticed.
 	chromed := func(e ast.Expr) bool {
 		call, ok := e.(*ast.CallExpr)
 		if !ok {
@@ -218,17 +189,8 @@ func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
 		return ok && id.Name == "asChrome"
 	}
 
-	draws, scanned := 0, 0
-	for path, f := range files {
-		base := filepath.Base(path)
-		if strings.HasSuffix(base, "_test.go") {
-			continue
-		}
-		if why, exempt := nonSittingDrawFiles[base]; exempt {
-			t.Logf("skipping %s: %s", base, why)
-			continue
-		}
-		scanned++
+	draws := 0
+	scanned := scanPackageMain(t, nonSittingDrawFiles, func(f *ast.File) {
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -240,13 +202,12 @@ func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
 			}
 			draws++
 			if !chromed(call.Args[0]) {
-				t.Errorf("%s: the prompt handed to Draw is not asChrome'd — the sitting's live "+
-					"edge is chrome and must read as chrome, or the row it is on reads as content",
-					fset.Position(call.Args[0].Pos()))
+				t.Errorf("%s: the prompt handed to Draw is not asChrome'd — the sitting's "+
+					"live edge is chrome and must read as chrome, or the row it is on reads "+
+					"as content", fset.Position(call.Args[0].Pos()))
 			}
-			// A bar written inline as `[]string{...}` is chrome too; a footer built by
-			// a helper (boardFooter) owns its own styling and is checked by that
-			// helper's own test.
+			// A bar written inline as `[]string{...}` is chrome too; a footer built
+			// by a helper owns its own styling and is checked by that helper's test.
 			lit, ok := call.Args[1].(*ast.CompositeLit)
 			if !ok {
 				return true
@@ -259,17 +220,63 @@ func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
 			}
 			return true
 		})
-	}
-	if scanned == 0 {
-		t.Fatal("every file in package main was exempted; this guard would certify nothing")
-	}
+	})
 	if draws == 0 {
 		t.Fatalf("scanned %d files and found no Draw call — either the exemptions have "+
 			"swallowed the rule, or Draw was renamed and this guard now checks nothing", scanned)
 	}
-	for base := range nonSittingDrawFiles {
-		if _, ok := files[filepath.Join(root, "cmd", "define", base)]; !ok {
-			t.Errorf("nonSittingDrawFiles exempts %s, which is not in package main", base)
+}
+
+// scanPackageMain parses `cmd/define`'s package main and hands each non-test,
+// non-exempt file to visit. It is the shared body of this file's guards.
+//
+// EXTRACTED BECAUSE THE SECOND GUARD WAS A HAND COPY OF THE FIRST AND HAD
+// ALREADY DRIFTED (#44 BR-17). Thirty-five verbatim lines were shared — the
+// parse, the package resolution, the `_test.go` skip, the exemption lookup, the
+// "scanned nothing" Fatal and the exemption-names-a-real-file loop — and the copy
+// dropped the defensive package resolution, so where the original FATALS with
+// "package main parsed to no files; this guard would certify nothing", the copy
+// nil-dereferenced and turned a diagnosis into a panic. ARCH-DRY, on the very
+// artifact this issue spent five review rounds arguing for.
+//
+// The EXEMPTIONS are checked here too: an exemption naming a file that no longer
+// exists is a rule quietly widened or a scope quietly narrowed, and either should
+// be a deliberate edit rather than a silent one.
+//
+// `#42` wants a third caller.
+func scanPackageMain(t *testing.T, exempt map[string]string, visit func(*ast.File)) int {
+	t.Helper()
+	root := repoRoot(t)
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, filepath.Join(root, "cmd", "define"), nil, 0)
+	if err != nil {
+		t.Fatalf("parsing cmd/define: %v", err)
+	}
+	pkg, ok := pkgs["main"]
+	if !ok || len(pkg.Files) == 0 {
+		t.Fatal("package main parsed to no files; this guard would certify nothing")
+	}
+	scanned := 0
+	for path, f := range pkg.Files {
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, "_test.go") {
+			continue
+		}
+		if why, skip := exempt[base]; skip {
+			t.Logf("skipping %s: %s", base, why)
+			continue
+		}
+		scanned++
+		visit(f)
+	}
+	if scanned == 0 {
+		t.Fatal("every file in package main was exempted; this guard would certify nothing")
+	}
+	for base := range exempt {
+		if _, ok := pkg.Files[filepath.Join(root, "cmd", "define", base)]; !ok {
+			t.Errorf("an exemption names %s, which is not in package main — "+
+				"if it moved, move the exemption with it", base)
 		}
 	}
+	return scanned
 }

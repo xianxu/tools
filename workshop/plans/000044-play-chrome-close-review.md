@@ -416,3 +416,313 @@ findings:
       carried." followed by a bare "//" immediately above the Draw call. Cosmetic; the
       doc-owner guard does not fire because the owner is a statement, not a declaration.
 ```
+
+---
+
+## Re-review — 2026-09-02T15:36:35-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 44 — the play frame's chrome: separate it, colour it, and stop it growing a line per click |
+| repo | tools |
+| issue file | workshop/issues/000044-play-chrome.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 33321b152e51730cd1ed92e06385b8f6290c8102..7a3abc5f405e09f5e9376d5e60f9adb2cd12f6ec |
+| command | sdlc close --issue 44 |
+| reviewer | claude |
+| timestamp | 2026-09-02T15:36:35-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The code in this window is correct and unusually well pinned: I independently re-derived the frame budget (`grantedGap` → `s.rows` → gap emission → `footerTop`) and mutation-tested six of the claims rather than reading them, and every behavioural pin I broke went red for the right reason (reveal indicator → 547 vs 542 lines; `l.s.gap = chromeGap` → "the record butts the chrome"; `footerTop` losing its `+gap` → three click-map tests; `boardFooter`'s `asChrome` → the board's-bar subtest). `go test ./cmd/define`, `go test -tags conformance ./cmd/define` (135s) and `go vet ./...` are all green here. What blocks SHIP is not correctness: BR-10 is **not-addressed** — the amended "grep over the tree" rule was applied a second time and again stopped short, leaving the instance BR-10 itemized by name plus a fourth one three lines above a call site the same commit edited. And the round-2 guard M1 turns out to enforce a strictly narrower rule than its own doc claims: I confirmed by mutation that it is blind to a footer built by a helper, which is exactly the shipped `boardFooter` and exactly the shape `#42` will add.
+
+### 1. Strengths
+
+- **`grantedGap` as a single owner, with the retraction proved rather than papered over** (`cmd/define/screen.go:426-448`, `cmd/define/play_loop.go:694-707`). Declining to write a term that "looks like a reconciliation while doing nothing", and replacing it with an exhaustive equivalence pin (`play_loop_test.go:3548`), is the right call and the reasoning is recorded at both ends.
+- **`TestAFooterClickIsUnmovedByTheChromeGap` now asserts an absolute row** derived from the terminal (`screen_test.go:1424-1436`) instead of `FooterRowAt(footerTop+i)==i`. I dropped the `+gap` from `footerTop` in a scratch copy and it fails loudly, alongside `TestFooterRowAtNamesTheEntryUnderAClick`. This is the one arithmetic whose failure is a permanent mark on the wrong word, and it is genuinely pinned.
+- **`TestTheFooterIsBudgetedBeforeTheGap`** (`screen_test.go:1455-1480`) pins the ordering `#42` must inherit — written unprompted because nothing went red if it were reversed. That is the right instinct.
+- **Deleting `playRegion`'s `ind` parameter instead of guarding it** (`replraw.go:587`) removes two supplying sites structurally. Simplicity First applied correctly: the argument that cannot be wrong is the one that isn't there.
+- **`TestSittingPlaybackCommitsNothingToTheBuffer` measures a difference** (audible vs silent over the same deck) rather than counting blanks (`play_loop_test.go:3480-3532`). Content held fixed, playback the only variable — that is what makes the assertion sharp, and it reproduced at 547 vs 542 under mutation.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**I-A — the chrome guard enforces a narrower rule than its doc claims: a footer built by a helper is outside it.**
+`cmd/define/indicator_guard_test.go:250` — `lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`. Verified by mutation: with `boardFooter` returning `sittingBar(fig)` unchromed, `TestEverySittingDrawPassesChromeThroughAsChrome` **PASSES**. So the shipped `Draw(…, boardFooter(q, fig, pal))` at `play_loop.go:217` is entirely outside the guard, and a `#42`-added `Draw(prompt, someNewFooter(...))` ships undimmed chrome exactly as silently as the fifth `Draw` M1 was written to prevent. The behavioural pin covers today's two sites; the guard exists for tomorrow's, and does not reach them.
+
+> **This is the 3rd finding in family `sweep-every-site-of-the-rule`.** Do not fix this instance. The rule that covers BR-6, BR-11 and this one: **a guard's scope must be the rule's scope on *every* axis it enumerates — file, callee, and argument shape — and anything the guard structurally cannot see is an explicit, reasoned exemption, never silence.** BR-6 inverted the file axis; BR-11 inverted it again for the sibling; this is the same defect on the argument-shape axis, and it was written in the same commit as BR-11's fix. Measured prevalence: 3 of the 3 scope axes these two guards enumerate have now each shipped as an inclusion list. Concretely, either follow a footer-returning callee's `return` into the package (the same package-local resolution the sibling guard already does for parameter types), or name helper-built footers as an exemption keyed by callee with the real pin cited.
+
+**I-B — the two AST guards in `indicator_guard_test.go` are a hand-copied pair and have already diverged.**
+`indicator_guard_test.go:63-172` and `:202-275` share ~35 lines verbatim: `repoRoot` → `ParseDir(cmd/define)` → resolve package `main` → skip `_test.go` → exemption-map lookup + `t.Logf` → `scanned++` → `scanned == 0` Fatal → "the exemption names a real file" loop. The copy has already lost a check: guard 1 resolves the package defensively and Fatals with "package main parsed to no files" (`:70-78`); guard 2 does `files := pkgs["main"].Files` (`:209`) and would nil-panic in the same situation. This is ARCH-DRY on the very artifact this issue argues for ("a sweep is not a fix — the rule gets a guard"): the second guard is a second owner of the scaffold, and it drifted on its first copy. Fix sketch: extract `scanPackageMain(t, exempt map[string]string, visit func(path string, f *ast.File)) (scanned int)` and have both guards call it; `#42` will want a third.
+
+### 4. Minor findings
+
+- `cmd/define/indicator_guard_test.go:211` — `// asChrome(...), or a plain identifier holding something already chromed.` The `chromed` closure returns `false` for a plain identifier; only a direct `asChrome(...)` call passes. (Recorded under BR-10's note as a live third instance rather than raised separately.)
+- `workshop/plans/000044-play-chrome-plan.md` Core concepts — `screenIndicator` is a **new** pure entity (`main.go:857`) and appears in neither table; the parenthetical says it "belongs above" but it was never moved there. See §7.
+- `play_loop_test.go:3529` — `words` is used only in the failure message; the deck size is set by the `playRig` argument list, so the two can drift silently.
+
+### 5. Test coverage notes
+
+Mutation results from a scratch worktree at HEAD (all reverted; working tree clean):
+
+| mutation | test | result |
+|---|---|---|
+| `play_loop.go:507` → `defaultIndicator(opt)` | `TestSittingPlaybackCommitsNothingToTheBuffer` + the by-type guard | RED (both) |
+| delete `l.s.gap = chromeGap` | `TestAFullBufferStillLeavesARowAboveThePrompt` | RED |
+| `footerTop` drops `+gap` | `TestAFooterClickIsUnmovedByTheChromeGap` + 2 others | RED |
+| `boardFooter` drops `asChrome` | `TestTheChromeBandIsDimmedTogether/a board's bar` | RED |
+| `boardFooter` drops `asChrome` | `TestEverySittingDrawPassesChromeThroughAsChrome` | **GREEN** → I-A |
+| new file with an unchromed `view.Draw` | `TestEverySittingDrawPassesChromeThroughAsChrome` | RED → BR-11 confirmed |
+
+Note that `TestAFooterClickIsUnmovedByTheChromeGap` stays green when `newPinnedScreen`'s gap wiring is deleted — correctly, since on a pinned screen the footer sits on the bottom edge either way. Its doc-title ("footerTop COUNTS THE GAP") oversells slightly; the `footerTop`-arithmetic mutation above is what it actually pins, and that is the mutation that matters.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — flag.** See I-B (duplicated guard scaffold). Otherwise clean: `screenIndicator`, `asChrome`, `grantedGap`, `chromeGap` are each single owners, and `newPinnedScreen`/`newLiveScreen` are the only two screen constructors in the tree.
+- **ARCH-PURE — pass.** `grantedGap` is tested purely over the function (`screen_test.go:1500-1526`) rather than read back out of a frame, and the comment says why (`s.rows`'s clamp would be measured too). `chromeGap`, `asChrome`, `screenIndicator` are pure; `Paint` stays a pure writer over `io.Writer`.
+- **ARCH-PURPOSE — flag.** I-A: the guard delivers the easy subset of the class it names ("EVERY STRING THE SITTING DRAWS AS CHROME"). BR-10: the sweep again delivered the sites that were convenient rather than the enumeration.
+- **ARCH-MOCK — pass.** Audio goes through the injected `fakePlayer` (`fp.Played`), the screen is the pure half with `liveScreen` the only tty toucher, and the conformance suite drives the real binary over a pty for the SGR-1006 click — a live conformance check for the one behaviour whose failure is irreversible. Both suites verified green in this window.
+- **ARCH-CONSTRAINTS — pass.** The operating envelope is the frame budget and it is enforced, not asserted: `TestTheChromeGapIsGivenUpBeforeTheFrameOverflows` sweeps 1–12 rows × 2 prompt widths × 3 footer shapes; `TestTheChromeGapNeverChangesWhetherABoardFits` exhausts 0–40 × 1–30 × 1–5. `newPalette` is resolved once per sitting (`play_loop.go:164`), not per frame.
+
+### 7. Plan revision recommendations
+
+- **Core concepts / Integration points** — `screenIndicator` currently sits in neither table; the parenthetical at Integration points says it "belongs above" and it was left where it is. Add the row to **Pure entities** (`cmd/define/main.go`, `new`) and drop the parenthetical, or restate it as an explicit "listed under Integration points by decision, because …". As written the table is a subset of the delivered entities, which is what the cross-check reads.
+- **`## Revisions` rule** — the existing entry now says "over the TREE". Add the operational half the last two rounds both skipped: *read the grep to its last hit, and record the resulting file list in the issue's `## Log`.* An unrecorded sweep is indistinguishable from an unrun one, which is why round 3 and round 4 landed identically.
+- **`fitsABoard`** — the Core concepts entry says "UNCHANGED"; its doc comment gained a 10-line paragraph in this window (`play_loop.go:694-707`). Cosmetic, but `TestPlanTableStatusMatchesTheChangeWindow` is the guard that reads these rows.
+
+```findings
+dispose:
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      atlas fixed at both sites, but the sweep again stopped short: replraw.go:341 and indicator_guard_test.go:249/:211 still state retracted or false designs, and no file list was recorded in the Log.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Verified by mutation — a new cmd/define file with an unchromed view.Draw now fails the guard at both the prompt and the inline bar.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      The bare "//" above view.Draw is gone in 7a3abc5.
+findings:
+  - id: new
+    severity: Important
+    family: sweep-every-site-of-the-rule
+    title: |
+      the chrome guard only inspects Draw's second argument when it is a composite literal, so a helper-built footer is outside the rule it names
+    detail: |
+      THIRD IN FAMILY — do NOT fix this instance. indicator_guard_test.go:250 bails
+      (`lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`), so the
+      shipped `Draw(..., boardFooter(q, fig, pal))` at play_loop.go:217 is never
+      checked. Verified by mutation: with boardFooter returning `sittingBar(fig)`
+      unchromed, TestEverySittingDrawPassesChromeThroughAsChrome PASSES (only the
+      behavioural pin goes red). That is precisely the fifth-Draw failure M1 was
+      written to prevent, and #42 adds draw paths.
+
+      THE RULE covering BR-6, BR-11 and this one: a guard's scope must be the rule's
+      scope on EVERY axis it enumerates — file, callee, and argument shape — and
+      anything the guard structurally cannot see is an explicit reasoned exemption,
+      never silence. Measured prevalence: all 3 scope axes these two guards enumerate
+      have now each shipped as an inclusion list, and this one was written in the same
+      commit that inverted the file axis for BR-11. Fix at the rule: follow a
+      footer-returning callee's return into the package (the sibling guard already
+      does package-local resolution for parameter types), or exempt helper-built
+      footers by callee name with the real pin cited.
+  - id: new
+    severity: Important
+    family: second-copy-becomes-a-helper
+    title: |
+      the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+    detail: |
+      indicator_guard_test.go:63-172 and :202-275 share ~35 verbatim lines — repoRoot,
+      ParseDir(cmd/define), resolve package main, skip _test.go, exemption lookup +
+      t.Logf, scanned++, the `scanned == 0` Fatal, and the exemption-names-a-real-file
+      loop. Guard 1 resolves the package defensively and Fatals with "package main
+      parsed to no files" (:70-78); guard 2 does `files := pkgs["main"].Files` (:209)
+      and nil-panics in the same case. ARCH-DRY on the artifact this issue argues for:
+      the second guard is a second owner of the scaffold and it drifted on its first
+      copy. Extract scanPackageMain(t, exempt, visit) and have both call it — #42 will
+      want a third.
+  - id: new
+    severity: Minor
+    family: cite-the-code-you-claim
+    title: |
+      the plan's Core concepts tables omit screenIndicator, a new pure entity
+    detail: |
+      screenIndicator ships at cmd/define/main.go:857 and appears in neither the Pure
+      entities table nor the Integration points table; the parenthetical under
+      Integration points says it "belongs above" but it was never moved. The tables are
+      what the boundary cross-check and TestPlanTableStatusMatchesTheChangeWindow read.
+```
+
+---
+
+## Re-review — 2026-09-02T15:45:37-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 44 — the play frame's chrome: separate it, colour it, and stop it growing a line per click |
+| repo | tools |
+| issue file | workshop/issues/000044-play-chrome.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 33321b152e51730cd1ed92e06385b8f6290c8102..dce569332bb97effe1e195074f8f2e7ed9acd5ea |
+| command | sdlc close --issue 44 |
+| reviewer | claude |
+| timestamp | 2026-09-02T15:45:37-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+The three operator complaints are genuinely delivered and the frame arithmetic — the part where a wrong row is a permanent mark on the wrong word — is correct under independent re-derivation and under mutation. I re-derived the budget by hand (`grantedGap` → `s.rows` → gap emission → `footerTop` → `LineAt`/`FooterRowAt` coverage of every viewport row) and broke the code rather than reading it: reverting the reveal indicator reddens the leak test at 547 vs 542 lines, deleting `l.s.gap = chromeGap` reddens the full-buffer placement test, dropping `+gap` from `footerTop` reddens the click test at `footerTop = 5, want 6`, and a new `cmd/define` file with an unchromed `view.Draw` reddens the chrome guard. `go test ./cmd/define` (108s), `go vet ./...` and `gofmt -l` are clean at HEAD. Nothing here is a correctness bug. What stops SHIP is that BR-10 is not-addressed for a second time — the sweep again fixed the sites the finding's *title* named and left the site its *detail* itemized — and that the chrome guard turns out to enforce a strictly narrower rule than its own doc claims, on a third scope axis, which I confirmed by mutation.
+
+### 1. Strengths
+
+- **`grantedGap` as a single owner with the retraction proved rather than written** (`cmd/define/screen.go:426-448`, `cmd/define/play_loop.go:694-707`). I re-derived `T−P−F ≥ 2 ⟹ F+P+1 ≤ T−1` independently; the equivalence holds, and `{T:8,F:7,P:1}` is a real counterexample to the naive charge. Declining to write a term that would look like a reconciliation while changing nothing is the right call, and `TestTheChromeGapNeverChangesWhetherABoardFits` makes it a pin rather than a comment.
+- **Every reachable viewport row is accounted for.** `LineAt` bounds on `len(frame)`, not `s.rows`, so the pinned padding *and* the gap row both answer "no line"; `FooterRowAt` starts at `bufRows+gap+promptRows`. There is no row that maps to a buffer line it isn't showing. The `s.rows < 0` clamp cannot fire while `gap > 0`, because `grantedGap` demands two rows of slack — so the frame totals exactly `termRows`.
+- **`TestSittingPlaybackCommitsNothingToTheBuffer` measures a difference** (`play_loop_test.go:3480-3532`), running the same deck audible and silent so content is held fixed and playback is the only variable. That is what makes it sharp, and it reproduced under mutation.
+- **`TestTheFooterIsBudgetedBeforeTheGap`** (`screen_test.go:1455`) pins the ordering `#42` must inherit, written unprompted because nothing went red if it were reversed.
+- **Deleting `playRegion`'s `ind` parameter** (`replraw.go:587`) instead of guarding it — two supplying sites removed structurally. The atlas paragraph at `:2265` now says the old design *was* the bug, which is the right thing for the document a next reader opens.
+
+### 2. Critical findings
+
+None.
+
+### 3. Important findings
+
+**N1 — `cmd/define/indicator_guard_test.go:250` — the chrome guard only inspects `Draw`'s second argument when it is a composite literal, so the shipped helper-built footer is outside the rule the guard names.**
+
+`lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`. Verified by mutation in a scratch worktree: with `boardFooter` returning `sittingBar(fig)` **unchromed**, `TestEverySittingDrawPassesChromeThroughAsChrome` **PASSES** (only the behavioural pin goes red). So `Draw(…, boardFooter(q, fig, pal))` at `play_loop.go:217` — one of the two shipped sites — is never checked, and a `#42`-added `Draw(prompt, someNewFooter(…))` ships undimmed chrome exactly as silently as the fifth `Draw` this guard was written to prevent.
+
+> **This is the 3rd finding in family `sweep-every-site-of-the-rule`.** Earlier rounds fixed instances (BR-6 inverted the file axis; BR-11 inverted the file axis again for the sibling). Do NOT fix this instance. **The rule: a source-level guard's scope must equal the rule's scope on *every* axis it enumerates — file, callee, and argument shape — and anything the guard structurally cannot see is an explicit reasoned exemption with the real pin cited, never a silent `return true`.** Measured prevalence: all 3 scope axes these two guards enumerate have now each shipped as an inclusion list, and this one was written in the same commit that inverted the file axis. Concretely: follow a footer-returning callee's `return` into the package (guard 1 already does package-local resolution for parameter types), or exempt helper-built footers keyed by callee name with `TestTheChromeBandIsDimmedTogether/a board's bar` cited as the pin.
+
+**N2 — `cmd/define/indicator_guard_test.go:63-172` and `:202-275` are a hand-copied pair, and the copy has already lost a check (ARCH-DRY).**
+
+The two guards share ~35 verbatim lines: `repoRoot` → `ParseDir(cmd/define)` → resolve package `main` → skip `_test.go` → exemption lookup + `t.Logf` → `scanned++` → the `scanned == 0` Fatal → the "exemption names a real file" loop. Guard 1 resolves the package defensively and Fatals with `"package main parsed to no files; this guard would certify nothing"` (`:70-78`); guard 2 does `files := pkgs["main"].Files` (`:209`) and nil-derefs in the same situation — a panic where its sibling has a diagnosis. This is ARCH-DRY on the very artifact this issue argues for ("a sweep is not a fix — the rule gets a guard"): the second guard is a second owner of the scaffold and it drifted on its first copy. Extract `scanPackageMain(t, exempt map[string]string, visit func(path string, f *ast.File)) int` and have both call it; `#42` will want a third.
+
+**N3 — five review rounds have produced six families and two new rules, and `workshop/lessons.md` has no entry from this issue (AGENTS.md §4).**
+
+`git grep '#44' workshop/lessons.md` is empty. The two rules this issue invented — "a `## Revisions` entry is not done until `git grep <entity>` over the TREE is clean" and "a guard's file scope is an exemption list, never an enumeration" — live only in `workshop/plans/000044-play-chrome-plan.md`'s `## Revisions`, which §1 archives to `workshop/history/` at close and §2 tells the next agent not to read. Both rules failed on their first application *inside this issue*; neither will be visible to the next one. The immediately preceding issue on this surface did this correctly — `#40` closed with lessons at `lessons.md:3229/3253/3281`, including one from its own round 6 whose text is *"record every round's outcome in the ISSUE, not only in the plan and the gate files."* Cheap fix: two `## `-headed entries in `lessons.md` before close, keyed `(#44, round N)`, carrying the rule and the measured prevalence rather than the instance.
+
+### 4. Minor findings
+
+- `cmd/define/indicator_guard_test.go:211` — the comment says the predicate accepts "a plain identifier holding something already chromed"; `chromed` returns `false` for any non-`CallExpr`. Same class as BR-10's remaining instance.
+- `cmd/define/play_loop_test.go:3529` — `const words = 6` is used only in the failure message; the deck size is really set by the `playRig` argument list, so the two can drift silently.
+- `cmd/define/screen_test.go:1447` — `TestTheChromeGapIsGivenUpBeforeTheFrameOverflows` still builds `screen{pinned: true, gap: chromeGap}` by hand. Acceptable (it is about overflow, not wiring, and two siblings go through `newPinnedScreen`), but BR-3's rule is written down now and a one-line "by hand deliberately, because…" would keep it from reading as the shape BR-3 banned.
+
+### 5. Test coverage notes
+
+Mutations run in a scratch worktree at HEAD, all reverted, tree clean:
+
+| mutation | test | result |
+|---|---|---|
+| `play_loop.go:507` → `defaultIndicator(opt)` | `TestSittingPlaybackCommitsNothingToTheBuffer` | RED (547 vs 542) |
+| delete `l.s.gap = chromeGap` | `TestAFullBufferStillLeavesARowAboveThePrompt` | RED ("the record butts the chrome") |
+| `footerTop` drops `+gap` | `TestAFooterClickIsUnmovedByTheChromeGap` | RED (`footerTop = 5, want 6`) |
+| new `cmd/define` file with unchromed `view.Draw` | `TestEverySittingDrawPassesChromeThroughAsChrome` | RED (both prompt and inline bar) → BR-11 confirmed |
+| `boardFooter` drops `asChrome` | `TestEverySittingDrawPassesChromeThroughAsChrome` | **GREEN** → N1 |
+
+`TestBoardFooterPutsTheFormsOwnRowsFirst` calls `boardFooter(board, sittingFigures{}, palette{})` — an empty palette, where `asChrome` is the identity — so it cannot check styling under any mutation. That is the factual basis for BR-10 staying open.
+
+### 6. Architectural notes
+
+- **ARCH-DRY — flag (N2).** Otherwise clean: `chromeGap`, `grantedGap`, `asChrome`, `screenIndicator` are each single owners, the dim escape reads from `newPalette`, and the five-way indicator drift collapses to one constructor plus a deleted parameter. The `asChrome(sittingBar(fig), pal)` duplication at the two `Draw` seams is forced by keeping `sittingBar` plain for the README pin and is correct.
+- **ARCH-PURE — pass.** `grantedGap` is tested directly over the function rather than read back out of a frame, and the comment says why (`s.rows`'s clamp would be measured too). Every new frame test drives a `strings.Builder`/`bytes.Buffer`; `liveScreen` remains the only tty-touching part; `Paint` stays a pure writer over `io.Writer`.
+- **ARCH-PURPOSE — flag (N1, BR-10).** The issue's own thesis is "the deliverable is the CLASS, not the instances", and the class deliverable for the dim is the guard — which reaches one of the two shipped sites. BR-10 is the same axis on the documentary side: the enumeration was run to the sites the title named.
+- **ARCH-MOCK — pass.** Audio through the injected `fakePlayer`, the screen as the pure half with `liveScreen` the only tty toucher, and the pty conformance suite driving the real binary for the SGR-1006 click — a live conformance check for the one behaviour whose failure is irreversible.
+- **ARCH-CONSTRAINTS — pass.** `Paint` is the keystroke path; the gap costs one comparison and a `chromeGap`-iteration loop. `newPalette` resolves once per sitting (`play_loop.go:164`), not per frame. The envelope is enforced rather than asserted: `TestTheChromeGapIsGivenUpBeforeTheFrameOverflows` sweeps 1–12 rows × 2 prompt widths × 3 footer shapes, and `TestTheChromeGapNeverTakesTheLastContentRow` pins the `+1` threshold that the exhaustion test structurally cannot see.
+
+### 7. Plan revision recommendations
+
+- **Core concepts — `screenIndicator` is in neither table.** It ships new and pure at `cmd/define/main.go:857`; the parenthetical under Integration points says it "belongs above" and it was never moved. Add the row to **Pure entities** (`cmd/define/main.go`, `new`) and drop the parenthetical. As written the table is a subset of the delivered entities, which is exactly what the boundary cross-check reads — and `TestPlanTableStatusMatchesTheChangeWindow` only checks table→code, never code→table, so nothing else will catch it.
+- **`fitsABoard`** — the Core concepts entry says "UNCHANGED"; its doc comment gained a 10-line paragraph in this window (`play_loop.go:694-707`). Cosmetic, but that row is what the guard reads.
+- **`## Revisions` rule** — the entry now says "over the TREE". Add the operational half both applications skipped: *read the grep to its last hit, and record the resulting file list in the issue's `## Log`.* An unrecorded sweep is indistinguishable from an unrun one, which is why two consecutive rounds landed identically. Then move the rule to `lessons.md` per N3, since the plan is archived at close.
+
+```findings
+dispose:
+  - id: BR-10
+    disposition: not-addressed
+    note: |
+      atlas:370 and :2264 are fixed and verified, but the third site the finding itemized by name — indicator_guard_test.go:249, "checked by that helper's own test" — is unchanged; TestBoardFooterPutsTheFormsOwnRowsFirst asserts row ORDER and passes palette{}, so it cannot check styling under any mutation.
+  - id: BR-11
+    disposition: addressed
+    note: |
+      Mutation-verified: a new cmd/define file with an unchromed view.Draw now fails the guard at both the prompt and the inline bar.
+  - id: BR-12
+    disposition: addressed
+    note: |
+      The bare "//" above view.Draw is gone in 7a3abc5.
+findings:
+  - id: new
+    severity: Important
+    family: sweep-every-site-of-the-rule
+    title: |
+      the chrome guard only inspects Draw's second argument when it is a composite literal, so the shipped helper-built footer is outside the rule it names
+    detail: |
+      THIRD IN FAMILY — do NOT fix this instance. indicator_guard_test.go:250 bails on
+      `lit, ok := call.Args[1].(*ast.CompositeLit); if !ok { return true }`, so
+      `Draw(..., boardFooter(q, fig, pal))` at play_loop.go:217 is never checked.
+      Independently mutation-verified: with boardFooter returning `sittingBar(fig)`
+      unchromed, TestEverySittingDrawPassesChromeThroughAsChrome PASSES; only the
+      behavioural pin goes red. THE RULE covering BR-6, BR-11 and this one: a
+      source-level guard's scope must equal the rule's scope on EVERY axis it
+      enumerates — file, callee, and argument shape — and anything the guard
+      structurally cannot see is an explicit reasoned exemption with the real pin
+      cited, never a silent `return true`. Measured prevalence: all 3 scope axes these
+      two guards enumerate have now each shipped as an inclusion list, and this one
+      was written in the same commit that inverted the file axis for BR-11. Fix:
+      follow a footer-returning callee's return into the package (guard 1 already
+      resolves parameter types package-locally), or exempt helper-built footers by
+      callee name citing TestTheChromeBandIsDimmedTogether/a board's bar. NOTE: the
+      working-tree close-gate ledger already carries this as BR-13 — merge, do not
+      duplicate.
+  - id: new
+    severity: Important
+    family: second-copy-becomes-a-helper
+    title: |
+      the two AST guards in indicator_guard_test.go are a hand-copied pair and the copy has already lost a safety check
+    detail: |
+      indicator_guard_test.go:63-172 and :202-275 share ~35 verbatim lines — repoRoot,
+      ParseDir(cmd/define), resolve package main, skip _test.go, exemption lookup +
+      t.Logf, scanned++, the `scanned == 0` Fatal, and the exemption-names-a-real-file
+      loop. Guard 1 resolves the package defensively and Fatals with "package main
+      parsed to no files; this guard would certify nothing" (:70-78); guard 2 does
+      `files := pkgs["main"].Files` (:209) and nil-derefs in the same case, turning a
+      diagnosis into a panic. ARCH-DRY on the very artifact this issue argues for.
+      Extract scanPackageMain(t, exempt, visit) and have both call it — #42 will want
+      a third. NOTE: already carried as BR-14 in the working-tree ledger; merge.
+  - id: new
+    severity: Important
+    family: rule-written-where-it-will-be-archived
+    title: |
+      five rounds produced six families and two new rules, and workshop/lessons.md has no entry from this issue
+    detail: |
+      `git grep '#44' workshop/lessons.md` is empty. The two rules this issue invented
+      — "a `## Revisions` entry is not done until `git grep <entity>` over the TREE is
+      clean" and "a guard's file scope is an exemption list, never an enumeration" —
+      exist only in workshop/plans/000044-play-chrome-plan.md's `## Revisions`, which
+      AGENTS.md §1 archives to workshop/history/ at close and §2 tells the next agent
+      not to read. Both failed on their first application inside this issue, so their
+      value is entirely to the NEXT one, which will not see them. AGENTS.md §4 makes
+      this the reviewer-loop's own obligation, and #40 — the previous issue on this
+      exact surface — discharged it at lessons.md:3229/3253/3281, including a round-6
+      lesson that says in as many words "record every round's outcome in the ISSUE,
+      not only in the plan and the gate files". Fix: two `## `-headed lessons.md
+      entries keyed (#44, round N) before close, each stating the rule and its
+      measured prevalence rather than the instance.
+```
