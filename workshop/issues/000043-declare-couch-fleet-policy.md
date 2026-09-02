@@ -37,8 +37,8 @@ authority for tools admission behavior.
 
 ## Plan
 
-- [ ] Add `.sdlc/fleet.json` using the established repo-keyed bounded policy.
-- [ ] Validate the declaration through `sdlc fleet policy`.
+- [x] Add `.sdlc/fleet.json` using the established repo-keyed bounded policy.
+- [x] Validate the declaration through `sdlc fleet policy`.
 
 ## Log
 
@@ -47,3 +47,6 @@ authority for tools admission behavior.
 The operator approved the same single-thread-per-repository declaration used by
 Pair and Parley. This keeps the admission fact in the repository-owned policy
 source (`ARCH-DRY`).
+
+Added the declaration and validated its normalized result through the same
+`sdlc fleet policy` boundary Couch invokes.
