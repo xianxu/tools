@@ -10,8 +10,12 @@ import (
 //
 // Three values rather than a bool, because the ladder now promotes by an amount
 // that depends on the manner of the answer, and a bool cannot carry three
-// states. It is also the seam `#40`'s board extends with `GradeUnsure` rather
-// than re-opening.
+// states.
+//
+// `#40` was expected to extend this seam with a fourth, `GradeUnsure`, and it
+// did NOT: the operator deleted the third mark — *"I guess unsure means no"* —
+// so form 2.5's board grades `Correct` and `Wrong` like everything else. The
+// seam is still the right one to extend; nothing has needed to yet.
 type Grade int
 
 const (

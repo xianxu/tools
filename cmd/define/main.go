@@ -369,6 +369,18 @@ type options struct {
 	// width is the terminal width for wrapping; 0 on a pipe, where a consumer
 	// re-wraps for itself and baked-in breaks cannot be undone.
 	width int
+	// rows is the terminal HEIGHT, and unlike width it is never 0 (#40 D15).
+	//
+	// The two answer different questions. `width` is a WRAP POLICY, which is why
+	// it may be zero — a pipe wants no baked-in breaks, and a terminal under
+	// twenty columns cannot be wrapped readably. Height has no such policy: a
+	// frame is as tall as the terminal is, and terminalRows falls back to 24
+	// rather than to nothing.
+	//
+	// Read here because form selection needs it BEFORE the screen exists: a
+	// board that cannot be drawn whole is not offered, and that is decided while
+	// the queue is being built.
+	rows int
 	// tty reports whether stdout is a terminal, which decides whether transient
 	// UI can be erased. Distinct from color (same probe, different question) and
 	// from stdinIsTerminal (different stream entirely).
@@ -526,6 +538,7 @@ func run(ctx context.Context, args []string, d deps, stdin io.Reader, stdout, st
 		// would leave those users with erase sequences they cannot render.
 		tty:   !*noColor && isTerminal(stdout),
 		width: terminalWidth(stdout),
+		rows:  terminalRows(stdout),
 		// -raw is the scripting form: the unparsed entry and nothing else. The
 		// one-shot path already returned before playing, but the loop's replay
 		// branch never consulted the flag — so a bare return under -raw fetched

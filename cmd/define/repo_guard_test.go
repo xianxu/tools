@@ -587,7 +587,7 @@ func TestProseDoesNotSpellStaleRuntimeArtifactNames(t *testing.T) {
 			t.Fatalf("reading %s: %v", f, err)
 		}
 		seen++
-		text := currentTruthOnly(string(b))
+		text := currentTruthOnly(t, f, string(b))
 		if n := strings.Count(text, "user-model."); n > allowed[p] {
 			t.Errorf("%s spells a runtime artifact's name %d time(s), allowed %d — name the "+
 				"artifact (\"the learner model\") unless the line is a current layout, the "+
@@ -610,20 +610,75 @@ func TestProseDoesNotSpellStaleRuntimeArtifactNames(t *testing.T) {
 //   - everything from a "## Revisions" or "## Log" heading onward;
 //   - any "### " section carrying a "**closed:**" line, which is how a project
 //     file marks a milestone detail block as finished.
-func currentTruthOnly(text string) string {
+//
+// IT TAKES A T AND FAILS WHEN THE FILTER SWALLOWS THE ARTIFACT (R10). Truncating
+// at the first record heading is only sound while records come LAST. `#40`'s
+// plan grew a second "## Revisions" above "## Done when", and every guard
+// reading this saw a file that stopped before the section it existed to check —
+// four of them then reported "nothing to check" and skipped. A guard that
+// certifies nothing while reporting success is worse than no guard, and this is
+// the one place all of them pass through.
+//
+// So: a record heading must be the LAST top-level section. Anything after it is
+// invisible, and invisible is the failure — not a state to tolerate.
+func currentTruthOnly(t *testing.T, name, text string) string {
 	for _, marker := range []string{"\n## Revisions", "\n## Log"} {
-		if i := strings.Index(text, marker); i >= 0 {
-			text = text[:i]
+		i := strings.Index(text, marker)
+		if i < 0 {
+			continue
 		}
+		// What the filter is about to discard, minus the record section itself.
+		rest := text[i+1:]
+		if j := strings.Index(rest[1:], "\n## "); j >= 0 {
+			t.Errorf("%s has a %q section with another top-level section after it. "+
+				"Records are truncated at the first one, so everything below is invisible to every guard "+
+				"that reads current truth — %s is unchecked. Records go LAST, once.",
+				name, strings.TrimPrefix(marker, "\n## "), strings.SplitN(strings.TrimPrefix(rest[1+j:], "\n"), "\n", 2)[0])
+		}
+		text = text[:i]
 	}
+	// THE SECOND DISCARDING RULE, and R10's premise assertion applies to it too.
+	//
+	// Splitting on "\n### " means a closed section runs to the NEXT "### " — which
+	// can swallow a following top-level "## " section whole, exactly as the
+	// truncation above could. No live instance in the tree, which is why this is
+	// the rule written down rather than a defect fixed: a filter with two ways to
+	// discard needs the assertion on both, or the next one silently gets none.
 	var kept []string
 	for _, sec := range strings.Split(text, "\n### ") {
-		if strings.Contains(sec, "**closed:**") {
+		if closedSection(sec) {
+			if i := strings.Index(sec, "\n## "); i >= 0 {
+				t.Errorf("%s has a closed \"### \" section with a top-level section after it (%q). "+
+					"Closed sections are discarded up to the next \"### \", so that section is invisible "+
+					"to every guard reading current truth. Close out the detail block before the next \"## \".",
+					name, strings.SplitN(strings.TrimPrefix(sec[i:], "\n"), "\n", 2)[0])
+			}
 			continue
 		}
 		kept = append(kept, sec)
 	}
 	return strings.Join(kept, "\n### ")
+}
+
+// closedSection reports whether a "### " block carries a project file's
+// `**closed:**` marker — the LINE, not the characters.
+//
+// `strings.Contains` was the first spelling and it was wrong in the way that
+// matters for a filter: `atlas/repo-guards.md` DOCUMENTS this very rule, so the
+// marker appears mid-sentence in its prose, and the whole top of that file — the
+// guard inventory itself — was silently discarded from every guard reading
+// current truth. It went unnoticed until R13 made discarding say so, which is
+// the argument for the premise assertion in one line.
+//
+// A marker is written at the start of a line by whatever wrote the record. Prose
+// about a marker is not a marker.
+func closedSection(sec string) bool {
+	for _, line := range strings.Split(sec, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "**closed:**") {
+			return true
+		}
+	}
+	return false
 }
 
 // A plan's Core-concepts table may not name an entity the tree does not have.
@@ -685,7 +740,7 @@ func TestPlanTablesNameEntitiesThatExist(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", plan, err)
 		}
-		body := currentTruthOnly(string(b))
+		body := currentTruthOnly(t, filepath.Base(plan), string(b))
 		// An unticked step means the plan is still a plan. Scanned per plan, not
 		// per row, because it is a property of the document.
 		inProgress := strings.Contains(body, "- [ ] ")
@@ -853,7 +908,7 @@ func TestPlanNamedTestsExist(t *testing.T) {
 		// finished from the moment the plan was written. Document-level alone is
 		// wrong the other way — it would exempt a milestone for exactly as long
 		// as that milestone was being built, which is when #30's miss happened.
-		body := currentTruthOnly(string(b))
+		body := currentTruthOnly(t, filepath.Base(plan), string(b))
 		units := planSections(body)
 		if !strings.Contains(body, "## Milestone ") {
 			units = []string{body}
@@ -1007,7 +1062,7 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", f, err)
 		}
-		text := currentTruthOnly(string(b))
+		text := currentTruthOnly(t, f, string(b))
 		for old, now := range retiredSymbolNames {
 			// Word-boundaried: migrateFlatDeck must not match MigrateFlatDeck,
 			// and a longer identifier containing the old name is not the old name.
@@ -1015,6 +1070,54 @@ func TestNoArtifactNamesARetiredSymbol(t *testing.T) {
 				t.Errorf("%s names the retired symbol %q; the tree declares %q. A rename "+
 					"sweeps every restatement in the SAME commit — nine findings in this "+
 					"family say the hand-sweep does not hold.", f, old, now)
+			}
+		}
+	}
+}
+
+// retiredPhrases is the CONCEPT half of the rule above: a phrase naming a DRAWN
+// element the tool no longer has, mapped to what states that fact now.
+//
+// `retiredSymbolNames` closes the half a compiler could almost have caught — a
+// name the tree stops declaring. This is the half nothing can: R11 deleted the
+// board's footer toggle row and moved the live mark onto the prompt row, and
+// six months of comments went on describing a row that is not drawn. No symbol
+// was renamed (`toggleLine` was unexported, which `isCitableName` filters out on
+// purpose), so every existing guard stayed green while five comments, one of
+// them contradicting its own owner twenty lines below, told a reader to look for
+// a row that is gone. It took five rounds of one boundary review to enumerate.
+//
+// The trigger the finding asked for, made mechanical: when a window deletes a
+// drawn element, the sweep set is `grep` for what it was CALLED over
+// currentTruthFiles, and this map is where that grep gets written down so it
+// runs on every later commit too. A key is a PHRASE, not a word — "toggle" is
+// still a live verb for what Tab does, and the row it used to name is not.
+var retiredPhrases = map[string]string{
+	"toggle row":      "the prompt row — `Board.Keys` states the live mark (#40 R11)",
+	"footer's toggle": "the prompt row — `Board.Keys` states the live mark (#40 R11)",
+}
+
+// No current-truth artifact describes a drawn element the tool no longer draws.
+//
+// Same scope and same reasoning as TestNoArtifactNamesARetiredSymbol — records
+// legitimately say what was true when written, so this reads currentTruthOnly.
+// Case-insensitive: these are prose phrases, and the comments that went stale
+// spelled the element in three different cases.
+func TestNoArtifactDescribesARetiredDrawnElement(t *testing.T) {
+	root := repoRoot(t)
+	for _, f := range currentTruthFiles(t, root) {
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("reading %s: %v", f, err)
+		}
+		text := currentTruthOnly(t, f, string(b))
+		for old, now := range retiredPhrases {
+			re := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(old) + `\b`)
+			if loc := re.FindStringIndex(text); loc != nil {
+				t.Errorf("%s describes %q, a drawn element the tool no longer has; %s. "+
+					"A deleted element is swept in the SAME commit — grep for what it "+
+					"was called, and add the phrase here so the next commit is swept too.",
+					f, text[loc[0]:loc[1]], now)
 			}
 		}
 	}
@@ -1079,7 +1182,7 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reading %s: %v", plan, err)
 		}
-		for _, line := range strings.Split(currentTruthOnly(string(b)), "\n") {
+		for _, line := range strings.Split(currentTruthOnly(t, filepath.Base(plan), string(b)), "\n") {
 			m := row.FindStringSubmatch(line)
 			if m == nil {
 				continue
@@ -1104,6 +1207,91 @@ func TestPlanTableStatusMatchesTheChangeWindow(t *testing.T) {
 		// no row names, has no status claim to contradict. Reachable on a
 		// docs-only commit, which is a normal state rather than drift.
 		t.Skip("no unchanged/modified rows pointed at files this window touched")
+	}
+}
+
+// A PLAN'S `pinned by` COLUMN IS A CLAIM ABOUT THE TREE, and it is checkable.
+//
+// The sibling above checks the STATUS column — "did this window touch that
+// symbol" — and reads only the `name | file.go | status` rows, which left the
+// Done-when table's `pinned by` column unguarded. `#40`'s boundary review found
+// it: three rows cited four tests that had never been written, and the shipped
+// pins appeared only in the issue's Log. A Done-when row naming a test that does
+// not exist is worse than one naming none, because it reads as evidence.
+//
+// The issue's own Log had recorded the lesson one round earlier — "a hand-sweep
+// of a plan's tables does not hold, and this repo already knew it" — and the
+// hand-sweep failed again in the column the guard could not see. So the guard
+// grows rather than the discipline.
+//
+// EVERY backticked `Test*` identifier in an active plan, not only the Done-when
+// table's: a plan citing a test anywhere is making the same claim.
+func TestPlanCitesTestsThatExist(t *testing.T) {
+	root := repoRoot(t)
+	plans, err := filepath.Glob(filepath.Join(root, "workshop", "plans", "*-plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plans) == 0 {
+		// conformance:inapplicable — every plan is archived at close, so no
+		// active plan is a legitimate state between issues.
+		t.Skip("no active plans")
+	}
+	// The tree's test functions, by name, read once.
+	declared := map[string]bool{}
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range regexp.MustCompile(`func (Test[A-Za-z0-9_]*)\(`).FindAllStringSubmatch(string(b), -1) {
+			declared[m[1]] = true
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(declared) == 0 {
+		t.Fatal("found no test functions in the tree; this guard would pass vacuously")
+	}
+
+	cite := regexp.MustCompile("`(Test[A-Za-z0-9_]*)`")
+	checked, donewhen := 0, 0
+	for _, plan := range plans {
+		b, err := os.ReadFile(plan)
+		if err != nil {
+			t.Fatalf("reading %s: %v", plan, err)
+		}
+		body := currentTruthOnly(t, filepath.Base(plan), string(b))
+		if strings.Contains(body, "## Done when") {
+			donewhen++
+		}
+		for _, m := range cite.FindAllStringSubmatch(body, -1) {
+			checked++
+			if !declared[m[1]] {
+				t.Errorf("%s cites `%s` and no such test exists. A plan naming a test that was "+
+					"never written reads as evidence; write it, or cite the one that shipped.",
+					filepath.Base(plan), m[1])
+			}
+		}
+	}
+	if checked == 0 && donewhen > 0 {
+		// NOT A SKIP. `checked == 0` beside a Done-when table means the citations
+		// were swallowed — which is exactly how this guard passed while `#40`'s
+		// plan cited four tests that did not exist (R10). A guard reading a
+		// FILTERED view has to assert its premise about that view and fail, not
+		// report success about a file it never saw.
+		t.Errorf("%d plan(s) have a Done-when table and not one cites a test. Either the rows "+
+			"name no pin — which is what the table is for — or currentTruthOnly truncated them away.", donewhen)
+	}
+	if checked == 0 && donewhen == 0 {
+		// conformance:inapplicable — a plan may legitimately name no test yet,
+		// which is the normal state before implementation begins.
+		t.Skip("no active plan has a Done-when table")
 	}
 }
 
@@ -1348,7 +1536,7 @@ func TestARemovedDeclarationIsSweptOrRetired(t *testing.T) {
 			// was the first spelling and it is wrong the same way it was wrong
 			// for the doc check two commits earlier — a substring hit is not a
 			// mention, and this guard was written after that fix.
-			if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(currentTruthOnly(string(b))) {
+			if regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`).MatchString(currentTruthOnly(t, f, string(b))) {
 				t.Errorf("%s names %q, which this window REMOVED and which is not in "+
 					"retiredSymbolNames. Either add the row — the mapping is the part only "+
 					"you know — or sweep the mention. A guard that depends on someone "+

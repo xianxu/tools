@@ -58,6 +58,18 @@ type screen struct {
 	// the buffer: the transcript and the click map must not gain rows that exist
 	// only because the terminal is tall.
 	pinned bool
+	// footer and footerTop are WHERE THE LIVE EDGE ENDED UP, recorded by the
+	// last Paint so a click can be resolved against it (#40 D10).
+	//
+	// Paint already computes both — the footer it actually drew, after fitFooter
+	// dropped what would not fit, and the viewport row it began at — and simply
+	// did not report them. This is that report, and it is what makes the live
+	// edge clickable at all: the buffer is append-only, which is what makes a
+	// click's coordinates exact and also what stops anything written there from
+	// ever changing, so a surface with marks that change colour has to live in
+	// the footer instead.
+	footer    []string
+	footerTop int
 }
 
 // Write appends bytes to the buffer, splitting on newlines.
@@ -200,6 +212,43 @@ func (s *screen) LineAt(row int) (int, bool) {
 		return 0, false
 	}
 	return top + row, true
+}
+
+// FooterRowAt resolves a click on the LIVE EDGE: a viewport row to the index of
+// the footer entry drawn there, and to WHICH of that entry's physical rows was
+// hit — 0 for its first, 1 for the first continuation, and so on.
+//
+// The INDEX, because that is what a caller wants to know: "which of the things I
+// handed over was clicked". The screen wrapped them, so the screen owns the
+// mapping; making the caller work out which of its entries had wrapped would be
+// two owners of one measurement.
+//
+// AND THE OFFSET, because the index alone is not enough to place a COLUMN
+// (R9). An entry too wide for the terminal is drawn across several rows, and a
+// click on the second of them carries a column that means nothing in the
+// entry's own coordinate space — column 4 of a continuation is column
+// cols+4 of the entry. A caller that acts on a column has to be able to refuse
+// that, and it can only refuse what it is told about.
+//
+// False for the buffer, for the prompt, and for a footer row fitFooter dropped:
+// a click on a row that was not drawn is a click on nothing, and inventing an
+// entry for it would mark a word that is not on screen.
+//
+// Answered from the LAST PAINT rather than from the current state, because that
+// is what the person clicking was looking at.
+func (s *screen) FooterRowAt(row int) (entry, offset int, ok bool) {
+	if row < s.footerTop {
+		return 0, 0, false
+	}
+	off := row - s.footerTop
+	for i, m := range s.footer {
+		h := displayRows(m, s.cols)
+		if off < h {
+			return i, off, true
+		}
+		off -= h
+	}
+	return 0, 0, false
 }
 
 // Lines is the whole buffer. Present for tests and for the exit transcript
@@ -438,6 +487,16 @@ func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, foote
 			b.WriteString("\r\n")
 		}
 	}
+	// Recorded HERE, from the values this paint is about to use, rather than
+	// recomputed by whoever asks later. The buffer's height is len(frame) unless
+	// the padding above just filled it out, which is the one place the two
+	// surfaces differ — and it is exactly the arithmetic that decides where a
+	// footer click lands.
+	bufRows := len(frame)
+	if s.pinned && s.rows > bufRows {
+		bufRows = s.rows
+	}
+	s.footer, s.footerTop = footer, bufRows+promptRows
 	b.WriteString(prompt)
 	for _, m := range footer {
 		b.WriteString("\r\n" + m)
@@ -672,6 +731,15 @@ func (l *liveScreen) RegionAtRow(row, col int) (Region, bool) {
 	return l.s.RegionAt(line, col)
 }
 
+// FooterRowAt resolves a click on the live edge, under the lock like every other
+// read of the screen: Paint runs from the throttle's goroutine too, and this
+// reads what Paint wrote.
+func (l *liveScreen) FooterRowAt(row int) (int, int, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.s.FooterRowAt(row)
+}
+
 // Page and Scroll move the viewport and show the result. The paint is the point:
 // a scroll nobody can see is not a scroll.
 func (l *liveScreen) Page(n int) {
@@ -695,6 +763,19 @@ func (l *liveScreen) Resize(rows, cols int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.rows, l.cols = rows, cols
+}
+
+// Size is the terminal's shape AS IT IS NOW, for a caller that has to lay
+// something out before drawing it (#40 R17).
+//
+// The screen is the authority: it is given the shape by the resize watcher and
+// it is what Paint budgets against. A loop keeping its own copy would be a
+// second owner of a number the terminal owns, and the copy would be right until
+// the first SIGWINCH it happened not to see.
+func (l *liveScreen) Size() (rows, cols int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rows, l.cols
 }
 
 // Stop ends painting. Called as the terminal is handed back, and idempotent for

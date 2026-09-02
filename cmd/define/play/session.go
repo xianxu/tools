@@ -12,8 +12,45 @@ type InputKind int
 const (
 	// InputRune is a key the FORM grades. The session never learns what it means.
 	InputRune InputKind = iota
-	// InputReveal asks to see the answer.
+	// InputReveal asks to see the answer. SPACE, and Enter for every form that
+	// holds one word — see InputFinish.
 	InputReveal
+	// InputFinish is ENTER, split from space because a form holding many words
+	// spends itself on it.
+	//
+	// The two were one kind, deliberately: "Enter and space both land on this
+	// kind". That held while every form had one word and one answer. A board
+	// takes every unmarked word as Wrong when it is finished, and leaving the
+	// pair merged would fire that on SPACE — the one expensive-to-undo action on
+	// that surface, on the most careless key there is.
+	//
+	// For every form holding one word the two remain EQUIVALENT, which is what
+	// keeps 2.1 and 2.3 from noticing the split.
+	InputFinish
+	// InputToggle switches the MODE of a form that has one. Tab.
+	//
+	// It belongs in play rather than being intercepted by the loop, and the line
+	// between the two is what the keystroke is ABOUT: the paging keys change what
+	// you are looking at, which is the terminal's business, while this changes
+	// what your next answer will mean, which is the session's. An earlier draft
+	// routed the paging keys through here and was reversed for exactly that
+	// reason (#41 D6); this one goes the other way for the same test.
+	InputToggle
+	// InputMark answers ONE CELL of a form drawn as a grid. A click, and the
+	// only input that carries a coordinate.
+	//
+	// #38 shipped "a click ACTS and never answers", pinned by a row that is
+	// still green: a click on a headword plays the word and stops before
+	// toInput, so Apply never sees it. A board reverses that for itself, and the
+	// invariant survives restated honestly — A CLICK NEVER ANSWERS A FORM THAT
+	// DID NOT ASK FOR IT. Every form that is not a Grid declines this kind, which
+	// is what makes the seam a widening rather than a branch.
+	//
+	// It is not a forged keystroke. The loop could have looked up the cell's
+	// printed label and sent InputRune, which would need no new kind at all —
+	// and it would mean this machine could no longer tell a key from a pointer,
+	// on the one surface where the difference is the whole design.
+	InputMark
 	// InputQuit ends the session now, keeping everything already recorded.
 	InputQuit
 	// InputDrop removes the current word from the deck and moves on.
@@ -23,12 +60,25 @@ const (
 	// deck" is true whatever form is asking about it, so every future form gets
 	// it for free. It is also not an assessment — dropping records no review.
 	InputDrop
+	// numInputKinds is the sentinel a test derives the SET from, never a list.
+	//
+	// It exists because D12 wrote down four Apply paths that must consult Batch
+	// and the true matrix is InputKind x Batch — `InputReveal` was the fifth
+	// cell and nothing noticed, because the enumeration lived in prose. A form
+	// holding many words has no single hidden word to reveal, so space set
+	// `Revealed` and handed the loop an arbitrary cell's word to pronounce and a
+	// blank reveal to file in the append-only buffer.
+	//
+	// TestEveryInputKindIsAnsweredForABatchForm ranges over this, so the NEXT
+	// kind added cannot skip the question. Same move as choice.go's `numAxes`.
+	numInputKinds
 )
 
 // Input is one decoded keystroke.
 type Input struct {
 	Kind InputKind
 	Rune rune // set when Kind is InputRune
+	Cell int  // set when Kind is InputMark: which cell of a grid form
 }
 
 // OutcomeKind is what the LOOP must do next. The session performs no effects
@@ -95,7 +145,11 @@ type Outcome struct {
 	// It is the objective half of the ladder's two-rung promotion: an
 	// observation the session makes rather than a confidence the learner
 	// asserts.
-	Unaided     bool
+	Unaided bool
+	// Form is which form asked, on every Record outcome (#40 D4a). Set in ONE
+	// place — see Apply — because three call sites building Records is three
+	// chances to ship a promotion the log cannot attribute.
+	Form        string
 	SessionDone bool
 }
 
@@ -142,10 +196,29 @@ func (s Session) Current() Question {
 // Order is significant: the record is emitted FIRST, so a caller performing them
 // in order writes the event before anything that can block on the terminal.
 func Apply(s Session, in Input) (Session, []Outcome) {
+	q := s.Current()
+	next, outs := apply(s, q, in)
+	// EVERY RECORD NAMES THE FORM THAT ASKED, and it is stamped HERE rather than
+	// at the three places that build one (#40 D4a).
+	//
+	// The alternative is `Form: q.Form()` written out at the advance, the
+	// miss-on-a-hidden-word branch and the Enter-spends-a-board loop — three
+	// chances to ship a promotion the log cannot attribute, and the failure would
+	// be silent: an event with an empty form looks like data. What this field
+	// exists to watch is already silent and delayed enough.
+	for i := range outs {
+		if outs[i].Kind == OutcomeRecord && q != nil {
+			outs[i].Form = q.Form()
+		}
+	}
+	return next, outs
+}
+
+// apply is the machine itself, with the current question already in hand.
+func apply(s Session, q Question, in Input) (Session, []Outcome) {
 	if s.Done {
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 	}
-	q := s.Current()
 	if q == nil {
 		s.Done = true
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
@@ -166,13 +239,34 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 	// InputDrop and InputQuit stay OUTSIDE deliberately: "this word is not mine"
 	// and "stop" are still true after a verdict, and routing them here would
 	// silently turn a drop into a plain advance.
-	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal) {
+	if s.Graded && (in.Kind == InputRune || in.Kind == InputReveal || in.Kind == InputFinish) {
 		next, out := advance(s, q, Skipped, false)
 		return next, []Outcome{out}
 	}
 
 	switch in.Kind {
 	case InputDrop:
+		// `d` IS THE FORM'S when the form holds many words.
+		//
+		// It was REFUSED here, because `d` names no word on a grid: advance would
+		// drop q.Word(), whichever cell that happened to be, and dropping the
+		// wrong word is silent. That reasoning is intact — what changed is what
+		// happens instead of the drop. The key did nothing on that screen, and
+		// the board's labels carried a hole at `d` to protect it, which an
+		// operator reading a real grid found confusing rather than safe.
+		//
+		// So the session reserves `d` for forms that HAVE a current word to
+		// remove, and hands it to any other form as an ordinary graded key. A
+		// form that does not grade it gets the old behaviour exactly — false,
+		// then OutcomeNone.
+		if batchOf(q) != nil {
+			verdict, ok := q.Grade(in.Rune)
+			if !ok {
+				return s, []Outcome{{Kind: OutcomeNone}}
+			}
+			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
+			return next, []Outcome{out}
+		}
 		// Dropping is allowed in every state — before a reveal, after a peek, and
 		// after a miss. "This word is not mine" is true whatever is on screen,
 		// and someone who just missed a word is exactly who wants to drop it.
@@ -186,9 +280,84 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 		s.Done = true
 		return s, []Outcome{{Kind: OutcomeDone, SessionDone: true}}
 
+	case InputMark:
+		// The cell was resolved by the FORM before this — the loop asked
+		// Grid.CellAt where the click landed, because the form is the only thing
+		// that knows where it drew its words. This lands the mark and records it
+		// exactly as the printed key would: one act, two ways in.
+		g, ok := q.(Grid)
+		if !ok {
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
+		v, ok := g.Mark(in.Cell)
+		if !ok {
+			// A cell that is already answered, or no cell at all. Nothing
+			// happens and nothing is said, which is what a click on ordinary
+			// text has always done here.
+			//
+			// LOAD-BEARING FOR A GRID THAT IS NOT A BATCH, which is the only
+			// reason it is not `advance(Skipped)` — that would be the same thing
+			// for a board, because an unspent form does not advance. Grid and
+			// Batch are separate capabilities, and a one-word grid form is spent
+			// by definition: without this, a click on nothing would move it on.
+			// TestARefusedClickDoesNotAdvanceAGridThatIsNotABatch is the pin.
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
+		next, out := advance(s, q, v, unaidedNow(s, q, v))
+		return next, []Outcome{out}
+
+	case InputToggle:
+		// Tab, and it reaches only a form that HAS a mode.
+		//
+		// A NO-OP everywhere else, rather than a member of the "any key = next
+		// word" rule above. A board is never Graded, so the only forms Tab could
+		// advance there are 2.1 and 2.3 — where it would be an accident-prone
+		// extra way to scroll a definition away mid-read. Doing nothing is the
+		// safer failure of the two, and the only one that cannot lose something
+		// the learner was still reading.
+		if m, ok := q.(Moded); ok {
+			m.Toggle()
+		}
+		return s, []Outcome{{Kind: OutcomeNone}}
+
+	case InputFinish:
+		// A form holding many words SPENDS itself: every word still unmarked is
+		// answered Wrong, one record each, and the session moves on. That is
+		// "I am out of time, ask me all of these again", and it is the reason
+		// Enter needed its own kind.
+		if b := batchOf(q); b != nil {
+			rest := b.Rest(Wrong)
+			outs := make([]Outcome, 0, len(rest)+1)
+			for _, w := range rest {
+				s = score(s, Wrong)
+				outs = append(outs, Outcome{Kind: OutcomeRecord, Word: w, Verdict: Wrong})
+			}
+			next, out := advance(s, q, Skipped, false)
+			outs = append(outs, out)
+			for i := range outs {
+				outs[i].SessionDone = next.Done
+			}
+			return next, outs
+		}
+		// Every other form: Enter means what space means.
+		fallthrough
+
 	case InputReveal:
-		// The graded case is handled above: Enter and space both land on this
-		// kind, and once graded they mean "next".
+		// A FORM HOLDING MANY WORDS HAS NOTHING TO REVEAL, and this is the fifth
+		// Apply path that has to ask (D12 enumerated four).
+		//
+		// Its words are all on screen from the first frame and its marks are
+		// self-report over a grid; there is no hidden answer to earn. Without
+		// this, space set `Revealed` and returned OutcomeReveal carrying
+		// `q.Word()` — which on a grid is whichever cell was marked last, or the
+		// first cell before any mark — so the loop filed a blank reveal in the
+		// append-only buffer and played the pronunciation of a word nobody
+		// asked about. Space is the natural key to press: it reveals on both
+		// other forms, and a board's prompt does not mention it.
+		if batchOf(q) != nil {
+			return s, []Outcome{{Kind: OutcomeNone}}
+		}
+		// The graded case is handled above: once graded they mean "next".
 		if s.Revealed {
 			return s, []Outcome{{Kind: OutcomeNone}}
 		}
@@ -217,6 +386,15 @@ func Apply(s Session, in Input) (Session, []Outcome) {
 			// there would mark EVERY correct answer unaided — the feature would
 			// look like it worked while running the ladder at double speed.
 			// TestARevealDisqualifiesUnaided is the pin.
+			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
+			return next, []Outcome{out}
+		}
+		// A form holding many words has no hidden word to reveal — its marks are
+		// self-report over a grid — so a Wrong mark is an ordinary graded answer.
+		// Falling through to the branch below would set Graded, and the next
+		// keystroke would then mean "any key = next word": the form would freeze
+		// after its first No.
+		if batchOf(q) != nil {
 			next, out := advance(s, q, verdict, unaidedNow(s, q, verdict))
 			return next, []Outcome{out}
 		}
@@ -260,10 +438,14 @@ func score(s Session, v Verdict) Session {
 // implemented in two places or neither.
 func advance(s Session, q Question, v Verdict, unaided bool) (Session, Outcome) {
 	s = score(s, v)
-	s.Index++
-	s.Revealed, s.Graded = false, false
-	if s.Index >= len(s.Questions) {
-		s.Done = true
+	// A form holding many words keeps the slot until every one is answered
+	// (Batch). Everything else is spent by definition.
+	if spent(q) {
+		s.Index++
+		s.Revealed, s.Graded = false, false
+		if s.Index >= len(s.Questions) {
+			s.Done = true
+		}
 	}
 
 	if v == Skipped {
@@ -296,11 +478,110 @@ func missedAxis(q Question) Axis {
 	return AxisNone
 }
 
+// Batch is implemented by forms that hold MORE THAN ONE word.
+//
+// Third of its kind beside Missed and SelfRated, and for the same reason both of
+// those exist: the session must not learn which form is asking (#6's Done-when),
+// so it names a CAPABILITY and asks. A type switch on *Board here would be the
+// thing that Done-when forbids.
+//
+// IT IS CONSULTED ON MORE PATHS THAN ONE, and this comment used to say how many.
+//
+// It said FOUR and listed three, and the number was wrong within the same commit
+// that declared prose enumerations the problem — `InputReveal` was a fifth and
+// nobody recounted. That is the fault, not the number: a set the code owns,
+// restated in prose, is a second owner and drifts silently.
+//
+// So the set is `InputKind × Batch` and it is DERIVED, from `numInputKinds`, by
+// TestEveryInputKindIsAnsweredForABatchForm. Read that table for what each kind
+// means to a form holding many words; a kind added later arrives in it with no
+// expectation and fails. `advance` is the obvious consumer besides.
+type Batch interface {
+	// Words is how many words this form holds, for the bar (D8).
+	//
+	// The bar's total was `len(s.Questions)`, which is the SLOT count — a
+	// twenty-word sitting with a board in it read "0 of 2". The budget is
+	// unaffected either way, because schedule.Queue returns that many KEYS
+	// whatever they are packed into; what was wrong was the number on screen.
+	Words() int
+	// Spent reports whether every word this form holds has been answered.
+	Spent() bool
+	// Rest answers every word still unmarked with v and returns them, which is
+	// what Enter means to a form holding many.
+	Rest(v Verdict) []string
+}
+
+// spent asks a form whether it is finished, and takes YES from anything that
+// cannot answer — which is every form holding one word, and the right default.
+func spent(q Question) bool {
+	b, ok := q.(Batch)
+	return !ok || b.Spent()
+}
+
+// batchOf is the form as a Batch, or nil. Named so the four call sites read as
+// one question rather than four type assertions.
+func batchOf(q Question) Batch {
+	b, _ := q.(Batch)
+	return b
+}
+
+// Grid is implemented by forms drawn as a GRID on the live edge, whose cells are
+// answered by clicking them.
+//
+// Fifth of its kind, and the first one the LOOP asks rather than Apply — which
+// is why all three methods are on one interface instead of split by consumer.
+// They are one capability: a form that decides where its own words are printed
+// is the only thing that can say which one was clicked, and a form that can say
+// that is the only thing whose clicks mean anything. Splitting the geometry from
+// the answering would put the two halves of that sentence in different places.
+type Grid interface {
+	// Rows is how many lines Prompt() produces, so the caller can budget the
+	// live edge and know how far the grid extends.
+	Rows() int
+	// CellAt is which cell is at a position INSIDE the grid: row 0 is the grid's
+	// first line, column 0 its first column. The caller subtracts wherever it
+	// drew the block, which is the only part of this it is qualified to know.
+	CellAt(row, col int) (int, bool)
+	// Mark lands the form's active mode on cell i, and reports what that meant.
+	// False for a cell that is not there or is already answered.
+	Mark(i int) (Verdict, bool)
+	// Resize tells the form the width it will now be DRAWN at, so its rows keep
+	// fitting the terminal (R9).
+	//
+	// On the interface because it is the same fact as the other three: a form
+	// that decides where its own words are printed has to be told when the space
+	// they are printed in changes. A layout fixed at selection time survives
+	// exactly until the window does not — and then a footer entry wraps, stops
+	// being one physical row, and a click on the continuation carries a column
+	// that means something else.
+	Resize(cols int)
+}
+
+// Moded is implemented by forms that hold a MODE: a setting the learner
+// switches, which changes what their next answer MEANS rather than what it is
+// about.
+//
+// Fourth of its kind beside Missed, SelfRated and Batch, and asked rather than
+// switched on for the same reason all three exist. Separate from Batch
+// deliberately, even though the board is today the only implementer of either:
+// "I hold many words" and "my answer key has two meanings" are different facts,
+// and folding them together would force a mode onto the next batch form that
+// does not want one.
+type Moded interface {
+	// Toggle switches the mode. This is the whole of what Tab means, and the
+	// whole of this interface: the form DRAWS its own toggle, so nothing outside
+	// it ever needs to read the mode. An accessor here would be a second way to
+	// learn a fact the form already puts on screen.
+	Toggle()
+}
+
 // SelfRated is implemented by forms whose verdict is the learner's CLAIM rather
 // than something the form checked.
 //
-// Form 2.1 is the whole population today: `y` means "I knew it" and nobody
-// verified it. `#40`'s board joins it — a `firm` mark is triage, not retrieval.
+// Form 2.1 and form 2.5's board: `y` means "I knew it" and nobody verified it,
+// and a mark on a grid is triage rather than retrieval. The board's marks are
+// `yes` and `no`; an earlier draft called the positive one `firm` and had a
+// third, and both went when the operator cut the mark set to two (#40 D7).
 //
 // It is `SelfRated` and not `Observed` deliberately, even though the DEFAULT is
 // then the permissive one. A marker that a new form must remember to add would

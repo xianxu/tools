@@ -110,6 +110,8 @@ corrections somewhere nothing reads.
 | `TestProseDoesNotSpellStaleRuntimeArtifactNames` | README, `atlas/`, `workshop/projects/` | a stale filename in a doc read as current truth |
 | `TestPlanTablesNameEntitiesThatExist` | active plans' Core-concepts tables | a plan naming a SYMBOL the tree does not declare |
 | `TestNoArtifactNamesARetiredSymbol` | non-test Go, README, `atlas/`, active plans | a RENAMED symbol surviving anywhere read as current |
+| `TestNoArtifactDescribesARetiredDrawnElement` | the same set | a phrase naming a DRAWN element the tool no longer draws — the half no rename can signal (#40 BR-15) |
+| `TestPlanCitesTestsThatExist` | every backticked `Test*` in an active plan | a Done-when row citing a pin that was never written, which reads as evidence |
 | `TestTheCResolverAndTheGoSymbolListAgree` | the cgo preamble vs `dcsPrivateSymbols` | a `dlsym` the conformance check does not cover |
 | `TestCaptureScriptUsesTheCuratedDictionaries` | `capture.sh` vs `curated` | fixtures captured from a dictionary production never asks |
 
@@ -125,22 +127,52 @@ worth stating: their Core-concepts tables and their live prose ARE swept — by
 because a plan's design sections describe the design as it IS, while everything
 from its `## Revisions` heading on is a record and is skipped.
 
-**Rows three to six are the SYMBOL half**, which recurred NINE times while the
-first two ratchets counted filenames only. Table rows were the tractable part; plans named `deckDeps`, `MigrateFlatDeck`,
-`dictChoice` and `dcsDictionaries`, none of which the tree had. A plan's
-Core-concepts table already states "this identifier lives at this path" in
-machine-readable form, so making the plan a CONSUMER of the tree is cheap. A row
-whose file does not exist yet is skipped — a plan legitimately precedes its code;
-a row pointing at a real file that does not declare the name is a lie.
+**The middle rows — `TestPlanTablesNameEntitiesThatExist` through
+`TestPlanCitesTestsThatExist` — are the SYMBOL half**, which recurred NINE times
+while the first two ratchets counted filenames only. They are named rather than
+numbered here because a row inserted into the table would otherwise renumber this
+sentence silently, which is this page's own family. Table rows were the tractable part:
+four separate plan rows named identifiers the tree did not have, across two
+review rounds. A plan's Core-concepts table already states "this identifier lives
+at this path" in machine-readable form, so making the plan a CONSUMER of the tree
+is cheap. A row whose file does not exist yet is skipped — a plan legitimately
+precedes its code; a row pointing at a real file that does not declare the name
+is a lie.
+
+**The examples are counted here, not named** — deliberately, and it is this
+guard's own rule applied to its own documentation. Spelling four retired
+identifiers on this page would make it the tenth artifact in the family, and it
+did: they sat here unswept because `currentTruthOnly` matched the `**closed:**`
+in the paragraph above as a record marker and discarded the whole page. The names
+that belong in the record live in `retiredSymbolNames` and in the guard's own
+doc comment, which is a test file and exempt by design.
 
 **`retiredSymbolNames` is where the rule needs a human.** A rename cannot be
 detected automatically — only the person doing it knows the old name — so
 renaming adds one row there, and everything after that is mechanical. It is what
-caught three `newDeck` comments left behind by the very commit that added the
-table guard.
+caught three stale comments left behind by the very commit that added the table
+guard — naming a symbol that commit had just retired.
 
-**The last two rows are the same move applied to boundaries Go cannot see
-into.** A cgo preamble and a shell script cannot import a Go declaration, so the
+**`retiredPhrases` is the CONCEPT half, and it exists because a deletion can
+leave no symbol behind at all.** `#40` R11 deleted a footer row the board used to
+draw for its live mark, moving that statement onto the prompt row. Nothing was
+renamed — the row's only identifier was unexported, which `isCitableName` filters
+out on purpose — so every guard above stayed green while five comments went on
+describing a row that is not drawn, one of them contradicting its own owner
+twenty lines below it. It took five rounds of one boundary review to enumerate
+them. The map turns a sweep a human would otherwise have to remember — grep for
+what the element was CALLED — into one that runs on every later commit.
+
+Its keys are PHRASES, not words, because the word usually survives the row: the
+same verb still names what `Tab` does. And the retired phrases themselves are NOT
+spelled on this page, for the reason two paragraphs above gives about retired
+identifiers — naming them here would make this page the next artifact in the
+family. They live in the map and in the guard's own doc comment, which is a test
+file and exempt by design.
+
+**`TestTheCResolverAndTheGoSymbolListAgree` and
+`TestCaptureScriptUsesTheCuratedDictionaries` are the same move applied to
+boundaries Go cannot see into.** A cgo preamble and a shell script cannot import a Go declaration, so the
 two copies are COMPARED by reading the source rather than unified. Both close a
 gap that had already bitten: a `dlsym` the conformance check did not cover, and
 a corpus captured through a dictionary production does not consult.

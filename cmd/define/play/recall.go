@@ -32,6 +32,9 @@ func (r *Recall) Reveal() string { return r.definition }
 // Keys names the two this form grades, which is what the prompt line shows.
 func (r *Recall) Keys() string { return "y = got it, n = missed it" }
 
+// Form names this form in the log (#40 D4a). The self-rated one.
+func (r *Recall) Form() string { return "recall" }
+
 // IsSelfRated: this form's verdict is the LEARNER'S CLAIM. `y` means "I knew
 // it" and nothing checked. That is why a correct answer here never earns the
 // ladder's two-rung promotion, however quickly it came — see play.SelfRated.

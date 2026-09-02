@@ -54,6 +54,12 @@ func TestREADMEQuotesThePromptsTheLoopActuallyPrints(t *testing.T) {
 		play.NewChoice("ephemeral", "", []play.Option{
 			{Gloss: "a", Correct: true}, {Gloss: "b"}, {Gloss: "c"}, {Gloss: "d"},
 		}),
+		// The board's line differs in its RESERVED half too, not only in its own
+		// keys: `d` is refused on a form holding many words, so the prompt must
+		// not offer it (#40 D12). That is the second thing this row checks, and
+		// the reason it is worth adding rather than being the "third form" the
+		// comment above calls human.
+		play.NewBoard([]play.Cell{{Word: "ephemeral"}, {Word: "quokka"}}, 80, play.Palette{}),
 	}
 	seen := map[string]bool{}
 	for _, f := range forms {
@@ -335,6 +341,53 @@ func TestREADMENamesEveryFallbackReason(t *testing.T) {
 			t.Errorf("README.md does not name the fallback reason %q.\n"+
 				"A learner whose word silently gets the other form has no way to know why. "+
 				"Add it, or change fallbackReasons if the wording moved.", r)
+		}
+	}
+}
+
+// THE README'S BOARD IS DERIVED, NOT DRAWN BY HAND (#40 BR-18).
+//
+// The block was a hand-maintained picture with no consumer, and it went stale
+// the moment an operator sitting changed the design: it still showed the mark
+// standing where the key was, and a label row carrying the old hole at `d` —
+// both contradicted by the README's own prose eight lines below.
+// `doc_sync_test` pinned the prompt LINE and nothing pinned the grid.
+//
+// So the grid derives, exactly as the prompt lines do: the fenced block's cell
+// rows must be what a real `play.Board` over those words draws. The marks are
+// deliberately absent from the picture — a marked cell is distinguished by
+// COLOUR, which a code fence cannot show, and the prose says so instead.
+func TestREADMEDrawsTheBoardTheFormActuallyDraws(t *testing.T) {
+	b, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatalf("README.md unreadable: %v", err)
+	}
+	readme := string(b)
+	board := play.NewBoard(boardCells(readmeBoardWords...), defaultCols, play.Palette{})
+
+	grid := strings.Split(board.Prompt(), "\n")
+	rows := 0
+	for _, row := range grid {
+		if row == "" {
+			break // the blank that separates the grid from the panel
+		}
+		rows++
+		if !strings.Contains(readme, row) {
+			t.Errorf("README.md does not contain the grid row the board draws:\n\t%q\n"+
+				"The form changed and the README did not. Regenerate the block from "+
+				"play.Board over readmeBoardWords, or change the form if the picture "+
+				"is the intended one.", row)
+		}
+	}
+	if rows == 0 {
+		t.Fatal("the board drew no grid rows; this test would assert nothing")
+	}
+	// AND THE PICTURE IS OF AN UNMARKED BOARD, so nothing in it can imply a mark
+	// is drawn by a glyph. `[y]`/`[n]` in a cell is the design the sitting
+	// deleted.
+	for _, gone := range []string{"[y] ", "[n] "} {
+		if strings.Contains(readme, gone) {
+			t.Errorf("README.md draws %q in a cell — a mark is COLOUR now, and the key stays put", gone)
 		}
 	}
 }

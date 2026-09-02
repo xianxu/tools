@@ -1171,3 +1171,98 @@ func TestClickMapSurvivesTheViewportGrowing(t *testing.T) {
 		})
 	}
 }
+
+// THE LIVE EDGE IS CLICKABLE (#40 D10), which is the seam the board rests on.
+//
+// The buffer is append-only — that is what makes a click's coordinates exact —
+// so a surface whose marks change as they land cannot live there. It lives in
+// the footer instead, and the footer is only usable if a click can be resolved
+// against it. Paint already computed where the footer began and simply did not
+// say; this is that report.
+func TestFooterRowAtNamesTheEntryUnderAClick(t *testing.T) {
+	t.Run("--play's pinned screen: the footer is at the bottom edge", func(t *testing.T) {
+		var tty strings.Builder
+		l := newPinnedScreen(&tty, 10, 20)
+		l.interval = -1
+		l.Write([]byte("one\ntwo\n"))
+		l.Draw("prompt", []string{"grid row", "toggle", "bar"})
+
+		// 10 rows: 6 of buffer (padded, because pinned), 1 of prompt, 3 of footer.
+		for row, want := range map[int]int{7: 0, 8: 1, 9: 2} {
+			got, _, ok := l.FooterRowAt(row)
+			if !ok || got != want {
+				t.Errorf("FooterRowAt(%d) = (%d, %v), want entry %d", row, got, ok, want)
+			}
+		}
+		for _, row := range []int{-1, 0, 5, 6, 10, 99} {
+			if got, _, ok := l.FooterRowAt(row); ok {
+				t.Errorf("FooterRowAt(%d) = entry %d, want none — that row is buffer, prompt or nothing", row, got)
+			}
+		}
+	})
+
+	t.Run("the editor's screen: the footer follows the content", func(t *testing.T) {
+		var tty strings.Builder
+		l := newLiveScreen(&tty, 10, 20)
+		l.interval = -1
+		l.Write([]byte("one\ntwo\n"))
+		l.Draw("prompt", []string{"first", "second"})
+
+		// Unpinned, so the buffer occupies only what it has: 2 rows, then the
+		// prompt, then the footer.
+		for row, want := range map[int]int{3: 0, 4: 1} {
+			got, _, ok := l.FooterRowAt(row)
+			if !ok || got != want {
+				t.Errorf("FooterRowAt(%d) = (%d, %v), want entry %d", row, got, ok, want)
+			}
+		}
+		if got, _, ok := l.FooterRowAt(2); ok {
+			t.Errorf("the prompt row answered entry %d, want none", got)
+		}
+	})
+
+	t.Run("a wrapped entry owns every row it occupies, and says WHICH", func(t *testing.T) {
+		var tty strings.Builder
+		l := newPinnedScreen(&tty, 10, 10)
+		l.interval = -1
+		l.Draw("p", []string{"aaaaaaaaaaaaaaa", "b"}) // 15 columns at 10 wide is two rows
+
+		// 10 rows: 6 of buffer, 1 of prompt, 3 of footer — the first entry taking
+		// two of them. The OFFSET is what lets a caller acting on a column refuse
+		// the continuation, whose column 4 is really column 14 of the entry (R9).
+		for row, want := range map[int][2]int{7: {0, 0}, 8: {0, 1}, 9: {1, 0}} {
+			got, off, ok := l.FooterRowAt(row)
+			if !ok || got != want[0] || off != want[1] {
+				t.Errorf("FooterRowAt(%d) = (%d, %d, %v), want entry %d row %d", row, got, off, ok, want[0], want[1])
+			}
+		}
+	})
+
+	t.Run("an entry fitFooter dropped is not clickable", func(t *testing.T) {
+		// A click on a row that was not drawn must find nothing: inventing an
+		// entry for it would mark a word that is not on screen.
+		var tty strings.Builder
+		l := newPinnedScreen(&tty, 3, 20)
+		l.interval = -1
+		l.Draw("p", []string{"kept", "kept too", "dropped"})
+
+		if _, _, ok := l.FooterRowAt(1); !ok {
+			t.Error("the first footer row is not clickable")
+		}
+		for _, row := range []int{3, 4} {
+			if got, _, ok := l.FooterRowAt(row); ok {
+				t.Errorf("FooterRowAt(%d) = entry %d, but that row was never painted", row, got)
+			}
+		}
+	})
+
+	t.Run("nothing is clickable before the first paint", func(t *testing.T) {
+		var tty strings.Builder
+		l := newPinnedScreen(&tty, 10, 20)
+		for _, row := range []int{0, 1, 9} {
+			if got, _, ok := l.FooterRowAt(row); ok {
+				t.Errorf("FooterRowAt(%d) = entry %d on an unpainted screen", row, got)
+			}
+		}
+	})
+}

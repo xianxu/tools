@@ -53,6 +53,33 @@ type ReviewEvent struct {
 	// Absent on every event written before this existed, which folds to
 	// GradeCorrect: one rung rather than two, the conservative reading.
 	Unaided bool `yaml:"unaided,omitempty"`
+	// Form is WHICH FORM ASKED — "recall", "meaning", "board" (#40 D4a).
+	//
+	// TELEMETRY, not assessment. Fold does not read it and must not: nothing
+	// about the ladder depends on which form produced an answer, and a scheduler
+	// that started branching on it would make this field load-bearing when it is
+	// meant to be observational.
+	//
+	// It exists because form 2.5 promotes a word on SELF-REPORT, and the two
+	// remedies for that — promote more slowly, or offer the board less often —
+	// are both deferred to be chosen from evidence. The query is "did a
+	// board-promoted word fail beyond reasonable in a real recall test later",
+	// which joins a promotion to the word's NEXT test — so the form has to be on
+	// the event that promoted it, not on a summary somewhere else.
+	//
+	// The damage it watches for is silent and delayed: a wrongly promoted word
+	// vanishes for weeks, and when it is eventually forgotten that is
+	// indistinguishable from ordinary forgetting. Without this the log cannot
+	// tell the two apart, and neither remedy can be chosen from anything but
+	// argument.
+	//
+	// NAMES rather than the project's form numbers, which are 2.1, 2.3 and 2.5.
+	// A log is read years later by a script or a person, and "board" needs no
+	// atlas to decode while "2.5" does.
+	//
+	// Absent on every event written before this existed, which reads as "some
+	// earlier form" and is the truth.
+	Form string `yaml:"form,omitempty"`
 	// At stays LAST, and a field added after it would break the torn-record rule
 	// silently. See complete(): the rule is termination PLUS completeness, and
 	// completeness leans on a cut record losing its timestamp. A field written

@@ -185,6 +185,10 @@ func (c *Choice) Keys() string {
 	return "1-" + string(rune('0'+len(c.options))) + " = pick the definition"
 }
 
+// Form names this form in the log (#40 D4a). `meaning` rather than "2.3",
+// because that is what the learner types to reach it.
+func (c *Choice) Form() string { return "meaning" }
+
 // Grade reads 1-4 and nothing else.
 //
 // A digit past the end of the option set returns false rather than a verdict:

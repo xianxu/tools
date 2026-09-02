@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"slices"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/xianxu/tools/cmd/define/play"
+	"github.com/xianxu/tools/cmd/define/schedule"
 	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm"
 )
@@ -46,7 +48,13 @@ func playRig(t *testing.T, words ...string) (deps, options, *store.Mem) {
 	// the 0 sentinel. A rig that left it 0 turned the wrap OFF, and the wrap is
 	// what every region has to survive — that default hid a dropped click map on
 	// every multiple-choice question until the operator found it.
-	return d, options{color: true, tty: true, width: defaultCols, count: 20, times: 1, noAudio: true}, st
+	// ROWS 24, for the same reason width is 80 and stated again because it is the
+	// same trap: a rig whose default is a state production cannot produce hides
+	// the feature that reads it. `--play` refuses unless stdout is a terminal, so
+	// opt.rows is terminalRows' real answer and never zero — and zero would make
+	// fitsABoard false for every board, so #40's whole form would never be
+	// offered in any test while looking perfectly healthy.
+	return d, options{color: true, tty: true, width: defaultCols, rows: defaultRows, count: 20, times: 1, noAudio: true}, st
 }
 
 // audible makes the playback branch REACHABLE and returns the player recording it.
@@ -1984,5 +1992,1462 @@ func TestFinishReportsTheLoad(t *testing.T) {
 	// about four reviews a day, not zero.
 	if strings.Contains(got, "~0 reviews/day") {
 		t.Errorf("the load reports zero for a four-word deck — the deck is not being read:\n%s", got)
+	}
+}
+
+// ENTER IS ITS OWN KIND NOW, AND TAB REACHES play AT ALL (#40 D13, D14).
+//
+// Both rows are about the same seam: toInput is where main.Key stops and a
+// session intent begins, and both of these were wrong there rather than deeper
+// in. Enter was merged with space, which would have fired a board's commit on
+// the most careless key there is; Tab was decoded by key.go and dropped on the
+// floor because nothing here had a case for it.
+func TestToInputSplitsEnterFromSpaceAndCarriesTab(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		key  Key
+		want play.InputKind
+	}{
+		{"Enter finishes", Key{Kind: KeyEnter}, play.InputFinish},
+		{"space reveals", Key{Kind: KeyRune, Rune: ' '}, play.InputReveal},
+		{"Tab toggles", Key{Kind: KeyTab}, play.InputToggle},
+		{"d drops, before any form sees it", Key{Kind: KeyRune, Rune: 'd'}, play.InputDrop},
+		{"Ctrl-C quits", Key{Kind: KeyInterrupt}, play.InputQuit},
+		{"anything else is the form's", Key{Kind: KeyRune, Rune: 'y'}, play.InputRune},
+	} {
+		got, ok := toInput(tc.key)
+		if !ok || got.Kind != tc.want {
+			t.Errorf("%s: toInput(%+v) = (%+v, %v), want kind %v", tc.name, tc.key, got, ok, tc.want)
+		}
+	}
+}
+
+// AND THE SPLIT IS INVISIBLE TO EVERY FORM THAT HOLDS ONE WORD, which is the
+// property that let it ship without touching 2.1 or 2.3. Apply treats
+// InputFinish exactly as InputReveal for them, so Enter still reveals.
+func TestEnterStillRevealsOnASingleWordForm(t *testing.T) {
+	for _, q := range []play.Question{
+		play.NewRecall("keel", "the bottom of a ship"),
+		play.NewChoice("keel", "", []play.Option{{Gloss: "the bottom of a ship", Correct: true}, {Gloss: "a flat-topped hill"}}),
+	} {
+		s := play.NewSession([]play.Question{q})
+		in, _ := toInput(Key{Kind: KeyEnter})
+		s, outs := play.Apply(s, in)
+		if !s.Revealed {
+			t.Errorf("%T: Enter did not reveal", q)
+		}
+		if len(outs) != 1 || outs[0].Kind != play.OutcomeReveal {
+			t.Errorf("%T: Enter produced %+v, want an OutcomeReveal", q, outs)
+		}
+	}
+}
+
+// THE LOOP'S HALF OF THE CLICK (#40 D11, T5): the subtraction between two
+// answers it is not qualified to give itself.
+//
+// The screen says which footer entry the pointer was on; the form says which
+// cell is at that spot. The loop only knows that the grid is drawn as the FIRST
+// footer entries, so a row at or past Rows() is the toggle or the bar rather
+// than a word. The end-to-end join — that the grid really is drawn there — is
+// TestAClickOnABoardMarksIt on the real screen.
+func boardCells(words ...string) []play.Cell {
+	cs := make([]play.Cell, len(words))
+	for i, w := range words {
+		cs[i] = play.Cell{Word: w}
+	}
+	return cs
+}
+
+func TestFormCellAsksTheScreenAndTheForm(t *testing.T) {
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
+	// Five words at four columns: two grid rows, then the blank and the panel.
+	// (R11 moved the toggle to the prompt row.)
+	if board.Rows() != 4 {
+		t.Fatalf("expected a four-row live edge, got %d:\n%s", board.Rows(), board.Prompt())
+	}
+
+	// The gutter column, derived from what Prompt DREW rather than from the
+	// board's arithmetic: one column left of where the second cell starts.
+	firstLine := strings.Split(board.Prompt(), "\n")[0]
+	gutter := strings.Index(firstLine, "[1] ") - 1
+	if gutter < 1 {
+		t.Fatalf("could not find the second cell in %q", firstLine)
+	}
+
+	view := paintInto(io.Discard)
+	view.footerAt(7, 0) // the grid's first row
+	view.footerAt(8, 1) // its second
+	view.footerAt(9, 2) // the toggle, which is not a cell
+	// A CONTINUATION ROW: the same entry, drawn a second time because it was too
+	// wide for the terminal. Its columns are not in the entry's own space (R9).
+	view.footerAtOffset(10, 0, 1)
+
+	for _, tc := range []struct {
+		name     string
+		q        play.Question
+		row, col int
+		want     int
+		wantOK   bool
+	}{
+		{"the first grid row", board, 7, 0, 0, true},
+		{"the second grid row", board, 8, 0, 4, true},
+		{"a gutter is not a cell", board, 7, gutter, 0, false},
+		{"the toggle row is not a cell", board, 9, 0, 0, false},
+		{"a row the screen does not place", board, 3, 0, 0, false},
+		// The board keeps its rows fitting by relaying out, so this should never
+		// arise — which is why the loop refuses it rather than trusting that.
+		// Column 0 of a continuation is column `cols` of the line, and acting on
+		// it lands a permanent mark on whatever word sits at column 0.
+		{"a wrapped entry's continuation row", board, 10, 0, 0, false},
+		{"a form that is not a grid", play.NewRecall("keel", "d"), 7, 0, 0, false},
+		{"no form at all", nil, 7, 0, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := formCell(view, tc.q, Key{Kind: KeyClick, Row: tc.row, Col: tc.col})
+			if ok != tc.wantOK || (ok && got != tc.want) {
+				t.Errorf("formCell = (%d, %v), want (%d, %v)", got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
+// DONE-WHEN 7, THE END TO END: A CLICK MARKS ON A BOARD (#40 D11, T5+T6).
+//
+// The two halves are pinned separately — formCell's subtraction against a
+// scripted screen, and FooterRowAt's arithmetic on a real one — and the object
+// that JOINS them is this loop. #30's rule applies: a double may not stand in
+// for the joining object, so this drives a real pinned screen with a real board
+// and asserts the mark reached the log.
+//
+// The discriminator is the EVENT. A loop that did not offer the click to the
+// form would send it to playRegion instead, which records nothing at all.
+func TestAClickOnABoardMarksIt(t *testing.T) {
+	d, opt, st := playRig(t, "sycophantic", "ephemeral")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width, play.Palette{})
+	// One grid row, then the blank and the panel (R11 moved the toggle out).
+	if board.Rows() != 3 {
+		t.Fatalf("expected a three-row live edge, got %d rows:\n%s", board.Rows(), board.Prompt())
+	}
+
+	// TEN ROWS, so the geometry is arithmetic rather than a guess. Pinned, the
+	// footer sits at the bottom edge: four entries (the board's own three, plus
+	// the bar) means the grid's only row is viewport row 10-4 = 6.
+	//
+	// The board also writes ONE blank line into the buffer as it opens, which
+	// separates it from the previous question — the operator's fourth note from
+	// a real sitting. It is a buffer line, so it does not move the footer.
+	const termRows, gridRow = 10, 6
+	// The second cell's column, read off what Prompt DREW rather than computed.
+	col := strings.Index(board.Prompt(), "[1] ") + len("[1] ")
+	if col < 1 {
+		t.Fatalf("no second cell in %q", board.Prompt())
+	}
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, termRows, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 2)
+	keys <- Key{Kind: KeyClick, Row: gridRow, Col: col}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE PREMISE, checked against the PAINT rather than assumed: the grid really
+	// was drawn on the row that was clicked, and the click's column really was
+	// inside the second cell. Without this the assertions below would pass for a
+	// sitting whose footer was somewhere else entirely.
+	//
+	// Read off the frame, not off FooterRowAt — the click map and the paint are
+	// the two things that have to agree, so a premise taken from one of them
+	// could not catch the two disagreeing.
+	rows := paintedRowsShowing(t, tty.String(), "[0] sycophantic")
+	if len(rows) <= gridRow {
+		t.Fatalf("the first frame is %d rows, want the grid at row %d:\n%s", len(rows), gridRow, strings.Join(rows, "\n"))
+	}
+	if !strings.HasPrefix(rows[gridRow], "[0] sycophantic") {
+		t.Fatalf("viewport row %d is %q, want the grid's first row", gridRow, rows[gridRow])
+	}
+	if !strings.HasPrefix(rows[gridRow][col:], "ephemeral") {
+		t.Fatalf("column %d of the grid row is %q, want the second cell's word", col, rows[gridRow][col:])
+	}
+
+	// AND THE MARK LANDED, on the word that was actually under the pointer.
+	evs := reviewEvents(t, st)
+	if len(evs) != 1 {
+		t.Fatalf("%d review events, want the one click:\n%s", len(evs), unstyled(tty.String()))
+	}
+	if evs[0].Word != "ephemeral" {
+		t.Errorf("the click recorded %q, want the word it landed on", evs[0].Word)
+	}
+	if board.Spent() {
+		t.Error("one click spent a board of two cells")
+	}
+}
+
+// paintedRowsShowing is the first frame that DREW want, split into rows.
+//
+// By content rather than by index, because a board writes a blank buffer line as
+// it opens — separating it from the previous question — and that write paints a
+// frame of its own before the grid is drawn. A test that indexed frames counted
+// that one and read the wrong screen.
+func paintedRowsShowing(t *testing.T, out, want string) []string {
+	t.Helper()
+	for i, f := range strings.Split(out, cursorHome+eraseDown) {
+		if i == 0 {
+			continue // whatever preceded the first frame
+		}
+		if rows := strings.Split(unstyled(f), "\r\n"); strings.Contains(unstyled(f), want) {
+			return rows
+		}
+	}
+	t.Fatalf("no frame drew %q:\n%s", want, out)
+	return nil
+}
+
+// paintedRows is frame n of a session's output, split into the rows the terminal
+// placed.
+//
+// A frame begins at cursorHome+eraseDown, and its rows are separated by the
+// CRLFs Paint writes. The last row carries the cursor walk-back and the prompt
+// reprint appended to it, which is why callers match on a PREFIX.
+func paintedRows(t *testing.T, out string, n int) []string {
+	t.Helper()
+	frames := strings.Split(out, cursorHome+eraseDown)[1:] // [0] is whatever preceded the first
+	if len(frames) <= n {
+		t.Fatalf("output holds %d frames, want at least %d:\n%s", len(frames), n+1, out)
+	}
+	return strings.Split(unstyled(frames[n]), "\r\n")
+}
+
+// A BOARD IS THE LIVE EDGE, so it is NOT in the transcript (#41 D4, #40 D10).
+//
+// The buffer is what survives the sitting, and a grid whose marks changed in
+// place could never have been written there. The relearn line is what the
+// transcript gets instead (T9).
+func TestABoardIsDrawnInTheFooterAndNotTheBuffer(t *testing.T) {
+	d, opt, _ := playRig(t, "sycophantic", "ephemeral")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 10, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 1)
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if strings.Contains(unstyled(live.Transcript()), "[0] ") {
+		t.Errorf("the grid reached the transcript, where nothing can change:\n%s", live.Transcript())
+	}
+	if !strings.Contains(unstyled(tty.String()), "[0] sycophantic") {
+		t.Errorf("the grid was never drawn:\n%s", unstyled(tty.String()))
+	}
+	// The toggle is drawn, and the FORM draws it — the loop only appends the bar,
+	// so every row of the board on screen came out of one Prompt().
+	frame := unstyled(tty.String())
+	for _, row := range strings.Split(board.Prompt(), "\n") {
+		if !strings.Contains(frame, row) {
+			t.Errorf("the frame is missing the board's row %q:\n%s", row, frame)
+		}
+	}
+	// The mode is on the PROMPT row now (R11) rather than a footer row, because
+	// fitFooter drops from the end and that made the one statement of what a
+	// click will mean the first thing a short terminal lost.
+	if !strings.Contains(frame, "marking [yes] no") {
+		t.Errorf("the frame does not say which mark is live:\n%s", frame)
+	}
+}
+
+// THE PROMPT MUST NOT OFFER `d` ON A BOARD (#40 D12).
+//
+// Apply refuses the drop for a form holding many words, because `d` names no
+// word on a grid. A prompt line offering it anyway is the exact bug gradePrompt
+// was created to fix.
+func TestABoardsPromptDoesNotOfferTheDropKey(t *testing.T) {
+	board := play.NewBoard(boardCells("keel", "mesa"), 80, play.Palette{})
+	line := gradePrompt(board)
+	if strings.Contains(line, "remove from deck") {
+		t.Errorf("a board's prompt offers a key Apply refuses:\n\t%q", line)
+	}
+	if !strings.Contains(line, quitKey) {
+		t.Errorf("a board's prompt does not offer Ctrl-C:\n\t%q", line)
+	}
+	if n := visibleCells(line); n > defaultCols {
+		t.Errorf("the prompt is %d columns wide, which wraps at %d and makes the frame a row taller than the board was offered for:\n\t%q", n, defaultCols, line)
+	}
+	// ...and every single-word form still gets the full set.
+	for _, q := range []play.Question{
+		play.NewRecall("keel", "d"),
+		play.NewChoice("keel", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
+	} {
+		if !strings.Contains(gradePrompt(q), sessionKeys) {
+			t.Errorf("%T lost the reserved keys: %q", q, gradePrompt(q))
+		}
+	}
+}
+
+// A BOARD THAT DOES NOT FIT IS NOT OFFERED (#40 D15), which is what leaves
+// fitFooter's budget invariant true instead of negotiating with it.
+func TestFitsABoardCountsTheWholeLiveEdge(t *testing.T) {
+	for _, tc := range []struct {
+		termRows, boardRows, promptRows int
+		want                            bool
+	}{
+		{10, 6, 1, true}, // a 4x4 board: 4 grid rows plus 2 of its own chrome
+		{8, 6, 1, true},  // exactly: the board, a one-row keys prompt, the bar
+		{7, 6, 1, false}, // one short, and half a board is unusable
+		{24, 6, 1, true}, // an ordinary terminal
+		{5, 3, 1, true},  // a board of one grid row
+		{4, 3, 1, false}, //
+		{0, 3, 1, false}, //
+		{100, 28, 1, true},
+		// AND THE PROMPT'S REAL HEIGHT, which is what a constant got wrong: the
+		// keys line is 76 columns wide and a board is offered from 20.
+		{8, 6, 2, false},
+		{9, 6, 2, true},
+		{11, 6, 4, true},
+		{10, 6, 4, false},
+	} {
+		if got := fitsABoard(tc.termRows, tc.boardRows, tc.promptRows); got != tc.want {
+			t.Errorf("fitsABoard(%d rows, a %d-row board, a %d-row prompt) = %v, want %v",
+				tc.termRows, tc.boardRows, tc.promptRows, got, tc.want)
+		}
+	}
+	// The rows it counts below the board are the rows boardFooter actually
+	// DRAWS. Two owners of that number would put half a board on screen.
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank", "set"), 80, play.Palette{})
+	footer := boardFooter(board, sittingFigures{})
+	if got, want := len(footer)-board.Rows(), barRows; got != want {
+		t.Errorf("boardFooter adds %d rows below the board's own, but fitsABoard budgets %d", got, want)
+	}
+	// AND THE MEASUREMENT REACHES boardFits: at a width where the keys line
+	// wraps, a board that would fit a one-row prompt must be refused.
+	//
+	// Read off the real prompt rather than assumed, so the numbers here cannot
+	// drift from the wording.
+	probe := play.NewBoard(boardCells("keel", "mesa", "run", "bank"), 40, play.Palette{})
+	pr := displayRows(gradePrompt(probe), 40)
+	if pr < 2 {
+		t.Fatalf("the keys prompt is %d row(s) at 40 columns; this case is vacuous", pr)
+	}
+	tight := probe.Rows() + 1 + barRows // enough for a ONE-row prompt, and no more
+	if boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight}) {
+		t.Errorf("a %d-row terminal was offered a board whose prompt needs %d rows", tight, pr)
+	}
+	if !boardFits([]string{"keel", "mesa", "run", "bank"}, options{width: 40, rows: tight + pr - 1}) {
+		t.Errorf("a terminal with exactly enough room refused the board")
+	}
+}
+
+// DONE-WHEN 9, THROUGH THE STORE: a review event on disk names the form that
+// asked it (#40 D4a).
+//
+// play_test pins that Apply stamps every record; this pins that the stamp
+// survives CaptureReview and reaches the log, which is the only place the query
+// this field exists for can read it.
+func TestAReviewEventNamesItsFormOnDisk(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		q    func(opt options) play.Question
+		key  Key
+		want string
+	}{
+		{"form 2.1, the recall", func(options) play.Question {
+			return play.NewRecall("sycophantic", "behaving obsequiously")
+		}, Key{Kind: KeyRune, Rune: 'y'}, "recall"},
+		{"form 2.3, the meaning", func(options) play.Question {
+			return play.NewChoice("sycophantic", "", []play.Option{
+				{Gloss: "behaving obsequiously", Correct: true}, {Gloss: "a flat-topped hill"},
+			})
+		}, Key{Kind: KeyRune, Rune: '1'}, "meaning"},
+		{"form 2.5, the board", func(opt options) play.Question {
+			return play.NewBoard(boardCells("sycophantic", "ephemeral"), opt.width, play.Palette{})
+		}, Key{Kind: KeyRune, Rune: '0'}, "board"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, opt, st := playRig(t, "sycophantic", "ephemeral")
+			_, held := questionsFor(t, d, opt)
+
+			tty := &syncBuf{}
+			live := newPinnedScreen(tty, 24, opt.width)
+			live.interval = -1
+			var errb bytes.Buffer
+
+			keys := make(chan Key, 2)
+			keys <- tc.key
+			keys <- Key{Kind: KeyInterrupt}
+			close(keys)
+
+			playSession(t.Context(), d, opt, play.NewSession([]play.Question{tc.q(opt)}), held, keys,
+				console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+			evs := reviewEvents(t, st)
+			if len(evs) != 1 {
+				t.Fatalf("%d review events, want the one answer:\n%s", len(evs), unstyled(tty.String()))
+			}
+			if evs[0].Form != tc.want {
+				t.Errorf("the log names the form %q, want %q — the field is what lets a later query ask whether this form promotes too generously", evs[0].Form, tc.want)
+			}
+		})
+	}
+}
+
+// seedBox drives a word to a box by logging n correct reviews, so a test can
+// build a deck that spans the board's threshold.
+//
+// Through the LOG rather than by writing a Progress: box is a fold over events,
+// and a test that set the number directly would be asserting against a state the
+// program cannot reach.
+func seedBox(t *testing.T, st *store.Mem, word string, n int) {
+	t.Helper()
+	for i := range n {
+		if err := st.AppendEvent(store.ReviewEvent{
+			Word: word, Kind: store.EventReviewed, Found: true, Correct: true,
+			At: aDay.Add(time.Duration(i) * time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// DONE-WHEN 3 (the issue's): THE SCHEDULER CHOOSES THE FORM, and both sides are
+// asserted — 2.5 at box >= 3, one at a time below (D4).
+//
+// This is the first thing in the program to consult a box when choosing HOW to
+// ask. Everything before it was a capability question: form 2.3 when the deck
+// could supply distractors, 2.1 when it could not.
+func TestTheBoxPicksTheForm(t *testing.T) {
+	opt := options{width: defaultCols, rows: defaultRows}
+	prog := map[string]schedule.Progress{
+		"keel": {Box: 0}, "mesa": {Box: 1}, "run": {Box: 2},
+		"bank": {Box: 3}, "set": {Box: 4}, "quokka": {Box: 9},
+	}
+	keys := []string{"keel", "bank", "mesa", "set", "run", "quokka"}
+	single, boards := boardsFor(keys, prog, opt)
+
+	if want := []string{"keel", "mesa", "run"}; !slices.Equal(single, want) {
+		t.Errorf("asked one at a time: %v, want %v — the boxes under %d, in queue order", single, want, boardBox)
+	}
+	if len(boards) != 1 {
+		t.Fatalf("%d boards, want one holding the three mature words", len(boards))
+	}
+	if want := []string{"bank", "set", "quokka"}; !slices.Equal(boards[0], want) {
+		t.Errorf("the board holds %v, want %v — the boxes at or above %d", boards[0], want, boardBox)
+	}
+	// A word with no history at all is box 0, which is the common case on a young
+	// deck and must not reach the board.
+	single, boards = boardsFor([]string{"unheard-of"}, map[string]schedule.Progress{}, opt)
+	if len(boards) != 0 || len(single) != 1 {
+		t.Errorf("a word with no history produced %d boards and %d singles, want 0 and 1", len(boards), len(single))
+	}
+}
+
+// PACKED SIXTEEN AT A TIME, which is the load argument made concrete.
+func TestBoardsArePackedToTheLabelAlphabet(t *testing.T) {
+	opt := options{width: defaultCols, rows: 60}
+	var keys []string
+	prog := map[string]schedule.Progress{}
+	for i := range 40 {
+		k := fmt.Sprintf("word%02d", i)
+		keys = append(keys, k)
+		prog[k] = schedule.Progress{Box: 5}
+	}
+	single, boards := boardsFor(keys, prog, opt)
+	if len(single) != 0 {
+		t.Errorf("%d words were asked one at a time, want none — every one is eligible", len(single))
+	}
+	var sizes []int
+	for _, b := range boards {
+		sizes = append(sizes, len(b))
+	}
+	if want := []int{16, 16, 8}; !slices.Equal(sizes, want) {
+		t.Errorf("boards of %v, want %v", sizes, want)
+	}
+	// And every word is on exactly one of them.
+	seen := map[string]bool{}
+	for _, b := range boards {
+		for _, k := range b {
+			if seen[k] {
+				t.Errorf("%q is on two boards", k)
+			}
+			seen[k] = true
+		}
+	}
+	if len(seen) != len(keys) {
+		t.Errorf("%d of %d words reached a board", len(seen), len(keys))
+	}
+}
+
+// DONE-WHEN 10: A BOARD IS NEVER DRAWN CLIPPED (D15).
+//
+// A terminal too short for the whole board sends those words to form 2.3 for
+// that sitting, which is a complete answer rather than a degraded one. The
+// alternative — a floor in fitFooter — would have broken the budget Paint rests
+// on, and the symptom would have been a click landing on the wrong word.
+func TestAShortTerminalGetsMeaningChoiceNotAClippedBoard(t *testing.T) {
+	prog := map[string]schedule.Progress{}
+	var keys []string
+	for i := range 16 {
+		k := fmt.Sprintf("word%02d", i)
+		keys = append(keys, k)
+		prog[k] = schedule.Progress{Box: 5}
+	}
+	// Tall enough: a 16-word board at 80 columns is four grid rows plus its own
+	// two, and the prompt and bar make eight.
+	if _, boards := boardsFor(keys, prog, options{width: defaultCols, rows: 8}); len(boards) != 1 {
+		t.Errorf("an 8-row terminal offered %d boards, want 1", len(boards))
+	}
+	for _, tc := range []struct {
+		name string
+		opt  options
+	}{
+		{"one row too short", options{width: defaultCols, rows: 7}},
+		{"a small window", options{width: defaultCols, rows: 5}},
+		{"too narrow to lay out at all", options{width: 12, rows: 60}},
+		// THE WIDTH AXIS. The keys line is 76 columns, so below that it wraps
+		// and takes rows off the top that the board was counting on — which a
+		// constant chrome budget missed entirely, and `fitFooter` then dropped
+		// the bar, the panel and eventually the TOGGLE off a board that had
+		// been offered anyway.
+		{"narrow enough that the prompt wraps past the height", options{width: 40, rows: 10}},
+		{"very narrow, where the prompt takes four rows", options{width: 24, rows: 13}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			single, boards := boardsFor(keys, prog, tc.opt)
+			if len(boards) != 0 {
+				t.Errorf("%d boards offered on a terminal that cannot draw one whole", len(boards))
+			}
+			if len(single) != len(keys) {
+				t.Errorf("%d of %d words fell back to being asked one at a time", len(single), len(keys))
+			}
+		})
+	}
+}
+
+// DONE-WHEN 1: A SITTING OF ELIGIBLE WORDS PRESENTS THEM AS A GRID — end to end
+// through todaysQuestions, over a deck that spans the threshold.
+func TestASittingOfDueWordsIsABoard(t *testing.T) {
+	mature := []string{"quokka", "mesa", "parrot", "bank"}
+	young := []string{"sycophantic", "ephemeral"}
+	d, opt, st := playRig(t, append(append([]string{}, mature...), young...)...)
+	for _, w := range mature {
+		seedBox(t, st, w, boardBox)
+	}
+
+	var out, errb bytes.Buffer
+	qs, _, code := todaysQuestions(d, opt, &out, &errb)
+	if code != 0 {
+		t.Fatalf("todaysQuestions = %d: %s", code, errb.String())
+	}
+
+	var board *play.Board
+	var singles []play.Question
+	for _, q := range qs {
+		if b, ok := q.(*play.Board); ok {
+			if board != nil {
+				t.Fatal("two boards for four mature words, want one")
+			}
+			board = b
+			continue
+		}
+		singles = append(singles, q)
+	}
+	if board == nil {
+		t.Fatalf("no board in a sitting of %d questions over a deck with %d mature words", len(qs), len(mature))
+	}
+	if len(singles) != len(young) {
+		t.Errorf("%d questions asked one at a time, want the %d young words", len(singles), len(young))
+	}
+	// BOTH SIDES: every mature word is on the board, every young one is not.
+	grid := board.Prompt()
+	for _, w := range mature {
+		if !strings.Contains(grid, w) {
+			t.Errorf("%q is mature and not on the board:\n%s", w, grid)
+		}
+	}
+	for _, w := range young {
+		if strings.Contains(grid, w) {
+			t.Errorf("%q is young and reached the board:\n%s", w, grid)
+		}
+	}
+	// The panel has something to show: the gloss came from the same sense form
+	// 2.3 asks about.
+	if _, ok := board.Mark(0); !ok {
+		t.Fatal("the first cell refused a mark")
+	}
+	panel := strings.Split(board.Prompt(), "\n")
+	if last := panel[len(panel)-1]; !strings.Contains(last, " ") {
+		t.Errorf("the panel is %q — the board was built with no glosses", last)
+	}
+	// The board comes LAST: retrieval gets the freshest attention.
+	if _, ok := qs[len(qs)-1].(*play.Board); !ok {
+		t.Errorf("the board is not the last question; the queue is %T...%T", qs[0], qs[len(qs)-1])
+	}
+}
+
+// DONE-WHEN 11: THE OUTCOME SURVIVES THE SITTING (#40 D10, T9).
+//
+// The board is live edge and vanishes whole — that is what bought marks that
+// change as they land. What must not vanish is which words the learner said no
+// to, because those are the ones the sitting was actually about.
+func TestABoardLeavesItsRelearnListInTheTranscript(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	// yes on the first, then no on the other two — Tab switches the mark.
+	keys := make(chan Key, 5)
+	keys <- Key{Kind: KeyRune, Rune: '0'}
+	keys <- Key{Kind: KeyTab}
+	keys <- Key{Kind: KeyRune, Rune: '1'}
+	keys <- Key{Kind: KeyRune, Rune: '2'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	script := unstyled(live.Transcript())
+	if !strings.Contains(script, "relearn: mesa, parrot") {
+		t.Errorf("the transcript does not name the words marked no:\n%s", script)
+	}
+	if strings.Contains(script, "quokka") {
+		t.Errorf("a word marked YES is in the relearn list:\n%s", script)
+	}
+	// ...and the grid itself is still not in the transcript.
+	if strings.Contains(script, "[0] ") {
+		t.Errorf("the grid reached the transcript:\n%s", script)
+	}
+}
+
+// A board swept entirely `yes` leaves NOTHING, because an empty relearn list is
+// not news — and a bare "relearn:" would read as a list that failed to render.
+func TestABoardWithNothingToRelearnWritesNoLine(t *testing.T) {
+	d, opt, _ := playRig(t, "quokka", "mesa")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyRune, Rune: '0'}
+	keys <- Key{Kind: KeyRune, Rune: '1'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if strings.Contains(unstyled(live.Transcript()), "relearn") {
+		t.Errorf("an all-yes board wrote a relearn line:\n%s", live.Transcript())
+	}
+}
+
+// DONE-WHEN 12: THE BAR COUNTS WORDS, NOT SLOTS (#40 D8).
+//
+// `done` was always a word count — every mark scores — so a board made the bar
+// compare words against slots, and a twenty-word sitting with one board in it
+// read "0 of 2".
+func TestTheBarCountsWordsNotSlots(t *testing.T) {
+	qs := []play.Question{
+		play.NewRecall("keel", "d"),
+		play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), 80, play.Palette{}),
+		play.NewChoice("run", "", []play.Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
+	}
+	if got, want := sittingWords(qs), 6; got != want {
+		t.Errorf("sittingWords = %d, want %d — one board of four plus two single questions", got, want)
+	}
+	if got := sittingWords(nil); got != 0 {
+		t.Errorf("an empty sitting counts %d words", got)
+	}
+	// The number reaches the bar.
+	d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank")
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank"), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 2)
+	keys <- Key{Kind: KeyRune, Rune: '0'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if frame := unstyled(tty.String()); !strings.Contains(frame, "of 4") {
+		t.Errorf("the bar does not count the board's four words:\n%s", frame)
+	}
+}
+
+// DONE-WHEN 13, MEASURED — and the measurement moved the claim (#40 R5).
+//
+// The plan asked for "materially fewer KEYSTROKES than form 2.3", and that is
+// not what the numbers say. Both forms cost one keystroke per word in the good
+// case; 2.3 costs a second on every miss (the definition goes up and any key
+// moves on) and a board costs one per mode switch. Over eight words that is 1.00
+// against 1.00, or 1.12 against 1.25. Marginal either way.
+//
+// What IS material is how much the learner has to READ. Form 2.3 writes a whole
+// rendered entry per word into the transcript — the four options, then the right
+// answer, then the entry — and a board writes one line for the entire sweep.
+// Measured at 8.8 lines per word against 0.4, and 23.1 against 0.6 once misses
+// are involved. That is the Spec's own claim ("a hundred mature words swept in a
+// grid cost what ten fragile ones cost") and it is a reading cost, not a typing
+// one — which is the right reading of "cost" for a form whose whole argument is
+// that a large deck becomes unaffordable.
+//
+// So this pins BOTH: the keystroke floor the plan's red-when names, and the
+// reading ratio that carries the claim.
+func TestABoardCostsFarLessPerWordThanMeaningChoice(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank", "concrete", "ephemeral", "run", "set"}
+
+	// THE BOARD: one keystroke per word, one mode throughout.
+	d, opt, _ := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
+	var boardKeys []Key
+	for i := range words {
+		boardKeys = append(boardKeys, Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])})
+	}
+	boardLines := sittingCost(t, d, opt, []play.Question{board}, held, boardKeys)
+
+	// FORM 2.3 over the same words, every one answered right — which is the
+	// cheapest that form can possibly be, so the comparison is against its best
+	// case rather than a convenient one.
+	d2, opt2, _ := playRig(t, words...)
+	qs, held2, code := todaysQuestions(d2, opt2, &bytes.Buffer{}, &bytes.Buffer{})
+	if code != 0 {
+		t.Fatalf("todaysQuestions = %d", code)
+	}
+	var singles []play.Question
+	for _, q := range qs {
+		if _, ok := q.(*play.Board); !ok {
+			singles = append(singles, q)
+		}
+	}
+	if len(singles) != len(words) {
+		t.Fatalf("%d single questions for %d words; the comparison is not like for like", len(singles), len(words))
+	}
+	var choiceKeys []Key
+	for _, q := range singles {
+		choiceKeys = append(choiceKeys, Key{Kind: KeyRune, Rune: []rune(gradeKey(t, q, play.Correct))[0]})
+	}
+	choiceLines := sittingCost(t, d2, opt2, singles, held2, choiceKeys)
+
+	// ONE KEYSTROKE PER WORD, which is the plan's red-when: "the grid asks for
+	// more than one keystroke per word".
+	//
+	// Asserted against the BOARD, not against the script: `len(boardKeys) >
+	// len(words)` was the first version and it cannot fail, because boardKeys is
+	// built by ranging over words. What has to be true is that those keystrokes
+	// SPENT the board — one per word, and nothing left owing.
+	if len(boardKeys) != len(words) {
+		t.Fatalf("the script is %d keystrokes for %d words; this row asserts nothing", len(boardKeys), len(words))
+	}
+	if !board.Spent() {
+		t.Errorf("%d keystrokes did not finish a board of %d words — it asks for more than one per word", len(boardKeys), len(words))
+	}
+	// AND THE READING COST, which is where the load argument actually lives.
+	perWordBoard := float64(boardLines) / float64(len(words))
+	perWordChoice := float64(choiceLines) / float64(len(words))
+	if perWordBoard <= 0 {
+		t.Fatal("the board's sitting produced no transcript at all; the ratio below would be meaningless")
+	}
+	if ratio := perWordChoice / perWordBoard; ratio < 10 {
+		t.Errorf("form 2.3 costs %.1f transcript lines per word and the board costs %.1f — a ratio of %.1f, "+
+			"and the Spec's claim is that a grid makes a large deck affordable (ten to one)",
+			perWordChoice, perWordBoard, ratio)
+	}
+	// The MECHANISM, stated so a future change that quietly starts writing the
+	// grid to the buffer fails here too rather than only in the ratio.
+	if boardLines > len(words) {
+		t.Errorf("the board wrote %d transcript lines for %d words — it is meant to write one line for the whole sweep", boardLines, len(words))
+	}
+}
+
+// sittingCost runs a scripted sitting and returns how many lines it left in the
+// transcript — what the learner has to read.
+//
+// The summary the sitting ends with is counted for BOTH forms, which makes the
+// board look slightly worse than it is. That is the conservative direction.
+func sittingCost(t *testing.T, d deps, opt options, qs []play.Question, held *sittingDeck, script []Key) int {
+	t.Helper()
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 40, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, len(script)+1)
+	for _, k := range script {
+		keys <- k
+	}
+	close(keys)
+	playSession(t.Context(), d, opt, play.NewSession(qs), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+	return strings.Count(unstyled(live.Transcript()), "\n")
+}
+
+// DONE-WHEN 2 AND 4: EVERY MARK REACHES THE LOG AS IT HAPPENS, so Ctrl-C leaves
+// the marked words recorded and the unmarked ones untouched (#40 D3).
+//
+// These are one observable. A board that wrote its marks at the END would look
+// identical in a completed sitting and lose everything on an interrupt — and the
+// interrupt is the case the operator asked for by name: *"ctrl-C means nothing is
+// changed from that form. already clicked words can still be recorded, but
+// unmarked words are just unmarked, no state change for them."*
+//
+// Asserted through the FOLD rather than the event count alone, because "no state
+// change" is a claim about boxes, and boxes are what the log folds to.
+func TestCtrlCCancelsABoardWithoutMovingUnmarkedWords(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
+
+	before := schedule.Fold(eventsOf(t, st))
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyRune, Rune: '0'} // quokka: yes
+	keys <- Key{Kind: KeyRune, Rune: '1'} // mesa: yes
+	keys <- Key{Kind: KeyInterrupt}       // ...and stop, two words unmarked
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// TWO events, not four and not zero. Zero is what batching at the end would
+	// leave; four would mean the interrupt committed the rest.
+	evs := reviewEvents(t, st)
+	if len(evs) != 2 {
+		t.Fatalf("%d review events after two marks and Ctrl-C, want 2", len(evs))
+	}
+	got := map[string]bool{evs[0].Word: true, evs[1].Word: true}
+	if !got["quokka"] || !got["mesa"] {
+		t.Errorf("the log holds %v, want the two words that were marked", got)
+	}
+
+	// AND THE UNMARKED WORDS DID NOT MOVE.
+	after := schedule.Fold(eventsOf(t, st))
+	for _, w := range []string{"parrot", "bank"} {
+		if after[w] != before[w] {
+			t.Errorf("%q was never marked and its progress changed: %+v -> %+v", w, before[w], after[w])
+		}
+	}
+	if after["quokka"] == before["quokka"] {
+		t.Errorf("quokka WAS marked and its progress did not change — the premise above is vacuous")
+	}
+	// Both marks were `yes`, so there is nothing to relearn and no line — the
+	// interrupted board that DOES have one is the sibling test below.
+	if strings.Contains(unstyled(live.Transcript()), "relearn") {
+		t.Errorf("an all-yes board wrote a relearn line:\n%s", live.Transcript())
+	}
+}
+
+// Ctrl-C mid-board still writes the relearn line for what WAS marked no.
+func TestCtrlCOnABoardStillLeavesItsRelearnList(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, _ := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 4)
+	keys <- Key{Kind: KeyTab}             // switch to marking no
+	keys <- Key{Kind: KeyRune, Rune: '2'} // parrot: no
+	keys <- Key{Kind: KeyInterrupt}       // ...and stop, three unmarked
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	script := unstyled(live.Transcript())
+	if !strings.Contains(script, "relearn: parrot") {
+		t.Errorf("an interrupted board lost the outcome it had:\n%s", script)
+	}
+	for _, w := range []string{"quokka", "mesa", "bank"} {
+		if strings.Contains(script, w) {
+			t.Errorf("%q was never marked and is in the relearn list:\n%s", w, script)
+		}
+	}
+}
+
+// THE BOARD'S OWN ROWS COME FIRST IN THE FOOTER, IN ORDER, and formCell reads a
+// footer entry index straight back as a grid row — so anything inserted above
+// the grid silently shifts every cell.
+//
+// `boardFooter`'s comment calls that load-bearing and nothing tested it. A second
+// live-edge form, or anything wanting a row above the grid, is where it breaks.
+func TestBoardFooterPutsTheFormsOwnRowsFirst(t *testing.T) {
+	board := play.NewBoard(boardCells("quokka", "mesa", "parrot", "bank", "set"), 80, play.Palette{})
+	footer := boardFooter(board, sittingFigures{})
+	own := strings.Split(board.Prompt(), "\n")
+	if len(footer) < len(own) {
+		t.Fatalf("the footer is %d rows and the board draws %d", len(footer), len(own))
+	}
+	for i, row := range own {
+		if footer[i] != row {
+			t.Errorf("footer entry %d is %q, but the board's own row %d is %q — formCell reads that index back as a grid row", i, footer[i], i, row)
+		}
+	}
+	if len(footer) != len(own)+barRows {
+		t.Errorf("the footer is %d rows, want the board's %d plus %d for the bar", len(footer), len(own), barRows)
+	}
+}
+
+// DONE-WHEN 2, the completed sweep: N marks, N events.
+func TestEveryMarkOnABoardIsRecordedImmediately(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, len(words)+1)
+	for i := range words {
+		keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])}
+	}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	evs := reviewEvents(t, st)
+	if len(evs) != len(words) {
+		t.Fatalf("%d review events for %d marks:\n%s", len(evs), len(words), unstyled(live.Transcript()))
+	}
+	seen := map[string]bool{}
+	for _, e := range evs {
+		if seen[e.Word] {
+			t.Errorf("%q was recorded twice — Fold would read that as two reviews on one day", e.Word)
+		}
+		seen[e.Word] = true
+	}
+}
+
+// DONE-WHEN 6: THE MOUSE-LESS PATH WORKS, and `d` is not a cell label.
+//
+// #38's pty rows exist because a terminal reporting no mouse must keep working.
+// Without the printed keys a board would silently degrade to "everything is no",
+// which is wrong rather than merely limited.
+func TestABoardIsMarkableByKeyAlone(t *testing.T) {
+	// SIXTEEN REAL WORDS, so the whole label alphabet is exercised including the
+	// `d` gap — and real ones because the rig's deck is looked up for its glosses.
+	words := []string{
+		"bank", "concrete", "content", "defenestrate",
+		"desert", "ephemeral", "even", "man",
+		"mesa", "minute", "parrot", "present",
+		"pulp", "quokka", "read", "run",
+	}
+	if len(words) != play.MaxBoardWords {
+		t.Fatalf("%d words, want a full board of %d", len(words), play.MaxBoardWords)
+	}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 30, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, len(words)+1)
+	for i := range words {
+		keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])}
+	}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if n := len(reviewEvents(t, st)); n != len(words) {
+		t.Errorf("%d events for %d keys — a mouse-less terminal cannot finish a board", n, len(words))
+	}
+}
+
+// ...AND `d` IS NOT A CELL LABEL. It is the session's drop key, taken by toInput
+// before any form sees it — and on a board Apply refuses it too, because a grid
+// has no single current word to remove.
+func TestDOnABoardIsNotACellLabel(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), opt.width, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, opt.width)
+	live.interval = -1
+	var errb bytes.Buffer
+	keys := make(chan Key, 3)
+	keys <- Key{Kind: KeyRune, Rune: 'd'}
+	keys <- Key{Kind: KeyRune, Rune: 'D'}
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	if n := len(reviewEvents(t, st)); n != 0 {
+		t.Errorf("%d review events after pressing d twice — it graded a cell", n)
+	}
+	if strings.Contains(unstyled(live.Transcript()), "removed") {
+		t.Errorf("d removed a word from the deck on a board, where it names none:\n%s", live.Transcript())
+	}
+	deck, err := st.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck) != len(words) {
+		t.Errorf("the deck holds %d words, want %d — d took one", len(deck), len(words))
+	}
+	// ...and it still drops on a form that HAS a current word, which is the other
+	// half: the key was refused for a reason, not disabled.
+	d2, opt2, st2 := playRig(t, "quokka", "mesa")
+	_, held2 := questionsFor(t, d2, opt2)
+	tty2 := &syncBuf{}
+	live2 := newPinnedScreen(tty2, 24, opt2.width)
+	live2.interval = -1
+	keys2 := make(chan Key, 2)
+	keys2 <- Key{Kind: KeyRune, Rune: 'd'}
+	keys2 <- Key{Kind: KeyInterrupt}
+	close(keys2)
+	playSession(t.Context(), d2, opt2, play.NewSession([]play.Question{play.NewRecall("quokka", "d")}), held2, keys2,
+		console{view: live2, finish: func() {}, stdout: live2, stderr: &errb})
+	deck2, err := st2.Deck()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deck2) != 1 {
+		t.Errorf("the deck holds %d words after a drop on form 2.1, want 1 — d stopped working everywhere", len(deck2))
+	}
+}
+
+// eventsOf is every event in the store, for folding.
+func eventsOf(t *testing.T, st *store.Mem) []store.ReviewEvent {
+	t.Helper()
+	all, err := st.Events(time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return all
+}
+
+// R9, THROUGH THE LOOP: a narrowing resize under a live board must not leave a
+// click marking the wrong word (R12).
+//
+// The first version of this test asserted over an EVENT SET IT NEVER PRODUCED —
+// `for _, e := range reviewEvents(...)` with no count check, and the click never
+// landed, so it passed with `formCell` stubbed to return false. The rule it
+// broke is one this issue's own Log already records for T13: **read the click's
+// row and column off the PAINT, never compute them** — the goroutine derived a
+// row from logical writes while `FooterRowAt` works in physical rows.
+//
+// So the click is placed from the frame, and the premise is checked before the
+// assertion: a test whose subject is an event must assert the event happened.
+func TestANarrowingResizeKeepsTheBoardsClickMapHonest(t *testing.T) {
+	// Long words, so the board's rows are wide at 80 and MUST be relaid out at
+	// 40 or they wrap — which is the whole failure.
+	words := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), 80, play.Palette{})
+	if board.Rows() != 3 {
+		t.Fatalf("expected a one-row grid plus chrome at 80 columns, got %d rows:\n%s", board.Rows(), board.Prompt())
+	}
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	resizes := make(chan winSize, 1)
+	keys := make(chan Key, 2)
+
+	// The resize lands, the frame settles, and only THEN is the click placed —
+	// from the painted frame, at the physical row and column the terminal is
+	// actually showing the second cell at.
+	// The driver ALWAYS closes `keys`, whatever it fails to find. A helper
+	// goroutine that gives up without closing leaves playSession blocked on the
+	// channel forever, so the test HANGS instead of failing — which is how the
+	// first version of this behaved under the very mutation it exists to catch.
+	// A test that hangs on the defect certifies about as much as one that passes
+	// on it, and takes longer to say so. (`waitFor`'s own t.Fatal is worse than
+	// useless here: FailNow on a non-test goroutine is a Goexit, so it skips
+	// every remaining line including the close.)
+	go func() {
+		defer close(keys)
+		settled := func(cond func() bool) bool {
+			for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+				if cond() {
+					return true
+				}
+				time.Sleep(time.Millisecond)
+			}
+			return false
+		}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "[0] ") }) {
+			return
+		}
+		resizes <- winSize{rows: 24, cols: 40}
+		// THE DRIVER NEVER TOUCHES THE BOARD. `board` belongs to the loop
+		// goroutine, which is about to relayout it — reading `board.Rows()` here
+		// is a data race, and -race says so. Production has one goroutine on a
+		// form for exactly this reason.
+		//
+		// A PROBE instead: the same words at the same width lay out the same way,
+		// which is the property boardFits already relies on. Everything the
+		// driver needs to place a click comes from the probe (a column) and the
+		// screen (a row), and the screen is behind a mutex.
+		probe := play.NewBoard(boardCells(words...), 40, play.Palette{})
+		col := strings.Index(strings.Split(probe.Prompt(), "\n")[0], "[1] ")
+		if col < 0 {
+			return
+		}
+
+		// EVERYTHING COMES FROM THE SCREEN, and the frame text is not consulted
+		// at all. Two earlier spellings scraped it and both were wrong in the
+		// same way: `FooterRowAt` answers in the TERMINAL's rows, and a frame
+		// split on "\r\n" gives LOGICAL lines. The keys prompt is one logical
+		// line and — at 76 columns in a 40-column window — two physical rows, so
+		// the two indices differ by one from that point down and a click placed
+		// by frame index lands a row high. (The first spelling also matched the
+		// pre-resize paint outright, because the 40-column grid row is a PREFIX
+		// of the 80-column one.)
+		//
+		// The relayout is observable through the map alone: at 80 the board is
+		// three rows and the footer holds four entries; at 40 it is four and the
+		// footer holds five. So wait until some row reports the LAST entry index
+		// a relaid-out board produces — that count cannot be reached by the old
+		// layout — and then take the row that is entry 0.
+		lastEntry := probe.Rows() // entries are the board's rows, then the bar
+		row := -1
+		if !settled(func() bool {
+			seenLast, first := false, -1
+			for r := 0; r < 24; r++ {
+				e, off, ok := live.FooterRowAt(r)
+				if !ok {
+					continue
+				}
+				if e == lastEntry {
+					seenLast = true
+				}
+				if e == 0 && off == 0 && first < 0 {
+					first = r
+				}
+			}
+			row = first
+			return seenLast && first >= 0
+		}) {
+			return
+		}
+		keys <- Key{Kind: KeyClick, Row: row, Col: col + len("[1] ")}
+		keys <- Key{Kind: KeyInterrupt}
+	}()
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE PREMISE FIRST: the click landed at all. Without this the assertion
+	// below is a loop over nothing, which is what shipped and passed.
+	evs := reviewEvents(t, st)
+	if len(evs) != 1 {
+		t.Fatalf("%d review events, want the one click — the click never reached the form:\n%s",
+			len(evs), lastPaintedFrame(tty.String()))
+	}
+	// ...and the frame really did show the grid, so the row above was a grid row
+	// rather than an empty footer entry that happened to answer.
+	if !strings.Contains(unstyled(tty.String()), "[1] "+words[1]) {
+		t.Fatalf("the second cell was never painted:\n%s", lastPaintedFrame(tty.String()))
+	}
+	// AND IT MARKED THE WORD DRAWN THERE. Without the relayout the board's rows
+	// are 74 columns wide at a 40-column terminal, each wraps into two physical
+	// rows, and the column carries a different word.
+	if evs[0].Word != words[1] {
+		t.Errorf("the click marked %q, want %q — the column meant a different word after the resize", evs[0].Word, words[1])
+	}
+
+	// THE BOARD'S OWN ROWS FIT, which is the invariant the click map rests on:
+	// one footer entry, one physical row, so an entry index IS a grid row. The
+	// keys prompt and the bar may wrap — Paint budgets the first with
+	// displayRows and fitFooter drops the second — which is exactly why the
+	// board's rows are the ones that have to fit.
+	//
+	// Read here, AFTER playSession returned: the loop goroutine is done, so the
+	// board is this goroutine's to look at.
+	frame := unstyled(tty.String())
+	for i, row := range strings.Split(board.Prompt(), "\n") {
+		if n := visibleCells(row); n > 40 {
+			t.Errorf("the board's row %d is %d columns after a resize to 40 — it wraps, and a click on the continuation means another word:\n%q", i, n, row)
+		}
+		if row != "" && !strings.Contains(frame, row) {
+			t.Errorf("the board's row %d was never drawn after the resize:\n%q", i, row)
+		}
+	}
+	if board.Rows() <= 3 {
+		t.Errorf("the board is %d rows at 40 columns and was 3 at 80 — it did not relayout", board.Rows())
+	}
+}
+
+// lastPaintedFrame is the most recent whole frame in a session's output.
+func lastPaintedFrame(out string) string {
+	frames := strings.Split(unstyled(out), cursorHome+eraseDown)
+	return frames[len(frames)-1]
+}
+
+// R17: A BOARD THAT BECOMES CURRENT AFTER A RESIZE IS LAID OUT FOR THE TERMINAL
+// AS IT IS, not the one it was built for.
+//
+// The resize case told `s.Current()` its new width, which fixed the board on
+// screen at that moment and no other. The NEXT board was built by
+// `todaysQuestions` at the old width and painted with rows too wide — so its
+// rows wrapped, a footer entry stopped being one physical row, and BR-8's
+// wrong-word click came back through a door the first fix could not see.
+//
+// `show` is the one place that draws, so it is the only place that can promise
+// this for every board.
+func TestABoardBuiltBeforeAResizeIsStillLaidOutForTheTerminal(t *testing.T) {
+	first := []string{"keel", "mesa", "run", "bank"}
+	// Long words, so an 80-column layout is far too wide for a 40-column window.
+	second := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
+	d, opt, _ := playRig(t, "quokka", "concrete")
+	_, held := questionsFor(t, d, opt)
+
+	// BOTH boards built at 80, as todaysQuestions would before any resize.
+	a := play.NewBoard(boardCells(first...), 80, play.Palette{})
+	b := play.NewBoard(boardCells(second...), 80, play.Palette{})
+
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, 24, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+	resizes := make(chan winSize, 1)
+	keys := make(chan Key, 8)
+
+	go func() {
+		defer close(keys)
+		settled := func(cond func() bool) bool {
+			for dl := time.Now().Add(2 * time.Second); time.Now().Before(dl); {
+				if cond() {
+					return true
+				}
+				time.Sleep(time.Millisecond)
+			}
+			return false
+		}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "[0] keel") }) {
+			return
+		}
+		// Narrow the window while the FIRST board is up...
+		resizes <- winSize{rows: 24, cols: 40}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "[3] bank") }) {
+			return
+		}
+		// ...then sweep it, so the SECOND board becomes current after the resize.
+		for i := range first {
+			keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[i])}
+		}
+		if !settled(func() bool { return strings.Contains(unstyled(tty.String()), "arrondissement") }) {
+			return
+		}
+		keys <- Key{Kind: KeyInterrupt}
+	}()
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{a, b}), held, keys,
+		console{view: live, resizes: resizes, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE PREMISE: the second board was actually reached and drawn.
+	frame := unstyled(tty.String())
+	if !strings.Contains(frame, "arrondissement") {
+		t.Fatalf("the second board was never drawn:\n%s", frame)
+	}
+	// AND IT FITS. Built at 80, four long words are one row of 74 columns; at 40
+	// that wraps into two physical rows and every click below it means another
+	// word.
+	for i, row := range strings.Split(b.Prompt(), "\n") {
+		if n := visibleCells(row); n > 40 {
+			t.Errorf("the second board's row %d is %d columns in a 40-column window — it was never told the terminal changed:\n%q", i, n, row)
+		}
+	}
+	if b.Rows() <= 3 {
+		t.Errorf("the second board is %d rows; at 40 columns four long words need more, so it did not relayout", b.Rows())
+	}
+}
+
+// R17: ENTER IS HELD WHILE THE BOARD IS NOT DRAWN IN FULL.
+//
+// Enter takes every unmarked word as Wrong. On a terminal too short to draw the
+// whole board, `fitFooter` drops trailing grid rows — so one keystroke would
+// halve the box of words that were never on screen. The loop refuses, the prompt
+// says why, and marking what IS visible still works.
+func TestEnterIsHeldWhileTheBoardIsNotDrawnInFull(t *testing.T) {
+	var words []string
+	for _, w := range []string{
+		"bank", "concrete", "content", "defenestrate", "desert", "ephemeral",
+		"even", "man", "mesa", "minute", "parrot", "present", "pulp", "quokka",
+		"read", "run",
+	} {
+		words = append(words, w)
+	}
+	d, opt, st := playRig(t, words...)
+	_, held := questionsFor(t, d, opt)
+	board := play.NewBoard(boardCells(words...), 80, play.Palette{})
+
+	// A window that cannot hold it: the board is six rows plus a prompt and bar.
+	const short = 6
+	tty := &syncBuf{}
+	live := newPinnedScreen(tty, short, 80)
+	live.interval = -1
+	var errb bytes.Buffer
+
+	keys := make(chan Key, 4)
+	keys <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[0])} // one mark, by hand
+	keys <- Key{Kind: KeyEnter}                                 // ...and the sweep, which must not land
+	keys <- Key{Kind: KeyInterrupt}
+	close(keys)
+
+	playSession(t.Context(), d, opt, play.NewSession([]play.Question{board}), held, keys,
+		console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+	// THE PREMISE: the terminal really is too short for this board.
+	if fitsABoard(short, board.Rows(), displayRows(gradePrompt(board), 80)) {
+		t.Fatalf("a %d-row window fits a %d-row board; this test asserts nothing", short, board.Rows())
+	}
+	// ONE event — the mark. Not sixteen.
+	evs := reviewEvents(t, st)
+	if len(evs) != 1 {
+		t.Fatalf("%d review events, want the one mark — Enter swept words the window never drew:\n%s",
+			len(evs), unstyled(tty.String()))
+	}
+	if evs[0].Word != words[0] {
+		t.Errorf("recorded %q, want the word that was marked by hand", evs[0].Word)
+	}
+	// ...and the learner is told why, on the row Paint clips last.
+	if !strings.Contains(unstyled(tty.String()), "window too short") {
+		t.Errorf("Enter was refused silently:\n%s", unstyled(tty.String()))
+	}
+
+	// AND THE SAME BOARD IN A WINDOW THAT FITS DOES commit, so the refusal is
+	// about the window and not about boards.
+	d2, opt2, st2 := playRig(t, words...)
+	_, held2 := questionsFor(t, d2, opt2)
+	board2 := play.NewBoard(boardCells(words...), 80, play.Palette{})
+	tty2 := &syncBuf{}
+	live2 := newPinnedScreen(tty2, 24, 80)
+	live2.interval = -1
+	keys2 := make(chan Key, 3)
+	keys2 <- Key{Kind: KeyRune, Rune: rune(play.BoardLabels[0])}
+	keys2 <- Key{Kind: KeyEnter}
+	keys2 <- Key{Kind: KeyInterrupt}
+	close(keys2)
+	playSession(t.Context(), d2, opt2, play.NewSession([]play.Question{board2}), held2, keys2,
+		console{view: live2, finish: func() {}, stdout: live2, stderr: &errb})
+	if n := len(reviewEvents(t, st2)); n != len(words) {
+		t.Errorf("%d events in a window that fits, want all %d — Enter must still commit there", n, len(words))
+	}
+}
+
+// readmeBoardWords are the words the README's board example shows, and the
+// README DERIVES its grid from them (BR-18).
+//
+// The block used to be hand-drawn, and it went stale the moment the operator's
+// sitting changed the design: it still showed `[y] keel` for a mark standing
+// where the key was, and a label row with the old hole at `d` — both contradicted
+// by the README's own prose eight lines below. doc_sync pins the prompt LINE, so
+// the grid was a restatement with no consumer.
+var readmeBoardWords = []string{
+	"arrondissement", "bailiwick", "keel", "mesa",
+	"ephemeral", "quokka", "potassium", "ligament",
+	"sycophantic", "concrete", "parrot", "run",
+	"light", "bank", "set", "obsequious",
+}
+
+// THE REFUSAL ROW IS NO WIDER THAN THE KEYS ROW IT REPLACES.
+//
+// `Paint` charges the frame for the prompt it is given, and `boardFitsIn`
+// computes the fit from the KEYS row — so a taller replacement would drop one
+// more footer row than the fit was computed against. Measured before the fix:
+// the keys row is 78 columns and the refusal was 79, which disagreed at 78, 39
+// and 26 columns.
+//
+// Bounded to cosmetics either way — Enter is already held in that state and an
+// unpainted row is unclickable — but "these two strings are the same width" is
+// not a fact anyone re-checks by eye.
+func TestTheRefusalRowIsNoWiderThanTheKeysRow(t *testing.T) {
+	board := play.NewBoard(boardCells("keel", "mesa", "run", "bank"), 80, play.Palette{})
+	keys := boardPrompt(board, true)
+	refusal := boardPrompt(board, false)
+	if refusal == keys {
+		t.Fatal("the two prompts are identical; this test asserts nothing")
+	}
+	if visibleCells(refusal) > visibleCells(keys) {
+		t.Errorf("the refusal is %d columns and the keys row is %d — the frame is budgeted "+
+			"for the keys row, so a wider refusal drops a footer row the fit did not account for:\n\t%q\n\t%q",
+			visibleCells(refusal), visibleCells(keys), refusal, keys)
+	}
+	// ...and at every width the board is offered at, the refusal costs no MORE
+	// rows than the budget was computed for. Fewer is fine and is the safe
+	// direction — the frame then has a row it did not spend.
+	for _, w := range []int{minWrapWidth, 24, 26, 39, 40, 78, defaultCols, 120} {
+		if a, b := displayRows(keys, w), displayRows(refusal, w); b > a {
+			t.Errorf("at %d columns the keys row is %d rows and the refusal is %d — the frame is "+
+				"budgeted for the first and would draw the second", w, a, b)
+		}
+	}
+}
+
+// ONE FIT FORMULA, asked at selection and at draw (BR-19).
+//
+// It was spelled twice and had already diverged: the selection copy refused a
+// terminal under minWrapWidth and the draw-time copy did not, so a board
+// narrowed below that by a resize still reported itself whole. Not reachable as
+// harm — the row arithmetic turns the answer false well before the words become
+// unreadable — which is the reason to consolidate rather than a reason not to.
+func TestSelectionAndDrawAskTheSameFitQuestion(t *testing.T) {
+	words := []string{"arrondissement", "sycophantic", "defenestrate", "ephemeral"}
+	for _, tc := range []struct{ rows, cols int }{
+		{24, 80}, {10, 80}, {8, 80}, {24, 40}, {10, 40}, {60, 19}, {60, 12}, {5, 80},
+	} {
+		opt := options{width: tc.cols, rows: tc.rows}
+		atSelection := boardFits(words, opt)
+		probe := play.NewBoard(boardCells(words...), tc.cols, play.Palette{})
+		atDraw := boardFitsIn(probe, tc.rows, tc.cols)
+		if atSelection != atDraw {
+			t.Errorf("%dx%d: selection says %v and the frame says %v — two spellings of one formula",
+				tc.rows, tc.cols, atSelection, atDraw)
+		}
+	}
+	// THE WIDTH RULE REACHES THE DRAW, which is the divergence that existed.
+	narrow := play.NewBoard(boardCells(words...), minWrapWidth-1, play.Palette{})
+	if boardFitsIn(narrow, 100, minWrapWidth-1) {
+		t.Errorf("a %d-column terminal reports a whole board; below minWrapWidth this program "+
+			"treats the terminal as too narrow to lay text out at all", minWrapWidth-1)
 	}
 }

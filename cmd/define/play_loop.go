@@ -134,7 +134,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// silently stale in the bar, and a stale number on screen is worse than
 		// no number.
 		fig = held.figures(opt.count)
-		fig.total = len(s.Questions)
+		fig.total = sittingWords(s.Questions)
 		// ANSWERED, which is what the Spec's bar says. A dropped word is not an
 		// answer: the learner curated it away rather than being asked about it.
 		fig.done = s.Right + s.Wrong
@@ -156,12 +156,71 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 	// question's index, and -1 means none — the state is one int, and it lives
 	// here because "perform the outcomes" already does.
 	written := -1
+	// boardWhole is whether the CURRENT board is drawn in full, recomputed by
+	// every frame and read by the key loop (R17). False only after a resize has
+	// shrunk the terminal under a board already in play — the board is not
+	// re-selected then, because its marks are already in the log.
+	boardWhole := true
+	// relearn is the words this board has been marked `no` on, emptied into the
+	// transcript when it closes. A slice on the loop rather than state on the
+	// form: see relearnLine.
+	var relearn []string
 	// `show` rather than `draw`: the package-level draw() is gone, and a closure
 	// wearing its name would read as the same thing narrowed rather than as the
 	// different thing it is — this one decides what has changed, where that one
 	// printed everything every time.
 	show := func() {
-		if q := s.Current(); q != nil && written != s.Index {
+		q := s.Current()
+		// A GRID IS THE LIVE EDGE AND NOT A BUFFER LINE (#40 D10).
+		//
+		// The buffer is append-only, which is what makes a click's coordinates
+		// exact — and also what would freeze a grid the moment it was written.
+		// Its marks change as they land, so it is rebuilt into the FOOTER on
+		// every frame instead, and nothing about it reaches the transcript
+		// except the relearn line it writes as it closes.
+		if g, ok := q.(play.Grid); ok {
+			// LAID OUT FOR THE TERMINAL AS IT IS, at DRAW time (R17).
+			//
+			// The resize case used to be the only place that told a form its
+			// width, which fixed the board that happened to be ON SCREEN when
+			// the window changed and no other: a board that became current
+			// afterwards was built by todaysQuestions at the old width and
+			// painted with rows too wide for the terminal, so its rows wrapped,
+			// a footer entry stopped being one physical row, and the wrong-word
+			// click was back. `show` is the ONE place that draws, so it is the
+			// only place that can promise this for every board.
+			//
+			// Idempotent: Resize returns immediately when the width is the one
+			// the form already has, which is every frame but the first after a
+			// change.
+			termRows, termCols := view.Size()
+			g.Resize(termCols)
+			// AND WHETHER IT FITS, which decides one thing: whether Enter may
+			// spend it. A shrunken terminal drops trailing footer rows, so some
+			// grid rows are simply not drawn — and Enter takes every unmarked
+			// word as Wrong, including words the learner never saw. That is a
+			// box halved per word on a keystroke meaning "ask me these again".
+			boardWhole = boardFitsIn(q, termRows, termCols)
+			// ONE BLANK BUFFER LINE, the first time this board is drawn.
+			//
+			// A board writes nothing else to the buffer, so without it the grid
+			// begins immediately under the previous question's last line and the
+			// two read as one block — which is what the operator saw in a real
+			// sitting. Every other form is separated by the leading "\n" of its
+			// own prompt write, and a board has no prompt write to carry one.
+			//
+			// Through `written`, so it happens once per board rather than once
+			// per frame: the buffer is append-only, and a blank line per
+			// keystroke would push the transcript up the screen as the learner
+			// marked.
+			if written != s.Index {
+				written = s.Index
+				fmt.Fprintln(stdout)
+			}
+			view.Draw(boardPrompt(q, boardWhole), boardFooter(q, fig))
+			return
+		}
+		if q != nil && written != s.Index {
 			written = s.Index
 			// Plain \n: the screen places every row, so nothing here decides
 			// where a line goes (D1).
@@ -227,6 +286,23 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// the screen's own cols, which Resize is what updates. Setting a
 			// second width here would be a second answer to the same question.
 			view.Resize(sz.rows, sz.cols)
+			// NOTHING IS TOLD ABOUT THE FORM HERE, and that is R17.
+			//
+			// This case used to relayout the board — correctly for the one on
+			// screen, and for no other: a board that became current later was
+			// built at the old width and painted too wide, so its rows wrapped
+			// and a click on a continuation row meant a different word. `show`
+			// is the one place that draws, so it is the only place that can
+			// promise a layout for every board, and it does it every frame.
+			//
+			// AND NO RE-SELECTION. The board stays, at the new shape, even if the
+			// terminal is now too short to draw it whole — D15's rule holding
+			// rather than bending. `boardsFor` chooses the form for words not yet
+			// asked; this board's marks are already in the log, so "send it to
+			// 2.3 instead" would mean re-asking answered words. What a short
+			// terminal loses is the bar, then the panel, then grid rows — and
+			// Enter is held while any of them are missing, which is what makes
+			// those losses survivable rather than "harmless" (R18).
 			show()
 			continue
 		case got, ok := <-keys:
@@ -255,26 +331,59 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			continue
 		}
 
-		// A CLICK ACTS AND NEVER ANSWERS (D8, T7).
+		// A CLICK NEVER ANSWERS A FORM THAT DID NOT ASK FOR IT (D8, T7; #40 D11).
 		//
-		// Hearing the word is what `y`/`n` are answering ABOUT, so a click that
-		// recorded a review would corrupt the schedule silently — the worst kind
-		// of bug here, because the damage is to data the learner cannot see. Like
-		// a viewport gesture it stops before `toInput`, so `play.Apply` never
-		// learns that a mouse exists.
+		// #38 shipped this as "a click ACTS and never answers", and the reason
+		// stands unchanged for every form that holds one word: hearing the word
+		// is what `y`/`n` are answering ABOUT, so a click that recorded a review
+		// would corrupt the schedule silently — the worst kind of bug here,
+		// because the damage is to data the learner cannot see.
+		//
+		// A board asks for it. Its cells ARE its answers, so the click is offered
+		// to the form FIRST and falls through to playRegion when the form
+		// declines — which every existing form does, by not being a grid. That is
+		// why #38's row is still green untouched, and being untouched is the
+		// proof that the seam widened rather than branched.
 		//
 		// A click on nothing is nothing: no beep, no message. Pointing at
 		// ordinary text is not an error.
+		var in play.Input
 		if k.Kind == KeyClick {
-			if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
-				// The record-shaped indicator, not the editor's erasable one:
-				// a sitting's `♫ playing 3×` is a frame write like any other
-				// (D5a), and defaultIndicator is what every other playback on
-				// this path already uses.
-				playRegion(ctx, d, opt, r, "", defaultIndicator(opt), stdout, stderr)
-				show()
+			cell, marks := formCell(view, s.Current(), k)
+			if !marks {
+				if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
+					// The record-shaped indicator, not the editor's erasable one:
+					// a sitting's `♫ playing 3×` is a frame write like any other
+					// (D5a), and defaultIndicator is what every other playback on
+					// this path already uses.
+					playRegion(ctx, d, opt, r, "", defaultIndicator(opt), stdout, stderr)
+					show()
+				}
+				continue
 			}
-			continue
+			in = play.Input{Kind: play.InputMark, Cell: cell}
+		} else {
+			var ok bool
+			if in, ok = toInput(k); !ok {
+				continue
+			}
+			// ENTER IS HELD WHILE THE BOARD IS NOT DRAWN IN FULL (R17).
+			//
+			// It takes every unmarked word as Wrong, and on a shrunken terminal
+			// some of those words were never on screen — so one keystroke would
+			// halve the box of words the learner had no chance to look at. The
+			// loop refuses rather than the session, for the same reason a
+			// viewport gesture never reaches `play` (D6): what was DRAWN is the
+			// terminal's business and the pure package must not learn about it.
+			//
+			// Marking still works, and Ctrl-C is still free — so nothing is
+			// stuck. The prompt says why, because a key that silently stops
+			// working is the thing a learner blames themselves for.
+			if in.Kind == play.InputFinish && !boardWhole {
+				if _, isGrid := s.Current().(play.Grid); isGrid {
+					continue
+				}
+			}
 		}
 
 		// The question the keystroke is ABOUT, read before Apply moves on. A
@@ -282,12 +391,19 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 		// reading it after would make that a fact about Apply that this loop
 		// silently depends on, and BR-4 is what a nil Current() costs.
 		asked := s.Current()
-		in, ok := toInput(k)
-		if !ok {
-			continue
-		}
 		var outs []play.Outcome
 		s, outs = play.Apply(s, in)
+		// THE BOARD'S OUTCOME, KEPT (D10). Its grid never reaches the buffer, so
+		// without this a swept board would leave the transcript with no trace
+		// that the sitting happened at all.
+		_, wasGrid := asked.(play.Grid)
+		if wasGrid {
+			for _, out := range outs {
+				if out.Kind == play.OutcomeRecord && out.Verdict == play.Wrong {
+					relearn = append(relearn, out.Word)
+				}
+			}
+		}
 
 		// EVERY outcome, ONCE, IN ORDER.
 		//
@@ -393,6 +509,16 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 				}
 			}
 		}
+		// WRITTEN AS THE BOARD CLOSES, before the next question is drawn — so the
+		// line sits in the transcript where the board was, rather than after
+		// whatever came next. `asked` is the form the keystroke was about, and a
+		// board leaves the screen the moment its last word is answered.
+		if wasGrid && s.Current() != asked {
+			if line := relearnLine(relearn); line != "" {
+				fmt.Fprintf(stdout, "\n%s\n", line)
+			}
+			relearn = nil
+		}
 		show()
 	}
 	return over()
@@ -409,17 +535,334 @@ func toInput(k Key) (play.Input, bool) {
 	case KeyInterrupt, KeyEOF:
 		return play.Input{Kind: play.InputQuit}, true
 	case KeyEnter:
-		return play.Input{Kind: play.InputReveal}, true
+		// ENTER IS NOT SPACE ANY MORE (D14). The two were one kind while every
+		// form held one word and one answer; a board takes every unmarked word
+		// as No when it is finished, and leaving them merged fired that on the
+		// most careless key there is. Apply treats InputFinish exactly as
+		// InputReveal for every form that is not a Batch, which is what keeps
+		// 2.1 and 2.3 from noticing.
+		return play.Input{Kind: play.InputFinish}, true
+	case KeyTab:
+		// Dropped on the floor until now — key.go decoded it and nothing here
+		// had a case for it (D13).
+		return play.Input{Kind: play.InputToggle}, true
 	case KeyRune:
 		switch k.Rune {
 		case ' ':
 			return play.Input{Kind: play.InputReveal}, true
 		case 'd', 'D':
-			return play.Input{Kind: play.InputDrop}, true
+			// THE RUNE RIDES ALONG, because `d` is only the session's key while
+			// the form has a current word to remove. On a form holding many it is
+			// an ordinary graded key, and Apply cannot ask the form about a
+			// keystroke this did not carry.
+			return play.Input{Kind: play.InputDrop, Rune: k.Rune}, true
 		}
 		return play.Input{Kind: play.InputRune, Rune: k.Rune}, true
 	}
 	return play.Input{}, false
+}
+
+// boardPrompt is a board's prompt row: its own keys, or the reason Enter is
+// held (R17).
+//
+// The REASON, not a silent refusal. A learner who presses Enter on a board that
+// will not commit needs to know the window is the problem — and this row is the
+// one `Paint` clips last, so it is the right place to say it.
+//
+// It replaces the form's keys rather than joining them, because the two would
+// not both fit at the width where this happens, and a prompt that wraps is a
+// frame one row taller than the board was budgeted for.
+func boardPrompt(q play.Question, whole bool) string {
+	if whole {
+		return gradePrompt(q)
+	}
+	return boardRefusal
+}
+
+// boardRefusal is the prompt row when the window cannot show the whole board.
+//
+// NO WIDER THAN THE KEYS ROW IT REPLACES, which is a budget constraint rather
+// than a style one: `Paint` charges the frame for the prompt it is given, and a
+// taller replacement would drop one more footer row than the fit was computed
+// against. Pinned by TestTheRefusalRowIsNoWiderThanTheKeysRow, because "these
+// two strings are the same width" is not a fact anyone will re-check by eye.
+const boardRefusal = "window too short for the whole board — mark what you see, Ctrl-C to stop"
+
+// boardFitsIn is THE answer to "can this board be drawn whole here", and it is
+// asked at both moments: at SELECTION, where a board that does not fit is not
+// offered (D15), and at every DRAW, where the answer decides whether Enter may
+// spend it (R17).
+//
+// One helper because it was two spellings of one formula, and they had already
+// diverged: the selection copy refused a terminal under `minWrapWidth` and the
+// draw-time copy did not, so a board narrowed below that by a resize still
+// reported itself whole. Not reachable as harm today — the row arithmetic turns
+// the answer false well before the words become unreadable — which is the reason
+// to consolidate it rather than a reason not to (ARCH-DRY).
+func boardFitsIn(q play.Question, termRows, termCols int) bool {
+	g, ok := q.(play.Grid)
+	if !ok || termCols < minWrapWidth {
+		// Below minWrapWidth this program already treats the terminal as too
+		// narrow to lay text out at all, and a board there is columns of stubs.
+		return false
+	}
+	return fitsABoard(termRows, g.Rows(), displayRows(gradePrompt(q), termCols))
+}
+
+// boardPalette is how a board's marks are painted, and it is the ONE place this
+// program decides that.
+//
+// GREEN for yes, RED for no — the two conventions a terminal reader already
+// has, and the pair a learner does not have to be taught. Bold, because the
+// grid's unmarked cells are ordinary weight and the marked ones should separate
+// at a glance rather than on inspection.
+//
+// It comes from `main` because `main` owns the terminal: `play` is mechanically
+// guarded pure, and a form choosing its own escape sequences would be a second
+// owner of a decision `newPalette` already makes for every other surface. The
+// board takes finished sequences, exactly as `Choice` takes finished options.
+//
+// Empty under `-no-color`, which `--play` refuses to run with (BR-3) — so this
+// is belt rather than a reachable state, and the board then draws in plain text
+// with its keys intact, which is still usable.
+func boardPalette(opt options) play.Palette {
+	if !opt.color {
+		return play.Palette{}
+	}
+	return play.Palette{Yes: "\x1b[1;32m", No: "\x1b[1;31m", Off: "\x1b[0m"}
+}
+
+// boardFooter is the live edge for a board: everything the FORM draws, then the
+// bar.
+//
+// One line of assembly, and that is the point. The grid and the panel are the
+// board's own rendering — a form owns how it looks, and a loop composing it out
+// of accessors would make the board's appearance a thing two files agree about,
+// on the surface where disagreeing marks the wrong word. All this adds is the
+// bar, which belongs to the sitting rather than to the question.
+//
+// THE FORM IS FIRST, which is load-bearing rather than aesthetic: formCell reads
+// a footer entry index straight back as a grid row, so anything above it would
+// silently shift every cell. It is also the order of value that fitFooter drops
+// from: the bar goes first, then the panel, then grid rows.
+//
+// A BOARD CAN END UP IN A FOOTER THAT DROPS ROWS, and D15's "never" was measured
+// wrong (R11). It holds at SELECTION — boardsFor refuses a board the terminal
+// cannot draw whole — and a resize afterwards is a shape nobody chose.
+//
+// What the order buys is that the losses are SURVIVABLE in sequence: the bar (a
+// figure), the panel (cosmetic), then grid rows. An earlier version of this
+// comment called them "harmless", which was checked against the CLICK map —
+// FooterRowAt answers nothing for a row that was never painted — and was false
+// of the SWEEP, which does not go through that map at all: Enter took every
+// unmarked word including ones the window never drew. That is why Enter is now
+// held while the board is not whole (R17), and why a safety word has to name the
+// path it was checked on.
+//
+// The one thing that must not go is the statement of what a click will MEAN, and
+// that is why the mode moved to the prompt row, which Paint clips last.
+func boardFooter(q play.Question, fig sittingFigures) []string {
+	return append(strings.Split(q.Prompt(), "\n"), sittingBar(fig))
+}
+
+// barRows is the ONE row the bar is guaranteed below the board.
+//
+// A minimum rather than a measurement, and that asymmetry with promptRows is
+// deliberate. `fitFooter` drops whole rows from the END, and the board's own
+// rows come FIRST — so if the bar turns out to need three rows on a narrow
+// terminal, the bar is what gets dropped and the board is still whole. That is
+// the sacrifice order D10 wanted, and it means the bar's real height cannot cost
+// the board anything. The prompt is different: it sits ABOVE the footer and
+// takes its share off the top, so its real height has to be charged.
+const barRows = 1
+
+// fitsABoard reports whether a terminal this tall can draw a board of boardRows
+// WHOLE, given a keys prompt of promptRows (D15).
+//
+// A board that cannot be drawn whole is not a board, so the words go to form 2.3
+// for that sitting instead — which is a complete answer rather than a degraded
+// one. The alternative was a floor in fitFooter, and it would have broken the
+// budget Paint rests on: footerRows would exceed what the prompt left, the
+// terminal would scroll to fit it, and a click at viewport row R would stop
+// meaning the word drawn there. Refusing to offer the board keeps fitFooter's
+// guarantee true rather than negotiating with it.
+//
+// promptRows is MEASURED and passed in, because a constant here was a second
+// owner of a height `displayRows` already computes. It was 1, and the board's
+// keys line is seventy-six columns while the board was offered from twenty — so
+// on a narrow terminal `fitFooter` silently dropped the bar, then the panel, and
+// then — while the live mark still had a footer row of its own, before R11 moved
+// it onto the prompt — the one statement of what the next click would mean,
+// while every mark is irreversible.
+func fitsABoard(termRows, boardRows, promptRows int) bool {
+	return boardRows+promptRows+barRows <= termRows
+}
+
+// formCell offers a click to the form on screen and reports which of its cells
+// was hit, if any.
+//
+// TWO questions, and each is asked of the only thing that can answer it. The
+// SCREEN says which footer entry the pointer was on, because the screen laid the
+// footer out; the FORM says which cell is at that spot, because the form decided
+// where its words are printed. The loop knows neither and does the subtraction
+// between them — the grid is drawn as the FIRST footer entries, so a footer row
+// below Rows() is the bar rather than a word.
+//
+// False for every form that is not a grid, which is every form but the board,
+// and false is what leaves #38's behaviour exactly as it was.
+func formCell(view display, q play.Question, k Key) (int, bool) {
+	g, ok := q.(play.Grid)
+	if !ok {
+		// Also the nil case, at the end of a queue: a nil Question is not a Grid.
+		return 0, false
+	}
+	row, offset, ok := view.FooterRowAt(k.Row)
+	if !ok {
+		return 0, false
+	}
+	// A CONTINUATION ROW IS NOT A TARGET (R9).
+	//
+	// `k.Col` is a column of the TERMINAL, and it only means a column of the
+	// form's own line while that line is drawn on one physical row. Once an entry
+	// wraps, column 4 of its second row is column cols+4 of the line, and acting
+	// on it lands a permanent mark on whatever word happens to sit at column 4.
+	//
+	// The board keeps its rows fitting by relaying out on resize, so this should
+	// never fire — which is exactly why it is here. That guarantee lives in
+	// another package and depends on the loop remembering to pass the resize on;
+	// a click is irreversible, and "should never happen" is not a thing to bet
+	// one on.
+	if offset != 0 {
+		return 0, false
+	}
+	// NO SECOND BOUND HERE. A `row >= g.Rows()` guard was written first and a
+	// mutation showed it changed nothing: CellAt already refuses a row past the
+	// grid, because the grid is the thing that knows how tall it is. Two owners
+	// of one bound is how a chrome row comes to be a cell on the day one of them
+	// is edited.
+	return g.CellAt(row, k.Col)
+}
+
+// sittingWords is how many WORDS the sitting will ask about, which is not the
+// same as how many questions it holds (D8).
+//
+// `fig.done` was already a word count — every mark scores — so a board made the
+// bar compare words against slots, and a twenty-word sitting with one board in
+// it read "0 of 2". The budget is untouched: schedule.Queue returns that many
+// keys whatever they are packed into. This is the number on screen, and it is
+// the number the whole load argument is about.
+func sittingWords(qs []play.Question) int {
+	n := 0
+	for _, q := range qs {
+		if b, ok := q.(play.Batch); ok {
+			n += b.Words()
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// relearnLine is what a board leaves in the transcript as it closes (D10).
+//
+// The live edge is ephemeral by design — that is what bought marks that change
+// as they land — and for a grid that is right, because a grid of sixteen words
+// is not something to scroll back to. The OUTCOME is worth keeping: the words
+// marked `no` are the ones the sitting was actually about.
+//
+// Built from the outcomes the loop RECORDED rather than from the board's marks,
+// and that is not an arbitrary choice between two equal sources: it makes the
+// transcript name exactly what reached the log. A line assembled from the form
+// could disagree with the events, and a transcript that disagrees with the log
+// is worse than no transcript.
+func relearnLine(words []string) string {
+	if len(words) == 0 {
+		return ""
+	}
+	return "relearn: " + strings.Join(words, ", ")
+}
+
+// boardBox is the box at which a word becomes eligible for the board (D4).
+//
+// A STARTING NUMBER, not a derived one, and the only figure in this issue with
+// no argument under it. What is argued is the shape of the risk: a wrong `Yes`
+// sends a word to box+1 where a real test would have sent it to box/2, so the
+// cost is the DELAY it buys — 0 days at box 0, 4 at box 3, 165 at box 10 — while
+// the CHANCE of a wrong yes falls as the box rises. The product peaks in the
+// middle, around boxes 5-7, which no single floor expresses well.
+//
+// Boxes 0 and 1 are literally free: the ladder waits one day at both, so a
+// wrongly promoted new word comes back tomorrow regardless. Three is past those
+// two free rungs, at a four-day interval and roughly three recalls of history.
+//
+// It is meant to be REPLACED BY EVIDENCE rather than by argument, which is what
+// ReviewEvent.Form (D4a) is for. The operator confirmed the floor stands until
+// the log can answer.
+const boardBox = 3
+
+// boardsFor splits today's keys into the ones swept on a board and the ones
+// asked one at a time (D4).
+//
+// SINGLES FIRST, THEN BOARDS, and the order is a choice rather than an
+// accident. Packing is the point of the whole form — sixteen words for sixteen
+// keystrokes is what makes a large deck affordable — and packing cannot preserve
+// the queue's interleaving, because a board formed from words scattered through
+// the queue has to sit somewhere. So retrieval gets the learner's freshest
+// attention and the maintenance sweep comes after.
+//
+// The counter-argument is real and now measurable: a tired learner marks
+// everything yes, which is the illusion-of-knowing the Spec worries about.
+// `ReviewEvent.Form` is what will eventually say whether it happens.
+//
+// A CHUNK THAT WILL NOT FIT GOES BACK TO SINGLES (D15). A board that cannot be
+// drawn whole is not a board, and form 2.3 is a complete answer rather than a
+// degraded one.
+func boardsFor(keys []string, prog map[string]schedule.Progress, opt options) (single []string, boards [][]string) {
+	var eligible []string
+	for _, k := range keys {
+		if prog[k].Box < boardBox {
+			single = append(single, k)
+			continue
+		}
+		eligible = append(eligible, k)
+	}
+	for len(eligible) > 0 {
+		n := min(len(eligible), play.MaxBoardWords)
+		chunk := eligible[:n]
+		eligible = eligible[n:]
+		if boardFits(chunk, opt) {
+			boards = append(boards, chunk)
+			continue
+		}
+		single = append(single, chunk...)
+	}
+	return single, boards
+}
+
+// boardFits reports whether this terminal can draw a board of these words whole.
+//
+// It builds a PROBE and asks it TWO questions, because both heights belong to
+// something else: the board owns its layout — how many columns fit, and
+// therefore how many rows — and `displayRows` owns how tall a line is once the
+// terminal has wrapped it. Neither is re-derived here.
+//
+// Glosses are left out of the probe: the panel is one row whatever it says, so
+// they cannot change the answer.
+//
+// The width check is separate and blunt: below minWrapWidth this program already
+// treats the terminal as too narrow to lay text out at all, and a board there
+// would be columns of truncated stubs.
+func boardFits(words []string, opt options) bool {
+	cells := make([]play.Cell, len(words))
+	for i, w := range words {
+		cells[i] = play.Cell{Word: w}
+	}
+	// NO PALETTE on the probe: escape sequences cost no columns, so they cannot
+	// change how tall the board is, which is the only thing being asked here.
+	// THE SAME QUESTION THE FRAME WILL ASK, through the same helper — so a board
+	// offered at selection is one the draw agrees is whole, and neither can
+	// acquire a rule the other lacks.
+	return boardFitsIn(play.NewBoard(cells, opt.width, play.Palette{}), opt.rows, opt.width)
 }
 
 // todaysQuestions builds the queue: fold the log, ask the schedule, render each
@@ -462,9 +905,15 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 	day := now.Format("2006-01-02")
 	pool := buildPool(d, deck, seedFor("pool", day))
 
+	// THE BOX PICKS THE FORM (D4), and this is the first time anything in this
+	// program has consulted one to choose HOW to ask. Selection was a capability
+	// question until now — form 2.3 when the deck can supply distractors, 2.1
+	// when it cannot — and nothing looked at a box at all.
+	single, boards := boardsFor(keys, held.prog, opt)
+
 	var qs []play.Question
 	marks := map[string]clickable{}
-	for _, key := range keys {
+	for _, key := range single {
 		text, err := d.dict.Lookup(key)
 		if err != nil {
 			// A word in the deck the dictionary no longer knows. Skip it rather
@@ -497,6 +946,32 @@ func todaysQuestions(d deps, opt options, stdout, stderr io.Writer) ([]play.Ques
 			continue
 		}
 		qs = append(qs, play.NewRecall(key, rendered))
+	}
+	// THE BOARDS, and they are the only questions that need no render: nothing
+	// about a board reaches the buffer, so there is no click map to build and no
+	// definition to wrap. One gloss each — for the panel — is the whole of what
+	// the form takes, and targetCandidate is the same sense form 2.3 asks about.
+	//
+	// A word the dictionary no longer knows is skipped exactly as it is above.
+	// The board only gets SHORTER for it, so the fit boardsFor already checked
+	// still holds.
+	for _, chunk := range boards {
+		var cells []play.Cell
+		for _, key := range chunk {
+			text, err := d.dict.Lookup(key)
+			if err != nil {
+				fmt.Fprintf(stderr, "define: skipping %q: %v\n", key, err)
+				continue
+			}
+			var gloss string
+			if c, ok := targetCandidate(key, ParseEntry(text)); ok {
+				gloss = c.Gloss
+			}
+			cells = append(cells, play.Cell{Word: key, Gloss: gloss})
+		}
+		if len(cells) > 0 {
+			qs = append(qs, play.NewBoard(cells, opt.width, boardPalette(opt)))
+		}
 	}
 	if len(qs) == 0 {
 		// NOT "nothing due today": words WERE due, and every one of them failed
@@ -654,14 +1129,32 @@ func livePrompt(s play.Session) string {
 // doc comments, then reached the doc comments and not the two test citations.
 // Sweeping is what kept failing; a consumer that fails the build does not.
 const (
-	// sessionKeys are the keys the SESSION reserves, true whatever form is
-	// asking (question.go:74-77). The form's own keys are prepended by
-	// gradePrompt — this half does not vary, and a form restating it would be
-	// two owners of one fact.
-	sessionKeys = "d = remove from deck, Ctrl-C to stop"
+	// quitKey is the one reserved key true of EVERY form without exception,
+	// which is what earned it a name of its own (#40 D12).
+	quitKey = "Ctrl-C to stop"
+	// sessionKeys are the keys the SESSION reserves, true of every form that
+	// holds ONE word (question.go:74-77). The form's own keys are prepended by
+	// gradePrompt — this half does not vary per form, and a form restating it
+	// would be two owners of one fact.
+	sessionKeys = "d = remove from deck, " + quitKey
 	// gradedPrompt is shown once the answer is in and the definition is up.
-	gradedPrompt = "any key = next word, d = remove from deck, Ctrl-C to stop"
+	// DERIVED from the pair above, so the wording cannot drift between them.
+	gradedPrompt = "any key = next word, " + sessionKeys
 )
+
+// reservedKeys is the session's own half of the prompt, for THIS form.
+//
+// `d` NAMES NO WORD on a form holding many — a grid has no single current word,
+// so Apply refuses the drop rather than guessing which cell it meant (#40 D12).
+// Offering it here would be the exact bug gradePrompt was created to fix: a keys
+// line promising a key that does nothing. The reserved set shrank for one kind
+// of form, so the sentence about it had to stop being a constant.
+func reservedKeys(q play.Question) string {
+	if _, ok := q.(play.Batch); ok {
+		return quitKey
+	}
+	return sessionKeys
+}
 
 // gradePrompt is what to press while a verdict is still owed: the FORM's answer
 // keys, then the session's reserved ones.
@@ -674,7 +1167,7 @@ func gradePrompt(q play.Question) string {
 	// No nil guard: draw returns before this when Current() is nil, so a nil
 	// here would be a bug in the loop rather than a state to render politely.
 	// The guard that was here shipped as dead code and would have hidden that.
-	return q.Keys() + ", " + sessionKeys
+	return q.Keys() + ", " + reservedKeys(q)
 }
 
 // finish prints the sitting's score AND what the deck now costs per day.

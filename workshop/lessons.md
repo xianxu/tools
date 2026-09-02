@@ -2964,3 +2964,334 @@ doc had drifted onto `newsFeedFor`, `checkPlanName`'s onto `coreConceptsSection`
 **When a finding is "a comment is in the wrong place", ask whether the class is
 walkable; here it was fifty lines.**
 
+
+## An enumeration that lives in prose fails silently the next time the set grows (`#40`)
+
+`#40` D12 wrote down FOUR `Apply` paths that must consult the `Batch` capability,
+found by measurement, and the plan treated that list as the deliverable. The real
+shape is `InputKind × Batch`, and `InputReveal` was a fifth cell nobody had
+counted — so space on a board set `Revealed`, handed the loop an arbitrary cell's
+word to pronounce and a blank reveal to file in the append-only buffer. The
+boundary review reproduced it by execution.
+
+**The deliverable is the enumeration, not the guard.** `numInputKinds` is now a
+sentinel and a table test ranges over it, so the next kind added arrives with no
+expectation and fails. `choice.go`'s `numAxes` had already established the
+pattern in the same package — *"the guard derives the set from this, never from a
+list"* — and the list was written down anyway.
+
+Ask, of any "the following N places must X": **what makes N?** If it is a
+property of a type, derive it. If it is prose, it is already stale.
+
+## A constant standing in for a measurement someone else already computes (`#40`)
+
+`boardChromeRows = 2` charged a board's keys prompt one row. That line is 76
+columns wide and the board was offered from 20, so below 76 the live edge was
+under-budgeted and the footer silently dropped rows from the end — the bar, then
+the panel, then the mode toggle, which is the ONE owner of which mark is live on
+a surface where every mark is irreversible.
+
+`displayRows` already answers "how tall is this line at this width". The
+constant was a second, implicit owner of it. **When a budget charges a component
+a fixed height, ask whether anything in the tree already measures that
+component** — and if the answer is yes, the constant is the bug waiting.
+
+The fix kept ONE constant deliberately, and the asymmetry is the interesting
+part: the bar keeps a one-row minimum because `fitFooter` drops from the END and
+the bar is last, so its real height cannot cost the board anything. A budget only
+has to measure what it can be squeezed by.
+
+## A `## Revisions` section placed mid-document truncates every guard that reads it (`#40`)
+
+`currentTruthOnly` cuts a plan at its first `## Revisions`, so the guards see only
+what is above it. `#40`'s plan grew two such sections, the first sitting above
+`## Done when` — and both `TestPlanTableStatusMatchesTheChangeWindow` and the new
+`TestPlanCitesTestsThatExist` were reading a truncated file and passing on it.
+
+Found only because the new guard was mutation-checked: citing a test that does
+not exist left it green. **A guard added without a mutation is a guard nobody has
+seen fail**, and this one would have shipped certifying nothing.
+
+Revisions are APPENDED, once, at the END. AGENTS.md already says "append"; this
+is what the word is doing.
+
+## An in-memory double cannot pin a claim about persistence (`#40`)
+
+`yaml:"-"` on a new `ReviewEvent` field left the whole suite green: the loop's
+tests read through `store.Mem`, which keeps events in memory, so the field
+reached every assertion without ever reaching a file. The field exists to be
+queried months later, and a field that reaches only memory answers nothing.
+
+Same shape as `#30`'s rule about doubles standing in for the object that joins
+two separately-pinned halves — here the halves are the struct and the file, and
+the thing between them is the tag. **A claim about what SURVIVES needs the real
+writer.**
+
+## A Done-when that names a proxy is a hypothesis, and measuring it can falsify the proxy (`#40`)
+
+Done-when 13 asked for "materially fewer KEYSTROKES than form 2.3". Measured:
+1.00 per word against 1.00, or 1.12 against 1.25 with misses. A wash. The claim
+the Spec actually makes — *"a hundred mature words cost what ten fragile ones
+cost"* — is about what the learner READS, and there the ratio is 20-40x.
+
+The wrong response is to find a framing under which the proxy passes. **Say which
+measurement the claim rests on, and move the row.** A proxy that survives its own
+measurement unexamined is how a Done-when becomes decoration.
+
+## A layout fixed at selection time survives exactly until the window does not (`#40` R9)
+
+`Board` computed its columns once, in its constructor, and the field comment said
+the width "cannot change". The terminal is resized under a live board: a layout
+for eighty columns has 74-column rows, at forty each wraps into two, a footer
+entry stops being one physical row, and a click on the continuation carries a
+column that means a different word. Permanently — the mark is already in the log.
+
+**The rule: every quantity a click map or a frame budget depends on must be read
+from the terminal AS IT IS at draw and click time.** Not at selection time, not
+at construction. The enumeration is small and worth writing out for any
+live-edge surface: the prompt's height, the form's layout width, the fit
+re-check after a resize, and the column translation for an entry that wrapped.
+
+Two defences, and both earn their place: the form relays out (closing it at the
+root) and the loop refuses a click on any continuation row (closing it at the
+seam, for the next multi-row entry and for the day someone forgets to pass the
+resize on). **"Should never happen" is not a thing to bet an irreversible action
+on.**
+
+## A guard that reports success about a file it never saw is worse than no guard (`#40` R10)
+
+`currentTruthOnly` truncates an artifact at its first `## Revisions` — sound only
+while records come last. A plan grew a second one higher up, and every guard
+reading it saw a file that stopped before the section it existed to check. Four
+of the eight then reported "nothing to check" and SKIPPED.
+
+The first fix was to reorder that one plan. The shape comes back tomorrow, in any
+artifact, and it comes back as success.
+
+**A guard reading a FILTERED view must assert its premise about that view and
+FAIL — never Skip — when the filter removed its subject.** The filter is the
+right place for it: one check there covered all eight call sites. And a guard
+whose "nothing to check" branch cannot distinguish *there was nothing* from
+*I was handed nothing* has a hole exactly the size of its own filter.
+
+## Fixing the instance is how a family reaches round two (`#40`)
+
+Round 1 of `#40`'s boundary review found a prose enumeration that had gone stale
+(`Batch` "consulted at FOUR points", with a fifth path unguarded) and a constant
+standing in for a measurement. Both were fixed at the class — a sentinel plus a
+matrix test, a measured height — and round 2 still returned three REPEAT families:
+the same `frame-budget-hardcoded-not-measured` through the resize door, the same
+`plan-citations-unenforced` through the skip, and the same
+`comment-asserts-absent-behaviour` in the very comment that had declared prose
+the culprit while still saying "four".
+
+**When a review names a family, enumerate every member before fixing one.** The
+question is not "where else does this exact bug appear" but "what else is this
+quantity read from, and when". Writing the enumeration into the fix — as a
+derived set, a measured value, or a table in the revision — is what stops round
+three.
+
+## Put the irreplaceable thing on the row that survives (`#40` R11)
+
+The board's mode toggle had its own footer row, because the live edge is where
+things that change belong. `fitFooter` drops footer rows from the END, so a
+narrowing resize dropped the panel and then the toggle — leaving a grid on screen
+with no statement of what the next click would MEAN, while every mark is
+irreversible.
+
+`Paint`'s order of sacrifice is a design surface, not an implementation detail.
+**Ask, of every element on a live edge: what does its absence cost, and where in
+the drop order does that put it?** The mode moved to the prompt row, which Paint
+clips last. Still one owner — the question was never whether to duplicate it, but
+which row it should be on.
+
+The general form: an element whose absence makes the remaining UI *misleading*
+outranks every element whose absence merely makes it *smaller*.
+
+## A test that hangs on the defect is barely better than one that passes on it (`#40` R12)
+
+A resize test drove its input from a helper goroutine that called `waitFor`,
+whose timeout is `t.Fatal`. `FailNow` off the test goroutine is a `Goexit`: the
+goroutine died without closing the key channel, the loop blocked forever, and the
+mutation that should have reddened the test hung the run instead — five minutes,
+no output, no signal.
+
+**A driver goroutine closes its channel with `defer`, always, and reports nothing
+itself.** Assertions belong on the test goroutine, where a failure is a failure.
+The same test also asserted over an event set it never produced (`for _, e :=
+range events` with no count check) — so: **a test whose subject is an event must
+assert the event happened**, before it asserts anything about it.
+
+## A filter that discards silently cannot be audited by reading it (`#40` R14)
+
+`currentTruthOnly` strips the record sections out of an artifact before the name
+guards read it, and it found closed blocks with `strings.Contains(sec,
+"**closed:**")`. `atlas/repo-guards.md` DOCUMENTS that rule, so the marker
+appears in its prose — and the whole guard inventory had been discarded from
+every guard reading current truth. Two of them were blind over that page for
+months, and unblinding it turned up five retired identifiers on the page whose
+subject is retired identifiers.
+
+Nobody found it by reading the filter, twice over: the fix that added a premise
+assertion to the OTHER discarding rule was written on the belief there was no
+live instance, and it took thirty seconds to write and fired immediately.
+
+**A discard is a decision, and a decision that never speaks cannot be reviewed.**
+Where a filter drops something its caller was going to check, say so and fail.
+And match markers the way they are WRITTEN — anchored — because prose about a
+marker is not a marker, and documentation of a rule is the first place that
+distinction bites.
+
+## A frame's lines are not the terminal's rows (`#40` R15)
+
+`FooterRowAt` answers in the rows the terminal reports for a click. A frame
+string split on `\r\n` gives LOGICAL lines. They agree only while nothing wraps —
+and the keys prompt is one logical line and two physical rows in a narrow window,
+so from that point down the two indices differ by one and a click placed by frame
+index lands a row high.
+
+Three attempts at one test driver, each a different way of being wrong about
+this: scraping the frame raced the redraw; asking the screen alone raced the
+other way, because it answers from the last paint; and requiring both, matched by
+PREFIX, admitted the stale state anyway — the narrow layout's first row is a
+prefix of the wide one's.
+
+**Drive a screen through the screen.** If a test needs to know where something
+was drawn, ask the object that drew it, and detect state changes by something the
+old state cannot produce — here the footer's entry COUNT, which grows when the
+board relays out. And never let a test goroutine touch a form the loop owns:
+`-race` says so, and production has one goroutine on it for the same reason.
+
+## A review checks that the code does what the plan says; a sitting checks whether the plan was right (`#40` R16)
+
+Three boundary-review rounds on `#40` found a Critical reproduced by execution, a
+resize that landed a permanent mark on the wrong word, and two guards that had
+been certifying nothing. The operator's FIRST real sitting found four things none
+of them did:
+
+- the mark replaced the cell's key, which is how a mouse-less terminal reaches it
+- the label sequence skipped `d` to protect a key that did nothing on that screen
+- the grid began flush against the previous question, with no separator
+- (and the fix for the second broke three restatements of the old sequence)
+
+Every one is *correct code that reads wrong to the person using it*. A reviewer
+reads the plan and the diff and checks they agree; only the person holding the
+keyboard can tell you the agreement was on the wrong thing.
+
+**So: get it in front of the operator before the boundary review, not after.** A
+round of review spent on a design a sitting would have changed is a round spent
+polishing the wrong object — and the plan's `ux-rename-iteration` line, priced for
+"3–5 rounds per TUI-heavy milestone", is an estimate of exactly this and was
+still treated as if reviews could substitute for it.
+
+## Let the plan-status guard adjudicate, and commit first (`#40`)
+
+`livePrompt`/`gradePrompt` flipped status four times in one issue. Twice that was
+real churn — the code genuinely changed across review rounds. Twice it was me
+reading `git diff` hunk headers by hand and losing to the guard, which locates a
+declaration in the CURRENT file and compares it against the diff from the
+merge-base: while edits sit uncommitted, the two can disagree about which
+function a hunk lands in.
+
+**Commit, then run the guard, then write what it says.** Arguing with a
+mechanism that reads the tree from an argument about line numbers is a way to
+spend a round and be wrong at the end of it.
+
+## "Harmless" is a claim about a mechanism, not about a state (`#40` R17)
+
+A shrunken terminal drops trailing footer rows, so some of a board's grid rows go
+unpainted. I checked that against the click map — `FooterRowAt` answers nothing
+for a row that was never drawn, so a click cannot reach one — and wrote the
+losses down as harmless in three places.
+
+Enter does not go through the click map. It sweeps every unmarked word as wrong,
+including the ones that were never on screen: boxes halved on one keystroke, for
+words the learner had no chance to look at.
+
+The word "harmless" was carried from the mechanism it was verified against to a
+different one, silently. **A safety claim names the path it was checked on.** If
+a second path reaches the same state, it is a second claim and needs its own
+check — and the enumeration of paths is the deliverable, exactly as it was for
+`InputKind × Batch`.
+
+## Read the terminal at DRAW time, and only there (`#40` R17)
+
+Two separate bugs, one shape: a fact about the terminal read once, where it had
+to be read every frame. The resize handler told the CURRENT form its new width —
+fixing the board on screen at that instant and no other, while the next board was
+built at the old width and painted too wide.
+
+**The place that draws is the only place that can promise anything about how
+things are drawn.** Ask the screen for its shape there; do not keep a copy, which
+is correct until the first resize you miss. Make the setter idempotent so calling
+it every frame costs a comparison.
+
+## The sweep set for a drawn-or-keyed contract is the same every time (`#40` R18)
+
+Five findings in one issue said "prose asserts behaviour that is absent". The
+fifth one finally named the fix: **stop patching sites and write the enumeration
+down.** A change to what is drawn, or to what a key does, goes stale in exactly
+seven places:
+
+1. the comment where the mechanism moved FROM — it describes a call that is gone
+2. the comment where it moved TO — it inherits the old reasoning verbatim
+3. `atlas/*.md`, which names call sites and repeats safety words
+4. README prose, which states contracts unconditionally
+5. the README key table — a key that gained a condition still reads absolute
+6. the README example block — a picture with no consumer
+7. the plan's Done-when AND the issue's Done-when, both
+
+Run it in the SAME commit. What no guard catches is shipped behaviour with **no**
+citation — a guard can only check that a citation resolves, and both of R17's
+tests existed while neither was named. The checklist is the substitute.
+
+Row 6 is the one that can stop being prose: make the example DERIVE. `#40`'s
+README board block now builds a real form and asserts the fenced rows are what it
+draws — it had gone stale within hours of the sitting that changed the design,
+while the prose eight lines below contradicted it.
+
+## A deleted element leaves no symbol to rename, so write the PHRASE down (`#40` BR-15)
+
+The rule above says run the sweep in the same commit. It was written down and
+then not run, twice — which means the sweep needed a mechanism, not a better
+reminder.
+
+`retiredSymbolNames` already turns a RENAME into a build failure: the human adds
+one row, and every later commit is swept mechanically. A DELETION of something
+drawn gets none of that. `#40` R11 removed a footer row and moved what it said
+onto the prompt row; the row's only identifier was unexported, so
+`isCitableName` filtered it out and nothing mechanical ever saw the change. Five
+comments went on describing a row that is not drawn — one of them contradicting
+its own owner twenty lines below it — and it took five rounds of one boundary
+review to enumerate them.
+
+**So: `retiredPhrases` is the same mechanism for the half a compiler cannot
+reach.** A phrase naming a drawn element the tool no longer has, mapped to what
+states that fact now, swept over every current-truth artifact by
+`TestNoArtifactDescribesARetiredDrawnElement`. Keys are PHRASES rather than
+words, because the word usually survives the row — the verb that named the
+deleted row still names what `Tab` does.
+
+Two things fall out of it. **A doc page that documents the guard must not spell
+the retired phrase** — the same convention `retiredSymbolNames` already has, for
+the same reason: the page would become the next stale artifact. And **prose that
+restates a table's ORDER is a second owner of that order** — "rows three to six"
+renumbers itself silently the day a row is inserted. Name the rows.
+
+## An open ledger row is a question, not an answer (`#40`, round 6)
+
+A boundary review round read the whole window and returned no machine-readable
+findings block. The gate converged anyway and printed seven findings as still
+open, two of them Important and demoted past the round cap with the explicit
+warning that no later gate picks them up.
+
+Measured against the tree at the publish gate: **five of the seven were already
+fixed** by the two commits after the round that raised them, and unrecorded only
+because a round that names nothing can dispose nothing. One was real.
+
+**Before crossing a boundary on a demoted finding, re-measure it against the
+tree.** Neither trusting the ledger nor dismissing it is available: the ledger
+records what a reviewer saw at some past HEAD, and it is the tree that ships. And
+record every round's outcome in the ISSUE, not only in the plan and the gate
+files — the tracker is the artifact a reader opens first, and it was four rounds
+stale while three other files were current.

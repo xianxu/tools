@@ -422,3 +422,36 @@ func TestReFoldingAnOldLogIsSafe(t *testing.T) {
 			"ladder buys nothing if it never exceeds the ceiling it replaced", IntervalDays(10))
 	}
 }
+
+// THE FORM IS TELEMETRY AND THE SCHEDULER MUST NOT READ IT (#40 D4a).
+//
+// The field exists so a later query can ask whether board-promoted words lapse
+// more than the ones a real retrieval test promoted. The moment the ladder
+// branched on it, it would stop being an observation and start being a rule —
+// and the deferred remedies it is meant to inform would already be half-chosen.
+func TestFoldIgnoresTheFormThatAsked(t *testing.T) {
+	at := time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC)
+	base := []store.ReviewEvent{
+		{Word: "keel", Kind: store.EventReviewed, Correct: true, At: at},
+		{Word: "keel", Kind: store.EventReviewed, Correct: true, Unaided: true, At: at.Add(24 * time.Hour)},
+		{Word: "mesa", Kind: store.EventReviewed, Correct: false, At: at},
+	}
+	want := Fold(base)
+
+	for _, form := range []string{"recall", "meaning", "board", ""} {
+		tagged := make([]store.ReviewEvent, len(base))
+		copy(tagged, base)
+		for i := range tagged {
+			tagged[i].Form = form
+		}
+		got := Fold(tagged)
+		if len(got) != len(want) {
+			t.Fatalf("form %q folded to %d words, want %d", form, len(got), len(want))
+		}
+		for k, p := range want {
+			if got[k] != p {
+				t.Errorf("form %q changed %q: %+v, want %+v", form, k, got[k], p)
+			}
+		}
+	}
+}

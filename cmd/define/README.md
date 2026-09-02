@@ -34,8 +34,9 @@ define -no-color bank       # never emit ANSI (also automatic when piped)
 
 ## Reviewing what is due
 
-**`define --play` reviews what is due today.** There are two kinds of question,
-and which you get depends only on how big your deck is — you never choose.
+**`define --play` reviews what is due today.** There are three kinds of question,
+and you never choose which you get: two of them depend on how big your deck is,
+and the third on how well you already know the word.
 
 ### Multiple choice, once your deck can supply distractors
 
@@ -95,13 +96,66 @@ ephemeral
 y = got it, n = missed it, d = remove from deck, Ctrl-C to stop
 ```
 
+### The board, once a word is settled
+
+**A word that has climbed three rungs of the ladder is swept on a grid rather
+than tested one at a time.** It is the BOX that decides, not a tally of correct
+answers — a miss knocks a word back down, so one recalled five times and missed
+twice is still asked one at a time. Sixteen at once, one keystroke or one click
+each: you are saying whether you still have it, not proving it.
+
+```
+$ define --play
+marking [yes] no, Tab switches, click or key marks, Enter ends, Ctrl-C to stop
+[0] arrondissement  [1] bailiwick       [2] keel            [3] mesa
+[4] ephemeral       [5] quokka          [6] potassium       [7] ligament
+[8] sycophantic     [9] concrete        [a] parrot          [b] run
+[c] light           [d] bank            [e] set             [f] obsequious
+
+sycophantic  behaving in an obsequious way to gain advantage
+12 of 41 · ~12 reviews/day · 3.2 new words/day at 20 a sitting
+```
+
+**This is why a large deck stays affordable.** Most of a grown deck is words you
+mostly know, each costing a few reviews a year — and one at a time that is most
+of the day's work. On the grid it is a glance. A multiple choice puts a whole
+dictionary entry on screen for every word; a board puts one line up for the
+entire sweep.
+
+**Click a word, or press the key printed beside it** — `0`–`9` then `a`–`f`, in
+order and with no gaps. `Tab` switches between marking yes and marking no; the
+bracketed one on the prompt line is live, and that line is the last thing a short
+window gives up.
+
+**A marked word turns green for yes and red for no, and keeps its key** — so you
+can still see what you answered and the grid still reads the same way. A word can
+only be marked once: the answer is written the moment it lands, so there is
+nothing to take back.
+
+**`Enter` takes everything still unmarked as "no"** — "I am out of time, ask me
+all of these again". `Ctrl-C` does the opposite and costs nothing: what you
+marked is saved, and what you did not is simply not reviewed today.
+
+**`Enter` is held if the window is too short to show the whole board**, and the
+prompt line says so. It would otherwise demote words that were never on screen —
+a short window drops the bottom rows of the grid. Marking what you can see still
+works, and `Ctrl-C` is still free; make the window taller, or stop.
+
+A word marked yes counts as a correct answer, never as a confident one — the
+grid is self-report, so it can never earn the double promotion a real retrieval
+test can. As a board closes it leaves one line naming the words you marked no.
+
 | key | does |
 |---|---|
 | `1`–`4` | multiple choice: pick the definition |
 | `y` | recall: you had it — straight to the next word |
 | `n` | recall: you missed it — the definition appears |
-| space or Enter | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
-| `d` | remove this word from the deck — its history is kept |
+| `0`–`9`, `a`–`f` | board: mark the word printed beside that key |
+| click | board: mark that word. Anywhere else in a sitting, a click plays the word rather than answering |
+| Tab | board: switch between marking yes and marking no |
+| Enter | board: finish, taking everything unmarked as "no" — held while the window is too short to show the whole board. Elsewhere: see the answer, like space |
+| space | see the answer first — on a multiple choice this shows which option is right, so it is on you not to then press it |
+| `d` | remove this word from the deck — its history is kept. On a board it is a cell's key instead: a grid has no single current word to remove |
 | PageUp / PageDown, wheel | scroll back through the sitting — a long entry no longer pushes the word off the top |
 | Ctrl-C | stop; everything you answered is already saved |
 

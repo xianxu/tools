@@ -138,7 +138,24 @@ rounds:
           family: contract-override-omits-limit-case
           round: 3
       blocked: true
-content_hash: d5dc613d6dd0630fd4316647b4748277ff2278fc4fafb5ba1f27872051240683
+    - "n": 4
+      timestamp: "2026-09-01T10:28:12-07:00"
+      agent: claude
+      dispose:
+        - id: PQ-8
+          disposition: addressed
+          note: Threshold, unsure and /board swept in the issue; the revision states the sweeping rule itself.
+          round: 4
+        - id: PQ-9
+          disposition: addressed
+          note: D14 splits InputFinish from InputReveal; toInput's five cases each decided, two Done-when rows pin it.
+          round: 4
+        - id: PQ-10
+          disposition: addressed
+          note: D15 drops the floor entirely — fitFooter unchanged, a board that cannot be drawn whole is not offered.
+          round: 4
+      blocked: false
+content_hash: 3d7b0ec1ec89baf89a6a070cb8cb42bc85ea64d15a619f4d80b44fe5f89c4c1d
 ---
 
 # Gate ledger — tools#40 (plan-quality)
@@ -218,8 +235,14 @@ later rounds disposed of them. Generated — edit the gate, not this file.
   T9's relearn line is invisible), and add a Done-when row whose mutation is "the floor lets
   footerRows exceed termRows - promptRows".
 
+## Round 4 — 2026-09-01T10:28:12-07:00 (claude) — passed
+
+### Disposed
+
+- PQ-8 — addressed — Threshold, unsure and /board swept in the issue; the revision states the sweeping rule itself.
+- PQ-9 — addressed — D14 splits InputFinish from InputReveal; toInput's five cases each decided, two Done-when rows pin it.
+- PQ-10 — addressed — D15 drops the floor entirely — fitFooter unchanged, a board that cannot be drawn whole is not offered.
+
 ## Open findings
 
-- **PQ-8** [Minor] `confirmed-purpose-has-no-task` Three of the issue's seven Done-when rows are contradicted or unserved by the revised plan
-- **PQ-9** [Important] `apply-assumes-one-word-per-question` Space is InputReveal too, so it spends the board — the plan decides only Enter
-- **PQ-10** [Important] `contract-override-omits-limit-case` fitFooter's new floor breaks the budget invariant Paint documents, with no stated behaviour at the limit
+(none — every finding has been disposed)

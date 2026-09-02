@@ -358,6 +358,7 @@ func (f *fakeForm) Word() string   { return f.word }
 func (f *fakeForm) Prompt() string { return "which one?" }
 func (f *fakeForm) Reveal() string { return "it was the first" }
 func (f *fakeForm) Keys() string   { return "1 = right, 2 = wrong" }
+func (f *fakeForm) Form() string   { return "fake" }
 func (f *fakeForm) Grade(r rune) (Verdict, bool) {
 	switch r {
 	case '1':
@@ -471,5 +472,452 @@ func TestQuitAndDropAlsoReportTheEnd(t *testing.T) {
 	last := NewSession([]Question{NewRecall("w", "d")})
 	if _, outs := Apply(last, Input{Kind: InputDrop}); !only(t, outs).SessionDone {
 		t.Error("dropping the last question did not report the end")
+	}
+}
+
+// A FORM THAT HOLDS MANY WORDS STAYS CURRENT UNTIL IT IS SPENT.
+//
+// `advance` moves on after every graded answer, which is right for every form
+// that holds one word and wrong for a board. The session must not learn what a
+// board IS (#6's Done-when), so it asks — the third instance of the pattern
+// `Missed` and `SelfRated` already establish.
+//
+// Four points need it, not one, and three of them are why this test drives Apply
+// rather than advance directly: a `Wrong` mark reaches the miss-on-a-hidden-word
+// branch, which sets Graded and would freeze the form; a drop has no single word
+// to name; and Enter must spend the form rather than reveal.
+func TestABatchFormStaysCurrentUntilSpent(t *testing.T) {
+	s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+
+	// Two marks, and the session must not have moved.
+	for i, r := range []rune{'y', 'n'} {
+		var outs []Outcome
+		s, outs = Apply(s, Input{Kind: InputRune, Rune: r})
+		if s.Index != 0 {
+			t.Fatalf("mark %d advanced the session to index %d — the form is not spent", i, s.Index)
+		}
+		if s.Done {
+			t.Fatalf("mark %d ended the session", i)
+		}
+		if s.Graded {
+			t.Fatalf("mark %d set Graded, so the next key means \"next word\" and the form is frozen", i)
+		}
+		if len(outs) == 0 || outs[0].Kind != OutcomeRecord {
+			t.Fatalf("mark %d recorded nothing: %+v", i, outs)
+		}
+	}
+
+	// The third mark spends it, and only then does the session move.
+	s, _ = Apply(s, Input{Kind: InputRune, Rune: 'y'})
+	if !s.Done {
+		t.Errorf("the form is spent and the session did not finish: index %d done %v", s.Index, s.Done)
+	}
+}
+
+// A single-word form is spent after one answer, which is every form that exists
+// and is the right default for one that does not implement the capability.
+func TestASingleWordFormIsSpentAfterOneAnswer(t *testing.T) {
+	s := NewSession([]Question{NewRecall("alpha", "a"), NewRecall("beta", "b")})
+	s, _ = Apply(s, Input{Kind: InputRune, Rune: 'y'})
+	if s.Index != 1 {
+		t.Errorf("index = %d after one answer, want 1 — a form that holds one word advances", s.Index)
+	}
+}
+
+// fakeBatch is the double: N words, one verdict each, spent when they are all
+// answered. A test double rather than *Board, so this file keeps asserting what
+// the SESSION does rather than what a form does.
+type fakeBatch struct {
+	words  []string
+	marked int
+}
+
+func newFakeBatch(words ...string) *fakeBatch { return &fakeBatch{words: words} }
+
+func (b *fakeBatch) Word() string   { return b.words[min(b.marked, len(b.words)-1)] }
+func (b *fakeBatch) Prompt() string { return "grid" }
+func (b *fakeBatch) Reveal() string { return "" }
+func (b *fakeBatch) Keys() string   { return "y = yes, n = no" }
+func (b *fakeBatch) Form() string   { return "fake-batch" }
+func (b *fakeBatch) Grade(r rune) (Verdict, bool) {
+	switch r {
+	case 'y':
+		b.marked++
+		return Correct, true
+	case 'n':
+		b.marked++
+		return Wrong, true
+	}
+	return Skipped, false
+}
+func (b *fakeBatch) Words() int  { return len(b.words) }
+func (b *fakeBatch) Spent() bool { return b.marked >= len(b.words) }
+func (b *fakeBatch) Rest(v Verdict) []string {
+	rest := b.words[b.marked:]
+	b.marked = len(b.words)
+	return rest
+}
+
+// ENTER SPENDS A BATCH FORM AND SPACE MUST NOT.
+//
+// toInput maps BOTH Enter and space to InputReveal, deliberately — this
+// machine's own comment says so. Spending a board on that kind means a casual
+// space takes every unmarked word as No, which is the one action on that surface
+// that is expensive to undo, on the most careless key there is.
+//
+// So Enter carries its own kind. For every form that holds ONE word the two are
+// equivalent, which is what keeps 2.1 and 2.3 from noticing the split.
+func TestEnterSpendsABatchFormAndSpaceDoesNot(t *testing.T) {
+	t.Run("space leaves it alone", func(t *testing.T) {
+		s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+		s, outs := Apply(s, Input{Kind: InputReveal})
+		if s.Done || s.Index != 0 {
+			t.Errorf("space spent the form: index %d done %v", s.Index, s.Done)
+		}
+		for _, o := range outs {
+			if o.Kind == OutcomeRecord {
+				t.Errorf("space recorded %q — it marked a word nobody marked", o.Word)
+			}
+		}
+	})
+
+	t.Run("Enter takes the rest as Wrong", func(t *testing.T) {
+		s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+		s, _ = Apply(s, Input{Kind: InputRune, Rune: 'y'}) // one marked by hand
+		s, outs := Apply(s, Input{Kind: InputFinish})
+
+		var recorded []string
+		for _, o := range outs {
+			if o.Kind == OutcomeRecord {
+				if o.Verdict != Wrong {
+					t.Errorf("%q was committed as %v, want Wrong", o.Word, o.Verdict)
+				}
+				recorded = append(recorded, o.Word)
+			}
+		}
+		if len(recorded) != 2 {
+			t.Errorf("Enter recorded %v, want the two words left unmarked", recorded)
+		}
+		if !s.Done {
+			t.Error("Enter did not spend the form")
+		}
+	})
+
+	t.Run("a single-word form treats Enter exactly as space", func(t *testing.T) {
+		// The equivalence that keeps 2.1 and 2.3 from noticing the split.
+		reveal := NewSession([]Question{NewRecall("alpha", "a")})
+		finish := NewSession([]Question{NewRecall("alpha", "a")})
+		reveal, ro := Apply(reveal, Input{Kind: InputReveal})
+		finish, fo := Apply(finish, Input{Kind: InputFinish})
+		if reveal.Revealed != finish.Revealed || len(ro) != len(fo) || ro[0].Kind != fo[0].Kind {
+			t.Errorf("Enter and space diverged on a one-word form: %+v vs %+v", ro, fo)
+		}
+	})
+}
+
+// `d` IS REFUSED BY A FORM HOLDING MANY WORDS, rather than dropping a guess.
+//
+// InputDrop advances with Skipped and drops q.Word(). On a grid there is no
+// single current word, so q.Word() is whichever cell happens to be next — and
+// dropping the wrong word is SILENT and takes it out of the deck. The form does
+// nothing instead.
+func TestDropIsRefusedByABatchForm(t *testing.T) {
+	s := NewSession([]Question{newFakeBatch("alpha", "beta", "gamma")})
+	s, outs := Apply(s, Input{Kind: InputDrop})
+
+	for _, o := range outs {
+		if o.Kind == OutcomeDrop {
+			t.Errorf("a board dropped %q — on a grid `d` names no word", o.Word)
+		}
+	}
+	if s.Done || s.Index != 0 {
+		t.Errorf("`d` moved the session on: index %d done %v", s.Index, s.Done)
+	}
+}
+
+// TAB REACHES A FORM THAT HAS A MODE, AND NOTHING ELSE (D13).
+//
+// The session must not learn what a board is, so Tab asks a CAPABILITY like the
+// three before it. The half that matters for 2.1 and 2.3 is the second subtest:
+// a new input kind that quietly advanced them would be a way to scroll a
+// definition away mid-read.
+func TestTabSwitchesTheModeOfAFormThatHasOne(t *testing.T) {
+	t.Run("a moded form is toggled", func(t *testing.T) {
+		m := &fakeModed{}
+		s := NewSession([]Question{m})
+		s, outs := Apply(s, Input{Kind: InputToggle})
+		if m.toggles != 1 {
+			t.Errorf("Tab toggled %d times, want 1", m.toggles)
+		}
+		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+			t.Errorf("Tab produced %+v, want one OutcomeNone — the frame redraws and nothing is recorded", outs)
+		}
+		if s.Index != 0 || s.Done {
+			t.Errorf("Tab advanced the session: index %d done %v", s.Index, s.Done)
+		}
+	})
+
+	t.Run("a form without a mode is untouched", func(t *testing.T) {
+		s := NewSession([]Question{NewRecall("keel", "the bottom of a ship")})
+		s, outs := Apply(s, Input{Kind: InputToggle})
+		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+			t.Errorf("Tab on form 2.1 produced %+v, want nothing", outs)
+		}
+		if s.Index != 0 || s.Done || s.Revealed || s.Graded {
+			t.Errorf("Tab moved form 2.1: %+v", s)
+		}
+	})
+
+	t.Run("Tab does not mean next word once a verdict is in", func(t *testing.T) {
+		// "any key = next word" deliberately excludes it: a board is never
+		// Graded, so the only thing Tab could advance is a definition the
+		// learner is still reading.
+		s := NewSession([]Question{NewRecall("keel", "the bottom of a ship"), NewRecall("mesa", "a flat-topped hill")})
+		s, _ = Apply(s, Input{Kind: InputRune, Rune: 'n'})
+		if !s.Graded {
+			t.Fatal("a miss on a hidden word did not set Graded")
+		}
+		s, _ = Apply(s, Input{Kind: InputToggle})
+		if s.Index != 0 {
+			t.Error("Tab advanced past a definition that was still on screen")
+		}
+	})
+}
+
+// fakeModed is the double: a form with a mode and nothing else. A double rather
+// than *Board so this file keeps asserting what the SESSION does.
+type fakeModed struct {
+	toggles int
+	mode    Mark
+}
+
+func (m *fakeModed) Word() string   { return "keel" }
+func (m *fakeModed) Prompt() string { return "keel" }
+func (m *fakeModed) Reveal() string { return "" }
+func (m *fakeModed) Keys() string   { return "y = yes, n = no" }
+func (m *fakeModed) Form() string   { return "fake-moded" }
+func (m *fakeModed) Grade(rune) (Verdict, bool) {
+	return Skipped, false
+}
+func (m *fakeModed) Mode() Mark { return m.mode }
+func (m *fakeModed) Toggle() {
+	m.toggles++
+	if m.mode == Yes {
+		m.mode = No
+		return
+	}
+	m.mode = Yes
+}
+
+// AND IT NEVER ANSWERS A FORM THAT DID NOT ASK FOR IT. #38's invariant, in the
+// form it takes once one form does ask: every other form declines the kind, so
+// its row stays green untouched.
+func TestAClickDoesNotAnswerANonGridForm(t *testing.T) {
+	for _, q := range []Question{
+		NewRecall("keel", "the bottom of a ship"),
+		NewChoice("keel", "", []Option{{Gloss: "the bottom of a ship", Correct: true}, {Gloss: "a flat-topped hill"}}),
+		newFakeBatch("alpha", "beta"), // holds many words, but draws no cells
+	} {
+		s := NewSession([]Question{q, NewRecall("mesa", "a flat-topped hill")})
+		s, outs := Apply(s, Input{Kind: InputMark, Cell: 0})
+		if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+			t.Errorf("%T: a click produced %+v, want nothing", q, outs)
+		}
+		if s.Index != 0 || s.Revealed || s.Graded || s.Right != 0 || s.Wrong != 0 {
+			t.Errorf("%T: a click moved the session: %+v", q, s)
+		}
+	}
+}
+
+// fakeGrid is a Grid that is NOT a Batch: one word, drawn as one cell. It exists
+// because Grid and Batch are separate capabilities and the board happens to be
+// both — so the board cannot show what the machine does with a form that is only
+// one of them.
+type fakeGrid struct{ marked bool }
+
+func (g *fakeGrid) Word() string                { return "keel" }
+func (g *fakeGrid) Prompt() string              { return "[0] keel" }
+func (g *fakeGrid) Reveal() string              { return "" }
+func (g *fakeGrid) Keys() string                { return "0 = mark" }
+func (g *fakeGrid) Form() string                { return "fake-grid" }
+func (g *fakeGrid) Grade(rune) (Verdict, bool)  { return Skipped, false }
+func (g *fakeGrid) Rows() int                   { return 1 }
+func (g *fakeGrid) CellAt(int, int) (int, bool) { return 0, true }
+func (g *fakeGrid) Resize(int)                  {}
+func (g *fakeGrid) Mark(i int) (Verdict, bool) {
+	if i != 0 || g.marked {
+		return Skipped, false
+	}
+	g.marked = true
+	return Correct, true
+}
+
+// A REFUSED CLICK MOVES NOTHING, and a form holding one word is where that
+// matters: it is spent by definition, so routing a refusal through advance would
+// step past the question on a click that hit nothing.
+func TestARefusedClickDoesNotAdvanceAGridThatIsNotABatch(t *testing.T) {
+	s := NewSession([]Question{&fakeGrid{}, NewRecall("mesa", "a flat-topped hill")})
+
+	// The cell this form does not have.
+	s, outs := Apply(s, Input{Kind: InputMark, Cell: 3})
+	if len(outs) != 1 || outs[0].Kind != OutcomeNone {
+		t.Fatalf("a click on a cell that is not there produced %+v", outs)
+	}
+	if s.Index != 0 {
+		t.Fatal("a refused click advanced past the question")
+	}
+	// The real one lands and DOES advance, because this form holds one word.
+	s, outs = Apply(s, Input{Kind: InputMark, Cell: 0})
+	if len(outs) != 1 || outs[0].Kind != OutcomeRecord || outs[0].Word != "keel" {
+		t.Fatalf("the mark produced %+v", outs)
+	}
+	if s.Index != 1 {
+		t.Errorf("a spent one-word grid did not advance: index %d", s.Index)
+	}
+	// And now the SECOND click on a spent cell must not step off the queue.
+	s, outs = Apply(s, Input{Kind: InputMark, Cell: 0})
+	if s.Index != 1 || s.Done {
+		t.Errorf("a click on the next question's non-existent grid moved the session: %+v %+v", s, outs)
+	}
+}
+
+// DONE-WHEN 9: EVERY RECORD NAMES THE FORM THAT ASKED (#40 D4a).
+//
+// Over all three shipped forms, and over all three PATHS that build a record —
+// the ordinary advance, the miss-on-a-hidden-word branch, and the Enter that
+// spends a board. Three call sites is three chances to ship a promotion the log
+// cannot attribute, which is why the stamp is in one place; this is what says so.
+//
+// The red-when the plan names is "written for one form and defaulted for the
+// others, which is worse than absent" — so the assertion is that the names are
+// present, distinct, and equal to what the form says about itself.
+func TestEveryRecordNamesItsForm(t *testing.T) {
+	names := map[string]bool{}
+	for _, tc := range []struct {
+		q  Question
+		in Input
+	}{
+		// The ordinary path: a self-rated yes.
+		{NewRecall("keel", "the bottom of a ship"), Input{Kind: InputRune, Rune: 'y'}},
+		// The MISS branch, which builds its own outcomes rather than going
+		// through advance.
+		{NewRecall("mesa", "a flat-topped hill"), Input{Kind: InputRune, Rune: 'n'}},
+		{NewChoice("run", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '1'}},
+		{NewChoice("bank", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}), Input{Kind: InputRune, Rune: '2'}},
+		// A board, by key and by click.
+		{NewBoard(cellsOf("keel", "mesa"), 80, Palette{}), Input{Kind: InputRune, Rune: '0'}},
+		{NewBoard(cellsOf("keel", "mesa"), 80, Palette{}), Input{Kind: InputMark, Cell: 1}},
+		// And the Enter that spends one, which builds a record per word.
+		{NewBoard(cellsOf("keel", "mesa"), 80, Palette{}), Input{Kind: InputFinish}},
+	} {
+		_, outs := Apply(NewSession([]Question{tc.q}), tc.in)
+		records := 0
+		for _, o := range outs {
+			if o.Kind != OutcomeRecord {
+				continue
+			}
+			records++
+			if o.Form == "" {
+				t.Errorf("%T on %+v recorded %q with no form — an event that says nothing looks like data", tc.q, tc.in, o.Word)
+			}
+			if o.Form != tc.q.Form() {
+				t.Errorf("%T recorded form %q, but the form calls itself %q", tc.q, o.Form, tc.q.Form())
+			}
+			names[o.Form] = true
+		}
+		if records == 0 {
+			t.Errorf("%T on %+v recorded nothing, so this row asserts nothing", tc.q, tc.in)
+		}
+	}
+	if len(names) != 3 {
+		t.Errorf("the three forms produced %d distinct names (%v) — a name shared by two forms cannot answer the query the field exists for", len(names), names)
+	}
+	// A form is named the same way whatever happened to it.
+	for _, q := range []Question{
+		NewRecall("keel", "d"),
+		NewChoice("keel", "", []Option{{Gloss: "a", Correct: true}, {Gloss: "b"}}),
+		NewBoard(cellsOf("keel"), 80, Palette{}),
+	} {
+		if q.Form() == "" {
+			t.Errorf("%T does not name itself", q)
+		}
+	}
+}
+
+// EVERY InputKind IS ANSWERED FOR A FORM HOLDING MANY WORDS, and the set is
+// derived from the sentinel rather than listed here.
+//
+// THIS IS THE CLASS, not the guard that was missing. D12 wrote down four Apply
+// paths that must consult Batch; the real shape is `InputKind x Batch`, and
+// `InputReveal` was a fifth cell nobody had enumerated — space set `Revealed`,
+// returned an `OutcomeReveal` carrying an arbitrary cell's word, and the loop
+// filed a blank reveal in the append-only buffer and pronounced a word nobody
+// asked about. The enumeration lived in prose, so prose is what failed.
+//
+// Ranging over numInputKinds means the NEXT kind added to this machine cannot
+// skip the question: it arrives here with no expectation and fails.
+func TestEveryInputKindIsAnsweredForABatchForm(t *testing.T) {
+	// What each kind must do to a board with three words and nothing marked.
+	// No `reveals` dimension: NO kind may set Revealed on a form holding many
+	// words, so it is asserted unconditionally below rather than per case. A
+	// field beside these two would read as a third thing being checked.
+	want := map[InputKind]struct {
+		kinds    []OutcomeKind
+		advances bool
+	}{
+		// A cell's key marks it: one record, and the form keeps the slot.
+		InputRune: {kinds: []OutcomeKind{OutcomeRecord}},
+		// NOTHING. A form holding many words has no hidden word to reveal.
+		InputReveal: {kinds: []OutcomeKind{OutcomeNone}},
+		// Spends the form: a record per unmarked word, then the advance.
+		InputFinish: {kinds: []OutcomeKind{OutcomeRecord, OutcomeRecord, OutcomeRecord, OutcomeNone}, advances: true},
+		// The mode flips and the frame redraws.
+		InputToggle: {kinds: []OutcomeKind{OutcomeNone}},
+		// A click on cell 0 marks it.
+		InputMark: {kinds: []OutcomeKind{OutcomeRecord}},
+		// Ends the sitting, keeping what was already recorded.
+		InputQuit: {kinds: []OutcomeKind{OutcomeDone}, advances: true},
+		// `d` IS THE FORM'S HERE. The session reserves it only where a form has
+		// a current word to remove, and a grid has none — so it arrives as an
+		// ordinary graded key, and this table's Rune ('0') marks cell 0.
+		InputDrop: {kinds: []OutcomeKind{OutcomeRecord}},
+	}
+	if len(want) != int(numInputKinds) {
+		t.Fatalf("this table covers %d input kinds and the machine has %d — a kind was added and nobody said what it means to a form holding many words", len(want), numInputKinds)
+	}
+
+	for k := InputKind(0); k < numInputKinds; k++ {
+		exp, ok := want[k]
+		if !ok {
+			t.Errorf("input kind %d has no expectation", k)
+			continue
+		}
+		b := NewBoard(cellsOf("alpha", "beta", "gamma"), 80, Palette{})
+		s := NewSession([]Question{b, NewRecall("mesa", "a flat-topped hill")})
+		// A rune this form grades, and a cell it has.
+		next, outs := Apply(s, Input{Kind: k, Rune: '0', Cell: 0})
+
+		var got []OutcomeKind
+		for _, o := range outs {
+			got = append(got, o.Kind)
+		}
+		if len(got) != len(exp.kinds) {
+			t.Errorf("kind %d produced %v, want %v", k, got, exp.kinds)
+			continue
+		}
+		for i := range got {
+			if got[i] != exp.kinds[i] {
+				t.Errorf("kind %d outcome %d is %v, want %v", k, i, got[i], exp.kinds[i])
+			}
+		}
+		if next.Revealed {
+			t.Errorf("kind %d set Revealed on a form with nothing to reveal — the loop then writes a blank reveal and pronounces an arbitrary cell", k)
+		}
+		if next.Graded {
+			t.Errorf("kind %d set Graded on a board, which freezes it: the next key would mean \"next word\"", k)
+		}
+		if moved := next.Index != 0 || next.Done; moved != exp.advances {
+			t.Errorf("kind %d advanced=%v, want %v (index %d done %v)", k, moved, exp.advances, next.Index, next.Done)
+		}
 	}
 }

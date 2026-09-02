@@ -50,6 +50,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/xianxu/tools/cmd/define/play"
+	"github.com/xianxu/tools/cmd/define/store"
 	"github.com/xianxu/tools/internal/llm/llmtest"
 	"golang.org/x/term"
 )
@@ -945,3 +947,179 @@ func twiceNumberedOption(frame string) byte {
 
 // pageUp is what a terminal sends for the key, decoded by key.go.
 const pageUp = "\x1b[5~"
+
+// seedMature drives words to a box the board is offered at, by writing the same
+// review events a real sitting would.
+//
+// Through store.NewYAML rather than by hand: a box is a fold over the log, and a
+// fixture written with a different shape than production writes would be testing
+// the fixture.
+func seedMature(t *testing.T, deck string, box int, words ...string) {
+	t.Helper()
+	s := store.NewYAML(deck, store.DefaultLang, nil)
+	// Well in the past, so every word is overdue however long its interval.
+	at := time.Now().AddDate(0, -6, 0)
+	for _, w := range words {
+		for i := range box {
+			if err := s.AppendEvent(store.ReviewEvent{
+				Word: w, Kind: store.EventReviewed, Found: true, Correct: true,
+				Form: "meaning", At: at.Add(time.Duration(i) * time.Hour),
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// DONE-WHEN 14: FORM 2.5 ON A REAL TERMINAL — drawn, clicked, and recorded.
+//
+// This is the row the in-process tests cannot supply. They drive playSession
+// with a hand-built board against a screen that has no terminal underneath it,
+// so none of them exercises the path that decides a real deck deserves a board,
+// paints a grid into the FOOTER of a real 24x80 window without the terminal
+// scrolling, turns a real SGR mouse report into a mark, and writes `form: board`
+// to a real file.
+//
+// The grid is the LIVE EDGE, which is what makes the click possible and also
+// what makes it dangerous: a frame one row too tall scrolls the terminal, and
+// every row the app believes it placed moves. So the click's row is read off the
+// PAINT rather than computed — if the two ever disagree, this is where it shows.
+func TestPTYPlayBoardIsDrawnAndClickable(t *testing.T) {
+	words := []string{"quokka", "mesa", "parrot", "bank"}
+	deck := seedDeckN(t, words...)
+	seedMature(t, deck, 3, words...)
+
+	_, f := startDefineInDir(t, deck, nil, "--play", "--no-audio")
+	out := watch(f)
+	if err := pty.Setsize(f, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+		conformance.SkipOrFail(t, "cannot size the pty on this platform", err)
+	}
+	first := unstyled(out.take(4 * time.Second))
+
+	// THE BOARD WAS OFFERED, and its own keys line is on screen rather than form
+	// 2.1's or 2.3's.
+	//
+	// DERIVED from the form, not restated. This row spelled "Tab = switch" and
+	// went red when R11 reworded the line — correctly, but for the wrong reason:
+	// a conformance row's subject is that the board REACHED a real terminal, not
+	// how its prompt is phrased. The wording is pinned once, against the README,
+	// by TestREADMEQuotesThePromptsTheLoopActuallyPrints.
+	keys := play.NewBoard([]play.Cell{{Word: words[0]}, {Word: words[1]}}, 80, play.Palette{}).Keys()
+	if !strings.Contains(first, keys) {
+		t.Fatalf("the board was not offered, or its keys were not printed (want %q):\n%q", keys, first)
+	}
+	if strings.Contains(first, "= pick the definition") || strings.Contains(first, "y = got it") {
+		t.Errorf("a board printed another form's keys — a learner would press a dead key:\n%q", first)
+	}
+	// `d` MUST NOT BE OFFERED: Apply refuses the drop on a form holding many
+	// words, because `d` names no word on a grid.
+	if strings.Contains(first, "remove from deck") {
+		t.Errorf("the board's prompt offers a key it refuses:\n%q", first)
+	}
+	// THE MODE IS ON THAT SAME LINE (R11), which Paint clips last — so what a
+	// click will mean is knowable for as long as anything on screen is. It had a
+	// footer row until a resize showed fitFooter dropping it.
+	if !strings.Contains(keys, "[yes]") {
+		t.Fatalf("the form's keys line does not say which mark is live: %q", keys)
+	}
+
+	// DRAWN WHOLE. Every row of a 24x80 frame must fit 80 columns: a footer row
+	// that wraps is a frame one row too tall, and the terminal then scrolls.
+	frame := lastFrame(first)
+	rows := strings.Split(frame, "\r\n")
+	gridRow := -1
+	for i, r := range rows {
+		// Cut at the first escape: the frame's LAST row carries the cursor
+		// walk-back and the reprinted prompt appended to it, which are not
+		// columns the terminal draws. unstyled strips colour, not motion.
+		drawn := r
+		if j := strings.IndexByte(drawn, 0x1b); j >= 0 {
+			drawn = drawn[:j]
+		}
+		if n := visibleCells(drawn); n > 80 {
+			t.Errorf("row %d is %d columns wide in an 80-column window:\n%q", i, n, drawn)
+		}
+		if strings.HasPrefix(drawn, "[0] ") {
+			gridRow = i
+		}
+	}
+	if gridRow < 0 {
+		t.Fatalf("no grid on screen:\n%q", frame)
+	}
+
+	// A REAL CLICK, on the third cell, at the column the paint put it.
+	//
+	// SGR 1006, one-based, which is what a terminal sends. The column is read
+	// off the drawn row for the same reason the row is: the click map and the
+	// paint are the two things that have to agree.
+	col := strings.Index(rows[gridRow], "[2] ")
+	if col < 0 {
+		t.Fatalf("no third cell on the grid row %q", rows[gridRow])
+	}
+	fmt.Fprintf(f, "\x1b[<0;%d;%dM", col+1, gridRow+1)
+	raw := out.take(2 * time.Second)
+	afterClick := unstyled(raw)
+
+	// THE PANEL, which is how a mark says it landed — and it names the word that
+	// was under the pointer rather than a neighbour.
+	third := wordAt(rows[gridRow], col+len("[2] "))
+	if !strings.Contains(lastFrame(afterClick), third) {
+		t.Errorf("clicking %q left no trace in the panel:\n%q", third, lastFrame(afterClick))
+	}
+	// THE CELL KEEPS ITS KEY and is PAINTED — asserted on the RAW output,
+	// because `unstyled` strips exactly the thing under test. Derived from
+	// boardPalette rather than spelling the escape, so the colour is decided in
+	// one place.
+	if !strings.Contains(afterClick, "[2] "+third) {
+		t.Errorf("the clicked cell lost its key:\n%q", lastFrame(afterClick))
+	}
+	pal := boardPalette(options{color: true})
+	if !strings.Contains(lastFrame(raw), pal.Yes+"[2] "+third+pal.Off) {
+		t.Errorf("the clicked cell is not painted as a yes on a real terminal:\n%q", lastFrame(raw))
+	}
+
+	// TAB, which reached nothing at all before this issue.
+	f.WriteString("\t")
+	afterTab := unstyled(out.take(2 * time.Second))
+	flipped := play.NewBoard([]play.Cell{{Word: words[0]}}, 80, play.Palette{})
+	flipped.Toggle()
+	if !strings.Contains(lastFrame(afterTab), flipped.Keys()) {
+		t.Errorf("Tab did not flip the mode on a real terminal (want %q):\n%q", flipped.Keys(), lastFrame(afterTab))
+	}
+
+	// The rest by KEY, which is the path a mouse-less terminal has.
+	transcript := first + afterClick + afterTab
+	for _, k := range []string{"0", "1", "3"} {
+		f.WriteString(k)
+		transcript += unstyled(out.take(700 * time.Millisecond))
+	}
+	transcript += unstyled(out.take(3 * time.Second))
+	if !strings.Contains(transcript, "right,") {
+		t.Fatalf("the sitting never finished:\n%q", transcript)
+	}
+	// THE RELEARN LINE survives into the exit transcript, though the grid does not.
+	if !strings.Contains(transcript, "relearn: ") {
+		t.Errorf("no relearn line after three words were marked no:\n%q", transcript)
+	}
+
+	// THE RECORD: every event names the form that asked it.
+	events, err := os.ReadFile(latestEventFile(t, deck))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(events), "form: board"); n != len(words) {
+		t.Errorf("%d events name the board, want %d:\n%s", n, len(words), events)
+	}
+}
+
+// wordAt is the run of non-space characters starting at col.
+func wordAt(line string, col int) string {
+	if col >= len(line) {
+		return ""
+	}
+	rest := line[col:]
+	if i := strings.Index(rest, " "); i >= 0 {
+		return rest[:i]
+	}
+	return rest
+}
