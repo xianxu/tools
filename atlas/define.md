@@ -367,10 +367,11 @@ visible CELLS and knows nothing about an embedded newline, so a two-line prompt
 would be charged one row and the frame would come out one row too tall; and
 `Paint` writes the prompt with a bare `WriteString`, where raw mode needs `\r\n`.
 
-**`grantedGap` is the one owner of "is there room", and it has TWO consumers** —
-`Paint` when it draws, and the board's fit when it decides whether Enter may spend
-a board. Two answers would mean a board drawn whole and refused in the same
-breath. It grants the row only when a buffer row survives beside it, which is what
+**`grantedGap` is the one owner of "is there room", and it has ONE consumer** —
+`Paint`. An earlier version of this paragraph said two, the board's fit being the
+second; that was the design, not the code, and `fitsABoard` never charges the gap
+(see the next paragraph). The two agree by a PROOF rather than by a shared call.
+It grants the row only when a buffer row survives beside it, which is what
 keeps `s.rows`'s floor-at-zero from absorbing a shortfall while the row is written
 anyway — the frame would then be one row taller than the terminal, scroll, and
 move every row the app believes it placed.
@@ -2261,11 +2262,15 @@ construction: alternate screen, mouse reporting, a screen, `watchResize`,
 (`#38`).** `#30` Done-when 7 asked for *"one mechanism, so a third consumer is a
 row rather than a new feature"*, and until `#38` the switch on `RegionKind` lived
 inside `runEditor`'s own closure, where a second loop could only copy it.
-`playRegion` is that registry lifted out: both loops call it, and the INDICATOR
-is its one parameter, because the editor's is erasable and a sitting's is the
-record-shaped `defaultIndicator`. A kind with no row there draws an underline
-that does nothing, which `TestEveryRegionKindIsActionable` catches by deriving
-its loop from `numRegionKinds`.
+`playRegion` is that registry lifted out, and both loops call it. It takes NO
+indicator: this paragraph used to say the indicator was "its one parameter,
+because the editor's is erasable and a sitting's is the record-shaped
+`defaultIndicator`" — and that difference was the bug `#44` found, not a design.
+A click can only arrive inside a screen, so the parameter offered a choice with
+one right answer and the two callers took different ones; it is deleted. A kind
+with no row there draws an underline that does nothing, which
+`TestEveryRegionKindIsActionable` catches by deriving its loop from
+`numRegionKinds`.
 
 - **The prompt word is line 1, column 0 of the write the loop already makes.**
   Both forms put the headword on their first line, so there is nothing to search

@@ -171,6 +171,22 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 	}
 }
 
+// nonSittingDrawFiles are the files whose `Draw` calls are NOT the sitting's live
+// edge, and they are the exemptions — everything else in package main is in scope.
+//
+// AN ALLOWLIST, for the reason its sibling above is one (#44 BR-11). The first
+// version of this guard hardcoded `play_loop.go`, which is the inclusion-list
+// shape BR-6 had just made me invert for the indicator rule — written one screen
+// away from the comment explaining why that shape is wrong. A guard whose scope is
+// a hand-maintained enumeration cannot see the file nobody added it to.
+//
+//   - replraw.go — the EDITOR's frame. Its prompt is the line you are typing, a
+//     continuation of what is above it rather than a legend, so it is deliberately
+//     undimmed and reserves no gap either.
+var nonSittingDrawFiles = map[string]string{
+	"replraw.go": "the editor's prompt is content being typed, not chrome",
+}
+
 // EVERY STRING THE SITTING DRAWS AS CHROME GOES THROUGH asChrome (#44 M1).
 //
 // The indicator class got a guard and the dim class did not, which is the same
@@ -186,10 +202,11 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filepath.Join(root, "cmd", "define", "play_loop.go"), nil, 0)
+	pkgs, err := parser.ParseDir(fset, filepath.Join(root, "cmd", "define"), nil, 0)
 	if err != nil {
-		t.Fatalf("parsing play_loop.go: %v", err)
+		t.Fatalf("parsing cmd/define: %v", err)
 	}
+	files := pkgs["main"].Files
 
 	// `asChrome(...)`, or a plain identifier holding something already chromed.
 	chromed := func(e ast.Expr) bool {
@@ -201,38 +218,58 @@ func TestEverySittingDrawPassesChromeThroughAsChrome(t *testing.T) {
 		return ok && id.Name == "asChrome"
 	}
 
-	draws := 0
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+	draws, scanned := 0, 0
+	for path, f := range files {
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, "_test.go") {
+			continue
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel == nil || sel.Sel.Name != "Draw" || len(call.Args) != 2 {
-			return true
+		if why, exempt := nonSittingDrawFiles[base]; exempt {
+			t.Logf("skipping %s: %s", base, why)
+			continue
 		}
-		draws++
-		if !chromed(call.Args[0]) {
-			t.Errorf("%s: the prompt handed to Draw is not asChrome'd — the sitting's live "+
-				"edge is chrome and must read as chrome, or the row it is on reads as content",
-				fset.Position(call.Args[0].Pos()))
-		}
-		// A bar written inline as `[]string{...}` is chrome too; a footer built by
-		// a helper (boardFooter) owns its own styling and is checked by that
-		// helper's own test.
-		lit, ok := call.Args[1].(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-		for _, el := range lit.Elts {
-			if !chromed(el) {
-				t.Errorf("%s: a footer row written inline at a Draw call is not asChrome'd",
-					fset.Position(el.Pos()))
+		scanned++
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
 			}
-		}
-		return true
-	})
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel == nil || sel.Sel.Name != "Draw" || len(call.Args) != 2 {
+				return true
+			}
+			draws++
+			if !chromed(call.Args[0]) {
+				t.Errorf("%s: the prompt handed to Draw is not asChrome'd — the sitting's live "+
+					"edge is chrome and must read as chrome, or the row it is on reads as content",
+					fset.Position(call.Args[0].Pos()))
+			}
+			// A bar written inline as `[]string{...}` is chrome too; a footer built by
+			// a helper (boardFooter) owns its own styling and is checked by that
+			// helper's own test.
+			lit, ok := call.Args[1].(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			for _, el := range lit.Elts {
+				if !chromed(el) {
+					t.Errorf("%s: a footer row written inline at a Draw call is not asChrome'd",
+						fset.Position(el.Pos()))
+				}
+			}
+			return true
+		})
+	}
+	if scanned == 0 {
+		t.Fatal("every file in package main was exempted; this guard would certify nothing")
+	}
 	if draws == 0 {
-		t.Fatal("no Draw calls found in play_loop.go; this guard would certify nothing")
+		t.Fatalf("scanned %d files and found no Draw call — either the exemptions have "+
+			"swallowed the rule, or Draw was renamed and this guard now checks nothing", scanned)
+	}
+	for base := range nonSittingDrawFiles {
+		if _, ok := files[filepath.Join(root, "cmd", "define", base)]; !ok {
+			t.Errorf("nonSittingDrawFiles exempts %s, which is not in package main", base)
+		}
 	}
 }

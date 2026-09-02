@@ -214,7 +214,6 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			// for every form by `chromeGap` — so this was one form's exception to
 			// a rule the frame did not yet have, and it also spent a buffer line
 			// on it, which the exit transcript then carried.
-			//
 			view.Draw(asChrome(boardPrompt(q, boardWhole), pal), boardFooter(q, fig, pal))
 			return
 		}

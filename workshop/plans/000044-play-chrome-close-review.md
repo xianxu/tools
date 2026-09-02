@@ -254,3 +254,165 @@ Coverage is strong where it was attacked last round and thin exactly where it wa
 
 - **`## Revisions` — "grantedGap has one consumer, not two".** The 2026-09-02 entry retracted `fitsABoard`'s charge but the plan's Core-concepts bullet still says `grantedGap` is "**Relationships:** 1:2 — `Paint` asks it when drawing, `fitsABoard` when deciding whether Enter may spend a board", which the code no longer does. Append a delta correcting the relationship to 1:1 and noting that the DRY rationale now rests on the *equivalence proof* rather than on a shared call, so the row stops claiming what `screen.go:504` alone delivers. Same entry should record the `git grep grantedGap` sweep (I4).
 - **Task 2 Step 5 — mark struck, not done.** It reads as an unticked instruction to write the charge that `## Revisions` retracted; strike it in place (`- [x] ~~Step 5: Charge it in the board's fit~~ — see ## Revisions`) when the plan is ticked (I5), so the archived artifact does not preserve a live instruction to reintroduce the term.
+
+---
+
+## Re-review — 2026-09-02T15:16:06-07:00 (FIX-THEN-SHIP)
+
+| field | value |
+|-------|-------|
+| issue | 44 — the play frame's chrome: separate it, colour it, and stop it growing a line per click |
+| repo | tools |
+| issue file | workshop/issues/000044-play-chrome.md |
+| boundary | whole-issue close |
+| milestone | — |
+| window | 33321b152e51730cd1ed92e06385b8f6290c8102..69bd3d7767e56f6ba323d58eb104ff206c7d88b2 |
+| command | sdlc close --issue 44 |
+| reviewer | claude |
+| timestamp | 2026-09-02T15:16:06-07:00 |
+| verdict | FIX-THEN-SHIP |
+
+## Review
+
+```verdict
+verdict: FIX-THEN-SHIP
+confidence: high
+```
+
+All three operator complaints are delivered and the frame arithmetic — the part where a wrong row means a permanent mark on the wrong word — holds under independent re-derivation and under mutation. I re-verified every prior blocker by breaking the code rather than by reading the commit: deleting `l.s.gap = chromeGap` reddens the full-buffer test (BR-3), dropping `+gap` from `footerTop` reddens the click test at `footerTop = 5, want 6` (BR-4), `go doc -all -u` now prints `Paint` with its own prose and the widened guard catches a function inserted between a const's doc and the const (BR-5), and a new `cmd/define/newscreen.go` passing `defaultIndicator` reddens the indicator guard (BR-6). `go test ./...` (108s), `go vet ./...`, `gofmt -l` and `go test -tags conformance ./cmd/define` (138s) are all green in a clean checkout of HEAD. What stops SHIP is not correctness: it is that two of the families this issue has been escalating on repeated *inside the commit that closed them*. The round-2 `## Revisions` entry states the rule "a revision is not complete until `git grep <entity>` is clean" — and the sweep was run over `cmd/`, so `atlas/define.md` (the first hit of `git grep grantedGap`) still says `grantedGap` has TWO consumers, and `git grep playRegion` still finds the atlas asserting "the INDICATOR is its one parameter". And the M1 chrome guard, written in the same commit that inverted the indicator guard's file scope to an allowlist (BR-6), scopes itself to one hardcoded filename.
+
+## 1. Strengths
+
+- **`fitsABoard` left unchanged, with the proof as the deliverable.** I re-derived it: `T−P−F ≥ 2 ⟹ F+P+1 ≤ T−1`, so charged and uncharged coincide at every shape. Writing the term would have looked like a reconciliation while altering nothing. `TestTheChromeGapNeverChangesWhetherABoardFits` (`play_loop_test.go:3548`) pins it by exhaustion rather than by comment.
+- **The budget order is now pinned, unprompted.** `TestTheFooterIsBudgetedBeforeTheGap` (`screen_test.go:1467`) goes red on the honest mutation (`fitFooter(footer, termRows-promptRows-s.gap, …)` → "the drawn footer is 1 rows but an ungapped budget gives 2"). That ordering is the whole reason a border can never cost a board a grid row, and `#42` reworks exactly this.
+- **`declName` split from `documentedDecl` (`repo_guard_test.go:1731`).** The owner set and the neighbour set now widen together *by construction* — the right fix, because the declaration being caught is precisely the one that has just lost its doc. Verified: inserting `func zzzFiller() {}` between `chromeGap`'s doc and `const chromeGap` fires the guard.
+- **The leak test measures a difference, not a shape.** Running the same deck audible and silent (`play_loop_test.go:3479`) holds content fixed so playback is the only variable; restoring `before: "\n"` reddens it at 547 vs 542.
+- **`playRegion`'s parameter deleted rather than guarded.** Two of the five drifted sites become structurally incapable of being wrong. That is Simplicity-First applied correctly, not as an excuse to skip the guard for the three that remain.
+
+## 2. Critical findings
+
+None.
+
+## 3. Important findings
+
+**N1 — `atlas/define.md:370` and `:2264` — the revision sweep's enumeration was the package, not the tree.**
+
+**This is the 5th finding in family `cite-the-code-you-claim`.** Earlier rounds fixed instances. Do NOT fix these two paragraphs and stop — the rule is already written down twice (the plan's second `## Revisions` entry, and `workshop/lessons.md:649` "a claim naming an identifier or an on-disk artifact must be grep-verified in the same edit that writes it"). It failed a fifth time because the sweep's **scope** was `cmd/define`, and the rule never said what tree the grep runs over. State the scope: `git grep -n <entity>` with **no path filter**, read to the last hit, and record the file list in `## Log` — its first hit is as binding as its last.
+
+Measured prevalence in this window, 3 instances, all first-page hits of greps the round-2 entry says it ran:
+- `atlas/define.md:370` — "**`grantedGap` is the one owner of "is there room", and it has TWO consumers** — `Paint` when it draws, and the board's fit…". `grantedGap` has one production consumer (`screen.go:513`), and the *next paragraph*, `atlas/define.md:378`, says the opposite. This is exactly I4's defect, in the file AGENTS.md §8 calls "always current", nine lines from its own refutation.
+- `atlas/define.md:2264` — "`playRegion` is that registry lifted out: both loops call it, and **the INDICATOR is its one parameter**, because the editor's is erasable and a sitting's is the record-shaped `defaultIndicator`." That parameter was deleted in this window; the plan calls this exact sentence "the bug stated as a design note" and fixed it at `replraw.go:577` while leaving the atlas's copy of it. The same file already carries the correct statement at line 318.
+- `cmd/define/indicator_guard_test.go:221` — "a footer built by a helper (`boardFooter`) owns its own styling and **is checked by that helper's own test**". There is no such test: `TestBoardFooterPutsTheFormsOwnRowsFirst` and `TestFitsABoardCountsTheWholeLiveEdge` both pass `palette{}`. The real pin is the frame-level `TestTheChromeBandIsDimmedTogether/a board's bar` (which does go red — I removed `asChrome` from `boardFooter` and watched it fail), so the coverage exists and only the citation is wrong.
+
+**N2 — `cmd/define/indicator_guard_test.go:189` — the chrome guard's file scope is an inclusion list.**
+
+**This is the 2nd finding in family `sweep-every-site-of-the-rule`.** BR-6 inverted the indicator guard's scope to an exemption list precisely so a new screen-hosted file defaults *into* the rule. `TestEverySittingDrawPassesChromeThroughAsChrome`, added in the same commit, does `parser.ParseFile(…, "play_loop.go")` — one hardcoded filename. Its own doc comment predicts the failure it cannot catch: "a fifth `view.Draw` — which `#42` will add, since it reworks the form selection — would ship undimmed chrome silently". If `#42` puts that `Draw` in a new file, the guard never sees it, and no test reddens.
+
+The rule that covers both: **a source-level guard's file scope is an exemption list over the package, never an enumeration of the files it applies to** — and each exemption carries a reason and is checked to name a real file (which `nonScreenFiles` already does, at `indicator_guard_test.go:161`). Measured prevalence: 3 AST guards in the package, 2 scan the directory (`indicator_guard_test.go:66`, `repo_guard_test.go:1647`), 1 scans a single file — the one written alongside the fix. The inversion here is cheap: scan package `main`'s non-test files and exempt `replraw.go` by name ("the editor's live edge is the line you are typing, not chrome" — `replraw.go:316` and `:473` are the two correctly-unchromed `Draw` calls).
+
+## 4. Minor findings
+
+- `cmd/define/play_loop.go:217` — a stray empty `//` line left between the deleted-blank-line comment and `view.Draw`; the comment now ends in a dangling continuation.
+- `cmd/define/render.go:52` / `cmd/define/editor.go:246` — `pal.off` and `sgrOff` are two spellers of `"\x1b[0m"`. Pre-existing, not introduced here; `asChrome` correctly took the palette's. Noted only because ARCH-DRY's owner for the reset is now ambiguous at a site this window touched.
+- `TestEverySittingDrawPassesChromeThroughAsChrome` lives in `indicator_guard_test.go`, a file named for the other rule. Fine today; a third guard makes the filename a lie.
+
+## 5. Test coverage notes
+
+Coverage is strong and, unusually, *demonstrated*. Everything I mutated went red where it should: `l.s.gap = chromeGap`, `footerTop`'s `+gap`, `chromeGap = 1 → 2`, `grantedGap`'s `>= want+1 → >= want` (9 shapes), the budget order, all four `asChrome` sites, `before: "\n"` restored, the board's re-added blank line, a new screen-hosted file, and a const-owner doc reparent. The editor's *absence* of a gap is also pinned, which I had expected to be a hole: setting `gap: chromeGap` in `newLiveScreen` reddens `TestOnlyThePinnedConstructorPads` and `TestFooterRowAtNamesTheEntryUnderAClick`.
+
+Two thin spots, neither blocking: `TestTheChromeGapIsGivenUpBeforeTheFrameOverflows` still builds `screen{pinned: true, gap: chromeGap}` by hand — correct for a test about overflow rather than wiring, but BR-3's rule is now written down and this is the one gap test that does not go through the constructor, so it deserves the one-line comment saying why. And nothing asserts that a click on the *gap row* maps to nothing; `LineAt` refuses it structurally (`row >= len(frame)` at `screen.go:215`, and the pinned padding sits below the frame rows either way), so this is a note, not a hole.
+
+## 6. Architectural notes
+
+- **ARCH-DRY — pass, with N1.** `chromeGap`, `grantedGap`, `asChrome`, `screenIndicator` each replace a rule that existed only as whatever an author typed; the five-way indicator drift collapses to one constructor plus a deleted parameter. The failure is documentary, not structural.
+- **ARCH-PURE — pass.** `chromeGap`, `grantedGap`, `asChrome`, `screenIndicator` are pure; `TestTheChromeGapNeverTakesTheLastContentRow` runs directly over `grantedGap` with no frame at all, which is the right call — reading the threshold back out of a painted frame would also measure `s.rows`'s clamp. Every new frame test drives a `strings.Builder`/`bytes.Buffer`; `liveScreen` stays the only tty-touching part.
+- **ARCH-PURPOSE — flag (N1, N2).** The purpose was the CLASS, not the five instances, and the indicator class genuinely got one. But the two class-level mechanisms added this round each stopped one step short of their own class: the doc sweep swept a package, and the chrome guard enumerated a file. Both are the easy subset of the rule they state.
+- **ARCH-MOCK — pass.** `fakePlayer` is stateful across calls (`fp.Played`) and injected through `deps`, so production and test flow share the boundary. The pty conformance suite is the live check for the terminal dependency, and it passes — `#37` remains the standing risk that nothing runs it automatically.
+- **ARCH-CONSTRAINTS — pass.** `Paint` is the keystroke path; the additions are one comparison, a one-iteration loop and two string concatenations per frame, and `newPalette` resolves once per sitting rather than per frame. The declared envelope ("granted only when a buffer row survives beside it") is now enforced *and* pinned, which it was not last round. Test cost: 6,150 pure iterations plus 72 paints plus two extra full sittings, inside a 108s package suite dominated by pre-existing work.
+
+For `#42`: the one thing to inherit is `screen.go:511-514` — `fitFooter` gets `termRows-promptRows` with no gap subtracted, and `grantedGap` takes only from the remainder. That is now pinned. The second thing is that `boardFitsIn` deliberately does not know `chromeGap` exists; if `#42` adds a term there, `TestTheChromeGapNeverChangesWhetherABoardFits` is the test that will say so.
+
+## 7. Plan revision recommendations
+
+- **`## Revisions` — "the sweep's scope is the tree".** Append a delta to the second 2026-09-02 entry recording that the `git grep` it prescribes was run over `cmd/define` and not the repository, that `atlas/define.md:370` and `:2264` were the misses, and that the enumeration is `git grep -n <entity>` with no path filter. Without this the entry reads as a rule that was satisfied.
+- **Core concepts — `grantedGap` "Relationships: 1:2".** The bullet at plan line 38 is superseded by the second `## Revisions` entry and correctly left in place per the append-don't-overwrite convention, but nothing in the bullet points forward to the retraction. Add a one-line `→ see ## Revisions` marker so a reader of the table alone is not misled.
+- **Task 3 file list.** The plan names `cmd/define/playbar_test.go` and `TestTheChromeBandIsPlainWithoutAPalette`; the coverage shipped as the `"no palette at all"` row of `TestTheChromeBandIsDimmedTogether` in `play_loop_test.go`, and `playbar_test.go` is untouched in the window. Record the delta so the plan stops naming a test that does not exist.
+
+```findings
+dispose:
+  - id: BR-1
+    disposition: addressed
+    note: |
+      fitsABoard never charges the gap; the equivalence is proved and pinned by exhaustion instead.
+  - id: BR-2
+    disposition: addressed
+    note: |
+      Plan Step 2a now names repo_guard_test.go as the precedent and disowns dict_symbols_darwin_test.go.
+  - id: BR-3
+    disposition: addressed
+    note: |
+      Mutation-verified: deleting l.s.gap = chromeGap reddens TestAFullBufferStillLeavesARowAboveThePrompt.
+  - id: BR-4
+    disposition: addressed
+    note: |
+      Mutation-verified: dropping +gap from footerTop fails with "footerTop = 5, want 6".
+  - id: BR-5
+    disposition: addressed
+    note: |
+      go doc -all -u prints Paint with its own prose; the widened guard catches a const-owner reparent.
+  - id: BR-6
+    disposition: addressed
+    note: |
+      Verified: a new cmd/define/newscreen.go passing defaultIndicator reddens the guard.
+  - id: BR-7
+    disposition: addressed
+    note: |
+      Done-when now states the by-type rule survives the next forwarder rather than catching one today.
+  - id: BR-8
+    disposition: addressed
+    note: |
+      Sentence moved to the sitting section; the board picture at README.md:113 confirms the keys-line claim.
+  - id: BR-9
+    disposition: addressed
+    note: |
+      The chrome-band test now reads dim from newPalette(true).dim.
+findings:
+  - id: new
+    severity: Important
+    family: cite-the-code-you-claim
+    title: |
+      the revision sweep ran over cmd/define, not the tree — atlas/define.md:370 and :2264 still state the retracted design
+    detail: |
+      5th in family. The rule is already written (plan Revisions, lessons.md:649); what
+      failed a fifth time is its SCOPE. Fix the rule — the enumeration is `git grep -n
+      <entity>` with NO path filter, read to the last hit, file list recorded in the Log.
+      Prevalence 3, all first-page hits of greps round 2 says it ran: atlas:370 says
+      grantedGap has TWO consumers and is refuted by atlas:378 nine lines later;
+      atlas:2264 says playRegion's indicator "is its one parameter" after the parameter
+      was deleted, while atlas:318 states the correction; indicator_guard_test.go:221
+      cites "that helper's own test" for boardFooter's styling, which does not exist (the
+      real pin is TestTheChromeBandIsDimmedTogether/a board's bar, verified red).
+  - id: new
+    severity: Important
+    family: sweep-every-site-of-the-rule
+    title: |
+      the chrome guard scopes itself to one hardcoded filename, the inclusion list BR-6 inverted for its sibling
+    detail: |
+      2nd in family. TestEverySittingDrawPassesChromeThroughAsChrome parses only
+      play_loop.go, so a fifth view.Draw in a new file escapes silently — the failure its
+      own comment predicts for #42. The rule covering both guards: a source-level guard's
+      file scope is an exemption list over the package, never an enumeration of the files
+      it applies to. Prevalence 1-of-3 AST guards in the package (the other two ParseDir),
+      and the offender was written in the same commit that inverted the indicator guard.
+      Inversion is cheap: scan package main's non-test files, exempt replraw.go by name
+      (its two Draw calls at :316 and :473 are correctly unchromed).
+  - id: new
+    severity: Minor
+    family: doc-attaches-to-the-wrong-decl
+    title: |
+      a stray empty comment line dangles between the deleted-blank-line note and view.Draw
+    detail: |
+      cmd/define/play_loop.go:217 — the block ends "...which the exit transcript then
+      carried." followed by a bare "//" immediately above the Draw call. Cosmetic; the
+      doc-owner guard does not fire because the owner is a statement, not a declaration.
+```

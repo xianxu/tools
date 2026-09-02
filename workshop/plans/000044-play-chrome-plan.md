@@ -498,9 +498,19 @@ above retracted — and the DRY rationale rests on the EQUIVALENCE PROOF rather 
 on a shared call.
 
 **The rule this makes explicit, because the retraction was incomplete for a whole
-round:** a `## Revisions` entry is not done until `git grep <entity>` is clean of
-comments still stating the superseded design. The enumeration *is* that grep, one
-per revised entity. Three entities were revised here — `fitsABoard`, `grantedGap`,
+round:** a `## Revisions` entry is not done until `git grep <entity>` **over the
+TREE** is clean of comments still stating the superseded design. The enumeration
+*is* that grep, one per revised entity.
+
+**And "over the tree" is not a flourish — it is the correction the rule needed on
+its first application.** Round 3 found the sweep had been run over `cmd/` alone,
+leaving `atlas/define.md` stating both retracted designs: that `grantedGap` has
+two consumers, and that `playRegion`'s indicator is "its one parameter, because
+the editor's is erasable and a sitting's is the record-shaped
+`defaultIndicator`" — the bug, written down as a design note, in the document
+that exists to tell the next reader how this works. A rule scoped to the
+directory you happen to be editing is the same defect as a guard scoped to the
+files you happen to remember. Three entities were revised here — `fitsABoard`, `grantedGap`,
 `playRegion` — and running it found three live instances: `grantedGap`'s own doc
 advertising a consumer it does not have (which reads as an instruction to add the
 term back), the indicator guard's comment describing the pre-deletion tree, and
