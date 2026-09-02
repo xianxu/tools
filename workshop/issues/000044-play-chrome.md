@@ -368,3 +368,27 @@ applied to the instance and not to the rule.
 
 Every fix above was mutation-verified: the code was reverted and the named test
 watched to go red.
+
+### 2026-09-02 — boundary review round 3: both new rules failed on first use
+
+Nine findings disposed; two new, and both are the rules written in round 2
+failing the first time they were applied. That is the useful shape of this round.
+
+- **BR-10 — the revision sweep ran over `cmd/`, not the tree.** The rule I had
+  just recorded says "a `## Revisions` entry is not done until `git grep <entity>`
+  is clean"; I ran it over the directory I was editing. `atlas/define.md` was
+  still stating BOTH retracted designs — that `grantedGap` has two consumers, and
+  that `playRegion`'s indicator is "its one parameter, because the editor's is
+  erasable and a sitting's is the record-shaped `defaultIndicator`". That second
+  one is the bug written down as a design note, in the document whose whole job is
+  telling the next reader how this works. Rule amended in the plan: **over the
+  tree**, and the amendment says why.
+- **BR-11 — the chrome guard hardcoded one filename**, which is the inclusion-list
+  shape BR-6 had made me invert for its sibling — written one screen away from the
+  comment explaining why that shape is wrong. Inverted to `nonSittingDrawFiles`,
+  so a new file with a `Draw` call defaults into the rule; `replraw.go` is the one
+  exemption, because the editor's prompt is content being typed rather than chrome.
+
+Both mutation-verified. The pattern across three rounds is one lesson, not three:
+**a fix applied at the site of the finding is not the fix** — and that applies to
+rules about rules, which is where rounds 2 and 3 both landed.
