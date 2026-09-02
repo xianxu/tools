@@ -307,6 +307,21 @@ diagnostics where the definition goes. In production every field is the same
   ephemeral indicator's own "take that line back". A buffer that ignored it would
   carry `♫ playing 3×` into the exit transcript, which is the "ephemeral UI vs
   record" doctrine failing in the direction it exists to prevent.
+- **…but it takes back only the line still OPEN, so playback into a screen
+  carries no `before`.** `eraseOpenLine` drops the partial line and nothing else,
+  deliberately — "a completed line is scrollback". `indicator.before` was written
+  for a cooked terminal, where `"\n"` is cursor movement and the erase then clears
+  the row it moved to; inside an append-only buffer that newline is CONTENT, and
+  it is already committed by the time the erase arrives. So the frame grew a blank
+  row per playback: per answered question in a sitting, per lookup in the editor.
+  `screenIndicator()` is the one shape for a screen (`main.go`), and
+  `playRegion`'s indicator PARAMETER is deleted rather than corrected — a click
+  can only happen inside a screen, so the parameter offered a choice with one
+  right answer and its two callers took different ones.
+  `TestEveryScreenPlaybackTakesTheScreenIndicator` matches on the ARGUMENT'S TYPE,
+  not on a callee name: the callee-name version was written first and was blind to
+  exactly the site the bug was reported from, because the sitting's click reaches
+  `playAnnounced` through a forwarder.
 - **STDERR routes through the screen too.** A diagnostic written past it would
   land wherever the cursor happens to be and corrupt the frame. It also means
   `define: … no dictionary entry` is part of the record now instead of scrolling
@@ -335,7 +350,60 @@ did. The prompt survives first — it is the line you are typing, and it is clip
 only when it alone is taller than the terminal, where the alternative is a frame
 nobody owns. The menu gives up whole rows next (`fitMenu`, from the end, because
 the list is sorted and the first matches are the likely ones). The buffer takes
-what is left, because it is the part you can scroll.
+what is left, because it is the part you can scroll. **The chrome gap goes before
+any of them**, because it is the only component that carries no information.
+
+**A SITTING'S frame reserves one row between the record and the live edge**
+(`chromeGap`, `screen.gap`, set by `newPinnedScreen`). The action row is a legend
+of what you can press and the buffer is what you are reading; with nothing between
+them they read as one block, which is what an operator saw in a real sitting. The
+editor's frame reserves nothing — its prompt is the line you are TYPING, a
+continuation of what is above it rather than a legend — and that difference lives
+at the constructor, where `pinned` already makes it visible.
+
+It is a ROW THE FRAME RESERVES, never a `"\n"` in the prompt, and both halves of
+why are this program's own scar tissue: `displayRows` measures the prompt in
+visible CELLS and knows nothing about an embedded newline, so a two-line prompt
+would be charged one row and the frame would come out one row too tall; and
+`Paint` writes the prompt with a bare `WriteString`, where raw mode needs `\r\n`.
+
+**`grantedGap` is the one owner of "is there room", and it has TWO consumers** —
+`Paint` when it draws, and the board's fit when it decides whether Enter may spend
+a board. Two answers would mean a board drawn whole and refused in the same
+breath. It grants the row only when a buffer row survives beside it, which is what
+keeps `s.rows`'s floor-at-zero from absorbing a shortfall while the row is written
+anyway — the frame would then be one row taller than the terminal, scroll, and
+move every row the app believes it placed.
+
+**`fitsABoard` does NOT charge the gap, and that is a proof rather than an
+oversight.** `grantedGap` hands out the row only when there were two rows spare
+past the prompt and the footer, so `T-P-F >= 2` gives `F+P+1 <= T-1`: charging it
+alters no answer while LOOKING like the two consumers had been reconciled. At
+`{T:8, F:7, P:1}` a naive charge would refuse a board `Paint` goes on to draw
+whole, swapping the keys row for `boardRefusal` and holding Enter over a grid with
+every cell on screen. `TestTheChromeGapNeverChangesWhetherABoardFits` exhausts the
+shape space, so the equivalence is pinned rather than argued.
+
+**`footerTop` counts the gap**, and that is the row of arithmetic that must not be
+wrong: on a board the footer entries ARE the grid, so a click mapped one row high
+marks the wrong word — and a mark is written the moment it lands, with nothing to
+take back. The pty conformance suite's SGR-1006 click is the end-to-end proof.
+
+The gap also DELETED the board's own blank-buffer-line, which `show()` wrote the
+first time a board was drawn. That was one form's exception to a rule the frame
+did not yet have, and it spent an append-only buffer line on it, which the exit
+transcript then carried.
+
+**The chrome is DIMMED — the action row and the bar together** (`asChrome`,
+`playbar.go`). It was the one unstyled thing on screen while the definition, the
+highlighted deck words and the board's marks were all coloured, so nothing marked
+where the text you read ends and the keys you press begin. Both rows, because
+dimming only the action row leaves the figure line brighter than the controls
+above it. `gradePrompt` and `sittingBar` stay PLAIN at their source — `README.md`
+quotes them verbatim and `doc_sync_test.go` pins that — and the style is applied
+where the strings are handed to `Draw`. Escapes cost no columns and every
+measuring helper skips them, so no row budget moves; the summary `finish` writes
+is the RECORD rather than the live edge and is correctly left undimmed.
 
 **A frame is a PLACEMENT, not a set of substrings**, and the tests read it that
 way: `readFrame` interprets what `Paint` emits the way a terminal would —

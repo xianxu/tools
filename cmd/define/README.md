@@ -145,6 +145,11 @@ A word marked yes counts as a correct answer, never as a confident one — the
 grid is self-report, so it can never earn the double promotion a real retrieval
 test can. As a board closes it leaves one line naming the words you marked no.
 
+**The bottom two rows are chrome, and they look like it.** A blank row separates
+them from whatever you are reading, and both are dimmed — the row of keys you can
+press, and the row of figures under it. Everything above them is the sitting
+itself, and that is the only distinction those rows are making.
+
 | key | does |
 |---|---|
 | `1`–`4` | multiple choice: pick the definition |
