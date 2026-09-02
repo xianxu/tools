@@ -5,7 +5,7 @@ deps: []
 github_issue:
 created: 2026-09-02
 updated: 2026-09-02
-estimate_hours:
+estimate_hours: 2.16
 started: 2026-09-02T12:50:12-07:00
 ---
 
@@ -54,7 +54,7 @@ The mechanism, traced:
 - `screen.Write` splits on `eraseLine` and calls `eraseOpenLine`, which drops the
   **open** line only — deliberately, since "a completed line is scrollback".
 - So the erase takes back the indicator's own partial line, and the `"\n"` that
-  preceded it stays as a committed blank line. One per click, forever.
+  preceded it stays as a committed blank line. One per playback, forever.
 
 `before: "\n"` is cursor positioning, which is what it meant on a cooked
 terminal. **Inside a screen a newline is CONTENT**, and the buffer is
@@ -180,6 +180,42 @@ those keep working where hand-maintained enumerations did not.
 - [ ] The board's own blank-buffer-line special case is gone, and a board still reads as separated from the question above it.
 - [ ] `README.md` still quotes the prompt lines verbatim and the doc pin still passes — the plain text is unchanged.
 - [ ] `go test -tags conformance ./cmd/define` passes: the pty suite's SGR-1006 click is the only end-to-end proof that `footerTop` still maps a real terminal's click to the intended cell.
+
+## Estimate
+
+*Produced via `brain/data/life/42shots/velocity/estimate-logic-v3.1.md` against
+`baseline-v3.1.md`. Method A only.*
+
+Design is light throughout because the plan doc resolved the decisions — the
+`design-buffer` is 0.15 rather than 0.30 for exactly that reason. The two
+expensive rows are the frame budget (an arithmetic change on the surface where a
+wrong row means a permanent mark on the wrong word) and the test churn behind it:
+`newPinnedScreen` has ~30 test call sites and the gap moves every placement
+expectation among them.
+
+```estimate
+model: estimate-logic-v3.1
+familiarity: 1.0
+item: cross-cutting-refactor   design=0.15 impl=0.14
+item: smaller-go-module        design=0.1  impl=0.2
+item: tui-screen               design=0.4  impl=0.36
+item: cross-cutting-refactor   design=0.05 impl=0.16
+item: smaller-go-module        design=0.05 impl=0.12
+item: atlas-docs               design=0.1  impl=0.06
+item: milestone-review         design=0.0  impl=0.14
+design-buffer: 0.15
+total: 2.16
+```
+
+| row | what it is |
+|---|---|
+| `cross-cutting-refactor` #1 | the five-site indicator sweep + deleting `playRegion`'s parameter |
+| `smaller-go-module` #1 | the AST guard, matching on argument type |
+| `tui-screen` | `chromeGap`: `Paint`'s budget, the sacrifice order, `footerTop`, `fitsABoard` |
+| `cross-cutting-refactor` #2 | the shifted placement expectations across the pinned-screen tests |
+| `smaller-go-module` #2 | `asChrome` at its four sites |
+| `atlas-docs` | README (derived block regenerated) + the atlas's screen section |
+| `milestone-review` | the one boundary review at close |
 
 ## Plan
 
