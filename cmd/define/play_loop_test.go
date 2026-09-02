@@ -3576,17 +3576,27 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		color bool
+		board bool
 	}{
 		// `--play` refuses -no-color (BR-3), so the colourless row is belt — but a
 		// rig running colourless is how #40's wrap Critical stayed invisible, so
 		// both are driven.
-		{"a coloured sitting", true},
-		{"no palette at all", false},
+		{"a coloured sitting", true, false},
+		{"no palette at all", false, false},
+		// THE BOARD'S BAR IS A SECOND SITE. It reaches the frame through
+		// `boardFooter` rather than the inline `[]string{sittingBar(fig)}`, and
+		// an earlier draft of this work styled one and not the other (PQ-6) — so
+		// covering only the common sitting would leave exactly the half that was
+		// missed before.
+		{"a board's bar", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank")
 			opt.color = tc.color
 			qs, held := questionsFor(t, d, opt)
+			if tc.board {
+				qs = []play.Question{play.NewBoard(boardCells("quokka", "mesa"), opt.width, boardPalette(opt))}
+			}
 
 			tty := &syncBuf{}
 			live := newPinnedScreen(tty, 24, opt.width)
@@ -3601,34 +3611,49 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) {
 			// of them and not the others is exactly the gap this is about. The
 			// last frame is the summary, where there is no action row at all.
 			out := tty.String()
-			// The action row by its exact text; the bar by the phrase only it
-			// carries. Located UNSTYLED first, so a row that is missing fails
-			// loudly rather than quietly reading as "not dimmed".
 			// The bar is matched by its PROGRESS PREFIX, not by "reviews/day": the
 			// summary `finish` writes carries that phrase too, and the summary is
 			// the record rather than the live edge — it is correctly undimmed, so
 			// a looser matcher fails on content that is behaving.
-			bar := regexp.MustCompile(`\d+ of \d+ · .*reviews/day`)
+			barRe := regexp.MustCompile(`\d+ of \d+ · .*?reviews/day`)
+			// THE ESCAPE IS ANCHORED TO THE TEXT, not merely present on the row.
+			// `Paint` walks the cursor back and REPRINTS the prompt with no
+			// newline between, so one "\n"-split line carries the bar AND the
+			// prompt — and "this line contains a dim" then passed on the prompt's
+			// dim while the bar had none. That made the board's row of this table
+			// vacuous, which is the failure a premise check exists to catch.
+			plainRow := func(line string, find func(string) string) (string, bool) {
+				got := find(unstyled(line))
+				return got, got != ""
+			}
 			for _, row := range []struct {
 				what string
-				hits func(string) bool
+				find func(string) string
 			}{
-				{"the action row", func(l string) bool { return strings.Contains(l, gradePrompt(qs[0])) }},
-				{"the bar", bar.MatchString},
+				{"the action row", func(l string) string {
+					if p := gradePrompt(qs[0]); strings.Contains(l, p) {
+						return p
+					}
+					return ""
+				}},
+				{"the bar", barRe.FindString},
 			} {
-				if !row.hits(unstyled(out)) {
-					t.Fatalf("%s was never painted:\n%s", row.what, unstyled(out))
-				}
+				var seen bool
 				for _, line := range strings.Split(out, "\n") {
-					if !row.hits(unstyled(line)) {
+					text, ok := plainRow(line, row.find)
+					if !ok {
 						continue
 					}
-					if got := strings.Contains(line, "\x1b[2m"); got != tc.color {
+					seen = true
+					if got := strings.Contains(line, "\x1b[2m"+text); got != tc.color {
 						t.Errorf("%s dimmed = %v, want %v — the band must read as chrome in a "+
 							"sitting and carry no escape without a palette:\n\t%q",
 							row.what, got, tc.color, line)
 						break
 					}
+				}
+				if !seen {
+					t.Fatalf("%s was never painted:\n%s", row.what, unstyled(out))
 				}
 			}
 		})
