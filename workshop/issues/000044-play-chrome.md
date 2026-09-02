@@ -176,7 +176,7 @@ those keep working where hand-maintained enumerations did not.
 - [x] The action row and the bar carry the dim style in a coloured sitting — at BOTH bar sites, the board's and the common one — and neither carries an escape sequence when the palette is off. — `TestTheChromeBandIsDimmedTogether`, three rows. **Verified by deleting each styling site in turn and watching it fail**, which is how two holes were found: the board's bar was uncovered, and the predicate "this line contains a dim" passed on the PROMPT's dim, because `Paint` reprints the prompt on the same `\n`-split line as the bar.
 - [x] ~~The gap is CHARGED where a board is offered~~ and SACRIFICED FIRST where a frame is drawn, pinned at both boundary heights. — **Revised: it is not charged, and the proof is the deliverable.** `grantedGap` hands the row out only when there were two rows spare, so `T-P-F >= 2` gives `F+P+1 <= T-1`: charging `fitsABoard` alters no answer while looking like a reconciliation, and at `{T:8, F:7, P:1}` a naive charge refuses a board `Paint` draws whole. `TestTheChromeGapNeverChangesWhetherABoardFits` exhausts 0–40 × 1–30 × 1–5. Sacrifice: `TestTheChromeGapIsGivenUpBeforeTheFrameOverflows` sweeps heights 1–12 × two prompt widths × three footer shapes. See the plan's `## Revisions`.
 - [x] A sitting that plays audio N times leaves the buffer the height it was — driven through the REVEAL path as well as the click path. — `TestSittingPlaybackCommitsNothingToTheBuffer` runs the same sitting audible and silent and compares buffer heights, so content is held fixed and playback is the only variable; it failed at 547 vs 542 lines over five questions. **Stated precisely: the behavioural test drives the REVEAL only**; the click path is covered by the guard below and by `playRegion` no longer taking an indicator at all.
-- [x] No `playAnnounced` call in a screen-hosted file passes anything but `screenIndicator()`, enforced by a test rather than by having swept the five that exist today. — `TestEveryScreenPlaybackTakesTheScreenIndicator`, and it is STRONGER than this row asks: it matches on the ARGUMENT'S TYPE, so it also reaches the two sites that call `playAnnounced` through `playRegion` — which a callee-name walk would have missed, including the site the operator reported.
+- [x] No `playAnnounced` call in a screen-hosted file passes anything but `screenIndicator()`, enforced by a test rather than by having swept the five that exist today. — `TestEveryScreenPlaybackTakesTheScreenIndicator`. It matches on the ARGUMENT'S TYPE and its file scope is an ALLOWLIST (`nonScreenFiles`), so a new screen-hosted file defaults into the rule rather than out of it (BR-6). **Stated precisely:** with `playRegion`'s parameter deleted the tree now has only direct `playAnnounced` arguments, which a callee-name walk would also have reached — the by-type predicate is the better rule because it survives the next forwarder, not because it catches something today. The earlier claim that a callee walk "would have missed the reported site" described the PRE-deletion tree.
 - [x] The board's own blank-buffer-line special case is gone, and a board still reads as separated from the question above it. — deleted from `show()`; the separation is now the frame's, for every form.
 - [x] `README.md` still quotes the prompt lines verbatim and the doc pin still passes — the plain text is unchanged. — `TestREADMEQuotesThePromptsTheLoopActuallyPrints` green; `gradePrompt`/`sittingBar` untouched.
 - [x] `go test -tags conformance ./cmd/define` passes: the pty suite's SGR-1006 click is the only end-to-end proof that `footerTop` still maps a real terminal's click to the intended cell. — green, 133s.
@@ -277,3 +277,46 @@ Estimate 2.16h. The estimate-quality judge flagged (INFO, non-blocking) that no
 `ux-rename-iteration` row was booked on a change whose whole subject is how the
 thing LOOKS — fair, and the issue's own provenance is an operator iteration
 round. Left as filed so the close-time ledger scores the real miss.
+
+### 2026-09-02 — boundary review round 1: four blockers, all about the TESTS
+
+Verdict FIX-THEN-SHIP. No correctness finding — the frame arithmetic was
+independently re-derived and held. Every blocker was a pin that did not pin,
+which is the more useful kind of finding here.
+
+- **BR-3 — `newPinnedScreen`'s `gap: chromeGap` was pinned by nothing.** Every
+  gap test built `screen{pinned: true, gap: chromeGap}` by hand, so deleting the
+  production wiring left the full suite *and* the conformance suite green — on
+  the issue's headline Done-when. The class: **a test that constructs the object
+  by hand does not test the wiring that constructs it in production.** Both gap
+  tests now go through `newPinnedScreen`, and the mutation goes red.
+- **BR-4 — the footer-click test was a tautology.** It asked
+  `FooterRowAt(sc.footerTop + i) == i`, and `FooterRowAt` *is* `row - footerTop`;
+  it passed with the gap dropped and with a nonsense `footerTop`. It now asserts
+  an ABSOLUTE row (`termRows - len(footer)`, from D3a's bottom-edge rule) and
+  reads the drawn frame back, so it can fail.
+- **BR-5 — `Paint`'s 35-line doc block was reparented onto `const chromeGap`.**
+  `go doc` printed the constant with "Paint draws one whole frame…" and left
+  `Paint` undocumented. Fixed by moving the constants above the block — and the
+  CLASS is that `TestADocCommentNamesWhatItSitsOn` only walked `FuncDecl`, so a
+  block reparented onto a const was invisible to the guard written for exactly
+  this failure. Widened to single-spec const/var, and **it immediately found two
+  pre-existing instances** (`unstyled`/`sgr`, `builtBinary`/`builtBinaryOnce`),
+  both fixed.
+- **BR-6 — the indicator guard's file scope was itself a swept enumeration.**
+  Naming the two screen-hosted files meant a third would silently escape the
+  rule — this issue's own thesis, one level up. Inverted to an allowlist
+  (`nonScreenFiles`), so a new file defaults into the rule and each exemption
+  carries its reason; the guard also fails if an exemption stops naming a real
+  file.
+
+Minors also taken: the dim escape now reads from `newPalette`, the README
+sentence moved out of the board section (where "the bottom two rows" is false),
+and the issue's own claim about the by-type guard was corrected — post-deletion,
+a callee-name walk would reach the same four arguments, so the predicate is
+better because it survives the NEXT forwarder, not because it catches one today.
+
+Also pinned unprompted, because the review named it as the one thing `#42` must
+inherit and nothing went red if it were broken: `TestTheFooterIsBudgetedBeforeTheGap`
+holds that `fitFooter` gets its budget before `grantedGap` does — the ordering
+that is the whole reason a border can never cost a board a grid row.
