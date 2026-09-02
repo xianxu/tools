@@ -1,12 +1,13 @@
 ---
 id: 000043
-status: working
+status: codecomplete
 deps: []
 github_issue:
 created: 2026-09-01
 updated: 2026-09-01
 estimate_hours:
 started: 2026-09-01T20:23:56-07:00
+actual_hours: N/A
 ---
 
 # Declare Couch fleet policy
@@ -43,6 +44,7 @@ authority for tools admission behavior.
 ## Log
 
 ### 2026-09-01
+- 2026-09-01: closed — One-file repository configuration; jq validated the exact declaration and sdlc fleet policy --path /Users/xianxu/workspace/tools --json returned ok=true with repo-keyed bounded capacity 1 and reject overflow. Actual-time telemetry was unavailable for this worktree, so calibration is not applicable.; review verdict: SHIP
 
 The operator approved the same single-thread-per-repository declaration used by
 Pair and Parley. This keeps the admission fact in the repository-owned policy
