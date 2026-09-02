@@ -3451,3 +3451,74 @@ func TestSelectionAndDrawAskTheSameFitQuestion(t *testing.T) {
 			"treats the terminal as too narrow to lay text out at all", minWrapWidth-1)
 	}
 }
+
+// PLAYBACK IN A SITTING MUST COMMIT NOTHING TO THE BUFFER (#44).
+//
+// The indicator is ephemeral UI and takes its own line back — `screen.Write`
+// splits on the erase gesture and `eraseOpenLine` drops the line it was writing.
+// But `defaultIndicator` also writes a newline BEFORE it, and inside an
+// append-only buffer that newline is CONTENT the erase cannot reach: it is a
+// completed line by the time the erase arrives, and a completed line is
+// scrollback by definition.
+//
+// Operator, 2026-09-02: "after clicking on pronunciation in the daily play, one
+// additional line's inserted".
+//
+// DRIVEN THROUGH THE REVEAL, not the click. The click is where it was SEEN and
+// the reveal is where it lives — every answered question that plays audio pays
+// one row, so a sitting drifts up the screen on its own with nobody clicking
+// anything.
+//
+// MEASURED AS A DIFFERENCE, which is what makes the assertion sharp: the same
+// sitting is run twice against the same deck, audible and silent, so the content
+// is identical and playback is the only variable. Counting blank lines instead
+// would be counting the dictionary's own — a rendered entry is full of them.
+func TestSittingPlaybackCommitsNothingToTheBuffer(t *testing.T) {
+	// TWO questions at least, because one leftover row is indistinguishable from
+	// ordinary spacing — which is how this shipped.
+	const words = 6
+	run := func(t *testing.T, wantAudio bool) int {
+		t.Helper()
+		d, opt, _ := playRig(t, "quokka", "mesa", "parrot", "bank", "keel", "run")
+		var fp *fakePlayer
+		if wantAudio {
+			fp = audible(&d, &opt)
+		}
+		qs, held := questionsFor(t, d, opt)
+		if len(qs) < 2 {
+			t.Fatalf("need two questions to see a per-playback leak, got %d", len(qs))
+		}
+		tty := &syncBuf{}
+		live := newPinnedScreen(tty, 24, opt.width)
+		live.interval = -1
+		var errb bytes.Buffer
+
+		script := ""
+		for _, q := range qs {
+			script += "\r" + gradeKey(t, q, play.Correct)
+		}
+		playSession(t.Context(), d, opt, play.NewSession(qs), held, keysFor(script),
+			console{view: live, finish: func() {}, stdout: live, stderr: &errb})
+
+		if wantAudio {
+			if len(fp.Played) < 2 {
+				t.Fatalf("played %d times; this test cannot see the leak it is about", len(fp.Played))
+			}
+			for _, l := range live.s.Lines() {
+				if strings.Contains(unstyled(l), "playing") {
+					t.Errorf("the indicator itself survived in the buffer: %q", l)
+				}
+			}
+		}
+		return len(live.s.Lines())
+	}
+
+	silent := run(t, false)
+	audible := run(t, true)
+	if audible != silent {
+		t.Errorf("the buffer is %d lines with playback and %d without, over a deck of %d — "+
+			"playback writes a newline its erase cannot take back, so a sitting drifts "+
+			"up the screen by one row per answered question",
+			audible, silent, words)
+	}
+}

@@ -945,7 +945,7 @@ func TestEveryRegionKindIsActionableThroughTheSharedRegistry(t *testing.T) {
 
 		playRegion(t.Context(), rig.deps, opt,
 			Region{Kind: kind, Text: "sycophantic", Word: "sycophantic", Lang: "fr"},
-			"", defaultIndicator(opt), &out, &errb)
+			"", &out, &errb)
 
 		if rig.player.count() == 0 {
 			t.Errorf("RegionKind %d played nothing through playRegion — a sitting draws the "+
@@ -966,7 +966,7 @@ func TestAnUnknownRegionKindPlaysNothing(t *testing.T) {
 
 	playRegion(t.Context(), rig.deps, opt,
 		Region{Kind: numRegionKinds + 7, Text: "sycophantic", Word: "sycophantic"},
-		"", defaultIndicator(opt), &out, &errb)
+		"", &out, &errb)
 
 	if got := rig.player.count(); got != 0 {
 		t.Errorf("an unknown kind played %d times — the registry guessed instead of refusing", got)

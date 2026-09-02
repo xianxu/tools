@@ -352,11 +352,13 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 			cell, marks := formCell(view, s.Current(), k)
 			if !marks {
 				if r, ok := view.RegionAtRow(k.Row, k.Col); ok {
-					// The record-shaped indicator, not the editor's erasable one:
-					// a sitting's `♫ playing 3×` is a frame write like any other
-					// (D5a), and defaultIndicator is what every other playback on
-					// this path already uses.
-					playRegion(ctx, d, opt, r, "", defaultIndicator(opt), stdout, stderr)
+					// The indicator is playRegion's own now (#44). It used to be
+					// passed, and this site passed `defaultIndicator` under a
+					// comment saying that was "what every other playback on this
+					// path already uses" — true of the ONE-SHOT path and false of
+					// every screen, which is how a blank line came to be committed
+					// per click.
+					playRegion(ctx, d, opt, r, "", stdout, stderr)
 					show()
 				}
 				continue
@@ -505,7 +507,7 @@ func playSession(ctx context.Context, d deps, opt options, s play.Session, held 
 					// language throughout, and #29's -pron is a per-lookup flag that
 					// --play has no line to carry.
 					playAnnounced(ctx, d, opt, utteranceFor(out.Word, "", "", opt),
-						defaultIndicator(opt), stdout, stderr)
+						screenIndicator(), stdout, stderr)
 				}
 			}
 		}
