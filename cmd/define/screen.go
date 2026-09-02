@@ -409,6 +409,36 @@ const (
 	eraseDown  = "\x1b[J" // clear from the cursor to the end of the screen
 )
 
+// chromeGap is the rows a frame holds EMPTY between the record and the live edge.
+//
+// The live edge is a legend of what you can press; the buffer is what you are
+// reading. With nothing between them the action row butts the last line of the
+// definition it belongs under and the two read as one block — which is what the
+// operator saw in a real sitting (#44).
+//
+// A ROW THE FRAME RESERVES, never a "\n" inside the prompt. `displayRows`
+// measures the prompt in visible CELLS and knows nothing about an embedded
+// newline, so a two-line prompt would be charged one row and the frame would come
+// out one row too tall — the terminal scrolls and every placed row moves. Paint
+// also writes the prompt with a bare WriteString, where raw mode needs "\r\n".
+const chromeGap = 1
+
+// grantedGap is whether a frame of this shape gets its gap, and it is ONE owner
+// because TWO consumers ask: Paint when it draws, and fitsABoard when it decides
+// whether Enter may spend a board. Two answers here means a board drawn whole and
+// refused in the same breath (#44 PQ-8).
+//
+// DECORATION, so it is the first component given up — before the buffer, before
+// the footer, before the prompt. A frame that scrolls has lost every coordinate
+// on it, and a border is not worth that. Granted only when a buffer row survives
+// beside it: at that size the reader needs the content more than the border.
+func grantedGap(want, termRows, promptRows, footerRows int) int {
+	if termRows-promptRows-footerRows >= want+1 {
+		return want
+	}
+	return 0
+}
+
 // Paint draws one whole frame: the buffer's visible tail, then the prompt, then
 // the FOOTER under it.
 //
@@ -444,36 +474,6 @@ const (
 //
 // termRows and termCols are passed in rather than stored, so a resize is one
 // call site's business (the loop's SIGWINCH case) and not fields that go stale.
-// chromeGap is the rows a frame holds EMPTY between the record and the live edge.
-//
-// The live edge is a legend of what you can press; the buffer is what you are
-// reading. With nothing between them the action row butts the last line of the
-// definition it belongs under and the two read as one block — which is what the
-// operator saw in a real sitting (#44).
-//
-// A ROW THE FRAME RESERVES, never a "\n" inside the prompt. `displayRows`
-// measures the prompt in visible CELLS and knows nothing about an embedded
-// newline, so a two-line prompt would be charged one row and the frame would come
-// out one row too tall — the terminal scrolls and every placed row moves. Paint
-// also writes the prompt with a bare WriteString, where raw mode needs "\r\n".
-const chromeGap = 1
-
-// grantedGap is whether a frame of this shape gets its gap, and it is ONE owner
-// because TWO consumers ask: Paint when it draws, and fitsABoard when it decides
-// whether Enter may spend a board. Two answers here means a board drawn whole and
-// refused in the same breath (#44 PQ-8).
-//
-// DECORATION, so it is the first component given up — before the buffer, before
-// the footer, before the prompt. A frame that scrolls has lost every coordinate
-// on it, and a border is not worth that. Granted only when a buffer row survives
-// beside it: at that size the reader needs the content more than the border.
-func grantedGap(want, termRows, promptRows, footerRows int) int {
-	if termRows-promptRows-footerRows >= want+1 {
-		return want
-	}
-	return 0
-}
-
 func (s *screen) Paint(w io.Writer, termRows, termCols int, prompt string, footer []string) {
 	var footerRows int
 	s.cols = termCols

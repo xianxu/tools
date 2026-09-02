@@ -1628,9 +1628,17 @@ func isCitableName(name string) bool {
 // instances found at once were of exactly that shape, two of them inserted by the
 // window under review.
 //
-// FuncDecl only, and named-function only. A method's receiver is not in the
-// comment by convention, and a `var`/`const` block's doc legitimately describes
-// the group rather than any member.
+// Named FUNCTIONS and SINGLE-SPEC const/var declarations. A method's receiver is
+// not in the comment by convention, and a MULTI-spec `var`/`const` block's doc
+// legitimately describes the group rather than any member — but a lone
+// `const chromeGap = 1` is named by its own doc exactly as a function is.
+//
+// The const arm was added after this guard watched the failure it exists to catch
+// go past it (#44): a new constant was inserted between `Paint`'s doc block and
+// `Paint`, so `go doc` printed the constant with "Paint draws one whole frame…"
+// and left `Paint` undocumented — invisible here, because the reparented block's
+// new owner was not a FuncDecl. A guard whose scope is narrower than the failure
+// mode is the shape of the thing it is guarding against.
 func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 	root := repoRoot(t)
 	fset := token.NewFileSet()
@@ -1643,8 +1651,8 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 		for _, pkg := range pkgs {
 			for path, f := range pkg.Files {
 				for _, d := range f.Decls {
-					fn, ok := d.(*ast.FuncDecl)
-					if !ok || fn.Doc == nil || fn.Name == nil {
+					name, doc := documentedDecl(d)
+					if name == "" || doc == nil {
 						continue
 					}
 					// A TEST's doc legitimately opens with the name of what it
@@ -1652,12 +1660,12 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 					// the repo's convention and reads correctly. The failure
 					// this catches is a PRODUCTION declaration wearing its
 					// neighbour's prose.
-					if strings.HasPrefix(fn.Name.Name, "Test") ||
-						strings.HasPrefix(fn.Name.Name, "Fuzz") ||
-						strings.HasPrefix(fn.Name.Name, "Benchmark") {
+					if strings.HasPrefix(name, "Test") ||
+						strings.HasPrefix(name, "Fuzz") ||
+						strings.HasPrefix(name, "Benchmark") {
 						continue
 					}
-					first := strings.Fields(fn.Doc.Text())
+					first := strings.Fields(doc.Text())
 					if len(first) == 0 {
 						continue
 					}
@@ -1668,7 +1676,7 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 					// a neighbour). Only a first word that is ANOTHER
 					// declaration's name is the failure this catches.
 					word := strings.Trim(first[0], "`:,.—-")
-					if word == fn.Name.Name {
+					if word == name {
 						continue
 					}
 					// SAME FILE only, because that is the shape this catches: a
@@ -1684,14 +1692,42 @@ func TestADocCommentNamesWhatItSitsOn(t *testing.T) {
 						"declaration in this package — a comment block acquires the wrong "+
 						"owner when a declaration is inserted between them, leaving one "+
 						"undocumented and the other described by its neighbour's prose",
-						filepath.Base(path), fn.Name.Name, word)
+						filepath.Base(path), name, word)
 				}
 			}
 		}
 	}
 	if checked == 0 {
-		t.Fatal("no documented functions parsed, so this guard checked nothing")
+		t.Fatal("no documented declarations parsed, so this guard checked nothing")
 	}
+}
+
+// documentedDecl is the NAME a doc comment sits on, and the doc, for the two
+// declaration shapes whose comment names one thing: a named function, and a
+// single-spec const/var.
+//
+// A multi-spec `const (…)` block is excluded because its doc describes the GROUP
+// — "The two prompt lines livePrompt returns…" over a pair of constants is
+// correct prose that this guard must not fire on. A lone declaration has no group
+// to describe, so its doc names it or names its neighbour.
+func documentedDecl(d ast.Decl) (string, *ast.CommentGroup) {
+	switch d := d.(type) {
+	case *ast.FuncDecl:
+		if d.Name == nil {
+			return "", nil
+		}
+		return d.Name.Name, d.Doc
+	case *ast.GenDecl:
+		if d.Doc == nil || len(d.Specs) != 1 {
+			return "", nil
+		}
+		vs, ok := d.Specs[0].(*ast.ValueSpec)
+		if !ok || len(vs.Names) != 1 {
+			return "", nil
+		}
+		return vs.Names[0].Name, d.Doc
+	}
+	return "", nil
 }
 
 // declaredIn is every function name in ONE file, so the guard can tell a

@@ -5,17 +5,31 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// screenHostedFiles are the files whose playback writes into a `screen` rather
-// than into a real stdout.
+// nonScreenFiles are the files whose playback writes to a REAL stdout, and they
+// are the exemptions — everything else in package main is in scope.
 //
-// A LIST, because "is this writer a screen" is not a question any type can
-// answer here: `playAnnounced` takes an `io.Writer`, and that is right — the
-// one-shot and piped paths hand it the real thing and genuinely want the
-// cursor-positioning newline `screenIndicator` refuses.
-var screenHostedFiles = []string{"play_loop.go", "replraw.go"}
+// AN ALLOWLIST, INVERTED FROM THE FIRST DRAFT, and the inversion is the whole
+// point (#44 BR-6). That draft named the two screen-hosted files, which made the
+// guard's own SCOPE a hand-maintained enumeration — the very shape this issue
+// exists to argue against, one level up: a third screen-hosted file would simply
+// not be checked, silently. This package's purity guard is an allowlist for the
+// same reason, and it is the precedent this cites.
+//
+// So a new file defaults INTO the rule. Exempting one is a deliberate edit here,
+// with a reason:
+//
+//   - main.go — the one-shot path (`define <word>`), writing to the real stdout,
+//     where "\n" genuinely is cursor movement.
+//   - repl.go — the piped loop, where the indicator is a RECORD rather than
+//     ephemeral UI and is written as a plain line with no escape at all.
+var nonScreenFiles = map[string]string{
+	"main.go": "the one-shot path writes to a real stdout",
+	"repl.go": "the piped loop keeps the indicator as a record",
+}
 
 // EVERY indicator ARGUMENT in a screen-hosted file is screenIndicator() (#44).
 //
@@ -79,9 +93,17 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 		t.Fatal("no function in package main takes an indicator; this guard would certify nothing")
 	}
 
-	checked := 0
-	for _, want := range screenHostedFiles {
-		f := fileNamed(t, fset, files, want)
+	checked, scanned := 0, 0
+	for path, f := range files {
+		base := filepath.Base(path)
+		if strings.HasSuffix(base, "_test.go") {
+			continue
+		}
+		if why, exempt := nonScreenFiles[base]; exempt {
+			t.Logf("skipping %s: %s", base, why)
+			continue
+		}
+		scanned++
 		// A function that itself takes an indicator may forward its own
 		// parameter — the argument is then a bare identifier and the obligation
 		// belongs to whoever supplied it. No such function survives in these
@@ -122,21 +144,21 @@ func TestEveryScreenPlaybackTakesTheScreenIndicator(t *testing.T) {
 			return true
 		})
 	}
-	if checked == 0 {
-		t.Fatalf("found no indicator arguments in %v; a guard that checks nothing certifies nothing", screenHostedFiles)
+	if scanned == 0 {
+		t.Fatal("every file in package main was exempted; this guard would certify nothing")
 	}
-}
-
-// fileNamed finds one parsed file by base name, and FATALS when it is absent —
-// never skips. A renamed file must break this guard loudly rather than quietly
-// dropping the rule it carried.
-func fileNamed(t *testing.T, fset *token.FileSet, files map[string]*ast.File, base string) *ast.File {
-	t.Helper()
-	for path, f := range files {
-		if filepath.Base(path) == base {
-			return f
+	if checked == 0 {
+		t.Fatalf("scanned %d files and found no indicator argument in any of them — "+
+			"either the exemptions have swallowed the rule, or `indicator` moved and "+
+			"this guard is now checking a name nothing uses", scanned)
+	}
+	// The exemptions must still NAME REAL FILES. A renamed or deleted exemption is
+	// a rule quietly widened or a scope quietly narrowed, and either should be a
+	// deliberate edit rather than a silent one.
+	for base := range nonScreenFiles {
+		if _, ok := files[filepath.Join(root, "cmd", "define", base)]; !ok {
+			t.Errorf("nonScreenFiles exempts %s, which is not in package main — "+
+				"if it moved, move the exemption with it", base)
 		}
 	}
-	t.Fatalf("%s is not in package main — if it moved, move it in screenHostedFiles too", base)
-	return nil
 }

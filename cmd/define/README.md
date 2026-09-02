@@ -58,6 +58,12 @@ sycophantic
 1-4 = pick the definition, d = remove from deck, Ctrl-C to stop
 ```
 
+**The keys line and the figures line are chrome, and they look like it.** Both
+are dimmed, and a blank row separates them from whatever you are reading — so the
+sitting is what you see and those two rows are the frame around it. On a board
+the keys line sits above the grid rather than below it, as the picture further
+down shows.
+
 **The wrong answers are your own words**, taken from your deck — never invented
 by a model, so this works offline and costs nothing. They are also chosen to
 differ from one another: where your deck allows, one is a specialist sense the
@@ -144,11 +150,6 @@ works, and `Ctrl-C` is still free; make the window taller, or stop.
 A word marked yes counts as a correct answer, never as a confident one — the
 grid is self-report, so it can never earn the double promotion a real retrieval
 test can. As a board closes it leaves one line naming the words you marked no.
-
-**The bottom two rows are chrome, and they look like it.** A blank row separates
-them from whatever you are reading, and both are dimmed — the row of keys you can
-press, and the row of figures under it. Everything above them is the sitting
-itself, and that is the only distinction those rows are making.
 
 | key | does |
 |---|---|

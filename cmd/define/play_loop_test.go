@@ -3638,6 +3638,10 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) {
 				}},
 				{"the bar", barRe.FindString},
 			} {
+				// THE ESCAPE COMES FROM THE PALETTE, not spelled here: newPalette
+				// owns the sequence, and a second speller is how the two come to
+				// disagree (ARCH-DRY).
+				dim := newPalette(true).dim
 				var seen bool
 				for _, line := range strings.Split(out, "\n") {
 					text, ok := plainRow(line, row.find)
@@ -3645,7 +3649,7 @@ func TestTheChromeBandIsDimmedTogether(t *testing.T) {
 						continue
 					}
 					seen = true
-					if got := strings.Contains(line, "\x1b[2m"+text); got != tc.color {
+					if got := strings.Contains(line, dim+text); got != tc.color {
 						t.Errorf("%s dimmed = %v, want %v — the band must read as chrome in a "+
 							"sitting and carry no escape without a palette:\n\t%q",
 							row.what, got, tc.color, line)

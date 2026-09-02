@@ -94,6 +94,13 @@ func startDefineInDir(t *testing.T, dir string, env []string, args ...string) (*
 	return cmd, f
 }
 
+// builtBinaryOnce memoises the build, so the cost is paid once per run.
+var builtBinaryOnce struct {
+	sync.Once
+	path string
+	err  error
+}
+
 // builtBinary is the binary these tests drive, BUILT FROM THE SOURCE IN THE TREE.
 //
 // It used to be whatever `../../bin/define` happened to be, with a skip if it
@@ -105,12 +112,6 @@ func startDefineInDir(t *testing.T, dir string, env []string, args ...string) (*
 //
 // Built once per run into the test's own temp space, so it cannot be stale and
 // cannot collide with `make build`'s output.
-var builtBinaryOnce struct {
-	sync.Once
-	path string
-	err  error
-}
-
 func builtBinary(t *testing.T) string {
 	t.Helper()
 	builtBinaryOnce.Do(func() {
